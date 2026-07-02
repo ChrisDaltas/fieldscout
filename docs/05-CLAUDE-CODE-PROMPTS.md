@@ -23,7 +23,7 @@
 ### Task 0.1 — Initialize the Project
 
 ```
-I'm building a fantasy football app called Hadouken. Please read CLAUDE.md before doing anything — it contains the full stack conventions and patterns you must follow.
+I'm building a fantasy football app called FieldScout. Please read CLAUDE.md before doing anything — it contains the full stack conventions and patterns you must follow.
 
 Set up the project:
 
@@ -49,13 +49,13 @@ Set up the project:
    NEXT_PUBLIC_APP_URL=http://localhost:3000
 8. Install additional dependencies: @tanstack/react-query, zustand, zod, @supabase/supabase-js, @supabase/ssr, lucide-react, date-fns, clsx, tailwind-merge
 
-Brand: app name is "Hadouken", primary color is Spotify green (#1DB954), app background is #121212, font is Inter, dark mode only. Read docs/06-DESIGN-SYSTEM.md for the full design system before building any UI.
+Brand: app name is "FieldScout", primary color is Spotify green (#1DB954), app background is #121212, font is Inter, dark mode only. Read docs/06-DESIGN-SYSTEM.md for the full design system before building any UI.
 ```
 
 ### Task 0.2 — Supabase Setup + Database Schema
 
 ```
-Set up Supabase and the initial database schema for Hadouken. Read CLAUDE.md and docs/03-DATA-MODEL.md before starting.
+Set up Supabase and the initial database schema for FieldScout. Read CLAUDE.md and docs/03-DATA-MODEL.md before starting.
 
 1. Create the Supabase client utilities:
    - src/lib/supabase/client.ts — browser client using createBrowserClient from @supabase/ssr
@@ -80,8 +80,7 @@ Set up Supabase and the initial database schema for Hadouken. Read CLAUDE.md and
    - updated_at TIMESTAMPTZ DEFAULT NOW()
 
    players (read-only, populated by sync scripts):
-   - id UUID PRIMARY KEY DEFAULT gen_random_uuid()
-   - sleeper_id TEXT UNIQUE
+   - id TEXT PRIMARY KEY                        -- Sleeper player ID used directly as PK
    - full_name TEXT NOT NULL
    - first_name TEXT
    - last_name TEXT
@@ -150,7 +149,7 @@ Reference docs/03-DATA-MODEL.md for the full schema including any fields I may h
 ### Task 0.3 — Authentication
 
 ```
-Build the authentication flow for Hadouken. Email/password only — no OAuth. Read CLAUDE.md before starting.
+Build the authentication flow for FieldScout. Email/password only — no OAuth. Read CLAUDE.md before starting.
 
 1. Auth pages:
    - app/(auth)/login/page.tsx — email + password login form
@@ -183,7 +182,7 @@ Build the authentication flow for Hadouken. Email/password only — no OAuth. Re
 
 8. Nav user menu: avatar + dropdown with "My Profile", "Settings", "Sign Out"
 
-Design: auth pages should be centered cards on a dark background with the Hadouken wordmark above. Clean, minimal, sports-energy. Mobile-first.
+Design: auth pages should be centered cards on a dark background with the FieldScout wordmark above. Clean, minimal, sports-energy. Mobile-first.
 
 Note on admin: Supabase dashboard (supabase.com → your project) is used for all admin tasks during early development — viewing users, editing rows, running SQL for usage stats, manually flipping is_pro=true, removing content. No custom admin panel needed until the user base justifies it.
 ```
@@ -191,7 +190,7 @@ Note on admin: Supabase dashboard (supabase.com → your project) is used for al
 ### Task 0.4 — NFL Player Data Pipeline
 
 ```
-Set up the NFL player data pipeline for Hadouken. This has three layers. Read CLAUDE.md before starting.
+Set up the NFL player data pipeline for FieldScout. This has three layers. Read CLAUDE.md before starting.
 
 --- LAYER 1: Sleeper API (player profiles) ---
 
@@ -246,7 +245,7 @@ Run scripts in this order after setup:
 ### Task 0.5 — App Shell
 
 ```
-Build the app shell for Hadouken. Read CLAUDE.md before starting.
+Build the app shell for FieldScout. Read CLAUDE.md before starting.
 
 1. Root layout app/layout.tsx:
    - Inter font
@@ -258,12 +257,12 @@ Build the app shell for Hadouken. Read CLAUDE.md before starting.
      Nav items: Home, Big Board, My Lists, Rankings, Research, Teams, Settings
      Bottom of sidebar: user avatar, display name, cred score badge, sign out
    - Mobile: bottom tab bar with icons for: Home, Lists, Big Board, Research, Profile
-   - Top bar (mobile only): Hadouken logo + global search icon
+   - Top bar (mobile only): FieldScout logo + global search icon
    - Active route highlighting
 
 3. Logged-out landing page app/page.tsx:
    - Hero: "Rank Players. Earn Cred. Win Your League."
-   - Subtext: "Hadouken is the fantasy football app for players who actually know ball."
+   - Subtext: "FieldScout is the fantasy football app for players who actually know ball."
    - Two CTAs: "Start Ranking Free" (→ /signup) and "See How It Works" (→ scrolls to features)
    - Feature section: 3 cards — Build Your Big Board, Earn Cred for Accuracy, Draft With Confidence
    - Clean, dark, sports-energy. Electric blue accents. Mobile responsive.
@@ -289,12 +288,12 @@ The whole app should feel like a premium sports product. Read docs/06-DESIGN-SYS
 
 ## Phase 1: MVP
 
-> This is the launch. When Phase 1 is done, real users can sign up, build their draft rankings, share them, and engage with the community. The north star: *a user opens Hadouken before their fantasy draft, builds their rankings, and uses them as a cheat sheet while on the clock.*
+> This is the launch. When Phase 1 is done, real users can sign up, build their draft rankings, share them, and engage with the community. The north star: *a user opens FieldScout before their fantasy draft, builds their rankings, and uses them as a cheat sheet while on the clock.*
 
 ### Task 1.1 — Lists Database & API
 
 ```
-Build the database and API layer for player lists in Hadouken. Read CLAUDE.md and docs/03-DATA-MODEL.md before starting.
+Build the database and API layer for player lists in FieldScout. Read CLAUDE.md and docs/03-DATA-MODEL.md before starting.
 
 1. Create supabase/migrations/002_lists.sql:
 
@@ -399,7 +398,7 @@ Business rules to enforce in API:
 ### Task 1.2 — Lists UI
 
 ```
-Build the list UI for Hadouken. Read CLAUDE.md before starting. Use React Query hooks from Task 1.1.
+Build the list UI for FieldScout. Read CLAUDE.md before starting. Use React Query hooks from Task 1.1.
 
 1. My Lists page (app/(app)/lists/page.tsx):
    - "My Big Board" entry pinned at top with a distinctive look (star icon, subtle gradient border)
@@ -450,7 +449,7 @@ Styling: player rows should be clean and dense — circular headshot, bold name,
 ### Task 1.3 — Big Board
 
 ```
-Build the full Big Board feature for Hadouken. Read CLAUDE.md and the Big Board section of docs/01-PRD.md (F2A) before starting.
+Build the full Big Board feature for FieldScout. Read CLAUDE.md and the Big Board section of docs/01-PRD.md (F2A) before starting.
 
 Key Big Board rules to understand before writing any code:
 - The Big Board is a WORKSPACE. Changes are not saved until the user hits "Update Big Board".
@@ -498,7 +497,7 @@ Key Big Board rules to understand before writing any code:
 4. Public Big Board page (app/u/[username]/big-board/page.tsx):
    - Server-rendered for SEO
    - Read-only view of saved Big Board
-   - OG tags: "@{username}'s Big Board — Hadouken"
+   - OG tags: "@{username}'s Big Board — FieldScout"
 
 5. API routes needed:
    - GET /api/big-board — get current user's saved Big Board state
@@ -511,7 +510,7 @@ Key Big Board rules to understand before writing any code:
 ### Task 1.4 — Tier View Mode
 
 ```
-Build the tier view mode for Hadouken lists and Big Board. Read the tier view section of docs/01-PRD.md (F2) before starting.
+Build the tier view mode for FieldScout lists and Big Board. Read the tier view section of docs/01-PRD.md (F2) before starting.
 
 Key concept: tiers are a VIEW MODE OVERLAY. They do not change the underlying player order. The player order (position field in list_players) is always the source of truth. Tiers only change how the list is visually presented.
 
@@ -550,7 +549,7 @@ Apply this to both regular lists AND the Big Board.
 ### Task 1.5 — Home Feed
 
 ```
-Build the home feed for Hadouken. Read docs/01-PRD.md (F5) before starting.
+Build the home feed for FieldScout. Read docs/01-PRD.md (F5) before starting.
 
 The home feed is a simple chronological stream of all public lists created or updated by any user on the platform. No algorithm — newest first. This is the default logged-in landing page.
 
@@ -588,19 +587,19 @@ The home feed is a simple chronological stream of all public lists created or up
 ### Task 1.6 — Guest Experience
 
 ```
-Build the anonymous / guest experience for Hadouken. Read the F0 section of docs/01-PRD.md before starting.
+Build the anonymous / guest experience for FieldScout. Read the F0 section of docs/01-PRD.md before starting.
 
 This is HIGH PRIORITY. Users should be able to start using the app without signing up.
 
 1. Guest Big Board (localStorage-backed):
-   - When a user visits hadouken.gg without being logged in, redirect them to /big-board (not a landing page)
-   - The guest Big Board works exactly like the real Big Board UI (add players, reorder, Smart Order, tiers) but is stored in localStorage under the key 'hadouken_guest_big_board'
+   - When a user visits fieldscout.gg without being logged in, redirect them to /big-board (not a landing page)
+   - The guest Big Board works exactly like the real Big Board UI (add players, reorder, Smart Order, tiers) but is stored in localStorage under the key 'fieldscout_guest_big_board'
    - Guest Big Board state shape: { players: [{playerId, position, tier}], savedAt: ISO string, size: number }
    - No "Update Big Board" button for guests — their changes auto-save to localStorage on every action (no explicit save needed since it's local only)
    - Guest can add players, reorder them, enable tiers, use Smart Order — full functionality
 
 2. Guest list creation:
-   - Guests can also create lists, stored in localStorage under 'hadouken_guest_lists'
+   - Guests can also create lists, stored in localStorage under 'fieldscout_guest_lists'
    - Up to 3 guest lists allowed (to avoid bloat)
 
 3. Persistent sign-up CTA (non-blocking):
@@ -630,7 +629,7 @@ This is HIGH PRIORITY. Users should be able to start using the app without signi
 ### Task 1.7 — Social (Likes, Comments) + Basic Search
 
 ```
-Complete the social layer and search for Hadouken Phase 1.
+Complete the social layer and search for FieldScout Phase 1.
 
 LIKES (already have DB + API from Task 1.1 — just verify UI):
 - Like button on list cards in feed: heart icon, count, filled/unfilled state. Optimistic toggle.
@@ -686,7 +685,7 @@ USER PROFILES:
 ### Task 2.1 — Teams
 
 ```
-Build the Teams feature for Hadouken. Read CLAUDE.md and the Teams section of docs/01-PRD.md (F9) before starting.
+Build the Teams feature for FieldScout. Read CLAUDE.md and the Teams section of docs/01-PRD.md (F9) before starting.
 
 A team is a persistent list with a scoring system locked in at creation time. It is not meaningfully different from a list at this stage — the key distinction is that the scoring system is embedded permanently so fantasy point values are always consistent.
 
@@ -739,7 +738,7 @@ A team is a persistent list with a scoring system locked in at creation time. It
 ### Task 3.1 — Research Table + Scoring Systems
 
 ```
-Build the Player Research tab and custom scoring systems for Hadouken. Read CLAUDE.md and docs/01-PRD.md (F7, F8) before starting.
+Build the Player Research tab and custom scoring systems for FieldScout. Read CLAUDE.md and docs/01-PRD.md (F7, F8) before starting.
 
 RESEARCH TABLE:
 1. Research page (app/(app)/research/page.tsx):
@@ -788,7 +787,7 @@ SCORING SYSTEMS:
 ### Task 4.1 — Stripe Integration + Pro Gates
 
 ```
-Build the Pro subscription system for Hadouken. Read CLAUDE.md and docs/01-PRD.md (F11) before starting.
+Build the Pro subscription system for FieldScout. Read CLAUDE.md and docs/01-PRD.md (F11) before starting.
 
 1. Install: npm install stripe @stripe/stripe-js
 
@@ -844,7 +843,7 @@ Build the Pro subscription system for Hadouken. Read CLAUDE.md and docs/01-PRD.m
 ### Task 5.1 — Submissions Database + API
 
 ```
-Build the ranking submission system for Hadouken. Read CLAUDE.md and docs/01-PRD.md (F3, F6) before starting.
+Build the ranking submission system for FieldScout. Read CLAUDE.md and docs/01-PRD.md (F3, F6) before starting.
 
 1. Database migration supabase/migrations/005_submissions.sql:
 
@@ -889,7 +888,7 @@ Build the ranking submission system for Hadouken. Read CLAUDE.md and docs/01-PRD
 ### Task 5.2 — Cred System + Consensus Rankings
 
 ```
-Build the cred system and consensus rankings for Hadouken. Read docs/01-PRD.md (F4, F6) before starting.
+Build the cred system and consensus rankings for FieldScout. Read docs/01-PRD.md (F4, F6) before starting.
 
 1. Accuracy calculation (src/utils/calculate-accuracy.ts):
    - Implement Spearman rank correlation between submitted player order and actual fantasy point rankings
@@ -932,7 +931,7 @@ Build the cred system and consensus rankings for Hadouken. Read docs/01-PRD.md (
 ### Task 5.3 — Start or Sit
 
 ```
-Build the Start or Sit feature for Hadouken. Read docs/01-PRD.md (F6A) before starting.
+Build the Start or Sit feature for FieldScout. Read docs/01-PRD.md (F6A) before starting.
 
 1. Database migration (add to supabase/migrations/005_submissions.sql or new 006 migration):
 

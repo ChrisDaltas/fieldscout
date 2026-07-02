@@ -1,4 +1,4 @@
-# Quickstart: Building Hadouken with Claude Code
+# Quickstart: Building FieldScout with Claude Code
 
 Hey Chris — here's how to go from these docs to a running app.
 
@@ -8,9 +8,9 @@ Hey Chris — here's how to go from these docs to a running app.
 
 ### Accounts to Create (all free to start)
 
-1. **GitHub** — github.com (you probably have this). Create a new repo called `hadouken`.
+1. **GitHub** — github.com (you probably have this). Create a new repo called `fieldscout`.
 2. **Vercel** — vercel.com — Sign up with GitHub. This hosts the app. Free tier is plenty.
-3. **Supabase** — supabase.com — Sign up and create a new project called "hadouken". Choose the region closest to you. Save the project URL and anon key (shown on the project dashboard under Settings → API).
+3. **Supabase** — supabase.com — Sign up and create a new project called "fieldscout". Choose the region closest to you. Save the project URL and anon key (shown on the project dashboard under Settings → API).
 4. **Stripe** — stripe.com — Sign up for an account. You'll use test mode until launch. Get your test API keys from the Developers dashboard.
 5. **MySportsFeeds** — mysportsfeeds.com — Sign up for a developer account (non-commercial tier is free, paid tiers start ~$9/month). Get an NFL API key. This powers current-season stats and live game scoring. (You can skip this initially — Phases 1–6 use free data sources and mock data. Only needed for Phase 7 Live Mode.)
 6. **Anthropic** — console.anthropic.com — You probably have this. Get an API key for Claude API access.
@@ -31,15 +31,15 @@ Hey Chris — here's how to go from these docs to a running app.
 ### 1. Create the GitHub Repo
 
 ```bash
-mkdir hadouken
-cd hadouken
+mkdir fieldscout
+cd fieldscout
 git init
-git remote add origin https://github.com/YOUR_USERNAME/hadouken.git
+git remote add origin https://github.com/YOUR_USERNAME/fieldscout.git
 ```
 
 ### 2. Copy the CLAUDE.md File
 
-Copy `docs/CLAUDE.md` to the root of the `hadouken/` directory. This is the instruction manual that Claude Code reads automatically.
+Copy `docs/CLAUDE.md` to the root of the `fieldscout/` directory. This is the instruction manual that Claude Code reads automatically.
 
 ### 3. Set Up Environment Variables
 
@@ -55,7 +55,7 @@ Fill in the values from your Supabase, Stripe, etc. dashboards.
 ### 4. Start Claude Code
 
 ```bash
-cd hadouken
+cd fieldscout
 claude
 ```
 

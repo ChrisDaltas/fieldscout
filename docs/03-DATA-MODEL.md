@@ -1,4 +1,4 @@
-# Data Model: Hadouken Fantasy Football
+# Data Model: FieldScout Fantasy Football
 
 **Version:** 1.0
 **Date:** March 29, 2026
@@ -9,9 +9,11 @@
 
 All tables live in Supabase (PostgreSQL). Row-Level Security (RLS) is enabled on every table. Types are auto-generated from the schema using the Supabase CLI (`supabase gen types typescript`).
 
-**Expert profiles and lists:** Expert profiles do not use Supabase Auth — they are application-level records. Their ranking lists (Big Board + position lists) are stored in the `lists` table but are owned by a special system account (`system_expert_owner_id`) until claimed. When claimed, ownership transfers to the expert's real Hadouken profile. This means the expert's lists participate in the consensus ranking system just like any user's lists.
+**Expert profiles and lists:** Expert profiles do not use Supabase Auth — they are application-level records. Their ranking lists (Big Board + position lists) are stored in the `lists` table but are owned by a special system account (`system_expert_owner_id`) until claimed. When claimed, ownership transfers to the expert's real FieldScout profile. This means the expert's lists participate in the consensus ranking system just like any user's lists.
 
 **Phase 0 → Phase 1 player matching:** AI-generated expert rankings (Phase 0) store player names as plain text strings inside JSONB (e.g., `"Patrick Mahomes, QB, KC"`). The `list_players` table requires a real `player_id` foreign key referencing the `players` table, which is populated from the Sleeper API in Phase 1. During Phase 1, run a one-time matching script (`scripts/match-expert-players.ts`) that resolves each text name in every AI-generated ranking to a Sleeper player ID, then inserts the matched rows into `list_players`. Unmatched names should be logged for manual review. After this pass, expert lists are fully integrated into the consensus system.
+
+**Persona system tables:** The AI persona tables (`ai_personas`, `persona_source_rankings`) and the persona content-engine tables (`persona_sources`, `persona_content_items`, `persona_context`, `persona_context_versions`, `persona_posts`) are defined in their specs ([spec-ai-expert-personas.md](specs/spec-ai-expert-personas.md), [spec-ai-content-engine.md](specs/spec-ai-content-engine.md)) rather than duplicated here. All are service-role-managed (no client policies) except published `persona_posts`, which are publicly readable.
 
 ---
 
@@ -431,7 +433,7 @@ CREATE TABLE tags (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,                  -- Display name (e.g., "Week 3", "Sleepers")
   slug TEXT NOT NULL UNIQUE,                  -- URL-safe (e.g., "week-3", "sleepers")
-  is_system_tag BOOLEAN DEFAULT FALSE,        -- TRUE for Hadouken-provided tags
+  is_system_tag BOOLEAN DEFAULT FALSE,        -- TRUE for FieldScout-provided tags
   created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,  -- NULL for system tags
   use_count INTEGER DEFAULT 0,                -- How many lists use this tag (denormalized for speed)
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -691,7 +693,7 @@ CREATE TABLE expert_profiles (
 
   -- Claim status
   is_claimed BOOLEAN DEFAULT FALSE,
-  claimed_by UUID REFERENCES profiles(id) ON DELETE SET NULL,  -- The Hadouken profile that claimed this
+  claimed_by UUID REFERENCES profiles(id) ON DELETE SET NULL,  -- The FieldScout profile that claimed this
   claimed_at TIMESTAMPTZ,
 
   -- Content labeling
@@ -731,7 +733,7 @@ CREATE POLICY "Claimed experts can update their profile"
 
 ### expert_follows
 
-Separate follow relationship for expert profiles (distinct from user-to-user follows since experts may not have Hadouken accounts).
+Separate follow relationship for expert profiles (distinct from user-to-user follows since experts may not have FieldScout accounts).
 
 ```sql
 CREATE TABLE expert_follows (

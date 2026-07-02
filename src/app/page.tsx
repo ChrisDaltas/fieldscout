@@ -1,101 +1,119 @@
-import Image from "next/image";
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
-export default function Home() {
+import { GuestShell } from '@/components/layout/guest-shell'
+import {
+  GuestBigBoard,
+  type GuestBigBoardPlayer,
+} from '@/components/players/guest-big-board'
+import { Button } from '@/components/ui/button'
+import { createServerClient } from '@/lib/supabase/server'
+
+// Curated top players for the guest preview big board. We look these up by
+// full_name against the synced players table so the modal can fetch real stats.
+const SEED_NAMES = [
+  'CeeDee Lamb',
+  "Ja'Marr Chase",
+  'Tyreek Hill',
+  'Christian McCaffrey',
+  'Bijan Robinson',
+  'Jahmyr Gibbs',
+  'Justin Jefferson',
+  'Amon-Ra St. Brown',
+  'Saquon Barkley',
+  'Breece Hall',
+  'Jonathan Taylor',
+  'Garrett Wilson',
+  'Patrick Mahomes',
+  'Josh Allen',
+  'Lamar Jackson',
+  'Derrick Henry',
+  'A.J. Brown',
+  'Davante Adams',
+  'Travis Kelce',
+  'Sam LaPorta',
+  'Puka Nacua',
+  'Drake London',
+  'De’Von Achane',
+  'Malik Nabers',
+] as const
+
+async function loadSeedPlayers(): Promise<GuestBigBoardPlayer[]> {
+  const supabase = await createServerClient()
+  const { data } = await supabase
+    .from('players')
+    .select('id, full_name, position, team, headshot_url')
+    .in('full_name', SEED_NAMES as unknown as string[])
+
+  const byName = new Map<string, GuestBigBoardPlayer>(
+    (data ?? []).map((p) => [p.full_name as string, p as GuestBigBoardPlayer]),
+  )
+
+  // Preserve our curated order; drop any names that didn't match the DB.
+  return SEED_NAMES.map((name) => byName.get(name)).filter(
+    (p): p is GuestBigBoardPlayer => Boolean(p),
+  )
+}
+
+export default async function GuestHomePage() {
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (user) {
+    redirect('/app')
+  }
+
+  const players = await loadSeedPlayers()
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <GuestShell wide>
+      <div className="space-y-10">
+        <header className="mx-auto max-w-3xl text-center">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+            Welcome to FieldScout
+          </h1>
+          <p className="mt-3 text-base text-text-secondary md:text-lg">
+            Get ready for draft season. FieldScout is the ultimate tool 100% focused
+            on fantasy football.
+          </p>
+          <p className="mt-6 text-sm font-medium text-foreground">
+            Start building your fantasy rankings now and get ready for draft season.
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Link href="/signup">
+              <Button size="lg" className="font-semibold">
+                Sign up free
+              </Button>
+            </Link>
+            <Link href="/login">
+              <Button size="lg" variant="invisible" className="text-text-secondary">
+                Sign in
+              </Button>
+            </Link>
+          </div>
+        </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+        <GuestBigBoard players={players} />
+
+        <section className="border-t border-bg-elevated-2 pt-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold">Explore the community</h3>
+            <Link
+              href="/consensus"
+              className="text-sm font-medium text-foreground hover:text-text-secondary"
+            >
+              View consensus →
+            </Link>
+          </div>
+          <p className="mt-2 max-w-2xl text-sm text-text-secondary">
+            Public rankings, expert profiles, and weekly Start or Sit are open to
+            everyone. Sign up free when you want to save your work, follow rankers,
+            or start tracking accuracy.
+          </p>
+        </section>
+      </div>
+    </GuestShell>
+  )
 }

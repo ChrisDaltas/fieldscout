@@ -1,4 +1,4 @@
-# Technical Architecture: Hadouken Fantasy Football
+# Technical Architecture: FieldScout Fantasy Football
 
 **Version:** 1.0
 **Date:** March 29, 2026
@@ -7,7 +7,7 @@
 
 ## Architecture Decision: Single App (Monorepo)
 
-Hadouken ships as a **single Next.js web application** in a **monorepo structure**. This is the right call for several reasons:
+FieldScout ships as a **single Next.js web application** in a **monorepo structure**. This is the right call for several reasons:
 
 1. **Speed to ship.** One app, one deploy, one domain. No cross-app auth, no API gateway, no microservice orchestration.
 2. **Claude Code works best** with a single codebase it can navigate end-to-end.
@@ -34,7 +34,7 @@ Hadouken ships as a **single Next.js web application** in a **monorepo structure
 | **NFL Player Data** | Sleeper API (free) | Player profiles, headshots, rosters, injury designations, ADP, schedules — no API key required |
 | **NFL Historical Stats** | nflverse / nfl_data_py (free) | Open-source library for loading clean historical weekly + season stats (2022–present) into Supabase via one-time script |
 | **NFL Current + Live Stats** | MySportsFeeds (launch) → SportsDataIO (scale) | Weekly final stats, live in-game scoring during games. MySportsFeeds (~$50–100/mo) for Year 1; upgrade to SportsDataIO ($500+/mo) when Pro revenue supports it |
-| **Web Scraping** | FireCrawl API | Structured extraction of publicly available expert profile data (bios, social links, employer info) — NOT rankings content |
+| **Web Scraping** | FireCrawl API | Structured extraction of publicly available expert profile data (bios, social links, employer info) and published ranking lists from free, non-paywalled pages (AI persona pipeline input — see spec-ai-expert-personas.md) |
 | **Email** | Resend | Transactional emails (welcome, weekly digest, notifications, profile claim verification) |
 | **Analytics** | PostHog | Open-source product analytics, session replay, feature flags |
 | **Error Tracking** | Sentry | Error monitoring and performance tracking |
@@ -46,7 +46,7 @@ Hadouken ships as a **single Next.js web application** in a **monorepo structure
 ## Monorepo Structure
 
 ```
-hadouken/
+fieldscout/
 ├── CLAUDE.md                    # Project-level instructions for Claude Code
 ├── package.json                 # Root package.json (workspace config)
 ├── turbo.json                   # Turborepo config for build orchestration
@@ -125,9 +125,9 @@ hadouken/
 │       │   │   │   └── client.ts
 │       │   │   ├── claude/
 │       │   │   │   ├── client.ts        # Claude API for AI recommendations
-│       │   │   │   └── expert-gen.ts    # Expert ranking generation prompts
+│       │   │   │   └── persona-gen.ts   # AI persona rationale generation prompts
 │       │   │   ├── firecrawl/
-│       │   │   │   └── client.ts        # FireCrawl for expert bio/profile data
+│       │   │   │   └── client.ts        # FireCrawl for expert bios + persona source rankings
 │       │   │   └── sports-data/
 │       │   │       └── client.ts        # NFL stats API client
 │       │   │
@@ -162,7 +162,9 @@ hadouken/
 │               ├── update-consensus/    # Consensus ranking updates
 │               ├── sync-stats/          # NFL stats sync — slow cadence (cron)
 │               ├── sync-live-stats/     # NFL live stats sync — 30s during game windows (cron)
-│               └── refresh-expert-rankings/  # Seasonal AI expert ranking refresh
+│               ├── refresh-persona-lists/      # Refresh persona lists (consumes persona_context)
+│               ├── ingest-persona-content/     # Daily change-gated source ingestion → persona_context
+│               └── generate-persona-content/   # Automated persona posts + themed lists (SEO)
 │
 ├── packages/
 │   ├── shared/                          # Shared utilities & types
@@ -219,7 +221,14 @@ See `03-DATA-MODEL.md` for full schema.
 - `cred_scores` — Calculated accuracy/cred data
 - `start_sit_questions` — Start or Sit community questions
 - `start_sit_votes` — Individual votes on Start or Sit questions
-- `expert_profiles` — Fantasy football influencer/analyst profiles (claimed or AI-generated)
+- `expert_profiles` — Real-name analyst profiles, claimable placeholders only (no AI content)
+- `ai_personas` — Parody-named AI analyst personas (see spec-ai-expert-personas.md)
+- `persona_source_rankings` — Raw scraped source rankings powering persona lists (service-role only)
+- `persona_sources` — Per-persona content sources to monitor; drives daily ingestion (service-role only)
+- `persona_content_items` — Ingested non-ranking opinion content with extracted signals (service-role only)
+- `persona_context` — Living, cited per-persona knowledge layer (the "context files") (service-role only)
+- `persona_context_versions` — Snapshots of persona context over time (service-role only)
+- `persona_posts` — Automated persona-voiced posts/themed lists for SEO (published rows public)
 - `expert_claim_requests` — Profile claim verification requests
 - `subscriptions` — Stripe subscription status
 
@@ -228,7 +237,7 @@ See `03-DATA-MODEL.md` for full schema.
 ## Authentication Flow
 
 ```
-New visitor lands on hadouken.gg
+New visitor lands on fieldscout.gg
   → No auth required — dropped directly into interactive guest experience
   → Guest session ID generated and stored in localStorage
   → Guest Big Board state stored in localStorage (player list, order, view prefs)
@@ -322,7 +331,9 @@ The stats pipeline operates at **two speeds**: a slow cadence for offseason/non-
 | `resolve-start-or-sit` | Tuesday 6am ET (runs with calculate-cred) | Determine correct Start or Sit answers, score votes |
 | `update-consensus` | Every 30 minutes | Refresh materialized views for consensus rankings |
 | `decay-cred` | Weekly (offseason) | Apply small decay to inactive users' cred scores |
-| `refresh-expert-rankings` | Twice per year (pre-draft, pre-Week 1) | Regenerate AI expert rankings using Claude API |
+| `refresh-persona-lists` | Weekly in season, monthly off-season | Re-scrape persona source rankings (FireCrawl), regenerate persona lists + rationales (Claude API), snapshot prior versions |
+| `ingest-persona-content` | Daily (change-gated) | Cheap check for new free-source content per persona; on change, FireCrawl fetch + Claude extraction into `persona_content_items`, resynthesize `persona_context`, snapshot prior version (see spec-ai-content-engine.md) |
+| `generate-persona-content` | Persona-list cadence + on material-change flags | Generate persona-voiced themed lists + posts with justification/citations into `persona_posts` (draft → review → publish) for SEO (see spec-ai-content-engine.md) |
 
 > **Cost note:** `sync-live-stats` running every 30 seconds for ~17 hours per Sunday (plus TNF and MNF) = ~2,000 API calls per week during the season. SportsDataIO's live stats endpoint supports this; verify the pricing tier covers it before launch.
 
@@ -332,7 +343,7 @@ The stats pipeline operates at **two speeds**: a slow cadence for offseason/non-
 
 ### NFL Data: Three-Layer Strategy
 
-No single API does everything Hadouken needs at an acceptable price point. The three-layer approach matches the best tool to each job and phases costs in as the product grows.
+No single API does everything FieldScout needs at an acceptable price point. The three-layer approach matches the best tool to each job and phases costs in as the product grows.
 
 ---
 
@@ -424,18 +435,17 @@ Upgrade when Pro subscription revenue justifies it.
 
 - Trade recommendation engine: given two teams in a league, suggest fair trades
 - Add/drop suggestions: given a team's roster and available players, suggest moves
-- **Expert ranking generation:** given an expert's known opinions and philosophy, generate a top-100 Big Board and position-specific rankings, clearly labeled as AI-generated
+- **Persona rationale generation:** given a persona's `style_profile` and scraped source rankings, generate original per-player rationale text and persona-voiced list titles, clearly labeled as AI-generated (ranks mirror the source; prose is always original — see spec-ai-expert-personas.md)
 - Natural language player insights in Research tab (stretch goal for V1)
 
-### FireCrawl (Expert Profile Data Only)
+### FireCrawl (Expert Profiles + Persona Source Rankings)
 
-FireCrawl is used **only** for gathering publicly available expert *profile information* — not rankings content:
-- Expert's employer/affiliation (ESPN, NFL Network, independent, etc.)
-- Twitter/X handle, YouTube channel, podcast name
-- Brief professional bio
-- These are factual, non-copyrightable data points used to populate expert profile cards
+FireCrawl gathers two kinds of publicly available data:
 
-FireCrawl is **not** used to scrape or reproduce ranking lists, articles, or any creative content belonging to influencers. All ranking content is AI-generated by Claude and clearly labeled.
+1. **Expert profile information** — employer/affiliation, Twitter/X handle, YouTube channel, podcast name, brief professional bio. Factual data points used to populate expert profile cards.
+2. **Published ranking lists** from free, non-paywalled pages only — ingested into `persona_source_rankings` as input for the AI persona pipeline (see spec-ai-expert-personas.md). Persona lists mirror source ranks exactly; rationale prose and titles are always Claude-generated, never copied. Raw scrapes are service-role only and never served to clients. Paywalled or subscription content is never scraped. Non-ranking opinion content (articles, video and podcast notes) is ingested into `persona_content_items` by the daily `ingest-persona-content` job and synthesized into each persona's `persona_context` (see spec-ai-content-engine.md).
+
+Analysts' written articles and analysis text are never reproduced. Source URLs are stored with every scrape, and any takedown request is honored via soft-delete (see spec-ai-expert-personas.md takedown process).
 
 ---
 
@@ -452,9 +462,9 @@ FireCrawl is **not** used to scrape or reproduce ranking lists, articles, or any
     ↓
 [Resend] ← Transactional email
     ↓
-[Claude API] ← AI features + expert ranking generation
+[Claude API] ← AI features + persona rationale generation
     ↓
-[FireCrawl] ← Expert profile bio/social data scraping
+[FireCrawl] ← Expert profile data + persona source ranking scraping
     ↓
 [PostHog] ← Analytics
     ↓

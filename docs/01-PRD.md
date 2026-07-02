@@ -1,4 +1,4 @@
-# Product Requirements Document: Hadouken Fantasy Football
+# Product Requirements Document: FieldScout Fantasy Football
 
 **Version:** 1.0
 **Author:** Chris Daltas
@@ -9,7 +9,7 @@
 
 ## Vision
 
-Hadouken is the all-in-one community app for fantasy football players. It combines player lists, rankings, stat research, league simulation, and social credibility into a single platform — starting with the NFL. Think of it as "Spotify for fantasy football rankings" meets "PFF for the people."
+FieldScout is the all-in-one community app for fantasy football players. It combines player lists, rankings, stat research, league simulation, and social credibility into a single platform — starting with the NFL. Think of it as "Spotify for fantasy football rankings" meets "PFF for the people."
 
 The north star is simple: **help fantasy football players make better decisions, prove they know what they're talking about, and have fun doing it.**
 
@@ -32,7 +32,7 @@ The north star is simple: **help fantasy football players make better decisions,
 3. **Earned credibility, not purchased.** Cred points come from accuracy, not money. Pro unlocks convenience features, never accuracy advantages.
 4. **Your league, your rules.** Custom scoring systems ensure the app is relevant to each user's actual home league — not just generic projections.
 5. **AI assists, humans decide.** AI recommendations surface insights but the user always makes the final call.
-6. **Experts belong here.** Fantasy football influencers and analysts are first-class citizens. Their rankings are prominently featured, and Hadouken gives them a home for their content and an audience that takes it seriously.
+6. **Experts belong here.** Fantasy football influencers and analysts are first-class citizens. Their rankings are prominently featured, and FieldScout gives them a home for their content and an audience that takes it seriously.
 
 ---
 
@@ -46,7 +46,7 @@ The north star is simple: **help fantasy football players make better decisions,
 | **Tiers** | An optional view mode on top of a ranked list. When tiers are enabled, the list is displayed as rows of player cards grouped by tier label (S, A, B, C, D, F — best to worst). Within each row, cards are ordered left to right from highest to lowest rank. Users can also switch to a stacked list view within tiers mode, which shows the same grouping vertically. The underlying rank order is always preserved — tiers is purely a way of viewing and presenting that rank, not a different system. Designed for hardcore rankers, draft content creators, and fantasy influencers sharing tier-based takes. Not on by default. |
 | **Average Rank** | System-calculated aggregate ranking across all user rankings for a given position/context. Visible to everyone. |
 | **Expert Consensus Rank** | System-calculated aggregate ranking across all high performing, defined as 80th percentile and better by prediction accuracy, user rankings for a given position/context. Visible to everyone. |
-| **Cred** | Hadouken's reputation currency. A cumulative score earned through participation (submitting rankings and Start or Sit votes) and prediction accuracy. Distinct from accuracy — cred rewards showing up consistently as well as being right. Accumulates into a rank tier: Freshie → Sophomore → JV → Varsity → Rookie → Veteran → All Pro → Local Legend → Hall of Famer → GOAT. |
+| **Cred** | FieldScout's reputation currency. A cumulative score earned through participation (submitting rankings and Start or Sit votes) and prediction accuracy. Distinct from accuracy — cred rewards showing up consistently as well as being right. Accumulates into a rank tier: Freshie → Sophomore → JV → Varsity → Rookie → Veteran → All Pro → Local Legend → Hall of Famer → GOAT. |
 | **Accuracy** | A pure mathematical stat measuring how closely a user's submitted ranking matched actual fantasy point outcomes, calculated using Spearman rank correlation. Displayed as a percentage on a user's profile. Separate from cred — a user can have high cred (lots of participation) and average accuracy, or vice versa. |
 | **Team** | A "locked-in" list that represents a fantasy roster. Tracks week-to-week performance. Converting a list to a team is like converting a playlist to an album. |
 | **League** | A group of teams bound together. Each player can only exist on one team within a league. Simulates a user's real home league. This allows AI to make recommendations on who to pickup from the Waiver Wire or what trades to offer to improve their team. |
@@ -54,11 +54,11 @@ The north star is simple: **help fantasy football players make better decisions,
 | **Profile** | A user's public page showing their big board, lists, rankings, cred score, accuracy metrics, and follower count. Shareable link for bragging rights. |
 | **Research Table** | A custom, filterable table of players and their stats. Users build these in the Research tab with their preferred scoring system applied. |
 | **Big Board** | Every user's permanent, personal top-100 overall player list. Auto-created on signup. Cannot be deleted. Filters applied to a Big Board can be instantly converted into a new standalone list. |
-| **Tag** | A label attached to a list that enables one-click discovery (e.g., "Week 3", "Sleepers", "Busts", "Rookies"). System tags are provided by Hadouken; users can also apply any custom tag text. Tags are browsable from the Explore/Homefeed. |
+| **Tag** | A label attached to a list that enables one-click discovery (e.g., "Week 3", "Sleepers", "Busts", "Rookies"). System tags are provided by FieldScout; users can also apply any custom tag text. Tags are browsable from the Explore/Homefeed. |
 | **Start or Sit** | A community Q&A feature where users post a dilemma — two players, one slot — and the community votes on who to start. After the week's games, votes are scored for accuracy and cred points are awarded to correct voters. |
-| **Expert Profile** | A profile representing a well-known fantasy football analyst or influencer (e.g., Matthew Berry, Field Yates). Expert profiles are claimed by the real person, who then controls their own rankings directly on Hadouken. Unclaimed profiles exist as placeholders with no rankings displayed. |
-| **Claimed Profile** | An Expert Profile that has been verified and taken over by the real person. Claimed profiles have a verified badge and the expert manages their lists and rankings directly on Hadouken like any other user. |
-| **Expert Rankings Hub** | A public, SEO-optimized section of Hadouken that aggregates rankings from claimed fantasy football experts in one place. Usable without an account. Only shows real rankings from real claimed experts — no AI-generated content. |
+| **Expert Profile** | A profile representing a well-known fantasy football analyst or influencer (e.g., Matthew Berry, Field Yates). Expert profiles are claimed by the real person, who then controls their own rankings directly on FieldScout. Unclaimed profiles exist as placeholders with no rankings displayed. |
+| **Claimed Profile** | An Expert Profile that has been verified and taken over by the real person. Claimed profiles have a verified badge and the expert manages their lists and rankings directly on FieldScout like any other user. |
+| **Expert Rankings Hub** | A public, SEO-optimized section of FieldScout that aggregates rankings from claimed fantasy football experts in one place. Usable without an account. Only shows real rankings from real claimed experts — no AI-generated content. |
 
 ---
 
@@ -66,10 +66,10 @@ The north star is simple: **help fantasy football players make better decisions,
 
 ### F0: Anonymous / Guest Experience (High Priority)
 
-**Description:** Users who land on Hadouken — signed in or not — are dropped immediately into a product experience, an interactive "big board" where they can start to re-order the top 50 players and expand with a dropdown all the way to the top 300. They can also explore publicly created lists and search. There is no splash page. However, we will want a "sign up" with a strong marketing line that is fixed in place just below the top bar. But from a high level, the product IS the landing page. Users can explore lists, but will be prompted to sign up if they want to create or duplicate a list or do any activity that requires persistence, like saving changes to the big board they get dropped into. Any work they do as a guest carries over seamlessly when they sign up.
+**Description:** Users who land on FieldScout — signed in or not — are dropped immediately into a product experience, an interactive "big board" where they can start to re-order the top 50 players and expand with a dropdown all the way to the top 300. They can also explore publicly created lists and search. There is no splash page. However, we will want a "sign up" with a strong marketing line that is fixed in place just below the top bar. But from a high level, the product IS the landing page. Users can explore lists, but will be prompted to sign up if they want to create or duplicate a list or do any activity that requires persistence, like saving changes to the big board they get dropped into. Any work they do as a guest carries over seamlessly when they sign up.
 
 **The anonymous experience:**
-- A new visitor landing on hadouken.gg is immediately presented with an interactive guest Big Board — a full list of NFL players they can start adding, reordering, and exploring right away. When they make edits a CTA to update their big board appears. This will prompt them to sign up if clicked.
+- A new visitor landing on fieldscout.gg is immediately presented with an interactive guest Big Board — a full list of NFL players they can start adding, reordering, and exploring right away. When they make edits a CTA to update their big board appears. This will prompt them to sign up if clicked.
 - Guest state is stored in the browser (local storage) — no account required
 - Public lists, consensus rankings, and expert profiles, are all viewable without an account.
 
@@ -105,7 +105,7 @@ The north star is simple: **help fantasy football players make better decisions,
 - Profile photo upload (optional)
 - Professional teams they root for (optional)
 - Profile page shows: username, photo, cred score, accuracy metrics, current rank tier (Freshie → GOAT), follower/following counts, big board, all public lists, all public teams, all public leagues
-- Shareable profile URL: `hadouken.gg/u/{username}`
+- Shareable profile URL: `fieldscout.gg/u/{username}`
 - Follow/unfollow other users
 - Notification preferences (email digest frequency)
 
@@ -148,7 +148,7 @@ The north star is simple: **help fantasy football players make better decisions,
 - Lists display player name, team, position, headshot, and key stats
 - Public by default
 - Users can have unlimited lists
-- Lists have a shareable URL: `hadouken.gg/u/{username}/lists/{list-slug}`
+- Lists have a shareable URL: `fieldscout.gg/u/{username}/lists/{list-slug}`
 - Lists show creation date, last updated date, and total player count
 - Users can duplicate a list (fork it)
 - Users can "like" other users' lists
@@ -166,7 +166,7 @@ The north star is simple: **help fantasy football players make better decisions,
 
 ### F2A: Big Board
 
-**Description:** Every user's permanent personal ranking — a visual, always-present home base on their profile. The Big Board is the simplest entry point to Hadouken: you don't need to submit rankings, create lists, or do anything formal. Just come in, move players around, and the system passively tracks how your ordering compares to real outcomes. It's the one thing a casual user might only ever use.
+**Description:** Every user's permanent personal ranking — a visual, always-present home base on their profile. The Big Board is the simplest entry point to FieldScout: you don't need to submit rankings, create lists, or do anything formal. Just come in, move players around, and the system passively tracks how your ordering compares to real outcomes. It's the one thing a casual user might only ever use.
 
 **Season-long (pre season) Big Board vs. Weekly Big Boards:**
 - Every user has one **season-long Big Board** — their overall player rankings for the entire NFL season, set before the season starts. This is the primary "Big Board" during draft season and it can be used to quickly create positional ranks using filters for draft prep. It also has a "draft mode" so users can mark players as drafted during a live draft. Free accounts get one pre-season big board. Pro users can create multiple ie one for every league and select a custom scoring system for viewing last seasons and projected fantasy points. Once the season starts these lock and track accuracy through the season. 
@@ -177,7 +177,7 @@ The north star is simple: **help fantasy football players make better decisions,
 - **No future week editing:** Users can only edit the current week's Big Board. Future weeks are visible in the UI but locked. This is intentional — users should come back to the app each week to make updates, not front-load the entire season at once.
 - **No special modes:** Big Boards are always ranked. The don't support Tiers, and cannot be converted to a team. They also cannot be rearranged with a filter applied.
 - **Week navigation UI:** Once the season starts, the Big Board tab displays a horizontal week selector at the top of the screen — weeks 1 through 18 shown left to right, similar to a roster screen in a fantasy app. The current week is the active/selected state by default. Past weeks are viewable (read-only). Future weeks are visible but locked.
-- Weekly Big Board URLs: `hadouken.gg/u/{username}/big-board/week/{week-number}`
+- Weekly Big Board URLs: `fieldscout.gg/u/{username}/big-board/week/{week-number}`
 - Weekly Big Boards are available for all 18 regular season weeks. Preseason and playoff weeks are out of scope for now.
 
 **Size:**
@@ -208,7 +208,7 @@ The north star is simple: **help fantasy football players make better decisions,
 - Created automatically on signup, in the Big Board section of the navigation where there are two sub sections for Season and Weekly. Cannot be renamed, deleted, or converted to a team. Cannot be marked as unranked — it always has a meaningful order.
 - View modes (card, compact list, comfortable list) available. Default is card for Big Board while lists are compact list.
 - Always public — cannot be made private. It is a user's canonical public statement of how they rank players.
-- Season-long Big Board URL: `hadouken.gg/u/{username}/big-board`
+- Season-long Big Board URL: `fieldscout.gg/u/{username}/big-board`
 - **Consensus Big Board:** The platform maintains a system-wide Community Big Board — consensus top players across all user Big Boards, weighted by cred score.
 
 **Free vs Pro:**
@@ -224,7 +224,7 @@ The north star is simple: **help fantasy football players make better decisions,
 **Requirements:**
 - Tags are attached to a list at creation time or edited later
 - Each list can have up to 5 tags
-- **System tags** (provided by Hadouken, always available):
+- **System tags** (provided by FieldScout, always available):
   - Week 1 through Week 18 (current and historical NFL weeks)
   - Sleepers, Busts, Must-Starts, Do not draft
   - Rookies, Veterans, First-Year Starters
@@ -234,8 +234,8 @@ The north star is simple: **help fantasy football players make better decisions,
 - **Custom tags:** Users can type any custom tag (max 20 characters, no special characters)
 - Tags are displayed as chips/badges on list cards in the explore feed and on list detail pages
 - Tags are browsable: clicking any tag takes the user to a tag feed showing all public lists with that tag, sorted by recency and popularity
-- Tag feeds have their own URLs: `hadouken.gg/tag/{tag-slug}`
-- Tag feeds are public and indexable (good for SEO — people searching "Week 5 RB sleepers" can find Hadouken lists)
+- Tag feeds have their own URLs: `fieldscout.gg/tag/{tag-slug}`
+- Tag feeds are public and indexable (good for SEO — people searching "Week 5 RB sleepers" can find FieldScout lists)
 - The Explore and Homefeed show a horizontal scrollable row of trending tags (most-used tags in the last 7 days)
 - Search results can be filtered by tag
 
@@ -279,7 +279,7 @@ Each feed item is visually distinct by type — player news looks different from
 - Browse trending lists (most liked/viewed in last 7 days)
 - Browse by position (Top QB lists, Top RB lists, etc.)
 - Browse by week (Week 2 RB rankings, Week 11 QB rankings)
-- Browse by tag: clicking any tag shows a feed of all public lists with that tag (`hadouken.gg/tag/{tag-slug}`)
+- Browse by tag: clicking any tag shows a feed of all public lists with that tag (`fieldscout.gg/tag/{tag-slug}`)
 - Trending tags row: horizontal scroll of the hottest tags right now
 - Filter by: recency, popularity, cred score of author
 - "Rising rankers" section: users whose cred score is climbing fastest
@@ -294,7 +294,7 @@ Each feed item is visually distinct by type — player news looks different from
 
 ### F5: Cred System
 
-**Description:** Cred is Hadouken's reputation currency — a cumulative score earned through participation and prediction accuracy. It is distinct from accuracy, which is a separate pure mathematical stat. Cred weights a user's influence on consensus rankings and determines their rank tier on the platform.
+**Description:** Cred is FieldScout's reputation currency — a cumulative score earned through participation and prediction accuracy. It is distinct from accuracy, which is a separate pure mathematical stat. Cred weights a user's influence on consensus rankings and determines their rank tier on the platform.
 
 **Accuracy vs. Cred — they are different things:**
 - **Accuracy** is a pure mathematical score: how closely did your submitted ranking match the actual fantasy point output? Measured using Spearman rank correlation, displayed as a percentage. It is a cold, objective measure of prediction quality — the delta between what you said would happen and what actually did.
@@ -427,7 +427,7 @@ Cred accumulates into a visible rank tier displayed on a user's profile. Tiers f
   - Significant roster moves (trades, cuts, signings, suspensions)
   - Game-day inactives
   - Notable stat lines or performance alerts (e.g., 3 TD game)
-- **News data source:** Aggregated from a third-party NFL news/injury API (e.g., Rotowire, SportsDataIO, FantasyPros injury feed). Hadouken does not generate its own news content — it surfaces and attributes stories from existing sources.
+- **News data source:** Aggregated from a third-party NFL news/injury API (e.g., Rotowire, SportsDataIO, FantasyPros injury feed). FieldScout does not generate its own news content — it surfaces and attributes stories from existing sources.
 - Each news item links out to the original source article.
 - News items are timestamped. During the season, injury and status updates should surface within minutes of the official report.
 - **Player page:** Each player's profile page has a dedicated news tab showing all recent news for that player, regardless of whether the user follows them.
@@ -571,7 +571,7 @@ Cred accumulates into a visible rank tier displayed on a user's profile. Tiers f
 ## V2 Features (Future — Not in Scope for V1)
 
 - **Betting on Start Sit:** Users can bet on fantasy point outcomes (over/under on player performance, head-to-head matchups)
-- **Real Fantasy Platform (V3):** Hadouken becomes an actual fantasy football hosting platform where users draft, trade, and compete for real.
+- **Real Fantasy Platform (V3):** FieldScout becomes an actual fantasy football hosting platform where users draft, trade, and compete for real.
 
 ---
 

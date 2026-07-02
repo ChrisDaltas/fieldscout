@@ -1,14 +1,14 @@
-# CLAUDE.md — Hadouken Fantasy Football
+# CLAUDE.md — FieldScout Fantasy Football
 
-> This file is the project-level instruction manual for Claude Code. Place it at the root of the `hadouken/` monorepo. Claude Code reads this file automatically when you start a session in this directory.
+> This file is the project-level instruction manual for Claude Code. Place it at the root of the `fieldscout/` monorepo. Claude Code reads this file automatically when you start a session in this directory.
 
 ---
 
 ## Project Overview
 
-Hadouken is an all-in-one fantasy football community app for the NFL. Users create player lists, rank players into tiers, earn credibility through prediction accuracy, do player research with custom scoring systems, and simulate their real fantasy leagues.
+FieldScout is an all-in-one fantasy football community app for the NFL. Users create player lists, rank players into tiers, earn credibility through prediction accuracy, do player research with custom scoring systems, and simulate their real fantasy leagues.
 
-**Domain:** hadouken.gg
+**Domain:** fieldscout.gg
 **Stack:** Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui + Supabase + Stripe + Vercel
 
 ---

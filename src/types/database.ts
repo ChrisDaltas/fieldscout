@@ -1,0 +1,1991 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      ai_call_log: {
+        Row: {
+          created_at: string
+          error: string | null
+          feature: string
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          model: string
+          output_tokens: number | null
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          feature: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model: string
+          output_tokens?: number | null
+          success?: boolean
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          feature?: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model?: string
+          output_tokens?: number | null
+          success?: boolean
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_call_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_personas: {
+        Row: {
+          avatar_url: string | null
+          bio: string
+          created_at: string | null
+          deleted_at: string | null
+          display_name: string
+          id: string
+          is_active: boolean | null
+          style_profile: Json
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio: string
+          created_at?: string | null
+          deleted_at?: string | null
+          display_name: string
+          id?: string
+          is_active?: boolean | null
+          style_profile: Json
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string
+          created_at?: string | null
+          deleted_at?: string | null
+          display_name?: string
+          id?: string
+          is_active?: boolean | null
+          style_profile?: Json
+          username?: string
+        }
+        Relationships: []
+      }
+      big_board_snapshots: {
+        Row: {
+          id: string
+          saved_at: string
+          snapshot_data: Json
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          saved_at?: string
+          snapshot_data: Json
+          user_id: string
+        }
+        Update: {
+          id?: string
+          saved_at?: string
+          snapshot_data?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "big_board_snapshots_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      big_board_weekly: {
+        Row: {
+          created_at: string
+          id: string
+          list_id: string
+          season: number
+          user_id: string
+          week_number: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          list_id: string
+          season: number
+          user_id: string
+          week_number: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          list_id?: string
+          season?: number
+          user_id?: string
+          week_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "big_board_weekly_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "big_board_weekly_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cred_scores: {
+        Row: {
+          average_accuracy: number | null
+          best_week: number | null
+          best_week_score: number | null
+          id: string
+          season: number
+          total_cred: number | null
+          updated_at: string | null
+          user_id: string
+          weeks_submitted: number | null
+        }
+        Insert: {
+          average_accuracy?: number | null
+          best_week?: number | null
+          best_week_score?: number | null
+          id?: string
+          season: number
+          total_cred?: number | null
+          updated_at?: string | null
+          user_id: string
+          weeks_submitted?: number | null
+        }
+        Update: {
+          average_accuracy?: number | null
+          best_week?: number | null
+          best_week_score?: number | null
+          id?: string
+          season?: number
+          total_cred?: number | null
+          updated_at?: string | null
+          user_id?: string
+          weeks_submitted?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cred_scores_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expert_claim_requests: {
+        Row: {
+          email_sent_to: string | null
+          email_token: string | null
+          email_token_expires_at: string | null
+          expert_id: string
+          id: string
+          requested_at: string | null
+          requester_id: string
+          resolved_at: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string | null
+          twitter_verified_handle: string | null
+          verification_method: string
+        }
+        Insert: {
+          email_sent_to?: string | null
+          email_token?: string | null
+          email_token_expires_at?: string | null
+          expert_id: string
+          id?: string
+          requested_at?: string | null
+          requester_id: string
+          resolved_at?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          twitter_verified_handle?: string | null
+          verification_method: string
+        }
+        Update: {
+          email_sent_to?: string | null
+          email_token?: string | null
+          email_token_expires_at?: string | null
+          expert_id?: string
+          id?: string
+          requested_at?: string | null
+          requester_id?: string
+          resolved_at?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          twitter_verified_handle?: string | null
+          verification_method?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_claim_requests_expert_id_fkey"
+            columns: ["expert_id"]
+            isOneToOne: false
+            referencedRelation: "expert_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expert_claim_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expert_claim_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expert_follows: {
+        Row: {
+          created_at: string | null
+          expert_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expert_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expert_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_follows_expert_id_fkey"
+            columns: ["expert_id"]
+            isOneToOne: false
+            referencedRelation: "expert_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expert_follows_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expert_profiles: {
+        Row: {
+          ai_generated_disclaimer: string | null
+          avatar_url: string | null
+          bio: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          created_at: string | null
+          display_name: string
+          employer: string | null
+          follower_count: number | null
+          id: string
+          is_ai_generated: boolean | null
+          is_claimed: boolean | null
+          last_rankings_updated_at: string | null
+          podcast_name: string | null
+          podcast_url: string | null
+          slug: string
+          twitter_handle: string | null
+          updated_at: string | null
+          website_url: string | null
+          youtube_url: string | null
+        }
+        Insert: {
+          ai_generated_disclaimer?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string | null
+          display_name: string
+          employer?: string | null
+          follower_count?: number | null
+          id?: string
+          is_ai_generated?: boolean | null
+          is_claimed?: boolean | null
+          last_rankings_updated_at?: string | null
+          podcast_name?: string | null
+          podcast_url?: string | null
+          slug: string
+          twitter_handle?: string | null
+          updated_at?: string | null
+          website_url?: string | null
+          youtube_url?: string | null
+        }
+        Update: {
+          ai_generated_disclaimer?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string | null
+          display_name?: string
+          employer?: string | null
+          follower_count?: number | null
+          id?: string
+          is_ai_generated?: boolean | null
+          is_claimed?: boolean | null
+          last_rankings_updated_at?: string | null
+          podcast_name?: string | null
+          podcast_url?: string | null
+          slug?: string
+          twitter_handle?: string | null
+          updated_at?: string | null
+          website_url?: string | null
+          youtube_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_profiles_claimed_by_fkey"
+            columns: ["claimed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follows: {
+        Row: {
+          created_at: string | null
+          follower_id: string
+          following_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          follower_id: string
+          following_id: string
+        }
+        Update: {
+          created_at?: string | null
+          follower_id?: string
+          following_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follows_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_chat: {
+        Row: {
+          created_at: string | null
+          id: string
+          league_id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          league_id: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          league_id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_chat_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_chat_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leagues: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          invite_code: string | null
+          is_active: boolean | null
+          max_teams: number
+          name: string
+          owner_id: string
+          roster_settings: Json
+          scoring_system_id: string | null
+          season: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          invite_code?: string | null
+          is_active?: boolean | null
+          max_teams?: number
+          name: string
+          owner_id: string
+          roster_settings?: Json
+          scoring_system_id?: string | null
+          season: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          invite_code?: string | null
+          is_active?: boolean | null
+          max_teams?: number
+          name?: string
+          owner_id?: string
+          roster_settings?: Json
+          scoring_system_id?: string | null
+          season?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leagues_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leagues_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_comments: {
+        Row: {
+          author_id: string
+          body: string
+          created_at: string | null
+          deleted_at: string | null
+          id: string
+          list_id: string
+          parent_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          author_id: string
+          body: string
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          list_id: string
+          parent_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          list_id?: string
+          parent_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_comments_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_comments_parent_comment_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "list_comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_favorites: {
+        Row: {
+          created_at: string
+          list_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          list_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          list_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_favorites_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_favorites_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          thumbnail_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_folders_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_likes: {
+        Row: {
+          created_at: string | null
+          list_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          list_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          list_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_likes_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_players: {
+        Row: {
+          added_at: string | null
+          id: string
+          list_id: string
+          notes: string | null
+          overall_rank: number | null
+          player_id: string
+          position: number
+          rank_in_tier: number | null
+          slot: string | null
+          tier: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          added_at?: string | null
+          id?: string
+          list_id: string
+          notes?: string | null
+          overall_rank?: number | null
+          player_id: string
+          position: number
+          rank_in_tier?: number | null
+          slot?: string | null
+          tier?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          added_at?: string | null
+          id?: string
+          list_id?: string
+          notes?: string | null
+          overall_rank?: number | null
+          player_id?: string
+          position?: number
+          rank_in_tier?: number | null
+          slot?: string | null
+          tier?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_players_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_tags: {
+        Row: {
+          created_at: string | null
+          list_id: string
+          tag_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          list_id: string
+          tag_id: string
+        }
+        Update: {
+          created_at?: string | null
+          list_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_tags_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lists: {
+        Row: {
+          ai_persona_id: string | null
+          comments_enabled: boolean | null
+          created_at: string | null
+          deleted_at: string | null
+          description: string | null
+          folder_id: string | null
+          hide_order: boolean | null
+          id: string
+          is_big_board: boolean | null
+          is_favorited: boolean | null
+          is_private: boolean | null
+          is_team: boolean | null
+          like_count: number | null
+          owner_id: string
+          player_count: number | null
+          position_filter: string | null
+          ranking_mode: string
+          roster_settings: Json | null
+          scoring_system_id: string | null
+          slug: string
+          thumbnail_url: string | null
+          tiers_enabled: boolean | null
+          title: string
+          updated_at: string | null
+          view_count: number | null
+        }
+        Insert: {
+          ai_persona_id?: string | null
+          comments_enabled?: boolean | null
+          created_at?: string | null
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          hide_order?: boolean | null
+          id?: string
+          is_big_board?: boolean | null
+          is_favorited?: boolean | null
+          is_private?: boolean | null
+          is_team?: boolean | null
+          like_count?: number | null
+          owner_id: string
+          player_count?: number | null
+          position_filter?: string | null
+          ranking_mode?: string
+          roster_settings?: Json | null
+          scoring_system_id?: string | null
+          slug: string
+          thumbnail_url?: string | null
+          tiers_enabled?: boolean | null
+          title: string
+          updated_at?: string | null
+          view_count?: number | null
+        }
+        Update: {
+          ai_persona_id?: string | null
+          comments_enabled?: boolean | null
+          created_at?: string | null
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          hide_order?: boolean | null
+          id?: string
+          is_big_board?: boolean | null
+          is_favorited?: boolean | null
+          is_private?: boolean | null
+          is_team?: boolean | null
+          like_count?: number | null
+          owner_id?: string
+          player_count?: number | null
+          position_filter?: string | null
+          ranking_mode?: string
+          roster_settings?: Json | null
+          scoring_system_id?: string | null
+          slug?: string
+          thumbnail_url?: string | null
+          tiers_enabled?: boolean | null
+          title?: string
+          updated_at?: string | null
+          view_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lists_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lists_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "list_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lists_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lists_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nfl_games: {
+        Row: {
+          away_score: number | null
+          away_team: string
+          game_clock: string | null
+          game_type: string | null
+          home_score: number | null
+          home_team: string
+          id: string
+          kickoff_at: string
+          quarter: number | null
+          season: number
+          status: string | null
+          updated_at: string | null
+          week: number
+        }
+        Insert: {
+          away_score?: number | null
+          away_team: string
+          game_clock?: string | null
+          game_type?: string | null
+          home_score?: number | null
+          home_team: string
+          id: string
+          kickoff_at: string
+          quarter?: number | null
+          season: number
+          status?: string | null
+          updated_at?: string | null
+          week: number
+        }
+        Update: {
+          away_score?: number | null
+          away_team?: string
+          game_clock?: string | null
+          game_type?: string | null
+          home_score?: number | null
+          home_team?: string
+          id?: string
+          kickoff_at?: string
+          quarter?: number | null
+          season?: number
+          status?: string | null
+          updated_at?: string | null
+          week?: number
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string | null
+          data: Json | null
+          id: string
+          read: boolean | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          read?: boolean | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          read?: boolean | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persona_source_rankings: {
+        Row: {
+          ai_persona_id: string
+          id: string
+          position: string | null
+          raw_rankings: Json
+          scoring: string | null
+          scraped_at: string | null
+          source_published_at: string | null
+          source_url: string
+        }
+        Insert: {
+          ai_persona_id: string
+          id?: string
+          position?: string | null
+          raw_rankings: Json
+          scoring?: string | null
+          scraped_at?: string | null
+          source_published_at?: string | null
+          source_url: string
+        }
+        Update: {
+          ai_persona_id?: string
+          id?: string
+          position?: string | null
+          raw_rankings?: Json
+          scoring?: string | null
+          scraped_at?: string | null
+          source_published_at?: string | null
+          source_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_source_rankings_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_stats: {
+        Row: {
+          def_fumble_recoveries: number | null
+          def_interceptions: number | null
+          def_points_allowed: number | null
+          def_sacks: number | null
+          def_safeties: number | null
+          def_tds: number | null
+          fg_attempted: number | null
+          fg_made: number | null
+          fg_made_40_plus: number | null
+          fg_made_50_plus: number | null
+          fumbles_lost: number | null
+          game_clock: string | null
+          game_id: string | null
+          game_quarter: number | null
+          id: string
+          interceptions: number | null
+          is_live: boolean | null
+          pass_attempts: number | null
+          pass_completions: number | null
+          pass_tds: number | null
+          pass_yards: number | null
+          player_game_status: string | null
+          player_id: string | null
+          receiving_tds: number | null
+          receiving_yards: number | null
+          receptions: number | null
+          rush_attempts: number | null
+          rush_tds: number | null
+          rush_yards: number | null
+          sacks_taken: number | null
+          season: number
+          source: string | null
+          stat_type: string
+          targets: number | null
+          two_point_conversions: number | null
+          updated_at: string | null
+          week: number | null
+          xp_attempted: number | null
+          xp_made: number | null
+        }
+        Insert: {
+          def_fumble_recoveries?: number | null
+          def_interceptions?: number | null
+          def_points_allowed?: number | null
+          def_sacks?: number | null
+          def_safeties?: number | null
+          def_tds?: number | null
+          fg_attempted?: number | null
+          fg_made?: number | null
+          fg_made_40_plus?: number | null
+          fg_made_50_plus?: number | null
+          fumbles_lost?: number | null
+          game_clock?: string | null
+          game_id?: string | null
+          game_quarter?: number | null
+          id?: string
+          interceptions?: number | null
+          is_live?: boolean | null
+          pass_attempts?: number | null
+          pass_completions?: number | null
+          pass_tds?: number | null
+          pass_yards?: number | null
+          player_game_status?: string | null
+          player_id?: string | null
+          receiving_tds?: number | null
+          receiving_yards?: number | null
+          receptions?: number | null
+          rush_attempts?: number | null
+          rush_tds?: number | null
+          rush_yards?: number | null
+          sacks_taken?: number | null
+          season: number
+          source?: string | null
+          stat_type?: string
+          targets?: number | null
+          two_point_conversions?: number | null
+          updated_at?: string | null
+          week?: number | null
+          xp_attempted?: number | null
+          xp_made?: number | null
+        }
+        Update: {
+          def_fumble_recoveries?: number | null
+          def_interceptions?: number | null
+          def_points_allowed?: number | null
+          def_sacks?: number | null
+          def_safeties?: number | null
+          def_tds?: number | null
+          fg_attempted?: number | null
+          fg_made?: number | null
+          fg_made_40_plus?: number | null
+          fg_made_50_plus?: number | null
+          fumbles_lost?: number | null
+          game_clock?: string | null
+          game_id?: string | null
+          game_quarter?: number | null
+          id?: string
+          interceptions?: number | null
+          is_live?: boolean | null
+          pass_attempts?: number | null
+          pass_completions?: number | null
+          pass_tds?: number | null
+          pass_yards?: number | null
+          player_game_status?: string | null
+          player_id?: string | null
+          receiving_tds?: number | null
+          receiving_yards?: number | null
+          receptions?: number | null
+          rush_attempts?: number | null
+          rush_tds?: number | null
+          rush_yards?: number | null
+          sacks_taken?: number | null
+          season?: number
+          source?: string | null
+          stat_type?: string
+          targets?: number | null
+          two_point_conversions?: number | null
+          updated_at?: string | null
+          week?: number | null
+          xp_attempted?: number | null
+          xp_made?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_stats_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "nfl_games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_stats_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          adp: number | null
+          birth_date: string | null
+          bye_week: number | null
+          college: string | null
+          draft_pick: number | null
+          draft_round: number | null
+          draft_year: number | null
+          experience_years: number | null
+          first_name: string | null
+          full_name: string
+          headshot_url: string | null
+          height: string | null
+          id: string
+          jersey_number: number | null
+          last_name: string | null
+          position: string
+          projected_games: number | null
+          projected_pts_half_ppr: number | null
+          projected_pts_ppr: number | null
+          projected_pts_standard: number | null
+          projections_season: number | null
+          projections_updated_at: string | null
+          search_name: string | null
+          sleeper_id: string | null
+          status: string | null
+          team: string | null
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          adp?: number | null
+          birth_date?: string | null
+          bye_week?: number | null
+          college?: string | null
+          draft_pick?: number | null
+          draft_round?: number | null
+          draft_year?: number | null
+          experience_years?: number | null
+          first_name?: string | null
+          full_name: string
+          headshot_url?: string | null
+          height?: string | null
+          id: string
+          jersey_number?: number | null
+          last_name?: string | null
+          position: string
+          projected_games?: number | null
+          projected_pts_half_ppr?: number | null
+          projected_pts_ppr?: number | null
+          projected_pts_standard?: number | null
+          projections_season?: number | null
+          projections_updated_at?: string | null
+          search_name?: string | null
+          sleeper_id?: string | null
+          status?: string | null
+          team?: string | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          adp?: number | null
+          birth_date?: string | null
+          bye_week?: number | null
+          college?: string | null
+          draft_pick?: number | null
+          draft_round?: number | null
+          draft_year?: number | null
+          experience_years?: number | null
+          first_name?: string | null
+          full_name?: string
+          headshot_url?: string | null
+          height?: string | null
+          id?: string
+          jersey_number?: number | null
+          last_name?: string | null
+          position?: string
+          projected_games?: number | null
+          projected_pts_half_ppr?: number | null
+          projected_pts_ppr?: number | null
+          projected_pts_standard?: number | null
+          projections_season?: number | null
+          projections_updated_at?: string | null
+          search_name?: string | null
+          sleeper_id?: string | null
+          status?: string | null
+          team?: string | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string | null
+          cred_rank: number | null
+          cred_score: number | null
+          display_name: string | null
+          follower_count: number | null
+          following_count: number | null
+          id: string
+          is_pro: boolean | null
+          stripe_customer_id: string | null
+          subscription_status: string | null
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string | null
+          cred_rank?: number | null
+          cred_score?: number | null
+          display_name?: string | null
+          follower_count?: number | null
+          following_count?: number | null
+          id: string
+          is_pro?: boolean | null
+          stripe_customer_id?: string | null
+          subscription_status?: string | null
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string | null
+          cred_rank?: number | null
+          cred_score?: number | null
+          display_name?: string | null
+          follower_count?: number | null
+          following_count?: number | null
+          id?: string
+          is_pro?: boolean | null
+          stripe_customer_id?: string | null
+          subscription_status?: string | null
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      ranking_history: {
+        Row: {
+          changed_at: string | null
+          id: string
+          list_id: string | null
+          new_rank: number | null
+          old_rank: number | null
+          player_id: string | null
+        }
+        Insert: {
+          changed_at?: string | null
+          id?: string
+          list_id?: string | null
+          new_rank?: number | null
+          old_rank?: number | null
+          player_id?: string | null
+        }
+        Update: {
+          changed_at?: string | null
+          id?: string
+          list_id?: string | null
+          new_rank?: number | null
+          old_rank?: number | null
+          player_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ranking_history_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ranking_history_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_configs: {
+        Row: {
+          columns: Json
+          created_at: string | null
+          filters: Json
+          id: string
+          name: string
+          owner_id: string
+          position_filter: string | null
+          scoring_system_id: string | null
+          sort_by: string | null
+          sort_direction: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          columns?: Json
+          created_at?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          owner_id: string
+          position_filter?: string | null
+          scoring_system_id?: string | null
+          sort_by?: string | null
+          sort_direction?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          columns?: Json
+          created_at?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          owner_id?: string
+          position_filter?: string | null
+          scoring_system_id?: string | null
+          sort_by?: string | null
+          sort_direction?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_configs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_configs_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scoring_systems: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          is_system_default: boolean | null
+          name: string
+          owner_id: string | null
+          rules: Json
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_system_default?: boolean | null
+          name: string
+          owner_id?: string | null
+          rules: Json
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_system_default?: boolean | null
+          name?: string
+          owner_id?: string | null
+          rules?: Json
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scoring_systems_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      start_sit_questions: {
+        Row: {
+          context_note: string | null
+          correct_player: string | null
+          created_at: string | null
+          id: string
+          is_voided: boolean | null
+          player_a_id: string
+          player_b_id: string
+          poster_id: string
+          resolved_at: string | null
+          scoring_system_id: string | null
+          season: number
+          vote_count_a: number | null
+          vote_count_b: number | null
+          voting_closes_at: string
+          week: number
+        }
+        Insert: {
+          context_note?: string | null
+          correct_player?: string | null
+          created_at?: string | null
+          id?: string
+          is_voided?: boolean | null
+          player_a_id: string
+          player_b_id: string
+          poster_id: string
+          resolved_at?: string | null
+          scoring_system_id?: string | null
+          season: number
+          vote_count_a?: number | null
+          vote_count_b?: number | null
+          voting_closes_at: string
+          week: number
+        }
+        Update: {
+          context_note?: string | null
+          correct_player?: string | null
+          created_at?: string | null
+          id?: string
+          is_voided?: boolean | null
+          player_a_id?: string
+          player_b_id?: string
+          poster_id?: string
+          resolved_at?: string | null
+          scoring_system_id?: string | null
+          season?: number
+          vote_count_a?: number | null
+          vote_count_b?: number | null
+          voting_closes_at?: string
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "start_sit_questions_player_a_id_fkey"
+            columns: ["player_a_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "start_sit_questions_player_b_id_fkey"
+            columns: ["player_b_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "start_sit_questions_poster_id_fkey"
+            columns: ["poster_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "start_sit_questions_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      start_sit_votes: {
+        Row: {
+          cred_points_earned: number | null
+          id: string
+          is_correct: boolean | null
+          question_id: string
+          voted_at: string | null
+          voted_for: string
+          voter_id: string
+        }
+        Insert: {
+          cred_points_earned?: number | null
+          id?: string
+          is_correct?: boolean | null
+          question_id: string
+          voted_at?: string | null
+          voted_for: string
+          voter_id: string
+        }
+        Update: {
+          cred_points_earned?: number | null
+          id?: string
+          is_correct?: boolean | null
+          question_id?: string
+          voted_at?: string | null
+          voted_for?: string
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "start_sit_votes_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "start_sit_questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "start_sit_votes_voter_id_fkey"
+            columns: ["voter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tags: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_system_tag: boolean | null
+          name: string
+          slug: string
+          use_count: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_system_tag?: boolean | null
+          name: string
+          slug: string
+          use_count?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_system_tag?: boolean | null
+          name?: string
+          slug?: string
+          use_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tags_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_lineups: {
+        Row: {
+          bench: Json
+          id: string
+          season: number
+          set_at: string | null
+          starters: Json
+          team_id: string
+          total_points: number | null
+          week: number
+        }
+        Insert: {
+          bench: Json
+          id?: string
+          season: number
+          set_at?: string | null
+          starters: Json
+          team_id: string
+          total_points?: number | null
+          week: number
+        }
+        Update: {
+          bench?: Json
+          id?: string
+          season?: number
+          set_at?: string | null
+          starters?: Json
+          team_id?: string
+          total_points?: number | null
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_lineups_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string | null
+          id: string
+          league_id: string | null
+          list_id: string
+          losses: number | null
+          name: string
+          owner_id: string
+          scoring_system_id: string | null
+          total_points: number | null
+          updated_at: string | null
+          wins: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          league_id?: string | null
+          list_id: string
+          losses?: number | null
+          name: string
+          owner_id: string
+          scoring_system_id?: string | null
+          total_points?: number | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          league_id?: string | null
+          list_id?: string
+          losses?: number | null
+          name?: string
+          owner_id?: string
+          scoring_system_id?: string | null
+          total_points?: number | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weekly_rankings: {
+        Row: {
+          accuracy_score: number | null
+          cred_points_earned: number | null
+          id: string
+          position: string
+          rankings: Json
+          season: number
+          submitted_at: string | null
+          user_id: string
+          week: number
+        }
+        Insert: {
+          accuracy_score?: number | null
+          cred_points_earned?: number | null
+          id?: string
+          position: string
+          rankings: Json
+          season: number
+          submitted_at?: string | null
+          user_id: string
+          week: number
+        }
+        Update: {
+          accuracy_score?: number | null
+          cred_points_earned?: number | null
+          id?: string
+          position?: string
+          rankings?: Json
+          season?: number
+          submitted_at?: string | null
+          user_id?: string
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_rankings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      active_game_window: {
+        Row: {
+          is_active: boolean | null
+        }
+        Relationships: []
+      }
+      consensus_rankings: {
+        Row: {
+          average_rank: number | null
+          consensus_position_rank: number | null
+          full_name: string | null
+          player_id: string | null
+          position: string | null
+          ranker_count: number | null
+          team: string | null
+          weighted_rank: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Functions: {
+      reorder_list_players: {
+        Args: { p_list_id: string; p_positions: Json }
+        Returns: undefined
+      }
+      duplicate_list: {
+        Args: {
+          p_source_id: string
+          p_title: string
+          p_slug: string
+          p_force_public?: boolean
+        }
+        Returns: Database["public"]["Tables"]["lists"]["Row"]
+      }
+      notify_list_followers: {
+        Args: { p_list_id: string; p_actor: string }
+        Returns: undefined
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const
+
+// ============================================================================
+// Hand-written convenience aliases.
+//
+// These are NOT emitted by `supabase gen types`. Keep this block when
+// regenerating database.ts (or re-add it) — the app imports these from
+// `@/types/database`.
+// ============================================================================
+
+export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
+export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
+export type List = Database['public']['Tables']['lists']['Row']
+export type ListComment = Database['public']['Tables']['list_comments']['Row']
+export type ListFolder = Database['public']['Tables']['list_folders']['Row']
+export type ListPlayer = Database['public']['Tables']['list_players']['Row']
+export type PersonaSourceRanking =
+  Database['public']['Tables']['persona_source_rankings']['Row']
+export type Player = Database['public']['Tables']['players']['Row']
+export type Profile = Database['public']['Tables']['profiles']['Row']
+export type Tag = Database['public']['Tables']['tags']['Row']
+
+/** Tier grade a player can be assigned within a ranked list. */
+export type ListTier = 'S' | 'A' | 'B' | 'C' | 'D' | 'F'
+
+/** Roster slot a player can occupy in a team list (mirrors the list_players.slot CHECK). */
+export type TeamSlot =
+  | 'QB'
+  | 'RB'
+  | 'WR'
+  | 'FLEX'
+  | 'TE'
+  | 'DST'
+  | 'K'
+  | 'IR'
+  | 'BENCH'
+
+/** Shape of lists.roster_settings (JSONB) for team lists. */
+export interface ListRosterSettings {
+  total: number
+  qb: number
+  rb: number
+  wr: number
+  te: number
+  flex: number
+  k: number
+  dst: number
+  bench: number
+  ir: number
+}

@@ -1,4 +1,4 @@
-# Design System: Hadouken
+# Design System: FieldScout
 
 > This document is the source of truth for all visual and UX decisions. Claude Code should read this file whenever building UI components, pages, or layouts. Every design decision made here should be reflected consistently across the entire app.
 
@@ -156,7 +156,7 @@ Pill-shaped badge showing tier name. Colors:
 **Sidebar (desktop):**
 - Width: 240px, fixed
 - Background: `#000000` (pure black, like Spotify)
-- Logo at top: "Hadouken" wordmark in white, bold
+- Logo at top: "FieldScout" wordmark in white, bold
 - Nav items: 14px, `--color-text-secondary`, hover text-white + `bg-[#282828]`, active: text-white + `bg-[#1DB95420]` with green left border (2px)
 - User section at bottom: avatar, display name, cred badge
 
@@ -230,3 +230,39 @@ Use **Lucide React** for all icons. Keep icon size consistent:
 - No card borders that are too bright — they should be barely visible
 - No gradients except on GOAT badge and hero sections
 - No emoji in UI unless user-generated
+
+---
+
+## Agent Prompt Guide
+
+Use these as reference prompts when building components. Always use Tailwind classes and shadcn/ui primitives — never hardcode hex values outside of `tailwind.config.ts`.
+
+**Player row (standard):**
+"Create a player row: 56px height, `bg-[#1E1E1E]` hover `bg-[#282828]` transition 150ms. Left: rank number in 13px tabular-nums weight 700 `#B3B3B3` → 32px circular headshot → player name 14px weight 600 white + team/position 12px weight 400 `#B3B3B3`. Right: stat value 13px weight 600 tabular-nums white → ghost action buttons appear on hover."
+
+**List/Big Board card:**
+"Create a card: `bg-[#1E1E1E]` border `1px solid #282828` rounded-lg (8px). No drop shadow. Hover: background shifts to `#282828` in 150ms. Title 20px weight 600 white. Metadata 12px weight 400 `#B3B3B3`."
+
+**Primary button:**
+"Create a pill button: `bg-[#1DB954]` hover `bg-[#1AAE4D]` text-black font-semibold rounded-full. Sizes: sm `h-8 px-4 text-sm`, md `h-10 px-6 text-sm`, lg `h-12 px-8 text-base`."
+
+**Secondary button:**
+"Create an outlined pill button: `bg-transparent border border-[#6B6B6B]` hover `border-white` text-white rounded-full. Same size scale as primary."
+
+**Position badge:**
+"Create a position badge: rounded-full pill, 12px weight 500. QB `#8B5CF6`, RB `#1DB954`, WR `#3B82F6`, TE `#F97316`, K `#6B6B6B`, DEF `#E5534B`. Background at 20% opacity of the badge color."
+
+**Tag chip:**
+"Create a tag chip: `bg-[#282828]` hover `bg-[#333333]` rounded-full px-3 py-1 text-12px weight 400 `#B3B3B3` hover text-white. Transition 150ms."
+
+**Text input:**
+"Create an input: `bg-[#333333]` border `1px solid transparent` focus `border-[#1DB954]` rounded-md height 40px text-white placeholder `#6B6B6B`. No drop shadow."
+
+**Skeleton loader:**
+"Create a skeleton: `bg-[#282828]` animate-pulse rounded-lg. Use `bg-[#333333]` as the shimmer highlight color."
+
+**Toast notification:**
+"Create a toast: `bg-[#282828]` border `1px solid #333333` rounded-lg shadow-lg. Slides in from bottom-right. Auto-dismiss 3s. Text 14px white. Success variant uses `#1DB954` left border accent."
+
+**Sidebar nav item:**
+"Create a nav item: 14px weight 400 `#B3B3B3` hover text-white hover `bg-[#282828]` rounded-md px-3 py-2. Active state: text-white `bg-[#1DB95420]` with 2px `#1DB954` left border."
