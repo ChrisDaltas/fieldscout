@@ -142,6 +142,7 @@ The specs assume **Supabase Edge Functions on `pg_cron`** for the persona jobs, 
 
 - For the **on-demand, Phase-0 precursors** (seeding, one-shot context builds), write them as `scripts/*.ts` run with the service-role key — matching the existing `scripts/sync-players.ts` pattern — before promoting them to scheduled Edge Functions.
 - If Edge Function + `pg_cron` setup proves heavy, **Vercel Cron hitting a protected route handler** is an acceptable equivalent for the daily/weekly cadence. Pick one and standardize; the spec's default is Supabase Edge Functions.
+- **Decision (2026-07-02): Vercel Cron.** The ingestion engine lives in `src/lib/personas/ingest.ts` and shares the Claude client, context module, and feed layer with the scripts — Deno Edge Functions can't import those Node/TS modules. Cron surface: `vercel.json` → `GET /api/cron/ingest-persona-content` guarded by `CRON_SECRET`; `npm run ingest:personas` runs the same engine locally.
 
 ### 3.6 Environment variables to add
 

@@ -33,6 +33,25 @@ export const personaSourceLogEntrySchema = z.object({
   ingested_at: z.string().nullable(),
 })
 
+/** persona_content_items.extracted JSONB shape — structured signals Claude
+ * Haiku pulls from one ingested feed item (never verbatim prose). */
+export const extractedSignalsSchema = z.object({
+  player_takes: z.array(
+    z.object({
+      player_name: z.string(),
+      team: z.string().nullable(),
+      stance: z.enum(['up', 'down', 'neutral']),
+      summary: z.string(),
+      /** 0–1 conviction strength. */
+      strength: z.number(),
+    }),
+  ),
+  themes: z.array(z.string()),
+  format: z.enum(['PPR', 'Half-PPR', 'Standard']).nullable(),
+  kind: z.enum(['rankings_article', 'opinion', 'video', 'podcast']),
+})
+export type ExtractedSignals = z.infer<typeof extractedSignalsSchema>
+
 export const personaContextSchema = z.object({
   /** ISO date this context was synthesized. */
   as_of: z.string(),

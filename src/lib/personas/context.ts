@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { CLAUDE_GENERATION_MODEL } from '@/lib/claude/models'
 import { structuredClaudeCall } from '@/lib/claude/structured'
+import { logAiCall } from '@/lib/claude/telemetry'
 import { assertNoRealAnalystNames } from '@/lib/personas/blocklist'
 import type { PersonaStyleProfile } from '@/lib/personas/roster'
 import {
@@ -298,4 +299,207 @@ export async function getPersonaContext(
   if (error || !data) return null
   const parsed = personaContextSchema.safeParse(data.context)
   return parsed.success ? parsed.data : null
+}
+
+// ============================================================================
+// Full context refresh: load material → synthesize (or seed) → version,
+// snapshot, write. Shared by scripts/build-persona-context.ts (on-demand) and
+// the daily ingestion engine (Slice B). Service-role client required.
+// ============================================================================
+
+export interface PersonaForContext {
+  id: string
+  username: string
+  display_name: string
+  style_profile: PersonaStyleProfile
+}
+
+export interface RefreshContextResult {
+  action: 'synthesized' | 'seeded' | 'skipped'
+  reason?: string
+  version?: number
+  stances?: number
+  materialChange?: boolean
+  droppedUngrounded?: number
+}
+
+interface ExistingContextRow {
+  context: PersonaContext | null
+  version: number
+  raw: unknown
+  last_material_change_at: string | null
+}
+
+async function loadExistingContext(
+  supabase: SupabaseClient,
+  personaId: string,
+): Promise<ExistingContextRow | null> {
+  const { data, error } = await supabase
+    .from('persona_context')
+    .select('context, version, last_material_change_at')
+    .eq('ai_persona_id', personaId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const parsed = personaContextSchema.safeParse(data.context)
+  return {
+    context: parsed.success ? parsed.data : null,
+    version: (data.version as number | null) ?? 1,
+    raw: data.context,
+    last_material_change_at: data.last_material_change_at as string | null,
+  }
+}
+
+async function writeContext(
+  supabase: SupabaseClient,
+  persona: PersonaForContext,
+  next: PersonaContext,
+  sourceItemCount: number,
+  existing: ExistingContextRow | null,
+): Promise<{ version: number; materialChange: boolean }> {
+  const material = hasMaterialChange(existing?.context ?? null, next)
+  const now = new Date().toISOString()
+  const renderedMd = renderContextMd(persona.display_name, next)
+
+  if (existing) {
+    // Snapshot the prior version before overwriting (audit trail). Guarded
+    // against re-inserts: a run that snapshotted and then failed the update
+    // must not duplicate the snapshot on retry.
+    const { data: priorSnap, error: snapCheckError } = await supabase
+      .from('persona_context_versions')
+      .select('id')
+      .eq('ai_persona_id', persona.id)
+      .eq('version', existing.version)
+      .limit(1)
+      .maybeSingle()
+    if (snapCheckError) throw snapCheckError
+    if (!priorSnap) {
+      const { error: snapError } = await supabase
+        .from('persona_context_versions')
+        .insert({
+          ai_persona_id: persona.id,
+          version: existing.version,
+          context: existing.raw as never,
+        })
+      if (snapError) throw snapError
+    }
+
+    // Optimistic concurrency: only update the version we read. A concurrent
+    // writer (manual CLI overlapping the cron) loses cleanly instead of
+    // silently rolling the version backward.
+    const { data: updatedRows, error } = await supabase
+      .from('persona_context')
+      .update({
+        context: next,
+        rendered_md: renderedMd,
+        version: existing.version + 1,
+        source_item_count: sourceItemCount,
+        last_material_change_at: material ? now : existing.last_material_change_at,
+        updated_at: now,
+      })
+      .eq('ai_persona_id', persona.id)
+      .eq('version', existing.version)
+      .select('version')
+    if (error) throw error
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error(
+        `concurrent persona_context write detected for ${persona.username} — refresh skipped`,
+      )
+    }
+    return { version: existing.version + 1, materialChange: material }
+  }
+
+  const { error } = await supabase.from('persona_context').insert({
+    ai_persona_id: persona.id,
+    context: next,
+    rendered_md: renderedMd,
+    version: 1,
+    source_item_count: sourceItemCount,
+    last_material_change_at: material ? now : null,
+    updated_at: now,
+  })
+  if (error) throw error
+  return { version: 1, materialChange: material }
+}
+
+export async function refreshPersonaContext(
+  supabase: SupabaseClient,
+  persona: PersonaForContext,
+): Promise<RefreshContextResult> {
+  const [itemsRes, rankingsRes, existing] = await Promise.all([
+    supabase
+      .from('persona_content_items')
+      .select('source_url, source_type, title, published_at, ingested_at, extracted')
+      .eq('ai_persona_id', persona.id)
+      .order('ingested_at', { ascending: false })
+      .limit(CONTEXT_MAX_ITEMS),
+    supabase
+      .from('persona_source_rankings')
+      .select('source_url, source_published_at, position, scoring, raw_rankings')
+      .eq('ai_persona_id', persona.id)
+      .order('scraped_at', { ascending: false })
+      .limit(CONTEXT_MAX_RANKINGS),
+    loadExistingContext(supabase, persona.id),
+  ])
+  if (itemsRes.error) throw itemsRes.error
+  if (rankingsRes.error) throw rankingsRes.error
+
+  const items = (itemsRes.data ?? []) as ContentItemForSynthesis[]
+  const rankings = (rankingsRes.data ?? []) as SourceRankingForSynthesis[]
+  const asOf = new Date().toISOString().slice(0, 10)
+
+  if (items.length === 0 && rankings.length === 0) {
+    if (existing) {
+      // Never downgrade a synthesized context to a seed.
+      return { action: 'skipped', reason: 'no source material; existing context unchanged' }
+    }
+    const seed = seedContextFromProfile(persona.style_profile, asOf)
+    const { version, materialChange } = await writeContext(supabase, persona, seed, 0, null)
+    return { action: 'seeded', version, stances: 0, materialChange }
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { action: 'skipped', reason: 'source material exists but ANTHROPIC_API_KEY is unset' }
+  }
+
+  try {
+    const { context, droppedUngrounded, inputTokens, outputTokens, latencyMs } =
+      await synthesizePersonaContext({
+        displayName: persona.display_name,
+        styleProfile: persona.style_profile,
+        items,
+        rankings,
+        asOf,
+      })
+    await logAiCall({
+      feature: 'content_ingest',
+      model: CLAUDE_GENERATION_MODEL,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      latency_ms: latencyMs,
+      success: true,
+    })
+    const { version, materialChange } = await writeContext(
+      supabase,
+      persona,
+      context,
+      items.length,
+      existing,
+    )
+    return {
+      action: 'synthesized',
+      version,
+      stances: context.current_stances.length,
+      materialChange,
+      droppedUngrounded,
+    }
+  } catch (err) {
+    await logAiCall({
+      feature: 'content_ingest',
+      model: CLAUDE_GENERATION_MODEL,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    throw err
+  }
 }
