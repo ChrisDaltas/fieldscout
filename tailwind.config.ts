@@ -18,6 +18,7 @@ const config: Config = {
       colors: {
         border: 'hsl(var(--border))',
         'border-subtle': 'hsl(var(--border-subtle))',
+        'ai-glint': 'hsl(var(--ai-glint) / <alpha-value>)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
@@ -111,18 +112,23 @@ const config: Config = {
           from: { opacity: '0' },
           to: { opacity: '1' },
         },
-        // Periodic glimmer sweep (Create with AI button): a skewed highlight
-        // crosses the button, then rests for the remainder of the cycle.
-        shine: {
-          '0%': { transform: 'translateX(-150%) skewX(-12deg)' },
-          '60%, 100%': { transform: 'translateX(400%) skewX(-12deg)' },
+        // Border glint (Create with AI button): one lap of the stroke with the
+        // fade built into the lap. The glint's base state is opacity-0, so
+        // when the finite animation ends it is genuinely gone — never parked
+        // mid-ring.
+        'border-shine': {
+          '0%': { transform: 'translate(-50%, -50%) rotate(0deg)', opacity: '0' },
+          '12%': { opacity: '1' },
+          '85%': { opacity: '1' },
+          '100%': { transform: 'translate(-50%, -50%) rotate(360deg)', opacity: '0' },
         },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'fade-in': 'fade-in 150ms ease-out',
-        shine: 'shine 3s ease-in-out infinite',
+        // Two eased laps shortly after mount, then done (no infinite loop).
+        'border-shine': 'border-shine 3s cubic-bezier(0.65, 0, 0.35, 1) 0.8s 2',
       },
     },
   },

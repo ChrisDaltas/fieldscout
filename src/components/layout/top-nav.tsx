@@ -17,6 +17,7 @@ import {
 import { AccountMenu } from '@/components/layout/account-menu'
 import { TopSearch } from '@/components/layout/top-search'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
+import { Wordmark } from '@/components/shared/wordmark'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -66,11 +67,8 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
 
   return (
     <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 bg-background px-4 lg:px-6">
-      <Link
-        href={isSignedIn ? '/app' : '/'}
-        className="font-silkscreen text-base font-bold tracking-[-0.1em] text-foreground"
-      >
-        FieldScout
+      <Link href={isSignedIn ? '/app' : '/'}>
+        <Wordmark className="text-base text-foreground" />
       </Link>
 
       {/* Center cluster: all nav items left of the search bar, Spotify-style. */}

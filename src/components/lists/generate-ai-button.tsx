@@ -15,9 +15,10 @@ interface GenerateAiButtonProps {
 
 /**
  * "Create with AI" trigger. Visible to everyone (free users get the upgrade
- * prompt when they submit — the server route is the real gate). Carries a
- * periodic glimmer sweep so it stands out; suppressed for reduced-motion
- * users via motion-safe.
+ * prompt when they submit — the server route is the real gate). A subtle
+ * glint laps the button's stroke twice shortly after mount, fading out as
+ * each lap completes (masked ring + rotating conic highlight, base
+ * opacity-0); suppressed entirely for reduced-motion users via motion-safe.
  */
 export function GenerateAiButton({
   className,
@@ -29,15 +30,20 @@ export function GenerateAiButton({
     <>
       <Button
         size={size}
-        className={cn('relative overflow-hidden', className)}
+        className={cn(
+          'relative border border-ai-glint/25 transition-colors hover:border-ai-glint/45',
+          className,
+        )}
         onClick={() => setOpen(true)}
       >
         <Sparkles className="h-4 w-4" />
         {label}
         <span
           aria-hidden
-          className="pointer-events-none absolute -inset-y-1 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/25 to-transparent motion-safe:animate-shine"
-        />
+          className="ai-shine-ring pointer-events-none absolute inset-0 overflow-hidden rounded-full"
+        >
+          <span className="ai-shine-gradient absolute left-1/2 top-1/2 aspect-square w-[250%] -translate-x-1/2 -translate-y-1/2 opacity-0 motion-safe:animate-border-shine" />
+        </span>
       </Button>
       <GenerateAiModal open={open} onOpenChange={setOpen} />
     </>

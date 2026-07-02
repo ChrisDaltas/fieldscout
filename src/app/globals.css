@@ -63,6 +63,10 @@
     --chart-3: 24.62 94.95% 53.14%;  /* orange #F97316 */
     --chart-4: 47.95 95.83% 53.14%;  /* yellow #EAB308 */
     --chart-5: 50.59 100% 50%;       /* gold #FFD700 */
+
+    /* AI accent (Create with AI glint, future AI surfaces) */
+    --ai-glint: 268 85% 66%;         /* violet bloom */
+    --ai-glint-core: 274 100% 88%;   /* lavender-white specular core */
   }
 }
 
@@ -89,5 +93,34 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+  /* Gradient-border glint for the Create with AI button: a masked 1px ring
+     (mask excludes the content box, leaving only the padding ring) with a
+     rotating conic highlight inside. */
+  .ai-shine-ring {
+    padding: 1px;
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+  /* Comet-shaped glint: rotation is clockwise, so higher-degree stops lead.
+     Long soft violet tail, bright lavender core near the head, quick falloff. */
+  .ai-shine-gradient {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 280deg,
+      hsl(var(--ai-glint) / 0.12) 300deg,
+      hsl(var(--ai-glint) / 0.45) 325deg,
+      hsl(var(--ai-glint-core) / 0.9) 340deg,
+      hsl(var(--ai-glint) / 0.2) 348deg,
+      transparent 354deg,
+      transparent 360deg
+    );
   }
 }
