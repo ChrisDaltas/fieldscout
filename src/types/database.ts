@@ -972,6 +972,133 @@ export type Database = {
           },
         ]
       }
+      persona_content_items: {
+        Row: {
+          ai_persona_id: string
+          content_hash: string
+          extracted: Json
+          id: string
+          ingested_at: string | null
+          published_at: string | null
+          raw_excerpt: string | null
+          source_id: string | null
+          source_type: string | null
+          source_url: string
+          title: string | null
+        }
+        Insert: {
+          ai_persona_id: string
+          content_hash: string
+          extracted: Json
+          id?: string
+          ingested_at?: string | null
+          published_at?: string | null
+          raw_excerpt?: string | null
+          source_id?: string | null
+          source_type?: string | null
+          source_url: string
+          title?: string | null
+        }
+        Update: {
+          ai_persona_id?: string
+          content_hash?: string
+          extracted?: Json
+          id?: string
+          ingested_at?: string | null
+          published_at?: string | null
+          raw_excerpt?: string | null
+          source_id?: string | null
+          source_type?: string | null
+          source_url?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_content_items_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "persona_content_items_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "persona_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persona_context: {
+        Row: {
+          ai_persona_id: string
+          context: Json
+          last_material_change_at: string | null
+          rendered_md: string | null
+          source_item_count: number | null
+          updated_at: string | null
+          version: number | null
+        }
+        Insert: {
+          ai_persona_id: string
+          context: Json
+          last_material_change_at?: string | null
+          rendered_md?: string | null
+          source_item_count?: number | null
+          updated_at?: string | null
+          version?: number | null
+        }
+        Update: {
+          ai_persona_id?: string
+          context?: Json
+          last_material_change_at?: string | null
+          rendered_md?: string | null
+          source_item_count?: number | null
+          updated_at?: string | null
+          version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_context_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: true
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persona_context_versions: {
+        Row: {
+          ai_persona_id: string
+          context: Json
+          created_at: string | null
+          id: string
+          version: number
+        }
+        Insert: {
+          ai_persona_id: string
+          context: Json
+          created_at?: string | null
+          id?: string
+          version: number
+        }
+        Update: {
+          ai_persona_id?: string
+          context?: Json
+          created_at?: string | null
+          id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_context_versions_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       persona_source_rankings: {
         Row: {
           ai_persona_id: string
@@ -1006,6 +1133,62 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "persona_source_rankings_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persona_sources: {
+        Row: {
+          ai_persona_id: string
+          created_at: string | null
+          deleted_at: string | null
+          etag: string | null
+          id: string
+          is_active: boolean | null
+          is_paywalled: boolean | null
+          label: string | null
+          last_checked_at: string | null
+          last_item_published_at: string | null
+          last_listing_hash: string | null
+          type: string
+          url: string
+        }
+        Insert: {
+          ai_persona_id: string
+          created_at?: string | null
+          deleted_at?: string | null
+          etag?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_paywalled?: boolean | null
+          label?: string | null
+          last_checked_at?: string | null
+          last_item_published_at?: string | null
+          last_listing_hash?: string | null
+          type: string
+          url: string
+        }
+        Update: {
+          ai_persona_id?: string
+          created_at?: string | null
+          deleted_at?: string | null
+          etag?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_paywalled?: boolean | null
+          label?: string | null
+          last_checked_at?: string | null
+          last_item_published_at?: string | null
+          last_listing_hash?: string | null
+          type?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_sources_ai_persona_id_fkey"
             columns: ["ai_persona_id"]
             isOneToOne: false
             referencedRelation: "ai_personas"
@@ -1955,6 +2138,11 @@ export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']
 export type ListPlayer = Database['public']['Tables']['list_players']['Row']
+export type PersonaContentItem =
+  Database['public']['Tables']['persona_content_items']['Row']
+export type PersonaContextRow =
+  Database['public']['Tables']['persona_context']['Row']
+export type PersonaSource = Database['public']['Tables']['persona_sources']['Row']
 export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']
 export type Player = Database['public']['Tables']['players']['Row']

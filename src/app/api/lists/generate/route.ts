@@ -16,6 +16,10 @@ import { structuredClaudeCall } from '@/lib/claude/structured'
 import { findAnalyticalStyle, renderStyleDescription } from '@/lib/claude/styles'
 import { countAiCallsToday, logAiCall } from '@/lib/claude/telemetry'
 import { assertNoRealAnalystNames } from '@/lib/personas/blocklist'
+import {
+  getPersonaContext,
+  renderContextForPrompt,
+} from '@/lib/personas/context'
 import type { PersonaStyleProfile } from '@/lib/personas/roster'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
@@ -115,21 +119,30 @@ export async function POST(request: Request) {
     )
   }
 
-  // Persona styles mirror the analyst's latest scraped ranks when available;
-  // absent source data degrades gracefully to the style profile alone.
+  // Persona styles are grounded in the persona's living context (current
+  // sourced stances, movements, themes) and mirror the analyst's latest
+  // scraped ranks when available (spec-ai-content-engine.md §Use Case 1).
+  // Both tables are service-role only; absent data degrades gracefully to
+  // the style profile alone.
   let sourceRanks: SourceRankEntry[] | undefined
   if (resolved.personaId) {
     const admin = createAdminClient()
-    const { data: ranks } = await admin
-      .from('persona_source_rankings')
-      .select('raw_rankings')
-      .eq('ai_persona_id', resolved.personaId)
-      .eq('position', position)
-      .order('scraped_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const raw = ranks?.raw_rankings as SourceRankEntry[] | undefined
+    const [ranksRes, context] = await Promise.all([
+      admin
+        .from('persona_source_rankings')
+        .select('raw_rankings')
+        .eq('ai_persona_id', resolved.personaId)
+        .eq('position', position)
+        .order('scraped_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      getPersonaContext(admin, resolved.personaId),
+    ])
+    const raw = ranksRes.data?.raw_rankings as SourceRankEntry[] | undefined
     if (Array.isArray(raw) && raw.length > 0) sourceRanks = raw
+    if (context) {
+      resolved.description = `${resolved.description}\n\n${renderContextForPrompt(context)}`
+    }
   }
 
   try {

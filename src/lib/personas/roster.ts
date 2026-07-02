@@ -22,6 +22,15 @@ export interface PersonaStyleProfile {
   rationale_style: string
 }
 
+/** A content feed monitored by the content engine (persona_sources table).
+ * Distinct from source_urls: these are opinion/content feeds for context
+ * ingestion, not exact ranked-list pages. */
+export interface PersonaContentSource {
+  type: 'rss' | 'youtube' | 'web' | 'podcast'
+  url: string
+  label?: string
+}
+
 export interface PersonaSeed {
   username: string
   display_name: string
@@ -30,6 +39,9 @@ export interface PersonaSeed {
   /** Free, non-paywalled ranking pages to scrape into persona_source_rankings.
    * Empty until a source is confirmed free — never guess URLs, never paywalls. */
   source_urls: string[]
+  /** Free, non-paywalled content feeds to seed into persona_sources (content
+   * engine). Same posture: empty until a source is confirmed free. */
+  sources: PersonaContentSource[]
 }
 
 export function personaDisclaimer(displayName: string): string {
@@ -54,6 +66,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'one-liner with a hook, conversational',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'yield-fates-ai',
@@ -71,6 +84,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'calm, tier-referencing, emphasizes flexibility',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'kina-mimes-ai',
@@ -89,6 +103,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'evidence-first one-liner, names the metric',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'bustin-joone-ai',
@@ -107,6 +122,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'terse, numbers-forward, no exclamation points',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'zj-jachariason-ai',
@@ -125,6 +141,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'stat-cited one-liner, mildly contrarian tone',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'mason-joore-ai',
@@ -143,6 +160,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'friendly, strategic, references draft cost',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'handy-aolloway-ai',
@@ -161,6 +179,7 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'punchy, confident, occasionally all-caps energy',
     },
     source_urls: [],
+    sources: [],
   },
   {
     username: 'wike-mright-ai',
@@ -179,5 +198,6 @@ export const PERSONA_ROSTER: PersonaSeed[] = [
       rationale_style: 'market-framed one-liner, cites ADP',
     },
     source_urls: [],
+    sources: [],
   },
 ]

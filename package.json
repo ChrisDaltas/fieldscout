@@ -14,6 +14,8 @@
     "seed:dev": "npx tsx scripts/seed-dev-user.ts",
     "seed:personas": "npx tsx scripts/seed-ai-personas.ts",
     "scrape:personas": "npx tsx scripts/scrape-persona-sources.ts",
+    "seed:persona-sources": "npx tsx scripts/seed-persona-sources.ts",
+    "build:persona-context": "npx tsx scripts/build-persona-context.ts",
     "test": "vitest run"
   },
   "dependencies": {
