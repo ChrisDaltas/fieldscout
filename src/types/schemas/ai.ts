@@ -25,13 +25,31 @@ export type AiScoringFormat = (typeof AI_SCORING_FORMATS)[number]
 export const AI_PLAYER_COUNTS = [5, 10, 15, 25, 50] as const
 export type AiPlayerCount = (typeof AI_PLAYER_COUNTS)[number]
 
-/** Request body for POST /api/lists/generate. `style` is an analytical-bias
- * label/key or an active persona username/display name — validated in the
- * route against the style registry and ai_personas. */
+/** Analytical ranking-style keys (registry lives in src/lib/claude/styles.ts).
+ * Defined here because they're part of the API contract. */
+export const ANALYTICAL_STYLE_KEYS = [
+  'consensus',
+  'age-prime',
+  'last-season-points',
+  'strength-of-schedule',
+  'target-share',
+  'breakout-upside',
+] as const
+export type AnalyticalStyleKey = (typeof ANALYTICAL_STYLE_KEYS)[number]
+
+/** One weighted ranking priority: 3 = most important, 1 = least. */
+export const styleWeightSchema = z.object({
+  key: z.enum(ANALYTICAL_STYLE_KEYS),
+  weight: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+})
+export type StyleWeight = z.infer<typeof styleWeightSchema>
+
+/** Request body for POST /api/lists/generate. Persona (AI expert) and
+ * weighted ranking styles are independent and BOTH optional — neither
+ * present means a plain consensus board. */
 export const generateListRequestSchema = z.object({
   position: z.enum(AI_POSITIONS),
   scoring: z.enum(AI_SCORING_FORMATS),
-  style: z.string().trim().min(1).max(80),
   player_count: z.union([
     z.literal(5),
     z.literal(10),
@@ -39,6 +57,13 @@ export const generateListRequestSchema = z.object({
     z.literal(25),
     z.literal(50),
   ]),
+  /** Active persona username (or display name) whose voice/stances ground the list. */
+  persona: z.string().trim().min(1).max(80).optional(),
+  /** Weighted analytical priorities; duplicate keys are deduped server-side. */
+  style_weights: z
+    .array(styleWeightSchema)
+    .max(ANALYTICAL_STYLE_KEYS.length * 2)
+    .optional(),
 })
 export type GenerateListRequest = z.infer<typeof generateListRequestSchema>
 

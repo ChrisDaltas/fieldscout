@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Inter, Silkscreen } from 'next/font/google'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
@@ -13,6 +13,13 @@ const inter = Inter({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-sans',
+})
+
+// Logomark only ("FieldScout" wordmark) — pixel font.
+const silkscreen = Silkscreen({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-silkscreen',
 })
 
 export const metadata: Metadata = {
@@ -38,6 +45,7 @@ export default function RootLayout({
         className={cn(
           'min-h-screen bg-background font-sans text-foreground antialiased',
           inter.variable,
+          silkscreen.variable,
         )}
       >
         <QueryProvider>

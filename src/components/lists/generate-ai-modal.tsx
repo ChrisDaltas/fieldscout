@@ -67,7 +67,10 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const [step, setStep] = useState<Step>('form')
   const [position, setPosition] = useState<Position>('WR')
   const [scoring, setScoring] = useState<Scoring>('PPR')
-  const [style, setStyle] = useState<string>('Consensus')
+  /** Optional: style key → importance (1–3). Empty = no style bias. */
+  const [styleWeights, setStyleWeights] = useState<Record<string, number>>({})
+  /** Optional: selected persona username. Null = no AI expert. */
+  const [persona, setPersona] = useState<string | null>(null)
   const [count, setCount] = useState<Count>(10)
   const [error, setError] = useState<string | null>(null)
   const [upgradeRequired, setUpgradeRequired] = useState(false)
@@ -109,10 +112,20 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
     setUpgradeRequired(false)
     savedListRef.current = null
     try {
+      const weightEntries = Object.entries(styleWeights).map(([key, weight]) => ({
+        key,
+        weight,
+      }))
       const res = await fetch('/api/lists/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ position, scoring, style, player_count: count }),
+        body: JSON.stringify({
+          position,
+          scoring,
+          player_count: count,
+          ...(persona ? { persona } : {}),
+          ...(weightEntries.length > 0 ? { style_weights: weightEntries } : {}),
+        }),
       })
       if (sessionRef.current !== session) return
       if (res.status === 402) {
@@ -212,14 +225,16 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
     }
   }
 
-  const styleOptions: { value: string; label: string; hint?: string }[] = [
-    ...ANALYTICAL_STYLES.map((s) => ({ value: s.label, label: s.label })),
-    ...(personas.data ?? []).map((p) => ({
-      value: p.username,
-      label: p.display_name,
-      hint: 'AI persona',
-    })),
-  ]
+  /** Cycle a style's importance: unset → 1 → 2 → 3 → unset. */
+  const cycleStyleWeight = (key: string) => {
+    setStyleWeights((prev) => {
+      const next = ((prev[key] ?? 0) + 1) % 4
+      const copy = { ...prev }
+      if (next === 0) delete copy[key]
+      else copy[key] = next
+      return copy
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -266,32 +281,66 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
               />
             </Field>
 
-            <Field label="Ranking style">
-              <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
-                {styleOptions.map((opt) => {
-                  const active = style === opt.value
+            <Field
+              label="Ranking Style"
+              hint="Optional — tap a style to cycle its importance: 1 (least) to 3 (most), tap past 3 to clear."
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                {ANALYTICAL_STYLES.map((s) => {
+                  const weight = styleWeights[s.key] ?? 0
+                  const active = weight > 0
                   return (
                     <button
-                      key={opt.value}
+                      key={s.key}
                       type="button"
-                      onClick={() => setStyle(opt.value)}
+                      onClick={() => cycleStyleWeight(s.key)}
+                      title={s.description}
                       className={cn(
-                        'flex w-full items-center justify-between rounded-md border px-3 py-1.5 text-left text-sm transition-colors',
+                        'flex items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-left text-xs font-semibold transition-colors',
                         active
-                          ? 'border-foreground bg-bg-elevated-2 text-foreground'
-                          : 'border-bg-elevated-2 bg-bg-elevated-3 text-text-secondary hover:border-bg-elevated-3 hover:text-foreground',
+                          ? 'bg-foreground text-background'
+                          : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
                       )}
                     >
-                      <span>{opt.label}</span>
-                      {opt.hint && (
-                        <span className="text-[10px] uppercase tracking-wider text-text-tertiary">
-                          {opt.hint}
+                      <span className="truncate">{s.label}</span>
+                      {active && (
+                        <span className="shrink-0 rounded-full bg-background/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                          {weight}
                         </span>
                       )}
                     </button>
                   )
                 })}
               </div>
+            </Field>
+
+            <Field label="AI Expert" hint="Optional — rank in a persona's voice and current stances.">
+              {personas.isLoading ? (
+                <p className="text-xs text-text-tertiary">Loading experts…</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(personas.data ?? []).map((p) => {
+                    const active = persona === p.username
+                    return (
+                      <button
+                        key={p.username}
+                        type="button"
+                        onClick={() =>
+                          setPersona((cur) => (cur === p.username ? null : p.username))
+                        }
+                        className={cn(
+                          'truncate rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                          active
+                            ? 'bg-foreground text-background'
+                            : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
+                        )}
+                      >
+                        {p.display_name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </Field>
 
             <Field label="Players">
@@ -377,13 +426,20 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-        {label}
-      </span>
-      {children}
+      <span className="block text-xs font-semibold text-text-secondary">{label}</span>
+      {hint && <p className="mt-0.5 text-[11px] text-text-tertiary">{hint}</p>}
+      <div className="mt-1.5">{children}</div>
     </div>
   )
 }

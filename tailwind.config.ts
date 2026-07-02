@@ -13,6 +13,7 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
         switzer: ['Switzer', 'system-ui', 'sans-serif'],
+        silkscreen: ['var(--font-silkscreen)', 'monospace'],
       },
       colors: {
         border: 'hsl(var(--border))',
@@ -110,11 +111,18 @@ const config: Config = {
           from: { opacity: '0' },
           to: { opacity: '1' },
         },
+        // Periodic glimmer sweep (Create with AI button): a skewed highlight
+        // crosses the button, then rests for the remainder of the cycle.
+        shine: {
+          '0%': { transform: 'translateX(-150%) skewX(-12deg)' },
+          '60%, 100%': { transform: 'translateX(400%) skewX(-12deg)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'fade-in': 'fade-in 150ms ease-out',
+        shine: 'shine 3s ease-in-out infinite',
       },
     },
   },

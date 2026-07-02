@@ -13,7 +13,11 @@ import {
   resolveGeneratedPlayers,
 } from '@/lib/claude/player-packet'
 import { structuredClaudeCall } from '@/lib/claude/structured'
-import { findAnalyticalStyle, renderStyleDescription } from '@/lib/claude/styles'
+import {
+  renderStyleDescription,
+  renderWeightedStyleDescription,
+  styleByKey,
+} from '@/lib/claude/styles'
 import { countAiCallsToday, logAiCall } from '@/lib/claude/telemetry'
 import { assertNoRealAnalystNames } from '@/lib/personas/blocklist'
 import {
@@ -26,6 +30,7 @@ import {
   generateListRequestSchema,
   generatedListSchema,
   type GenerateListResponse,
+  type StyleWeight,
 } from '@/types/schemas/ai'
 
 /**
@@ -34,13 +39,6 @@ import {
  * Deliberately does NOT persist anything: the user saves explicitly via the
  * existing POST /api/lists + /api/lists/[id]/players flow.
  */
-
-interface ResolvedStyle {
-  label: string
-  description: string
-  /** Set when the style is a persona — enables source-rank mirroring. */
-  personaId?: string
-}
 
 export async function POST(request: Request) {
   const gate = await requireProUser()
@@ -65,7 +63,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
-  const { position, scoring, style, player_count } = parsed.data
+  const { position, scoring, player_count } = parsed.data
 
   const used = await countAiCallsToday(user.id, 'list_generation')
   if (used >= AI_LIST_GENERATION_DAILY_LIMIT) {
@@ -78,72 +76,91 @@ export async function POST(request: Request) {
     )
   }
 
-  // Resolve the ranking style: analytical bias config, or an active persona.
-  let resolved: ResolvedStyle | null = null
-  const analytical = findAnalyticalStyle(style)
-  if (analytical) {
-    resolved = { label: analytical.label, description: analytical.description }
-  } else {
-    // Two .eq() lookups instead of .or(): style is user input and persona
-    // display names contain characters PostgREST's or-syntax reserves.
+  // Weighted ranking styles: dedupe by key (last entry wins).
+  const weightByKey = new Map<StyleWeight['key'], StyleWeight>()
+  for (const w of parsed.data.style_weights ?? []) weightByKey.set(w.key, w)
+  const weights = [...weightByKey.values()]
+
+  // Optional AI expert. Two .eq() lookups instead of .or(): the value is user
+  // input and persona display names contain characters PostgREST's or-syntax
+  // reserves.
+  interface ResolvedPersona {
+    id: string
+    display_name: string
+    style_profile: PersonaStyleProfile
+  }
+  let persona: ResolvedPersona | null = null
+  if (parsed.data.persona) {
     const personaQuery = () =>
       supabase
         .from('ai_personas')
         .select('id, username, display_name, style_profile')
         .eq('is_active', true)
         .is('deleted_at', null)
-    let { data: persona } = await personaQuery()
-      .eq('username', style)
+    let { data: found } = await personaQuery()
+      .eq('username', parsed.data.persona)
       .maybeSingle()
-    if (!persona) {
+    if (!found) {
       const byDisplayName = await personaQuery()
-        .eq('display_name', style)
+        .eq('display_name', parsed.data.persona)
         .limit(1)
         .maybeSingle()
-      persona = byDisplayName.data
+      found = byDisplayName.data
     }
-    if (persona) {
-      resolved = {
-        label: persona.display_name as string,
-        description: renderStyleDescription(
-          persona.style_profile as unknown as PersonaStyleProfile,
-        ),
-        personaId: persona.id as string,
-      }
+    if (!found) {
+      return NextResponse.json(
+        { error: `Unknown AI expert: ${parsed.data.persona}` },
+        { status: 400 },
+      )
     }
-  }
-  if (!resolved) {
-    return NextResponse.json(
-      { error: `Unknown ranking style: ${style}` },
-      { status: 400 },
-    )
+    persona = {
+      id: found.id as string,
+      display_name: found.display_name as string,
+      style_profile: found.style_profile as unknown as PersonaStyleProfile,
+    }
   }
 
-  // Persona styles are grounded in the persona's living context (current
-  // sourced stances, movements, themes) and mirror the analyst's latest
-  // scraped ranks when available (spec-ai-content-engine.md §Use Case 1).
-  // Both tables are service-role only; absent data degrades gracefully to
-  // the style profile alone.
+  // Assemble {style_description}: persona voice/stances and weighted
+  // priorities are independent, composable, and both optional — neither
+  // present degrades to a plain consensus board.
+  const descriptionParts: string[] = []
+  if (persona) descriptionParts.push(renderStyleDescription(persona.style_profile))
+  if (weights.length > 0) descriptionParts.push(renderWeightedStyleDescription(weights))
+  if (descriptionParts.length === 0) {
+    descriptionParts.push(styleByKey('consensus').description)
+  }
+  const styleLabel =
+    persona && weights.length > 0
+      ? `${persona.display_name} Blend`
+      : persona
+        ? persona.display_name
+        : weights.length > 0
+          ? 'Custom Blend'
+          : 'Consensus'
+
+  // Personas are grounded in their living context (current sourced stances,
+  // movements, themes) and mirror the analyst's latest scraped ranks when
+  // available (spec-ai-content-engine.md §Use Case 1). Both tables are
+  // service-role only; absent data degrades gracefully.
   let sourceRanks: SourceRankEntry[] | undefined
-  if (resolved.personaId) {
+  if (persona) {
     const admin = createAdminClient()
     const [ranksRes, context] = await Promise.all([
       admin
         .from('persona_source_rankings')
         .select('raw_rankings')
-        .eq('ai_persona_id', resolved.personaId)
+        .eq('ai_persona_id', persona.id)
         .eq('position', position)
         .order('scraped_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      getPersonaContext(admin, resolved.personaId),
+      getPersonaContext(admin, persona.id),
     ])
     const raw = ranksRes.data?.raw_rankings as SourceRankEntry[] | undefined
     if (Array.isArray(raw) && raw.length > 0) sourceRanks = raw
-    if (context) {
-      resolved.description = `${resolved.description}\n\n${renderContextForPrompt(context)}`
-    }
+    if (context) descriptionParts.push(renderContextForPrompt(context))
   }
+  const styleDescription = descriptionParts.join('\n\n')
 
   try {
     const packet = await buildPlayerPacket(supabase, {
@@ -155,8 +172,8 @@ export async function POST(request: Request) {
     const prompt = buildGenerationPrompt({
       position,
       scoring,
-      style: resolved.label,
-      styleDescription: resolved.description,
+      style: styleLabel,
+      styleDescription,
       playerCount: player_count,
       packetRendered: packet.rendered,
       sourceRanks,
@@ -197,7 +214,7 @@ export async function POST(request: Request) {
     const response: GenerateListResponse = {
       position,
       scoring,
-      style: resolved.label,
+      style: styleLabel,
       player_count,
       players,
       style_note: data.style_note,

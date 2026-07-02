@@ -1,13 +1,15 @@
 import type { PersonaStyleProfile } from '@/lib/personas/roster'
+import type { AnalyticalStyleKey, StyleWeight } from '@/types/schemas/ai'
 
 /**
  * Ranking-style registry for AI list generation (spec-ai-list-generation.md).
- * Analytical biases are static config; persona styles resolve dynamically
- * against ai_personas in the route.
+ * Analytical biases are static config; personas (AI experts) resolve
+ * dynamically against ai_personas in the route. The two are independent
+ * inputs: styles carry a 1–3 importance weight, personas carry voice/stances.
  */
 
 export interface AnalyticalStyle {
-  key: string
+  key: AnalyticalStyleKey
   label: string
   description: string
 }
@@ -51,14 +53,22 @@ export const ANALYTICAL_STYLES: AnalyticalStyle[] = [
   },
 ]
 
-/** Match a client-provided style string by key or label, case-insensitively. */
-export function findAnalyticalStyle(style: string): AnalyticalStyle | null {
-  const needle = style.trim().toLowerCase()
-  return (
-    ANALYTICAL_STYLES.find(
-      (s) => s.key === needle || s.label.toLowerCase() === needle,
-    ) ?? null
-  )
+export function styleByKey(key: AnalyticalStyleKey): AnalyticalStyle {
+  const style = ANALYTICAL_STYLES.find((s) => s.key === key)
+  if (!style) throw new Error(`Unknown analytical style key: ${key}`)
+  return style
+}
+
+/** Render weighted ranking priorities into the {style_description} slot.
+ * Sorted most-important first so the model reads emphasis in order. */
+export function renderWeightedStyleDescription(weights: StyleWeight[]): string {
+  const lines = [...weights]
+    .sort((a, b) => b.weight - a.weight)
+    .map((w) => {
+      const s = styleByKey(w.key)
+      return `- [importance ${w.weight}/3] ${s.label}: ${s.description}`
+    })
+  return `Blend the following ranking priorities, weighted by importance (3 = most important, 1 = least):\n${lines.join('\n')}`
 }
 
 /** Render a persona's structured style_profile into the {style_description}

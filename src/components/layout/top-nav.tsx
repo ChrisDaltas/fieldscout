@@ -16,6 +16,7 @@ import {
 
 import { AccountMenu } from '@/components/layout/account-menu'
 import { TopSearch } from '@/components/layout/top-search'
+import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -67,7 +68,7 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
     <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 bg-background px-4 lg:px-6">
       <Link
         href={isSignedIn ? '/app' : '/'}
-        className="font-switzer text-base font-bold tracking-tight text-foreground"
+        className="font-silkscreen text-base font-bold tracking-[-0.1em] text-foreground"
       >
         FieldScout
       </Link>
@@ -92,6 +93,9 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
       <div className="flex items-center gap-1">
         {isSignedIn ? (
           <>
+            {showAppNav && (
+              <GenerateAiButton size="sm" className="mr-1 font-semibold" />
+            )}
             {showAppNav && <CreateMenu />}
             <NotificationBell />
             <AccountMenu variant="topbar" />
