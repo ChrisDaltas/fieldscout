@@ -82,7 +82,7 @@ ALTER TABLE persona_sources ENABLE ROW LEVEL SECURITY;
 -- No policies: service-role only. Operational metadata, never served to clients.
 ```
 
-> **Source guidance.** RSS is the most reliable (many analyst sites and *every* YouTube channel expose a per-channel RSS feed). Web pages work via FireCrawl. Podcasts via their RSS feed + episode notes. **X/Twitter is largely not fetchable and should be treated as best-effort/optional** — do not make any persona depend on it as its only source.
+> **Source guidance.** RSS is the most reliable (many analyst sites and *every* YouTube channel expose a per-channel RSS feed). **Decision (2026-07-02): ingestion is RSS + YouTube feeds only, fetched directly — no scraping service.** Podcasts count as RSS. Arbitrary web pages are out of scope until a persona's only good source is one. **X/Twitter is largely not fetchable and should be treated as best-effort/optional** — do not make any persona depend on it as its only source.
 
 ### persona_content_items
 
@@ -219,7 +219,7 @@ CREATE POLICY "Published persona posts are viewable by everyone"
 Per active persona (`ai_personas.is_active = TRUE`), per active source:
 
 1. **Cheap change check first.** RSS/YouTube: compare newest item GUID / `pubDate` against `last_item_published_at`. Web: compare HTTP `ETag`/`Last-Modified`, else hash the listing and compare to `last_listing_hash`. If nothing new → update `last_checked_at` and stop. This is the gate that keeps daily runs near-free.
-2. **Fetch only new items** via FireCrawl (free, non-paywalled pages only; skip `is_paywalled`).
+2. **Fetch only new items** directly from the RSS/YouTube feed (free, non-paywalled only; skip `is_paywalled`).
 3. **Extract** structured signals with the Claude API into the `extracted` shape; upsert into `persona_content_items` (dedupe on `content_hash`). Store only a short `raw_excerpt` for traceability — never full article prose.
 4. **Recompute `persona_context`** by synthesizing recent items + existing `persona_source_rankings` + the seed `style_profile`. Bump `version`, snapshot the prior version into `persona_context_versions`.
 5. **Flag material changes.** If stances shifted meaningfully, set `last_material_change_at` — this is the trigger the content engine and `refresh-persona-lists` listen for.
@@ -229,7 +229,7 @@ for persona in active_personas:
   for source in persona.sources where is_active and not is_paywalled:
     if not source.has_new_content():        # ETag / pubDate / listing hash
         source.touch(last_checked_at); continue
-    items = firecrawl.fetch_new(source)
+    items = fetch_new(source)               # plain fetch of the RSS/YouTube feed
     signals = claude.extract(items)          # → extracted JSONB
     upsert persona_content_items(signals)
   ctx = claude.synthesize(persona, recent_items, source_rankings, style_profile)
@@ -240,13 +240,13 @@ for persona in active_personas:
 
 **Cadence reconciliation.** The existing `refresh-persona-lists` cron (weekly in season / monthly off-season — see [02-TECHNICAL-ARCHITECTURE.md](../02-TECHNICAL-ARCHITECTURE.md)) regenerates the heavyweight persona *lists*. Keep it. `ingest-persona-content` becomes the cheap daily front door: it watches sources every day, and the expensive list regeneration still runs on its own cadence but now consumes fresh context and can be nudged early by a `last_material_change_at` flag. Net effect: daily freshness, no daily cost spike.
 
-**Cost.** ~8 personas × a handful of sources, change-gated, means most days do zero FireCrawl/Claude work — especially off-season (now). Cost rises only when analysts actually publish (in-season Tue–Wed rankings drops). Add a per-run item cap as a safety valve.
+**Cost.** ~8 personas × a handful of sources, change-gated, means most days do zero fetch/Claude work — especially off-season (now). Cost rises only when analysts actually publish (in-season Tue–Wed rankings drops). Add a per-run item cap as a safety valve.
 
 ### Implementation approach: deterministic pipeline vs. autonomous agent
 
-"Agents vs. FireCrawl" is really a choice of *orchestration style* — FireCrawl only fetches and cleans a page, so an LLM (Claude) still has to turn that page into opinions either way. The two real options:
+"Agents vs. pipeline" is really a choice of *orchestration style* — fetching only retrieves the content, so an LLM (Claude) still has to turn it into opinions either way. The two real options:
 
-- **Deterministic pipeline (recommended for the daily hot path).** `persona_sources` → cheap change check → FireCrawl fetch of the known URL → one fixed Claude extraction call (low temperature, structured output) → `persona_content_items` → context synthesis. Predictable cost and latency, easy to cache, diff, and change-gate, fully auditable, and trivial to constrain to free/non-paywalled URLs (compliance + takedown). Weakness: no discovery — it only looks where told — and some sources (YouTube transcripts, podcasts) need small per-type adapters.
+- **Deterministic pipeline (recommended for the daily hot path).** `persona_sources` → cheap change check → direct fetch of the known feed URL → one fixed Claude extraction call (low temperature, structured output) → `persona_content_items` → context synthesis. Predictable cost and latency, easy to cache, diff, and change-gate, fully auditable, and trivial to constrain to free/non-paywalled URLs (compliance + takedown). Weakness: no discovery — it only looks where told — and some sources (YouTube transcripts, podcasts) need small per-type adapters.
 - **Autonomous agent (Claude with search/fetch tools).** The model decides what to search, read, and follow, then synthesizes. Strengths: discovery of new posts/sources, resilience to page-layout changes, one flexible loop for heterogeneous content. Weaknesses that matter here: non-determinism and hallucination risk — acute for an *attribution*-sensitive feature, where an agent could invent a stance or a citation — plus variable/higher cost and latency at daily × N personas, weaker compliance control (must hard-allowlist domains and block paywalls), and harder observability, testing, and change-gating.
 
 **Recommendation: hybrid.** Run the deterministic pipeline daily over known sources (the 90% case — each persona has 1–3 stable feeds). Reserve agentic behavior for two narrow, infrequent, allowlisted, human-reviewed jobs: (a) **source discovery** — find or refresh a persona's `persona_sources` at setup or when one goes stale; (b) **investigation** — optionally gather corroborating context when a material change is flagged. This buys the agent's flexibility for discovery without putting a non-deterministic loop in the daily, cost-sensitive, attribution-critical path. Every stance lands in `persona_content_items` with a real `source_url` regardless of which path produced it.
@@ -341,9 +341,9 @@ All run with the service-role key, never from application code (player and perso
 2. **Exact-mirror vs. synthesized opinion.** The existing personas mirror published rankings with original prose. Use case 2 synthesizes opinions. Recommendation: allow synthesized content but keep it strictly persona-attributed (parody firewall), cited, and behind the review gate. Confirm appetite here.
 3. **Source coverage.** Each persona needs ≥1 reliable free source (RSS/site/YouTube). X/Twitter is best-effort only. Some analysts' best content may be paywalled and therefore off-limits — those personas will lean more on `style_profile`.
 4. **Editorial human-in-the-loop.** Recommendation: required in Phase 1, optional later. Confirm who reviews drafts.
-5. **Cost ceiling.** Set a monthly FireCrawl/Claude budget + per-run caps before enabling the daily cron.
+5. **Cost ceiling.** Set a monthly Claude budget + per-run caps before enabling the daily cron.
 6. **Product name.** All `/docs` use **FieldScout** / fieldscout.gg; this project is labeled **Hadouken**. This spec uses FieldScout to match the existing docs — flag if the rename should propagate.
-7. **Ingestion implementation — pipeline vs. agent.** Recommendation: hybrid — a deterministic FireCrawl + fixed Claude extraction step in the daily hot path, with agentic discovery/investigation as occasional, allowlisted, human-reviewed add-ons. See *Implementation approach* under The Daily Ingestion Agent.
+7. **Ingestion implementation — pipeline vs. agent.** Recommendation: hybrid — a deterministic fetch + fixed Claude extraction step in the daily hot path, with agentic discovery/investigation as occasional, allowlisted, human-reviewed add-ons. See *Implementation approach* under The Daily Ingestion Agent.
 
 ---
 

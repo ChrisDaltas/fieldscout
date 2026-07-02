@@ -63,7 +63,7 @@ Claude Code will read CLAUDE.md and understand the project.
 
 ### 5. Start with Phase 0, Task 0.1
 
-Open `docs/05-CLAUDE-CODE-PROMPTS.md`, copy the first prompt (Task 0.1 — Expert Seed Data + FireCrawl Profile Scrape), and paste it into Claude Code.
+Open `docs/05-CLAUDE-CODE-PROMPTS.md`, copy the first prompt (Task 0.1 — Expert Seed Data + Profile Scrape), and paste it into Claude Code.
 
 Let it work. It will create the project structure, install dependencies, and set up the foundational code.
 

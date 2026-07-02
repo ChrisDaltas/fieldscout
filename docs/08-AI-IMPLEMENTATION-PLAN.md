@@ -22,7 +22,7 @@ The source specs (read these for the "why" and the product detail):
 
 ## 1. Executive summary
 
-All four features are **greenfield.** Nothing AI-related is built yet: there is no `ai_personas` table (migrations run through `019`), no Supabase Edge Functions directory, and neither the Anthropic SDK nor a FireCrawl client is installed. The good news is that the substrate the AI features lean on already exists — `profiles.is_pro` with race-safe free-tier enforcement, a service-role admin client, the Sleeper + stats data layer, and the `big_board_snapshots` snapshot pattern the specs reuse.
+All four features are **greenfield.** Nothing AI-related is built yet: there is no `ai_personas` table (migrations run through `019`), no Supabase Edge Functions directory, and the Anthropic SDK is not installed. The good news is that the substrate the AI features lean on already exists — `profiles.is_pro` with race-safe free-tier enforcement, a service-role admin client, the Sleeper + stats data layer, and the `big_board_snapshots` snapshot pattern the specs reuse.
 
 The four features are **not peers.** They form a dependency chain:
 
@@ -53,10 +53,10 @@ The four features are **not peers.** They form a dependency chain:
 ### 2.2 What's missing (build these)
 
 - **Anthropic SDK + client.** No `@anthropic-ai/sdk` in `package.json`; no `src/lib/claude/`. The architecture doc anticipates `src/lib/claude/client.ts` and `persona-gen.ts` — neither exists.
-- **FireCrawl client.** No dependency, no `src/lib/firecrawl/`.
+- ~~FireCrawl client~~ — **dropped (decision 2026-07-02):** source ingestion is RSS + YouTube feeds fetched directly (plain fetch); no scraping service.
 - **Supabase Edge Functions.** No `supabase/functions/` directory. The persona crons (`refresh-persona-lists`, `ingest-persona-content`, `generate-persona-content`) are specced but unscaffolded.
 - **Persona data model.** None of the persona tables exist.
-- **AI env vars.** `.env.example` has only Supabase + app + dev-auth. Missing: `ANTHROPIC_API_KEY`, `FIRECRAWL_API_KEY`, `THE_ODDS_API_KEY`, `SPORTS_DATA_API_KEY`.
+- **AI env vars.** `.env.example` has only Supabase + app + dev-auth. Missing: `ANTHROPIC_API_KEY`, `THE_ODDS_API_KEY`, `SPORTS_DATA_API_KEY`.
 - **Stripe.** `src/lib/stripe/.gitkeep` is an empty placeholder. Pro *purchase* is Phase 4 and not built — see the gating note in §2.4.
 
 ### 2.3 Doc-vs-reality drift (use the real conventions)
@@ -132,7 +132,7 @@ Return `402 Payment Required` (or `403`) so the client can show an upgrade promp
 
 - **Per-user rate limits** on `/api/lists/generate` and `/api/ask` (e.g., N calls/day even for Pro) via Vercel edge middleware — the security section of the architecture doc already calls for rate limiting on mutation endpoints.
 - **Per-run caps** on all batch/cron jobs (max items per persona per run) as a runaway safety valve.
-- **Monthly budget ceiling** for Anthropic + FireCrawl + The Odds API, tracked in code (a spend counter table or the provider dashboards) with alerting.
+- **Monthly budget ceiling** for Anthropic + The Odds API, tracked in code (a spend counter table or the provider dashboards) with alerting.
 - **Change-gating** for the content engine (see §6) so quiet days cost ~$0.
 - **Token/latency logging** on every Claude call (model, input/output tokens, ms, feature) to a lightweight `ai_call_log` table or Sentry/PostHog, so cost is attributable per feature from day one.
 
@@ -150,8 +150,6 @@ Append to `.env.example` and set in Vercel + Supabase:
 ```env
 # AI
 ANTHROPIC_API_KEY=
-# Web scraping (persona source rankings + content ingestion, free non-paywalled only)
-FIRECRAWL_API_KEY=
 # Ask AI — Vegas lines (free tier)
 THE_ODDS_API_KEY=
 # NFL current/live stats (already anticipated by architecture doc)
@@ -160,9 +158,8 @@ SPORTS_DATA_API_KEY=
 
 ### 3.7 M0 checklist
 
-- [ ] `npm install @anthropic-ai/sdk` and a FireCrawl client dep.
+- [ ] `npm install @anthropic-ai/sdk`.
 - [ ] `src/lib/claude/client.ts`, `src/lib/claude/models.ts`, `src/lib/claude/structured.ts` (Zod output helpers).
-- [ ] `src/lib/firecrawl/client.ts`.
 - [ ] `src/lib/auth/require-pro.ts`.
 - [ ] Rate-limit middleware for AI routes; per-run caps constant module.
 - [ ] `ai_call_log` (or telemetry hook) for token/cost logging.
@@ -181,7 +178,7 @@ A roster of ~8 fictional, parody-named analyst personas (e.g., *Bathew Merry (AI
 
 ### 4.2 Why first
 
-`ai_personas`, `persona_source_rankings`, and `lists.ai_persona_id` are prerequisites for both the Content Engine (§6) and the persona-grounded path of List Generation (§5). Personas also validate the parody firewall, the FireCrawl scrape path, and Claude rationale generation — the same primitives every later feature reuses.
+`ai_personas`, `persona_source_rankings`, and `lists.ai_persona_id` are prerequisites for both the Content Engine (§6) and the persona-grounded path of List Generation (§5). Personas also validate the parody firewall, the source-scrape path (plain fetch), and Claude rationale generation — the same primitives every later feature reuses.
 
 ### 4.3 Data model / migrations
 
@@ -197,7 +194,7 @@ Follow the schemas verbatim from the spec (columns, RLS comments). Key invariant
 Personas are **system-written**, so the write paths are scripts/Edge Functions with the service role — not app API routes. Read paths are ordinary server components/routes.
 
 - `scripts/seed-ai-personas.ts` — insert the roster rows (username, display name, bio + parody disclaimer, `style_profile` JSONB, avatar). Then generate initial lists via Claude (ranks from source where available, else `style_profile`), writing persona-owned `lists` rows. **Phase 0:** player entries stored as text names in JSONB per `03-DATA-MODEL.md`.
-- `scripts/scrape-persona-sources.ts` — FireCrawl fetch of each persona's free, non-paywalled published rankings into `persona_source_rankings` (source URL + publish date).
+- `scripts/scrape-persona-sources.ts` — direct fetch (no scraping service) of each persona's free, non-paywalled published rankings into `persona_source_rankings` (source URL + publish date).
 - `supabase/functions/refresh-persona-lists/` — regenerate lists on the data-pipeline cadence (weekly in-season, monthly off-season), snapshotting prior versions (reuse `big_board_snapshots` pattern). Runs with service role.
 - `src/lib/claude/persona-gen.ts` — the rationale-generation prompt builder: takes `style_profile` + the FieldScout player data packet, returns original per-player rationale + persona-voiced titles. **Ranks mirror the source; words are always ours.**
 - **Phase 1:** `scripts/match-expert-players.ts` — resolve text names → Sleeper player IDs, insert `list_players` rows so persona lists can participate in consensus (weight 1, same as cred-0 users).
@@ -233,7 +230,7 @@ Add a lightweight **lint/test** that scans generated persona content for the rea
 - [ ] `020_ai_personas.sql` (+ `lists.ai_persona_id`, system owner decision documented).
 - [ ] `021_persona_source_rankings.sql`.
 - [ ] `scripts/seed-ai-personas.ts` with v1 roster + `style_profile`s.
-- [ ] `scripts/scrape-persona-sources.ts` (FireCrawl).
+- [ ] `scripts/scrape-persona-sources.ts` (plain fetch + Haiku extraction).
 - [ ] `src/lib/claude/persona-gen.ts` (original-prose rationales).
 - [ ] `supabase/functions/refresh-persona-lists/` (cadence + snapshots).
 - [ ] Persona UI: badge, card, profile page, disclaimer, list footer.
@@ -357,14 +354,14 @@ Use the spec's schemas verbatim, including the `extracted` and `context` JSONB s
 `supabase/functions/ingest-persona-content/` — daily on `pg_cron`, service role. Per active persona × active non-paywalled source:
 
 1. **Cheap change check first** (the cost gate): RSS/YouTube compare newest GUID/`pubDate` vs. `last_item_published_at`; web compare HTTP `ETag`/`Last-Modified`, else hash the listing vs. `last_listing_hash`. Nothing new → touch `last_checked_at`, stop.
-2. **Fetch only new items** via FireCrawl (skip `is_paywalled`).
+2. **Fetch only new items** directly from the RSS/YouTube feed (skip `is_paywalled`).
 3. **Extract** structured signals with **Claude Haiku 4.5** (low temperature, `output_format` schema) → upsert `persona_content_items` (dedupe on `content_hash`; store only a short `raw_excerpt`, never full prose).
 4. **Resynthesize `persona_context`** from recent items + `persona_source_rankings` + seed `style_profile` (Sonnet 5). Bump `version`, snapshot prior into `persona_context_versions`.
 5. **Flag material change** → set `last_material_change_at` (the trigger the content engine and `refresh-persona-lists` listen for).
 
 **Implementation approach = hybrid** (per the spec's recommendation): a **deterministic pipeline** in the daily hot path (predictable cost, auditable, easy to change-gate and allowlist), with **agentic behavior reserved** for two narrow, infrequent, allowlisted, human-reviewed jobs — (a) source discovery at setup / when a source goes stale, (b) optional corroboration when a material change fires. Keep the non-deterministic loop out of the daily, attribution-critical path. Every stance lands in `persona_content_items` with a real `source_url` regardless of path.
 
-**Cost:** ~8 personas × a few sources, change-gated → most days do zero FireCrawl/Claude work (especially off-season). Cost rises only when analysts actually publish. Enforce a per-run item cap.
+**Cost:** ~8 personas × a few sources, change-gated → most days do zero fetch/Claude work (especially off-season). Cost rises only when analysts actually publish. Enforce a per-run item cap.
 
 ### 6.5 Slice C — the automated content engine
 
@@ -403,7 +400,7 @@ Use case 2 goes a step beyond "mirror published ranks, original prose": it synth
 ### 6.10 Verification
 
 - Slice A: `build-persona-context.ts` produces a sensible `rendered_md` context file for a persona; List Generation with that persona reflects current stances.
-- Slice B: on a day with no new source items, the run does **zero** FireCrawl/Claude calls (change-gate works). On a new item, `persona_content_items` gets one deduped row and `version` bumps only on material change.
+- Slice B: on a day with no new source items, the run does **zero** fetch/Claude calls (change-gate works). On a new item, `persona_content_items` gets one deduped row and `version` bumps only on material change.
 - Slice C: a themed post lands as `draft` with citations resolving to real URLs; approval publishes it; it appears on the persona profile, feed, `/tag/{slug}`, and sitemap; takedown removes it everywhere.
 - Cost: per-run caps and monthly ceiling enforced; token log attributes spend to this feature.
 
@@ -550,11 +547,11 @@ If the goal is the **smallest set that puts trustworthy AI in front of paying us
 
 **Legal / IP (highest-attention).** The parody firewall is the core mitigation: fictional swapped-letter names, `(AI)` suffix, original prose only, free non-paywalled sources only, `source_url` on everything, one-click soft-delete takedown. Enforce the real-name blocklist in CI (§4.6) and keep the editorial review gate on synthesized posts (§6.8). Never ingest paywalled content. Personas are never claimable and never carry a real analyst's name.
 
-**Cost.** Anthropic + FireCrawl + Odds API are metered. Controls (§3.4): per-user daily caps on interactive features, per-run caps on jobs, change-gating on ingestion, model tiering (Haiku for extraction), and a monthly ceiling with alerting. Ask AI is the priciest call; the Content Engine is the biggest *aggregate* risk if change-gating regresses — add a test that asserts a no-new-content run makes zero paid calls.
+**Cost.** Anthropic + The Odds API are metered. Controls (§3.4): per-user daily caps on interactive features, per-run caps on jobs, change-gating on ingestion, model tiering (Haiku for extraction), and a monthly ceiling with alerting. Ask AI is the priciest call; the Content Engine is the biggest *aggregate* risk if change-gating regresses — add a test that asserts a no-new-content run makes zero paid calls.
 
 **Content quality / hallucination.** Structured outputs + server-side validation + resolving `player_name → player_id` against the real pool (drop hallucinated players). Deterministic pipeline in the daily hot path; agentic behavior only in allowlisted, reviewed, off-path jobs. Draft→review gate before any synthesized post publishes.
 
-**Prompt injection from scraped content.** Ingested pages are untrusted input. Treat FireCrawl output as data, not instructions: extract with a constrained schema, never let scraped text steer tool use, and keep extraction on the cheap model with low temperature and no tools.
+**Prompt injection from scraped content.** Ingested pages are untrusted input. Treat fetched feed/page content as data, not instructions: extract with a constrained schema, never let scraped text steer tool use, and keep extraction on the cheap model with low temperature and no tools.
 
 **Security / RLS.** Persona operational tables (`persona_sources`, `persona_content_items`, `persona_context*`, `persona_source_rankings`) are **service-role only** — no client policies. Only `ai_personas` (public read), published `persona_posts`, and persona-owned public `lists` are client-readable. All AI writes go through the service role in routes/scripts/Edge Functions, never the browser client. Zod-validate every route input.
 
@@ -585,12 +582,11 @@ Resolve these as you reach each milestone; none block M0.
 ### 11.1 New dependencies
 
 - `@anthropic-ai/sdk` (Claude client + structured outputs).
-- A FireCrawl client (SDK or fetch wrapper) for `src/lib/firecrawl/`.
 - The Odds API: no SDK needed — thin fetch wrapper in `src/lib/odds/`.
 
 ### 11.2 New environment variables
 
-`ANTHROPIC_API_KEY`, `FIRECRAWL_API_KEY`, `THE_ODDS_API_KEY`, `SPORTS_DATA_API_KEY` (add to `.env.example`, Vercel, Supabase).
+`ANTHROPIC_API_KEY`, `THE_ODDS_API_KEY`, `SPORTS_DATA_API_KEY` (add to `.env.example`, Vercel, Supabase).
 
 ### 11.3 Migration numbering (continues from `019`)
 
@@ -607,7 +603,6 @@ Resolve these as you reach each milestone; none block M0.
 
 ```
 src/lib/claude/           client.ts · models.ts · structured.ts · persona-gen.ts · player-packet.ts
-src/lib/firecrawl/        client.ts
 src/lib/odds/             client.ts
 src/lib/auth/             require-pro.ts
 src/app/api/lists/generate/route.ts        (List Generation)

@@ -24,9 +24,14 @@ export interface PersonaStyleProfile {
 
 /** A content feed monitored by the content engine (persona_sources table).
  * Distinct from source_urls: these are opinion/content feeds for context
- * ingestion, not exact ranked-list pages. */
+ * ingestion, not exact ranked-list pages.
+ *
+ * DECISION (2026-07-02): ingestion is RSS + YouTube feeds only, fetched
+ * directly (plain fetch of XML) — no scraping service. Podcasts are RSS
+ * feeds, so they fall under 'rss'. Arbitrary web pages are unsupported
+ * until a real need appears. */
 export interface PersonaContentSource {
-  type: 'rss' | 'youtube' | 'web' | 'podcast'
+  type: 'rss' | 'youtube'
   url: string
   label?: string
 }

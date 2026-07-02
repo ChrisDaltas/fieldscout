@@ -16,5 +16,5 @@ export const PERSONA_MAX_LISTS_PER_RUN = 4
 /** Max players per generated persona list. */
 export const PERSONA_LIST_PLAYER_COUNT = 25
 
-/** Max sources scraped per persona per scrape run (FireCrawl cost valve). */
+/** Max source URLs fetched per persona per scrape/ingest run (cost valve). */
 export const PERSONA_MAX_SCRAPES_PER_RUN = 5

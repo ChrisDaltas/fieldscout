@@ -34,7 +34,7 @@ FieldScout ships as a **single Next.js web application** in a **monorepo structu
 | **NFL Player Data** | Sleeper API (free) | Player profiles, headshots, rosters, injury designations, ADP, schedules — no API key required |
 | **NFL Historical Stats** | nflverse / nfl_data_py (free) | Open-source library for loading clean historical weekly + season stats (2022–present) into Supabase via one-time script |
 | **NFL Current + Live Stats** | MySportsFeeds (launch) → SportsDataIO (scale) | Weekly final stats, live in-game scoring during games. MySportsFeeds (~$50–100/mo) for Year 1; upgrade to SportsDataIO ($500+/mo) when Pro revenue supports it |
-| **Web Scraping** | FireCrawl API | Structured extraction of publicly available expert profile data (bios, social links, employer info) and published ranking lists from free, non-paywalled pages (AI persona pipeline input — see spec-ai-expert-personas.md) |
+| **Feed ingestion** | Plain fetch (RSS + YouTube feeds) | Direct fetch of free, non-paywalled analyst feeds and server-rendered ranking pages (AI persona pipeline input — see spec-ai-expert-personas.md). No scraping service (decision 2026-07-02). |
 | **Email** | Resend | Transactional emails (welcome, weekly digest, notifications, profile claim verification) |
 | **Analytics** | PostHog | Open-source product analytics, session replay, feature flags |
 | **Error Tracking** | Sentry | Error monitoring and performance tracking |
@@ -126,8 +126,6 @@ fieldscout/
 │       │   │   ├── claude/
 │       │   │   │   ├── client.ts        # Claude API for AI recommendations
 │       │   │   │   └── persona-gen.ts   # AI persona rationale generation prompts
-│       │   │   ├── firecrawl/
-│       │   │   │   └── client.ts        # FireCrawl for expert bios + persona source rankings
 │       │   │   └── sports-data/
 │       │   │       └── client.ts        # NFL stats API client
 │       │   │
@@ -331,8 +329,8 @@ The stats pipeline operates at **two speeds**: a slow cadence for offseason/non-
 | `resolve-start-or-sit` | Tuesday 6am ET (runs with calculate-cred) | Determine correct Start or Sit answers, score votes |
 | `update-consensus` | Every 30 minutes | Refresh materialized views for consensus rankings |
 | `decay-cred` | Weekly (offseason) | Apply small decay to inactive users' cred scores |
-| `refresh-persona-lists` | Weekly in season, monthly off-season | Re-scrape persona source rankings (FireCrawl), regenerate persona lists + rationales (Claude API), snapshot prior versions |
-| `ingest-persona-content` | Daily (change-gated) | Cheap check for new free-source content per persona; on change, FireCrawl fetch + Claude extraction into `persona_content_items`, resynthesize `persona_context`, snapshot prior version (see spec-ai-content-engine.md) |
+| `refresh-persona-lists` | Weekly in season, monthly off-season | Re-scrape persona source rankings (plain fetch), regenerate persona lists + rationales (Claude API), snapshot prior versions |
+| `ingest-persona-content` | Daily (change-gated) | Cheap check for new free-source content per persona; on change, direct feed fetch + Claude extraction into `persona_content_items`, resynthesize `persona_context`, snapshot prior version (see spec-ai-content-engine.md) |
 | `generate-persona-content` | Persona-list cadence + on material-change flags | Generate persona-voiced themed lists + posts with justification/citations into `persona_posts` (draft → review → publish) for SEO (see spec-ai-content-engine.md) |
 
 > **Cost note:** `sync-live-stats` running every 30 seconds for ~17 hours per Sunday (plus TNF and MNF) = ~2,000 API calls per week during the season. SportsDataIO's live stats endpoint supports this; verify the pricing tier covers it before launch.
@@ -438,9 +436,9 @@ Upgrade when Pro subscription revenue justifies it.
 - **Persona rationale generation:** given a persona's `style_profile` and scraped source rankings, generate original per-player rationale text and persona-voiced list titles, clearly labeled as AI-generated (ranks mirror the source; prose is always original — see spec-ai-expert-personas.md)
 - Natural language player insights in Research tab (stretch goal for V1)
 
-### FireCrawl (Expert Profiles + Persona Source Rankings)
+### Source Ingestion (Expert Profiles + Persona Source Rankings)
 
-FireCrawl gathers two kinds of publicly available data:
+The ingestion scripts gather (plain fetch of RSS/YouTube feeds and server-rendered pages — no scraping service) two kinds of publicly available data:
 
 1. **Expert profile information** — employer/affiliation, Twitter/X handle, YouTube channel, podcast name, brief professional bio. Factual data points used to populate expert profile cards.
 2. **Published ranking lists** from free, non-paywalled pages only — ingested into `persona_source_rankings` as input for the AI persona pipeline (see spec-ai-expert-personas.md). Persona lists mirror source ranks exactly; rationale prose and titles are always Claude-generated, never copied. Raw scrapes are service-role only and never served to clients. Paywalled or subscription content is never scraped. Non-ranking opinion content (articles, video and podcast notes) is ingested into `persona_content_items` by the daily `ingest-persona-content` job and synthesized into each persona's `persona_context` (see spec-ai-content-engine.md).
@@ -464,7 +462,7 @@ Analysts' written articles and analysis text are never reproduced. Source URLs a
     ↓
 [Claude API] ← AI features + persona rationale generation
     ↓
-[FireCrawl] ← Expert profile data + persona source ranking scraping
+[Feed fetch] ← Expert profile data + persona source ranking scraping
     ↓
 [PostHog] ← Analytics
     ↓
@@ -490,7 +488,6 @@ STRIPE_PRO_ANNUAL_PRICE_ID=
 SPORTS_DATA_API_KEY=
 
 # Web Scraping (expert profile data only — not content)
-FIRECRAWL_API_KEY=
 
 # AI
 ANTHROPIC_API_KEY=
