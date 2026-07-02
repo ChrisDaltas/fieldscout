@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Sparkles } from 'lucide-react'
 
-import { AiPlayerRow } from '@/components/lists/ai-player-row'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,11 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useToast } from '@/hooks/use-toast'
+import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import type { GenerateListResponse } from '@/types/schemas/ai'
+import { useAiBuildStore } from '@/stores/ai-build-store'
+import { useAuthStore } from '@/stores/auth-store'
+import type { AnalyticalStyleKey, GenerateListRequest } from '@/types/schemas/ai'
 
 const POSITIONS = ['Overall', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'] as const
 const SCORINGS = ['PPR', 'Half-PPR', 'Standard'] as const
@@ -27,7 +28,7 @@ type Position = (typeof POSITIONS)[number]
 type Scoring = (typeof SCORINGS)[number]
 type Count = (typeof COUNTS)[number]
 
-type Step = 'form' | 'loading' | 'results' | 'saving'
+type Step = 'form' | 'creating'
 
 interface GenerateAiModalProps {
   open: boolean
@@ -58,11 +59,17 @@ function usePersonaStyles(enabled: boolean) {
   })
 }
 
+/**
+ * "Create with AI" — collects the brief, creates the (empty) list, queues the
+ * AI build job, and immediately navigates to the List Detail page where the
+ * user watches the AI add players and put them in order (useAiListBuild).
+ */
 export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const router = useRouter()
-  const { toast } = useToast()
   const queryClient = useQueryClient()
   const personas = usePersonaStyles(open)
+  const startBuild = useAiBuildStore((s) => s.start)
+  const profile = useAuthStore((s) => s.profile)
 
   const [step, setStep] = useState<Step>('form')
   const [position, setPosition] = useState<Position>('WR')
@@ -74,15 +81,10 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const [count, setCount] = useState<Count>(10)
   const [error, setError] = useState<string | null>(null)
   const [upgradeRequired, setUpgradeRequired] = useState(false)
-  const [result, setResult] = useState<GenerateListResponse | null>(null)
-  const [saveProgress, setSaveProgress] = useState(0)
 
   // Staleness guard: bumped on every open AND close so in-flight async work
   // from a previous dialog session can never mutate fresh state.
   const sessionRef = useRef(0)
-  // Partial-save resume target: a retry adds the missing players to the SAME
-  // list instead of creating a duplicate.
-  const savedListRef = useRef<{ id: string; added: Set<string> } | null>(null)
 
   // Reset transient state on every open; invalidate stale handlers on close.
   useEffect(() => {
@@ -91,137 +93,79 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
       setStep('form')
       setError(null)
       setUpgradeRequired(false)
-      setResult(null)
-      setSaveProgress(0)
-      savedListRef.current = null
     }
   }, [open])
 
-  // The dialog must not be dismissable mid-save (Esc, overlay, X all route
-  // through here in controlled mode) — a background save finishing after
-  // dismissal would navigate/toast out of nowhere.
+  // Don't allow dismissal mid-create (Esc, overlay, X all route through here
+  // in controlled mode) — the create finishing after dismissal would navigate
+  // out of nowhere.
   const handleOpenChange = (next: boolean) => {
-    if (!next && step === 'saving') return
+    if (!next && step === 'creating') return
     onOpenChange(next)
   }
 
-  const handleGenerate = async () => {
+  const handleCreate = async () => {
+    // Client-side Pro pre-check so free users get the pitch before an empty
+    // list exists. Profile not loaded yet → proceed; the generate route is
+    // the real gate and its 402 surfaces on the detail page.
+    if (profile && !profile.is_pro) {
+      setUpgradeRequired(true)
+      return
+    }
     const session = sessionRef.current
-    setStep('loading')
+    setStep('creating')
     setError(null)
-    setUpgradeRequired(false)
-    savedListRef.current = null
     try {
-      const weightEntries = Object.entries(styleWeights).map(([key, weight]) => ({
-        key,
-        weight,
-      }))
-      const res = await fetch('/api/lists/generate', {
+      // Mirrors the server's style label; the list is retitled after
+      // generation anyway if resolution drops players.
+      const personaName = persona
+        ? (personas.data?.find((p) => p.username === persona)?.display_name ?? persona)
+        : null
+      const hasWeights = Object.keys(styleWeights).length > 0
+      const styleLabel =
+        personaName && hasWeights
+          ? `${personaName} Blend`
+          : (personaName ?? (hasWeights ? 'Custom Blend' : 'Consensus'))
+      const title = `${styleLabel} ${position} Top ${count}`.slice(0, 100)
+
+      const res = await fetch('/api/lists', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          position,
-          scoring,
-          player_count: count,
-          ...(persona ? { persona } : {}),
-          ...(weightEntries.length > 0 ? { style_weights: weightEntries } : {}),
+          title,
+          position_filter: position === 'Overall' ? undefined : position,
+          ranking_mode: 'ranked',
         }),
       })
       if (sessionRef.current !== session) return
-      if (res.status === 402) {
-        setUpgradeRequired(true)
-        setStep('form')
-        return
-      }
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: unknown } | null
-        if (sessionRef.current !== session) return
-        setError(
-          typeof body?.error === 'string'
-            ? body.error
-            : 'Generation failed. Please try again.',
+        throw new Error(
+          typeof body?.error === 'string' ? body.error : 'Could not create the list.',
         )
-        setStep('form')
-        return
       }
-      const data = (await res.json()) as GenerateListResponse
-      if (sessionRef.current !== session) return
-      setResult(data)
-      setStep('results')
-    } catch {
-      if (sessionRef.current !== session) return
-      setError('Generation failed. Please check your connection and try again.')
-      setStep('form')
-    }
-  }
+      const created = (await res.json()) as { id: string }
 
-  const handleSave = async () => {
-    if (!result) return
-    const session = sessionRef.current
-    const title = `${result.style} ${result.position} Top ${result.players.length}`.slice(0, 100)
-    setError(null)
-    setStep('saving')
-    try {
-      let listId = savedListRef.current?.id
-      const addedIds = savedListRef.current?.added ?? new Set<string>()
-      if (!listId) {
-        const createRes = await fetch('/api/lists', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            description: result.style_note.slice(0, 500),
-            position_filter: result.position === 'Overall' ? undefined : result.position,
-            ranking_mode: 'ranked',
-          }),
-        })
-        if (!createRes.ok) throw new Error('Could not create the list.')
-        const created = (await createRes.json()) as { id: string }
-        listId = created.id
-        savedListRef.current = { id: listId, added: addedIds }
+      const weightEntries = Object.entries(styleWeights).map(([key, weight]) => ({
+        key: key as AnalyticalStyleKey,
+        weight: weight as 1 | 2 | 3,
+      }))
+      const request: GenerateListRequest = {
+        position,
+        scoring,
+        player_count: count,
+        ...(persona ? { persona } : {}),
+        ...(weightEntries.length > 0 ? { style_weights: weightEntries } : {}),
       }
+      startBuild(created.id, request)
 
-      // Sequential on purpose: player order = order added (business rule), and
-      // the position counter must not race. 409 = already on the list (retry).
-      setSaveProgress(addedIds.size)
-      for (const player of result.players) {
-        if (addedIds.has(player.player_id)) continue
-        const res = await fetch(`/api/lists/${listId}/players`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            player_id: player.player_id,
-            notes: player.rationale.slice(0, 280),
-          }),
-        })
-        if (res.ok || res.status === 409) addedIds.add(player.player_id)
-        if (sessionRef.current === session) setSaveProgress(addedIds.size)
-      }
-      if (sessionRef.current !== session) return
-
-      queryClient.invalidateQueries({ queryKey: ['lists'] })
-      const failed = result.players.length - addedIds.size
-      toast(
-        failed > 0
-          ? {
-              title: 'List saved with warnings',
-              description: `${title} — ${addedIds.size} of ${result.players.length} players added.`,
-              variant: 'destructive',
-            }
-          : {
-              title: 'List saved',
-              description: `${title} — ${addedIds.size} players. AI-assisted, fully editable.`,
-            },
-      )
+      queryClient.invalidateQueries({ queryKey: listsKeys.all })
       onOpenChange(false)
-      router.push(`/app/lists/${listId}`)
+      router.push(`/app/lists/${created.id}`)
     } catch (err) {
       if (sessionRef.current !== session) return
-      setError(
-        (err instanceof Error ? err.message : 'Saving failed.') +
-          (savedListRef.current ? ' Retry to finish saving to the same list.' : ''),
-      )
-      setStep('results')
+      setError(err instanceof Error ? err.message : 'Could not create the list.')
+      setStep('form')
     }
   }
 
@@ -261,166 +205,117 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </div>
         )}
 
-        {(step === 'form' || step === 'loading') && (
-          <div className="space-y-5">
-            <Field label="Position">
-              <PillGroup
-                options={POSITIONS.map((p) => ({ value: p, label: p }))}
-                value={position}
-                onChange={(v) => setPosition(v as Position)}
-                columns={4}
-              />
-            </Field>
+        <div className="space-y-5">
+          <Field label="Position">
+            <PillGroup
+              options={POSITIONS.map((p) => ({ value: p, label: p }))}
+              value={position}
+              onChange={(v) => setPosition(v as Position)}
+              columns={4}
+            />
+          </Field>
 
-            <Field label="Scoring">
-              <PillGroup
-                options={SCORINGS.map((s) => ({ value: s, label: s }))}
-                value={scoring}
-                onChange={(v) => setScoring(v as Scoring)}
-                columns={3}
-              />
-            </Field>
+          <Field label="Scoring">
+            <PillGroup
+              options={SCORINGS.map((s) => ({ value: s, label: s }))}
+              value={scoring}
+              onChange={(v) => setScoring(v as Scoring)}
+              columns={3}
+            />
+          </Field>
 
-            <Field
-              label="Ranking Style"
-              hint="Optional — tap a style to cycle its importance: 1 (least) to 3 (most), tap past 3 to clear."
-            >
+          <Field
+            label="Ranking Style"
+            hint="Optional — tap a style to cycle its importance: 1 (least) to 3 (most), tap past 3 to clear."
+          >
+            <div className="grid grid-cols-2 gap-1.5">
+              {ANALYTICAL_STYLES.map((s) => {
+                const weight = styleWeights[s.key] ?? 0
+                const active = weight > 0
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => cycleStyleWeight(s.key)}
+                    title={s.description}
+                    className={cn(
+                      'flex items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-left text-xs font-semibold transition-colors',
+                      active
+                        ? 'bg-foreground text-background'
+                        : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
+                    )}
+                  >
+                    <span className="truncate">{s.label}</span>
+                    {active && (
+                      <span className="shrink-0 rounded-full bg-background/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                        {weight}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
+
+          <Field label="AI Expert" hint="Optional — rank in a persona's voice and current stances.">
+            {personas.isLoading ? (
+              <p className="text-xs text-text-tertiary">Loading experts…</p>
+            ) : (
               <div className="grid grid-cols-2 gap-1.5">
-                {ANALYTICAL_STYLES.map((s) => {
-                  const weight = styleWeights[s.key] ?? 0
-                  const active = weight > 0
+                {(personas.data ?? []).map((p) => {
+                  const active = persona === p.username
                   return (
                     <button
-                      key={s.key}
+                      key={p.username}
                       type="button"
-                      onClick={() => cycleStyleWeight(s.key)}
-                      title={s.description}
+                      onClick={() =>
+                        setPersona((cur) => (cur === p.username ? null : p.username))
+                      }
                       className={cn(
-                        'flex items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-left text-xs font-semibold transition-colors',
+                        'truncate rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
                         active
                           ? 'bg-foreground text-background'
                           : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
                       )}
                     >
-                      <span className="truncate">{s.label}</span>
-                      {active && (
-                        <span className="shrink-0 rounded-full bg-background/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
-                          {weight}
-                        </span>
-                      )}
+                      {p.display_name}
                     </button>
                   )
                 })}
               </div>
-            </Field>
-
-            <Field label="AI Expert" hint="Optional — rank in a persona's voice and current stances.">
-              {personas.isLoading ? (
-                <p className="text-xs text-text-tertiary">Loading experts…</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(personas.data ?? []).map((p) => {
-                    const active = persona === p.username
-                    return (
-                      <button
-                        key={p.username}
-                        type="button"
-                        onClick={() =>
-                          setPersona((cur) => (cur === p.username ? null : p.username))
-                        }
-                        className={cn(
-                          'truncate rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
-                          active
-                            ? 'bg-foreground text-background'
-                            : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-                        )}
-                      >
-                        {p.display_name}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </Field>
-
-            <Field label="Players">
-              <PillGroup
-                options={COUNTS.map((c) => ({ value: String(c), label: String(c) }))}
-                value={String(count)}
-                onChange={(v) => setCount(Number(v) as Count)}
-                columns={5}
-              />
-            </Field>
-
-            <Button
-              variant="primary"
-              className="w-full font-semibold"
-              disabled={step === 'loading'}
-              onClick={handleGenerate}
-            >
-              {step === 'loading' ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Generating — a few
-                  seconds…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> Generate
-                </>
-              )}
-            </Button>
-          </div>
-        )}
-
-        {(step === 'results' || step === 'saving') && result && (
-          <div className="space-y-4">
-            <p className="text-xs text-text-tertiary">
-              {result.style} · {result.scoring} · a starting point, not an oracle —
-              fully editable after saving.
-            </p>
-            <ul className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-              {result.players.map((p) => (
-                <AiPlayerRow
-                  key={p.player_id}
-                  rank={p.rank}
-                  name={p.player_name}
-                  team={p.team}
-                  rationale={p.rationale}
-                />
-              ))}
-            </ul>
-            <p className="text-xs italic text-text-secondary">{result.style_note}</p>
-            {result.unresolved.length > 0 && (
-              <p className="text-xs text-text-tertiary">
-                Skipped {result.unresolved.length} unrecognized{' '}
-                {result.unresolved.length === 1 ? 'name' : 'names'}.
-              </p>
             )}
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                className="flex-1 font-semibold"
-                disabled={step === 'saving'}
-                onClick={handleSave}
-              >
-                {step === 'saving' ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Saving{' '}
-                    {saveProgress}/{result.players.length}…
-                  </>
-                ) : (
-                  'Save as New List'
-                )}
-              </Button>
-              <Button
-                disabled={step === 'saving'}
-                onClick={() => onOpenChange(false)}
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        )}
+          </Field>
+
+          <Field label="Players">
+            <PillGroup
+              options={COUNTS.map((c) => ({ value: String(c), label: String(c) }))}
+              value={String(count)}
+              onChange={(v) => setCount(Number(v) as Count)}
+              columns={5}
+            />
+          </Field>
+
+          <Button
+            variant="primary"
+            className="w-full font-semibold"
+            disabled={step === 'creating'}
+            onClick={handleCreate}
+          >
+            {step === 'creating' ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Creating list…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" /> Create List
+              </>
+            )}
+          </Button>
+          <p className="text-center text-[11px] text-text-tertiary">
+            You&apos;ll land on the list and watch the AI build it — a starting
+            point, not an oracle. Fully editable.
+          </p>
+        </div>
       </DialogContent>
     </Dialog>
   )

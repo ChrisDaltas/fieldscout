@@ -191,9 +191,12 @@ function isPlayerDragOver(drop: TierAddDrop): boolean {
 interface ListDetailViewProps {
   list: ListWithDetails
   isOwner: boolean
+  /** True while the AI build (useAiListBuild) owns this list — swaps the
+   *  empty state for a "scouting" placeholder until players start landing. */
+  aiBuilding?: boolean
 }
 
-export function ListDetailView({ list, isOwner }: ListDetailViewProps) {
+export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetailViewProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
@@ -726,7 +729,7 @@ export function ListDetailView({ list, isOwner }: ListDetailViewProps) {
         )}
       >
       {players.length === 0 ? (
-        <EmptyState isOwner={isOwner} />
+        <EmptyState isOwner={isOwner} aiBuilding={aiBuilding} />
       ) : list.is_team ? (
         <PositionBoard
           players={players}
@@ -1889,7 +1892,24 @@ function EditableTitle({
   )
 }
 
-function EmptyState({ isOwner }: { isOwner: boolean }) {
+function EmptyState({
+  isOwner,
+  aiBuilding = false,
+}: {
+  isOwner: boolean
+  aiBuilding?: boolean
+}) {
+  if (aiBuilding) {
+    return (
+      <Card className="border-bg-elevated-2 bg-bg-elevated">
+        <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <p className="animate-pulse text-sm text-text-secondary">
+            FieldScout AI is scouting players for this list…
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
   return (
     <Card className="border-bg-elevated-2 bg-bg-elevated">
       <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
