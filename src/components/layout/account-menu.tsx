@@ -9,6 +9,7 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 
+import { DevProMenuItem } from '@/components/dev/dev-pro-menu-item'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,6 +127,7 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
             </Link>
           </DropdownMenuItem>
         )}
+        <DevProMenuItem isPro={Boolean(profile.is_pro)} />
         <DropdownMenuItem
           onClick={signOut}
           className="cursor-pointer text-destructive focus:text-destructive"

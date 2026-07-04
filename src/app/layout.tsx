@@ -3,7 +3,6 @@ import { Inter, Silkscreen } from 'next/font/google'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
-import { DevProToggle } from '@/components/dev/dev-pro-toggle'
 import { PlayerWindowsLayer } from '@/components/players/player-windows-layer'
 import { DevAuthProvider } from '@/components/providers/dev-auth-provider'
 import { QueryProvider } from '@/components/providers/query-provider'
@@ -53,7 +52,6 @@ export default function RootLayout({
           <DevAuthProvider>
             {children}
             <DevAuthBadge />
-            <DevProToggle />
           </DevAuthProvider>
           <PlayerWindowsLayer />
           <Toaster />
