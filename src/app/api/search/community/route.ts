@@ -52,7 +52,7 @@ export async function GET(request: Request) {
   const listsQuery = supabase
     .from('lists')
     .select(
-      'id, title, slug, position_filter, player_count, owner:profiles(username)',
+      'id, title, slug, position_filter, player_count, owner:profiles!owner_id(username)',
     )
     .ilike('title', pattern)
     .eq('is_private', false)

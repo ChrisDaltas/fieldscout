@@ -10,8 +10,6 @@ import { UserAvatar } from '@/components/ui/user-avatar'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 
-type SearchMode = 'community' | 'players'
-
 interface PlayerHit {
   id: string
   full_name: string
@@ -44,7 +42,6 @@ export function TopSearch() {
 
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
-  const [mode, setMode] = useState<SearchMode>('community')
   const [focused, setFocused] = useState(false)
   const [communityResults, setCommunityResults] = useState<{
     lists: CommunityListHit[]
@@ -90,7 +87,7 @@ export function TopSearch() {
     return () => document.removeEventListener('keydown', onKey)
   }, [focused])
 
-  // Fire the search for the current mode whenever the debounced query changes.
+  // Fire both searches whenever the debounced query changes.
   useEffect(() => {
     if (!debounced) {
       setCommunityResults({ lists: [], users: [] })
@@ -102,36 +99,36 @@ export function TopSearch() {
     abortRef.current = controller
 
     const params = new URLSearchParams({ q: debounced, limit: '8' })
-    const endpoint =
-      mode === 'community'
-        ? `/api/search/community?${params}`
-        : `/api/players/search?${params}`
+    const swallowAbort = (err: unknown) => {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        // Silently degrade — the bar stays usable even if a fetch fails.
+      }
+    }
 
-    fetch(endpoint, { signal: controller.signal })
+    fetch(`/api/players/search?${params}`, { signal: controller.signal })
       .then((res) => res.json())
-      .then((data) => {
-        if (mode === 'community') {
-          setCommunityResults({
-            lists: data.lists ?? [],
-            users: data.users ?? [],
-          })
-        } else {
-          setPlayerResults(data.results ?? [])
-        }
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          // Silently degrade — the bar stays usable even if a fetch fails.
-        }
-      })
+      .then((data) => setPlayerResults(data.results ?? []))
+      .catch(swallowAbort)
+
+    fetch(`/api/search/community?${params}`, { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) =>
+        setCommunityResults({
+          lists: data.lists ?? [],
+          users: data.users ?? [],
+        }),
+      )
+      .catch(swallowAbort)
+
     return () => controller.abort()
-  }, [debounced, mode])
+  }, [debounced])
 
   const open = focused && debounced.length > 0
   const hasResults =
-    mode === 'community'
-      ? communityResults.lists.length + communityResults.users.length > 0
-      : playerResults.length > 0
+    playerResults.length +
+      communityResults.lists.length +
+      communityResults.users.length >
+    0
 
   const navigate = useCallback(
     (href: string) => {
@@ -161,11 +158,7 @@ export function TopSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
-          placeholder={
-            mode === 'community'
-              ? 'Search community: lists, users…'
-              : 'Search players, teams…'
-          }
+          placeholder="Search players, lists, users…"
           className="h-full flex-1 bg-transparent text-foreground outline-none placeholder:text-text-tertiary"
           aria-label="Search"
         />
@@ -183,7 +176,6 @@ export function TopSearch() {
             <X className="h-3.5 w-3.5" />
           </button>
         )}
-        {active && <ModeToggle mode={mode} onChange={setMode} />}
         <button
           type="button"
           onClick={() => openPalette(true)}
@@ -205,67 +197,11 @@ export function TopSearch() {
               No matches yet.
             </p>
           )}
-          {mode === 'community' && (
-            <CommunityResults
-              results={communityResults}
-              onNavigate={navigate}
-            />
-          )}
-          {mode === 'players' && (
-            <PlayerResults results={playerResults} onNavigate={navigate} />
-          )}
+          <PlayerResults results={playerResults} onNavigate={navigate} />
+          <CommunityResults results={communityResults} onNavigate={navigate} />
         </div>
       )}
     </div>
-  )
-}
-
-function ModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: SearchMode
-  onChange: (next: SearchMode) => void
-}) {
-  return (
-    <div className="flex items-center rounded-full bg-bg-elevated-3 p-0.5 text-[10px] font-semibold">
-      <ToggleButton
-        active={mode === 'community'}
-        onClick={() => onChange('community')}
-        label="Community"
-      />
-      <ToggleButton
-        active={mode === 'players'}
-        onClick={() => onChange('players')}
-        label="Players"
-      />
-    </div>
-  )
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className={cn(
-        'rounded-full px-2 py-1 transition-colors',
-        active
-          ? 'bg-foreground text-background'
-          : 'text-text-secondary hover:text-foreground',
-      )}
-    >
-      {label}
-    </button>
   )
 }
 
@@ -363,8 +299,10 @@ function PlayerResults({
 }) {
   if (results.length === 0) return null
   return (
-    <ul>
-      {results.map((player) => {
+    <div>
+      <SectionHeader label="Players" />
+      <ul>
+        {results.map((player) => {
         const initials = player.full_name
           .split(' ')
           .map((n) => n[0])
@@ -400,7 +338,8 @@ function PlayerResults({
           </li>
         )
       })}
-    </ul>
+      </ul>
+    </div>
   )
 }
 

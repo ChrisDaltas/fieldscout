@@ -3,13 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BarChart3,
   Bell,
-  Home,
-  ListOrdered,
   ListPlus,
   Plus,
-  Shield,
   SlidersHorizontal,
   Trophy,
 } from 'lucide-react'
@@ -25,11 +21,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { useAuth } from '@/hooks/use-auth'
 import { useNotifications } from '@/hooks/use-notifications'
 import { cn } from '@/lib/utils'
@@ -42,16 +33,15 @@ interface TopNavProps {
 interface CenterNavItem {
   label: string
   href: string
-  icon: typeof Home
   matchPrefix?: string
   exact?: boolean
 }
 
 const CENTER_NAV: CenterNavItem[] = [
-  { label: 'Home', href: '/app', icon: Home, exact: true },
-  { label: 'Lists', href: '/app/lists', icon: ListOrdered, matchPrefix: '/app/lists' },
-  { label: 'Players', href: '/app/players', icon: Shield, matchPrefix: '/app/players' },
-  { label: 'My Stats', href: '/app/profile', icon: BarChart3, matchPrefix: '/app/profile' },
+  { label: 'Home', href: '/app', exact: true },
+  { label: 'Lists', href: '/app/lists', matchPrefix: '/app/lists' },
+  { label: 'Players', href: '/app/players', matchPrefix: '/app/players' },
+  { label: 'My Stats', href: '/app/profile', matchPrefix: '/app/profile' },
 ]
 
 function isCenterActive(pathname: string, item: CenterNavItem): boolean {
@@ -71,7 +61,7 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
         <Wordmark className="text-base text-foreground" />
       </Link>
 
-      {/* Center cluster: all nav items left of the search bar, Spotify-style. */}
+      {/* Center cluster: text nav links, Spotify-style. */}
       <div className="flex flex-1 items-center justify-center gap-1 px-2 sm:gap-2 sm:px-6">
         {showAppNav && (
           <div className="hidden items-center gap-1 lg:flex">
@@ -84,13 +74,14 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
             ))}
           </div>
         )}
-
-        {isSignedIn && <TopSearch />}
       </div>
 
       <div className="flex items-center gap-1">
         {isSignedIn ? (
           <>
+            <div className="mr-1 w-52 sm:w-64 lg:w-72">
+              <TopSearch />
+            </div>
             {showAppNav && (
               <GenerateAiButton size="sm" className="mr-1 font-semibold" />
             )}
@@ -204,26 +195,17 @@ function CenterNavLink({
   item: CenterNavItem
   active: boolean
 }) {
-  const Icon = item.icon
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Link
-          href={item.href}
-          aria-label={item.label}
-          className={cn(
-            'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
-            active
-              ? 'bg-bg-elevated-2 text-foreground'
-              : 'text-text-secondary hover:bg-bg-elevated-2 hover:text-foreground',
-          )}
-        >
-          <Icon className="h-5 w-5" strokeWidth={active ? 2.25 : 2} />
-        </Link>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={6}>
-        {item.label}
-      </TooltipContent>
-    </Tooltip>
+    <Link
+      href={item.href}
+      className={cn(
+        'flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors',
+        active
+          ? 'bg-bg-elevated-2 text-foreground'
+          : 'text-text-secondary hover:bg-bg-elevated-2 hover:text-foreground',
+      )}
+    >
+      {item.label}
+    </Link>
   )
 }
