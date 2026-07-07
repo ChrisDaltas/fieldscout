@@ -36,7 +36,7 @@ Research covered ESPN, Yahoo, Sleeper, Flock Fantasy, and Footballguys; cross-ch
 - **Sleeper is the gold standard for the draft engine**: snake / linear / 3rd-round-reversal / auction / best-ball, pick timers from **10 seconds to 24 hours**, unlimited pause and pick-undo, force-CPU-pick for disconnected drafters, and — critically — **commissioner override actions auto-post to league chat and cannot be silenced**.
 - **The universal weakness is commissioner transparency.** Every platform lets a commissioner silently edit rosters and effectively rewrite scores. **None offers a real, tamper-evident, member-visible audit log of commissioner actions.** Yahoo is the murkiest on manual score edits; MFL even lets a commissioner *delete* transaction records. This is FieldScout's clearest wedge and aligns exactly with the product goal: *let the commissioner do anything, but make it visible.*
 - **No platform has a native "illegal-lineup penalty" engine.** Starting a bye/OUT/ineligible player simply scores 0; any further consequence is a house rule the commissioner enforces by hand. FieldScout's commissioner tools make that workflow first-class (flag → override result → logged with reason).
-- **Defaults worth copying:** 4–20 teams (we scope to even 8–20), half-PPR is the modern default, decimal scoring on, individual-game lineup lock by default, auction budget **$200**, FAAB budget **$100**, FAAB and auction budgets are **separate pools**.
+- **Defaults worth copying:** 4–20 teams, half-PPR is the modern default, decimal scoring on, individual-game lineup lock by default, auction budget **$200**, FAAB budget **$100**, FAAB and auction budgets are **separate pools**.
 
 ### 2.3 Positioning vs. existing FieldScout features
 | Existing | Relationship to this feature |
@@ -51,7 +51,7 @@ Research covered ESPN, Yahoo, Sleeper, Flock Fantasy, and Footballguys; cross-ch
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
-1. A commissioner can create a redraft league for **8–20** managers (even counts) and configure **every** league, roster, and scoring setting (Appendix B), with sensible defaults so a league can be created in under 2 minutes.
+1. A commissioner can create a redraft league for **4–20** managers (even counts) and configure **every** league, roster, and scoring setting (Appendix B), with sensible defaults so a league can be created in under 2 minutes.
 2. A league can run a **real-time snake or auction draft** with configurable order, timers, autopick, queueing, and chat — playable on desktop and mobile.
 3. The commissioner has **complete live draft control**: pause/resume, undo (single or cascade), edit/reassign any pick, move a drafted player to another team, force a pick for a manager, and recover gracefully from disconnects.
 4. The league plays a full season: weekly H2H matchups, live scoring against the league scoring system, standings/tiebreakers, **waivers + FAAB**, **trades**, free agency, and playoffs.
