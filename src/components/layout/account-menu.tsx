@@ -32,11 +32,47 @@ interface AccountMenuProps {
 }
 
 export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountMenuProps) {
-  const { profile, signOut } = useAuth()
+  const { user, profile, signOut } = useAuth()
   const isTopbar = variant === 'topbar'
   const isCompact = isTopbar || collapsed
 
   if (!profile) {
+    // Session exists but the profile failed to load (usually a stale token
+    // that can no longer refresh). A /login link here dead-ends — middleware
+    // bounces signed-in users straight back. Offer the escape hatch instead:
+    // log out, which clears the stuck session client-side.
+    if (user) {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Account"
+              className={cn(
+                'flex h-10 items-center gap-3 rounded-full px-3 text-sm text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground',
+                isCompact && 'w-10 justify-center px-0',
+              )}
+            >
+              <UserIcon className="h-5 w-5" />
+              {!isCompact && <span>Account</span>}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side={isTopbar ? 'bottom' : 'top'} sideOffset={8} className="w-64">
+            <DropdownMenuLabel className="font-normal text-text-secondary">
+              Your session looks stale — log out and back in to fix it.
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={signOut}
+              className="cursor-pointer text-destructive focus:text-destructive"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+    }
     return (
       <Link
         href="/login"
