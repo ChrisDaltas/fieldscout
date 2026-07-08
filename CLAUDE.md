@@ -42,6 +42,9 @@ A whole-app visual overhaul is underway. The **Claude Design prototype ("Field S
 - **Responsive design:** Mobile-first. Use Tailwind breakpoints (`sm:`, `md:`, `lg:`).
 - **Theming: single blended mode.** No dark/light toggle. Legacy `next-themes` / `dark:` variants are being removed as part of the redesign — don't add new ones.
 
+### Components
+- **No near-duplicate components.** Before creating any component, search `components/` for one that already does the job. Prefer adding a CVA variant or prop to an existing component over creating a new one. New shared components require explicit approval; small visual differences from a mock never justify forking a component.
+
 ### State Management
 - **React Query (TanStack Query)** for all server state (data fetching, caching, mutations)
 - **Zustand** for client-only UI state (sidebar open/closed, drag state, modal state)
