@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
 
 import { PlayerRow } from '@/components/players/player-row'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 interface PlayerHit {
@@ -22,11 +22,23 @@ interface PlayerHit {
 
 const POSITION_FILTERS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 type PositionFilter = (typeof POSITION_FILTERS)[number]
+const POSITION_LABELS: Record<PositionFilter, string> = {
+  All: 'All',
+  QB: 'QB',
+  RB: 'RB',
+  WR: 'WR',
+  TE: 'TE',
+  K: 'K',
+  DEF: 'D/ST',
+}
 
 interface PlayersBrowserProps {
   initialPosition?: PositionFilter
 }
 
+/** Simple browse list over `/api/players/search` — search + position tabs +
+ *  flush player rows. The research table (`players-spreadsheet.tsx`) is the
+ *  canonical Players surface; this stays a lightweight alternative. */
 export function PlayersBrowser({ initialPosition = 'All' }: PlayersBrowserProps) {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -80,7 +92,7 @@ export function PlayersBrowser({ initialPosition = 'All' }: PlayersBrowserProps)
   const skeletonRows = useMemo(
     () =>
       Array.from({ length: 12 }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full rounded-md" />
+        <Skeleton key={i} className="h-14 w-full" />
       )),
     [],
   )
@@ -88,87 +100,88 @@ export function PlayersBrowser({ initialPosition = 'All' }: PlayersBrowserProps)
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        <div className="flex h-9 items-center gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3">
-          <Search className="h-4 w-4 text-text-tertiary" />
+        <div className="flex h-btn-md max-w-[272px] items-center gap-2 rounded-sm border border-ink bg-white px-2.5 transition-colors focus-within:border-accent">
+          <Icon name="search" size={13} className="text-n-3" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name…"
-            className="h-full flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-text-tertiary"
+            className="h-full flex-1 bg-transparent text-[12px] font-bold text-ink outline-none placeholder:text-n-3"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="text-xs text-text-tertiary transition-colors hover:text-foreground"
+              aria-label="Clear search"
+              className="text-n-3 transition-colors hover:text-ink"
             >
-              Clear
+              <Icon name="close" size={12} />
             </button>
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {POSITION_FILTERS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPosition(p)}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-semibold transition-colors',
-                position === p
-                  ? 'bg-foreground text-background'
-                  : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={position}
+          onValueChange={(v) => setPosition(v as PositionFilter)}
+        >
+          <TabsList className="flex-wrap">
+            {POSITION_FILTERS.map((p) => (
+              <TabsTrigger key={p} value={p}>
+                {POSITION_LABELS[p]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
       {error && (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
+        <Card className="border-negative bg-negative-soft">
+          <CardContent className="p-4 text-[13px] font-semibold text-negative-strong">
+            {error}
+          </CardContent>
         </Card>
       )}
 
       {showSkeletons ? (
         <div className="space-y-1">{skeletonRows}</div>
       ) : results.length === 0 ? (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-6 text-center text-sm text-text-secondary">
+        <Card>
+          <CardContent className="p-6 text-center text-[13px] font-semibold text-n-3">
             {debounced
               ? `No players found for “${debounced}”${position !== 'All' ? ` in ${position}` : ''}.`
               : 'No players in this view.'}
           </CardContent>
         </Card>
       ) : (
-        <ul className="space-y-0.5">
-          {results.map((player, i) => (
-            <li key={player.id}>
-              <PlayerRow
-                rank={i + 1}
-                player={player}
-                density="comfortable"
-                showRank={false}
-                onOpen={() => openPlayer(player.id)}
-                trailing={
-                  player.adp != null ? (
-                    <span className="text-xs text-text-secondary tabular-nums">
-                      ADP {Number(player.adp).toFixed(1)}
-                    </span>
-                  ) : (
-                    <PositionBadge position={player.position} />
-                  )
-                }
-              />
-            </li>
-          ))}
-        </ul>
+        <Card className="overflow-hidden">
+          <ul className="divide-y divide-n-4">
+            {results.map((player, i) => (
+              <li key={player.id}>
+                <PlayerRow
+                  rank={i + 1}
+                  player={player}
+                  density="comfortable"
+                  showRank={false}
+                  onOpen={() => openPlayer(player.id)}
+                  className="rounded-none"
+                  trailing={
+                    player.adp != null ? (
+                      <span className="fs-num text-[12px] font-bold text-n-3">
+                        ADP {Number(player.adp).toFixed(1)}
+                      </span>
+                    ) : (
+                      <PositionBadge position={player.position} />
+                    )
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
-      <p className="pt-2 text-center text-[10px] text-text-tertiary">
+      <p className="pt-2 text-center text-[11px] font-medium text-n-3">
         Showing up to 50 players. Use search or position filters to narrow the list.
       </p>
     </div>

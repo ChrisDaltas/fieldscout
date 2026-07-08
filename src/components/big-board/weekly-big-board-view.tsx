@@ -1,14 +1,10 @@
 'use client'
 
-import Link from 'next/link'
 import { useMemo } from 'react'
-import { CalendarDays, Lock } from 'lucide-react'
 
 import { BigBoardGrid } from '@/components/big-board/big-board-grid'
-import { Card, CardContent } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
-
-const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
+import { WeekTabs } from '@/components/big-board/week-tabs'
+import { Icon } from '@/components/ui/icon'
 
 interface WeeklyBigBoardViewProps {
   weekNumber: number
@@ -16,7 +12,7 @@ interface WeeklyBigBoardViewProps {
 }
 
 /**
- * Wraps BigBoardGrid with a week selector strip and the past/current/future
+ * Wraps BigBoardGrid with the Rankings week tabs and the past/current/future
  * lock semantics from the F2A spec. Past weeks render read-only; future weeks
  * show a locked card and never mount the editor.
  *
@@ -42,73 +38,40 @@ export function WeeklyBigBoardView({
 
   if (status === 'invalid') {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="p-6 text-sm text-destructive">
+      <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+        <h3 className="text-h6">That week doesn&apos;t exist</h3>
+        <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
           Week must be between 1 and 18.
-        </CardContent>
-      </Card>
+        </p>
+      </div>
+    )
+  }
+
+  if (status === 'future') {
+    return (
+      <section>
+        <WeekTabs
+          className="mb-4"
+          active={weekNumber}
+          currentWeek={currentWeek}
+        />
+        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <Icon name="clock" size={20} className="mx-auto text-n-3" />
+          <h3 className="mt-3 text-h6">Week {weekNumber} is locked</h3>
+          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+            You can only edit the current week&apos;s big board. This unlocks
+            once the prior week&apos;s board locks at first kickoff.
+          </p>
+        </div>
+      </section>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <WeekStrip currentSelected={weekNumber} currentWeek={currentWeek} />
-
-      {status === 'future' ? (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-            <Lock className="h-6 w-6 text-text-tertiary" />
-            <p className="text-sm font-medium">Week {weekNumber} is locked.</p>
-            <p className="max-w-md text-xs text-text-secondary">
-              You can only edit the current week&apos;s Big Board. This unlocks
-              once the prior week&apos;s board locks at first kickoff.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <BigBoardGrid weekNumber={weekNumber} readOnly={status === 'past'} />
-      )}
-    </div>
-  )
-}
-
-function WeekStrip({
-  currentSelected,
-  currentWeek,
-}: {
-  currentSelected: number
-  currentWeek: number
-}) {
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1">
-      <CalendarDays className="h-4 w-4 shrink-0 text-text-tertiary" />
-      <div
-        role="tablist"
-        aria-label="Weekly Big Board navigation"
-        className="flex items-center gap-1"
-      >
-        {WEEKS.map((w) => {
-          const active = w === currentSelected
-          const locked = currentWeek > 0 && w > currentWeek
-          return (
-            <Link
-              key={w}
-              role="tab"
-              aria-selected={active}
-              href={`/app/big-board/week/${w}`}
-              className={cn(
-                'inline-flex h-7 min-w-[28px] items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors',
-                active
-                  ? 'bg-foreground text-background'
-                  : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-                locked && !active && 'opacity-60',
-              )}
-            >
-              {w}
-            </Link>
-          )
-        })}
-      </div>
-    </div>
+    <BigBoardGrid
+      weekNumber={weekNumber}
+      readOnly={status === 'past'}
+      currentWeek={currentWeek}
+    />
   )
 }

@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ExternalLink, LinkIcon, MinusCircle, MoreHorizontal, Shield } from 'lucide-react'
 
 import { AddToListPopover } from '@/components/players/add-to-list-popover'
 import { Button } from '@/components/ui/button'
@@ -13,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 import { useRemovePlayer } from '@/hooks/use-lists'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { useToast } from '@/hooks/use-toast'
@@ -38,7 +38,7 @@ interface PlayerDetailActionsProps {
 /**
  * Key actions row for player detail views. Main actions stay visible —
  * add to list, and remove when opened from a list — everything else lives
- * in the "More…" overflow menu.
+ * in the "More" overflow menu. Stroke buttons on the ink border, kit-style.
  */
 export function PlayerDetailActions({
   player,
@@ -88,7 +88,7 @@ export function PlayerDetailActions({
 
   if (readOnly) {
     return (
-      <Button variant="brand" size="sm" asChild className="font-semibold">
+      <Button variant="blue" size="sm" asChild>
         <Link href="/signup">Sign up to add to lists</Link>
       </Button>
     )
@@ -104,32 +104,27 @@ export function PlayerDetailActions({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="default"
-            size="sm"
-            aria-label="More actions"
-            className="border border-bg-elevated-3 bg-bg-elevated-2 font-semibold text-text-secondary hover:text-foreground"
-          >
-            <MoreHorizontal className="h-4 w-4" />
+          <Button variant="stroke" size="sm" aria-label="More actions">
+            <Icon name="dots" size={13} />
             More
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="border-bg-elevated-2 bg-bg-elevated">
+        <DropdownMenuContent align="end">
           {!onFullPage && (
             <DropdownMenuItem onSelect={() => router.push(`/app/players/${player.id}`)}>
-              <ExternalLink className="mr-2 h-4 w-4" />
+              <Icon name="external-link" size={14} />
               Open full page
             </DropdownMenuItem>
           )}
           {player.team && (
             <DropdownMenuItem onSelect={() => router.push(`/app/nfl/${player.team}`)}>
-              <Shield className="mr-2 h-4 w-4" />
+              <Icon name="team" size={14} />
               View {teamInfo ? `${teamInfo.city} ${teamInfo.name}` : player.team}
             </DropdownMenuItem>
           )}
           {(!onFullPage || player.team) && <DropdownMenuSeparator />}
           <DropdownMenuItem onSelect={handleCopyLink}>
-            <LinkIcon className="mr-2 h-4 w-4" />
+            <Icon name="document" size={14} />
             Copy link
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -137,13 +132,13 @@ export function PlayerDetailActions({
 
       {listContext && (
         <Button
-          variant="default"
+          variant="stroke"
           size="sm"
           onClick={handleRemove}
           disabled={removePlayer.isPending}
-          className="border border-bg-elevated-3 bg-bg-elevated-2 font-semibold text-destructive hover:bg-destructive/20"
+          className="text-negative-strong hover:border-negative-strong hover:bg-negative-soft hover:text-negative-strong"
         >
-          <MinusCircle className="h-4 w-4" />
+          <Icon name="minus-circle" size={13} />
           {removePlayer.isPending ? 'Removing…' : 'Remove'}
         </Button>
       )}

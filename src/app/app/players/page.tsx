@@ -3,15 +3,24 @@
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { PlayersSpreadsheet } from '@/components/players/players-spreadsheet'
 
 const VALID_POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 
+/**
+ * Players browse — currently the same stat table as `/app/research` (which is
+ * the canonical surface per decision D2). Kept as-is during the reskin;
+ * consolidation is a post-reskin task.
+ */
 export default function PlayersBrowserPage() {
   return (
-    <Suspense fallback={null}>
-      <Browser />
-    </Suspense>
+    <>
+      <PageHeader title="Players" />
+      <Suspense fallback={null}>
+        <Browser />
+      </Suspense>
+    </>
   )
 }
 

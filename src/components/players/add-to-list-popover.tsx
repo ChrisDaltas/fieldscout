@@ -3,19 +3,14 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Search } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { listsKeys, useLists } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 
@@ -25,9 +20,9 @@ interface AddToListPopoverProps {
   /** Display name used in toasts and the popover header. */
   playerName: string
   /**
-   * `default` — small icon-only chip that only shows on row hover. Tooltip
-   *             reveals the label.
-   * `primary` — full pill button with icon + "Add to list" text. Used in
+   * `default` — compact labeled stroke button ("+ List") for standalone
+   *             placements (table rows, rail cards).
+   * `primary` — full "Add to list" stroke button. Used in detail views and
    *             the multi-select action bar.
    */
   triggerVariant?: 'default' | 'primary'
@@ -146,60 +141,50 @@ export function AddToListPopover({
 
   const trigger =
     triggerVariant === 'primary' ? (
-      <Button variant="brand" className="font-semibold">
-        <Plus className="h-4 w-4" />
+      <Button variant="stroke" size="sm">
+        <Icon name="plus" size={13} />
         Add to list
       </Button>
     ) : (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="primary"
-            size="icon"
-            className="h-7 w-7"
-            aria-label={`Add ${playerName} to a list`}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Add to list</TooltipContent>
-      </Tooltip>
+      <Button
+        variant="stroke"
+        size="sm"
+        aria-label={`Add ${playerName} to a list`}
+      >
+        <Icon name="plus" size={13} />
+        List
+      </Button>
     )
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align={align}
-        className="w-72 border-bg-elevated-2 bg-bg-elevated p-0"
-      >
-        <div className="border-b border-bg-elevated-2 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+      <PopoverContent align={align} className="w-64 p-0">
+        <div className="border-b border-n-4 px-3 py-2">
+          <p className="fs-overline text-n-3">
             {isMulti
               ? `Add ${playerIds.length} players to list`
               : 'Add to list'}
           </p>
-          <p className="mt-0.5 truncate text-xs text-text-secondary">
-            {playerName}
-          </p>
+          <p className="mt-0.5 truncate text-[12px] font-bold">{playerName}</p>
         </div>
 
-        <div className="border-b border-bg-elevated-2 px-2 py-1.5">
-          <div className="flex h-7 items-center gap-2 rounded-full bg-bg-elevated-3 px-3">
-            <Search className="h-3.5 w-3.5 text-text-tertiary" />
+        <div className="border-b border-n-4 px-2 py-1.5">
+          <div className="flex h-7 items-center gap-2 rounded-sm border border-n-4 bg-white px-2 transition-colors focus-within:border-accent">
+            <Icon name="search" size={13} className="text-n-3" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Find a list…"
-              className="h-full flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-text-tertiary"
+              className="h-full min-w-0 flex-1 bg-transparent text-[12px] font-medium text-ink outline-none placeholder:text-n-3"
             />
           </div>
         </div>
 
         <ul className="max-h-60 overflow-y-auto p-1">
           {lists.length === 0 && (
-            <li className="px-3 py-3 text-center text-[11px] text-text-tertiary">
+            <li className="px-3 py-3 text-center text-[11px] font-medium text-n-3">
               {query ? 'No matching lists.' : 'No lists yet.'}
             </li>
           )}
@@ -209,12 +194,10 @@ export function AddToListPopover({
                 type="button"
                 disabled={working}
                 onClick={() => addToExisting(list.id, list.title)}
-                className="flex w-full items-center justify-between gap-2 rounded-full px-2 py-1.5 text-left text-xs transition-colors hover:bg-bg-elevated-2 disabled:opacity-50"
+                className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] font-medium text-ink transition-colors hover:bg-accent-soft disabled:opacity-40"
               >
-                <span className="min-w-0 flex-1 truncate text-foreground">
-                  {list.title}
-                </span>
-                <span className="shrink-0 text-[10px] text-text-tertiary tabular-nums">
+                <span className="min-w-0 flex-1 truncate">{list.title}</span>
+                <span className="fs-num shrink-0 text-[11px] text-n-3">
                   {list.player_count}
                 </span>
               </button>
@@ -222,14 +205,14 @@ export function AddToListPopover({
           ))}
         </ul>
 
-        <div className="border-t border-bg-elevated-2 p-1">
+        <div className="border-t border-n-4 p-1">
           <button
             type="button"
             disabled={working}
             onClick={createAndAdd}
-            className="flex w-full items-center gap-2 rounded-full px-2 py-2 text-xs font-medium text-foreground transition-colors hover:bg-bg-elevated-2 disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-[12px] font-bold text-ink transition-colors hover:bg-accent-soft disabled:opacity-40"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Icon name="plus" size={13} />
             Create new list
           </button>
         </div>

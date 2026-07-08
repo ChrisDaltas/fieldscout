@@ -1,14 +1,10 @@
 'use client'
 
-import { Check, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Icon } from '@/components/ui/icon'
 import { PositionBadge } from '@/components/players/position-badge'
-import {
-  darkTeamPrimary,
-  teamTintBackground,
-} from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 
 export interface PlayerCardPlayer {
@@ -129,7 +125,7 @@ function FittedName({
       ref={ref}
       title={fullName}
       className={cn(
-        'block w-full truncate font-bold leading-tight',
+        'block w-full truncate font-extrabold leading-tight',
         compact ? 'text-[12px]' : 'text-[13px]',
         drafted && 'line-through',
       )}
@@ -150,7 +146,7 @@ function FittedName({
         onOpen()
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      className="block w-full min-w-0 cursor-pointer text-center hover:underline focus:outline-none focus-visible:underline"
+      className="block w-full min-w-0 cursor-pointer text-center hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
     >
       {name}
     </button>
@@ -206,26 +202,25 @@ export function PlayerCard({
 }: PlayerCardProps) {
   const { first, last } = splitName(player.full_name)
   const initials = (first[0] ?? '') + (last[0] ?? '')
-  const teamColor = darkTeamPrimary(player.team)
-  const tintBg = teamTintBackground(player.team, 0.22)
   const compact = size === 'compact'
 
   const projectionLabel =
     typeof projectedPts === 'number' ? projectedPts.toFixed(1) : '—'
 
+  // Hover lift stays shadow-only: dnd-kit drives `transform` inline, so a
+  // translate hover would fight the drag transform.
   return (
     <div
       {...dragHandleProps}
       onClick={onSelect}
       className={cn(
-        'group relative flex flex-col items-stretch rounded-lg border border-bg-elevated-2 bg-bg-elevated transition-colors hover:border-foreground/40 hover:bg-bg-elevated-3',
+        'group relative flex flex-col items-stretch rounded-sm border border-ink bg-white transition-all hover:shadow-hard-4',
         // Compact is a fixed 120×112 tile (list detail cards view) that must
         // never resize; default fills its column and is 160px tall.
         compact ? 'h-[112px] w-[120px] px-2 pt-1.5 pb-1' : 'h-40 px-3 pt-2.5 pb-1.5',
         draggable && 'cursor-grab active:cursor-grabbing',
-        isDragging &&
-          'z-10 scale-[1.03] border-bg-elevated-3 shadow-lg shadow-black/40',
-        selected && 'border-foreground bg-bg-elevated-3 ring-2 ring-foreground',
+        isDragging && 'z-10 shadow-hard-6',
+        selected && 'bg-accent-soft ring-2 ring-ink',
         drafted && 'opacity-50',
         className,
       )}
@@ -242,11 +237,11 @@ export function PlayerCard({
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Remove from list"
           className={cn(
-            'absolute right-1 top-1 z-10 flex items-center justify-center rounded-full bg-bg-elevated-3 text-text-secondary opacity-0 transition-opacity hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100 group-hover:opacity-100',
+            'absolute right-1 top-1 z-10 flex items-center justify-center rounded-sm border border-ink bg-white text-ink opacity-0 transition-all hover:bg-negative hover:text-ink focus-visible:opacity-100 group-hover:opacity-100',
             compact ? 'h-5 w-5' : 'h-6 w-6',
           )}
         >
-          <X className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+          <Icon name="close" size={compact ? 11 : 12} />
         </button>
       )}
 
@@ -259,14 +254,14 @@ export function PlayerCard({
         {showRank && (
           <span
             className={cn(
-              'font-mono font-extrabold tabular-nums text-foreground',
+              'fs-num font-extrabold text-ink',
               compact ? 'text-sm' : 'text-base',
             )}
           >
             {rank}
           </span>
         )}
-        <span className="font-mono text-[11px] font-semibold tabular-nums text-text-secondary">
+        <span className="fs-num text-[11px] font-semibold text-n-3">
           {projectionLabel}
         </span>
       </div>
@@ -279,13 +274,7 @@ export function PlayerCard({
           compact ? 'mt-0.5 gap-0.5' : 'mt-1 gap-1',
         )}
       >
-        <Avatar
-          className={cn(
-            'shrink-0 border-2',
-            compact ? 'h-9 w-9' : 'h-14 w-14',
-          )}
-          style={{ backgroundColor: tintBg, borderColor: teamColor }}
-        >
+        <Avatar className={cn('shrink-0', compact ? 'h-9 w-9' : 'h-14 w-14')}>
           {player.headshot_url && (
             <AvatarImage
               src={player.headshot_url}
@@ -293,9 +282,7 @@ export function PlayerCard({
               className="h-full w-full object-cover object-top"
             />
           )}
-          <AvatarFallback className="text-xs font-semibold">
-            {initials}
-          </AvatarFallback>
+          <AvatarFallback className="text-xs">{initials}</AvatarFallback>
         </Avatar>
         <FittedName
           first={first}
@@ -310,7 +297,7 @@ export function PlayerCard({
       <div className="mt-auto flex items-center justify-center gap-1.5">
         <PositionBadge position={player.position} />
         {player.team && (
-          <span className="text-[10px] text-text-secondary">{player.team}</span>
+          <span className="text-[10px] font-semibold text-n-3">{player.team}</span>
         )}
       </div>
 
@@ -323,13 +310,13 @@ export function PlayerCard({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'mt-1 rounded-full py-1 text-[10px] font-semibold opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100',
+            'mt-1 rounded-sm border border-ink py-1 text-[10px] font-bold leading-none opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100',
             drafted
-              ? 'bg-bg-elevated-3 text-text-secondary'
-              : 'bg-foreground text-background hover:bg-foreground/90',
+              ? 'bg-white text-ink hover:bg-n-4'
+              : 'bg-accent text-accent-foreground hover:bg-accent-strong',
           )}
         >
-          {drafted ? <Check className="mx-auto h-3 w-3" /> : 'Mark drafted'}
+          {drafted ? <Icon name="check" size={12} className="mx-auto" /> : 'Mark drafted'}
         </button>
       )}
     </div>

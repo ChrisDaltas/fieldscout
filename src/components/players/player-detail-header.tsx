@@ -1,30 +1,40 @@
 'use client'
 
-/* eslint-disable @next/next/no-img-element */
-
 import Link from 'next/link'
 
 import { PositionBadge } from '@/components/players/position-badge'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
-import { darkTeamPrimary, teamTintBackground } from '@/lib/nfl-team-colors'
 import { getNflTeam } from '@/lib/nfl-teams'
 import { cn } from '@/lib/utils'
 
 interface PlayerDetailHeaderProps {
   player: PlayerStatsPlayer
-  /** Larger headshot/type scale for the expanded modal and the full page. */
+  /** Larger headshot/type scale for the full page ('expanded'). */
   size?: 'compact' | 'expanded'
 }
 
+/** Status designation chip (Q / D / O / IR …) after the name, kit-style. */
+const STATUS_CHIPS: Record<string, { label: string; tone: 'caution' | 'negative' }> = {
+  Questionable: { label: 'Q', tone: 'caution' },
+  Doubtful: { label: 'D', tone: 'caution' },
+  Out: { label: 'O', tone: 'negative' },
+  IR: { label: 'IR', tone: 'negative' },
+  PUP: { label: 'PUP', tone: 'negative' },
+  Suspended: { label: 'SUS', tone: 'negative' },
+  injured: { label: 'IR', tone: 'negative' },
+}
+
 /**
- * Identity band shared by the player modal (both disclosure levels) and the
- * full player page. Figma node 473:74 — square rounded headshot tile on a
- * team-tinted gradient, name, badge pills, then a "team · seasons · age"
- * meta line. The team pill links to the NFL team detail page.
+ * Identity block for the full player page (Field Scout reskin of the kit's
+ * PlayerPage hero): large square ink-stroked headshot tile, h2 name with a
+ * status chip, meta line (position badge, team, height · weight · bye), then
+ * the vitals grid. Pos-rank / auction / SOS aren't in the stats payload yet,
+ * so the meta line omits them and the vitals grid shows "—".
  */
 export function PlayerDetailHeader({
   player,
-  size = 'compact',
+  size = 'expanded',
 }: PlayerDetailHeaderProps) {
   const initials = player.full_name
     .split(' ')
@@ -32,114 +42,141 @@ export function PlayerDetailHeader({
     .filter(Boolean)
     .slice(0, 2)
     .join('')
+    .toUpperCase()
 
   const teamInfo = getNflTeam(player.team)
   const expanded = size === 'expanded'
-  const age = formatAge(player.birth_date)
-  const seasons =
-    player.experience_years > 0
-      ? `${player.experience_years} season${player.experience_years === 1 ? '' : 's'}`
-      : 'Rookie'
+  const status = player.status ? STATUS_CHIPS[player.status] : undefined
+
+  // Meta line — only fields that exist in the payload.
+  const metaParts: string[] = []
+  const height = formatHeight(player.height)
+  if (height !== '—') metaParts.push(height)
+  if (player.weight != null) metaParts.push(`${player.weight} lb`)
+  if (player.bye_week != null) metaParts.push(`Bye ${player.bye_week}`)
 
   return (
-    <div className="flex items-start gap-4 p-4 sm:p-6">
-      {/* Headshot tile — rounded square on a team-color tint (Figma tile-001) */}
-      <div
-        className={cn(
-          'flex shrink-0 items-end justify-center overflow-hidden rounded-xl',
-          expanded ? 'h-28 w-28' : 'h-20 w-20',
-        )}
-        style={{
-          background: `linear-gradient(180deg, ${teamTintBackground(player.team, 0.55)}, ${teamTintBackground(player.team, 0.25)})`,
-          boxShadow: `inset 0 0 0 1px ${darkTeamPrimary(player.team)}`,
-        }}
-      >
-        {player.headshot_url ? (
-          <img
-            src={player.headshot_url}
-            alt={player.full_name}
-            className="h-full w-full object-cover object-top"
-          />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center text-lg font-bold text-foreground">
-            {initials}
-          </span>
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1 py-0.5">
-        <h2
-          className={cn(
-            'font-bold leading-tight',
-            expanded ? 'text-3xl' : 'text-2xl',
-          )}
+    <div className="min-w-0">
+      <div className="flex items-start gap-4">
+        {/* Headshot — large square tile on the ink border (kit Headshot 88px ×0.8) */}
+        <Avatar
+          className={cn('shrink-0', expanded ? 'h-[70px] w-[70px]' : 'h-12 w-12')}
         >
-          {player.full_name}
-        </h2>
+          {player.headshot_url && (
+            <AvatarImage
+              src={player.headshot_url}
+              alt={player.full_name}
+              className="object-cover object-top"
+            />
+          )}
+          <AvatarFallback className={expanded ? 'text-[21px]' : 'text-[14px]'}>
+            {initials}
+          </AvatarFallback>
+        </Avatar>
 
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <PositionBadge position={player.position} size="md" />
-          {player.team && (
-            <Link
-              href={`/app/nfl/${player.team}`}
-              title={teamInfo ? `${teamInfo.city} ${teamInfo.name}` : player.team}
-              className="inline-flex h-6 items-center rounded-full bg-bg-elevated-3 px-2.5 text-xs font-bold tracking-wide text-foreground transition-colors hover:bg-bg-elevated-2"
-            >
-              {player.team}
-            </Link>
-          )}
-          {isInjuryStatus(player.status) && (
-            <span className="inline-flex h-6 items-center rounded-full bg-destructive/20 px-2.5 text-xs font-bold text-destructive">
-              {player.status}
-            </span>
-          )}
+        <div className="min-w-0 flex-1">
+          <h2
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              expanded ? 'text-h4' : 'text-h6',
+            )}
+          >
+            <span className="min-w-0 break-words">{player.full_name}</span>
+            {status && (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-sm px-1.5 py-px text-[11px] font-extrabold leading-none',
+                  status.tone === 'caution' ? 'bg-caution' : 'bg-negative',
+                )}
+              >
+                {status.label}
+              </span>
+            )}
+          </h2>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <PositionBadge position={player.position} size="md" />
+            {player.team && (
+              <Link
+                href={`/app/nfl/${player.team}`}
+                title={teamInfo ? `${teamInfo.city} ${teamInfo.name}` : player.team}
+                className="text-[13px] font-bold text-ink transition-colors hover:text-accent"
+              >
+                {player.team}
+              </Link>
+            )}
+            {metaParts.length > 0 && (
+              <span className="fs-num text-[12px] font-semibold text-n-3">
+                {metaParts.join(' · ')}
+              </span>
+            )}
+          </div>
         </div>
-
-        <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs font-medium tracking-wide text-text-secondary">
-          {teamInfo && (
-            <>
-              <span>{teamInfo.city}</span>
-              <span>·</span>
-            </>
-          )}
-          <span>{seasons}</span>
-          {age && (
-            <>
-              <span>·</span>
-              <span>{age} yo</span>
-            </>
-          )}
-          {player.bye_week != null && (
-            <>
-              <span>·</span>
-              <span>Bye {player.bye_week}</span>
-            </>
-          )}
-        </p>
       </div>
+
+      {expanded && (
+        <div className="mt-4 max-w-[448px]">
+          <VitalsGrid player={player} />
+        </div>
+      )}
     </div>
   )
 }
 
-const INJURY_STATUSES = new Set([
-  'Questionable',
-  'Doubtful',
-  'Out',
-  'IR',
-  'PUP',
-  'Suspended',
-  'injured',
-])
+/**
+ * Hairline-celled 4×2 vitals grid (kit VitalsGrid). Auction $ / Pos rank /
+ * SOS aren't synced yet — "—" rather than fabricating values client-side.
+ */
+function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
+  const cells: Array<[string, string]> = [
+    ['ADP', formatAdp(player.adp)],
+    ['Auction $', '—'],
+    ['Pos rank', '—'],
+    ['SOS', '—'],
+    ['Height', formatHeight(player.height)],
+    ['Weight', player.weight != null ? `${player.weight} lb` : '—'],
+    ['Age', formatAge(player.birth_date)],
+    ['Seasons', String(player.experience_years)],
+  ]
 
-function isInjuryStatus(status: string | null): boolean {
-  return Boolean(status) && (INJURY_STATUSES.has(status!) || status!.toLowerCase().includes('injur'))
+  return (
+    <div className="grid grid-cols-2 border-l border-t border-n-4 sm:grid-cols-4">
+      {cells.map(([label, value]) => (
+        <div key={label} className="border-b border-r border-n-4 px-2.5 py-1.5">
+          <p className="fs-overline truncate leading-tight text-n-3">{label}</p>
+          <p className="fs-num mt-0.5 truncate text-[13px] font-extrabold leading-tight">
+            {value}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
 }
 
-/** Decimal age, e.g. "30.1" — matches the reference design's "30.1 yo". */
-function formatAge(birthDate: string | null): string | null {
-  if (!birthDate) return null
-  const born = new Date(birthDate).getTime()
-  if (Number.isNaN(born)) return null
-  const years = (Date.now() - born) / (365.25 * 24 * 60 * 60 * 1000)
-  return years > 0 ? years.toFixed(1) : null
+function formatAdp(adp: number | null): string {
+  if (adp == null) return '—'
+  const n = Number(adp)
+  if (!Number.isFinite(n)) return '—'
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+/** The sync stores height as total inches in a string (e.g. "74" → 6'2"). */
+function formatHeight(height: string | null): string {
+  if (!height) return '—'
+  const inches = Number(height)
+  if (!Number.isFinite(inches) || inches <= 0) return height
+  return `${Math.floor(inches / 12)}'${inches % 12}"`
+}
+
+function formatAge(birthDate: string | null): string {
+  if (!birthDate) return '—'
+  const born = new Date(birthDate)
+  if (Number.isNaN(born.getTime())) return '—'
+  const now = new Date()
+  let age = now.getFullYear() - born.getFullYear()
+  const beforeBirthday =
+    now.getMonth() < born.getMonth() ||
+    (now.getMonth() === born.getMonth() && now.getDate() < born.getDate())
+  if (beforeBirthday) age -= 1
+  return age > 0 ? String(age) : '—'
 }
