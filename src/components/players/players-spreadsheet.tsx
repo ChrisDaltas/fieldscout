@@ -11,7 +11,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Icon } from '@/components/ui/icon'
 import {
   Popover,
@@ -29,6 +28,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TableCell, TableHead } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  useFavoritePlayerIds,
+  useToggleFavorite,
+} from '@/hooks/use-favorites'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -200,6 +203,9 @@ const RECENT_KEY = 'fieldscout.player-search.recent'
 const MAX_RECENT_SEARCHES = 5
 const DEFAULT_AUTOCOMPLETE_LIMIT = 7
 
+// Rows shown per page; "Show more" appends another page and the page scrolls.
+const PAGE_SIZE = 15
+
 type SortKey = 'projected' | 'pts' | { stat: string }
 
 interface SortState {
@@ -235,7 +241,10 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
   const [advanced, setAdvanced] = useState(false)
   const [showRank, setShowRank] = useState(false)
   const [sort, setSort] = useState<SortState>({ key: 'projected', dir: 'desc' })
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Load 15 rows at a time; the whole page scrolls and "Show 15 more" appends.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const { data: favoritedIds } = useFavoritePlayerIds()
+  const toggleFavorite = useToggleFavorite()
   const [rows, setRows] = useState<PlayerRow[]>([])
   const [seasons, setSeasons] = useState<{ current: number; last: number }>({
     current: 2026,
@@ -257,7 +266,6 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     abortRef.current = controller
     setIsLoading(true)
     setError(null)
-    setSelected(new Set())
 
     const params = new URLSearchParams({ scoring, limit: '1500' })
     if (position !== 'All') params.set('positions', position)
@@ -406,42 +414,25 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
   const sortKeyForColumn = (col: ColumnDef): SortKey =>
     col.statField ? { stat: col.statField } : (col.key as 'projected' | 'pts')
 
-  const toggleSelected = (id: string) => {
-    setSelected((cur) => {
-      const next = new Set(cur)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const allSelected =
-    sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id))
-  const toggleSelectAll = () => {
-    if (allSelected) setSelected(new Set())
-    else setSelected(new Set(sortedRows.map((r) => r.id)))
-  }
-
   const showSkeletons = isLoading && rows.length === 0
 
-  const selectedNames = useMemo(() => {
-    if (selected.size === 0) return []
-    const map = new Map(rows.map((r) => [r.id, r.full_name]))
-    return Array.from(selected).map((id) => map.get(id) ?? id)
-  }, [selected, rows])
+  // Reset to the first page whenever the result set or ordering changes, so
+  // filtering doesn't leave the user deep in a long "show more" list.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [debounced, position, team, scoring, season, sort])
+
+  const pagedRows = useMemo(
+    () => sortedRows.slice(0, visibleCount),
+    [sortedRows, visibleCount],
+  )
+  const hasMore = visibleCount < sortedRows.length
 
   const seasonLabel = season === 'current' ? seasons.current : seasons.last
   const ptsHeader = `${seasonLabel} points`
 
   return (
     <div className="space-y-4">
-      <SelectionBar
-        count={selected.size}
-        names={selectedNames}
-        playerIds={Array.from(selected)}
-        onClear={() => setSelected(new Set())}
-      />
-
       {error && (
         <p className="rounded-sm border border-negative bg-negative-soft p-3 text-[13px] font-semibold text-negative-strong">
           {error}
@@ -557,16 +548,18 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
           </span>
         </div>
 
-        {/* Table */}
-        <div className="max-h-[calc(100dvh-15rem)] overflow-auto overscroll-contain">
+        {/* Table — horizontal scroll for wide columns; the page (not the
+            table) scrolls vertically, so only the current page of rows is
+            mounted. */}
+        <div className="overflow-x-auto">
           {/* border-separate (not the ui/table root's border-collapse) so the
-              sticky header + lead columns keep their borders while scrolling. */}
+              sticky lead columns keep their borders while scrolling. */}
           <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
-            <thead className="sticky top-0 z-10 bg-white">
+            <thead className="bg-white">
               <tr>
-                {/* One empty band cell spans the 4 sticky lead columns. */}
+                {/* One empty band cell spans the 3 sticky lead columns. */}
                 <th
-                  colSpan={4}
+                  colSpan={3}
                   className="sticky left-0 z-[11] border-b border-n-4 bg-white"
                 />
                 {bands.map((b, i) => (
@@ -583,22 +576,13 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                 ))}
               </tr>
               <tr>
-                <StickyTh width="36px">
-                  <span className="flex items-center justify-center">
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={toggleSelectAll}
-                      aria-label="Select all players"
-                    />
-                  </span>
+                <StickyTh width="72px">
+                  <span className="sr-only">Save</span>
                 </StickyTh>
-                <StickyTh leftOffset="36px" width="48px">
-                  <span className="sr-only">Add to list</span>
-                </StickyTh>
-                <StickyTh leftOffset="84px" width="40px" align="right">
+                <StickyTh leftOffset="72px" width="34px" align="right">
                   #
                 </StickyTh>
-                <StickyTh leftOffset="124px" width="240px">
+                <StickyTh leftOffset="106px" width="230px">
                   Player
                 </StickyTh>
                 {visibleColumns.map((c, i) => {
@@ -621,7 +605,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             <tbody>
               {showSkeletons && (
                 <tr>
-                  <td colSpan={visibleColumns.length + 4} className="p-3">
+                  <td colSpan={visibleColumns.length + 3} className="p-3">
                     <div className="space-y-1">
                       {Array.from({ length: 10 }).map((_, i) => (
                         <Skeleton key={i} className="h-9 w-full" />
@@ -633,7 +617,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
               {!isLoading && sortedRows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={visibleColumns.length + 4}
+                    colSpan={visibleColumns.length + 3}
                     className="p-7 text-center text-[13px] font-semibold text-n-3"
                   >
                     {debounced
@@ -642,7 +626,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                   </td>
                 </tr>
               )}
-              {sortedRows.map((row, i) => (
+              {pagedRows.map((row, i) => (
                 <PlayerTableRow
                   key={row.id}
                   rank={i + 1}
@@ -651,8 +635,13 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                   columnValue={columnValue}
                   rankIndex={rankIndex}
                   sortKey={sort.key}
-                  selected={selected.has(row.id)}
-                  onToggleSelect={() => toggleSelected(row.id)}
+                  favorited={favoritedIds?.has(row.id) ?? false}
+                  onToggleFavorite={() =>
+                    toggleFavorite.mutate({
+                      playerId: row.id,
+                      favorited: favoritedIds?.has(row.id) ?? false,
+                    })
+                  }
                   onOpenPlayer={() => openPlayer(row.id)}
                 />
               ))}
@@ -660,10 +649,23 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
           </table>
         </div>
 
+        {/* Show more */}
+        {hasMore && (
+          <div className="flex justify-center border-t border-n-4 py-3">
+            <Button
+              variant="stroke"
+              size="sm"
+              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            >
+              Show {Math.min(PAGE_SIZE, sortedRows.length - visibleCount)} more
+            </Button>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 border-t border-ink px-4 py-2">
           <span className="fs-num text-[11px] font-semibold text-n-3">
-            Showing {sortedRows.length} of {rows.length} players
+            Showing {pagedRows.length} of {sortedRows.length} players
           </span>
           <span className="text-[11px] font-medium text-n-3">
             Scroll horizontally for more columns
@@ -698,37 +700,6 @@ function sortKeyEquals(a: SortKey, b: SortKey): boolean {
   return a === b
 }
 
-function SelectionBar({
-  count,
-  names,
-  playerIds,
-  onClear,
-}: {
-  count: number
-  names: string[]
-  playerIds: string[]
-  onClear: () => void
-}) {
-  if (count === 0) return null
-  const primaryName = count === 1 ? names[0] : `${count} players`
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-ink bg-white p-3">
-      <AddToListPopover
-        playerIds={playerIds}
-        playerName={primaryName}
-        triggerVariant="primary"
-      />
-      <span className="text-[13px] font-medium text-n-3">
-        <span className="fs-num font-bold text-ink">{count}</span> player
-        {count === 1 ? '' : 's'} selected
-      </span>
-      <Button variant="ghost" size="sm" className="ml-auto" onClick={onClear}>
-        Clear selection
-      </Button>
-    </div>
-  )
-}
-
 function PlayerTableRow({
   rank,
   row,
@@ -736,8 +707,8 @@ function PlayerTableRow({
   columnValue,
   rankIndex,
   sortKey,
-  selected,
-  onToggleSelect,
+  favorited,
+  onToggleFavorite,
   onOpenPlayer,
 }: {
   rank: number
@@ -746,8 +717,8 @@ function PlayerTableRow({
   columnValue: (row: PlayerRow, col: ColumnDef) => number | null
   rankIndex: Map<ColumnKey, Map<string, number>> | null
   sortKey: SortKey
-  selected: boolean
-  onToggleSelect: () => void
+  favorited: boolean
+  onToggleFavorite: () => void
   onOpenPlayer: () => void
 }) {
   const initials = row.full_name
@@ -758,34 +729,41 @@ function PlayerTableRow({
     .join('')
 
   return (
-    <tr
-      className={cn(
-        'group transition-colors hover:bg-accent-soft',
-        selected && 'bg-accent-soft',
-      )}
-    >
-      <StickyTd width="36px" highlight={selected}>
-        <span className="flex items-center justify-center">
-          <Checkbox
-            checked={selected}
-            onCheckedChange={onToggleSelect}
-            aria-label={`Select ${row.full_name}`}
-          />
-        </span>
-      </StickyTd>
-      <StickyTd leftOffset="36px" width="48px" highlight={selected}>
-        <span className="flex items-center justify-center">
+    <tr className="group transition-colors hover:bg-accent-soft">
+      <StickyTd width="72px">
+        <span className="flex items-center justify-center gap-1">
+          {/* Pin/favorite quick-save + add-to-a-list. */}
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            aria-pressed={favorited}
+            aria-label={
+              favorited
+                ? `Remove ${row.full_name} from favorites`
+                : `Save ${row.full_name} to favorites`
+            }
+            title={favorited ? 'In favorites' : 'Save to favorites'}
+            className={cn(
+              'flex h-btn-sm w-btn-sm items-center justify-center rounded-sm border-1 border-ink transition-colors',
+              favorited
+                ? 'bg-brand text-ink'
+                : 'bg-white text-n-3 hover:bg-n-4 hover:text-ink',
+            )}
+          >
+            <Icon name="star" size={13} />
+          </button>
           <AddToListPopover
             playerIds={[row.id]}
             playerName={row.full_name}
+            triggerVariant="icon"
             align="start"
           />
         </span>
       </StickyTd>
-      <StickyTd leftOffset="84px" width="40px" align="right" highlight={selected}>
+      <StickyTd leftOffset="72px" width="34px" align="right">
         <span className="fs-num text-[11px] font-semibold text-n-3">{rank}</span>
       </StickyTd>
-      <StickyTd leftOffset="124px" width="240px" highlight={selected}>
+      <StickyTd leftOffset="106px" width="230px">
         <div className="flex items-center gap-2.5">
           <Avatar className="h-6 w-6">
             {row.headshot_url && (

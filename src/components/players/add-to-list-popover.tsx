@@ -21,11 +21,12 @@ interface AddToListPopoverProps {
   playerName: string
   /**
    * `default` — compact labeled stroke button ("+ List") for standalone
-   *             placements (table rows, rail cards).
+   *             placements (rail cards).
    * `primary` — full "Add to list" stroke button. Used in detail views and
    *             the multi-select action bar.
+   * `icon`    — icon-only "+" square button (players table rows).
    */
-  triggerVariant?: 'default' | 'primary'
+  triggerVariant?: 'default' | 'primary' | 'icon'
   /** Popover alignment relative to the trigger. */
   align?: 'start' | 'end'
 }
@@ -140,7 +141,16 @@ export function AddToListPopover({
   }
 
   const trigger =
-    triggerVariant === 'primary' ? (
+    triggerVariant === 'icon' ? (
+      <Button
+        variant="stroke"
+        size="icon-sm"
+        aria-label={`Add ${playerName} to a list`}
+        title="Add to a list"
+      >
+        <Icon name="plus" size={13} />
+      </Button>
+    ) : triggerVariant === 'primary' ? (
       <Button variant="stroke" size="sm">
         <Icon name="plus" size={13} />
         Add to list

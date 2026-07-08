@@ -781,6 +781,7 @@ export type Database = {
           hide_order: boolean | null
           id: string
           is_big_board: boolean | null
+          is_favorites: boolean
           is_favorited: boolean | null
           is_private: boolean | null
           is_team: boolean | null
@@ -808,6 +809,7 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
+          is_favorites?: boolean
           is_favorited?: boolean | null
           is_private?: boolean | null
           is_team?: boolean | null
@@ -835,6 +837,7 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
+          is_favorites?: boolean
           is_favorited?: boolean | null
           is_private?: boolean | null
           is_team?: boolean | null
