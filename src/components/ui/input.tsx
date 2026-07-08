@@ -2,13 +2,18 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Field Scout input — 51px tall, white fill, 1px ink border that turns
+ * accent blue on focus (no ring glow). Labels above the field belong to
+ * callers.
+ */
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
     return (
       <input
         type={type}
         className={cn(
-          "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          "flex h-input w-full rounded-sm border border-ink bg-white px-4 text-[14px] font-medium text-ink transition-colors file:border-0 file:bg-transparent file:text-[14px] file:font-medium file:text-ink placeholder:text-n-3 focus:border-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
           className
         )}
         ref={ref}

@@ -5,6 +5,11 @@ import * as TabsPrimitive from "@radix-ui/react-tabs"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Field Scout tabs — boxed, not underlined. The list is a plain row of
+ * bordered boxes; each trigger is a 26px white box with a 1px ink border,
+ * and the active tab fills accent with white text. No animated indicator.
+ */
 const Tabs = TabsPrimitive.Root
 
 const TabsList = React.forwardRef<
@@ -13,10 +18,7 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn(
-      "inline-flex h-9 items-center justify-center gap-1 rounded-full border border-bg-elevated-2 bg-bg-elevated p-1 text-text-secondary",
-      className
-    )}
+    className={cn("inline-flex items-center gap-1.5", className)}
     {...props}
   />
 ))
@@ -29,7 +31,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-1 text-sm font-semibold transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-foreground data-[state=active]:text-background",
+      "inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink bg-white px-4 text-[11px] font-bold leading-none text-ink transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 data-[state=inactive]:hover:bg-n-4 data-[state=active]:bg-accent data-[state=active]:text-accent-foreground",
       className
     )}
     {...props}
@@ -44,7 +46,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "mt-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
       className
     )}
     {...props}

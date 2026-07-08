@@ -40,9 +40,9 @@ const config: Config = {
           foreground: '#000000',
         },
         // Reserved football semantics: only up/down/caution — never identity.
-        positive: { DEFAULT: '#98e9ab', soft: '#eafbee' },
-        negative: { DEFAULT: '#e99898', soft: '#fbeaea' },
-        caution: { DEFAULT: '#fae8a4', soft: '#fefaed' },
+        positive: { DEFAULT: '#98e9ab', soft: '#eafbee', strong: '#2e9c56' },
+        negative: { DEFAULT: '#e99898', soft: '#fbeaea', strong: '#c0392b' },
+        caution: { DEFAULT: '#fae8a4', soft: '#fefaed', strong: '#b98900' },
         // Position identity — saturated fills, always white text.
         pos: {
           qb: '#d9591b',

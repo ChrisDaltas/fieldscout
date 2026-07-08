@@ -24,16 +24,17 @@ are non-negotiable; every reskinned surface swaps lucide for the filled 16×16 i
 ## Phase status
 
 - [x] **0 — Intake** (done): package read, inventories below.
-- [ ] **1 — Tokens & fonts**: CSS vars in `globals.css`, `tailwind.config.ts` extensions
-      (colors, `hard-*` shadows, radius, control heights), Roboto Flex / Roboto Mono /
-      Silkscreen via `next/font/google`, remove next-themes provider, port icon map from
-      `_ds_bundle.js` → `src/components/ui/icon.tsx` (typed name map).
-      **Scale decision — pre-scaled token values** (see below).
-- [ ] **2 — Primitives**: restyle existing `components/ui/*`; add missing shadcn
-      primitives (select, checkbox, switch, radio, progress, slider, table) then reskin;
-      port hover/press recipes from `tokens/components.css` into CVA variants.
-      Deliverable: **component manifest** (appendix below, completed) + style-guide page
-      skeleton at `/app/styleguide` as the living acceptance checklist.
+- [x] **1 — Tokens & fonts** (done): shadcn HSL layer redefined in `globals.css`
+      (legacy classes stay compiling, values are the new design); Field Scout palette
+      as literal hex in `tailwind.config.ts` (+ `positive/negative/caution-strong`);
+      hard shadows, 1px radius forced across `rounded-*`; control constants + heading
+      scale pre-scaled ×0.8; Roboto Flex/Mono via next/font (Inter + Switzer removed);
+      `dark` class dropped; 61-glyph filled icon set at `ui/icon.tsx`.
+- [ ] **2 — Primitives** (code done, this commit): all `components/ui/*` restyled per
+      `tokens/components.css` recipes; NEW: select, checkbox, switch, radio-group,
+      progress, slider, table, label; badge grew canonical variants + `FilterChip`;
+      button/badge keep legacy aliases so pre-reskin call sites compile.
+      `/app/styleguide` is live as the acceptance checklist.
 - [ ] **3 — App shell**: ink sidebar (wordmark, search, nav, Teams section), sticky
       header + breadcrumbs + page actions, lime draft alert bar, right rail (56px strip +
       320px panels: Account/Notifications/Messages/Teams/Players), search overlay
