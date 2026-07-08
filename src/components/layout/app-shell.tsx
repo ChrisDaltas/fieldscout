@@ -20,12 +20,10 @@ interface AppShellProps {
   children: React.ReactNode
 }
 
-// Routes that need to render edge-to-edge inside the main panel.
-// Anything else gets the standard centered/max-width container.
-const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set([
-  '/app/players',
-  '/app/research',
-])
+// Routes that render edge-to-edge (no gutter). The players spreadsheet is a
+// bordered card that wants the standard gutter like every other page — its
+// horizontal scroll happens inside the card, so it doesn't need full bleed.
+const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set<string>()
 const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
 /** Field Scout shell — ink sidebar · content column (draft bar + sticky
