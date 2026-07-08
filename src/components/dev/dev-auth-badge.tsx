@@ -27,9 +27,9 @@ export function DevAuthBadge() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 right-4 z-50 select-none rounded-full border border-destructive bg-destructive px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-destructive-foreground shadow-lg dark:shadow-black/40"
+      className="fixed bottom-4 right-4 z-50 select-none rounded-sm border border-ink bg-negative px-3 py-1.5 text-xs font-bold text-ink shadow-hard-4"
     >
-      DEV AUTH — {email ?? 'signing in…'}
+      Dev auth — {email ?? 'signing in…'}
     </div>
   )
 }

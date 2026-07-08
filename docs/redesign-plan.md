@@ -41,14 +41,28 @@ are non-negotiable; every reskinned surface swaps lucide for the filled 16×16 i
       (restyle `shared/command-palette.tsx`), toast restyle (sonner → fs-toast),
       mini player card restyle (`players/player-window.tsx` + `shared/window-shell.tsx`).
 - [ ] **4 — Screens** (parallel agent batches, see below).
-- [ ] **5 — New interactions** (serial): lists draft-mode marking, rail drag-to-add,
-      draggable list reorder upgrades, customize-columns sets.
-- [ ] **6 — League/draft mock screens** (can overlap 5): league workspace tabs, snake
-      draft room, auction draft, scoring-builder league version. Mock data + stub
-      handlers, `// TODO(live-draft):` markers. No new API routes/tables/schema.
-- [ ] **7 — Cleanup & acceptance**: remove next-themes + dead `dark:` variants (grep
-      count → 0), delete orphaned styles, finish style guide, type-check + build +
-      /code-review, visual QA sweep vs screenshots at desktop + mobile widths.
+- [x] **5 — New interactions** (done, mostly built inline): draft-mode tap-cycle
+      marking (localStorage), rail drag-onto-lists (dnd payload), sidebar/rail
+      persistence, customize-columns visibility. DEFERRED nice-to-have: column
+      drag-to-*reorder* on the research table (visibility toggling works).
+- [x] **6 — League/draft mock screens** (done + verified): league workspace tabs,
+      snake + auction draft rooms, scoring builder. Mock-boundary gate passed —
+      zero new API routes/migrations, zero Supabase writes in league/draft dirs,
+      28 files carry `TODO(live-draft)` markers.
+- [x] **7 — Cleanup & acceptance** (done): next-themes removed, all real `dark:`
+      modifiers + legacy tokens cleared, dead cluster deleted (old sidebar tree,
+      side-by-side-tab, players-browser, user-nav), type-check + build + lint clean,
+      visual acceptance sweep.
+
+## Product gaps found during the reskin (spawned as separate tasks)
+
+These are documented-but-unimplemented features surfaced by agents; each is its own
+background task, NOT part of the reskin:
+- Free-tier weekly rankings gate (CLAUDE.md rule #4) — never implemented in code.
+- Follow/unfollow mutation — `follows` table exists, no write path; Follow buttons
+  ship disabled pending it.
+- Also unbuilt (noted, not spawned): submissions/accuracy backend, teams data,
+  Stripe billing flow, notification prefs, sessions management.
 
 **The 0.8 scale decision (phase 1):** the prototype renders at 0.8 zoom. Strategy:
 define Tailwind/CSS tokens at **pre-scaled (×0.8) values** — button 42px, input 51px,
