@@ -2,14 +2,10 @@
 
 import Link from 'next/link'
 
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBigBoardHistory } from '@/hooks/use-big-board'
 
@@ -33,16 +29,16 @@ export function RankingHistoryCard() {
   const snapshots = data?.snapshots ?? []
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ranking history</CardTitle>
-        {snapshots.length > 0 && (
+    <CollapsibleCard
+      title="Ranking history"
+      headerRight={
+        snapshots.length > 0 ? (
           <Badge variant="stroke" className="fs-num">
             {snapshots.length} {snapshots.length === 1 ? 'save' : 'saves'}
           </Badge>
-        )}
-      </CardHeader>
-
+        ) : undefined
+      }
+    >
       {isLoading ? (
         <CardContent className="space-y-2">
           <Skeleton className="h-9 w-full" />
@@ -109,6 +105,6 @@ export function RankingHistoryCard() {
           </div>
         </>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }

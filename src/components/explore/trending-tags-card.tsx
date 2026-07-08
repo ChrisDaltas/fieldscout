@@ -1,7 +1,7 @@
 'use client'
 
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 import { TagChip } from '@/components/lists/tag-chip'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTags } from '@/hooks/use-tags'
 
@@ -17,11 +17,8 @@ export function TrendingTagsCard() {
   const tags = (data?.tags ?? []).slice(0, TAG_COUNT)
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Trending tags</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-2 p-[13px]">
+    <CollapsibleCard title="Trending tags">
+      <div className="flex flex-wrap gap-2 p-[13px]">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-chip w-16" />
@@ -33,7 +30,7 @@ export function TrendingTagsCard() {
             <TagChip key={tag.id} name={`#${tag.name}`} slug={tag.slug} />
           ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }

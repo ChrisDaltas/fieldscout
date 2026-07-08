@@ -3,8 +3,8 @@
 import Link from 'next/link'
 
 import { FollowButton } from '@/components/explore/follow-button'
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
@@ -21,11 +21,7 @@ export function TopScoutsCard() {
   const { user } = useAuth()
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Top ranked scouts</CardTitle>
-      </CardHeader>
-
+    <CollapsibleCard title="Top ranked scouts">
       {isLoading ? (
         <div className="space-y-2 p-[13px]">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -76,6 +72,6 @@ export function TopScoutsCard() {
           })}
         </div>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }

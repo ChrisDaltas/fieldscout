@@ -3,6 +3,7 @@
 import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { TwoColumnLayout } from '@/components/layout/two-column-layout'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { RankingHistoryCard } from '@/components/stats/ranking-history-card'
@@ -87,15 +88,17 @@ export default function ProfilePage() {
           isOwn
         />
 
-        <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.4fr_1fr]">
-          <ProfileStats
-            credScore={profile.cred_score ?? 0}
-            followerCount={profile.follower_count ?? 0}
-            followingCount={profile.following_count ?? 0}
-            showInfoPopover
-          />
-          <RankingHistoryCard />
-        </div>
+        <TwoColumnLayout
+          main={
+            <ProfileStats
+              credScore={profile.cred_score ?? 0}
+              followerCount={profile.follower_count ?? 0}
+              followingCount={profile.following_count ?? 0}
+              showInfoPopover
+            />
+          }
+          aside={<RankingHistoryCard />}
+        />
       </div>
     </>
   )
