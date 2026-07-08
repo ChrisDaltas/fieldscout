@@ -1,199 +1,185 @@
 'use client'
 
-import { Award, ClipboardList, Target, TrendingUp, Vote } from 'lucide-react'
-
 import { CredInfoPopover } from '@/components/stats/cred-info-popover'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { computeCredRank } from '@/lib/cred-tiers'
+import { cn } from '@/lib/utils'
 
 interface ProfileStatsProps {
   credScore: number
-  /** When true, the cred info popover renders next to the section heading. */
+  followerCount: number
+  followingCount: number
+  /** When true, the cred info popover renders in the progress card head. */
   showInfoPopover?: boolean
 }
 
 /**
- * Re-usable stats dashboard displayed on both the user's own /app/profile and
- * their public /u/[username] page. Built to read entirely from `profile`
- * fields the API already exposes — accuracy / submission counts wire up later.
+ * Stats block shared by /app/profile ("My stats") and the public
+ * /u/[username] page. Reads entirely from profile fields the API already
+ * exposes: cred score (+ tier progress from lib/cred-tiers) and
+ * follower/following counts. Accuracy comparisons stay honest placeholders
+ * until accuracy data lands — no fabricated bars.
  */
-export function ProfileStats({ credScore, showInfoPopover }: ProfileStatsProps) {
+export function ProfileStats({
+  credScore,
+  followerCount,
+  followingCount,
+  showInfoPopover,
+}: ProfileStatsProps) {
   const rank = computeCredRank(credScore)
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-          Rank progress
-        </h2>
-        {showInfoPopover && <CredInfoPopover />}
+    <div className="space-y-[19px]">
+      {/* Stat tiles — fs-overline labels, mono values */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
+          label="Cred score"
+          value={credScore.toLocaleString()}
+          sub={
+            rank.next
+              ? `${rank.toNext.toLocaleString()} to ${rank.next.name}`
+              : 'Top tier'
+          }
+          tone={rank.next ? undefined : 'good'}
+        />
+        <StatTile
+          label="Scout tier"
+          value={rank.current.name}
+          sub={`Tier ${rank.current.level} of 10`}
+          valueIsNum={false}
+        />
+        <StatTile label="Followers" value={followerCount.toLocaleString()} />
+        <StatTile label="Following" value={followingCount.toLocaleString()} />
       </div>
 
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="space-y-4 p-6">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                Current rank
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <span
-                  className="inline-flex h-3 w-3 rounded-full"
-                  style={{ backgroundColor: rank.current.accent }}
-                />
-                <h3 className="text-2xl font-bold">{rank.current.name}</h3>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                Total cred
-              </p>
-              <p className="mt-1 font-mono text-2xl font-bold tabular-nums">
-                {credScore.toLocaleString()}
-              </p>
-            </div>
+      {/* Cred progress — hard-edged StatBar row (white track, ink border) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Cred progress</CardTitle>
+          {showInfoPopover && <CredInfoPopover />}
+        </CardHeader>
+        <CardContent>
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <span className="text-[13px] font-extrabold text-ink">
+              {rank.next
+                ? `Progress to ${rank.next.name}`
+                : 'Top tier reached'}
+            </span>
+            <span className="fs-num text-[12px] font-bold text-n-3">
+              {rank.next
+                ? `${credScore.toLocaleString()} / ${rank.next.threshold.toLocaleString()}`
+                : credScore.toLocaleString()}
+            </span>
           </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs text-text-secondary">
-              <span>
-                {rank.next ? (
-                  <>
-                    Next: <span className="text-foreground">{rank.next.name}</span>
-                  </>
-                ) : (
-                  <span className="text-foreground">Top tier</span>
-                )}
-              </span>
-              <span className="font-mono tabular-nums">
-                {rank.next ? `${rank.toNext.toLocaleString()} to go` : 'GOAT'}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-bg-elevated-3">
-              <div
-                className="h-full rounded-full bg-foreground transition-all"
-                style={{ width: `${rank.progressPct}%` }}
-              />
-            </div>
-          </div>
+          <Progress
+            value={rank.progressPct}
+            className="h-2"
+            indicatorClassName={rank.next ? 'bg-accent' : 'bg-brand'}
+          />
+          <p className="mt-2 text-[11px] font-medium text-n-3">
+            Earn cred with big board updates, weekly submissions, and start or
+            sit votes. Accuracy bonuses stack on top.
+          </p>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          icon={<Target className="h-4 w-4 text-text-secondary" />}
-          label="Season accuracy"
-          value="—"
-          helper="Spearman correlation vs actuals"
-        />
-        <StatCard
-          icon={<TrendingUp className="h-4 w-4 text-text-secondary" />}
-          label="vs Consensus"
-          value="—"
-          helper="Average delta from the crowd"
-        />
-        <StatCard
-          icon={<Award className="h-4 w-4 text-text-secondary" />}
-          label="Best week"
-          value="—"
-          helper="Highest single-week accuracy"
-        />
-      </div>
-
-      <section>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-          Activity breakdown
-        </h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <ActivityCard
-            icon={<ClipboardList className="h-4 w-4 text-text-secondary" />}
-            label="Big Board updates"
-            count={0}
-            accuracy={null}
-            credEarned={0}
+      {/* Accuracy — honest placeholders until accuracy data exists */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Ranking accuracy</CardTitle>
+          <span className="fs-overline text-n-3">Tracks from week 1</span>
+        </CardHeader>
+        <div className="px-card-pad">
+          <AccuracyRow
+            label="Season accuracy"
+            helper="Spearman correlation vs actuals"
           />
-          <ActivityCard
-            icon={<TrendingUp className="h-4 w-4 text-text-secondary" />}
-            label="Weekly submissions"
-            count={0}
-            accuracy={null}
-            credEarned={0}
+          <AccuracyRow
+            label="vs consensus"
+            helper="Average delta from the crowd"
           />
-          <ActivityCard
-            icon={<Vote className="h-4 w-4 text-text-secondary" />}
-            label="Start or Sit votes"
-            count={0}
-            accuracy={null}
-            credEarned={0}
+          <AccuracyRow
+            label="Best week"
+            helper="Highest single-week accuracy"
+            last
           />
         </div>
-      </section>
+        <div className="border-t border-n-4 px-card-pad py-2.5">
+          <p className="text-[11px] font-medium text-n-3">
+            The 2026 season hasn&apos;t kicked off yet — accuracy fills in as
+            your rankings meet real results.
+          </p>
+        </div>
+      </Card>
     </div>
   )
 }
 
-function StatCard({
-  icon,
+function StatTile({
   label,
   value,
-  helper,
+  sub,
+  tone,
+  valueIsNum = true,
 }: {
-  icon: React.ReactNode
   label: string
   value: string
-  helper: string
+  sub?: string
+  tone?: 'good'
+  valueIsNum?: boolean
 }) {
   return (
-    <Card className="border-bg-elevated-2 bg-bg-elevated">
-      <CardContent className="space-y-2 p-4">
-        <div className="flex items-center gap-2 text-xs text-text-tertiary">
-          {icon}
-          <span className="font-semibold uppercase tracking-wider">{label}</span>
+    <div className="rounded-sm border border-ink bg-white px-3.5 py-3">
+      <div className="fs-overline text-n-3">{label}</div>
+      <div
+        className={cn(
+          'mt-1 truncate text-[21px] font-extrabold leading-tight text-ink',
+          valueIsNum && 'fs-num',
+        )}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div
+          className={cn(
+            'mt-0.5 text-[10px] font-bold',
+            tone === 'good' ? 'text-positive-strong' : 'text-n-3',
+          )}
+        >
+          {sub}
         </div>
-        <p className="font-mono text-2xl font-bold tabular-nums">{value}</p>
-        <p className="text-[10px] text-text-tertiary">{helper}</p>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   )
 }
 
-function ActivityCard({
-  icon,
+function AccuracyRow({
   label,
-  count,
-  accuracy,
-  credEarned,
+  helper,
+  last = false,
 }: {
-  icon: React.ReactNode
   label: string
-  count: number
-  accuracy: number | null
-  credEarned: number
+  helper: string
+  last?: boolean
 }) {
   return (
-    <Card className="border-bg-elevated-2 bg-bg-elevated">
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-center gap-2 text-xs text-text-tertiary">
-          {icon}
-          <span className="font-semibold uppercase tracking-wider">{label}</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 text-xs">
-          <Mini label="Count" value={count.toString()} />
-          <Mini label="Accuracy" value={accuracy != null ? `${accuracy}%` : '—'} />
-          <Mini label="Cred" value={credEarned.toString()} />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-bg-elevated-2 px-2 py-1.5">
-      <p className="text-[9px] uppercase tracking-wider text-text-tertiary">
-        {label}
-      </p>
-      <p className="font-mono text-sm font-semibold tabular-nums">{value}</p>
+    <div
+      className={cn(
+        'flex items-center justify-between gap-3 py-3',
+        !last && 'border-b border-n-4',
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-[13px] font-extrabold text-ink">{label}</div>
+        <div className="text-[11px] font-medium text-n-3">{helper}</div>
+      </div>
+      <span className="fs-num shrink-0 text-[13px] font-bold text-n-3">—</span>
     </div>
   )
 }

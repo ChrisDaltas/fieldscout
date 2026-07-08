@@ -1,9 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useAuth } from '@/hooks/use-auth'
+
 import { Button } from '@/components/ui/button'
-import { UserAvatar } from '@/components/ui/user-avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,27 +11,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { LogOut, Settings, User } from 'lucide-react'
+import { UserAvatar } from '@/components/ui/user-avatar'
+import { useAuth } from '@/hooks/use-auth'
 
 export function UserNav() {
   const { user, profile, isLoading, signOut } = useAuth()
 
   if (isLoading) {
-    return <Skeleton className="h-8 w-8 rounded-full" />
+    return <Skeleton className="h-7 w-7 rounded-pill" />
   }
 
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Link href="/login">
-          <Button variant="invisible" size="sm">
-            Sign in
-          </Button>
-        </Link>
-        <Link href="/signup">
-          <Button size="sm">Sign up</Button>
-        </Link>
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/login">Sign in</Link>
+        </Button>
+        <Button variant="blue" size="sm" asChild>
+          <Link href="/signup">Sign up</Link>
+        </Button>
       </div>
     )
   }
@@ -40,45 +39,50 @@ export function UserNav() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="invisible" className="relative h-8 w-8 rounded-full">
+        <button
+          type="button"
+          aria-label="Account"
+          className="flex h-btn-md w-btn-md items-center justify-center rounded-sm transition-opacity duration-200 ease-linear hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          {/* !rounded-pill: the base Avatar's rounded-sm survives twMerge
+              (custom token), so force the people-are-round rule here. */}
           <UserAvatar
             src={profile?.avatar_url}
             name={profile?.display_name ?? profile?.username}
-            className="h-8 w-8"
-            fallbackClassName="text-xs"
+            className="h-7 w-7 !rounded-pill"
+            fallbackClassName="text-[10px]"
           />
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">
-              {profile?.display_name ?? profile?.username}
-            </p>
-            <p className="text-xs leading-none text-muted-foreground">
-              @{profile?.username}
-            </p>
-          </div>
+        <DropdownMenuLabel>
+          <p className="text-[13px] font-bold leading-tight text-ink">
+            {profile?.display_name ?? profile?.username}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium leading-tight text-n-3">
+            @{profile?.username}
+          </p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href={`/profile/${profile?.username}`}>
-            <User className="mr-2 h-4 w-4" />
-            My Profile
+            <Icon name="profile" size={14} />
+            My profile
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/app/settings">
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
+            <Icon name="setup" size={14} />
+            Account settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          variant="destructive"
           onClick={signOut}
-          className="cursor-pointer text-destructive focus:text-destructive"
+          className="cursor-pointer"
         >
-          <LogOut className="mr-2 h-4 w-4" />
+          <Icon name="transfer" size={14} />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

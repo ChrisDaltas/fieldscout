@@ -3,18 +3,13 @@
 import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { createBrowserClient } from '@/lib/supabase/client'
+
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   return (
@@ -58,21 +53,22 @@ function LoginForm() {
 
   return (
     <Card>
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your account</CardDescription>
+      <CardHeader>
+        <CardTitle>Welcome back</CardTitle>
       </CardHeader>
       <form onSubmit={handleLogin}>
         <CardContent className="space-y-4">
+          <p className="text-[12px] font-medium text-n-3">
+            Sign in to your account
+          </p>
           {error && (
-            <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="flex items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-bold text-ink">
+              <Icon name="info-circle" size={13} className="shrink-0" />
               {error}
             </div>
           )}
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
@@ -83,14 +79,12 @@ function LoginForm() {
               autoComplete="email"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password
-              </label>
+              <Label htmlFor="password">Password</Label>
               <Link
                 href="/forgot-password"
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-[11px] font-bold text-accent hover:underline"
               >
                 Forgot password?
               </Link>
@@ -104,19 +98,18 @@ function LoginForm() {
               autoComplete="current-password"
             />
           </div>
+          <div className="flex flex-col gap-4 pt-1">
+            <Button variant="blue" type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? 'Signing in…' : 'Sign in'}
+            </Button>
+            <p className="text-center text-[12px] font-medium text-n-3">
+              Don&apos;t have an account?{' '}
+              <Link href="/signup" className="font-bold text-accent hover:underline">
+                Sign up
+              </Link>
+            </p>
+          </div>
         </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading && <Loader2 className="animate-spin" />}
-            Sign in
-          </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <Link href="/signup" className="font-medium text-foreground hover:underline">
-              Sign up
-            </Link>
-          </p>
-        </CardFooter>
       </form>
     </Card>
   )

@@ -2,18 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@/lib/supabase/client'
+
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -56,23 +51,22 @@ export default function ResetPasswordPage() {
 
   return (
     <Card>
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl">Set new password</CardTitle>
-        <CardDescription>
-          Enter your new password below
-        </CardDescription>
+      <CardHeader>
+        <CardTitle>Set new password</CardTitle>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
+          <p className="text-[12px] font-medium text-n-3">
+            Enter your new password below
+          </p>
           {error && (
-            <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="flex items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-bold text-ink">
+              <Icon name="info-circle" size={13} className="shrink-0" />
               {error}
             </div>
           )}
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-sm font-medium">
-              New password
-            </label>
+          <div className="space-y-1.5">
+            <Label htmlFor="password">New password</Label>
             <Input
               id="password"
               type="password"
@@ -85,10 +79,8 @@ export default function ResetPasswordPage() {
               autoFocus
             />
           </div>
-          <div className="space-y-2">
-            <label htmlFor="confirm-password" className="text-sm font-medium">
-              Confirm new password
-            </label>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-password">Confirm new password</Label>
             <Input
               id="confirm-password"
               type="password"
@@ -99,13 +91,12 @@ export default function ResetPasswordPage() {
               autoComplete="new-password"
             />
           </div>
+          <div className="pt-1">
+            <Button variant="blue" type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? 'Updating…' : 'Update password'}
+            </Button>
+          </div>
         </CardContent>
-        <CardFooter>
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading && <Loader2 className="animate-spin" />}
-            Update password
-          </Button>
-        </CardFooter>
       </form>
     </Card>
   )

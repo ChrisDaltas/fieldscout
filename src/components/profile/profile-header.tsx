@@ -18,6 +18,15 @@ interface ProfileHeaderProps {
   isOwn: boolean
 }
 
+/**
+ * Profile hero card — white surface, ink border, resting hard shadow (the
+ * package's Profile header card). Round person avatar left; name + tier/Pro
+ * badges; meta line with linked follower/following counts in mono numerals.
+ *
+ * Heading semantics: the public /u/[username] page keeps the name as the
+ * page h1 (SEO); on /app/profile the shell PageHeader owns the page title,
+ * so the name demotes to h2.
+ */
 export function ProfileHeader({
   username,
   displayName,
@@ -30,76 +39,62 @@ export function ProfileHeader({
   isOwn,
 }: ProfileHeaderProps) {
   const rank = computeCredRank(credScore)
+  const Heading = isOwn ? ('h2' as const) : ('h1' as const)
 
   return (
-    <header className="flex flex-col gap-4 border-b border-bg-elevated-2 pb-6 sm:flex-row sm:items-center">
+    <header className="flex flex-col gap-4 rounded-sm border border-ink bg-white p-card-pad shadow-hard-4 sm:flex-row sm:items-center sm:gap-[18px] sm:px-[18px] sm:py-4">
       <UserAvatar
         src={avatarUrl}
         name={displayName ?? username}
-        className="h-20 w-20 shrink-0 sm:h-24 sm:w-24"
+        className="h-16 w-16 shrink-0 sm:h-20 sm:w-20"
         fallbackClassName="text-lg"
       />
 
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-bold leading-tight">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Heading className="text-h4 leading-tight text-ink">
             {displayName ?? `@${username}`}
-          </h1>
-          {isPro && (
-            <Badge
-              variant="default"
-              className="border-amber-300/40 bg-amber-300/10 text-[10px] font-semibold text-amber-300"
-            >
-              PRO
-            </Badge>
-          )}
-          <Badge
-            variant="default"
-            className="border-bg-elevated-3 text-[10px] text-text-secondary"
-          >
+          </Heading>
+          <Badge variant="stroke" className="gap-1.5">
             <span
-              className="mr-1 inline-block h-2 w-2 rounded-full"
+              className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: rank.current.accent }}
             />
             {rank.current.name}
           </Badge>
+          {isPro && <Badge variant="accent">Pro</Badge>}
         </div>
 
-        <p className="text-sm text-text-secondary">@{username}</p>
-
-        {bio && (
-          <p className="max-w-xl text-sm text-foreground">{bio}</p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <Link
-            href={`/u/${username}/following`}
-            className="text-text-secondary transition-colors hover:text-foreground"
-          >
-            <span className="font-mono font-bold tabular-nums text-foreground">
-              {followingCount.toLocaleString()}
-            </span>{' '}
-            Following
-          </Link>
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] font-bold text-n-3">
+          <span>@{username}</span>
+          <span aria-hidden>·</span>
           <Link
             href={`/u/${username}/followers`}
-            className="text-text-secondary transition-colors hover:text-foreground"
+            className="transition-colors hover:text-ink hover:underline"
           >
-            <span className="font-mono font-bold tabular-nums text-foreground">
-              {followerCount.toLocaleString()}
-            </span>{' '}
-            Followers
+            <span className="fs-num">{followerCount.toLocaleString()}</span>{' '}
+            followers
           </Link>
-          <span className="text-text-secondary">
-            <span className="font-mono font-bold tabular-nums text-foreground">
-              {credScore.toLocaleString()}
-            </span>{' '}
-            Cred
+          <span aria-hidden>·</span>
+          <Link
+            href={`/u/${username}/following`}
+            className="transition-colors hover:text-ink hover:underline"
+          >
+            <span className="fs-num">{followingCount.toLocaleString()}</span>{' '}
+            following
+          </Link>
+          <span aria-hidden>·</span>
+          <span>
+            <span className="fs-num">{credScore.toLocaleString()}</span> cred
           </span>
-        </div>
+        </p>
+
+        {bio && (
+          <p className="mt-2 max-w-xl text-[13px] font-medium text-ink">{bio}</p>
+        )}
 
         {isOwn && (
-          <p className="text-[10px] text-text-tertiary">
+          <p className="mt-2 text-[11px] font-medium text-n-3">
             This is what your public profile looks like — visitors also see
             your public lists.
           </p>

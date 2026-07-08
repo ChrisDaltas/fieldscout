@@ -1,41 +1,102 @@
 'use client'
 
+import Link from 'next/link'
+
+import { PageHeader } from '@/components/layout/app-header'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
-import { Card, CardContent } from '@/components/ui/card'
+import { RankingHistoryCard } from '@/components/stats/ranking-history-card'
+import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 
+/**
+ * My stats — how the user's profile performs (package screen 09). The shell
+ * PageHeader owns the page title; edit/share actions live there. Content:
+ * profile hero card, real stat tiles (cred / tier / followers / following),
+ * cred progress bar, accuracy placeholders, ranking history.
+ */
 export default function ProfilePage() {
   const { profile, isLoading } = useAuth()
 
   if (isLoading) {
-    return <p className="text-sm text-text-secondary">Loading profile…</p>
+    return (
+      <>
+        <PageHeader title="My stats" />
+        <div className="space-y-[19px]">
+          <Skeleton className="h-28 w-full" />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+          </div>
+          <Skeleton className="h-40 w-full" />
+        </div>
+      </>
+    )
   }
 
   if (!profile) {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="p-6 text-sm text-destructive">
-          Profile unavailable.
-        </CardContent>
-      </Card>
+      <>
+        <PageHeader title="My stats" />
+        <div className="mx-auto max-w-2xl rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <h2 className="text-h5">Profile unavailable</h2>
+          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-negative-strong">
+            We couldn&apos;t load your profile. Refresh to try again.
+          </p>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="space-y-8">
-      <ProfileHeader
-        username={profile.username}
-        displayName={profile.display_name}
-        bio={profile.bio}
-        avatarUrl={profile.avatar_url}
-        isPro={profile.is_pro ?? false}
-        credScore={profile.cred_score ?? 0}
-        followerCount={profile.follower_count ?? 0}
-        followingCount={profile.following_count ?? 0}
-        isOwn
+    <>
+      <PageHeader
+        title="My stats"
+        actions={
+          <>
+            <Button asChild variant="stroke" size="md">
+              <Link href="/app/settings/profile">
+                <Icon name="edit" />
+                Edit profile
+              </Link>
+            </Button>
+            <Button asChild variant="blue" size="md">
+              <Link href={`/u/${profile.username}`}>
+                <Icon name="external-link" />
+                View public profile
+              </Link>
+            </Button>
+          </>
+        }
       />
-      <ProfileStats credScore={profile.cred_score ?? 0} showInfoPopover />
-    </div>
+
+      <div className="space-y-[19px]">
+        <ProfileHeader
+          username={profile.username}
+          displayName={profile.display_name}
+          bio={profile.bio}
+          avatarUrl={profile.avatar_url}
+          isPro={profile.is_pro ?? false}
+          credScore={profile.cred_score ?? 0}
+          followerCount={profile.follower_count ?? 0}
+          followingCount={profile.following_count ?? 0}
+          isOwn
+        />
+
+        <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.4fr_1fr]">
+          <ProfileStats
+            credScore={profile.cred_score ?? 0}
+            followerCount={profile.follower_count ?? 0}
+            followingCount={profile.following_count ?? 0}
+            showInfoPopover
+          />
+          <RankingHistoryCard />
+        </div>
+      </div>
+    </>
   )
 }

@@ -6,7 +6,7 @@ import { GuestShell } from '@/components/layout/guest-shell'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { PublicListCard } from '@/components/lists/public-list-card'
-import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface PageProps {
@@ -72,7 +72,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-4xl space-y-8">
+      <div className="mx-auto max-w-4xl space-y-[19px]">
         <ProfileHeader
           username={profile.username}
           displayName={profile.display_name}
@@ -85,24 +85,29 @@ export default async function PublicProfilePage({ params }: PageProps) {
           isOwn={false}
         />
 
-        <ProfileStats credScore={profile.cred_score} />
+        <ProfileStats
+          credScore={profile.cred_score}
+          followerCount={profile.follower_count}
+          followingCount={profile.following_count}
+        />
 
         <section>
-          <h2 className="mb-3 flex items-baseline justify-between text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-            <span>Public lists</span>
-            <Link
-              href={`/u/${profile.username}/big-board`}
-              className="text-xs font-medium normal-case text-foreground hover:underline"
-            >
-              View Big Board →
-            </Link>
-          </h2>
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <h2 className="text-h6">Public lists</h2>
+            <Button asChild variant="stroke" size="sm">
+              <Link href={`/u/${profile.username}/big-board`}>
+                View big board
+              </Link>
+            </Button>
+          </div>
           {lists.length === 0 ? (
-            <Card className="border-bg-elevated-2 bg-bg-elevated">
-              <CardContent className="p-6 text-center text-sm text-text-secondary">
-                No public lists yet.
-              </CardContent>
-            </Card>
+            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+              <h3 className="text-h5">No public lists yet</h3>
+              <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+                Public lists {profile.display_name ?? `@${profile.username}`}{' '}
+                publishes will show up here.
+              </p>
+            </div>
           ) : (
             <ul className="space-y-2">
               {lists.map((list) => (
