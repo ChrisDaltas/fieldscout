@@ -1,5 +1,6 @@
 'use client'
 
+import { AiExpertShelf } from '@/components/home/ai-expert-shelf'
 import { PlayerShelves } from '@/components/home/player-shelves'
 import { RecentlyViewed } from '@/components/home/recently-viewed'
 
@@ -11,6 +12,7 @@ export default function AppHomePage() {
       </header>
 
       <RecentlyViewed />
+      <AiExpertShelf />
       <PlayerShelves />
     </div>
   )

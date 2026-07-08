@@ -101,6 +101,13 @@ async function ensureSystemOwner(): Promise<string> {
   return userId
 }
 
+/** Cartoon robot avatars, self-hosted under public/avatars/personas/
+ * (DiceBear "bottts" style — free for commercial use; never a real
+ * likeness, per the parody firewall). */
+function personaAvatarUrl(username: string): string {
+  return `/avatars/personas/${username}.svg`
+}
+
 /** Personas eligible for list generation: active, not deleted. */
 async function upsertPersonas(): Promise<Map<string, string>> {
   const ids = new Map<string, string>()
@@ -133,6 +140,7 @@ async function upsertPersonas(): Promise<Map<string, string>> {
           display_name: persona.display_name,
           bio: persona.bio,
           style_profile: persona.style_profile,
+          avatar_url: personaAvatarUrl(persona.username),
         })
         .eq('id', existing.id)
       if (error) throw error
@@ -145,6 +153,7 @@ async function upsertPersonas(): Promise<Map<string, string>> {
           display_name: persona.display_name,
           bio: persona.bio,
           style_profile: persona.style_profile,
+          avatar_url: personaAvatarUrl(persona.username),
           is_active: true,
         })
         .select('id')
