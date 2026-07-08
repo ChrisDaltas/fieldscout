@@ -119,7 +119,12 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           <Icon name="comments" size={12} />
           <span className="fs-num">{formatCount(item.comment_count)}</span>
         </span>
-        <FollowButton className="pointer-events-auto" />
+        {item.author_id && (
+          <FollowButton
+            userId={item.author_id}
+            className="pointer-events-auto"
+          />
+        )}
       </div>
     </div>
   )

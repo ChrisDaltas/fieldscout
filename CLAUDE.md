@@ -193,7 +193,7 @@ export function ListCard({ list }: ListCardProps) {
 
 3. **Free users: 1 team.** Same check — count existing teams before allowing conversion.
 
-4. **Free users: 2 weekly ranking positions.** Count submissions for the current week before allowing new ones.
+4. **Rankings are a free feature.** Weekly rankings and pre-draft big boards are available to everyone with no per-week or per-position limit. (There is intentionally no Pro gate on rankings — do not add one.)
 
 5. **Leagues are Pro only.** Gate league creation and joining behind Pro check.
 

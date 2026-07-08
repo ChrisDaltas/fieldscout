@@ -69,7 +69,7 @@ export function TopScoutsCard() {
                     You
                   </Badge>
                 ) : (
-                  <FollowButton className="relative z-10 shrink-0" />
+                  <FollowButton userId={scout.id} className="relative z-10 shrink-0" />
                 )}
               </div>
             )

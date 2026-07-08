@@ -33,10 +33,14 @@ export interface ExploreFeedItem {
   /** Public list page (persona boards also live under the owner profile). */
   href: string
   author_href: string
+  /** Owner profile id for the follow control — null for AI-persona boards
+   *  (personas aren't real profiles, so they can't be followed here). */
+  author_id: string | null
   tag: { name: string; slug: string } | null
 }
 
 interface EmbeddedProfile {
+  id: string
   username: string
   display_name: string | null
   avatar_url: string | null
@@ -71,7 +75,7 @@ function first<T>(value: T | T[] | null | undefined): T | null {
 }
 
 const FEED_SELECT = `id, title, slug, ranking_mode, ai_persona_id, like_count, player_count, created_at,
-  owner:profiles!lists_owner_id_fkey(username, display_name, avatar_url),
+  owner:profiles!lists_owner_id_fkey(id, username, display_name, avatar_url),
   persona:ai_personas!lists_ai_persona_id_fkey(username, display_name, avatar_url),
   comments:list_comments(count),
   tag_links:list_tags(tag:tags(name, slug))`
@@ -110,6 +114,7 @@ function mapRows(rows: FeedRowShape[]): ExploreFeedItem[] {
         author_href: persona
           ? `/personas/${persona.username}`
           : `/u/${owner.username}`,
+        author_id: persona ? null : owner.id,
         tag: first(row.tag_links?.[0]?.tag ?? null),
       },
     ]
