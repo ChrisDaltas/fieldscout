@@ -9,14 +9,27 @@
 FieldScout is an all-in-one fantasy football community app for the NFL. Users create player lists, rank players into tiers, earn credibility through prediction accuracy, do player research with custom scoring systems, and simulate their real fantasy leagues.
 
 **Domain:** fieldscout.gg
-**Stack:** Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui + Supabase + Stripe + Vercel
+**Stack:** Next.js 15 (App Router) + TypeScript + Tailwind 3 + shadcn/ui + Supabase + Stripe + Vercel
+
+---
+
+## Redesign (In Progress — July 2026)
+
+A whole-app visual overhaul is underway. The **Claude Design prototype ("Field Scout look") is the design source of truth** — the current UI (an early "make it look like Spotify" pass) carries no design value worth preserving. Rules for all redesign work:
+
+- **Re-skin in place.** Restyle the existing shadcn/Radix/CVA components in `src/components/ui/` via tokens and variant styles. Do not generate a replacement component library or parallel component tree.
+- **Single theme.** One mode blending dark and light. There is no dark/light toggle. Remove/ignore `next-themes` and `dark:` variants as screens are reskinned; never generate dual-theme tokens.
+- **Design intent:** simpler and less pro-user-dense than the old UI. When a judgment call isn't covered by the design package, choose clarity over information density.
+- **New IA:** right-side context-aware bar (Account, Notifications, Direct Messages, Players quick-research panel). Social/user-generated content lives on the Community tab; Home is a jump-off hub (join a live draft, adjust a lineup, player research). Lists are a draft tool, not social-media content.
+- **Prototype gaps:** AI list generation and influencer personas/AI experts exist in the app but not the prototype. Keep them and restyle them in the new design language — never leave them in the old style, never remove them. Same for states the prototype doesn't show (loading, empty, error, overflow, free-vs-Pro gates): extend the new design language.
+- **League/team/live-draft screens are UI-only for now.** The backend isn't built (PRD exists, not yet greenlit). Build these screens with clearly-marked mock data and stub handlers — do not invent API routes or schema for them.
 
 ---
 
 ## Tech Stack & Conventions
 
 ### Framework
-- **Next.js 14+** with App Router (NOT Pages Router)
+- **Next.js 15+** with App Router (NOT Pages Router)
 - **Server Components by default.** Only add `"use client"` when the component needs interactivity (event handlers, hooks, browser APIs)
 - **Server Actions** for simple mutations. **Route Handlers** (`app/api/`) for complex mutations, webhooks, and external API calls
 - **TypeScript** everywhere. No `any` types. Use Zod for runtime validation of API inputs.
@@ -25,8 +38,9 @@ FieldScout is an all-in-one fantasy football community app for the NFL. Users cr
 - **Tailwind CSS** for all styling. No CSS modules, no styled-components.
 - **shadcn/ui** as the component library base. Import from `@/components/ui/`.
 - Follow the existing Tailwind theme in `tailwind.config.ts`. Don't add arbitrary color values — use theme tokens.
+- **Tailwind v3.4** — tokens live in `tailwind.config.ts` theme extensions + CSS variables. Do not use Tailwind v4 conventions (`@theme` blocks).
 - **Responsive design:** Mobile-first. Use Tailwind breakpoints (`sm:`, `md:`, `lg:`).
-- **Dark mode:** Support `dark:` variant from the start. Use `class` strategy.
+- **Theming: single blended mode.** No dark/light toggle. Legacy `next-themes` / `dark:` variants are being removed as part of the redesign — don't add new ones.
 
 ### State Management
 - **React Query (TanStack Query)** for all server state (data fetching, caching, mutations)
