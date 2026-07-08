@@ -2,71 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
-/* FieldScout — dark mode only. Tokens align with docs/06-DESIGN-SYSTEM.md */
+/* Field Scout — neo-brutalist design system, single blended theme.
+   Source of truth: redesign package _ds/tokens/*.css (values here are
+   pre-scaled ×0.8 per the prototype's ZOOM constant — match the rendered
+   result, not raw token numbers).
+
+   Two layers:
+   1. shadcn-compatible HSL triplets below — the legacy semantic layer
+      (bg-background, border-border, …) redefined to the new palette so
+      not-yet-reskinned screens stay functional and directionally correct.
+   2. The Field Scout palette proper lives as literal hex in
+      tailwind.config.ts (page, ink, accent, brand, positive, pos-*, tier-*).
+      Reskinned components use those classes. */
 @layer base {
   :root {
-    /* Backgrounds */
-    --background: 0 0% 0%;           /* #000000 — body, shows through the gap between panels */
-    --bg-elevated: 0 0% 7.06%;       /* #121212 — main panel + sidebar panel */
-    --bg-elevated-2: 0 0% 15.69%;    /* #282828 */
-    --bg-elevated-3: 0 0% 20%;       /* #333333 */
+    /* Surfaces */
+    --background: 225 8% 90%; /* page grey #e4e5e8 */
+    --bg-elevated: 0 0% 100%; /* cards are white now */
+    --bg-elevated-2: 210 4% 91%; /* n-4 hairline/sunken */
+    --bg-elevated-3: 220 5% 85%;
 
     /* Text */
-    --foreground: 0 0% 100%;         /* #FFFFFF */
-    --text-secondary: 0 0% 70.2%;    /* #B3B3B3 */
-    --text-tertiary: 0 0% 41.96%;    /* #6B6B6B */
+    --foreground: 0 0% 0%; /* ink */
+    --text-secondary: 219 7% 40%; /* n-3 muted */
+    --text-tertiary: 220 5% 55%;
 
-    /* Surfaces (shadcn-compatible aliases) */
-    --card: 0 0% 11.76%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 7.06%;           /* #121212 — floating menus */
-    --popover-foreground: 0 0% 100%;
-    --muted: 0 0% 15.69%;
-    --muted-foreground: 0 0% 70.2%;
-    --accent: 0 0% 15.69%;
-    --accent-foreground: 0 0% 100%;
+    /* Surfaces (shadcn aliases) */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --muted: 210 4% 91%; /* n-4 */
+    --muted-foreground: 219 7% 40%; /* n-3 */
+    --accent: 226 100% 93%; /* accent-soft #dce4ff — hover surfaces */
+    --accent-foreground: 0 0% 0%;
 
-    /* Primary green (#1DB954) */
-    --primary: 142.41 70.95% 41.96%;
-    --primary-foreground: 0 0% 0%;
-    --primary-hover: 142.55 73.43% 39.02%;
+    /* Primary = ultramarine accent ("do a thing") */
+    --primary: 230 100% 62%; /* #3d5cff */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 231 75% 52%; /* #2a44e0 */
 
-    /* Secondary (Spotify uses muted gray) */
-    --secondary: 0 0% 15.69%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 210 4% 91%;
+    --secondary-foreground: 0 0% 0%;
 
-    /* Destructive (#E5534B) */
-    --destructive: 3.7 73.13% 59.41%;
-    --destructive-foreground: 0 0% 100%;
+    /* Destructive = reserved negative (pastel pink, ink text) */
+    --destructive: 0 65% 76%; /* #e99898 */
+    --destructive-foreground: 0 0% 0%;
 
-    /* Borders */
-    --border: 0 0% 15.69%;           /* #282828 */
-    --border-subtle: 0 0% 11.76%;    /* #1E1E1E */
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
+    /* Borders — always 1px ink; muted hairlines use border-subtle */
+    --border: 0 0% 0%;
+    --border-subtle: 210 4% 91%; /* n-4 */
+    --input: 0 0% 0%;
+    --ring: 230 100% 62%;
 
-    /* Sidebar (pure black) */
+    /* Sidebar (ink panel) */
     --sidebar: 0 0% 0%;
-    --sidebar-foreground: 0 0% 70.2%;
-    --sidebar-primary: 142.41 70.95% 41.96%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 98 100% 77%; /* brand lime #b4ff89 */
     --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 15.69%;
+    --sidebar-accent: 230 100% 62%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 15.69%;
-    --sidebar-ring: 0 0% 100%;
+    --sidebar-border: 0 0% 100%;
+    --sidebar-ring: 230 100% 62%;
 
-    --radius: 0.5rem;
+    /* Near-square corners everywhere (tailwind.config hard-overrides the
+       rounded-* scale to 1px; this var covers any calc() stragglers) */
+    --radius: 1px;
 
-    /* Chart palette (tier colors etc.) */
-    --chart-1: 142.41 70.95% 41.96%; /* primary green */
-    --chart-2: 217.22 91.22% 59.8%;  /* blue #3B82F6 */
-    --chart-3: 24.62 94.95% 53.14%;  /* orange #F97316 */
-    --chart-4: 47.95 95.83% 53.14%;  /* yellow #EAB308 */
-    --chart-5: 50.59 100% 50%;       /* gold #FFD700 */
+    /* Chart palette — legacy consumers; restyled screens use tier/pos hues */
+    --chart-1: 230 100% 62%;
+    --chart-2: 98 100% 77%;
+    --chart-3: 24 70% 48%;
+    --chart-4: 45 77% 52%;
+    --chart-5: 137 43% 44%;
 
-    /* AI accent (Create with AI glint, future AI surfaces) */
-    --ai-glint: 268 85% 66%;         /* violet bloom */
-    --ai-glint-core: 274 100% 88%;   /* lavender-white specular core */
+    /* AI accent — AI moments are ultramarine now (legacy glint vars kept
+       working until AI surfaces are reskinned in batch E) */
+    --ai-glint: 230 100% 62%;
+    --ai-glint-core: 226 100% 93%;
   }
 }
 
@@ -77,14 +90,37 @@
   html,
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'cv11', 'ss01';
   }
   body {
-    color-scheme: dark;
+    color-scheme: light;
+    font-weight: 500; /* body weight per the design system */
+  }
+  /* Heavy, tight headings — the system's defining trait. Unitless 1.25
+     line-height so inline-sized headings keep their descenders. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+  ::selection {
+    background: #3d5cff;
+    color: #ffffff;
   }
 }
 
 @layer utilities {
+  /* Mono numerals — use on every stat / number block */
+  .fs-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings:
+      'tnum' 1;
+  }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
@@ -94,9 +130,8 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
-  /* Gradient-border glint for the Create with AI button: a masked 1px ring
-     (mask excludes the content box, leaving only the padding ring) with a
-     rotating conic highlight inside. */
+  /* Legacy AI glint ring (Create with AI button) — kept until AI surfaces
+     are reskinned; colors now map to the ultramarine accent. */
   .ai-shine-ring {
     padding: 1px;
     -webkit-mask:
@@ -108,8 +143,6 @@
       linear-gradient(#fff 0 0);
     mask-composite: exclude;
   }
-  /* Comet-shaped glint: rotation is clockwise, so higher-degree stops lead.
-     Long soft violet tail, bright lavender core near the head, quick falloff. */
   .ai-shine-gradient {
     background: conic-gradient(
       from 0deg,

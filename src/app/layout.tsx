@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Silkscreen } from 'next/font/google'
+import { Roboto_Flex, Roboto_Mono, Silkscreen } from 'next/font/google'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
@@ -9,10 +9,18 @@ import { QueryProvider } from '@/components/providers/query-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
 
-const inter = Inter({
+// Workhorse type — variable optical size + weight (400–800 headings).
+const robotoFlex = Roboto_Flex({
+  subsets: ['latin'],
+  axes: ['opsz'],
+  variable: '--font-sans',
+})
+
+// Every numeral/stat renders mono + tabular (see .fs-num).
+const robotoMono = Roboto_Mono({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-sans',
+  variable: '--font-mono',
 })
 
 // Logomark only ("FieldScout" wordmark) — pixel font.
@@ -33,18 +41,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://api.fontshare.com/v2/css?f[]=switzer@700&display=swap"
-        />
-      </head>
+    <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
           'min-h-screen bg-background font-sans text-foreground antialiased',
-          inter.variable,
+          robotoFlex.variable,
+          robotoMono.variable,
           silkscreen.variable,
         )}
       >
