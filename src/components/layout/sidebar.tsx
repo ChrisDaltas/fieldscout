@@ -52,11 +52,11 @@ const MORE_ITEMS: NavEntry[] = [
 ]
 
 // TODO(live-draft): replace with the user's real teams once the league
-// backend exists. Shapes match the future teams row (crest initials, team
-// name over league name).
+// backend exists. Ids/names mirror MOCK_LEAGUES so a team row opens the
+// populated league workspace (My Team tab).
 const MOCK_TEAMS: Array<{ id: string; team: string; league: string }> = [
+  { id: 'log', team: 'Gridiron Gurus', league: 'League of Ordinary Gentlemen' },
   { id: 'wrk', team: 'Cubicle Kings', league: 'The Work League' },
-  { id: 'fam', team: 'Gridiron Gurus', league: 'Family Football' },
 ]
 
 function isActive(pathname: string, item: NavEntry): boolean {
@@ -258,7 +258,7 @@ export function Sidebar() {
                 {MOCK_TEAMS.map((t) => (
                   <Link
                     key={t.id}
-                    href="/app/teams"
+                    href={`/app/leagues/${t.id}?tab=my-team`}
                     title={isCollapsed ? t.team : undefined}
                     className={cn(
                       'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',

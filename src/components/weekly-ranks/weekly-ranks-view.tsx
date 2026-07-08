@@ -219,7 +219,9 @@ export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
       />
 
       <section className="grid items-start gap-6 lg:grid-cols-[1.7fr_1fr]">
-        <div>
+        {/* min-w-0 lets this grid column shrink so the wide week-tab row
+            scrolls internally instead of blowing out the page width. */}
+        <div className="min-w-0">
           {/* title → actions → position chips → week tabs → board */}
           <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
             <h2 className="mr-auto whitespace-nowrap text-h5">Weekly rankings</h2>

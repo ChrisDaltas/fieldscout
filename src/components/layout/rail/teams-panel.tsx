@@ -14,24 +14,24 @@ export interface RailTeam {
   crestUrl: string | null
 }
 
-// TODO(live-draft): replace with real teams data. There is no teams hook or
-// /api route yet (/app/teams/* are placeholder pages) — when leagues/teams
-// land, swap MOCK_TEAMS for the hook result and delete this block.
+// TODO(live-draft): replace with real teams data. Ids mirror MOCK_LEAGUES so
+// a row opens the populated league workspace (My Team tab); swap for the hook
+// result when leagues/teams land.
 const MOCK_TEAMS: RailTeam[] = [
   {
-    id: 'mock-gridiron-gurus',
+    id: 'log',
     name: 'Gridiron Gurus',
     leagueName: 'League of Ordinary Gentlemen',
     crestUrl: null,
   },
   {
-    id: 'mock-check-downs',
+    id: 'din',
     name: 'Check Downs',
     leagueName: 'Dynasty Degenerates',
     crestUrl: null,
   },
   {
-    id: 'mock-cubicle-kings',
+    id: 'wrk',
     name: 'Cubicle Kings',
     leagueName: 'The Work League',
     crestUrl: null,
@@ -65,7 +65,7 @@ export function TeamsPanel({ onClose, teams = MOCK_TEAMS }: TeamsPanelProps) {
         {teams.map((team) => (
           <Link
             key={team.id}
-            href={`/app/teams/${team.id}`}
+            href={`/app/leagues/${team.id}?tab=my-team`}
             className="flex h-[45px] items-center gap-2.5 border-b border-n-4 px-3 transition-colors duration-200 ease-linear hover:bg-n-4"
           >
             <UserAvatar

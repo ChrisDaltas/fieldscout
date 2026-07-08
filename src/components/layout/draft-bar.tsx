@@ -12,11 +12,18 @@ interface DraftAlert {
   href: string
 }
 
-// TODO(live-draft): replace with real draft data once the league backend
-// exists. Returning null keeps the bar hidden; flip to the sample object to
-// preview the bar.
+// TODO(live-draft): mock live draft driving the platform-wide alert bar.
+// Swap for the real active-draft query when the league backend lands;
+// return null to hide the bar when no draft is live/scheduled.
+const MOCK_ALERT: DraftAlert = {
+  live: true,
+  league: 'The Work League',
+  detail: "Round 4 · Pick 7 · you're on the clock",
+  href: '/app/leagues/wrk/draft?format=snake',
+}
+
 function useDraftAlert(): DraftAlert | null {
-  return null
+  return MOCK_ALERT
 }
 
 /** Full-width lime alert bar above the header — only when a draft is live or

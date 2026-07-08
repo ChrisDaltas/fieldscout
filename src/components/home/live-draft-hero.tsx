@@ -1,9 +1,10 @@
 'use client'
 
+import Link from 'next/link'
+
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
-import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 /**
@@ -17,21 +18,23 @@ interface LiveDraftAlert {
   league: string
   detail: string
   cta: string
+  /** Draft room the CTA opens (mock league id). */
+  href: string
 }
 
-// TODO(live-draft): the league/draft backend doesn't exist yet, so there is
-// never a live draft to announce. Return PREVIEW_ALERT instead of null to
-// preview the hero card while building the draft room.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const PREVIEW_ALERT: LiveDraftAlert = {
+// TODO(live-draft): the league/draft backend doesn't exist yet — this is the
+// mock live draft that drives the home hero + top draft bar. Swap for the real
+// active-draft query when leagues land.
+const MOCK_ALERT: LiveDraftAlert = {
   live: true,
   league: 'The Work League',
   detail: "Round 4 · Pick 7 · you're on the clock",
   cta: 'Open draft room',
+  href: '/app/leagues/wrk/draft?format=snake',
 }
 
 function useLiveDraftAlert(): LiveDraftAlert | null {
-  return null
+  return MOCK_ALERT
 }
 
 export function LiveDraftHero() {
@@ -67,19 +70,11 @@ export function LiveDraftHeroCard({ draft }: { draft: LiveDraftAlert }) {
         </div>
       </div>
 
-      <Button
-        variant="blue"
-        shadow
-        onClick={() =>
-          // TODO(live-draft): route into the draft room once it exists.
-          toast({
-            title: 'Draft room',
-            description: 'The live draft room is still under construction.',
-          })
-        }
-      >
-        {draft.cta}
-        <Icon name="arrow-next" />
+      <Button variant="blue" shadow asChild>
+        <Link href={draft.href}>
+          {draft.cta}
+          <Icon name="arrow-next" />
+        </Link>
       </Button>
     </Card>
   )

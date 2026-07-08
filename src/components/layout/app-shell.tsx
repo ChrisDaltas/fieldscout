@@ -65,10 +65,13 @@ export function AppShell({ children }: AppShellProps) {
               <AppHeader />
             </div>
             <main className="min-h-0 flex-1 overflow-y-auto">
+              {/* Content fills the full width between the sidebar and rail
+                  (matching the prototype's padded, un-capped main). Full-bleed
+                  routes drop the horizontal padding for edge-to-edge tables. */}
               <div
                 className={cn(
-                  'w-full px-4 py-5 pb-20 lg:px-7 lg:pb-[20vh]',
-                  !fullBleed && 'mx-auto max-w-content',
+                  'w-full py-5 pb-20 lg:pb-[20vh]',
+                  !fullBleed && 'px-4 lg:px-7',
                 )}
               >
                 {children}
