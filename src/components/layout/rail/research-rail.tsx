@@ -59,14 +59,10 @@ export function ResearchRail() {
         aria-label="Research rail"
         aria-orientation="vertical"
       >
-        {/* Account zone — lines up with the panel head; joins the white tab
-            while a panel is open. */}
-        <div
-          className={cn(
-            'flex h-[37px] w-full shrink-0 items-center justify-center border-b transition-colors duration-200 ease-linear',
-            activeTool ? 'border-ink bg-white' : 'border-white/10',
-          )}
-        >
+        {/* Account zone — always ink; it's a menu, not a rail tool, so it
+            never takes the white "selected" treatment (only the open tool
+            below does). */}
+        <div className="flex h-[37px] w-full shrink-0 items-center justify-center border-b border-white/10">
           <AccountMenu variant="topbar" />
         </div>
 
@@ -83,13 +79,13 @@ export function ResearchRail() {
                 title={tool.label}
                 onClick={() => toggleTool(tool.id)}
                 className={cn(
-                  'relative flex h-[29px] w-[29px] items-center justify-center rounded-sm transition-colors duration-200 ease-linear',
+                  'relative flex h-[34px] w-[34px] items-center justify-center rounded-sm transition-colors duration-200 ease-linear',
                   isActive
                     ? 'bg-white text-ink'
                     : 'text-white/70 hover:bg-white/10 hover:text-white',
                 )}
               >
-                <Icon name={tool.icon} size={14} />
+                <Icon name={tool.icon} size={16} />
                 {count > 0 && (
                   <span className="fs-num absolute -right-1 -top-1 inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
                     {count > 9 ? '9+' : count}

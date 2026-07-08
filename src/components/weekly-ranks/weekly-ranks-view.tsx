@@ -17,6 +17,7 @@ import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-ki
 import { SortableBoardRow } from '@/components/big-board/board-row'
 import { WeekTabs } from '@/components/big-board/week-tabs'
 import { PageHeader } from '@/components/layout/app-header'
+import { POSITION_FILTER_ACTIVE } from '@/components/players/position-badge'
 import { AIInsight } from '@/components/ui/ai-insight'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -254,6 +255,7 @@ export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
                 key={p}
                 pressed={pos === p}
                 onPressedChange={() => setPos(p)}
+                className={pos === p ? POSITION_FILTER_ACTIVE[p] : undefined}
               >
                 {p}
               </FilterChip>

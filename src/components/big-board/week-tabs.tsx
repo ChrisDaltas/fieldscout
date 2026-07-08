@@ -26,7 +26,7 @@ function tabClass(active: boolean, locked: boolean) {
   return cn(
     'inline-flex h-tab shrink-0 items-center justify-center whitespace-nowrap rounded-sm border border-ink px-3 text-[11px] font-bold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
     active
-      ? 'bg-accent text-accent-foreground'
+      ? 'bg-ink text-white'
       : 'bg-white text-ink hover:bg-n-4',
     locked && !active && 'opacity-50',
   )

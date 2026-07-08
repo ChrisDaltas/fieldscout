@@ -39,6 +39,7 @@ export function AppHeader() {
   const pathname = usePathname()
   const title = useHeaderStore((s) => s.title)
   const actions = useHeaderStore((s) => s.actions)
+  const subnav = useHeaderStore((s) => s.subnav)
 
   return (
     <header className="sticky top-0 z-20 shrink-0 border-b border-ink bg-white px-7">
@@ -52,6 +53,7 @@ export function AppHeader() {
         </div>
         {actions}
       </div>
+      {subnav}
     </header>
   )
 }
@@ -59,17 +61,19 @@ export function AppHeader() {
 interface PageHeaderProps {
   title: React.ReactNode
   actions?: React.ReactNode
+  /** Optional second header row rendered under the title row. */
+  subnav?: React.ReactNode
 }
 
 /** Rendered by pages to claim the shell header. Renders nothing itself. */
-export function PageHeader({ title, actions }: PageHeaderProps) {
+export function PageHeader({ title, actions, subnav }: PageHeaderProps) {
   const setHeader = useHeaderStore((s) => s.setHeader)
   const clearHeader = useHeaderStore((s) => s.clearHeader)
 
   useEffect(() => {
-    setHeader(title, actions)
+    setHeader(title, actions, subnav)
     return () => clearHeader()
-  }, [title, actions, setHeader, clearHeader])
+  }, [title, actions, subnav, setHeader, clearHeader])
 
   return null
 }

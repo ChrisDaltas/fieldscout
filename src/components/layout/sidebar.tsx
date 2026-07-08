@@ -56,6 +56,7 @@ const MORE_ITEMS: NavEntry[] = [
 // populated league workspace (My Team tab).
 const MOCK_TEAMS: Array<{ id: string; team: string; league: string }> = [
   { id: 'log', team: 'Gridiron Gurus', league: 'League of Ordinary Gentlemen' },
+  { id: 'din', team: 'Check Downs', league: 'Dynasty Degenerates' },
   { id: 'wrk', team: 'Cubicle Kings', league: 'The Work League' },
 ]
 

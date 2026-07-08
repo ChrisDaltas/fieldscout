@@ -4,7 +4,10 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { AddToListPopover } from '@/components/players/add-to-list-popover'
-import { PositionBadge } from '@/components/players/position-badge'
+import {
+  PositionBadge,
+  POSITION_TAB_ACTIVE,
+} from '@/components/players/position-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -463,7 +466,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
           >
             <TabsList>
               {POSITION_FILTERS.map((p) => (
-                <TabsTrigger key={p} value={p}>
+                <TabsTrigger key={p} value={p} className={POSITION_TAB_ACTIVE[p]}>
                   {POSITION_LABELS[p]}
                 </TabsTrigger>
               ))}

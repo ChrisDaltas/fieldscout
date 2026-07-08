@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils"
 
 /**
  * Field Scout tabs — boxed, not underlined. The list is a plain row of
- * bordered boxes; each trigger is a 26px white box with a 1px ink border,
- * and the active tab fills accent with white text. No animated indicator.
+ * bordered boxes; each trigger is a 26px white box with an ink border, and
+ * the active tab fills ink with white text (content tabs select to black;
+ * accent/blue is reserved for "do a thing" controls). No animated indicator.
  */
 const Tabs = TabsPrimitive.Root
 
@@ -31,7 +32,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink bg-white px-4 text-[11px] font-bold leading-none text-ink transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 data-[state=inactive]:hover:bg-n-4 data-[state=active]:bg-accent data-[state=active]:text-accent-foreground",
+      "inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink bg-white px-4 text-[11px] font-bold leading-none text-ink transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 data-[state=inactive]:hover:bg-n-4 data-[state=active]:bg-ink data-[state=active]:text-white",
       className
     )}
     {...props}

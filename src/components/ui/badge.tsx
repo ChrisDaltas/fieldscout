@@ -56,8 +56,10 @@ function Badge({ className, variant, ...props }: BadgeProps) {
 
 /**
  * Toggleable filter chip — the interactive sibling of the badge. 26px tall,
- * ink outline; off = white with a sunken-grey hover, on = accent fill with
- * white text. Button semantics with `aria-pressed`.
+ * ink outline; off = white with a sunken-grey hover, on = ink fill with white
+ * text (content filters select to black). Position filters override the on
+ * state to the position colour via `className`. Button semantics with
+ * `aria-pressed`.
  */
 export interface FilterChipProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -83,7 +85,7 @@ const FilterChip = React.forwardRef<HTMLButtonElement, FilterChipProps>(
       className={cn(
         "inline-flex h-btn-sm select-none items-center gap-1.5 whitespace-nowrap rounded-sm border border-ink px-3 text-[11px] font-bold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
         pressed
-          ? "bg-accent text-accent-foreground hover:bg-accent-strong"
+          ? "bg-ink text-white hover:bg-ink-2"
           : "bg-white text-ink hover:bg-n-4",
         className,
       )}

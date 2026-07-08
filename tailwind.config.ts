@@ -173,12 +173,24 @@ const config: Config = {
         header: '58px',
         sidebar: '243px',
         'sidebar-collapsed': '67px',
-        'rail-strip': '45px',
+        // Rail strip matches the collapsed sidebar width so both edges read
+        // as the same icon rail.
+        'rail-strip': '67px',
         'rail-panel': '256px',
         'card-pad': '16px',
       },
       maxWidth: {
         content: '1152px',
+        // Right context column — capped at a mobile-compliant width so it
+        // stacks cleanly and the main column keeps the rest.
+        rail: '374px',
+      },
+      // Hairline strokes: 0.5px everywhere (buttons opt back to 1px).
+      borderWidth: {
+        DEFAULT: '0.5px',
+        '0': '0',
+        '1': '1px',
+        '2': '2px',
       },
       transitionDuration: {
         DEFAULT: '200ms',

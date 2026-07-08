@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { ListCard } from '@/components/lists/list-card'
+import { POSITION_FILTER_ACTIVE } from '@/components/players/position-badge'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -154,6 +155,7 @@ export function ListsBrowse() {
             key={pos}
             pressed={position === pos}
             onPressedChange={() => setPosition(pos)}
+            className={position === pos ? POSITION_FILTER_ACTIVE[pos] : undefined}
           >
             {pos}
           </FilterChip>

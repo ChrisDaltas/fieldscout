@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 
 import { Crest } from './league-cells'
 import { LeagueHomeTab } from './league-home-tab'
@@ -143,32 +143,44 @@ export function LeagueWorkspace({ leagueId, initialTab }: LeagueWorkspaceProps) 
             </Button>
           </div>
         }
+        subnav={
+          // League sub-nav in the header: an underline tab bar, distinct from
+          // the boxed content tabs. Active tab carries an accent underline.
+          <nav
+            className="-mx-7 flex items-center gap-1 overflow-x-auto border-t border-n-4 px-7 scrollbar-none"
+            aria-label="League sections"
+          >
+            {LEAGUE_TABS.map((item) => {
+              const active = tab === item.value
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => handleTabChange(item.value)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'relative shrink-0 whitespace-nowrap px-3 py-2.5 text-[12px] font-extrabold transition-colors',
+                    active ? 'text-ink' : 'text-n-3 hover:text-ink',
+                  )}
+                >
+                  {item.label}
+                  {active && (
+                    <span className="absolute inset-x-3 bottom-0 h-[2px] bg-accent" />
+                  )}
+                </button>
+              )
+            })}
+            <Link
+              href="/app/settings/scoring"
+              className="shrink-0 whitespace-nowrap px-3 py-2.5 text-[12px] font-extrabold text-n-3 transition-colors hover:text-ink"
+            >
+              League settings
+            </Link>
+          </nav>
+        }
       />
 
       <LeagueIdentityRow league={league} />
-
-      {/* Sub-nav — boxed tabs; League settings is a link out to the scoring
-          builder until league-scoped settings exist. */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Tabs
-          value={tab}
-          onValueChange={(value) => handleTabChange(value as LeagueWorkspaceTab)}
-        >
-          <TabsList className="flex-wrap">
-            {LEAGUE_TABS.map((item) => (
-              <TabsTrigger key={item.value} value={item.value}>
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Link
-          href="/app/settings/scoring"
-          className="inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink bg-white px-4 text-[11px] font-bold leading-none text-ink transition-colors hover:bg-n-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          League settings
-        </Link>
-      </div>
 
       <div>
         {tab === 'home' && (
