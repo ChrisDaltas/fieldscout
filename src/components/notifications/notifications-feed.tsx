@@ -32,7 +32,7 @@ function relativeTime(iso: string): string {
  * `/api/notifications` hooks; opening the page clears the unread state.
  */
 export function NotificationsFeed() {
-  const { data, isLoading } = useNotifications()
+  const { data, isLoading, isError } = useNotifications()
   const markRead = useMarkNotificationsRead()
   const notifications = data?.notifications ?? []
   const unreadCount = data?.unreadCount ?? 0
@@ -60,6 +60,18 @@ export function NotificationsFeed() {
             </li>
           ))}
         </ul>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+        <Icon name="info-circle" size={16} className="text-negative-strong" />
+        <p className="text-h5 text-ink">Couldn&apos;t load notifications</p>
+        <p className="max-w-md text-[13px] font-medium text-negative-strong">
+          Something went wrong fetching your notifications. Refresh to try again.
+        </p>
       </Card>
     )
   }

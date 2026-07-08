@@ -79,6 +79,20 @@ export function GuestBigBoard({ players }: GuestBigBoardProps) {
     .map((id) => players.find((p) => p.id === id))
     .filter((p): p is GuestBigBoardPlayer => Boolean(p))
 
+  if (orderedPlayers.length === 0) {
+    return (
+      <section>
+        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <p className="text-h5 text-ink">No players to rank yet</p>
+          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+            The preview board is empty right now — check back once player data
+            has synced.
+          </p>
+        </div>
+      </section>
+    )
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return

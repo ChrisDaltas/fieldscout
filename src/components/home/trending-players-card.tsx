@@ -105,7 +105,7 @@ function TrendRows({
 }
 
 export function TrendingPlayersCard() {
-  const { data, isLoading } = useHomePlayers()
+  const { data, isLoading, isError } = useHomePlayers()
   const openPlayer = usePlayerWindowsStore((s) => s.open)
 
   const { risers, fallers } = useMemo(() => {
@@ -145,6 +145,10 @@ export function TrendingPlayersCard() {
               <Skeleton key={i} className="h-8 w-full" />
             ))}
           </div>
+        ) : isError ? (
+          <p className="px-[13px] py-8 text-center text-[12px] font-medium text-negative-strong">
+            Couldn&apos;t load trending players. Refresh to try again.
+          </p>
         ) : (
           <>
             <TabsContent value="risers" className="mt-0">

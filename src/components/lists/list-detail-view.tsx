@@ -2042,7 +2042,9 @@ function EmptyState({
   if (aiBuilding) {
     return (
       <div className="rounded-sm border border-accent bg-accent-soft px-6 py-14 text-center">
-        <p className="animate-pulse text-sm font-bold text-ink">
+        <p className="inline-flex items-center gap-2 text-sm font-bold text-ink">
+          {/* The live dot is the only sanctioned looping animation. */}
+          <span className="h-1.5 w-1.5 animate-pulse rounded-pill bg-accent" />
           FieldScout AI is scouting players for this list…
         </p>
       </div>

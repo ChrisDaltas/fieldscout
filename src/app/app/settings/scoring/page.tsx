@@ -254,30 +254,28 @@ export default function ScoringSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: async (): Promise<ScoringSystemRow> => {
       if (!user) throw new Error('You need to be signed in')
-      const payload = {
-        name: name.trim() || CUSTOM_DEFAULT_NAME,
-        rules: rules as unknown as Json,
-        updated_at: new Date().toISOString(),
+      // Pro gate + write live in the route handler — custom scoring is
+      // Pro-only (business rule 6) and can't be gated by the client alone.
+      const res = await fetch('/api/scoring-systems', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || CUSTOM_DEFAULT_NAME,
+          rules,
+        }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string
+          code?: string
+        } | null
+        throw new Error(
+          body?.code === 'PRO_REQUIRED'
+            ? 'Custom scoring is a Pro feature.'
+            : body?.error || 'Could not save scoring',
+        )
       }
-
-      if (savedSystem) {
-        const { data, error } = await supabase
-          .from('scoring_systems')
-          .update(payload)
-          .eq('id', savedSystem.id)
-          .select()
-          .single()
-        if (error) throw error
-        return data
-      }
-
-      const { data, error } = await supabase
-        .from('scoring_systems')
-        .insert({ owner_id: user.id, ...payload })
-        .select()
-        .single()
-      if (error) throw error
-      return data
+      return (await res.json()) as ScoringSystemRow
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scoring-system', user?.id] })

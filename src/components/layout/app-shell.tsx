@@ -22,7 +22,10 @@ interface AppShellProps {
 
 // Routes that need to render edge-to-edge inside the main panel.
 // Anything else gets the standard centered/max-width container.
-const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set(['/app/players'])
+const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set([
+  '/app/players',
+  '/app/research',
+])
 const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
 /** Field Scout shell — ink sidebar · content column (draft bar + sticky

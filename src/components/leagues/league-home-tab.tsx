@@ -206,7 +206,10 @@ function StandingsCard({ league }: { league: MockLeague }) {
 
 function ScheduleStrip({ league }: { league: MockLeague }) {
   return (
-    <Card>
+    // overflow-hidden lets the grid track shrink so the week strip scrolls
+    // internally instead of blowing out the page width (matches the sibling
+    // schedule/manage tabs).
+    <Card className="overflow-hidden">
       <CardHeader>
         <CardTitle>Schedule</CardTitle>
         <Badge variant="green">{league.record}</Badge>

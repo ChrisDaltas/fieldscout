@@ -31,9 +31,9 @@ function formatCount(n: number): string {
 function LikeButton({ item }: { item: ExploreFeedItem }) {
   const qc = useQueryClient()
   const toggleLike = useToggleLike(item.id)
-  // The feed query doesn't know the viewer's per-list liked state; the toggle
-  // endpoint returns it, so track it locally after the first interaction.
-  const [liked, setLiked] = useState(false)
+  // Seed from the viewer's real liked state so already-liked lists render
+  // liked; the toggle endpoint returns the authoritative state after a click.
+  const [liked, setLiked] = useState(item.is_liked)
 
   return (
     <button

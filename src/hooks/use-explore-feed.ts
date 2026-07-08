@@ -36,6 +36,8 @@ export interface ExploreFeedItem {
   /** Owner profile id for the follow control — null for AI-persona boards
    *  (personas aren't real profiles, so they can't be followed here). */
   author_id: string | null
+  /** Whether the signed-in viewer has already liked this list. */
+  is_liked: boolean
   tag: { name: string; slug: string } | null
 }
 
@@ -82,7 +84,7 @@ const FEED_SELECT = `id, title, slug, ranking_mode, ai_persona_id, like_count, p
 
 const FEED_LIMIT = 30
 
-function mapRows(rows: FeedRowShape[]): ExploreFeedItem[] {
+function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[] {
   return rows.flatMap((row) => {
     const owner = first(row.owner)
     if (!owner) return []
@@ -115,6 +117,7 @@ function mapRows(rows: FeedRowShape[]): ExploreFeedItem[] {
           ? `/personas/${persona.username}`
           : `/u/${owner.username}`,
         author_id: persona ? null : owner.id,
+        is_liked: likedIds.has(row.id),
         tag: first(row.tag_links?.[0]?.tag ?? null),
       },
     ]
@@ -176,7 +179,27 @@ export function useExploreFeed(tab: ExploreFeedTab, tagId: string | null) {
       const { data, error } = await query
       if (error) throw error
 
-      return mapRows((data ?? []) as unknown as FeedRowShape[])
+      const rows = (data ?? []) as unknown as FeedRowShape[]
+
+      // Seed the viewer's per-list liked state so already-liked lists render
+      // liked (and the first click toggles the right direction).
+      const likedIds = new Set<string>()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user && rows.length > 0) {
+        const { data: likes } = await supabase
+          .from('list_likes')
+          .select('list_id')
+          .eq('user_id', user.id)
+          .in(
+            'list_id',
+            rows.map((r) => r.id),
+          )
+        for (const like of likes ?? []) likedIds.add(like.list_id as string)
+      }
+
+      return mapRows(rows, likedIds)
     },
   })
 }

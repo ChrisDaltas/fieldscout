@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -94,36 +96,29 @@ function ordinal(n: number): string {
   return `${n}th`
 }
 
-// TODO(live-draft): stub — entity links and Open will route into the league
-// workspace once real leagues exist.
-function leagueStub() {
-  toast({
-    title: 'Leagues are coming soon',
-    description: 'This is preview data — real leagues land with the league backend.',
-  })
-}
-
-/** Team/league name link (mock: fires the coming-soon stub). */
+/** Team/league name link into the league workspace. */
 function EntityLink({
+  href,
   children,
   className,
 }: {
+  href: string
   children: React.ReactNode
   className?: string
 }) {
   return (
-    <button
-      type="button"
-      onClick={leagueStub}
+    <Link
+      href={href}
       className={`truncate text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus-visible:underline focus:outline-none ${className ?? ''}`}
     >
       {children}
-    </button>
+    </Link>
   )
 }
 
 function LeagueCard({ league }: { league: MockLeague }) {
   const winning = league.proj >= league.oppProj
+  const href = `/app/leagues/${league.id}`
   const stats: Array<[label: string, value: string]> = [
     ['Record', league.record],
     ['Points for', league.pf.toLocaleString()],
@@ -139,10 +134,16 @@ function LeagueCard({ league }: { league: MockLeague }) {
           <AvatarFallback>{league.teamInitials}</AvatarFallback>
         </Avatar>
         <div className="mr-auto flex min-w-0 flex-col">
-          <EntityLink className="text-[12px] font-extrabold leading-tight">
+          <EntityLink
+            href={href}
+            className="text-[12px] font-extrabold leading-tight"
+          >
             {league.team}
           </EntityLink>
-          <EntityLink className="text-[10px] font-semibold leading-tight text-n-3">
+          <EntityLink
+            href={href}
+            className="text-[10px] font-semibold leading-tight text-n-3"
+          >
             {league.name}
           </EntityLink>
         </div>
@@ -180,7 +181,7 @@ function LeagueCard({ league }: { league: MockLeague }) {
                 {league.oppInitials}
               </AvatarFallback>
             </Avatar>
-            <EntityLink className="text-[10px] font-extrabold">
+            <EntityLink href={href} className="text-[10px] font-extrabold">
               {league.opp}
             </EntityLink>
           </div>
@@ -198,9 +199,11 @@ function LeagueCard({ league }: { league: MockLeague }) {
           {winning ? 'Win' : 'Toss-up'} prob{' '}
           <span className="fs-num">{league.winProb}%</span>
         </Badge>
-        <Button variant="stroke" size="sm" onClick={leagueStub}>
-          Open
-          <Icon name="arrow-next" />
+        <Button variant="stroke" size="sm" asChild>
+          <Link href={href}>
+            Open
+            <Icon name="arrow-next" />
+          </Link>
         </Button>
       </div>
     </Card>
