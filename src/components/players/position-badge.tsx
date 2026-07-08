@@ -28,8 +28,8 @@ export function PositionBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded-full font-mono font-semibold uppercase tracking-tight',
-        size === 'sm' ? 'h-5 px-2 text-[10px]' : 'h-6 px-2.5 text-xs',
+        'inline-flex items-center justify-center rounded-sm border border-ink font-sans font-extrabold',
+        size === 'sm' ? 'h-[15px] min-w-[26px] px-1 text-[9px]' : 'h-chip px-1.5 text-[11px]',
         style,
         className,
       )}

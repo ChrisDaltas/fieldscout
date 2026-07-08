@@ -28,23 +28,12 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useRouter } from 'next/navigation'
-import {
-  Copy,
-  LayoutGrid,
-  LayoutList,
-  Lock,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  Settings2,
-  ThumbsUp,
-  Trash2,
-} from 'lucide-react'
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
@@ -57,20 +46,30 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { CustomizeModal } from '@/components/lists/customize-modal'
 import { EditableThumbnail } from '@/components/lists/editable-thumbnail'
 import { TagChip } from '@/components/lists/tag-chip'
-import { TierBadge } from '@/components/lists/tier-badge'
+import { TIER_BAND_BG } from '@/components/lists/tier-badge'
+import type { BuilderPlayer } from '@/components/lists/builder/types'
 import { PlayerCard } from '@/components/players/player-card'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { PositionBadge } from '@/components/players/position-badge'
 import { PlayerRow } from '@/components/players/player-row'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   type ListPlayerWithPlayer,
   type ListWithDetails,
+  useAddPlayer,
   useDeleteList,
   useDuplicateList,
   useRemovePlayer,
@@ -199,7 +198,7 @@ interface ListDetailViewProps {
 export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetailViewProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const [viewMode, setViewMode] = useState<ViewMode>('cards')
+  const [viewMode, setViewMode] = useState<ViewMode>('comfortable')
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const openPlayerWindow = usePlayerWindowsStore((s) => s.open)
@@ -221,6 +220,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
 
   const reorder = useReorderPlayers(list.id)
   const removePlayer = useRemovePlayer(list.id)
+  const addPlayer = useAddPlayer(list.id)
   const toggleLike = useToggleLike(list.id)
   const toggleFavorite = useToggleFavorite()
   const duplicateList = useDuplicateList()
@@ -261,6 +261,26 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
     })
   }
 
+  const handleShare = () => {
+    const url = typeof window !== 'undefined' ? window.location.href : ''
+    if (!url) return
+    void navigator.clipboard?.writeText(url).then(
+      () =>
+        toast({
+          title: 'Link copied',
+          description: list.is_private
+            ? 'This list is private — only you can open it.'
+            : list.title,
+        }),
+      () => toast({ title: 'Could not copy link', variant: 'destructive' }),
+    )
+  }
+
+  const handleReset = () => {
+    draft.clearDrafted()
+    toast({ title: 'List reset — drafted marks cleared' })
+  }
+
   const players = list.players
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -283,6 +303,10 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   const tierAddDrops = useTierAddDroppables(list.id)
 
   const orderedIds = useMemo(() => players.map((p) => p.player_id), [players])
+  const addedIds = useMemo(
+    () => new Set(players.map((p) => p.player_id)),
+    [players],
+  )
 
   const handleListReorder = (event: DragEndEvent) => {
     if (!isOwner || list.tiers_enabled) return
@@ -339,6 +363,27 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
       onError: (err) =>
         toast({
           title: 'Could not remove',
+          description: err.message,
+          variant: 'destructive',
+        }),
+    })
+  }
+
+  const handleAdd = (player: { id: string; full_name: string }) => {
+    // Each player appears once per list — the unique constraint is server-side;
+    // the combobox greys out players that are already on the board.
+    if (addedIds.has(player.id)) {
+      toast({
+        title: `${player.full_name} is already on this list`,
+        variant: 'destructive',
+      })
+      return
+    }
+    addPlayer.mutate(player.id, {
+      onSuccess: () => toast({ title: `Added ${player.full_name}` }),
+      onError: (err) =>
+        toast({
+          title: 'Could not add',
           description: err.message,
           variant: 'destructive',
         }),
@@ -497,132 +542,173 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   const toggleSelected = (playerId: string) =>
     setSelectedPlayerId((cur) => (cur === playerId ? null : playerId))
 
+  const draftedCount = players.filter((p) => draft.drafted.has(p.player_id)).length
+  const kindBadge = list.is_team ? (
+    <Badge variant="stroke">Team</Badge>
+  ) : list.hide_order ? (
+    <Badge variant="stroke">List</Badge>
+  ) : (
+    <Badge variant="accent">Ranking</Badge>
+  )
+
   return (
-    <div className="space-y-6">
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex items-start gap-4">
-            <EditableThumbnail
-              listId={list.id}
-              positionFilter={list.position_filter}
-              isTeam={list.is_team ?? false}
-              imageUrl={list.thumbnail_url}
-              players={list.players.slice(0, 3).map((p) => ({
-                id: p.player.id,
-                full_name: p.player.full_name,
-                team: p.player.team,
-                headshot_url: p.player.headshot_url,
-                position: p.player.position,
-              }))}
-              editable={isOwner}
-              className="hidden sm:inline-flex"
-            />
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2 empty:hidden">
-                {list.is_big_board && (
-                  <Badge className="border-bg-elevated-3 bg-bg-elevated-2 text-[10px] font-semibold text-foreground">
-                    Big Board
-                  </Badge>
-                )}
-                {list.position_filter && (
-                  <PositionBadge
-                    position={
-                      list.position_filter === 'DEF' ? 'DST' : list.position_filter
-                    }
-                    size="sm"
-                  />
-                )}
-                {list.hide_order && (
-                  <Badge
-                    variant="default"
-                    className="border-bg-elevated-3 text-[10px] text-text-secondary"
-                  >
-                    Unranked
-                  </Badge>
-                )}
-                {list.tiers_enabled && (
-                  <Badge
-                    variant="default"
-                    className="border-bg-elevated-3 text-[10px] text-text-secondary"
-                  >
-                    Tiers
-                  </Badge>
-                )}
-                {draft.enabled && (
-                  <Badge
-                    variant="default"
-                    className="border-bg-elevated-3 text-[10px] text-text-secondary"
-                  >
-                    Draft
-                  </Badge>
-                )}
-                {list.is_private && (
-                  <Badge
-                    variant="default"
-                    className="border-bg-elevated-3 text-[10px] text-text-secondary"
-                  >
-                    <Lock className="mr-1 h-3 w-3" /> Private
-                  </Badge>
-                )}
-              </div>
-              <EditableTitle
-                title={list.title}
-                editable={isOwner && !list.is_big_board}
-                onSave={(next) =>
-                  updateList.mutate(
-                    { title: next },
-                    {
+    <div className="space-y-4">
+      <PageHeader
+        title={
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Back"
+              onClick={() => router.back()}
+            >
+              <Icon name="arrow-prev" size={14} />
+            </Button>
+            <nav
+              aria-label="Breadcrumb"
+              className="flex min-w-0 items-center gap-1.5 text-[12px] font-bold"
+            >
+              <Link
+                href="/app/lists"
+                className="shrink-0 text-n-3 transition-colors hover:text-ink"
+              >
+                Lists
+              </Link>
+              <span className="text-n-3">/</span>
+              <span className="truncate text-ink">{list.title}</span>
+            </nav>
+          </div>
+        }
+        actions={
+          <div className="flex items-center gap-2.5">
+            <Button variant="stroke" size="sm" onClick={handleShare}>
+              <Icon name="send" size={13} /> Share
+            </Button>
+            {isOwner && (
+              <Button
+                variant="stroke"
+                size="sm"
+                disabled={!draft.enabled || draftedCount === 0}
+                onClick={handleReset}
+              >
+                <Icon name="reset" size={13} /> Reset list
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="More actions">
+                  <Icon name="dots" size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() =>
+                    toggleFavorite.mutate(list.id, {
                       onError: (err) =>
                         toast({
-                          title: 'Could not rename',
+                          title: 'Could not pin',
                           description: err.message,
                           variant: 'destructive',
                         }),
-                    },
-                  )
-                }
-              />
-              {list.description && (
-                <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-                  {list.description}
-                </p>
-              )}
-              <p className="mt-2 text-xs text-text-secondary">
-                {list.player_count} player{list.player_count === 1 ? '' : 's'}
-                {' · '}
-                {list.like_count}
-                {list.like_count === 1 ? ' thumbs up' : ' thumbs ups'}
-              </p>
-            </div>
+                    })
+                  }
+                >
+                  <Icon name="marker" size={13} />
+                  {list.is_favorited ? 'Unpin' : 'Pin'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={duplicateList.isPending}
+                  onSelect={handleDuplicate}
+                >
+                  <Icon name="save" size={13} />
+                  Duplicate
+                </DropdownMenuItem>
+                {isOwner && !list.is_big_board && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="focus:bg-negative-soft"
+                      onSelect={() => setDeleteOpen(true)}
+                    >
+                      <Icon name="remove" size={13} />
+                      Delete list
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+        }
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="invisible"
-              onClick={() =>
-                toggleFavorite.mutate(list.id, {
+      {/* Identity card */}
+      <header className="flex flex-wrap items-center gap-4 rounded-sm border border-ink bg-white px-5 py-4">
+        <EditableThumbnail
+          listId={list.id}
+          positionFilter={list.position_filter}
+          isTeam={list.is_team ?? false}
+          imageUrl={list.thumbnail_url}
+          players={list.players.slice(0, 3).map((p) => ({
+            id: p.player.id,
+            full_name: p.player.full_name,
+            team: p.player.team,
+            headshot_url: p.player.headshot_url,
+            position: p.player.position,
+          }))}
+          editable={isOwner}
+          className="hidden sm:inline-flex"
+        />
+        <div className="min-w-0 flex-1 basis-56">
+          <EditableTitle
+            title={list.title}
+            editable={isOwner && !list.is_big_board}
+            onSave={(next) =>
+              updateList.mutate(
+                { title: next },
+                {
                   onError: (err) =>
                     toast({
-                      title: 'Could not pin',
+                      title: 'Could not rename',
                       description: err.message,
                       variant: 'destructive',
                     }),
-                })
-              }
-              className="text-text-secondary hover:text-foreground"
-              aria-label={list.is_favorited ? 'Unpin' : 'Pin'}
-              aria-pressed={list.is_favorited ?? false}
-            >
-              <Pin
-                className={cn(
-                  'mr-1.5 h-4 w-4',
-                  list.is_favorited && 'fill-foreground',
-                )}
+                },
+              )
+            }
+          />
+          {list.description && (
+            <p className="mt-1 max-w-2xl text-sm font-medium text-n-3">
+              {list.description}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {kindBadge}
+            {list.is_big_board && <Badge variant="black">Big board</Badge>}
+            <Badge variant="stroke">
+              <span className="fs-num">{list.player_count}</span>&nbsp;player
+              {list.player_count === 1 ? '' : 's'}
+            </Badge>
+            {list.position_filter && (
+              <PositionBadge
+                position={
+                  list.position_filter === 'DEF' ? 'DST' : list.position_filter
+                }
+                size="sm"
               />
-              {list.is_favorited ? 'Pinned' : 'Pin'}
-            </Button>
-            <Button
-              variant="invisible"
+            )}
+            {list.tags.map((tag) => (
+              <TagChip key={tag.id} name={tag.name} slug={tag.slug} />
+            ))}
+            <span className="text-[12px] font-semibold text-n-3">
+              {list.is_private ? 'Private' : 'Public'}
+            </span>
+            {draft.enabled && draftedCount > 0 && (
+              <Badge variant="black">
+                <span className="fs-num">{draftedCount}</span>&nbsp;drafted
+              </Badge>
+            )}
+            <button
+              type="button"
               onClick={() =>
                 toggleLike.mutate(undefined, {
                   onError: (err) =>
@@ -633,99 +719,91 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
                     }),
                 })
               }
-              className="text-text-secondary hover:text-foreground"
-              aria-label="Upvote"
+              aria-label="Thumbs up"
+              className="inline-flex h-chip items-center gap-1 rounded-sm border border-ink bg-white px-2 text-[11px] font-bold leading-none text-ink transition-colors hover:bg-n-4"
             >
-              <ThumbsUp className="mr-1.5 h-4 w-4" />
-              <span className="tabular-nums">{list.like_count}</span>
-            </Button>
-            {isOwner && (
-              <Button
-                variant="invisible"
-                onClick={() => setCustomizeOpen(true)}
-                className="text-text-secondary hover:text-foreground"
-              >
-                <Settings2 className="mr-1.5 h-4 w-4" /> Customize
-              </Button>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="invisible"
-                  className="text-text-secondary hover:text-foreground"
-                  aria-label="More actions"
-                >
-                  <MoreHorizontal className="mr-1.5 h-4 w-4" /> More
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="border-bg-elevated-2 bg-bg-elevated"
-              >
-                <DropdownMenuItem
-                  disabled={duplicateList.isPending}
-                  onSelect={handleDuplicate}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Duplicate
-                </DropdownMenuItem>
-                {isOwner && !list.is_big_board && (
-                  <DropdownMenuItem
-                    onSelect={() => setDeleteOpen(true)}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <Icon name="like" size={11} />
+              <span className="fs-num">{list.like_count}</span>
+            </button>
           </div>
         </div>
-
-        {list.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {list.tags.map((tag) => (
-              <TagChip key={tag.id} name={tag.name} slug={tag.slug} />
-            ))}
-          </div>
+        {isOwner && !list.is_team && (
+          <AddPlayerCombobox
+            addedIds={addedIds}
+            positionFilter={list.position_filter}
+            onAdd={handleAdd}
+          />
         )}
       </header>
 
-      <Toolbar
-        viewMode={viewMode}
-        onViewMode={setViewMode}
-        showViewModes={!list.is_team}
-        // Tiers is a view mode, not a property of the list — flip it any time.
-        tiersOn={
-          isOwner && !list.is_team && !list.hide_order
-            ? list.tiers_enabled
-            : null
-        }
-        onTiersChange={(next) =>
-          // Drive ranking_mode (the source of truth) so hide_order/tiers_enabled
-          // stay in sync. Players are never touched — turning tiers on just
-          // regroups them; everything starts in the Untiered section.
-          updateList.mutate(
-            { ranking_mode: next ? 'rank_and_tier' : 'ranked' },
-            {
-              onError: (err) =>
-                toast({
-                  title: 'Could not save',
-                  description: err.message,
-                  variant: 'destructive',
-                }),
-            },
-          )
-        }
-      />
+      {/* Toolbar — grouping tabs, keyboard hint, customize, layout tabs */}
+      <div className="flex flex-wrap items-center gap-3">
+        {isOwner && !list.is_team && !list.hide_order && (
+          <Tabs
+            value={list.tiers_enabled ? 'tiers' : 'order'}
+            onValueChange={(next) => {
+              if (next !== 'tiers' && next !== 'order') return
+              // Drive ranking_mode (the source of truth) so hide_order/
+              // tiers_enabled stay in sync. Players are never touched —
+              // turning tiers on just regroups them into Untiered.
+              updateList.mutate(
+                { ranking_mode: next === 'tiers' ? 'rank_and_tier' : 'ranked' },
+                {
+                  onError: (err) =>
+                    toast({
+                      title: 'Could not save',
+                      description: err.message,
+                      variant: 'destructive',
+                    }),
+                },
+              )
+            }}
+          >
+            <TabsList>
+              <TabsTrigger value="order">List order</TabsTrigger>
+              <TabsTrigger value="tiers">Tiers</TabsTrigger>
+              <ComingSoonTab label="Rounds" />
+              <ComingSoonTab label="Price" />
+            </TabsList>
+          </Tabs>
+        )}
+        {selectedPlayerId && !list.tiers_enabled && (
+          <span className="fs-num text-[11px] font-bold text-n-3">
+            ↑↓ to move · esc to clear
+          </span>
+        )}
+        <span className="ml-auto inline-flex items-center gap-2.5">
+          {isOwner && (
+            <Button
+              variant="stroke"
+              size="sm"
+              onClick={() => setCustomizeOpen(true)}
+            >
+              <Icon name="setup" size={13} /> Customize
+            </Button>
+          )}
+          {!list.is_team && (
+            <Tabs
+              value={viewMode === 'cards' ? 'cards' : 'stacked'}
+              onValueChange={(next) =>
+                setViewMode(next === 'cards' ? 'cards' : 'comfortable')
+              }
+            >
+              <TabsList>
+                <TabsTrigger value="stacked">Stacked</TabsTrigger>
+                <TabsTrigger value="cards">Cards</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </span>
+      </div>
 
       <div
         ref={playerDrop.setNodeRef}
         className={cn(
-          'rounded-lg transition-all',
-          playerDropActive && 'p-2 ring-1 ring-foreground/30 ring-offset-0',
-          playerDropActive && playerDrop.isOver && 'bg-foreground/5 ring-foreground/60',
+          'rounded-sm transition-all',
+          playerDropActive && 'p-2 ring-1 ring-accent/50',
+          playerDropActive && playerDrop.isOver && 'bg-accent-soft/60 ring-accent',
         )}
       >
       {players.length === 0 ? (
@@ -796,7 +874,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
           onDragCancel={() => setListDragId(null)}
         >
           <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-0.5">
+            <ul className="space-y-0.5 rounded-sm border border-ink bg-white p-1">
               {players.map((p, i) => (
                 <SortablePlayer
                   key={p.player_id}
@@ -837,7 +915,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
                   density={viewMode === 'compact' ? 'compact' : 'comfortable'}
                   stats={rowStatsFor(p, viewMode)}
                   isDragging
-                  className="bg-bg-elevated-2"
+                  className="bg-white"
                 />
               )
             })()}
@@ -858,21 +936,19 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
 
       {isOwner && !list.is_big_board && (
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent className="border-bg-elevated-2 bg-bg-elevated sm:max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Delete this list?</DialogTitle>
               <DialogDescription>
-                <span className="font-semibold text-foreground">
-                  {list.title}
-                </span>{' '}
-                will be moved to your Trash. You can restore it from there until
+                <span className="font-bold text-ink">{list.title}</span> will
+                be moved to your Trash. You can restore it from there until
                 it&apos;s permanently removed.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button
                 type="button"
-                variant="invisible"
+                variant="stroke"
                 onClick={() => setDeleteOpen(false)}
                 disabled={deleteList.isPending}
               >
@@ -881,10 +957,11 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
               <Button
                 type="button"
                 variant="destructive"
+                shadow
                 onClick={handleConfirmDelete}
                 disabled={deleteList.isPending}
               >
-                {deleteList.isPending ? 'Deleting…' : 'Yes, Delete'}
+                {deleteList.isPending ? 'Deleting…' : 'Delete list'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -894,102 +971,134 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   )
 }
 
-function Toolbar({
-  viewMode,
-  onViewMode,
-  showViewModes = true,
-  tiersOn = null,
-  onTiersChange,
-}: {
-  viewMode: ViewMode
-  onViewMode: (next: ViewMode) => void
-  showViewModes?: boolean
-  /** null hides the switch (team lists, unranked lists, non-owners). */
-  tiersOn?: boolean | null
-  onTiersChange?: (next: boolean) => void
-}) {
+/** Disabled grouping tab — Rounds/Price need league sync data we don't have. */
+function ComingSoonTab({ label }: { label: string }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
-      {showViewModes ? (
-        <div className="flex items-center gap-1 rounded-full border border-bg-elevated-2 bg-bg-elevated p-1">
-          <ViewButton
-            icon={<LayoutGrid className="h-4 w-4" />}
-            label="Card"
-            active={viewMode === 'cards'}
-            onClick={() => onViewMode('cards')}
-          />
-          <ViewButton
-            icon={<LayoutList className="h-4 w-4" />}
-            label="List"
-            active={viewMode === 'comfortable'}
-            onClick={() => onViewMode('comfortable')}
-          />
-        </div>
-      ) : (
-        <div />
-      )}
-
-      <div className="flex items-center gap-2">
-        {tiersOn !== null && onTiersChange && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={tiersOn}
-            onClick={() => onTiersChange(!tiersOn)}
-            className="flex items-center gap-2 text-sm text-text-secondary"
-          >
-            <span
-              className={cn(
-                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                tiersOn ? 'bg-foreground' : 'bg-bg-elevated-3',
-              )}
-            >
-              <span
-                className={cn(
-                  'absolute h-4 w-4 rounded-full transition-transform',
-                  tiersOn
-                    ? 'translate-x-4 bg-background'
-                    : 'translate-x-0.5 bg-foreground',
-                )}
-              />
-            </span>
-            <span className={cn('font-medium', tiersOn && 'text-foreground')}>
-              Tiers
-            </span>
-          </button>
-        )}
-      </div>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <TabsTrigger value={label.toLowerCase()} disabled>
+            {label}
+          </TabsTrigger>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Coming with league sync</TooltipContent>
+    </Tooltip>
   )
 }
 
-function ViewButton({
-  icon,
-  label,
-  active,
-  onClick,
+// =============================================================================
+// Add-a-player combobox — inline quick-add in the identity card. Same data
+// source as the player sidebar (/api/players/builder); same add mutation.
+// =============================================================================
+
+/**
+ * Maps a list's position_filter to the set of player positions the picker
+ * should show. FLEX expands to RB/WR/TE; null/empty means no restriction.
+ */
+function expandPositionFilter(
+  positionFilter: string | null | undefined,
+): readonly string[] | null {
+  if (!positionFilter) return null
+  const upper = positionFilter.toUpperCase()
+  if (upper === 'FLEX') return ['RB', 'WR', 'TE']
+  if (['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].includes(upper)) return [upper]
+  return null
+}
+
+function AddPlayerCombobox({
+  addedIds,
+  positionFilter,
+  onAdd,
 }: {
-  icon: React.ReactNode
-  label: string
-  active: boolean
-  onClick: () => void
+  addedIds: Set<string>
+  positionFilter: string | null | undefined
+  onAdd: (player: { id: string; full_name: string }) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [pool, setPool] = useState<BuilderPlayer[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const fetchedRef = useRef(false)
+
+  // Lazy-load the player pool the first time the field opens.
+  useEffect(() => {
+    if (!open || fetchedRef.current) return
+    fetchedRef.current = true
+    setLoading(true)
+    const params = new URLSearchParams({ scoring: 'ppr', limit: '300' })
+    const positions = expandPositionFilter(positionFilter)
+    if (positions) params.set('positions', positions.join(','))
+    fetch(`/api/players/builder?${params}`)
+      .then((res) => res.json() as Promise<{ players: BuilderPlayer[] }>)
+      .then((data) => setPool(data.players ?? []))
+      .catch(() => setPool([]))
+      .finally(() => setLoading(false))
+  }, [open, positionFilter])
+
+  const q = query.trim().toLowerCase()
+  const matches = (pool ?? [])
+    .filter((p) => !q || p.full_name.toLowerCase().includes(q))
+    .slice(0, 8)
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      className={cn(
-        'flex h-7 w-8 items-center justify-center rounded-full transition-colors',
-        active
-          ? 'bg-bg-elevated-3 text-foreground'
-          : 'text-text-secondary hover:text-foreground',
+    <div className="relative w-full sm:w-[200px]">
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        placeholder="Add a player…"
+        aria-label="Add a player"
+        className="h-btn text-[13px]"
+      />
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-full min-w-[240px] rounded-sm border border-ink bg-white py-1 shadow-hard-4">
+          {loading && (
+            <p className="px-3 py-2 text-xs font-semibold text-n-3">Loading…</p>
+          )}
+          {!loading && matches.length === 0 && (
+            <p className="px-3 py-2 text-xs font-semibold text-n-3">
+              No players found.
+            </p>
+          )}
+          {!loading &&
+            matches.map((p) => {
+              const added = addedIds.has(p.id)
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={added}
+                  // mousedown fires before the input's blur closes the panel.
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    if (!added) onAdd(p)
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                    added ? 'opacity-40' : 'hover:bg-accent-soft',
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-bold text-ink">
+                      {p.full_name}
+                    </span>
+                    <span className="block text-[11px] font-medium text-n-3">
+                      {[p.position, p.team].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <Icon
+                    name={added ? 'check' : 'plus'}
+                    size={12}
+                    className={added ? 'text-positive-strong' : 'text-ink'}
+                  />
+                </button>
+              )
+            })}
+        </div>
       )}
-    >
-      {icon}
-    </button>
+    </div>
   )
 }
 
@@ -1081,13 +1190,13 @@ function SortablePlayer({
                   onClick={onToggleDrafted}
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
-                    'rounded-full px-2 py-1 text-[10px] font-semibold opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100',
+                    'rounded-sm border border-ink px-2 py-1 text-[10px] font-bold leading-none opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100',
                     drafted
-                      ? 'bg-bg-elevated-3 text-text-secondary'
-                      : 'bg-foreground text-background hover:bg-foreground/90',
+                      ? 'bg-white text-ink hover:bg-n-4'
+                      : 'bg-accent text-accent-foreground hover:bg-accent-strong',
                   )}
                 >
-                  {drafted ? 'Drafted' : 'Mark drafted'}
+                  {drafted ? 'Undo' : 'Drafted'}
                 </button>
               ) : slotAction ? (
                 <button
@@ -1098,10 +1207,10 @@ function SortablePlayer({
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
-                    'rounded-full px-2.5 py-1 text-[10px] font-semibold opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100',
+                    'rounded-sm border border-ink px-2.5 py-1 text-[10px] font-bold leading-none opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100',
                     slotAction.label === 'Start'
-                      ? 'bg-foreground text-background hover:bg-foreground/90'
-                      : 'bg-bg-elevated-3 text-text-secondary hover:bg-bg-elevated-2 hover:text-foreground',
+                      ? 'bg-positive text-ink hover:brightness-95'
+                      : 'bg-white text-ink hover:bg-n-4',
                   )}
                 >
                   {slotAction.label}
@@ -1328,7 +1437,7 @@ function TierBoard({
       measuring={MEASURE_ALWAYS}
       onDragEnd={handleDragEnd}
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         {/* Untiered sits at the TOP so that right after enabling tiers (when
             every player is untiered) they're immediately visible and can be
             dragged down into S, A, … rather than hidden below empty tiers. */}
@@ -1366,6 +1475,36 @@ function TierBoard({
         ))}
       </div>
     </DndContext>
+  )
+}
+
+/** Tier band head — painted with the tier ramp color, count on the right. */
+function TierBandHead({
+  chip,
+  label,
+  count,
+  className,
+}: {
+  chip: string
+  label: string
+  count: number
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'flex min-h-[38px] items-center gap-2.5 border-b border-ink px-4 py-1.5',
+        className,
+      )}
+    >
+      <span className="fs-num inline-flex h-6 min-w-6 items-center justify-center rounded-sm border border-ink bg-white px-1.5 text-[13px] font-extrabold text-ink">
+        {chip}
+      </span>
+      <span className="text-[13px] font-extrabold tracking-wide">{label}</span>
+      <span className="fs-num ml-auto text-[11px] font-bold opacity-80">
+        {count} player{count === 1 ? '' : 's'}
+      </span>
+    </div>
   )
 }
 
@@ -1413,16 +1552,16 @@ function TierRow({
   const highlight = isOver || isPlayerDragOver(tierAddDrop)
 
   return (
-    <section>
-      <div className="px-1 pb-1.5">
-        <TierBadge tier={tier} />
-      </div>
+    <section className="overflow-hidden rounded-sm border border-ink bg-white">
+      <TierBandHead
+        chip={tier}
+        label={`Tier ${tier}`}
+        count={players.length}
+        className={TIER_BAND_BG[tier]}
+      />
       <div
         ref={setRefs}
-        className={cn(
-          'rounded-md bg-white/[0.03] p-1 transition-colors',
-          highlight && 'bg-foreground/10 ring-1 ring-foreground/40',
-        )}
+        className={cn('p-1 transition-colors', highlight && 'bg-accent-soft')}
       >
         <SortableContext
           items={players.map((p) => p.player_id)}
@@ -1433,7 +1572,7 @@ function TierRow({
           }
         >
           {players.length === 0 ? (
-            <p className="px-3 py-3 text-center text-xs text-text-tertiary">
+            <p className="px-3 py-3 text-center text-xs font-semibold text-n-3">
               Drop players here
             </p>
           ) : (
@@ -1506,16 +1645,16 @@ function UntieredRow({
   const highlight = isOver || isPlayerDragOver(tierAddDrop)
 
   return (
-    <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-        Untiered
-      </h3>
+    <section className="overflow-hidden rounded-sm border border-ink bg-white">
+      <TierBandHead
+        chip="—"
+        label="Untiered"
+        count={players.length}
+        className="bg-n-4 text-ink"
+      />
       <div
         ref={setRefs}
-        className={cn(
-          'rounded-md bg-white/[0.03] p-1 transition-colors',
-          highlight && 'bg-foreground/10 ring-1 ring-foreground/40',
-        )}
+        className={cn('p-1 transition-colors', highlight && 'bg-accent-soft')}
       >
         <SortableContext
           items={players.map((p) => p.player_id)}
@@ -1686,7 +1825,7 @@ function PositionBoard({
       measuring={MEASURE_ALWAYS}
       onDragEnd={handleDragEnd}
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         {SLOT_ORDER.map((slot) => (
           <SlotRow
             key={slot}
@@ -1746,12 +1885,12 @@ function SlotRow({
   }
 
   return (
-    <section>
-      <div className="flex items-center justify-between px-1 pb-1.5">
-        {/* Position slots get the colored positional tag (QB green, etc.);
+    <section className="overflow-hidden rounded-sm border border-ink bg-white">
+      <div className="flex min-h-[38px] items-center justify-between gap-2 border-b border-ink px-4 py-1.5">
+        {/* Position slots get the colored positional tag (QB orange, etc.);
             Bench and IR aren't positions, so they keep a plain text label. */}
         {slot === 'BENCH' || slot === 'IR' ? (
-          <p className="text-xs font-bold uppercase tracking-wider text-foreground">
+          <p className="text-[12px] font-extrabold uppercase tracking-wide text-ink">
             {SLOT_LABELS[slot]}
           </p>
         ) : (
@@ -1760,8 +1899,8 @@ function SlotRow({
         {capacity != null && (
           <p
             className={cn(
-              'text-[10px] tabular-nums',
-              over ? 'font-semibold text-destructive' : 'text-text-tertiary',
+              'fs-num text-[11px] font-bold',
+              over ? 'text-negative-strong' : 'text-n-3',
             )}
           >
             {players.length}/{capacity}
@@ -1770,17 +1909,14 @@ function SlotRow({
       </div>
       <div
         ref={setNodeRef}
-        className={cn(
-          'rounded-md bg-white/[0.03] p-1 transition-colors',
-          isOver && 'bg-foreground/10',
-        )}
+        className={cn('p-1 transition-colors', isOver && 'bg-accent-soft')}
       >
         <SortableContext
           items={players.map((p) => p.player_id)}
           strategy={verticalListSortingStrategy}
         >
           {players.length === 0 ? (
-            <p className="px-3 py-3 text-center text-xs text-text-tertiary">
+            <p className="px-3 py-3 text-center text-xs font-semibold text-n-3">
               Drop players here
             </p>
           ) : (
@@ -1838,7 +1974,7 @@ function EditableTitle({
   }, [editing])
 
   if (!editable) {
-    return <h1 className="text-2xl font-bold leading-tight">{title}</h1>
+    return <h1 className="text-h4">{title}</h1>
   }
 
   const commit = () => {
@@ -1873,7 +2009,7 @@ function EditableTitle({
           }
         }}
         maxLength={100}
-        className="w-full max-w-xl rounded-md border border-bg-elevated-3 bg-bg-elevated px-2 py-1 text-2xl font-bold leading-tight text-foreground outline-none focus:border-foreground"
+        className="w-full max-w-xl rounded-sm border border-ink bg-white px-2 py-1 text-h4 text-ink outline-none focus:border-accent"
         aria-label="List title"
       />
     )
@@ -1883,11 +2019,15 @@ function EditableTitle({
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className="group inline-flex items-center gap-2 rounded-full text-left"
+      className="group inline-flex max-w-full items-center gap-2 text-left"
       aria-label="Rename list"
     >
-      <h1 className="text-2xl font-bold leading-tight">{title}</h1>
-      <Pencil className="h-4 w-4 text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100" />
+      <h1 className="truncate text-h4">{title}</h1>
+      <Icon
+        name="edit"
+        size={14}
+        className="shrink-0 text-n-3 opacity-0 transition-opacity group-hover:opacity-100"
+      />
     </button>
   )
 }
@@ -1901,32 +2041,29 @@ function EmptyState({
 }) {
   if (aiBuilding) {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-          <p className="animate-pulse text-sm text-text-secondary">
-            FieldScout AI is scouting players for this list…
-          </p>
-        </CardContent>
-      </Card>
+      <div className="rounded-sm border border-accent bg-accent-soft px-6 py-14 text-center">
+        <p className="animate-pulse text-sm font-bold text-ink">
+          FieldScout AI is scouting players for this list…
+        </p>
+      </div>
     )
   }
   return (
-    <Card className="border-bg-elevated-2 bg-bg-elevated">
-      <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <p className="text-sm text-text-secondary">
-          {isOwner
-            ? "Empty list. Add your first player to get started."
-            : 'No players in this list yet.'}
-        </p>
-        {!isOwner && (
-          <Link
-            href="/app/players"
-            className="text-xs font-medium text-foreground hover:underline"
-          >
-            Browse players →
-          </Link>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+      <h2 className="text-h5">No players yet</h2>
+      <p className="mt-2 text-sm font-medium text-n-3">
+        {isOwner
+          ? 'Add from the player bar on the right, or search above.'
+          : 'No players in this list yet.'}
+      </p>
+      {!isOwner && (
+        <Link
+          href="/app/players"
+          className="mt-3 inline-block text-xs font-bold text-accent hover:underline"
+        >
+          Browse players →
+        </Link>
+      )}
+    </div>
   )
 }

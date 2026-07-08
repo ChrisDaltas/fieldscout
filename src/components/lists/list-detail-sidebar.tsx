@@ -1,11 +1,11 @@
 'use client'
 
-import { Check, Maximize2, Minimize2, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { PlayerSidebar } from '@/components/lists/builder/player-sidebar'
 import type { BuilderPlayer } from '@/components/lists/builder/types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Tooltip,
@@ -81,10 +81,9 @@ export function ListDetailSidebar({
     window.localStorage.setItem(STORAGE_KEY, next)
   }
 
-  // Floating panel — a detached rounded surface like the left nav, with no
-  // border strokes defining its area.
+  // White panel on a 1px ink border — same surface language as the cards.
   const panelClass =
-    'flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-bg-elevated-2 shadow-lg shadow-black/20'
+    'flex h-full shrink-0 flex-col overflow-hidden rounded-sm border border-ink bg-white'
 
   if (mode === 'condensed') {
     return (
@@ -132,12 +131,12 @@ function SidebarModeBar({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-between gap-1 px-3 py-2',
+        'flex shrink-0 items-center justify-between gap-1 border-b border-ink px-3 py-2',
         mode === 'condensed' && 'justify-center',
       )}
     >
       {mode === 'full' && (
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-n-3">
           Players
         </span>
       )}
@@ -146,13 +145,9 @@ function SidebarModeBar({
         aria-label={mode === 'full' ? 'Minimize to condensed' : 'Expand to full sidebar'}
         title={mode === 'full' ? 'Minimize' : 'Expand'}
         onClick={() => onModeChange(mode === 'full' ? 'condensed' : 'full')}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground"
+        className="flex h-7 w-7 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4"
       >
-        {mode === 'full' ? (
-          <Minimize2 className="h-3.5 w-3.5" />
-        ) : (
-          <Maximize2 className="h-3.5 w-3.5" />
-        )}
+        <Icon name={mode === 'full' ? 'arrow-next' : 'arrow-prev'} size={13} />
       </button>
     </div>
   )
@@ -200,7 +195,7 @@ function CondensedPlayerList({
       {loading && (
         <div className="space-y-1 px-2 py-2">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-14 rounded-md" />
+            <Skeleton key={i} className="h-14 w-14" />
           ))}
         </div>
       )}
@@ -232,7 +227,7 @@ function CondensedPlayerList({
                         : `Add ${player.full_name}`
                     }
                     className={cn(
-                      'group relative flex w-full items-center justify-center rounded-md px-2 py-2.5 transition-colors hover:bg-bg-elevated-3',
+                      'group relative flex w-full items-center justify-center rounded-sm px-2 py-2.5 transition-colors hover:bg-n-4',
                       isAdded && 'cursor-default',
                     )}
                   >
@@ -256,25 +251,21 @@ function CondensedPlayerList({
                     </Avatar>
                     <span
                       className={cn(
-                        'absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated-2 transition-opacity',
+                        'absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full border border-ink transition-opacity',
                         isAdded
-                          ? 'bg-tier-a/90 text-background opacity-100'
-                          : 'bg-foreground text-background opacity-0 group-hover:opacity-100',
+                          ? 'bg-positive text-ink opacity-100'
+                          : 'bg-ink text-white opacity-0 group-hover:opacity-100',
                       )}
                     >
-                      {isAdded ? (
-                        <Check className="h-3 w-3" />
-                      ) : (
-                        <Plus className="h-3 w-3" />
-                      )}
+                      <Icon name={isAdded ? 'check' : 'plus'} size={10} />
                     </span>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="left" sideOffset={8} className="max-w-[220px]">
-                  <p className="truncate text-sm font-semibold">
+                  <p className="truncate text-sm font-bold">
                     {player.full_name}
                   </p>
-                  <p className="truncate text-xs text-text-secondary">
+                  <p className="truncate text-xs font-medium text-white/70">
                     {[player.position, player.team].filter(Boolean).join(' · ')}
                     {player.projected_pts != null &&
                       ` · Proj ${player.projected_pts.toFixed(1)}`}

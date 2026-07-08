@@ -1,10 +1,10 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { Camera, Loader2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { ListThumbnail } from '@/components/lists/list-thumbnail'
+import { Icon } from '@/components/ui/icon'
 import { listsKeys, type ThumbnailPlayer } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -97,15 +97,15 @@ export function EditableThumbnail({
         disabled={uploading}
         aria-label="Change thumbnail"
         className={cn(
-          'absolute inset-0 flex items-center justify-center rounded-md bg-black/55 text-foreground opacity-0 transition-opacity group-hover:opacity-100',
+          'absolute inset-0 flex items-center justify-center rounded-sm bg-ink/85 text-white opacity-0 transition-opacity group-hover:opacity-100',
           uploading && 'opacity-100',
         )}
       >
         {uploading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-[11px] font-bold">Uploading…</span>
         ) : (
-          <span className="flex flex-col items-center gap-1 text-[11px] font-semibold">
-            <Camera className="h-5 w-5" />
+          <span className="flex flex-col items-center gap-1 text-[11px] font-bold">
+            <Icon name="edit" size={14} />
             Change
           </span>
         )}

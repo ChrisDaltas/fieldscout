@@ -2,7 +2,6 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { Folder, ImagePlus, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import {
   foldersKeys,
@@ -30,7 +30,7 @@ interface FolderFormDialogProps {
 }
 
 /**
- * Create / edit a sidebar folder: name plus an optional custom thumbnail.
+ * Create / edit a folder: name plus an optional custom thumbnail.
  * Without a custom image the folder shows the default folder icon.
  */
 export function FolderFormDialog({
@@ -120,10 +120,10 @@ export function FolderFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-bg-elevated-2 bg-bg-elevated sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>
-            {mode === 'create' ? 'New folder' : 'Edit folder'}
+            {mode === 'create' ? 'Create a folder' : 'Edit folder'}
           </DialogTitle>
         </DialogHeader>
 
@@ -133,7 +133,7 @@ export function FolderFormDialog({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               aria-label="Change folder thumbnail"
-              className="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg-elevated-2 transition-colors hover:bg-bg-elevated-3"
+              className="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-ink bg-white transition-colors hover:bg-n-4"
             >
               {thumbnailSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -143,15 +143,15 @@ export function FolderFormDialog({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <Folder className="h-7 w-7 text-text-secondary" />
+                <Icon name="folder" size={22} className="text-ink" />
               )}
-              <span className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-                <ImagePlus className="h-5 w-5 text-white" />
+              <span className="absolute inset-0 flex items-center justify-center bg-ink/85 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <Icon name="edit" size={14} />
               </span>
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">Thumbnail</p>
-              <p className="text-xs text-text-secondary">
+              <p className="text-sm font-bold text-ink">Thumbnail</p>
+              <p className="text-xs font-medium text-n-3">
                 Optional — defaults to the folder icon.
               </p>
             </div>
@@ -165,7 +165,7 @@ export function FolderFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+            <label className="block text-[12px] font-bold text-ink">
               Folder name
             </label>
             <Input
@@ -173,7 +173,7 @@ export function FolderFormDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
-              placeholder="e.g. Dynasty Research"
+              placeholder="e.g. Draft prep"
               required
             />
           </div>
@@ -181,15 +181,20 @@ export function FolderFormDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="invisible"
+              variant="stroke"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Create' : 'Save'}
+            <Button type="submit" variant="blue" shadow disabled={!canSubmit}>
+              {submitting
+                ? mode === 'create'
+                  ? 'Creating…'
+                  : 'Saving…'
+                : mode === 'create'
+                  ? 'Create folder'
+                  : 'Save'}
             </Button>
           </DialogFooter>
         </form>

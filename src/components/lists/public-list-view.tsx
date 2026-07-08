@@ -1,12 +1,14 @@
 import Link from 'next/link'
-import { Heart, Lock } from 'lucide-react'
 
 import { PinListButton } from '@/components/lists/pin-list-button'
 import { TagChip } from '@/components/lists/tag-chip'
-import { TierBadge } from '@/components/lists/tier-badge'
+import { TierBadge, TIER_BAND_BG } from '@/components/lists/tier-badge'
 import { PlayerRow } from '@/components/players/player-row'
+import { PositionBadge } from '@/components/players/position-badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Badge } from '@/components/ui/badge'
+import { Icon } from '@/components/ui/icon'
+import { cn } from '@/lib/utils'
 
 import type { ListTier } from '@/types/database'
 
@@ -78,53 +80,13 @@ export function PublicListView({
   initialPinned,
 }: PublicListViewProps) {
   return (
-    <article className="space-y-6">
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {list.is_big_board && (
-            <Badge className="border-bg-elevated-3 bg-bg-elevated-2 text-[10px] font-semibold text-foreground">
-              Big Board
-            </Badge>
-          )}
-          {list.position_filter && (
-            <Badge
-              variant="default"
-              className="border-bg-elevated-3 text-[10px] text-text-secondary"
-            >
-              {list.position_filter}
-            </Badge>
-          )}
-          {list.hide_order && (
-            <Badge
-              variant="default"
-              className="border-bg-elevated-3 text-[10px] text-text-secondary"
-            >
-              Unranked
-            </Badge>
-          )}
-          {list.tiers_enabled && (
-            <Badge
-              variant="default"
-              className="border-bg-elevated-3 text-[10px] text-text-secondary"
-            >
-              Tiers
-            </Badge>
-          )}
-          {list.is_private && (
-            <Badge
-              variant="default"
-              className="border-bg-elevated-3 text-[10px] text-text-secondary"
-            >
-              <Lock className="mr-1 h-3 w-3" /> Private
-            </Badge>
-          )}
-        </div>
-
+    <article className="space-y-5">
+      <header className="space-y-3 rounded-sm border border-ink bg-white px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold leading-tight">{list.title}</h1>
+            <h1 className="text-h4">{list.title}</h1>
             {list.description && (
-              <p className="mt-1 max-w-2xl text-sm text-text-secondary">
+              <p className="mt-1 max-w-2xl text-sm font-medium text-n-3">
                 {list.description}
               </p>
             )}
@@ -138,56 +100,70 @@ export function PublicListView({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {list.hide_order ? (
+            <Badge variant="stroke">List</Badge>
+          ) : (
+            <Badge variant="accent">Ranking</Badge>
+          )}
+          {list.is_big_board && <Badge variant="black">Big board</Badge>}
+          <Badge variant="stroke">
+            <span className="fs-num">{list.player_count}</span>&nbsp;player
+            {list.player_count === 1 ? '' : 's'}
+          </Badge>
+          {list.position_filter && (
+            <PositionBadge
+              position={
+                list.position_filter === 'DEF' ? 'DST' : list.position_filter
+              }
+              size="sm"
+            />
+          )}
+          {tags.map((tag) => (
+            <TagChip key={tag.id} name={tag.name} slug={tag.slug} />
+          ))}
+          <span className="text-[12px] font-semibold text-n-3">
+            {list.is_private ? 'Private' : 'Public'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-n-3">
           <Link
             href={`/u/${owner.username}`}
-            className="flex items-center gap-2 rounded-full bg-bg-elevated px-3 py-1 transition-colors hover:bg-bg-elevated-2"
+            className="flex items-center gap-2 rounded-sm border border-ink bg-white px-2.5 py-1 text-ink transition-colors hover:bg-n-4"
           >
             <UserAvatar
               src={owner.avatar_url}
               name={owner.display_name ?? owner.username}
-              className="h-6 w-6"
+              className="h-5 w-5"
             />
-            <span className="text-foreground">
+            <span className="font-bold">
               {owner.display_name ?? `@${owner.username}`}
             </span>
-            {owner.is_pro && (
-              <span className="rounded-full bg-bg-elevated-2 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
-                PRO
-              </span>
-            )}
+            {owner.is_pro && <Badge variant="black">Pro</Badge>}
           </Link>
-          <span className="text-xs">
-            {list.player_count} player{list.player_count === 1 ? '' : 's'}
+          <span className="inline-flex items-center gap-1">
+            <Icon name="like" size={11} />
+            <span className="fs-num">{list.like_count}</span>
           </span>
-          <span className="text-xs">·</span>
-          <span className="inline-flex items-center gap-1 text-xs">
-            <Heart className="h-3 w-3" />
-            <span className="tabular-nums">{list.like_count}</span>
-          </span>
-          <span className="text-xs">·</span>
-          <span className="text-xs tabular-nums">
+          <span>·</span>
+          <span className="fs-num">
             {list.view_count} view{list.view_count === 1 ? '' : 's'}
           </span>
         </div>
-
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <TagChip key={tag.id} name={tag.name} slug={tag.slug} />
-            ))}
-          </div>
-        )}
       </header>
 
       {players.length === 0 ? (
-        <p className="rounded-md border border-bg-elevated-2 bg-bg-elevated p-6 text-center text-sm text-text-secondary">
-          No players in this list yet.
-        </p>
+        <div className="rounded-sm border border-ink bg-white px-6 py-12 text-center">
+          <h2 className="text-h6">No players yet</h2>
+          <p className="mt-1.5 text-sm font-medium text-n-3">
+            This list is still empty.
+          </p>
+        </div>
       ) : list.tiers_enabled && !list.hide_order ? (
         <PublicTierView players={players} />
       ) : (
-        <ul className="space-y-0.5">
+        <ul className="space-y-0.5 rounded-sm border border-ink bg-white p-1">
           {players.map((p, i) => (
             <li key={p.player_id}>
               <PlayerRow rank={i + 1} player={p.player} density="comfortable" />
@@ -214,11 +190,25 @@ function PublicTierView({ players }: { players: PlayerEntry[] }) {
         const rows = grouped.get(tier) ?? []
         if (rows.length === 0) return null
         return (
-          <section key={tier} className="flex gap-3">
-            <div className="pt-3">
-              <TierBadge tier={tier} />
+          <section
+            key={tier}
+            className="overflow-hidden rounded-sm border border-ink bg-white"
+          >
+            <div
+              className={cn(
+                'flex min-h-[38px] items-center gap-2.5 border-b border-ink px-4 py-1.5',
+                TIER_BAND_BG[tier],
+              )}
+            >
+              <TierBadge tier={tier} className="h-6 w-6 border-ink bg-white text-[13px] text-ink" />
+              <span className="text-[13px] font-extrabold tracking-wide">
+                Tier {tier}
+              </span>
+              <span className="fs-num ml-auto text-[11px] font-bold opacity-80">
+                {rows.length} player{rows.length === 1 ? '' : 's'}
+              </span>
             </div>
-            <ul className="flex-1 space-y-0.5 rounded-md border border-bg-elevated-2 bg-bg-elevated p-1">
+            <ul className="space-y-0.5 p-1">
               {rows.map((p) => (
                 <li key={p.player_id}>
                   <PlayerRow rank={p.position} player={p.player} showRank={false} />
@@ -228,6 +218,26 @@ function PublicTierView({ players }: { players: PlayerEntry[] }) {
           </section>
         )
       })}
+      {(grouped.get('untiered') ?? []).length > 0 && (
+        <section className="overflow-hidden rounded-sm border border-ink bg-white">
+          <div className="flex min-h-[38px] items-center gap-2.5 border-b border-ink bg-n-4 px-4 py-1.5">
+            <span className="text-[13px] font-extrabold tracking-wide">
+              Untiered
+            </span>
+            <span className="fs-num ml-auto text-[11px] font-bold opacity-80">
+              {(grouped.get('untiered') ?? []).length} player
+              {(grouped.get('untiered') ?? []).length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <ul className="space-y-0.5 p-1">
+            {(grouped.get('untiered') ?? []).map((p) => (
+              <li key={p.player_id}>
+                <PlayerRow rank={p.position} player={p.player} showRank={false} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }
