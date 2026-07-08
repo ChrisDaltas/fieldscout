@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { HomePlayerRow } from '@/components/home/home-player-row'
 import type { BuilderPlayer } from '@/components/lists/builder/types'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -129,15 +129,14 @@ export function TrendingPlayersCard() {
   }, [data])
 
   return (
-    <Card>
+    <CollapsibleCard title="Trending players">
       <Tabs defaultValue="risers">
-        <CardHeader>
-          <CardTitle>Trending players</CardTitle>
+        <div className="flex justify-end border-b border-n-4 px-[13px] py-2">
           <TabsList>
             <TabsTrigger value="risers">Risers</TabsTrigger>
             <TabsTrigger value="fallers">Fallers</TabsTrigger>
           </TabsList>
-        </CardHeader>
+        </div>
 
         {isLoading ? (
           <div className="space-y-2 p-[13px]">
@@ -168,6 +167,6 @@ export function TrendingPlayersCard() {
           </>
         )}
       </Tabs>
-    </Card>
+    </CollapsibleCard>
   )
 }

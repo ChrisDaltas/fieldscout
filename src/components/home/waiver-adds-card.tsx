@@ -1,7 +1,7 @@
 'use client'
 
 import { HomePlayerRow } from '@/components/home/home-player-row'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 
 /**
  * Top waiver adds (package screen 01, right column) — add % / rostered % /
@@ -33,13 +33,14 @@ const MOCK_WAIVERS: MockWaiverAdd[] = [
 
 export function WaiverAddsCard() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Top waiver adds</CardTitle>
+    <CollapsibleCard
+      title="Top waiver adds"
+      headerRight={
         <span className="text-[10px] font-medium tracking-[0.01em] text-n-3">
           This week
         </span>
-      </CardHeader>
+      }
+    >
       <div className="divide-y divide-n-4">
         {MOCK_WAIVERS.map((p) => (
           <HomePlayerRow
@@ -64,6 +65,6 @@ export function WaiverAddsCard() {
           />
         ))}
       </div>
-    </Card>
+    </CollapsibleCard>
   )
 }

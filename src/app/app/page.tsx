@@ -10,6 +10,7 @@ import { TrendingPlayersCard } from '@/components/home/trending-players-card'
 import { WaiverAddsCard } from '@/components/home/waiver-adds-card'
 import { YourLeagues } from '@/components/home/your-leagues'
 import { PageHeader } from '@/components/layout/app-header'
+import { TwoColumnLayout } from '@/components/layout/two-column-layout'
 
 /**
  * Home — the jump-off hub (package screen 01). Two columns ~1.55fr/1fr with a
@@ -23,19 +24,22 @@ export default function AppHomePage() {
     <div className="space-y-[19px]">
       <PageHeader title="Home" actions={<HomeQuickActions />} />
 
-      <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.55fr_1fr]">
-        <div className="flex min-w-0 flex-col gap-[19px]">
-          <LiveDraftHero />
-          <YourLeagues />
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-[19px]">
-          <ScoutAiCard />
-          <TrendingPlayersCard />
-          <WaiverAddsCard />
-          <InjuryNewsCard />
-        </div>
-      </div>
+      <TwoColumnLayout
+        main={
+          <div className="flex min-w-0 flex-col gap-[19px]">
+            <LiveDraftHero />
+            <YourLeagues />
+          </div>
+        }
+        aside={
+          <>
+            <ScoutAiCard />
+            <TrendingPlayersCard />
+            <WaiverAddsCard />
+            <InjuryNewsCard />
+          </>
+        }
+      />
 
       <RecentlyViewed />
       <AiExpertShelf />

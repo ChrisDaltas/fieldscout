@@ -2,7 +2,7 @@
 
 import { HomePlayerRow } from '@/components/home/home-player-row'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { CollapsibleCard } from '@/components/layout/two-column-layout'
 
 /**
  * Injury news (package screen 01) — status-badged rows for the user's
@@ -69,11 +69,10 @@ const STATUS_VARIANT: Record<InjuryStatus, 'pink' | 'yellow' | 'green'> = {
 
 export function InjuryNewsCard() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Injury report</CardTitle>
-        <Badge variant="stroke">Your players + top 50</Badge>
-      </CardHeader>
+    <CollapsibleCard
+      title="Injury report"
+      headerRight={<Badge variant="stroke">Your players + top 50</Badge>}
+    >
       <div className="divide-y divide-n-4">
         {MOCK_INJURIES.map((p) => (
           <HomePlayerRow
@@ -93,6 +92,6 @@ export function InjuryNewsCard() {
           />
         ))}
       </div>
-    </Card>
+    </CollapsibleCard>
   )
 }
