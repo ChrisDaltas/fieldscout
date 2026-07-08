@@ -58,7 +58,7 @@ export function TagInput({
     <div ref={containerRef} className="relative">
       <div
         className={cn(
-          'flex flex-wrap items-center gap-2 rounded-md border border-bg-elevated-2 bg-bg-elevated-3 px-2 py-2 transition-colors focus-within:border-foreground',
+          'flex flex-wrap items-center gap-2 rounded-sm border border-ink bg-white px-2 py-2 transition-colors focus-within:border-accent',
           atLimit && 'opacity-90',
         )}
       >
@@ -85,22 +85,22 @@ export function TagInput({
           placeholder={
             atLimit ? `Max ${max} tags` : value.length === 0 ? placeholder : ''
           }
-          className="min-w-[80px] flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
+          className="min-w-[80px] flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-n-3 disabled:cursor-not-allowed"
         />
       </div>
 
       {open && !atLimit && suggestions.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-bg-elevated-2 bg-bg-elevated shadow-lg">
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-sm border border-ink bg-white shadow-hard-4">
           <ul className="max-h-60 overflow-y-auto py-1">
             {suggestions.map((tag) => (
               <li key={tag.id}>
                 <button
                   type="button"
                   onClick={() => addTag(tag.name)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm hover:bg-bg-elevated-2"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm hover:bg-accent-soft"
                 >
                   <span>{tag.name}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-text-tertiary">
+                  <span className="text-[10px] tracking-wider text-n-3">
                     {tag.is_system_tag ? 'System' : `${tag.use_count} uses`}
                   </span>
                 </button>
@@ -111,7 +111,7 @@ export function TagInput({
                 <button
                   type="button"
                   onClick={() => addTag(draft)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-bg-elevated-2"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-ink hover:bg-accent-soft"
                 >
                   + Create &ldquo;{draft.trim()}&rdquo;
                 </button>
@@ -121,7 +121,7 @@ export function TagInput({
         </div>
       )}
 
-      <p className="mt-1.5 text-[10px] text-text-tertiary">
+      <p className="mt-1.5 text-[10px] text-n-3">
         {value.length} / {max} tags
       </p>
     </div>

@@ -170,7 +170,7 @@ function SideRow({ row, rank, mark, drafted, onCycle }: SideRowProps) {
         <span className="fs-num block text-[11px] font-extrabold leading-tight">
           {player.adp ?? '—'}
         </span>
-        <span className="block text-[8px] font-bold uppercase tracking-wider text-n-3">
+        <span className="block text-[8px] font-bold tracking-wider text-n-3">
           ADP
         </span>
       </span>

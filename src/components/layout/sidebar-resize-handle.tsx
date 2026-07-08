@@ -54,7 +54,7 @@ export function SidebarResizeHandle() {
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
-      className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-bg-elevated-3"
+      className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent"
     />
   )
 }

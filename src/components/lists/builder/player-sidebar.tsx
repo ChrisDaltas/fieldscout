@@ -1,18 +1,30 @@
 'use client'
 
 import { useDraggable } from '@dnd-kit/core'
-import { Check, ChevronDown, Plus, Search, Settings2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PlayerRow, type PlayerRowStat } from '@/components/players/player-row'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { FilterChip } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Icon } from '@/components/ui/icon'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { darkTeamPrimary, getTeamColors, NFL_TEAM_COLORS, teamTintBackground } from '@/lib/nfl-team-colors'
+import { Switch } from '@/components/ui/switch'
+import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 
 import {
@@ -49,6 +61,9 @@ interface PlayerSidebarProps {
 }
 
 const TEAM_OPTIONS = Object.keys(NFL_TEAM_COLORS).sort()
+
+/** Radix Select forbids empty-string item values — sentinel for "all". */
+const ALL_TEAMS = 'all'
 
 export function PlayerSidebar({
   scoring,
@@ -132,51 +147,45 @@ export function PlayerSidebar({
     <aside
       className={cn(
         'flex h-full w-full flex-col',
-        !frameless && 'border-r border-bg-elevated-2 bg-bg-elevated',
+        !frameless && 'rounded-sm border border-ink bg-white',
       )}
     >
       <div
-        className={cn(
-          'space-y-3 p-3',
-          !frameless && 'border-b border-bg-elevated-2',
-        )}
+        className={cn('space-y-2.5 p-3', !frameless && 'border-b border-ink')}
       >
         <div className="flex items-center gap-2">
-          <div className="flex h-9 flex-1 items-center gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3">
-            <Search className="h-4 w-4 text-text-tertiary" />
+          <div className="flex h-btn-md flex-1 items-center gap-1.5 rounded-sm border border-ink bg-white px-2.5 transition-colors focus-within:border-accent">
+            <Icon name="search" size={13} className="shrink-0 text-n-3" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search players…"
-              className="h-full flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-text-tertiary"
+              className="h-full min-w-0 flex-1 bg-transparent text-[12px] font-medium text-ink outline-none placeholder:text-n-3"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
                 aria-label="Clear search"
-                className="text-text-tertiary transition-colors hover:text-foreground"
+                className="shrink-0 text-n-3 transition-colors hover:text-ink"
               >
-                <X className="h-3.5 w-3.5" />
+                <Icon name="close" size={12} />
               </button>
             )}
           </div>
           <Popover>
             <PopoverTrigger asChild>
-              <button
-                type="button"
+              <Button
+                variant="stroke"
+                size="icon-md"
                 aria-label="Player list options"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-bg-elevated-2 bg-bg-elevated-3 text-text-secondary hover:bg-bg-elevated-2 hover:text-foreground"
               >
-                <Settings2 className="h-4 w-4" />
-              </button>
+                <Icon name="setup" />
+              </Button>
             </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              className="w-56 border-bg-elevated-2 bg-bg-elevated p-3"
-            >
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+            <PopoverContent align="end" className="w-56 p-3">
+              <p className="mb-2 text-[12px] font-bold text-ink">
                 Stat columns
               </p>
               <ul className="space-y-1">
@@ -204,91 +213,62 @@ export function PlayerSidebar({
 
         {!isLocked && (
           <div className="flex flex-wrap gap-1.5">
-            {POSITION_FILTERS.map((pos) => {
-              const active = positions.has(pos)
-              return (
-                <button
-                  key={pos}
-                  type="button"
-                  onClick={() => togglePosition(pos)}
-                  className={cn(
-                    'rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors',
-                    active
-                      ? 'bg-foreground text-background'
-                      : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-                  )}
-                >
-                  {pos}
-                </button>
-              )
-            })}
+            {POSITION_FILTERS.map((pos) => (
+              <FilterChip
+                key={pos}
+                pressed={positions.has(pos)}
+                onPressedChange={() => togglePosition(pos)}
+                className="px-2"
+              >
+                {pos}
+              </FilterChip>
+            ))}
           </div>
         )}
 
-        <div className="relative">
-          <select
-            value={team}
-            onChange={(e) => setTeam(e.target.value)}
-            className="h-9 w-full appearance-none rounded-full border border-bg-elevated-2 bg-bg-elevated-3 pl-3 pr-9 text-xs text-foreground focus:border-foreground focus:outline-none"
-          >
-            <option value="">All teams</option>
-            {TEAM_OPTIONS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          {/* Custom arrow so its right gap matches the "All teams" left gap. */}
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-        </div>
-
-        <button
-          type="button"
-          role="switch"
-          aria-checked={showAdded}
-          onClick={() => setShowAdded((v) => !v)}
-          className="flex w-full items-center justify-between gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:text-foreground"
+        <Select
+          value={team || ALL_TEAMS}
+          onValueChange={(v) => setTeam(v === ALL_TEAMS ? '' : v)}
         >
-          <span>Show added players</span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                'text-[10px] font-semibold uppercase tracking-wider',
-                showAdded ? 'text-foreground' : 'text-text-tertiary',
-              )}
-            >
-              {showAdded ? 'On' : 'Off'}
-            </span>
-            <span
-              className={cn(
-                'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
-                showAdded ? 'bg-foreground' : 'bg-bg-elevated-2',
-              )}
-            >
-              <span
-                className={cn(
-                  'absolute h-3 w-3 rounded-full transition-transform',
-                  showAdded ? 'translate-x-3.5 bg-background' : 'translate-x-0.5 bg-foreground',
-                )}
-              />
-            </span>
+          <SelectTrigger
+            aria-label="Filter by team"
+            className="h-btn-md px-2.5 text-[12px] font-bold"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_TEAMS}>All teams</SelectItem>
+            {TEAM_OPTIONS.map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm border border-ink bg-white px-2.5 py-1.5">
+          <span className="text-[12px] font-bold text-ink">
+            Show added players
           </span>
-        </button>
+          <Switch checked={showAdded} onCheckedChange={setShowAdded} />
+        </label>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {error && (
-          <p className="p-3 text-xs text-destructive">{error}</p>
+          <p className="m-3 rounded-sm border border-negative-strong bg-negative-soft p-2.5 text-[12px] font-medium text-ink">
+            {error}
+          </p>
         )}
         {isLoading && players.length === 0 && (
           <div className="space-y-1 p-2">
             {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded" />
+              <Skeleton key={i} className="h-11 w-full" />
             ))}
           </div>
         )}
         {!isLoading && filtered.length === 0 && (
-          <p className="p-6 text-center text-xs text-text-tertiary">
+          <p className="p-6 text-center text-[12px] font-medium text-n-3">
             No players match these filters.
           </p>
         )}
@@ -305,7 +285,7 @@ export function PlayerSidebar({
             ))}
           </ul>
         ) : (
-          <ul>
+          <ul className="divide-y divide-n-4">
             {filtered.map((player) => {
               const isAdded = added.has(player.id)
               const Row = disableDrag ? SidebarPlayerRowStatic : SidebarPlayerRow
@@ -322,11 +302,54 @@ export function PlayerSidebar({
           </ul>
         )}
 
-        <p className="p-3 text-center text-[10px] text-text-tertiary">
+        <p className="fs-num p-3 text-center text-[10px] font-semibold text-n-3">
           Showing {filtered.length} of top {players.length} players
         </p>
       </div>
     </aside>
+  )
+}
+
+/** Checkbox row for the stat-column popover — accent-blue checkbox per the
+ *  control recipes; the always-on projected column renders disabled. */
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string
+  description?: string
+  checked: boolean
+  onChange: (next: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <li>
+      <label
+        className={cn(
+          'flex items-center justify-between gap-3 rounded-sm px-1 py-1 transition-colors',
+          disabled ? 'cursor-default' : 'cursor-pointer hover:bg-n-4/60',
+        )}
+      >
+        <span className="min-w-0">
+          <span className="block text-[12px] font-medium text-ink">
+            {label}
+          </span>
+          {description && (
+            <span className="block text-[10px] font-medium text-n-3">
+              {description}
+            </span>
+          )}
+        </span>
+        <Checkbox
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(v) => onChange(v === true)}
+        />
+      </label>
+    </li>
   )
 }
 
@@ -377,8 +400,6 @@ function SidebarPlayerCard({
     .filter(Boolean)
     .slice(0, 2)
     .join('')
-  const teamColor = darkTeamPrimary(player.team)
-  const tintBg = teamTintBackground(player.team, 0.22)
 
   return (
     <li>
@@ -399,28 +420,25 @@ function SidebarPlayerCard({
           added ? `${player.full_name} already added` : `Add ${player.full_name}`
         }
         className={cn(
-          'group relative flex w-full touch-manipulation flex-col items-center gap-1.5 rounded-lg bg-bg-elevated p-2.5 pt-3 transition-colors',
+          'group relative flex w-full touch-manipulation flex-col items-center gap-1.5 rounded-sm border border-ink bg-white p-2.5 pt-3 transition-all',
           added
-            ? 'cursor-default opacity-60'
-            : 'cursor-grab hover:bg-bg-elevated-3 active:cursor-grabbing',
+            ? 'cursor-default bg-n-4/60'
+            : 'cursor-grab hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:cursor-grabbing',
           isDragging && 'opacity-40',
         )}
       >
         <span
           className={cn(
-            'absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full transition-opacity',
+            'absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-sm border border-ink transition-opacity',
             added
-              ? 'bg-tier-a/90 text-background opacity-100'
-              : 'bg-foreground text-background opacity-0 group-hover:opacity-100',
+              ? 'bg-positive text-ink opacity-100'
+              : 'bg-accent text-white opacity-0 group-hover:opacity-100',
           )}
         >
-          {added ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+          <Icon name={added ? 'check' : 'plus'} size={11} />
         </span>
 
-        <Avatar
-          className="h-12 w-12 shrink-0 border-2"
-          style={{ backgroundColor: tintBg, borderColor: teamColor }}
-        >
+        <Avatar className="h-12 w-12 shrink-0">
           {player.headshot_url && (
             <AvatarImage
               src={player.headshot_url}
@@ -428,33 +446,46 @@ function SidebarPlayerCard({
               className="h-full w-full object-cover object-top"
             />
           )}
-          <AvatarFallback className="text-xs font-semibold">
-            {initials}
-          </AvatarFallback>
+          <AvatarFallback className="text-[11px]">{initials}</AvatarFallback>
         </Avatar>
 
         <span
-          className="w-full truncate text-center text-xs font-semibold leading-tight"
+          className="w-full truncate text-center text-[12px] font-extrabold leading-tight text-ink"
           title={player.full_name}
         >
           {player.full_name}
         </span>
 
         <span className="flex items-center gap-1.5">
-          <PositionBadge position={player.position} />
+          <PositionBadge position={player.position} size="sm" />
           {player.team && (
-            <span className="text-[10px] text-text-secondary">{player.team}</span>
+            <span className="text-[10px] font-semibold text-n-3">
+              {player.team}
+            </span>
           )}
         </span>
 
         {player.projected_pts != null && (
-          <span className="text-[10px] font-medium tabular-nums text-text-tertiary">
+          <span className="fs-num text-[10px] font-semibold text-n-3">
             Proj {player.projected_pts.toFixed(1)}
           </span>
         )}
       </button>
     </li>
   )
+}
+
+/** Stat cells for the row layout — zeros/nulls render as an em dash so the
+ *  mono columns stay aligned across rows. */
+function rowStats(player: BuilderPlayer, statCols: StatColumnPrefs): PlayerRowStat[] {
+  const fmt = (value: number | null, hideZero = false) =>
+    value == null || (hideZero && value === 0) ? '—' : value.toFixed(0)
+  const stats: PlayerRowStat[] = [
+    { label: 'Proj', value: fmt(player.projected_pts) },
+  ]
+  if (statCols.current) stats.push({ label: '2026', value: fmt(player.current_pts, true) })
+  if (statCols.last) stats.push({ label: '2025', value: fmt(player.last_pts, true) })
+  return stats
 }
 
 function SidebarPlayerRow({ player, added, statCols, onAdd }: SidebarPlayerRowProps) {
@@ -472,22 +503,19 @@ function SidebarPlayerRow({ player, added, statCols, onAdd }: SidebarPlayerRowPr
     : {}
 
   return (
-    <SidebarPlayerRowContent
-      player={player}
-      added={added}
-      statCols={statCols}
-      onAdd={onAdd}
-      rowProps={{
-        ref: setNodeRef,
-        style,
-        ...attributes,
-        ...listeners,
-      }}
-      extraClassName={cn(
-        added ? 'cursor-default' : 'cursor-grab',
-        isDragging && 'cursor-grabbing bg-bg-elevated-2 shadow-lg shadow-black/40',
-      )}
-    />
+    <li ref={setNodeRef} style={style} className="relative">
+      <PlayerRow
+        rank={0}
+        showRank={false}
+        density="compact"
+        player={player}
+        draggable={!added}
+        dragHandleProps={{ ...attributes, ...listeners }}
+        isDragging={isDragging}
+        stats={rowStats(player, statCols)}
+        trailing={<AddButton player={player} added={added} onAdd={onAdd} />}
+      />
+    </li>
   )
 }
 
@@ -498,183 +526,46 @@ function SidebarPlayerRowStatic({
   onAdd,
 }: SidebarPlayerRowProps) {
   return (
-    <SidebarPlayerRowContent
-      player={player}
-      added={added}
-      statCols={statCols}
-      onAdd={onAdd}
-    />
+    <li>
+      <PlayerRow
+        rank={0}
+        showRank={false}
+        density="compact"
+        player={player}
+        stats={rowStats(player, statCols)}
+        trailing={<AddButton player={player} added={added} onAdd={onAdd} />}
+      />
+    </li>
   )
 }
 
-interface SidebarPlayerRowContentProps extends SidebarPlayerRowProps {
-  rowProps?: React.HTMLAttributes<HTMLLIElement> & {
-    ref?: React.Ref<HTMLLIElement>
-  }
-  extraClassName?: string
-}
-
-function SidebarPlayerRowContent({
+function AddButton({
   player,
   added,
-  statCols,
   onAdd,
-  rowProps,
-  extraClassName,
-}: SidebarPlayerRowContentProps) {
-  const initials = player.full_name
-    .split(' ')
-    .map((n) => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-
-  const teamColor = darkTeamPrimary(player.team)
-  const tintBg = teamTintBackground(player.team, 0.22)
-
+}: {
+  player: BuilderPlayer
+  added: boolean
+  onAdd: () => void
+}) {
   return (
-    <li
-      {...rowProps}
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!added) onAdd()
+      }}
+      disabled={added}
+      aria-label={added ? `${player.full_name} already added` : `Add ${player.full_name}`}
       className={cn(
-        'group flex items-center gap-2 border-b border-bg-elevated-2/50 px-3 py-2 transition-colors hover:bg-bg-elevated-2',
-        extraClassName,
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink transition-colors',
+        added
+          ? 'cursor-default border-positive bg-positive-soft text-ink'
+          : 'bg-white text-ink hover:bg-ink hover:text-white',
       )}
     >
-      <Avatar
-        className="h-8 w-8 shrink-0 border-2"
-        style={{ backgroundColor: tintBg, borderColor: teamColor }}
-      >
-        {player.headshot_url && (
-          <AvatarImage
-            src={player.headshot_url}
-            alt={player.full_name}
-            className="h-full w-full object-cover object-top"
-          />
-        )}
-        <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
-      </Avatar>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold leading-tight">
-          {player.full_name}
-        </p>
-        <div className="flex items-center gap-1">
-          <PositionBadge position={player.position} />
-          {player.team && (
-            <span className="text-[10px] text-text-secondary">{player.team}</span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 text-right text-[11px] tabular-nums">
-        <StatPill label="Proj" value={player.projected_pts} accent />
-        {statCols.current && (
-          <StatPill label="2026" value={player.current_pts} hideZero />
-        )}
-        {statCols.last && <StatPill label="2025" value={player.last_pts} hideZero />}
-      </div>
-
-      <button
-        type="button"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!added) onAdd()
-        }}
-        disabled={added}
-        aria-label={added ? 'Already added' : 'Add to list'}
-        className={cn(
-          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
-          added
-            ? 'cursor-default bg-tier-a/15 text-tier-a'
-            : 'bg-bg-elevated-3 text-text-secondary hover:bg-foreground hover:text-background',
-        )}
-      >
-        {added ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-      </button>
-    </li>
-  )
-}
-
-function StatPill({
-  label,
-  value,
-  accent,
-  hideZero,
-}: {
-  label: string
-  value: number | null
-  accent?: boolean
-  hideZero?: boolean
-}) {
-  if (value === null) {
-    return (
-      <span className="flex w-12 flex-col items-end leading-tight">
-        <span className="text-[8px] uppercase tracking-wider text-text-tertiary">
-          {label}
-        </span>
-        <span className="text-text-tertiary">—</span>
-      </span>
-    )
-  }
-  if (hideZero && value === 0) return <span className="w-12" />
-  return (
-    <span className="flex w-12 flex-col items-end leading-tight">
-      <span className="text-[8px] uppercase tracking-wider text-text-tertiary">
-        {label}
-      </span>
-      <span
-        className={cn('font-semibold', accent ? 'text-foreground' : 'text-foreground')}
-      >
-        {value.toFixed(0)}
-      </span>
-    </span>
-  )
-}
-
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string
-  description?: string
-  checked: boolean
-  onChange: (next: boolean) => void
-  disabled?: boolean
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className="flex w-full items-center justify-between gap-3 rounded px-1 py-1 text-left text-xs hover:bg-bg-elevated-2 disabled:cursor-default disabled:hover:bg-transparent"
-      >
-        <div className="min-w-0">
-          <p className="text-foreground">{label}</p>
-          {description && (
-            <p className="text-[10px] text-text-tertiary">{description}</p>
-          )}
-        </div>
-        <span
-          className={cn(
-            'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
-            checked ? 'bg-foreground' : 'bg-bg-elevated-3',
-          )}
-        >
-          <span
-            className={cn(
-              'absolute h-3 w-3 rounded-full transition-all',
-              checked
-                ? 'translate-x-3.5 bg-background'
-                : 'translate-x-0.5 bg-foreground',
-            )}
-          />
-        </span>
-      </button>
-    </li>
+      <Icon name={added ? 'check' : 'plus'} size={12} />
+    </button>
   )
 }

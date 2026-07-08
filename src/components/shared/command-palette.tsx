@@ -2,23 +2,9 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import {
-  Calendar,
-  ClipboardList,
-  Compass,
-  Home,
-  ListOrdered,
-  type LucideIcon,
-  PieChart,
-  Settings,
-  Shield,
-  Swords,
-  Trophy,
-  Vote,
-} from 'lucide-react'
 
+import { PositionBadge } from '@/components/players/position-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import {
   CommandDialog,
   CommandEmpty,
@@ -28,6 +14,8 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import { Icon, type IconName } from '@/components/ui/icon'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import { useUIStore } from '@/stores/ui-store'
 
 interface PlayerHit {
@@ -39,28 +27,63 @@ interface PlayerHit {
   status: string | null
 }
 
+interface UserHit {
+  type: 'user'
+  id: string
+  username: string
+  display_name: string | null
+  avatar_url: string | null
+}
+
+interface ListHit {
+  type: 'list'
+  id: string
+  title: string
+  slug: string
+  owner_username: string | null
+  position_filter: string | null
+  player_count: number
+}
+
 interface NavTarget {
   label: string
   href: string
-  icon: LucideIcon
+  icon: IconName
   keywords?: string
 }
 
+// Quick-nav targets mirror the sidebar IA (routes stay as-is during the
+// reskin — docs/redesign-plan.md D1/D2).
 const NAV_TARGETS: NavTarget[] = [
-  { label: 'Home', href: '/app', icon: Home, keywords: 'feed community' },
-  { label: 'Explore', href: '/app/explore', icon: Compass },
-  { label: 'Big Board', href: '/app/big-board', icon: ClipboardList },
-  { label: 'Stats', href: '/app/stats', icon: PieChart },
-  { label: 'Weekly Ranks', href: '/app/weekly-ranks', icon: Calendar },
-  { label: 'Players', href: '/app/players', icon: Shield },
-  { label: 'Lists', href: '/app/lists', icon: ListOrdered },
-  { label: 'Research', href: '/app/research', icon: PieChart, keywords: 'stats table' },
-  { label: 'Start or Sit', href: '/app/start-or-sit', icon: Vote },
-  { label: 'Teams', href: '/app/teams', icon: Swords },
-  { label: 'Leagues', href: '/app/leagues', icon: Trophy },
-  { label: 'Settings', href: '/app/settings', icon: Settings },
+  { label: 'Home', href: '/app', icon: 'dashboard', keywords: 'hub feed' },
+  {
+    label: 'Community',
+    href: '/app/explore',
+    icon: 'team',
+    keywords: 'explore social feed',
+  },
+  { label: 'Big board', href: '/app/big-board', icon: 'level' },
+  { label: 'Weekly ranks', href: '/app/weekly-ranks', icon: 'calendar' },
+  { label: 'My stats', href: '/app/stats', icon: 'chart', keywords: 'cred accuracy' },
+  {
+    label: 'Players',
+    href: '/app/research',
+    icon: 'table',
+    keywords: 'research stats browse',
+  },
+  { label: 'Lists', href: '/app/lists', icon: 'list' },
+  { label: 'Start or sit', href: '/app/start-or-sit', icon: 'sort' },
+  { label: 'Teams', href: '/app/teams', icon: 'layers' },
+  { label: 'Leagues', href: '/app/leagues', icon: 'cup' },
+  { label: 'Settings', href: '/app/settings', icon: 'setup', keywords: 'account' },
 ]
 
+/**
+ * The search overlay — one surface for players, lists, users, and quick nav
+ * on the reskinned Command primitives (white panel, ink border, accent-soft
+ * active row). Opens via Cmd+K (here), "/" (sidebar), and the search
+ * triggers in the sidebar, top bar, and bottom tabs.
+ */
 export function CommandPalette() {
   const router = useRouter()
   const isOpen = useUIStore((s) => s.isCommandPaletteOpen)
@@ -70,6 +93,8 @@ export function CommandPalette() {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [players, setPlayers] = useState<PlayerHit[]>([])
+  const [lists, setLists] = useState<ListHit[]>([])
+  const [users, setUsers] = useState<UserHit[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -96,13 +121,17 @@ export function CommandPalette() {
     if (!isOpen) {
       setQuery('')
       setPlayers([])
+      setLists([])
+      setUsers([])
     }
   }, [isOpen])
 
-  // Player search
+  // Live search: players + community (lists, users)
   useEffect(() => {
     if (!debounced) {
       setPlayers([])
+      setLists([])
+      setUsers([])
       setIsSearching(false)
       return
     }
@@ -112,16 +141,23 @@ export function CommandPalette() {
     setIsSearching(true)
 
     const params = new URLSearchParams({ q: debounced, limit: '8' })
-    fetch(`/api/players/search?${params}`, { signal: controller.signal })
+    const playersReq = fetch(`/api/players/search?${params}`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
-      .then((data: { results: PlayerHit[] }) => {
-        setPlayers(data.results ?? [])
-        setIsSearching(false)
+      .then((data: { results?: PlayerHit[] }) => setPlayers(data.results ?? []))
+    const communityReq = fetch(`/api/search/community?${params}`, {
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((data: { lists?: ListHit[]; users?: UserHit[] }) => {
+        setLists(data.lists ?? [])
+        setUsers(data.users ?? [])
       })
-      .catch((err) => {
-        if (err.name === 'AbortError') return
-        setIsSearching(false)
-      })
+
+    Promise.allSettled([playersReq, communityReq]).then(() => {
+      if (!controller.signal.aborted) setIsSearching(false)
+    })
 
     return () => controller.abort()
   }, [debounced])
@@ -131,15 +167,7 @@ export function CommandPalette() {
     router.push(href)
   }
 
-  const filteredNav = NAV_TARGETS.filter((target) => {
-    if (!debounced) return true
-    const q = debounced.toLowerCase()
-    return (
-      target.label.toLowerCase().includes(q) ||
-      target.href.toLowerCase().includes(q) ||
-      target.keywords?.toLowerCase().includes(q)
-    )
-  })
+  const hasHits = players.length + lists.length + users.length > 0
 
   return (
     <CommandDialog open={isOpen} onOpenChange={setOpen}>
@@ -149,71 +177,124 @@ export function CommandPalette() {
         placeholder="Search players, lists, users…"
       />
       <CommandList>
-        <CommandEmpty>
-          {isSearching ? 'Searching…' : 'No matches'}
-        </CommandEmpty>
+        <CommandEmpty>{isSearching ? 'Searching…' : 'No matches'}</CommandEmpty>
 
         {players.length > 0 && (
           <CommandGroup heading="Players">
             {players.map((player) => (
               <CommandItem
                 key={player.id}
-                value={`player-${player.id}`}
+                value={`${player.full_name} ${player.id}`}
                 onSelect={() => navigate(`/app/players/${player.id}`)}
-                className="gap-3"
+                className="gap-2.5"
               >
-                <Avatar className="h-8 w-8">
+                <Avatar className="h-6 w-6">
                   {player.headshot_url && (
-                    <AvatarImage src={player.headshot_url} alt={player.full_name} />
+                    <AvatarImage
+                      src={player.headshot_url}
+                      alt={player.full_name}
+                      className="object-cover object-top"
+                    />
                   )}
-                  <AvatarFallback className="text-[10px]">
-                    {player.full_name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .slice(0, 2)
-                      .join('')}
+                  <AvatarFallback className="text-[9px]">
+                    {initialsOf(player.full_name)}
                   </AvatarFallback>
                 </Avatar>
-                <span className="flex-1 truncate font-medium">
+                <span className="min-w-0 flex-1 truncate font-extrabold">
                   {player.full_name}
                 </span>
-                <Badge
-                  variant="default"
-                  className="font-mono text-[10px] px-1.5 py-0"
-                >
-                  {player.position}
-                </Badge>
+                <PositionBadge position={player.position} size="sm" />
                 {player.team && (
-                  <Badge
-                    variant="default"
-                    className="text-[10px] px-1.5 py-0"
-                  >
+                  <span className="text-[11px] font-semibold text-n-3">
                     {player.team}
-                  </Badge>
+                  </span>
                 )}
               </CommandItem>
             ))}
           </CommandGroup>
         )}
 
-        {players.length > 0 && filteredNav.length > 0 && <CommandSeparator />}
-
-        {filteredNav.length > 0 && (
-          <CommandGroup heading="Go to">
-            {filteredNav.map((target) => (
+        {lists.length > 0 && (
+          <CommandGroup heading="Lists & rankings">
+            {lists.map((list) => (
               <CommandItem
-                key={target.href}
-                value={`nav-${target.href}`}
-                onSelect={() => navigate(target.href)}
-                className="gap-3"
+                key={list.id}
+                value={`${list.title} ${list.id}`}
+                onSelect={() => navigate(`/app/lists/${list.id}`)}
+                className="gap-2.5"
               >
-                <target.icon className="h-4 w-4 text-text-secondary" />
-                <span>{target.label}</span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-n-4 text-ink">
+                  <Icon name="list" size={13} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-bold">{list.title}</span>
+                  <span className="block truncate text-[11px] font-medium text-n-3">
+                    {list.owner_username ? `by @${list.owner_username}` : 'List'}
+                    {list.player_count > 0 && (
+                      <>
+                        {' · '}
+                        <span className="fs-num">{list.player_count}</span> players
+                      </>
+                    )}
+                  </span>
+                </span>
               </CommandItem>
             ))}
           </CommandGroup>
         )}
+
+        {users.length > 0 && (
+          <CommandGroup heading="Users">
+            {users.map((u) => (
+              <CommandItem
+                key={u.id}
+                value={`${u.display_name ?? ''} ${u.username} ${u.id}`}
+                onSelect={() => navigate(`/u/${u.username}`)}
+                className="gap-2.5"
+              >
+                <UserAvatar
+                  src={u.avatar_url}
+                  name={u.display_name ?? u.username}
+                  className="h-6 w-6 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-bold">
+                    {u.display_name ?? u.username}
+                  </span>
+                  <span className="block truncate text-[11px] font-medium text-n-3">
+                    @{u.username}
+                  </span>
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {hasHits && <CommandSeparator />}
+
+        <CommandGroup heading="Go to">
+          {NAV_TARGETS.map((target) => (
+            <CommandItem
+              key={target.href}
+              value={`${target.label} ${target.keywords ?? ''} ${target.href}`}
+              onSelect={() => navigate(target.href)}
+              className="gap-2.5"
+            >
+              <Icon name={target.icon} size={14} className="text-n-3" />
+              <span>{target.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
       </CommandList>
     </CommandDialog>
   )
+}
+
+function initialsOf(name: string): string {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
 }

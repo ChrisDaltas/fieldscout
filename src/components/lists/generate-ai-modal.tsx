@@ -1,21 +1,23 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { FilterChip } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Icon } from '@/components/ui/icon'
+import { Skeleton } from '@/components/ui/skeleton'
 import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
 import { useAuthStore } from '@/stores/auth-store'
 import type { AnalyticalStyleKey, GenerateListRequest } from '@/types/schemas/ai'
@@ -63,6 +65,7 @@ function usePersonaStyles(enabled: boolean) {
  * "Create with AI" — collects the brief, creates the (empty) list, queues the
  * AI build job, and immediately navigates to the List Detail page where the
  * user watches the AI add players and put them in order (useAiListBuild).
+ * Scout AI surface: accent-blue moments, never lime.
  */
 export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const router = useRouter()
@@ -182,32 +185,41 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto border-bg-elevated-2 bg-bg-elevated sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" /> Generate with AI
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-accent text-white">
+              <Icon name="star" size={13} />
+            </span>
+            Generate with AI
           </DialogTitle>
         </DialogHeader>
 
         {upgradeRequired && (
-          <div className="rounded-md border border-bg-elevated-3 bg-bg-elevated-2 p-4 text-sm">
-            <p className="font-semibold">FieldScout Pro required</p>
-            <p className="mt-1 text-text-secondary">
-              AI list generation is a Pro feature. Upgrade to generate ranked
-              lists in any style, instantly.
+          <div className="rounded-sm border border-ink bg-accent-soft p-4">
+            <p className="text-[13px] font-bold text-ink">
+              You need Pro for this one
             </p>
+            <p className="mt-1 text-[13px] font-medium text-n-3">
+              AI list generation is a Pro feature — upgrade and you can
+              generate ranked lists in any style, instantly.
+            </p>
+            <Button asChild variant="blue" size="md" className="mt-3">
+              <Link href="/app/settings/billing">Upgrade to Pro</Link>
+            </Button>
           </div>
         )}
 
         {error && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
+          <div className="rounded-sm border border-negative-strong bg-negative-soft p-3">
+            <p className="text-[13px] font-bold text-ink">Could not create the list</p>
+            <p className="mt-0.5 text-[13px] font-medium text-n-3">{error}</p>
           </div>
         )}
 
         <div className="space-y-5">
           <Field label="Position">
-            <PillGroup
+            <ChipGroup
               options={POSITIONS.map((p) => ({ value: p, label: p }))}
               value={position}
               onChange={(v) => setPosition(v as Position)}
@@ -216,7 +228,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </Field>
 
           <Field label="Scoring">
-            <PillGroup
+            <ChipGroup
               options={SCORINGS.map((s) => ({ value: s, label: s }))}
               value={scoring}
               onChange={(v) => setScoring(v as Scoring)}
@@ -225,7 +237,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </Field>
 
           <Field
-            label="Ranking Style"
+            label="Ranking style"
             hint="Optional — tap a style to cycle its importance: 1 (least) to 3 (most), tap past 3 to clear."
           >
             <div className="grid grid-cols-2 gap-1.5">
@@ -233,53 +245,50 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
                 const weight = styleWeights[s.key] ?? 0
                 const active = weight > 0
                 return (
-                  <button
+                  <FilterChip
                     key={s.key}
-                    type="button"
+                    pressed={active}
                     onClick={() => cycleStyleWeight(s.key)}
                     title={s.description}
-                    className={cn(
-                      'flex items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-left text-xs font-semibold transition-colors',
-                      active
-                        ? 'bg-foreground text-background'
-                        : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-                    )}
+                    className="w-full justify-between px-2.5 text-left"
                   >
                     <span className="truncate">{s.label}</span>
                     {active && (
-                      <span className="shrink-0 rounded-full bg-background/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                      <span className="fs-num flex h-4 min-w-4 shrink-0 items-center justify-center rounded-sm bg-white/25 px-1 text-[10px]">
                         {weight}
                       </span>
                     )}
-                  </button>
+                  </FilterChip>
                 )
               })}
             </div>
           </Field>
 
-          <Field label="AI Expert" hint="Optional — rank in a persona's voice and current stances.">
+          <Field
+            label="AI expert"
+            hint="Optional — rank in a persona's voice and current stances."
+          >
             {personas.isLoading ? (
-              <p className="text-xs text-text-tertiary">Loading experts…</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-btn-sm w-full" />
+                ))}
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-1.5">
                 {(personas.data ?? []).map((p) => {
                   const active = persona === p.username
                   return (
-                    <button
+                    <FilterChip
                       key={p.username}
-                      type="button"
+                      pressed={active}
                       onClick={() =>
                         setPersona((cur) => (cur === p.username ? null : p.username))
                       }
-                      className={cn(
-                        'truncate rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
-                        active
-                          ? 'bg-foreground text-background'
-                          : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-                      )}
+                      className="w-full justify-center px-2.5"
                     >
-                      {p.display_name}
-                    </button>
+                      <span className="truncate">{p.display_name}</span>
+                    </FilterChip>
                   )
                 })}
               </div>
@@ -287,7 +296,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </Field>
 
           <Field label="Players">
-            <PillGroup
+            <ChipGroup
               options={COUNTS.map((c) => ({ value: String(c), label: String(c) }))}
               value={String(count)}
               onChange={(v) => setCount(Number(v) as Count)}
@@ -296,22 +305,22 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </Field>
 
           <Button
-            variant="primary"
-            className="w-full font-semibold"
+            variant="blue"
+            className="w-full"
             disabled={step === 'creating'}
             onClick={handleCreate}
           >
             {step === 'creating' ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Creating list…
+                <Icon name="star" className="animate-pulse" /> Creating list…
               </>
             ) : (
               <>
-                <Sparkles className="h-4 w-4" /> Create List
+                <Icon name="star" /> Create list
               </>
             )}
           </Button>
-          <p className="text-center text-[11px] text-text-tertiary">
+          <p className="text-center text-[11px] font-medium text-n-3">
             You&apos;ll land on the list and watch the AI build it — a starting
             point, not an oracle. Fully editable.
           </p>
@@ -332,14 +341,15 @@ function Field({
 }) {
   return (
     <div>
-      <span className="block text-xs font-semibold text-text-secondary">{label}</span>
-      {hint && <p className="mt-0.5 text-[11px] text-text-tertiary">{hint}</p>}
+      <span className="block text-[12px] font-bold text-ink">{label}</span>
+      {hint && <p className="mt-0.5 text-[11px] font-medium text-n-3">{hint}</p>}
       <div className="mt-1.5">{children}</div>
     </div>
   )
 }
 
-function PillGroup({
+/** Single-select chip row — FilterChips on a fixed grid. */
+function ChipGroup({
   options,
   value,
   onChange,
@@ -355,24 +365,16 @@ function PillGroup({
       className="grid gap-1.5"
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
-      {options.map((opt) => {
-        const active = value === opt.value
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'rounded-full px-2 py-1.5 text-xs font-semibold transition-colors',
-              active
-                ? 'bg-foreground text-background'
-                : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-            )}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
+      {options.map((opt) => (
+        <FilterChip
+          key={opt.value}
+          pressed={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          className="w-full justify-center px-1.5"
+        >
+          <span className="truncate">{opt.label}</span>
+        </FilterChip>
+      ))}
     </div>
   )
 }

@@ -136,7 +136,7 @@ function SidebarModeBar({
       )}
     >
       {mode === 'full' && (
-        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-n-3">
+        <span className="text-[10px] font-bold tracking-[0.08em] text-n-3">
           Players
         </span>
       )}

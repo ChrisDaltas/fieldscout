@@ -6,24 +6,27 @@ interface PlaceholderPageProps {
   children?: React.ReactNode
 }
 
+/**
+ * Honest empty-state scaffold for routes whose feature hasn't shipped yet —
+ * the Field Scout empty-state recipe: bordered white card, heavy heading,
+ * 13px muted line (decor spiral deliberately omitted).
+ */
 export function PlaceholderPage({
   title,
   description,
   children,
 }: PlaceholderPageProps) {
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold">{title}</h1>
-        {description && (
-          <p className="mt-1 text-sm text-text-secondary">{description}</p>
+    <Card>
+      <CardContent className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+        <h1 className="text-h4">{title}</h1>
+        <p className="max-w-md text-[13px] font-medium text-n-3">
+          {description ?? 'Coming soon.'}
+        </p>
+        {children != null && (
+          <div className="mt-1 text-[13px] font-medium text-n-3">{children}</div>
         )}
-      </header>
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="p-6 text-sm text-text-secondary">
-          {children ?? 'Coming soon.'}
-        </CardContent>
-      </Card>
-    </div>
+      </CardContent>
+    </Card>
   )
 }

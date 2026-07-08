@@ -1890,7 +1890,7 @@ function SlotRow({
         {/* Position slots get the colored positional tag (QB orange, etc.);
             Bench and IR aren't positions, so they keep a plain text label. */}
         {slot === 'BENCH' || slot === 'IR' ? (
-          <p className="text-[12px] font-extrabold uppercase tracking-wide text-ink">
+          <p className="text-[12px] font-extrabold tracking-wide text-ink">
             {SLOT_LABELS[slot]}
           </p>
         ) : (

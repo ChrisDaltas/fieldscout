@@ -26,7 +26,7 @@ import type { ListFolder } from '@/types/database'
 const POSITION_FILTERS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX'] as const
 type PositionFilter = (typeof POSITION_FILTERS)[number]
 
-const OVERLINE = 'text-[10px] font-bold uppercase tracking-[0.08em] text-n-3'
+const OVERLINE = 'text-[10px] font-bold tracking-[0.08em] text-n-3'
 
 /** Lists browse — draft-mode CTA, position/tag filter rows, folders, and the
  *  3-up card grid. All list/folder mutations run through the existing hooks. */

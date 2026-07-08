@@ -5,7 +5,6 @@ import type { Metadata } from 'next'
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PersonaBadge } from '@/components/personas/persona-badge'
 import { PublicListCard } from '@/components/lists/public-list-card'
-import { Card, CardContent } from '@/components/ui/card'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { personaDisclaimer } from '@/lib/personas/roster'
 import { createServerClient } from '@/lib/supabase/server'
@@ -76,45 +75,52 @@ export default async function PersonaProfilePage({ params }: PageProps) {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-4xl space-y-8">
-        <header className="flex items-start gap-4">
-          <UserAvatar
-            src={persona.avatar_url ?? undefined}
-            alt={persona.display_name}
-            name={persona.display_name}
-            className="h-16 w-16"
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-2xl font-bold">{persona.display_name}</h1>
-              <PersonaBadge />
+      <div className="mx-auto max-w-4xl space-y-[19px]">
+        <header className="rounded-sm border border-ink bg-white p-card-pad">
+          <div className="flex items-start gap-4">
+            <UserAvatar
+              src={persona.avatar_url ?? undefined}
+              alt={persona.display_name}
+              name={persona.display_name}
+              className="h-16 w-16 shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-h4">{persona.display_name}</h1>
+                <PersonaBadge />
+              </div>
+              <p className="mt-0.5 text-[12px] font-semibold text-n-3">
+                @{persona.username}
+              </p>
+              <p className="mt-2.5 text-[13px] font-medium text-n-3">
+                {persona.bio}
+              </p>
             </div>
-            <p className="mt-1 text-sm text-text-secondary">@{persona.username}</p>
-            <p className="mt-3 text-sm text-text-secondary">{persona.bio}</p>
           </div>
         </header>
 
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-4 text-xs text-text-tertiary">
-            {personaDisclaimer(persona.display_name)}
-          </CardContent>
-        </Card>
+        {/* AI disclosure — accent-soft tint marks the AI surface. */}
+        <div className="rounded-sm border border-ink bg-accent-soft p-3 text-[12px] font-medium text-ink/70">
+          {personaDisclaimer(persona.display_name)}
+        </div>
 
         {posts.length > 0 && (
           <section>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-              Posts
-            </h2>
+            <h2 className="mb-2.5 text-h6">Posts</h2>
             <ul className="space-y-2">
               {posts.map((post) => (
                 <li key={post.id}>
                   <Link
                     href={`/personas/${persona.username}/posts/${post.slug}`}
-                    className="block rounded-lg bg-bg-elevated p-4 transition-colors hover:bg-bg-elevated-2"
+                    className="block rounded-sm border border-ink bg-white p-4 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
                   >
-                    <p className="font-semibold">{post.title}</p>
+                    <p className="text-[13px] font-extrabold text-ink">
+                      {post.title}
+                    </p>
                     {post.dek && (
-                      <p className="mt-1 text-sm text-text-secondary">{post.dek}</p>
+                      <p className="mt-1 text-[12px] font-medium text-n-3">
+                        {post.dek}
+                      </p>
                     )}
                   </Link>
                 </li>
@@ -124,15 +130,15 @@ export default async function PersonaProfilePage({ params }: PageProps) {
         )}
 
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-            Rankings
-          </h2>
+          <h2 className="mb-2.5 text-h6">Rankings</h2>
           {lists.length === 0 ? (
-            <Card className="border-bg-elevated-2 bg-bg-elevated">
-              <CardContent className="p-6 text-center text-sm text-text-secondary">
-                No rankings published yet.
-              </CardContent>
-            </Card>
+            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+              <h3 className="text-h5">No rankings published yet</h3>
+              <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+                {persona.display_name}&apos;s boards will show up here as soon
+                as they publish.
+              </p>
+            </div>
           ) : (
             <ul className="space-y-2">
               {lists.map((list) => {
@@ -165,7 +171,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
           )}
         </section>
 
-        <p className="text-center text-xs text-text-tertiary">
+        <p className="text-center text-[11px] font-medium text-n-3">
           Generated by FieldScout AI ·{' '}
           <Link href="/" className="hover:underline">
             fieldscout.gg

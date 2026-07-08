@@ -113,7 +113,7 @@ export default async function TagFeedPage(props: PageProps) {
     <GuestShell>
       <div className="mx-auto max-w-3xl space-y-5">
         <header>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-n-3">
+          <p className="text-[10px] font-bold tracking-wider text-n-3">
             Tag
           </p>
           <h1 className="mt-1 text-h4">{tag.name}</h1>

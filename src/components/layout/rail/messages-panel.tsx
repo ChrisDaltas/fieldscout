@@ -107,7 +107,7 @@ function TradeCard({ trade }: { trade: RailTradeProposal }) {
     <div className="my-1 rounded-sm border border-ink bg-white">
       <div className="flex items-center gap-1.5 border-b border-n-4 px-2.5 py-1.5">
         <Icon name="transfer" size={12} className="text-accent" />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-n-3">
+        <span className="text-[9px] font-bold tracking-wider text-n-3">
           Trade proposal
         </span>
       </div>

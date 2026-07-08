@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
@@ -50,6 +51,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex flex-col gap-5">
             <NotificationsCard />
+            <ScoringCard />
             <SessionsCard email={user?.email ?? ''} onSignOut={signOut} />
           </div>
         </div>
@@ -386,6 +388,29 @@ function cnRow(last: boolean): string {
   return last
     ? 'flex items-center gap-3 py-3'
     : 'flex items-center gap-3 border-b border-n-4 py-3'
+}
+
+/* -------------------------------- Scoring -------------------------------- */
+
+// Entry point to the scoring builder — nothing else links to it yet; the
+// league-scoped version arrives with the league build.
+function ScoringCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Scoring</CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3 p-card-pad">
+        <p className="text-[13px] font-medium text-n-3">
+          Pick a scoring preset or build your own system — your projections
+          and player values follow it.
+        </p>
+        <Button variant="stroke" size="md" asChild>
+          <Link href="/app/settings/scoring">Open scoring</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
 }
 
 /* ------------------------------- Sessions ------------------------------- */

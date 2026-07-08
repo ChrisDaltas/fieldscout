@@ -3,15 +3,21 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { RotateCcw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
+import { Skeleton } from '@/components/ui/skeleton'
 import { listsKeys } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 
 import type { List } from '@/types/database'
 
+/**
+ * Trash — soft-deleted lists with restore. Deletes stay soft platform-wide
+ * (business rule: never hard-delete), so restore is the only action here;
+ * there is deliberately no "delete forever".
+ */
 export default function TrashPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -61,63 +67,87 @@ export default function TrashPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-center gap-2">
-        <Trash2 className="h-6 w-6 text-text-secondary" />
-        <h1 className="text-2xl font-bold">Trash</h1>
-      </header>
-
+    <div className="space-y-[19px]">
       {loading && (
-        <p className="text-sm text-text-secondary">Loading deleted lists…</p>
+        <Card>
+          <ul>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-3 last:border-0"
+              >
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-1/3" />
+                  <Skeleton className="h-2.5 w-24" />
+                </div>
+                <Skeleton className="h-btn-sm w-20" />
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
       {error && (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-6 text-sm text-destructive">{error}</CardContent>
+        <Card className="border-negative bg-negative-soft">
+          <p className="p-card-pad text-[13px] font-bold text-negative-strong">
+            {error}
+          </p>
         </Card>
       )}
 
       {!loading && !error && lists.length === 0 && (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-8 text-center text-sm text-text-secondary">
-            Trash is empty. Deleted lists land here so you can restore them later.
-          </CardContent>
+        <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+          <p className="text-h5 text-ink">Trash is empty</p>
+          <p className="max-w-md text-[13px] font-medium text-n-3">
+            Deleted lists land here so you can restore them later.
+          </p>
         </Card>
       )}
 
       {!loading && lists.length > 0 && (
-        <ul className="space-y-1.5">
-          {lists.map((list) => (
-            <li
-              key={list.id}
-              className="flex items-center gap-3 rounded-md border border-bg-elevated-2 bg-bg-elevated px-3 py-3"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{list.title}</p>
-                <p className="mt-0.5 text-xs text-text-tertiary">
-                  Deleted {list.deleted_at ? formatRelative(list.deleted_at) : ''}
-                  {' · '}
-                  {list.player_count} player{list.player_count === 1 ? '' : 's'}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="default"
-                disabled={busyId === list.id}
-                onClick={() => restore(list)}
-                className="border-bg-elevated-3 text-text-secondary hover:text-foreground"
+        <Card>
+          <ul>
+            {lists.map((list) => (
+              <li
+                key={list.id}
+                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-3 last:border-0"
               >
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                {busyId === list.id ? 'Restoring…' : 'Restore'}
-              </Button>
-            </li>
-          ))}
-        </ul>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-extrabold text-ink">
+                    {list.title}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-n-3">
+                    Deleted{' '}
+                    <span className="fs-num">
+                      {list.deleted_at ? formatRelative(list.deleted_at) : ''}
+                    </span>
+                    {' · '}
+                    <span className="fs-num">{list.player_count}</span> player
+                    {list.player_count === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="stroke"
+                  disabled={busyId === list.id}
+                  onClick={() => restore(list)}
+                >
+                  <Icon name="reset" size={13} />
+                  {busyId === list.id ? 'Restoring…' : 'Restore'}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
-      <p className="text-xs text-text-tertiary">
-        <Link href="/app/lists" className="transition-colors hover:text-foreground">
-          ← Back to My Lists
+      <p>
+        <Link
+          href="/app/lists"
+          className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
+        >
+          <Icon name="arrow-prev" size={13} />
+          Back to lists
         </Link>
       </p>
     </div>

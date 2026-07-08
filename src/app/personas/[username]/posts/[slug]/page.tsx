@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PersonaBadge } from '@/components/personas/persona-badge'
+import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { personaDisclaimer } from '@/lib/personas/roster'
 import { createServerClient } from '@/lib/supabase/server'
@@ -97,13 +98,13 @@ function renderBody(bodyMd: string) {
     const trimmed = block.trim()
     if (trimmed.startsWith('## ')) {
       return (
-        <h2 key={i} className="mt-8 text-lg font-bold">
+        <h2 key={i} className="mt-8 text-h5">
           {trimmed.slice(3)}
         </h2>
       )
     }
     return (
-      <p key={i} className="mt-4 leading-relaxed text-text-secondary">
+      <p key={i} className="mt-4 text-[14px] font-medium leading-relaxed text-ink">
         {trimmed}
       </p>
     )
@@ -133,7 +134,7 @@ export default async function PersonaPostPage({ params }: PageProps) {
 
   return (
     <GuestShell>
-      <article className="mx-auto max-w-2xl space-y-6">
+      <article className="mx-auto max-w-2xl">
         <script
           type="application/ld+json"
           // Escape < so model/feed-influenced text can never emit </script>
@@ -146,7 +147,7 @@ export default async function PersonaPostPage({ params }: PageProps) {
         <header className="space-y-3">
           <Link
             href={`/personas/${persona.username}`}
-            className="flex items-center gap-2"
+            className="inline-flex items-center gap-2"
           >
             <UserAvatar
               src={persona.avatar_url ?? undefined}
@@ -154,13 +155,17 @@ export default async function PersonaPostPage({ params }: PageProps) {
               name={persona.display_name}
               className="h-8 w-8"
             />
-            <span className="text-sm font-medium">{persona.display_name}</span>
+            <span className="text-[13px] font-extrabold text-ink hover:underline hover:decoration-2 hover:underline-offset-2">
+              {persona.display_name}
+            </span>
             <PersonaBadge />
           </Link>
-          <h1 className="text-3xl font-bold leading-tight">{post.title}</h1>
-          {post.dek && <p className="text-base text-text-secondary">{post.dek}</p>}
+          <h1 className="text-h2">{post.title}</h1>
+          {post.dek && (
+            <p className="text-[14px] font-medium text-n-3">{post.dek}</p>
+          )}
           {post.published_at && (
-            <p className="text-xs text-text-tertiary">
+            <p className="text-[12px] font-semibold text-n-3">
               {new Date(post.published_at).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
@@ -170,31 +175,30 @@ export default async function PersonaPostPage({ params }: PageProps) {
           )}
         </header>
 
-        <div>{renderBody(post.body_md)}</div>
+        <div className="mt-2">{renderBody(post.body_md)}</div>
 
         {backingList && (
           <Link
             href={`/u/${backingList.ownerUsername}/lists/${backingList.slug}`}
-            className="block rounded-lg bg-bg-elevated p-4 text-sm font-medium transition-colors hover:bg-bg-elevated-2"
+            className="mt-6 flex items-center justify-between gap-2 rounded-sm border border-accent bg-accent-soft p-4 text-[13px] font-extrabold text-ink transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            View the full ranked list →
+            View the full ranked list
+            <Icon name="arrow-next" size={14} />
           </Link>
         )}
 
         {citations.length > 0 && (
-          <section className="border-t border-bg-elevated-2 pt-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-              Sources
-            </h2>
-            <ul className="mt-2 space-y-1 text-sm">
+          <section className="mt-6 border-t border-n-4 pt-4">
+            <h2 className="text-h6">Sources</h2>
+            <ul className="mt-2 space-y-1 text-[13px] font-medium">
               {citations.map((c, i) => (
-                <li key={i} className="text-text-secondary">
+                <li key={i} className="text-n-3">
                   {isSafeHttpUrl(c.source_url) ? (
                     <a
                       href={c.source_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="underline hover:text-foreground"
+                      className="underline hover:text-ink"
                     >
                       {c.claim}
                     </a>
@@ -207,7 +211,7 @@ export default async function PersonaPostPage({ params }: PageProps) {
           </section>
         )}
 
-        <p className="border-t border-bg-elevated-2 pt-4 text-xs text-text-tertiary">
+        <p className="mt-6 border-t border-n-4 pt-4 text-[11px] font-medium text-n-3">
           {personaDisclaimer(persona.display_name)} Generated by FieldScout AI.
         </p>
       </article>

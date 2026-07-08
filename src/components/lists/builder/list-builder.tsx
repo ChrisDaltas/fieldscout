@@ -11,14 +11,22 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
-import { Loader2, MoreHorizontal, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import {
   DEFAULT_SCORING_PRESET,
@@ -184,7 +192,7 @@ export function ListBuilder() {
       collisionDetection={pointerWithin}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex h-[calc(100vh-3.5rem-2rem)] flex-col gap-3 lg:h-[calc(100vh-3.5rem-3rem)]">
+      <div className="flex h-[calc(100dvh-4rem-2.5rem)] flex-col gap-3 lg:h-[calc(100dvh-58px-2.5rem)]">
         <BuilderHeader
           title={title}
           onTitleChange={setTitle}
@@ -204,7 +212,7 @@ export function ListBuilder() {
         />
 
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="min-h-0 overflow-hidden rounded-lg">
+          <div className="min-h-0 overflow-hidden">
             <PlayerSidebar
               scoring={scoringKey}
               added={addedSet}
@@ -242,6 +250,9 @@ interface BuilderHeaderProps {
   playerCount: number
 }
 
+/** Radix Select forbids empty-string item values — sentinel for "all". */
+const ALL_POSITIONS = 'all'
+
 function BuilderHeader({
   title,
   onTitleChange,
@@ -269,7 +280,7 @@ function BuilderHeader({
   }, [editing])
 
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-bg-elevated-2 pb-3">
+    <header className="flex items-center justify-between gap-3 border-b border-ink pb-3">
       <div className="min-w-0 flex-1">
         {editing ? (
           <input
@@ -285,21 +296,21 @@ function BuilderHeader({
               }
             }}
             maxLength={100}
-            className="w-full max-w-2xl rounded-md border border-bg-elevated-3 bg-bg-elevated-3 px-2 py-1 text-2xl font-bold text-foreground outline-none"
+            className="w-full max-w-2xl rounded-sm border border-ink bg-white px-2 py-1 text-h4 text-ink outline-none transition-colors focus:border-accent"
           />
         ) : (
           <button
             type="button"
             onClick={() => onEditingChange(true)}
             className={cn(
-              'rounded-md px-1 py-0.5 text-left text-2xl font-bold transition-colors hover:bg-bg-elevated-2',
-              title === 'Untitled' && 'text-text-secondary',
+              'rounded-sm px-1 py-0.5 text-left text-h4 transition-colors hover:bg-n-4',
+              title === 'Untitled' ? 'text-n-3' : 'text-ink',
             )}
           >
             {title || 'Untitled'}
           </button>
         )}
-        <p className="mt-0.5 px-1 text-xs text-text-tertiary">
+        <p className="fs-num mt-0.5 px-1 text-[11px] font-semibold text-n-3">
           {playerCount} player{playerCount === 1 ? '' : 's'} added
         </p>
       </div>
@@ -307,53 +318,66 @@ function BuilderHeader({
       <div className="flex shrink-0 items-center gap-2">
         <Popover>
           <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label="List options"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-bg-elevated-2 bg-bg-elevated text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
+            <Button variant="stroke" size="icon-md" aria-label="List options">
+              <Icon name="dots" />
+            </Button>
           </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            className="w-72 border-bg-elevated-2 bg-bg-elevated p-3"
-          >
+          <PopoverContent align="end" className="w-72 p-3">
             <div className="space-y-4">
               <Field label="Position group">
-                <select
-                  value={positionFilter}
-                  onChange={(e) => onPositionFilterChange(e.target.value)}
-                  className="h-8 w-full rounded-md border border-bg-elevated-2 bg-bg-elevated-3 px-2 text-xs text-foreground focus:border-foreground focus:outline-none"
+                <Select
+                  value={positionFilter || ALL_POSITIONS}
+                  onValueChange={(v) =>
+                    onPositionFilterChange(v === ALL_POSITIONS ? '' : v)
+                  }
                 >
-                  {LIST_POSITION_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    aria-label="Position group"
+                    className="h-btn-md px-2.5 text-[12px] font-bold"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LIST_POSITION_OPTIONS.map((opt) => (
+                      <SelectItem
+                        key={opt.value || ALL_POSITIONS}
+                        value={opt.value || ALL_POSITIONS}
+                      >
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
 
               <Field label="Scoring system">
-                <select
+                <Select
                   value={scoringPreset}
-                  onChange={(e) =>
-                    onScoringPresetChange(e.target.value as ScoringPresetId)
+                  onValueChange={(v) =>
+                    onScoringPresetChange(v as ScoringPresetId)
                   }
-                  className="h-8 w-full rounded-md border border-bg-elevated-2 bg-bg-elevated-3 px-2 text-xs text-foreground focus:border-foreground focus:outline-none"
                 >
-                  {SCORING_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[10px] text-text-tertiary">
-                  Affects projected/season fantasy points in the player list.
+                  <SelectTrigger
+                    aria-label="Scoring system"
+                    className="h-btn-md px-2.5 text-[12px] font-bold"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCORING_PRESETS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-[11px] font-medium text-n-3">
+                  Affects projected and season fantasy points in the player
+                  list.
                 </p>
               </Field>
 
-              <div className="space-y-2 border-t border-bg-elevated-2 pt-3">
+              <div className="space-y-1 border-t border-n-4 pt-3">
                 <ToggleRow
                   label="Private"
                   description="Only you can see this list."
@@ -371,19 +395,14 @@ function BuilderHeader({
           </PopoverContent>
         </Popover>
 
-        <Button
-          variant="brand"
-          onClick={onSave}
-          disabled={saving}
-          className="rounded-full font-semibold"
-        >
+        <Button variant="blue" size="md" shadow onClick={onSave} disabled={saving}>
           {saving ? (
             <>
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Saving…
+              <Icon name="save" className="animate-pulse" /> Saving…
             </>
           ) : (
             <>
-              <Save className="mr-1 h-4 w-4" /> Save
+              <Icon name="save" /> Save
             </>
           )}
         </Button>
@@ -401,14 +420,14 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-        {label}
-      </label>
+      <label className="block text-[12px] font-bold text-ink">{label}</label>
       {children}
     </div>
   )
 }
 
+/** Switch row for the list-options popover — lime-on switch per the control
+ *  recipes (these are on/off settings, not selections). */
 function ToggleRow({
   label,
   description,
@@ -421,32 +440,16 @@ function ToggleRow({
   onChange: (next: boolean) => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 rounded text-left text-xs"
-    >
-      <div className="min-w-0">
-        <p className="text-foreground">{label}</p>
+    <label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-sm px-1 py-1 transition-colors hover:bg-n-4/60">
+      <span className="min-w-0">
+        <span className="block text-[12px] font-medium text-ink">{label}</span>
         {description && (
-          <p className="text-[10px] text-text-secondary">{description}</p>
+          <span className="block text-[10px] font-medium text-n-3">
+            {description}
+          </span>
         )}
-      </div>
-      <span
-        className={cn(
-          'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-          checked ? 'bg-foreground' : 'bg-bg-elevated-3',
-        )}
-      >
-        <span
-          className={cn(
-            'absolute h-4 w-4 rounded-full transition-all',
-            checked
-              ? 'translate-x-4 bg-background'
-              : 'translate-x-0.5 bg-foreground',
-          )}
-        />
       </span>
-    </button>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </label>
   )
 }
