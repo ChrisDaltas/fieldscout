@@ -22,3 +22,7 @@ export const PERSONA_MAX_SCRAPES_PER_RUN = 5
 /** Max NEW feed items extracted per source per ingest run (cost valve —
  * bounds Haiku spend even when a feed dumps a large backlog). */
 export const INGEST_MAX_ITEMS_PER_SOURCE = 5
+
+/** Max persona posts generated per content-engine run (cost + review-load
+ * valve — the full personas × themes grid drains across runs). */
+export const PERSONA_MAX_POSTS_PER_RUN = 10

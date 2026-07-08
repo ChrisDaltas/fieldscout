@@ -1099,6 +1099,72 @@ export type Database = {
           },
         ]
       }
+      persona_posts: {
+        Row: {
+          ai_persona_id: string
+          body_md: string
+          citations: Json
+          created_at: string | null
+          dek: string | null
+          deleted_at: string | null
+          id: string
+          kind: string
+          list_id: string | null
+          published_at: string | null
+          slug: string
+          status: string | null
+          title: string
+          view_count: number | null
+        }
+        Insert: {
+          ai_persona_id: string
+          body_md: string
+          citations: Json
+          created_at?: string | null
+          dek?: string | null
+          deleted_at?: string | null
+          id?: string
+          kind: string
+          list_id?: string | null
+          published_at?: string | null
+          slug: string
+          status?: string | null
+          title: string
+          view_count?: number | null
+        }
+        Update: {
+          ai_persona_id?: string
+          body_md?: string
+          citations?: Json
+          created_at?: string | null
+          dek?: string | null
+          deleted_at?: string | null
+          id?: string
+          kind?: string
+          list_id?: string | null
+          published_at?: string | null
+          slug?: string
+          status?: string | null
+          title?: string
+          view_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_posts_ai_persona_id_fkey"
+            columns: ["ai_persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_personas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "persona_posts_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       persona_source_rankings: {
         Row: {
           ai_persona_id: string
@@ -1441,6 +1507,7 @@ export type Database = {
           follower_count: number | null
           following_count: number | null
           id: string
+          is_admin: boolean
           is_pro: boolean | null
           stripe_customer_id: string | null
           subscription_status: string | null
@@ -1457,6 +1524,7 @@ export type Database = {
           follower_count?: number | null
           following_count?: number | null
           id: string
+          is_admin?: boolean
           is_pro?: boolean | null
           stripe_customer_id?: string | null
           subscription_status?: string | null
@@ -1473,6 +1541,7 @@ export type Database = {
           follower_count?: number | null
           following_count?: number | null
           id?: string
+          is_admin?: boolean
           is_pro?: boolean | null
           stripe_customer_id?: string | null
           subscription_status?: string | null
@@ -2142,6 +2211,7 @@ export type PersonaContentItem =
   Database['public']['Tables']['persona_content_items']['Row']
 export type PersonaContextRow =
   Database['public']['Tables']['persona_context']['Row']
+export type PersonaPost = Database['public']['Tables']['persona_posts']['Row']
 export type PersonaSource = Database['public']['Tables']['persona_sources']['Row']
 export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']

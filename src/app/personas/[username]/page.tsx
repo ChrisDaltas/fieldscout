@@ -33,18 +33,27 @@ async function loadPersona(username: string) {
 
   if (!persona) return null
 
-  const { data: lists } = await supabase
-    .from('lists')
-    .select(
-      'id, title, slug, description, position_filter, like_count, player_count, updated_at, owner:profiles!lists_owner_id_fkey(username)',
-    )
-    .eq('ai_persona_id', persona.id)
-    .eq('is_private', false)
-    .is('deleted_at', null)
-    .order('updated_at', { ascending: false })
-    .limit(20)
+  const [{ data: lists }, { data: posts }] = await Promise.all([
+    supabase
+      .from('lists')
+      .select(
+        'id, title, slug, description, position_filter, like_count, player_count, updated_at, owner:profiles!lists_owner_id_fkey(username)',
+      )
+      .eq('ai_persona_id', persona.id)
+      .eq('is_private', false)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    // RLS exposes only published, non-deleted posts to anon reads.
+    supabase
+      .from('persona_posts')
+      .select('id, title, slug, dek, published_at')
+      .eq('ai_persona_id', persona.id)
+      .order('published_at', { ascending: false })
+      .limit(10),
+  ])
 
-  return { persona, lists: lists ?? [] }
+  return { persona, lists: lists ?? [], posts: posts ?? [] }
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -63,7 +72,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
   const data = await loadPersona(username)
   if (!data) notFound()
 
-  const { persona, lists } = data
+  const { persona, lists, posts } = data
 
   return (
     <GuestShell>
@@ -90,6 +99,29 @@ export default async function PersonaProfilePage({ params }: PageProps) {
             {personaDisclaimer(persona.display_name)}
           </CardContent>
         </Card>
+
+        {posts.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">
+              Posts
+            </h2>
+            <ul className="space-y-2">
+              {posts.map((post) => (
+                <li key={post.id}>
+                  <Link
+                    href={`/personas/${persona.username}/posts/${post.slug}`}
+                    className="block rounded-lg bg-bg-elevated p-4 transition-colors hover:bg-bg-elevated-2"
+                  >
+                    <p className="font-semibold">{post.title}</p>
+                    {post.dek && (
+                      <p className="mt-1 text-sm text-text-secondary">{post.dek}</p>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">

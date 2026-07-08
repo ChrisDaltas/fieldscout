@@ -17,6 +17,7 @@
     "seed:persona-sources": "npx tsx scripts/seed-persona-sources.ts",
     "build:persona-context": "npx tsx scripts/build-persona-context.ts",
     "ingest:personas": "npx tsx scripts/ingest-persona-content.ts",
+    "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "test": "vitest run"
   },
   "dependencies": {

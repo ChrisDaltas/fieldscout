@@ -90,3 +90,69 @@ export function usePersonaBoards(limit = 9) {
     },
   })
 }
+
+// ============================================================================
+// Published persona posts for the same shelf (M5 — content engine).
+// ============================================================================
+
+export interface PersonaPostCard {
+  id: string
+  title: string
+  slug: string
+  dek: string | null
+  published_at: string | null
+  persona: {
+    username: string
+    display_name: string
+    avatar_url: string | null
+  }
+}
+
+interface PersonaPostRow {
+  id: string
+  title: string
+  slug: string
+  dek: string | null
+  published_at: string | null
+  persona:
+    | { username: string; display_name: string; avatar_url: string | null }
+    | { username: string; display_name: string; avatar_url: string | null }[]
+    | null
+}
+
+/** Latest published persona posts. RLS exposes only published, non-deleted
+ * rows to anon reads, so no status filter is needed client-side. */
+export function usePersonaPosts(limit = 6) {
+  return useQuery({
+    queryKey: ['persona-posts', limit],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<PersonaPostCard[]> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('persona_posts')
+        .select(
+          `id, title, slug, dek, published_at,
+           persona:ai_personas!persona_posts_ai_persona_id_fkey!inner(username, display_name, avatar_url, is_active)`,
+        )
+        .eq('ai_personas.is_active', true)
+        .order('published_at', { ascending: false })
+        .limit(limit)
+      if (error) throw error
+
+      return ((data ?? []) as unknown as PersonaPostRow[]).flatMap((row) => {
+        const persona = first(row.persona)
+        if (!persona) return []
+        return [
+          {
+            id: row.id,
+            title: row.title,
+            slug: row.slug,
+            dek: row.dek,
+            published_at: row.published_at,
+            persona,
+          },
+        ]
+      })
+    },
+  })
+}
