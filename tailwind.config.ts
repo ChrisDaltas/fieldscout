@@ -23,7 +23,7 @@ const config: Config = {
       colors: {
         /* ---- Field Scout palette (use these on reskinned surfaces) ---- */
         page: '#e4e5e8', // flat light-grey page background
-        ink: { DEFAULT: '#000000', 2: '#161616' },
+        ink: { DEFAULT: '#0B0C10', 2: '#161616' },
         n: { 1: '#000000', 2: '#161616', 3: '#5f646d', 4: '#e7e8e9' },
         // Ultramarine — "do a thing": buttons, tabs, selection, links, AI.
         accent: {

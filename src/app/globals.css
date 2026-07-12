@@ -23,19 +23,19 @@
     --bg-elevated-3: 220 5% 85%;
 
     /* Text */
-    --foreground: 0 0% 0%; /* ink */
+    --foreground: 228 18% 5%; /* ink */
     --text-secondary: 219 7% 40%; /* n-3 muted */
     --text-tertiary: 220 5% 55%;
 
     /* Surfaces (shadcn aliases) */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 0%;
+    --card-foreground: 228 18% 5%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 0%;
+    --popover-foreground: 228 18% 5%;
     --muted: 210 4% 91%; /* n-4 */
     --muted-foreground: 219 7% 40%; /* n-3 */
     --accent: 226 100% 93%; /* accent-soft #dce4ff — hover surfaces */
-    --accent-foreground: 0 0% 0%;
+    --accent-foreground: 228 18% 5%;
 
     /* Primary = ultramarine accent ("do a thing") */
     --primary: 230 100% 62%; /* #3d5cff */
@@ -43,23 +43,23 @@
     --primary-hover: 231 75% 52%; /* #2a44e0 */
 
     --secondary: 210 4% 91%;
-    --secondary-foreground: 0 0% 0%;
+    --secondary-foreground: 228 18% 5%;
 
     /* Destructive = reserved negative (pastel pink, ink text) */
     --destructive: 0 65% 76%; /* #e99898 */
-    --destructive-foreground: 0 0% 0%;
+    --destructive-foreground: 228 18% 5%;
 
     /* Borders — always 1px ink; muted hairlines use border-subtle */
-    --border: 0 0% 0%;
+    --border: 228 18% 5%;
     --border-subtle: 210 4% 91%; /* n-4 */
-    --input: 0 0% 0%;
+    --input: 228 18% 5%;
     --ring: 230 100% 62%;
 
     /* Sidebar (ink panel) */
-    --sidebar: 0 0% 0%;
+    --sidebar: 228 18% 5%;
     --sidebar-foreground: 0 0% 100%;
     --sidebar-primary: 98 100% 77%; /* brand lime #b4ff89 */
-    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-primary-foreground: 228 18% 5%;
     --sidebar-accent: 230 100% 62%;
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 0 0% 100%;
