@@ -66,6 +66,8 @@ export interface PlayerStatsPlayer {
   adp: number | null
   /** Strength of schedule rank, 1 = easiest – 32 = hardest. */
   sos: number | null
+  /** Average auction price in dollars (ESPN live draft data). */
+  auction_value: number | null
   /** Positional rank among projected players (half PPR), 1 = best. */
   pos_rank: number | null
   injury_body_part: string | null

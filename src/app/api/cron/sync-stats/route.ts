@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { syncAuctionValues } from '@/lib/sync/auction'
 import { syncByeWeeks } from '@/lib/sync/bye-weeks'
 import { syncPlayers } from '@/lib/sync/players'
 import { syncProjections } from '@/lib/sync/projections'
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
   const steps: Array<[string, () => Promise<SyncSummary>]> = [
     ['players', () => syncPlayers(supabase)],
     ['projections', () => syncProjections(supabase, season)],
+    ['auction', () => syncAuctionValues(supabase, season)],
     ['bye-weeks', () => syncByeWeeks(supabase, season)],
     ['usage', () => syncUsage(supabase, usageSeason)],
     ['splits', () => syncSplits(supabase, season)],

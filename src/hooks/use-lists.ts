@@ -35,6 +35,7 @@ export interface ListPlayerWithPlayer extends ListPlayer {
     snap_pct?: number | null
     target_share?: number | null
     sos?: number | null
+    auction_value?: number | null
   }
   stats?: ListPlayerStats | null
 }

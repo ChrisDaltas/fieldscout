@@ -39,7 +39,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { data: player, error: playerError } = await supabase
     .from('players')
     .select(
-      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, projected_pts_half_ppr, projected_stats, injury_body_part, injury_notes, injury_start_date, practice_participation',
+      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, auction_value, projected_pts_half_ppr, projected_stats, injury_body_part, injury_notes, injury_start_date, practice_participation',
     )
     .eq('id', id)
     .maybeSingle()

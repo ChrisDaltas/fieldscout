@@ -20,10 +20,11 @@ export interface BoardSourcePlayer {
   snap_pct: number | null
   target_share: number | null
   sos: number | null
+  auction_value: number | null
 }
 
 const PLAYER_COLS =
-  'id, full_name, position, team, headshot_url, bye_week, adp, projected_pts_standard, projected_pts_half_ppr, projected_pts_ppr, snap_pct, target_share, sos'
+  'id, full_name, position, team, headshot_url, bye_week, adp, projected_pts_standard, projected_pts_half_ppr, projected_pts_ppr, snap_pct, target_share, sos, auction_value'
 
 const BOARD_LIMIT = 200
 const STALE_TIME = 5 * 60 * 1000
@@ -69,6 +70,27 @@ export function useAdpBoard(enabled: boolean) {
         .select(PLAYER_COLS)
         .not('adp', 'is', null)
         .order('adp', { ascending: true })
+        .limit(BOARD_LIMIT)
+      if (error) throw error
+      return (data ?? []) as BoardSourcePlayer[]
+    },
+  })
+}
+
+/** Auction board — the player pool ordered by average auction price
+ * (ESPN live draft data, synced by sync-auction). */
+export function useAuctionBoard(enabled: boolean) {
+  return useQuery({
+    queryKey: ['board-source', 'auction'],
+    enabled,
+    staleTime: STALE_TIME,
+    queryFn: async (): Promise<BoardSourcePlayer[]> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('players')
+        .select(PLAYER_COLS)
+        .not('auction_value', 'is', null)
+        .order('auction_value', { ascending: false })
         .limit(BOARD_LIMIT)
       if (error) throw error
       return (data ?? []) as BoardSourcePlayer[]

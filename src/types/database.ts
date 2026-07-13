@@ -1439,6 +1439,8 @@ export type Database = {
       players: {
         Row: {
           adp: number | null
+          auction_updated_at: string | null
+          auction_value: number | null
           birth_date: string | null
           bye_week: number | null
           college: string | null
@@ -1481,6 +1483,8 @@ export type Database = {
         }
         Insert: {
           adp?: number | null
+          auction_updated_at?: string | null
+          auction_value?: number | null
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null
@@ -1523,6 +1527,8 @@ export type Database = {
         }
         Update: {
           adp?: number | null
+          auction_updated_at?: string | null
+          auction_value?: number | null
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null

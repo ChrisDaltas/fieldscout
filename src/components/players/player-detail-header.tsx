@@ -144,7 +144,7 @@ export function PlayerDetailHeader({
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
   const cells: Array<[string, string]> = [
     ['ADP', formatAdp(player.adp)],
-    ['Auction $', '—'],
+    ['Auction $', player.auction_value != null ? `$${player.auction_value}` : '—'],
     ['Pos rank', player.pos_rank != null ? `${player.position}${player.pos_rank}` : '—'],
     ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
     ['Height', formatHeight(player.height)],

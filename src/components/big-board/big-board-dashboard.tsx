@@ -36,6 +36,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   useAdpBoard,
+  useAuctionBoard,
   useConsensusBoard,
   usePersonaBoardPlayers,
   type BoardSourcePlayer,
@@ -91,7 +92,7 @@ const FIELDS: Array<{ id: string; label: string; available: boolean }> = [
   { id: 'tgt', label: 'Target share', available: true },
   { id: 'snap', label: 'Snap %', available: true },
   { id: 'sos', label: 'Strength of schedule', available: true },
-  { id: 'auction', label: 'Avg auction price', available: false },
+  { id: 'auction', label: 'Avg auction price', available: true },
 ]
 
 const PROJ_KEY: Record<Scoring, keyof BoardSourcePlayer> = {
@@ -244,6 +245,7 @@ export function BigBoardDashboard() {
   const mineQuery = useBigBoard()
   const consensusQuery = useConsensusBoard(source === 'consensus')
   const adpQuery = useAdpBoard(source === 'adp')
+  const auctionQuery = useAuctionBoard(source === 'auction')
   const personaListId = source.startsWith('persona:') ? source.slice('persona:'.length) : null
   const personaQuery = usePersonaBoardPlayers(personaListId)
   const personas = usePersonaBoards(8)
@@ -267,6 +269,7 @@ export function BigBoardDashboard() {
         snap_pct: entry.player.snap_pct ?? null,
         target_share: entry.player.target_share ?? null,
         sos: entry.player.sos ?? null,
+        auction_value: entry.player.auction_value ?? null,
       })),
     [mineQuery.data],
   )
@@ -292,7 +295,7 @@ export function BigBoardDashboard() {
         : source === 'adp'
           ? adpQuery
           : source === 'auction'
-            ? null
+            ? auctionQuery
             : personaQuery
 
   const pool = useMemo<BoardSourcePlayer[]>(() => {
@@ -303,9 +306,9 @@ export function BigBoardDashboard() {
     }
     if (source === 'consensus') return consensusQuery.data ?? []
     if (source === 'adp') return adpQuery.data ?? []
-    if (source === 'auction') return []
+    if (source === 'auction') return auctionQuery.data ?? []
     return personaQuery.data ?? []
-  }, [source, order, mineById, consensusQuery.data, adpQuery.data, personaQuery.data])
+  }, [source, order, mineById, consensusQuery.data, adpQuery.data, auctionQuery.data, personaQuery.data])
 
   // ---- filters ------------------------------------------------------------
   const inPos = (p: BoardSourcePlayer) => matchesPosition(p.position, pos)
@@ -350,6 +353,14 @@ export function BigBoardDashboard() {
         }
         if (chipSet.has('snap') && player.snap_pct != null) {
           chips.push({ id: 'snap', text: `Sn: ${Math.round(player.snap_pct)}%` })
+        }
+        // Green per the design: auction is the "money" chip.
+        if (chipSet.has('auction') && player.auction_value != null) {
+          chips.push({
+            id: 'auction',
+            text: `$${Math.round(player.auction_value)}`,
+            tone: 'green',
+          })
         }
         return {
           player,
@@ -406,11 +417,15 @@ export function BigBoardDashboard() {
   }
 
   // ---- source select ------------------------------------------------------
-  // Selecting the ADP board flips that stat onto the cards (design behavior).
+  // Selecting the ADP/auction board flips that stat onto the cards
+  // (design behavior).
   const pickSource = (next: SourceId) => {
     setSource(next)
     if (next === 'adp') {
       setFields((f) => (f.includes('adp') ? f : [...f, 'adp']))
+    }
+    if (next === 'auction') {
+      setFields((f) => (f.includes('auction') ? f : [...f, 'auction']))
     }
   }
 
@@ -629,16 +644,7 @@ export function BigBoardDashboard() {
       </div>
 
       {/* board */}
-      {source === 'auction' ? (
-        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-          <Icon name="clock" size={20} className="mx-auto text-n-3" />
-          <h3 className="mt-3 text-h6">Auction values aren&apos;t in yet</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
-            Average auction prices land with the draft-season data feed. Pick
-            another board in the meantime.
-          </p>
-        </div>
-      ) : activeQuery?.isPending ? (
+      {activeQuery?.isPending ? (
         <div style={gridStyle}>
           {Array.from({ length: 12 }, (_, i) => (
             <Skeleton key={i} className="h-[95px] w-full" />
