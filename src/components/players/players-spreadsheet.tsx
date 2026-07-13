@@ -43,6 +43,8 @@ interface PlayerRow {
   team: string | null
   headshot_url: string | null
   status: string | null
+  depth_chart_order: number | null
+  depth_chart_position: string | null
   current_pts: number
   current_games: number
   last_pts: number
@@ -788,6 +790,15 @@ function PlayerTableRow({
               {row.team && (
                 <span className="text-[11px] font-semibold text-n-3">
                   {row.team}
+                </span>
+              )}
+              {row.depth_chart_order != null && row.depth_chart_position && (
+                <span
+                  title={`Depth chart: ${row.depth_chart_position} #${row.depth_chart_order}`}
+                  className="fs-num text-[10px] font-bold text-n-3"
+                >
+                  · {row.depth_chart_position}
+                  {row.depth_chart_order}
                 </span>
               )}
             </div>

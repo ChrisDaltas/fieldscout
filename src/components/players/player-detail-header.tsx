@@ -124,15 +124,15 @@ export function PlayerDetailHeader({
 }
 
 /**
- * Hairline-celled 4×2 vitals grid (kit VitalsGrid). Auction $ / Pos rank /
- * SOS aren't synced yet — "—" rather than fabricating values client-side.
+ * Hairline-celled 4×2 vitals grid (kit VitalsGrid). Auction $ / Pos rank
+ * aren't synced yet — "—" rather than fabricating values client-side.
  */
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
   const cells: Array<[string, string]> = [
     ['ADP', formatAdp(player.adp)],
     ['Auction $', '—'],
     ['Pos rank', '—'],
-    ['SOS', '—'],
+    ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
     ['Height', formatHeight(player.height)],
     ['Weight', player.weight != null ? `${player.weight} lb` : '—'],
     ['Age', formatAge(player.birth_date)],

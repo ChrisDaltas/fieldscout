@@ -194,13 +194,13 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
 // ---------------------------------------------------------------------------
 
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
-  // Auction $ / Pos rank / SOS aren't in the stats payload yet — render "—"
+  // Auction $ / Pos rank aren't in the stats payload yet — render "—"
   // rather than fabricating values client-side.
   const cells: Array<[string, string]> = [
     ['ADP', formatAdp(player.adp)],
     ['Auction $', '—'],
     ['Pos rank', '—'],
-    ['SOS', '—'],
+    ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
     ['Height', formatHeight(player.height)],
     ['Weight', player.weight != null ? `${player.weight} lb` : '—'],
     ['Age', formatAge(player.birth_date)],

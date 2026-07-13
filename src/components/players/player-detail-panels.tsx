@@ -456,6 +456,11 @@ export function SeasonCard({
             basis: {season.season - 1}
           </span>
         )}
+        {season.basis === 'projections' && (
+          <span className="fs-num text-[10px] font-medium text-n-3">
+            basis: projections
+          </span>
+        )}
       </div>
       {view === 'fantasy' ? (
         <FantasyBlock season={season} />
