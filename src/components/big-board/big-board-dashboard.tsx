@@ -203,7 +203,8 @@ export function BigBoardDashboard() {
   const [scoring, setScoring] = useState<Scoring>('half')
   const [tiers, setTiers] = useState(false)
   const [width, setWidth] = useState<string>('0')
-  const [fields, setFields] = useState<string[]>(['rank', 'adp', 'auction', 'sos'])
+  // No pills by default (Figma "Default" state) — enable via the Card info menu.
+  const [fields, setFields] = useState<string[]>([])
   const [hideDrafted, setHideDrafted] = useState(false)
 
   const labels = useBoardLabelsStore((s) => s.labels)
@@ -413,17 +414,7 @@ export function BigBoardDashboard() {
   }
 
   // ---- source select ------------------------------------------------------
-  // Selecting the ADP/auction board flips that stat onto the cards
-  // (design behavior).
-  const pickSource = (next: SourceId) => {
-    setSource(next)
-    if (next === 'adp') {
-      setFields((f) => (f.includes('adp') ? f : [...f, 'adp']))
-    }
-    if (next === 'auction') {
-      setFields((f) => (f.includes('auction') ? f : [...f, 'auction']))
-    }
-  }
+  const pickSource = (next: SourceId) => setSource(next)
 
   const toggleField = (id: string) =>
     setFields((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
@@ -445,7 +436,7 @@ export function BigBoardDashboard() {
     gap: '10px',
     gridTemplateColumns:
       width === '0'
-        ? 'repeat(auto-fill, minmax(170px, 1fr))'
+        ? 'repeat(auto-fill, minmax(200px, 1fr))'
         : `repeat(${width}, minmax(0, 1fr))`,
   } as const
 
@@ -496,7 +487,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[200px] flex-col gap-1">
           <span className="fs-overline text-n-3">Board</span>
           <Select value={source} onValueChange={(v) => pickSource(v as SourceId)}>
-            <SelectTrigger className="h-btn">
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -518,7 +509,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[170px] flex-col gap-1">
           <span className="fs-overline text-n-3">Position</span>
           <Select value={pos} onValueChange={(v) => setPos(v as PositionFilter)}>
-            <SelectTrigger className="h-btn">
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -532,7 +523,7 @@ export function BigBoardDashboard() {
         </label>
 
         {pos !== 'ALL' && (
-          <label className="flex h-btn cursor-pointer items-center gap-2">
+          <label className="flex h-btn-md cursor-pointer items-center gap-2">
             <Switch checked={hideOthers} onCheckedChange={setHideOthers} />
             <span className="text-[12px] font-bold">
               {hideOthers ? 'Hide others' : 'Fade others'}
@@ -543,7 +534,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[130px] flex-col gap-1">
           <span className="fs-overline text-n-3">Scoring</span>
           <Select value={scoring} onValueChange={(v) => setScoring(v as Scoring)}>
-            <SelectTrigger className="h-btn">
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -559,7 +550,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[110px] flex-col gap-1">
           <span className="fs-overline text-n-3">Width</span>
           <Select value={width} onValueChange={setWidth}>
-            <SelectTrigger className="h-btn">
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -572,7 +563,7 @@ export function BigBoardDashboard() {
           </Select>
         </label>
 
-        <label className="flex h-btn cursor-pointer items-center gap-2">
+        <label className="flex h-btn-md cursor-pointer items-center gap-2">
           <Switch checked={tiers} onCheckedChange={setTiers} />
           <span className="text-[12px] font-bold">Tiers</span>
         </label>

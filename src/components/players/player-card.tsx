@@ -252,7 +252,7 @@ export function PlayerCard({
     const name = (
       <span
         title={player.full_name}
-        className="block truncate text-[16px] font-extrabold leading-tight"
+        className="block truncate text-[15px] font-extrabold leading-tight"
       >
         {abbrev}
       </span>
@@ -261,18 +261,22 @@ export function PlayerCard({
       <div
         {...dragHandleProps}
         className={cn(
-          'group relative overflow-hidden rounded-sm border border-ink transition-all hover:shadow-hard-4',
-          drafted2 ? 'bg-positive-soft' : dnd ? 'bg-n-4' : 'bg-white',
+          'group relative overflow-hidden rounded-[6px] border transition-all hover:border-ink hover:shadow-hard-4',
+          drafted2
+            ? 'border-n-4 bg-positive-soft'
+            : dnd
+              ? 'border-n-3 bg-n-4'
+              : 'border-n-4 bg-white',
           draggable && 'cursor-grab active:cursor-grabbing',
-          isDragging && 'z-10 shadow-hard-6',
+          isDragging && 'z-10 border-ink shadow-hard-6',
           faded && 'opacity-50',
           className,
         )}
       >
-        {/* headshot bleeds to the right edge, under the rank chip */}
+        {/* headshot — right side, running under the floating rank chip */}
         <Avatar
           className={cn(
-            'absolute right-0 top-0 z-0 h-[92px] w-[76px] rounded-none',
+            'absolute right-0.5 top-0 z-0 h-[92px] w-[68px] rounded-none',
             dimContent && 'opacity-40 grayscale',
           )}
         >
@@ -287,7 +291,7 @@ export function PlayerCard({
         </Avatar>
 
         {showRank && (
-          <span className="fs-num absolute right-0 top-0 z-20 inline-flex h-[22px] min-w-[26px] items-center justify-center rounded-bl-[4px] bg-accent px-1.5 text-[13px] font-bold leading-none text-accent-foreground">
+          <span className="fs-num absolute right-1.5 top-1.5 z-20 inline-flex h-[24px] min-w-[28px] items-center justify-center rounded-[5px] bg-accent px-1.5 text-[13px] font-bold leading-none text-accent-foreground">
             {rank}
           </span>
         )}
@@ -295,7 +299,7 @@ export function PlayerCard({
         {/* header block — name, meta, hover quick-labels; sized to the headshot */}
         <div
           className={cn(
-            'relative z-10 flex min-h-[92px] flex-col pb-2 pl-2.5 pr-[80px] pt-2',
+            'relative z-10 flex min-h-[92px] flex-col pb-2 pl-2.5 pr-[74px] pt-2',
             dimContent && 'opacity-60',
           )}
         >
@@ -326,6 +330,9 @@ export function PlayerCard({
 
           {onToggleLabel && (
             <span className="mt-auto flex items-center gap-1.5 pt-1.5">
+              {/* Resting hover shows bare glyphs; once a label is active both
+                  buttons stay visible boxed — filled active, outlined idle
+                  (Figma states: Hover / Highlighted / Demoted). */}
               <button
                 type="button"
                 aria-label={dnd ? 'Undo do not draft' : 'Do not draft'}
@@ -337,13 +344,15 @@ export function PlayerCard({
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className={cn(
-                  'flex h-[22px] w-[26px] items-center justify-center rounded-[4px] border transition-all focus-visible:opacity-100',
+                  'flex h-[24px] w-[28px] items-center justify-center rounded-[5px] transition-all focus-visible:opacity-100',
                   dnd
-                    ? 'border-ink bg-ink text-white opacity-100'
-                    : 'border-n-4 bg-white text-n-3 opacity-0 hover:border-ink hover:text-ink group-hover:opacity-100',
+                    ? 'bg-ink text-white opacity-100'
+                    : label != null
+                      ? 'border border-n-3 bg-white text-ink opacity-100'
+                      : 'text-n-3 opacity-0 hover:text-ink group-hover:opacity-100',
                 )}
               >
-                <Icon name="eye-off" size={13} />
+                <Icon name="eye-off" size={14} />
               </button>
               <button
                 type="button"
@@ -356,13 +365,15 @@ export function PlayerCard({
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className={cn(
-                  'flex h-[22px] w-[26px] items-center justify-center rounded-[4px] border transition-all focus-visible:opacity-100',
+                  'flex h-[24px] w-[28px] items-center justify-center rounded-[5px] transition-all focus-visible:opacity-100',
                   drafted2
-                    ? 'border-positive-strong bg-positive-strong text-white opacity-100'
-                    : 'border-n-4 bg-white text-n-3 opacity-0 hover:border-ink hover:text-ink group-hover:opacity-100',
+                    ? 'bg-positive-strong text-white opacity-100'
+                    : label != null
+                      ? 'border border-n-3 bg-white text-ink opacity-100'
+                      : 'text-n-3 opacity-0 hover:text-ink group-hover:opacity-100',
                 )}
               >
-                <Icon name="check" size={13} />
+                <Icon name="check" size={14} />
               </button>
             </span>
           )}
