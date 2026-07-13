@@ -26,7 +26,16 @@ export interface ListPlayerWithPlayer extends ListPlayer {
   player: Pick<
     Player,
     'id' | 'full_name' | 'position' | 'team' | 'headshot_url' | 'status'
-  > & { adp?: number | null }
+  > & {
+    adp?: number | null
+    bye_week?: number | null
+    projected_pts_ppr?: number | null
+    projected_pts_half_ppr?: number | null
+    projected_pts_standard?: number | null
+    snap_pct?: number | null
+    target_share?: number | null
+    sos?: number | null
+  }
   stats?: ListPlayerStats | null
 }
 

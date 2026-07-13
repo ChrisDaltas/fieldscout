@@ -212,6 +212,36 @@ export type Database = {
           },
         ]
       }
+      defense_position_splits: {
+        Row: {
+          defense: string
+          factor: number
+          position: string
+          rank: number
+          sample_weeks: number
+          season: number
+          updated_at: string
+        }
+        Insert: {
+          defense: string
+          factor: number
+          position: string
+          rank: number
+          sample_weeks?: number
+          season: number
+          updated_at?: string
+        }
+        Update: {
+          defense?: string
+          factor?: number
+          position?: string
+          rank?: number
+          sample_weeks?: number
+          season?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       expert_claim_requests: {
         Row: {
           email_sent_to: string | null
@@ -1412,6 +1442,8 @@ export type Database = {
           birth_date: string | null
           bye_week: number | null
           college: string | null
+          depth_chart_order: number | null
+          depth_chart_position: string | null
           draft_pick: number | null
           draft_round: number | null
           draft_year: number | null
@@ -1428,13 +1460,18 @@ export type Database = {
           projected_pts_half_ppr: number | null
           projected_pts_ppr: number | null
           projected_pts_standard: number | null
+          projected_stats: Json | null
           projections_season: number | null
           projections_updated_at: string | null
           search_name: string | null
           sleeper_id: string | null
+          snap_pct: number | null
+          sos: number | null
           status: string | null
+          target_share: number | null
           team: string | null
           updated_at: string | null
+          usage_season: number | null
           weight: number | null
         }
         Insert: {
@@ -1442,6 +1479,8 @@ export type Database = {
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null
+          depth_chart_order?: number | null
+          depth_chart_position?: string | null
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
@@ -1458,13 +1497,18 @@ export type Database = {
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
           projected_pts_standard?: number | null
+          projected_stats?: Json | null
           projections_season?: number | null
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
+          snap_pct?: number | null
+          sos?: number | null
           status?: string | null
+          target_share?: number | null
           team?: string | null
           updated_at?: string | null
+          usage_season?: number | null
           weight?: number | null
         }
         Update: {
@@ -1472,6 +1516,8 @@ export type Database = {
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null
+          depth_chart_order?: number | null
+          depth_chart_position?: string | null
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
@@ -1488,13 +1534,18 @@ export type Database = {
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
           projected_pts_standard?: number | null
+          projected_stats?: Json | null
           projections_season?: number | null
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
+          snap_pct?: number | null
+          sos?: number | null
           status?: string | null
+          target_share?: number | null
           team?: string | null
           updated_at?: string | null
+          usage_season?: number | null
           weight?: number | null
         }
         Relationships: []

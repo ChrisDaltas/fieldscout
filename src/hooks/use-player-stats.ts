@@ -35,7 +35,7 @@ export interface SeasonBlock {
   gamesPlayed: number
   totals: StatTotals
   fantasy: { ppr: number; standard: number }
-  basis?: 'pace' | 'last_season'
+  basis?: 'pace' | 'projections' | 'last_season'
 }
 
 export interface GameLogRow {
@@ -64,6 +64,8 @@ export interface PlayerStatsPlayer {
   draft_round: number | null
   draft_pick: number | null
   adp: number | null
+  /** Strength of schedule rank, 1 = easiest – 32 = hardest. */
+  sos: number | null
 }
 
 export interface PlayerStatsResponse {
