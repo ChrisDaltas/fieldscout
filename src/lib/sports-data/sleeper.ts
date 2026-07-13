@@ -23,6 +23,11 @@ export interface SleeperPlayer {
   number: number | null
   status: string | null
   injury_status: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
+  espn_id: number | string | null
   active: boolean | null
   years_exp: number | null
   age: number | null
@@ -57,6 +62,11 @@ export interface PlayerRow {
   college: string | null
   depth_chart_order: number | null
   depth_chart_position: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
+  espn_id: string | null
   search_name: string
   updated_at: string
 }
@@ -209,6 +219,11 @@ export function mapSleeperPlayerToDb(player: SleeperPlayer): PlayerRow | null {
     college: player.college,
     depth_chart_order: player.depth_chart_order,
     depth_chart_position: player.depth_chart_position,
+    injury_body_part: player.injury_body_part?.trim() || null,
+    injury_notes: player.injury_notes?.trim() || null,
+    injury_start_date: player.injury_start_date || null,
+    practice_participation: player.practice_participation?.trim() || null,
+    espn_id: player.espn_id != null ? String(player.espn_id) : null,
     search_name: (player.search_full_name ?? fullName.toLowerCase().replace(/\s+/g, '')),
     updated_at: new Date().toISOString(),
   }

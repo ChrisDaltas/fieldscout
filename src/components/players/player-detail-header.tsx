@@ -55,6 +55,14 @@ export function PlayerDetailHeader({
   if (player.weight != null) metaParts.push(`${player.weight} lb`)
   if (player.bye_week != null) metaParts.push(`Bye ${player.bye_week}`)
 
+  // Injury context (Sleeper roster feed): "Hamstring · limited practice".
+  const injuryParts: string[] = []
+  if (player.injury_body_part) injuryParts.push(player.injury_body_part)
+  if (player.practice_participation) {
+    injuryParts.push(`${player.practice_participation.toLowerCase()} practice`)
+  }
+  const injuryDetail = injuryParts.join(' · ')
+
   return (
     <div className="min-w-0">
       <div className="flex items-start gap-4">
@@ -84,12 +92,18 @@ export function PlayerDetailHeader({
             <span className="min-w-0 break-words">{player.full_name}</span>
             {status && (
               <span
+                title={player.injury_notes ?? undefined}
                 className={cn(
                   'inline-flex shrink-0 items-center rounded-sm px-1.5 py-px text-[11px] font-extrabold leading-none',
                   status.tone === 'caution' ? 'bg-caution' : 'bg-negative',
                 )}
               >
                 {status.label}
+                {injuryDetail && (
+                  <span className="ml-1 font-bold normal-case opacity-80">
+                    — {injuryDetail}
+                  </span>
+                )}
               </span>
             )}
           </h2>

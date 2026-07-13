@@ -1445,6 +1445,11 @@ export type Database = {
           depth_chart_order: number | null
           depth_chart_position: string | null
           draft_pick: number | null
+          espn_id: string | null
+          injury_body_part: string | null
+          injury_notes: string | null
+          injury_start_date: string | null
+          practice_participation: string | null
           draft_round: number | null
           draft_year: number | null
           experience_years: number | null
@@ -1484,9 +1489,14 @@ export type Database = {
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
+          espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
           full_name: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
+          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id: string
@@ -1521,9 +1531,14 @@ export type Database = {
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
+          espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
           full_name?: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
+          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id?: string

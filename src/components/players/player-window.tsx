@@ -168,12 +168,22 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
           <span className="truncate">{player.full_name}</span>
           {status && (
             <span
+              title={
+                [player.injury_body_part, player.injury_notes]
+                  .filter(Boolean)
+                  .join(' — ') || undefined
+              }
               className={cn(
                 'inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[10px] font-extrabold leading-none',
                 status.tone === 'caution' ? 'bg-caution' : 'bg-negative',
               )}
             >
               {status.label}
+              {player.injury_body_part && (
+                <span className="ml-1 font-bold opacity-80">
+                  — {player.injury_body_part}
+                </span>
+              )}
             </span>
           )}
         </p>

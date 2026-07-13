@@ -68,6 +68,10 @@ export interface PlayerStatsPlayer {
   sos: number | null
   /** Positional rank among projected players (half PPR), 1 = best. */
   pos_rank: number | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
 }
 
 export interface PlayerStatsResponse {
