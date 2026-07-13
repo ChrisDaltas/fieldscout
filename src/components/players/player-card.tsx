@@ -252,7 +252,7 @@ export function PlayerCard({
     const name = (
       <span
         title={player.full_name}
-        className="block truncate text-[15px] font-extrabold leading-tight"
+        className="block truncate text-[20px] font-bold leading-normal"
       >
         {abbrev}
       </span>
@@ -261,22 +261,18 @@ export function PlayerCard({
       <div
         {...dragHandleProps}
         className={cn(
-          'group relative overflow-hidden rounded-[6px] border transition-all hover:border-ink hover:shadow-hard-4',
-          drafted2
-            ? 'border-n-4 bg-positive-soft'
-            : dnd
-              ? 'border-n-3 bg-n-4'
-              : 'border-n-4 bg-white',
+          'group relative overflow-hidden rounded-sm border-[0.5px] border-ink transition-all hover:shadow-hard-4',
+          drafted2 ? 'bg-positive-soft' : dnd ? 'bg-n-4' : 'bg-white',
           draggable && 'cursor-grab active:cursor-grabbing',
-          isDragging && 'z-10 border-ink shadow-hard-6',
+          isDragging && 'z-10 shadow-hard-6',
           faded && 'opacity-50',
           className,
         )}
       >
-        {/* headshot — right side, running under the floating rank chip */}
+        {/* headshot — flush to the right edge, full header height (802:30) */}
         <Avatar
           className={cn(
-            'absolute right-0.5 top-0 z-0 h-[92px] w-[68px] rounded-none',
+            'absolute right-0 top-0 z-0 h-[93px] w-[60%] max-w-[140px] rounded-none',
             dimContent && 'opacity-40 grayscale',
           )}
         >
@@ -291,42 +287,45 @@ export function PlayerCard({
         </Avatar>
 
         {showRank && (
-          <span className="fs-num absolute right-1.5 top-1.5 z-20 inline-flex h-[24px] min-w-[28px] items-center justify-center rounded-[5px] bg-accent px-1.5 text-[13px] font-bold leading-none text-accent-foreground">
+          <span className="fs-num absolute right-[20px] top-[8px] z-20 inline-flex w-[25px] items-center justify-center rounded-sm border-[0.5px] border-ink bg-accent p-[4px] text-[14px] font-medium leading-none text-accent-foreground">
             {rank}
           </span>
         )}
 
-        {/* header block — name, meta, hover quick-labels; sized to the headshot */}
+        {/* header block — name, meta, hover quick-labels (text sits over the
+            photo zone like the mock; 802:31 caps the text column's width) */}
         <div
           className={cn(
-            'relative z-10 flex min-h-[92px] flex-col pb-2 pl-2.5 pr-[74px] pt-2',
+            'relative z-10 flex min-h-[93px] flex-col pb-2 pl-[10px] pt-[8px]',
             dimContent && 'opacity-60',
           )}
         >
-          {onOpen ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpen()
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="cursor-pointer text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
-            >
-              {name}
-            </button>
-          ) : (
-            name
-          )}
+          <div className="w-[52%] min-w-[96px]">
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpen()
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="block w-full cursor-pointer text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+              >
+                {name}
+              </button>
+            ) : (
+              name
+            )}
 
-          <span className="mt-1 flex items-center gap-1.5">
-            <PositionBadge position={player.position} />
-            <span className="truncate text-[11px] font-semibold text-n-3">
-              {[player.team, player.bye_week != null ? `BYE ${player.bye_week}` : null]
-                .filter(Boolean)
-                .join(' · ')}
+            <span className="mt-px flex items-center gap-[3px]">
+              <PositionBadge position={player.position} className="border-0 px-1 py-0.5 text-[12px] font-semibold" />
+              <span className="truncate text-[12px] font-semibold text-n-3">
+                {[player.team, player.bye_week != null ? `BYE ${player.bye_week}` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
             </span>
-          </span>
+          </div>
 
           {onToggleLabel && (
             <span className="mt-auto flex items-center gap-1.5 pt-1.5">
