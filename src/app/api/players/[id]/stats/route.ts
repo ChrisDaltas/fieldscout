@@ -39,7 +39,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { data: player, error: playerError } = await supabase
     .from('players')
     .select(
-      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, projected_stats',
+      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, projected_pts_half_ppr, projected_stats',
     )
     .eq('id', id)
     .maybeSingle()
@@ -49,6 +49,19 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
   if (!player) {
     return NextResponse.json({ error: 'Player not found' }, { status: 404 })
+  }
+
+  // Positional rank among projected players (half PPR, the app default):
+  // rank = 1 + players at the same position projected above this one.
+  // Read-time count keeps it honest as projections refresh.
+  let posRank: number | null = null
+  if (player.projected_pts_half_ppr != null) {
+    const { count, error: rankError } = await supabase
+      .from('players')
+      .select('id', { count: 'exact', head: true })
+      .eq('position', player.position)
+      .gt('projected_pts_half_ppr', player.projected_pts_half_ppr)
+    if (!rankError && count != null) posRank = count + 1
   }
 
   const { data: rows, error: statsError } = await supabase
@@ -101,7 +114,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   })()
 
   return NextResponse.json({
-    player,
+    player: { ...player, pos_rank: posRank },
     seasons: {
       current: {
         season: CURRENT_SEASON,

@@ -131,7 +131,7 @@ function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
   const cells: Array<[string, string]> = [
     ['ADP', formatAdp(player.adp)],
     ['Auction $', '—'],
-    ['Pos rank', '—'],
+    ['Pos rank', player.pos_rank != null ? `${player.position}${player.pos_rank}` : '—'],
     ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
     ['Height', formatHeight(player.height)],
     ['Weight', player.weight != null ? `${player.weight} lb` : '—'],
