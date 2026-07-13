@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
-import { PositionBadge, POSITION_RING } from '@/components/players/position-badge'
+import { PositionBadge } from '@/components/players/position-badge'
 import { cn } from '@/lib/utils'
 
 export interface PlayerCardPlayer {
@@ -13,18 +13,20 @@ export interface PlayerCardPlayer {
   position: string
   team: string | null
   headshot_url: string | null
+  /** Board layout shows the bye inline in the meta row when present. */
+  bye_week?: number | null
 }
 
-/** A small stat chip on the board-layout card ("B: 9", "P: 288.4"). */
+/** A labeled stat pill on the board-layout card ("Rank: 3rd", "$28"). */
 export interface PlayerCardStatChip {
   id: string
   text: string
-  /** grey = neutral stat, pink = warning-ish (SOS), green = money (auction). */
-  tone?: 'grey' | 'pink' | 'green'
+  /** ink = neutral stat, pink = warning-ish (SOS), green = money (auction). */
+  tone?: 'ink' | 'pink' | 'green'
 }
 
 const CHIP_TONES: Record<NonNullable<PlayerCardStatChip['tone']>, string> = {
-  grey: 'bg-n-4 text-ink',
+  ink: 'bg-ink text-white',
   pink: 'bg-negative text-ink',
   green: 'bg-brand text-ink',
 }
@@ -73,15 +75,18 @@ interface PlayerCardProps {
   onRemove?: () => void
   /**
    * 'tile' (default) is the vertical centered card. 'board' is the Big Board
-   * dashboard card from the Field Scout design package (Frame 3): horizontal,
-   * position-colour ring, ink rank chip top-left, stat chips top-right, name
-   * left-aligned, headshot bleeding off the bottom-right corner.
+   * dashboard card (Figma Hadouken 802:8): name top-left over a position ·
+   * team · bye meta row, accent rank chip flush in the top-right corner,
+   * headshot bleeding to the right edge, labeled stat pills along the bottom,
+   * and hover-revealed drafted / do-not-draft buttons.
    */
   layout?: 'tile' | 'board'
-  /** Board layout only: up to three small stat chips shown top-right. */
+  /** Board layout only: labeled stat pills along the card bottom (max 4). */
   statChips?: PlayerCardStatChip[]
-  /** Board layout only: quick label — dims the card and shows a corner ribbon. */
+  /** Board layout only: quick label — tints (drafted) or greys (dnd) the card. */
   label?: 'drafted' | 'dnd' | null
+  /** Board layout only: toggle a quick label (renders the hover buttons). */
+  onToggleLabel?: (label: 'drafted' | 'dnd') => void
   /** Board layout only: dim the card (position filter in "fade others" mode). */
   faded?: boolean
   className?: string
@@ -228,6 +233,7 @@ export function PlayerCard({
   layout = 'tile',
   statChips,
   label,
+  onToggleLabel,
   faded = false,
   className,
 }: PlayerCardProps) {
@@ -240,11 +246,13 @@ export function PlayerCard({
 
   if (layout === 'board') {
     const abbrev = first ? `${first[0]}. ${last}` : last
-    const dim = faded || label === 'drafted' || label === 'dnd'
+    const drafted2 = label === 'drafted'
+    const dnd = label === 'dnd'
+    const dimContent = faded || dnd
     const name = (
       <span
         title={player.full_name}
-        className="block truncate text-[15px] font-extrabold leading-tight"
+        className="block truncate text-[16px] font-extrabold leading-tight"
       >
         {abbrev}
       </span>
@@ -253,16 +261,21 @@ export function PlayerCard({
       <div
         {...dragHandleProps}
         className={cn(
-          'group relative h-[95px] overflow-hidden rounded-sm bg-white ring-2 transition-all hover:shadow-hard-4',
-          POSITION_RING[player.position] ?? POSITION_RING.FLEX,
+          'group relative overflow-hidden rounded-sm border border-ink transition-all hover:shadow-hard-4',
+          drafted2 ? 'bg-positive-soft' : dnd ? 'bg-n-4' : 'bg-white',
           draggable && 'cursor-grab active:cursor-grabbing',
           isDragging && 'z-10 shadow-hard-6',
-          dim && 'opacity-50',
+          faded && 'opacity-50',
           className,
         )}
       >
-        {/* headshot bleeds off the bottom-right corner, behind the text */}
-        <Avatar className="absolute -bottom-1 -right-1.5 z-0 h-14 w-14">
+        {/* headshot bleeds to the right edge, under the rank chip */}
+        <Avatar
+          className={cn(
+            'absolute right-0 top-0 z-0 h-[92px] w-[76px] rounded-none',
+            dimContent && 'opacity-40 grayscale',
+          )}
+        >
           {player.headshot_url && (
             <AvatarImage
               src={player.headshot_url}
@@ -270,63 +283,111 @@ export function PlayerCard({
               className="h-full w-full object-cover object-top"
             />
           )}
-          <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+          <AvatarFallback className="rounded-none text-sm">{initials}</AvatarFallback>
         </Avatar>
 
         {showRank && (
-          <span className="fs-num absolute left-2 top-2.5 z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-ink px-1 text-[12px] font-bold leading-none text-white">
+          <span className="fs-num absolute right-0 top-0 z-20 inline-flex h-[22px] min-w-[26px] items-center justify-center rounded-bl-[4px] bg-accent px-1.5 text-[13px] font-bold leading-none text-accent-foreground">
             {rank}
           </span>
         )}
 
+        {/* header block — name, meta, hover quick-labels; sized to the headshot */}
+        <div
+          className={cn(
+            'relative z-10 flex min-h-[92px] flex-col pb-2 pl-2.5 pr-[80px] pt-2',
+            dimContent && 'opacity-60',
+          )}
+        >
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpen()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="cursor-pointer text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+            >
+              {name}
+            </button>
+          ) : (
+            name
+          )}
+
+          <span className="mt-1 flex items-center gap-1.5">
+            <PositionBadge position={player.position} />
+            <span className="truncate text-[11px] font-semibold text-n-3">
+              {[player.team, player.bye_week != null ? `BYE ${player.bye_week}` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          </span>
+
+          {onToggleLabel && (
+            <span className="mt-auto flex items-center gap-1.5 pt-1.5">
+              <button
+                type="button"
+                aria-label={dnd ? 'Undo do not draft' : 'Do not draft'}
+                aria-pressed={dnd}
+                title={dnd ? 'Undo do not draft' : 'Do not draft'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleLabel('dnd')
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={cn(
+                  'flex h-[22px] w-[26px] items-center justify-center rounded-[4px] border transition-all focus-visible:opacity-100',
+                  dnd
+                    ? 'border-ink bg-ink text-white opacity-100'
+                    : 'border-n-4 bg-white text-n-3 opacity-0 hover:border-ink hover:text-ink group-hover:opacity-100',
+                )}
+              >
+                <Icon name="eye-off" size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label={drafted2 ? 'Undo drafted' : 'Mark drafted'}
+                aria-pressed={drafted2}
+                title={drafted2 ? 'Undo drafted' : 'Mark drafted'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleLabel('drafted')
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={cn(
+                  'flex h-[22px] w-[26px] items-center justify-center rounded-[4px] border transition-all focus-visible:opacity-100',
+                  drafted2
+                    ? 'border-positive-strong bg-positive-strong text-white opacity-100'
+                    : 'border-n-4 bg-white text-n-3 opacity-0 hover:border-ink hover:text-ink group-hover:opacity-100',
+                )}
+              >
+                <Icon name="check" size={13} />
+              </button>
+            </span>
+          )}
+        </div>
+
+        {/* labeled stat pills — full width, below the headshot zone */}
         {statChips && statChips.length > 0 && (
-          <span className="absolute right-1.5 top-2.5 z-10 flex items-center gap-1">
-            {statChips.slice(0, 3).map((chip) => (
+          <div
+            className={cn(
+              'relative z-10 flex flex-wrap items-center gap-1 px-2 pb-2',
+              dimContent && 'opacity-60',
+            )}
+          >
+            {statChips.slice(0, 4).map((chip) => (
               <span
                 key={chip.id}
                 className={cn(
-                  'fs-num inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-semibold leading-none tracking-tight',
-                  CHIP_TONES[chip.tone ?? 'grey'],
+                  'fs-num inline-flex items-center rounded-full px-2 py-[3px] text-[10px] font-bold leading-none',
+                  CHIP_TONES[chip.tone ?? 'ink'],
                 )}
               >
                 {chip.text}
               </span>
             ))}
-          </span>
-        )}
-
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpen()
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute left-2.5 right-11 top-[42px] z-10 cursor-pointer text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
-          >
-            {name}
-          </button>
-        ) : (
-          <span className="absolute left-2.5 right-11 top-[42px] z-10">{name}</span>
-        )}
-
-        <span className="absolute bottom-2 left-2.5 z-10 flex items-center gap-1.5">
-          <PositionBadge position={player.position} />
-          {player.team && (
-            <span className="text-[10px] font-semibold text-n-3">{player.team}</span>
-          )}
-        </span>
-
-        {label === 'drafted' && (
-          <span className="absolute right-0 top-0 z-20 bg-ink px-1.5 py-0.5 text-[9px] font-extrabold leading-none text-white">
-            Drafted
-          </span>
-        )}
-        {label === 'dnd' && (
-          <span className="absolute right-0 top-0 z-20 bg-negative-strong px-1.5 py-0.5 text-[9px] font-extrabold leading-none text-white">
-            Do not draft
-          </span>
+          </div>
         )}
 
         {menuSlot}

@@ -16,13 +16,6 @@ import { CSS } from '@dnd-kit/utilities'
 import { PlayerCard, type PlayerCardStatChip } from '@/components/players/player-card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -81,19 +74,32 @@ const WIDTHS = [
   { id: '10', title: '10 wide' },
 ] as const
 
-// What a card can show. Insertion-ordered — the 3 most recently enabled
-// fields win a chip slot (mirrors the design package's card-info menu).
-// TODO(data): SOS and auction values have no schema column yet — the menu
-// keeps their slots visible-but-disabled so the feature is discoverable.
+// What a card can show as a stat pill. Insertion-ordered — the 4 most
+// recently enabled fields win a slot (Figma 802:8 shows four pills). Bye is
+// not here: it lives permanently in the card's meta row.
 const FIELDS: Array<{ id: string; label: string; available: boolean }> = [
-  { id: 'bye', label: 'Bye week', available: true },
+  { id: 'rank', label: 'Position rank', available: true },
+  { id: 'adp', label: 'Draft round (from ADP)', available: true },
   { id: 'proj', label: 'Proj points', available: true },
-  { id: 'adp', label: 'ADP', available: true },
   { id: 'tgt', label: 'Target share', available: true },
   { id: 'snap', label: 'Snap %', available: true },
   { id: 'sos', label: 'Strength of schedule', available: true },
   { id: 'auction', label: 'Avg auction price', available: true },
 ]
+
+/** Ordinal for the rank pill: 1st, 2nd, 3rd, 4th… */
+function ord(n: number): string {
+  const rem100 = n % 100
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`
+  const rem10 = n % 10
+  if (rem10 === 1) return `${n}st`
+  if (rem10 === 2) return `${n}nd`
+  if (rem10 === 3) return `${n}rd`
+  return `${n}th`
+}
+
+/** ADP → snake-draft round in a 12-team league. */
+const DRAFT_ROUND_TEAMS = 12
 
 const PROJ_KEY: Record<Scoring, keyof BoardSourcePlayer> = {
   standard: 'projected_pts_standard',
@@ -142,41 +148,6 @@ interface CardData {
   faded: boolean
 }
 
-function BoardCardMenu({
-  label,
-  onToggle,
-}: {
-  label: BoardLabel | null
-  onToggle: (label: BoardLabel) => void
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Quick label"
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="absolute bottom-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded-sm border border-ink bg-white text-ink opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-        >
-          <Icon name="dots" size={11} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onClick={() => onToggle('drafted')}>
-          <Icon name="check" size={12} />
-          {label === 'drafted' ? 'Undo drafted' : 'Mark drafted'}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => onToggle('dnd')}>
-          <Icon name="close" size={12} />
-          {label === 'dnd' ? 'Undo do not draft' : 'Do not draft'}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 function SortableBoardCard({
   data,
   draggable,
@@ -202,12 +173,12 @@ function SortableBoardCard({
         player={data.player}
         statChips={data.chips}
         label={data.label}
+        onToggleLabel={onToggleLabel}
         faded={data.faded}
         draggable={draggable}
         isDragging={isDragging}
         dragHandleProps={{ ...attributes, ...listeners }}
         onOpen={onOpen}
-        menuSlot={<BoardCardMenu label={data.label} onToggle={onToggleLabel} />}
       />
     </div>
   )
@@ -232,7 +203,7 @@ export function BigBoardDashboard() {
   const [scoring, setScoring] = useState<Scoring>('half')
   const [tiers, setTiers] = useState(false)
   const [width, setWidth] = useState<string>('0')
-  const [fields, setFields] = useState<string[]>(['bye', 'adp', 'proj'])
+  const [fields, setFields] = useState<string[]>(['rank', 'adp', 'auction', 'sos'])
   const [hideDrafted, setHideDrafted] = useState(false)
 
   const labels = useBoardLabelsStore((s) => s.labels)
@@ -327,40 +298,65 @@ export function BigBoardDashboard() {
     [pool, labels],
   )
 
-  const chipSet = useMemo(() => new Set(fields.slice(-3)), [fields])
+  const chipSet = useMemo(() => new Set(fields.slice(-4)), [fields])
   const projKey = PROJ_KEY[scoring]
+
+  // Positional rank within the current pool by projected points (scoring-
+  // aware) — powers the "Rank: 3rd" pill without a stored column.
+  const posRankById = useMemo(() => {
+    const byPos = new Map<string, Array<{ id: string; v: number }>>()
+    for (const p of pool) {
+      const v = p[projKey]
+      if (typeof v !== 'number') continue
+      let list = byPos.get(p.position)
+      if (!list) {
+        list = []
+        byPos.set(p.position, list)
+      }
+      list.push({ id: p.id, v })
+    }
+    const ranks = new Map<string, number>()
+    for (const list of byPos.values()) {
+      list.sort((a, b) => b.v - a.v)
+      list.forEach((e, i) => ranks.set(e.id, i + 1))
+    }
+    return ranks
+  }, [pool, projKey])
 
   const cardData = useMemo<CardData[]>(
     () =>
       visible.map((player, i) => {
         const chips: PlayerCardStatChip[] = []
-        // Pink per the design: SOS is the "watch out" stat (1 easy – 32 hard).
-        if (chipSet.has('sos') && player.sos != null) {
-          chips.push({ id: 'sos', text: `S: ${player.sos}`, tone: 'pink' })
-        }
-        if (chipSet.has('bye') && player.bye_week != null) {
-          chips.push({ id: 'bye', text: `B: ${player.bye_week}` })
+        const posRank = posRankById.get(player.id)
+        if (chipSet.has('rank') && posRank != null) {
+          chips.push({ id: 'rank', text: `Rank: ${ord(posRank)}` })
         }
         if (chipSet.has('adp') && player.adp != null) {
-          chips.push({ id: 'adp', text: `A: ${Math.round(player.adp)}` })
+          chips.push({
+            id: 'adp',
+            text: `Round: ${Math.max(1, Math.ceil(player.adp / DRAFT_ROUND_TEAMS))}`,
+          })
         }
         const proj = player[projKey]
         if (chipSet.has('proj') && typeof proj === 'number') {
-          chips.push({ id: 'proj', text: `P: ${proj.toFixed(0)}` })
+          chips.push({ id: 'proj', text: `Proj: ${proj.toFixed(0)}` })
         }
         if (chipSet.has('tgt') && player.target_share != null) {
-          chips.push({ id: 'tgt', text: `T: ${Math.round(player.target_share)}%` })
+          chips.push({ id: 'tgt', text: `Tgt: ${Math.round(player.target_share)}%` })
         }
         if (chipSet.has('snap') && player.snap_pct != null) {
-          chips.push({ id: 'snap', text: `Sn: ${Math.round(player.snap_pct)}%` })
+          chips.push({ id: 'snap', text: `Snap: ${Math.round(player.snap_pct)}%` })
         }
-        // Green per the design: auction is the "money" chip.
+        // Green = money, pink = "watch out" (SOS), per the Figma pills.
         if (chipSet.has('auction') && player.auction_value != null) {
           chips.push({
             id: 'auction',
             text: `$${Math.round(player.auction_value)}`,
             tone: 'green',
           })
+        }
+        if (chipSet.has('sos') && player.sos != null) {
+          chips.push({ id: 'sos', text: `SOS: ${player.sos}`, tone: 'pink' })
         }
         return {
           player,
@@ -371,7 +367,7 @@ export function BigBoardDashboard() {
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, chipSet, projKey, labels, fading, pos],
+    [visible, chipSet, projKey, posRankById, labels, fading, pos],
   )
 
   // ---- drag to sort (your board only) -------------------------------------
@@ -500,7 +496,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[200px] flex-col gap-1">
           <span className="fs-overline text-n-3">Board</span>
           <Select value={source} onValueChange={(v) => pickSource(v as SourceId)}>
-            <SelectTrigger>
+            <SelectTrigger className="h-btn">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -522,7 +518,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[170px] flex-col gap-1">
           <span className="fs-overline text-n-3">Position</span>
           <Select value={pos} onValueChange={(v) => setPos(v as PositionFilter)}>
-            <SelectTrigger>
+            <SelectTrigger className="h-btn">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -536,7 +532,7 @@ export function BigBoardDashboard() {
         </label>
 
         {pos !== 'ALL' && (
-          <label className="flex h-input cursor-pointer items-center gap-2">
+          <label className="flex h-btn cursor-pointer items-center gap-2">
             <Switch checked={hideOthers} onCheckedChange={setHideOthers} />
             <span className="text-[12px] font-bold">
               {hideOthers ? 'Hide others' : 'Fade others'}
@@ -547,7 +543,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[130px] flex-col gap-1">
           <span className="fs-overline text-n-3">Scoring</span>
           <Select value={scoring} onValueChange={(v) => setScoring(v as Scoring)}>
-            <SelectTrigger>
+            <SelectTrigger className="h-btn">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -563,7 +559,7 @@ export function BigBoardDashboard() {
         <label className="flex w-[110px] flex-col gap-1">
           <span className="fs-overline text-n-3">Width</span>
           <Select value={width} onValueChange={setWidth}>
-            <SelectTrigger>
+            <SelectTrigger className="h-btn">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -576,7 +572,7 @@ export function BigBoardDashboard() {
           </Select>
         </label>
 
-        <label className="flex h-input cursor-pointer items-center gap-2">
+        <label className="flex h-btn cursor-pointer items-center gap-2">
           <Switch checked={tiers} onCheckedChange={setTiers} />
           <span className="text-[12px] font-bold">Tiers</span>
         </label>
@@ -590,7 +586,7 @@ export function BigBoardDashboard() {
             </PopoverTrigger>
             <PopoverContent align="end" className="w-60 p-3.5">
               <p className="mb-2.5 text-[11px] font-extrabold text-n-3">
-                Show on every card · latest 3 show
+                Show on every card · latest 4 show
               </p>
               <div className="flex flex-col gap-2.5">
                 {FIELDS.map((f) => (

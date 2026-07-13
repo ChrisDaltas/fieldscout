@@ -46,19 +46,6 @@ export const POSITION_TAB_ACTIVE: Record<string, string> = {
   DST: 'data-[state=active]:bg-pos-def data-[state=active]:text-white',
 }
 
-// Big Board card ring — the card is outlined in its position's colour. Full
-// literal strings so Tailwind's scanner emits them.
-export const POSITION_RING: Record<string, string> = {
-  QB: 'ring-pos-qb',
-  RB: 'ring-pos-rb',
-  WR: 'ring-pos-wr',
-  TE: 'ring-pos-te',
-  FLEX: 'ring-pos-flex',
-  K: 'ring-pos-k',
-  DEF: 'ring-pos-def',
-  DST: 'ring-pos-def',
-}
-
 export function PositionBadge({
   position,
   size = 'sm',
