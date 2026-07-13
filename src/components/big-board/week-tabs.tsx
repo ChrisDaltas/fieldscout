@@ -19,6 +19,8 @@ interface WeekTabsProps {
   weekHrefBase?: string
   /** Button mode: weekly tabs select in place (wins over weekHrefBase). */
   onSelectWeek?: (week: number) => void
+  /** Button mode for the "Pre draft" tab: select in place (wins over preHref). */
+  onSelectPre?: () => void
   className?: string
 }
 
@@ -41,9 +43,10 @@ function tabClass(active: boolean, locked: boolean) {
 export function WeekTabs({
   active,
   currentWeek,
-  preHref = '/app/big-board',
+  preHref = '/app/weekly-ranks?tab=pre',
   weekHrefBase = '/app/big-board/week',
   onSelectWeek,
+  onSelectPre,
   className,
 }: WeekTabsProps) {
   const isLocked = (week: number) =>
@@ -58,14 +61,26 @@ export function WeekTabs({
         className,
       )}
     >
-      <Link
-        role="tab"
-        aria-selected={active === 'pre'}
-        href={preHref}
-        className={tabClass(active === 'pre', false)}
-      >
-        Pre draft
-      </Link>
+      {onSelectPre ? (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={active === 'pre'}
+          onClick={onSelectPre}
+          className={tabClass(active === 'pre', false)}
+        >
+          Pre draft
+        </button>
+      ) : (
+        <Link
+          role="tab"
+          aria-selected={active === 'pre'}
+          href={preHref}
+          className={tabClass(active === 'pre', false)}
+        >
+          Pre draft
+        </Link>
+      )}
       {Array.from({ length: WEEK_COUNT }, (_, i) => i + 1).map((week) => {
         const cls = tabClass(active === week, isLocked(week))
         if (onSelectWeek) {

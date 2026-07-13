@@ -16,7 +16,7 @@ interface WeeklyBigBoardViewProps {
  * lock semantics from the F2A spec. Past weeks render read-only; future weeks
  * show a locked card and never mount the editor.
  *
- * `currentWeek` is sourced from NEXT_PUBLIC_NFL_WEEK at the server boundary —
+ * `currentWeek` is sourced from Sleeper state (getCurrentNflWeek) at the server boundary —
  * 0 means offseason, in which case Week 1 is treated as the active board.
  */
 export function WeeklyBigBoardView({

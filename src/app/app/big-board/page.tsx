@@ -1,12 +1,16 @@
-import { BigBoardGrid } from '@/components/big-board/big-board-grid'
+import { BigBoardDashboard } from '@/components/big-board/big-board-dashboard'
 import { PageHeader } from '@/components/layout/app-header'
 
+/**
+ * The Big Board — the evergreen cross-position VIEW of rankings (now → rest
+ * of season). The ranking *activity* (pre-draft + weekly) lives on the
+ * Rankings page at /app/weekly-ranks.
+ */
 export default function BigBoardPage() {
-  const currentWeek = Number(process.env.NEXT_PUBLIC_NFL_WEEK ?? 0)
   return (
     <>
-      <PageHeader title="Rankings" />
-      <BigBoardGrid currentWeek={Number.isFinite(currentWeek) ? currentWeek : 0} />
+      <PageHeader title="Big Board" />
+      <BigBoardDashboard />
     </>
   )
 }

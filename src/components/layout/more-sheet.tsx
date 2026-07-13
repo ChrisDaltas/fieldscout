@@ -33,9 +33,15 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
         <ul className="mt-3">
           <Row href="/app/stats" icon="chart" label="My stats" onClick={close} />
           <Row
+            href="/app/big-board"
+            icon="layers"
+            label="Big Board"
+            onClick={close}
+          />
+          <Row
             href="/app/weekly-ranks"
             icon="calendar"
-            label="Weekly ranks"
+            label="Rankings"
             onClick={close}
           />
           <Row

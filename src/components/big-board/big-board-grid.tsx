@@ -74,6 +74,8 @@ interface BigBoardGridProps {
   readOnly?: boolean
   /** Current NFL week (0 = offseason) — drives the week tabs' lock styling. */
   currentWeek?: number
+  /** Hide the internal week-tab row when a parent renders its own (Rankings). */
+  showWeekTabs?: boolean
 }
 
 const SIZE_KEY = 'fieldscout:big-board-size'
@@ -103,6 +105,7 @@ export function BigBoardGrid({
   weekNumber,
   readOnly = false,
   currentWeek = 0,
+  showWeekTabs = true,
 }: BigBoardGridProps = {}) {
   const isWeekly = typeof weekNumber === 'number'
   const seasonQuery = useBigBoard()
@@ -318,13 +321,13 @@ export function BigBoardGrid({
     }
   }
 
-  const weekTabs = (
+  const weekTabs = showWeekTabs ? (
     <WeekTabs
       className="mb-4"
       active={isWeekly ? weekNumber : 'pre'}
       currentWeek={currentWeek}
     />
-  )
+  ) : null
 
   if (isLoading) {
     return (
@@ -362,7 +365,7 @@ export function BigBoardGrid({
     <section>
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
         <h2 className="mr-auto whitespace-nowrap text-h5">
-          {isWeekly ? `Week ${weekNumber} big board` : 'Pre draft big board'}
+          {isWeekly ? `Week ${weekNumber} big board` : 'Pre draft rankings'}
         </h2>
 
         {editable && (

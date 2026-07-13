@@ -22,6 +22,12 @@ interface NavEntry {
 const PRIMARY: NavEntry[] = [
   { href: '/app', label: 'Home', icon: 'dashboard' },
   {
+    href: '/app/big-board',
+    label: 'Big Board',
+    icon: 'layers',
+    matchPrefix: '/app/big-board',
+  },
+  {
     href: '/app/weekly-ranks',
     label: 'Rankings',
     icon: 'level',

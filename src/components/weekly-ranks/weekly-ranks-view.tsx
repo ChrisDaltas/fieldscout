@@ -14,8 +14,9 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 
+import { BigBoardGrid } from '@/components/big-board/big-board-grid'
 import { SortableBoardRow } from '@/components/big-board/board-row'
-import { WeekTabs } from '@/components/big-board/week-tabs'
+import { WeekTabs, type WeekTabValue } from '@/components/big-board/week-tabs'
 import { PageHeader } from '@/components/layout/app-header'
 import { POSITION_FILTER_ACTIVE } from '@/components/players/position-badge'
 import { AIInsight } from '@/components/ui/ai-insight'
@@ -60,8 +61,10 @@ function matchesPosition(playerPosition: string, filter: Position): boolean {
 }
 
 interface WeeklyRanksViewProps {
-  /** Current NFL week from NEXT_PUBLIC_NFL_WEEK; 0 = offseason (week 1 active). */
+  /** Current NFL week from Sleeper state (lib/sports-data/nfl-state); 0 = offseason (week 1 active). */
   currentWeek: number
+  /** Open on the pre-draft tab (deep link: /app/weekly-ranks?tab=pre). */
+  initialTab?: WeekTabValue
 }
 
 /**
@@ -73,17 +76,23 @@ interface WeeklyRanksViewProps {
  * persists (reorder RPC) — position filters permute players within their own
  * slots so the rest of the week's board is never disturbed.
  */
-export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
+export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProps) {
   const activeWeek = currentWeek === 0 ? 1 : currentWeek
-  const [week, setWeek] = useState(activeWeek)
+  const [tab, setTab] = useState<WeekTabValue>(initialTab ?? activeWeek)
   const [pos, setPos] = useState<Position>('QB')
   const [lastSubmittedWeek, setLastSubmittedWeek] = useState<number | null>(null)
+
+  // Pre-draft renders the season board editor; weekly logic below treats the
+  // active week as selected so its hooks stay mounted without fetching extra.
+  const isPre = tab === 'pre'
+  const week = typeof tab === 'number' ? tab : activeWeek
 
   const status: 'past' | 'current' | 'future' =
     week < activeWeek ? 'past' : week === activeWeek ? 'current' : 'future'
   // Fetching a future week would auto-create its board server-side — never
-  // mount the query for locked weeks (mirrors WeeklyBigBoardView).
-  const query = useWeeklyBigBoard(status === 'future' ? -1 : week)
+  // mount the query for locked weeks (mirrors WeeklyBigBoardView). The pre
+  // tab doesn't need weekly data either.
+  const query = useWeeklyBigBoard(status === 'future' || isPre ? -1 : week)
   const { data, isLoading, isError, error } = query
 
   const listId = data?.list?.id ?? ''
@@ -219,13 +228,24 @@ export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
         }
       />
 
+      {isPre ? (
+        <section>
+          <WeekTabs
+            className="mb-4"
+            active="pre"
+            currentWeek={currentWeek}
+            onSelectWeek={setTab}
+            onSelectPre={() => setTab('pre')}
+          />
+          <BigBoardGrid currentWeek={currentWeek} showWeekTabs={false} />
+        </section>
+      ) : (
       <section className="grid items-start gap-6 lg:grid-cols-[1.7fr_1fr]">
         {/* min-w-0 lets this grid column shrink so the wide week-tab row
             scrolls internally instead of blowing out the page width. */}
         <div className="min-w-0">
-          {/* title → actions → position chips → week tabs → board */}
-          <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-            <h2 className="mr-auto whitespace-nowrap text-h5">Weekly rankings</h2>
+          {/* actions → position chips → week tabs → board */}
+          <div className="mb-3.5 flex flex-wrap items-center justify-end gap-2.5">
             <Button
               variant="stroke"
               size="sm"
@@ -266,7 +286,8 @@ export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
             className="mb-4"
             active={week}
             currentWeek={currentWeek}
-            onSelectWeek={setWeek}
+            onSelectWeek={setTab}
+            onSelectPre={() => setTab('pre')}
           />
 
           {status === 'future' ? (
@@ -442,6 +463,7 @@ export function WeeklyRanksView({ currentWeek }: WeeklyRanksViewProps) {
           </Card>
         </div>
       </section>
+      )}
     </>
   )
 }

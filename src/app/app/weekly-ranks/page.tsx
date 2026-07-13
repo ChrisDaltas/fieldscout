@@ -1,8 +1,16 @@
 import { WeeklyRanksView } from '@/components/weekly-ranks/weekly-ranks-view'
+import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
 
-export default function WeeklyRanksPage() {
-  const currentWeek = Number(process.env.NEXT_PUBLIC_NFL_WEEK ?? 0)
+export default async function WeeklyRanksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const [currentWeek, { tab }] = await Promise.all([getCurrentNflWeek(), searchParams])
   return (
-    <WeeklyRanksView currentWeek={Number.isFinite(currentWeek) ? currentWeek : 0} />
+    <WeeklyRanksView
+      currentWeek={currentWeek}
+      initialTab={tab === 'pre' ? 'pre' : undefined}
+    />
   )
 }
