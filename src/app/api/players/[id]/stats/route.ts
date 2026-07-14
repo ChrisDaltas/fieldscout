@@ -39,7 +39,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { data: player, error: playerError } = await supabase
     .from('players')
     .select(
-      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp',
+      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, auction_value, projected_pts_half_ppr, projected_stats, injury_body_part, injury_notes, injury_start_date, practice_participation',
     )
     .eq('id', id)
     .maybeSingle()
@@ -51,6 +51,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Player not found' }, { status: 404 })
   }
 
+  // No positional rank pre-season: rank on a board is an opinion; an
+  // OBJECTIVE rank only exists once real points are scored. When the season
+  // is live this can return, computed from actual fantasy points.
   const { data: rows, error: statsError } = await supabase
     .from('player_stats')
     .select(SELECT_COLS)
@@ -78,11 +81,22 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const liveGames = currentLiveWeekly.length
   const remainingGames = Math.max(0, 17 - liveGames)
 
+  // Real projected stat line synced from Sleeper (sync-projections.ts) —
+  // the honest pre-season basis, and what custom scoring should score.
+  // Empty {} lines don't count: fall back to last season rather than
+  // rendering a blank projection.
+  const sleeperProjection =
+    player.projected_stats &&
+    typeof player.projected_stats === 'object' &&
+    Object.keys(player.projected_stats).length > 0
+      ? (player.projected_stats as StatRow)
+      : null
+
   // Projection: pace × remaining games when real games exist; otherwise the
-  // player's full last-season total stands in for the baseline.
+  // synced projected stat line; last-season totals only as a final fallback.
   const projection: StatRow = (() => {
     if (liveGames === 0) {
-      return { ...lastTotals }
+      return sleeperProjection ? { ...sleeperProjection } : { ...lastTotals }
     }
     const proj: Record<string, number> = {}
     for (const [k, v] of Object.entries(liveTotals)) {
@@ -116,7 +130,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
       },
       projection: {
         season: CURRENT_SEASON,
-        basis: liveGames === 0 ? 'last_season' : 'pace',
+        basis:
+          liveGames > 0 ? 'pace' : sleeperProjection ? 'projections' : 'last_season',
         totals: projection,
         fantasy: {
           ppr: calculateFantasyPoints(projection, PPR_SCORING),

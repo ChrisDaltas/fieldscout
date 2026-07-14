@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import { Heart } from 'lucide-react'
 
 import { PositionBadge } from '@/components/players/position-badge'
+import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 
 interface PublicListCardProps {
@@ -40,7 +40,7 @@ export function PublicListCard({
   return (
     <Link
       href={href}
-      className="block rounded-lg border border-bg-elevated-2 bg-bg-elevated p-4 transition-colors hover:border-bg-elevated-3 hover:bg-bg-elevated-2"
+      className="block rounded-sm border border-ink bg-white p-4 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
     >
       <div className="flex items-start gap-3">
         <UserAvatar
@@ -50,25 +50,31 @@ export function PublicListCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{title}</h3>
-            {positionFilter && <PositionBadge position={positionFilter} />}
+            <h3 className="truncate text-sm font-extrabold text-ink">{title}</h3>
+            {positionFilter && (
+              <PositionBadge
+                position={positionFilter === 'DEF' ? 'DST' : positionFilter}
+              />
+            )}
           </div>
           {description && (
-            <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">
+            <p className="mt-0.5 line-clamp-2 text-xs font-medium text-n-3">
               {description}
             </p>
           )}
-          <div className="mt-2 flex items-center gap-3 text-xs text-text-secondary">
-            <span>{owner.display_name ?? `@${owner.username}`}</span>
+          <div className="mt-2 flex items-center gap-2.5 text-[11px] font-semibold text-n-3">
+            <span className="truncate">
+              {owner.display_name ?? `@${owner.username}`}
+            </span>
             <span>·</span>
-            <span className="tabular-nums">{playerCount} players</span>
+            <span className="fs-num whitespace-nowrap">{playerCount} players</span>
             <span>·</span>
-            <span className="inline-flex items-center gap-1 tabular-nums">
-              <Heart className="h-3 w-3" />
+            <span className="fs-num inline-flex items-center gap-1 whitespace-nowrap">
+              <Icon name="like" size={10} />
               {likeCount}
             </span>
             <span>·</span>
-            <span>{formatRelative(updatedAt)}</span>
+            <span className="whitespace-nowrap">{formatRelative(updatedAt)}</span>
           </div>
         </div>
       </div>

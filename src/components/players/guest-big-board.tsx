@@ -16,9 +16,9 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ClipboardList, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
 import { GuestSignupPrompt } from '@/components/layout/guest-signup-prompt'
 import { PlayerCard } from '@/components/players/player-card'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -79,6 +79,20 @@ export function GuestBigBoard({ players }: GuestBigBoardProps) {
     .map((id) => players.find((p) => p.id === id))
     .filter((p): p is GuestBigBoardPlayer => Boolean(p))
 
+  if (orderedPlayers.length === 0) {
+    return (
+      <section>
+        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <p className="text-h5 text-ink">No players to rank yet</p>
+          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+            The preview board is empty right now — check back once player data
+            has synced.
+          </p>
+        </div>
+      </section>
+    )
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -92,22 +106,18 @@ export function GuestBigBoard({ players }: GuestBigBoardProps) {
     <section>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-2xl font-bold">
-            <ClipboardList className="h-6 w-6 text-foreground" />
-            Big Board
+          <h2 className="flex items-center gap-2 text-h5">
+            <Icon name="list" size={19} />
+            Big board
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-text-secondary">
+          <p className="mt-1 max-w-2xl text-[13px] font-medium text-n-3">
             Drag players to reorder. Click any card for stats and projections. Sign
             up to save your rankings and track accuracy all season.
           </p>
         </div>
-        <Button
-          variant="brand"
-          onClick={() => setShowSavePrompt(true)}
-          className="rounded-full font-semibold"
-        >
-          <Save className="mr-2 h-4 w-4" />
-          Save Big Board
+        <Button variant="blue" shadow onClick={() => setShowSavePrompt(true)}>
+          <Icon name="save" size={14} />
+          Save big board
         </Button>
       </div>
 
@@ -133,7 +143,7 @@ export function GuestBigBoard({ players }: GuestBigBoardProps) {
       <button
         type="button"
         onClick={() => setShowSavePrompt(true)}
-        className="mt-4 block w-full rounded-full border border-dashed border-bg-elevated-2 py-3 text-center text-xs font-medium text-text-secondary transition-colors hover:border-bg-elevated-3 hover:bg-bg-elevated hover:text-foreground"
+        className="mt-4 block w-full rounded-sm border border-dashed border-ink py-3 text-center text-[11px] font-bold text-n-3 transition-colors hover:bg-n-4 hover:text-ink"
       >
         Show top 50 → 300 (sign up to expand)
       </button>
@@ -141,7 +151,7 @@ export function GuestBigBoard({ players }: GuestBigBoardProps) {
       <GuestSignupPrompt
         open={showSavePrompt}
         onOpenChange={setShowSavePrompt}
-        title="Save your Big Board"
+        title="Save your big board"
         description="Sign up free and your rankings carry over to your account. Track accuracy all season."
       />
     </section>

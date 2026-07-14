@@ -1,6 +1,5 @@
 import Link from 'next/link'
 
-import { Card, CardContent } from '@/components/ui/card'
 import { PlayerCard } from '@/components/players/player-card'
 import { cn } from '@/lib/utils'
 
@@ -37,21 +36,24 @@ export function PublicBigBoard({
 }: PublicBigBoardProps) {
   return (
     <section>
-      <header className="mb-4 space-y-1">
-        <h1 className="text-2xl font-bold">{title}</h1>
+      <header className="mb-4">
+        <h1 className="text-h4">{title}</h1>
         {subtitle && (
-          <p className="text-xs text-text-tertiary">{subtitle}</p>
+          <p className="mt-0.5 text-[11px] font-semibold text-n-3">
+            {subtitle}
+          </p>
         )}
       </header>
 
       {weekNav}
 
       {players.length === 0 ? (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-8 text-center text-sm text-text-secondary">
+        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <h2 className="text-h5">No rankings yet</h2>
+          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
             {emptyMessage}
-          </CardContent>
-        </Card>
+          </p>
+        </div>
       ) : (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12">
           {players.map((p, i) => (
@@ -98,7 +100,7 @@ export function PublicWeekStrip({
 }: PublicWeekStripProps) {
   const weeks = Array.from({ length: 18 }, (_, i) => i + 1)
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1">
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
       {weeks.map((w) => {
         const active = w === currentSelected
         return (
@@ -107,10 +109,10 @@ export function PublicWeekStrip({
             href={`/u/${username}/big-board/week/${w}`}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'inline-flex h-7 min-w-[28px] items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors',
+              'fs-num inline-flex h-btn-sm min-w-[26px] items-center justify-center rounded-sm border border-ink px-2 text-[11px] font-bold leading-none transition-colors',
               active
-                ? 'bg-foreground text-background'
-                : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
+                ? 'bg-accent text-accent-foreground'
+                : 'bg-white text-ink hover:bg-n-4',
             )}
           >
             {w}

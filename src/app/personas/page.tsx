@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PersonaCard } from '@/components/personas/persona-card'
-import { Card, CardContent } from '@/components/ui/card'
 import { createServerClient } from '@/lib/supabase/server'
 
 /**
@@ -27,10 +26,10 @@ export default async function PersonasIndexPage() {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-4xl space-y-8">
+      <div className="mx-auto max-w-4xl space-y-[19px]">
         <header>
-          <h1 className="text-2xl font-bold">The AI Experts</h1>
-          <p className="mt-2 text-sm text-text-secondary">
+          <h1 className="text-h3">The AI experts</h1>
+          <p className="mt-2 max-w-2xl text-[13px] font-medium text-n-3">
             Fictional, AI-generated analyst personas — each with its own
             ranking style and always-fresh boards. Parody, not affiliated with
             or endorsed by any real person.
@@ -38,13 +37,14 @@ export default async function PersonasIndexPage() {
         </header>
 
         {!personas || personas.length === 0 ? (
-          <Card className="border-bg-elevated-2 bg-bg-elevated">
-            <CardContent className="p-6 text-center text-sm text-text-secondary">
-              The experts are warming up — check back soon.
-            </CardContent>
-          </Card>
+          <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+            <h2 className="text-h5">The experts are warming up</h2>
+            <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+              New AI analyst boards land here soon — check back shortly.
+            </p>
+          </div>
         ) : (
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {personas.map((persona) => (
               <li key={persona.username}>
                 <PersonaCard

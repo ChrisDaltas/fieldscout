@@ -13,6 +13,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PositionBadge } from '@/components/players/position-badge'
 
 export interface PlayerSearchResult {
   id: string
@@ -49,10 +50,10 @@ function isInjuryStatus(status: string | null | undefined): boolean {
   return INJURY_STATUSES.has(status) || status.toLowerCase().includes('injur')
 }
 
-function injuryBadgeVariant(status: string): 'destructive' | 'default' {
+function injuryBadgeVariant(status: string): 'pink' | 'stroke-pink' {
   const s = status.toLowerCase()
-  if (s.includes('out') || s.includes('ir') || s.includes('doubt')) return 'destructive'
-  return 'default'
+  if (s.includes('out') || s.includes('ir') || s.includes('doubt')) return 'pink'
+  return 'stroke-pink'
 }
 
 export function PlayerSearch({
@@ -113,7 +114,7 @@ export function PlayerSearch({
     () =>
       Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className="flex items-center gap-3 px-2 py-2">
-          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-8 w-8" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-3 w-32" />
             <Skeleton className="h-3 w-20" />
@@ -124,7 +125,7 @@ export function PlayerSearch({
   )
 
   return (
-    <Command shouldFilter={false} className="rounded-lg border shadow-sm">
+    <Command shouldFilter={false} className="rounded-sm border border-ink">
       <CommandInput
         value={query}
         onValueChange={setQuery}
@@ -142,11 +143,15 @@ export function PlayerSearch({
                 onSelect={() => onSelect?.(player)}
                 className="flex items-center gap-3 py-2"
               >
-                <Avatar className="h-10 w-10">
+                <Avatar className="h-8 w-8">
                   {player.headshot_url && (
-                    <AvatarImage src={player.headshot_url} alt={player.full_name} />
+                    <AvatarImage
+                      src={player.headshot_url}
+                      alt={player.full_name}
+                      className="h-full w-full object-cover object-top"
+                    />
                   )}
-                  <AvatarFallback>
+                  <AvatarFallback className="text-[9px]">
                     {player.full_name
                       .split(' ')
                       .map((n) => n[0])
@@ -154,26 +159,26 @@ export function PlayerSearch({
                       .join('')}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium truncate">{player.full_name}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-extrabold">
+                      {player.full_name}
+                    </span>
                     {isInjuryStatus(player.status) && (
                       <Badge
                         variant={injuryBadgeVariant(player.status as string)}
-                        className="text-[10px] px-1.5 py-0"
+                        className="h-[15px] px-1 text-[9px]"
                       >
                         {player.status}
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <Badge variant="default" className="text-[10px] px-1.5 py-0 font-mono">
-                      {player.position}
-                    </Badge>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <PositionBadge position={player.position} size="sm" />
                     {player.team && (
-                      <Badge variant="default" className="text-[10px] px-1.5 py-0">
+                      <span className="text-[10px] font-semibold text-n-3">
                         {player.team}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                 </div>

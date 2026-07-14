@@ -3,12 +3,15 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, ChevronUp, Trash2, Undo2 } from 'lucide-react'
 
 import { PersonaBadge } from '@/components/personas/persona-badge'
+import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
+import { Skeleton } from '@/components/ui/skeleton'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 
 /**
  * Editorial review queue for AI persona posts (spec-ai-content-engine.md
@@ -35,6 +38,8 @@ interface AdminPost {
     | null
 }
 
+type QueueView = 'drafts' | 'published'
+
 function personaOf(post: AdminPost) {
   const p = Array.isArray(post.persona) ? post.persona[0] : post.persona
   return p ?? { username: '', display_name: 'Unknown', avatar_url: null }
@@ -43,6 +48,7 @@ function personaOf(post: AdminPost) {
 export default function AdminPostsPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const [view, setView] = useState<QueueView>('drafts')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin-posts'],
@@ -88,104 +94,121 @@ export default function AdminPostsPage() {
   const posts = data?.posts ?? []
   const drafts = posts.filter((p) => p.status !== 'published' && !p.deleted_at)
   const published = posts.filter((p) => p.status === 'published' && !p.deleted_at)
+  const shown = view === 'drafts' ? drafts : published
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-[19px]">
       <header>
-        <h1 className="text-2xl font-bold">Persona posts — review queue</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Drafts from the content engine. Publishing makes a post public and
-          SEO-indexable; takedown removes it everywhere immediately.
+        <h1 className="text-h3">Persona posts</h1>
+        <p className="mt-1 text-[13px] font-medium text-n-3">
+          Review queue for the content engine. Publishing makes a post public
+          and SEO-indexable; takedown removes it everywhere immediately.
         </p>
       </header>
 
-      {isLoading && <p className="text-sm text-text-secondary">Loading…</p>}
-      {error && (
-        <p className="rounded-md bg-bg-elevated p-4 text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Failed to load.'}
-        </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterChip
+          pressed={view === 'drafts'}
+          onPressedChange={() => setView('drafts')}
+        >
+          Drafts
+          <span className="fs-num">{drafts.length}</span>
+        </FilterChip>
+        <FilterChip
+          pressed={view === 'published'}
+          onPressedChange={() => setView('published')}
+        >
+          Published
+          <span className="fs-num">{published.length}</span>
+        </FilterChip>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2.5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
+        </div>
+      )}
+
+      {error != null && (
+        <div className="rounded-sm border border-negative-strong bg-negative-soft p-4">
+          <p className="text-[13px] font-bold text-ink">Could not load the queue</p>
+          <p className="mt-1 text-[13px] font-medium text-n-3">
+            {error instanceof Error ? error.message : 'Failed to load.'}
+          </p>
+        </div>
       )}
 
       {!isLoading && !error && (
         <>
-          <PostGroup
-            title={`Drafts (${drafts.length})`}
-            posts={drafts}
-            actions={(post) => (
-              <>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  className="font-semibold"
-                  disabled={act.isPending}
-                  onClick={() => act.mutate({ id: post.id, action: 'publish' })}
-                >
-                  <CheckCircle2 className="mr-1 h-4 w-4" /> Publish
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={act.isPending}
-                  onClick={() => act.mutate({ id: post.id, action: 'takedown' })}
-                >
-                  <Trash2 className="mr-1 h-4 w-4" /> Take down
-                </Button>
-              </>
-            )}
-          />
-          <PostGroup
-            title={`Published (${published.length})`}
-            posts={published}
-            actions={(post) => (
-              <>
-                <Link
-                  href={`/personas/${personaOf(post).username}/posts/${post.slug}`}
-                  className="text-xs font-medium text-text-secondary hover:text-foreground hover:underline"
-                >
-                  View live →
-                </Link>
-                <Button
-                  size="sm"
-                  disabled={act.isPending}
-                  onClick={() => act.mutate({ id: post.id, action: 'unpublish' })}
-                >
-                  <Undo2 className="mr-1 h-4 w-4" /> Unpublish
-                </Button>
-              </>
-            )}
-          />
+          {shown.length === 0 ? (
+            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+              <h2 className="text-h5">
+                {view === 'drafts' ? 'No drafts waiting' : 'Nothing published yet'}
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+                {view === 'drafts'
+                  ? 'The content engine drops new drafts here for review.'
+                  : 'Approve a draft and it shows up here, live on the site.'}
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-2.5">
+              {shown.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  actions={
+                    view === 'drafts' ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="green"
+                          disabled={act.isPending}
+                          onClick={() => act.mutate({ id: post.id, action: 'publish' })}
+                        >
+                          <Icon name="check" />
+                          Publish
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={act.isPending}
+                          onClick={() => act.mutate({ id: post.id, action: 'takedown' })}
+                        >
+                          <Icon name="remove" />
+                          Take down
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Link
+                          href={`/personas/${personaOf(post).username}/posts/${post.slug}`}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-accent hover:underline"
+                        >
+                          <Icon name="external-link" size={12} />
+                          View live
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="stroke"
+                          disabled={act.isPending}
+                          onClick={() => act.mutate({ id: post.id, action: 'unpublish' })}
+                        >
+                          <Icon name="repeat" />
+                          Unpublish
+                        </Button>
+                      </>
+                    )
+                  }
+                />
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>
-  )
-}
-
-function PostGroup({
-  title,
-  posts,
-  actions,
-}: {
-  title: string
-  posts: AdminPost[]
-  actions: (post: AdminPost) => React.ReactNode
-}) {
-  return (
-    <section>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-tertiary">
-        {title}
-      </h2>
-      {posts.length === 0 ? (
-        <p className="rounded-lg bg-bg-elevated p-4 text-sm text-text-secondary">
-          Nothing here.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} actions={actions(post)} />
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }
 
@@ -193,38 +216,47 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
   const [expanded, setExpanded] = useState(false)
   const persona = personaOf(post)
   return (
-    <li className="rounded-lg bg-bg-elevated p-4">
+    <li className="rounded-sm border border-ink bg-white p-card-pad">
       <div className="flex items-center gap-2">
         <UserAvatar
           src={persona.avatar_url ?? undefined}
           alt={persona.display_name}
           name={persona.display_name}
-          className="h-6 w-6"
+          className="h-6 w-6 shrink-0"
         />
-        <span className="text-xs font-medium text-text-secondary">
+        <span className="truncate text-[11px] font-bold text-n-3">
           {persona.display_name}
         </span>
         <PersonaBadge />
-        <span className="ml-auto text-xs text-text-tertiary">{post.kind}</span>
+        <Badge variant="stroke" className="ml-auto shrink-0">
+          {post.kind}
+        </Badge>
       </div>
-      <p className="mt-2 text-base font-semibold">{post.title}</p>
-      {post.dek && <p className="mt-1 text-sm text-text-secondary">{post.dek}</p>}
+      <p className="mt-2 text-[14px] font-extrabold text-ink">{post.title}</p>
+      {post.dek && (
+        <p className="mt-1 text-[12px] font-medium text-n-3">{post.dek}</p>
+      )}
 
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="mt-2 flex items-center gap-1 text-xs font-medium text-text-secondary hover:text-foreground"
+        aria-expanded={expanded}
+        className="mt-2 flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-ink"
       >
-        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        <Icon
+          name="arrow-bottom"
+          size={13}
+          className={cn('transition-transform', expanded && 'rotate-180')}
+        />
         {expanded ? 'Hide full post' : 'Read full post'}
       </button>
       {expanded && (
-        <div className="mt-3 space-y-3 border-t border-bg-elevated-2 pt-3">
-          <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary">
+        <div className="mt-3 space-y-3 border-t border-n-4 pt-3">
+          <pre className="whitespace-pre-wrap font-sans text-[13px] font-medium leading-relaxed text-ink">
             {post.body_md}
           </pre>
           {post.citations.length > 0 && (
-            <div className="text-xs text-text-tertiary">
+            <div className="text-[11px] font-semibold text-n-3">
               Sources:{' '}
               {post.citations.map((c, i) =>
                 /^https?:\/\//i.test(c.source_url) ? (
@@ -233,12 +265,14 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
                     href={c.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline hover:text-foreground"
+                    className="fs-num underline hover:text-ink"
                   >
                     [{i + 1}]
                   </a>
                 ) : (
-                  <span key={i}>[{i + 1}: unsafe URL omitted]</span>
+                  <span key={i} className="fs-num">
+                    [{i + 1}: unsafe URL omitted]
+                  </span>
                 ),
               )}
             </div>

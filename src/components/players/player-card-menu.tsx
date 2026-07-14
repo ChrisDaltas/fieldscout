@@ -1,7 +1,6 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { ListPlus, MoreHorizontal, Plus } from 'lucide-react'
 
 import {
   DropdownMenu,
@@ -12,6 +11,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 import { listsKeys, useLists } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { useUIStore } from '@/stores/ui-store'
@@ -78,24 +78,20 @@ export function PlayerCardMenu({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-full bg-bg-elevated text-text-secondary shadow-sm ring-1 ring-bg-elevated-3 transition-colors hover:bg-bg-elevated-3 hover:text-foreground',
+            'flex h-7 w-7 items-center justify-center rounded-sm border border-ink bg-white text-ink transition-colors hover:bg-n-4 hover:text-accent',
             className,
           )}
         >
-          <MoreHorizontal className="h-4 w-4" />
+          <Icon name="dots" size={14} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="border-bg-elevated-2 bg-bg-elevated"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <ListPlus className="mr-2 h-4 w-4" />
+            <Icon name="list" size={14} />
             Add to list
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-72 overflow-y-auto border-bg-elevated-2 bg-bg-elevated">
+          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
             {lists.length === 0 ? (
               <DropdownMenuItem disabled>No lists yet</DropdownMenuItem>
             ) : (
@@ -116,7 +112,7 @@ export function PlayerCardMenu({
             openCreate(true)
           }}
         >
-          <Plus className="mr-2 h-4 w-4" />
+          <Icon name="plus" size={14} />
           Create new list
         </DropdownMenuItem>
       </DropdownMenuContent>

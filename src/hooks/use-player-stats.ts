@@ -35,7 +35,7 @@ export interface SeasonBlock {
   gamesPlayed: number
   totals: StatTotals
   fantasy: { ppr: number; standard: number }
-  basis?: 'pace' | 'last_season'
+  basis?: 'pace' | 'projections' | 'last_season'
 }
 
 export interface GameLogRow {
@@ -64,6 +64,14 @@ export interface PlayerStatsPlayer {
   draft_round: number | null
   draft_pick: number | null
   adp: number | null
+  /** Strength of schedule rank, 1 = easiest – 32 = hardest. */
+  sos: number | null
+  /** Average auction price in dollars (ESPN live draft data). */
+  auction_value: number | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
 }
 
 export interface PlayerStatsResponse {

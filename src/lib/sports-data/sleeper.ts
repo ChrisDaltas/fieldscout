@@ -23,6 +23,11 @@ export interface SleeperPlayer {
   number: number | null
   status: string | null
   injury_status: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
+  espn_id: number | string | null
   active: boolean | null
   years_exp: number | null
   age: number | null
@@ -55,6 +60,13 @@ export interface PlayerRow {
   weight: number | null
   birth_date: string | null
   college: string | null
+  depth_chart_order: number | null
+  depth_chart_position: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+  practice_participation: string | null
+  espn_id: string | null
   search_name: string
   updated_at: string
 }
@@ -98,6 +110,88 @@ function parseWeight(weight: string | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** The projected stat keys Sleeper's projections API exposes, superset
+ *  across positions. All optional — QBs have no rec keys, kickers no pass. */
+export interface SleeperProjectedStats {
+  pass_yd?: number | null
+  pass_td?: number | null
+  pass_int?: number | null
+  rush_yd?: number | null
+  rush_td?: number | null
+  rec?: number | null
+  rec_yd?: number | null
+  rec_td?: number | null
+  fum_lost?: number | null
+  pass_2pt?: number | null
+  rush_2pt?: number | null
+  rec_2pt?: number | null
+  fgm_40_49?: number | null
+  fgm_50p?: number | null
+  xpm?: number | null
+  sack?: number | null
+  int?: number | null
+  fum_rec?: number | null
+  def_fum_td?: number | null
+  pass_int_td?: number | null
+  def_kr_td?: number | null
+  pr_td?: number | null
+  safe?: number | null
+}
+
+/** App-convention projected stat line (matches ScoringRules/StatRow keys in
+ *  lib/scoring/default.ts) so calculateFantasyPoints can score it directly. */
+export type ProjectedStatLine = Record<string, number>
+
+const projNum = (v: number | null | undefined): number => {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Map a Sleeper projected stat object into the app's StatRow convention.
+ * Only writes keys with a non-zero value so the stored JSON stays small.
+ * Kicker note: Sleeper projects only 40+ FG buckets (no short-FG key), so
+ * fg_made stays absent — the per-bucket 40+/50+ fields carry the points,
+ * which matches how Sleeper's own pts_std for kickers is built.
+ */
+export function sleeperProjectionToStatRow(
+  stats: SleeperProjectedStats | null | undefined,
+): ProjectedStatLine {
+  if (!stats) return {}
+  const line: ProjectedStatLine = {}
+  const set = (key: string, value: number) => {
+    if (value !== 0) line[key] = Math.round(value * 10) / 10
+  }
+  set('pass_yards', projNum(stats.pass_yd))
+  set('pass_tds', projNum(stats.pass_td))
+  set('interceptions', projNum(stats.pass_int))
+  set('rush_yards', projNum(stats.rush_yd))
+  set('rush_tds', projNum(stats.rush_td))
+  set('receptions', projNum(stats.rec))
+  set('receiving_yards', projNum(stats.rec_yd))
+  set('receiving_tds', projNum(stats.rec_td))
+  set('fumbles_lost', projNum(stats.fum_lost))
+  set(
+    'two_point_conversions',
+    projNum(stats.pass_2pt) + projNum(stats.rush_2pt) + projNum(stats.rec_2pt),
+  )
+  set('fg_made_40_plus', projNum(stats.fgm_40_49))
+  set('fg_made_50_plus', projNum(stats.fgm_50p))
+  set('xp_made', projNum(stats.xpm))
+  set('def_sacks', projNum(stats.sack))
+  set('def_interceptions', projNum(stats.int))
+  set('def_fumble_recoveries', projNum(stats.fum_rec))
+  set(
+    'def_tds',
+    projNum(stats.def_fum_td) +
+      projNum(stats.pass_int_td) +
+      projNum(stats.def_kr_td) +
+      projNum(stats.pr_td),
+  )
+  set('def_safeties', projNum(stats.safe))
+  return line
+}
+
 export function mapSleeperPlayerToDb(player: SleeperPlayer): PlayerRow | null {
   const position = pickFantasyPosition(player)
   if (!position) return null
@@ -123,6 +217,13 @@ export function mapSleeperPlayerToDb(player: SleeperPlayer): PlayerRow | null {
     weight: parseWeight(player.weight),
     birth_date: player.birth_date,
     college: player.college,
+    depth_chart_order: player.depth_chart_order,
+    depth_chart_position: player.depth_chart_position,
+    injury_body_part: player.injury_body_part?.trim() || null,
+    injury_notes: player.injury_notes?.trim() || null,
+    injury_start_date: player.injury_start_date || null,
+    practice_participation: player.practice_participation?.trim() || null,
+    espn_id: player.espn_id != null ? String(player.espn_id) : null,
     search_name: (player.search_full_name ?? fullName.toLowerCase().replace(/\s+/g, '')),
     updated_at: new Date().toISOString(),
   }

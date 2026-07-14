@@ -212,6 +212,36 @@ export type Database = {
           },
         ]
       }
+      defense_position_splits: {
+        Row: {
+          defense: string
+          factor: number
+          position: string
+          rank: number
+          sample_weeks: number
+          season: number
+          updated_at: string
+        }
+        Insert: {
+          defense: string
+          factor: number
+          position: string
+          rank: number
+          sample_weeks?: number
+          season: number
+          updated_at?: string
+        }
+        Update: {
+          defense?: string
+          factor?: number
+          position?: string
+          rank?: number
+          sample_weeks?: number
+          season?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       expert_claim_requests: {
         Row: {
           email_sent_to: string | null
@@ -781,6 +811,7 @@ export type Database = {
           hide_order: boolean | null
           id: string
           is_big_board: boolean | null
+          is_favorites: boolean
           is_favorited: boolean | null
           is_private: boolean | null
           is_team: boolean | null
@@ -808,6 +839,7 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
+          is_favorites?: boolean
           is_favorited?: boolean | null
           is_private?: boolean | null
           is_team?: boolean | null
@@ -835,6 +867,7 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
+          is_favorites?: boolean
           is_favorited?: boolean | null
           is_private?: boolean | null
           is_team?: boolean | null
@@ -1403,13 +1436,54 @@ export type Database = {
           },
         ]
       }
+      player_usage: {
+        Row: {
+          player_id: string
+          season: number
+          snap_pct: number | null
+          target_share: number | null
+          updated_at: string
+        }
+        Insert: {
+          player_id: string
+          season: number
+          snap_pct?: number | null
+          target_share?: number | null
+          updated_at?: string
+        }
+        Update: {
+          player_id?: string
+          season?: number
+          snap_pct?: number | null
+          target_share?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_usage_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       players: {
         Row: {
           adp: number | null
+          auction_updated_at: string | null
+          auction_value: number | null
           birth_date: string | null
           bye_week: number | null
           college: string | null
+          depth_chart_order: number | null
+          depth_chart_position: string | null
           draft_pick: number | null
+          espn_id: string | null
+          injury_body_part: string | null
+          injury_notes: string | null
+          injury_start_date: string | null
+          practice_participation: string | null
           draft_round: number | null
           draft_year: number | null
           experience_years: number | null
@@ -1425,10 +1499,12 @@ export type Database = {
           projected_pts_half_ppr: number | null
           projected_pts_ppr: number | null
           projected_pts_standard: number | null
+          projected_stats: Json | null
           projections_season: number | null
           projections_updated_at: string | null
           search_name: string | null
           sleeper_id: string | null
+          sos: number | null
           status: string | null
           team: string | null
           updated_at: string | null
@@ -1436,15 +1512,24 @@ export type Database = {
         }
         Insert: {
           adp?: number | null
+          auction_updated_at?: string | null
+          auction_value?: number | null
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null
+          depth_chart_order?: number | null
+          depth_chart_position?: string | null
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
+          espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
           full_name: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
+          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id: string
@@ -1455,10 +1540,12 @@ export type Database = {
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
           projected_pts_standard?: number | null
+          projected_stats?: Json | null
           projections_season?: number | null
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
+          sos?: number | null
           status?: string | null
           team?: string | null
           updated_at?: string | null
@@ -1466,15 +1553,24 @@ export type Database = {
         }
         Update: {
           adp?: number | null
+          auction_updated_at?: string | null
+          auction_value?: number | null
           birth_date?: string | null
           bye_week?: number | null
           college?: string | null
+          depth_chart_order?: number | null
+          depth_chart_position?: string | null
           draft_pick?: number | null
           draft_round?: number | null
           draft_year?: number | null
+          espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
           full_name?: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
+          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id?: string
@@ -1485,10 +1581,12 @@ export type Database = {
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
           projected_pts_standard?: number | null
+          projected_stats?: Json | null
           projections_season?: number | null
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
+          sos?: number | null
           status?: string | null
           team?: string | null
           updated_at?: string | null

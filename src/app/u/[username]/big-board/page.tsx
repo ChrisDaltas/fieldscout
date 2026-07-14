@@ -98,16 +98,16 @@ export default async function PublicSeasonBigBoardPage({ params }: PageProps) {
     ? `${data.players.length} players · updated ${new Date(
         data.list.updated_at,
       ).toLocaleDateString()}`
-    : 'No Big Board yet.'
+    : 'No big board yet.'
 
   return (
     <GuestShell>
       <div className="mx-auto max-w-7xl">
         <PublicBigBoard
-          title={`${handle}'s Big Board`}
+          title={`${handle}'s big board`}
           subtitle={subtitle}
           players={data.players}
-          emptyMessage="This user hasn't built their Big Board yet."
+          emptyMessage="This user hasn't built their big board yet."
         />
       </div>
     </GuestShell>

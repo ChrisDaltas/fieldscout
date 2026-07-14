@@ -20,11 +20,13 @@ interface GuestSignupPromptProps {
   redirectTo?: string
 }
 
+/** Signup gate for guests — accent-blue "do a thing" moment on the standard
+ *  white ink-bordered dialog. */
 export function GuestSignupPrompt({
   open,
   onOpenChange,
   title = 'Sign up to save your work',
-  description = 'Track your accuracy over the season. Share your Big Board with your league. Sign up free, takes 30 seconds.',
+  description = 'Track your accuracy over the season. Share your big board with your league. Sign up free, takes 30 seconds.',
   redirectTo,
 }: GuestSignupPromptProps) {
   const signupHref = redirectTo
@@ -36,24 +38,18 @@ export function GuestSignupPrompt({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-bg-elevated-2 bg-bg-elevated-2 sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="text-text-secondary">
-            {description}
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Link href={signupHref} className="w-full">
-            <Button className="w-full rounded-full font-semibold">
-              Sign up free
-            </Button>
-          </Link>
-          <Link href={loginHref} className="w-full">
-            <Button variant="invisible" className="w-full text-text-secondary">
-              I already have an account
-            </Button>
-          </Link>
+          <Button variant="blue" shadow asChild className="w-full">
+            <Link href={signupHref}>Sign up free</Link>
+          </Button>
+          <Button variant="ghost" asChild className="w-full">
+            <Link href={loginHref}>I already have an account</Link>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

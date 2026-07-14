@@ -71,44 +71,38 @@ export default async function GuestHomePage() {
     <GuestShell wide>
       <div className="space-y-10">
         <header className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-5xl">
-            Welcome to FieldScout
-          </h1>
-          <p className="mt-3 text-base text-text-secondary md:text-lg">
+          <h1 className="text-h2">Welcome to FieldScout</h1>
+          <p className="mt-3 text-base text-n-3 md:text-lg">
             Get ready for draft season. FieldScout is the ultimate tool 100% focused
             on fantasy football.
           </p>
-          <p className="mt-6 text-sm font-medium text-foreground">
+          <p className="mt-6 text-sm font-medium text-ink">
             Start building your fantasy rankings now and get ready for draft season.
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Link href="/signup">
-              <Button size="lg" className="font-semibold">
-                Sign up free
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button size="lg" variant="invisible" className="text-text-secondary">
-                Sign in
-              </Button>
-            </Link>
+            <Button size="lg" variant="blue" shadow asChild>
+              <Link href="/signup">Sign up free</Link>
+            </Button>
+            <Button size="lg" variant="stroke" asChild>
+              <Link href="/login">Sign in</Link>
+            </Button>
           </div>
         </header>
 
         <GuestBigBoard players={players} />
 
-        <section className="border-t border-bg-elevated-2 pt-6">
+        <section className="border-t border-ink pt-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold">Explore the community</h3>
+            <h3 className="text-h6">Explore the community</h3>
             <Link
               href="/consensus"
-              className="text-sm font-medium text-foreground hover:text-text-secondary"
+              className="text-sm font-bold text-accent hover:underline"
             >
               View consensus →
             </Link>
           </div>
-          <p className="mt-2 max-w-2xl text-sm text-text-secondary">
-            Public rankings, expert profiles, and weekly Start or Sit are open to
+          <p className="mt-2 max-w-2xl text-sm text-n-3">
+            Public rankings, expert profiles, and weekly start or sit are open to
             everyone. Sign up free when you want to save your work, follow rankers,
             or start tracking accuracy.
           </p>

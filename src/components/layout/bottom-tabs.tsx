@@ -2,15 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  BarChart3,
-  Home,
-  type LucideIcon,
-  MoreHorizontal,
-  Search,
-  Shield,
-} from 'lucide-react'
 
+import { Icon, type IconName } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 
@@ -20,7 +13,7 @@ interface BottomTabsProps {
 
 interface TabConfig {
   label: string
-  icon: LucideIcon
+  icon: IconName
   href?: string
   matchPrefix?: string
   isMore?: boolean
@@ -28,21 +21,21 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
-  { label: 'Home', icon: Home, href: '/app', matchPrefix: '/app' },
+  { label: 'Home', icon: 'dashboard', href: '/app', matchPrefix: '/app' },
   {
     label: 'Players',
-    icon: Shield,
+    icon: 'table',
     href: '/app/players',
     matchPrefix: '/app/players',
   },
-  { label: 'Search', icon: Search, isSearch: true },
+  { label: 'Search', icon: 'search', isSearch: true },
   {
-    label: 'My Stats',
-    icon: BarChart3,
+    label: 'My stats',
+    icon: 'chart',
     href: '/app/profile',
     matchPrefix: '/app/profile',
   },
-  { label: 'More', icon: MoreHorizontal, isMore: true },
+  { label: 'More', icon: 'dots', isMore: true },
 ]
 
 function isTabActive(pathname: string, tab: TabConfig): boolean {
@@ -53,25 +46,24 @@ function isTabActive(pathname: string, tab: TabConfig): boolean {
   return Boolean(tab.matchPrefix && pathname.startsWith(tab.matchPrefix))
 }
 
+/** Mobile tab bar — ink surface, 64px, lime active state (the "you are
+ *  here" signal; lime never carries the tap action itself). */
 export function BottomTabs({ onMoreClick }: BottomTabsProps) {
   const pathname = usePathname()
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-bg-elevated-2 bg-sidebar lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-ink bg-ink lg:hidden">
       {TABS.map((tab) => {
         const active = isTabActive(pathname, tab)
         const inner = (
           <span
             className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-              active ? 'text-foreground' : 'text-text-secondary',
+              'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors duration-200 ease-linear',
+              active ? 'text-brand' : 'text-white/60 hover:text-white',
             )}
           >
-            <tab.icon
-              className="h-5 w-5"
-              strokeWidth={active ? 2.25 : 2}
-            />
+            <Icon name={tab.icon} size={16} />
             <span>{tab.label}</span>
           </span>
         )

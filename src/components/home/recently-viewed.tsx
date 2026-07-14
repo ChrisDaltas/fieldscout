@@ -2,19 +2,21 @@
 
 import Link from 'next/link'
 import { useMemo } from 'react'
-import { History as HistoryIcon, ListOrdered } from 'lucide-react'
 
 import { ListThumbnail } from '@/components/lists/list-thumbnail'
+import { Icon } from '@/components/ui/icon'
 import { useLists } from '@/hooks/use-lists'
 import { useHistoryStore } from '@/stores/history-store'
 
 const MAX_TILES = 12
 
 /**
- * The home page's "Recently Viewed" shelf. Driven by the client-side history
+ * The home page's "Recently viewed" shelf. Driven by the client-side history
  * store (populated whenever a list detail page is opened). For lists the user
  * owns or has pinned we render the real 4-quadrant thumbnail; for anything
- * else we fall back to the stored image or a generic icon.
+ * else we fall back to the stored image or a generic icon. FieldScout-only
+ * surface (not in the package mock) — styled per the hub's white-card /
+ * ink-border language.
  */
 export function RecentlyViewed() {
   const entries = useHistoryStore((s) => s.entries)
@@ -32,17 +34,18 @@ export function RecentlyViewed() {
 
   return (
     <section>
-      <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold">
-        <HistoryIcon className="h-4 w-4 text-foreground" />
-        Recently Viewed
-      </h2>
+      <h2 className="mb-2.5 text-h5">Recently viewed</h2>
 
       {recent.length === 0 ? (
-        <p className="rounded-lg bg-bg-elevated p-6 text-sm text-text-secondary">
-          Lists you open will show up here so you can pick up where you left off.
-        </p>
+        <div className="rounded-sm border border-ink bg-white p-4">
+          <p className="text-[13px] font-extrabold">Nothing here yet</p>
+          <p className="mt-1 text-[11px] font-medium text-n-3">
+            Lists you open will show up here so you can pick up where you left
+            off.
+          </p>
+        </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {recent.map((entry) => {
             const id = entry.href.split('/').pop() ?? ''
             const list = listsById.get(id)
@@ -50,7 +53,7 @@ export function RecentlyViewed() {
               <li key={entry.href}>
                 <Link
                   href={entry.href}
-                  className="group flex h-14 items-center gap-3 overflow-hidden rounded-lg bg-bg-elevated transition-colors hover:bg-bg-elevated-2"
+                  className="flex h-12 items-center gap-2.5 overflow-hidden rounded-sm border border-ink bg-white transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
                 >
                   {list ? (
                     <ListThumbnail
@@ -59,28 +62,29 @@ export function RecentlyViewed() {
                       imageUrl={list.thumbnail_url}
                       players={list.first_players}
                       size="md"
+                      className="m-1"
                     />
                   ) : entry.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={entry.imageUrl}
                       alt=""
-                      className="m-1 h-12 w-12 shrink-0 rounded-md object-cover"
+                      className="m-1 h-10 w-10 shrink-0 rounded-sm border border-ink object-cover"
                     />
                   ) : (
                     <span
                       aria-hidden
-                      className="m-1 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-bg-elevated-2 text-foreground ring-1 ring-bg-elevated-3"
+                      className="m-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-ink bg-n-4 text-ink"
                     >
-                      <ListOrdered className="h-4 w-4" />
+                      <Icon name="list" size={14} />
                     </span>
                   )}
-                  <div className="min-w-0 flex-1 pr-3">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                  <div className="min-w-0 flex-1 pr-2.5">
+                    <p className="truncate text-[12px] font-extrabold">
                       {list?.title ?? entry.name}
                     </p>
                     {(list || entry.subtitle) && (
-                      <p className="truncate text-[10px] text-text-tertiary">
+                      <p className="truncate text-[10px] font-semibold text-n-3">
                         {list
                           ? `${list.player_count} player${list.player_count === 1 ? '' : 's'}`
                           : entry.subtitle}

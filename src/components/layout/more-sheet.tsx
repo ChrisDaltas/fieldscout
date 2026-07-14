@@ -1,18 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import {
-  BarChart3,
-  Calendar,
-  History as HistoryIcon,
-  LogOut,
-  Settings,
-  Swords,
-  Trophy,
-  User as UserIcon,
-  Vote,
-} from 'lucide-react'
 
+import { Icon, type IconName } from '@/components/ui/icon'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { useHistoryStore } from '@/stores/history-store'
@@ -22,6 +12,8 @@ interface MoreSheetProps {
   onOpenChange: (open: boolean) => void
 }
 
+/** Mobile "More" sheet — white bottom panel, flush 13px rows on the filled
+ *  16px icon set, recent-history section, account rows at the foot. */
 export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
   const { profile, signOut } = useAuth()
   const entries = useHistoryStore((s) => s.entries)
@@ -32,50 +24,57 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="rounded-t-xl border-bg-elevated-2 bg-bg-elevated px-4 pb-8 pt-6 max-h-[85vh] overflow-y-auto"
+        className="max-h-[85vh] overflow-y-auto px-4 pb-8 pt-5"
       >
         <SheetHeader className="text-left">
-          <SheetTitle className="text-base">More</SheetTitle>
+          <SheetTitle>More</SheetTitle>
         </SheetHeader>
 
-        <ul className="mt-4 space-y-1">
-          <Row href="/app/stats" icon={BarChart3} label="Stats" onClick={close} />
+        <ul className="mt-3">
+          <Row href="/app/stats" icon="chart" label="My stats" onClick={close} />
+          <Row
+            href="/app/big-board"
+            icon="layers"
+            label="Big Board"
+            onClick={close}
+          />
           <Row
             href="/app/weekly-ranks"
-            icon={Calendar}
-            label="Weekly Ranks"
+            icon="calendar"
+            label="Rankings"
             onClick={close}
           />
           <Row
             href="/app/start-or-sit"
-            icon={Vote}
-            label="Start or Sit"
+            icon="sort"
+            label="Start or sit"
             onClick={close}
           />
-          <Row href="/app/teams" icon={Swords} label="Teams" onClick={close} />
-          <Row href="/app/leagues" icon={Trophy} label="Leagues" onClick={close} />
+          <Row href="/app/teams" icon="layers" label="Teams" onClick={close} />
+          <Row href="/app/leagues" icon="cup" label="Leagues" onClick={close} />
         </ul>
 
-        <div className="mt-6">
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            <span className="inline-flex items-center gap-1">
-              <HistoryIcon className="h-3 w-3" /> History
-            </span>
+        <div className="mt-5">
+          <p className="flex items-center gap-1.5 px-2.5 pb-1.5 text-[11px] font-bold text-n-3">
+            <Icon name="clock" size={13} />
+            History
           </p>
           {entries.length === 0 ? (
-            <p className="px-3 text-xs text-text-tertiary">No history yet</p>
+            <p className="px-2.5 text-[12px] font-medium text-n-3">
+              No history yet
+            </p>
           ) : (
-            <ul className="space-y-0.5">
+            <ul>
               {entries.slice(0, 8).map((entry) => (
                 <li key={entry.href + entry.visitedAt}>
                   <Link
                     href={entry.href}
                     onClick={close}
-                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground"
+                    className="flex h-[34px] items-center gap-2 rounded-sm px-2.5 text-[13px] font-medium text-n-3 transition-colors duration-200 ease-linear hover:bg-n-4 hover:text-ink"
                   >
                     <span className="truncate">{entry.name}</span>
                     {entry.subtitle && (
-                      <span className="ml-auto truncate text-xs text-text-tertiary">
+                      <span className="ml-auto truncate text-[11px] font-medium text-n-3">
                         {entry.subtitle}
                       </span>
                     )}
@@ -86,22 +85,17 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
           )}
         </div>
 
-        <div className="mt-6 border-t border-bg-elevated-2 pt-4">
-          <ul className="space-y-1">
+        <div className="mt-5 border-t border-n-4 pt-3">
+          <ul>
             {profile && (
               <Row
                 href={`/u/${profile.username}`}
-                icon={UserIcon}
-                label="My Profile"
+                icon="profile"
+                label="My profile"
                 onClick={close}
               />
             )}
-            <Row
-              href="/app/settings"
-              icon={Settings}
-              label="Settings"
-              onClick={close}
-            />
+            <Row href="/app/settings" icon="setup" label="Settings" onClick={close} />
             {profile && (
               <li>
                 <button
@@ -110,9 +104,9 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
                     close()
                     void signOut()
                   }}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-destructive transition-colors hover:bg-bg-elevated-2"
+                  className="flex h-[38px] w-full items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-negative-strong transition-colors duration-200 ease-linear hover:bg-negative-soft"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <Icon name="transfer" size={16} />
                   Sign out
                 </button>
               </li>
@@ -126,12 +120,12 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
 
 function Row({
   href,
-  icon: Icon,
+  icon,
   label,
   onClick,
 }: {
   href: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: IconName
   label: string
   onClick: () => void
 }) {
@@ -140,9 +134,9 @@ function Row({
       <Link
         href={href}
         onClick={onClick}
-        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground"
+        className="flex h-[38px] items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-ink transition-colors duration-200 ease-linear hover:bg-n-4"
       >
-        <Icon className="h-4 w-4" />
+        <Icon name={icon} size={16} className="text-ink" />
         <span>{label}</span>
       </Link>
     </li>

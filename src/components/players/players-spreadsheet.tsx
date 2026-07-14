@@ -2,18 +2,37 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, ChevronDown, Search, Settings, X } from 'lucide-react'
 
 import { AddToListPopover } from '@/components/players/add-to-list-popover'
-import { PositionBadge } from '@/components/players/position-badge'
+import {
+  PositionBadge,
+  POSITION_TAB_ACTIVE,
+} from '@/components/players/position-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { darkTeamPrimary, NFL_TEAM_COLORS, teamTintBackground } from '@/lib/nfl-team-colors'
+import { Switch } from '@/components/ui/switch'
+import { TableCell, TableHead } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  useFavoritePlayerIds,
+  useToggleFavorite,
+} from '@/hooks/use-favorites'
+import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
@@ -24,6 +43,8 @@ interface PlayerRow {
   team: string | null
   headshot_url: string | null
   status: string | null
+  depth_chart_order: number | null
+  depth_chart_position: string | null
   current_pts: number
   current_games: number
   last_pts: number
@@ -35,87 +56,118 @@ interface PlayerRow {
 
 type ColumnKey =
   | 'projected'
-  | 'last_pts'
+  | 'pts'
+  | 'two_point_conversions'
   | 'pass_yards'
   | 'pass_tds'
   | 'interceptions'
   | 'pass_attempts'
   | 'pass_completions'
+  | 'sacks_taken'
   | 'rush_attempts'
   | 'rush_yards'
   | 'rush_tds'
+  | 'fumbles_lost'
   | 'targets'
   | 'receptions'
   | 'receiving_yards'
   | 'receiving_tds'
-  | 'fumbles_lost'
+  | 'fg_made'
+  | 'fg_attempted'
+  | 'fg_made_40_plus'
+  | 'fg_made_50_plus'
+  | 'xp_made'
+  | 'xp_attempted'
   | 'def_sacks'
   | 'def_interceptions'
   | 'def_fumble_recoveries'
   | 'def_tds'
   | 'def_safeties'
-  | 'fg_made'
-  | 'fg_attempted'
-  | 'xp_made'
 
-type GroupKey = 'fantasy' | 'passing' | 'rushing' | 'receiving' | 'def_st'
+type GroupKey =
+  | 'fantasy'
+  | 'passing'
+  | 'rushing'
+  | 'receiving'
+  | 'kicking'
+  | 'def_st'
 
 const GROUP_LABELS: Record<GroupKey, string> = {
-  fantasy: 'Fantasy Points',
+  fantasy: 'Fantasy points',
   passing: 'Passing',
   rushing: 'Rushing',
   receiving: 'Receiving',
-  def_st: 'Defense & Special Teams',
+  kicking: 'Kicking',
+  def_st: 'Defense',
 }
 
-const GROUP_ORDER: GroupKey[] = ['fantasy', 'passing', 'rushing', 'receiving', 'def_st']
+const GROUP_ORDER: GroupKey[] = [
+  'fantasy',
+  'passing',
+  'rushing',
+  'receiving',
+  'kicking',
+  'def_st',
+]
 
 interface ColumnDef {
   key: ColumnKey
+  /** Short table header — sentence case; stat codes stay caps. */
   label: string
+  /** Full name shown in the customize-columns menu. */
+  full: string
   group: GroupKey
-  align?: 'right'
-  statField?: keyof PlayerRow['stats_last']
-  sortBy:
-    | { kind: 'projected' }
-    | { kind: 'last_pts' }
-    | { kind: 'stat'; field: keyof PlayerRow['stats_last'] }
+  /** Season-total field in `stats_current`/`stats_last`. Absent for the
+   *  computed fantasy-point columns. */
+  statField?: string
+  /** Part of the "Advanced stats" toggle set. */
+  adv?: boolean
+  /** Position-rank direction — false means lower is better (INT, FUM…). */
+  higherIsBetter?: boolean
 }
 
 const COLUMNS: ColumnDef[] = [
-  // Fantasy Points
-  { key: 'projected', label: 'Proj', group: 'fantasy', align: 'right', sortBy: { kind: 'projected' } },
-  { key: 'last_pts', label: '2025 PTS', group: 'fantasy', align: 'right', sortBy: { kind: 'last_pts' } },
+  // Fantasy points
+  { key: 'projected', label: 'Proj', full: 'Projected points', group: 'fantasy' },
+  { key: 'pts', label: 'Points', full: 'Fantasy points', group: 'fantasy' },
+  { key: 'two_point_conversions', label: '2PT', full: '2-point conversions', group: 'fantasy', statField: 'two_point_conversions', adv: true },
   // Passing
-  { key: 'pass_yards', label: 'Pass Y', group: 'passing', align: 'right', statField: 'pass_yards', sortBy: { kind: 'stat', field: 'pass_yards' } },
-  { key: 'pass_tds', label: 'Pass TD', group: 'passing', align: 'right', statField: 'pass_tds', sortBy: { kind: 'stat', field: 'pass_tds' } },
-  { key: 'interceptions', label: 'INT', group: 'passing', align: 'right', statField: 'interceptions', sortBy: { kind: 'stat', field: 'interceptions' } },
-  { key: 'pass_attempts', label: 'Pass Att', group: 'passing', align: 'right', statField: 'pass_attempts', sortBy: { kind: 'stat', field: 'pass_attempts' } },
-  { key: 'pass_completions', label: 'Comp', group: 'passing', align: 'right', statField: 'pass_completions', sortBy: { kind: 'stat', field: 'pass_completions' } },
+  { key: 'pass_yards', label: 'Yds', full: 'Passing yards', group: 'passing', statField: 'pass_yards' },
+  { key: 'pass_tds', label: 'TD', full: 'Passing touchdowns', group: 'passing', statField: 'pass_tds' },
+  { key: 'interceptions', label: 'INT', full: 'Interceptions thrown', group: 'passing', statField: 'interceptions', higherIsBetter: false },
+  { key: 'pass_attempts', label: 'Att', full: 'Pass attempts', group: 'passing', statField: 'pass_attempts', adv: true },
+  { key: 'pass_completions', label: 'Comp', full: 'Completions', group: 'passing', statField: 'pass_completions', adv: true },
+  { key: 'sacks_taken', label: 'Sacked', full: 'Sacks taken', group: 'passing', statField: 'sacks_taken', adv: true, higherIsBetter: false },
   // Rushing
-  { key: 'rush_attempts', label: 'Rush Att', group: 'rushing', align: 'right', statField: 'rush_attempts', sortBy: { kind: 'stat', field: 'rush_attempts' } },
-  { key: 'rush_yards', label: 'Rush Y', group: 'rushing', align: 'right', statField: 'rush_yards', sortBy: { kind: 'stat', field: 'rush_yards' } },
-  { key: 'rush_tds', label: 'Rush TD', group: 'rushing', align: 'right', statField: 'rush_tds', sortBy: { kind: 'stat', field: 'rush_tds' } },
-  { key: 'fumbles_lost', label: 'FUM', group: 'rushing', align: 'right', statField: 'fumbles_lost', sortBy: { kind: 'stat', field: 'fumbles_lost' } },
+  { key: 'rush_attempts', label: 'Att', full: 'Rush attempts', group: 'rushing', statField: 'rush_attempts' },
+  { key: 'rush_yards', label: 'Yds', full: 'Rushing yards', group: 'rushing', statField: 'rush_yards' },
+  { key: 'rush_tds', label: 'TD', full: 'Rushing touchdowns', group: 'rushing', statField: 'rush_tds' },
+  { key: 'fumbles_lost', label: 'FUM', full: 'Fumbles lost', group: 'rushing', statField: 'fumbles_lost', higherIsBetter: false },
   // Receiving
-  { key: 'targets', label: 'Tgt', group: 'receiving', align: 'right', statField: 'targets', sortBy: { kind: 'stat', field: 'targets' } },
-  { key: 'receptions', label: 'Rec', group: 'receiving', align: 'right', statField: 'receptions', sortBy: { kind: 'stat', field: 'receptions' } },
-  { key: 'receiving_yards', label: 'Rec Y', group: 'receiving', align: 'right', statField: 'receiving_yards', sortBy: { kind: 'stat', field: 'receiving_yards' } },
-  { key: 'receiving_tds', label: 'Rec TD', group: 'receiving', align: 'right', statField: 'receiving_tds', sortBy: { kind: 'stat', field: 'receiving_tds' } },
-  // Defense & Special Teams
-  { key: 'def_sacks', label: 'Sacks', group: 'def_st', align: 'right', statField: 'def_sacks', sortBy: { kind: 'stat', field: 'def_sacks' } },
-  { key: 'def_interceptions', label: 'D INT', group: 'def_st', align: 'right', statField: 'def_interceptions', sortBy: { kind: 'stat', field: 'def_interceptions' } },
-  { key: 'def_fumble_recoveries', label: 'D FR', group: 'def_st', align: 'right', statField: 'def_fumble_recoveries', sortBy: { kind: 'stat', field: 'def_fumble_recoveries' } },
-  { key: 'def_tds', label: 'D TD', group: 'def_st', align: 'right', statField: 'def_tds', sortBy: { kind: 'stat', field: 'def_tds' } },
-  { key: 'def_safeties', label: 'Safety', group: 'def_st', align: 'right', statField: 'def_safeties', sortBy: { kind: 'stat', field: 'def_safeties' } },
-  { key: 'fg_made', label: 'FGM', group: 'def_st', align: 'right', statField: 'fg_made', sortBy: { kind: 'stat', field: 'fg_made' } },
-  { key: 'fg_attempted', label: 'FGA', group: 'def_st', align: 'right', statField: 'fg_attempted', sortBy: { kind: 'stat', field: 'fg_attempted' } },
-  { key: 'xp_made', label: 'XPM', group: 'def_st', align: 'right', statField: 'xp_made', sortBy: { kind: 'stat', field: 'xp_made' } },
+  { key: 'targets', label: 'Tgt', full: 'Targets', group: 'receiving', statField: 'targets' },
+  { key: 'receptions', label: 'Rec', full: 'Receptions', group: 'receiving', statField: 'receptions' },
+  { key: 'receiving_yards', label: 'Yds', full: 'Receiving yards', group: 'receiving', statField: 'receiving_yards' },
+  { key: 'receiving_tds', label: 'TD', full: 'Receiving touchdowns', group: 'receiving', statField: 'receiving_tds' },
+  // Kicking
+  { key: 'fg_made', label: 'FGM', full: 'Field goals made', group: 'kicking', statField: 'fg_made' },
+  { key: 'fg_attempted', label: 'FGA', full: 'Field goals attempted', group: 'kicking', statField: 'fg_attempted' },
+  { key: 'fg_made_40_plus', label: 'FG 40+', full: 'Field goals 40+ yards', group: 'kicking', statField: 'fg_made_40_plus', adv: true },
+  { key: 'fg_made_50_plus', label: 'FG 50+', full: 'Field goals 50+ yards', group: 'kicking', statField: 'fg_made_50_plus', adv: true },
+  { key: 'xp_made', label: 'XPM', full: 'Extra points made', group: 'kicking', statField: 'xp_made' },
+  { key: 'xp_attempted', label: 'XPA', full: 'Extra points attempted', group: 'kicking', statField: 'xp_attempted', adv: true },
+  // Defense & special teams
+  { key: 'def_sacks', label: 'Sacks', full: 'Sacks', group: 'def_st', statField: 'def_sacks' },
+  { key: 'def_interceptions', label: 'INT', full: 'Interceptions', group: 'def_st', statField: 'def_interceptions' },
+  { key: 'def_fumble_recoveries', label: 'FR', full: 'Fumble recoveries', group: 'def_st', statField: 'def_fumble_recoveries' },
+  { key: 'def_tds', label: 'TD', full: 'Defensive touchdowns', group: 'def_st', statField: 'def_tds' },
+  { key: 'def_safeties', label: 'Safety', full: 'Safeties', group: 'def_st', statField: 'def_safeties' },
 ]
+
+const ADV_KEYS = COLUMNS.filter((c) => c.adv).map((c) => c.key)
 
 const DEFAULT_VISIBLE: ColumnKey[] = [
   'projected',
-  'last_pts',
+  'pts',
   'pass_yards',
   'pass_tds',
   'rush_yards',
@@ -127,17 +179,36 @@ const DEFAULT_VISIBLE: ColumnKey[] = [
 
 const POSITION_FILTERS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 type PositionFilter = (typeof POSITION_FILTERS)[number]
+const POSITION_LABELS: Record<PositionFilter, string> = {
+  All: 'All',
+  QB: 'QB',
+  RB: 'RB',
+  WR: 'WR',
+  TE: 'TE',
+  K: 'K',
+  DEF: 'D/ST',
+}
+
+type ScoringKey = 'ppr' | 'half_ppr' | 'standard'
+const SCORING_OPTIONS: Array<{ id: ScoringKey; label: string }> = [
+  { id: 'ppr', label: 'PPR' },
+  { id: 'half_ppr', label: 'Half-PPR' },
+  { id: 'standard', label: 'Standard' },
+]
+
+/** Which season's totals feed the stat cells. `last` matches the pre-Week-1
+ *  default the spreadsheet has always shown. */
+type SeasonKey = 'current' | 'last'
 
 const TEAM_OPTIONS = Object.keys(NFL_TEAM_COLORS).sort()
 const RECENT_KEY = 'fieldscout.player-search.recent'
 const MAX_RECENT_SEARCHES = 5
 const DEFAULT_AUTOCOMPLETE_LIMIT = 7
 
-type SortKey =
-  | 'projected'
-  | 'name'
-  | 'last_pts'
-  | { stat: string }
+// Rows shown per page; "Show more" appends another page and the page scrolls.
+const PAGE_SIZE = 15
+
+type SortKey = 'projected' | 'pts' | { stat: string }
 
 interface SortState {
   key: SortKey
@@ -148,17 +219,39 @@ interface PlayersSpreadsheetProps {
   initialPosition?: PositionFilter
 }
 
+/** Ordinal for position-rank chips: 1st, 2nd, 3rd, 4th… */
+function ord(n: number): string {
+  const rem100 = n % 100
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`
+  const rem10 = n % 10
+  if (rem10 === 1) return `${n}st`
+  if (rem10 === 2) return `${n}nd`
+  if (rem10 === 3) return `${n}rd`
+  return `${n}th`
+}
+
 export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadsheetProps) {
   const [position, setPosition] = useState<PositionFilter>(initialPosition)
   const [team, setTeam] = useState<string>('')
+  const [scoring, setScoring] = useState<ScoringKey>('ppr')
+  const [season, setSeason] = useState<SeasonKey>('last')
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [visibleCols, setVisibleCols] = useState<Set<ColumnKey>>(
     () => new Set(DEFAULT_VISIBLE),
   )
+  const [advanced, setAdvanced] = useState(false)
+  const [showRank, setShowRank] = useState(false)
   const [sort, setSort] = useState<SortState>({ key: 'projected', dir: 'desc' })
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Load 15 rows at a time; the whole page scrolls and "Show 15 more" appends.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const { data: favoritedIds } = useFavoritePlayerIds()
+  const toggleFavorite = useToggleFavorite()
   const [rows, setRows] = useState<PlayerRow[]>([])
+  const [seasons, setSeasons] = useState<{ current: number; last: number }>({
+    current: 2026,
+    last: 2025,
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const openPlayer = usePlayerWindowsStore((s) => s.open)
@@ -175,19 +268,22 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     abortRef.current = controller
     setIsLoading(true)
     setError(null)
-    setSelected(new Set())
 
-    const params = new URLSearchParams({ scoring: 'ppr', limit: '1500' })
+    const params = new URLSearchParams({ scoring, limit: '1500' })
     if (position !== 'All') params.set('positions', position)
     if (team) params.set('teams', team)
 
     fetch(`/api/players/builder?${params}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`Players failed (${res.status})`)
-        return res.json() as Promise<{ players: PlayerRow[] }>
+        return res.json() as Promise<{
+          players: PlayerRow[]
+          season?: { current: number; last: number }
+        }>
       })
       .then((data) => {
         setRows(data.players ?? [])
+        if (data.season) setSeasons(data.season)
         setIsLoading(false)
       })
       .catch((err) => {
@@ -197,7 +293,18 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
       })
 
     return () => controller.abort()
-  }, [position, team])
+  }, [position, team, scoring])
+
+  const statsOf = (row: PlayerRow) =>
+    season === 'current' ? row.stats_current : row.stats_last
+  const ptsOf = (row: PlayerRow) =>
+    season === 'current' ? row.current_pts : row.last_pts
+
+  const columnValue = (row: PlayerRow, col: ColumnDef): number | null => {
+    if (col.key === 'projected') return row.projected_pts
+    if (col.key === 'pts') return ptsOf(row)
+    return Number(statsOf(row)[col.statField ?? ''] ?? 0)
+  }
 
   const filteredRows = useMemo(() => {
     const q = debounced.toLowerCase()
@@ -209,20 +316,59 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     const copy = [...filteredRows]
     const dir = sort.dir === 'asc' ? 1 : -1
     copy.sort((a, b) => {
-      const av = sortValue(a, sort.key)
-      const bv = sortValue(b, sort.key)
-      if (typeof av === 'string' || typeof bv === 'string') {
-        return String(av).localeCompare(String(bv)) * dir
-      }
-      return (Number(av) - Number(bv)) * dir
+      const av = sortValue(a, sort.key, season)
+      const bv = sortValue(b, sort.key, season)
+      return (av - bv) * dir
     })
     return copy
-  }, [filteredRows, sort])
+  }, [filteredRows, sort, season])
 
   const visibleColumns = useMemo(
     () => COLUMNS.filter((c) => visibleCols.has(c.key)),
     [visibleCols],
   )
+
+  // Contiguous runs of the same group become spanning header bands
+  // (Fantasy points · Passing · Rushing …), ESPN-style.
+  const bands = useMemo(() => {
+    const out: { group: GroupKey; count: number }[] = []
+    for (const c of visibleColumns) {
+      const last = out[out.length - 1]
+      if (last && last.group === c.group) last.count += 1
+      else out.push({ group: c.group, count: 1 })
+    }
+    return out
+  }, [visibleColumns])
+
+  // Position ranks per stat, computed from the fetched rows (the payload has
+  // every player for the current filters, so ranks are derived client-side —
+  // there is no server-side rank field).
+  const rankIndex = useMemo(() => {
+    if (!showRank) return null
+    const index = new Map<ColumnKey, Map<string, number>>()
+    for (const col of visibleColumns) {
+      const byPos = new Map<string, { id: string; v: number }[]>()
+      for (const row of rows) {
+        const v = columnValue(row, col)
+        if (v == null || v === 0) continue
+        let bucket = byPos.get(row.position)
+        if (!bucket) {
+          bucket = []
+          byPos.set(row.position, bucket)
+        }
+        bucket.push({ id: row.id, v })
+      }
+      const colMap = new Map<string, number>()
+      const asc = col.higherIsBetter === false
+      for (const bucket of byPos.values()) {
+        bucket.sort((a, b) => (asc ? a.v - b.v : b.v - a.v))
+        bucket.forEach((entry, i) => colMap.set(entry.id, i + 1))
+      }
+      index.set(col.key, colMap)
+    }
+    return index
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRank, rows, visibleColumns, season])
 
   const toggleColumn = (key: ColumnKey) => {
     setVisibleCols((cur) => {
@@ -233,11 +379,33 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     })
   }
 
+  const toggleAdvanced = (on: boolean) => {
+    setAdvanced(on)
+    setVisibleCols((cur) => {
+      const next = new Set(cur)
+      for (const key of ADV_KEYS) {
+        if (on) next.add(key)
+        else next.delete(key)
+      }
+      return next
+    })
+  }
+
+  const resetColumns = () => {
+    setVisibleCols(new Set(DEFAULT_VISIBLE))
+    setAdvanced(false)
+  }
+
+  const resetFilters = () => {
+    setQuery('')
+    setPosition('All')
+    setTeam('')
+    setScoring('ppr')
+    setSeason('last')
+  }
+
   const handleSort = (col: ColumnDef) => {
-    const key: SortKey =
-      col.sortBy.kind === 'stat'
-        ? { stat: col.sortBy.field as string }
-        : col.sortBy.kind
+    const key: SortKey = col.statField ? { stat: col.statField } : (col.key as 'projected' | 'pts')
     const sameKey = sortKeyEquals(sort.key, key)
     setSort({
       key,
@@ -245,103 +413,180 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     })
   }
 
-  const toggleSelected = (id: string) => {
-    setSelected((cur) => {
-      const next = new Set(cur)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const allSelected =
-    sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id))
-  const toggleSelectAll = () => {
-    if (allSelected) setSelected(new Set())
-    else setSelected(new Set(sortedRows.map((r) => r.id)))
-  }
+  const sortKeyForColumn = (col: ColumnDef): SortKey =>
+    col.statField ? { stat: col.statField } : (col.key as 'projected' | 'pts')
 
   const showSkeletons = isLoading && rows.length === 0
-  const skeletonRows = useMemo(
-    () =>
-      Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="h-9 w-full rounded" />
-      )),
-    [],
-  )
 
-  const selectedNames = useMemo(() => {
-    if (selected.size === 0) return []
-    const map = new Map(rows.map((r) => [r.id, r.full_name]))
-    return Array.from(selected).map((id) => map.get(id) ?? id)
-  }, [selected, rows])
+  // Reset to the first page whenever the result set or ordering changes, so
+  // filtering doesn't leave the user deep in a long "show more" list.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [debounced, position, team, scoring, season, sort])
+
+  const pagedRows = useMemo(
+    () => sortedRows.slice(0, visibleCount),
+    [sortedRows, visibleCount],
+  )
+  const hasMore = visibleCount < sortedRows.length
+
+  const seasonLabel = season === 'current' ? seasons.current : seasons.last
+  const ptsHeader = `${seasonLabel} points`
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-2xl font-bold">Players</h1>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchAutocomplete
-          query={query}
-          onQueryChange={setQuery}
-          allRows={rows}
-        />
-        <TeamFilterPopover team={team} onChange={setTeam} />
-        <div className="flex flex-wrap gap-1">
-          {POSITION_FILTERS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPosition(p)}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-semibold transition-colors',
-                position === p
-                  ? 'bg-foreground text-background'
-                  : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        <ColumnsPopover visible={visibleCols} onToggle={toggleColumn} />
-      </div>
-
-      <SelectionBar
-        count={selected.size}
-        names={selectedNames}
-        playerIds={Array.from(selected)}
-        onClear={() => setSelected(new Set())}
-      />
-
       {error && (
-        <p className="rounded-md border border-bg-elevated-2 bg-bg-elevated p-3 text-sm text-destructive">
+        <p className="rounded-sm border border-negative bg-negative-soft p-3 text-[13px] font-semibold text-negative-strong">
           {error}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-bg-elevated-2 bg-bg-elevated">
-        <div className="max-h-[calc(100dvh-15rem)] overflow-auto overscroll-contain">
-          <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
-            <thead className="sticky top-0 z-10 bg-bg-elevated">
-              <GroupHeaderRow visibleColumns={visibleColumns} />
+      <Card>
+        {/* Row 0 — search */}
+        <div className="border-b border-n-4 px-4 py-2.5">
+          <SearchAutocomplete
+            query={query}
+            onQueryChange={setQuery}
+            allRows={rows}
+          />
+        </div>
+
+        {/* Row 1 — positions + table controls */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-n-4 px-4 py-3">
+          <Tabs
+            value={position}
+            onValueChange={(v) => setPosition(v as PositionFilter)}
+          >
+            <TabsList>
+              {POSITION_FILTERS.map((p) => (
+                <TabsTrigger key={p} value={p} className={POSITION_TAB_ACTIVE[p]}>
+                  {POSITION_LABELS[p]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <div className="ml-auto flex flex-wrap items-center gap-4">
+            <label className="flex cursor-pointer items-center gap-2">
+              <Switch checked={advanced} onCheckedChange={toggleAdvanced} />
+              <span className="text-[12px] font-bold">Advanced stats</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <Switch checked={showRank} onCheckedChange={setShowRank} />
+              <span className="text-[12px] font-bold">Show rank</span>
+            </label>
+            <CustomizePopover
+              visible={visibleCols}
+              onToggle={toggleColumn}
+              onReset={resetColumns}
+            />
+          </div>
+        </div>
+
+        {/* Row 2 — labeled filters + reset + result count */}
+        <div className="flex flex-wrap items-end gap-3 border-b border-ink px-4 py-2.5">
+          <div className="w-[130px]">
+            <div className="mb-1 text-[10px] font-medium text-n-3">Pro team</div>
+            <Select
+              value={team || 'all'}
+              onValueChange={(v) => setTeam(v === 'all' ? '' : v)}
+            >
+              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-[12px]">
+                  All teams
+                </SelectItem>
+                {TEAM_OPTIONS.map((t) => (
+                  <SelectItem key={t} value={t} className="text-[12px]">
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[124px]">
+            <div className="mb-1 text-[10px] font-medium text-n-3">Scoring</div>
+            <Select
+              value={scoring}
+              onValueChange={(v) => setScoring(v as ScoringKey)}
+            >
+              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SCORING_OPTIONS.map((s) => (
+                  <SelectItem key={s.id} value={s.id} className="text-[12px]">
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[104px]">
+            <div className="mb-1 text-[10px] font-medium text-n-3">Season</div>
+            <Select
+              value={season}
+              onValueChange={(v) => setSeason(v as SeasonKey)}
+            >
+              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="current" className="text-[12px]">
+                  {String(seasons.current)}
+                </SelectItem>
+                <SelectItem value="last" className="text-[12px]">
+                  {String(seasons.last)}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="ghost" size="md" onClick={resetFilters}>
+            Reset
+          </Button>
+          <span className="fs-num ml-auto pb-1.5 text-[12px] font-bold text-n-3">
+            {sortedRows.length} players · {seasonLabel} season
+          </span>
+        </div>
+
+        {/* Table — horizontal scroll for wide columns; the page (not the
+            table) scrolls vertically, so only the current page of rows is
+            mounted. */}
+        <div className="overflow-x-auto">
+          {/* border-separate (not the ui/table root's border-collapse) so the
+              sticky lead columns keep their borders while scrolling. */}
+          <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
+            <thead className="bg-white">
               <tr>
-                <Th sticky width="36px">
-                  <span className="flex items-center justify-center">
-                    <Checkbox checked={allSelected} onChange={toggleSelectAll} />
-                  </span>
-                </Th>
-                <Th sticky leftOffset="36px" width="48px">
-                  <span className="sr-only">Add to list</span>
-                </Th>
-                <Th sticky leftOffset="84px" width="40px" align="right">
+                {/* One empty band cell spans the 3 sticky lead columns. */}
+                <th
+                  colSpan={3}
+                  className="sticky left-0 z-[11] border-b border-n-4 bg-white"
+                />
+                {bands.map((b, i) => (
+                  <th
+                    key={`${b.group}:${i}`}
+                    colSpan={b.count}
+                    className={cn(
+                      'fs-overline whitespace-nowrap border-b border-n-4 bg-white px-3 pb-0.5 pt-1.5 text-center text-n-3',
+                      i > 0 && 'border-l border-n-4',
+                    )}
+                  >
+                    {GROUP_LABELS[b.group]}
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                <StickyTh width="72px">
+                  <span className="sr-only">Save</span>
+                </StickyTh>
+                <StickyTh leftOffset="72px" width="34px" align="right">
                   #
-                </Th>
-                <Th sticky leftOffset="124px" width="240px">
+                </StickyTh>
+                <StickyTh leftOffset="106px" width="230px">
                   Player
-                </Th>
+                </StickyTh>
                 {visibleColumns.map((c, i) => {
                   const prev = i > 0 ? visibleColumns[i - 1] : undefined
                   const startsGroup = !prev || prev.group !== c.group
@@ -349,7 +594,9 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                     <SortableTh
                       key={c.key}
                       column={c}
-                      sort={sort}
+                      label={c.key === 'pts' ? ptsHeader : c.label}
+                      active={sortKeyEquals(sort.key, sortKeyForColumn(c))}
+                      dir={sort.dir}
                       onSort={() => handleSort(c)}
                       groupBoundary={startsGroup}
                     />
@@ -360,61 +607,89 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             <tbody>
               {showSkeletons && (
                 <tr>
-                  <td
-                    colSpan={visibleColumns.length + 4}
-                    className="space-y-1 p-3"
-                  >
-                    <div className="space-y-1">{skeletonRows}</div>
+                  <td colSpan={visibleColumns.length + 3} className="p-3">
+                    <div className="space-y-1">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <Skeleton key={i} className="h-9 w-full" />
+                      ))}
+                    </div>
                   </td>
                 </tr>
               )}
               {!isLoading && sortedRows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={visibleColumns.length + 4}
-                    className="p-6 text-center text-sm text-text-tertiary"
+                    colSpan={visibleColumns.length + 3}
+                    className="p-7 text-center text-[13px] font-semibold text-n-3"
                   >
-                    {debounced ? `No players match "${debounced}".` : 'No players.'}
+                    {debounced
+                      ? `No players match "${debounced}".`
+                      : 'No players match these filters.'}
                   </td>
                 </tr>
               )}
-              {sortedRows.map((row, i) => (
+              {pagedRows.map((row, i) => (
                 <PlayerTableRow
                   key={row.id}
                   rank={i + 1}
                   row={row}
                   visibleColumns={visibleColumns}
-                  selected={selected.has(row.id)}
-                  onToggleSelect={() => toggleSelected(row.id)}
+                  columnValue={columnValue}
+                  rankIndex={rankIndex}
+                  sortKey={sort.key}
+                  favorited={favoritedIds?.has(row.id) ?? false}
+                  onToggleFavorite={() =>
+                    toggleFavorite.mutate({
+                      playerId: row.id,
+                      favorited: favoritedIds?.has(row.id) ?? false,
+                    })
+                  }
                   onOpenPlayer={() => openPlayer(row.id)}
                 />
               ))}
             </tbody>
           </table>
         </div>
-      </div>
 
-      <p className="text-center text-[10px] text-text-tertiary">
-        Showing {sortedRows.length} of {rows.length} players · scroll horizontally
-        for more columns
-      </p>
+        {/* Show more */}
+        {hasMore && (
+          <div className="flex justify-center border-t border-n-4 py-3">
+            <Button
+              variant="stroke"
+              size="sm"
+              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            >
+              Show {Math.min(PAGE_SIZE, sortedRows.length - visibleCount)} more
+            </Button>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 border-t border-ink px-4 py-2">
+          <span className="fs-num text-[11px] font-semibold text-n-3">
+            Showing {pagedRows.length} of {sortedRows.length} players
+          </span>
+          <span className="text-[11px] font-medium text-n-3">
+            Scroll horizontally for more columns
+          </span>
+        </div>
+      </Card>
     </div>
   )
 }
 
-function sortValue(row: PlayerRow, key: SortKey): number | string {
+function sortValue(row: PlayerRow, key: SortKey, season: SeasonKey): number {
   if (typeof key === 'object' && 'stat' in key) {
-    return Number(row.stats_last[key.stat as keyof PlayerRow['stats_last']] ?? 0)
+    const stats = season === 'current' ? row.stats_current : row.stats_last
+    return Number(stats[key.stat] ?? 0)
   }
   switch (key) {
     case 'projected':
       // Sort missing projections to the bottom — never confuse "no
       // projection" with "0 projected points".
       return row.projected_pts ?? -Infinity
-    case 'last_pts':
-      return row.last_pts
-    case 'name':
-      return row.full_name
+    case 'pts':
+      return season === 'current' ? row.current_pts : row.last_pts
     default:
       return 0
   }
@@ -422,62 +697,30 @@ function sortValue(row: PlayerRow, key: SortKey): number | string {
 
 function sortKeyEquals(a: SortKey, b: SortKey): boolean {
   if (typeof a === 'object' && typeof b === 'object') {
-    return 'stat' in a && 'stat' in b && a.stat === b.stat
+    return a.stat === b.stat
   }
   return a === b
-}
-
-function SelectionBar({
-  count,
-  names,
-  playerIds,
-  onClear,
-}: {
-  count: number
-  names: string[]
-  playerIds: string[]
-  onClear: () => void
-}) {
-  if (count === 0) return null
-  const primaryName =
-    count === 1 ? names[0] : `${count} players`
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-bg-elevated-3 bg-bg-elevated p-3">
-      <AddToListPopover
-        playerIds={playerIds}
-        playerName={primaryName}
-        triggerVariant="primary"
-      />
-      <span className="text-sm text-text-secondary">
-        <span className="font-mono font-bold tabular-nums text-foreground">
-          {count}
-        </span>{' '}
-        player{count === 1 ? '' : 's'} selected
-      </span>
-      <button
-        type="button"
-        onClick={onClear}
-        className="ml-auto text-xs text-text-tertiary transition-colors hover:text-foreground"
-      >
-        Clear selection
-      </button>
-    </div>
-  )
 }
 
 function PlayerTableRow({
   rank,
   row,
   visibleColumns,
-  selected,
-  onToggleSelect,
+  columnValue,
+  rankIndex,
+  sortKey,
+  favorited,
+  onToggleFavorite,
   onOpenPlayer,
 }: {
   rank: number
   row: PlayerRow
   visibleColumns: ColumnDef[]
-  selected: boolean
-  onToggleSelect: () => void
+  columnValue: (row: PlayerRow, col: ColumnDef) => number | null
+  rankIndex: Map<ColumnKey, Map<string, number>> | null
+  sortKey: SortKey
+  favorited: boolean
+  onToggleFavorite: () => void
   onOpenPlayer: () => void
 }) {
   const initials = row.full_name
@@ -487,43 +730,44 @@ function PlayerTableRow({
     .slice(0, 2)
     .join('')
 
-  const teamColor = darkTeamPrimary(row.team)
-  const tintBg = teamTintBackground(row.team, 0.22)
-
   return (
-    <tr
-      className={cn(
-        'group border-t border-bg-elevated-2 transition-colors hover:bg-bg-elevated-2',
-        selected && 'bg-bg-elevated-2',
-      )}
-    >
-      <Td sticky width="36px">
-        <span className="flex items-center justify-center">
-          <Checkbox checked={selected} onChange={onToggleSelect} />
-        </span>
-      </Td>
-      <Td sticky leftOffset="36px" width="48px">
-        <span className="flex items-center justify-center">
+    <tr className="group transition-colors hover:bg-accent-soft">
+      <StickyTd width="72px">
+        <span className="flex items-center justify-center gap-1">
+          {/* Pin/favorite quick-save + add-to-a-list. */}
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            aria-pressed={favorited}
+            aria-label={
+              favorited
+                ? `Remove ${row.full_name} from favorites`
+                : `Save ${row.full_name} to favorites`
+            }
+            title={favorited ? 'In favorites' : 'Save to favorites'}
+            className={cn(
+              'flex h-btn-sm w-btn-sm items-center justify-center rounded-sm border-1 border-ink transition-colors',
+              favorited
+                ? 'bg-brand text-ink'
+                : 'bg-white text-n-3 hover:bg-n-4 hover:text-ink',
+            )}
+          >
+            <Icon name="star" size={13} />
+          </button>
           <AddToListPopover
             playerIds={[row.id]}
             playerName={row.full_name}
+            triggerVariant="icon"
             align="start"
           />
         </span>
-      </Td>
-      <Td sticky leftOffset="84px" width="40px" align="right" mono>
-        <span className="text-text-secondary">{rank}</span>
-      </Td>
-      <Td sticky leftOffset="124px" width="240px">
-        <button
-          type="button"
-          onClick={onOpenPlayer}
-          className="group/name flex w-full items-center gap-3 text-left"
-        >
-          <Avatar
-            className="h-11 w-11 shrink-0 border-2"
-            style={{ backgroundColor: tintBg, borderColor: teamColor }}
-          >
+      </StickyTd>
+      <StickyTd leftOffset="72px" width="34px" align="right">
+        <span className="fs-num text-[11px] font-semibold text-n-3">{rank}</span>
+      </StickyTd>
+      <StickyTd leftOffset="106px" width="230px">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-6 w-6">
             {row.headshot_url && (
               <AvatarImage
                 src={row.headshot_url}
@@ -531,365 +775,223 @@ function PlayerTableRow({
                 className="h-full w-full object-cover object-top"
               />
             )}
-            <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
+            <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold leading-tight group-hover/name:underline">
+            <button
+              type="button"
+              onClick={onOpenPlayer}
+              className="block max-w-full truncate text-left text-[13px] font-extrabold leading-tight hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+            >
               {row.full_name}
-            </p>
-            <div className="mt-1 flex items-center gap-1.5">
+            </button>
+            <div className="mt-0.5 flex items-center gap-1.5">
               <PositionBadge position={row.position} />
               {row.team && (
-                <span className="text-[11px] text-text-secondary">
+                <span className="text-[11px] font-semibold text-n-3">
                   {row.team}
+                </span>
+              )}
+              {row.depth_chart_order != null && row.depth_chart_position && (
+                <span
+                  title={`Depth chart: ${row.depth_chart_position} #${row.depth_chart_order}`}
+                  className="fs-num text-[10px] font-bold text-n-3"
+                >
+                  · {row.depth_chart_position}
+                  {row.depth_chart_order}
                 </span>
               )}
             </div>
           </div>
-        </button>
-      </Td>
+        </div>
+      </StickyTd>
       {visibleColumns.map((c, i) => {
         const prev = i > 0 ? visibleColumns[i - 1] : undefined
         const startsGroup = !prev || prev.group !== c.group
+        const value = columnValue(row, c)
+        const posRank = rankIndex?.get(c.key)?.get(row.id) ?? null
         return (
-          <Cell key={c.key} column={c} row={row} groupBoundary={startsGroup} />
+          <StatCell
+            key={c.key}
+            column={c}
+            value={value}
+            posRank={posRank}
+            position={row.position}
+            groupBoundary={startsGroup}
+            sorted={sortKeyEquals(
+              sortKey,
+              c.statField ? { stat: c.statField } : (c.key as 'projected' | 'pts'),
+            )}
+          />
         )
       })}
     </tr>
   )
 }
 
-function Cell({
+function StatCell({
   column,
-  row,
+  value,
+  posRank,
+  position,
   groupBoundary,
+  sorted,
 }: {
   column: ColumnDef
-  row: PlayerRow
+  value: number | null
+  posRank: number | null
+  position: string
   groupBoundary?: boolean
+  sorted?: boolean
 }) {
-  if (column.key === 'projected') {
-    return (
-      <Td align="right" mono groupBoundary={groupBoundary}>
-        <span className="font-semibold text-foreground">
-          {typeof row.projected_pts === 'number'
-            ? row.projected_pts.toFixed(0)
-            : '—'}
-        </span>
-      </Td>
-    )
-  }
-  if (column.key === 'last_pts') {
-    return (
-      <Td align="right" mono groupBoundary={groupBoundary}>
-        {row.last_pts.toFixed(0)}
-      </Td>
-    )
-  }
-  if (column.statField) {
-    const value = Number(row.stats_last[column.statField] ?? 0)
-    return (
-      <Td align="right" mono groupBoundary={groupBoundary}>
-        {value === 0 ? (
-          <span className="text-text-tertiary">—</span>
-        ) : (
-          value.toLocaleString()
-        )}
-      </Td>
-    )
-  }
-  return <Td groupBoundary={groupBoundary}>—</Td>
-}
+  const cellClass = cn(
+    'whitespace-nowrap border-b border-n-4 text-right',
+    groupBoundary && 'border-l border-n-4',
+    sorted && 'bg-accent-soft/30',
+  )
 
-function GroupHeaderRow({ visibleColumns }: { visibleColumns: ColumnDef[] }) {
-  // Group consecutive columns by their `group` so we can colspan a single
-  // header cell across each section (Fantasy Points, Passing, …).
-  const groups: { group: GroupKey; count: number }[] = []
-  for (const c of visibleColumns) {
-    const last = groups[groups.length - 1]
-    if (last && last.group === c.group) last.count += 1
-    else groups.push({ group: c.group, count: 1 })
+  // Missing projection / zero counting stat both read as an em dash — we
+  // never fabricate a number (see aggregate-fantasy.ts for the rule).
+  const empty =
+    value == null || (column.key !== 'projected' && column.key !== 'pts' && value === 0)
+  if (empty) {
+    return (
+      <TableCell className={cellClass}>
+        <span className="fs-num text-n-3">—</span>
+      </TableCell>
+    )
   }
+
+  const text =
+    column.key === 'projected'
+      ? value.toFixed(1)
+      : column.key === 'pts'
+        ? value.toFixed(0)
+        : value.toLocaleString()
 
   return (
-    <tr>
-      {/* The 4 sticky leading columns (select / drag / # / Player) live below
-          this row, so we leave a single empty colspanned cell for them. */}
-      <th
-        className="border-b border-bg-elevated-2 bg-bg-elevated"
-        colSpan={4}
-        style={{ position: 'sticky', left: 0, zIndex: 11 }}
-      />
-      {groups.map((g, i) => (
-        <th
-          key={`${g.group}:${i}`}
-          colSpan={g.count}
-          className={cn(
-            'border-b border-bg-elevated-2 px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-text-secondary',
-            i > 0 && 'border-l border-bg-elevated-2',
-          )}
-        >
-          {GROUP_LABELS[g.group]}
-        </th>
-      ))}
-      <th
-        className="border-b border-l border-bg-elevated-2 bg-bg-elevated"
-        style={{ position: 'sticky', right: 0, zIndex: 11, width: '56px' }}
-      />
-    </tr>
+    <TableCell className={cellClass}>
+      <span className="fs-num text-[13px] font-bold">{text}</span>
+      {posRank != null && (
+        <div className="fs-num text-[9px] font-medium leading-tight text-n-3">
+          {ord(posRank)} {position}
+        </div>
+      )}
+    </TableCell>
   )
 }
 
 function SortableTh({
   column,
-  sort,
+  label,
+  active,
+  dir,
   onSort,
   groupBoundary,
 }: {
   column: ColumnDef
-  sort: SortState
+  label: string
+  active: boolean
+  dir: 'asc' | 'desc'
   onSort: () => void
   groupBoundary?: boolean
 }) {
-  const sortKey: SortKey =
-    column.sortBy.kind === 'stat'
-      ? { stat: column.sortBy.field as string }
-      : column.sortBy.kind
-  const active = sortKeyEquals(sort.key, sortKey)
   return (
-    <th
+    <TableHead
       className={cn(
-        'border-b border-bg-elevated-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary',
-        column.align === 'right' ? 'text-right' : 'text-left',
-        groupBoundary && 'border-l border-bg-elevated-2',
+        'whitespace-nowrap border-b border-ink bg-white text-right align-bottom',
+        groupBoundary && 'border-l border-n-4',
+        active && 'bg-accent-soft text-accent-strong',
       )}
+      aria-sort={active ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
     >
       <button
         type="button"
         onClick={onSort}
+        title={column.full}
         className={cn(
-          'inline-flex items-center gap-1 transition-colors hover:text-foreground',
-          column.align === 'right' && 'flex-row-reverse',
-          active && 'text-foreground',
+          'inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-ink',
+          active && 'text-accent-strong hover:text-accent-strong',
         )}
       >
-        <span>{column.label}</span>
-        {active &&
-          (sort.dir === 'desc' ? (
-            <ArrowDown className="h-3 w-3" />
-          ) : (
-            <ArrowUp className="h-3 w-3" />
-          ))}
+        <span>{label}</span>
+        {active && (
+          <Icon
+            name="arrow-bottom"
+            size={12}
+            className={cn(dir === 'asc' && 'rotate-180')}
+          />
+        )}
       </button>
-    </th>
+    </TableHead>
   )
 }
 
-function TeamFilterPopover({
-  team,
-  onChange,
-}: {
-  team: string
-  onChange: (team: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-
-  const teams = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return TEAM_OPTIONS
-    return TEAM_OPTIONS.filter((t) => t.toLowerCase().includes(q))
-  }, [search])
-
-  const select = (value: string) => {
-    onChange(value)
-    setOpen(false)
-    setSearch('')
-  }
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) setSearch('')
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Filter by team"
-          className="flex h-9 items-center gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground"
-        >
-          <span className={cn(team && 'text-foreground')}>
-            {team || 'All teams'}
-          </span>
-          <ChevronDown className="h-4 w-4 text-text-tertiary" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-56 border-bg-elevated-2 bg-bg-elevated p-0"
-      >
-        <div className="border-b border-bg-elevated-2 px-2 py-1.5">
-          <div className="flex h-7 items-center gap-2 rounded-full bg-bg-elevated-3 px-3">
-            <Search className="h-3.5 w-3.5 text-text-tertiary" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find a team…"
-              className="h-full flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-text-tertiary"
-            />
-          </div>
-        </div>
-        <ul className="max-h-60 overflow-y-auto p-1">
-          <li>
-            <button
-              type="button"
-              onClick={() => select('')}
-              className="flex w-full items-center justify-between gap-2 rounded-full px-2 py-1.5 text-left text-xs transition-colors hover:bg-bg-elevated-2"
-            >
-              <span className="text-foreground">All teams</span>
-              {team === '' && <Check className="h-3.5 w-3.5 text-foreground" />}
-            </button>
-          </li>
-          {teams.map((t) => (
-            <li key={t}>
-              <button
-                type="button"
-                onClick={() => select(t)}
-                className="flex w-full items-center justify-between gap-2 rounded-full px-2 py-1.5 text-left text-xs transition-colors hover:bg-bg-elevated-2"
-              >
-                <span className="text-foreground">{t}</span>
-                {team === t && <Check className="h-3.5 w-3.5 text-foreground" />}
-              </button>
-            </li>
-          ))}
-          {teams.length === 0 && (
-            <li className="px-3 py-3 text-center text-[11px] text-text-tertiary">
-              No matching teams.
-            </li>
-          )}
-        </ul>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function ColumnsPopover({
+function CustomizePopover({
   visible,
   onToggle,
+  onReset,
 }: {
   visible: Set<ColumnKey>
   onToggle: (key: ColumnKey) => void
+  onReset: () => void
 }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Customize columns"
-          className="flex h-9 items-center gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-elevated-2 hover:text-foreground"
-        >
-          <Settings className="h-4 w-4" />
-          Customize
-        </button>
+        <Button variant="stroke" size="sm">
+          <Icon name="setup" size={13} /> Customize
+        </Button>
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-72 border-bg-elevated-2 bg-bg-elevated p-3"
-      >
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-          Columns
-        </p>
-        {GROUP_ORDER.map((group) => (
-          <ColumnGroup
-            key={group}
-            label={GROUP_LABELS[group]}
-            columns={COLUMNS.filter((c) => c.group === group)}
-            visible={visible}
-            onToggle={onToggle}
-          />
-        ))}
+      <PopoverContent align="end" className="max-h-[480px] w-64 overflow-y-auto p-0">
+        <div className="flex items-center justify-between gap-2 border-b border-n-4 px-3 py-2">
+          <span className="fs-overline text-n-3">Show columns</span>
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[11px] font-bold text-ink transition-colors hover:text-accent"
+          >
+            Reset columns
+          </button>
+        </div>
+        <div className="py-1">
+          {GROUP_ORDER.map((group) => (
+            <div key={group}>
+              <div className="fs-overline px-3 pb-0.5 pt-2 text-accent-strong">
+                {GROUP_LABELS[group]}
+              </div>
+              {COLUMNS.filter((c) => c.group === group).map((c) => {
+                const checked = visible.has(c.key)
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={checked}
+                    onClick={() => onToggle(c.key)}
+                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft"
+                  >
+                    {/* Static check tile (the ui/checkbox recipe) — a real
+                        Checkbox here would nest a button inside a button. */}
+                    <span
+                      className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
+                        checked
+                          ? 'border-accent bg-accent text-accent-foreground'
+                          : 'border-ink bg-white',
+                      )}
+                    >
+                      {checked && <Icon name="check" size={12} />}
+                    </span>
+                    <span>{c.full}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
-  )
-}
-
-function ColumnGroup({
-  label,
-  columns,
-  visible,
-  onToggle,
-}: {
-  label: string
-  columns: ColumnDef[]
-  visible: Set<ColumnKey>
-  onToggle: (key: ColumnKey) => void
-}) {
-  return (
-    <div className="mb-3">
-      <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">
-        {label}
-      </p>
-      <ul className="space-y-0.5">
-        {columns.map((c) => {
-          const checked = visible.has(c.key)
-          return (
-            <li key={c.key}>
-              <button
-                type="button"
-                onClick={() => onToggle(c.key)}
-                className="flex w-full items-center justify-between gap-2 rounded-full px-2 py-1 text-left text-xs transition-colors hover:bg-bg-elevated-2"
-              >
-                <span className="text-foreground">{c.label}</span>
-                <Checkbox checked={checked} onChange={() => onToggle(c.key)} />
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
-  )
-}
-
-function Checkbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean
-  onChange: () => void
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={(e) => {
-        e.stopPropagation()
-        onChange()
-      }}
-      className={cn(
-        'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border',
-        checked
-          ? 'border-foreground bg-foreground text-background'
-          : 'border-bg-elevated-3',
-      )}
-    >
-      {checked && (
-        <svg viewBox="0 0 12 12" className="h-2.5 w-2.5">
-          <path
-            d="M2 6L5 9L10 3"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </button>
   )
 }
 
@@ -969,9 +1071,9 @@ function SearchAutocomplete({
   }, [query, recents.length, allRows])
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="flex h-9 w-[180px] items-center gap-2 rounded-full border border-bg-elevated-2 bg-bg-elevated-3 px-3 transition-colors focus-within:border-foreground">
-        <Search className="h-4 w-4 text-text-tertiary" />
+    <div ref={containerRef} className="relative max-w-[272px]">
+      <div className="flex h-btn-md items-center gap-2 rounded-sm border border-ink bg-white px-2.5 transition-colors focus-within:border-accent">
+        <Icon name="search" size={13} className="text-n-3" />
         <input
           type="text"
           value={query}
@@ -990,29 +1092,29 @@ function SearchAutocomplete({
           onBlur={() => {
             if (query.trim()) persistRecent(query.trim())
           }}
-          placeholder="Search…"
-          className="h-full flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-text-tertiary"
+          placeholder="Search players…"
+          className="h-full flex-1 bg-transparent text-[12px] font-bold text-ink outline-none placeholder:text-n-3"
         />
         {query && (
           <button
             type="button"
             onClick={() => onQueryChange('')}
             aria-label="Clear search"
-            className="text-text-tertiary transition-colors hover:text-foreground"
+            className="text-n-3 transition-colors hover:text-ink"
           >
-            <X className="h-3.5 w-3.5" />
+            <Icon name="close" size={12} />
           </button>
         )}
       </div>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-lg border border-bg-elevated-2 bg-bg-elevated shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-sm border border-ink bg-white shadow-hard-4">
           {showingRecents && (
             <div>
-              <p className="border-b border-bg-elevated-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+              <p className="fs-overline border-b border-n-4 px-3 py-2 text-n-3">
                 Recent searches
               </p>
-              <ul className="p-1">
+              <ul className="py-1">
                 {recents.map((r) => (
                   <li key={r}>
                     <button
@@ -1021,9 +1123,9 @@ function SearchAutocomplete({
                         onQueryChange(r)
                         setOpen(false)
                       }}
-                      className="flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-bg-elevated-2"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-medium transition-colors hover:bg-accent-soft"
                     >
-                      <Search className="h-3.5 w-3.5 text-text-tertiary" />
+                      <Icon name="search" size={12} className="text-n-3" />
                       <span>{r}</span>
                     </button>
                   </li>
@@ -1032,7 +1134,7 @@ function SearchAutocomplete({
             </div>
           )}
           {!showingRecents && suggestions && suggestions.length > 0 && (
-            <ul className="p-1">
+            <ul className="py-1">
               {suggestions.map((p) => (
                 <li key={p.id}>
                   <Link
@@ -1041,10 +1143,10 @@ function SearchAutocomplete({
                       persistRecent(query.trim() || p.full_name)
                       setOpen(false)
                     }}
-                    className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition-colors hover:bg-bg-elevated-2"
+                    className="flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-accent-soft"
                   >
                     <span className="truncate">{p.full_name}</span>
-                    <span className="ml-auto text-[10px] text-text-tertiary">
+                    <span className="ml-auto text-[10px] font-semibold text-n-3">
                       {p.position}
                       {p.team ? ` · ${p.team}` : ''}
                     </span>
@@ -1054,7 +1156,7 @@ function SearchAutocomplete({
             </ul>
           )}
           {!showingRecents && (!suggestions || suggestions.length === 0) && (
-            <p className="px-3 py-3 text-center text-xs text-text-tertiary">
+            <p className="px-3 py-3 text-center text-[12px] font-medium text-n-3">
               No matches.
             </p>
           )}
@@ -1064,94 +1166,56 @@ function SearchAutocomplete({
   )
 }
 
-function Th({
+/** Sticky lead header cell — opaque so scrolled columns slide beneath it. */
+function StickyTh({
   children,
   align = 'left',
   width,
-  sticky,
   leftOffset,
-  stickyRight,
 }: {
   children: React.ReactNode
   align?: 'left' | 'right'
   width?: string
-  sticky?: boolean
   leftOffset?: string
-  stickyRight?: boolean
 }) {
-  const style: React.CSSProperties = {}
-  if (width) style.width = width
-  if (sticky) {
-    style.position = 'sticky'
-    style.left = leftOffset ?? 0
-    style.zIndex = 11
-    style.background = 'hsl(var(--bg-elevated))'
-  }
-  if (stickyRight) {
-    style.position = 'sticky'
-    style.right = 0
-    style.zIndex = 11
-    style.background = 'hsl(var(--bg-elevated))'
-  }
   return (
-    <th
-      style={style}
+    <TableHead
+      style={{ width, position: 'sticky', left: leftOffset ?? 0, zIndex: 11 }}
       className={cn(
-        'border-b border-bg-elevated-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary',
+        'border-b border-ink bg-white align-bottom',
         align === 'right' ? 'text-right' : 'text-left',
-        stickyRight && 'border-l border-bg-elevated-2',
       )}
     >
       {children}
-    </th>
+    </TableHead>
   )
 }
 
-function Td({
+/** Sticky lead body cell — its own fill must follow the row hover/selection
+ *  because a transparent sticky cell would show columns sliding beneath. */
+function StickyTd({
   children,
   align = 'left',
   width,
-  sticky,
   leftOffset,
-  stickyRight,
-  mono,
-  groupBoundary,
+  highlight,
 }: {
   children: React.ReactNode
   align?: 'left' | 'right'
   width?: string
-  sticky?: boolean
   leftOffset?: string
-  stickyRight?: boolean
-  mono?: boolean
-  groupBoundary?: boolean
+  highlight?: boolean
 }) {
-  const style: React.CSSProperties = {}
-  if (width) style.width = width
-  if (sticky) {
-    style.position = 'sticky'
-    style.left = leftOffset ?? 0
-    style.zIndex = 5
-    style.background = 'inherit'
-  }
-  if (stickyRight) {
-    style.position = 'sticky'
-    style.right = 0
-    style.zIndex = 5
-    style.background = 'inherit'
-  }
   return (
-    <td
-      style={style}
+    <TableCell
+      style={{ width, position: 'sticky', left: leftOffset ?? 0, zIndex: 5 }}
       className={cn(
-        'px-3 py-2',
+        'border-b border-n-4 transition-colors group-hover:bg-accent-soft',
+        highlight ? 'bg-accent-soft' : 'bg-white',
         align === 'right' ? 'text-right' : 'text-left',
-        mono && 'font-mono tabular-nums',
-        groupBoundary && 'border-l border-bg-elevated-2',
-        stickyRight && 'border-l border-bg-elevated-2',
       )}
     >
       {children}
-    </td>
+    </TableCell>
   )
 }

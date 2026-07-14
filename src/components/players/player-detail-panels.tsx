@@ -2,6 +2,14 @@
 
 import { useState } from 'react'
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import type {
   GameLogRow,
   PlayerStatsPlayer,
@@ -13,7 +21,7 @@ import { cn } from '@/lib/utils'
 
 type View = 'fantasy' | 'nfl'
 
-/** Solid position-color tile backgrounds (Figma node 476:622 stat tiles). */
+/** Solid position-color tile backgrounds — position identity, white text. */
 const POSITION_TILE_BG: Record<string, string> = {
   QB: 'bg-pos-qb',
   RB: 'bg-pos-rb',
@@ -24,18 +32,11 @@ const POSITION_TILE_BG: Record<string, string> = {
 }
 
 // =============================================================================
-// Overview — the "most important stats" disclosure level. The compact modal
-// is exactly this: six big position-colored tiles. The expanded modal and
-// full page add the season cards below.
+// Overview — the headline stat tiles plus the weekly production chart (the
+// kit's PlayerPage overview). Season cards live on the Stats tab.
 // =============================================================================
 
-export function OverviewPanel({
-  data,
-  expanded,
-}: {
-  data: PlayerStatsResponse
-  expanded: boolean
-}) {
+export function OverviewPanel({ data }: { data: PlayerStatsResponse }) {
   const { current, last, projection } = data.seasons
   const { player } = data
   const ppg = current.gamesPlayed > 0 ? current.fantasy.ppr / current.gamesPlayed : 0
@@ -54,8 +55,8 @@ export function OverviewPanel({
   ]
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {tiles.map((tile) => (
           <StatTile
             key={tile.label}
@@ -66,34 +67,15 @@ export function OverviewPanel({
         ))}
       </div>
 
-      {expanded && (
-        <div className="grid gap-4 pt-2 md:grid-cols-3">
-          <SeasonCard
-            label={`${current.season} Season`}
-            season={current}
-            view="fantasy"
-            position={player.position}
-          />
-          <SeasonCard
-            label={`${projection.season} Projected`}
-            season={projection}
-            view="fantasy"
-            position={player.position}
-            muted
-          />
-          <SeasonCard
-            label={`${last.season} Season`}
-            season={last}
-            view="fantasy"
-            position={player.position}
-          />
-        </div>
-      )}
+      <div className="max-w-[496px]">
+        <p className="fs-overline mb-2 text-n-3">Weekly production</p>
+        <WeeklyProduction rows={data.gameLog} />
+      </div>
     </div>
   )
 }
 
-/** Big stat tile — bold value over a quiet label on the position color. */
+/** Big stat tile — mono value over a quiet label on the position color. */
 function StatTile({
   value,
   label,
@@ -106,14 +88,74 @@ function StatTile({
   return (
     <div
       className={cn(
-        'flex flex-col justify-between gap-3 rounded-xl p-3 sm:p-4',
-        POSITION_TILE_BG[position] ?? 'bg-bg-elevated-2',
+        'flex flex-col justify-between gap-3 rounded-sm border border-ink p-3',
+        POSITION_TILE_BG[position] ?? 'bg-n-4',
       )}
     >
-      <p className="text-3xl font-bold leading-none tracking-tight text-white sm:text-4xl">
+      <p className="fs-num text-[24px] font-extrabold leading-none text-white sm:text-[29px]">
         {value}
       </p>
-      <p className="text-xs font-medium text-white/85 sm:text-sm">{label}</p>
+      <p className="fs-overline text-white/85">{label}</p>
+    </div>
+  )
+}
+
+/**
+ * Weekly production bars from the game log — lime for at-or-above the season
+ * average, muted grey below it. Same treatment as the mini player card.
+ */
+function WeeklyProduction({ rows }: { rows: GameLogRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+        No games logged yet for the current season.
+      </p>
+    )
+  }
+
+  const total = rows.reduce((sum, row) => sum + row.fantasy.ppr, 0)
+  const avg = total / rows.length
+  const max = Math.max(...rows.map((row) => row.fantasy.ppr))
+
+  return (
+    <div>
+      <p className="mb-2.5 text-[11px] font-semibold text-n-3">
+        <span className="fs-num text-[15px] font-extrabold text-ink">
+          {avg.toFixed(1)}
+        </span>{' '}
+        avg per week ·{' '}
+        <span className="fs-num text-[15px] font-extrabold text-ink">
+          {Math.round(total)}
+        </span>{' '}
+        total
+      </p>
+      <div className="flex flex-col gap-1">
+        {rows.map((row) => {
+          const pts = row.fantasy.ppr
+          const width = max > 0 ? (pts / max) * 100 : 0
+          return (
+            <div key={row.week} className="flex items-center gap-2">
+              <span className="fs-num w-9 shrink-0 text-[11px] font-bold text-n-3">
+                Wk {row.week}
+              </span>
+              <span className="h-3.5 min-w-0 flex-1 bg-n-4">
+                {width > 0 && (
+                  <span
+                    className={cn(
+                      'block h-full border border-ink',
+                      pts >= avg ? 'bg-brand' : 'bg-n-3/40',
+                    )}
+                    style={{ width: `${width}%` }}
+                  />
+                )}
+              </span>
+              <span className="fs-num w-10 shrink-0 text-right text-[12px] font-extrabold">
+                {pts.toFixed(1)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -168,22 +210,22 @@ export function StatsPanel({ data }: { data: PlayerStatsResponse }) {
       <div className="flex justify-end">
         <ViewToggle view={view} onChange={setView} />
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         <SeasonCard
-          label={`${current.season} Season`}
+          label={`${current.season} season`}
           season={current}
           view={view}
           position={position}
         />
         <SeasonCard
-          label={`${projection.season} Projected`}
+          label={`${projection.season} projected`}
           season={projection}
           view={view}
           position={position}
           muted
         />
         <SeasonCard
-          label={`${last.season} Season`}
+          label={`${last.season} season`}
           season={last}
           view={view}
           position={position}
@@ -194,7 +236,7 @@ export function StatsPanel({ data }: { data: PlayerStatsResponse }) {
 }
 
 // =============================================================================
-// Game Log — weekly rows with performance-colored fantasy chips
+// Game log — weekly rows with performance-colored fantasy chips
 // =============================================================================
 
 export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
@@ -206,7 +248,7 @@ export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
 
   if (rows.length === 0) {
     return (
-      <p className="rounded-md border border-bg-elevated-2 bg-bg-elevated p-6 text-center text-sm text-text-secondary">
+      <p className="rounded-sm border border-n-4 p-5 text-center text-[12px] font-semibold text-n-3">
         No game log yet for the current season.
       </p>
     )
@@ -228,55 +270,55 @@ export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
 
 /**
  * Color a weekly fantasy score relative to the player's own season average —
- * green for a hit week, red for a bust, amber in between (reference design
- * colors weekly cells the same way).
+ * positive for a hit week, negative for a bust, caution in between (football
+ * semantic fills, ink text).
  */
 function performanceChip(ppr: number, ppg: number): string {
-  if (ppg <= 0) return 'bg-bg-elevated-2 text-foreground'
+  if (ppg <= 0) return 'bg-n-4'
   const ratio = ppr / ppg
-  if (ratio >= 1.15) return 'bg-tier-a/15 text-tier-a'
-  if (ratio <= 0.6) return 'bg-tier-f/15 text-tier-f'
-  return 'bg-tier-c/15 text-tier-c'
+  if (ratio >= 1.15) return 'bg-positive'
+  if (ratio <= 0.6) return 'bg-negative'
+  return 'bg-caution'
 }
 
 function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
   return (
-    <div className="overflow-hidden rounded-md border border-bg-elevated-2">
-      <table className="w-full text-sm">
-        <thead className="bg-bg-elevated-2 text-text-tertiary">
-          <tr>
-            <Th>Wk</Th>
-            <Th align="right">PPR</Th>
-            <Th align="right">Std</Th>
-            <Th align="right">Source</Th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="rounded-sm border border-ink">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Wk</TableHead>
+            <TableHead className="text-right">PPR</TableHead>
+            <TableHead className="text-right">Std</TableHead>
+            <TableHead className="text-right">Source</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row) => (
-            <tr key={row.week} className="border-t border-bg-elevated-2">
-              <Td>Week {row.week}</Td>
-              <Td align="right">
+            <TableRow key={row.week}>
+              <TableCell className="fs-num font-bold">Wk {row.week}</TableCell>
+              <TableCell className="text-right">
                 <span
                   className={cn(
-                    'inline-block min-w-[3rem] rounded-md px-2 py-0.5 text-right font-mono font-semibold tabular-nums',
+                    'fs-num inline-block min-w-[3rem] rounded-sm border border-ink px-1.5 py-px text-right text-[12px] font-bold text-ink',
                     performanceChip(row.fantasy.ppr, ppg),
                   )}
                 >
                   {row.fantasy.ppr.toFixed(1)}
                 </span>
-              </Td>
-              <Td align="right" mono>
+              </TableCell>
+              <TableCell className="fs-num text-right">
                 {row.fantasy.standard.toFixed(1)}
-              </Td>
-              <Td align="right">
-                <span className="text-[10px] uppercase tracking-wider text-text-tertiary">
+              </TableCell>
+              <TableCell className="text-right">
+                <span className="fs-overline text-n-3">
                   {row.source === 'mock' ? 'preview' : (row.source ?? 'live')}
                 </span>
-              </Td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -284,31 +326,31 @@ function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
 function NflGameLog({ rows, position }: { rows: GameLogRow[]; position: string }) {
   const cols = positionColumns(position)
   return (
-    <div className="overflow-x-auto rounded-md border border-bg-elevated-2">
-      <table className="w-full text-sm">
-        <thead className="bg-bg-elevated-2 text-text-tertiary">
-          <tr>
-            <Th>Wk</Th>
+    <div className="rounded-sm border border-ink">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Wk</TableHead>
             {cols.map((c) => (
-              <Th key={c.label} align="right">
+              <TableHead key={c.label} className="text-right">
                 {c.label}
-              </Th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row) => (
-            <tr key={row.week} className="border-t border-bg-elevated-2">
-              <Td>Week {row.week}</Td>
+            <TableRow key={row.week}>
+              <TableCell className="fs-num font-bold">Wk {row.week}</TableCell>
               {cols.map((c) => (
-                <Td key={c.label} align="right" mono>
+                <TableCell key={c.label} className="fs-num text-right">
                   {c.render(row.stats)}
-                </Td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -332,7 +374,7 @@ export function BioPanel({ player }: { player: PlayerStatsPlayer }) {
 
   const facts: { label: string; value: string }[] = [
     { label: 'Height', value: formatHeight(player.height) },
-    { label: 'Weight', value: player.weight != null ? `${player.weight} lbs` : '—' },
+    { label: 'Weight', value: player.weight != null ? `${player.weight} lb` : '—' },
     { label: 'Age', value: formatAge(player.birth_date) },
     { label: 'College', value: player.college ?? '—' },
     { label: 'Drafted', value: draft },
@@ -347,7 +389,7 @@ export function BioPanel({ player }: { player: PlayerStatsPlayer }) {
     },
     { label: 'Status', value: player.status ?? '—' },
     {
-      label: 'Bye Week',
+      label: 'Bye week',
       value: player.bye_week != null ? `Week ${player.bye_week}` : '—',
     },
   ]
@@ -402,17 +444,21 @@ export function SeasonCard({
   return (
     <div
       className={cn(
-        'rounded-lg border border-bg-elevated-2 bg-bg-elevated p-4',
-        muted && 'border-dashed',
+        'rounded-sm border bg-white p-3.5',
+        // Projected card takes the quieter grey border; real seasons get ink.
+        muted ? 'border-n-3' : 'border-ink',
       )}
     >
-      <div className="mb-2 flex items-baseline justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-          {label}
-        </p>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <p className="fs-overline text-n-3">{label}</p>
         {season.basis === 'last_season' && (
-          <span className="text-[10px] text-text-tertiary">
+          <span className="fs-num text-[10px] font-medium text-n-3">
             basis: {season.season - 1}
+          </span>
+        )}
+        {season.basis === 'projections' && (
+          <span className="fs-num text-[10px] font-medium text-n-3">
+            basis: projections
           </span>
         )}
       </div>
@@ -421,8 +467,9 @@ export function SeasonCard({
       ) : (
         <NflBlock totals={season.totals} position={position} />
       )}
-      <p className="mt-3 text-[10px] text-text-tertiary">
-        {season.gamesPlayed} game{season.gamesPlayed === 1 ? '' : 's'}
+      <p className="mt-3 text-[10px] font-medium text-n-3">
+        <span className="fs-num">{season.gamesPlayed}</span> game
+        {season.gamesPlayed === 1 ? '' : 's'}
       </p>
     </div>
   )
@@ -433,14 +480,14 @@ function FantasyBlock({ season }: { season: SeasonBlock }) {
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <span className="font-mono text-3xl font-bold tabular-nums text-foreground">
+        <span className="fs-num text-[24px] font-extrabold leading-none text-ink">
           {season.fantasy.ppr.toFixed(1)}
         </span>
-        <span className="text-xs text-text-secondary">PPR</span>
+        <span className="text-[11px] font-semibold text-n-3">PPR</span>
       </div>
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div className="grid grid-cols-2 gap-1.5">
         <Stat label="Standard" value={season.fantasy.standard.toFixed(1)} />
-        <Stat label="PPR / G" value={ppg.toFixed(1)} />
+        <Stat label="PPR / game" value={ppg.toFixed(1)} />
       </div>
     </div>
   )
@@ -454,39 +501,39 @@ interface StatField {
 function getNflFields(totals: StatTotals, position: string): StatField[] {
   if (position === 'QB') {
     return [
-      { label: 'Pass Yds', value: totals.pass_yards },
+      { label: 'Pass yds', value: totals.pass_yards },
       { label: 'Pass TD', value: totals.pass_tds },
       { label: 'INT', value: totals.interceptions },
-      { label: 'Comp / Att', value: null },
-      { label: 'Rush Yds', value: totals.rush_yards },
+      { label: 'Comp / att', value: null },
+      { label: 'Rush yds', value: totals.rush_yards },
       { label: 'Rush TD', value: totals.rush_tds },
     ]
   }
   if (position === 'RB') {
     return [
-      { label: 'Rush Att', value: totals.rush_attempts },
-      { label: 'Rush Yds', value: totals.rush_yards },
+      { label: 'Rush att', value: totals.rush_attempts },
+      { label: 'Rush yds', value: totals.rush_yards },
       { label: 'Rush TD', value: totals.rush_tds },
       { label: 'Tgt', value: totals.targets },
       { label: 'Rec', value: totals.receptions },
-      { label: 'Rec Yds', value: totals.receiving_yards },
+      { label: 'Rec yds', value: totals.receiving_yards },
     ]
   }
   if (position === 'WR' || position === 'TE') {
     return [
       { label: 'Tgt', value: totals.targets },
       { label: 'Rec', value: totals.receptions },
-      { label: 'Rec Yds', value: totals.receiving_yards },
+      { label: 'Rec yds', value: totals.receiving_yards },
       { label: 'Rec TD', value: totals.receiving_tds },
-      { label: 'Rush Yds', value: totals.rush_yards },
+      { label: 'Rush yds', value: totals.rush_yards },
       { label: 'Rush TD', value: totals.rush_tds },
     ]
   }
   if (position === 'K') {
     return [
-      { label: 'FG Made', value: totals.fg_made },
-      { label: 'FG Att', value: totals.fg_attempted },
-      { label: 'XP Made', value: totals.xp_made },
+      { label: 'FG made', value: totals.fg_made },
+      { label: 'FG att', value: totals.fg_attempted },
+      { label: 'XP made', value: totals.xp_made },
     ]
   }
   // DEF
@@ -500,13 +547,13 @@ function getNflFields(totals: StatTotals, position: string): StatField[] {
 function NflBlock({ totals, position }: { totals: StatTotals; position: string }) {
   const fields = getNflFields(totals, position)
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 gap-1.5">
       {fields.map((field) => (
         <Stat
           key={field.label}
           label={field.label}
           value={
-            field.label === 'Comp / Att'
+            field.label === 'Comp / att'
               ? `${totals.pass_completions ?? 0} / ${totals.pass_attempts ?? 0}`
               : Number(field.value ?? 0).toLocaleString()
           }
@@ -516,6 +563,7 @@ function NflBlock({ totals, position }: { totals: StatTotals; position: string }
   )
 }
 
+/** Hairline stat cell — overline label over a mono value. */
 export function Stat({
   label,
   value,
@@ -524,22 +572,25 @@ export function Stat({
   value: string | number
 }) {
   return (
-    <div className="rounded-md bg-bg-elevated-2 px-2 py-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-text-tertiary">
-        {label}
-      </p>
-      <p className="font-mono text-sm font-semibold tabular-nums">{value}</p>
+    <div className="rounded-sm border border-n-4 px-2 py-1.5">
+      <p className="fs-overline truncate text-n-3">{label}</p>
+      <p className="fs-num text-[13px] font-extrabold">{value}</p>
     </div>
   )
 }
 
+/** Fantasy / NFL segmented toggle — boxed segments, accent fill when active. */
 function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
   return (
-    <div className="flex h-7 items-center rounded-full border border-bg-elevated-2 bg-bg-elevated-3 p-0.5 text-[11px] font-semibold">
+    <div className="flex overflow-hidden rounded-sm border border-ink">
       <ToggleSegment active={view === 'fantasy'} onClick={() => onChange('fantasy')}>
         Fantasy
       </ToggleSegment>
-      <ToggleSegment active={view === 'nfl'} onClick={() => onChange('nfl')}>
+      <ToggleSegment
+        active={view === 'nfl'}
+        onClick={() => onChange('nfl')}
+        className="border-l border-ink"
+      >
         NFL
       </ToggleSegment>
     </div>
@@ -549,21 +600,25 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
 function ToggleSegment({
   active,
   onClick,
+  className,
   children,
 }: {
   active: boolean
   onClick: () => void
+  className?: string
   children: React.ReactNode
 }) {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'rounded-full px-3 py-1 transition-colors',
+        'h-btn-sm px-3 text-[11px] font-extrabold leading-none transition-colors',
         active
-          ? 'bg-foreground text-background'
-          : 'text-text-secondary hover:text-foreground',
+          ? 'bg-accent text-accent-foreground'
+          : 'bg-white text-ink hover:bg-n-4',
+        className,
       )}
     >
       {children}
@@ -579,9 +634,8 @@ interface LogColumn {
 const num = (v: number | null | undefined) => Number(v ?? 0).toLocaleString()
 
 /**
- * Weekly NFL stat columns by position — mirrors the reference design's
- * Logs table (passing detail incl. CMP% and sacks for QBs, rushing +
- * receiving splits for skill positions).
+ * Weekly NFL stat columns by position — passing detail incl. CMP% and sacks
+ * for QBs, rushing + receiving splits for skill positions.
  */
 function positionColumns(position: string): LogColumn[] {
   if (position === 'QB') {
@@ -600,7 +654,7 @@ function positionColumns(position: string): LogColumn[] {
       { label: 'INT', render: (s) => num(s.interceptions) },
       { label: 'Sack', render: (s) => num(s.sacks_taken) },
       { label: 'Car', render: (s) => num(s.rush_attempts) },
-      { label: 'Rush Yd', render: (s) => num(s.rush_yards) },
+      { label: 'Rush yd', render: (s) => num(s.rush_yards) },
       { label: 'Rush TD', render: (s) => num(s.rush_tds) },
     ]
   }
@@ -611,7 +665,7 @@ function positionColumns(position: string): LogColumn[] {
       { label: 'TD', render: (s) => num(s.rush_tds) },
       { label: 'Tgt', render: (s) => num(s.targets) },
       { label: 'Rec', render: (s) => num(s.receptions) },
-      { label: 'Rec Yd', render: (s) => num(s.receiving_yards) },
+      { label: 'Rec yd', render: (s) => num(s.receiving_yards) },
       { label: 'Rec TD', render: (s) => num(s.receiving_tds) },
     ]
   }
@@ -621,7 +675,7 @@ function positionColumns(position: string): LogColumn[] {
       { label: 'Rec', render: (s) => num(s.receptions) },
       { label: 'Yd', render: (s) => num(s.receiving_yards) },
       { label: 'TD', render: (s) => num(s.receiving_tds) },
-      { label: 'Rush Yd', render: (s) => num(s.rush_yards) },
+      { label: 'Rush yd', render: (s) => num(s.rush_yards) },
       { label: 'Rush TD', render: (s) => num(s.rush_tds) },
     ]
   }
@@ -637,45 +691,4 @@ function positionColumns(position: string): LogColumn[] {
     { label: 'INT', render: (s) => num(s.def_interceptions) },
     { label: 'TD', render: (s) => num(s.def_tds) },
   ]
-}
-
-function Th({
-  children,
-  align = 'left',
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right'
-}) {
-  return (
-    <th
-      className={cn(
-        'px-3 py-2 text-[10px] font-semibold uppercase tracking-wider',
-        align === 'right' ? 'text-right' : 'text-left',
-      )}
-    >
-      {children}
-    </th>
-  )
-}
-
-function Td({
-  children,
-  align = 'left',
-  mono = false,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right'
-  mono?: boolean
-}) {
-  return (
-    <td
-      className={cn(
-        'px-3 py-2',
-        align === 'right' ? 'text-right' : 'text-left',
-        mono && 'font-mono tabular-nums',
-      )}
-    >
-      {children}
-    </td>
-  )
 }

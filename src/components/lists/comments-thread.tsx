@@ -5,7 +5,6 @@ import { useState } from 'react'
 
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/use-auth'
 import {
   type CommentWithAuthor,
@@ -14,7 +13,6 @@ import {
   useDeleteComment,
 } from '@/hooks/use-comments'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
 import { MAX_COMMENT_LEN } from '@/types/schemas/lists'
 
 interface CommentsThreadProps {
@@ -43,29 +41,25 @@ export function CommentsThread({ listId, ownerId, commentsEnabled }: CommentsThr
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">
-          Comments
-          <span className="ml-2 text-sm font-normal text-text-tertiary tabular-nums">
-            {data?.pagination.total ?? 0}
-          </span>
-        </h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-h6">Comments</h2>
+        <span className="fs-num text-sm font-bold text-n-3">
+          {data?.pagination.total ?? 0}
+        </span>
       </div>
 
       {commentsEnabled ? (
         <CommentComposer listId={listId} />
       ) : (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-4 text-sm text-text-secondary">
-            Comments are turned off on this list.
-          </CardContent>
-        </Card>
+        <div className="rounded-sm border border-ink bg-white p-4 text-sm font-medium text-n-3">
+          Comments are turned off on this list.
+        </div>
       )}
 
       {isLoading ? (
-        <p className="text-sm text-text-secondary">Loading comments…</p>
+        <p className="text-sm font-medium text-n-3">Loading comments…</p>
       ) : comments.length === 0 ? (
-        <p className="text-sm text-text-tertiary">No comments yet.</p>
+        <p className="text-sm font-medium text-n-3">No comments yet.</p>
       ) : (
         <ul className="space-y-3">
           {comments.map((comment) => (
@@ -90,19 +84,17 @@ function CommentComposer({ listId }: { listId: string }) {
 
   if (!user) {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="flex items-center justify-between p-4">
-          <p className="text-sm text-text-secondary">
-            Sign in to join the discussion.
-          </p>
-          <Link
-            href="/login"
-            className="text-sm font-medium text-foreground hover:text-text-secondary"
-          >
-            Sign in →
-          </Link>
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-between rounded-sm border border-ink bg-white p-4">
+        <p className="text-sm font-medium text-n-3">
+          Sign in to join the discussion.
+        </p>
+        <Link
+          href="/login"
+          className="text-sm font-bold text-accent hover:underline"
+        >
+          Sign in →
+        </Link>
+      </div>
     )
   }
 
@@ -132,16 +124,17 @@ function CommentComposer({ listId }: { listId: string }) {
         rows={2}
         maxLength={MAX_COMMENT_LEN}
         placeholder="Add a comment…"
-        className="w-full resize-none rounded-md border border-bg-elevated-2 bg-bg-elevated-3 px-3 py-2 text-sm text-foreground placeholder:text-text-tertiary focus:border-foreground focus:outline-none"
+        className="w-full resize-none rounded-sm border border-ink bg-white px-3 py-2 text-sm font-medium text-ink transition-colors placeholder:text-n-3 focus:border-accent focus:outline-none"
       />
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-text-tertiary tabular-nums">
+        <span className="fs-num text-[10px] font-semibold text-n-3">
           {body.length} / {MAX_COMMENT_LEN}
         </span>
         <Button
           type="submit"
+          variant="blue"
+          size="sm"
           disabled={addComment.isPending || body.trim() === ''}
-          className="rounded-full font-semibold"
         >
           {addComment.isPending ? 'Posting…' : 'Post'}
         </Button>
@@ -173,11 +166,11 @@ function CommentItem({
         name={comment.author.display_name ?? comment.author.username}
         className="h-8 w-8 shrink-0"
       />
-      <div className="min-w-0 flex-1 rounded-md border border-bg-elevated-2 bg-bg-elevated px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-text-secondary">
+      <div className="min-w-0 flex-1 rounded-sm border border-ink bg-white px-3 py-2">
+        <div className="flex items-center gap-2 text-xs font-semibold text-n-3">
           <Link
             href={`/u/${comment.author.username}`}
-            className="font-semibold text-foreground hover:underline"
+            className="font-bold text-ink hover:underline"
           >
             {comment.author.display_name ?? `@${comment.author.username}`}
           </Link>
@@ -196,15 +189,13 @@ function CommentItem({
                     }),
                 })
               }
-              className={cn(
-                'ml-auto text-xs text-text-tertiary hover:text-destructive',
-              )}
+              className="ml-auto text-xs font-semibold text-n-3 transition-colors hover:text-negative-strong"
             >
               Delete
             </button>
           )}
         </div>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+        <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-ink">
           {comment.body}
         </p>
       </div>

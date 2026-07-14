@@ -1,160 +1,78 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import {
-  Bell,
-  ListPlus,
-  Plus,
-  SlidersHorizontal,
-  Trophy,
-} from 'lucide-react'
 
 import { AccountMenu } from '@/components/layout/account-menu'
 import { TopSearch } from '@/components/layout/top-search'
-import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { Wordmark } from '@/components/shared/wordmark'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useNotifications } from '@/hooks/use-notifications'
-import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 
 interface TopNavProps {
   variant?: 'app' | 'guest'
 }
 
-interface CenterNavItem {
-  label: string
-  href: string
-  matchPrefix?: string
-  exact?: boolean
-}
-
-const CENTER_NAV: CenterNavItem[] = [
-  { label: 'Home', href: '/app', exact: true },
-  { label: 'Lists', href: '/app/lists', matchPrefix: '/app/lists' },
-  { label: 'Players', href: '/app/players', matchPrefix: '/app/players' },
-  { label: 'My Stats', href: '/app/profile', matchPrefix: '/app/profile' },
-]
-
-function isCenterActive(pathname: string, item: CenterNavItem): boolean {
-  if (item.exact) return pathname === item.href || pathname === '/app/explore'
-  return Boolean(item.matchPrefix && pathname.startsWith(item.matchPrefix))
-}
-
+/**
+ * White top bar — 1px ink bottom border, wordmark left. In the app shell it
+ * renders on mobile only (desktop nav lives in the sidebar + rail); on guest
+ * pages it renders at every width. Signed in: search trigger, quick
+ * new-list (app only), notifications bell, account. Signed out: sign in /
+ * sign up.
+ */
 export function TopNav({ variant = 'app' }: TopNavProps) {
-  const pathname = usePathname()
   const { user } = useAuth()
   const isSignedIn = Boolean(user)
   const showAppNav = isSignedIn && variant === 'app'
-
-  return (
-    <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 bg-background px-4 lg:px-6">
-      <Link href={isSignedIn ? '/app' : '/'}>
-        <Wordmark className="text-base text-foreground" />
-      </Link>
-
-      {/* Center cluster: text nav links, Spotify-style. */}
-      <div className="flex flex-1 items-center justify-center gap-1 px-2 sm:gap-2 sm:px-6">
-        {showAppNav && (
-          <div className="hidden items-center gap-1 lg:flex">
-            {CENTER_NAV.map((item) => (
-              <CenterNavLink
-                key={item.href}
-                item={item}
-                active={isCenterActive(pathname, item)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1">
-        {isSignedIn ? (
-          <>
-            <div className="mr-1 w-52 sm:w-64 lg:w-72">
-              <TopSearch />
-            </div>
-            {showAppNav && (
-              <GenerateAiButton size="sm" className="mr-1 font-semibold" />
-            )}
-            {showAppNav && <CreateMenu />}
-            <NotificationBell />
-            <AccountMenu variant="topbar" />
-          </>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Link href="/login">
-              <Button variant="invisible" size="sm">
-                Sign in
-              </Button>
-            </Link>
-            <Link href="/signup">
-              <Button size="sm" className="font-semibold">
-                Sign up
-              </Button>
-            </Link>
-          </div>
-        )}
-      </div>
-    </header>
-  )
-}
-
-/** "+ Create" dropdown — New List today; League and Scoring System are
- *  placeholders until those features ship. */
-function CreateMenu() {
   const setCreateListOpen = useUIStore((s) => s.setCreateListOpen)
   const setSeedPlayerId = useUIStore((s) => s.setCreateListSeedPlayerId)
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="default" size="sm" className="font-semibold">
-          <Plus className="h-4 w-4" />
-          Create
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-52 border-bg-elevated-2 bg-bg-elevated"
-      >
-        <DropdownMenuItem
-          onSelect={() => {
-            setSeedPlayerId(null)
-            setCreateListOpen(true)
-          }}
-        >
-          <ListPlus className="mr-2 h-4 w-4" />
-          New List
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled className="justify-between">
-          <span className="flex items-center">
-            <Trophy className="mr-2 h-4 w-4" />
-            League
-          </span>
-          <SoonBadge />
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled className="justify-between">
-          <span className="flex items-center">
-            <SlidersHorizontal className="mr-2 h-4 w-4" />
-            Scoring System
-          </span>
-          <SoonBadge />
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <header className="sticky top-0 z-40 flex h-header shrink-0 items-center gap-2 border-b border-ink bg-white px-4 lg:px-6">
+      <Link href={isSignedIn ? '/app' : '/'} className="shrink-0">
+        <Wordmark className="text-[15px] text-ink" />
+      </Link>
+
+      {isSignedIn ? (
+        <>
+          <div className="ml-auto min-w-0 max-w-xs flex-1">
+            <TopSearch />
+          </div>
+          {showAppNav && (
+            <Button
+              variant="ghost"
+              size="icon-md"
+              aria-label="New list"
+              title="New list"
+              onClick={() => {
+                setSeedPlayerId(null)
+                setCreateListOpen(true)
+              }}
+            >
+              <Icon name="plus" size={14} />
+            </Button>
+          )}
+          <NotificationBell />
+          <AccountMenu variant="topbar" />
+        </>
+      ) : (
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/login">Sign in</Link>
+          </Button>
+          <Button variant="blue" size="sm" asChild>
+            <Link href="/signup">Sign up</Link>
+          </Button>
+        </div>
+      )}
+    </header>
   )
 }
 
-/** Bell with an unread-count badge. Polls via React Query (see useNotifications). */
+/** Bell with a lime unseen-count chip. Polls via React Query (see
+ *  useNotifications). Lime = "look here"; the control itself stays neutral. */
 function NotificationBell() {
   const { data } = useNotifications()
   const unread = data?.unreadCount ?? 0
@@ -162,50 +80,14 @@ function NotificationBell() {
     <Link
       href="/app/notifications"
       aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
-      className="relative"
+      className="relative inline-flex h-btn-md w-btn-md shrink-0 items-center justify-center rounded-sm text-ink transition-colors duration-200 ease-linear hover:bg-n-4 hover:text-accent"
     >
-      <Button
-        variant="invisible"
-        size="icon"
-        className="h-9 w-9 text-text-secondary hover:text-foreground"
-      >
-        <Bell className="h-5 w-5" />
-      </Button>
+      <Icon name="notification" size={14} />
       {unread > 0 && (
-        <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
+        <span className="fs-num absolute right-0 top-0 inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-pill border border-ink bg-brand px-1 text-[9px] font-bold leading-none text-ink">
           {unread > 9 ? '9+' : unread}
         </span>
       )}
-    </Link>
-  )
-}
-
-function SoonBadge() {
-  return (
-    <span className="rounded-full bg-bg-elevated-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
-      Soon
-    </span>
-  )
-}
-
-function CenterNavLink({
-  item,
-  active,
-}: {
-  item: CenterNavItem
-  active: boolean
-}) {
-  return (
-    <Link
-      href={item.href}
-      className={cn(
-        'flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors',
-        active
-          ? 'bg-bg-elevated-2 text-foreground'
-          : 'text-text-secondary hover:bg-bg-elevated-2 hover:text-foreground',
-      )}
-    >
-      {item.label}
     </Link>
   )
 }

@@ -104,7 +104,7 @@ export async function GET(request: Request) {
   let playerQuery = supabase
     .from('players')
     .select(
-      `id, full_name, position, team, headshot_url, status, ${projectionColumn}`,
+      `id, full_name, position, team, headshot_url, status, depth_chart_order, depth_chart_position, ${projectionColumn}`,
     )
     // Filter out retirees / free agents — Sleeper still flags these as
     // active=true, so the reliable signal is having a current team.

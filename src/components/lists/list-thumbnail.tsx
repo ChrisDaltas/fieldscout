@@ -1,5 +1,4 @@
-import { Pencil } from 'lucide-react'
-
+import { Icon } from '@/components/ui/icon'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 
@@ -24,8 +23,8 @@ const POS_TINTS: Record<ListThumbnailLabel, { bg: string; fg: string }> = {
   K: { bg: 'bg-pos-k', fg: 'text-white' },
   DEF: { bg: 'bg-pos-def', fg: 'text-white' },
   FLEX: { bg: 'bg-pos-flex', fg: 'text-white' },
-  AP: { bg: 'bg-bg-elevated-3', fg: 'text-foreground' },
-  TM: { bg: 'bg-bg-elevated-3', fg: 'text-foreground' },
+  AP: { bg: 'bg-ink', fg: 'text-white' },
+  TM: { bg: 'bg-ink', fg: 'text-white' },
 }
 
 interface ListThumbnailProps {
@@ -58,13 +57,14 @@ const LABEL_SIZE: Record<NonNullable<ListThumbnailProps['size']>, string> = {
   xl: 'text-base',
 }
 
-const EMPTY_HINT_ICON_SIZE: Record<NonNullable<ListThumbnailProps['size']>, string> = {
-  sm: 'h-3 w-3',
-  md: 'h-3.5 w-3.5',
-  lg: 'h-4 w-4',
-  xl: 'h-6 w-6',
+const EMPTY_HINT_ICON_SIZE: Record<NonNullable<ListThumbnailProps['size']>, number> = {
+  sm: 10,
+  md: 12,
+  lg: 14,
+  xl: 20,
 }
 
+/** 2×2 headshot tile — square, 1px ink border, 1px ink seams. */
 export function ListThumbnail({
   positionFilter,
   isTeam = false,
@@ -75,14 +75,14 @@ export function ListThumbnail({
 }: ListThumbnailProps) {
   const label = isTeam ? 'TM' : normalizeLabel(positionFilter)
   const titleAttr =
-    label === 'TM' ? 'Team' : label === 'AP' ? 'All Players' : `${label} list`
+    label === 'TM' ? 'Team' : label === 'AP' ? 'All players' : `${label} list`
 
   if (imageUrl) {
     return (
       <div
         aria-hidden
         className={cn(
-          'inline-flex shrink-0 overflow-hidden rounded-md ring-1 ring-bg-elevated-3',
+          'inline-flex shrink-0 overflow-hidden rounded-sm border border-ink',
           SIZE_CLASSES[size],
           className,
         )}
@@ -111,13 +111,13 @@ export function ListThumbnail({
     <div
       aria-hidden
       className={cn(
-        'inline-flex shrink-0 overflow-hidden rounded-md ring-1 ring-bg-elevated-3',
+        'inline-flex shrink-0 overflow-hidden rounded-sm border border-ink bg-ink',
         SIZE_CLASSES[size],
         className,
       )}
       title={titleAttr}
     >
-      <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+      <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-px">
         <div
           className={cn(
             'flex items-center justify-center font-mono font-bold uppercase tracking-tight',
@@ -131,8 +131,8 @@ export function ListThumbnail({
         <PlayerQuadrant player={top3[0]} size={size} />
         <PlayerQuadrant player={top3[1]} size={size} />
         {isEmpty ? (
-          <div className="flex items-center justify-center bg-bg-elevated-2 text-text-tertiary">
-            <Pencil className={EMPTY_HINT_ICON_SIZE[size]} />
+          <div className="flex items-center justify-center bg-n-4 text-n-3">
+            <Icon name="edit" size={EMPTY_HINT_ICON_SIZE[size]} />
           </div>
         ) : (
           <PlayerQuadrant player={top3[2]} size={size} />
@@ -150,7 +150,7 @@ function PlayerQuadrant({
   size: NonNullable<ListThumbnailProps['size']>
 }) {
   if (!player) {
-    return <div className="bg-bg-elevated-2" />
+    return <div className="bg-n-4" />
   }
   const { primary } = getTeamColors(player.team)
   const initials = player.full_name
@@ -176,7 +176,7 @@ function PlayerQuadrant({
       ) : (
         <span
           className={cn(
-            'font-bold uppercase tracking-tight text-white/90',
+            'font-mono font-bold uppercase tracking-tight text-white/90',
             LABEL_SIZE[size],
           )}
         >

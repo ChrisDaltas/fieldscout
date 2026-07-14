@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { X } from 'lucide-react'
 
+import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
 interface TagChipProps {
@@ -14,16 +14,17 @@ interface TagChipProps {
   className?: string
 }
 
+/** List tag chip — ink outline on an accent-soft tint (tags are metadata,
+ *  not controls, so they stay a badge rather than a FilterChip). */
 export function TagChip({ name, slug, href, onRemove, active, className }: TagChipProps) {
   const target = href ?? (slug ? `/tag/${slug}` : undefined)
 
   const inner = (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'bg-bg-elevated-2 text-foreground'
-          : 'bg-bg-elevated-2 text-text-secondary hover:bg-bg-elevated-3 hover:text-foreground',
+        'inline-flex h-chip items-center gap-1 whitespace-nowrap rounded-sm border border-ink px-2 text-[11px] font-bold leading-none text-ink transition-colors',
+        active ? 'bg-accent text-accent-foreground' : 'bg-accent-soft',
+        target && !onRemove && 'hover:bg-accent hover:text-accent-foreground',
         className,
       )}
     >
@@ -36,10 +37,10 @@ export function TagChip({ name, slug, href, onRemove, active, className }: TagCh
             e.stopPropagation()
             onRemove()
           }}
-          className="-mr-1 ml-0.5 rounded-full p-0.5 text-text-tertiary hover:text-foreground"
+          className="-mr-0.5 inline-flex items-center text-ink transition-colors hover:text-accent"
           aria-label={`Remove ${name}`}
         >
-          <X className="h-3 w-3" />
+          <Icon name="close" size={10} />
         </button>
       )}
     </span>

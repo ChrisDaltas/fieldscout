@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { createBrowserClient } from '@/lib/supabase/client'
+import { firstEmbed } from '@/utils/supabase-embed'
 
 export interface PersonaBoard {
   id: string
@@ -37,11 +38,6 @@ interface PersonaBoardRow {
   owner: { username: string } | { username: string }[] | null
 }
 
-function first<T>(value: T | T[] | null): T | null {
-  if (value == null) return null
-  return Array.isArray(value) ? (value[0] ?? null) : value
-}
-
 /** Latest public persona-owned boards for the home "From the AI Experts"
  * shelf. Personas and their public lists are anon-readable under RLS. */
 export function usePersonaBoards(limit = 9) {
@@ -66,8 +62,8 @@ export function usePersonaBoards(limit = 9) {
       if (error) throw error
 
       return ((data ?? []) as unknown as PersonaBoardRow[]).flatMap((row) => {
-        const persona = first(row.persona)
-        const owner = first(row.owner)
+        const persona = firstEmbed(row.persona)
+        const owner = firstEmbed(row.owner)
         if (!persona || !owner) return []
         return [
           {
@@ -140,7 +136,7 @@ export function usePersonaPosts(limit = 6) {
       if (error) throw error
 
       return ((data ?? []) as unknown as PersonaPostRow[]).flatMap((row) => {
-        const persona = first(row.persona)
+        const persona = firstEmbed(row.persona)
         if (!persona) return []
         return [
           {

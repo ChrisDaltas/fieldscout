@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft } from 'lucide-react'
 
 import { TeamRoster, type RosterPlayer } from '@/components/teams/team-roster'
-import { getTeamColors, teamTintBackground } from '@/lib/nfl-team-colors'
+import { Card, CardContent } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
+import { getTeamColors } from '@/lib/nfl-team-colors'
 import { getNflTeam } from '@/lib/nfl-teams'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -15,7 +16,7 @@ export async function generateMetadata({ params }: NflTeamPageProps) {
   const { team } = await params
   const info = getNflTeam(team)
   return {
-    title: info ? `${info.city} ${info.name} · FieldScout` : 'NFL Team · FieldScout',
+    title: info ? `${info.city} ${info.name} · FieldScout` : 'NFL team · FieldScout',
   }
 }
 
@@ -37,58 +38,55 @@ export default async function NflTeamPage({ params }: NflTeamPageProps) {
     throw new Error(error.message)
   }
 
-  const roster = (players ?? []) as (RosterPlayer & { bye_week: number | null })[]
+  const roster = (players ?? []) as RosterPlayer[]
   const colors = getTeamColors(info.abbr)
   // The bye week lives on player rows, not a teams table — read it off any
   // roster member.
   const byeWeek = roster.find((p) => p.bye_week != null)?.bye_week ?? null
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-[19px]">
       <Link
         href="/app/nfl"
-        className="inline-flex items-center gap-1 text-xs font-medium text-text-secondary transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
+        <Icon name="arrow-prev" size={13} />
         All teams
       </Link>
 
-      <header
-        className="flex flex-wrap items-center gap-4 rounded-lg border border-bg-elevated-2 p-5 sm:gap-5 sm:p-6"
-        style={{
-          background: `linear-gradient(135deg, ${teamTintBackground(info.abbr, 0.35)}, transparent 70%)`,
-        }}
-      >
-        <span
-          className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-lg font-extrabold text-white sm:h-20 sm:w-20"
-          style={{
-            backgroundColor: colors.primary,
-            boxShadow: `0 0 0 3px ${colors.secondary}`,
-          }}
-        >
-          {info.abbr}
-        </span>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold leading-tight sm:text-3xl">
-            {info.city} {info.name}
-          </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-text-secondary">
-            <span>
-              {info.conference} {info.division}
-            </span>
-            <span>·</span>
-            <span>
-              {roster.length} fantasy player{roster.length === 1 ? '' : 's'}
-            </span>
-            {byeWeek != null && (
-              <>
-                <span>·</span>
-                <span>Bye Week {byeWeek}</span>
-              </>
-            )}
-          </p>
-        </div>
-      </header>
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-4">
+          <span
+            className="flex h-[51px] w-[51px] shrink-0 items-center justify-center rounded-sm border border-ink text-[15px] font-extrabold text-white"
+            style={{ backgroundColor: colors.primary }}
+          >
+            {info.abbr}
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-h4 text-ink">
+              {info.city} {info.name}
+            </h1>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] font-semibold text-n-3">
+              <span>
+                {info.conference} {info.division}
+              </span>
+              <span aria-hidden>·</span>
+              <span>
+                <span className="fs-num">{roster.length}</span> fantasy player
+                {roster.length === 1 ? '' : 's'}
+              </span>
+              {byeWeek != null && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>
+                    Bye week <span className="fs-num">{byeWeek}</span>
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <TeamRoster players={roster} />
     </div>

@@ -6,7 +6,7 @@ import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { CommentsThread } from '@/components/lists/comments-thread'
 import { ListDetailSidebar } from '@/components/lists/list-detail-sidebar'
 import { ListDetailView } from '@/components/lists/list-detail-view'
-import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useAddPlayer, useList } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
@@ -46,16 +46,20 @@ export default function ListDetailPage(props: ListDetailPageProps) {
   }, [data?.id, data?.title, data?.player_count, data?.thumbnail_url, pushHistory]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
-    return <p className="text-sm text-text-secondary">Loading list…</p>
+    return (
+      <div className="space-y-4 px-2 lg:px-3">
+        <Skeleton className="h-[104px] w-full" />
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+    )
   }
 
   if (isError || !data) {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="p-6 text-sm text-destructive">
-          {(error as Error)?.message ?? 'List not found.'}
-        </CardContent>
-      </Card>
+      <div className="mx-2 rounded-sm border border-negative-strong bg-negative-soft p-6 text-sm font-medium text-ink lg:mx-3">
+        {(error as Error)?.message ?? 'List not found.'}
+      </div>
     )
   }
 

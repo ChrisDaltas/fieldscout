@@ -1,13 +1,11 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-const SIDEBAR_DEFAULT = 240
-const SIDEBAR_MIN = 180
-const SIDEBAR_MAX = 400
-// Wide enough to host the lg-sized list thumbnail (56px) with matching px-2
-// padding plus a comfortable gutter — keeps thumbnail size identical to the
-// expanded state.
-const SIDEBAR_COLLAPSED = 80
+// Field Scout ink sidebar — package tokens ×0.8 (304/230/380/84).
+const SIDEBAR_DEFAULT = 243
+const SIDEBAR_MIN = 184
+const SIDEBAR_MAX = 304
+const SIDEBAR_COLLAPSED = 67
 
 interface UIStore {
   sidebarWidth: number

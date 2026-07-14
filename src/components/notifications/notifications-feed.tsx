@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { Bell } from 'lucide-react'
 import { useEffect } from 'react'
 
+import { Card } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   useMarkNotificationsRead,
@@ -24,8 +25,14 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+/**
+ * Notifications page feed — the rail notifications panel language at page
+ * width: flush rows on n-4 hairlines inside a flat white card, accent dot
+ * for unread, mono timestamps. Real data via the existing
+ * `/api/notifications` hooks; opening the page clears the unread state.
+ */
 export function NotificationsFeed() {
-  const { data, isLoading } = useNotifications()
+  const { data, isLoading, isError } = useNotifications()
   const markRead = useMarkNotificationsRead()
   const notifications = data?.notifications ?? []
   const unreadCount = data?.unreadCount ?? 0
@@ -38,38 +45,57 @@ export function NotificationsFeed() {
 
   if (isLoading && notifications.length === 0) {
     return (
-      <ul className="space-y-1">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <li key={i} className="flex items-start gap-3 px-3 py-3">
-            <Skeleton className="h-9 w-9 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-          </li>
-        ))}
-      </ul>
+      <Card>
+        <ul>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <li
+              key={i}
+              className="flex items-start gap-2.5 border-b border-n-4 px-card-pad py-3 last:border-0"
+            >
+              <Skeleton className="mt-1 h-1.5 w-1.5 rounded-pill" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-2/3" />
+                <Skeleton className="h-2.5 w-16" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+        <Icon name="info-circle" size={16} className="text-negative-strong" />
+        <p className="text-h5 text-ink">Couldn&apos;t load notifications</p>
+        <p className="max-w-md text-[13px] font-medium text-negative-strong">
+          Something went wrong fetching your notifications. Refresh to try again.
+        </p>
+      </Card>
     )
   }
 
   if (notifications.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-bg-elevated-2 bg-bg-elevated px-6 py-16 text-center">
-        <Bell className="h-8 w-8 text-text-tertiary" />
-        <p className="text-sm font-medium text-foreground">No notifications yet</p>
-        <p className="max-w-xs text-sm text-text-secondary">
+      <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+        <Icon name="notification" size={16} className="text-n-3" />
+        <p className="text-h5 text-ink">No notifications yet</p>
+        <p className="max-w-md text-[13px] font-medium text-n-3">
           When someone you pin updates their list, you&apos;ll hear about it here.
         </p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <ul className="space-y-1">
-      {notifications.map((n) => (
-        <NotificationRow key={n.id} notification={n} />
-      ))}
-    </ul>
+    <Card>
+      <ul>
+        {notifications.map((n) => (
+          <NotificationRow key={n.id} notification={n} />
+        ))}
+      </ul>
+    </Card>
   )
 }
 
@@ -79,27 +105,39 @@ function NotificationRow({ notification: n }: { notification: NotificationItem }
   const body = (
     <div
       className={cn(
-        'flex items-start gap-3 rounded-lg px-3 py-3 transition-colors',
-        href && 'hover:bg-bg-elevated-2',
-        !n.read && 'bg-bg-elevated',
+        'flex items-start gap-2.5 px-card-pad py-3 transition-colors duration-200 ease-linear',
+        href && 'hover:bg-n-4',
       )}
     >
       <span
         className={cn(
-          'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-          n.read ? 'bg-transparent' : 'bg-destructive',
+          'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-pill',
+          n.read ? 'bg-transparent' : 'bg-accent',
         )}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{n.title}</p>
-        {n.body && <p className="text-sm text-text-secondary">{n.body}</p>}
-        <p className="mt-0.5 text-xs text-text-tertiary">
+        <p
+          className={cn(
+            'text-[13px] leading-snug text-ink',
+            n.read ? 'font-medium' : 'font-bold',
+          )}
+        >
+          {n.title}
+        </p>
+        {n.body && (
+          <p className="mt-0.5 text-[12px] font-medium text-n-3">{n.body}</p>
+        )}
+        <p className="fs-num mt-0.5 text-[11px] font-medium text-n-3">
           {relativeTime(n.created_at)}
         </p>
       </div>
     </div>
   )
 
-  return <li>{href ? <Link href={href}>{body}</Link> : body}</li>
+  return (
+    <li className="border-b border-n-4 last:border-0">
+      {href ? <Link href={href}>{body}</Link> : body}
+    </li>
+  )
 }

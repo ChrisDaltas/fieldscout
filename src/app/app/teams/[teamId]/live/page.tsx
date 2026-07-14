@@ -8,9 +8,10 @@ export default async function TeamLivePage({ params }: TeamLivePageProps) {
   const { teamId } = await params
   return (
     <PlaceholderPage
-      title="Live Mode"
+      title="Live mode"
+      description="Coming with league sync — live scoring for your matchup, play by play."
     >
-      Team ID: <span className="font-mono text-xs">{teamId}</span>
+      Team ID: <span className="fs-num text-[11px]">{teamId}</span>
     </PlaceholderPage>
   )
 }

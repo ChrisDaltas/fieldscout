@@ -8,33 +8,26 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type Modifier,
 } from '@dnd-kit/core'
 import {
   SortableContext,
   arrayMove,
-  rectSortingStrategy,
-  useSortable,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
-  ArrowUpDown,
-  ClipboardList,
-  History,
-  Loader2,
-  RotateCcw,
-  Save,
-  Settings2,
-  Sparkles,
-} from 'lucide-react'
 
+import { SortableBoardRow } from '@/components/big-board/board-row'
+import { WeekTabs } from '@/components/big-board/week-tabs'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 import {
   Popover,
   PopoverContent,
@@ -46,7 +39,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { PlayerCard } from '@/components/players/player-card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Slider } from '@/components/ui/slider'
 import { PlayerSearch, type PlayerSearchResult } from '@/components/players/player-search'
 import {
   type BigBoardSnapshotPlayer,
@@ -78,6 +72,10 @@ interface BigBoardGridProps {
   weekNumber?: number
   /** Disable all editing affordances. */
   readOnly?: boolean
+  /** Current NFL week (0 = offseason) — drives the week tabs' lock styling. */
+  currentWeek?: number
+  /** Hide the internal week-tab row when a parent renders its own (Rankings). */
+  showWeekTabs?: boolean
 }
 
 const SIZE_KEY = 'fieldscout:big-board-size'
@@ -89,6 +87,12 @@ const SIZE_MAX = 300
 // gear popover if the deeper view is overwhelming.
 const SIZE_DEFAULT = 300
 
+/** Vertical boards feel much steadier when the drag can't wander sideways. */
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+})
+
 function readStoredSize(): number {
   if (typeof window === 'undefined') return SIZE_DEFAULT
   const raw = window.localStorage.getItem(SIZE_KEY)
@@ -97,7 +101,12 @@ function readStoredSize(): number {
   return Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round(parsed)))
 }
 
-export function BigBoardGrid({ weekNumber, readOnly = false }: BigBoardGridProps = {}) {
+export function BigBoardGrid({
+  weekNumber,
+  readOnly = false,
+  currentWeek = 0,
+  showWeekTabs = true,
+}: BigBoardGridProps = {}) {
   const isWeekly = typeof weekNumber === 'number'
   const seasonQuery = useBigBoard()
   const weeklyQuery = useWeeklyBigBoard(isWeekly ? weekNumber : -1)
@@ -192,7 +201,7 @@ export function BigBoardGrid({ weekNumber, readOnly = false }: BigBoardGridProps
     saveBigBoard.mutate(
       { playerIds: order },
       {
-        onSuccess: () => toast({ title: 'Big Board saved' }),
+        onSuccess: () => toast({ title: 'Big board saved' }),
         onError: (err) =>
           toast({
             title: 'Could not save',
@@ -293,7 +302,7 @@ export function BigBoardGrid({ weekNumber, readOnly = false }: BigBoardGridProps
       setHistoryOpen(false)
       toast({
         title: 'Snapshot loaded',
-        description: 'Hit Update Big Board to commit.',
+        description: 'Hit Update big board to commit.',
       })
     } catch (err) {
       toast({
@@ -312,103 +321,103 @@ export function BigBoardGrid({ weekNumber, readOnly = false }: BigBoardGridProps
     }
   }
 
+  const weekTabs = showWeekTabs ? (
+    <WeekTabs
+      className="mb-4"
+      active={isWeekly ? weekNumber : 'pre'}
+      currentWeek={currentWeek}
+    />
+  ) : null
+
   if (isLoading) {
-    return <p className="text-sm text-text-secondary">Loading your Big Board…</p>
+    return (
+      <section>
+        {weekTabs}
+        <div className="space-y-2">
+          <Skeleton className="h-btn-sm w-52" />
+          {Array.from({ length: 8 }, (_, i) => (
+            <Skeleton key={i} className="h-11 w-full" />
+          ))}
+        </div>
+      </section>
+    )
   }
 
   if (isError || !data) {
     return (
-      <Card className="border-bg-elevated-2 bg-bg-elevated">
-        <CardContent className="p-6 text-sm text-destructive">
-          {(error as Error)?.message ?? 'Could not load Big Board.'}
-        </CardContent>
-      </Card>
+      <section>
+        {weekTabs}
+        <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+          <h3 className="text-h6">Could not load the board</h3>
+          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
+            {(error as Error)?.message ?? 'Something went wrong loading this board.'}
+          </p>
+        </div>
+      </section>
     )
   }
 
   const saving = isWeekly ? reorder.isPending : saveBigBoard.isPending
   const editable = !readOnly
+  const boardLabel = isWeekly ? `Week ${weekNumber} board` : 'Pre draft board'
 
   return (
     <section>
-      <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <ClipboardList className="h-6 w-6 text-foreground" />
-            {isWeekly ? `Week ${weekNumber} Big Board` : 'Big Board'}
-          </h1>
-          <p className="mt-1 text-xs text-text-tertiary">
-            {visiblePlayers.length} of {orderedPlayers.length} players
-            {dirty && (
-              <span className="ml-2 text-foreground">· unsaved changes</span>
-            )}
-          </p>
-        </div>
+      <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+        <h2 className="mr-auto whitespace-nowrap text-h5">
+          {isWeekly ? `Week ${weekNumber} big board` : 'Pre draft rankings'}
+        </h2>
 
         {editable && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!isWeekly && (
               <Button
-                variant="invisible"
+                variant="stroke"
+                size="sm"
                 onClick={() => setHistoryOpen(true)}
-                className="text-text-secondary hover:text-foreground"
               >
-                <History className="mr-1 h-4 w-4" /> History
+                <Icon name="clock" size={13} /> History
               </Button>
             )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="invisible"
-                  className="text-text-secondary hover:text-foreground"
-                >
-                  <Sparkles className="mr-1 h-4 w-4" /> Smart Order
-                  <ArrowUpDown className="ml-1 h-3 w-3" />
+                <Button variant="stroke" size="sm">
+                  <Icon name="sort" size={13} /> Smart order
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onSelect={handleSortByFantasyRank}>
-                  Sort by Fantasy Rank
+                  Sort by fantasy rank
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={handleSortByAdp}>
                   Sort by ADP
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => handleStubSort('Consensus Rank')}>
-                  Sort by Consensus Rank
+                <DropdownMenuItem onSelect={() => handleStubSort('Consensus rank')}>
+                  Sort by consensus rank
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button
-                  variant="invisible"
-                  size="icon"
-                  aria-label="Board size"
-                  className="text-text-secondary hover:text-foreground"
-                >
-                  <Settings2 className="h-4 w-4" />
+                <Button variant="stroke" size="icon-sm" aria-label="Board size">
+                  <Icon name="setup" size={13} />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="w-64 border-bg-elevated-2 bg-bg-elevated"
-              >
-                <p className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                  Board size
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">{boardSize}</p>
-                <input
-                  type="range"
+              <PopoverContent align="end" className="w-60">
+                <p className="fs-overline text-n-3">Board size</p>
+                <p className="fs-num mt-1 text-h4">{boardSize}</p>
+                <Slider
+                  className="mt-2"
                   min={SIZE_MIN}
                   max={SIZE_MAX}
                   step={1}
-                  value={boardSize}
-                  onChange={(e) => handleSizeChange(Number(e.target.value))}
-                  className="mt-2 w-full accent-foreground"
+                  value={[boardSize]}
+                  onValueChange={([v]) => handleSizeChange(v)}
+                  aria-label="Board size"
                 />
-                <p className="mt-2 text-[11px] text-text-tertiary">
+                <p className="mt-2 text-[11px] font-medium text-n-3">
                   Players beyond {boardSize} stay on your board but are hidden.
                 </p>
               </PopoverContent>
@@ -416,84 +425,101 @@ export function BigBoardGrid({ weekNumber, readOnly = false }: BigBoardGridProps
 
             {dirty && (
               <Button
-                variant="invisible"
+                variant="stroke"
+                size="sm"
                 onClick={handleReset}
                 disabled={saving}
-                className="text-text-secondary hover:text-foreground"
               >
-                <RotateCcw className="mr-1 h-4 w-4" /> Reset
+                <Icon name="repeat" size={13} /> Reset
               </Button>
             )}
             <Button
-              variant="brand"
+              variant="green"
+              size="sm"
               onClick={handleSave}
               disabled={!dirty || saving}
-              className="rounded-full font-semibold disabled:opacity-60"
             >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Saving…
-                </>
-              ) : (
-                <>
-                  <Save className="mr-1 h-4 w-4" /> Update Big Board
-                </>
-              )}
+              <Icon name="check" size={13} />
+              {saving
+                ? 'Saving…'
+                : isWeekly
+                  ? `Save week ${weekNumber}`
+                  : 'Update big board'}
             </Button>
           </div>
         )}
-      </header>
+      </div>
+
+      {weekTabs}
 
       {orderedPlayers.length === 0 ? (
-        <Card className="border-bg-elevated-2 bg-bg-elevated">
-          <CardContent className="p-8 text-center text-sm text-text-secondary">
+        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+          <h3 className="text-h6">This board is empty</h3>
+          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
             {isWeekly
               ? 'Empty week. Add players using the search below.'
-              : 'Your Big Board is empty. Refresh to auto-fill the top 50 players from last season.'}
-          </CardContent>
-        </Card>
-      ) : editable ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={visiblePlayers.map((p) => p.player_id)}
-            strategy={rectSortingStrategy}
-          >
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12">
+              : 'Your big board is empty. Refresh to auto-fill the top 50 players from last season.'}
+          </p>
+        </div>
+      ) : (
+        <Card>
+          <div className="flex flex-wrap items-center gap-2 border-b border-ink px-4 py-2.5">
+            <span className="text-[12px] font-extrabold">{boardLabel}</span>
+            {dirty && <Badge variant="yellow">Unsaved changes</Badge>}
+            <span className="fs-num ml-auto whitespace-nowrap text-[11px] font-bold text-n-3">
+              {visiblePlayers.length} of {orderedPlayers.length} players
+            </span>
+            <span className="whitespace-nowrap text-[11px] font-bold text-n-3">
+              {editable ? 'Drag to reorder' : 'View only'}
+            </span>
+          </div>
+          {editable ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={visiblePlayers.map((p) => p.player_id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul className="space-y-0.5 p-1">
+                  {visiblePlayers.map((entry, i) => (
+                    <SortableBoardRow
+                      key={entry.player_id}
+                      id={entry.player_id}
+                      rank={i + 1}
+                      player={entry.player}
+                      projection={entry.player.projected_pts_ppr ?? null}
+                      draggable
+                      onOpen={() => openPlayer(entry.player_id)}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
+          ) : (
+            <ul className="space-y-0.5 p-1">
               {visiblePlayers.map((entry, i) => (
-                <SortableCard
+                <SortableBoardRow
                   key={entry.player_id}
+                  id={entry.player_id}
                   rank={i + 1}
-                  entry={entry}
-                  draggable
+                  player={entry.player}
+                  projection={entry.player.projected_pts_ppr ?? null}
+                  draggable={false}
                   onOpen={() => openPlayer(entry.player_id)}
                 />
               ))}
             </ul>
-          </SortableContext>
-        </DndContext>
-      ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12">
-          {visiblePlayers.map((entry, i) => (
-            <SortableCard
-              key={entry.player_id}
-              rank={i + 1}
-              entry={entry}
-              draggable={false}
-              onOpen={() => openPlayer(entry.player_id)}
-            />
-          ))}
-        </ul>
+          )}
+        </Card>
       )}
 
       {editable && (
         <div className="mt-6 max-w-md">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-            Add a player
-          </p>
+          <p className="fs-overline mb-2 text-n-3">Add a player</p>
           <PlayerSearch
             placeholder="Search by name…"
             limit={15}
@@ -529,45 +555,49 @@ function HistorySheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="border-bg-elevated-2 bg-bg-elevated sm:max-w-md"
-      >
+      <SheetContent side="right" className="sm:max-w-md">
         <SheetHeader>
           <SheetTitle>History</SheetTitle>
         </SheetHeader>
         <div className="mt-4 space-y-2">
           {isLoading && (
-            <p className="text-sm text-text-secondary">Loading…</p>
+            <div className="space-y-2">
+              {Array.from({ length: 4 }, (_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
           )}
           {isError && (
-            <p className="text-sm text-destructive">
+            <p className="text-[13px] font-medium text-negative-strong">
               {(error as Error)?.message ?? 'Could not load history.'}
             </p>
           )}
           {!isLoading && data?.snapshots.length === 0 && (
-            <p className="text-sm text-text-tertiary">
-              No saved versions yet. Hit Update Big Board to capture your first
-              snapshot.
-            </p>
+            <div className="rounded-sm border border-ink bg-white px-4 py-8 text-center">
+              <h3 className="text-h6">No saved versions yet</h3>
+              <p className="mt-1 text-[12px] font-medium text-n-3">
+                Hit Update big board to capture your first snapshot.
+              </p>
+            </div>
           )}
           <ul className="space-y-1.5">
             {(data?.snapshots ?? []).map((snap) => (
               <li
                 key={snap.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-bg-elevated-2 bg-bg-elevated-2 px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-sm border border-ink bg-white px-3 py-2.5"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">
+                  <p className="fs-num text-[12px] font-bold">
                     {new Date(snap.saved_at).toLocaleString()}
                   </p>
-                  <p className="text-[11px] text-text-tertiary">
-                    {snap.player_count} player{snap.player_count === 1 ? '' : 's'}
+                  <p className="text-[11px] font-medium text-n-3">
+                    <span className="fs-num">{snap.player_count}</span> player
+                    {snap.player_count === 1 ? '' : 's'}
                   </p>
                 </div>
                 <Button
                   size="sm"
-                  variant="default"
+                  variant="stroke"
                   disabled={isRestoring}
                   onClick={() => onRestore(snap.id)}
                   className="shrink-0"
@@ -580,39 +610,5 @@ function HistorySheet({
         </div>
       </SheetContent>
     </Sheet>
-  )
-}
-
-function SortableCard({
-  rank,
-  entry,
-  draggable,
-  onOpen,
-}: {
-  rank: number
-  entry: BoardPlayer
-  draggable: boolean
-  onOpen: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: entry.player_id, disabled: !draggable })
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  return (
-    <li ref={setNodeRef} style={style} className="touch-manipulation">
-      <PlayerCard
-        rank={rank}
-        player={entry.player}
-        projectedPts={entry.player.projected_pts_ppr ?? null}
-        onOpen={onOpen}
-        draggable={draggable}
-        dragHandleProps={{ ...attributes, ...listeners }}
-        isDragging={isDragging}
-      />
-    </li>
   )
 }

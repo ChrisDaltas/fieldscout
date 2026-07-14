@@ -5,6 +5,9 @@ import * as React from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
+/** People are round; team & league crests are square tiles with an ink stroke. */
+type UserAvatarKind = 'user' | 'team' | 'league'
+
 interface UserAvatarProps {
   src?: string | null
   alt?: string
@@ -12,6 +15,11 @@ interface UserAvatarProps {
   name?: string | null
   /** Optional explicit initials override (e.g. for @username vs display_name). */
   initials?: string
+  /**
+   * Shape per the design system: `user` (default) renders a borderless round
+   * pill; `team` / `league` render the square crest with a 1px ink border.
+   */
+  kind?: UserAvatarKind
   className?: string
   fallbackClassName?: string
 }
@@ -28,27 +36,29 @@ function computeInitials(name: string | null | undefined): string {
 }
 
 /**
- * Circular avatar for users. The base `Avatar` component is `rounded-md`
- * (used for player headshots so they don't look like users); this wrapper
- * forces `rounded-full` on both the container and the fallback so every
- * place a user appears in the UI gets a consistent circular treatment.
+ * Identity avatar. The base `Avatar` is the square ink-stroked tile (player
+ * headshots / crests); this wrapper applies the design-system shape rule —
+ * people are the only round element in the UI, crests stay square. Fallback
+ * is bold ink initials on the n-4 sunken fill (from the base component).
  */
 export const UserAvatar = React.forwardRef<
   React.ElementRef<typeof Avatar>,
   UserAvatarProps
->(({ src, alt, name, initials, className, fallbackClassName }, ref) => {
+>(({ src, alt, name, initials, kind = 'user', className, fallbackClassName }, ref) => {
   const computed = initials ?? computeInitials(name ?? alt ?? null)
 
   return (
-    <Avatar ref={ref} className={cn('rounded-full', className)}>
-      <AvatarImage
-        src={src ?? undefined}
-        alt={alt ?? name ?? ''}
-        className="rounded-full"
-      />
-      <AvatarFallback
-        className={cn('rounded-full text-[10px] font-semibold', fallbackClassName)}
-      >
+    <Avatar
+      ref={ref}
+      className={cn(
+        kind === 'user'
+          ? 'rounded-pill border-0'
+          : 'rounded-sm border border-ink',
+        className,
+      )}
+    >
+      <AvatarImage src={src ?? undefined} alt={alt ?? name ?? ''} />
+      <AvatarFallback className={cn('text-[10px]', fallbackClassName)}>
         {computed}
       </AvatarFallback>
     </Avatar>

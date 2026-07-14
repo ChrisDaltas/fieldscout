@@ -10,9 +10,10 @@ export default async function StartOrSitDetailPage({
   const { questionId } = await params
   return (
     <PlaceholderPage
-      title="Start or Sit"
+      title="Start or sit"
+      description="Coming soon — community votes land here with the start/sit split."
     >
-      Question ID: <span className="font-mono text-xs">{questionId}</span>
+      Question ID: <span className="fs-num text-[11px]">{questionId}</span>
     </PlaceholderPage>
   )
 }

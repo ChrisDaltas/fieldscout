@@ -1,9 +1,14 @@
+'use client'
+
 import Link from 'next/link'
 
+import { FollowButton } from '@/components/explore/follow-button'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 
 interface ProfileListRowProps {
+  /** Profile id — drives the follow control. */
+  userId: string
   username: string
   displayName: string | null
   avatarUrl: string | null
@@ -12,7 +17,14 @@ interface ProfileListRowProps {
   isPro: boolean
 }
 
+/**
+ * Flush person row for follower/following lists — round avatar, bold name,
+ * handle + bio meta, mono cred, and a follow control. The name is a stretched
+ * link (after:inset-0) so the whole row navigates while the follow button
+ * stays a real sibling button — no button-inside-anchor nesting.
+ */
 export function ProfileListRow({
+  userId,
   username,
   displayName,
   avatarUrl,
@@ -21,43 +33,35 @@ export function ProfileListRow({
   isPro,
 }: ProfileListRowProps) {
   return (
-    <Link
-      href={`/u/${username}`}
-      className="flex items-center gap-3 rounded-md border border-bg-elevated-2 bg-bg-elevated p-3 transition-colors hover:border-bg-elevated-3 hover:bg-bg-elevated-2"
-    >
+    <div className="relative flex items-center gap-3 px-card-pad py-2.5 transition-colors hover:bg-accent-soft">
       <UserAvatar
         src={avatarUrl}
         name={displayName ?? username}
-        className="h-10 w-10 shrink-0"
-        fallbackClassName="text-xs"
+        className="h-9 w-9 shrink-0"
+        fallbackClassName="text-[10px]"
       />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-semibold">
+        <div className="flex items-center gap-1.5">
+          <Link
+            href={`/u/${username}`}
+            className="truncate text-[13px] font-extrabold leading-tight text-ink after:absolute after:inset-0"
+          >
             {displayName ?? `@${username}`}
-          </p>
-          {isPro && (
-            <Badge
-              variant="default"
-              className="border-amber-300/40 bg-amber-300/10 text-[9px] font-semibold text-amber-300"
-            >
-              PRO
-            </Badge>
-          )}
+          </Link>
+          {isPro && <Badge variant="accent">Pro</Badge>}
         </div>
-        <p className="truncate text-xs text-text-secondary">@{username}</p>
-        {bio && (
-          <p className="mt-1 line-clamp-1 text-xs text-text-tertiary">{bio}</p>
-        )}
+        <p className="mt-0.5 truncate text-[11px] font-semibold text-n-3">
+          @{username}
+          {bio ? ` · ${bio}` : ''}
+        </p>
       </div>
-      <span className="shrink-0 text-right text-xs">
-        <span className="block text-[9px] uppercase tracking-wider text-text-tertiary">
-          Cred
-        </span>
-        <span className="font-mono font-semibold tabular-nums text-foreground">
+      <div className="shrink-0 text-right leading-tight">
+        <span className="fs-num block text-[13px] font-bold text-ink">
           {credScore.toLocaleString()}
         </span>
-      </span>
-    </Link>
+        <span className="fs-overline text-[9px] text-n-3">Cred</span>
+      </div>
+      <FollowButton userId={userId} className="relative z-10 shrink-0" />
+    </div>
   )
 }

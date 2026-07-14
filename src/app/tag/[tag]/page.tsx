@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PublicListCard } from '@/components/lists/public-list-card'
+import { Icon } from '@/components/ui/icon'
 import { createServerClient } from '@/lib/supabase/server'
 import { cn } from '@/lib/utils'
 
@@ -110,33 +111,35 @@ export default async function TagFeedPage(props: PageProps) {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-3xl space-y-5">
         <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+          <p className="text-[10px] font-bold tracking-wider text-n-3">
             Tag
           </p>
-          <h1 className="mt-1 text-2xl font-bold leading-tight">{tag.name}</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            {total} public list{total === 1 ? '' : 's'} tagged{' '}
-            <span className="font-semibold text-foreground">{tag.name}</span>
+          <h1 className="mt-1 text-h4">{tag.name}</h1>
+          <p className="mt-1 text-[11px] font-semibold text-n-3">
+            <span className="fs-num">{total}</span> public list
+            {total === 1 ? '' : 's'} tagged{' '}
+            <span className="font-bold text-ink">{tag.name}</span>
           </p>
         </header>
 
-        <div className="flex items-center justify-between border-b border-bg-elevated-2 pb-2">
-          <div className="flex gap-1">
-            <SortLink slug={slug} sort="recent" active={sort === 'recent'}>
-              Recent
-            </SortLink>
-            <SortLink slug={slug} sort="popular" active={sort === 'popular'}>
-              Popular
-            </SortLink>
-          </div>
+        <div className="flex gap-1.5">
+          <SortLink slug={slug} sort="recent" active={sort === 'recent'}>
+            Recent
+          </SortLink>
+          <SortLink slug={slug} sort="popular" active={sort === 'popular'}>
+            Popular
+          </SortLink>
         </div>
 
         {lists.length === 0 ? (
-          <p className="rounded-md border border-bg-elevated-2 bg-bg-elevated p-6 text-center text-sm text-text-secondary">
-            No public lists tagged {tag.name} yet.
-          </p>
+          <div className="rounded-sm border border-ink bg-white p-[19px] text-center">
+            <p className="text-h6">No lists yet</p>
+            <p className="mt-1 text-[11px] font-medium text-n-3">
+              No public lists tagged {tag.name} yet — be the first.
+            </p>
+          </div>
         ) : (
           <ul className="space-y-2">
             {lists.map((list) => (
@@ -157,23 +160,25 @@ export default async function TagFeedPage(props: PageProps) {
         )}
 
         {(page > 1 || hasMore) && (
-          <nav className="flex items-center justify-between text-sm">
+          <nav className="flex items-center justify-between">
             <PaginationLink
               slug={slug}
               sort={sort}
               page={page - 1}
               disabled={page <= 1}
             >
-              ← Newer
+              <Icon name="arrow-prev" size={12} /> Newer
             </PaginationLink>
-            <span className="text-xs text-text-tertiary">Page {page}</span>
+            <span className="text-[10px] font-semibold text-n-3">
+              Page <span className="fs-num">{page}</span>
+            </span>
             <PaginationLink
               slug={slug}
               sort={sort}
               page={page + 1}
               disabled={!hasMore}
             >
-              Older →
+              Older <Icon name="arrow-next" size={12} />
             </PaginationLink>
           </nav>
         )}
@@ -194,18 +199,19 @@ function SortLink({
   children: React.ReactNode
 }) {
   const href = sort === 'recent' ? `/tag/${slug}` : `/tag/${slug}?sort=popular`
+  // Boxed-tab treatment (ui/tabs recipe) as plain links so the page stays SSR.
   return (
     <Link
       href={href}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative px-3 py-2 text-sm font-medium transition-colors',
-        active ? 'text-foreground' : 'text-text-secondary hover:text-foreground',
+        'inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink px-4 text-[11px] font-bold leading-none transition-colors',
+        active
+          ? 'bg-accent text-accent-foreground'
+          : 'bg-white text-ink hover:bg-n-4',
       )}
     >
       {children}
-      {active && (
-        <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-t bg-foreground" />
-      )}
     </Link>
   )
 }
@@ -231,13 +237,15 @@ function PaginationLink({
 
   if (disabled) {
     return (
-      <span className="cursor-not-allowed text-text-tertiary">{children}</span>
+      <span className="inline-flex cursor-not-allowed items-center gap-1 text-[11px] font-bold text-n-3 opacity-40">
+        {children}
+      </span>
     )
   }
   return (
     <Link
       href={href}
-      className="text-text-secondary transition-colors hover:text-foreground"
+      className="inline-flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-ink"
     >
       {children}
     </Link>

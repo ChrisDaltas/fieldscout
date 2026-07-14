@@ -4,8 +4,11 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { AppDndContext } from '@/components/layout/app-dnd-context'
+import { AppHeader } from '@/components/layout/app-header'
 import { BottomTabs } from '@/components/layout/bottom-tabs'
+import { DraftBar } from '@/components/layout/draft-bar'
 import { MoreSheet } from '@/components/layout/more-sheet'
+import { ResearchRail } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
 import { ListFormDialog } from '@/components/lists/list-form-dialog'
@@ -17,11 +20,15 @@ interface AppShellProps {
   children: React.ReactNode
 }
 
-// Routes that need to render edge-to-edge inside the main panel.
-// Anything else gets the standard centered/max-width container.
-const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set(['/app/players'])
+// Routes that render edge-to-edge (no gutter). The players spreadsheet is a
+// bordered card that wants the standard gutter like every other page — its
+// horizontal scroll happens inside the card, so it doesn't need full bleed.
+const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set<string>()
 const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
+/** Field Scout shell — ink sidebar · content column (draft bar + sticky
+ *  header + scrolling main) · right rail. Desktop-first; mobile keeps the
+ *  legacy top bar + bottom tabs until the mobile companion pass. */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -43,23 +50,37 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <AppDndContext>
-      <div className="flex h-screen flex-col overflow-hidden bg-background">
-        <TopNav variant="app" />
+      <div className="flex h-screen flex-col overflow-hidden bg-page">
+        {/* Mobile-only legacy top bar; desktop nav lives in the sidebar/rail */}
+        <div className="lg:hidden">
+          <TopNav variant="app" />
+        </div>
 
-        <div className="flex min-h-0 flex-1 gap-2 px-2 pb-2 lg:pb-2">
+        {/* The rail strip is fixed-right (45px); clear it on desktop. */}
+        <div className="flex min-h-0 flex-1 lg:pr-rail-strip">
           <Sidebar />
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-bg-elevated">
-            <div className="flex-1 overflow-y-auto pb-20 lg:pb-0">
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <DraftBar />
+            <div className="hidden lg:block">
+              <AppHeader />
+            </div>
+            <main className="min-h-0 flex-1 overflow-y-auto">
+              {/* Content fills the full width between the sidebar and rail
+                  (matching the prototype's padded, un-capped main). Full-bleed
+                  routes drop the horizontal padding for edge-to-edge tables. */}
               <div
                 className={cn(
-                  'w-full px-4 py-6 lg:px-6',
-                  !fullBleed && 'mx-auto max-w-7xl',
+                  'w-full py-5 pb-20 lg:pb-[20vh]',
+                  !fullBleed && 'px-4 lg:px-7',
                 )}
               >
                 {children}
               </div>
-            </div>
-          </main>
+            </main>
+          </div>
+
+          <ResearchRail />
         </div>
 
         <BottomTabs onMoreClick={() => setMoreOpen(true)} />

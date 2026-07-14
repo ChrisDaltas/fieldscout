@@ -16,6 +16,7 @@ interface GuestShellProps {
   wide?: boolean
 }
 
+/** Guest chrome — white top bar, lime signup banner, page-grey content. */
 export function GuestShell({
   children,
   showBanner = true,
@@ -23,14 +24,14 @@ export function GuestShell({
 }: GuestShellProps) {
   const { user } = useAuth()
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-page">
       <TopNav variant="guest" />
       {showBanner && !user && <GuestBanner />}
       <main className="flex-1">
         <div
           className={cn(
-            'mx-auto w-full px-4 py-6 lg:px-6',
-            wide ? 'max-w-screen-2xl' : 'max-w-7xl',
+            'mx-auto w-full px-4 py-5 lg:px-7',
+            wide ? 'max-w-screen-2xl' : 'max-w-content',
           )}
         >
           {children}

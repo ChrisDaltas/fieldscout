@@ -247,7 +247,7 @@ export function AppDndContext({ children }: { children: React.ReactNode }) {
             />
           </div>
         ) : (activeKind === 'players' || activeKind === 'list') && activeLabel ? (
-          <div className="pointer-events-none inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full bg-foreground px-3 py-1.5 text-xs font-semibold text-background shadow-lg shadow-black/40">
+          <div className="pointer-events-none inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-sm border border-ink bg-ink px-3 py-1.5 text-xs font-semibold text-white shadow-hard-4">
             {activeLabel}
           </div>
         ) : null}

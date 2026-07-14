@@ -1,15 +1,135 @@
 'use client'
 
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { SidebarResizeHandle } from '@/components/layout/sidebar-resize-handle'
-import { YourListsSidebar } from '@/components/layout/your-lists-sidebar'
+import { Icon, type IconName } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import { SIDEBAR_DIMENSIONS, useUIStore } from '@/stores/ui-store'
 
+interface NavEntry {
+  href: string
+  label: string
+  icon: IconName
+  matchPrefix?: string
+}
+
+// Primary nav per the redesign IA. Routes stay as-is during the reskin
+// (docs/redesign-plan.md D1/D2): "Players" points at the research table,
+// Community lives at /app/explore, My Stats at /app/stats.
+const PRIMARY: NavEntry[] = [
+  { href: '/app', label: 'Home', icon: 'dashboard' },
+  {
+    href: '/app/big-board',
+    label: 'Big Board',
+    icon: 'layers',
+    matchPrefix: '/app/big-board',
+  },
+  {
+    href: '/app/weekly-ranks',
+    label: 'Rankings',
+    icon: 'level',
+    matchPrefix: '/app/weekly-ranks',
+  },
+  {
+    href: '/app/research',
+    label: 'Players',
+    icon: 'table',
+    matchPrefix: '/app/research',
+  },
+  { href: '/app/lists', label: 'Lists', icon: 'list', matchPrefix: '/app/lists' },
+]
+
+const MORE_ITEMS: NavEntry[] = [
+  {
+    href: '/app/explore',
+    label: 'Community',
+    icon: 'team',
+    matchPrefix: '/app/explore',
+  },
+  {
+    href: '/app/stats',
+    label: 'My stats',
+    icon: 'chart',
+    matchPrefix: '/app/stats',
+  },
+]
+
+// TODO(live-draft): replace with the user's real teams once the league
+// backend exists. Ids/names mirror MOCK_LEAGUES so a team row opens the
+// populated league workspace (My Team tab).
+const MOCK_TEAMS: Array<{ id: string; team: string; league: string }> = [
+  { id: 'log', team: 'Gridiron Gurus', league: 'League of Ordinary Gentlemen' },
+  { id: 'din', team: 'Check Downs', league: 'Dynasty Degenerates' },
+  { id: 'wrk', team: 'Cubicle Kings', league: 'The Work League' },
+]
+
+function isActive(pathname: string, item: NavEntry): boolean {
+  if (item.href === '/app') return pathname === '/app'
+  return Boolean(item.matchPrefix && pathname.startsWith(item.matchPrefix))
+}
+
+function NavRow({
+  item,
+  collapsed,
+  active,
+}: {
+  item: NavEntry
+  collapsed: boolean
+  active: boolean
+}) {
+  return (
+    <Link
+      href={item.href}
+      title={collapsed ? item.label : undefined}
+      className={cn(
+        'flex h-[34px] items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
+        collapsed && 'w-[34px] justify-center self-center px-0',
+        active
+          ? 'bg-accent text-white'
+          : 'text-white/75 hover:bg-white/10 hover:text-white',
+      )}
+    >
+      <Icon name={item.icon} size={16} />
+      {!collapsed && <span className="truncate">{item.label}</span>}
+    </Link>
+  )
+}
+
+/** The ink sidebar — wordmark band, search, primary nav with a More
+ *  expander, and the Teams section. Drag-resizable, collapses to an icon
+ *  rail. */
 export function Sidebar() {
+  const pathname = usePathname()
   const sidebarWidth = useUIStore((s) => s.sidebarWidth)
   const isCollapsed = useUIStore((s) => s.isSidebarCollapsed)
+  const toggleCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
+  const setPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
+
+  const moreActive = MORE_ITEMS.some((i) => isActive(pathname, i))
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [teamsOpen, setTeamsOpen] = useState(true)
+  useEffect(() => {
+    if (moreActive) setMoreOpen(true)
+  }, [moreActive])
+
+  // "/" opens search from anywhere (Cmd+K stays wired in command-palette).
+  useEffect(() => {
+    const onSlash = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const typing =
+        t &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      if (e.key === '/' && !typing) {
+        e.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onSlash)
+    return () => window.removeEventListener('keydown', onSlash)
+  }, [setPaletteOpen])
 
   // Avoid hydration flash: only animate width transitions after mount
   const [animateWidth, setAnimateWidth] = useState(false)
@@ -24,12 +144,159 @@ export function Sidebar() {
     <aside
       style={{ width }}
       className={cn(
-        'relative hidden shrink-0 flex-col overflow-hidden rounded-lg bg-bg-elevated text-sidebar-foreground lg:flex',
-        animateWidth && 'transition-[width] duration-200 ease-out',
+        'relative hidden shrink-0 flex-col overflow-visible bg-ink text-white lg:flex',
+        animateWidth && 'transition-[width] duration-200',
       )}
-      aria-label="Your lists"
+      aria-label="Main navigation"
     >
-      <YourListsSidebar collapsed={isCollapsed} />
+      {/* Logo band — 37px, flush with the header line */}
+      <div
+        className={cn(
+          'flex h-[37px] shrink-0 items-center border-b border-white/10',
+          isCollapsed ? 'justify-center' : 'px-3.5',
+        )}
+      >
+        <Link
+          href="/app"
+          className="whitespace-nowrap font-wordmark text-[16px] tracking-[-0.1em] text-brand"
+        >
+          {isCollapsed ? 'FS' : 'FIELDSCOUT'}
+        </Link>
+      </div>
+
+      {/* Toggle + search */}
+      <div
+        className={cn(
+          'flex shrink-0 items-center gap-1.5 pt-3',
+          isCollapsed ? 'flex-col px-0' : 'px-2.5',
+        )}
+      >
+        <button
+          onClick={toggleCollapsed}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-sm text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <Icon name="burger" size={15} />
+        </button>
+        {isCollapsed ? (
+          <button
+            onClick={() => setPaletteOpen(true)}
+            title="Search"
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-sm text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Icon name="search" size={15} />
+          </button>
+        ) : (
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="flex h-[34px] min-w-0 flex-1 cursor-text items-center gap-2 rounded-sm border border-white/20 px-2.5 text-left text-[11px] font-semibold text-white/60 transition-colors hover:border-white/40"
+          >
+            <Icon name="search" size={13} className="shrink-0 opacity-70" />
+            <span className="truncate">Search players, lists, users…</span>
+            <kbd className="ml-auto shrink-0 rounded-sm border border-white/25 px-1 font-mono text-[9px] text-white/50">
+              /
+            </kbd>
+          </button>
+        )}
+      </div>
+
+      {/* Scrollable middle: nav + teams */}
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto scrollbar-none">
+        <nav
+          className={cn(
+            'flex flex-col gap-0.5',
+            isCollapsed ? 'items-stretch px-0' : 'px-2.5',
+          )}
+        >
+          {PRIMARY.map((item) => (
+            <NavRow
+              key={item.href}
+              item={item}
+              collapsed={isCollapsed}
+              active={isActive(pathname, item)}
+            />
+          ))}
+          {moreOpen &&
+            MORE_ITEMS.map((item) => (
+              <NavRow
+                key={item.href}
+                item={item}
+                collapsed={isCollapsed}
+                active={isActive(pathname, item)}
+              />
+            ))}
+          <button
+            onClick={() => setMoreOpen((o) => !o)}
+            title={isCollapsed ? (moreOpen ? 'Less' : 'More') : undefined}
+            className={cn(
+              'flex h-[34px] items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',
+              isCollapsed && 'w-[34px] justify-center self-center px-0',
+            )}
+          >
+            <Icon
+              name={moreOpen ? 'arrow-up' : 'dots'}
+              size={16}
+            />
+            {!isCollapsed && <span>{moreOpen ? 'Less' : 'More'}</span>}
+          </button>
+
+          {/* Teams section */}
+          <div className={cn('mt-2.5', isCollapsed && 'mt-1.5')}>
+            {isCollapsed ? (
+              <div className="mx-1.5 my-2 h-px bg-white/10" />
+            ) : (
+              <button
+                onClick={() => setTeamsOpen((o) => !o)}
+                className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-[11px] font-bold text-white/50 transition-colors hover:text-white/80"
+              >
+                <span>Teams</span>
+                <Icon
+                  name="arrow-bottom"
+                  size={13}
+                  className={cn(
+                    'transition-transform',
+                    !teamsOpen && '-rotate-90',
+                  )}
+                />
+              </button>
+            )}
+            {(isCollapsed || teamsOpen) && (
+              <div className="flex flex-col gap-0.5">
+                {MOCK_TEAMS.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/app/leagues/${t.id}?tab=my-team`}
+                    title={isCollapsed ? t.team : undefined}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',
+                      isCollapsed
+                        ? 'h-[34px] w-[34px] justify-center self-center px-0'
+                        : 'h-[45px]',
+                    )}
+                  >
+                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
+                      {t.team
+                        .split(' ')
+                        .map((w) => w[0])
+                        .slice(0, 2)
+                        .join('')}
+                    </span>
+                    {!isCollapsed && (
+                      <span className="flex min-w-0 flex-col leading-tight">
+                        <span className="truncate">{t.team}</span>
+                        <span className="truncate text-[10px] font-semibold text-white/50">
+                          {t.league}
+                        </span>
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </nav>
+      </div>
+
       <SidebarResizeHandle />
     </aside>
   )

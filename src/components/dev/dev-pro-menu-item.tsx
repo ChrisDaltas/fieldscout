@@ -1,8 +1,7 @@
 'use client'
 
-import { FlaskConical } from 'lucide-react'
-
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { Icon } from '@/components/ui/icon'
 
 /**
  * DEV ONLY: account-menu item that flips the signed-in account between Free
@@ -20,7 +19,7 @@ export function DevProMenuItem({ isPro }: { isPro: boolean }) {
 
   return (
     <DropdownMenuItem onClick={toggle} className="cursor-pointer">
-      <FlaskConical className="mr-2 h-4 w-4 text-text-tertiary" />
+      <Icon name="repeat" size={14} className="text-n-3" />
       Dev: switch to {isPro ? 'Free' : 'Pro'}
     </DropdownMenuItem>
   )

@@ -1,11 +1,10 @@
 'use client'
 
-import { Pin } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { Icon } from '@/components/ui/icon'
 
 interface PinListButtonProps {
   listId: string
@@ -29,9 +28,9 @@ export function PinListButton({
 
   if (!signedIn) {
     return (
-      <Button asChild variant="primary" size="sm" className="shrink-0 font-semibold">
+      <Button asChild variant="blue" size="sm" className="shrink-0">
         <Link href="/login">
-          <Pin className="h-4 w-4" />
+          <Icon name="marker" size={13} />
           Pin
         </Link>
       </Button>
@@ -60,11 +59,11 @@ export function PinListButton({
       type="button"
       onClick={toggle}
       disabled={busy}
-      variant={pinned ? 'default' : 'primary'}
+      variant={pinned ? 'stroke' : 'blue'}
       size="sm"
-      className="shrink-0 font-semibold"
+      className="shrink-0"
     >
-      <Pin className={cn('h-4 w-4', pinned && 'fill-current')} />
+      <Icon name="marker" size={13} />
       {pinned ? 'Pinned' : 'Pin'}
     </Button>
   )

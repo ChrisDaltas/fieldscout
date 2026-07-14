@@ -2,10 +2,9 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import * as TabsPrimitive from '@radix-ui/react-tabs'
-import { Maximize2, Minimize2, X } from 'lucide-react'
 
-import { cn } from '@/lib/utils'
+import { Icon } from '@/components/ui/icon'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export interface DetailWindowTab {
   value: string
@@ -15,12 +14,11 @@ export interface DetailWindowTab {
 
 interface WindowShellProps {
   title: string
-  /** Fullscreen vs floating-window disclosure (drag is disabled when expanded). */
-  expanded: boolean
-  onExpandedChange: (expanded: boolean) => void
   onClose: () => void
   /** Bring this window to the front (called on any pointer-down). */
   onFocus: () => void
+  /** Open the entity's full page (top-right arrow icon). Hidden when omitted. */
+  onExpand?: () => void
   /** Stacking order — higher renders above. */
   zIndex: number
   /** Cascade offset so stacked windows don't open exactly on top of each other. */
@@ -31,15 +29,20 @@ interface WindowShellProps {
   onPositionChange?: (pos: WindowPosition) => void
   /** Front-most window owns Escape-to-close. */
   isTop: boolean
+  /** Identity content rendered inside the draggable header row. */
   header: React.ReactNode
-  actions?: React.ReactNode
+  /** Sections between the header and the tabs (stat grid, actions row, …). */
+  children?: React.ReactNode
   tabs: DetailWindowTab[]
   loading?: boolean
   error?: string | null
   loadingFallback?: React.ReactNode
 }
 
-const WINDOW_WIDTH = 460
+// Kit PlayerCard is 380px wide with a 620px height cap, rendered at 0.8 zoom —
+// we paint the scaled result directly.
+const WINDOW_WIDTH = 304
+const WINDOW_MAX_HEIGHT = 'min(496px, calc(100vh - 24px))'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -71,25 +74,25 @@ function resolveInitialPosition(
 }
 
 /**
- * Floating, draggable window chrome for entity detail views. Unlike a modal
- * there's no backdrop and no focus trap — the page and other windows stay
- * interactive — so several can be open and dragged around independently. Drag
- * by the top control bar; Expand toggles fullscreen; X (or Escape on the front
- * window) closes.
+ * Floating, draggable mini-card window for entity detail views — Field Scout
+ * chrome: white card, 1px ink border, hard offset shadow, near-square corners.
+ * Unlike a modal there's no backdrop and no focus trap — the page and other
+ * windows stay interactive — so several can be open and dragged around
+ * independently. Drag by the header; the arrow icon opens the full page;
+ * X (or Escape on the front window) closes.
  */
 export function WindowShell({
   title,
-  expanded,
-  onExpandedChange,
   onClose,
   onFocus,
+  onExpand,
   zIndex,
   stackIndex,
   initialPosition,
   onPositionChange,
   isTop,
   header,
-  actions,
+  children,
   tabs,
   loading = false,
   error = null,
@@ -128,11 +131,10 @@ export function WindowShell({
 
   if (!mounted) return null
 
-  // Drag via pointer capture on the control bar — no global listeners, so it
+  // Drag via pointer capture on the header — no global listeners, so it
   // can't leak even if the window unmounts mid-drag.
   const onHandlePointerDown = (e: React.PointerEvent) => {
-    if (expanded) return
-    if ((e.target as HTMLElement).closest('button')) return
+    if ((e.target as HTMLElement).closest('button, a')) return
     const el = e.currentTarget as HTMLElement
     el.setPointerCapture(e.pointerId)
     dragRef.current = {
@@ -169,100 +171,75 @@ export function WindowShell({
       role="dialog"
       aria-label={title}
       onPointerDownCapture={onFocus}
-      style={{ zIndex, ...(expanded ? {} : { left: pos.x, top: pos.y }) }}
-      className={cn(
-        'fixed flex flex-col overflow-hidden rounded-2xl border border-bg-elevated-2 bg-bg-elevated shadow-2xl shadow-black/50',
-        expanded
-          ? 'inset-3 sm:inset-6'
-          : 'h-[560px] max-h-[85vh] w-[460px] max-w-[calc(100vw-1rem)]',
-      )}
+      style={{ zIndex, left: pos.x, top: pos.y, maxHeight: WINDOW_MAX_HEIGHT }}
+      className="fixed flex w-[304px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-sm border border-ink bg-white text-ink shadow-hard-6"
     >
-      {/* 1 — control bar (drag handle) */}
+      {/* header — identity band, doubles as the drag handle */}
       <div
         onPointerDown={onHandlePointerDown}
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
-        className={cn(
-          'flex shrink-0 touch-none items-center justify-between px-4 pt-4 sm:px-6',
-          expanded ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
-        )}
+        className="flex shrink-0 cursor-grab touch-none items-start gap-1 border-b border-ink py-2.5 pl-3 pr-2 active:cursor-grabbing"
       >
-        <button
-          type="button"
-          onClick={() => onExpandedChange(!expanded)}
-          aria-label={expanded ? 'Collapse to window' : 'Expand to full screen'}
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-bg-elevated-3 bg-bg-elevated-2 px-4 text-xs font-semibold text-text-secondary transition-colors hover:text-foreground"
-        >
-          {expanded ? (
-            <>
-              <Minimize2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Collapse</span>
-            </>
-          ) : (
-            <>
-              <Maximize2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Expand</span>
-            </>
-          )}
-        </button>
+        <div className="min-w-0 flex-1">{header}</div>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            aria-label="Open full page"
+            title="Open full page"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4 hover:text-accent"
+          >
+            <Icon name="arrow-up-right" size={13} />
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-bg-elevated-3 bg-bg-elevated-2 text-text-secondary transition-colors hover:text-foreground"
+          title="Close"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4 hover:text-accent"
         >
-          <X className="h-4 w-4" />
+          <Icon name="close" size={14} />
         </button>
       </div>
 
-      {loading && <div className="flex-1 overflow-y-auto">{loadingFallback}</div>}
+      {loading && (
+        <div className="min-h-0 flex-1 overflow-y-auto">{loadingFallback}</div>
+      )}
 
       {error && !loading && (
-        <div className="p-6 text-sm text-destructive">{error}</div>
+        <p className="p-3 text-[12px] font-semibold text-negative-strong">
+          {error}
+        </p>
       )}
 
       {!loading && !error && (
-        <>
-          <div className="shrink-0">{header}</div>
-
-          {actions && (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 px-4 pb-4 sm:px-6">
-              {actions}
-            </div>
-          )}
-
-          <TabsPrimitive.Root
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {children}
+          <Tabs
             value={tab}
             onValueChange={setTab}
-            className="flex min-h-0 flex-1 flex-col"
+            className="px-3 pb-3 pt-2.5"
           >
-            <div className="shrink-0 px-4 sm:px-6">
-              <TabsPrimitive.List className="flex w-full gap-1.5 overflow-x-auto rounded-full border border-bg-elevated-3 bg-bg-elevated-2 p-1.5">
-                {tabs.map((t) => (
-                  <TabsPrimitive.Trigger
-                    key={t.value}
-                    value={t.value}
-                    className={cn(
-                      'whitespace-nowrap rounded-full border border-transparent px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-foreground',
-                      'data-[state=active]:border-bg-elevated-3 data-[state=active]:bg-background data-[state=active]:text-foreground',
-                    )}
-                  >
-                    {t.label}
-                  </TabsPrimitive.Trigger>
-                ))}
-              </TabsPrimitive.List>
-            </div>
+            <TabsList className="flex w-full">
+              {tabs.map((t) => (
+                <TabsTrigger
+                  key={t.value}
+                  value={t.value}
+                  className="min-w-0 flex-1 px-1"
+                >
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
             {tabs.map((t) => (
-              <TabsPrimitive.Content
-                key={t.value}
-                value={t.value}
-                className="min-h-0 flex-1 overflow-y-auto p-4 focus-visible:outline-none sm:p-6 data-[state=inactive]:hidden"
-              >
+              <TabsContent key={t.value} value={t.value} className="mt-2.5">
                 {t.content}
-              </TabsPrimitive.Content>
+              </TabsContent>
             ))}
-          </TabsPrimitive.Root>
-        </>
+          </Tabs>
+        </div>
       )}
     </div>,
     document.body,

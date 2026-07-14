@@ -133,10 +133,10 @@ export default async function PublicWeeklyBigBoardPage({ params }: PageProps) {
     <GuestShell>
       <div className="mx-auto max-w-7xl">
         <PublicBigBoard
-          title={`${handle}'s Week ${weekNum} Big Board`}
+          title={`${handle}'s week ${weekNum} big board`}
           subtitle={subtitle}
           players={data.players}
-          emptyMessage="This user hasn't set their Week's Big Board yet."
+          emptyMessage="This user hasn't set this week's big board yet."
           weekNav={
             <PublicWeekStrip
               username={data.profile.username}

@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { Bot } from 'lucide-react'
 
-import { PersonaBadge } from '@/components/personas/persona-badge'
+import { PositionBadge } from '@/components/players/position-badge'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { usePersonaBoards, usePersonaPosts } from '@/hooks/use-persona-boards'
 
@@ -24,6 +26,7 @@ type ShelfItem =
       href: string
       meta: string
       date: string
+      positionFilter: string | null
       persona: { username: string; display_name: string; avatar_url: string | null }
     }
   | {
@@ -33,12 +36,15 @@ type ShelfItem =
       href: string
       meta: string
       date: string
+      positionFilter: null
       persona: { username: string; display_name: string; avatar_url: string | null }
     }
 
 /**
  * Home shelf: the AI experts' latest content — ranking boards and published
  * posts, merged newest-first. Hidden entirely until anything exists.
+ * FieldScout-only surface (not in the package mock) — styled per the hub's
+ * white-card / ink-border language.
  */
 export function AiExpertShelf() {
   const boards = usePersonaBoards(9)
@@ -54,6 +60,7 @@ export function AiExpertShelf() {
       href: `/u/${board.owner.username}/lists/${board.slug}`,
       meta: `${board.player_count} players`,
       date: board.updated_at,
+      positionFilter: board.position_filter,
       persona: board.persona,
     })),
     ...(posts.data ?? []).map((post): ShelfItem => ({
@@ -63,6 +70,7 @@ export function AiExpertShelf() {
       href: `/personas/${post.persona.username}/posts/${post.slug}`,
       meta: 'Post',
       date: post.published_at ?? '',
+      positionFilter: null,
       persona: post.persona,
     })),
   ]
@@ -73,42 +81,48 @@ export function AiExpertShelf() {
 
   return (
     <section>
-      <h2 className="mb-3 flex items-center justify-between text-lg font-semibold">
-        <span className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-foreground" />
-          From the AI Experts
-        </span>
-        <Link
-          href="/personas"
-          className="text-xs font-medium text-text-secondary hover:text-foreground hover:underline"
-        >
-          Meet the experts →
-        </Link>
-      </h2>
+      <div className="mb-2.5 flex items-center">
+        <h2 className="mr-auto text-h5">From the AI experts</h2>
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/personas">
+            Meet the experts
+            <Icon name="arrow-next" />
+          </Link>
+        </Button>
+      </div>
 
-      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
           <li key={item.id}>
             <Link
               href={item.href}
-              className="group block rounded-lg bg-bg-elevated p-3 transition-colors hover:bg-bg-elevated-2"
+              className="block rounded-sm border border-ink bg-white p-2.5 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <UserAvatar
                   src={item.persona.avatar_url ?? undefined}
                   alt={item.persona.display_name}
                   name={item.persona.display_name}
                   className="h-6 w-6 shrink-0"
                 />
-                <span className="truncate text-xs font-medium text-text-secondary">
+                <span className="truncate text-[10px] font-bold text-n-3">
                   {item.persona.display_name}
                 </span>
-                <PersonaBadge className="shrink-0" />
+                <Badge variant="stroke" className="ml-auto shrink-0">
+                  AI
+                </Badge>
+                {item.positionFilter && (
+                  <PositionBadge
+                    position={item.positionFilter}
+                    size="sm"
+                    className="shrink-0"
+                  />
+                )}
               </div>
-              <p className="mt-2 truncate text-sm font-semibold group-hover:text-foreground">
+              <p className="mt-2 truncate text-[12px] font-extrabold">
                 {item.title}
               </p>
-              <p className="mt-1 text-xs text-text-tertiary">
+              <p className="mt-0.5 truncate text-[10px] font-semibold text-n-3">
                 {item.meta}
                 {item.date && <> · {formatRelative(item.date)}</>}
               </p>

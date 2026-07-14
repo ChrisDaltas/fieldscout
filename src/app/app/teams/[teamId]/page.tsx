@@ -9,8 +9,9 @@ export default async function TeamDetailPage({ params }: TeamDetailPageProps) {
   return (
     <PlaceholderPage
       title="Team detail"
+      description="Coming with league sync — your roster, matchup, and record will live here."
     >
-      Team ID: <span className="font-mono text-xs">{teamId}</span>
+      Team ID: <span className="fs-num text-[11px]">{teamId}</span>
     </PlaceholderPage>
   )
 }
