@@ -1,4 +1,4 @@
-import type { SyncClient, SyncSummary } from './types'
+import { pageAll, type SyncClient, type SyncSummary } from './types'
 
 /**
  * Average auction values from ESPN's public fantasy API —
@@ -71,18 +71,26 @@ export async function syncAuctionValues(
 
   // Our players: two lookups — by espn_id, and by normalized name+position
   // (ambiguous name+position keys are dropped).
-  const { data: players, error } = await supabase
-    .from('players')
-    .select('id, full_name, position, espn_id')
-    .not('team', 'is', null)
-  if (error) throw new Error(`players query failed: ${error.message}`)
+  const players = await pageAll<{
+    id: string
+    full_name: string
+    position: string
+    espn_id: string | null
+  }>((from, to) =>
+    supabase
+      .from('players')
+      .select('id, full_name, position, espn_id')
+      .not('team', 'is', null)
+      .order('id')
+      .range(from, to),
+  )
 
   const byEspnId = new Map<string, string>()
   const byNamePos = new Map<string, string | null>()
-  for (const p of players ?? []) {
-    if (p.espn_id) byEspnId.set(String(p.espn_id), p.id as string)
-    const key = `${normalizeName(p.full_name as string)}|${p.position}`
-    byNamePos.set(key, byNamePos.has(key) ? null : (p.id as string))
+  for (const p of players) {
+    if (p.espn_id) byEspnId.set(String(p.espn_id), p.id)
+    const key = `${normalizeName(p.full_name)}|${p.position}`
+    byNamePos.set(key, byNamePos.has(key) ? null : p.id)
   }
 
   let matchedById = 0

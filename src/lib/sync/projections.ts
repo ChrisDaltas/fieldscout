@@ -4,7 +4,7 @@ import {
   type SleeperProjectedStats,
 } from '@/lib/sports-data/sleeper'
 
-import type { SyncClient, SyncSummary } from './types'
+import { num, pageAll, type SyncClient, type SyncSummary } from './types'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 type Position = (typeof POSITIONS)[number]
@@ -36,15 +36,9 @@ interface UpdateRow {
   projections_updated_at: string
 }
 
-function toNullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null
-  const n = Number(value)
-  return Number.isFinite(n) ? n : null
-}
-
 /** Sleeper uses 999 as an "undrafted / no data" sentinel on ADP fields. */
 function toNullableAdp(value: unknown): number | null {
-  const n = toNullableNumber(value)
+  const n = num(value)
   return n === null || n >= 999 ? null : n
 }
 
@@ -70,21 +64,10 @@ async function fetchProjections(
 }
 
 export async function fetchKnownPlayerIds(supabase: SyncClient): Promise<Set<string>> {
-  const known = new Set<string>()
-  const pageSize = 1000
-  let offset = 0
-  while (true) {
-    const { data, error } = await supabase
-      .from('players')
-      .select('id')
-      .range(offset, offset + pageSize - 1)
-    if (error) throw new Error(error.message)
-    if (!data || data.length === 0) break
-    for (const r of data) known.add(r.id as string)
-    if (data.length < pageSize) break
-    offset += pageSize
-  }
-  return known
+  const rows = await pageAll<{ id: string }>((from, to) =>
+    supabase.from('players').select('id').order('id').range(from, to),
+  )
+  return new Set(rows.map((r) => r.id))
 }
 
 /** Season projections: preset point totals, ADP, and the full projected
@@ -108,9 +91,9 @@ export async function syncProjections(
         skippedNoMatch++
         continue
       }
-      const ppr = toNullableNumber(row.stats?.pts_ppr)
-      const std = toNullableNumber(row.stats?.pts_std)
-      const half = toNullableNumber(row.stats?.pts_half_ppr)
+      const ppr = num(row.stats?.pts_ppr)
+      const std = num(row.stats?.pts_std)
+      const half = num(row.stats?.pts_half_ppr)
       if (ppr === null && std === null && half === null) {
         skippedNoPoints++
         continue
@@ -132,7 +115,7 @@ export async function syncProjections(
         projected_pts_ppr: ppr,
         projected_pts_standard: std,
         projected_pts_half_ppr: half,
-        projected_games: toNullableNumber(row.stats?.gp),
+        projected_games: num(row.stats?.gp),
         // Keep a previously-seen ADP when the winning row lacks one.
         adp: adp ?? existing?.adp ?? null,
         projected_stats: sleeperProjectionToStatRow(row.stats),

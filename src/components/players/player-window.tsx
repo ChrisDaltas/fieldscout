@@ -209,7 +209,8 @@ function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
   const cells: Array<[string, string]> = [
     ['ADP', formatAdp(player.adp)],
     ['Auction $', player.auction_value != null ? `$${player.auction_value}` : '—'],
-    ['Pos rank', player.pos_rank != null ? `${player.position}${player.pos_rank}` : '—'],
+    // Objective rank only exists once real points are scored — returns in-season.
+    ['Pos rank', '—'],
     ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
     ['Height', formatHeight(player.height)],
     ['Weight', player.weight != null ? `${player.weight} lb` : '—'],

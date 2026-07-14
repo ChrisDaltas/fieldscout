@@ -30,6 +30,23 @@ async function loadSplits(
   return splits
 }
 
+/** Run update thunks concurrently in small batches; sums affected counts. */
+async function runBatched<T>(
+  items: T[],
+  run: (item: T) => PromiseLike<{ error: { message: string } | null; count: number | null }>,
+): Promise<number> {
+  const BATCH = 20
+  let total = 0
+  for (let i = 0; i < items.length; i += BATCH) {
+    const results = await Promise.all(items.slice(i, i + BATCH).map(run))
+    for (const r of results) {
+      if (r.error) throw new Error(`sos update failed: ${r.error.message}`)
+      total += r.count ?? 0
+    }
+  }
+  return total
+}
+
 const ALL_POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 
 /** Team-level ranks from projection-weighted team strength — the fallback
@@ -70,15 +87,12 @@ export async function syncSos(
   if (splits.size === 0) {
     // No splits at all — team-level for everyone.
     const ranks = await teamLevelRanks(supabase, season)
-    let updated = 0
-    for (const [team, rank] of ranks) {
-      const { error, count } = await supabase
+    const updated = await runBatched(Array.from(ranks), ([team, rank]) =>
+      supabase
         .from('players')
         .update({ sos: rank }, { count: 'exact' })
-        .eq('team', team)
-      if (error) throw new Error(`sos update failed for ${team}: ${error.message}`)
-      updated += count ?? 0
-    }
+        .eq('team', team),
+    )
     return {
       name: 'sos',
       counts: { teams: ranks.size, players: updated },
@@ -88,19 +102,16 @@ export async function syncSos(
 
   // Positional path for positions that have splits…
   const ranks = computePositionalSosRanks(games, splits)
-  let updated = 0
   const covered = new Set<string>()
   for (const key of ranks.keys()) covered.add(key.split('|')[1])
-  for (const [key, rank] of ranks) {
+  const updated = await runBatched(Array.from(ranks), ([key, rank]) => {
     const [team, position] = key.split('|')
-    const { error, count } = await supabase
+    return supabase
       .from('players')
       .update({ sos: rank }, { count: 'exact' })
       .eq('team', team)
       .eq('position', position)
-    if (error) throw new Error(`sos update failed for ${team} ${position}: ${error.message}`)
-    updated += count ?? 0
-  }
+  })
 
   // …and team-level fallback for the positions that don't.
   const missing = ALL_POSITIONS.filter((p) => !covered.has(p))
@@ -108,15 +119,13 @@ export async function syncSos(
   if (missing.length > 0) {
     warnings.push(`team-level fallback for positions without splits: ${missing.join(', ')}`)
     const teamRanks = await teamLevelRanks(supabase, season)
-    for (const [team, rank] of teamRanks) {
-      const { error, count } = await supabase
+    fallbackUpdated = await runBatched(Array.from(teamRanks), ([team, rank]) =>
+      supabase
         .from('players')
         .update({ sos: rank }, { count: 'exact' })
         .eq('team', team)
-        .in('position', missing as unknown as string[])
-      if (error) throw new Error(`sos fallback failed for ${team}: ${error.message}`)
-      fallbackUpdated += count ?? 0
-    }
+        .in('position', missing as unknown as string[]),
+    )
   }
 
   return {

@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { createBrowserClient } from '@/lib/supabase/client'
+import { firstEmbed } from '@/utils/supabase-embed'
 
 /** Everything a Big Board dashboard card can show. All stats nullable — the
  * card simply skips chips it has no data for. */
@@ -27,11 +28,6 @@ const PLAYER_COLS =
 const BOARD_LIMIT = 200
 const STALE_TIME = 5 * 60 * 1000
 
-function first<T>(value: T | T[] | null): T | null {
-  if (value == null) return null
-  return Array.isArray(value) ? (value[0] ?? null) : value
-}
-
 /** Expert consensus board — the cred-weighted community ranking (the same
  * consensus_rankings view behind /consensus), hydrated with player card data. */
 export function useConsensusBoard(enabled: boolean) {
@@ -48,7 +44,7 @@ export function useConsensusBoard(enabled: boolean) {
         .limit(BOARD_LIMIT)
       if (error) throw error
       return (data ?? []).flatMap((row) => {
-        const player = first(row.player as BoardSourcePlayer | BoardSourcePlayer[] | null)
+        const player = firstEmbed(row.player as BoardSourcePlayer | BoardSourcePlayer[] | null)
         return player ? [player] : []
       })
     },
@@ -153,7 +149,7 @@ export function usePersonaBoardPlayers(listId: string | null) {
         .limit(300)
       if (error) throw error
       return (data ?? []).flatMap((row) => {
-        const player = first(row.player as BoardSourcePlayer | BoardSourcePlayer[] | null)
+        const player = firstEmbed(row.player as BoardSourcePlayer | BoardSourcePlayer[] | null)
         return player ? [player] : []
       })
     },

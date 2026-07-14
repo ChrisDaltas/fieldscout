@@ -13,10 +13,12 @@ import { syncUsage } from '@/lib/sync/usage'
 
 /**
  * Weekly stats pipeline (vercel.json: Tuesday morning, after MNF settles).
- * Order matters — later steps consume earlier steps' writes:
- *   players (roster/depth) → projections (+ADP, stat lines) → byes →
- *   usage (snap % / target share) → splits (positional matchups) → SOS.
- * Usage reads last season pre-draft and the current season once games exist.
+ * Two ordered stages with a parallel middle:
+ *   1. players (roster/depth) → projections (+ADP, stat lines)
+ *   2. auction + byes + usage + splits — mutually independent, run together
+ *   3. SOS last (consumes splits + projections)
+ * Usage refreshes last season always and adds the current one once games
+ * exist; both live in player_usage side by side.
  */
 
 export const maxDuration = 300
@@ -34,25 +36,8 @@ export async function GET(request: Request) {
 
   const results: SyncSummary[] = []
   const failures: string[] = []
-  const steps: Array<[string, () => Promise<SyncSummary>]> = [
-    ['players', () => syncPlayers(supabase)],
-    ['projections', () => syncProjections(supabase, season)],
-    ['auction', () => syncAuctionValues(supabase, season)],
-    ['bye-weeks', () => syncByeWeeks(supabase, season)],
-    // Usage is per-season in player_usage: refresh last season always, and
-    // add the current season's rows once games exist. Both coexist — the UI
-    // season filter picks, nothing is overwritten.
-    ['usage-last', () => syncUsage(supabase, season - 1)],
-    ...(currentWeek > 0
-      ? ([['usage-current', () => syncUsage(supabase, season)]] as Array<
-          [string, () => Promise<SyncSummary>]
-        >)
-      : []),
-    ['splits', () => syncSplits(supabase, season)],
-    ['sos', () => syncSos(supabase, season)],
-  ]
 
-  for (const [name, run] of steps) {
+  const attempt = async (name: string, run: () => Promise<SyncSummary>) => {
     try {
       results.push(await run())
     } catch (err) {
@@ -63,6 +48,26 @@ export async function GET(request: Request) {
       // upstream fetch hiccups.
     }
   }
+
+  // Stage 1 — ordered: everything downstream matches against these writes.
+  await attempt('players', () => syncPlayers(supabase))
+  await attempt('projections', () => syncProjections(supabase, season))
+
+  // Stage 2 — independent, run together. Usage is per-season in
+  // player_usage: last season always, plus the current one once games
+  // exist; both coexist and the UI season filter picks.
+  await Promise.all([
+    attempt('auction', () => syncAuctionValues(supabase, season)),
+    attempt('bye-weeks', () => syncByeWeeks(supabase, season)),
+    attempt('usage-last', () => syncUsage(supabase, season - 1)),
+    ...(currentWeek > 0
+      ? [attempt('usage-current', () => syncUsage(supabase, season))]
+      : []),
+    attempt('splits', () => syncSplits(supabase, season)),
+  ])
+
+  // Stage 3 — SOS consumes splits + projections.
+  await attempt('sos', () => syncSos(supabase, season))
 
   const status = failures.length === 0 ? 200 : results.length === 0 ? 500 : 207
   return NextResponse.json({ season, currentWeek, results, failures }, { status })

@@ -34,12 +34,24 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
   )
 }
 
+/** Numeric tier ramp (bands 1-6): fill + contrast text in one recipe.
+ *  Shared by list tier headers and the Big Board tier bands — tweak the
+ *  ramp here and every surface follows. */
+export const TIER_RAMP: readonly string[] = [
+  'bg-tier-1 text-white',
+  'bg-tier-2 text-white',
+  'bg-tier-3 text-ink',
+  'bg-tier-4 text-ink',
+  'bg-tier-5 text-white',
+  'bg-tier-6 text-white',
+]
+
 /** Band recipe shared by the tier group headers (detail + public views). */
 export const TIER_BAND_BG: Record<ListTier, string> = {
-  S: 'bg-tier-1 text-white',
-  A: 'bg-tier-2 text-white',
-  B: 'bg-tier-3 text-ink',
-  C: 'bg-tier-4 text-ink',
-  D: 'bg-tier-5 text-white',
-  F: 'bg-tier-6 text-white',
+  S: TIER_RAMP[0],
+  A: TIER_RAMP[1],
+  B: TIER_RAMP[2],
+  C: TIER_RAMP[3],
+  D: TIER_RAMP[4],
+  F: TIER_RAMP[5],
 }

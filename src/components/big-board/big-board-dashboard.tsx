@@ -36,7 +36,9 @@ import {
   useUsageMap,
   type BoardSourcePlayer,
 } from '@/hooks/use-board-sources'
+import { TIER_RAMP } from '@/components/lists/tier-badge'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
+import { matchesPosition } from '@/utils/positions'
 import { listsKeys, useBigBoard, useReorderPlayers } from '@/hooks/use-lists'
 import { usePersonaBoards } from '@/hooks/use-persona-boards'
 import { useToast } from '@/hooks/use-toast'
@@ -79,27 +81,18 @@ const WIDTHS = [
 
 // What a card can show as a stat pill. Insertion-ordered — the 4 most
 // recently enabled fields win a slot (Figma 802:8 shows four pills). Bye is
-// not here: it lives permanently in the card's meta row.
-const FIELDS: Array<{ id: string; label: string; available: boolean }> = [
-  { id: 'rank', label: 'Position rank', available: true },
-  { id: 'adp', label: 'Draft round (from ADP)', available: true },
-  { id: 'proj', label: 'Proj points', available: true },
-  { id: 'tgt', label: 'Target share', available: true },
-  { id: 'snap', label: 'Snap %', available: true },
-  { id: 'sos', label: 'Strength of schedule', available: true },
-  { id: 'auction', label: 'Avg auction price', available: true },
+// not here: it lives permanently in the card's meta row. "Position rank" is
+// deliberately absent pre-season: rank on a board is an OPINION (the blue
+// chip); an objective rank only exists once real points are scored, and can
+// return then, computed from actual fantasy points.
+const FIELDS: Array<{ id: string; label: string }> = [
+  { id: 'adp', label: 'Draft round (from ADP)' },
+  { id: 'proj', label: 'Proj points' },
+  { id: 'tgt', label: 'Target share' },
+  { id: 'snap', label: 'Snap %' },
+  { id: 'sos', label: 'Strength of schedule' },
+  { id: 'auction', label: 'Avg auction price' },
 ]
-
-/** Ordinal for the rank pill: 1st, 2nd, 3rd, 4th… */
-function ord(n: number): string {
-  const rem100 = n % 100
-  if (rem100 >= 11 && rem100 <= 13) return `${n}th`
-  const rem10 = n % 10
-  if (rem10 === 1) return `${n}st`
-  if (rem10 === 2) return `${n}nd`
-  if (rem10 === 3) return `${n}rd`
-  return `${n}th`
-}
 
 /** ADP → snake-draft round in a 12-team league. */
 const DRAFT_ROUND_TEAMS = 12
@@ -115,13 +108,6 @@ const PROJ_KEY: Record<Scoring, keyof BoardSourcePlayer> = {
   standard: 'projected_pts_standard',
   half: 'projected_pts_half_ppr',
   ppr: 'projected_pts_ppr',
-}
-
-function matchesPosition(position: string, filter: PositionFilter): boolean {
-  if (filter === 'ALL') return true
-  if (filter === 'FLEX') return ['RB', 'WR', 'TE'].includes(position)
-  if (filter === 'DEF') return position === 'DEF' || position === 'DST'
-  return position === filter
 }
 
 // Cross-position tier cuts, proportional to how deep the board is (from the
@@ -140,11 +126,6 @@ function tierBands(count: number): Array<{ tier: number; start: number; end: num
   }
   return bands
 }
-
-// Full literal class strings so Tailwind's scanner emits them. Tiers 3–4
-// take dark text per the token ramp's contrast note.
-const TIER_BG = ['bg-tier-1', 'bg-tier-2', 'bg-tier-3', 'bg-tier-4', 'bg-tier-5', 'bg-tier-6']
-const TIER_TEXT = ['text-white', 'text-white', 'text-ink', 'text-ink', 'text-white', 'text-white']
 
 // ---------------------------------------------------------------------------
 // Sortable card
@@ -278,16 +259,28 @@ export function BigBoardDashboard() {
     return map
   }, [minePlayers])
 
-  const activeQuery =
-    source === 'mine'
-      ? mineQuery
-      : source === 'consensus'
-        ? consensusQuery
-        : source === 'adp'
-          ? adpQuery
-          : source === 'auction'
-            ? auctionQuery
-            : personaQuery
+  // Single source descriptor — the ONE place that enumerates board sources.
+  // Adding a source means adding one entry here plus its SelectItem.
+  const sourceInfo = useMemo(() => {
+    switch (source) {
+      case 'mine':
+        return { query: mineQuery, title: 'My board' }
+      case 'consensus':
+        return { query: consensusQuery, title: 'Expert consensus' }
+      case 'adp':
+        return { query: adpQuery, title: 'ADP' }
+      case 'auction':
+        return { query: auctionQuery, title: 'Auction price' }
+      default:
+        return {
+          query: personaQuery,
+          title:
+            personas.data?.find((b) => b.id === personaListId)?.persona
+              .display_name ?? 'AI board',
+        }
+    }
+  }, [source, mineQuery, consensusQuery, adpQuery, auctionQuery, personaQuery, personas.data, personaListId])
+  const activeQuery = sourceInfo.query
 
   const pool = useMemo<BoardSourcePlayer[]>(() => {
     if (source === 'mine') {
@@ -295,11 +288,8 @@ export function BigBoardDashboard() {
         .map((id) => mineById.get(id))
         .filter((p): p is BoardSourcePlayer => Boolean(p))
     }
-    if (source === 'consensus') return consensusQuery.data ?? []
-    if (source === 'adp') return adpQuery.data ?? []
-    if (source === 'auction') return auctionQuery.data ?? []
-    return personaQuery.data ?? []
-  }, [source, order, mineById, consensusQuery.data, adpQuery.data, auctionQuery.data, personaQuery.data])
+    return (sourceInfo.query.data as BoardSourcePlayer[] | undefined) ?? []
+  }, [source, order, mineById, sourceInfo.query.data])
 
   // ---- filters ------------------------------------------------------------
   const inPos = (p: BoardSourcePlayer) => matchesPosition(p.position, pos)
@@ -325,36 +315,10 @@ export function BigBoardDashboard() {
   const chipSet = useMemo(() => new Set(fields.slice(-4)), [fields])
   const projKey = PROJ_KEY[scoring]
 
-  // Positional rank within the current pool by projected points (scoring-
-  // aware) — powers the "Rank: 3rd" pill without a stored column.
-  const posRankById = useMemo(() => {
-    const byPos = new Map<string, Array<{ id: string; v: number }>>()
-    for (const p of pool) {
-      const v = p[projKey]
-      if (typeof v !== 'number') continue
-      let list = byPos.get(p.position)
-      if (!list) {
-        list = []
-        byPos.set(p.position, list)
-      }
-      list.push({ id: p.id, v })
-    }
-    const ranks = new Map<string, number>()
-    for (const list of byPos.values()) {
-      list.sort((a, b) => b.v - a.v)
-      list.forEach((e, i) => ranks.set(e.id, i + 1))
-    }
-    return ranks
-  }, [pool, projKey])
-
   const cardData = useMemo<CardData[]>(
     () =>
       visible.map((player, i) => {
         const chips: PlayerCardStatChip[] = []
-        const posRank = posRankById.get(player.id)
-        if (chipSet.has('rank') && posRank != null) {
-          chips.push({ id: 'rank', text: `Rank: ${ord(posRank)}` })
-        }
         if (chipSet.has('adp') && player.adp != null) {
           chips.push({
             id: 'adp',
@@ -392,7 +356,7 @@ export function BigBoardDashboard() {
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, chipSet, projKey, posRankById, usageMap, labels, fading, pos],
+    [visible, chipSet, projKey, usageMap, labels, fading, pos],
   )
 
   // ---- drag to sort (your board only) -------------------------------------
@@ -443,17 +407,7 @@ export function BigBoardDashboard() {
   const toggleField = (id: string) =>
     setFields((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
 
-  const sourceTitle =
-    source === 'mine'
-      ? 'My board'
-      : source === 'consensus'
-        ? 'Expert consensus'
-        : source === 'adp'
-          ? 'ADP'
-          : source === 'auction'
-            ? 'Auction price'
-            : (personas.data?.find((b) => b.id === personaListId)?.persona.display_name ??
-              'AI board')
+  const sourceTitle = sourceInfo.title
 
   const gridStyle = {
     display: 'grid',
@@ -486,8 +440,7 @@ export function BigBoardDashboard() {
             <span
               className={cn(
                 'fs-num inline-flex items-center rounded-sm border border-ink px-2.5 py-0.5 text-[12px] font-extrabold',
-                TIER_BG[i],
-                TIER_TEXT[i],
+                TIER_RAMP[i],
               )}
             >
               Tier {band.tier}
@@ -650,22 +603,13 @@ export function BigBoardDashboard() {
                 {FIELDS.map((f) => (
                   <label
                     key={f.id}
-                    className={cn(
-                      'flex items-center gap-2 text-[13px] font-bold',
-                      f.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
-                    )}
+                    className="flex cursor-pointer items-center gap-2 text-[13px] font-bold"
                   >
                     <Checkbox
                       checked={fields.includes(f.id)}
-                      disabled={!f.available}
                       onCheckedChange={() => toggleField(f.id)}
                     />
                     {f.label}
-                    {!f.available && (
-                      <span className="ml-auto text-[10px] font-bold text-n-3">
-                        Soon
-                      </span>
-                    )}
                   </label>
                 ))}
               </div>

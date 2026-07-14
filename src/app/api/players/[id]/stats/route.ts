@@ -51,19 +51,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Player not found' }, { status: 404 })
   }
 
-  // Positional rank among projected players (half PPR, the app default):
-  // rank = 1 + players at the same position projected above this one.
-  // Read-time count keeps it honest as projections refresh.
-  let posRank: number | null = null
-  if (player.projected_pts_half_ppr != null) {
-    const { count, error: rankError } = await supabase
-      .from('players')
-      .select('id', { count: 'exact', head: true })
-      .eq('position', player.position)
-      .gt('projected_pts_half_ppr', player.projected_pts_half_ppr)
-    if (!rankError && count != null) posRank = count + 1
-  }
-
+  // No positional rank pre-season: rank on a board is an opinion; an
+  // OBJECTIVE rank only exists once real points are scored. When the season
+  // is live this can return, computed from actual fantasy points.
   const { data: rows, error: statsError } = await supabase
     .from('player_stats')
     .select(SELECT_COLS)
@@ -93,8 +83,12 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
   // Real projected stat line synced from Sleeper (sync-projections.ts) —
   // the honest pre-season basis, and what custom scoring should score.
+  // Empty {} lines don't count: fall back to last season rather than
+  // rendering a blank projection.
   const sleeperProjection =
-    player.projected_stats && typeof player.projected_stats === 'object'
+    player.projected_stats &&
+    typeof player.projected_stats === 'object' &&
+    Object.keys(player.projected_stats).length > 0
       ? (player.projected_stats as StatRow)
       : null
 
@@ -114,7 +108,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   })()
 
   return NextResponse.json({
-    player: { ...player, pos_rank: posRank },
+    player,
     seasons: {
       current: {
         season: CURRENT_SEASON,

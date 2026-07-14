@@ -30,6 +30,7 @@ import { bigBoardKeys, useWeeklyBigBoard } from '@/hooks/use-big-board'
 import { useReorderPlayers } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { matchesPosition } from '@/utils/positions'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'FLEX'] as const
 type Position = (typeof POSITIONS)[number]
@@ -52,13 +53,6 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
   x: 0,
 })
-
-function matchesPosition(playerPosition: string, filter: Position): boolean {
-  if (filter === 'FLEX') {
-    return playerPosition === 'RB' || playerPosition === 'WR' || playerPosition === 'TE'
-  }
-  return playerPosition === filter
-}
 
 interface WeeklyRanksViewProps {
   /** Current NFL week from Sleeper state (lib/sports-data/nfl-state); 0 = offseason (week 1 active). */

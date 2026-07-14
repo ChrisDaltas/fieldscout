@@ -1,4 +1,5 @@
-import type { SyncClient, SyncSummary } from './types'
+import { fetchKnownPlayerIds } from './projections'
+import { num, type SyncClient, type SyncSummary } from './types'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 type Position = (typeof POSITIONS)[number]
@@ -24,12 +25,6 @@ async function fetchSeasonStats(
     throw new Error(`Stats fetch failed for ${position}: ${res.status}`)
   }
   return (await res.json()) as SleeperStatsRow[]
-}
-
-function num(value: unknown): number | null {
-  if (value === null || value === undefined) return null
-  const n = Number(value)
-  return Number.isFinite(n) ? n : null
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10
@@ -90,23 +85,7 @@ export async function syncUsage(
 
   // One shared per-season source (player_usage) — Big Board and Research
   // read the same rows; a new season never overwrites the previous one.
-  const known = new Set<string>()
-  {
-    const pageSize = 1000
-    let offset = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('players')
-        .select('id')
-        .order('id')
-        .range(offset, offset + pageSize - 1)
-      if (error) throw new Error(error.message)
-      if (!data || data.length === 0) break
-      for (const r of data) known.add(r.id as string)
-      if (data.length < pageSize) break
-      offset += pageSize
-    }
-  }
+  const known = await fetchKnownPlayerIds(supabase)
 
   const now = new Date().toISOString()
   const rowsToWrite = Array.from(updates.values())

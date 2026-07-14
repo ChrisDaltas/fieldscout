@@ -9,8 +9,6 @@ interface BoardLabelsStore {
 
   /** Toggle: applying the same label again clears it. */
   toggleLabel: (playerId: string, label: BoardLabel) => void
-  clearLabel: (playerId: string) => void
-  clearAll: () => void
 }
 
 /**
@@ -35,15 +33,6 @@ export const useBoardLabelsStore = create<BoardLabelsStore>()(
           return { labels: next }
         }),
 
-      clearLabel: (playerId) =>
-        set((state) => {
-          if (!(playerId in state.labels)) return state
-          const next = { ...state.labels }
-          delete next[playerId]
-          return { labels: next }
-        }),
-
-      clearAll: () => set({ labels: {} }),
     }),
     {
       name: 'fieldscout.board-labels',
