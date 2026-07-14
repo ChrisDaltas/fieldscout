@@ -17,6 +17,7 @@ import { PlayerCard, type PlayerCardStatChip } from '@/components/players/player
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Icon } from '@/components/ui/icon'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
@@ -32,8 +33,10 @@ import {
   useAuctionBoard,
   useConsensusBoard,
   usePersonaBoardPlayers,
+  useUsageMap,
   type BoardSourcePlayer,
 } from '@/hooks/use-board-sources'
+import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { listsKeys, useBigBoard, useReorderPlayers } from '@/hooks/use-lists'
 import { usePersonaBoards } from '@/hooks/use-persona-boards'
 import { useToast } from '@/hooks/use-toast'
@@ -100,6 +103,13 @@ function ord(n: number): string {
 
 /** ADP → snake-draft round in a 12-team league. */
 const DRAFT_ROUND_TEAMS = 12
+
+// Same season semantics as the Research table: stats default to the last
+// completed season until the current one has games worth reading.
+const CURRENT_SEASON = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
+const LAST_SEASON = CURRENT_SEASON - 1
+
+const TEAM_OPTIONS = Object.keys(NFL_TEAM_COLORS).sort()
 
 const PROJ_KEY: Record<Scoring, keyof BoardSourcePlayer> = {
   standard: 'projected_pts_standard',
@@ -201,6 +211,10 @@ export function BigBoardDashboard() {
   const [pos, setPos] = useState<PositionFilter>('ALL')
   const [hideOthers, setHideOthers] = useState(false)
   const [scoring, setScoring] = useState<Scoring>('half')
+  const [season, setSeason] = useState(LAST_SEASON)
+  const [team, setTeam] = useState('')
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [tiers, setTiers] = useState(false)
   const [width, setWidth] = useState<string>('0')
   // No pills by default (Figma "Default" state) — enable via the Card info menu.
@@ -213,8 +227,15 @@ export function BigBoardDashboard() {
   const { toast } = useToast()
   const qc = useQueryClient()
 
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 200)
+    return () => clearTimeout(id)
+  }, [query])
+
   // ---- source data -------------------------------------------------------
   const mineQuery = useBigBoard()
+  const usageQuery = useUsageMap(season)
+  const usageMap = usageQuery.data
   const consensusQuery = useConsensusBoard(source === 'consensus')
   const adpQuery = useAdpBoard(source === 'adp')
   const auctionQuery = useAuctionBoard(source === 'auction')
@@ -238,8 +259,6 @@ export function BigBoardDashboard() {
         projected_pts_standard: entry.player.projected_pts_standard ?? null,
         projected_pts_half_ppr: entry.player.projected_pts_half_ppr ?? null,
         projected_pts_ppr: entry.player.projected_pts_ppr ?? null,
-        snap_pct: entry.player.snap_pct ?? null,
-        target_share: entry.player.target_share ?? null,
         sos: entry.player.sos ?? null,
         auction_value: entry.player.auction_value ?? null,
       })),
@@ -289,10 +308,14 @@ export function BigBoardDashboard() {
   const visible = useMemo(() => {
     let list = pool
     if (pos !== 'ALL' && hideOthers) list = list.filter(inPos)
+    if (team) list = list.filter((p) => p.team === team)
+    if (debouncedQuery) {
+      list = list.filter((p) => p.full_name.toLowerCase().includes(debouncedQuery))
+    }
     if (hideDrafted) list = list.filter((p) => labels[p.id] !== 'drafted')
     return list
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pool, pos, hideOthers, hideDrafted, labels])
+  }, [pool, pos, hideOthers, team, debouncedQuery, hideDrafted, labels])
 
   const draftedCount = useMemo(
     () => pool.filter((p) => labels[p.id] === 'drafted').length,
@@ -342,11 +365,12 @@ export function BigBoardDashboard() {
         if (chipSet.has('proj') && typeof proj === 'number') {
           chips.push({ id: 'proj', text: `Proj: ${proj.toFixed(0)}` })
         }
-        if (chipSet.has('tgt') && player.target_share != null) {
-          chips.push({ id: 'tgt', text: `Tgt: ${Math.round(player.target_share)}%` })
+        const usage = usageMap?.get(player.id)
+        if (chipSet.has('tgt') && usage?.target_share != null) {
+          chips.push({ id: 'tgt', text: `Tgt: ${Math.round(usage.target_share)}%` })
         }
-        if (chipSet.has('snap') && player.snap_pct != null) {
-          chips.push({ id: 'snap', text: `Snap: ${Math.round(player.snap_pct)}%` })
+        if (chipSet.has('snap') && usage?.snap_pct != null) {
+          chips.push({ id: 'snap', text: `Snap: ${Math.round(usage.snap_pct)}%` })
         }
         // Green = money, pink = "watch out" (SOS), per the Figma pills.
         if (chipSet.has('auction') && player.auction_value != null) {
@@ -368,7 +392,7 @@ export function BigBoardDashboard() {
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, chipSet, projKey, posRankById, labels, fading, pos],
+    [visible, chipSet, projKey, posRankById, usageMap, labels, fading, pos],
   )
 
   // ---- drag to sort (your board only) -------------------------------------
@@ -545,6 +569,49 @@ export function BigBoardDashboard() {
               ))}
             </SelectContent>
           </Select>
+        </label>
+
+        <label className="flex w-[100px] flex-col gap-1">
+          <span className="fs-overline text-n-3">Season</span>
+          <Select value={String(season)} onValueChange={(v) => setSeason(Number(v))}>
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={String(LAST_SEASON)}>{LAST_SEASON}</SelectItem>
+              <SelectItem value={String(CURRENT_SEASON)}>{CURRENT_SEASON}</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+
+        <label className="flex w-[120px] flex-col gap-1">
+          <span className="fs-overline text-n-3">Pro team</span>
+          <Select
+            value={team || 'ALL'}
+            onValueChange={(v) => setTeam(v === 'ALL' ? '' : v)}
+          >
+            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All teams</SelectItem>
+              {TEAM_OPTIONS.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+
+        <label className="flex w-[170px] flex-col gap-1">
+          <span className="fs-overline text-n-3">Search</span>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search players…"
+            className="h-btn-md px-3 text-[12px]"
+          />
         </label>
 
         <label className="flex w-[110px] flex-col gap-1">

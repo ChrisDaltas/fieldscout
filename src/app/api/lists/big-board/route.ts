@@ -12,7 +12,7 @@ const BIG_BOARD_DEFAULT_SIZE = 300
 const PLAYER_SELECT =
   `id, player_id, position, tier, rank_in_tier, overall_rank, notes, added_at,
    player:players(id, full_name, position, team, headshot_url, status, adp, bye_week,
-     projected_pts_ppr, projected_pts_half_ppr, projected_pts_standard, snap_pct, target_share, sos, auction_value)`
+     projected_pts_ppr, projected_pts_half_ppr, projected_pts_standard, sos, auction_value)`
 
 export async function GET() {
   const supabase = await createServerClient()

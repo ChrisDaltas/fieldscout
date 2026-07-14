@@ -88,32 +88,47 @@ export async function syncUsage(
     })
   }
 
-  const all = Array.from(updates.values())
-  const BATCH = 200
-  let written = 0
-  let skippedNoMatch = 0
-  for (let i = 0; i < all.length; i += BATCH) {
-    const batch = all.slice(i, i + BATCH)
-    const results = await Promise.all(
-      batch.map((row) =>
-        supabase
-          .from('players')
-          .update(
-            {
-              snap_pct: row.snap_pct,
-              target_share: row.target_share,
-              usage_season: statsSeason,
-            },
-            { count: 'exact' },
-          )
-          .eq('id', row.id),
-      ),
-    )
-    for (const r of results) {
-      if (r.error) throw new Error(`usage update failed: ${r.error.message}`)
-      if ((r.count ?? 0) === 0) skippedNoMatch++
-      else written++
+  // One shared per-season source (player_usage) — Big Board and Research
+  // read the same rows; a new season never overwrites the previous one.
+  const known = new Set<string>()
+  {
+    const pageSize = 1000
+    let offset = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('players')
+        .select('id')
+        .order('id')
+        .range(offset, offset + pageSize - 1)
+      if (error) throw new Error(error.message)
+      if (!data || data.length === 0) break
+      for (const r of data) known.add(r.id as string)
+      if (data.length < pageSize) break
+      offset += pageSize
     }
+  }
+
+  const now = new Date().toISOString()
+  const rowsToWrite = Array.from(updates.values())
+    .filter((row) => known.has(row.id))
+    .map((row) => ({
+      player_id: row.id,
+      season: statsSeason,
+      snap_pct: row.snap_pct,
+      target_share: row.target_share,
+      updated_at: now,
+    }))
+  const skippedNoMatch = updates.size - rowsToWrite.length
+
+  const BATCH = 500
+  let written = 0
+  for (let i = 0; i < rowsToWrite.length; i += BATCH) {
+    const batch = rowsToWrite.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('player_usage')
+      .upsert(batch, { onConflict: 'player_id,season' })
+    if (error) throw new Error(`usage upsert failed: ${error.message}`)
+    written += batch.length
   }
 
   return {

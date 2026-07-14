@@ -31,7 +31,6 @@ export async function GET(request: Request) {
   const season = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
   const supabase = createAdminClient()
   const currentWeek = await getCurrentNflWeek()
-  const usageSeason = currentWeek > 0 ? season : season - 1
 
   const results: SyncSummary[] = []
   const failures: string[] = []
@@ -40,7 +39,15 @@ export async function GET(request: Request) {
     ['projections', () => syncProjections(supabase, season)],
     ['auction', () => syncAuctionValues(supabase, season)],
     ['bye-weeks', () => syncByeWeeks(supabase, season)],
-    ['usage', () => syncUsage(supabase, usageSeason)],
+    // Usage is per-season in player_usage: refresh last season always, and
+    // add the current season's rows once games exist. Both coexist — the UI
+    // season filter picks, nothing is overwritten.
+    ['usage-last', () => syncUsage(supabase, season - 1)],
+    ...(currentWeek > 0
+      ? ([['usage-current', () => syncUsage(supabase, season)]] as Array<
+          [string, () => Promise<SyncSummary>]
+        >)
+      : []),
     ['splits', () => syncSplits(supabase, season)],
     ['sos', () => syncSos(supabase, season)],
   ]

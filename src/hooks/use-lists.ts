@@ -32,8 +32,6 @@ export interface ListPlayerWithPlayer extends ListPlayer {
     projected_pts_ppr?: number | null
     projected_pts_half_ppr?: number | null
     projected_pts_standard?: number | null
-    snap_pct?: number | null
-    target_share?: number | null
     sos?: number | null
     auction_value?: number | null
   }

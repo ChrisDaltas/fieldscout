@@ -1436,6 +1436,38 @@ export type Database = {
           },
         ]
       }
+      player_usage: {
+        Row: {
+          player_id: string
+          season: number
+          snap_pct: number | null
+          target_share: number | null
+          updated_at: string
+        }
+        Insert: {
+          player_id: string
+          season: number
+          snap_pct?: number | null
+          target_share?: number | null
+          updated_at?: string
+        }
+        Update: {
+          player_id?: string
+          season?: number
+          snap_pct?: number | null
+          target_share?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_usage_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       players: {
         Row: {
           adp: number | null
@@ -1472,13 +1504,10 @@ export type Database = {
           projections_updated_at: string | null
           search_name: string | null
           sleeper_id: string | null
-          snap_pct: number | null
           sos: number | null
           status: string | null
-          target_share: number | null
           team: string | null
           updated_at: string | null
-          usage_season: number | null
           weight: number | null
         }
         Insert: {
@@ -1516,13 +1545,10 @@ export type Database = {
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
-          snap_pct?: number | null
           sos?: number | null
           status?: string | null
-          target_share?: number | null
           team?: string | null
           updated_at?: string | null
-          usage_season?: number | null
           weight?: number | null
         }
         Update: {
@@ -1560,13 +1586,10 @@ export type Database = {
           projections_updated_at?: string | null
           search_name?: string | null
           sleeper_id?: string | null
-          snap_pct?: number | null
           sos?: number | null
           status?: string | null
-          target_share?: number | null
           team?: string | null
           updated_at?: string | null
-          usage_season?: number | null
           weight?: number | null
         }
         Relationships: []
