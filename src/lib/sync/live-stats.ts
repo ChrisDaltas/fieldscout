@@ -77,10 +77,84 @@ async function fetchWeekStats(
 }
 
 /**
- * In-season live/box-score sync for the current week. Cheap self-gating:
- * skips outside the regular season and outside game windows (a window opens
- * on any scheduled game day for the week and stays open 36h), so a frequent
- * cron cadence costs nothing when nothing is being played.
+ * Which lingering "live" weeks should be finalized: any week still flagged
+ * live that is either behind the current week, or is the current week with
+ * its game window closed. Pure — unit tested.
+ */
+export function weeksToFinalize(
+  liveWeeks: number[],
+  currentWeek: number,
+  inWindow: boolean,
+): number[] {
+  return liveWeeks.filter((w) => w < currentWeek || (w === currentWeek && !inWindow))
+}
+
+/** Fetch + upsert one week's box scores with the given live flag. */
+async function ingestWeek(
+  supabase: SyncClient,
+  season: number,
+  week: number,
+  isLive: boolean,
+  known: Set<string>,
+): Promise<number> {
+  const upserts: Array<Record<string, unknown>> = []
+  for (const pos of POSITIONS) {
+    const rows = await fetchWeekStats(season, week, pos)
+    for (const row of rows) {
+      if (!known.has(row.player_id)) continue
+      const mapped = mapStats(row.stats)
+      if (Object.keys(mapped).length === 0) continue
+      upserts.push({
+        player_id: row.player_id,
+        season,
+        week,
+        stat_type: 'weekly',
+        source: 'sleeper',
+        is_live: isLive,
+        updated_at: new Date().toISOString(),
+        ...mapped,
+      })
+    }
+  }
+
+  const BATCH = 500
+  let written = 0
+  for (let i = 0; i < upserts.length; i += BATCH) {
+    const batch = upserts.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('player_stats')
+      .upsert(batch, { onConflict: 'player_id,season,week' })
+    if (error) throw new Error(`stats upsert failed (wk${week}): ${error.message}`)
+    written += batch.length
+  }
+  return written
+}
+
+/** Weeks in this season that still carry is_live rows. */
+async function lingeringLiveWeeks(
+  supabase: SyncClient,
+  season: number,
+): Promise<number[]> {
+  const weeks: number[] = []
+  for (let w = 1; w <= 18; w++) {
+    const { count, error } = await supabase
+      .from('player_stats')
+      .select('player_id', { count: 'exact', head: true })
+      .eq('season', season)
+      .eq('week', w)
+      .eq('is_live', true)
+    if (error) throw new Error(`live-week scan failed: ${error.message}`)
+    if ((count ?? 0) > 0) weeks.push(w)
+  }
+  return weeks
+}
+
+/**
+ * In-season live/box-score sync. During a game window it upserts the current
+ * week's running numbers flagged is_live. Once the window closes (or for any
+ * older week still flagged live) it runs one FINAL pass: re-fetches the
+ * settled numbers and writes them with is_live=false, so finished games
+ * never stay flagged in-progress. Outside the season it's a cheap no-op.
  */
 export async function syncLiveStats(
   supabase: SyncClient,
@@ -98,7 +172,12 @@ export async function syncLiveStats(
     const kickoffDay = new Date(`${g.date}T00:00:00Z`).getTime()
     return now.getTime() >= kickoffDay && now.getTime() <= kickoffDay + WINDOW_MS
   })
-  if (!inWindow) {
+
+  // Finalize any weeks still flagged live whose window is behind us.
+  const liveWeeks = await lingeringLiveWeeks(supabase, season)
+  const finalize = weeksToFinalize(liveWeeks, currentWeek, inWindow)
+
+  if (!inWindow && finalize.length === 0) {
     return {
       name: 'live-stats',
       counts: { skipped: 1 },
@@ -107,40 +186,20 @@ export async function syncLiveStats(
   }
 
   const known = await fetchKnownPlayerIds(supabase)
-  const upserts: Array<Record<string, unknown>> = []
-  for (const pos of POSITIONS) {
-    const rows = await fetchWeekStats(season, currentWeek, pos)
-    for (const row of rows) {
-      if (!known.has(row.player_id)) continue
-      const mapped = mapStats(row.stats)
-      if (Object.keys(mapped).length === 0) continue
-      upserts.push({
-        player_id: row.player_id,
-        season,
-        week: currentWeek,
-        stat_type: 'weekly',
-        source: 'sleeper',
-        is_live: true,
-        updated_at: new Date().toISOString(),
-        ...mapped,
-      })
-    }
+  const counts: Record<string, number> = {}
+
+  for (const week of finalize) {
+    counts[`finalized-wk${week}`] = await ingestWeek(supabase, season, week, false, known)
+  }
+  if (inWindow) {
+    counts[`live-wk${currentWeek}`] = await ingestWeek(
+      supabase,
+      season,
+      currentWeek,
+      true,
+      known,
+    )
   }
 
-  const BATCH = 500
-  let written = 0
-  for (let i = 0; i < upserts.length; i += BATCH) {
-    const batch = upserts.slice(i, i + BATCH)
-    const { error } = await supabase
-      .from('player_stats')
-      .upsert(batch, { onConflict: 'player_id,season,week' })
-    if (error) throw new Error(`live stats upsert failed: ${error.message}`)
-    written += batch.length
-  }
-
-  return {
-    name: 'live-stats',
-    counts: { week: currentWeek, players: written },
-    warnings: [],
-  }
+  return { name: 'live-stats', counts, warnings: [] }
 }
