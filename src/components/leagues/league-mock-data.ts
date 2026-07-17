@@ -165,16 +165,19 @@ export interface MockScoringGroup {
 // TODO(live-draft): replace with real data.
 // ---------------------------------------------------------------------------
 
+// Preseason: no games have been played, so every league is 0–0 (tied for
+// first). `proj`/`oppProj`/`opp`/`winProb` preview the Week 1 matchup —
+// projections are legitimate preseason content, unlike a record or a result.
 export const MOCK_LEAGUES: MockLeague[] = [
   {
     id: 'log',
     name: 'League of Ordinary Gentlemen',
     team: 'Gridiron Gurus',
     format: 'PPR · 12 team',
-    record: '8–2',
+    record: '0–0',
     rank: 1,
-    pf: 1284,
-    pa: 1102,
+    pf: 0,
+    pa: 0,
     proj: 132.4,
     oppProj: 118.9,
     opp: 'The Audibles',
@@ -186,10 +189,10 @@ export const MOCK_LEAGUES: MockLeague[] = [
     name: 'Dynasty Degenerates',
     team: 'Check Downs',
     format: 'Half-PPR · 12 team · Dynasty',
-    record: '6–4',
-    rank: 3,
-    pf: 1156,
-    pa: 1140,
+    record: '0–0',
+    rank: 1,
+    pf: 0,
+    pa: 0,
     proj: 121.0,
     oppProj: 127.6,
     opp: 'Air Raid',
@@ -201,10 +204,10 @@ export const MOCK_LEAGUES: MockLeague[] = [
     name: 'The Work League',
     team: 'Cubicle Kings',
     format: 'Standard · 12 team',
-    record: '9–1',
+    record: '0–0',
     rank: 1,
-    pf: 1330,
-    pa: 1044,
+    pf: 0,
+    pa: 0,
     proj: 140.1,
     oppProj: 109.8,
     opp: 'Lambeau Leapers',
@@ -214,48 +217,49 @@ export const MOCK_LEAGUES: MockLeague[] = [
   },
 ]
 
+// Preseason: every team in every league is 0–0/0 PF — no games played yet.
 const MOCK_LEAGUE_TEAMS_BY_ID: Record<string, MockLeagueTeam[]> = {
   log: [
-    { team: 'Gridiron Gurus', manager: 'You', w: 8, l: 2, pf: 1284 },
-    { team: 'Sunday Scaries', manager: 'Marcus W.', w: 7, l: 3, pf: 1241 },
-    { team: 'Air Raid', manager: 'Priya N.', w: 7, l: 3, pf: 1198 },
-    { team: 'Lambeau Leapers', manager: 'Devon K.', w: 6, l: 4, pf: 1154 },
-    { team: 'Check Downs', manager: 'Sara L.', w: 5, l: 5, pf: 1121 },
-    { team: 'The Audibles', manager: 'Tom R.', w: 4, l: 6, pf: 1049 },
-    { team: 'Pepperbox Farmers', manager: 'Alex T.', w: 3, l: 7, pf: 1003 },
-    { team: 'Cleveland Clowns', manager: 'Jordan M.', w: 4, l: 6, pf: 1066 },
-    { team: 'Mud Ducks', manager: 'Alexis F.', w: 6, l: 4, pf: 1187 },
-    { team: 'Hail Marys', manager: 'Nina P.', w: 5, l: 5, pf: 1098 },
-    { team: 'Bench Mob', manager: 'Omar S.', w: 2, l: 8, pf: 941 },
-    { team: 'Waiver Wire Wizards', manager: 'Dana K.', w: 7, l: 3, pf: 1236 },
+    { team: 'Gridiron Gurus', manager: 'You', w: 0, l: 0, pf: 0 },
+    { team: 'Sunday Scaries', manager: 'Marcus W.', w: 0, l: 0, pf: 0 },
+    { team: 'Air Raid', manager: 'Priya N.', w: 0, l: 0, pf: 0 },
+    { team: 'Lambeau Leapers', manager: 'Devon K.', w: 0, l: 0, pf: 0 },
+    { team: 'Check Downs', manager: 'Sara L.', w: 0, l: 0, pf: 0 },
+    { team: 'The Audibles', manager: 'Tom R.', w: 0, l: 0, pf: 0 },
+    { team: 'Pepperbox Farmers', manager: 'Alex T.', w: 0, l: 0, pf: 0 },
+    { team: 'Cleveland Clowns', manager: 'Jordan M.', w: 0, l: 0, pf: 0 },
+    { team: 'Mud Ducks', manager: 'Alexis F.', w: 0, l: 0, pf: 0 },
+    { team: 'Hail Marys', manager: 'Nina P.', w: 0, l: 0, pf: 0 },
+    { team: 'Bench Mob', manager: 'Omar S.', w: 0, l: 0, pf: 0 },
+    { team: 'Waiver Wire Wizards', manager: 'Dana K.', w: 0, l: 0, pf: 0 },
   ],
   din: [
-    { team: 'Check Downs', manager: 'You', w: 6, l: 4, pf: 1156 },
-    { team: 'Air Raid', manager: 'Priya N.', w: 8, l: 2, pf: 1266 },
-    { team: 'Trench Warfare', manager: 'Felix M.', w: 7, l: 3, pf: 1214 },
-    { team: 'Rookie Hoarders', manager: 'Gus B.', w: 6, l: 4, pf: 1147 },
-    { team: 'Draft Capital', manager: 'Lena K.', w: 6, l: 4, pf: 1132 },
-    { team: 'Taxi Squad', manager: 'Theo M.', w: 5, l: 5, pf: 1101 },
-    { team: 'Future Picks', manager: 'Ada V.', w: 5, l: 5, pf: 1088 },
-    { team: 'Window Closers', manager: 'Raj P.', w: 5, l: 5, pf: 1064 },
-    { team: 'The Long Game', manager: 'Mia D.', w: 4, l: 6, pf: 1032 },
-    { team: 'Devy Devils', manager: 'Cole R.', w: 4, l: 6, pf: 1008 },
-    { team: 'Pick Flippers', manager: 'Ivy S.', w: 3, l: 7, pf: 962 },
-    { team: 'Churn and Burn', manager: 'Ben W.', w: 1, l: 9, pf: 899 },
+    { team: 'Check Downs', manager: 'You', w: 0, l: 0, pf: 0 },
+    { team: 'Air Raid', manager: 'Priya N.', w: 0, l: 0, pf: 0 },
+    { team: 'Trench Warfare', manager: 'Felix M.', w: 0, l: 0, pf: 0 },
+    { team: 'Rookie Hoarders', manager: 'Gus B.', w: 0, l: 0, pf: 0 },
+    { team: 'Draft Capital', manager: 'Lena K.', w: 0, l: 0, pf: 0 },
+    { team: 'Taxi Squad', manager: 'Theo M.', w: 0, l: 0, pf: 0 },
+    { team: 'Future Picks', manager: 'Ada V.', w: 0, l: 0, pf: 0 },
+    { team: 'Window Closers', manager: 'Raj P.', w: 0, l: 0, pf: 0 },
+    { team: 'The Long Game', manager: 'Mia D.', w: 0, l: 0, pf: 0 },
+    { team: 'Devy Devils', manager: 'Cole R.', w: 0, l: 0, pf: 0 },
+    { team: 'Pick Flippers', manager: 'Ivy S.', w: 0, l: 0, pf: 0 },
+    { team: 'Churn and Burn', manager: 'Ben W.', w: 0, l: 0, pf: 0 },
   ],
   wrk: [
-    { team: 'Cubicle Kings', manager: 'You', w: 9, l: 1, pf: 1330 },
-    { team: 'Lambeau Leapers', manager: 'Drew F.', w: 8, l: 2, pf: 1287 },
-    { team: 'Spreadsheet FC', manager: 'Rosa T.', w: 7, l: 3, pf: 1226 },
-    { team: 'Reply All', manager: 'Quinn H.', w: 6, l: 4, pf: 1173 },
-    { team: 'Sync Meeting', manager: 'Sofia G.', w: 6, l: 4, pf: 1150 },
-    { team: 'The Deliverables', manager: 'Max C.', w: 5, l: 5, pf: 1117 },
-    { team: 'Stand Up Stars', manager: 'Noor A.', w: 5, l: 5, pf: 1095 },
-    { team: 'Ping Me Later', manager: 'Jack O.', w: 4, l: 6, pf: 1053 },
-    { team: 'Out of Office', manager: 'Tara L.', w: 4, l: 6, pf: 1027 },
-    { team: 'Circle Back', manager: 'Eli N.', w: 3, l: 7, pf: 991 },
-    { team: 'Q4 Crunch', manager: 'Zoe M.', w: 2, l: 8, pf: 948 },
-    { team: 'The Interns', manager: 'Sam Y.', w: 1, l: 9, pf: 903 },
+    { team: 'Cubicle Kings', manager: 'You', w: 0, l: 0, pf: 0 },
+    { team: 'Lambeau Leapers', manager: 'Drew F.', w: 0, l: 0, pf: 0 },
+    { team: 'Spreadsheet FC', manager: 'Rosa T.', w: 0, l: 0, pf: 0 },
+    { team: 'Reply All', manager: 'Quinn H.', w: 0, l: 0, pf: 0 },
+    { team: 'Sync Meeting', manager: 'Sofia G.', w: 0, l: 0, pf: 0 },
+    { team: 'The Deliverables', manager: 'Max C.', w: 0, l: 0, pf: 0 },
+    { team: 'Stand Up Stars', manager: 'Noor A.', w: 0, l: 0, pf: 0 },
+    { team: 'Ping Me Later', manager: 'Jack O.', w: 0, l: 0, pf: 0 },
+    { team: 'Out of Office', manager: 'Tara L.', w: 0, l: 0, pf: 0 },
+    { team: 'Circle Back', manager: 'Eli N.', w: 0, l: 0, pf: 0 },
+    { team: 'Q4 Crunch', manager: 'Zoe M.', w: 0, l: 0, pf: 0 },
+    { team: 'The Interns', manager: 'Sam Y.', w: 0, l: 0, pf: 0 },
   ],
 }
 
@@ -263,6 +267,8 @@ const MOCK_LEAGUE_TEAMS_BY_ID: Record<string, MockLeagueTeam[]> = {
 // scoped to the demo "log" league and reused for every mock league.
 // TODO(live-draft): scope per league once the backend exists.
 
+// Preseason: no games have started, so every side has its full lineup left
+// to play (yetToPlay always equals the 9-man starting lineup).
 export const MOCK_MATCHUPS: MockMatchup[] = [
   {
     home: { team: 'Gridiron Gurus', manager: 'You', proj: 132.4, yetToPlay: 9 },
@@ -270,12 +276,12 @@ export const MOCK_MATCHUPS: MockMatchup[] = [
     winProb: 71,
   },
   {
-    home: { team: 'Sunday Scaries', manager: 'Marcus W.', proj: 121.2, yetToPlay: 8 },
+    home: { team: 'Sunday Scaries', manager: 'Marcus W.', proj: 121.2, yetToPlay: 9 },
     away: { team: 'Check Downs', manager: 'Sara L.', proj: 127.6, yetToPlay: 9 },
     winProb: 44,
   },
   {
-    home: { team: 'Air Raid', manager: 'Priya N.', proj: 140.1, yetToPlay: 7 },
+    home: { team: 'Air Raid', manager: 'Priya N.', proj: 140.1, yetToPlay: 9 },
     away: { team: 'Lambeau Leapers', manager: 'Devon K.', proj: 109.8, yetToPlay: 9 },
     winProb: 78,
   },
@@ -286,16 +292,27 @@ export const MOCK_MATCHUPS: MockMatchup[] = [
   },
 ]
 
+// Preseason: nothing has been played, so no week has a result or is live —
+// every week is an upcoming kickoff.
 export const MOCK_SCHEDULE: MockScheduleGame[] = [
-  { week: 1, opp: 'The Audibles', result: 'W 128.4–101.2', win: true },
-  { week: 2, opp: 'Sunday Scaries', result: 'W 134.0–121.7', win: true },
-  { week: 3, opp: 'Check Downs', result: 'L 109.2–117.5', win: false },
-  { week: 4, opp: 'Air Raid', result: 'W 162.4–140.8', win: true },
-  { week: 5, opp: 'Lambeau Leapers', result: 'W 121.9–98.3', win: true },
-  { week: 6, opp: 'Pepperbox Farmers', result: 'L 84.1–102.6', win: false },
-  { week: 11, opp: 'The Audibles', live: true },
+  { week: 1, opp: 'The Audibles', kickoff: 'Sun 1:00' },
+  { week: 2, opp: 'Sunday Scaries', kickoff: 'Sun 1:00' },
+  { week: 3, opp: 'Check Downs', kickoff: 'Sun 4:05' },
+  { week: 4, opp: 'Air Raid', kickoff: 'Sun 1:00' },
+  { week: 5, opp: 'Lambeau Leapers', kickoff: 'Sun 4:25' },
+  { week: 6, opp: 'Pepperbox Farmers', kickoff: 'Sun 1:00' },
+  { week: 7, opp: 'Cleveland Clowns', kickoff: 'Sun 1:00' },
+  { week: 8, opp: 'Mud Ducks', kickoff: 'Mon 8:15' },
+  { week: 9, opp: 'Hail Marys', kickoff: 'Sun 1:00' },
+  { week: 10, opp: 'Bench Mob', kickoff: 'Sun 4:05' },
+  { week: 11, opp: 'The Audibles', kickoff: 'Sun 1:00' },
   { week: 12, opp: 'Sunday Scaries', kickoff: 'Sun 1:00' },
   { week: 13, opp: 'Air Raid', kickoff: 'Sun 4:25' },
+  { week: 14, opp: 'Waiver Wire Wizards', kickoff: 'Sun 1:00' },
+  { week: 15, opp: 'Lambeau Leapers', kickoff: 'Sun 4:05' },
+  { week: 16, opp: 'Pepperbox Farmers', kickoff: 'Sun 1:00' },
+  { week: 17, opp: 'Cleveland Clowns', kickoff: 'Sun 1:00' },
+  { week: 18, opp: 'Mud Ducks', kickoff: 'Sun 1:00' },
 ]
 
 export const MOCK_MESSAGES: MockBoardMessage[] = [
@@ -370,14 +387,15 @@ export const MOCK_HISTORY: Record<MockSeasonKey, MockSeasonRow[]> = {
     { team: 'The Audibles', w: 24, l: 32, titles: 0, pf: 4402 },
     { team: 'Pepperbox Farmers', w: 10, l: 46, titles: 0, pf: 3910 },
   ],
+  // Preseason: the 2026 season hasn't started, so every team is 0–0/0 PF.
   '2026': [
-    { team: 'Gridiron Gurus', w: 8, l: 2, titles: 0, pf: 1284 },
-    { team: 'Sunday Scaries', w: 7, l: 3, titles: 0, pf: 1251 },
-    { team: 'Check Downs', w: 6, l: 4, titles: 0, pf: 1198 },
-    { team: 'Air Raid', w: 6, l: 4, titles: 0, pf: 1177 },
-    { team: 'Lambeau Leapers', w: 4, l: 6, titles: 0, pf: 1080 },
-    { team: 'The Audibles', w: 3, l: 7, titles: 0, pf: 1011 },
-    { team: 'Pepperbox Farmers', w: 1, l: 9, titles: 0, pf: 894 },
+    { team: 'Gridiron Gurus', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'Sunday Scaries', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'Check Downs', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'Air Raid', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'Lambeau Leapers', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'The Audibles', w: 0, l: 0, titles: 0, pf: 0 },
+    { team: 'Pepperbox Farmers', w: 0, l: 0, titles: 0, pf: 0 },
   ],
   '2025': [
     { team: 'Check Downs', w: 11, l: 3, titles: 1, pf: 1401 },
@@ -399,11 +417,12 @@ export const MOCK_HISTORY: Record<MockSeasonKey, MockSeasonRow[]> = {
   ],
 }
 
+// Preseason: no weeks have been played, so there's no record to report yet.
 export const MOCK_STAT_RECORDS: MockStatRecord[] = [
-  { label: 'Highest week', value: '162.4', sub: 'Week 4 vs Air Raid' },
-  { label: 'Lowest week', value: '84.1', sub: 'Week 6 vs Pepperbox Farmers' },
-  { label: 'Average', value: '128.4', sub: 'League average 117.9' },
-  { label: 'Current streak', value: 'W4', sub: 'Longest this season' },
+  { label: 'Highest week', value: '—', sub: 'No games played yet' },
+  { label: 'Lowest week', value: '—', sub: 'No games played yet' },
+  { label: 'Average', value: '—', sub: 'Season starts soon' },
+  { label: 'Current streak', value: '—', sub: 'No games played yet' },
 ]
 
 export const MOCK_WAIVER_SETTINGS: MockWaiverSetting[] = [
@@ -513,5 +532,177 @@ export const MOCK_ROSTER_SPOT_COUNT = MOCK_ROSTER_SLOTS.reduce(
   0,
 )
 
-/** The current mock week — everything in the demo season points at week 11. */
-export const MOCK_CURRENT_WEEK = 11
+/** The current mock week. 0 = preseason (matches the app-wide convention —
+ *  see lib/sports-data/nfl-state.ts): no games played, nothing is "final,"
+ *  and every week 1–18 is still ahead of you. */
+export const MOCK_CURRENT_WEEK = 0
+
+/** For "Week N" labels — preseason (0) previews the season-opening Week 1
+ *  rather than printing the meaningless "Week 0". */
+export const MOCK_DISPLAY_WEEK = MOCK_CURRENT_WEEK === 0 ? 1 : MOCK_CURRENT_WEEK
+
+// ---------------------------------------------------------------------------
+// Weekly lineup engine (My Team, all 18 weeks)
+//
+// The league backend does not exist, so every week's opponent / kickoff /
+// projection / OPRK is DERIVED from the MOCK_LINEUP baseline above via a
+// deterministic (seeded, not Math.random()) generator — stable across
+// re-renders and week-to-week navigation. Preseason (MOCK_CURRENT_WEEK = 0)
+// never equals a selectable week, so weeklyVariant's no-op branch never
+// fires today — every week 1–18 is generated uniformly, which is correct
+// pre-season: nothing is "the current actual week" yet. That branch exists
+// for when the season starts and MOCK_CURRENT_WEEK becomes a real 1–18 week.
+// TODO(live-draft): replace with the real week-by-week roster/schedule.
+// ---------------------------------------------------------------------------
+
+/** NFL team → bye week. Only teams appearing in the demo roster need an
+ *  entry; anything else falls back to week 9. */
+const TEAM_BYE_WEEK: Record<string, number> = {
+  BUF: 7,
+  SF: 9,
+  PHI: 5,
+  DAL: 10,
+  NYJ: 9,
+  DET: 8,
+  TB: 9,
+  BAL: 7,
+  KC: 6,
+  MIA: 12,
+  TEN: 5,
+  ATL: 12,
+  MIN: 6,
+  CAR: 8,
+}
+
+function byeWeekFor(team: string): number {
+  return TEAM_BYE_WEEK[team] ?? 9
+}
+
+const OPPONENT_POOL = [
+  'MIA', 'NE', 'CLE', 'CIN', 'PIT', 'HOU', 'IND', 'JAX', 'DEN', 'LAC',
+  'NYG', 'WAS', 'GB', 'CHI', 'NO', 'SEA', 'ARI', 'LAR', 'BUF', 'NYJ',
+  'SF', 'DAL', 'PHI', 'BAL', 'KC', 'DET', 'TB', 'TEN', 'ATL', 'MIN', 'CAR',
+] as const
+
+const KICKOFF_SLOTS = ['Sun 1:00', 'Sun 4:05', 'Sun 4:25', 'Mon 8:15', 'Thu 8:15'] as const
+
+/** Deterministic hash → [0, 1) — stable across renders (no Math.random()). */
+function seeded(key: string): number {
+  let h = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    h = Math.imul(h ^ key.charCodeAt(i), 16777619)
+  }
+  return ((h >>> 0) % 100000) / 100000
+}
+
+/** A player's opponent/kickoff/projection/OPRK/status for `week`, derived
+ *  from their MOCK_LINEUP baseline (the "typical week" figures other tabs
+ *  read directly). Only a no-op at MOCK_CURRENT_WEEK — see the note above. */
+function weeklyVariant(base: MockLineupPlayer, week: number): MockLineupPlayer {
+  if (week === MOCK_CURRENT_WEEK) return base
+
+  const bye = byeWeekFor(base.team)
+  if (week === bye) {
+    return { ...base, opp: 'BYE', time: '', proj: 0, oprk: 0, status: '' }
+  }
+
+  const seedKey = `${base.name}:${week}`
+  const projVariance = (seeded(`${seedKey}:proj`) - 0.5) * 0.3 // ±15%
+  const oprkShift = Math.round((seeded(`${seedKey}:oprk`) - 0.5) * 20) // ±10
+  const pool = OPPONENT_POOL.filter((t) => t !== base.team)
+  const opponent = pool[Math.floor(seeded(`${seedKey}:opp`) * pool.length)]
+  const home = seeded(`${seedKey}:home`) >= 0.5
+  const kickoff =
+    KICKOFF_SLOTS[Math.floor(seeded(`${seedKey}:time`) * KICKOFF_SLOTS.length)]
+
+  return {
+    ...base,
+    opp: home ? `vs ${opponent}` : `@${opponent}`,
+    time: kickoff,
+    proj: Math.max(0, +(base.proj * (1 + projVariance)).toFixed(1)),
+    oprk: Math.min(32, Math.max(1, base.oprk + oprkShift)),
+    // Past weeks are final — never show a stale injury designation.
+    status: week < MOCK_CURRENT_WEEK ? '' : base.status,
+  }
+}
+
+/** The full 14-player roster pool (starters + bench), independent of any
+ *  week's slot assignment. */
+export const MOCK_ROSTER: MockLineupPlayer[] = [
+  ...MOCK_LINEUP.starters,
+  ...MOCK_LINEUP.bench,
+]
+
+/** The 9 starter slots, in display order (mirrors `MOCK_LINEUP.starters`). */
+export const STARTER_SLOTS: string[] = MOCK_LINEUP.starters.map((p) => p.slot)
+
+/** Can `pos` fill `slot`? FLEX takes RB/WR/TE; D/ST takes the DEF entry. */
+export function slotEligible(slot: string, pos: string): boolean {
+  if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE'
+  if (slot === 'D/ST') return pos === 'DEF'
+  return slot === pos
+}
+
+/** starters[i] occupies STARTER_SLOTS[i] — positional, NOT keyed by slot
+ *  label. Two starter slots share the label "RB" and two share "WR", so a
+ *  label-keyed map would silently collapse them onto one player. `ir` is the
+ *  name of the bench player placed on IR this week, if any. */
+export interface WeekAssignment {
+  starters: string[]
+  ir: string | null
+}
+
+export function defaultAssignment(): WeekAssignment {
+  return { starters: MOCK_LINEUP.starters.map((p) => p.name), ir: null }
+}
+
+/** Can a player go on IR? Mirrors real leagues, which only allow an official
+ *  "Out" designation — the only status this mock data models that far. */
+export function irEligible(status: MockInjuryStatus): boolean {
+  return status === 'O'
+}
+
+/** Resolve one week's starters/bench/IR from a slot assignment (defaults to
+ *  `defaultAssignment()` when the user hasn't edited that week). */
+export function resolveWeekLineup(
+  week: number,
+  assignment: WeekAssignment = defaultAssignment(),
+): MockLineup {
+  const byName = new Map(MOCK_ROSTER.map((p) => [p.name, p]))
+  const starters = STARTER_SLOTS.map((slot, i) => {
+    const base = byName.get(assignment.starters[i])
+    if (!base) throw new Error(`No roster player assigned to slot index ${i}`)
+    return { ...weeklyVariant(base, week), slot }
+  })
+  const startingNames = new Set(starters.map((p) => p.name))
+  const irBase = assignment.ir ? byName.get(assignment.ir) : undefined
+  const ir = irBase ? { ...weeklyVariant(irBase, week), slot: 'IR' } : null
+  const bench = MOCK_ROSTER.filter(
+    (p) => !startingNames.has(p.name) && p.name !== assignment.ir,
+  ).map((p) => ({ ...weeklyVariant(p, week), slot: 'BE' }))
+  return { starters, bench, ir, dl: MOCK_LINEUP.dl }
+}
+
+/** A week's fantasy opponent + a deterministic projected score for them,
+ *  derived from `league.oppProj` the same way a player's projection varies
+ *  week to week.
+ *
+ * At MOCK_CURRENT_WEEK, `league.opp`/`league.oppProj` are used as-is — they're
+ * per-league truth. MOCK_SCHEDULE, by contrast, is a single opponent list
+ * authored for the "log" demo league and reused for every league (see its
+ * comment above), so it only supplies the opponent NAME for other weeks;
+ * pairing it with `league.opp` at the current week would show e.g. "din"'s
+ * oppProj next to "log"'s opponent name. */
+export function weekMatchup(
+  league: MockLeague,
+  week: number,
+): { opp: string; oppProj: number } {
+  if (week === MOCK_CURRENT_WEEK) return { opp: league.opp, oppProj: league.oppProj }
+  const game = MOCK_SCHEDULE.find((g) => g.week === week)
+  const opp = game?.opp ?? league.opp
+  const variance = (seeded(`${opp}:${week}:oppProj`) - 0.5) * 0.3
+  return {
+    opp,
+    oppProj: Math.max(0, +(league.oppProj * (1 + variance)).toFixed(1)),
+  }
+}

@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 
 import { Crest, TeamCell, WinProbMeter } from './league-cells'
 import {
-  MOCK_CURRENT_WEEK,
+  MOCK_DISPLAY_WEEK,
   MOCK_MATCHUPS,
   MOCK_MESSAGES,
   MOCK_SCHEDULE,
@@ -114,31 +114,30 @@ function MatchupCard({
   )
 }
 
+// Preseason: nothing is live yet, so this previews the Week 1 slate rather
+// than showing an in-progress scoreboard.
 function Scoreboard({ onOpenMatchup }: { onOpenMatchup: () => void }) {
-  const [week, setWeek] = useState('w11')
+  const [week, setWeek] = useState('w1')
   return (
     <section>
       <div className="mb-2.5 flex items-center gap-2.5">
-        <h2 className="mr-auto text-h5">Live scoreboard</h2>
-        <Badge variant="green">
-          <span className="h-[6px] w-[6px] animate-pulse rounded-full bg-current" />
-          Live
-        </Badge>
+        <h2 className="mr-auto text-h5">Week 1 matchups</h2>
+        <Badge variant="stroke">Projected</Badge>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        {/* TODO(live-draft): weeks beyond the current one need real matchup data. */}
+        {/* TODO(live-draft): weeks beyond Week 1 need real matchup data. */}
         <Tabs value={week} onValueChange={setWeek}>
           <TabsList>
-            <TabsTrigger value="w11">Week 11</TabsTrigger>
-            <TabsTrigger value="w12">Week 12</TabsTrigger>
+            <TabsTrigger value="w1">Week 1</TabsTrigger>
+            <TabsTrigger value="w2">Week 2</TabsTrigger>
             <TabsTrigger value="po">Playoffs</TabsTrigger>
           </TabsList>
         </Tabs>
         <span className="ml-auto whitespace-nowrap text-[10px] font-semibold text-n-3">
-          Updates live · no refresh needed
+          Scores post once games kick off
         </span>
       </div>
-      {week === 'w11' ? (
+      {week === 'w1' ? (
         <div className="flex flex-col gap-4">
           {MOCK_MATCHUPS.map((matchup) => (
             <MatchupCard
@@ -157,7 +156,7 @@ function Scoreboard({ onOpenMatchup }: { onOpenMatchup: () => void }) {
             <p className="mt-1 text-[12px] font-medium text-n-3">
               {week === 'po'
                 ? 'Seeds settle after week 14 — check the standings to see who is in the hunt.'
-                : 'Next week’s matchups open once this week’s games go final.'}
+                : 'Week 2 matchups open once Week 1 games go final.'}
             </p>
           </CardContent>
         </Card>
@@ -172,7 +171,7 @@ function StandingsCard({ league }: { league: MockLeague }) {
     <Card>
       <CardHeader>
         <CardTitle>Standings</CardTitle>
-        <Badge variant="stroke">Week {MOCK_CURRENT_WEEK}</Badge>
+        <Badge variant="stroke">Week {MOCK_DISPLAY_WEEK}</Badge>
       </CardHeader>
       <div>
         {standings.map((row, i) => (

@@ -40,6 +40,7 @@ const SEASONS: Array<{ value: MockSeasonKey; label: string }> = [
 ]
 
 function winPct(w: number, l: number): number {
+  if (w + l === 0) return 0
   return Math.round((w / (w + l)) * 100)
 }
 

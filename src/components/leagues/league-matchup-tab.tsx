@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 import { Crest, PlayerCell, WinProbMeter } from './league-cells'
 import {
-  MOCK_CURRENT_WEEK,
+  MOCK_DISPLAY_WEEK,
   MOCK_LINEUP,
   MOCK_OPP_STARTERS,
   type MockLeague,
@@ -58,7 +58,7 @@ export function LeagueMatchupTab({ league }: { league: MockLeague }) {
           <MatchupHeaderSide team={league.team} manager="You" proj={league.proj} />
           <div className="hidden text-center sm:block">
             <div className="fs-overline text-[9px] text-n-3">
-              Week <span className="fs-num">{MOCK_CURRENT_WEEK}</span> · projected
+              Week <span className="fs-num">{MOCK_DISPLAY_WEEK}</span> · projected
             </div>
             <div className="mt-1 text-[10px] font-extrabold text-n-3">vs</div>
           </div>

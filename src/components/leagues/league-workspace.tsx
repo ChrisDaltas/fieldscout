@@ -19,10 +19,12 @@ import { LeaguePlayersTab } from './league-players-tab'
 import { LeagueScheduleTab } from './league-schedule-tab'
 import { LeagueStatsTab } from './league-stats-tab'
 import {
+  MOCK_DISPLAY_WEEK,
   MOCK_ROSTER_SPOT_COUNT,
   getMockLeague,
   getMockLeagueTeams,
   type MockLeague,
+  type WeekAssignment,
 } from './league-mock-data'
 
 /**
@@ -115,6 +117,14 @@ export function LeagueWorkspace({ leagueId, initialTab }: LeagueWorkspaceProps) 
     isLeagueTab(initialTab) ? initialTab : 'home',
   )
 
+  // My Team's selected week + in-progress lineup swaps live here (not in
+  // LeagueMyTeamTab) so switching to another sub-tab and back doesn't
+  // unmount-and-reset them — they naturally reset when leagueId changes.
+  const [myTeamWeek, setMyTeamWeek] = useState(MOCK_DISPLAY_WEEK)
+  const [myTeamAssignments, setMyTeamAssignments] = useState<
+    Record<number, WeekAssignment>
+  >({})
+
   const handleTabChange = (next: LeagueWorkspaceTab) => {
     setTab(next)
     // Keep the tab in the URL so league views are shareable/refreshable.
@@ -189,7 +199,15 @@ export function LeagueWorkspace({ leagueId, initialTab }: LeagueWorkspaceProps) 
             onOpenMatchup={() => handleTabChange('matchup')}
           />
         )}
-        {tab === 'my-team' && <LeagueMyTeamTab league={league} />}
+        {tab === 'my-team' && (
+          <LeagueMyTeamTab
+            league={league}
+            week={myTeamWeek}
+            onWeekChange={setMyTeamWeek}
+            assignments={myTeamAssignments}
+            onAssignmentsChange={setMyTeamAssignments}
+          />
+        )}
         {tab === 'matchup' && <LeagueMatchupTab league={league} />}
         {tab === 'players' && <LeaguePlayersTab />}
         {tab === 'schedule' && <LeagueScheduleTab league={league} />}
