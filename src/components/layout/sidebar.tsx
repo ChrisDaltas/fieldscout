@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 
 import { SidebarResizeHandle } from '@/components/layout/sidebar-resize-handle'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { SIDEBAR_DIMENSIONS, useUIStore } from '@/stores/ui-store'
 
@@ -240,7 +241,8 @@ export function Sidebar() {
             {!isCollapsed && <span>{moreOpen ? 'Less' : 'More'}</span>}
           </button>
 
-          {/* Teams section */}
+          {/* Teams section — league teams, gated with the leagues release */}
+          {featureFlags.leagues && (
           <div className={cn('mt-2.5', isCollapsed && 'mt-1.5')}>
             {isCollapsed ? (
               <div className="mx-1.5 my-2 h-px bg-white/10" />
@@ -294,6 +296,7 @@ export function Sidebar() {
               </div>
             )}
           </div>
+          )}
         </nav>
       </div>
 

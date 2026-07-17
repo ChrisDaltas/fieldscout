@@ -38,16 +38,19 @@ interface MockLeague {
 }
 
 // TODO(live-draft): mock memberships — replace with real league data.
+// Preseason: no games played, so every league is 0–0 (tied for first); proj/
+// oppProj/opp/winProb preview the Week 1 matchup (a legitimate preseason
+// projection, unlike a record or result).
 const MOCK_LEAGUES: MockLeague[] = [
   {
     id: 'log',
     name: 'League of Ordinary Gentlemen',
     team: 'Gridiron Gurus',
     teamInitials: 'GG',
-    record: '8–2',
+    record: '0–0',
     rank: 1,
-    pf: 1284,
-    pa: 1102,
+    pf: 0,
+    pa: 0,
     playoff: 96,
     proj: 132.4,
     opp: 'The Audibles',
@@ -60,10 +63,10 @@ const MOCK_LEAGUES: MockLeague[] = [
     name: 'Dynasty Degenerates',
     team: 'Check Downs',
     teamInitials: 'CD',
-    record: '6–4',
-    rank: 3,
-    pf: 1156,
-    pa: 1140,
+    record: '0–0',
+    rank: 1,
+    pf: 0,
+    pa: 0,
     playoff: 64,
     proj: 121.0,
     opp: 'Air Raid',
@@ -76,10 +79,10 @@ const MOCK_LEAGUES: MockLeague[] = [
     name: 'The Work League',
     team: 'Cubicle Kings',
     teamInitials: 'CK',
-    record: '9–1',
+    record: '0–0',
     rank: 1,
-    pf: 1330,
-    pa: 1044,
+    pf: 0,
+    pa: 0,
     playoff: 99,
     proj: 140.1,
     opp: 'Lambeau Leapers',

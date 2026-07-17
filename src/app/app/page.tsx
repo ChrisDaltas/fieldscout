@@ -11,6 +11,7 @@ import { WaiverAddsCard } from '@/components/home/waiver-adds-card'
 import { YourLeagues } from '@/components/home/your-leagues'
 import { PageHeader } from '@/components/layout/app-header'
 import { TwoColumnLayout } from '@/components/layout/two-column-layout'
+import { featureFlags } from '@/lib/feature-flags'
 
 /**
  * Home — the jump-off hub (package screen 01). Two columns ~1.55fr/1fr with a
@@ -24,22 +25,36 @@ export default function AppHomePage() {
     <div className="space-y-[19px]">
       <PageHeader title="Home" actions={<HomeQuickActions />} />
 
-      <TwoColumnLayout
-        main={
-          <div className="flex min-w-0 flex-col gap-[19px]">
-            <LiveDraftHero />
-            <YourLeagues />
-          </div>
-        }
-        aside={
-          <>
-            <ScoutAiCard />
-            <TrendingPlayersCard />
-            <WaiverAddsCard />
-            <InjuryNewsCard />
-          </>
-        }
-      />
+      {featureFlags.leagues ? (
+        <TwoColumnLayout
+          main={
+            <div className="flex min-w-0 flex-col gap-[19px]">
+              <LiveDraftHero />
+              <YourLeagues />
+            </div>
+          }
+          aside={
+            <>
+              <ScoutAiCard />
+              <TrendingPlayersCard />
+              <WaiverAddsCard />
+              <InjuryNewsCard />
+            </>
+          }
+        />
+      ) : (
+        // Leagues release gate off: no draft hero / league cards / waiver
+        // feed — research content takes over the hub grid.
+        <TwoColumnLayout
+          main={
+            <div className="flex min-w-0 flex-col gap-[19px]">
+              <ScoutAiCard />
+              <TrendingPlayersCard />
+            </div>
+          }
+          aside={<InjuryNewsCard />}
+        />
+      )}
 
       <RecentlyViewed />
       <AiExpertShelf />

@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 
@@ -48,6 +49,8 @@ export function HomeQuickActions() {
 
   return (
     <span className="flex items-center gap-2">
+      {featureFlags.leagues && (
+      <>
       <ActionChip
         icon="team"
         label="Join"
@@ -74,6 +77,8 @@ export function HomeQuickActions() {
           })
         }
       />
+      </>
+      )}
       <ActionChip
         icon="list"
         label="List"

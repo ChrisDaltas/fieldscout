@@ -9,13 +9,19 @@ import { PlayersPanel } from '@/components/layout/rail/players-panel'
 import { TeamsPanel } from '@/components/layout/rail/teams-panel'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { useNotifications } from '@/hooks/use-notifications'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useRailStore, type RailTool } from '@/stores/rail-store'
 
+// Messages and Teams (league teams) are release-gated with their features.
 const TOOLS: ReadonlyArray<{ id: RailTool; icon: IconName; label: string }> = [
   { id: 'notifications', icon: 'notification', label: 'Notifications' },
-  { id: 'messages', icon: 'comments', label: 'Messages' },
-  { id: 'teams', icon: 'team', label: 'Teams' },
+  ...(featureFlags.messages
+    ? [{ id: 'messages', icon: 'comments', label: 'Messages' } as const]
+    : []),
+  ...(featureFlags.leagues
+    ? [{ id: 'teams', icon: 'team', label: 'Teams' } as const]
+    : []),
   { id: 'players', icon: 'profile', label: 'Players' },
 ]
 
@@ -40,14 +46,18 @@ export function ResearchRail() {
   // persisted panel state after mount so SSR and first client paint agree.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const activeTool = mounted ? openTool : null
+  // A persisted openTool may point at a gated-off tool — treat it as closed.
+  const activeTool =
+    mounted && openTool && TOOLS.some((t) => t.id === openTool)
+      ? openTool
+      : null
 
   // Unseen counts for the strip badges. Notifications are real (shared query
   // with the rest of the app); messages are mock until DMs have a backend.
   const { data: notificationsData } = useNotifications(mounted)
   const unseen: Partial<Record<RailTool, number>> = {
     notifications: notificationsData?.unreadCount ?? 0,
-    messages: mockDmUnreadCount(),
+    ...(featureFlags.messages ? { messages: mockDmUnreadCount() } : {}),
   }
 
   return (
