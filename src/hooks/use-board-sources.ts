@@ -1,8 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { createBrowserClient } from '@/lib/supabase/client'
+import { aggregateFantasyStats, type ScoringKey } from '@/lib/stats/aggregate-fantasy'
 import { firstEmbed } from '@/utils/supabase-embed'
 
 /** Everything a Big Board dashboard card can show. All stats nullable — the
@@ -152,6 +154,27 @@ export function usePersonaBoardPlayers(listId: string | null) {
         const player = firstEmbed(row.player as BoardSourcePlayer | BoardSourcePlayer[] | null)
         return player ? [player] : []
       })
+    },
+  })
+}
+
+/** Last-season fantasy point totals for a set of players — Big Board's
+ *  "2025 total points" card field. Reads `player_stats` directly (RLS
+ *  already allows public read) via the same aggregator the list detail
+ *  page's server route uses, just from the browser client instead. Pass an
+ *  empty array to skip the fetch entirely (e.g. while the field is off). */
+export function useLastSeasonPoints(playerIds: string[], scoring: ScoringKey) {
+  const ids = useMemo(() => [...playerIds].sort(), [playerIds])
+  return useQuery({
+    queryKey: ['board-last-season-points', scoring, ids.join(',')],
+    enabled: ids.length > 0,
+    staleTime: STALE_TIME,
+    queryFn: async (): Promise<Map<string, number>> => {
+      const supabase = createBrowserClient()
+      const stats = await aggregateFantasyStats(supabase, ids, scoring)
+      const out = new Map<string, number>()
+      for (const [id, s] of stats) out.set(id, s.last_pts)
+      return out
     },
   })
 }
