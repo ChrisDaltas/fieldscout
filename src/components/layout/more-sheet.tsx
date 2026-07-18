@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuth } from '@/hooks/use-auth'
+import { featureFlags } from '@/lib/feature-flags'
 import { useHistoryStore } from '@/stores/history-store'
 
 interface MoreSheetProps {
@@ -51,7 +52,9 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
             onClick={close}
           />
           <Row href="/app/teams" icon="layers" label="Teams" onClick={close} />
-          <Row href="/app/leagues" icon="cup" label="Leagues" onClick={close} />
+          {featureFlags.leagues && (
+            <Row href="/app/leagues" icon="cup" label="Leagues" onClick={close} />
+          )}
         </ul>
 
         <div className="mt-5">

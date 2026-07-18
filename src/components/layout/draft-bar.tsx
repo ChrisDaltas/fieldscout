@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
+import { featureFlags } from '@/lib/feature-flags'
 
 interface DraftAlert {
   live: boolean
@@ -23,6 +24,7 @@ const MOCK_ALERT: DraftAlert = {
 }
 
 function useDraftAlert(): DraftAlert | null {
+  if (!featureFlags.leagues) return null
   return MOCK_ALERT
 }
 

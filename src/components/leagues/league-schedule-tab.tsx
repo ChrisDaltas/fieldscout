@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 
 import { TeamCell } from './league-cells'
 import {
-  MOCK_CURRENT_WEEK,
+  MOCK_DISPLAY_WEEK,
   MOCK_SCHEDULE,
   type MockLeague,
 } from './league-mock-data'
@@ -88,13 +88,13 @@ export function LeagueScheduleTab({ league }: { league: MockLeague }) {
         <CardHeader>
           <CardTitle>This week</CardTitle>
           <Badge variant="stroke">
-            Week <span className="fs-num">{MOCK_CURRENT_WEEK}</span>
+            Week <span className="fs-num">{MOCK_DISPLAY_WEEK}</span>
           </Badge>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <TeamCell
             team={league.opp}
-            sub={`Week ${MOCK_CURRENT_WEEK} opponent`}
+            sub={`Week ${MOCK_DISPLAY_WEEK} opponent`}
             crestClassName="h-8 w-8"
           />
           <div className="flex items-center justify-between gap-2.5 border-t border-n-4 pt-3 text-[12px] font-bold">

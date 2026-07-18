@@ -47,7 +47,11 @@ import {
 } from '@/components/ui/dialog'
 
 import { PageHeader } from '@/components/layout/app-header'
-import { CustomizeModal } from '@/components/lists/customize-modal'
+import {
+  CustomizePopover,
+  DEFAULT_LIST_ROW_STATS,
+  type ListRowStatKey,
+} from '@/components/lists/customize-popover'
 import { EditableThumbnail } from '@/components/lists/editable-thumbnail'
 import { TagChip } from '@/components/lists/tag-chip'
 import { TIER_BAND_BG } from '@/components/lists/tier-badge'
@@ -89,7 +93,7 @@ import {
   STARTING_SLOTS,
   slotCapacity,
 } from '@/lib/lists/roster'
-import { LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
 import { cn } from '@/lib/utils'
 
 import type { ListRosterSettings, ListTier, TeamSlot } from '@/types/database'
@@ -139,21 +143,70 @@ const TIER_LIST_CLASS = (viewMode: ViewMode) =>
     : 'space-y-0.5'
 
 /** The inline PROJ / <season> / ADP stat cells shown on a comfortable list row. */
-function rowStatsFor(entry: ListPlayerWithPlayer, density: ViewMode) {
-  if (density === 'compact' || !entry.stats) return undefined
+function rowStatsFor(
+  entry: ListPlayerWithPlayer,
+  density: ViewMode,
+  visibleStats: Set<ListRowStatKey>,
+) {
+  if (density === 'compact') return undefined
   const fantasy = entry.stats
-  const adp = entry.player.adp
-  return [
-    {
+  const player = entry.player
+  const stats: Array<{ label: string; value: string }> = []
+
+  if (visibleStats.has('proj')) {
+    stats.push({
       label: 'PROJ',
       value:
-        typeof fantasy.projected_pts === 'number'
+        typeof fantasy?.projected_pts === 'number'
           ? fantasy.projected_pts.toFixed(1)
           : '—',
-    },
-    { label: String(LAST_SEASON), value: fantasy.last_pts.toFixed(1) },
-    { label: 'ADP', value: typeof adp === 'number' ? adp.toFixed(1) : '—' },
-  ]
+    })
+  }
+  if (visibleStats.has('current')) {
+    stats.push({
+      label: String(CURRENT_SEASON),
+      value:
+        typeof fantasy?.current_pts === 'number'
+          ? fantasy.current_pts.toFixed(1)
+          : '—',
+    })
+  }
+  if (visibleStats.has('last')) {
+    stats.push({
+      label: String(LAST_SEASON),
+      value:
+        typeof fantasy?.last_pts === 'number' ? fantasy.last_pts.toFixed(1) : '—',
+    })
+  }
+  if (visibleStats.has('adp')) {
+    stats.push({
+      label: 'ADP',
+      value: typeof player.adp === 'number' ? player.adp.toFixed(1) : '—',
+    })
+  }
+  if (visibleStats.has('sos')) {
+    stats.push({
+      label: 'SOS',
+      value: typeof player.sos === 'number' ? String(player.sos) : '—',
+    })
+  }
+  if (visibleStats.has('auction')) {
+    stats.push({
+      label: 'AUCTION',
+      value:
+        typeof player.auction_value === 'number'
+          ? `$${player.auction_value}`
+          : '—',
+    })
+  }
+  if (visibleStats.has('bye')) {
+    stats.push({
+      label: 'BYE',
+      value: typeof player.bye_week === 'number' ? String(player.bye_week) : '—',
+    })
+  }
+
+  return stats.length > 0 ? stats : undefined
 }
 
 const MEASURE_ALWAYS = {
@@ -199,7 +252,9 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   const router = useRouter()
   const { toast } = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('comfortable')
-  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [visibleStats, setVisibleStats] = useState<Set<ListRowStatKey>>(
+    () => new Set(DEFAULT_LIST_ROW_STATS),
+  )
   const [deleteOpen, setDeleteOpen] = useState(false)
   const openPlayerWindow = usePlayerWindowsStore((s) => s.open)
   // Opening a player from an owned list passes the list context so the window's
@@ -280,6 +335,16 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
     draft.clearDrafted()
     toast({ title: 'List reset — drafted marks cleared' })
   }
+
+  const toggleStat = (key: ListRowStatKey) => {
+    setVisibleStats((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const resetStats = () => setVisibleStats(new Set(DEFAULT_LIST_ROW_STATS))
 
   const players = list.players
   const sensors = useSensors(
@@ -586,6 +651,19 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
             </Button>
             {isOwner && (
               <Button
+                variant={draft.enabled ? 'dark' : 'stroke'}
+                size="sm"
+                onClick={() => {
+                  const next = !draft.enabled
+                  draft.setEnabled(next)
+                  if (!next) draft.clearDrafted()
+                }}
+              >
+                <Icon name="table" size={13} /> Draft mode
+              </Button>
+            )}
+            {isOwner && (
+              <Button
                 variant="stroke"
                 size="sm"
                 disabled={!draft.enabled || draftedCount === 0}
@@ -774,13 +852,11 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
         )}
         <span className="ml-auto inline-flex items-center gap-2.5">
           {isOwner && (
-            <Button
-              variant="stroke"
-              size="sm"
-              onClick={() => setCustomizeOpen(true)}
-            >
-              <Icon name="setup" size={13} /> Customize
-            </Button>
+            <CustomizePopover
+              visibleStats={visibleStats}
+              onToggleStat={toggleStat}
+              onReset={resetStats}
+            />
           )}
           {!list.is_team && (
             <Tabs
@@ -814,6 +890,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
           roster={list.roster_settings as ListRosterSettings | null}
           isOwner={isOwner}
           density={viewMode === 'compact' ? 'compact' : 'comfortable'}
+          visibleStats={visibleStats}
           onSlotDrop={handleSlotDrop}
           onRemove={onRemove}
           onOpenPlayer={openPlayer}
@@ -837,6 +914,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
           players={players}
           isOwner={isOwner}
           viewMode={viewMode}
+          visibleStats={visibleStats}
           draftedSet={draft.drafted}
           draftMode={draft.enabled}
           selectedPlayerId={selectedPlayerId}
@@ -881,6 +959,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
                   rank={i + 1}
                   entry={p}
                   density={viewMode}
+                  visibleStats={visibleStats}
                   draggable={isOwner && !list.hide_order}
                   drafted={draft.drafted.has(p.player_id)}
                   draftMode={draft.enabled}
@@ -913,7 +992,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
                   rank={idx + 1}
                   player={p.player}
                   density={viewMode === 'compact' ? 'compact' : 'comfortable'}
-                  stats={rowStatsFor(p, viewMode)}
+                  stats={rowStatsFor(p, viewMode, visibleStats)}
                   isDragging
                   className="bg-white"
                 />
@@ -923,16 +1002,6 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
         </DndContext>
       )}
       </div>
-
-      <CustomizeModal
-        open={customizeOpen}
-        onOpenChange={setCustomizeOpen}
-        draftMode={draft.enabled}
-        onDraftModeChange={(next) => {
-          draft.setEnabled(next)
-          if (!next) draft.clearDrafted()
-        }}
-      />
 
       {isOwner && !list.is_big_board && (
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -1106,6 +1175,7 @@ function SortablePlayer({
   rank,
   entry,
   density,
+  visibleStats,
   draggable,
   drafted,
   draftMode,
@@ -1120,6 +1190,7 @@ function SortablePlayer({
   rank: number
   entry: ListPlayerWithPlayer
   density: ViewMode
+  visibleStats: Set<ListRowStatKey>
   draggable: boolean
   drafted: boolean
   draftMode: boolean
@@ -1148,7 +1219,7 @@ function SortablePlayer({
     opacity: usingOverlay && isDragging ? 0.3 : undefined,
   }
 
-  const rowStats = rowStatsFor(entry, density)
+  const rowStats = rowStatsFor(entry, density, visibleStats)
 
   return (
     <li ref={setNodeRef} style={style}>
@@ -1356,6 +1427,7 @@ interface TierBoardProps {
   players: ListPlayerWithPlayer[]
   isOwner: boolean
   viewMode: ViewMode
+  visibleStats: Set<ListRowStatKey>
   draftedSet: Set<string>
   draftMode: boolean
   selectedPlayerId: string | null
@@ -1372,6 +1444,7 @@ function TierBoard({
   players,
   isOwner,
   viewMode,
+  visibleStats,
   draftedSet,
   draftMode,
   selectedPlayerId,
@@ -1446,6 +1519,7 @@ function TierBoard({
             players={grouped.get('untiered') ?? []}
             isOwner={isOwner}
             viewMode={viewMode}
+            visibleStats={visibleStats}
             draftedSet={draftedSet}
             draftMode={draftMode}
             selectedPlayerId={selectedPlayerId}
@@ -1463,6 +1537,7 @@ function TierBoard({
             players={grouped.get(tier) ?? []}
             isOwner={isOwner}
             viewMode={viewMode}
+            visibleStats={visibleStats}
             draftedSet={draftedSet}
             draftMode={draftMode}
             selectedPlayerId={selectedPlayerId}
@@ -1513,6 +1588,7 @@ function TierRow({
   players,
   isOwner,
   viewMode,
+  visibleStats,
   draftedSet,
   draftMode,
   selectedPlayerId,
@@ -1526,6 +1602,7 @@ function TierRow({
   players: ListPlayerWithPlayer[]
   isOwner: boolean
   viewMode: ViewMode
+  visibleStats: Set<ListRowStatKey>
   draftedSet: Set<string>
   draftMode: boolean
   selectedPlayerId: string | null
@@ -1583,6 +1660,7 @@ function TierRow({
                   rank={p.position}
                   entry={p}
                   density={viewMode}
+                  visibleStats={visibleStats}
                   draggable={isOwner}
                   drafted={draftedSet.has(p.player_id)}
                   draftMode={draftMode}
@@ -1609,6 +1687,7 @@ function UntieredRow({
   players,
   isOwner,
   viewMode,
+  visibleStats,
   draftedSet,
   draftMode,
   selectedPlayerId,
@@ -1621,6 +1700,7 @@ function UntieredRow({
   players: ListPlayerWithPlayer[]
   isOwner: boolean
   viewMode: ViewMode
+  visibleStats: Set<ListRowStatKey>
   draftedSet: Set<string>
   draftMode: boolean
   selectedPlayerId: string | null
@@ -1671,6 +1751,7 @@ function UntieredRow({
                 rank={p.position}
                 entry={p}
                 density={viewMode}
+                visibleStats={visibleStats}
                 draggable={isOwner}
                 drafted={draftedSet.has(p.player_id)}
                 draftMode={draftMode}
@@ -1717,6 +1798,7 @@ interface PositionBoardProps {
   roster: ListRosterSettings | null
   isOwner: boolean
   density: 'comfortable' | 'compact'
+  visibleStats: Set<ListRowStatKey>
   onSlotDrop: (playerId: string, slot: TeamSlot) => void
   onRemove: (playerId: string, name: string) => void
   onOpenPlayer: (playerId: string) => void
@@ -1729,6 +1811,7 @@ function PositionBoard({
   roster,
   isOwner,
   density,
+  visibleStats,
   onSlotDrop,
   onRemove,
   onOpenPlayer,
@@ -1834,6 +1917,7 @@ function PositionBoard({
             capacity={slotCapacity(roster, slot)}
             isOwner={isOwner}
             density={density}
+            visibleStats={visibleStats}
             onRemove={onRemove}
             onOpenPlayer={onOpenPlayer}
             onStart={handleStart}
@@ -1851,6 +1935,7 @@ function SlotRow({
   capacity,
   isOwner,
   density,
+  visibleStats,
   onRemove,
   onOpenPlayer,
   onStart,
@@ -1861,6 +1946,7 @@ function SlotRow({
   capacity: number | null
   isOwner: boolean
   density: 'comfortable' | 'compact'
+  visibleStats: Set<ListRowStatKey>
   onRemove: (playerId: string, name: string) => void
   onOpenPlayer: (playerId: string) => void
   onStart: (player: ListPlayerWithPlayer) => void
@@ -1927,6 +2013,7 @@ function SlotRow({
                   rank={p.position}
                   entry={p}
                   density={density}
+                  visibleStats={visibleStats}
                   draggable={isOwner}
                   drafted={false}
                   draftMode={false}

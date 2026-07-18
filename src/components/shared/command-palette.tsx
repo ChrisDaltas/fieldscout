@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/command'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
+import { featureFlags } from '@/lib/feature-flags'
 import { useUIStore } from '@/stores/ui-store'
 
 interface PlayerHit {
@@ -74,7 +75,10 @@ const NAV_TARGETS: NavTarget[] = [
   { label: 'Lists', href: '/app/lists', icon: 'list' },
   { label: 'Start or sit', href: '/app/start-or-sit', icon: 'sort' },
   { label: 'Teams', href: '/app/teams', icon: 'layers' },
-  { label: 'Leagues', href: '/app/leagues', icon: 'cup' },
+  // Leagues are release-gated (mock UI until the league backend ships).
+  ...(featureFlags.leagues
+    ? [{ label: 'Leagues', href: '/app/leagues', icon: 'cup' } as NavTarget]
+    : []),
   { label: 'Settings', href: '/app/settings', icon: 'setup', keywords: 'account' },
 ]
 

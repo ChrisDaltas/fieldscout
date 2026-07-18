@@ -15,6 +15,7 @@ import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 interface AccountMenuProps {
@@ -147,17 +148,20 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
           </Link>
         </DropdownMenuItem>
         {/* TODO(live-draft): route to the league workspace once batch D ships it. */}
-        <DropdownMenuItem
-          onSelect={() =>
-            toast({
-              title: 'Leagues are on the way',
-              description: 'League workspaces arrive with the live draft update.',
-            })
-          }
-        >
-          <Icon name="cup" size={14} />
-          My leagues
-        </DropdownMenuItem>
+        {featureFlags.leagues && (
+          <DropdownMenuItem
+            onSelect={() =>
+              toast({
+                title: 'Leagues are on the way',
+                description:
+                  'League workspaces arrive with the live draft update.',
+              })
+            }
+          >
+            <Icon name="cup" size={14} />
+            My leagues
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link href="/app/styleguide">
             <Icon name="layers" size={14} />

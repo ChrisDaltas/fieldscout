@@ -32,10 +32,12 @@ import {
   useAdpBoard,
   useAuctionBoard,
   useConsensusBoard,
+  useLastSeasonPoints,
   usePersonaBoardPlayers,
   useUsageMap,
   type BoardSourcePlayer,
 } from '@/hooks/use-board-sources'
+import type { ScoringKey } from '@/lib/stats/aggregate-fantasy'
 import { TIER_RAMP } from '@/components/lists/tier-badge'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { matchesPosition } from '@/utils/positions'
@@ -92,13 +94,13 @@ const FIELDS: Array<{ id: string; label: string }> = [
   { id: 'snap', label: 'Snap %' },
   { id: 'sos', label: 'Strength of schedule' },
   { id: 'auction', label: 'Avg auction price' },
+  { id: 'pts2025', label: '2025 total points' },
 ]
 
 /** ADP → snake-draft round in a 12-team league. */
 const DRAFT_ROUND_TEAMS = 12
 
-// Same season semantics as the Research table: stats default to the last
-// completed season until the current one has games worth reading.
+// Big Board always represents the current season — there's no season picker.
 const CURRENT_SEASON = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
 const LAST_SEASON = CURRENT_SEASON - 1
 
@@ -108,6 +110,14 @@ const PROJ_KEY: Record<Scoring, keyof BoardSourcePlayer> = {
   standard: 'projected_pts_standard',
   half: 'projected_pts_half_ppr',
   ppr: 'projected_pts_ppr',
+}
+
+// Big Board's Scoring ids don't quite match aggregate-fantasy's ScoringKey
+// spelling ('half' vs 'half_ppr') — map between them for the 2025-points field.
+const SCORING_KEY: Record<Scoring, ScoringKey> = {
+  standard: 'standard',
+  half: 'half_ppr',
+  ppr: 'ppr',
 }
 
 // Cross-position tier cuts, proportional to how deep the board is (from the
@@ -192,7 +202,6 @@ export function BigBoardDashboard() {
   const [pos, setPos] = useState<PositionFilter>('ALL')
   const [hideOthers, setHideOthers] = useState(false)
   const [scoring, setScoring] = useState<Scoring>('half')
-  const [season, setSeason] = useState(LAST_SEASON)
   const [team, setTeam] = useState('')
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -215,7 +224,7 @@ export function BigBoardDashboard() {
 
   // ---- source data -------------------------------------------------------
   const mineQuery = useBigBoard()
-  const usageQuery = useUsageMap(season)
+  const usageQuery = useUsageMap(CURRENT_SEASON)
   const usageMap = usageQuery.data
   const consensusQuery = useConsensusBoard(source === 'consensus')
   const adpQuery = useAdpBoard(source === 'adp')
@@ -315,6 +324,15 @@ export function BigBoardDashboard() {
   const chipSet = useMemo(() => new Set(fields.slice(-4)), [fields])
   const projKey = PROJ_KEY[scoring]
 
+  // Lazy — only fetched once the field is actually toggled on, scoped to the
+  // whole (unfiltered) pool so typing in Search doesn't refetch on every key.
+  const wantsLastSeasonPts = fields.includes('pts2025')
+  const lastSeasonQuery = useLastSeasonPoints(
+    wantsLastSeasonPts ? pool.map((p) => p.id) : [],
+    SCORING_KEY[scoring],
+  )
+  const lastSeasonMap = lastSeasonQuery.data
+
   const cardData = useMemo<CardData[]>(
     () =>
       visible.map((player, i) => {
@@ -347,6 +365,10 @@ export function BigBoardDashboard() {
         if (chipSet.has('sos') && player.sos != null) {
           chips.push({ id: 'sos', text: `SOS: ${player.sos}`, tone: 'pink' })
         }
+        const pts2025 = lastSeasonMap?.get(player.id)
+        if (chipSet.has('pts2025') && pts2025 != null) {
+          chips.push({ id: 'pts2025', text: `${LAST_SEASON}: ${pts2025.toFixed(0)}` })
+        }
         return {
           player,
           rank: i + 1,
@@ -356,7 +378,7 @@ export function BigBoardDashboard() {
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, chipSet, projKey, usageMap, labels, fading, pos],
+    [visible, chipSet, projKey, usageMap, lastSeasonMap, labels, fading, pos],
   )
 
   // ---- drag to sort (your board only) -------------------------------------
@@ -520,19 +542,6 @@ export function BigBoardDashboard() {
                   {o.title}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        <label className="flex w-[100px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Season</span>
-          <Select value={String(season)} onValueChange={(v) => setSeason(Number(v))}>
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={String(LAST_SEASON)}>{LAST_SEASON}</SelectItem>
-              <SelectItem value={String(CURRENT_SEASON)}>{CURRENT_SEASON}</SelectItem>
             </SelectContent>
           </Select>
         </label>
