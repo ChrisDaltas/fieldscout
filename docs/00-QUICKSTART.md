@@ -37,9 +37,9 @@ git init
 git remote add origin https://github.com/YOUR_USERNAME/fieldscout.git
 ```
 
-### 2. Copy the CLAUDE.md File
+### 2. CLAUDE.md
 
-Copy `docs/CLAUDE.md` to the root of the `fieldscout/` directory. This is the instruction manual that Claude Code reads automatically.
+`CLAUDE.md` at the repo root is the instruction manual Claude Code reads automatically — it now reflects the live project, not a starting template, so there's nothing to copy here anymore.
 
 ### 3. Set Up Environment Variables
 
@@ -133,7 +133,6 @@ As a designer, here are the kinds of things you can ask:
 | `03-DATA-MODEL.md` | Database tables, columns, relationships, and security policies. |
 | `04-BUILD-ROADMAP.md` | 10-phase timeline from now to launch in July 2026. |
 | `05-CLAUDE-CODE-PROMPTS.md` | Copy-paste prompts for Claude Code, one per task per phase. |
-| `CLAUDE.md` | Claude Code's instruction manual. Goes at the repo root. |
 
 ---
 

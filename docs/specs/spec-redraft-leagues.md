@@ -1,10 +1,10 @@
 # PRD / Spec: Redraft Leagues + Custom Draft Engine
 
 **Feature:** Real, playable weekly redraft fantasy football leagues with a fully configurable draft room and an all-powerful, fully-audited commissioner.
-**Version:** 1.6 (Draft)
+**Version:** 2.6 (Draft)
 **Author:** Chris Daltas
-**Date:** June 24, 2026
-**Status:** Draft — ready for Claude Code build planning
+**Date:** July 16, 2026
+**Status:** Draft — ready for Claude Code build planning · v2.0 adds scale engineering, the schedule engine + Remix, the stats/NFL-data contract, game-day transaction locks, and operations. Companion doc: `docs/specs/delivery-plan-redraft-leagues.md` (implementation / QA / agent operating model). v2.1 adds the identity contract, seat-targeted invites, and the franchise/manager lifecycle (§7.2.1). v2.2 replaces open custom scoring with an 8-template v1 catalog and introduces **advanced-stat scoring** (air yards, YAC, yards after contact) via the FieldScout Alpha/Ultra templates (§7.3.3, §23.5, Appendix B). v2.3 promotes **Mock Draft Mode** to a core feature (§8.8) and pins the **scoring extensibility contract** — new stats become scorable without engine changes (§7.3.3, §23.5). v2.4 completes the UI inventory: every workflow, page, and control from v2.0–v2.3 is enumerated in §16 (routes/components extended; new §16.5 workflow & states audit). v2.5 adds the **`SyntheticStatsProvider`** (§23.6) so the entire pipeline — draft through live scoring through Alpha/Ultra — is buildable and demonstrably working before any stats vendor is paid. v2.6 locks v1 league sizes to **8–16** (18/20 and odd counts follow next season), makes email the primary invite channel for people without an account yet, sets the v1 playoff tiebreaker chain (Points For → Head-to-head → Points Against), and generalizes commissioner "Act as Manager" to any team, not just orphaned ones.
 **Codename:** Hadouken · **Product:** FieldScout (fieldscout.gg)
 
 > This document is written to be handed directly to Claude Code. It follows the conventions in the repo root `CLAUDE.md`, `docs/02-TECHNICAL-ARCHITECTURE.md`, `docs/03-DATA-MODEL.md`, and `docs/06-DESIGN-SYSTEM.md`. SQL, RLS, file paths, and naming match the existing codebase. Where it extends existing tables (`leagues`, `teams`, `team_lineups`, `league_chat`, `scoring_systems`), it says so explicitly and ships a migration.
@@ -13,7 +13,7 @@
 
 ## 1. TL;DR
 
-Today FieldScout treats a "league" as a *simulation* of a user's real home league (see `docs/01-PRD.md` §F9 and `docs/specs/spec-leagues-live-mode.md`). This feature turns FieldScout into a place where friends actually **play**: create a league, invite 8–20 friends, run a real **snake or auction draft** inside a live draft room, then compete head-to-head each week with live scoring, waivers/FAAB, and trades.
+Today FieldScout treats a "league" as a *simulation* of a user's real home league (see `docs/01-PRD.md` §F9 and `docs/specs/spec-leagues-live-mode.md`). This feature turns FieldScout into a place where friends actually **play**: create a league, invite 8–16 friends, run a real **snake or auction draft** inside a live draft room, then compete head-to-head each week with live scoring, waivers/FAAB, and trades.
 
 It pulls the "Real Fantasy Platform" idea (`docs/01-PRD.md` → V3 Future) forward as a major epic and supersedes the lightweight Phase 8 leagues model.
 
@@ -37,6 +37,7 @@ Research covered ESPN, Yahoo, Sleeper, Flock Fantasy, and Footballguys; cross-ch
 - **The universal weakness is commissioner transparency.** Every platform lets a commissioner silently edit rosters and effectively rewrite scores. **None offers a real, tamper-evident, member-visible audit log of commissioner actions.** Yahoo is the murkiest on manual score edits; MFL even lets a commissioner *delete* transaction records. This is FieldScout's clearest wedge and aligns exactly with the product goal: *let the commissioner do anything, but make it visible.*
 - **No platform has a native "illegal-lineup penalty" engine.** Starting a bye/OUT/ineligible player simply scores 0; any further consequence is a house rule the commissioner enforces by hand. FieldScout's commissioner tools make that workflow first-class (flag → override result → logged with reason).
 - **Defaults worth copying:** 4–20 teams, half-PPR is the modern default, decimal scoring on, individual-game lineup lock by default, auction budget **$200**, FAAB budget **$100**, FAAB and auction budgets are **separate pools**.
+- **The scoring whitespace (v2.2):** every incumbent — including maximal-customization platforms like Fantrax ("extensive category list") and MFL — scores exclusively from box-score categories. **No platform offers a single tracking- or charting-derived scoring category** (air yards, YAC, yards after contact). Advanced stats are everywhere in *analysis* products and nowhere in *scoring*. That gap is FieldScout's second wedge (§7.3.3): scoring that pays for individual impact, not just box-score residue.
 
 ### 2.3 Positioning vs. existing FieldScout features
 | Existing | Relationship to this feature |
@@ -44,7 +45,7 @@ Research covered ESPN, Yahoo, Sleeper, Flock Fantasy, and Footballguys; cross-ch
 | `docs/01-PRD.md` §F8 **Teams** | A league roster *is a* team. We reuse `teams` (and its `league_id`) as the per-manager entity inside a league. |
 | `docs/01-PRD.md` §F8A **Live Mode** | Live scoring for a league lineup reuses the Live Mode pipeline (`sync-live-stats`, `player_stats`, `nfl_games`). |
 | `docs/01-PRD.md` §F9 **Leagues (simulation)** & `spec-leagues-live-mode.md` | **Superseded/expanded.** The simulation concept (placeholder teams, AI recs, History Mode) becomes one mode of a real, playable league. This spec replaces the thin `leagues` schema with a complete one (migration provided). |
-| `scoring_systems` | Reused directly for league scoring; we extend the `rules` JSONB catalog (Appendix B). |
+| `scoring_systems` | Reused for league scoring via **system-owned templates** (v2.2: 8 fixed templates in v1, `is_template = TRUE`; the `rules` catalog gains advanced-stat keys — Appendix B). User-owned custom systems attach to leagues starting v1.1. |
 
 ---
 
@@ -97,7 +98,7 @@ This is a large epic that depends on foundations from earlier phases. It should 
 
 | Term | Meaning |
 |---|---|
-| **League** | A hosted, playable competition of 8–20 managers (even counts) for one NFL season. Has one commissioner, settings, a draft, matchups, standings. |
+| **League** | A hosted, playable competition of 8–16 managers (even counts) for one NFL season in v1 — 18/20 and odd counts are a v1.1 fast-follow. Has one commissioner, settings, a draft, matchups, standings. |
 | **Commissioner** | The league's admin/owner. Has unrestricted override powers (all logged). Can appoint co-commissioners. |
 | **Manager** | A league member who owns one team. |
 | **Team (league roster)** | A manager's roster within a league. Reuses the `teams` table (`teams.league_id`). Distinct from a FieldScout "list." |
@@ -119,7 +120,7 @@ This is a large epic that depends on foundations from earlier phases. It should 
 | **Lineup lock** | The moment a starting slot can no longer be edited (default: each player's individual kickoff). |
 | **League-tagged list** | One of a user's ranking lists *attached to a league* (§7.4) so it's one tap away in that league's Live Draft Tool — as a cheat sheet, a pool overlay, a queue source, or the team's primary draft board. Attachable to multiple leagues; optionally shared with the whole league. |
 | **Restricted / Unrestricted IR** | A per-IR-spot rule set by the commissioner (§7.3.2). *Unrestricted*: the manager moves eligible players in/out freely before lock. *Restricted* (baseball-IL style): requires an eligible designation **and** a minimum stint (default 4 weeks) before the player can be removed. |
-| **Swap spot** | An optional roster spot (§7.3.2). A team arms **one** bench player to auto-start in place of a chosen starter if that starter is ruled out pre-game or injured in-game. The swap player must be the **exact same position** as the protected starter (even if the starter is in a FLEX). Locks at first Sunday kickoff (or Thursday if a Thursday player is involved). |
+| **Swap spot** | An optional roster spot (§7.3.2). A team arms **one** bench player to auto-start in place of a chosen starter if that starter is ruled out **pre-game or at any point during the game** — any official OUT/inactive designation, not injury-specific. The swap player must be the **exact same position** as the protected starter (even if the starter is in a FLEX). Locks at first Sunday kickoff (or Thursday if a Thursday player is involved). |
 
 ---
 
@@ -147,14 +148,50 @@ A commissioner may move the league backward (e.g., `drafting → setup` via "Res
 ### 7.2 Membership, roles & invites
 Roles live in a new `league_members` table (§12): `commissioner`, `co_commissioner`, `manager`.
 
+**Identity contract (v2.1 — applies to every league surface).** Every account carries three identity fields, each with exactly one job:
+
+| Field | Example | Job | Visible to |
+|---|---|---|---|
+| `profiles.display_name` | Jason Jones | The human name shown beside teams, chat, transactions, audit entries | League members |
+| `profiles.username` | `jasonjones1995` | Unique public handle (citext, 3–20 chars `[a-z0-9_]`): @-mentions, invite-by-username, public URLs (`/u/[username]`) | Anyone |
+| auth email | — | Login + email updates (invites, waiver results, trade offers, weekly recap, per notification prefs) | **No one in the league** — never rendered in league surfaces, exports, or system posts |
+
+League UI renders **Team name — display name (@username)**. Usernames are changeable (uniqueness enforced; league surfaces update live because every reference joins on `user_id`); the audit log stores `user_id`, so history survives renames. Email is the only private field.
+
 **Requirements**
-- **Create league** (Pro only — gate on `is_pro`): name, season, `team_count` ∈ {8, 10, 12, 14, 16, 18, 20}, and a settings wizard (7.3). Creator becomes `commissioner` and gets a team.
-- **Invite** via shareable invite code/link (`leagues.invite_code`, already exists) and/or by FieldScout username. Optional email invite (uses existing notifications + email flow).
+- **Create league** (Pro only — gate on `is_pro`): name, season, `team_count` ∈ {8, 10, 12, 14, 16} (v1 — see changelog v2.6), and a settings wizard (7.3). Creator becomes `commissioner` and gets a team.
+- **Invite** three ways (v2.1, email elevated v2.6), all funneling into one claim flow (link → sign-up/sign-in → seated):
+  1. **League share link** (`leagues.invite_code`, already exists) — multi-use, rotatable, with an optional **custom slug** (`fieldscout.gg/join/<slug>`, unique, commissioner-set; falls back to the random code). Joins the claimer as a member the commissioner then attaches to a team (or auto-creates a team while open seats remain).
+  2. **Seat-targeted invite by email** *(v1's primary path — most invitees don't have a FieldScout account yet)* — commissioner types an email address for a specific franchise ("You've been invited to manage **Team 4** in *Yardboats League*"); a `league_invites` row (§12.23) is created with `invited_email` set and a real email is sent with a claim link. Works identically whether the address belongs to an existing account or not: an existing user is prompted to sign in; a new visitor gets a **signup form with the email field pre-filled and locked** to the invited address (removes the mismatch failure mode entirely for the common case, E65). Claiming seats the user on that exact team and opens their first manager stint (§7.2.1) — this is how a replacement GM inherits a specific team.
+  3. **Seat-targeted invite by username** — commissioner types `@tim_boris02` for an existing FieldScout user; same `league_invites` mechanics with `invited_username` set instead, plus an in-app/email notification. Requires the invitee already have an account, so it's the secondary path.
+  4. **Seat-targeted invite by copyable link** — same token, no username/email restriction; commissioner shares it themselves (text, Slack, group chat).
+- Invites expire (default 14 days), are revocable, and every send/claim/revoke is recorded (the invite funnel of §16.4).
 - **Join** with invite code (free; not Pro-gated — matches current rule "Free: can join unlimited leagues but cannot create"). On join, a `teams` row is created for the manager with `league_id` set.
 - **Placeholder/managed teams.** Commissioner can create empty seats (a `teams` row owned by the commissioner, flagged `is_placeholder`) so the draft can run before everyone has joined; ownership can be reassigned to a real user later (audited).
 - **Roles.** Commissioner can promote a manager to `co_commissioner` (full powers, audited) or demote. Exactly one `commissioner`; multiple `co_commissioner` allowed. The original creator can never be removed by a co-commissioner.
-- **Kick/replace.** Commissioner can remove a manager (pre-draft) or reassign a team to a new manager (any time; audited). Removing mid-season is an override (roster handling defined in §11 / §13).
+- **Kick/replace.** Commissioner can remove a manager at any time; what happens to the *franchise* is a first-class, explicit choice — **takeover · retire-and-succeed · vacate/autopilot** — defined in **§7.2.1**. All paths post-draft are audited overrides.
 - **Capacity.** Cannot start a draft until the number of active teams equals `team_count` (commissioner may override to draft short — audited — with empty seats auto-set to autopick).
+
+### 7.2.1 Franchise & manager lifecycle (NEW v2.1) — teams outlive managers
+
+**Model: a franchise is not its manager.** A `teams` row is a durable *franchise* in the league (name, roster, record, FAAB, draft slot, H2H history). People hold **manager stints** on a franchise (`team_managers`, §12.22): who ran it, from when to when, and why the stint ended. `league_members.user_id`/`team_id` remain the *current-state* cache; stints are the historical truth. This one separation is what makes replacement, history attribution, and the audit story coherent — without it, reassigning a team silently rewrites the past (v1.x behavior: jasonjones1995's whole tenure would be re-credited to his replacement).
+
+**When a manager leaves (removed by the commissioner or leaves voluntarily), the commissioner picks one of three outcomes:**
+
+**(a) Takeover — franchise continuity (default).** `tim_boris02` opens a new stint on Team 4 and inherits the franchise whole: roster, W-L, FAAB balance, waiver position, draft assets, H2H record, and name (renameable). History Mode shows the franchise with its stint timeline — *jasonjones1995 (Wk 1–8) → tim_boris02 (Wk 9–)* — with per-stint splits. This is the right call mid-season and matches what real leagues do when a friend adopts an abandoned team.
+
+**(b) Retire & succeed — franchise shutdown.** Team 4's identity is **sealed** with jasonjones1995 as its only-ever (or final) manager: `teams.status='retired'`, name/record frozen, permanently visible in History Mode under his name. A **successor franchise** is created into the same league *slot* (`successor_team_id` links them): it takes over the schedule position and — because a 12-team league must keep fielding 12 teams — inherits the roster, FAAB, and remaining draft assets as-is. **Standings rule:** the successor inherits the W-L record *for seeding math only* (a mid-season 0-0 team would break playoff qualification); History Mode partitions the ledgers, so the retired franchise's results stay under jasonjones1995 and the successor's book opens at its founding week. (The NFL analogy the UI can borrow: the Browns' records stayed in Cleveland; the Ravens started a new book.) Retirement is primarily an **offseason** action; mid-season it's allowed as an audited override with the standings-inheritance rule shown in the confirm dialog.
+
+**(c) Vacate — no replacement yet.** The stint closes with no successor: `teams.status='orphaned'` (autopilot). Lineups auto-set (last valid, healthy-substitution per existing autopick logic), open trade offers involving the team auto-rescind, pending waiver claims cancel, no new transactions. The commissioner may act **as** the team (set a lineup, accept a fair trade) — every such action is logged with `acting_as_team_id` and rendered in the activity feed as "Commissioner (acting for Team 4)". Orphaned is a holding state that resolves into (a) or (b).
+
+**Removal mechanics (all paths).**
+- Access ends the instant the stint closes: league write access derives from the **open stint** in RLS/RPC checks, so a removed manager's live session can write nothing — no race window, no cleanup job.
+- The removed user's chat messages, transactions, and audit entries are **retained under their identity** (immutable history; display name + @username keep rendering).
+- The removed user is notified with the outcome category (removed / left / franchise retired) and can be **re-invited later** — to any team, including their old franchise (a second stint on the same team is just another row).
+- Removal **during a live draft** flips the seat to autopick on the same pick clock (existing §8 machinery); the stint mechanics are identical.
+- Voluntary leave uses the same flow with `end_reason='left'`; a commissioner cannot leave without first transferring the `commissioner` role.
+
+**Generalized "Act as Manager" (v2.6) — for a still-seated manager who's gone quiet.** Vacate (c) requires formally closing the stint — the right call once you've decided a manager is truly gone. But the common early case is softer: the manager is still in their seat, just unresponsive (no lineup set in weeks, ignoring waivers), and the commissioner isn't ready to remove them yet. For that, **acting-as is available for any team in the league, at any time, with no stint change required.** From a team's page, the commissioner selects "Act as [Team]," takes whatever action is needed (set a lineup, submit a claim, accept a trade), and every action is tagged `acting_as_team_id` and posted to the activity feed as "Commissioner (acting for Team 4)" — identical treatment to the orphaned case, just without requiring orphaned status first. The real manager's access is **never locked** during this — if they come back and act too, both actions land, each correctly attributed in the activity feed and audit log to its true actor (commissioner vs. manager), last write wins. No new persistent state: this reuses the existing `acting_as_team_id` tagging already built for orphaned teams (§12.12) — the only change is that the UI stops gating the "Act as" entry point behind orphaned status.
 
 ### 7.3 Settings catalog
 All settings are editable in `setup`/`scheduled`. After the draft, structural settings (roster slots, team count, scoring categories) become **commissioner-override-only** (changing them mid-season is allowed but logged and warned). Store settings as typed columns where queried often, and in a `settings JSONB` blob on `leagues` for the long tail (see §12 schema). **Defaults below are the league-creation defaults.**
@@ -165,7 +202,7 @@ Legend: **D** = default · **R** = allowed range/options.
 | Setting | D | R / Options | Notes |
 |---|---|---|---|
 | `format` | `redraft` | redraft (only one enabled v1; keeper/dynasty/best_ball reserved) | Drives draft + offseason logic. |
-| `team_count` | 12 | **8, 10, 12, 14, 16, 18, 20** | Even only in v1. Large (16–20) leagues: validate the draftable player pool (§7.3 validation). |
+| `team_count` | 12 | **8, 10, 12, 14, 16** (v1) | Even only in v1; 18/20 and odd counts are v1.1 (OQ 12). 16-team leagues: validate the draftable player pool (§7.3 validation). |
 | `divisions` | 1 | 1–2 (v1) | If 2, must split evenly; used for standings & playoff seeding. |
 | `regular_season_weeks` | 14 | 12–15 | Must leave room for playoffs within weeks 1–18. |
 | `playoff_teams` | 6 | 0, 2, 4, 6, 8, 10, 12 (≤ team_count) | 0 = no playoffs (points-only champion). |
@@ -175,6 +212,9 @@ Legend: **D** = default · **R** = allowed range/options.
 | `playoff_reseed` | true | true/false | Reseed each round by seed. |
 | `consolation_bracket` | false | true/false | "Toilet bowl" for non-playoff teams. |
 | `third_place_game` | false | true/false | |
+| `schedule_mode` | `h2h` | `h2h`, `total_points` | v2.0. Total-points = no matchups; standings by cumulative PF (§11.7). |
+| `median_game` | false | true/false | v2.0. Sleeper-style extra weekly game vs the league median (avg of the two middle scores; equal = tie). Regular season only (§11.7). |
+| `second_opponent` | false | true/false | v2.0. Yahoo-style second H2H matchup each week (never your primary opponent). Stackable with `median_game` (§11.7). |
 
 #### 7.3.2 Roster & lineup slots (fully commissioner-configurable)
 The commissioner sets **every roster number**: how many starters at each position, how many **flex** slots and exactly which positions each flex accepts, how many **bench** spots, and how many **IR** spots. Total roster size is derived. There are **no hard-coded lineup templates** — a league's roster is a *list of slot definitions*, so any real-world configuration can be reproduced (a superset of ESPN/Yahoo/Sleeper).
@@ -236,10 +276,11 @@ The commissioner sets **every roster number**: how many starters at each positio
 - **Type — Unrestricted:** the manager may move eligible players in and out **as often as they like** (any time before that player's lineup locks), as long as the player holds an eligible designation.
 - **Type — Restricted (baseball-IL style):** the player must hold an eligible designation **and remain in the spot for a minimum stint (`min_weeks`, default 4)** before the manager may remove them. Early removal is blocked (commissioner can override, §10).
 - **Eligible designations (per spot):** which player statuses qualify — drawn from `players.status` / the injury feed (e.g., **OUT, IR, Doubtful, PUP, NFI, Suspended**). Default: **OUT, IR**. A player may be placed on a spot only while holding one of that spot's designations.
+- **"DL" preset (v2.0, product naming):** the roster builder ships a one-tap Restricted-IR preset labeled **DL** — designations **OUT, IR, Doubtful**, `min_weeks = 4`. Identical mechanics to any Restricted spot; the label is the product promise ("whoever goes on the DL stays 4 weeks, even if healthy").
 - **`min_weeks` (restricted only):** default **4**, range 1–17. Tenure is counted in NFL weeks: placed in week *W* → removable in week *W + min_weeks*.
 - **Enforcement:** IR'd players never count toward the lineup and score nothing; if an IR'd player loses eligibility (returns to active) the roster is flagged illegal until they're moved off — but a Restricted player still cannot be removed before the stint completes (commissioner override available). All IR moves respect lineup-lock timing. Tenure is tracked on `league_rosters` (`ir_placed_week`, `ir_lock_until_week`, §12.7).
 
-**Swap spot rules (optional; one armed auto-substitution).** A Swap spot lets a manager designate a **bench player to auto-start if a chosen starter is knocked out** — before the game or during it. It's a safety net, not a free roster slot.
+**Swap spot rules (optional; one armed auto-substitution).** A Swap spot lets a manager designate a **bench player to auto-start if a chosen starter is knocked out** — before the game or during it. It's a safety net, not a free roster slot. Surfaced in all UI copy as **"Hot Swap"** (§16.4).
 - **One swap per team.** The Swap spot is an **on/off** league setting (`swap_spots` = 0 or 1). When on, each team gets **exactly one** swap per week: pick the **starter to protect** (the *out* player) and the **bench player** that replaces them (the *in* player). (Deliberately capped at one — multiple auto-subs make an opponent's lineup confusing to follow mid-week.)
 - **Exact-position match (key rule).** The *in* player must play the **exact same `player.position`** as the *out* player — RB↔RB, WR↔WR, etc. — **even if the out player occupies a FLEX or SUPERFLEX slot.** (You protect an RB-in-FLEX with an RB, not a WR.) The position is fixed by the starter you choose at assignment time. Because positions match, the *in* player is automatically legal for the *out* player's exact slot.
 - **Lock / arm time.** The swap is editable until the team's weekly lock, then **armed**: lock is the **first Sunday kickoff**, or the **Thursday kickoff** if either the *out* or *in* player is in a Thursday game (so a swap can't be set after seeing Thursday results).
@@ -251,12 +292,30 @@ The commissioner sets **every roster number**: how many starters at each positio
 - **Stored** as `roster_settings.swap_spots` (0/1) in the §7.3.2 JSONB; per-week assignments in `lineup_swaps` (§12.16).
 - **Display order:** render the Swap spot directly **below the Flex/superflex slots** and **above K, D/ST, and IR** in both the lineup view and the roster-builder.
 
-#### 7.3.3 Scoring
-- **Engine:** reuse `scoring_systems` (`rules JSONB`). The league references one `scoring_system_id`. Commissioner picks a **preset** or builds **custom**.
-- **Presets shipped** (system defaults, `is_system_default = true`): `Standard (non-PPR)`, `Half-PPR`, `Full PPR`, plus platform-flavored `ESPN PPR`, `Yahoo Half-PPR`, `Sleeper Half-PPR`. Full point tables in **Appendix B**.
-- **Custom catalog** (every category editable; decimals supported): passing (yds/TD/INT/2pt/300+ & 400+ bonuses), rushing (yds/TD/2pt/100+ & 200+ bonuses), receiving (rec [0/0.5/1/custom, **TE-premium** supported], yds/TD/2pt/100+ & 200+ bonuses), fumbles lost, misc TDs/return TDs, **kicking by distance** (0–39/40–49/50+/made PAT/missed FG/missed PAT), **D/ST** (sack/INT/FR/TD/safety/blocked kick/return TD + **points-allowed tiers** and optional **yards-allowed tiers**, supporting both ESPN's split model and Yahoo's single-tier model), and **IDP** (tackle solo/assist, sack, TFL, QB hit, INT, PD, FF, FR, def TD, safety). Full key list in Appendix B.
-- **Decimal/fractional scoring:** on by default.
-- **Half-point per-reception** and **TE premium** are first-class toggles in the editor.
+#### 7.3.3 Scoring (v2.2 — templates only in v1; advanced-stat scoring is the differentiator)
+
+**Product thesis.** Box-score scoring pays for *where the ball ended up*; FieldScout pays for *who moved it*. FieldScout is the **first fantasy platform where advanced stats — completed air yards, yards after the catch, and yards after contact — are scorable categories**, so a player's fantasy output tracks his actual game impact. (Category audits of ESPN/Yahoo/Sleeper/Fantrax/MFL: none offers any tracking- or charting-derived scoring category. Verify the "first" claim once more before marketing copy ships — see Appendix A.0.)
+
+- **v1 scope: template picker, not an editor.** The commissioner picks **one of 8 fixed templates** at creation; no per-category editing in v1 (full custom scoring returns in v1.1 as an unlock — the engine already supports it, the cut is UI + QA-matrix scope). A user's personal `scoring_systems` (existing app feature) cannot be attached to a league in v1.
+- **The 8 templates** (system-owned `scoring_systems` rows, `is_template = TRUE`, `owner_id NULL`; full point tables in **Appendix B**):
+  | Template | One-liner |
+  |---|---|
+  | **ESPN Standard** | ESPN's defaults, 0 PPR |
+  | **ESPN Full PPR** | ESPN's defaults, 1.0 PPR |
+  | **Yahoo Standard** | Yahoo's defaults, 0 PPR (note: −1 INT) |
+  | **Yahoo Half PPR** *(Yahoo's platform default)* | Yahoo's defaults, 0.5 PPR |
+  | **Sleeper Standard** | Sleeper's defaults, 0 PPR |
+  | **Sleeper Full PPR** *(Sleeper's platform default)* | Sleeper's defaults, 1.0 PPR |
+  | **FieldScout Alpha** | *The catch, re-scored.* Receiving yardage split into completed air yards + YAC (YAC pays double). 100% live-capable stats. |
+  | **FieldScout Ultra** | *Every yard credited to who earned it.* Alpha + rushing split by yards after contact + QB sack penalty. Charted stats settle next morning (§23.5). |
+- **Parity guarantee:** each platform template matches that platform's *published* defaults in **every** category (e.g., ESPN INT −2 vs. Yahoo/Sleeper −1; per-platform K and D/ST tables) so a migrating league's scores feel identical. Values in Appendix B are best-known as of July 2026 and **must be re-verified against each platform's official help pages at build time** (they drift).
+- **Template gating by data capability (§23.5):** Alpha requires the `tracking` feed (air yards + YAC — live-capable); Ultra additionally requires the `charted` feed (yards after contact — lands T+1). If a feed isn't yet contracted for the environment, the template renders as "coming soon" rather than silently scoring zeros. Beta can ship Alpha before Ultra. **v2.3:** Alpha/Ultra additionally sit behind a per-environment **feature flag** — v1 launch does *not* require them to function. The launch bar is the 6 parity templates plus the pipeline below; lighting up Alpha/Ultra later is a config change, not a release.
+- **Decimal/fractional scoring:** on by default (advanced-stat coefficients require it).
+- **Scoring snapshot (v2.0, integrity fix):** on draft start (and on any commissioner scoring change), the template's full `rules` JSONB is **frozen into `leagues.scoring_rules_snapshot`**; all scoring — live, finalization, rescoring — reads the snapshot, never the live `scoring_systems` row. (Unchanged from v2.0; templates make the source row effectively immutable anyway.)
+- **Precision & rounding (v2.0, determinism rule):** per-player weekly fantasy points are computed at full precision and stored rounded **half-up to 2 decimals** (`NUMERIC(8,2)`); a team's score = the sum of those rounded per-player values. Ties at 2 decimals are real ties (E38).
+- **Template picker UX (§16):** side-by-side compare + a **"same game, scored three ways"** widget — pick any real player-week and see his points under Sleeper PPR vs. Alpha vs. Ultra with the yardage split visualized (air vs. YAC; before vs. after contact). This is the product's best pitch and doubles as marketing surface.
+- **Calibration rule (house templates):** Alpha/Ultra coefficients below are structural defaults, **calibration-pending**: before GA, backtest against the recorded 2026 fixture season (delivery plan M0/M1) and tune so each position's league-wide weekly mean lands within **±10% of Half-PPR** — familiar totals, redistributed toward impact. Publish the backtest ("impact correlation") as launch content.
+- **Extensibility contract (v2.3 — the actual v1 requirement for advanced stats):** what must ship at launch is not Alpha/Ultra working — it's a scoring system where **adding a new scorable stat is a data task, not an engineering project**. The calculator is a **generic dot-product**: `score = Σ rules[key] × stat(key)` over whatever keys the league's snapshot contains; rules keys with no matching stat resolve to *pending/0* (honest badge, §23.5), stat keys with no rules entry are ignored. New stats land in `player_stats.advanced` JSONB (no migration), get one provider-adapter mapping + one `STAT_KEYS` registry entry, and become scorable via a template-row update — zero calculator or engine changes (full checklist §23.5).
 
 #### 7.3.4 Waivers & free agency (in-season)
 | Setting | D | R / Options | Notes |
@@ -270,6 +329,9 @@ The commissioner sets **every roster number**: how many starters at each positio
 | `free_agency` | `immediate_after_waivers` | immediate / continuous | Unclaimed players become FCFS. |
 | `acquisitions_per_week` | unlimited | unlimited or 0–50 | Per-team weekly add cap. |
 | `acquisitions_per_season` | unlimited | unlimited or 0–500 | |
+| `player_game_lock` | **true** | true/false | v2.0. When on, an unowned player **locks for adds at their kickoff** and a rostered player **locks for drops at their kickoff**, until the week clears (§23.4 window). This is the strict "players lock as soon as their games start" rule; off reproduces lax incumbent behavior. Enforced via `league_player_pool.locked_until` (§12.19). |
+| `bench_lock` | **true** | true/false | v2.0 (Sleeper-style). A waiver claim whose *drop* player has already played this week **fails at processing** (`drop_locked`, no FAAB spent). Off = the claim executes and the locked starter's stats still count for the dropping team (E33–E34). |
+| `fa_hold_hours` | 0 | 0–48 | v2.0 (Sleeper's "24-hour rule", off by default). A free-agent add must be held this long before being droppable; earlier drops return the player to FA, not waivers. |
 
 #### 7.3.5 Trades
 | Setting | D | R / Options |
@@ -280,6 +342,7 @@ The commissioner sets **every roster number**: how many starters at each positio
 | `trade_deadline_week` | 11 | none or 1–regular_season_weeks |
 | `allow_faab_in_trades` | false | true/false |
 | `allow_future_considerations` | false | true/false (notes-only "gentleman's" trades; no draft picks in redraft) |
+| `trade_lock_behavior` | `defer` | `defer`, `reject` — v2.0: if any included player's game is live at execution time, defer to the next lock-free moment or reject (E35). Rosters never change mid-game. |
 
 #### 7.3.6 Lineups & lock
 | Setting | D | R / Options | Notes |
@@ -287,9 +350,15 @@ The commissioner sets **every roster number**: how many starters at each positio
 | `lineup_lock` | `per_player_kickoff` | `per_player_kickoff`, `first_game_of_week` | Default matches incumbents. |
 | `allow_illegal_lineups` | true | true/false | If true, byes/OUT score 0 (incumbent behavior). If false, the slot is blocked at submit. Either way, commissioner can flag & override (the differentiator, §10). |
 | `auto_sub_inactives` | false | true/false | Optional Sleeper-style auto-sub of inactive starters from bench (§11.3). |
+| `stat_correction_window` | Thu 06:00 ET | 0h–7d | v2.0. How long after the week official stat corrections auto-apply (§23.4). Incumbent norm: Sleeper through Thursday; Yahoo until the next week's first game. Matchups show `final (pending corrections)` until it closes. |
 
-#### 7.3.7 Tiebreakers (standings)
-Ordered, reorderable list. Default order: **(1) Win %, (2) Head-to-head, (3) Points For, (4) Division record (if divisions), (5) Points Against, (6) Coin flip (deterministic seeded).** Stored as an ordered array in `settings`.
+#### 7.3.7 Tiebreakers (standings & playoff seeding)
+Ordered, reorderable list, applied whenever two or more teams are tied after the primary sort (Win %) — this is the same chain standings display uses and playoff seeding uses at end of regular season, so there's exactly one ranking rule in the product.
+
+**v1 default (Chris's ruling):** **(1) Win %, (2) Points For, (3) Head-to-head, (4) Points Against — higher wins, (5) Division record (if divisions), (6) Coin flip (deterministic seeded).** Stored as an ordered array in `settings`; fully reorderable by the commissioner. (2)–(4) are the chain that actually matters for v1; (5)–(6) exist purely as a deterministic fallback for the near-impossible case all three tie exactly, and are candidates to trim later if you'd rather force a hard stop sooner.
+- **Points Against direction is deliberate, not a typo:** the team that *allowed* more points played a harder schedule, so more Points Against ranks higher when Points For and head-to-head don't separate two teams.
+- **Head-to-head only resolves a clean two-team tie** — the win-loss record between exactly those two teams' meetings that season. With three or more teams still tied after Points For, a round-robin comparison has no single well-defined winner (records can cycle: A beat B, B beat C, C beat A), so head-to-head is **skipped** for that group and the chain falls straight to Points Against (E63).
+- **`total_points` leagues (§11.7) have no matchups, so no head-to-head data exists at all** — the chain skips directly from Points For to Points Against for those leagues (E64).
 
 #### 7.3.8 Draft configuration
 Lives on the league `settings` and is hydrated into a `drafts` row when scheduled (§8/§12).
@@ -312,14 +381,16 @@ Lives on the league `settings` and is hydrated into a `drafts` row when schedule
 | `draft_scheduled_at` | — | timestamptz | When the room opens. |
 
 **Validation rules (enforced in API + DB constraints):**
-- `team_count ∈ {8,10,12,14,16,18,20}`.
+- `team_count ∈ {8,10,12,14,16}` (v1).
 - `playoff_start_week + (playoff_rounds × playoff_weeks_per_round) − 1 ≤ 18`.
 - Sum of starting slots ≥ 1 and ≤ 20; `roster_size` large enough that `roster_size × team_count` ≤ draftable player pool.
 - Every starting slot has a unique `key` and a non-empty `eligible` set; **flex slots list ≥ 2 eligible positions**, single-position slots exactly 1; `bench` 0–20 and 0–6 IR spots.
 - Each IR spot has a `type` (`unrestricted` | `restricted`) and ≥ 1 eligible designation; **restricted** spots set `min_weeks` ≥ 1 (default 4).
 - A Swap assignment (when `swap_spots = 1`): the *out* player is a current starter, the *in* player is on the bench with the **same `player.position`**; **at most one swap per team per week**; editable only before the swap's lock.
 - Auction: `auction_budget ≥ roster_size × auction_min_bid` (every team can fill a legal roster).
-- Exactly one scoring system referenced and readable by the league.
+- Exactly one scoring system referenced and readable by the league; on draft start its rules are snapshotted (§7.3.3) — a league in `drafting`+ must always have a non-null `scoring_rules_snapshot`.
+- Schedule (v2.0): generation invariants of §11.7 hold (each team exactly once per week per game type; both home- and away-side uniqueness; repeats separated ≥ 3 weeks; divisions play 2× when weeks allow); `second_opponent` derangement never pairs a team with its primary opponent.
+- Locks (v2.0): all kickoff-derived locks (lineup, add/drop, swap, trade-defer) are evaluated from `nfl_games.kickoff` at runtime — precomputed lock timestamps are forbidden outside `league_player_pool.locked_until`, which the `lineup-lock` job refreshes on every run (§23.3).
 
 ### 7.4 Attaching ranking lists to a league (list ↔ league tie-in)
 FieldScout's atomic unit is the ranking list (`docs/01-PRD.md` §F2). This ties a user's lists to the leagues they play in, so the rankings they built for *this* league are one tap away in the Live Draft Tool and all season.
@@ -364,7 +435,7 @@ The draft room is the highest-stakes, most concurrency-sensitive surface in the 
 
 ### 8.4 Queue & autopick
 - Each manager has a personal **queue** (`draft_queues`): an ordered list of `player_id`s. Drag to reorder; players already drafted are auto-removed/skedaddled.
-- **Autopick strategy** (`queue_then_board_then_adp`): on timeout or when a manager is in auto mode, pick the highest available from (1) their queue, else (2) their **primary league-tagged draft board** if they set one (§7.4), else (3) their FieldScout season-long Big Board order, else (4) lowest `players.adp`. The pick must fit an open slot (respect roster needs: don't autopick a 3rd QB into a 1-QB league if other needs are open — "best available that fills a need").
+- **Autopick strategy** (`queue_then_board_then_adp`): on timeout or when a manager is in auto mode, pick the highest available from (1) their queue, else (2) their **primary league-tagged draft board** if they set one (§7.4), else (3) their FieldScout season-long Big Board order, else (4) lowest `players.adp`. The pick must fit an open slot (respect roster needs: don't autopick a 3rd QB into a 1-QB league if other needs are open — "best available that fills a need"). **K/D-ST deferral (v2.0):** autopick treats K and D/ST as ineligible until the team's remaining picks equal its remaining required slots or the draft is within its final 3 rounds — no bot takes a kicker in round 3 (E30).
 - Managers can toggle **"Auto-draft me"** (e.g., if they have to leave). Commissioner can toggle it for any team.
 
 ### 8.5 Snake draft flow
@@ -382,13 +453,15 @@ The draft room is the highest-stakes, most concurrency-sensitive surface in the 
 4. Bid clock hits 0 → highest bidder wins; `draft_picks` row written with `price`; budgets recomputed; nomination advances.
 5. Inactive/disconnected managers do not auto-bid by default (configurable later); they can still be nominated for and simply don't participate.
 6. Repeat until all rosters legal/full or budgets exhausted (engine guarantees every team can always complete a legal roster via the max-bid formula).
+7. **Endgame rules (v2.0):** (a) nomination validates the nominator can afford their own opening bid; (b) a bid clock expiring with no raises awards the player to the **nominator at the opening bid**; (c) teams whose rosters are complete are **skipped in the nomination rotation** and cannot bid; (d) when a team's max bid is $1, only $1 bids are accepted for it; (e) system nominations on timeout pick the highest-ADP player that fits *some* team's open slot, skipping players no team can legally roster. (E25–E27)
+8. **Solvency invariant (v2.0):** `remaining_budget ≥ open_slots × min_bid` holds for every team at all times — including through commissioner budget edits and bid reversals, which are validated against it (a commissioner who needs more room reverses won bids instead; E28).
 
 ### 8.7 Commissioner live draft controls (explicitly required)
 All available from a **Draft Commissioner Panel** overlay in the room; **every one writes a `commissioner_actions` audit entry** (§10) and broadcasts.
 
 | Control | Behavior |
 |---|---|
-| **Pause / Resume** | Freezes/refreezes all clocks. Unlimited. Banner shows "Draft paused by {commish}". |
+| **Pause / Resume** | Freezes/refreezes all clocks. Unlimited. Banner shows "Draft paused by {commish}". On pause the remaining time persists to `drafts.deadline_remaining_ms`; on resume `current_deadline = now() + remaining` — clocks never gain or lose time across pauses (v2.0). |
 | **Edit pick clock** | Change `pick_timer_seconds` live (applies to subsequent picks); may extend the current deadline. |
 | **Undo last pick** | Reverts the most recent pick (player returns to pool, clock rewinds to that team). |
 | **Undo to a point (cascade)** | Undo back to pick #N (everything after is reverted). Clear confirm dialog showing what will be undone. |
@@ -404,9 +477,18 @@ All available from a **Draft Commissioner Panel** overlay in the room; **every o
 - If the commissioner disconnects, co-commissioners retain controls; if none, the draft auto-pauses after grace (configurable) so nothing runs unsupervised during an outage.
 - All ephemeral UI (who's typing, hover) uses Broadcast/Presence and is non-authoritative.
 
-### 8.8 Draft chat & mock drafts
+### 8.8 Draft chat & Mock Draft Mode (v2.3 — promoted from Phase-F nice-to-have to a core feature)
 - **Draft chat:** real-time chat scoped to the draft (reuse `league_chat` with a `channel = 'draft:<draft_id>'`, or a dedicated `draft_chat`; spec uses `league_chat.context`). Commissioner override actions auto-post a system message into draft chat (non-disable-able) — Sleeper-style transparency.
-- **Mock draft (nice-to-have, Phase F):** a throwaway draft against CPU autopickers so a commissioner can test settings. Same engine, `drafts.is_mock = true`, no `league_rosters` written.
+
+**Mock Draft Mode — solo practice under the league's real settings.** One user drafts against CPU opponents with the actual countdown pressure; the product requirement is *timer fidelity*, not a toy.
+- **Launch:** any league member starts a mock from a pre-draft league (`setup`/`scheduled`) — "Practice this draft." The mock snapshots the league's **real draft config** (type, pick clock, order incl. their actual slot, rounds from roster slots, anti-snipe) into a new `drafts` row with `is_mock = TRUE`. The human takes their real seat by default (any seat selectable); every other seat is a CPU.
+- **Same engine, literally:** server-authoritative deadlines, `draft-tick` timeouts, autopick, pause/resume, queue, board — the identical code path as a live draft. A mock that behaves differently from draft night is worse than no mock.
+- **CPU opponents = the simulator bots** (delivery plan §4.2) exposed in-product — one bot implementation, two consumers. Rankings/ADP-driven with roster-need awareness; **humanized timing** (picks land at a random 20–70% of the clock, with occasional near-buzzer picks so the user *feels* timeout and anti-snipe behavior); auction bots bid value-based (ADP-derived values ± noise) and pass the same max-bid/solvency validator as humans.
+- **CPU speed toggle:** `realistic` (default) or `fast` (~2s CPU picks). Affects bot think-time only — the human's clock always runs real.
+- **Zero side effects:** no `league_rosters`, no `transactions`, no league status transitions, no notifications to other members. Picks exist only under the mock `draft_id`; chat scoped to the mock room. Mock parameters live in `drafts.config.mock = { human_team_id, cpu_speed }` — no schema change (§12.3 already has `is_mock`).
+- **Lifecycle:** pause/leave anytime (auto-pauses on disconnect); resumable from the league page; abandoned mocks auto-expire after **72h** (daily cleanup cron); a finished mock keeps a **recap** (full board + your roster vs. the CPUs') until the user deletes it. Cap: **3 active mocks per user** (§22.5).
+- **Load accounting:** a mock is one realtime subscriber and rides the same SKIP-LOCKED `draft-tick`; cheap, but counted in the §22 draft-concurrency budget and load tests.
+- **v1 scope:** league-attached only (config, roster shape, and the player pool come from the league). A standalone practice lobby with quick settings — and multi-human mock rooms — is v1.1.
 
 ### 8.9 Draft references: your league-tagged lists in the room
 The Live Draft Tool surfaces the user's league-tagged lists (§7.4) so their prep is usable on the clock.
@@ -424,26 +506,55 @@ The Live Draft Tool surfaces the user's league-tagged lists (§7.4) so their pre
 
 ## 9. Real-time Architecture
 
-Builds on the existing Supabase Realtime usage (`docs/02-TECHNICAL-ARCHITECTURE.md` §Real-time Features). Three Realtime mechanisms are used deliberately:
+Builds on the existing Supabase Realtime usage (`docs/02-TECHNICAL-ARCHITECTURE.md` §Real-time Features) — **revised in v2.0 for scale.** The v1.x design subscribed clients to **Postgres Changes** on league tables. Supabase's own guidance now warns against this at scale: Postgres Changes authorizes **every change against every subscriber** (1 write × 100 subscribers = 100 RLS checks) and processes all changes on a **single thread** to preserve ordering — throughput scales with subscriber count, not write rate, and larger compute doesn't help. With hundreds of leagues live on a Sunday, that design falls over. Supabase's recommended replacement is **Broadcast from Database**: DB triggers call `realtime.broadcast_changes()` to publish to **private, authorized Broadcast channels**, which scales to tens of thousands of concurrent subscribers.
+
+**v2.0 transport rule: clients never use Postgres Changes. All authoritative table events reach clients via Broadcast-from-Database triggers on private channels.**
 
 | Mechanism | Used for | Authoritative? |
 |---|---|---|
-| **Postgres Changes** (INSERT/UPDATE) | The truth: `drafts` state, new `draft_picks`, `matchups` score changes, `transactions`, `commissioner_actions` | **Yes** — clients re-render from DB rows |
-| **Presence** | Who is currently in the draft room / online; per-team connection status; "on the clock" awareness | No (ephemeral) |
-| **Broadcast** | Ephemeral UX: countdown ticks/heartbeats, "typing…", bid button pulses, optimistic bid echoes | No (ephemeral) |
+| **Broadcast from Database** (triggers → `realtime.broadcast_changes()`) | The truth: `drafts` state, `draft_picks`, `draft_bids`, `matchups` score updates, `team_week_results`, `transactions`, `league_rosters`, `commissioner_actions`, `league_chat`, `lineup_swaps` | **Yes** — but clients treat each event as a *cache-invalidation + payload hint*; on any doubt they refetch via REST |
+| **Presence** | Who is in the draft room / online; per-team connection status | No (ephemeral) |
+| **Client Broadcast** | Ephemeral UX only: "typing…", bid-button pulses, optimistic intent echoes | No (ephemeral) |
 
-**Channels**
-- `draft:<draft_id>` — Postgres Changes on `drafts` + `draft_picks` (+ `draft_bids` for auction), Presence for room occupancy, Broadcast for clock heartbeat.
-- `league:<league_id>` — Postgres Changes on `matchups`, `transactions`, `league_rosters`, `commissioner_actions`, `league_chat`; powers the league activity feed, standings, and the audit log live.
-- Live scoring reuses the existing `player_stats` / `nfl_games` Realtime (Live Mode) — league matchup scores recompute client-side from those broadcasts and the league scoring system.
+### 9.1 Channels (all private; Realtime Authorization via RLS on `realtime.messages`)
+- `draft:<draft_id>` — draft state, picks, bids, draft chat, Presence, a 15s server heartbeat for clock-drift correction. Fan-out ≤ 20 clients + spectators.
+- `league:<league_id>` — matchup/score updates, transactions, roster changes, commissioner actions, league chat, swap events. Powers the activity feed, live standings, and the audit log.
+- **No client subscribes to `player_stats` or `nfl_games`.** Raw stat deltas are ingested server-side and fanned out per league by the `score-league-week` worker (§22.2), which writes `matchups` / `team_week_results` and lets the table triggers broadcast one compact `scores_updated` event per league per batch. Per-player box-score lines are fetched via REST when a matchup view is open, re-fetched on `scores_updated`.
 
-**Client rules**
-- On join/reconnect: **fetch authoritative state via REST first**, render, *then* subscribe (never trust that you received every broadcast).
-- Render countdowns from `current_deadline` (server timestamp) + local clock offset measured at subscribe time.
-- All writes go through Route Handlers/RPCs; Realtime is read-only to clients (RLS forbids client writes to `draft_picks`, `matchups`, etc. — only `*_chat` inserts are allowed directly).
+### 9.2 Trigger + authorization pattern
+```sql
+-- One trigger per authoritative table, e.g.:
+CREATE OR REPLACE FUNCTION broadcast_draft_changes() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+BEGIN
+  PERFORM realtime.broadcast_changes(
+    'draft:' || COALESCE(NEW.draft_id, OLD.draft_id)::text,  -- topic
+    TG_OP, TG_OP, TG_TABLE_NAME, TG_TABLE_SCHEMA, NEW, OLD);
+  RETURN NULL;
+END $$;
+CREATE TRIGGER tr_broadcast_draft_picks
+  AFTER INSERT OR UPDATE ON draft_picks
+  FOR EACH ROW EXECUTE FUNCTION broadcast_draft_changes();
 
-**RLS + Realtime note:** Realtime respects RLS. League tables are readable only by league members (policies in §12), so broadcasts naturally scope to the league. This is also why the audit log is *visible to members* — its SELECT policy allows all league members, while INSERT is restricted to commissioners via RPC.
+-- Authorization: members may read their league/draft topics.
+CREATE POLICY "members read league topics" ON realtime.messages
+  FOR SELECT TO authenticated USING (
+    (SELECT realtime.topic()) LIKE 'league:%'
+    AND is_league_member(split_part((SELECT realtime.topic()), ':', 2)::uuid)
+  );
+-- (equivalent policy for 'draft:%' topics via drafts.league_id lookup)
+```
+- Column-select payloads: broadcast only the columns clients render (never blind-bid amounts, never private queue rows). Sensitive tables (`waiver_claims`, `draft_queues`) are **never broadcast** — owners poll/refetch their own rows.
+- `realtime.send()` is used for synthetic events with no backing row (e.g., `scores_updated { week, updated_team_ids }`).
 
+### 9.3 Client rules (unchanged doctrine, stronger wording)
+- On join/reconnect: **fetch authoritative state via REST first**, render, *then* subscribe. Never depend on missed broadcasts. Each broadcast carries a monotonic `state_version` (from `drafts.updated_at`/sequence); a gap ⇒ refetch.
+- Countdowns render from `current_deadline` (server timestamp) + a clock offset measured at subscribe (and corrected by the 15s heartbeat). Clients never own the clock.
+- All writes go through Route Handlers/RPCs. The only direct client INSERT is `league_chat` (RLS-scoped, rate-limited).
+- Subscription budget: **one socket per client, ≤ 3 channels** (current league, current draft, notifications). Unsubscribe on route change — connection leaks are the #1 cause of Realtime quota suspensions.
+
+### 9.4 Capacity notes (see §22 for full model)
+Supabase enforces per-plan quotas on concurrent connections, messages/sec, channel joins/sec, and channels per connection; overages bill per 1k peak connections and per 1M messages. The §22 capacity model shows the target load (hundreds of concurrent leagues) fits comfortably **only** with the Broadcast-from-DB design and per-league score batching; Postgres Changes would not. Escape hatches if growth exceeds managed quotas: Supabase Team plan custom limits → self-hosted Realtime (open source) → dedicated realtime provider for the socket layer only.
 ---
 
 ## 10. Feature D — Commissioner Console + Audit Log (the differentiator)
@@ -461,7 +572,7 @@ All actions live in the **Commissioner Console** (`/app/leagues/[id]/commish`) a
 | **Standings & schedule** | Manually set a team's W/L/T record; edit the weekly schedule/matchups; assign byes; edit playoff seeds/bracket; set/break tiebreakers. |
 | **Draft** | Everything in §8.7 (pause, undo, reassign, move, reset). |
 | **League config** | Change any setting mid-season (with a warning about retroactive effects); change scoring (option to re-score prior weeks or not); change roster slots. |
-| **Membership** | Reassign a team to a new manager; add/remove managers; promote/demote co-commissioners; convert a team to/from autopick/auto-manage. |
+| **Membership** | Remove a manager with an explicit franchise outcome — **takeover** (successor inherits the franchise), **retire & succeed** (franchise sealed under its final manager; successor spun into the slot), or **vacate** (orphan/autopilot) — per §7.2.1; seat managers via seat-targeted invites; **act as any team in the league** — most commonly an orphaned one, but equally a still-seated manager who's gone inactive (logged with `acting_as_team_id`, §7.2.1 "Generalized Act as Manager"); promote/demote co-commissioners; convert a team to/from autopick/auto-manage. |
 | **Lifecycle** | Move league status backward/forward (e.g., re-open the season; reset the draft). |
 
 ### 10.2 The illegal-/ineligible-player workflow (first-class)
@@ -476,7 +587,7 @@ This turns a contentious manual chore into a transparent, defensible, two-click 
 ### 10.3 The Audit Log (`commissioner_actions`) — design
 The heart of the differentiator. **Append-only, immutable, league-visible.**
 
-- **Captured per action:** `id`, `league_id`, `actor_id` (commish/co-commish), `action_type` (enum), `target_type` + `target_id` (e.g., matchup, team, trade, player, draft_pick, setting), `reason` (required, non-empty), `before` JSONB, `after` JSONB, `metadata` JSONB (e.g., week, affected_team_ids), `created_at`. Optionally `is_reverted` + `reverted_by_action_id` for chained undo.
+- **Captured per action:** `id`, `league_id`, `actor_id` (commish/co-commish), `action_type` (enum), `target_type` + `target_id` (e.g., matchup, team, trade, player, draft_pick, setting), `reason` (required, non-empty), `before` JSONB, `after` JSONB, `metadata` JSONB (e.g., week, affected_team_ids), `acting_as_team_id` (set when the commissioner acts on behalf of any team, most commonly an orphaned one or a still-seated inactive manager, §7.2.1), `created_at`. Optionally `is_reverted` + `reverted_by_action_id` for chained undo.
 - **Immutability:** no UPDATE/DELETE allowed by anyone (enforced by RLS: only INSERT for commissioners; no UPDATE/DELETE policy exists, so they're denied). "Undoing" an override is itself a *new* logged action that references the original — the original entry is never erased. (This is explicitly better than MFL, where records can be deleted.)
 - **Visibility:** SELECT policy = any league member. Rendered as a human-readable, filterable **League Activity → Commissioner Actions** timeline: "{actor} changed Week 7: Team A 98.4 → set result to Team B win — reason: 'Started ineligible player (bye)'. 2h ago. [view diff]".
 - **Transparency guarantees:** override system messages auto-post to league chat and **cannot be disabled** (Sleeper-style). A small "✸ adjusted by commissioner" badge appears on any matchup/score/roster that was overridden, linking to the log entry.
@@ -510,10 +621,10 @@ The heart of the differentiator. **Append-only, immutable, league-visible.**
 - If `auto_sub_inactives` is on: ~90 min before a starter's kickoff, if the player is officially OUT/inactive (from `players.status` / injury feed) and a *legal, playing* bench replacement exists, auto-swap them and record it (visible to the manager, logged as a system — not commissioner — action). Off by default; mirrors Sleeper's free auto-sub (a feature ESPN/Yahoo lack and NFL.com paywalls).
 
 ### 11.4 Scoring, matchups & live updates
-- **Schedule generation:** on draft completion (or when entering `in_season`), generate a round-robin H2H schedule across `regular_season_weeks` honoring divisions; store as `matchups` rows (one per pairing per week). Commissioner-editable.
-- **Live scoring:** a matchup's team score = Σ fantasy points of that team's locked starters for the week, computed via `src/utils/calculate-fantasy-points.ts` against the league `scoring_system_id`, fed by the Live Mode pipeline (`player_stats` realtime). Matchup view reuses Live Mode patterns (Now Playing / Done / Up Next).
+- **Schedule generation:** on draft completion (or when entering `in_season`), the schedule engine (§11.7) generates the season deterministically from `schedule_seed` — round-robin honoring divisions, plus `second_opponent` rows when enabled — stored as `matchups`. Commissioner-editable; **Remix** regenerates with preview + diff (§11.7).
+- **Live scoring (v2.0 — server-materialized):** a matchup's team score = Σ fantasy points of that team's locked starters, computed via `src/utils/calculate-fantasy-points.ts` against the league's **scoring snapshot** (§7.3.3). Scores are computed **server-side** by the `score-league-week` worker (§22.2) from `player_stats` deltas and written to `matchups` / `team_week_results`, whose triggers broadcast one compact event per league (§9). Clients never subscribe to raw `player_stats`; the matchup view refetches box-score lines on `scores_updated`. Matchup view reuses Live Mode patterns (Now Playing / Done / Up Next).
 - **Swap resolution:** if a team armed a Swap spot (§7.3.2) and it triggers, the effective starter for that slot becomes the swap-in player (pre-game inactive) or the greater-of result (in-game injury); live scoring and finalization use the resolved slot.
-- **Finalization:** after the week's games + the stat-correction window (configurable, default Wednesday — see §14), the matchup is marked `final`, W/L/T assigned, standings updated. A `final` matchup is only changed via a commissioner override (§10).
+- **Finalization:** after the week's games + the stat-correction window (configurable, default **Thursday 06:00 ET** — §23.4), the matchup is marked `final`, W/L/T (plus median/second-opponent results, §11.7) written to `team_week_results`, standings updated, and `league_weeks.status → final`. Until then, completed matchups display `final (pending corrections)`. A `final` matchup is only changed via a commissioner override (§10).
 - **Stat corrections:** when the stats pipeline applies an official correction within the window, affected non-final matchups recompute automatically; the league sees a system note. *(Avoid the ESPN double-credit trap: never let a manual override and an automatic correction both apply — overrides set an absolute value or are tagged to suppress auto-recompute for that cell.)*
 
 ### 11.5 Standings & playoffs
@@ -523,6 +634,30 @@ The heart of the differentiator. **Append-only, immutable, league-visible.**
 
 ### 11.6 History Mode (carry-over from existing PRD §F9)
 - Preserve the existing **History Mode** concept (per-season records, H2H history between any two teams, avg points/week, win %). In this model it's simply derived from the persisted `matchups`/`league_rosters`/standings for completed seasons; expose it on a league History tab. (The original $5/yr monetization is a product decision — see Open Questions; the data is retained regardless so it can be unlocked retroactively.)
+- **v2.1 — history is franchise-first with per-stint attribution** (§7.2.1/§12.22): a franchise page shows its manager timeline and record splits per stint; a retired franchise stays permanently visible under its final manager; a successor franchise's book opens at its founding week. A user's profile aggregates their stints across leagues into a "managerial record".
+
+### 11.7 Schedule engine, remix & extra weekly games (NEW v2.0)
+
+The v1.x spec generated a round-robin and let the commissioner hand-edit it. v2.0 makes scheduling a first-class, deterministic engine with a **Remix** action (the "reshuffle until we like it" flow), plus the two extra-game modes leagues increasingly expect.
+
+**Generation (deterministic, seeded).**
+- Algorithm: **circle-method round-robin** over `team_count` teams. A seeded PRNG (`schedule_seed`, stored on `leagues.settings`) permutes the team order before generation, so the same seed always reproduces the same schedule (auditable, previewable, diffable).
+- `regular_season_weeks > team_count − 1` ⇒ the rotation cycles; a repeat pairing is always ≥ 3 weeks after the first meeting, and repeat counts are balanced (max spread of 1 across pairings).
+- **Divisions (if 2):** intra-division pairings are scheduled twice before any pairing repeats cross-division (classic "play your division 2×"), weeks permitting; the validator reports if the week count can't satisfy it.
+- Validation invariants: every team appears exactly once per week (v1: even counts, no byes); no self-matchups; `UNIQUE(league_id, season, week, home_team_id)` **and** `UNIQUE(league_id, season, week, away_team_id)` both hold; home/away alternates within a pairing.
+
+**Remix (commissioner action).**
+- **"Remix schedule"** regenerates with a fresh seed and shows a **preview diff** ("Week 3: you now play Team D instead of Team B…") before Confirm. Confirm replaces all `scheduled` matchups atomically and **auto-posts a system message to league chat** (Sleeper posts on randomize; we match, non-disableable).
+- Allowed freely until the **first NFL kickoff of league Week 1**. After that, Remix and any matchup edit become commissioner **overrides** (reason + audit entry per §10) and only `scheduled` future weeks may change — `live`/`final` weeks never regenerate.
+- Manual per-matchup editing (drag Team A ↔ Team C for Week 7) stays available in the same tool, same audit rules.
+
+**Extra weekly games (regular season only; both off by default).**
+- `median_game` (Sleeper-style "Extra Game vs League Median"): each week every team also gets a W/L/T vs the **league median score** — the average of the two middle team scores that week (scoring exactly the median = tie). Doubles games played; standings and Win % include it.
+- `second_opponent` (Yahoo Commissioner Plus-style): each team gets a second H2H matchup vs a different opponent each week, generated as a per-week derangement of the primary schedule (never your primary opponent, never yourself). Stackable with `median_game` (up to 3 results/week).
+- Both are computed at finalization into `team_week_results` (§12.18) — they are results, not extra `matchups` rows, except `second_opponent` which *does* materialize as `matchups.round_type = 'secondary'` rows so the UI can render it like any matchup.
+- Playoff seeding/tiebreakers use the combined record; Points For is counted **once** per week regardless of extra games.
+
+**Scoring-format setting.** `schedule_mode = 'h2h'` (default) or `'total_points'`. Total-points leagues generate no matchups: standings order by cumulative Points For, "playoffs" reduce to a final-week points race unless `playoff_teams > 0` is explicitly set with H2H brackets from points-seeding. (This closes the "head-to-head vs total scoring" requirement as a first-class mode rather than the v1.x `playoff_teams = 0` workaround.)
 
 ---
 
@@ -553,6 +688,7 @@ RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER AS $$
   );
 $$;
 ```
+> **v2.0 hardening:** every `SECURITY DEFINER` function (helpers, all RPCs, broadcast triggers) must `SET search_path = ''` (schema-qualify all references) and re-validate authorization **inside the function body** (`is_league_commish()` etc.) — the Route Handler check is UX, the in-function check is security. `REVOKE EXECUTE ... FROM anon` on all league RPCs.
 
 ### 12.1 `leagues` (ALTER existing)
 ```sql
@@ -561,7 +697,7 @@ ALTER TABLE leagues
     -- setup | scheduled | drafting | in_season | playoffs | complete
   ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'redraft',
   ADD COLUMN IF NOT EXISTS team_count INTEGER NOT NULL DEFAULT 12
-    CHECK (team_count IN (8,10,12,14,16,18,20)),
+    CHECK (team_count IN (8,10,12,14,16)),  -- v1; widen to 18/20 + odd in v1.1 (OQ 12)
   ADD COLUMN IF NOT EXISTS regular_season_weeks INTEGER NOT NULL DEFAULT 14,
   ADD COLUMN IF NOT EXISTS playoff_teams INTEGER NOT NULL DEFAULT 6,
   ADD COLUMN IF NOT EXISTS playoff_start_week INTEGER NOT NULL DEFAULT 15,
@@ -574,6 +710,10 @@ ALTER TABLE leagues
     -- long-tail config: divisions, playoff_weeks_per_round, reseed, consolation,
     -- tiebreakers[], waiver_process_day, acquisition caps, trade settings,
     -- auto_sub_inactives, allow_illegal_lineups, draft config block, etc.
+    -- v2.0 additions: schedule_mode, median_game, second_opponent, schedule_seed,
+    -- player_game_lock, bench_lock, fa_hold_hours, trade_lock_behavior, stat_correction_window, flags
+  ADD COLUMN IF NOT EXISTS scoring_rules_snapshot JSONB,
+    -- v2.0: frozen copy of scoring_systems.rules taken at draft start (§7.3.3); all scoring reads this
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 -- NOTE: existing columns reused: id, owner_id (the commissioner), name, description,
 --   max_teams (kept in sync with team_count), scoring_system_id, roster_settings (slots),
@@ -611,6 +751,7 @@ CREATE POLICY "Commish manages members"
 CREATE INDEX idx_league_members_league ON league_members(league_id);
 CREATE INDEX idx_league_members_user ON league_members(user_id);
 ```
+> **v2.1:** `user_id`/`team_id` here are a **current-state cache** for fast lookups; the historical truth of who managed which franchise when is `team_managers` (§12.22). Update both inside the same RPC transaction.
 
 ### 12.3 `drafts`
 ```sql
@@ -630,6 +771,7 @@ CREATE TABLE drafts (
   current_nomination JSONB,                        -- auction: { player_id, high_bid, high_bidder_team_id }
   current_deadline TIMESTAMPTZ,                    -- server-authoritative clock end
   paused_at TIMESTAMPTZ,
+  deadline_remaining_ms INTEGER,               -- v2.0: remaining clock persisted on pause (§8.7)
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -742,7 +884,7 @@ CREATE TABLE matchups (
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
   season INTEGER NOT NULL,
   week INTEGER NOT NULL,
-  round_type TEXT DEFAULT 'regular',               -- regular | playoff | consolation | third_place
+  round_type TEXT DEFAULT 'regular',               -- regular | playoff | consolation | third_place | secondary (v2.0 §11.7)
   home_team_id UUID REFERENCES teams(id) NOT NULL,
   away_team_id UUID REFERENCES teams(id),          -- NULL = bye
   home_score NUMERIC DEFAULT 0,
@@ -753,8 +895,15 @@ CREATE TABLE matchups (
   override_action_id UUID,                         -- FK → commissioner_actions(id)
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(league_id, season, week, home_team_id)
+  UNIQUE(league_id, season, week, home_team_id),
+  CHECK (away_team_id IS NULL OR away_team_id <> home_team_id)
 );
+-- v2.0: a team appears at most once per week on either side (per round_type):
+CREATE UNIQUE INDEX uniq_matchup_away_per_week
+  ON matchups(league_id, season, week, round_type, away_team_id) WHERE away_team_id IS NOT NULL;
+CREATE UNIQUE INDEX uniq_matchup_home_per_week
+  ON matchups(league_id, season, week, round_type, home_team_id);
+-- (the plain UNIQUE above is superseded by the round_type-aware pair; keep both or drop the plain one in the migration)
 ALTER TABLE matchups ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Matchups viewable by league members"
   ON matchups FOR SELECT USING (is_league_member(league_id));
@@ -791,6 +940,7 @@ CREATE TABLE waiver_claims (
   drop_player_id TEXT REFERENCES players(id),       -- optional corresponding drop
   faab_bid INTEGER DEFAULT 0,                        -- blind bid
   priority INTEGER,                                  -- for rolling/reverse modes
+  claim_order INTEGER DEFAULT 1,                     -- v2.0: this team's own ranking for cascading claims (1 = try first)
   status TEXT DEFAULT 'pending',                     -- pending | won | lost | invalid | cancelled
   process_at TIMESTAMPTZ,                            -- when the batch runs
   processed_at TIMESTAMPTZ,
@@ -871,13 +1021,20 @@ CREATE POLICY "Only commish can append"
   ON commissioner_actions FOR INSERT WITH CHECK (is_league_commish(league_id) AND actor_id = auth.uid());
 CREATE INDEX idx_commish_actions_league ON commissioner_actions(league_id, created_at DESC);
 ```
-> Because there is **no** UPDATE or DELETE policy, even a commissioner cannot alter or remove an entry — Postgres denies it. Every override RPC inserts here in the same transaction as the state change (a state change without its log entry is impossible). Add `matchups.override_action_id` / `transactions.related_action_id` FKs → this table (added in Phase E, after this table exists). **Caveat:** RLS does not restrict Supabase's `service_role`/admin, which bypasses RLS — so the optional hash chain (§10.3) is the real defense against privileged writes, and a DB trigger on overridable tables (requiring a matching log row) is a recommended backstop so no future code path can change state without logging.
+> Because there is **no** UPDATE or DELETE policy, even a commissioner cannot alter or remove an entry — Postgres denies it. Every override RPC inserts here in the same transaction as the state change (a state change without its log entry is impossible). Add `matchups.override_action_id` / `transactions.related_action_id` FKs → this table (added in Phase E, after this table exists). **Caveat:** RLS does not restrict Supabase's `service_role`/admin, which bypasses RLS — so the optional hash chain (§10.3) is the real defense against privileged writes, and a DB trigger on overridable tables (requiring a matching log row) is a recommended backstop so no future code path can change state without logging. **v2.0 makes the backstop concrete:** override RPCs set a transaction-local GUC after inserting the log row; a `BEFORE UPDATE` trigger on overridable columns refuses commissioner-path writes without it:
+```sql
+-- inside every override RPC, same transaction as the state change:
+PERFORM set_config('app.commish_action_id', v_action_id::text, true);
+-- trigger sketch on e.g. matchups (guards is_overridden / result / score edits):
+IF (NEW.is_overridden AND COALESCE(current_setting('app.commish_action_id', true), '') = '')
+THEN RAISE EXCEPTION 'override without audit entry'; END IF;
+```
 
 ### 12.13 `team_lineups` (extend existing) & `league_chat` (extend existing)
 ```sql
 -- team_lineups already: (team_id, season, week, starters JSONB, bench JSONB, total_points, set_at)
 ALTER TABLE team_lineups
-  ADD COLUMN IF NOT EXISTS slot_map JSONB,           -- { "<slot_key>": "<player_id>" }; keys are the unique roster_settings.starting_slots[].key (multiple flex slots stay distinct)
+  ADD COLUMN IF NOT EXISTS slot_map JSONB,           -- v2.0 FIX: { "<slot_key>:<index>": "<player_id>" }, e.g. "rb:0","rb:1" — slots with count>1 expand to indexed instances; canonical everywhere (lineup editor, legality checks, swaps, overrides)
   ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS edited_by_commish BOOLEAN DEFAULT FALSE;
 
@@ -954,13 +1111,168 @@ CREATE INDEX idx_lineup_swaps_week ON lineup_swaps(league_id, season, week);
 ```
 > Enforce in the API: one swap row per (team, season, week) when the Swap spot is on (`swap_spots = 1`); the *out* player must be a current starter and the *in* player on the bench with the **same `player.position`**; edits allowed only before `locked_at`. The auto-sub itself is performed by the `process-swaps` worker (§14), which sets `status`/`trigger_type`/`triggered_at` and writes a `transactions` row (`type='auto_swap'`).
 
+### 12.17 `league_weeks` (per-league week state) — NEW v2.0
+One row per (league, week): finalization state, median score, waiver bookkeeping. Gives crons an idempotent anchor and the UI a single source for "is this week final?".
+```sql
+CREATE TABLE league_weeks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
+  season INTEGER NOT NULL,
+  week INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'upcoming',   -- upcoming | live | correction_window | final
+  median_score NUMERIC(8,2),                 -- set at finalization when median_game is on
+  waivers_processed_at TIMESTAMPTZ,
+  finalized_at TIMESTAMPTZ,
+  reopened_by_action_id UUID,                -- commissioner reopen (audited)
+  UNIQUE(league_id, season, week)
+);
+ALTER TABLE league_weeks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "League weeks viewable by members"
+  ON league_weeks FOR SELECT USING (is_league_member(league_id));
+```
+
+### 12.18 `team_week_results` (materialized weekly results & standings source) — NEW v2.0
+Standings were previously derived by scanning `matchups` with tiebreaker logic per request. At hundreds of leagues that's wasteful and makes median/second-opponent games awkward. This table is written by `score-league-week` (live, provisional) and `finalize-matchups` (final), and standings become a single indexed scan.
+```sql
+CREATE TABLE team_week_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
+  team_id UUID REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
+  season INTEGER NOT NULL,
+  week INTEGER NOT NULL,
+  points NUMERIC(8,2) NOT NULL DEFAULT 0,        -- counted once/week for Points For
+  opponent_team_id UUID REFERENCES teams(id),
+  h2h_result TEXT,                                -- win | loss | tie | bye | NULL(pending)
+  median_result TEXT,                             -- win | loss | tie | NULL (median_game off/pending)
+  second_opponent_team_id UUID REFERENCES teams(id),
+  second_result TEXT,                             -- win | loss | tie | NULL
+  is_final BOOLEAN DEFAULT FALSE,
+  UNIQUE(league_id, team_id, season, week)
+);
+ALTER TABLE team_week_results ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Results viewable by members"
+  ON team_week_results FOR SELECT USING (is_league_member(league_id));
+CREATE INDEX idx_twr_league_season ON team_week_results(league_id, season, week);
+```
+> Precedence: `matchups` remains the pairing + score + override source of truth; `team_week_results` is derived and always rebuildable from it (a `rebuild_team_week_results(league_id, week)` RPC exists for corrections/overrides).
+
+### 12.19 `league_player_pool` (per-league waiver/lock state of unowned players) — NEW v2.0
+The v1.x design inferred waiver state from `transactions` timestamps at read time — workable, but the waiver processor and the game-day lock rules (§7.3.4) need authoritative, indexable state. Maintained by the add/drop/waiver/trade RPCs and the `lineup-lock` / `process-waivers` jobs.
+```sql
+CREATE TABLE league_player_pool (
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
+  player_id TEXT REFERENCES players(id) NOT NULL,
+  state TEXT NOT NULL DEFAULT 'free_agent',   -- free_agent | on_waivers | rostered | locked_in_game
+  waivers_until TIMESTAMPTZ,                  -- when the player clears (NULL unless on_waivers)
+  locked_until TIMESTAMPTZ,                   -- game-day add lock (player_game_lock=on): kickoff → week clear
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (league_id, player_id)
+);
+ALTER TABLE league_player_pool ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Pool viewable by members"
+  ON league_player_pool FOR SELECT USING (is_league_member(league_id));
+CREATE INDEX idx_pool_waivers ON league_player_pool(league_id, waivers_until)
+  WHERE state = 'on_waivers';
+```
+> Rows are created lazily (a player with no row = `free_agent` if unowned). `rostered` rows mirror `league_rosters` for one-lookup legality checks; a nightly reconciliation job asserts the mirror matches.
+
+### 12.20 `nfl_weeks` (global NFL calendar) — NEW v2.0
+Week boundaries stop being implicit. All week-scoped jobs key off this table; kickoff-derived locks always read `nfl_games.kickoff` **at evaluation time** (never cached) so NFL flex-scheduling and postponements are safe.
+```sql
+CREATE TABLE nfl_weeks (
+  season INTEGER NOT NULL,
+  week INTEGER NOT NULL,                      -- 1..18
+  starts_at TIMESTAMPTZ NOT NULL,             -- typically Wed 00:00 ET
+  first_kickoff_at TIMESTAMPTZ,               -- updated from nfl_games (TNF)
+  last_game_ends_at TIMESTAMPTZ,              -- updated as games finish (MNF)
+  correction_window_ends_at TIMESTAMPTZ,      -- default: Thu 06:00 ET after the week (see §23.4)
+  PRIMARY KEY (season, week)
+);
+-- world-readable reference data; no RLS-sensitive content
+```
+
+### 12.21 `stat_correction_events` — NEW v2.0
+Detected by the ingestion diff (§23.4); drives auto-recompute and the league-facing "Stat Corrections" view (filtered to that league's starters, Sleeper-style).
+```sql
+CREATE TABLE stat_correction_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season INTEGER NOT NULL,
+  week INTEGER NOT NULL,
+  player_id TEXT REFERENCES players(id) NOT NULL,
+  stat_key TEXT NOT NULL,
+  old_value NUMERIC,
+  new_value NUMERIC,
+  detected_at TIMESTAMPTZ DEFAULT NOW(),
+  applied_at TIMESTAMPTZ                      -- when league recompute fan-out completed
+);
+CREATE INDEX idx_stat_corrections_week ON stat_correction_events(season, week);
+```
+
 ---
+
+### 12.22 `team_managers` (manager stints) + franchise lifecycle columns — NEW v2.1
+The historical truth of §7.2.1. One row per stint; a team's current manager = the row with `ended_at IS NULL`.
+```sql
+ALTER TABLE teams
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',      -- active | orphaned | retired
+  ADD COLUMN IF NOT EXISTS retired_at_week INTEGER,                     -- league week the franchise was sealed
+  ADD COLUMN IF NOT EXISTS successor_team_id UUID REFERENCES teams(id); -- set on the RETIRED team → its successor
+
+CREATE TABLE team_managers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
+  team_id UUID REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',        -- manager (co_manager reserved post-v1)
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_week INTEGER,                        -- league-week granularity for history splits (NULL preseason)
+  ended_at TIMESTAMPTZ,
+  ended_week INTEGER,
+  end_reason TEXT,                             -- kicked | left | seat_retired | replaced
+  ended_by UUID REFERENCES profiles(id),       -- commissioner, or self
+  UNIQUE (team_id, user_id, started_at)
+);
+CREATE UNIQUE INDEX one_open_stint_per_team ON team_managers(team_id) WHERE ended_at IS NULL;
+CREATE INDEX idx_team_managers_user ON team_managers(user_id);
+ALTER TABLE team_managers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Stints viewable by league members"
+  ON team_managers FOR SELECT USING (is_league_member(league_id));
+-- writes only via SECURITY DEFINER RPCs: assign_manager / remove_manager(mode) / retire_franchise
+```
+> Claiming a placeholder seat opens the user's first stint. Backfill migration: open a stint for every currently seated `league_members` row so history never has a gap. Write stints from day one — retrofitting them later means guessing at dates.
+
+### 12.23 `league_invites` (seat-targeted invites + custom slug) — NEW v2.1
+```sql
+ALTER TABLE leagues ADD COLUMN IF NOT EXISTS invite_slug CITEXT UNIQUE;  -- custom share URL; NULL → random invite_code
+
+CREATE TABLE league_invites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
+  token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(16), 'hex'),
+  target_team_id UUID REFERENCES teams(id) ON DELETE CASCADE,  -- NULL = general league invite
+  invited_username CITEXT,                                     -- optional: restrict claim to this handle
+  invited_email CITEXT,                                        -- optional: restrict claim to this login email (never league-visible)
+  created_by UUID REFERENCES profiles(id) NOT NULL,
+  max_uses INTEGER NOT NULL DEFAULT 1,                         -- general links may set higher
+  use_count INTEGER NOT NULL DEFAULT 0,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '14 days',
+  revoked_at TIMESTAMPTZ,
+  claimed_by UUID REFERENCES profiles(id),
+  claimed_at TIMESTAMPTZ
+);
+CREATE INDEX idx_league_invites_league ON league_invites(league_id);
+ALTER TABLE league_invites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Invites viewable by commish"
+  ON league_invites FOR SELECT USING (is_league_commish(league_id));
+-- claim path = SECURITY DEFINER RPC keyed by token; pre-auth it exposes only league name + team label for the claim page
+```
 
 ## 13. Transactions — Waivers, FAAB, Trades & Free Agency
 
 ### 13.1 Add / drop & free agency
 - Managers add an unowned player (FCFS after waivers clear) and drop one to stay within `roster_size`. Validates exclusivity (`league_rosters` unique), roster legality, lock state, and acquisition caps. Writes a `transactions` row (`type='add_drop'`) and updates `league_rosters`.
-- Dropped players enter waivers for `waiver_period_hours` (unless `none_fcfs`).
+- Dropped players enter waivers for `waiver_period_hours` (unless `none_fcfs`); `league_player_pool` (§12.19) tracks `on_waivers`/`waivers_until` authoritatively.
+- **Game-day locks (v2.0, default strict):** with `player_game_lock` on, a player **cannot be added or dropped from their kickoff until the week's correction window closes** — no in-game stat-sniping pickups, no dropping a player mid-game. With `bench_lock` on, waiver claims whose drop already played fail at processing (E32–E34). Both settings off reproduce incumbent-lax behavior; the strict pair is the FieldScout default per the product requirement.
 
 ### 13.2 Waivers & FAAB (blind bid)
 - Managers submit `waiver_claims` (add + optional drop + `faab_bid`), private until processed (RLS).
@@ -991,13 +1303,16 @@ Follows the existing Edge Function + pg_cron pattern (`docs/02-TECHNICAL-ARCHITE
 
 | Job | Schedule | Responsibility |
 |---|---|---|
-| `draft-tick` | every ~5s **while any draft is `live`** (self-gating; no-op otherwise) | Enforce `current_deadline`: autopick (snake/linear) or close the bid / advance nomination (auction); set next deadline; broadcast via row update. Self-reschedules immediately after each user action for tight timing. |
-| `process-waivers` | per-league cadence (default Wed 3:00am local) | Resolve pending `waiver_claims` atomically (§13.2). |
-| `finalize-matchups` | after each NFL week + the stat-correction window (default Wed) | Mark matchups `final`, assign W/L/T, update standings; respects overrides (never recompute an overridden cell). |
+| `draft-tick` | every ~5s **while any draft is `live`** (self-gating; no-op otherwise) | Enforce `current_deadline`: autopick (snake/linear) or close the bid / advance nomination (auction); set next deadline; broadcast via row update. Self-reschedules immediately after each user action for tight timing. **v2.0:** claims due drafts with `FOR UPDATE SKIP LOCKED` in batches so one cron entry scales to hundreds of concurrent drafts (§22.3). |
+| `process-waivers` | per-league cadence (default Wed 3:00am local) | Resolve pending `waiver_claims` atomically (§13.2), honoring `claim_order` cascading and `bench_lock`. **v2.0:** one cron scans `leagues.waiver_next_run_at`, enqueues due leagues to pgmq, workers drain with SKIP LOCKED (§22.3). |
+| `finalize-matchups` | after the week + `stat_correction_window` (default **Thu 06:00 ET**, §23.4) | Mark matchups `final`; write W/L/T + median/second-opponent results to `team_week_results` (§12.18); set `league_weeks.status='final'`; update standings; respects overrides (never recompute an overridden cell). |
 | `trade-review-expiry` | every 15 min | Auto-resolve trades whose review window elapsed. |
-| `lineup-lock` | every 1 min on game days | Lock slots per `lineup_lock`; arm swaps at lock; optional `auto_sub_inactives` (§11.3). |
+| `lineup-lock` | every 1 min on game days | Lock slots per `lineup_lock`; arm swaps at lock; optional `auto_sub_inactives` (§11.3). **v2.0:** derives every lock from `nfl_games.kickoff` at run time (flex-schedule-safe, §23.3) and maintains `league_player_pool.locked_until` for `player_game_lock`. |
 | `process-swaps` | game windows (rides `sync-live-stats`, ~30s) | Fire armed **Swap spots** (§7.3.2): pre-game when the *out* player is inactive at kickoff, in-game when ruled out mid-game; set `lineup_swaps` status, credit the slot per the resolution rule, write a `transactions` (`auto_swap`) row, broadcast to the live matchup. |
-| live scoring | reuse existing `sync-live-stats` (30s in game windows) | Feeds matchup live scores via `player_stats`/`nfl_games` Realtime; no new job. |
+| `score-league-week` | every 5–10s in game windows (v2.0) | Drains the `score_fanout` pgmq queue of changed player-stat deltas, maps them to affected leagues via `league_rosters(player_id)`, batch-recomputes matchup scores + `team_week_results` per league, one broadcast per league per batch (§22.2). |
+| `sync-stat-corrections` | hourly Tue–Thu after a week (v2.0) | Diff post-final provider stats → `stat_correction_events` → recompute affected non-overridden cells → system notes (§23.4). Late (post-window) corrections are flagged for commissioner apply, not auto-applied. |
+| `league-week-advance` | hourly (v2.0) | Advance `league_weeks.status` on `nfl_weeks` boundaries; open the next week; never infer "current week" from wall-clock math elsewhere (§23.3). |
+| live stats ingestion | reuse existing `sync-live-stats` (20–30s in game windows) | Polls the provider, idempotent diff-aware upserts to `player_stats`, enqueues real deltas to `score_fanout`. Clients never subscribe to raw `player_stats` (§9.1). |
 
 **Authoritative-clock principle:** the draft is correct even if all clients are offline because `draft-tick` enforces deadlines server-side. All money/exclusivity-affecting jobs run inside transactions using the same RPC validators as user actions.
 
@@ -1016,14 +1331,22 @@ PATCH  /api/leagues/[id]                    update settings (commish; structural
 DELETE /api/leagues/[id]                    soft delete (commish)
 POST   /api/leagues/[id]/invite             create/refresh invite code; send invites
 POST   /api/leagues/join                    join via invite code (free)
-POST   /api/leagues/[id]/members           add placeholder seat (commish)
-PATCH  /api/leagues/[id]/members/[mid]      role change / reassign team / toggle autodraft (commish)
-DELETE /api/leagues/[id]/members/[mid]      remove member (commish)
+POST   /api/leagues/[id]/members            add placeholder seat (commish)
+PATCH  /api/leagues/[id]/members/[mid]      role change / toggle autodraft (commish)
+DELETE /api/leagues/[id]/members/[mid]      remove manager — body { mode: 'takeover'|'retire'|'vacate', successor_user_id?, reason } (§7.2.1; audited)
+POST   /api/leagues/[id]/teams/[tid]/assign-manager  seat a user on a franchise (opens stint; audited)
+POST   /api/leagues/[id]/invites            create seat-targeted or general invite (commish)
+DELETE /api/leagues/[id]/invites/[iid]      revoke an invite (commish)
+POST   /api/invites/claim                   claim by token (sign-up/sign-in → seated; opens stint)
+PATCH  /api/leagues/[id]/slug               set/clear the custom invite slug (commish)
 ```
 
 ### 15.2 Draft
 ```
 POST   /api/leagues/[id]/draft              create/schedule draft from settings (commish)
+POST   /api/leagues/[id]/mock-drafts        start a solo mock from league settings (any member; §8.8)
+GET    /api/leagues/[id]/mock-drafts        my mocks in this league (active + recaps)
+DELETE /api/leagues/[id]/mock-drafts/[did]  abandon/delete a mock (owner)
 PATCH  /api/leagues/[id]/draft              edit draft config / order (commish)
 POST   /api/leagues/[id]/draft/start        start (commish)            → rpc draft_start
 POST   /api/leagues/[id]/draft/pick         make a pick                → rpc draft_make_pick(action_id, player_id)
@@ -1054,6 +1377,9 @@ PATCH  /api/leagues/[id]/trades/[tid]       accept/reject/cancel/vote
 GET    /api/leagues/[id]/matchups?week=     matchups + live scores
 GET    /api/leagues/[id]/standings          standings (tiebreaker-ordered)
 GET    /api/leagues/[id]/activity           unified activity feed (incl. audit)
+POST   /api/leagues/[id]/schedule/remix     regenerate schedule w/ new seed → preview  (v2.0, commish; §11.7)
+POST   /api/leagues/[id]/schedule/confirm   apply a previewed remix (atomic; system chat post)
+GET    /api/leagues/[id]/corrections?week=  stat corrections filtered to this league's starters (v2.0, §23.4)
 ```
 
 ### 15.4 Commissioner overrides (all require `reason`; all write `commissioner_actions`)
@@ -1104,19 +1430,38 @@ src/app/(app)/leagues/[id]/players/page.tsx         League players / free agents
 src/app/(app)/leagues/[id]/trades/page.tsx          Trade center
 src/app/(app)/leagues/[id]/activity/page.tsx        Activity + Commissioner Action Log
 src/app/(app)/leagues/[id]/commish/page.tsx         Commissioner Console (commish only)
+src/app/(app)/leagues/[id]/schedule/page.tsx        Season schedule (member view; commish: edit + Remix §11.7)
+src/app/(app)/leagues/[id]/history/page.tsx         History Mode: seasons, franchises (incl. retired), H2H records (§11.6)
+src/app/(app)/leagues/[id]/chat/page.tsx            League chat (mobile full-screen; desktop persistent panel on league home)
+src/app/(app)/leagues/[id]/draft/recap/page.tsx     Draft recap — real & mock: final board + rosters (mock: delete) (§8.8)
+src/app/join/[token]/page.tsx                       Invite claim, pre-auth (resolves invite_code | custom slug | seat token) (§7.2, §12.23)
 src/app/u/[username]/leagues/[slug]/page.tsx        Public league page (SEO, read-only summary)
 ```
+> `/u/[username]` (existing profile route) additionally renders the cross-league **managerial record** aggregated from stints (§11.6).
 
 ### 16.2 Key components
 ```
 src/components/leagues/league-create-wizard.tsx     stepper: format → roster → scoring → waivers/trades → draft → invite
 src/components/leagues/settings-panel.tsx           grouped, validated settings forms
-src/components/leagues/scoring-editor.tsx           full custom scoring (presets + per-category)
+src/components/leagues/scoring-template-picker.tsx  8 template cards + compare + "same game, scored three ways" widget (v1; full editor returns v1.1)
 src/components/leagues/roster-slot-builder.tsx      per-position starter counts + "Add Custom Flex" (eligible-position multi-select) + bench count + IR spots (each set Restricted/Unrestricted with eligible designations + min weeks); live roster_size + validation
-src/components/leagues/invite-panel.tsx             code/link + username/email invites + seat list
+src/components/leagues/invite-panel.tsx             league link (custom slug) + seat-targeted invites (**email-first** — pre-filled/locked signup for new users, §7.2 — plus username/link) + seat list + invite status/revoke
+src/components/leagues/franchise-history.tsx        per-franchise manager-stint timeline + record splits (History tab, §11.6)
 src/components/leagues/attach-list-modal.tsx        attach a ranking list to a league; set primary board / share
+src/components/leagues/league-home-states.tsx       status-driven home: setup checklist → countdown → LIVE → in-season hub → champion (§16.5.1)
+src/components/leagues/schedule-view.tsx            week-by-week grid; byes; division tags; commish edit affordances (§11.7)
+src/components/leagues/schedule-remix-modal.tsx     regenerate (seeded) → side-by-side diff → system-post preview → confirm (§11.7, §16.4)
+src/components/leagues/corrections-view.tsx         stat corrections scoped to league starters; per-team point deltas; post-window commish-apply CTA (§23.4)
+src/components/leagues/waiver-claims-panel.tsx      my pending claims: FAAB amounts, drag claim_order, conditional drops, cancel (§13.2)
+src/components/leagues/trade-center.tsx             pending/history tabs; review state (commish or league vote w/ tally), veto/approve, deadline chip (§13.3)
+src/components/leagues/remove-manager-modal.tsx     takeover / retire-&-succeed / vacate chooser; consequences preview + reason (§7.2.1, E49)
+src/components/leagues/acting-as-banner.tsx         commissioner-operating-any-team mode (orphaned, or a still-seated inactive manager, §7.2.1); scoped controls; every action logged
+src/components/leagues/claim-invite-card.tsx        pre-auth claim card (league/team/inviter → sign-in/up → seated); mismatch + seat-filled states (E53–E54)
+src/components/leagues/stat-line.tsx                box-score row; Alpha/Ultra split rendering (air + YAC · yards ± after contact) + pending-charting badge (§23.5, E55)
+src/components/leagues/status-banners.tsx           shared banner/badge system per the §16.5.4 catalog — no one-off treatments
 -- Draft room --
-src/components/draft/draft-room.tsx                 layout shell; subscribes to draft channel; reconnect-safe
+src/components/draft/draft-room.tsx                 layout shell; subscribes to draft channel; reconnect-safe; MOCK banner when drafts.is_mock
+src/components/draft/mock-draft-launcher.tsx        "Practice this draft": seat picker + CPU speed toggle + resume/recap list (§8.8)
 src/components/draft/draft-board-grid.tsx           rounds × teams pick grid
 src/components/draft/pick-clock.tsx                 server-deadline countdown + paused state
 src/components/draft/available-players.tsx          searchable/filterable pool w/ Big Board/ADP/tier + league-list overlays, and an "only players on my list" filter
@@ -1127,13 +1472,15 @@ src/components/draft/auction-block.tsx              current nomination, bid inpu
 src/components/draft/draft-chat.tsx                  realtime chat + system (commish) posts
 src/components/draft/commish-draft-panel.tsx        pause/undo/reassign/move/force/reset (commish)
 src/components/draft/presence-bar.tsx               who's online / on the clock (Presence)
+src/components/draft/draft-setup-panel.tsx          pre-draft config: date/time (league TZ), order method (random/manual/reveal), clock, pause rules (commish)
+src/components/draft/mock-recap.tsx                 mock results: full board + your roster vs the CPUs'; delete (§8.8)
 -- In-season --
-src/components/leagues/lineup-editor.tsx            slot-based starters/bench, lock-aware (reuse from spec-leagues-live-mode)
+src/components/leagues/lineup-editor.tsx            slot-based starters/bench; per-player 🔒 at kickoff, bench_lock states, DL stint chips (weeks remaining)
 src/components/leagues/swap-assignment.tsx          assign one Swap: protect a starter ↔ same-position bench player; armed/triggered state; rendered below Flex, above K/D-ST/IR
-src/components/leagues/matchup-view.tsx             head-to-head live scoreboard (Live Mode patterns)
+src/components/leagues/matchup-view.tsx             head-to-head live scoreboard (Live Mode patterns); ⚑ Report-illegal-lineup entry for any member (§10.2); median/second-opponent rows + total_points leaderboard variant (§16.5.3)
 src/components/leagues/standings-table.tsx          tiebreaker-ordered, division-aware
-src/components/leagues/playoff-bracket.tsx          seeds, byes, reseed
-src/components/leagues/free-agents-table.tsx        add/claim, FAAB bid modal
+src/components/leagues/playoff-bracket.tsx          seeds, byes, reseed; commish edit affordances (seeds/results) routed through commish-action-modal (§10.1)
+src/components/leagues/free-agents-table.tsx        add/claim, FAAB bid modal; locked 🔒 rows once a player's game starts (player_game_lock); fa_hold countdown chips (§7.3.4)
 src/components/leagues/trade-builder.tsx            two-sided selector w/ legality preview
 src/components/leagues/activity-feed.tsx            unified feed w/ commissioner action treatment
 -- Commissioner --
@@ -1149,6 +1496,62 @@ src/components/leagues/audit-log.tsx                filterable, human-readable, 
 - **Reconnect = refetch then resubscribe.** Never depend on missed broadcasts.
 - **Commish panel is unmistakable** (distinct accent) and every commish action shows the live system post in chat so the room sees it happen.
 - **Accessible** to WCAG 2.1 AA (focus states, live-region announcements for picks/clock, color-independent status). Run the `design:accessibility-review` skill before handoff.
+
+### 16.4 Product & UX callouts (NEW v2.0 — flagged for design, not just build)
+- **Naming alignment with the product vision:** ship the Restricted-IR preset labeled **"DL"** (Disabled List — eligible designations OUT/IR/Doubtful, `min_weeks = 4`) as a one-tap option in the roster builder, and surface the Swap spot as **"Hot Swap"** in all UI copy. The mechanics already exist (§7.3.2); the names are the feature.
+- **Notification matrix (define before Phase D):** who gets pinged for what — your pick is up (push, urgent), outbid (push), trade proposed/resolved (push), waiver won/lost (morning digest), commissioner action affecting you (push + badge), swap fired (push), stat correction changed a result (push). Every push deep-links to the exact surface. Over-notification is the #1 uninstall driver; default to digests for everything non-urgent.
+- **Draft-night rehearsal:** surface Mock Draft (Phase F) prominently in the pre-draft lobby ("Test your settings with bots") — commissioners rehearse, and rehearsal is the moment misconfigured settings get caught.
+- **Schedule Remix UX:** preview-diff-confirm (never one-tap destructive), with the system chat post shown in the preview so the commissioner knows the league will see it.
+- **Stat-correction transparency:** the corrections view (§23.4) is a trust surface — treat it with the same editorial care as the audit log; "your matchup changed and here's exactly why" is the brand.
+- **Mobile draft room density:** at 20 teams the pick grid is 20 columns; mobile collapses to a ticker + "my picks" rail with the full grid one tap away. Design this before Phase B UI, not during.
+- **Invite conversion is the growth loop:** the join flow (invite link → signup → seated in league) must be measured step-by-step and owned like a funnel; a league that seats 10/10 managers is the product's best acquisition event. Seat-targeted invites (§7.2.1) get their own funnel cut (the "replacement GM" flow), and the pre-auth claim page shows league name, team name, and inviter — give people a reason to finish sign-up. **Identity display rule everywhere:** *Team name — display name (@username)*; email never renders in league surfaces.
+- **Timezones:** all deadlines (draft time, waiver runs, lock times) display in the viewer's local timezone with the league's reference timezone available on hover; waiver `process_day/time` is stored with an explicit IANA zone chosen at creation.
+
+### 16.5 UI completeness audit — workflows, states & coverage (NEW v2.4)
+Everything in v2.0–v2.3 that grew a UI surface is enumerated here; §16.1/§16.2 above are the canonical file lists (extended in v2.4). **The Design Reviewer agent uses this section as its coverage checklist** — a feature without its surfaces below is not done.
+
+#### 16.5.1 League home is a state machine (build it that way)
+`league-home-states.tsx` renders by `leagues.status`:
+| Status | Hero | Primary CTA | Also on screen |
+|---|---|---|---|
+| `setup` | **Setup checklist**: settings ✓ · seats *n*/*N* (each empty seat → invite affordance) · scoring template chosen · schedule draft | Invite managers / Schedule draft | Practice-draft card once a draft is configured |
+| `scheduled` | Draft countdown (league TZ + local) | **Enter draft lobby** · Practice this draft (§8.8) | Order reveal (if manual/reveal), template card, checklist remainder |
+| `drafting` | LIVE badge | **Join draft** | presence of who's in the room |
+| `in_season` | This week's matchup card (live scores) | Set lineup (lock countdown) | standings peek · waiver deadline chip · activity feed · trade deadline chip |
+| `complete` | Champion banner | View History | final standings, season recap |
+Empty/error variants for every card; skeletons on load.
+
+#### 16.5.2 Workflow → surface map (the connective tissue)
+| Workflow | Entry point | Screens/controls (in order) | Key states |
+|---|---|---|---|
+| **Invite & claim** (growth loop) | invite-panel · any empty seat | create league link / custom slug / seat invite → share sheet → **`/join/[token]`** pre-auth card (league, team, inviter) → sign-in/up → seated → land on league home | claim success · username/email mismatch (E53) · seat already filled (E54) · expired/revoked invite |
+| **Replace a GM** (§7.2.1) | Commish console → Membership · team page ⚙ | `remove-manager-modal` (takeover / retire-&-succeed / vacate; consequences preview incl. standings-inheritance for retire, E49; reason required) → confirm → (vacate) orphaned badge + `acting-as-banner` when commish operates the team → seat invite → new stint | orphaned team badge everywhere the team renders · retired franchise view (sealed, History) · removed-user notification |
+| **Act as Manager (any team)** (§7.2.1, v2.6) | Team page ⚙ → "Act as [Team]" (any team, no removal needed) | confirm → `acting-as-banner` for the session → lineup/waiver/trade screens render as that team → actions tagged `acting_as_team_id`, posted to activity feed as "Commissioner (acting for Team X)" → exit mode | real manager's access is never locked — both can act; each action attributed to its true actor (E66) |
+| **Schedule & Remix** (§11.7) | League nav → Schedule · commish console | `schedule-view` (week grid, byes, divisions) → **Remix** → `schedule-remix-modal` (regenerate → side-by-side diff → system-post preview → confirm) | free-before-Week-1 vs audited-override copy · post-kickoff = override styling · edit affordances commish-only |
+| **Waivers** (§13.2) | Players page → claim | FAAB bid modal (or priority claim) → `waiver-claims-panel` (drag `claim_order`, amounts, conditional drop, cancel) → run results in activity + notification | pending · won/lost w/ reason (outbid amount if FAAB) · locked player rows (game started) · `fa_hold` countdown chip |
+| **Trade lifecycle** (§13.3) | Trade center · player row → propose | `trade-builder` (legality preview) → pending card (counter/accept/rescind) → review state (commish approve/veto or league vote w/ tally) → executed → activity post | under-review countdown · vetoed w/ reason · deadline-passed lock · auto-rescinded (partner removed, E47) |
+| **Draft night** (§8) | League home CTA | lobby (presence, checklist) → order reveal (if configured) → live room → completion → **`/draft/recap`** (final board, rosters) → status `in_season` | pause overlay w/ remaining time · disconnect/reconnect toast · commish panel distinct accent |
+| **Mock draft** (§8.8) | Practice card · draft lobby | `mock-draft-launcher` (seat picker, CPU speed) → same draft room + persistent MOCK banner → `mock-recap` (board, your roster vs CPUs, delete) | resumable-paused card on league home · 72h-expiry note · 3-active cap message |
+| **Weekly loop** (§11) | Lineup CTA / matchup card | `lineup-editor` (lock-aware) → live `matchup-view` → `final (pending corrections)` badge → true final → standings update | per-player locked rows · Hot Swap armed/fired chip · median/second-opponent rows (below) · overridden ✸ badge |
+| **Stat corrections** (§23.4) | Activity → Corrections tab · push | `corrections-view` (league-scoped, per-team deltas) → if result flipped: matchup shows change note | in-window auto-applied · post-window flagged → commish apply CTA |
+| **Illegal lineup** (§10.2) | matchup ⚑ (any member can **Report**) | report modal (rule ref optional) → commish `illegal-lineup-flow` (remedy chooser) → applied + logged + chat system post | reported-pending badge for the reporter · resolved state |
+| **Commish override (generic)** (§10) | ⚙ Commish affordances everywhere | `commish-action-modal` (reason required, before/after) → applied → audit entry + non-disableable chat post → ✸ badge on the touched surface | undo (compensating action) · acting-as context when applicable |
+| **Alpha/Ultra week** (§23.5) | matchup box score | `stat-line` split rendering (air + YAC · yards ± after contact) → Ultra: YCO **pending** badge until charting posts → settled | provisional vs settled styling · charted-feed-late banner (E57) · flag-gated template card ("coming soon") in picker |
+
+#### 16.5.3 Scoring-mode display variants (settings change the shape of core screens)
+- **`total_points` leagues have no matchups:** matchup routes render a weekly **scores leaderboard** instead; standings sort by cumulative points; league home hero = "your week so far vs the field."
+- **`median_game`:** matchup list gains a second row — *vs League Median* — with its own W/L chip; standings show the combined record; the median line renders in `matchup-view` once all scores are in (exact-median = tie, per §11.7).
+- **`second_opponent`:** two result chips per week (primary + secondary opponent), both feeding the record; H2H history counts both.
+- **Divisions:** standings grouped w/ division tags; schedule-view badges division games.
+
+#### 16.5.4 Global banner / badge / state catalog (shared `status-banners.tsx`; never invent one-off treatments)
+- **Banners:** "Live stats delayed" (§23.2) · "Charting lands Mon AM" (Ultra, §23.5) · realtime-fallback "reconnecting — scores refresh every 10s" (§9) · deploy-freeze/maintenance (admin-set) · acting-as (commissioner operating an orphaned team).
+- **Badges:** `final (pending corrections)` → `final` · ✸ commissioner-adjusted (links to audit entry) · MOCK · LIVE · locked 🔒 (player game started; on lineup rows, FA rows, trade assets) · `fa_hold` countdown · Hot Swap armed/fired · DL stint (weeks remaining) · orphaned · retired franchise · pending-charting · autopick-on (draft seat) · **acting-as (any team, not only orphaned)**.
+- **Required states per data surface:** skeleton-loading, empty (designed copy, not blank), error-with-retry, degraded (banner + last-good data, never wrong numbers).
+- **Timezone rule everywhere a time renders:** viewer-local with league TZ on hover (§16.4).
+
+#### 16.5.5 Deliberately *not* in v1 UI (so nobody builds them by accident)
+Custom scoring editor (v1.1, §7.3.3) · standalone/multi-human mock lobbies (v1.1, §8.8) · odd-team-count byes and 18/20-team leagues (v1.1, OQ 12) · History Mode paywall (open question) · admin/ops kill-switch surfaces (internal tooling, §24.2 — not league UI).
 
 ---
 
@@ -1177,20 +1580,22 @@ Enforced at three layers: **RLS** (DB), **Route Handler** auth checks (Zod + rol
 
 Each phase ships something demoable and testable. Hand Claude Code **one phase at a time** (per `docs/04-BUILD-ROADMAP.md` guidance). Build prompts in **Appendix C**.
 
+> **v2.0 note:** the v2.0 additions (schedule engine + Remix, `score-league-week` fan-out, stats contract, game-day locks, new §12.17–12.21 tables, ops) are folded into these phases and re-sequenced — with per-milestone exit criteria, QA gates, and the agent operating loop — in `docs/specs/delivery-plan-redraft-leagues.md`. That doc is the build sequencer; this spec stays the source of truth for *what* to build.
+
 ### Phase A — League foundation & settings
 - Migrations: ALTER `leagues`, add `league_members`, RLS helpers (§12.0–12.2).
-- Create-league wizard, settings panel, scoring editor, roster-slot builder, invites/join, roles, placeholder seats, lifecycle status. Attach existing ranking lists to a league (`league_lists`, §7.4/§12.15).
-- **Gate:** a commissioner can create an 8/10/12/14/16/18/20-team league, fully configure it (defaults valid), invite & seat managers, and reach `scheduled`.
+- Create-league wizard, settings panel, scoring editor, roster-slot builder, invites/join (league link + custom slug + seat-targeted invites, §12.23), roles, placeholder seats, **manager stints written from day one** (`team_managers`, §12.22 — retrofitting stints later means guessing at dates), lifecycle status. Attach existing ranking lists to a league (`league_lists`, §7.4/§12.15).
+- **Gate:** a commissioner can create an 8/10/12/14/16-team league, fully configure it (defaults valid), invite & seat managers, and reach `scheduled`.
 
 ### Phase B — Snake draft engine
 - Migrations: `drafts`, `draft_picks`, `draft_queues` + RPCs (`draft_start`, `draft_make_pick`, `draft_undo`, `draft_tick`) + `draft-tick` worker.
 - Draft room (board, clock, pool, queue, roster tracker, chat, presence), autopick, disconnect grace, commissioner panel (pause/undo/reassign/move/force/reset). **My Lists** panel — view league-tagged lists, overlay on the pool, load into the queue — with primary-board autopick (§8.9).
-- **Gate:** run a full snake draft to completion with live clients; commissioner can pause, undo (single + cascade), reassign a pick, and move a drafted player between teams; disconnect/reconnect is seamless; `league_rosters` populated; status → `in_season`.
+- **Gate:** run a full snake draft to completion with live clients; commissioner can pause, undo (single + cascade), reassign a pick, and move a drafted player between teams; disconnect/reconnect is seamless; `league_rosters` populated; status → `in_season`; **a solo mock snake draft (§8.8) completes against CPU opponents with realistic timing and zero league side effects.**
 
 ### Phase C — Auction draft engine
 - Migrations: `draft_bids` + RPCs (`draft_nominate`, `draft_place_bid`, auction `draft_tick` path).
 - Auction block UI: budgets, max-bid, nomination/bid clocks, anti-snipe; commissioner budget/undo controls.
-- **Gate:** run a full auction with budgets enforced (no overspend, every team completes a legal roster), anti-snipe works, commissioner can reverse a won bid and adjust budgets.
+- **Gate:** run a full auction with budgets enforced (no overspend, every team completes a legal roster), anti-snipe works, commissioner can reverse a won bid and adjust budgets; **mock auctions run with CPU bidders that obey the solvency invariant.**
 
 ### Phase D — In-season play
 - Migrations: `league_rosters`, `matchups`, `transactions`, `waiver_claims`, `trades`/`trade_items`; extend `team_lineups`.
@@ -1203,7 +1608,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 - **Gate:** every override path writes an immutable, member-visible log entry with a required reason and correct before/after; changing a matchup result from the illegal-lineup flow works and is visible to all members; no override can occur without a log entry; audit entries cannot be edited/deleted by anyone.
 
 ### Phase F — Polish & extras
-- Mock drafts, draft order reveal animation, notifications wiring, History Mode tab, hash-chain tamper-evidence on the audit log, performance pass on the draft room (up-to-20-team concurrency), full accessibility pass, public league SEO page, optional auto-sub inactives.
+- Draft order reveal animation, notifications wiring, History Mode tab, hash-chain tamper-evidence on the audit log, performance pass on the draft room (up-to-20-team concurrency), full accessibility pass, public league SEO page, optional auto-sub inactives. *(Mock drafts were promoted to Phases B/C in v2.3 — §8.8.)*
 - **Gate:** load/concurrency test a 20-team live draft; Lighthouse/CWV acceptable; `design:accessibility-review` passes.
 
 > **Stack note for Claude Code:** the repo `CLAUDE.md` lists React Query + Zustand for state and `@supabase/ssr` clients. Use Zustand for ephemeral draft-room UI state (timer display, selected player, panel open) and React Query + Realtime subscriptions for authoritative data. All draft/transaction writes go through Route Handlers calling the RPCs — never write these tables from the client.
@@ -1213,7 +1618,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 ## 19. Acceptance Criteria & Test Cases
 
 ### 19.1 Functional acceptance (must all pass)
-- Create leagues of every supported size (**8, 10, 12, 14, 16, 18, 20**); defaults produce a valid, draftable configuration with no manual fixes.
+- Create leagues of every supported size (**8, 10, 12, 14, 16**); defaults produce a valid, draftable configuration with no manual fixes.
 - Commissioner can set per-position starter counts, **add one or more custom flex slots with any eligible-position combination** (WR/TE, WR/RB, RB/TE, WR/RB/TE, superflex, IDP flex, …), and set **bench** and **IR** counts; lineup validation respects each slot's eligibility, including multiple distinct flex slots.
 - A user can **attach a ranking list to a league**, set it as their **primary draft board**, and **load it into the queue** from the Live Draft Tool; pool overlays/filters work; **shared** lists appear to all members; the primary board feeds autopick.
 - Commissioner can add multiple **IR spots** and set each **Unrestricted** (free in/out for eligible players, before lock) or **Restricted** (eligible designation + minimum stint, default 4 weeks); the system blocks early removal from a Restricted IR spot, with a commissioner override.
@@ -1253,12 +1658,54 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 | E22 | Swap-in is a different position than the protected starter (e.g., WR for an RB-in-FLEX) | Rejected at assignment — exact `player.position` match required. |
 | E23 | A Thursday player is the *out* or *in* player | Swap locks at Thursday kickoff (not Sunday); can't be set/edited after the Thursday game starts. |
 | E24 | Swap-in is also inactive when the swap would fire | No benefit; slot resolves to the greater (often 0); manager is not further penalized. |
+| E25 | Auction endgame: team has $3 left and 3 open slots | Max bid enforced at $1; system allows only $1 bids; nomination validation confirms the nominator can afford their own opening bid. |
+| E26 | Auction: bid clock expires with no bids beyond the opening | Nominator wins at the opening bid (validated affordable at nomination time); roster/budget update; nomination advances. |
+| E27 | Auction: a team's roster fills mid-auction | Team is skipped in the nomination rotation and cannot bid; UI shows "roster complete". |
+| E28 | Commissioner edits a team's auction budget below its committed spend or below solvency (open_slots × min_bid) | Rejected with a clear explanation — the solvency invariant cannot be broken even by an override; commissioner may instead reverse won bids. |
+| E29 | Commissioner triggers cascade undo while a nomination has live bids | Nomination is voided (bids returned), then picks revert; all clients converge; single audit entry with full before/after. |
+| E30 | Autopick would take a K/DST in round 3 | Deferral heuristic: K/DST are ineligible for autopick until (open slots − remaining picks) forces them or round > total_rounds − 3. |
+| E31 | Snake draft order edited by commissioner after pick 15 (override) | Remaining picks re-derive from the new order; completed picks unchanged; audited; room broadcasts the new order. |
+| E32 | `player_game_lock` on: manager tries to add a player whose game kicked off 10 min ago | Blocked: "locked until the week clears (Wed 6am ET)"; `league_player_pool.locked_until` enforces it in the RPC, not just UI. |
+| E33 | `bench_lock` on: waiver claim's drop player already played | Claim fails at processing with reason `drop_locked`; FAAB not spent; manager notified; matches Sleeper's Bench Lock semantics. |
+| E34 | Player dropped mid-week after starting (bench_lock off, incumbent-lax config) | The locked starter's stats still count for the dropping team's matchup that week; the player enters waivers; edge documented in UI copy. |
+| E35 | Trade accepted while one included player's game is live | Execution defers to the next lock-free moment for all included players (or fails per setting `trade_lock_behavior`); rosters never change mid-game. |
+| E36 | Uneven trade (2-for-1) would overflow the receiving roster | Acceptance flow requires selecting drop(s) as part of the same atomic execution; the trade cannot leave an illegal roster. |
+| E37 | Pending trade invalidated (an included player was dropped/claimed elsewhere) | `trade-review-expiry`/validation job marks it `invalid` immediately with a reason; both parties notified — never fails silently at execute time. |
+| E38 | Two-decimal tie in H2H (98.24 vs 98.24) | `result = 'tie'`; standings W-L-T and tiebreakers handle ties; no hidden extra precision is consulted. |
+| E39 | Median game: team scores exactly the median | Median result = tie (Sleeper rule); records show e.g. 1-0-1 for the week. |
+| E40 | Second opponent generation | Never pairs a team with its primary opponent or itself in the same week; per-week derangement validated. |
+| E41 | Remix invoked after Week 1 kickoff | Blocked as Remix; offered as a commissioner override (reason required) affecting only `scheduled` future weeks; system chat post fires. |
+| E42 | NFL flexes SNF: a rostered player's kickoff moves from 1:00 to 8:20 | All locks (lineup, add/drop, swap) move automatically because they're evaluated from `nfl_games.kickoff` at runtime; no stale locks. |
+| E43 | Game postponed out of the league week | Affected players score 0 for the week; locks release; system note posts; commissioner override available; finalization proceeds without the postponed game. |
+| E44 | Stat correction arrives Wednesday changing a matchup result | Auto-recompute (non-overridden cells) + system note + corrections view entry; standings/waiver priority recompute; if it arrives after the window, it's flagged for optional commissioner apply instead. |
+| E45 | Provider outage for 10 minutes during Sunday games | UI shows "Live stats delayed"; no wrong data shown; on recovery, ingestion back-fills and fan-out catches up; finalization is unaffected (requires all games final + window). |
+| E46 | Swap-out player's OUT designation arrives only after the game ends | Deterministic re-check at game final still resolves the swap (greater-of rule); result identical whether the feed was fast or slow. |
+| E47 | Manager removed while their trade offer is pending with another team | Offer auto-rescinds on stint close; counterparty notified; commissioner may re-propose acting-as if the trade was fair (logged). |
+| E48 | Manager removed mid-draft | Seat flips to autopick on the same pick clock; stint closes; a replacement can claim via seat invite mid-draft and resume picking manually. |
+| E49 | Retire & succeed executed mid-season | Successor inherits roster/FAAB/schedule slot and W-L **for seeding only**; History partitions at `retired_at_week`; both consequences shown in the confirm dialog; audited override. |
+| E50 | Removed manager's live session writes a lineup seconds after removal | Write access derives from the open stint → denied atomically with stint close; no race window, no cleanup job. |
+| E51 | Previously removed manager re-invited to their old franchise | New stint on the same `team_id`; History shows both stints; no data merge. |
+| E52 | Username changed mid-season | Every league surface updates live (joins on `user_id`); audit + chat re-render under the new handle. |
+| E53 | Seat-targeted invite claimed by the wrong account (link forwarded) | If `invited_username`/`invited_email` is set → claim rejected with a friendly mismatch screen; if unrestricted, claim succeeds (commissioner chose an open link) and is recorded. |
+| E54 | Two seat invites for the same team claimed near-simultaneously | Claim RPC hits the one-open-stint unique index; second claim fails gracefully ("seat already filled"), invite marked expired, commissioner notified. |
+| E55 | Ultra league, Sunday night: charted YCO not yet posted | Scores show live-provisional with a "charting lands Mon AM" badge on the YCO component; never a silent 0; matchup can't finalize early anyway (Thu window). |
+| E56 | Charted feed revises a YCO number on Wednesday | Flows through `stat_correction_events` like any correction: in-window auto-recompute + system note + corrections-view entry. |
+| E57 | Charted feed misses its SLA for the whole week (vendor outage) | Ultra leagues see an honest banner; commissioner waits or finalizes with a logged override scoring YCO = 0 for the week (reversible via rescore §10.1). Alpha leagues unaffected. |
+| E58 | Tracking feed reports `yards_after_catch` > `receiving_yards` on a play (fumble-forward edge) | Ingestion clamps per the PFR convention (air + YAC may ≠ total on fumble yardage); reconciliation job (§23.2) asserts per-player consistency; discrepancies flag, never silently score. |
+| E59 | User abandons a mock mid-draft and never returns | Mock auto-pauses on disconnect; resumable from the league page; the 72h expiry cron deletes it; zero league impact either way. |
+| E60 | User has an active mock when their league's real draft goes live | Both run independently (separate draft_ids/channels); the real room always takes UI priority; mock notifications are suppressed during a live league draft; the mock never blocks or leaks into the real draft. |
+| E61 | A league's rules snapshot contains a stat key the environment's provider never delivers | The component renders as *pending/0* with an honest badge — never a silent wrong total; feature-flag gating (§7.3.3) should prevent the state, and the reconciliation job flags it if it occurs. |
+| E62 | CPU auction bot pushed to its budget edge by a human's bid-up | Bots run the same max-bid/solvency validator as humans; the §8.6.8 property test extends to bot-driven mock auctions — no reachable bot sequence violates solvency. |
+| E63 | Three or more teams tied on Win % and Points For at playoff seeding | Head-to-head has no clean comparator for 3+ teams (records can cycle); skipped for that group; chain falls through to Points Against. |
+| E64 | Playoff seeding tie in a `total_points` league (§11.7) | No matchups exist, so no head-to-head data; chain skips directly from Points For to Points Against. |
+| E65 | Seat-targeted invite sent by email, claimed via brand-new signup | Signup form pre-fills and **locks** the email field to `invited_email` — no mismatch is possible for a fresh account; an existing-session mismatch (different account already signed in) still hits the E53 friendly-mismatch screen. |
+| E66 | Commissioner enters "Act as Manager" for a still-seated (non-orphaned) team while the real manager is simultaneously active | No access lock on either side; both can act; last write wins; every action is attributed to its true actor (commissioner vs. manager) in the activity feed and audit log. |
 
 ### 19.3 Verification approach (for the build)
 - **Unit:** scoring math, tiebreaker ordering, snake-order generation (incl. 3rd-round reversal), auction max-bid, FAAB resolution, roster legality/eligibility.
 - **Integration (DB):** RLS policies per role (member/non-member/commish), exclusivity unique index, audit immutability, RPC validators.
 - **E2E (Playwright):** full snake draft, full auction, disconnect/reconnect, commissioner overrides, a simulated scored week, waiver run, trade under review. Use `npm run test` / `npm run test:e2e` (already in `CLAUDE.md`).
-- **Load:** simulate 14 concurrent drafters on a fast clock (E14).
+- **Load:** the §22.6 suite — 50 simultaneous 20-team drafts, an auction bid storm, a replayed real NFL Sunday across 500 seeded leagues at 1× and 4× speed, and a 24h connection-churn soak. (Supersedes the v1.x "14 concurrent drafters" test.)
 - Run `design:accessibility-review` and a `security-review` of the RLS/RPC surface before launch.
 
 ---
@@ -1269,6 +1716,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 | Leagues created | 1,000 |
 | Drafts completed | 800 (≥80% of created leagues draft) |
 | Draft completion rate (started → finished without abandonment) | ≥ 95% |
+| New leagues choosing FieldScout Alpha or Ultra (differentiator adoption) | ≥ 25% |
 | Median draft-room action latency (pick→broadcast) | < 500 ms |
 | Weekly active managers during season | 6,000 |
 | Leagues using ≥1 commissioner override | ≥ 40% (validates the differentiator is used) |
@@ -1292,6 +1740,153 @@ Each has a **recommended default** so the build is not blocked.
 9. **Naming** — surface as "Leagues" (replacing the simulation concept) or a new label like "Play"/"Compete"? *Rec: keep "Leagues"; the simulation becomes a non-default mode.*
 10. **Auto-bid for absent managers in auctions** (incumbents do this) — v1 or later? *Rec: later; v1 simply doesn't bid for the absent.*
 11. **In-game Swap scoring resolution** — greater-of (default) vs. strict swap-replaces-from-injury? *Rec: greater-of — a clear safety net, not exploitable.*
+12. **Odd team counts (7, 9, 11…) with weekly byes, and 18/20-team leagues** — incumbents support 4–20 including odd; v1 is even 8–16 (Chris's call, v2.6). *Rec: v1.1 fast-follow for both — the schedule engine (§11.7) already models byes (`away_team_id NULL`) and the draft engine needs nothing for odd counts; 18/20 is just re-widening the `team_count` CHECK constraint and re-running the Phase A/§22 load gates at that size — no new engineering either way.*
+13. **`second_opponent` QA priority** — ship on at GA or dark-launch? *Rec: build with `median_game` (shared `team_week_results` plumbing) but keep off-by-default and out of the v1 QA-critical path.*
+14. **Stats provider for GA** — stay on the Sleeper-based feed vs. contract SportsDataIO (or Sportradar push)? *Rec (v2.5): no rush — build and fully validate the entire pipeline (draft → scoring → corrections → Alpha/Ultra) against the free **synthetic** tier (§23.6) first; layer in `sleeper_free` for beta's real-world signal; make the paid-vendor call only when GA revenue timing actually requires it, informed by real accuracy/latency observed in beta. The `StatsProvider` interface (§23.1) makes it a swap whenever that is.*
+15. **Realtime scale escape hatch** — if concurrency outgrows managed quotas, Team-plan custom limits vs. self-hosted Realtime vs. dedicated provider for the socket layer? *Rec: decide only if §24.1 headroom alerts fire two weeks running; the Broadcast-from-DB design (§9) keeps all three options open.*
+16. **Charted-data license for Ultra** — which vendor for `rush_yards_after_contact` (SportsDataIO advanced tier vs. SIS vs. FTN vs. PFF), at what cost, with what delivery SLA (must land by Mon AM ET)? *Rec: quote all four during beta; tracking-tier stats are free (public pbp), so this license is the only data cost Alpha/Ultra add — and only Ultra needs it. Ship Alpha at beta regardless.*
+17. **Alpha/Ultra coefficient sign-off** — accept the calibrated values from the 2026-fixture backtest (target: positional weekly means within ±10% of Half-PPR)? *Rec: Chris reviews the backtest report + worked examples before template copy freezes; the coefficients are product voice, not just math.*
+18. **Yahoo Full-PPR variant** — v1 ships Yahoo Standard + Yahoo Half-PPR (their default). Add a Yahoo Full-PPR ninth template if migrating leagues ask? *Rec: wait for demand; it's a one-row insert.*
+
+---
+
+## 22. Scale & Capacity Engineering (NEW v2.0) — "hundreds of leagues, live"
+
+Explicit target: **500 concurrent leagues in-season** (≈6,000 managers), with peaks of **150 simultaneous live drafts** (Labor Day week evenings) and **Sunday 1:05pm ET scoring storms**, on the existing Supabase + Vercel stack — no new infrastructure.
+
+### 22.1 Load model (design numbers; load tests must confirm)
+| Surface | Peak assumption | Derived load |
+|---|---|---|
+| Draft night | 150 drafts × 20 clients | 3,000 realtime connections; ~1 pick/draft/30s ⇒ ~5 authoritative events/s ⇒ ~100 broadcast msgs/s fan-out |
+| Auction bursts | bids cluster on one nomination | ≤ 5 bids/s/draft, serialized by the draft-row lock; loser gets instant "outbid" |
+| Sunday scoring | 300 leagues with viewers, avg 4 viewers | 1,200 connections; 1 batched `scores_updated`/league/10s ⇒ 30 msgs/s × fan-out 4 = 120 msgs/s |
+| Stats ingestion | ~13 concurrent games, poll 20–30s | ~500–2,000 changed player-stat rows/min entering the fan-out queue |
+| Waiver runs | Wed 3am local staggered | dozens of leagues/min through the queue; each league atomic |
+These sit comfortably inside Supabase Realtime quotas (connections, msgs/s, joins/s are per-plan; overage is $10/1k peak connections, $2.50/1M messages) **only because** of Broadcast-from-DB + per-league batching (§9). Alert at 70% of any quota (§24).
+
+### 22.2 Scoring fan-out (server-side; replaces v1.x client-side recompute)
+```
+sync-live-stats (poll provider, 20–30s in game windows)
+  → upsert player_stats (idempotent diff; unchanged rows skipped)
+  → enqueue changed (season, week, player_id) into pgmq 'score_fanout'
+score-league-week worker (Edge Fn, cron every 5–10s in game windows)
+  → drain queue in batches; map player_ids → affected (league_id, team_id)
+      via idx on league_rosters(player_id) ∩ leagues in season-week
+  → per league: recompute affected matchup team scores + team_week_results
+      (pure fn: calculate-fantasy-points against the league's scoring SNAPSHOT §7.3.3)
+  → single UPDATE per matchup ⇒ trigger broadcasts one compact event per league
+```
+- Batching rule: coalesce a league's updates within a 5–10s window into one write/broadcast.
+- Recompute is **incremental** (only teams rostering changed players) with a `rebuild` path for corrections/overrides.
+- Overridden cells (`matchups.is_overridden`) are never auto-recomputed (existing rule; enforced here).
+
+### 22.3 Job architecture at N leagues (pattern for every scheduled job)
+- **One** pg_cron entry per job (Supabase Cron supports 1–59s sub-minute schedules) — never one cron per league.
+- The job claims due work with `FOR UPDATE SKIP LOCKED` (e.g., `drafts WHERE status='live' AND current_deadline < now()`, `leagues WHERE waiver_next_run_at < now()`), processes each item in its own transaction, batch-limited, looping until empty. Concurrent invocations are safe by construction; Edge Function timeouts are absorbed by re-claiming.
+- Long fan-outs (waivers, corrections, finalization) go through **pgmq** queues with visibility timeouts for retry; every job handler is **idempotent** (keyed on league_weeks / claim ids).
+- `draft-tick` keeps its immediate self-invocation after each user action for tight timers; the 5s cron is the safety net. Supporting index: `idx_drafts_due ON drafts(current_deadline) WHERE status='live'`.
+
+### 22.4 Database scale
+- **Partition `player_stats` by season** (LIST) at creation; prune old-season partitions from hot cache. All other league tables stay unpartitioned in v1 (500 leagues × a season ≈ low millions of rows — fine with the specified indexes).
+- Hot-path indexes (additive to §12): `league_rosters(player_id)`, `matchups(league_id, season, week) WHERE status != 'final'`, `transactions(league_id, created_at DESC)` (exists), `team_week_results(league_id, season)`.
+- Connection budget: Route Handlers use Supavisor transaction pooling; RPC-heavy design keeps transactions short. Workers reuse one pooled connection per invocation. No long-lived locks except the per-draft row lock (held < 50ms per action — assert in tests).
+- League settings + scoring snapshots are read-heavy: cache in the worker per invocation; never per-player.
+
+### 22.5 Abuse & rate limits
+- Route-layer per-user limits: 10 mutations/10s/league, chat 5 msgs/10s, bids 5/s (server also serializes via the draft lock). 429 with retry-after; never silently drop.
+- Idempotency (`action_id`) extends beyond the draft to add/drop, waiver submit, and trade actions (unique per league) so mobile retries are safe.
+- Invite codes rotate on demand; join attempts rate-limited by IP+code.
+- Mock drafts (§8.8): max **3 active per user**, creation 5/hour/user; abandoned mocks expire at 72h via a daily cleanup cron. Mocks share every live-draft rate limit above.
+
+### 22.6 Load & soak tests (gate for GA — see delivery plan)
+k6 scenarios, run against staging with production-shaped data: (1) 50 simultaneous snake drafts, 60s clocks, 20 bots each — assert p95 pick→broadcast < 500ms, zero duplicate picks; (2) auction bid storm — 20 bids in 2s on one nomination; (3) Sunday storm — replay a recorded real NFL Sunday's stat deltas at 1× and 4× speed across 500 seeded leagues — assert scoring lag p95 < 15s behind ingestion, no missed corrections; (4) 24h soak with connection churn — assert zero realtime-quota violations and no connection leaks.
+
+---
+
+## 23. Stats Ingestion & NFL Data Contract (NEW v2.0)
+
+The whole product rides on the stats pipeline. v1.x said "reuse Live Mode"; v2.0 pins down the contract that Live Mode must satisfy to host real leagues.
+
+### 23.1 Provider strategy (abstraction required)
+- All ingestion goes through a **`StatsProvider` interface** (`getWeekStats`, `getGameStates`, `getInjuries/Inactives`, `getSchedule`) so the provider is swappable without touching league logic. Player identity is already Sleeper-keyed (`players.id` TEXT); the adapter owns any external-ID mapping table.
+- **Three environment tiers, same interface (v2.5 — prove the pipeline free, pay only to go live):**
+  | Tier | Implementation | Cost | Used for |
+  |---|---|---|---|
+  | `synthetic` | `SyntheticStatsProvider` (§23.6, new) — generates realistic stat lines incl. advanced stats, on a controllable virtual clock | $0 | Every dev/CI session; the full nightly sim suite; end-to-end validation of the entire pipeline before any vendor is contracted |
+  | `sleeper_free` (v1 beta) | current Sleeper-based feed | $0 | Real free leagues in beta; real-world accuracy check on top of what synthetic already validated |
+  | `sportsdataio` / `sportradar` (GA) | licensed, SLA'd | paid (Open Question 14) | Paid/GA leagues once the whole pipeline is already proven |
+  A league/environment picks its tier at config time; the calculator, locks, corrections, and realtime fan-out run identically regardless — none of that code knows or cares which tier is live.
+- **GA upgrade path (decision needed, Open Question 14):** SportsDataIO (REST polling, fantasy-focused, self-serve entry tier, SLA on paid plans) → Sportradar (push feeds, 1–2s latency, official-grade; premium). The interface makes this a swap, not a rewrite. Real-money features (out of scope) would force the licensed tier. **The synthetic tier means this decision is on the critical path for GA revenue, not for finishing the build** — every feature in §7–§22 can be built, demoed, and load-tested end-to-end before it's made.
+- **Official inactives ~90 min pre-kickoff and in-game injury designations are a hard requirement** of whichever *live* provider is running — Swap spots (§7.3.2) and `auto_sub_inactives` (§11.3) depend on them; the synthetic provider fabricates these on a schedule so the logic is tested before a real feed ever supplies them.
+
+### 23.2 Ingestion invariants
+- Poll cadence 20–30s in game windows (existing two-speed cron). Every upsert is **idempotent** and **diff-aware**: unchanged rows are skipped so the fan-out queue only sees real deltas.
+- Provider outage: after 3 failed polls, raise a `stats_degraded` incident flag — league UIs show a non-alarming "Live stats delayed" banner (never wrong numbers, just honest staleness); scoring resumes and back-fills on recovery. No league state is ever advanced on partial data (finalization requires all games `final` + window elapsed).
+- A **reconciliation job** (nightly + at correction-window close) recomputes every league-week team score from raw `player_stats` and asserts it matches stored `matchups`/`team_week_results` (excluding overridden cells). Drift ⇒ alert, never silent fix.
+
+### 23.3 NFL calendar realities (each has an edge case in §19.2)
+- **Flex scheduling / game moves:** lineup & transaction locks derive from `nfl_games.kickoff` **at evaluation time** — never precomputed and stored per lineup. A moved kickoff moves the lock automatically; `lineup-lock` re-scans game times each run.
+- **Postponed beyond the league week:** players in a game postponed out of the `nfl_weeks` window score 0 for that week (incumbent behavior); their locks release when the kickoff moves; a system note posts to affected leagues; commissioner overrides remain available for house-rule fairness.
+- **International/early games (9:30am ET) and Saturday games (Wks 15–18):** no special-casing anywhere — all logic is kickoff-driven; Swap lock language "first Sunday kickoff" is implemented as "first kickoff of the week's main slate per `nfl_weeks`", handling early windows correctly.
+- **Week advancement:** a `league-week-advance` job flips `league_weeks.status` on `nfl_weeks` boundaries; no code ever infers "current week" from wall-clock math.
+
+### 23.4 Stat corrections (industry-normed)
+- Incumbent practice: Sleeper applies corrections up to and including **Thursday** after the week; Yahoo until the first game of the next week. FieldScout default `stat_correction_window` = **Thursday 06:00 ET** (configurable 0h–7d, §7.3.6).
+- Detection: ingestion diff after a game is `final` ⇒ `stat_correction_events` rows ⇒ fan-out recompute of affected, non-overridden league cells ⇒ system note in affected leagues. Matchups display `final (pending corrections)` until the window closes; true `final` (and waiver/standings dependencies) only after.
+- A correction landing **after** the window is *not* auto-applied — it surfaces as a flagged event the commissioner may apply via override (keeps late corrections from silently flipping decided playoff games; strictly better than incumbents' silent behavior).
+- **League-facing "Stat Corrections" view** (League → Activity): corrections filtered to players started in that league (Sleeper-style), showing point deltas per team.
+
+### 23.5 Advanced-stat feeds & capability tiers (NEW v2.2 — powers FieldScout Alpha/Ultra)
+The §7.3.3 house templates score stats no incumbent scores; the pipeline must treat them as first-class.
+
+- **Provider capability tiers** (declared by each `StatsProvider` adapter; league creation gates templates on them, §7.3.3):
+  | Tier | Stats | Source & latency | Required by |
+  |---|---|---|---|
+  | `core_box` | all Appendix B.1–B.5 categories | box score, live | every template |
+  | `tracking` | `air_yards` (completed), `yards_after_catch` | NGS player-tracking–derived; in official NFL play-by-play since 2016; **live-capable** via provider pbp; self-computable from nflverse as a free T+1 fallback | Alpha, Ultra |
+  | `charted` | `rush_yards_after_contact` (broken tackles reserved v1.1) | film charting (PFF/SIS/FTN-class licensing, or SportsDataIO advanced tier); **T+1** (next morning), occasionally revised | Ultra |
+- **Storage (v2.3 extensibility rule):** all advanced stats — `air_yards`, `yards_after_catch`, `rush_yards_after_contact`, and **every future stat** — live in `player_stats.advanced JSONB DEFAULT '{}'`. A missing key means *not-yet-reported* (≠ 0, renders as pending). New stats therefore require **no migration**; promote a key to a typed column only if query patterns ever demand it (a view can flatten). Ingestion is diff-aware per §23.2; charted arrivals fan out through the same `score-league-week` path.
+- **New-stat checklist (v2.3 — target: one small PR):** (1) provider adapter maps the feed field → a registry key; (2) the key + display label + tier (`core_box`/`tracking`/`charted`) + pending semantics are added to the code-level `STAT_KEYS` registry; (3) a template (or future custom system) references the key in its `rules`; (4) done — the generic calculator (§7.3.3) needs no change, storage needs no migration, and the two-phase/correction machinery applies automatically by tier. This checklist is the reason FieldScout can score whatever the data industry ships next before incumbents finish a planning cycle.
+- **Two-phase scoring for `charted` leagues (Ultra):** during games, scores are **live-provisional** — box + tracking stats count; the YCO component renders as *pending* (badge: "charting lands Mon AM"), never as a silent 0. When the charted feed posts (`advanced_final_at` per game), scores settle and the badge clears. **Finalization timing does not move:** charting lands Mon–Tue, comfortably inside the Thu 06:00 ET correction window (§23.4) that finalization already waits for — the v2.0 design absorbs the lag for free.
+- **Charted revisions** flow through `stat_correction_events` (§23.4) like any correction: in-window auto-recompute + system note; post-window flagged for commissioner apply.
+- **Degradation:** if the charted feed misses its SLA for a week, Ultra leagues see an honest banner and the commissioner may (a) wait, or (b) finalize with a logged override scoring YCO at 0 for that week (league-visible, reversible via rescore). Alpha is immune — all its stats are live-tier.
+- **Cost note (Open Question 16):** tracking-tier data is effectively free (public pbp) — the licensing decision is the charted tier only, and only Ultra needs it.
+
+### 23.6 `SyntheticStatsProvider` — validate the whole pipeline before paying for data (NEW v2.5)
+Directly answers "does this work" without a stats contract. Same `StatsProvider` interface as §23.1; everything downstream — calculator, locks, corrections, realtime fan-out, standings — is identical code whether the tier is `synthetic`, `sleeper_free`, or a paid vendor.
+
+- **What it generates:** plausible box-score lines (`core_box`) for a configurable slate of games, plus fabricated `air_yards`/`yards_after_catch` (`tracking`) and `rush_yards_after_contact` (`charted`) so **Alpha and Ultra are exercisable with zero data cost** — the whole point of the extensibility contract (§7.3.3) is that a stat's *plumbing* doesn't care whether the number is real.
+- **Runs on the `TimeProvider` virtual clock (§23.1/M0):** a "week" can play out in real time, at 64×, or be driven step-by-step from a test — kickoff, in-game deltas, final, and (critically) a T+1 charted-stat arrival and a post-final correction, all on command.
+- **Scenario library (versioned, reused by the League Simulator §4.2):** happy-path week · flexed/moved kickoff · postponed game · mass-inactives Sunday · provider outage (triggers `stats_degraded`, §23.2) · stat correction inside the window · stat correction after the window (flagged, not auto-applied) · charted feed late (Ultra degradation banner) · charted feed revises after posting. Each scenario is the synthetic equivalent of a real §19.2 edge case — deterministic and re-runnable, instead of waiting for a real Sunday to reproduce it.
+- **What it proves before a vendor is chosen:** the full Phase D gate (lineups → lock → live scores → corrections → finalize → standings), all 8 scoring templates including Alpha/Ultra's two-phase settle, the degradation banners, and the reconciliation job — all end-to-end, all at $0.
+- **What it can't prove:** real-world accuracy of any provider's actual numbers, or that provider's real-world uptime/latency under game-day load. Those are validated in order after synthetic passes: `sleeper_free` in beta (real data, no SLA), then the paid tier during the canary cohort (delivery plan M7) before GA.
+- **Build order:** ship in M0 alongside the fixture recorder (§23.6 is the "generate," the recorder is the "capture real" — both feed the same replay harness, delivery plan §4.2–4.3).
+
+---
+
+## 24. Observability, Operations & Game-Day Readiness (NEW v2.0)
+
+If draft night breaks, the league leaves. Operate like it.
+
+### 24.1 Golden signals & alerts (Sentry + Supabase logs/reports; dashboard per surface)
+| Metric | Target | Page-worthy alert |
+|---|---|---|
+| Pick/bid RPC latency (p95) | < 300ms server, < 500ms pick→broadcast | > 1s for 2 min |
+| Draft-tick lag (now − oldest due deadline) | < 2s | > 10s (a draft is stuck) |
+| Scoring lag (ingestion→league broadcast, p95) | < 15s | > 60s during games |
+| Realtime quota headroom (connections, msgs/s, joins/s) | < 70% | > 85% |
+| Job failures (waivers, finalize, swaps, corrections) | 0 | any (with league_id context) |
+| Reconciliation drift | 0 cells | any |
+Every worker writes structured logs with `league_id`/`draft_id` so any league's night can be replayed from logs.
+
+### 24.2 Controls
+- **Feature flags per league** (`leagues.settings.flags`): canary new engine behavior on staff/friendly leagues first.
+- **Kill switches:** pause-all-drafts (auto-pauses live drafts with a banner — the engine's pause semantics make this safe), disable-waiver-runs, freeze-scoring (show last-good scores). Each is an admin action with an ops log.
+- **Deploy freeze:** no schema or engine deploys Thu 7pm ET → Tue 6am ET during the NFL season; hotfix path documented (delivery plan).
+- **Migrations:** expand → backfill → contract, always additive during season; every migration reversible or explicitly marked one-way with a backup gate. PITR enabled before beta.
+
+### 24.3 Runbooks (written before GA; rehearsed once)
+Stuck draft (deadline in past, no tick) · stats provider outage mid-Sunday · realtime degradation (fall back to 10s REST polling — clients already REST-first) · waiver job partial failure (re-run idempotently per league) · "commissioner locked themselves out" (support tooling reads the audit log, never bypasses it) · restore-a-league from PITR without touching other leagues (documented as *possible but last-resort*).
 
 ---
 
@@ -1303,6 +1898,7 @@ Synthesized from official help docs (ESPN, Yahoo, Sleeper) cross-checked with NF
 - **Flock Fantasy** — **not a league host.** It's an analytics/rankings/creator-content companion that *syncs to* your ESPN/Yahoo/Sleeper league (rankings, a read-only league dashboard, trade calculator, practice mock drafts, and a draft-overlay Chrome extension, best-ball leaning). There is no Flock draft engine or league/scoring/commissioner settings to mirror. Useful as content/UX inspiration only.
 - **Footballguys** — **not a league host.** It's a research/projections/draft-*assistant* business (Draft Dominator runs alongside a draft hosted elsewhere; "Footballguys Home Leagues" are actually hosted on Sleeper). Great benchmark for draft-prep UX and customizable projections, not for hosting mechanics.
 - **Benchmarks that matter:** **Sleeper** (best-in-class draft + the best commissioner transparency), with **ESPN/Yahoo** as the mass-market baseline and **MFL/Fleaflicker** as the deep-customization references.
+- **Scoring-category audit (v2.2):** Yahoo's published category list and Fantrax's "extensive list / create your own" both top out at box-score-derived categories (40+-yard-play bonuses are as exotic as it gets). No host — major or niche — exposes air yards, YAC, or yards after contact as scorable. Supports the "first platform with advanced-stat scoring" claim; re-verify immediately before any marketing use.
 
 ### A.1 League settings
 | | ESPN | Yahoo | Sleeper |
@@ -1369,42 +1965,57 @@ Synthesized from official help docs (ESPN, Yahoo, Sleeper) cross-checked with NF
 
 ---
 
-## Appendix B — Default Scoring Presets & `scoring_systems.rules` Catalog
+## Appendix B — Scoring Template Catalog (`scoring_systems.rules`) — v2.2
 
-Reuses the existing `scoring_systems.rules JSONB` (see `docs/03-DATA-MODEL.md`). Ship these as `is_system_default = true`. Decimal supported throughout.
+Reuses the existing `scoring_systems.rules JSONB` (see `docs/03-DATA-MODEL.md`). Ship the 8 v1 templates as system rows (`is_template = TRUE`, `owner_id NULL`). Decimal supported throughout. **Platform values below are best-known as of July 2026 — re-verify every cell against ESPN/Yahoo/Sleeper official help pages at build time** (⚠ marks the cells most prone to drift: K distances, D/ST tiers).
 
-### B.1 Core offense (all presets share these; only `receptions` differs)
-| Key | Standard | Half-PPR | Full PPR |
-|---|---|---|---|
-| `pass_yards` | 0.04 | 0.04 | 0.04 |
-| `pass_tds` | 4 | 4 | 4 |
-| `interceptions` | −2 | −2 | −2 |
-| `pass_2pt` | 2 | 2 | 2 |
-| `rush_yards` | 0.1 | 0.1 | 0.1 |
-| `rush_tds` | 6 | 6 | 6 |
-| `rush_2pt` | 2 | 2 | 2 |
-| `receptions` | **0** | **0.5** | **1** |
-| `receiving_yards` | 0.1 | 0.1 | 0.1 |
-| `receiving_tds` | 6 | 6 | 6 |
-| `rec_2pt` | 2 | 2 | 2 |
-| `fumbles_lost` | −2 | −2 | −2 |
-| `fumble_recovery_td` / `return_td` | 6 | 6 | 6 |
+### B.1 Platform-parity templates — core offense
+| Key | ESPN Std | ESPN PPR | Yahoo Std | Yahoo ½PPR | Sleeper Std | Sleeper PPR |
+|---|---|---|---|---|---|---|
+| `pass_yards` | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 |
+| `pass_tds` | 4 | 4 | 4 | 4 | 4 | 4 |
+| `interceptions` | **−2** | **−2** | **−1** | **−1** | **−1** | **−1** |
+| `pass_2pt` | 2 | 2 | 2 | 2 | 2 | 2 |
+| `rush_yards` | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 |
+| `rush_tds` | 6 | 6 | 6 | 6 | 6 | 6 |
+| `rush_2pt` | 2 | 2 | 2 | 2 | 2 | 2 |
+| `receptions` | 0 | **1** | 0 | **0.5** | 0 | **1** |
+| `receiving_yards` | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 |
+| `receiving_tds` | 6 | 6 | 6 | 6 | 6 | 6 |
+| `rec_2pt` | 2 | 2 | 2 | 2 | 2 | 2 |
+| `fumbles_lost` | −2 | −2 | −2 | −2 | −2 | −2 |
+| `fumble_recovery_td` / `return_td` | 6 | 6 | 6 | 6 | 6 | 6 |
 
-### B.2 Optional bonuses & TE premium (off by default)
-`pass_300_bonus`, `pass_400_bonus`, `rush_100_bonus`, `rush_200_bonus`, `rec_100_bonus`, `rec_200_bonus`, `te_reception_premium` (added per-reception for TEs, e.g. +0.5), `pass_40yd_td_bonus`, etc.
+Kicking & D/ST use each platform's own tables (⚠ verify): K distance tiers per B.3 shape; D/ST per B.4 with `dst_model = 'split'` for ESPN templates and `'single'` for Yahoo/Sleeper.
 
-### B.3 Kicking (by distance)
-`fg_0_39` = 3, `fg_40_49` = 4, `fg_50_plus` = 5, `pat_made` = 1, `fg_missed` = −1 (off/0 by default on some presets), `pat_missed` = −1.
+### B.2 FieldScout Alpha — *the catch, re-scored* (`tracking` tier; 100% live)
+Replaces flat receiving yardage with a **who-earned-it split**: completed air yards credit the route/target win (shared with the QB throw); YAC is receiver-created and pays **double**. Everything else stays familiar (Sleeper-style base) so only the catch changes.
+| Key | Value | Note |
+|---|---|---|
+| `receptions` | 0.5 | anchor of familiarity |
+| `receiving_yards` | **0** | replaced by the split ↓ |
+| `receiving_air_yards` | **0.06** | completed air yards only — production, not intended-target opportunity |
+| `receiving_yac` | **0.12** | yards after the catch — receiver-created, pays 2× air |
+| passing / rushing / TDs / turnovers / K / D/ST | = Sleeper Std | 0.04 · 4 · −1 · 0.1 · 6 · −2 |
 
-### B.4 D/ST — supports BOTH models
-- **Play categories:** `def_sack` 1, `def_int` 2, `def_fumble_rec` 2, `def_td` 6, `def_safety` 2, `def_block` 2, `def_return_td` 6.
-- **Points-allowed (single-tier, Yahoo-style, default):** `def_pa_0` 10, `def_pa_1_6` 7, `def_pa_7_13` 4, `def_pa_14_20` 1, `def_pa_21_27` 0, `def_pa_28_34` −1, `def_pa_35_plus` −4.
-- **Split model (ESPN-style, optional):** enable `def_pa_*` (start +5) **and** `def_ya_*` yards-allowed tiers (start +5) → +10 baseline. A `dst_model` flag in `rules` selects `single` (default) or `split`.
+League-wide, YAC ≈ half of receiving yards, so expected yardage rate ≈ 0.06(.5) + 0.12(.5) = **0.09/yd** — Half-PPR magnitude, redistributed toward creators. *Worked example: 8 catches, 80 yds (40 air / 40 YAC): Half-PPR = 12.0 · **Alpha = 4 + 2.4 + 4.8 = 11.2**. A screen-game YAC monster with the same line at 10 air / 70 YAC: **Alpha = 13.0.** Same box score, different games, different points — that's the product.*
 
-### B.5 IDP (off by default)
-`idp_tackle_solo` 1, `idp_tackle_assist` 0.5, `idp_sack` 2, `idp_tfl` 1, `idp_qb_hit` 1, `idp_int` 3, `idp_pass_defended` 1, `idp_forced_fumble` 2, `idp_fumble_rec` 2, `idp_def_td` 6, `idp_safety` 2.
+### B.3 FieldScout Ultra — *every yard credited to who earned it* (`tracking` + `charted`)
+Alpha's receiving split, plus the rushing equivalent and a QB pressure signal:
+| Key | Value | Note |
+|---|---|---|
+| receiving | = Alpha | 0.5 / 0.06 air / 0.12 YAC |
+| `rush_yards` | **0.06** | the clean yard splits credit with the line |
+| `rush_yards_after_contact` | **0.06** | *stacks* on `rush_yards` → a contact yard pays **0.12**, double a clean yard |
+| `qb_sack_taken` | **−0.5** | pressure-to-sack is a QB skill; box-score stat, live |
+| everything else | = Alpha | |
 
-> The custom **scoring-editor** UI groups these into Passing / Rushing / Receiving / Misc / Kicking / D/ST / IDP, mirrors the platform presets as starting points, and shows a "differs from default" summary (reusing the existing "Custom Scoring" badge concept from `docs/01-PRD.md` §F7).
+*Worked example: 20 carries, 100 yds (45 after contact): Standard/PPR = 10.0 · **Ultra = 6.0 + 2.7 = 8.7** — while a 100-yd game with 70 YCO scores **10.2**. The bruiser out-points the untouched-lane runner on identical box scores.* Coefficients are **calibration-pending defaults** (§7.3.3): symmetric and memorable now; the M0-fixture backtest tunes them (expect the rush base to drift toward ~0.07) to hold positional means within ±10% of Half-PPR. `charted` timing/degradation semantics: §23.5. Reserved v1.1 keys: `broken_tackles`, `te_reception_premium` on house templates.
+
+### B.4 Kicking, D/ST & reserved catalog (engine supports; v1 exposure via templates only)
+Kicking by distance: `fg_0_39` 3, `fg_40_49` 4, `fg_50_plus` 5, `pat_made` 1, `fg_missed` −1 ⚠, `pat_missed` −1 ⚠. D/ST: `def_sack` 1, `def_int` 2, `def_fumble_rec` 2, `def_td` 6, `def_safety` 2, `def_block` 2, `def_return_td` 6; points-allowed single-tier (`def_pa_0` 10 … `def_pa_35_plus` −4) or ESPN split model via `dst_model`. Bonuses (`pass_300_bonus`, `rush_100_bonus`, …), TE premium, and the full IDP set (`idp_*`) remain in the engine catalog for the v1.1 custom-scoring unlock — the calculator ignores keys a snapshot doesn't contain, so templates and future custom systems share one code path.
+
+> **v1 UI is a template picker** (§7.3.3), not an editor: 8 cards, side-by-side compare, and the "same game, scored three ways" widget. The full editor (this catalog exposed per-category) returns in v1.1.
 
 ---
 
@@ -1412,20 +2023,22 @@ Reuses the existing `scoring_systems.rules JSONB` (see `docs/03-DATA-MODEL.md`).
 
 Copy-paste prompts in the style of `docs/05-CLAUDE-CODE-PROMPTS.md`. **Hand Claude Code one task at a time**, in order. Each assumes the repo is open and the prior task is committed.
 
+> **v2.0 note:** these prompts predate v2.0. The delivery plan (`delivery-plan-redraft-leagues.md` §3) extends this task list with the v2.0 work (L.A0 time/stats abstractions, L.D0 schedule engine, L.D4 scoring fan-out, L.D5 locks/pool, L.E2 corrections) and adds the per-task Definition-of-Done checklists every prompt must satisfy. Use the delivery plan's sequence; use these prompts as the style reference.
+
 ### Task L.A1 — League foundation: schema + RLS
 ```
 Build the league foundation for FieldScout. Read CLAUDE.md, docs/03-DATA-MODEL.md, and docs/specs/spec-redraft-leagues.md (§12) before starting. This supersedes the thin leagues schema in spec-leagues-live-mode.md.
 
 1. Migration supabase/migrations/0XX_leagues_foundation.sql:
    - RLS helper functions is_league_member(uuid) and is_league_commish(uuid) (SECURITY DEFINER, STABLE) — §12.0
-   - ALTER TABLE leagues to add: status, format, team_count CHECK IN (8,10,12,14,16,18,20), regular_season_weeks, playoff_teams, playoff_start_week, waiver_type, faab_budget, trade_review, trade_deadline_week, lineup_lock, settings JSONB, deleted_at — §12.1
+   - ALTER TABLE leagues to add: status, format, team_count CHECK IN (8,10,12,14,16)  -- v1, regular_season_weeks, playoff_teams, playoff_start_week, waiver_type, faab_budget, trade_review, trade_deadline_week, lineup_lock, settings JSONB, deleted_at — §12.1
    - Replace the old "viewable by members" policy with one using is_league_member()
    - CREATE TABLE league_members (role, team_id, is_placeholder, is_autodraft, faab_balance) + RLS + indexes — §12.2
 2. Zod schemas in src/types/league.ts for all settings (§7.3) with the documented defaults and ranges; a validateLeagueSettings() util enforcing the cross-field rules in §7.3 "Validation rules".
 3. API route handlers (Route Handlers, kebab-case): POST/GET /api/leagues, GET/PATCH/DELETE /api/leagues/[id], POST /api/leagues/[id]/invite, POST /api/leagues/join, member management under /api/leagues/[id]/members — §15.1. Gate POST /api/leagues behind is_pro.
 4. React Query hooks: src/hooks/use-leagues.ts, use-league.ts, use-league-members.ts.
 5. Regenerate types: npx supabase gen types typescript.
-Enforce: creator becomes commissioner + gets a team; joining is free; team_count ∈ {8,10,12,14,16,18,20}; structural settings editable only in setup/scheduled (else require a commissioner override flag).
+Enforce: creator becomes commissioner + gets a team; joining is free; team_count ∈ {8,10,12,14,16}; structural settings editable only in setup/scheduled (else require a commissioner override flag).
 ```
 
 ### Task L.A2 — League create wizard + settings UI
@@ -1433,9 +2046,9 @@ Enforce: creator becomes commissioner + gets a team; joining is free; team_count
 Build the league creation wizard and settings UI. Read docs/specs/spec-redraft-leagues.md (§7, §16) and docs/06-DESIGN-SYSTEM.md.
 
 1. src/app/(app)/leagues/page.tsx (My Leagues + Create), /leagues/new/page.tsx (wizard), /leagues/[id]/settings/page.tsx.
-2. Components: league-create-wizard.tsx (steps: format → roster slots → scoring → waivers/trades → draft → invite), roster-slot-builder.tsx (per-position starter counts, "Add Custom Flex" via an eligible-position multi-select, bench count, and IR spots each configured Restricted/Unrestricted with eligible designations + min weeks, live roster_size + validation), scoring-editor.tsx (presets + full custom per Appendix B; "differs from default" summary), settings-panel.tsx, invite-panel.tsx (code/link + username/email + seat list, placeholder seats, roles).
+2. Components: league-create-wizard.tsx (steps: format → roster slots → scoring → waivers/trades → draft → invite), roster-slot-builder.tsx (per-position starter counts, "Add Custom Flex" via an eligible-position multi-select, bench count, and IR spots each configured Restricted/Unrestricted with eligible designations + min weeks, live roster_size + validation), scoring-template-picker.tsx (8 templates per Appendix B; compare view + "same game, scored three ways" widget; no per-category editing in v1), settings-panel.tsx, invite-panel.tsx (code/link + username/email + seat list, placeholder seats, roles).
 3. Use the Zod schemas + defaults from Task L.A1. Mobile-first, dark, shadcn/ui. All ranges/defaults per §7.3.
-Acceptance: create an 8/10/12/14/16/18/20-team league with valid defaults in <2 min, invite & seat managers, reach status 'scheduled'.
+Acceptance: create an 8/10/12/14/16-team league with valid defaults in <2 min, invite & seat managers, reach status 'scheduled'.
 ```
 
 ### Task L.B1 — Snake draft: engine, RPCs, timer worker
@@ -1458,7 +2071,7 @@ Acceptance: a full snake draft runs to completion across multiple browser tabs; 
 ```
 Build the live draft room UI. Read docs/specs/spec-redraft-leagues.md (§8.5, §9, §16.2–16.3) and docs/06-DESIGN-SYSTEM.md.
 
-1. src/app/(app)/leagues/[id]/draft/page.tsx + components/draft/*: draft-room.tsx (subscribes to draft:<id>; on mount/reconnect FETCH state via REST then subscribe), draft-board-grid.tsx, pick-clock.tsx (countdown from server current_deadline + measured offset; paused state), available-players.tsx (search/filter, Big Board/ADP/tier overlays), my-queue.tsx (@dnd-kit drag), my-roster-tracker.tsx, draft-chat.tsx, presence-bar.tsx (Supabase Presence).
+1. src/app/(app)/leagues/[id]/draft/page.tsx + components/draft/*: draft-room.tsx (subscribes to draft:<id>; on mount/reconnect FETCH state via REST then subscribe), draft-board-grid.tsx, pick-clock.tsx (countdown from server current_deadline + measured offset; paused state), available-players.tsx (search/filter, Big Board/ADP/tier overlays), my-queue.tsx (@dnd-kit drag), my-roster-tracker.tsx, draft-chat.tsx, presence-bar.tsx (Supabase Presence), mock-draft-launcher.tsx + a persistent MOCK banner state in draft-room.tsx (§8.8: seat picker, CPU speed toggle, recap view; CPU opponents reuse the autopick/bot logic).
 2. Use Zustand for ephemeral UI (selected player, panel state, local clock); React Query + Realtime for authoritative data. Optimistic INTENT only; authoritative RESULT from broadcast. Friendly "player just went off the board" on race.
 3. Touch-friendly; WCAG AA (live-region announcements for picks/clock).
 Acceptance: draft night feels instant; reconnect restores full state in <2s.
@@ -1541,12 +2154,19 @@ Acceptance (all must pass): every override writes exactly one immutable log row 
 ```
 Polish the leagues feature. Read docs/specs/spec-redraft-leagues.md (§18 Phase F, §19).
 
-Mock drafts (drafts.is_mock, no league_rosters written), draft-order reveal animation, notifications wiring (league_invite, trade_proposal, commissioner action, waiver result), History Mode tab, optional hash-chain tamper-evidence on commissioner_actions (prev_hash/row_hash), auto-sub inactives (opt-in), public league SEO page. Then: Playwright E2E for full snake draft, full auction, disconnect/reconnect, commissioner overrides, a scored week, waiver run, and a trade; a 14-team concurrency load test of the draft room; run the design:accessibility-review and a security-review of the RLS/RPC surface. Fix what they find.
+Draft-order reveal animation, notifications wiring (league_invite, trade_proposal, commissioner action, waiver result), History Mode tab, optional hash-chain tamper-evidence on commissioner_actions (prev_hash/row_hash), auto-sub inactives (opt-in), public league SEO page. Then: Playwright E2E for full snake draft, full auction, disconnect/reconnect, commissioner overrides, a scored week, waiver run, and a trade; a 14-team concurrency load test of the draft room; run the design:accessibility-review and a security-review of the RLS/RPC surface. Fix what they find.
 ```
 
 ---
 
 ## Changelog
+- **v2.0 (2026-07-16):** Scale + correctness release, informed by platform research (Supabase Realtime scaling guidance, Sleeper/Yahoo/ESPN operational norms, NFL data-provider landscape). **(1) Realtime rewritten (§9):** Postgres Changes replaced by Broadcast-from-Database triggers on private authorized channels — the pattern Supabase recommends beyond ~3k subscribers; clients never subscribe to raw `player_stats`. **(2) Schedule engine + Remix (§11.7):** seeded deterministic generation (circle method, division-aware), preview-diff **Remix** (free until Week 1 kickoff, override after — Sleeper parity plus receipts), `schedule_mode` (`h2h`/`total_points`), Sleeper-style `median_game`, Yahoo-style `second_opponent`. **(3) Scale engineering (§22):** explicit 500-league / 150-draft load model, server-side scoring fan-out via pgmq (`score-league-week`), SKIP-LOCKED job pattern, `player_stats` partitioning, rate limits, k6 gate suite. **(4) Stats & NFL-data contract (§23):** `StatsProvider` interface + GA provider decision, ingestion invariants + degradation UX, `nfl_weeks` calendar, kickoff-derived locks (flex-schedule/postponement-safe), correction window normed to **Thu 06:00 ET** with `stat_correction_events` + league-facing corrections view; post-window corrections flag instead of auto-apply. **(5) Game-day transaction locks (§7.3.4/§13.1):** `player_game_lock` + `bench_lock` (strict defaults per product requirement), `fa_hold_hours`, `trade_lock_behavior`, `waiver_claims.claim_order`. **(6) Integrity fixes:** league **scoring snapshot** (`scoring_rules_snapshot`), 2-decimal rounding determinism, `slot_map` indexed instance keys (`rb:0`), matchup home/away uniqueness + self-play CHECK, pause clock bookkeeping (`deadline_remaining_ms`), auction endgame + solvency invariant, autopick K/D-ST deferral, audit backstop trigger, `SECURITY DEFINER search_path` hardening. **(7) New tables (§12.17–12.21):** `league_weeks`, `team_week_results`, `league_player_pool`, `nfl_weeks`, `stat_correction_events`. **(8) Ops (§24):** golden signals, kill switches, deploy freeze, runbooks. **(9)** Edge cases E25–E46; Open Questions 12–15; product/UX callouts (§16.4) incl. **DL** preset + **Hot Swap** naming. Companion delivery plan doc added.
+- **v2.1 (2026-07-16):** Identity & franchise lifecycle. **Identity contract** (§7.2): display name / unique username / private email with explicit display rules (*Team name — display name (@username)*; email never league-visible). **Invites** (§7.2, §12.23): custom league slug (`fieldscout.gg/join/<slug>`), single-use **seat-targeted invites** (link/username/email) with expiry, revocation, and a token-claim RPC. **Franchise ≠ manager** (§7.2.1, §12.22): `team_managers` stint history; manager removal resolves to an explicit outcome — **takeover** (continuity), **retire & succeed** (franchise sealed under its final manager; successor created into the slot, inheriting roster/FAAB and W-L *for seeding only* with partitioned history), or **vacate** (orphan/autopilot with audited `acting_as_team_id` actions). Write access derives from the open stint (instant, race-free revocation). History Mode goes franchise-first with per-stint splits (§11.6); powers table + audit metadata updated (§10); endpoints reworked (§15.1); edge cases E47–E54.
+- **v2.2 (2026-07-17):** Advanced-stat scoring + template-only v1. **Thesis** (§2.2, §7.3.3): first fantasy platform with tracking/charting-derived scorable categories — completed air yards, YAC, yards after contact — verified whitespace (no incumbent, incl. Fantrax/MFL, scores any of them). **v1 scope cut:** open custom scoring editor deferred to v1.1; v1 ships a **fixed 8-template picker** — ESPN Std/PPR, Yahoo Std/Half-PPR, Sleeper Std/PPR (full-category platform parity, build-time verification required), **FieldScout Alpha** (*the catch, re-scored*: rec 0.5 + 0.06/completed air yd + 0.12/YAC yd; 100% live) and **FieldScout Ultra** (Alpha + 0.06/rush yd + 0.06/yd after contact stacking, −0.5/sack; charted tier). **Data contract** (§23.5): provider capability tiers (`core_box`/`tracking`/`charted`), new `player_stats` keys, two-phase provisional→settled scoring for charted stats (finalization timing unchanged — the Thu 06:00 window absorbs Mon-AM charting), degradation + revision paths. **Calibration rule:** coefficients tuned via 2026-fixture backtest to ±10% of Half-PPR positional means (OQ 17). Appendix B rewritten as the 8-template catalog; template-picker UX with "same game, scored three ways" widget (§16); adoption metric (§20, ≥25%); OQ 16–18; edge cases E55–E58.
+- **v2.3 (2026-07-17):** Mock Draft Mode + scoring extensibility. **Mock Draft Mode** (§8.8, promoted from Phase-F nice-to-have): solo practice from any pre-draft league under its **real** draft config on the **identical** server-authoritative engine (real countdowns via `draft-tick`); CPU opponents are the simulator bots exposed in-product (humanized 20–70%-of-clock timing, near-buzzer picks, solvency-obedient auction bidding); CPU speed toggle (`realistic`/`fast` — never touches the human's clock); zero side effects (`is_mock`, no `league_rosters`/`transactions`); pause/resume, 72h expiry, recap, 3-active cap (§22.5); Phase B/C gates + endpoints + components updated; standalone lobby v1.1. **Extensibility contract** (§7.3.3, §23.5): launch bar re-pinned to the 6 parity templates + a pipeline where new stats are a data task — generic dot-product calculator, `player_stats.advanced` JSONB (no migrations), `STAT_KEYS` registry, one-PR new-stat checklist; Alpha/Ultra behind a per-environment feature flag until feeds verify. Edge cases E59–E62.
+- **v2.4 (2026-07-17):** UI completeness audit. §16 is now the exhaustive build list: **new routes** — `/schedule` (view + Remix), `/history`, `/chat`, `/draft/recap`, and the pre-auth **`/join/[token]`** claim page (the growth loop finally has its landing surface); `/u/[username]` gains the cross-league managerial record. **New components** — league-home state machine, schedule-view + remix-modal, corrections-view, waiver-claims-panel (drag claim_order), trade-center (review/vote states), remove-manager-modal, acting-as-banner, claim-invite-card (E53–E54 states), stat-line (Alpha/Ultra splits + pending badge), shared status-banners, draft-setup-panel, mock-recap; lineup-editor/matchup-view/free-agents-table/playoff-bracket lines extended with lock states, member illegal-lineup reporting, scoring-mode variants, and commish edit affordances. **New §16.5:** league-home state machine (§16.5.1), workflow → surface map for all twelve core flows (§16.5.2), scoring-mode display variants incl. total_points leaderboard and median/second-opponent rows (§16.5.3), the global banner/badge/state catalog (§16.5.4), and an explicit not-in-v1 list so deferred UI isn't built by accident (§16.5.5). Design Reviewer agent adopts §16.5 as its coverage checklist (delivery plan).
+- **v2.5 (2026-07-17):** `SyntheticStatsProvider` — validate before you pay. **§23.1** reframed around three interchangeable provider tiers behind the same `StatsProvider` interface: `synthetic` ($0, every dev/CI session), `sleeper_free` (v1 beta, real data no SLA), and the paid GA tier (Open Question 14) — the calculator, locks, corrections, and realtime fan-out are identical code regardless of tier. **New §23.6:** the synthetic provider itself — fabricates `core_box` plus `tracking`/`charted` advanced stats so Alpha/Ultra are fully exercisable with zero data cost, runs on the `TimeProvider` virtual clock, and ships a versioned, deterministic scenario library (flexed kickoff, postponement, mass-inactives, provider outage, in-window and post-window corrections, late/revised charting) that reproduces every relevant §19.2 edge case on demand instead of waiting for a real Sunday. OQ 14 recommendation updated: build and fully validate the pipeline on synthetic first, layer in the free real feed for beta signal, and make the paid-vendor call only when GA timing actually requires it.
+- **v2.6 (2026-07-17):** Product decisions from Chris's doc review. **League sizes (v1 scope cut):** `team_count` narrowed to **8/10/12/14/16**; 18/20 and odd counts move to OQ 12 as a v1.1 fast-follow (re-widening a CHECK constraint, not new engineering) — updated everywhere sizes are enumerated (§1, §6, §7.2, §7.3.1, §12.1, §16.5.5, §18, §19.1, Appendix C). **Invites (§7.2):** email promoted to the primary seat-targeted channel — since most invitees have no FieldScout account yet, a fresh signup via an email invite gets the email field pre-filled and **locked** to `invited_email`, removing the mismatch case entirely for that path (E65); username invite remains available for existing users. **Playoff tiebreakers (§7.3.7):** v1 default reordered to **Points For → Head-to-head → Points Against** (higher Points Against wins — stronger schedule), with Division record and Coin flip retained only as a deterministic tail; head-to-head explicitly skips for 3+-team ties (E63) and for `total_points` leagues with no matchups to compare (E64). **Hot Swap wording (§6):** glossary tightened to "ruled out pre-game or at any point during the game" — matches the always-generic OUT-designation trigger already implemented in §7.3.2/§11.4/§14 (no behavior change, confirms existing design). **Generalized Act as Manager (§7.2.1, §10.1):** commissioner can act as *any* team, not only an orphaned one — for a manager who's still seated but has gone inactive — with no stint change and no access lock on the real manager; reuses the existing `acting_as_team_id` tagging (§12.12), so this is a UI-availability change, not a new migration (E66).
 - **v1.6 (2026-06-24):** Locked the **Swap spot** to a single on/off setting (`swap_spots` = 0/1 — one swap per team; dropped the 0–3 range to avoid confusing mid-week lineup changes) and enforced it with `lineup_swaps` `UNIQUE(team_id, season, week)`. Added a UI rule: render the Swap spot **below Flex/superflex and above K, D/ST, IR**. Resolved the "multiple swaps" open question.
 - **v1.5 (2026-06-24):** Added the optional **Swap spot** (§7.3.2) — a team arms **one** same-position bench player to auto-start if a chosen starter is ruled out **pre-game or in-game**; exact `player.position` match required even for FLEX starters; locks at first Sunday kickoff (or Thursday if a Thursday player is involved). New `roster_settings.swap_spots` count, `lineup_swaps` table (§12.16), `process-swaps` worker (§14), enforcement/scoring/validation, UI (`swap-assignment.tsx`), API/hook, acceptance, edge cases E20–E24, and Open Questions 11–12 (in-game resolution + multiple swaps).
 - **v1.4 (2026-06-24):** IR spots are now **per-spot configurable** (§7.3.2): each spot is **Unrestricted** (free in/out for eligible players before lock) or **Restricted** (eligible designation + a minimum stint, default 4 weeks, baseball-IL style), with a commissioner-set list of eligible designations. New `roster_settings.ir_slots[]` shape; `league_rosters.ir_placed_week` / `ir_lock_until_week` track tenure; added enforcement (§11.2), validation (§7.3.8), build-prompt notes (L.A2/L.D1), acceptance, and edge cases E18–E19.

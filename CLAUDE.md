@@ -207,6 +207,29 @@ export function ListCard({ list }: ListCardProps) {
 
 ---
 
+## Active Builds
+
+### Redraft Leagues (in progress)
+- Spec (LAW): docs/specs/spec-redraft-leagues.md (v2.6)
+- Delivery plan: docs/specs/delivery-plan-redraft-leagues.md (v1.2)
+- Progress/memory: docs/specs/PROGRESS-leagues.md — read at session start, update at session end
+  (not yet created — first Architect session should create it, per delivery plan §9)
+- The spec wins every disagreement. If code and spec conflict, the code is wrong.
+  If the spec seems wrong or ambiguous: STOP, write the question + your recommendation
+  to PROGRESS under "Spec questions". Never improvise around the spec.
+- Server-authoritative always: clients never compute scores or write picks directly.
+  RPCs are SECURITY DEFINER with search_path=''; RLS exactly per spec §12.
+- Time only via TimeProvider; stats only via StatsProvider (spec §23, plan M0).
+  No raw Date.now() or fetch in league logic.
+- Never weaken: audit-log immutability (§12.12), lock semantics (§7.3.4/§11.2),
+  scoring-snapshot reads (§7.3.3), §22.6 load gates.
+- Definition of Done = delivery plan §2.3: tests green (shown, not claimed),
+  checklists §8.1–8.4 pass for schema/RLS/RPC/realtime work, PROGRESS updated,
+  small commit citing the spec §.
+
+---
+
+
 ## Commands
 
 ```bash
