@@ -16,19 +16,9 @@ extra_search_path = ["public", "extensions"]
 # The maximum number of rows returns from a view, table, or stored procedure. Limits payload size
 # for accidental or malicious requests.
 max_rows = 1000
-# Controls whether new tables, views, sequences and functions created in the `public` schema by
-# `postgres` are reachable through the Data API roles (`anon`, `authenticated`, `service_role`)
-# without explicit GRANTs. When unset, new entities are NOT auto-exposed, matching the new cloud
-# default. Set to `true` to keep the legacy behaviour of auto-exposing new entities; this is
-# deprecated and the field is removed on 2026-10-30 once the always-revoked behaviour is permanent.
-#
-# Set to true for parity with the hosted FieldScout project (L.A0.5a): production was created
-# under the legacy model and grants table privileges to anon/authenticated (verified 2026-07-19
-# via information_schema.role_table_grants on player_stats) — RLS is the effective gate there.
-# Without this, every pgTAP policy test fails on missing grants instead of exercising RLS.
-# HEADS-UP: when the CLI removes this field (2026-10-30), the local bootstrap needs an explicit
-# grants strategy — see PROGRESS-leagues.md decision D18.
-auto_expose_new_tables = true
+# NOTE: the deprecated `auto_expose_new_tables` flag is intentionally absent (L.A0.5c, resolves
+# D18). API-role grants + default privileges are versioned in migration 037_explicit_api_grants.sql
+# instead, mirroring the hosted project's verified grant model — RLS is the effective gate (§12).
 
 [api.tls]
 # Enable HTTPS endpoints locally using a self-signed certificate.

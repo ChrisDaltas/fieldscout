@@ -174,7 +174,7 @@ Dependency order:
 
 ```
 L.A0.1 → L.A0.2a → { L.A0.2b, L.A0.3, L.A0.4 in parallel } → L.A0.6
-L.A0.5a → L.A0.5b   (schema lane, independent; L.A0.6 item 1c needs L.A0.5b)
+L.A0.5a → { L.A0.5b, L.A0.5c }   (schema lane, independent; L.A0.6 item 1c needs L.A0.5b)
 ```
 
 Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see header note and PROGRESS §3 Resolved).
@@ -233,12 +233,22 @@ Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see hea
 ### L.A0.5b — `nfl_weeks` migration + 2026 seed *(depends on L.A0.5a)*
 > Create the global NFL calendar. Read spec §12.20 (verbatim DDL), §23.3, §23.4, delivery plan §8.1–8.2, this doc §6 + D10.
 >
-> 1. `supabase/migrations/037_nfl_weeks.sql` per §6.
+> 1. `supabase/migrations/038_nfl_weeks.sql` per §6 *(was 037; renumbered when L.A0.5c took 037)*.
 > 2. Seed derivation: run `fetchSchedule(2026)` (day-granularity is sufficient — boundaries are day math) via a throwaway script; verify Week 1 against the published 2026 opener; write explicit `America/New_York`-derived TIMESTAMPTZ literals (mind the Nov 1, 2026 DST transition); include the derivation output in the PR description.
 > 3. Typegen committed — **re-append the hand-written alias block** in `src/types/database.ts` (§2).
 > 4. pgTAP: anon + authenticated can SELECT; INSERT/UPDATE/DELETE denied for both (no policies exist); PK holds.
 >
 > DoD additionally: staging-clone rehearsal noted per §8.1; broadcast-trigger line disposed via the D10 waiver (cite it).
+
+### L.A0.5c — Explicit grants strategy *(schema lane; depends on L.A0.5a; added 2026-07-19, origin: PROGRESS decision D18)*
+> Retire the deprecated `auto_expose_new_tables` CLI flag L.A0.5a used for prod grant-parity (field removed from the CLI 2026-10-30). Read delivery plan §8.1–8.2, PROGRESS D18.
+>
+> 1. Re-verify production's grant model matches D18 before touching anything (`information_schema.role_table_grants` across **all** public tables + `pg_default_acl`); **stop and report** if it differs.
+> 2. Version the model in `supabase/migrations/037_explicit_api_grants.sql`: catch-up `GRANT ALL` on the existing 001–036 surface + `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public` on tables/sequences/routines — production's exact `pg_default_acl` rows, so replaying the chain anywhere (fresh local reset, future re-provisioned hosted env on the no-auto-grant default) lands on prod's model. Idempotent no-op when pushed to prod itself.
+> 3. Remove the flag from `supabase/config.toml`; pgTAP test pins the grant surface (existing-table grants, default-ACL canary table/function, RLS-still-gates behavioral check).
+> 4. Proof: fresh `supabase db reset` runs 001–037 clean + `npm run test:db` green.
+>
+> **Consequence for every future leagues migration:** no per-object `GRANT` statements needed — new tables/functions auto-expose exactly as in prod, and RLS is the effective gate (§8.2's per-table pgTAP proves it, exactly as before). Deliberate narrowing (e.g. an internal service-role-only function) must be an explicit `REVOKE` in that migration. Side effect: **`nfl_weeks` renumbers 037 → 038** (§6, L.A0.5b).
 
 ### L.A0.6 — M0 gate harness (exit-criteria proof) *(depends on L.A0.2b, L.A0.3, L.A0.4, L.A0.5b)*
 > Prove the M0 exit criteria. Read delivery plan §3 M0 row, this doc §7 + D7/D11.
@@ -252,9 +262,11 @@ Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see hea
 
 ---
 
-## 6. Migration plan (only one in M0)
+## 6. Migration plan (two in M0)
 
-**`supabase/migrations/037_nfl_weeks.sql`** — spec §12.20 verbatim, repo conventions applied:
+**`supabase/migrations/037_explicit_api_grants.sql`** *(L.A0.5c, added 2026-07-19 — resolves D18)* — catch-up API-role grants for the 001–036 surface + `ALTER DEFAULT PRIVILEGES` mirroring production's verified default ACLs, replacing the deprecated `auto_expose_new_tables` local flag. No schema-shape change (typegen no-op). Details in the L.A0.5c task entry.
+
+**`supabase/migrations/038_nfl_weeks.sql`** *(was 037; renumbered when L.A0.5c took 037)* — spec §12.20 verbatim, repo conventions applied:
 
 - Banner comment citing spec §12.20 / plan M0.
 - `CREATE TABLE IF NOT EXISTS nfl_weeks (season INTEGER NOT NULL, week INTEGER NOT NULL, starts_at TIMESTAMPTZ NOT NULL, first_kickoff_at TIMESTAMPTZ, last_game_ends_at TIMESTAMPTZ, correction_window_ends_at TIMESTAMPTZ, PRIMARY KEY (season, week))` — column-for-column §12.20; **no additions, no omissions**.
