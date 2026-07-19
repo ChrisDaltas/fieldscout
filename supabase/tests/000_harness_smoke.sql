@@ -2,7 +2,7 @@
 -- pgTAP harness smoke test — L.A0.5a (M0 breakdown D9; delivery plan §8.2).
 --
 -- Proves the harness itself against an EXISTING table's policy — no new
--- schema is tested here (M0's nfl_weeks pgTAP lands with migration 037 in
+-- schema is tested here (M0's nfl_weeks pgTAP lands with migration 038 in
 -- L.A0.5b). Target: player_stats — world-readable via "Stats are viewable
 -- by everyone" (migration 005), no write policies (service-role managed,
 -- §8.2 deny-by-default).
