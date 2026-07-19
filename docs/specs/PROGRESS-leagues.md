@@ -6,8 +6,8 @@
 **Spec:** `docs/specs/spec-redraft-leagues.md` — v2.7 (LAW — see CLAUDE.md)
 **Delivery plan:** `docs/specs/delivery-plan-redraft-leagues.md` — v1.3
 **M0 task breakdown:** `docs/specs/tasks-M0-foundations.md` (Architect, 2026-07-18)
-**Last updated:** 2026-07-18
-**Updated by:** Architect — M0
+**Last updated:** 2026-07-19
+**Updated by:** Builder — L.A0.5a
 
 ---
 
@@ -17,7 +17,7 @@ Mirrors delivery plan §3. Update the Status column only — Contents/Exit crite
 
 | Milestone | Contents (spec refs) | Exit criteria | Status |
 |---|---|---|---|
-| **M0 — Foundations for testability** | `TimeProvider` abstraction; `StatsProvider` interface (§23.1); `SyntheticStatsProvider` + scenario library (§23.6); fixture recorder (2026 season); `nfl_weeks` seed (§12.20) | Recorded NFL week replays deterministically at 1×/4×/64×; every synthetic scenario (happy path, flex, postponement, mass-inactives, outage, in-window correction, post-window correction, charted-late, charted-revision) passes with zero external calls | 🟡 In progress (L.A0.1 done; L.A0.5a 🔴 blocked — §5 B1; next: L.A0.2a) |
+| **M0 — Foundations for testability** | `TimeProvider` abstraction; `StatsProvider` interface (§23.1); `SyntheticStatsProvider` + scenario library (§23.6); fixture recorder (2026 season); `nfl_weeks` seed (§12.20) | Recorded NFL week replays deterministically at 1×/4×/64×; every synthetic scenario (happy path, flex, postponement, mass-inactives, outage, in-window correction, post-window correction, charted-late, charted-revision) passes with zero external calls | 🟡 In progress (L.A0.1, L.A0.5a done; next: L.A0.2a + L.A0.5b) |
 | **M1 — League foundation** *(Phase A)* | L.A1–L.A2; v2.0 settings catalog; scoring snapshot; `league_weeks`; identity contract + seat-targeted invites + `team_managers` stints (§7.2/§7.2.1/§12.22–23); scoring templates + picker UX (6 parity only — Chris 2026-07-18, spec v2.7; Alpha/Ultra cards return when funded); DL/Hot Swap naming | Phase A gate; snapshot present from draft start; settings round-trip tested; template parity tests (5 canonical player-weeks/platform); *Alpha/Ultra backtest deferred — spec v2.7, advanced stats punted until funded* | ⬜ Not started |
 | **M2 — Snake draft engine** *(Phase B)* | L.B1–L.B4; pause bookkeeping; K/D-ST autopick deferral; SKIP-LOCKED `draft-tick`; Broadcast-from-DB (§9.2); Mock Draft Mode (snake) | Phase B gate; 25 concurrent bot snake drafts, zero duplicates/stuck clocks; reconnect <2s; solo mock snake draft E2E | ⬜ Not started |
 | **M3 — Auction engine** *(Phase C)* | L.C1; endgame rules & solvency invariant (§8.6.7–8); mock auctions | Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E | ⬜ Not started |
@@ -41,7 +41,7 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 - [ ] **L.A0.2b** — ingestion seam: `syncLiveStats` consumes injected provider + time (single caller: sync-live cron route)
 - [ ] **L.A0.3** — `SyntheticStatsProvider` (§23.6) + scenario library, versioned in-repo: happy path · flexed/moved kickoff · postponed game · mass-inactives Sunday · provider outage (`stats_degraded` via `DegradationTracker`) · in-window correction · post-window correction (flagged, not auto-applied) · charted feed late · charted feed revises after posting *(charted scenarios use placeholder keys, D15)*
 - [ ] **L.A0.4** — Fixture recorder + replay provider + `record:fixtures` CLI — captures live 2026-season provider responses + injury/inactive feeds to replayable files *(sleeper_free recordings carry no real-time official inactives/kickoff timestamps; nflverse back-fill per Q1 resolution/D16)*
-- [ ] **L.A0.5a** — local Supabase stack + pgTAP bootstrap (first in repo) *(🔴 blocked — §5 B1: no container runtime on the dev machine)*
+- [x] **L.A0.5a** — local Supabase stack + pgTAP bootstrap (first in repo) *(2026-07-19; B1 resolved — Docker Desktop installed; CLI pinned as devDependency)*
 - [ ] **L.A0.5b** — `nfl_weeks` migration 037 + 2026 seed (§12.20)
 - [ ] **L.A0.6** — M0 gate harness: recorded week replays deterministically at 1×/4×/64× (D11 reading); all nine synthetic scenarios pass with zero external calls; calendar assertion against seeded `nfl_weeks`
 
@@ -89,6 +89,10 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 **2026-07-18 — Builder (L.A0.1):**
 - **D17** `VirtualClock` takes an injectable `wallClock: TimeProvider` (defaults `systemTime`) as its paced-mode wall reference — the class itself contains no raw clock reads (D3's single disable stays in `systemTime` only) and 1×/4×/64× pacing tests assert the wall→virtual mapping exactly against a stub wall instead of sleep-and-tolerance. The D3 lint ban covers test files under `src/lib/leagues/**` too — tests read time the same way engine code does.
 
+**2026-07-19 — Builder (L.A0.5a):**
+- **D18** Local stack sets `auto_expose_new_tables = true` (supabase/config.toml) for grant-parity with production: the hosted project was created under Supabase's legacy model and grants table privileges to `anon`/`authenticated` (verified via `information_schema.role_table_grants` on `player_stats`) — RLS is the effective gate. Without the flag, the new CLI default revokes API-role grants locally and every pgTAP policy test fails on missing grants instead of exercising RLS. **Heads-up:** the CLI removes this field 2026-10-30 (always-revoked becomes permanent) — before then the local bootstrap needs an explicit grants strategy, and any future re-provisioned/hosted environment lands on the new no-auto-grant default, so leagues migrations should not silently rely on auto-grants forever.
+- **D19** pgTAP harness conventions: Supabase CLI pinned as a devDependency (`supabase@2.109.1`, per B1 notes — no global install); tests live in `supabase/tests/*.sql` (pgTAP, begin/plan/finish/rollback); run via `npm run test:db` (`supabase test db`); local Postgres pinned `major_version = 17` matching hosted 17.6.
+
 **2026-07-18 — Architect (M0), after Chris resolved Q1/Q2:**
 - **D15** Advanced stats punted (Q2): `STAT_KEYS` seeds `core_box` only; the `tracking`/`charted` tiers keep their machinery (types, two-phase timing, revision paths) proven via clearly-marked placeholder keys (e.g. `example_charted_yards`) in the registry, synthetic scenarios, and fixtures — M0 gate unchanged (all nine scenarios), zero product key names baked in. Real keys arrive later as a §23.5 one-PR data task.
 - **D16** nflverse supplement (Q1): adapter work lands with the first runtime consumer of kickoffs, not M0; nflverse schedule/inactives data is retroactively fetchable so the 2026 fixture library back-fills any time; accepted limitation — back-fill loses inactives arrival timing (synthetic covers that per §23.1).
@@ -99,7 +103,7 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 
 *Anything currently stopping forward progress — a spec question awaiting an answer, a prerequisite phase not yet landed, a flaky test blocking a merge, an infra limit. Delete once resolved.*
 
-**B1 — L.A0.5a blocked: no container runtime on the dev machine (2026-07-18, Builder).** The Supabase local stack (`supabase start` / `db reset` / `test db`) hard-requires Docker or a Docker-API-compatible runtime. The machine has none: no Docker Desktop, no colima/OrbStack/podman/lima, no docker socket, no Homebrew to install one, no `supabase` CLI (global or devDependency), and no local Postgres (`psql` absent — so no side-door for the migration chain or pg_prove either). Every verifiable deliverable of L.A0.5a — the fresh-reset run of 001–036 and the pgTAP smoke test via `supabase test db` (D9) — executes inside that stack, and DoD §2.3 requires green shown, not claimed, so no bootstrap files were committed unverified. **Needs Chris:** install a container runtime — Docker Desktop is the most-tested path with the Supabase CLI and free at this team size; OrbStack (free for personal use) or colima (free OSS, needs Homebrew) also work — then re-run L.A0.5a unchanged (recommend `npm i -D supabase` in that session so the CLI version is pinned in-repo). Queued behind this: L.A0.5b and the L.A0.6(2c) calendar assertion. The engine lane (L.A0.2a → 2b/3/4) is unaffected and can proceed.
+*(none — B1 resolved 2026-07-19: Chris installed Docker Desktop; L.A0.5a re-run and landed. See session log.)*
 
 ---
 
@@ -109,6 +113,7 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 
 | Date | Session | Shipped | Next |
 |---|---|---|---|
+| 2026-07-19 | Builder — L.A0.5a (re-run) | **B1 resolved** (Docker Desktop installed by Chris). Supabase CLI pinned as devDependency (2.109.1, per B1 notes); `supabase/config.toml` (PG 17 = hosted 17.6; `auto_expose_new_tables = true` for prod grant-parity — D18); fresh `supabase db reset` runs the full 001–036 chain clean (shown); pgTAP harness bootstrapped — `supabase/tests/000_harness_smoke.sql` proves an existing policy (player_stats world-readable SELECT, anon write denied 42501), 6/6 via `npm run test:db` (D19); lint + type-check + vitest green (49/49) | L.A0.5b (`nfl_weeks` migration 037 + seed) now unblocked; engine lane continues at L.A0.2a |
 | 2026-07-18 | Builder — L.A0.5a | **Halted on infra blocker (§5 B1), nothing landed but this note:** the machine has no Docker/colima/OrbStack/podman, no Homebrew, no `supabase` CLI, no local Postgres — the local stack can't start, so the 001–036 fresh-reset proof and the pgTAP smoke test (D9) are unrunnable and DoD §2.3's shown-green is impossible; committing unverified bootstrap would defeat the task | Chris installs a container runtime (Docker Desktop recommended), then re-run L.A0.5a unchanged. Engine lane (L.A0.2a) can proceed in parallel |
 | 2026-07-18 | Builder — L.A0.1 | `TimeProvider` + `systemTime` + `VirtualClock` (step + wall-paced 1×/4×/64×, injectable wall reference — D17) in `src/lib/leagues/time/`; D3 ESLint time-guard on `src/lib/leagues/**` (deliberate-violation proof run); 13 colocated Vitest tests; lint/type-check/full suite green (49/49) | L.A0.2a (StatsProvider contract) and L.A0.5a (local stack + pgTAP) — parallel lanes |
 | 2026-07-18 | Architect — M0 (cont.) | Q1 resolved (nflverse supplement, D16) + Q2 resolved (advanced stats were illustrative examples — punted until funded; core_box-only registry + placeholder-key machinery proof, D15); spec → v2.7, delivery plan → v1.3 (M1 Alpha/Ultra backtest deferred); breakdown de-gated; follow-up: v1 picker = 6 parity templates only (no teaser cards; spec/plan/M1 rows annotated) | All M0 tasks unblocked. Builders start L.A0.1 and L.A0.5a |

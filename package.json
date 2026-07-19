@@ -24,7 +24,8 @@
     "build:persona-context": "npx tsx scripts/build-persona-context.ts",
     "ingest:personas": "npx tsx scripts/ingest-persona-content.ts",
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:db": "supabase test db"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
@@ -75,6 +76,7 @@
     "postcss": "^8",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
+    "supabase": "^2.109.1",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.21.0",
     "typescript": "^5",
