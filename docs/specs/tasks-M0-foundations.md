@@ -285,7 +285,7 @@ No other schema changes in M0. In particular (D8): **no** `player_stats.advanced
 ## 8. Known gaps & notes for later milestones (not M0 work)
 
 - **Q1 — resolved (nflverse, D16):** the nflverse kickoff/inactives adapter lands with the first runtime consumer of kickoffs (locks/schedule milestone); the 2026 fixture library back-fills retroactively; `nfl_games` population is fed by it.
-- **Q2 — resolved (advanced stats punted; spec v2.7, D15):** real tracking/charted keys, Alpha/Ultra coefficients, calibration (OQ 17), and any vendor decision wait for funding. M1 Architect owns the 8-vs-6 template-picker question and re-cuts the M1 gate (delivery plan v1.3 already defers the Alpha/Ultra backtest).
+- **Q2 — resolved (advanced stats punted; spec v2.7, D15):** real tracking/charted keys, Alpha/Ultra coefficients, calibration (OQ 17), and any vendor decision wait for funding. Follow-up resolved same day: the v1 template picker ships the **6 parity templates only** (Chris, 2026-07-18) — no teaser cards; delivery plan v1.3 defers the Alpha/Ultra backtest and the M1 rows are annotated accordingly.
 - **RPC convention divergence:** existing repo RPCs use `SET search_path = public, pg_temp`; the leagues spec + CLAUDE.md mandate `SECURITY DEFINER SET search_path = ''` (§8.3). M0 ships no RPCs; **M1's first RPC must follow the spec form.**
 - **`nfl_games` is unwritten** — populating it (kickoffs, statuses) belongs to the milestone that first needs it at runtime, fed by the nflverse supplement (Q1 resolution, D16).
 - **`player_stats.advanced` JSONB** (§23.5) — added by the first milestone that persists advanced stats; with Q2's punt, none is scheduled until advanced stats are funded.
