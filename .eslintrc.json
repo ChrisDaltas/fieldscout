@@ -1,3 +1,21 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript", "prettier"]
+  "extends": ["next/core-web-vitals", "next/typescript", "prettier"],
+  "overrides": [
+    {
+      "files": ["src/lib/leagues/**"],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+            "message": "League-engine code reads time from an injected TimeProvider, never Date.now() (spec §23.1/§23.6; M0 D3). Use time.now().getTime()."
+          },
+          {
+            "selector": "NewExpression[callee.name='Date'][arguments.length=0]",
+            "message": "League-engine code reads time from an injected TimeProvider, never `new Date()` (spec §23.1/§23.6; M0 D3). Use time.now()."
+          }
+        ]
+      }
+    }
+  ]
 }
