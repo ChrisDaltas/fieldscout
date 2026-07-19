@@ -210,10 +210,10 @@ export function ListCard({ list }: ListCardProps) {
 ## Active Builds
 
 ### Redraft Leagues (in progress)
-- Spec (LAW): docs/specs/spec-redraft-leagues.md (v2.6)
+- Spec (LAW): docs/specs/spec-redraft-leagues.md (v2.6.1)
 - Delivery plan: docs/specs/delivery-plan-redraft-leagues.md (v1.2)
 - Progress/memory: docs/specs/PROGRESS-leagues.md — read at session start, update at session end
-  (not yet created — first Architect session should create it, per delivery plan §9)
+- M0 task breakdown (Architect, 2026-07-18): docs/specs/tasks-M0-foundations.md
 - The spec wins every disagreement. If code and spec conflict, the code is wrong.
   If the spec seems wrong or ambiguous: STOP, write the question + your recommendation
   to PROGRESS under "Spec questions". Never improvise around the spec.
