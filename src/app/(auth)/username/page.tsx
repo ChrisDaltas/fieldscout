@@ -15,15 +15,19 @@ import { createBrowserClient } from '@/lib/supabase/client'
 // 040's profiles_username_format_check (human pattern; case folded at save).
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{5,20}$/
 
+// Pre-selection placeholder shape assigned by handle_new_user at signup.
+// Reserved (R32, migration 050): selecting a placeholder-shaped name would
+// leave the account "pre-selection" forever — this page's gate and filtered
+// UPDATE both key on the shape — so it can never be explicitly chosen.
+const PLACEHOLDER_REGEX = /^user_[0-9a-f]{8}$/
+
 function validateUsername(value: string): string | null {
   if (value.length < 5) return 'Must be at least 5 characters'
   if (value.length > 20) return 'Must be 20 characters or fewer'
   if (!/^[a-zA-Z0-9_]+$/.test(value)) return 'Only letters, numbers, and underscores'
+  if (PLACEHOLDER_REGEX.test(value.toLowerCase())) return 'This username format is reserved'
   return null
 }
-
-// Pre-selection placeholder shape assigned by handle_new_user at signup.
-const PLACEHOLDER_REGEX = /^user_[0-9a-f]{8}$/
 
 export default function UsernamePage() {
   const router = useRouter()

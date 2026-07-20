@@ -26,7 +26,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(72);
+select plan(76);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -108,7 +108,10 @@ values
    '{"provider": "email", "providers": ["email"]}', '{"username": "Bad"}', now(), now()),
   ('00000000-0000-0000-0000-000000000000', '50000000-0000-4000-8000-000000000005',
    'authenticated', 'authenticated', 'pgtap-u5@fieldscout.local', 'x', now(),
-   '{"provider": "email", "providers": ["email"]}', '{"username": "evil-ai"}', now(), now());
+   '{"provider": "email", "providers": ["email"]}', '{"username": "evil-ai"}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '60000000-0000-4000-8000-000000000006',
+   'authenticated', 'authenticated', 'pgtap-u6@fieldscout.local', 'x', now(),
+   '{"provider": "email", "providers": ["email"]}', '{"username": "user_deadbeef"}', now(), now());
 
 select is(
   (select count(*) from profiles
@@ -134,6 +137,15 @@ select ok(
   (select username = 'user_50000000' from profiles
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
+
+-- R32 (migration 050): the placeholder shape is reserved — metadata matches
+-- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name
+-- must fall back to the id-derived placeholder. Reverting 050's
+-- handle_new_user to 049's body fails this test (049 would honor it).
+select ok(
+  (select username = 'user_60000000' from profiles
+   where id = '60000000-0000-4000-8000-000000000006'),
+  'placeholder-shaped signup metadata (user_deadbeef) gets the id-derived FALLBACK — metadata cannot claim the reserved shape (R32, 050)');
 
 -- ---------------------------------------------------------------------------
 -- C. team_count CHECK boundaries + roster_settings default golden pin
@@ -226,6 +238,10 @@ select lives_ok(
   $$ update profiles set username = 'pgtap-test-ai'
      where id = '30000000-0000-4000-8000-000000000003' $$,
   'persona-pattern handle accepted for a PRIVILEGED writer (Q7.1 exemption)');
+select lives_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  'placeholder-pattern handle accepted for a PRIVILEGED writer (R32 — the shape stays writable by the signup trigger/service paths)');
 
 select has_trigger('public', 'profiles', 'trg_guard_username_namespace',
   'namespace guard trigger installed');
@@ -267,6 +283,28 @@ select results_eq(
      select count(*) from w $$,
   $$ values (1::bigint) $$,
   'authenticated rename to a VALID human name still succeeds at the DB layer (Q7.2 documented residual — permanence is app-enforced until selection moves server-side)');
+
+-- R32 break probe (migration 050): explicitly selecting a placeholder-shaped
+-- name is rejected at the DB layer for client roles — 040's guard (persona
+-- pattern only) passes this, so the test fails against the pre-050 guard.
+select throws_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'authenticated user cannot select a placeholder-shaped username (R32 — the shape is reserved, so the /username filter can never re-match a chosen name)');
+
+-- ...and a legitimately-placeholder row still completes selection normally:
+-- this is the exact write shape of the /username page (own-row UPDATE
+-- filtered to the placeholder pattern) under the JWT of the selecting user.
+select set_config('request.jwt.claims',
+  '{"sub": "50000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
+select results_eq(
+  $$ with w as (update profiles set username = 'chosen_by_five'
+                where id = '50000000-0000-4000-8000-000000000005'
+                  and username ~ '^user_[0-9a-f]{8}$' returning 1)
+     select count(*) from w $$,
+  $$ values (1::bigint) $$,
+  'a genuine placeholder holder still completes selection via the filtered UPDATE (R32 — reservation does not break onboarding)');
 
 select * from finish();
 rollback;
