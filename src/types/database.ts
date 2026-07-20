@@ -514,6 +514,89 @@ export type Database = {
           },
         ]
       }
+      league_invites: {
+        Row: {
+          claimed_at: string | null
+          claimed_by: string | null
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          invited_email: string | null
+          invited_username: string | null
+          last_sent_at: string | null
+          league_id: string
+          max_uses: number
+          revoked_at: string | null
+          target_team_id: string | null
+          token: string
+          use_count: number
+        }
+        Insert: {
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string
+          created_by: string
+          expires_at?: string
+          id?: string
+          invited_email?: string | null
+          invited_username?: string | null
+          last_sent_at?: string | null
+          league_id: string
+          max_uses?: number
+          revoked_at?: string | null
+          target_team_id?: string | null
+          token?: string
+          use_count?: number
+        }
+        Update: {
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          invited_email?: string | null
+          invited_username?: string | null
+          last_sent_at?: string | null
+          league_id?: string
+          max_uses?: number
+          revoked_at?: string | null
+          target_team_id?: string | null
+          token?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_invites_claimed_by_fkey"
+            columns: ["claimed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_invites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_invites_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_invites_target_team_id_fkey"
+            columns: ["target_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_members: {
         Row: {
           faab_balance: number | null
@@ -581,6 +664,7 @@ export type Database = {
           format: string
           id: string
           invite_code: string | null
+          invite_slug: string | null
           is_active: boolean | null
           lineup_lock: string
           max_teams: number
@@ -609,6 +693,7 @@ export type Database = {
           format?: string
           id?: string
           invite_code?: string | null
+          invite_slug?: string | null
           is_active?: boolean | null
           lineup_lock?: string
           max_teams?: number
@@ -637,6 +722,7 @@ export type Database = {
           format?: string
           id?: string
           invite_code?: string | null
+          invite_slug?: string | null
           is_active?: boolean | null
           lineup_lock?: string
           max_teams?: number
@@ -2566,6 +2652,7 @@ export const Constants = {
 
 
 
+
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2577,6 +2664,7 @@ export const Constants = {
 export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
+export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
