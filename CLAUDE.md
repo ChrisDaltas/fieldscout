@@ -195,7 +195,7 @@ export function ListCard({ list }: ListCardProps) {
 
 4. **Rankings are a free feature.** Weekly rankings and pre-draft big boards are available to everyone with no per-week or per-position limit. (There is intentionally no Pro gate on rankings — do not add one.)
 
-5. **Leagues are Pro only.** Gate league creation and joining behind Pro check.
+5. **League creation and joining are free.** Pro-level league features come later. *(Ruled by Chris 2026-07-20 — supersedes the earlier "Leagues are Pro only" rule; see spec-redraft-leagues.md changelog v2.8.)*
 
 6. **Custom scoring systems are Pro only.** System defaults available to everyone.
 
