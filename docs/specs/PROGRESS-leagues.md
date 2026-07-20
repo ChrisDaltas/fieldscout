@@ -74,7 +74,7 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 **2026-07-18 — Architect (M0).** Full rationale in `docs/specs/tasks-M0-foundations.md` §3:
 - **D1** Engine home `src/lib/leagues/` — pure TS (no Next/Node APIs, no `process.env`, no `fetch` outside adapters) so it ports to Deno Edge Functions later.
 - **D2** `TimeProvider` = `{ now(): Date }`; `VirtualClock` has step mode + wall-paced 1×/4×/64×.
-- **D3** ESLint ban on `Date.now()`/argless `new Date()` in `src/lib/leagues/**` + `src/lib/sync/live-stats.ts` (mechanical, not convention).
+- **D3** ESLint ban on `Date.now()`/argless `new Date()` in `src/lib/leagues/**` + `src/lib/sync/live-stats.ts` (mechanical, not convention). *Annotations 2026-07-19: (R17) the shipped override covers `src/lib/leagues/**` only — live-stats.ts still legitimately reads wall time today (the D12 stamp); the guard extends to it with the L.A0.2b seam refactor. (R15) selector set widened beyond the original two forms (bare `Date()`, `globalThis.Date`/`globalThis.performance`, computed `Date['now']`, `performance.now()`, Date aliasing, spread-into-`new Date`); still lint-level, so exotic indirection (e.g. `Reflect.get`) remains uncatchable — the guard is a tripwire, not a proof.*
 - **D4** Spec's "`getInjuries/Inactives`" (§23.1) = two methods, `getInjuries` + `getInactives` (different shapes/cadences).
 - **D5** One canonical stat-key namespace seeded from Appendix B.1–B.5 (names pending Q2); `storage: 'column'|'advanced'|'deferred'`; keys without columns not persisted in M0; capability *gating* starts M1.
 - **D6** Fixture format: JSONL.gz in-repo, `{t, method, args, ok, status, body}`, replay = latest response ≤ virtual now.

@@ -46,6 +46,12 @@ export class VirtualClock implements TimeProvider {
   /** Jump the clock to virtual time `t`. Throws if `t` is in the virtual past. */
   advanceTo(t: Date): void {
     const targetMs = t.getTime()
+    // R16: an Invalid Date yields NaN, which passes the `<` guard (NaN
+    // comparisons are always false), anchors the clock at NaN, and silently
+    // disables the monotonic contract for every later call. Reject it.
+    if (!Number.isFinite(targetMs)) {
+      throw new RangeError('VirtualClock.advanceTo: target must be a valid Date, got Invalid Date')
+    }
     const currentMs = this.nowMs()
     if (targetMs < currentMs) {
       throw new RangeError(

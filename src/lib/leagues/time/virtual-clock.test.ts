@@ -53,6 +53,17 @@ describe('VirtualClock — step mode (speed 0)', () => {
     expect(() => clock.advanceBy(-1)).toThrow(RangeError)
     expect(clock.now().getTime()).toBe(T0.getTime() + 10_000) // unchanged after rejects
   })
+
+  it('rejects an Invalid Date target without corrupting the anchor (R16)', () => {
+    const clock = new VirtualClock(T0, { wallClock: stubWall().clock })
+    clock.advanceBy(10_000)
+
+    expect(() => clock.advanceTo(new Date('bogus'))).toThrow(RangeError)
+    // The monotonic contract survives the attempt: a genuinely-backwards
+    // target still throws and the clock still reads the pre-attempt instant.
+    expect(() => clock.advanceTo(T0)).toThrow(RangeError)
+    expect(clock.now().getTime()).toBe(T0.getTime() + 10_000)
+  })
 })
 
 describe('VirtualClock — wall-paced mode', () => {
