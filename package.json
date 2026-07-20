@@ -15,6 +15,7 @@
     "sync:splits": "npx tsx scripts/sync-splits.ts",
     "sync:auction": "npx tsx scripts/sync-auction.ts",
     "sync:sos": "npx tsx scripts/sync-sos.ts",
+    "record:fixtures": "npx tsx scripts/record-fixtures.ts",
     "sync:history": "python3 scripts/load-historical-stats.py",
     "sync:mock-stats": "npx tsx scripts/generate-mock-current-stats.ts",
     "seed:dev": "npx tsx scripts/seed-dev-user.ts",
