@@ -517,45 +517,87 @@ export type Database = {
       leagues: {
         Row: {
           created_at: string | null
+          deleted_at: string | null
           description: string | null
+          faab_budget: number
+          format: string
           id: string
           invite_code: string | null
           is_active: boolean | null
+          lineup_lock: string
           max_teams: number
           name: string
           owner_id: string
+          playoff_start_week: number
+          playoff_teams: number
+          regular_season_weeks: number
           roster_settings: Json
+          scoring_rules_snapshot: Json | null
           scoring_system_id: string | null
           season: number
+          settings: Json
+          status: string
+          team_count: number
+          trade_deadline_week: number | null
+          trade_review: string
           updated_at: string | null
+          waiver_type: string
         }
         Insert: {
           created_at?: string | null
+          deleted_at?: string | null
           description?: string | null
+          faab_budget?: number
+          format?: string
           id?: string
           invite_code?: string | null
           is_active?: boolean | null
+          lineup_lock?: string
           max_teams?: number
           name: string
           owner_id: string
+          playoff_start_week?: number
+          playoff_teams?: number
+          regular_season_weeks?: number
           roster_settings?: Json
+          scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
           season: number
+          settings?: Json
+          status?: string
+          team_count?: number
+          trade_deadline_week?: number | null
+          trade_review?: string
           updated_at?: string | null
+          waiver_type?: string
         }
         Update: {
           created_at?: string | null
+          deleted_at?: string | null
           description?: string | null
+          faab_budget?: number
+          format?: string
           id?: string
           invite_code?: string | null
           is_active?: boolean | null
+          lineup_lock?: string
           max_teams?: number
           name?: string
           owner_id?: string
+          playoff_start_week?: number
+          playoff_teams?: number
+          regular_season_weeks?: number
           roster_settings?: Json
+          scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
           season?: number
+          settings?: Json
+          status?: string
+          team_count?: number
+          trade_deadline_week?: number | null
+          trade_review?: string
           updated_at?: string | null
+          waiver_type?: string
         }
         Relationships: [
           {
@@ -2375,6 +2417,7 @@ export const Constants = {
 } as const
 
 
+
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2385,6 +2428,7 @@ export const Constants = {
 
 export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
+export type League = Database['public']['Tables']['leagues']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']

@@ -77,22 +77,12 @@ function SettingsSkeleton() {
 
 /* ------------------------------- Profile ------------------------------- */
 
-function validateUsername(value: string): string | null {
-  if (value.length < 3) return 'Username must be at least 3 characters'
-  if (value.length > 30) return 'Username must be 30 characters or fewer'
-  if (!/^[a-zA-Z]/.test(value)) return 'Username must start with a letter'
-  if (!/^[a-zA-Z0-9_]+$/.test(value))
-    return 'Only letters, numbers, and underscores'
-  return null
-}
-
 function ProfileCard({ profile }: { profile: Profile }) {
   const supabase = createBrowserClient()
   const setProfile = useAuthStore((s) => s.setProfile)
   const { toast } = useToast()
 
   const [displayName, setDisplayName] = useState(profile.display_name ?? '')
-  const [username, setUsername] = useState(profile.username)
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -100,7 +90,6 @@ function ProfileCard({ profile }: { profile: Profile }) {
   // replace the store profile — don't clobber in-progress edits for those).
   useEffect(() => {
     setDisplayName(profile.display_name ?? '')
-    setUsername(profile.username)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id])
 
@@ -108,19 +97,13 @@ function ProfileCard({ profile }: { profile: Profile }) {
     e.preventDefault()
     setError(null)
 
-    const nextUsername = username.trim().replace(/^@/, '')
-    const usernameError = validateUsername(nextUsername)
-    if (usernameError) {
-      setError(usernameError)
-      return
-    }
-
     setIsSaving(true)
+    // Usernames are permanent (spec-redraft-leagues v2.8, Q4 ruling) — the
+    // form edits display_name only; username renders read-only below.
     const { data, error: updateError } = await supabase
       .from('profiles')
       .update({
         display_name: displayName.trim() || null,
-        username: nextUsername.toLowerCase(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', profile.id)
@@ -128,11 +111,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
       .single()
 
     if (updateError) {
-      setError(
-        updateError.code === '23505'
-          ? 'That username is already taken'
-          : updateError.message,
-      )
+      setError(updateError.message)
       setIsSaving(false)
       return
     }
@@ -173,15 +152,12 @@ function ProfileCard({ profile }: { profile: Profile }) {
               <Label htmlFor="settings-username">Username</Label>
               <Input
                 id="settings-username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                minLength={3}
-                maxLength={30}
-                autoComplete="username"
+                value={`@${profile.username}`}
+                readOnly
+                aria-readonly="true"
               />
               <p className="text-[11px] font-medium text-n-3">
-                Shown with your rankings and posts.
+                Usernames are permanent. Shown with your rankings and posts.
               </p>
             </div>
           </div>

@@ -35,7 +35,9 @@ interface DevUserSpec {
 }
 
 const USERS: DevUserSpec[] = [
-  { email: 'dev@fieldscout.local', username: 'dev', isPro: false },
+  // 'dev_user' not 'dev': usernames are 5–20 chars (spec v2.8, Q4/Q7 rulings;
+  // migration 040 CHECK). Email stays the stable login key on reruns.
+  { email: 'dev@fieldscout.local', username: 'dev_user', isPro: false },
   { email: 'dev-pro@fieldscout.local', username: 'devpro', isPro: true },
 ]
 

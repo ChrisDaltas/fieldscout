@@ -10,21 +10,49 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createBrowserClient } from '@/lib/supabase/client'
 
-const USERNAME_REGEX = /^[a-zA-Z][a-zA-Z0-9_]{2,29}$/
+// Username contract (spec-redraft-leagues v2.8/v2.8.1, Q4 ruling): 5–20 chars,
+// letters/numbers/underscores, permanent after selection. Mirrors migration
+// 040's profiles_username_format_check (human pattern; case folded at save).
+const USERNAME_REGEX = /^[a-zA-Z0-9_]{5,20}$/
 
 function validateUsername(value: string): string | null {
-  if (value.length < 3) return 'Must be at least 3 characters'
-  if (value.length > 30) return 'Must be 30 characters or fewer'
-  if (!/^[a-zA-Z]/.test(value)) return 'Must start with a letter'
+  if (value.length < 5) return 'Must be at least 5 characters'
+  if (value.length > 20) return 'Must be 20 characters or fewer'
   if (!/^[a-zA-Z0-9_]+$/.test(value)) return 'Only letters, numbers, and underscores'
   return null
 }
+
+// Pre-selection placeholder shape assigned by handle_new_user at signup.
+const PLACEHOLDER_REGEX = /^user_[0-9a-f]{8}$/
 
 export default function UsernamePage() {
   const router = useRouter()
   const supabase = createBrowserClient()
 
   const [username, setUsername] = useState('')
+
+  // Q7.2 (spec v2.8.1): usernames are permanent after explicit selection —
+  // this page is the ONE sanctioned selection write. Users who already
+  // selected get routed out; only placeholder holders may use it.
+  useEffect(() => {
+    let cancelled = false
+    const gate = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (!cancelled && profile && !PLACEHOLDER_REGEX.test(profile.username)) {
+        router.replace('/app')
+      }
+    }
+    gate()
+    return () => {
+      cancelled = true
+    }
+  }, [supabase, router])
   const [validationError, setValidationError] = useState<string | null>(null)
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [isChecking, setIsChecking] = useState(false)
@@ -81,7 +109,9 @@ export default function UsernamePage() {
       return
     }
 
-    const { error: updateError } = await supabase
+    // Belt for the mount gate: the write itself only applies while the row
+    // still holds the pre-selection placeholder (Q7.2 — one selection write).
+    const { data: updated, error: updateError } = await supabase
       .from('profiles')
       .update({
         username: username.toLowerCase(),
@@ -89,6 +119,14 @@ export default function UsernamePage() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id)
+      .filter('username', 'match', '^user_[0-9a-f]{8}$')
+      .select('id')
+
+    if (!updateError && (updated?.length ?? 0) === 0) {
+      // Username was already selected (e.g. in another tab) — nothing written.
+      router.replace('/app')
+      return
+    }
 
     if (updateError) {
       setError(
@@ -139,8 +177,8 @@ export default function UsernamePage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                minLength={3}
-                maxLength={30}
+                minLength={5}
+                maxLength={20}
                 autoComplete="username"
                 autoFocus
                 className="pr-10"
@@ -167,7 +205,7 @@ export default function UsernamePage() {
               </p>
             )}
             <p className="text-[11px] font-medium text-n-3">
-              3-30 characters. Letters, numbers, and underscores. Must start with a letter.
+              5–20 characters. Letters, numbers, and underscores. Usernames are permanent.
             </p>
           </div>
           <div className="pt-1">
