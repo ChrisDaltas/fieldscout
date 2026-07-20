@@ -29,7 +29,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(77);
+select plan(79);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -317,6 +317,25 @@ select results_eq(
      select count(*) from w $$,
   $$ values (1::bigint) $$,
   'a genuine placeholder holder still completes selection via the filtered UPDATE (R32 — reservation does not break onboarding)');
+
+-- R34: exercise the guard trigger's ANON branch. A plain `set role anon`
+-- write is RLS-filtered to 0 rows before the trigger can fire (probed in
+-- review), so run as postgres (RLS-exempt) with anon JWT claims —
+-- auth.role() reads the claim, so the guard sees 'anon'. A future guard
+-- rewrite that splits the role IN-list loses this coverage loudly now.
+reset role;
+select set_config('request.jwt.claims', '{"role": "anon"}', true);
+
+select throws_ok(
+  $$ update profiles set username = 'sneaky-ai'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'anon-context write of a *-ai handle blocked (guard anon branch, R34)');
+select throws_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'anon-context write of a placeholder-shaped handle blocked (guard anon branch, R34/R32)');
 
 select * from finish();
 rollback;
