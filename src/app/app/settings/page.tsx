@@ -154,8 +154,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
                 id="settings-username"
                 value={`@${profile.username}`}
                 readOnly
-                disabled
-                autoComplete="username"
+                aria-readonly="true"
               />
               <p className="text-[11px] font-medium text-n-3">
                 Usernames are permanent. Shown with your rankings and posts.

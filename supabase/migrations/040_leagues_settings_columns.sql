@@ -37,10 +37,14 @@
 --    app-enforced (settings field display-only) until selection moves
 --    server-side. Documented residual: direct-API renames to *valid human*
 --    names remain possible until then.
---    handle_new_user needs no change: signup passes no username metadata
---    (fallback 'user_' || 8 hex chars satisfies the human pattern), and its
---    WHEN OTHERS handler means even hostile metadata cannot break signup —
---    the profile row is skipped with a warning (pinned in pgTAP 005).
+--    handle_new_user is hardened in migration 049 (NOT here — 048 re-replaces
+--    the function after this file runs, so the fix must post-date 048): the
+--    signup trigger runs with auth.role() NULL, so WITHOUT 049 an anonymous
+--    GoTrue signup carrying user_metadata.username = 'evil-ai' would mint a
+--    persona-pattern handle past this guard (found + reproduced in review).
+--    049 makes the trigger honor metadata usernames only when they match the
+--    human pattern, falling back to 'user_' || 8 hex otherwise (pinned in
+--    pgTAP 005).
 --
 -- Grants: none — per the 037 default-ACL model (D23) grants are uniform and
 -- RLS is the gate; no policy changes in this migration (041 owns the §12.1
@@ -55,9 +59,13 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. citext (needed by 043's CITEXT columns; 001's pgcrypto style)
+-- 1. citext (needed by 043's CITEXT columns). Installed WITH SCHEMA extensions
+--    per platform convention — Supabase's advisor WARNs on extension_in_public
+--    (deliberate divergence from 001's schema-less pgcrypto form; the
+--    extensions schema exists on local and hosted, and the default
+--    search_path includes it, so CITEXT columns resolve unqualified).
 -- ----------------------------------------------------------------------------
-CREATE EXTENSION IF NOT EXISTS "citext";
+CREATE EXTENSION IF NOT EXISTS "citext" WITH SCHEMA extensions;
 
 -- ----------------------------------------------------------------------------
 -- 2. Spec §12.1 ALTER TABLE leagues (verbatim)
@@ -86,7 +94,20 @@ ALTER TABLE leagues
 DO $$
 DECLARE
   v_count bigint;
+  v_current_default text;
 BEGIN
+  -- Re-application safety (drift repair / migration-repair re-push): if the
+  -- canonical default is already in place, this whole section is a no-op —
+  -- don't fail the rows-must-not-exist gate for a swap that already happened
+  -- (ALTER ... SET DEFAULT never touches existing rows anyway).
+  SELECT pg_get_expr(d.adbin, d.adrelid) INTO v_current_default
+  FROM pg_attrdef d
+  JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+  WHERE d.adrelid = 'public.leagues'::regclass AND a.attname = 'roster_settings';
+  IF v_current_default LIKE '%starting_slots%' THEN
+    RETURN;
+  END IF;
+
   SELECT count(*) INTO v_count FROM leagues;
   IF v_count > 0 THEN
     RAISE EXCEPTION
@@ -96,7 +117,7 @@ BEGIN
 END $$;
 
 ALTER TABLE leagues ALTER COLUMN roster_settings SET DEFAULT
-  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 2}, {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 2}, {"key": "te", "label": "TE", "eligible": ["TE"], "count": 1}, {"key": "flex", "label": "FLEX (W/R/T)", "eligible": ["WR", "RB", "TE"], "count": 1}, {"key": "k", "label": "K", "eligible": ["K"], "count": 1}, {"key": "dst", "label": "D/ST", "eligible": ["DST"], "count": 1}], "bench": 6, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0}'::jsonb;
+  '{"starting_slots":[{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 2}, {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 2}, {"key": "te", "label": "TE", "eligible": ["TE"], "count": 1}, {"key": "flex", "label": "FLEX (W/R/T)", "eligible": ["WR", "RB", "TE"], "count": 1}, {"key": "k", "label": "K", "eligible": ["K"], "count": 1}, {"key": "dst", "label": "D/ST", "eligible": ["DST"], "count": 1}], "bench": 6, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0}'::jsonb;
 
 -- ----------------------------------------------------------------------------
 -- 4a. Username contract pre-checks (loud, actionable — never half-applied)
@@ -159,9 +180,13 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 BEGIN
+  -- 025's defensive TG_OP form: PostgreSQL does not guarantee OR evaluation
+  -- order, so OLD is never referenced in a branch that can run on INSERT.
   IF auth.role() IN ('authenticated', 'anon') THEN
-    IF NEW.username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$'
-       AND (TG_OP = 'INSERT' OR NEW.username IS DISTINCT FROM OLD.username) THEN
+    IF (TG_OP = 'INSERT' AND NEW.username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$')
+       OR (TG_OP = 'UPDATE'
+           AND NEW.username IS DISTINCT FROM OLD.username
+           AND NEW.username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$') THEN
       RAISE EXCEPTION '"-ai" usernames are reserved for FieldScout AI accounts.'
         USING errcode = 'check_violation';
     END IF;

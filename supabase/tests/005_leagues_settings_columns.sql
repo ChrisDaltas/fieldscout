@@ -26,7 +26,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(46);
+select plan(72);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -58,10 +58,34 @@ select col_default_is('public', 'leagues', 'lineup_lock', 'per_player_kickoff', 
 select col_default_is('public', 'leagues', 'settings', '{}', 'settings defaults to empty object');
 
 select col_not_null('public', 'leagues', 'status', 'status NOT NULL');
+select col_not_null('public', 'leagues', 'format', 'format NOT NULL');
 select col_not_null('public', 'leagues', 'team_count', 'team_count NOT NULL');
+select col_not_null('public', 'leagues', 'regular_season_weeks', 'regular_season_weeks NOT NULL');
+select col_not_null('public', 'leagues', 'playoff_teams', 'playoff_teams NOT NULL');
+select col_not_null('public', 'leagues', 'playoff_start_week', 'playoff_start_week NOT NULL');
+select col_not_null('public', 'leagues', 'waiver_type', 'waiver_type NOT NULL');
+select col_not_null('public', 'leagues', 'faab_budget', 'faab_budget NOT NULL');
+select col_not_null('public', 'leagues', 'trade_review', 'trade_review NOT NULL');
+select col_not_null('public', 'leagues', 'lineup_lock', 'lineup_lock NOT NULL');
+select col_not_null('public', 'leagues', 'settings', 'settings NOT NULL');
 select col_is_null('public', 'leagues', 'scoring_rules_snapshot', 'scoring_rules_snapshot nullable (pre-drafting, §7.3.8)');
 select col_is_null('public', 'leagues', 'trade_deadline_week', 'trade_deadline_week nullable ("none" allowed)');
 select col_is_null('public', 'leagues', 'deleted_at', 'deleted_at nullable (soft delete)');
+
+select col_type_is('public', 'leagues', 'status', 'text', 'status is TEXT');
+select col_type_is('public', 'leagues', 'format', 'text', 'format is TEXT');
+select col_type_is('public', 'leagues', 'team_count', 'integer', 'team_count is INTEGER');
+select col_type_is('public', 'leagues', 'regular_season_weeks', 'integer', 'regular_season_weeks is INTEGER');
+select col_type_is('public', 'leagues', 'playoff_teams', 'integer', 'playoff_teams is INTEGER');
+select col_type_is('public', 'leagues', 'playoff_start_week', 'integer', 'playoff_start_week is INTEGER');
+select col_type_is('public', 'leagues', 'waiver_type', 'text', 'waiver_type is TEXT');
+select col_type_is('public', 'leagues', 'faab_budget', 'integer', 'faab_budget is INTEGER');
+select col_type_is('public', 'leagues', 'trade_review', 'text', 'trade_review is TEXT');
+select col_type_is('public', 'leagues', 'trade_deadline_week', 'integer', 'trade_deadline_week is INTEGER');
+select col_type_is('public', 'leagues', 'lineup_lock', 'text', 'lineup_lock is TEXT');
+select col_type_is('public', 'leagues', 'settings', 'jsonb', 'settings is JSONB');
+select col_type_is('public', 'leagues', 'scoring_rules_snapshot', 'jsonb', 'scoring_rules_snapshot is JSONB');
+select col_type_is('public', 'leagues', 'deleted_at', 'timestamp with time zone', 'deleted_at is TIMESTAMPTZ');
 
 -- ---------------------------------------------------------------------------
 -- B. Seed real auth users → handle_new_user drives profiles (signup safety)
@@ -81,7 +105,10 @@ values
    '{"provider": "email", "providers": ["email"]}', '{}', now(), now()),
   ('00000000-0000-0000-0000-000000000000', '40000000-0000-4000-8000-000000000004',
    'authenticated', 'authenticated', 'pgtap-u4@fieldscout.local', 'x', now(),
-   '{"provider": "email", "providers": ["email"]}', '{"username": "Bad"}', now(), now());
+   '{"provider": "email", "providers": ["email"]}', '{"username": "Bad"}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '50000000-0000-4000-8000-000000000005',
+   'authenticated', 'authenticated', 'pgtap-u5@fieldscout.local', 'x', now(),
+   '{"provider": "email", "providers": ["email"]}', '{"username": "evil-ai"}', now(), now());
 
 select is(
   (select count(*) from profiles
@@ -95,9 +122,18 @@ select ok(
   'no-metadata signup gets the user_<8hex> fallback — passes the new CHECK');
 
 select ok(
-  exists (select 1 from auth.users where id = '40000000-0000-4000-8000-000000000004')
-  and not exists (select 1 from profiles where id = '40000000-0000-4000-8000-000000000004'),
-  'contract-violating metadata username: signup SURVIVES, profile skipped (handler)');
+  (select username = 'user_40000000' from profiles
+   where id = '40000000-0000-4000-8000-000000000004'),
+  'contract-violating metadata username: signup survives, profile gets the FALLBACK (049 — was profile-skipped pre-fix)');
+
+-- The Q7.1 critical pin (review-found bypass): the signup trigger runs with
+-- auth.role() NULL, so the 040 namespace guard cannot fire — 049's in-trigger
+-- validation is the only thing between public signup metadata and a minted
+-- '*-ai' handle. Reverting 049 to 048's body fails this test.
+select ok(
+  (select username = 'user_50000000' from profiles
+   where id = '50000000-0000-4000-8000-000000000005'),
+  'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
 
 -- ---------------------------------------------------------------------------
 -- C. team_count CHECK boundaries + roster_settings default golden pin
@@ -137,8 +173,8 @@ select policies_are('public', 'leagues',
   array['Leagues are viewable by members', 'League owners can manage'],
   '040 changes NO leagues policies — the 001 pair is intact for 041 to swap');
 
-select is((select count(*) from leagues), 3::bigint,
-  'service view: 3 seeded leagues exist (SELECT-sees pin before deny tests)');
+select is((select count(*) from leagues where name like 'pgtap-%'), 3::bigint,
+  'service view: 3 seeded fixture leagues exist (SELECT-sees pin before deny tests; scoped so real local rows never false-red this)');
 
 -- ---------------------------------------------------------------------------
 -- E. Username contract: constraint, index, boundaries (privileged context)
@@ -152,6 +188,11 @@ select has_index('public', 'profiles', 'profiles_username_lower_key',
   'lower(username) index exists (Q4: case-insensitive uniqueness)');
 select index_is_unique('public', 'profiles', 'profiles_username_lower_key',
   'lower(username) index is UNIQUE');
+select ok(
+  (select pg_get_indexdef(indexrelid) from pg_index
+   where indexrelid = 'public.profiles_username_lower_key'::regclass)
+    ~ 'lower\(',
+  'the index expression really is lower(username) — a plain (username) index under the same name fails here (review-proven gap)');
 
 select throws_ok(
   $$ update profiles set username = 'abcd'
@@ -196,14 +237,14 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "10000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
-select is((select count(*) from leagues), 3::bigint,
-  'owner sees own leagues (positive read — falsifiable against USING(false))');
+select is((select count(*) from leagues where name like 'pgtap-%'), 3::bigint,
+  'owner sees own fixture leagues (positive read — falsifiable against USING(false))');
 
 select set_config('request.jwt.claims',
   '{"sub": "20000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 
-select is((select count(*) from leagues), 0::bigint,
-  'non-owner non-member sees no leagues (001 policy still gates the new columns)');
+select is((select count(*) from leagues where name like 'pgtap-%'), 0::bigint,
+  'non-owner non-member sees no fixture leagues (001 policy still gates the new columns)');
 select results_eq(
   $$ with w as (update leagues set name = 'hijacked' returning 1)
      select count(*) from w $$,
@@ -215,6 +256,11 @@ select throws_ok(
      where id = '20000000-0000-4000-8000-000000000002' $$,
   '23514', null,
   'authenticated user cannot take a *-ai handle (namespace guard, Q7.1)');
+select throws_ok(
+  $$ update profiles set username = 'evil-twin-ai'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'multi-segment persona handle also blocked — the shape every live persona uses; a guard regex missing the (-segment)* group fails here (review-proven gap)');
 select results_eq(
   $$ with w as (update profiles set username = 'renamed_user'
                 where id = '20000000-0000-4000-8000-000000000002' returning 1)
