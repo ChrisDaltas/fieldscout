@@ -306,6 +306,42 @@ describe('syncLiveStats (seam integration)', () => {
     expect(summary.counts).toEqual({ 'finalized-wk1': 1, 'finalized-wk2': 1 })
   })
 
+  it('opens and closes the game window at the exact boundary instants — both edges inclusive (R24)', async () => {
+    // The window is [kickoffDay 00:00Z, kickoffDay + 36h], BOTH edges
+    // inclusive (live-stats.ts window check). T−1s / T / T+1s at each edge:
+    // an off-by-one in either comparison (>= → > or <= → <) flips one of
+    // these six instants and fails here.
+    const WINDOW_OPENS = Date.parse(`${GAME_DAY}T00:00:00Z`)
+    const WINDOW_CLOSES = WINDOW_OPENS + 36 * 60 * 60 * 1000 // 2026-09-21T12:00:00Z
+    const cases: Array<[number, boolean]> = [
+      [WINDOW_OPENS - 1000, false],
+      [WINDOW_OPENS, true],
+      [WINDOW_OPENS + 1000, true],
+      [WINDOW_CLOSES - 1000, true],
+      [WINDOW_CLOSES, true],
+      [WINDOW_CLOSES + 1000, false],
+    ]
+    for (const [instant, inWindow] of cases) {
+      banFetch()
+      const time = new VirtualClock(new Date(instant))
+      const { provider, getWeekStats } = stubProvider({ weekStats: () => [QB_STATS] })
+      const { client, upsertBatches } = fakeSyncClient()
+
+      const summary = await syncLiveStats(client, provider, SEASON, 2, time)
+
+      const label = new Date(instant).toISOString()
+      if (inWindow) {
+        expect(getWeekStats, label).toHaveBeenCalledExactlyOnceWith(SEASON, 2)
+        expect(upsertBatches, label).toHaveLength(1)
+        expect(summary.counts, label).toEqual({ 'live-wk2': 1 })
+      } else {
+        expect(getWeekStats, label).not.toHaveBeenCalled()
+        expect(upsertBatches, label).toEqual([])
+        expect(summary.counts, label).toEqual({ skipped: 1 })
+      }
+    }
+  })
+
   it('skips without polling stats when no window is open and nothing lingers', async () => {
     banFetch()
     const time = new VirtualClock(OUT_OF_WINDOW_NOW)
