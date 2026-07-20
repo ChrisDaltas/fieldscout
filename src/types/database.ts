@@ -655,6 +655,57 @@ export type Database = {
           },
         ]
       }
+      league_weeks: {
+        Row: {
+          finalized_at: string | null
+          id: string
+          league_id: string
+          median_score: number | null
+          reopened_by_action_id: string | null
+          season: number
+          status: string
+          waivers_processed_at: string | null
+          week: number
+        }
+        Insert: {
+          finalized_at?: string | null
+          id?: string
+          league_id: string
+          median_score?: number | null
+          reopened_by_action_id?: string | null
+          season: number
+          status?: string
+          waivers_processed_at?: string | null
+          week: number
+        }
+        Update: {
+          finalized_at?: string | null
+          id?: string
+          league_id?: string
+          median_score?: number | null
+          reopened_by_action_id?: string | null
+          season?: number
+          status?: string
+          waivers_processed_at?: string | null
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_weeks_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_weeks_season_week_fkey"
+            columns: ["season", "week"]
+            isOneToOne: false
+            referencedRelation: "nfl_weeks"
+            referencedColumns: ["season", "week"]
+          },
+        ]
+      }
       leagues: {
         Row: {
           created_at: string | null
@@ -2651,8 +2702,6 @@ export const Constants = {
 
 
 
-
-
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2666,6 +2715,7 @@ export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
+export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']
