@@ -54,6 +54,32 @@ const DEF_PA_TIERS = [
   'def_pa_35_plus',
 ]
 
+// R9: the `keyof Row` typing on `column` only rejects NON-EXISTENT columns —
+// a wrong-but-existing column (e.g. fg_40_49 → fg_made_50_plus, pat_made →
+// xp_attempted) passes type-check. This literal pins every key→column pair,
+// so a swapped mapping fails a test before L.A0.2b wires consumers. The two
+// divergence-documented mappings (fg_40_49, pat_made) are exactly the
+// swap-prone ones — see the registry comments (D20).
+const EXPECTED_COLUMN_MAPPINGS: Record<string, string> = {
+  pass_yards: 'pass_yards',
+  pass_tds: 'pass_tds',
+  interceptions: 'interceptions',
+  rush_yards: 'rush_yards',
+  rush_tds: 'rush_tds',
+  receptions: 'receptions',
+  receiving_yards: 'receiving_yards',
+  receiving_tds: 'receiving_tds',
+  fumbles_lost: 'fumbles_lost',
+  fg_40_49: 'fg_made_40_plus',
+  fg_50_plus: 'fg_made_50_plus',
+  pat_made: 'xp_made',
+  def_sack: 'def_sacks',
+  def_int: 'def_interceptions',
+  def_fumble_rec: 'def_fumble_recoveries',
+  def_td: 'def_tds',
+  def_safety: 'def_safeties',
+}
+
 const byKey = new Map(STAT_KEYS.map((def) => [def.key, def]))
 
 describe('STAT_KEYS registry', () => {
@@ -98,6 +124,20 @@ describe('STAT_KEYS registry', () => {
         expect(def.column, def.key).toBeUndefined()
       }
     }
+  })
+
+  it('pins every key→column mapping exactly (R9 — type-check cannot catch a swapped-but-existing column)', () => {
+    const columnMapped = Object.fromEntries(
+      STAT_KEYS.filter((def) => def.storage === 'column').map((def) => [def.key, def.column]),
+    )
+    expect(columnMapped).toEqual(EXPECTED_COLUMN_MAPPINGS)
+  })
+
+  it('carries exactly the two D15 placeholder keys (R14 — L.A0.3 scenarios depend on their presence)', () => {
+    const placeholders = STAT_KEYS.filter((def) => def.placeholder)
+      .map((def) => def.key)
+      .sort()
+    expect(placeholders).toEqual(['example_charted_yards', 'example_tracking_yards'])
   })
 
   it('marks every tracking/charted key as a D15 placeholder (Q2 punt — no real advanced product keys in M0)', () => {
