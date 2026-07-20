@@ -109,6 +109,28 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   { key: 'pass_300_bonus', label: '300-Yard Passing Game', tier: 'core_box', storage: 'deferred' },
   { key: 'rush_100_bonus', label: '100-Yard Rushing Game', tier: 'core_box', storage: 'deferred' },
 
+  // ── core_box · ingestion-continuity keys (L.A0.2b, D24 — D22 option
+  // "extend the adapter map + registry additively") ──────────────────────────
+  // Not Appendix B scoring categories: pre-existing player_stats columns the
+  // app's research/usage surfaces consume. They ride the canonical §23.1
+  // payload so the seam refactor — and record/replay, which only sees
+  // canonical method responses (D6) — reproduces today's ingestion writes
+  // exactly. §7.3.3 is untroubled: stat keys no rules reference are ignored.
+  // qb_sack_taken is the one spec-named key here (App B.3, box-score tier) —
+  // seeded now, ahead of D21's funded-Alpha/Ultra deferral, so the
+  // sacks_taken column never acquires a second canonical name.
+  { key: 'pass_attempts', label: 'Pass Attempts', tier: 'core_box', storage: 'column', column: 'pass_attempts' },
+  { key: 'pass_completions', label: 'Pass Completions', tier: 'core_box', storage: 'column', column: 'pass_completions' },
+  { key: 'qb_sack_taken', label: 'Sacks Taken', tier: 'core_box', storage: 'column', column: 'sacks_taken' },
+  { key: 'rush_attempts', label: 'Rush Attempts', tier: 'core_box', storage: 'column', column: 'rush_attempts' },
+  { key: 'targets', label: 'Targets', tier: 'core_box', storage: 'column', column: 'targets' },
+  { key: 'fg_made', label: 'FG Made (Total)', tier: 'core_box', storage: 'column', column: 'fg_made' },
+  { key: 'fg_attempted', label: 'FG Attempted', tier: 'core_box', storage: 'column', column: 'fg_attempted' },
+  { key: 'pat_attempted', label: 'PAT Attempted', tier: 'core_box', storage: 'column', column: 'xp_attempted' },
+  // The raw points-allowed number; the derived def_pa_<lo>_<hi> tier
+  // indicators above stay deferred (M1 scoring work) and feed off this.
+  { key: 'def_points_allowed', label: 'Points Allowed (Raw)', tier: 'core_box', storage: 'column', column: 'def_points_allowed' },
+
   // ── D15 placeholders — tier-machinery proof only, never product stats ─────
   { key: 'example_tracking_yards', label: 'Example Tracking Yards (placeholder)', tier: 'tracking', storage: 'advanced', placeholder: true },
   { key: 'example_charted_yards', label: 'Example Charted Yards (placeholder)', tier: 'charted', storage: 'advanced', placeholder: true },

@@ -23,6 +23,12 @@ export interface ProviderGame {
    *  resolved: nflverse supplements kickoffs from the locks/schedule
    *  milestone onward, D16). */
   kickoffAt: Date | null
+  /** YYYY-MM-DD calendar day of the game as the provider reports it — the
+   *  day-granularity signal tiers without kickoff timestamps still carry
+   *  (sleeper_free, Q1). The ingestion seam's game-window check runs on this
+   *  (L.A0.2b, D25); consumers with a real `kickoffAt` should prefer it.
+   *  null when even the day is unknown. */
+  gameDate: string | null
   status: 'scheduled' | 'live' | 'final' | 'postponed'
 }
 

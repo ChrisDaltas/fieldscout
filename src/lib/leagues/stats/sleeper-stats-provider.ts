@@ -3,10 +3,10 @@
  * (M0 task L.A0.2a).
  *
  * Wraps the Sleeper endpoints this repo already polls: the shared schedule
- * fetch (schedule.ts stays put — it also feeds bye-week and SOS syncs), a
- * re-implemented per-position weekly-stats fetch (live-stats.ts keeps its
- * private copy until the L.A0.2b seam refactor migrates it here; this task
- * changes no existing file), and injury designations from the roster dump.
+ * fetch (schedule.ts stays put — it also feeds bye-week and SOS syncs), the
+ * per-position weekly-stats fetch (live-stats.ts's private copy migrated
+ * here in the L.A0.2b seam refactor — this is now the only poller of that
+ * endpoint), and injury designations from the roster dump.
  *
  * Known free-tier limitations (PROGRESS Q1, resolved 2026-07-18): the
  * schedule feed is day-granularity — no kickoff timestamps — and there is no
@@ -45,21 +45,29 @@ import type {
  * part of the M1 core_box completeness re-verification.
  */
 export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
+  pass_att: 'pass_attempts',
+  pass_cmp: 'pass_completions',
   pass_yd: 'pass_yards',
   pass_td: 'pass_tds',
   pass_int: 'interceptions',
+  pass_sack: 'qb_sack_taken',
   pass_2pt: 'pass_2pt',
+  rush_att: 'rush_attempts',
   rush_yd: 'rush_yards',
   rush_td: 'rush_tds',
   rush_2pt: 'rush_2pt',
+  rec_tgt: 'targets',
   rec: 'receptions',
   rec_yd: 'receiving_yards',
   rec_td: 'receiving_tds',
   rec_2pt: 'rec_2pt',
   fum_lost: 'fumbles_lost',
+  fgm: 'fg_made',
+  fga: 'fg_attempted',
   fgm_40_49: 'fg_40_49',
   fgm_50p: 'fg_50_plus',
   xpm: 'pat_made',
+  xpa: 'pat_attempted',
   // R10 caveat: `xpmiss` is the one mapping NOT evidenced by live-stats'
   // STAT_MAP or SleeperProjectedStats — its only repo occurrence is a
   // projections-endpoint fixture, a different endpoint from the /stats
@@ -73,6 +81,7 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   fum_rec: 'def_fumble_rec',
   def_td: 'def_td',
   safe: 'def_safety',
+  pts_allow: 'def_points_allowed',
 }
 
 /**
@@ -115,8 +124,8 @@ interface SleeperWeeklyStatsRow {
   stats: Record<string, number | null> | null
 }
 
-/** Per-position weekly actuals — the same endpoint live-stats.ts polls; its
- *  private copy migrates here in L.A0.2b. */
+/** Per-position weekly actuals — migrated from live-stats.ts in L.A0.2b;
+ *  this adapter is now the endpoint's only poller. */
 async function fetchSleeperWeekStats(
   season: number,
   week: number,
@@ -177,6 +186,7 @@ export class SleeperStatsProvider implements StatsProvider {
       // Day-granularity feed — no kickoff timestamps at this tier (PROGRESS
       // Q1; nflverse supplements them from the locks/schedule milestone on).
       kickoffAt: null,
+      gameDate: game.date ?? null,
       status: mapSleeperGameStatus(game.status),
     }))
   }

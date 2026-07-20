@@ -1,79 +1,60 @@
-import { fetchKnownPlayerIds } from './projections'
-import { fetchSchedule } from './schedule'
-import type { SyncClient, SyncSummary } from './types'
+import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import type {
+  ProviderPlayerWeekStats,
+  StatsProvider,
+} from '@/lib/leagues/stats/stats-provider'
+import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 
-const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
+import { fetchKnownPlayerIds } from './projections'
+import type { SyncClient, SyncSummary } from './types'
 
 /** How long after kickoff day a game window stays open (late games, data
  *  settling). Two calendar days covers Sun late + Mon night finalization. */
 const WINDOW_MS = 36 * 60 * 60 * 1000
 
-interface SleeperWeeklyStatsRow {
-  player_id: string
-  stats: Record<string, number | null> | null
-}
+/**
+ * Canonical stat key → player_stats column, derived from the STAT_KEYS
+ * registry (single source of truth for storage mappings, D20/D24). The seam
+ * writes exactly these columns plus the two_point_conversions derivation
+ * below — the same surface the pre-seam STAT_MAP wrote (D22).
+ */
+export const STAT_COLUMN_BY_KEY: Readonly<Record<string, string>> = Object.fromEntries(
+  STAT_KEYS.filter((def) => def.storage === 'column' && def.column !== undefined).map(
+    (def) => [def.key, def.column as string],
+  ),
+)
 
-/** Sleeper actual-stat keys → player_stats columns. Values are summed when
- *  multiple Sleeper keys feed one column (2-point conversions). */
-const STAT_MAP: Record<string, string[]> = {
-  pass_attempts: ['pass_att'],
-  pass_completions: ['pass_cmp'],
-  pass_yards: ['pass_yd'],
-  pass_tds: ['pass_td'],
-  interceptions: ['pass_int'],
-  sacks_taken: ['pass_sack'],
-  rush_attempts: ['rush_att'],
-  rush_yards: ['rush_yd'],
-  rush_tds: ['rush_td'],
-  fumbles_lost: ['fum_lost'],
-  targets: ['rec_tgt'],
-  receptions: ['rec'],
-  receiving_yards: ['rec_yd'],
-  receiving_tds: ['rec_td'],
-  two_point_conversions: ['pass_2pt', 'rush_2pt', 'rec_2pt'],
-  fg_made: ['fgm'],
-  fg_attempted: ['fga'],
-  fg_made_40_plus: ['fgm_40_49'],
-  fg_made_50_plus: ['fgm_50p'],
-  xp_made: ['xpm'],
-  xp_attempted: ['xpa'],
-  def_sacks: ['sack'],
-  def_interceptions: ['int'],
-  def_fumble_recoveries: ['fum_rec'],
-  def_tds: ['def_td'],
-  def_safeties: ['safe'],
-  def_points_allowed: ['pts_allow'],
-}
+/** The canonical payload carries per-type 2-pt keys (storage deferred until
+ *  M1, D20); today's schema holds one summed column. The sum is a writer-side
+ *  storage derivation, byte-identical to the pre-seam STAT_MAP behavior. */
+const TWO_POINT_KEYS = ['pass_2pt', 'rush_2pt', 'rec_2pt'] as const
 
-function mapStats(stats: Record<string, number | null> | null): Record<string, number> {
+/**
+ * Canonical §23.1 stats payload → player_stats column values. Keys without a
+ * column mapping (storage 'deferred') are not persisted in M0 (D5); the
+ * `advanced` payload is likewise unpersisted until the milestone that adds
+ * the JSONB column (D8).
+ */
+export function toStatColumns(
+  stats: ProviderPlayerWeekStats['stats'],
+): Record<string, number> {
   const out: Record<string, number> = {}
-  if (!stats) return out
-  for (const [column, keys] of Object.entries(STAT_MAP)) {
-    let sum = 0
-    let seen = false
-    for (const key of keys) {
-      const v = Number(stats[key] ?? NaN)
-      if (Number.isFinite(v)) {
-        sum += v
-        seen = true
-      }
+  for (const [key, value] of Object.entries(stats)) {
+    if (typeof value !== 'number') continue
+    const column = STAT_COLUMN_BY_KEY[key]
+    if (column) out[column] = value
+  }
+  let twoPointSum = 0
+  let twoPointSeen = false
+  for (const key of TWO_POINT_KEYS) {
+    const value = stats[key]
+    if (typeof value === 'number') {
+      twoPointSum += value
+      twoPointSeen = true
     }
-    if (seen) out[column] = sum
   }
+  if (twoPointSeen) out.two_point_conversions = twoPointSum
   return out
-}
-
-async function fetchWeekStats(
-  season: number,
-  week: number,
-  position: string,
-): Promise<SleeperWeeklyStatsRow[]> {
-  const url = `https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular&position[]=${position}`
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`Weekly stats fetch failed (${position} wk${week}): ${res.status}`)
-  }
-  return (await res.json()) as SleeperWeeklyStatsRow[]
 }
 
 /**
@@ -92,29 +73,29 @@ export function weeksToFinalize(
 /** Fetch + upsert one week's box scores with the given live flag. */
 async function ingestWeek(
   supabase: SyncClient,
+  provider: StatsProvider,
   season: number,
   week: number,
   isLive: boolean,
   known: Set<string>,
+  time: TimeProvider,
 ): Promise<number> {
   const upserts: Array<Record<string, unknown>> = []
-  for (const pos of POSITIONS) {
-    const rows = await fetchWeekStats(season, week, pos)
-    for (const row of rows) {
-      if (!known.has(row.player_id)) continue
-      const mapped = mapStats(row.stats)
-      if (Object.keys(mapped).length === 0) continue
-      upserts.push({
-        player_id: row.player_id,
-        season,
-        week,
-        stat_type: 'weekly',
-        source: 'sleeper',
-        is_live: isLive,
-        updated_at: new Date().toISOString(),
-        ...mapped,
-      })
-    }
+  const rows = await provider.getWeekStats(season, week)
+  for (const row of rows) {
+    if (!known.has(row.playerId)) continue
+    const columns = toStatColumns(row.stats)
+    if (Object.keys(columns).length === 0) continue
+    upserts.push({
+      player_id: row.playerId,
+      season,
+      week,
+      stat_type: 'weekly',
+      source: provider.name, // 'sleeper' on the production path (D14)
+      is_live: isLive,
+      updated_at: time.now().toISOString(), // injected time, never the wall (D12)
+      ...columns,
+    })
   }
 
   const BATCH = 500
@@ -150,27 +131,36 @@ async function lingeringLiveWeeks(
 }
 
 /**
- * In-season live/box-score sync. During a game window it upserts the current
- * week's running numbers flagged is_live. Once the window closes (or for any
- * older week still flagged live) it runs one FINAL pass: re-fetches the
- * settled numbers and writes them with is_live=false, so finished games
- * never stay flagged in-progress. Outside the season it's a cheap no-op.
+ * In-season live/box-score sync, behind the §23.1 StatsProvider contract
+ * (L.A0.2b seam). During a game window it upserts the current week's running
+ * numbers flagged is_live. Once the window closes (or for any older week
+ * still flagged live) it runs one FINAL pass: re-fetches the settled numbers
+ * and writes them with is_live=false, so finished games never stay flagged
+ * in-progress. Outside the season it's a cheap no-op.
+ *
+ * All external reads go through `provider`; all time reads through `time`
+ * (D3) — so a FixtureReplayProvider + VirtualClock replays this exact path
+ * with zero external calls (M0 exit criterion 1).
  */
 export async function syncLiveStats(
   supabase: SyncClient,
+  provider: StatsProvider,
   season: number,
   currentWeek: number,
-  now: Date = new Date(),
+  time: TimeProvider,
 ): Promise<SyncSummary> {
   if (currentWeek < 1 || currentWeek > 18) {
     return { name: 'live-stats', counts: { skipped: 1 }, warnings: ['offseason — skipped'] }
   }
 
-  const games = await fetchSchedule(season)
-  const weekGames = games.filter((g) => g.week === currentWeek && g.date)
+  const games = await provider.getSchedule(season)
+  // The window check runs on the day-granularity gameDate (the sleeper tier
+  // has no kickoff timestamps — Q1/D25), exactly as the pre-seam code did.
+  const weekGames = games.filter((g) => g.week === currentWeek && g.gameDate)
   const inWindow = weekGames.some((g) => {
-    const kickoffDay = new Date(`${g.date}T00:00:00Z`).getTime()
-    return now.getTime() >= kickoffDay && now.getTime() <= kickoffDay + WINDOW_MS
+    const kickoffDay = new Date(`${g.gameDate}T00:00:00Z`).getTime()
+    const nowMs = time.now().getTime()
+    return nowMs >= kickoffDay && nowMs <= kickoffDay + WINDOW_MS
   })
 
   // Finalize any weeks still flagged live whose window is behind us.
@@ -189,15 +179,25 @@ export async function syncLiveStats(
   const counts: Record<string, number> = {}
 
   for (const week of finalize) {
-    counts[`finalized-wk${week}`] = await ingestWeek(supabase, season, week, false, known)
+    counts[`finalized-wk${week}`] = await ingestWeek(
+      supabase,
+      provider,
+      season,
+      week,
+      false,
+      known,
+      time,
+    )
   }
   if (inWindow) {
     counts[`live-wk${currentWeek}`] = await ingestWeek(
       supabase,
+      provider,
       season,
       currentWeek,
       true,
       known,
+      time,
     )
   }
 

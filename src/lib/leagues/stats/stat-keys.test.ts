@@ -78,6 +78,18 @@ const EXPECTED_COLUMN_MAPPINGS: Record<string, string> = {
   def_fumble_rec: 'def_fumble_recoveries',
   def_td: 'def_tds',
   def_safety: 'def_safeties',
+  // D24 ingestion-continuity keys (L.A0.2b) — pat_attempted → xp_attempted
+  // and qb_sack_taken → sacks_taken are the divergently-named, swap-prone
+  // pairs here.
+  pass_attempts: 'pass_attempts',
+  pass_completions: 'pass_completions',
+  qb_sack_taken: 'sacks_taken',
+  rush_attempts: 'rush_attempts',
+  targets: 'targets',
+  fg_made: 'fg_made',
+  fg_attempted: 'fg_attempted',
+  pat_attempted: 'xp_attempted',
+  def_points_allowed: 'def_points_allowed',
 }
 
 const byKey = new Map(STAT_KEYS.map((def) => [def.key, def]))
