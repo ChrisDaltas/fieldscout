@@ -26,7 +26,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(76);
+select plan(77);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -137,6 +137,15 @@ select ok(
   (select username = 'user_50000000' from profiles
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
+
+-- R31 (migration 051): the rejected metadata value must not resurface in
+-- display_name either — pre-051 this row got display_name = 'evil-ai'
+-- (laundered past the username validation; reproduced live in review).
+select is(
+  (select display_name from profiles
+   where id = '50000000-0000-4000-8000-000000000005'),
+  'user_50000000',
+  'rejected metadata username (evil-ai) does NOT reach display_name — it derives from the effective (fallback) username (R31, 051)');
 
 -- R32 (migration 050): the placeholder shape is reserved — metadata matches
 -- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name
