@@ -115,11 +115,11 @@ describe('SyntheticStatsProvider contract', () => {
 
   it('ships all nine §23.6 scenarios, versioned', () => {
     expect(SCENARIO_IDS).toHaveLength(9)
-    expect(SCENARIO_LIBRARY_VERSION).toBe(1)
+    expect(SCENARIO_LIBRARY_VERSION).toBe(2)
     for (const id of SCENARIO_IDS) {
       const scenario = makeScenario(id)
       expect(scenario.id).toBe(id)
-      expect(scenario.version).toBe(1)
+      expect(scenario.version).toBe(2)
       expect(scenario.seed).toBe(DEFAULT_SEED)
     }
   })

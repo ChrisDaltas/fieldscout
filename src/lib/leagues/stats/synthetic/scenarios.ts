@@ -19,8 +19,10 @@ import type {
 } from './scenario'
 
 /** Bump when any scenario's behavior changes (per-scenario `version` bumps
- *  with it). Fixture recordings and simulator runs pin against this. */
-export const SCENARIO_LIBRARY_VERSION = 1
+ *  with it). Fixture recordings and simulator runs pin against this.
+ *  v2 (R25): gameDate is now the ET calendar day of the kickoff, not the UTC
+ *  day — the SNF game's date moved Mon → Sun, matching the sleeper tier. */
+export const SCENARIO_LIBRARY_VERSION = 2
 
 export const DEFAULT_SEED = 20260920
 
@@ -89,7 +91,7 @@ function basePlayers(): SyntheticPlayerDef[] {
 function baseScenario(id: ScenarioId, seed: number): SyntheticScenario {
   return {
     id,
-    version: 1,
+    version: 2,
     seed,
     season: SEASON,
     week: WEEK,
