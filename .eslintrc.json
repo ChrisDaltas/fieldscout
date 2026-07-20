@@ -45,6 +45,14 @@
           {
             "selector": "NewExpression[callee.name='Date'] > SpreadElement",
             "message": "new Date(...spread) can be an argless wall-clock read at runtime (D3/R15). Pass explicit arguments or use the injected TimeProvider."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='Math'][callee.property.name='random']",
+            "message": "League-engine code uses the seeded deterministic PRNG (synthetic/prng.ts), never Math.random (spec §23.6; L.A0.3, D3 spirit)."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='Math'][callee.property.value='random']",
+            "message": "Math['random']() routes around the determinism guard (L.A0.3, D3 spirit). Use the seeded PRNG."
           }
         ]
       }
