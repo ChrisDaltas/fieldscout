@@ -1,7 +1,7 @@
 # PRD / Spec: Redraft Leagues + Custom Draft Engine
 
 **Feature:** Real, playable weekly redraft fantasy football leagues with a fully configurable draft room and an all-powerful, fully-audited commissioner.
-**Version:** 2.7.1 (Draft)
+**Version:** 2.8 (Draft)
 **Author:** Chris Daltas
 **Date:** July 16, 2026
 **Status:** Draft — ready for Claude Code build planning · v2.0 adds scale engineering, the schedule engine + Remix, the stats/NFL-data contract, game-day transaction locks, and operations. Companion doc: `docs/specs/delivery-plan-redraft-leagues.md` (implementation / QA / agent operating model). v2.1 adds the identity contract, seat-targeted invites, and the franchise/manager lifecycle (§7.2.1). v2.2 replaces open custom scoring with an 8-template v1 catalog and introduces **advanced-stat scoring** (air yards, YAC, yards after contact) via the FieldScout Alpha/Ultra templates (§7.3.3, §23.5, Appendix B). v2.3 promotes **Mock Draft Mode** to a core feature (§8.8) and pins the **scoring extensibility contract** — new stats become scorable without engine changes (§7.3.3, §23.5). v2.4 completes the UI inventory: every workflow, page, and control from v2.0–v2.3 is enumerated in §16 (routes/components extended; new §16.5 workflow & states audit). v2.5 adds the **`SyntheticStatsProvider`** (§23.6) so the entire pipeline — draft through live scoring through Alpha/Ultra — is buildable and demonstrably working before any stats vendor is paid. v2.6 locks v1 league sizes to **8–16** (18/20 and odd counts follow next season), makes email the primary invite channel for people without an account yet, sets the v1 playoff tiebreaker chain (Points For → Head-to-head → Points Against), and generalizes commissioner "Act as Manager" to any team, not just orphaned ones. v2.7 re-scopes advanced-stat scoring: the named tracking/charted stats are **illustrative examples**, deferred until a paid/owned real-time stats source is funded; v1 commits to the 6 parity templates plus the §7.3.3 extensibility contract, with the tier machinery proven on placeholder keys.
@@ -57,7 +57,7 @@ Research covered ESPN, Yahoo, Sleeper, Flock Fantasy, and Footballguys; cross-ch
 3. The commissioner has **complete live draft control**: pause/resume, undo (single or cascade), edit/reassign any pick, move a drafted player to another team, force a pick for a manager, and recover gracefully from disconnects.
 4. The league plays a full season: weekly H2H matchups, live scoring against the league scoring system, standings/tiebreakers, **waivers + FAAB**, **trades**, free agency, and playoffs.
 5. The commissioner can **override anything at any time** — scores, results, rosters, transactions, budgets, schedule — and **every override is captured in an immutable, league-visible audit log** with a required reason and before/after diff.
-6. Ship behind the existing **Pro** gate for league creation (joining is free), consistent with current business rules.
+6. League **creation and joining are both free** (v2.8 ruling, Chris 2026-07-20 — supersedes the earlier Pro gate on creation). Pro-level league features come later; CLAUDE.md Business Rule #5 updated to match.
 
 ### 3.2 Non-Goals (v1)
 - **Real money / entry fees / payouts.** No wallet, no LeagueSafe-style escrow. (Revisit post-v1; see Open Questions.)
@@ -153,20 +153,20 @@ Roles live in a new `league_members` table (§12): `commissioner`, `co_commissio
 | Field | Example | Job | Visible to |
 |---|---|---|---|
 | `profiles.display_name` | Jason Jones | The human name shown beside teams, chat, transactions, audit entries | League members |
-| `profiles.username` | `jasonjones1995` | Unique public handle (citext, 3–20 chars `[a-z0-9_]`): @-mentions, invite-by-username, public URLs (`/u/[username]`) | Anyone |
+| `profiles.username` | `jasonjones1995` | Unique public handle (**5–20 chars** `[a-z0-9_]`, case-insensitively unique via a `lower(username)` unique index — not citext; **permanent** after selection — v2.8/Q4 ruling. Persona/system-account charset exemption pending PROGRESS Q7): @-mentions, invite-by-username, public URLs (`/u/[username]`) | Anyone |
 | auth email | — | Login + email updates (invites, waiver results, trade offers, weekly recap, per notification prefs) | **No one in the league** — never rendered in league surfaces, exports, or system posts |
 
-League UI renders **Team name — display name (@username)**. Usernames are changeable (uniqueness enforced; league surfaces update live because every reference joins on `user_id`); the audit log stores `user_id`, so history survives renames. Email is the only private field.
+League UI renders **Team name — display name (@username)**. Usernames are **permanent** (v2.8/Q4 ruling — no renames after selection; the auto-generated pre-selection placeholder is not a selection). League surfaces join on `user_id` regardless, and the audit log stores `user_id`. Email is the only private field. *(The v2.7 text made usernames changeable; superseded.)*
 
 **Requirements**
-- **Create league** (Pro only — gate on `is_pro`): name, season, `team_count` ∈ {8, 10, 12, 14, 16} (v1 — see changelog v2.6), and a settings wizard (7.3). Creator becomes `commissioner` and gets a team.
+- **Create league** (free — v2.8 ruling; no `is_pro` gate): name, season, `team_count` ∈ {8, 10, 12, 14, 16} (v1 — see changelog v2.6), and a settings wizard (7.3). Creator becomes `commissioner` and gets a team.
 - **Invite** three ways (v2.1, email elevated v2.6), all funneling into one claim flow (link → sign-up/sign-in → seated):
   1. **League share link** (`leagues.invite_code`, already exists) — multi-use, rotatable, with an optional **custom slug** (`fieldscout.gg/join/<slug>`, unique, commissioner-set; falls back to the random code). Joins the claimer as a member the commissioner then attaches to a team (or auto-creates a team while open seats remain).
   2. **Seat-targeted invite by email** *(v1's primary path — most invitees don't have a FieldScout account yet)* — commissioner types an email address for a specific franchise ("You've been invited to manage **Team 4** in *Yardboats League*"); a `league_invites` row (§12.23) is created with `invited_email` set and a real email is sent with a claim link. Works identically whether the address belongs to an existing account or not: an existing user is prompted to sign in; a new visitor gets a **signup form with the email field pre-filled and locked** to the invited address (removes the mismatch failure mode entirely for the common case, E65). Claiming seats the user on that exact team and opens their first manager stint (§7.2.1) — this is how a replacement GM inherits a specific team.
   3. **Seat-targeted invite by username** — commissioner types `@tim_boris02` for an existing FieldScout user; same `league_invites` mechanics with `invited_username` set instead, plus an in-app/email notification. Requires the invitee already have an account, so it's the secondary path.
   4. **Seat-targeted invite by copyable link** — same token, no username/email restriction; commissioner shares it themselves (text, Slack, group chat).
 - Invites expire (default 14 days), are revocable, and every send/claim/revoke is recorded (the invite funnel of §16.4).
-- **Join** with invite code (free; not Pro-gated — matches current rule "Free: can join unlimited leagues but cannot create"). On join, a `teams` row is created for the manager with `league_id` set.
+- **Join** with invite code (free — v2.8: creation is free as well, so no Pro gate exists anywhere on the create/join surface). On join, a `teams` row is created for the manager with `league_id` set.
 - **Placeholder/managed teams.** Commissioner can create empty seats (a `teams` row owned by the commissioner, flagged `is_placeholder`) so the draft can run before everyone has joined; ownership can be reassigned to a real user later (audited).
 - **Roles.** Commissioner can promote a manager to `co_commissioner` (full powers, audited) or demote. Exactly one `commissioner`; multiple `co_commissioner` allowed. The original creator can never be removed by a co-commissioner.
 - **Kick/replace.** Commissioner can remove a manager at any time; what happens to the *franchise* is a first-class, explicit choice — **takeover · retire-and-succeed · vacate/autopilot** — defined in **§7.2.1**. All paths post-draft are audited overrides.
@@ -1337,7 +1337,7 @@ All mutations are Route Handlers (`app/api/...`, kebab-case) per `CLAUDE.md`; Zo
 
 ### 15.1 League & membership
 ```
-POST   /api/leagues                         create league (Pro-gated)
+POST   /api/leagues                         create league (free — v2.8; no Pro gate)
 GET    /api/leagues                         my leagues
 GET    /api/leagues/[id]                    league detail (members, settings, status)
 PATCH  /api/leagues/[id]                    update settings (commish; structural changes post-draft are overrides)
@@ -1427,7 +1427,7 @@ POST   /api/leagues/[id]/draft/queue/from-list/[listId]   load an attached list 
 
 ## 16. UI / Screens / Components
 
-Follows `docs/06-DESIGN-SYSTEM.md` (dark, Spotify-green accent, Inter, dense player rows, tier colors) and `docs/07-NAVIGATION-ARCHITECTURE.md` (Leagues nav item is Pro). Mobile-first; drag-and-drop must work on touch (reuse `@dnd-kit`).
+Follows `docs/06-DESIGN-SYSTEM.md` (dark, Spotify-green accent, Inter, dense player rows, tier colors) and `docs/07-NAVIGATION-ARCHITECTURE.md` (v2.8: the Leagues nav item is no longer Pro-gated — creation and joining are free). Mobile-first; drag-and-drop must work on touch (reuse `@dnd-kit`).
 
 ### 16.1 Routes (App Router)
 ```
@@ -1574,7 +1574,7 @@ Custom scoring editor (v1.1, §7.3.3) · standalone/multi-human mock lobbies (v1
 |---|---|---|---|---|
 | View public league summary | ✓ | ✓ | ✓ | ✓ |
 | View full league (rosters, chat, activity) | — | ✓ (member) | ✓ | ✓ |
-| Create league | — | — (needs Pro) | — | ✓ (Pro) |
+| Create league | sign-up first | ✓ (free — v2.8) | ✓ | ✓ |
 | Join via invite | sign-up first | ✓ | ✓ | ✓ |
 | Edit league settings | — | — | ✓ | ✓ |
 | Draft: pick/bid/queue for *own* team | — | ✓ | ✓ | ✓ |
@@ -1642,7 +1642,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 - In-season: lineups set & lock correctly; live scores match the league scoring system; matchups finalize; standings order by the configured tiebreakers; waivers/FAAB resolve; trades complete under each review mode; playoffs/bracket generate with byes/reseed.
 - **Commissioner can change a head-to-head result** (incl. via the illegal-lineup flow); the change is visible to every member with the reason and a before/after diff.
 - Every override writes exactly one immutable `commissioner_actions` row; the row is readable by all members and cannot be edited or deleted by anyone (including the commissioner).
-- League creation is Pro-gated; joining is free.
+- League creation and joining are both free (v2.8 ruling — no Pro gate anywhere on the create/join surface).
 
 ### 19.2 Critical edge cases / test matrix
 | # | Scenario | Expected |
@@ -1698,7 +1698,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 | E49 | Retire & succeed executed mid-season | Successor inherits roster/FAAB/schedule slot and W-L **for seeding only**; History partitions at `retired_at_week`; both consequences shown in the confirm dialog; audited override. |
 | E50 | Removed manager's live session writes a lineup seconds after removal | Write access derives from the open stint → denied atomically with stint close; no race window, no cleanup job. |
 | E51 | Previously removed manager re-invited to their old franchise | New stint on the same `team_id`; History shows both stints; no data merge. |
-| E52 | Username changed mid-season | Every league surface updates live (joins on `user_id`); audit + chat re-render under the new handle. |
+| E52 | Username changed mid-season | **Obsolete per v2.8 (usernames are permanent — Q4 ruling); retained for the record.** ~~Every league surface updates live (joins on `user_id`); audit + chat re-render under the new handle.~~ |
 | E53 | Seat-targeted invite claimed by the wrong account (link forwarded) | If `invited_username`/`invited_email` is set → claim rejected with a friendly mismatch screen; if unrestricted, claim succeeds (commissioner chose an open link) and is recorded. |
 | E54 | Two seat invites for the same team claimed near-simultaneously | Claim RPC hits the one-open-stint unique index; second claim fails gracefully ("seat already filled"), invite marked expired, commissioner notified. |
 | E55 | Ultra league, Sunday night: charted YCO not yet posted | Scores show live-provisional with a "charting lands Mon AM" badge on the YCO component; never a silent 0; matchup can't finalize early anyway (Thu window). |
@@ -1734,7 +1734,7 @@ Each phase ships something demoable and testable. Hand Claude Code **one phase a
 | Weekly active managers during season | 6,000 |
 | Leagues using ≥1 commissioner override | ≥ 40% (validates the differentiator is used) |
 | Manager-reported trust in commissioner fairness (survey) | ≥ 4.3/5 |
-| Pro conversions attributable to league creation | track as a primary Pro driver |
+| Pro conversions attributable to league creation | *(v2.8: creation is free — metric retired as written; replace with a Pro-league-features driver metric when those features are defined)* |
 | Season completion rate (leagues that finish) | ≥ 70% |
 
 ---
@@ -2048,7 +2048,7 @@ Build the league foundation for FieldScout. Read CLAUDE.md, docs/03-DATA-MODEL.m
    - Replace the old "viewable by members" policy with one using is_league_member()
    - CREATE TABLE league_members (role, team_id, is_placeholder, is_autodraft, faab_balance) + RLS + indexes — §12.2
 2. Zod schemas in src/types/league.ts for all settings (§7.3) with the documented defaults and ranges; a validateLeagueSettings() util enforcing the cross-field rules in §7.3 "Validation rules".
-3. API route handlers (Route Handlers, kebab-case): POST/GET /api/leagues, GET/PATCH/DELETE /api/leagues/[id], POST /api/leagues/[id]/invite, POST /api/leagues/join, member management under /api/leagues/[id]/members — §15.1. Gate POST /api/leagues behind is_pro.
+3. API route handlers (Route Handlers, kebab-case): POST/GET /api/leagues, GET/PATCH/DELETE /api/leagues/[id], POST /api/leagues/[id]/invite, POST /api/leagues/join, member management under /api/leagues/[id]/members — §15.1. League creation and joining are free (v2.8) — no is_pro gate on any of these routes.
 4. React Query hooks: src/hooks/use-leagues.ts, use-league.ts, use-league-members.ts.
 5. Regenerate types: npx supabase gen types typescript.
 Enforce: creator becomes commissioner + gets a team; joining is free; team_count ∈ {8,10,12,14,16}; structural settings editable only in setup/scheduled (else require a commissioner override flag).
@@ -2173,6 +2173,7 @@ Draft-order reveal animation, notifications wiring (league_invite, trade_proposa
 ---
 
 ## Changelog
+- **v2.8 (2026-07-20):** Three product rulings from Chris (PROGRESS Q4–Q6, ruled 2026-07-20). **(1) Usernames — Q4:** minimum **5** characters, maximum **20**, and **permanent** (no changing after creation) — supersedes both v2.1's 3–20/changeable identity contract (§7.2 table + prose updated; E52 marked obsolete) and the deployed client-side 3–30 rule. No production users exist, so no grandfathering: the DB constraint itself moves to 5–20 as part of the M1 schema work. Uniqueness stays case-insensitive, implemented as a `lower(username)` unique index (not a citext conversion). **Application note:** recording this ruling surfaced two codebase conflicts the M1 conflict report had missed — the account-settings page ships a live username-*change* flow, and the AI persona system stores hyphenated `*-ai` handles in `profiles.username` (production rows) that violate the §7.2 charset the constraint would inherit. The constraint work is **halted pending PROGRESS Q7** (charset/persona exemption + the rename-flow removal + what "creation" means given the pre-selection placeholder); the length/permanence ruling itself stands. **(2) Email invites — Q5:** no email vendor is chosen now; M1 builds invite sending behind a seam (interface only, no vendor binding — D37 confirmed). The v1 minimum bar, vendor-independent: **the league join link is always visible and copyable by the league manager** so they can paste it into any email/text themselves. Vendor selection is deferred until invite-send mail is ready to ship. **(3) Pro gate — Q6:** **neither creating nor joining a league requires Pro** — supersedes §7.2's "Create league (Pro only)", §3.1 goal 6, §15.1, §17, §19.1, and Appendix C L.A1 (all updated); the §20 Pro-conversion metric is retired as written; CLAUDE.md Business Rule #5 rewritten to "League creation and joining are free. Pro-level league features come later." Pro-level league features arrive later as their own features, not as create/join gates.
 - **v2.7.1 (2026-07-20):** Errata from the M1 Architect session (delivery plan principle 1 — spec never drifts behind reality). **(1)** §23.5 citation fix (pre-authorized by PROGRESS D21): `core_box` = Appendix **B.1 + B.4** — Appendix B ends at B.4; the old "B.1–B.5" reference was a miscitation. **(2)** Calculator path fix (§5, §11.4, §22.2, Appendix C L.D1): the fantasy-points utility never lived at `src/utils/calculate-fantasy-points.ts`; the legacy utility is `src/lib/scoring/default.ts` (hardcoded, legacy key namespace — research surfaces only), and league scoring uses the §7.3.3 generic dot-product calculator, home `src/lib/leagues/scoring/`. No semantic change to §7.3.3 — the contract was already the law; this names the file. **(3)** §12.1 + §12.22 gap fixes for the deployed schema (M1 survey, conflict report C3/C4/C9 in `tasks-M1-league-foundation.md`): `teams.list_id` DROPs NOT NULL (a league franchise has no backing list; 001's constraint made §7.2's auto-created join/placeholder teams uninsertable); 001's "Users can manage own teams" FOR ALL policy is replaced by an owner-manage policy scoped `league_id IS NULL` — league teams are server-authoritative-only (§8.1), world-readable SELECT retained (§17 public summary); and 001's legacy flat `roster_settings` DEFAULT is replaced with the §7.3.2 canonical default. **(4)** §12.23 alignment (post-breakdown review): the pre-auth claim preview exposes league name + team label **+ inviter display name** (the §16.2/§16.4/§16.5.2 growth-loop design — the old two-field comment was the stale text; tasks-M1 D48), and `league_invites` gains `created_at` + `last_sent_at` so §7.2's "every send/claim/revoke is recorded" is satisfiable (tasks-M1 D46/C18). M1 task breakdown: `docs/specs/tasks-M1-league-foundation.md`.
 - **v2.7 (2026-07-18):** Advanced-stat scoring re-scoped (product decision, Chris, M0 Architect Q&A). The specific tracking/charted stats named in §7.3.3/§23.5/Appendix B.2–B.3 (completed air yards, YAC, yards after contact) are **illustrative examples** of the long-run advanced-scoring direction — not v1 data commitments; they were given as examples of the kind of advanced scoring to support once user traction funds a paid real-time stats API (or an in-house feed). Concrete keys, Alpha/Ultra coefficients, calibration (OQ 17), and any vendor decision are **deferred until that funding decision**. What stays committed for v1: the 6 parity templates, the §7.3.3 extensibility contract (generic dot-product + `STAT_KEYS` registry + `player_stats.advanced` JSONB), and the tier machinery (`tracking`/`charted` capability tiers, two-phase provisional→settled scoring, revision handling) — proven in tests with clearly-marked placeholder keys so lighting up real advanced stats later remains a one-PR data task (§23.5 checklist). §7.3.3/§23.5/Appendix B.2–B.3 text stays as the design target, read as illustrative pending funding; the §23.5-vs-B.2 key-name conflict (PROGRESS Q2) is moot until then. Companion resolution (PROGRESS Q1): the free tier supplements Sleeper with **nflverse** for kickoff timestamps (and likely official inactives) — §23.1's live-provider hard requirements are to be met by the Sleeper+nflverse composite (inactives source confirmed when the adapter lands, with the first runtime consumer of kickoffs). §21 OQ 16–17 (charted-data license; Alpha/Ultra coefficient sign-off) are deferred along with the stats they price and calibrate. Same-session follow-up (Chris): the v1 template picker ships the **6 parity templates only** — no Alpha/Ultra teaser cards; the two FieldScout cards and the "same game, scored three ways" widget return with funded advanced stats (§7.3.3/§16/Appendix B/Appendix C "8 templates" references annotated to read as 6 for v1). Delivery plan v1.3 defers M1's Alpha/Ultra backtest gate accordingly.
 - **v2.6.1 (2026-07-18):** Erratum from the M0 Architect session (delivery plan principle 1 — spec never drifts behind code): the deployed `nfl_games` column is `kickoff_at` (001_initial_schema.sql), not `kickoff`; corrected the five references (§7.3.4, §12.20, §14, §19.2 E42, §23.3). No semantic change — kickoff-derived locks still read the column at evaluation time. M0 task breakdown: `docs/specs/tasks-M0-foundations.md`.
