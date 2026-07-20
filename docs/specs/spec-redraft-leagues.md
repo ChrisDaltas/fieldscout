@@ -1,7 +1,7 @@
 # PRD / Spec: Redraft Leagues + Custom Draft Engine
 
 **Feature:** Real, playable weekly redraft fantasy football leagues with a fully configurable draft room and an all-powerful, fully-audited commissioner.
-**Version:** 2.7 (Draft)
+**Version:** 2.7.1 (Draft)
 **Author:** Chris Daltas
 **Date:** July 16, 2026
 **Status:** Draft — ready for Claude Code build planning · v2.0 adds scale engineering, the schedule engine + Remix, the stats/NFL-data contract, game-day transaction locks, and operations. Companion doc: `docs/specs/delivery-plan-redraft-leagues.md` (implementation / QA / agent operating model). v2.1 adds the identity contract, seat-targeted invites, and the franchise/manager lifecycle (§7.2.1). v2.2 replaces open custom scoring with an 8-template v1 catalog and introduces **advanced-stat scoring** (air yards, YAC, yards after contact) via the FieldScout Alpha/Ultra templates (§7.3.3, §23.5, Appendix B). v2.3 promotes **Mock Draft Mode** to a core feature (§8.8) and pins the **scoring extensibility contract** — new stats become scorable without engine changes (§7.3.3, §23.5). v2.4 completes the UI inventory: every workflow, page, and control from v2.0–v2.3 is enumerated in §16 (routes/components extended; new §16.5 workflow & states audit). v2.5 adds the **`SyntheticStatsProvider`** (§23.6) so the entire pipeline — draft through live scoring through Alpha/Ultra — is buildable and demonstrably working before any stats vendor is paid. v2.6 locks v1 league sizes to **8–16** (18/20 and odd counts follow next season), makes email the primary invite channel for people without an account yet, sets the v1 playoff tiebreaker chain (Points For → Head-to-head → Points Against), and generalizes commissioner "Act as Manager" to any team, not just orphaned ones. v2.7 re-scopes advanced-stat scoring: the named tracking/charted stats are **illustrative examples**, deferred until a paid/owned real-time stats source is funded; v1 commits to the 6 parity templates plus the §7.3.3 extensibility contract, with the tier machinery proven on placeholder keys.
@@ -85,7 +85,7 @@ This is a large epic that depends on foundations from earlier phases. It should 
 
 **Hard dependencies (must exist first):**
 - Phase 0 Foundation: `profiles`, `players`, `player_stats`, `nfl_games`, `scoring_systems`, auth, app shell.
-- Phase 2 Teams: `teams`, `team_lineups`, fantasy-points utility (`src/utils/calculate-fantasy-points.ts`).
+- Phase 2 Teams: `teams`, `team_lineups`, fantasy-points utility (shipped as `src/lib/scoring/default.ts` — the `src/utils/calculate-fantasy-points.ts` path in earlier drafts never existed; league scoring uses the §7.3.3 generic calculator in `src/lib/leagues/scoring/`, erratum v2.7.1).
 - Phase 3 Scoring Systems: custom scoring create/apply.
 - Phase 4 Pro Subscription: `is_pro` gating.
 - Phase 8 Live Mode pipeline: `sync-live-stats`, real-time `player_stats`/`nfl_games`.
@@ -622,7 +622,7 @@ The heart of the differentiator. **Append-only, immutable, league-visible.**
 
 ### 11.4 Scoring, matchups & live updates
 - **Schedule generation:** on draft completion (or when entering `in_season`), the schedule engine (§11.7) generates the season deterministically from `schedule_seed` — round-robin honoring divisions, plus `second_opponent` rows when enabled — stored as `matchups`. Commissioner-editable; **Remix** regenerates with preview + diff (§11.7).
-- **Live scoring (v2.0 — server-materialized):** a matchup's team score = Σ fantasy points of that team's locked starters, computed via `src/utils/calculate-fantasy-points.ts` against the league's **scoring snapshot** (§7.3.3). Scores are computed **server-side** by the `score-league-week` worker (§22.2) from `player_stats` deltas and written to `matchups` / `team_week_results`, whose triggers broadcast one compact event per league (§9). Clients never subscribe to raw `player_stats`; the matchup view refetches box-score lines on `scores_updated`. Matchup view reuses Live Mode patterns (Now Playing / Done / Up Next).
+- **Live scoring (v2.0 — server-materialized):** a matchup's team score = Σ fantasy points of that team's locked starters, computed via the §7.3.3 generic calculator (`src/lib/leagues/scoring/`, erratum v2.7.1) against the league's **scoring snapshot** (§7.3.3). Scores are computed **server-side** by the `score-league-week` worker (§22.2) from `player_stats` deltas and written to `matchups` / `team_week_results`, whose triggers broadcast one compact event per league (§9). Clients never subscribe to raw `player_stats`; the matchup view refetches box-score lines on `scores_updated`. Matchup view reuses Live Mode patterns (Now Playing / Done / Up Next).
 - **Swap resolution:** if a team armed a Swap spot (§7.3.2) and it triggers, the effective starter for that slot becomes the swap-in player (pre-game inactive) or the greater-of result (in-game injury); live scoring and finalization use the resolved slot.
 - **Finalization:** after the week's games + the stat-correction window (configurable, default **Thursday 06:00 ET** — §23.4), the matchup is marked `final`, W/L/T (plus median/second-opponent results, §11.7) written to `team_week_results`, standings updated, and `league_weeks.status → final`. Until then, completed matchups display `final (pending corrections)`. A `final` matchup is only changed via a commissioner override (§10).
 - **Stat corrections:** when the stats pipeline applies an official correction within the window, affected non-final matchups recompute automatically; the league sees a system note. *(Avoid the ESPN double-credit trap: never let a manual override and an automatic correction both apply — overrides set an absolute value or are tagged to suppress auto-recompute for that cell.)*
@@ -715,6 +715,11 @@ ALTER TABLE leagues
   ADD COLUMN IF NOT EXISTS scoring_rules_snapshot JSONB,
     -- v2.0: frozen copy of scoring_systems.rules taken at draft start (§7.3.3); all scoring reads this
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- v2.7.1 gap fix (C9 in tasks-M1-league-foundation.md): 001's roster_settings DEFAULT is the legacy
+-- flat shape; the M1 migration replaces it with the §7.3.2 preset-table Default counts rendered in
+-- the canonical starting_slots[] shape (no leagues rows exist — verified at reset, prod check noted
+-- in the 040 PR):
+-- ALTER TABLE leagues ALTER COLUMN roster_settings SET DEFAULT '<§7.3.2 canonical 12-team default>';
 -- NOTE: existing columns reused: id, owner_id (the commissioner), name, description,
 --   max_teams (kept in sync with team_count), scoring_system_id, roster_settings (slots),
 --   invite_code, is_active, season, created_at, updated_at.
@@ -1217,6 +1222,11 @@ ALTER TABLE teams
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',      -- active | orphaned | retired
   ADD COLUMN IF NOT EXISTS retired_at_week INTEGER,                     -- league week the franchise was sealed
   ADD COLUMN IF NOT EXISTS successor_team_id UUID REFERENCES teams(id); -- set on the RETIRED team → its successor
+-- v2.7.1 gap fixes (M1 Architect survey — the deployed 001 schema blocks §7.2 as written):
+ALTER TABLE teams ALTER COLUMN list_id DROP NOT NULL;  -- league franchises carry no backing list; standalone team-lists unaffected
+-- Replace 001's client-write policy: "Users can manage own teams" becomes owner-manage scoped to
+-- league_id IS NULL (legacy standalone teams). League teams are written ONLY via SECURITY DEFINER
+-- RPCs (server-authoritative, §8.1). World-readable SELECT stays (public league summary, §17).
 
 CREATE TABLE team_managers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1264,7 +1274,10 @@ CREATE INDEX idx_league_invites_league ON league_invites(league_id);
 ALTER TABLE league_invites ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Invites viewable by commish"
   ON league_invites FOR SELECT USING (is_league_commish(league_id));
--- claim path = SECURITY DEFINER RPC keyed by token; pre-auth it exposes only league name + team label for the claim page
+-- claim path = SECURITY DEFINER RPC keyed by token; pre-auth it exposes only league name + team label + inviter display name for the claim page (v2.7.1: aligned to §16.2/§16.4/§16.5.2, which specify the inviter as growth-loop design; this comment previously said two fields)
+-- v2.7.1 gap fix (D46, tasks-M1 C18): §7.2 requires every send recorded; the DDL above additionally carries
+--   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),  -- initial send for email invites
+--   last_sent_at TIMESTAMPTZ                        -- updated on re-send
 ```
 
 ## 13. Transactions — Waivers, FAAB, Trades & Free Agency
@@ -1773,7 +1786,7 @@ score-league-week worker (Edge Fn, cron every 5–10s in game windows)
   → drain queue in batches; map player_ids → affected (league_id, team_id)
       via idx on league_rosters(player_id) ∩ leagues in season-week
   → per league: recompute affected matchup team scores + team_week_results
-      (pure fn: calculate-fantasy-points against the league's scoring SNAPSHOT §7.3.3)
+      (pure fn: the §7.3.3 generic calculator, src/lib/leagues/scoring/, against the league's scoring SNAPSHOT)
   → single UPDATE per matchup ⇒ trigger broadcasts one compact event per league
 ```
 - Batching rule: coalesce a league's updates within a 5–10s window into one write/broadcast.
@@ -1842,7 +1855,7 @@ The §7.3.3 house templates score stats no incumbent scores; the pipeline must t
 - **Provider capability tiers** (declared by each `StatsProvider` adapter; league creation gates templates on them, §7.3.3):
   | Tier | Stats | Source & latency | Required by |
   |---|---|---|---|
-  | `core_box` | all Appendix B.1–B.5 categories | box score, live | every template |
+  | `core_box` | all Appendix B.1 + B.4 categories *(citation fixed v2.7.1 — Appendix B ends at B.4; B.2–B.3 are the deferred Alpha/Ultra templates)* | box score, live | every template |
   | `tracking` | `air_yards` (completed), `yards_after_catch` | NGS player-tracking–derived; in official NFL play-by-play since 2016; **live-capable** via provider pbp; self-computable from nflverse as a free T+1 fallback | Alpha, Ultra |
   | `charted` | `rush_yards_after_contact` (broken tackles reserved v1.1) | film charting (PFF/SIS/FTN-class licensing, or SportsDataIO advanced tier); **T+1** (next morning), occasionally revised | Ultra |
 - **Storage (v2.3 extensibility rule):** all advanced stats — `air_yards`, `yards_after_catch`, `rush_yards_after_contact`, and **every future stat** — live in `player_stats.advanced JSONB DEFAULT '{}'`. A missing key means *not-yet-reported* (≠ 0, renders as pending). New stats therefore require **no migration**; promote a key to a typed column only if query patterns ever demand it (a view can flatten). Ingestion is diff-aware per §23.2; charted arrivals fan out through the same `score-league-week` path.
@@ -2109,7 +2122,7 @@ Acceptance: full auction with no overspend; every team completes a legal roster;
 
 ### Task L.D1 — In-season core: rosters, lineups, scoring, standings
 ```
-Build in-season play. Read docs/specs/spec-redraft-leagues.md (§11, §12.7–12.8, §12.13, §14) and reuse Live Mode (spec-leagues-live-mode.md) + src/utils/calculate-fantasy-points.ts.
+Build in-season play. Read docs/specs/spec-redraft-leagues.md (§11, §12.7–12.8, §12.13, §14) and reuse Live Mode patterns (spec-leagues-live-mode.md); scoring uses the §7.3.3 generic calculator in src/lib/leagues/scoring/ (built in M1, L.A1.8) against the league scoring snapshot — never the legacy src/lib/scoring/default.ts (research surfaces only; erratum v2.7.1).
 
 1. Migration: league_rosters (UNIQUE(league_id,player_id) for exclusivity; ir_placed_week, ir_lock_until_week), matchups, lineup_swaps (§12.16); ALTER team_lineups (slot_map, locked_at, edited_by_commish). Populate league_rosters from draft_picks on draft completion (status → in_season). Enforce IR slot rules (§7.3.2): placement requires an eligible designation; Restricted IR blocks removal until ir_lock_until_week (commissioner override allowed).
 2. Schedule generation: round-robin across regular_season_weeks honoring divisions → matchups rows. Tiebreaker-ordered standings util (§7.3.7).
@@ -2160,6 +2173,7 @@ Draft-order reveal animation, notifications wiring (league_invite, trade_proposa
 ---
 
 ## Changelog
+- **v2.7.1 (2026-07-20):** Errata from the M1 Architect session (delivery plan principle 1 — spec never drifts behind reality). **(1)** §23.5 citation fix (pre-authorized by PROGRESS D21): `core_box` = Appendix **B.1 + B.4** — Appendix B ends at B.4; the old "B.1–B.5" reference was a miscitation. **(2)** Calculator path fix (§5, §11.4, §22.2, Appendix C L.D1): the fantasy-points utility never lived at `src/utils/calculate-fantasy-points.ts`; the legacy utility is `src/lib/scoring/default.ts` (hardcoded, legacy key namespace — research surfaces only), and league scoring uses the §7.3.3 generic dot-product calculator, home `src/lib/leagues/scoring/`. No semantic change to §7.3.3 — the contract was already the law; this names the file. **(3)** §12.1 + §12.22 gap fixes for the deployed schema (M1 survey, conflict report C3/C4/C9 in `tasks-M1-league-foundation.md`): `teams.list_id` DROPs NOT NULL (a league franchise has no backing list; 001's constraint made §7.2's auto-created join/placeholder teams uninsertable); 001's "Users can manage own teams" FOR ALL policy is replaced by an owner-manage policy scoped `league_id IS NULL` — league teams are server-authoritative-only (§8.1), world-readable SELECT retained (§17 public summary); and 001's legacy flat `roster_settings` DEFAULT is replaced with the §7.3.2 canonical default. **(4)** §12.23 alignment (post-breakdown review): the pre-auth claim preview exposes league name + team label **+ inviter display name** (the §16.2/§16.4/§16.5.2 growth-loop design — the old two-field comment was the stale text; tasks-M1 D48), and `league_invites` gains `created_at` + `last_sent_at` so §7.2's "every send/claim/revoke is recorded" is satisfiable (tasks-M1 D46/C18). M1 task breakdown: `docs/specs/tasks-M1-league-foundation.md`.
 - **v2.7 (2026-07-18):** Advanced-stat scoring re-scoped (product decision, Chris, M0 Architect Q&A). The specific tracking/charted stats named in §7.3.3/§23.5/Appendix B.2–B.3 (completed air yards, YAC, yards after contact) are **illustrative examples** of the long-run advanced-scoring direction — not v1 data commitments; they were given as examples of the kind of advanced scoring to support once user traction funds a paid real-time stats API (or an in-house feed). Concrete keys, Alpha/Ultra coefficients, calibration (OQ 17), and any vendor decision are **deferred until that funding decision**. What stays committed for v1: the 6 parity templates, the §7.3.3 extensibility contract (generic dot-product + `STAT_KEYS` registry + `player_stats.advanced` JSONB), and the tier machinery (`tracking`/`charted` capability tiers, two-phase provisional→settled scoring, revision handling) — proven in tests with clearly-marked placeholder keys so lighting up real advanced stats later remains a one-PR data task (§23.5 checklist). §7.3.3/§23.5/Appendix B.2–B.3 text stays as the design target, read as illustrative pending funding; the §23.5-vs-B.2 key-name conflict (PROGRESS Q2) is moot until then. Companion resolution (PROGRESS Q1): the free tier supplements Sleeper with **nflverse** for kickoff timestamps (and likely official inactives) — §23.1's live-provider hard requirements are to be met by the Sleeper+nflverse composite (inactives source confirmed when the adapter lands, with the first runtime consumer of kickoffs). §21 OQ 16–17 (charted-data license; Alpha/Ultra coefficient sign-off) are deferred along with the stats they price and calibrate. Same-session follow-up (Chris): the v1 template picker ships the **6 parity templates only** — no Alpha/Ultra teaser cards; the two FieldScout cards and the "same game, scored three ways" widget return with funded advanced stats (§7.3.3/§16/Appendix B/Appendix C "8 templates" references annotated to read as 6 for v1). Delivery plan v1.3 defers M1's Alpha/Ultra backtest gate accordingly.
 - **v2.6.1 (2026-07-18):** Erratum from the M0 Architect session (delivery plan principle 1 — spec never drifts behind code): the deployed `nfl_games` column is `kickoff_at` (001_initial_schema.sql), not `kickoff`; corrected the five references (§7.3.4, §12.20, §14, §19.2 E42, §23.3). No semantic change — kickoff-derived locks still read the column at evaluation time. M0 task breakdown: `docs/specs/tasks-M0-foundations.md`.
 - **v2.0 (2026-07-16):** Scale + correctness release, informed by platform research (Supabase Realtime scaling guidance, Sleeper/Yahoo/ESPN operational norms, NFL data-provider landscape). **(1) Realtime rewritten (§9):** Postgres Changes replaced by Broadcast-from-Database triggers on private authorized channels — the pattern Supabase recommends beyond ~3k subscribers; clients never subscribe to raw `player_stats`. **(2) Schedule engine + Remix (§11.7):** seeded deterministic generation (circle method, division-aware), preview-diff **Remix** (free until Week 1 kickoff, override after — Sleeper parity plus receipts), `schedule_mode` (`h2h`/`total_points`), Sleeper-style `median_game`, Yahoo-style `second_opponent`. **(3) Scale engineering (§22):** explicit 500-league / 150-draft load model, server-side scoring fan-out via pgmq (`score-league-week`), SKIP-LOCKED job pattern, `player_stats` partitioning, rate limits, k6 gate suite. **(4) Stats & NFL-data contract (§23):** `StatsProvider` interface + GA provider decision, ingestion invariants + degradation UX, `nfl_weeks` calendar, kickoff-derived locks (flex-schedule/postponement-safe), correction window normed to **Thu 06:00 ET** with `stat_correction_events` + league-facing corrections view; post-window corrections flag instead of auto-apply. **(5) Game-day transaction locks (§7.3.4/§13.1):** `player_game_lock` + `bench_lock` (strict defaults per product requirement), `fa_hold_hours`, `trade_lock_behavior`, `waiver_claims.claim_order`. **(6) Integrity fixes:** league **scoring snapshot** (`scoring_rules_snapshot`), 2-decimal rounding determinism, `slot_map` indexed instance keys (`rb:0`), matchup home/away uniqueness + self-play CHECK, pause clock bookkeeping (`deadline_remaining_ms`), auction endgame + solvency invariant, autopick K/D-ST deferral, audit backstop trigger, `SECURITY DEFINER search_path` hardening. **(7) New tables (§12.17–12.21):** `league_weeks`, `team_week_results`, `league_player_pool`, `nfl_weeks`, `stat_correction_events`. **(8) Ops (§24):** golden signals, kill switches, deploy freeze, runbooks. **(9)** Edge cases E25–E46; Open Questions 12–15; product/UX callouts (§16.4) incl. **DL** preset + **Hot Swap** naming. Companion delivery plan doc added.
