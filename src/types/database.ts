@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -811,8 +831,8 @@ export type Database = {
           hide_order: boolean | null
           id: string
           is_big_board: boolean | null
-          is_favorites: boolean
           is_favorited: boolean | null
+          is_favorites: boolean
           is_private: boolean | null
           is_team: boolean | null
           like_count: number | null
@@ -839,8 +859,8 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
-          is_favorites?: boolean
           is_favorited?: boolean | null
+          is_favorites?: boolean
           is_private?: boolean | null
           is_team?: boolean | null
           like_count?: number | null
@@ -867,8 +887,8 @@ export type Database = {
           hide_order?: boolean | null
           id?: string
           is_big_board?: boolean | null
-          is_favorites?: boolean
           is_favorited?: boolean | null
+          is_favorites?: boolean
           is_private?: boolean | null
           is_team?: boolean | null
           like_count?: number | null
@@ -960,6 +980,33 @@ export type Database = {
           season?: number
           status?: string | null
           updated_at?: string | null
+          week?: number
+        }
+        Relationships: []
+      }
+      nfl_weeks: {
+        Row: {
+          correction_window_ends_at: string | null
+          first_kickoff_at: string | null
+          last_game_ends_at: string | null
+          season: number
+          starts_at: string
+          week: number
+        }
+        Insert: {
+          correction_window_ends_at?: string | null
+          first_kickoff_at?: string | null
+          last_game_ends_at?: string | null
+          season: number
+          starts_at: string
+          week: number
+        }
+        Update: {
+          correction_window_ends_at?: string | null
+          first_kickoff_at?: string | null
+          last_game_ends_at?: string | null
+          season?: number
+          starts_at?: string
           week?: number
         }
         Relationships: []
@@ -1479,22 +1526,22 @@ export type Database = {
           depth_chart_order: number | null
           depth_chart_position: string | null
           draft_pick: number | null
-          espn_id: string | null
-          injury_body_part: string | null
-          injury_notes: string | null
-          injury_start_date: string | null
-          practice_participation: string | null
           draft_round: number | null
           draft_year: number | null
+          espn_id: string | null
           experience_years: number | null
           first_name: string | null
           full_name: string
           headshot_url: string | null
           height: string | null
           id: string
+          injury_body_part: string | null
+          injury_notes: string | null
+          injury_start_date: string | null
           jersey_number: number | null
           last_name: string | null
           position: string
+          practice_participation: string | null
           projected_games: number | null
           projected_pts_half_ppr: number | null
           projected_pts_ppr: number | null
@@ -1526,16 +1573,16 @@ export type Database = {
           experience_years?: number | null
           first_name?: string | null
           full_name: string
-          injury_body_part?: string | null
-          injury_notes?: string | null
-          injury_start_date?: string | null
-          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
           jersey_number?: number | null
           last_name?: string | null
           position: string
+          practice_participation?: string | null
           projected_games?: number | null
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
@@ -1567,16 +1614,16 @@ export type Database = {
           experience_years?: number | null
           first_name?: string | null
           full_name?: string
-          injury_body_part?: string | null
-          injury_notes?: string | null
-          injury_start_date?: string | null
-          practice_participation?: string | null
           headshot_url?: string | null
           height?: string | null
           id?: string
+          injury_body_part?: string | null
+          injury_notes?: string | null
+          injury_start_date?: string | null
           jersey_number?: number | null
           last_name?: string | null
           position?: string
+          practice_participation?: string | null
           projected_games?: number | null
           projected_pts_half_ppr?: number | null
           projected_pts_ppr?: number | null
@@ -2141,21 +2188,54 @@ export type Database = {
       }
     }
     Functions: {
-      reorder_list_players: {
-        Args: { p_list_id: string; p_positions: Json }
-        Returns: undefined
-      }
       duplicate_list: {
         Args: {
+          p_force_public?: boolean
+          p_slug: string
           p_source_id: string
           p_title: string
-          p_slug: string
-          p_force_public?: boolean
         }
-        Returns: Database["public"]["Tables"]["lists"]["Row"]
+        Returns: {
+          ai_persona_id: string | null
+          comments_enabled: boolean | null
+          created_at: string | null
+          deleted_at: string | null
+          description: string | null
+          folder_id: string | null
+          hide_order: boolean | null
+          id: string
+          is_big_board: boolean | null
+          is_favorited: boolean | null
+          is_favorites: boolean
+          is_private: boolean | null
+          is_team: boolean | null
+          like_count: number | null
+          owner_id: string
+          player_count: number | null
+          position_filter: string | null
+          ranking_mode: string
+          roster_settings: Json | null
+          scoring_system_id: string | null
+          slug: string
+          thumbnail_url: string | null
+          tiers_enabled: boolean | null
+          title: string
+          updated_at: string | null
+          view_count: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "lists"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       notify_list_followers: {
-        Args: { p_list_id: string; p_actor: string }
+        Args: { p_actor: string; p_list_id: string }
+        Returns: undefined
+      }
+      reorder_list_players: {
+        Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
       }
     }
@@ -2286,10 +2366,14 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+
 
 // ============================================================================
 // Hand-written convenience aliases.
