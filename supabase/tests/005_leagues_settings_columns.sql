@@ -15,7 +15,10 @@
 --     not just policy-name pins); writes are denied via RETURNING-count.
 --   * Signup safety is behavioral: real auth.users inserts drive
 --     handle_new_user — the no-metadata fallback passes the new CHECK, and
---     hostile metadata skips the profile WITHOUT breaking the auth insert.
+--     hostile/contract-violating/placeholder-shaped metadata gets the
+--     user_<8hex> FALLBACK profile without breaking the auth insert
+--     (049/050), with display_name derived from the fallback, never the
+--     rejected value (051).
 --   * Ordering: every privileged-context (postgres) test runs BEFORE any
 --     request.jwt.claims is set — set_config(..., true) persists to txn end,
 --     and auth.role() would then read 'authenticated', flipping the
@@ -26,7 +29,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(72);
+select plan(81);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -108,7 +111,10 @@ values
    '{"provider": "email", "providers": ["email"]}', '{"username": "Bad"}', now(), now()),
   ('00000000-0000-0000-0000-000000000000', '50000000-0000-4000-8000-000000000005',
    'authenticated', 'authenticated', 'pgtap-u5@fieldscout.local', 'x', now(),
-   '{"provider": "email", "providers": ["email"]}', '{"username": "evil-ai"}', now(), now());
+   '{"provider": "email", "providers": ["email"]}', '{"username": "evil-ai"}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '60000000-0000-4000-8000-000000000006',
+   'authenticated', 'authenticated', 'pgtap-u6@fieldscout.local', 'x', now(),
+   '{"provider": "email", "providers": ["email"]}', '{"username": "user_deadbeef"}', now(), now());
 
 select is(
   (select count(*) from profiles
@@ -134,6 +140,24 @@ select ok(
   (select username = 'user_50000000' from profiles
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
+
+-- R31 (migration 051): the rejected metadata value must not resurface in
+-- display_name either — pre-051 this row got display_name = 'evil-ai'
+-- (laundered past the username validation; reproduced live in review).
+select is(
+  (select display_name from profiles
+   where id = '50000000-0000-4000-8000-000000000005'),
+  'user_50000000',
+  'rejected metadata username (evil-ai) does NOT reach display_name — it derives from the effective (fallback) username (R31, 051)');
+
+-- R32 (migration 050): the placeholder shape is reserved — metadata matches
+-- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name
+-- must fall back to the id-derived placeholder. Reverting 050's
+-- handle_new_user to 049's body fails this test (049 would honor it).
+select ok(
+  (select username = 'user_60000000' from profiles
+   where id = '60000000-0000-4000-8000-000000000006'),
+  'placeholder-shaped signup metadata (user_deadbeef) gets the id-derived FALLBACK — metadata cannot claim the reserved shape (R32, 050)');
 
 -- ---------------------------------------------------------------------------
 -- C. team_count CHECK boundaries + roster_settings default golden pin
@@ -226,6 +250,20 @@ select lives_ok(
   $$ update profiles set username = 'pgtap-test-ai'
      where id = '30000000-0000-4000-8000-000000000003' $$,
   'persona-pattern handle accepted for a PRIVILEGED writer (Q7.1 exemption)');
+select lives_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  'placeholder-pattern handle accepted for a PRIVILEGED writer (R32 — the shape stays writable by the signup trigger/service paths)');
+
+-- R35: persona handles carry a 32-char cap (edge and one past it).
+select lives_ok(
+  $$ update profiles set username = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ai'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  '32-char persona handle accepted (upper edge, R35)');
+select throws_ok(
+  $$ update profiles set username = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ai'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  '23514', null, '33-char persona handle rejected (one past the cap, R35)');
 
 select has_trigger('public', 'profiles', 'trg_guard_username_namespace',
   'namespace guard trigger installed');
@@ -267,6 +305,47 @@ select results_eq(
      select count(*) from w $$,
   $$ values (1::bigint) $$,
   'authenticated rename to a VALID human name still succeeds at the DB layer (Q7.2 documented residual — permanence is app-enforced until selection moves server-side)');
+
+-- R32 break probe (migration 050): explicitly selecting a placeholder-shaped
+-- name is rejected at the DB layer for client roles — 040's guard (persona
+-- pattern only) passes this, so the test fails against the pre-050 guard.
+select throws_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'authenticated user cannot select a placeholder-shaped username (R32 — the shape is reserved, so the /username filter can never re-match a chosen name)');
+
+-- ...and a legitimately-placeholder row still completes selection normally:
+-- this is the exact write shape of the /username page (own-row UPDATE
+-- filtered to the placeholder pattern) under the JWT of the selecting user.
+select set_config('request.jwt.claims',
+  '{"sub": "50000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
+select results_eq(
+  $$ with w as (update profiles set username = 'chosen_by_five'
+                where id = '50000000-0000-4000-8000-000000000005'
+                  and username ~ '^user_[0-9a-f]{8}$' returning 1)
+     select count(*) from w $$,
+  $$ values (1::bigint) $$,
+  'a genuine placeholder holder still completes selection via the filtered UPDATE (R32 — reservation does not break onboarding)');
+
+-- R34: exercise the guard trigger's ANON branch. A plain `set role anon`
+-- write is RLS-filtered to 0 rows before the trigger can fire (probed in
+-- review), so run as postgres (RLS-exempt) with anon JWT claims —
+-- auth.role() reads the claim, so the guard sees 'anon'. A future guard
+-- rewrite that splits the role IN-list loses this coverage loudly now.
+reset role;
+select set_config('request.jwt.claims', '{"role": "anon"}', true);
+
+select throws_ok(
+  $$ update profiles set username = 'sneaky-ai'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'anon-context write of a *-ai handle blocked (guard anon branch, R34)');
+select throws_ok(
+  $$ update profiles set username = 'user_deadbeef'
+     where id = '20000000-0000-4000-8000-000000000002' $$,
+  '23514', null,
+  'anon-context write of a placeholder-shaped handle blocked (guard anon branch, R34/R32)');
 
 select * from finish();
 rollback;
