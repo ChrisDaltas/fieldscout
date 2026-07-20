@@ -18,14 +18,22 @@
 --     set_config(..., true) persists to txn end (D49(7) lesson).
 --   * anon leagues SELECT asserts an empty RESULT, not an error — falsifiable
 --     against an over-eager REVOKE EXECUTE on the policy-predicate helpers
---     (052's documented §4.1 deviation).
+--     (052's documented §4.1 deviation). R42 correction: the load-bearing
+--     grant is Postgres's default PUBLIC EXECUTE — a literal
+--     `REVOKE ... FROM anon` is a behavioral no-op, so the helper ACL is
+--     ALSO pinned directly (PUBLIC + explicit anon entries): either REVOKE
+--     form now trips the suite.
+--   * Post-054 (Q8 ruling): leagues has NO client write policy and
+--     league_members has NO client UPDATE — the review's forged-snapshot
+--     and reseat probes are reproduced as denial pins in 008; this file
+--     pins the policy surface + the placeholder-seat-only write shape.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(71);
+select plan(81);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: §12.2 column-for-column.
@@ -62,15 +70,18 @@ select ok(
   (select rowsecurity from pg_tables where schemaname = 'public' and tablename = 'league_members'),
   'RLS enabled on league_members');
 select policies_are('public', 'league_members',
-  array['Members viewable by league members', 'Commish manages members'],
-  'exactly the two §12.2 policies');
+  array['Members viewable by league members', 'Commish adds placeholder seats',
+        'Commish removes placeholder seats'],
+  'exactly the three post-054 policies (§12.2 as amended by erratum v2.8.2 — no client UPDATE)');
 select policy_cmd_is('public', 'league_members', 'Members viewable by league members', 'SELECT',
   'member policy is SELECT-only');
-select policy_cmd_is('public', 'league_members', 'Commish manages members', 'ALL',
-  'commish policy is FOR ALL');
+select policy_cmd_is('public', 'league_members', 'Commish adds placeholder seats', 'INSERT',
+  'commish add policy is INSERT-only (the FOR ALL surface is gone — 054/R38)');
+select policy_cmd_is('public', 'league_members', 'Commish removes placeholder seats', 'DELETE',
+  'commish remove policy is DELETE-only');
 select policies_are('public', 'leagues',
-  array['Leagues viewable by members', 'League owners can manage'],
-  'post-swap leagues policy list — the old teams-based "Leagues are viewable by members" is gone');
+  array['Leagues viewable by members'],
+  'leagues carries ONLY the member/owner SELECT policy (054/Q8: league state is server-authoritative)');
 select policy_cmd_is('public', 'leagues', 'Leagues viewable by members', 'SELECT',
   'swapped-in leagues policy is SELECT');
 
@@ -93,6 +104,35 @@ select is(
    where oid = 'public.is_league_commish(uuid)'::regprocedure),
   array['search_path=""'],
   'is_league_commish pins search_path = ''''');
+
+-- R42: the helpers' EXECUTE posture pinned at the ACL layer. The behavioral
+-- empty-result pin below only trips on REVOKE FROM PUBLIC (anon inherits
+-- EXECUTE via the default PUBLIC grant — the load-bearing one); these four
+-- make the literal `REVOKE ... FROM anon` no-op trip the suite too.
+select is(
+  (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) a
+   where p.oid = 'public.is_league_member(uuid)'::regprocedure
+     and a.privilege_type = 'EXECUTE' and a.grantee = 0),
+  1::bigint,
+  'is_league_member keeps the PUBLIC EXECUTE grant (the load-bearing grant for anon policy evaluation — R42)');
+select is(
+  (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) a
+   where p.oid = 'public.is_league_member(uuid)'::regprocedure
+     and a.privilege_type = 'EXECUTE' and a.grantee = 'anon'::regrole),
+  1::bigint,
+  'is_league_member keeps the explicit anon EXECUTE grant (a FROM-anon-only REVOKE is a behavioral no-op but signals intent drift — trips here, R42)');
+select is(
+  (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) a
+   where p.oid = 'public.is_league_commish(uuid)'::regprocedure
+     and a.privilege_type = 'EXECUTE' and a.grantee = 0),
+  1::bigint,
+  'is_league_commish keeps the PUBLIC EXECUTE grant (R42)');
+select is(
+  (select count(*) from pg_proc p cross join lateral aclexplode(p.proacl) a
+   where p.oid = 'public.is_league_commish(uuid)'::regprocedure
+     and a.privilege_type = 'EXECUTE' and a.grantee = 'anon'::regrole),
+  1::bigint,
+  'is_league_commish keeps the explicit anon EXECUTE grant (R42)');
 
 -- ---------------------------------------------------------------------------
 -- D. Fixtures (postgres context — before any JWT claims).
@@ -273,42 +313,71 @@ select results_eq(
   $$ values (0::bigint) $$,
   'non-member DELETE affects 0 rows');
 
--- commissioner u1: full manage inside own league, nothing outside it.
+-- commissioner u1: placeholder-seat add/remove ONLY (054/R38 — no UPDATE,
+-- nothing seated, nothing role-bearing, no real users, league-scoped).
 select set_config('request.jwt.claims',
   '{"sub": "70000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select results_eq(
-  $$ with w as (update league_members set is_autodraft = true
-                where id = 'd0000000-0000-4000-8000-000000000002' returning 1)
-     select count(*) from w $$,
-  $$ values (1::bigint) $$,
-  'commish UPDATE affects the targeted member row (count 1)');
 select lives_ok(
   $$ insert into league_members (id, league_id, user_id, is_placeholder)
      values ('d0000000-0000-4000-8000-000000000009',
              'a0000000-0000-4000-8000-00000000000a', null, true) $$,
-  'commish INSERT of a placeholder seat succeeds');
+  'commish INSERT of a placeholder seat succeeds (the one client-shaped write left)');
 select results_eq(
   $$ with d as (delete from league_members
                 where id = 'd0000000-0000-4000-8000-000000000009' returning 1)
      select count(*) from d $$,
   $$ values (1::bigint) $$,
-  'commish DELETE of that seat succeeds (count 1)');
+  'commish DELETE of that placeholder seat succeeds (count 1)');
 select results_eq(
   $$ with w as (update league_members set is_autodraft = true
-                where league_id = 'a0000000-0000-4000-8000-00000000000b' returning 1)
-     select count(*) from w $$,
-  $$ values (0::bigint) $$,
-  'commish of L1 cannot touch L2 rows (count 0 — commish power is league-scoped)');
-
--- co-commissioner u5: manages too (policy uses is_league_commish, not role = 'commissioner').
-select set_config('request.jwt.claims',
-  '{"sub": "70000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
-select results_eq(
-  $$ with w as (update league_members set is_autodraft = false
                 where id = 'd0000000-0000-4000-8000-000000000002' returning 1)
      select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'commish UPDATE affects 0 rows — NO client UPDATE policy (054/R38; sees the row, changes nothing)');
+select throws_ok(
+  $$ insert into league_members (league_id, user_id, is_placeholder)
+     values ('a0000000-0000-4000-8000-00000000000a',
+             '70000000-0000-4000-8000-000000000004', false) $$,
+  '42501', null,
+  'commish INSERT of a REAL user''s membership denied — joins/claims are RPC-only (no stint-less cache rows)');
+select throws_ok(
+  $$ insert into league_members (league_id, user_id, team_id, is_placeholder)
+     values ('a0000000-0000-4000-8000-00000000000a', null,
+             'c0000000-0000-4000-8000-00000000000a', true) $$,
+  '42501', null,
+  'commish INSERT of a SEATED row denied — NO client path writes team_id (the R38 reseat probe, INSERT direction)');
+select throws_ok(
+  $$ insert into league_members (league_id, user_id, role, is_placeholder)
+     values ('a0000000-0000-4000-8000-00000000000a', null, 'co_commissioner', true) $$,
+  '42501', null,
+  'commish INSERT with an elevated role denied — role grants are L.A1.15 RPC work');
+select results_eq(
+  $$ with d as (delete from league_members
+                where id = 'd0000000-0000-4000-8000-000000000002' returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'commish DELETE of a real member affects 0 rows — kicks go through remove_manager (stint closed in the same txn)');
+select throws_ok(
+  $$ insert into league_members (league_id, user_id, is_placeholder)
+     values ('a0000000-0000-4000-8000-00000000000b', null, true) $$,
+  '42501', null,
+  'commish of L1 cannot add a seat to L2 (commish power is league-scoped)');
+
+-- co-commissioner u5: same placeholder surface (policy uses is_league_commish,
+-- not role = 'commissioner').
+select set_config('request.jwt.claims',
+  '{"sub": "70000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
+select lives_ok(
+  $$ insert into league_members (id, league_id, user_id, is_placeholder)
+     values ('d0000000-0000-4000-8000-00000000000e',
+             'a0000000-0000-4000-8000-00000000000a', null, true) $$,
+  'co-commissioner INSERT of a placeholder seat succeeds');
+select results_eq(
+  $$ with d as (delete from league_members
+                where id = 'd0000000-0000-4000-8000-00000000000e' returning 1)
+     select count(*) from d $$,
   $$ values (1::bigint) $$,
-  'co-commissioner UPDATE succeeds (count 1)');
+  'co-commissioner DELETE of that seat succeeds (count 1)');
 
 -- anon: sees nothing, writes nothing, and leagues SELECT returns EMPTY, not
 -- an error (falsifiable against a REVOKE on the policy-predicate helpers).
