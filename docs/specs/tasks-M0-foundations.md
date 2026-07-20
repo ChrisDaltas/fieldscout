@@ -31,7 +31,7 @@ Proof mapping in §7. The 1×/4×/64× reading and the pre-September fixture str
 - **`nfl_games` exists (001) but nothing writes to it.** Column is `kickoff_at` (spec erratum v2.6.1). Live sync approximates game windows from Sleeper's day-granularity `date` strings + a 36h constant. The free Sleeper schedule feed has **no kickoff timestamps** and there is **no official-inactives feed** → PROGRESS Q1 (**resolved:** nflverse supplement, D16).
 - **`player_stats` exists** with flat typed columns, `UNIQUE(player_id, season, week)`, `is_live`. **No `advanced` JSONB column** (§23.5) — deliberately *not* added in M0 (D8).
 - **`nfl_weeks` does not exist.** M0 creates it (§12.20 verbatim).
-- **Migrations:** `NNN_snake_case.sql`, 3-digit sequential (next = **037**), banner comment citing spec §, RLS + indexes in the same file, `IF NOT EXISTS` guards, service-role-managed tables get SELECT-only policies + a comment. No `supabase/config.toml`, **no local stack, no pgTAP anywhere** — bootstrapped in L.A0.5a.
+- **Migrations:** `NNN_snake_case.sql`, 3-digit sequential (next = **039** — 037 = explicit grants, 038 = R5 notify_list_followers hardening; this survey line originally said 037 and went stale through both renumberings, R20), banner comment citing spec §, RLS + indexes in the same file, `IF NOT EXISTS` guards, service-role-managed tables get SELECT-only policies + a comment. No `supabase/config.toml`, **no local stack, no pgTAP anywhere** — bootstrapped in L.A0.5a.
 - **Types:** `src/types/database.ts` is generated **plus a hand-written alias block at the end (~lines 2294–2348) that regeneration clobbers** — every typegen must re-append it (verify block location at task time).
 - **Tests:** Vitest 4, colocated `*.test.ts` under `src/lib/**`, pure-function style, inline fixtures, no mocking infra. `npm run test` = `vitest run`. No Playwright (CLAUDE.md's `npm run test:e2e` doesn't exist yet — lands with the first E2E milestone, M2 per plan §4.1).
 - **Lint:** `.eslintrc.json` is extends-only (`next/core-web-vitals`, `next/typescript`, `prettier`) — no custom rules yet.
@@ -233,7 +233,7 @@ Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see hea
 ### L.A0.5b — `nfl_weeks` migration + 2026 seed *(depends on L.A0.5a)*
 > Create the global NFL calendar. Read spec §12.20 (verbatim DDL), §23.3, §23.4, delivery plan §8.1–8.2, this doc §6 + D10.
 >
-> 1. `supabase/migrations/038_nfl_weeks.sql` per §6 *(was 037; renumbered when L.A0.5c took 037)*.
+> 1. `supabase/migrations/039_nfl_weeks.sql` per §6 *(was 037 → 038; renumbered again when the R5 hardening migration took 038, 2026-07-19)*.
 > 2. Seed derivation: run `fetchSchedule(2026)` (day-granularity is sufficient — boundaries are day math) via a throwaway script; verify Week 1 against the published 2026 opener; write explicit `America/New_York`-derived TIMESTAMPTZ literals (mind the Nov 1, 2026 DST transition); include the derivation output in the PR description.
 > 3. Typegen committed — **re-append the hand-written alias block** in `src/types/database.ts` (§2).
 > 4. pgTAP: anon + authenticated can SELECT; INSERT/UPDATE/DELETE denied for both (no policies exist); PK holds.
@@ -248,7 +248,7 @@ Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see hea
 > 3. Remove the flag from `supabase/config.toml`; pgTAP test pins the grant surface (existing-table grants, default-ACL canary table/function, RLS-still-gates behavioral check).
 > 4. Proof: fresh `supabase db reset` runs 001–037 clean + `npm run test:db` green.
 >
-> **Consequence for every future leagues migration:** no per-object `GRANT` statements needed — new tables/functions auto-expose exactly as in prod, and RLS is the effective gate (§8.2's per-table pgTAP proves it, exactly as before). Deliberate narrowing (e.g. an internal service-role-only function) must be an explicit `REVOKE` in that migration. Side effect: **`nfl_weeks` renumbers 037 → 038** (§6, L.A0.5b).
+> **Consequence for every future leagues migration:** no per-object `GRANT` statements needed — new tables/functions auto-expose exactly as in prod, and RLS is the effective gate (§8.2's per-table pgTAP proves it, exactly as before). Deliberate narrowing (e.g. an internal service-role-only function) must be an explicit `REVOKE` in that migration. Side effect: **`nfl_weeks` renumbers 037 → 038 → 039** (038 taken by `038_notify_list_followers_auth.sql`, the first such deliberate REVOKE — review finding R5, 2026-07-19; §6, L.A0.5b).
 
 ### L.A0.6 — M0 gate harness (exit-criteria proof) *(depends on L.A0.2b, L.A0.3, L.A0.4, L.A0.5b)*
 > Prove the M0 exit criteria. Read delivery plan §3 M0 row, this doc §7 + D7/D11.
@@ -266,7 +266,9 @@ Gating: **none — all tasks are unblocked** (Q1/Q2 resolved 2026-07-18; see hea
 
 **`supabase/migrations/037_explicit_api_grants.sql`** *(L.A0.5c, added 2026-07-19 — resolves D18)* — catch-up API-role grants for the 001–036 surface + `ALTER DEFAULT PRIVILEGES` mirroring production's verified default ACLs, replacing the deprecated `auto_expose_new_tables` local flag. No schema-shape change (typegen no-op). Details in the L.A0.5c task entry.
 
-**`supabase/migrations/038_nfl_weeks.sql`** *(was 037; renumbered when L.A0.5c took 037)* — spec §12.20 verbatim, repo conventions applied:
+*(Not in the original M0 plan: `038_notify_list_followers_auth.sql` — review finding R5, 2026-07-19 — in-body auth + anon REVOKE on the one pre-existing SECURITY DEFINER routine the 037 model would otherwise expose.)*
+
+**`supabase/migrations/039_nfl_weeks.sql`** *(was 037 → 038; renumbered again when the R5 hardening migration took 038)* — spec §12.20 verbatim, repo conventions applied:
 
 - Banner comment citing spec §12.20 / plan M0.
 - `CREATE TABLE IF NOT EXISTS nfl_weeks (season INTEGER NOT NULL, week INTEGER NOT NULL, starts_at TIMESTAMPTZ NOT NULL, first_kickoff_at TIMESTAMPTZ, last_game_ends_at TIMESTAMPTZ, correction_window_ends_at TIMESTAMPTZ, PRIMARY KEY (season, week))` — column-for-column §12.20; **no additions, no omissions**.
