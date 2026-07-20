@@ -121,27 +121,36 @@ describe('SleeperStatsProvider', () => {
     // The cross-check test below iterates the implementation's own map, so it
     // can never notice a DELETED mapping. This literal is the expectation.
     expect(SLEEPER_STAT_KEY_MAP).toEqual({
+      pass_att: 'pass_attempts',
+      pass_cmp: 'pass_completions',
       pass_yd: 'pass_yards',
       pass_td: 'pass_tds',
       pass_int: 'interceptions',
+      pass_sack: 'qb_sack_taken',
       pass_2pt: 'pass_2pt',
+      rush_att: 'rush_attempts',
       rush_yd: 'rush_yards',
       rush_td: 'rush_tds',
       rush_2pt: 'rush_2pt',
+      rec_tgt: 'targets',
       rec: 'receptions',
       rec_yd: 'receiving_yards',
       rec_td: 'receiving_tds',
       rec_2pt: 'rec_2pt',
       fum_lost: 'fumbles_lost',
+      fgm: 'fg_made',
+      fga: 'fg_attempted',
       fgm_40_49: 'fg_40_49',
       fgm_50p: 'fg_50_plus',
       xpm: 'pat_made',
+      xpa: 'pat_attempted',
       xpmiss: 'pat_missed', // R10: projections-fixture evidence only — see adapter comment
       sack: 'def_sack',
       int: 'def_int',
       fum_rec: 'def_fumble_rec',
       def_td: 'def_td',
       safe: 'def_safety',
+      pts_allow: 'def_points_allowed',
     })
   })
 
@@ -162,12 +171,12 @@ describe('SleeperStatsProvider', () => {
     expect(rows).toEqual([
       {
         playerId: '4881', season: 2026, week: 2,
-        stats: { pass_yards: 304, pass_tds: 3, interceptions: 1, pass_2pt: 1, rush_yards: 42, rush_tds: 1 },
+        stats: { pass_yards: 304, pass_tds: 3, interceptions: 1, qb_sack_taken: 2, pass_2pt: 1, rush_yards: 42, rush_tds: 1 },
         advanced: {},
       },
       {
         playerId: '9509', season: 2026, week: 2,
-        stats: { rush_yards: 118, rush_tds: 1, receptions: 4, receiving_yards: 33, rec_2pt: 1, fumbles_lost: 1 },
+        stats: { rush_attempts: 22, rush_yards: 118, rush_tds: 1, receptions: 4, receiving_yards: 33, rec_2pt: 1, fumbles_lost: 1 },
         advanced: {},
       },
       {
@@ -177,12 +186,12 @@ describe('SleeperStatsProvider', () => {
       },
       {
         playerId: '7839', season: 2026, week: 2,
-        stats: { fg_40_49: 2, fg_50_plus: 1, pat_made: 3, pat_missed: 1 },
+        stats: { fg_made: 3, fg_attempted: 4, fg_40_49: 2, fg_50_plus: 1, pat_made: 3, pat_missed: 1 },
         advanced: {},
       },
       {
         playerId: 'PHI', season: 2026, week: 2,
-        stats: { def_sack: 4, def_int: 2, def_fumble_rec: 1, def_td: 1, def_safety: 1 },
+        stats: { def_sack: 4, def_int: 2, def_fumble_rec: 1, def_td: 1, def_safety: 1, def_points_allowed: 17 },
         advanced: {},
       },
     ])
@@ -219,9 +228,9 @@ describe('SleeperStatsProvider', () => {
     stubHappyPath()
     const provider = new SleeperStatsProvider(frozenTime)
     expect(await provider.getSchedule(2026)).toEqual([
-      { gameId: '2026-wk01-BUF@KC', season: 2026, week: 1, homeTeam: 'KC', awayTeam: 'BUF', kickoffAt: null, status: 'final' },
-      { gameId: '2026-wk02-DAL@PHI', season: 2026, week: 2, homeTeam: 'PHI', awayTeam: 'DAL', kickoffAt: null, status: 'scheduled' },
-      { gameId: '2026-wk02-MIA@NYJ', season: 2026, week: 2, homeTeam: 'NYJ', awayTeam: 'MIA', kickoffAt: null, status: 'scheduled' },
+      { gameId: '2026-wk01-BUF@KC', season: 2026, week: 1, homeTeam: 'KC', awayTeam: 'BUF', kickoffAt: null, gameDate: '2026-09-10', status: 'final' },
+      { gameId: '2026-wk02-DAL@PHI', season: 2026, week: 2, homeTeam: 'PHI', awayTeam: 'DAL', kickoffAt: null, gameDate: '2026-09-17', status: 'scheduled' },
+      { gameId: '2026-wk02-MIA@NYJ', season: 2026, week: 2, homeTeam: 'NYJ', awayTeam: 'MIA', kickoffAt: null, gameDate: null, status: 'scheduled' },
     ])
   })
 

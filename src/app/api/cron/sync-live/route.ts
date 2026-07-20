@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+import { SleeperStatsProvider } from '@/lib/leagues/stats/sleeper-stats-provider'
+import { systemTime } from '@/lib/leagues/time/time-provider'
 import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncLiveStats } from '@/lib/sync/live-stats'
@@ -25,7 +27,15 @@ export async function GET(request: Request) {
 
   try {
     const currentWeek = await getCurrentNflWeek()
-    const summary = await syncLiveStats(createAdminClient(), season, currentWeek)
+    // The cron entry point is where real infrastructure is bound to the
+    // seam: the sleeper_free provider tier and the wall clock (§23.1; L.A0.2b).
+    const summary = await syncLiveStats(
+      createAdminClient(),
+      new SleeperStatsProvider(systemTime),
+      season,
+      currentWeek,
+      systemTime,
+    )
     return NextResponse.json(summary)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
