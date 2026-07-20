@@ -514,6 +514,64 @@ export type Database = {
           },
         ]
       }
+      league_members: {
+        Row: {
+          faab_balance: number | null
+          id: string
+          is_autodraft: boolean | null
+          is_placeholder: boolean | null
+          joined_at: string | null
+          league_id: string
+          role: string
+          team_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          faab_balance?: number | null
+          id?: string
+          is_autodraft?: boolean | null
+          is_placeholder?: boolean | null
+          joined_at?: string | null
+          league_id: string
+          role?: string
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          faab_balance?: number | null
+          id?: string
+          is_autodraft?: boolean | null
+          is_placeholder?: boolean | null
+          joined_at?: string | null
+          league_id?: string
+          role?: string
+          team_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_members_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leagues: {
         Row: {
           created_at: string | null
@@ -2272,6 +2330,8 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
+      is_league_member: { Args: { p_league_id: string }; Returns: boolean }
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
@@ -2417,7 +2477,6 @@ export const Constants = {
 } as const
 
 
-
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2429,6 +2488,7 @@ export const Constants = {
 export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
+export type LeagueMember = Database['public']['Tables']['league_members']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']

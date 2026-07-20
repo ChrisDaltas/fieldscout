@@ -371,21 +371,23 @@ GATE    everything → L.A1.16
 
 ---
 
-## 7. Migration plan (eight in M1, serialized)
+## 7. Migration plan (schema lane, serialized; numbering corrected 2026-07-20 — L.A1.2 session)
 
 | # | File | Contents | Task |
 |---|---|---|---|
 | 040 | `040_leagues_settings_columns.sql` | citext ext; §12.1 ALTER verbatim; canonical roster_settings default | L.A1.1 |
-| 041 | `041_league_members_and_helpers.sql` | §12.2 table; §12.0 helpers (search_path='' hardening); §12.1 policy swap | L.A1.2 |
-| 042 | `042_team_franchises.sql` | §12.22 teams ALTER + `list_id` DROP NOT NULL (D35a); teams RLS replacement (D35b); `team_managers` | L.A1.3 |
-| 043 | `043_league_invites.sql` | §12.23 (+ D46 send-tracking columns): `invite_slug` + `league_invites`; D36 `lower(username)` unique index + case-duplicate pre-check | L.A1.4 |
-| 044 | `044_league_weeks.sql` | §12.17 verbatim; no write policies | L.A1.5 |
-| 045 | `045_player_stats_box_columns.sql` | D41: additive box-score columns for deferred core_box keys; registry storage flips | L.A1.7 |
-| 046 | `046_scoring_templates.sql` | `is_template` column + template SELECT policy + 6 parity rows (idempotent seed) | L.A1.9 |
-| 047 | `047_scoring_snapshot.sql` | `snapshot_league_scoring` + `set_league_status` RPCs + D43 lifecycle guard trigger | L.A1.11 |
 | 049 | `049_handle_new_user_username_contract.sql` | Q7.1 critical fix (L.A1.1 review): signup metadata honored only when human-pattern — an anonymous signup could otherwise mint a `*-ai` handle (trigger context has `auth.role()` NULL, bypassing 040's guard). Post-dates 048 because 048 re-creates `handle_new_user` | L.A1.1 |
+| 050 | `050_reserve_placeholder_username_shape.sql` | R32 (L.A1.1 review): `user_<8hex>` placeholder shape reserved (CHECK carve-out + guard extension + metadata exclusion); R35 persona 32-char cap | L.A1.1 |
+| 051 | `051_handle_new_user_display_name_fallback.sql` | R31 (L.A1.1 review): `display_name` derives from `effective_username` — rejected metadata never propagates | L.A1.1 |
+| 052 | `052_league_members_and_helpers.sql` | §12.2 table; §12.0 helpers (search_path='' hardening); §12.1 policy swap *(was reserved as 041; renumbered at task time — the chain moved past the reservation via 048–051)* | L.A1.2 |
+| 053 | `053_team_franchises.sql` *(was 042)* | §12.22 teams ALTER + `list_id` DROP NOT NULL (D35a); teams RLS replacement (D35b); `team_managers` | L.A1.3 |
+| 054 | `054_league_invites.sql` *(was 043)* | §12.23 (+ D46 send-tracking columns): `invite_slug` + `league_invites` *(the D36 index moved to 040 per the Q4 ruling)* | L.A1.4 |
+| 055 | `055_league_weeks.sql` *(was 044)* | §12.17 verbatim; no write policies | L.A1.5 |
+| 056 | `056_player_stats_box_columns.sql` *(was 045)* | D41: additive box-score columns for deferred core_box keys; registry storage flips | L.A1.7 |
+| 057 | `057_scoring_templates.sql` *(was 046)* | `is_template` column + template SELECT policy + 6 parity rows (idempotent seed) | L.A1.9 |
+| 058 | `058_scoring_snapshot.sql` *(was 047)* | `snapshot_league_scoring` + `set_league_status` RPCs + D43 lifecycle guard trigger | L.A1.11 |
 
-Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 rehearsal waiver, D38 realtime waiver where applicable); pgTAP in the same PR *(waived for 045: additive columns on an already-tested table, no policy/constraint changes — coverage via L.A1.7's registry pins + vitest continuity, consistent with plan §2.3's "pgTAP for policies/constraints" scoping)*; typegen + alias-block re-append. M1 pgTAP files are **005–011** (004 was taken same-day by the C15 chip); migration **048** is likewise taken by the C15 fix — Builders confirm the next free numbers at task time. **Not in M1:** `drafts`/`draft_*` (M2), `league_lists` (M2, D32), `matchups`/`league_rosters`/`transactions`/`waiver_claims`/`trades`/`lineup_swaps`/`league_player_pool`/`team_week_results`/`stat_correction_events` (M4+), `commissioner_actions` (M6), `player_stats.advanced` JSONB (funded-advanced-stats milestone, D8).
+Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 rehearsal waiver, D38 realtime waiver where applicable); pgTAP in the same PR *(waived for 045: additive columns on an already-tested table, no policy/constraint changes — coverage via L.A1.7's registry pins + vitest continuity, consistent with plan §2.3's "pgTAP for policies/constraints" scoping)*; typegen + alias-block re-append. M1 pgTAP files are **005–011** (004 was taken same-day by the C15 chip); migrations **048** (C15 fix) and **049–051** (L.A1.1 review fixes) took the numbers directly after 040, so the remaining schema-lane tasks renumbered **052–058** (table above corrected 2026-07-20, L.A1.2 session — task-text mentions of 041–047 for pending migrations read through this table) — Builders confirm the next free numbers at task time. **Not in M1:** `drafts`/`draft_*` (M2), `league_lists` (M2, D32), `matchups`/`league_rosters`/`transactions`/`waiver_claims`/`trades`/`lineup_swaps`/`league_player_pool`/`team_week_results`/`stat_correction_events` (M4+), `commissioner_actions` (M6), `player_stats.advanced` JSONB (funded-advanced-stats milestone, D8).
 
 ---
 
