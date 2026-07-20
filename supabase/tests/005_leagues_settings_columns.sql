@@ -191,13 +191,14 @@ select is(
   'roster_settings default = the §7.3.2 canonical 12-team shape (golden pin, C9)');
 
 -- ---------------------------------------------------------------------------
--- D. leagues RLS surface — post-swap pair (the §12.1 swap landed in 052,
---    L.A1.2; this pin originally held the 001 pair "intact for the swap").
---    006_league_members.sql owns the behavioral swap tests.
+-- D. leagues RLS surface — post-054 single SELECT policy (the §12.1 swap
+--    landed in 052; 054 dropped "League owners can manage" per the Q8
+--    ruling — league state is server-authoritative, owner SELECT rides the
+--    swap policy's owner branch). 006/008 own the behavioral tests.
 -- ---------------------------------------------------------------------------
 select policies_are('public', 'leagues',
-  array['Leagues viewable by members', 'League owners can manage'],
-  'leagues carries the post-052 policy pair (old teams-based SELECT policy swapped out)');
+  array['Leagues viewable by members'],
+  'leagues carries ONLY the member/owner SELECT policy (054/Q8: no client write path)');
 
 select is((select count(*) from leagues where name like 'pgtap-%'), 3::bigint,
   'service view: 3 seeded fixture leagues exist (SELECT-sees pin before deny tests; scoped so real local rows never false-red this)');
