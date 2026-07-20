@@ -157,7 +157,7 @@ describe('flex_move (E42)', () => {
     clock.advanceTo(new Date('2026-09-17T19:59:59Z')) // 1s before the announcement
     expect(await scheduleGame(provider, G3)).toMatchObject({
       kickoffAt: new Date('2026-09-21T00:20:00Z'),
-      gameDate: '2026-09-21',
+      gameDate: '2026-09-20', // SNF: UTC Monday, but the ET Sunday (R25/library v2)
       status: 'scheduled',
     })
 

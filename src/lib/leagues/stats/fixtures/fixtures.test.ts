@@ -16,7 +16,7 @@ import {
   serializeFixture,
   type FixtureRecording,
 } from './fixture-format'
-import { FixtureReplayProvider } from './fixture-replay-provider'
+import { FixtureReplayProvider, ReplayedFailureError } from './fixture-replay-provider'
 import { MemoryFixtureSink, RecordingStatsProvider } from './recording-stats-provider'
 
 // ── Zero external calls, mechanically proven ────────────────────────────────
@@ -273,6 +273,33 @@ describe('failure-window replay (D6 / §23.2)', () => {
     clock.advanceTo(new Date(REPLAY_ANCHOR.getTime() + 10 * MIN))
     expect((await provider.getWeekStats(SEASON, WEEK))[0].stats.rush_yards).toBe(10)
   })
+
+  it('carries the recorded status on replayed failures — not just the message (R29)', async () => {
+    const recording: FixtureRecording = {
+      header: {
+        format: FIXTURE_FORMAT,
+        version: FIXTURE_FORMAT_VERSION,
+        provider: 'stub',
+        season: SEASON,
+        week: WEEK,
+      },
+      entries: [
+        {
+          t: REC_START.toISOString(),
+          method: 'getWeekStats',
+          args: [SEASON, WEEK],
+          ok: false,
+          status: 429,
+          error: 'rate limited',
+        },
+      ],
+    }
+    const { provider } = makeReplay(parseFixture(serializeFixture(recording)))
+    const err = await provider.getWeekStats(SEASON, WEEK).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ReplayedFailureError)
+    expect((err as ReplayedFailureError).message).toBe('rate limited')
+    expect((err as ReplayedFailureError).status).toBe(429)
+  })
 })
 
 describe('replay pacing equivalence (M0 exit criterion 1: 1×/4×/64×)', () => {
@@ -320,6 +347,24 @@ describe('fixture format', () => {
     expect(() => parseFixture('{"format":"something-else","version":1}\n')).toThrow(/unrecognized format/)
     expect(() => parseFixture(`{"format":"${FIXTURE_FORMAT}","version":99}\n`)).toThrow(/unsupported version/)
     expect(() => parseFixture('')).toThrow(/empty file/)
+  })
+
+  it('rejects headers missing the D27 identity fields loudly (R28)', () => {
+    // Without this, a provider-less header parses fine and flows downstream
+    // as name = 'fixture:undefined'.
+    const base = `"format":"${FIXTURE_FORMAT}","version":${FIXTURE_FORMAT_VERSION}`
+    expect(() => parseFixture(`{${base},"season":2026,"week":2}\n`)).toThrow(
+      /missing provider identity/,
+    )
+    expect(() => parseFixture(`{${base},"provider":"","season":2026,"week":2}\n`)).toThrow(
+      /missing provider identity/,
+    )
+    expect(() => parseFixture(`{${base},"provider":"sleeper","week":2}\n`)).toThrow(
+      /missing season\/week/,
+    )
+    expect(() => parseFixture(`{${base},"provider":"sleeper","season":2026}\n`)).toThrow(
+      /missing season\/week/,
+    )
   })
 
   it('reviveDates is strict: date-only and non-date strings never become Dates', () => {

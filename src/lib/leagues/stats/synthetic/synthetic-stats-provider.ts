@@ -38,6 +38,11 @@ import type {
 /** §23.1: the official inactives list publishes ~90 min pre-kickoff. */
 export const INACTIVES_LEAD_MS = 90 * 60 * 1000
 
+/** gameDate is the provider-reported calendar day in ET (D25/R25), matching
+ *  the sleeper tier — a Sunday-night game carries the Sunday date, not the
+ *  UTC Monday, which would shift the seam's window for a late game by a day. */
+const ET_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' })
+
 /** D15 placeholder keys — the only advanced keys that exist in M0. */
 export const TRACKING_PLACEHOLDER_KEY = 'example_tracking_yards'
 export const CHARTED_PLACEHOLDER_KEY = 'example_charted_yards'
@@ -246,7 +251,7 @@ export class SyntheticStatsProvider implements StatsProvider {
         homeTeam: game.homeTeam,
         awayTeam: game.awayTeam,
         kickoffAt: kickoff, // the synthetic tier HAS kickoff timestamps
-        gameDate: kickoff.toISOString().slice(0, 10),
+        gameDate: ET_DAY.format(kickoff),
         status: this.status(game),
       }
     })

@@ -83,11 +83,14 @@ async function main() {
     if (Date.now() < endAt) await sleep(POLL_INTERVAL_MS)
   } while (Date.now() < endAt)
 
+  // Header identity + path read the wrapped provider's name (the recording
+  // wrapper is transparent) — never hardcoded, so the fixture can't lie about
+  // its source if this CLI ever wraps a different provider (D27/R27).
   const jsonl = serializeFixture({
     header: {
       format: FIXTURE_FORMAT,
       version: FIXTURE_FORMAT_VERSION,
-      provider: 'sleeper',
+      provider: provider.name,
       season,
       week,
     },
@@ -96,7 +99,7 @@ async function main() {
 
   const outPath = resolve(
     process.cwd(),
-    `fixtures/nfl/${season}/wk${String(week).padStart(2, '0')}/sleeper.jsonl.gz`,
+    `fixtures/nfl/${season}/wk${String(week).padStart(2, '0')}/${provider.name}.jsonl.gz`,
   )
   mkdirSync(dirname(outPath), { recursive: true })
   writeFileSync(outPath, gzipSync(jsonl))

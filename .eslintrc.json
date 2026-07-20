@@ -53,6 +53,30 @@
           {
             "selector": "CallExpression[callee.object.name='Math'][callee.property.value='random']",
             "message": "Math['random']() routes around the determinism guard (L.A0.3, D3 spirit). Use the seeded PRNG."
+          },
+          {
+            "selector": "MemberExpression[object.name='globalThis'][property.name='Math']",
+            "message": "globalThis.Math routes around the determinism guard (L.A0.3/R22). Use the seeded PRNG (synthetic/prng.ts)."
+          },
+          {
+            "selector": "VariableDeclarator[init.name='Math']",
+            "message": "Aliasing (or destructuring) the Math object routes around the determinism guard (L.A0.3/R22). Use the seeded PRNG."
+          },
+          {
+            "selector": "AssignmentExpression[right.name='Math']",
+            "message": "Aliasing the Math object routes around the determinism guard (L.A0.3/R22). Use the seeded PRNG."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='crypto'][callee.property.name='getRandomValues']",
+            "message": "crypto.getRandomValues() is a nondeterministic random source (L.A0.3/R22). Use the seeded PRNG (synthetic/prng.ts)."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='crypto'][callee.property.value='getRandomValues']",
+            "message": "crypto['getRandomValues']() routes around the determinism guard (L.A0.3/R22). Use the seeded PRNG."
+          },
+          {
+            "selector": "MemberExpression[object.name='globalThis'][property.name='crypto']",
+            "message": "globalThis.crypto routes around the determinism guard (L.A0.3/R22). Use the seeded PRNG."
           }
         ]
       }
