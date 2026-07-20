@@ -144,3 +144,38 @@ export class FixtureReplayProvider implements StatsProvider {
     return this.replay('getInactives', [season, week])
   }
 }
+
+/**
+ * The D28/R30 byte-identical source-semantics opt-in (M0 task L.A0.6; logged
+ * as decision D29).
+ *
+ * A replayed ingestion normally writes `source: 'fixture:<recorded>'` — the
+ * honest default. A consumer that deliberately needs to reproduce the live
+ * session's rows byte-for-byte (source column included — the D24 replay
+ * guarantee, and the M0 gate's cross-check) wraps the replayer in this: a
+ * delegating provider whose `name` is the RECORDED provider's identity.
+ *
+ * Impossible to reach silently, by construction:
+ * - `FixtureReplayProvider` itself has no name option — every construction
+ *   path yields the `fixture:`-prefixed name (asserted in the gate).
+ * - This is the only sanctioned path, and it is a separate, loudly-named
+ *   call at the composition site — never a flag that can default on.
+ * - It refuses (at runtime, not just types) to wrap anything but a real
+ *   FixtureReplayProvider, so it cannot relabel an arbitrary provider.
+ */
+export function impersonateRecordedProvider(replay: FixtureReplayProvider): StatsProvider {
+  if (!(replay instanceof FixtureReplayProvider)) {
+    throw new Error(
+      'impersonateRecordedProvider: only a FixtureReplayProvider may replay under its recorded identity (D28/R30)',
+    )
+  }
+  return {
+    name: replay.recordedProviderName,
+    capabilities: replay.capabilities,
+    getSchedule: (season) => replay.getSchedule(season),
+    getGameStates: (season, week) => replay.getGameStates(season, week),
+    getWeekStats: (season, week) => replay.getWeekStats(season, week),
+    getInjuries: (season, week) => replay.getInjuries(season, week),
+    getInactives: (season, week) => replay.getInactives(season, week),
+  }
+}
