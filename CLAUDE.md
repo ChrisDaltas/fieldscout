@@ -226,6 +226,7 @@ export function ListCard({ list }: ListCardProps) {
 - Definition of Done = delivery plan §2.3: tests green (shown, not claimed),
   checklists §8.1–8.4 pass for schema/RLS/RPC/realtime work, PROGRESS updated,
   small commit citing the spec §.
+- All changes land via branch + PR — never commit directly to main. One task, one PR.
 
 ---
 
