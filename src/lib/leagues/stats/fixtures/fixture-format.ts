@@ -72,6 +72,14 @@ export function parseFixture(jsonl: string): FixtureRecording {
   if (header.version !== FIXTURE_FORMAT_VERSION) {
     throw new Error(`fixture parse: unsupported version ${header.version}`)
   }
+  // D27's identity guarantee is only total if the header carries it whole —
+  // a missing provider would otherwise flow to `name = 'fixture:undefined'`.
+  if (typeof header.provider !== 'string' || header.provider.length === 0) {
+    throw new Error('fixture parse: header missing provider identity (D27)')
+  }
+  if (!Number.isInteger(header.season) || !Number.isInteger(header.week)) {
+    throw new Error('fixture parse: header missing season/week (D27)')
+  }
   const entries = lines.slice(1).map((line) => JSON.parse(line) as FixtureEntry)
   return { header, entries }
 }

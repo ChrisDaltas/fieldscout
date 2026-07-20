@@ -34,6 +34,19 @@ function callKey(method: FixtureMethod, args: number[]): string {
   return `${method}(${args.join(',')})`
 }
 
+/** A replayed recorded failure. Carries the recorded HTTP-ish `status` so a
+ *  consumer branching on it sees the same information live and replayed —
+ *  the recorder captures it, so replay must not drop it (D6/R29). */
+export class ReplayedFailureError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+  ) {
+    super(message)
+    this.name = 'ReplayedFailureError'
+  }
+}
+
 export class FixtureReplayProvider implements StatsProvider {
   readonly name: string
   /** The identity the fixture was recorded from (header, D27/D28). */
@@ -102,8 +115,11 @@ export class FixtureReplayProvider implements StatsProvider {
       )
     }
     if (!latest.ok) {
-      // Recorded failure windows replay as failures (D6).
-      throw new Error(latest.error ?? `recorded failure for ${key} at ${latest.t}`)
+      // Recorded failure windows replay as failures (D6), status included (R29).
+      throw new ReplayedFailureError(
+        latest.error ?? `recorded failure for ${key} at ${latest.t}`,
+        latest.status,
+      )
     }
     return reviveDates(latest.body) as T
   }
