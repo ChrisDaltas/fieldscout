@@ -2142,16 +2142,90 @@ export type Database = {
           },
         ]
       }
+      team_managers: {
+        Row: {
+          end_reason: string | null
+          ended_at: string | null
+          ended_by: string | null
+          ended_week: number | null
+          id: string
+          league_id: string
+          role: string
+          started_at: string
+          started_week: number | null
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          end_reason?: string | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ended_week?: number | null
+          id?: string
+          league_id: string
+          role?: string
+          started_at?: string
+          started_week?: number | null
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          end_reason?: string | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ended_week?: number | null
+          id?: string
+          league_id?: string
+          role?: string
+          started_at?: string
+          started_week?: number | null
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_managers_ended_by_fkey"
+            columns: ["ended_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_managers_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_managers_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_managers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       teams: {
         Row: {
           created_at: string | null
           id: string
           league_id: string | null
-          list_id: string
+          list_id: string | null
           losses: number | null
           name: string
           owner_id: string
+          retired_at_week: number | null
           scoring_system_id: string | null
+          status: string
+          successor_team_id: string | null
           total_points: number | null
           updated_at: string | null
           wins: number | null
@@ -2160,11 +2234,14 @@ export type Database = {
           created_at?: string | null
           id?: string
           league_id?: string | null
-          list_id: string
+          list_id?: string | null
           losses?: number | null
           name: string
           owner_id: string
+          retired_at_week?: number | null
           scoring_system_id?: string | null
+          status?: string
+          successor_team_id?: string | null
           total_points?: number | null
           updated_at?: string | null
           wins?: number | null
@@ -2173,11 +2250,14 @@ export type Database = {
           created_at?: string | null
           id?: string
           league_id?: string | null
-          list_id?: string
+          list_id?: string | null
           losses?: number | null
           name?: string
           owner_id?: string
+          retired_at_week?: number | null
           scoring_system_id?: string | null
+          status?: string
+          successor_team_id?: string | null
           total_points?: number | null
           updated_at?: string | null
           wins?: number | null
@@ -2209,6 +2289,13 @@ export type Database = {
             columns: ["scoring_system_id"]
             isOneToOne: false
             referencedRelation: "scoring_systems"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_successor_team_id_fkey"
+            columns: ["successor_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -2477,6 +2564,8 @@ export const Constants = {
 } as const
 
 
+
+
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2504,6 +2593,8 @@ export type PersonaSourceRanking =
 export type Player = Database['public']['Tables']['players']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']
+export type Team = Database['public']['Tables']['teams']['Row']
+export type TeamManager = Database['public']['Tables']['team_managers']['Row']
 
 /** Tier grade a player can be assigned within a ranked list. */
 export type ListTier = 'S' | 'A' | 'B' | 'C' | 'D' | 'F'
