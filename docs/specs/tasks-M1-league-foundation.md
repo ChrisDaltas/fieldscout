@@ -137,7 +137,8 @@ claim_league_invite(p_token text) RETURNS jsonb
 Dependency order — three lanes; **schema lane serialized** (plan §2.2), engine lane pure-TS parallel, API/UI fan out behind their dependencies:
 
 ```
-SCHEMA  L.A1.1(040) → L.A1.2(041) → L.A1.3(042) → L.A1.4(043) → L.A1.5(044) → L.A1.7(045) → L.A1.9(046) → L.A1.11(047)
+SCHEMA  L.A1.1(040) → L.A1.2(052) → L.A1.3(053) → L.A1.4(055) → L.A1.5(056) → L.A1.7(057) → L.A1.9(058) → L.A1.11(059)
+        (numbers per the corrected §7 table — 048–051 and the 054 review-fix migration took the original reservations)
 ENGINE  L.A1.6 (no deps — parallel from day one) · L.A1.7 → L.A1.8 → L.A1.10 (L.A1.10 also needs L.A1.9's authored rules)
 API     {L.A1.2, L.A1.3, L.A1.6, L.A1.9} → L.A1.12 → L.A1.15 · {L.A1.6, L.A1.11, L.A1.12} → L.A1.13 · {L.A1.4, L.A1.12} → L.A1.14
 UI      L.A1.6 → L.A2.2 · L.A1.9 → L.A2.3 · L.A1.12/13 → { L.A2.1, L.A2.7 } · {L.A1.13, L.A2.2, L.A2.3} → L.A2.4
@@ -151,14 +152,15 @@ GATE    everything → L.A1.16
 > **Q4/Q7 rulings (Chris, 2026-07-20) fold the username contract into this task's schema work:** `profiles.username` CHECK `^[a-z0-9_]{5,20}$ OR ^[a-z0-9]+(-[a-z0-9]+)*-ai$` (persona exemption, Q7.1) + the `lower(username)` unique index (D36's 043 slot superseded — the index moves here) + a 025-pattern namespace-guard trigger (authenticated/anon can never write a persona-pattern username) + the settings-page username field goes display-only (Q7.2 — permanence is post-selection; no DB permanence trigger yet) + `seed-dev-user.ts` `'dev'` → `'dev_user'` (Q7.3). *(History: halted 2026-07-20 on the stop condition when the persona handles + settings rename flow surfaced; resumed same day on the Q7 ruling — PROGRESS §3 Q7. In-session adversarial review then found the signup-metadata bypass — fixed as **migration 049** since 048 re-creates `handle_new_user` after 040; plus the `/username` post-selection gate, index-expression + multi-segment pins, and full §12.1 type/NOT-NULL coverage. Fact correction: the roster personas live in `ai_personas`, not `profiles` — only `fieldscout-ai` is a persona-pattern profiles row.)*
 >
 > 1. `040_leagues_settings_columns.sql`: `CREATE EXTENSION IF NOT EXISTS citext;` + §12.1's ALTER verbatim (status, format, team_count CHECK (8,10,12,14,16), regular_season_weeks, playoff_teams, playoff_start_week, waiver_type, faab_budget, trade_review, trade_deadline_week, lineup_lock, settings JSONB, scoring_rules_snapshot, deleted_at). Replace the `roster_settings` DEFAULT with the §7.3.2 **preset-table Default counts rendered in the canonical `starting_slots[]` shape** — QB1/RB2/WR2/TE1/FLEX(W/R/T)1 keyed `flex`/K1/DST1, `bench` 6, `ir_slots` [one unrestricted spot, designations OUT+IR], `swap_spots` 0 — NOT the spec's printed multi-flex JSONB example, which illustrates the unique-key shape (two flexes), not the defaults (C9; spec erratum v2.7.1 — no app code has ever written a leagues row; verify `SELECT count(*) FROM leagues` = 0 on the local reset and note the prod check in the PR).
-> 2. **No policy changes yet** (041 owns the swap — helpers need `league_members` to exist first).
+> 2. **No policy changes yet** (L.A1.2's migration — landed as 052 — owns the swap; helpers need `league_members` to exist first).
 > 3. pgTAP 005: column/constraint pins (team_count CHECK at 8 and 16 pass, 7/9/18 fail; status default 'setup'), canonical roster_settings default golden-pinned.
 > 4. Typegen + alias block re-append (add `League` alias).
 >
 > DoD: §4 standing rules; `db reset` 001–040 clean; deliberate-break probe (e.g. widen the CHECK) shown failing pgTAP.
 
-### L.A1.2 — Migration 041: league_members + §12.0 helpers + leagues policy swap
+### L.A1.2 — Migration 052 *(landed; was reserved as 041)*: league_members + §12.0 helpers + leagues policy swap
 > Read spec §12.0–12.2, §17, delivery plan §8.2, this doc §4. Depends on L.A1.1.
+> *(2026-07-20, post-landing: items 1–2's "keep 'League owners can manage'" and the "Commish manages members" FOR ALL policy are superseded by the Q8 ruling / spec v2.8.2 — migration 054 dropped the owner write policy and replaced the commish FOR ALL with a placeholder-seat INSERT/DELETE pair, no client UPDATE. See PROGRESS R37/R38.)*
 >
 > 1. `041_league_members_and_helpers.sql`: `league_members` per §12.2 verbatim (incl. `faab_balance`, `UNIQUE(league_id, user_id)`, `UNIQUE(league_id, team_id)`, both indexes); then `is_league_member` / `is_league_commish` per §12.0 **with the v2.0 hardening applied** (`SET search_path = ''`, schema-qualified) — note §12.0's printed bodies omit it; the hardening note is normative; then the §12.1 policy swap (DROP "Leagues are viewable by members"; CREATE the `is_league_member(id) OR owner_id = auth.uid()` SELECT policy; keep "League owners can manage").
 > 2. league_members policies per §12.2 ("Members viewable by league members", "Commish manages members") — add an explicit `WITH CHECK (is_league_commish(league_id))` to the commish FOR ALL policy for clarity/pinning. (Not a spec hole: Postgres applies a FOR ALL policy's USING expression to new rows when WITH CHECK is omitted, so §12.2's printed policy already denies non-commish INSERTs — the same implicit-check semantics cover the other FOR ALL USING-only policies in §12; don't flag them as deviations, and don't use dropping the WITH CHECK as the deliberate-break probe — it's behaviorally a no-op.)
@@ -167,7 +169,7 @@ GATE    everything → L.A1.16
 >
 > DoD: §4 standing rules; probe: temporarily re-point the leagues SELECT policy at the OLD teams-based check → pgTAP membership tests fail (shown, reverted).
 
-### L.A1.3 — Migration 042: franchise columns + team_managers + teams RLS replacement
+### L.A1.3 — Migration 053 *(landed; was reserved as 042)*: franchise columns + team_managers + teams RLS replacement
 > Read spec §7.2.1, §12.22, erratum v2.7.1 (D35), delivery plan §8.2, this doc D35/D42. Depends on L.A1.2 (team_managers RLS uses `is_league_member`; schema-lane order).
 >
 > 1. `042_team_franchises.sql`: `ALTER TABLE teams` — §12.22's three columns (status/retired_at_week/successor_team_id) **plus** `ALTER COLUMN list_id DROP NOT NULL` (D35a). `CREATE TABLE team_managers` per §12.22 verbatim incl. `one_open_stint_per_team` partial unique index + user index + RLS ("Stints viewable by league members"; **no client write policies** — writes only via RPCs).
@@ -178,7 +180,7 @@ GATE    everything → L.A1.16
 >
 > DoD: §4 standing rules; probe: drop the partial index predicate → double-open-stint test fails (shown, reverted).
 
-### L.A1.4 — Migration 043: league_invites + invite_slug
+### L.A1.4 — Migration 055 *(was 043)*: league_invites + invite_slug
 > Read spec §7.2 (invite requirements + E53/E54/E65), §12.23 (+ D46/D48 errata), this doc §4. Depends on L.A1.1 (citext — invited_username/invited_email/invite_slug are CITEXT) + L.A1.2 (`is_league_commish` for the SELECT policy); L.A1.3 precedes it by schema-lane serialization only (target_team_id references `teams`, a 001 table). *(The D36 username index moved to L.A1.1/040 per the Q4 ruling, 2026-07-20.)*
 >
 > 1. `043_league_invites.sql`: `ALTER TABLE leagues ADD COLUMN invite_slug CITEXT UNIQUE;` + `league_invites` per §12.23 **plus the D46 additive columns** (`created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`, `last_sent_at TIMESTAMPTZ`) (token default via pgcrypto, invited_username/invited_email CITEXT, max_uses/use_count, expiry default 14 days, revoked/claimed columns) + league index + RLS: "Invites viewable by commish" SELECT only; **no client writes** (create/revoke/claim all via RPCs).
@@ -187,7 +189,7 @@ GATE    everything → L.A1.16
 >
 > DoD: §4 standing rules. Note: the pre-auth claim *preview* is deliberately NOT an RLS carve-out — it's a SECURITY DEFINER RPC (L.A1.14) exposing only league name + team label (§12.23).
 
-### L.A1.5 — Migration 044: league_weeks
+### L.A1.5 — Migration 056 *(was 044)*: league_weeks
 > Read spec §12.17, §23.4, this doc D38. Depends on L.A1.4 (schema lane order only).
 >
 > 1. `044_league_weeks.sql`: table per §12.17 verbatim (status default 'upcoming', median_score NUMERIC(8,2), waivers/finalized/reopened columns, `UNIQUE(league_id, season, week)`) + member-SELECT policy + **no write policies** (populated by M4's schedule/`league-week-advance` machinery; banner says so).
@@ -205,7 +207,7 @@ GATE    everything → L.A1.16
 >
 > DoD: plan §2.3 + §4.3; deliberate-break probe (flip one default) fails the golden pin.
 
-### L.A1.7 — Migration 045 + registry completion: def_ya seeding (Q3), box-score columns (D41), adapter re-check
+### L.A1.7 — Migration 057 *(was 045)* + registry completion: def_ya seeding (Q3), box-score columns (D41), adapter re-check
 > Read PROGRESS Q3 resolution, spec §23.5, App B.4, this doc D41/D44, M0 decisions D5/D20–D22. Schema lane, after L.A1.5. **Needs web access** (ESPN published scoring table) and the checked-in 2025-wk2 fixture.
 >
 > 1. **Verify ESPN's split-D/ST bucket boundaries** from ESPN's official published table (record URL + retrieved values in the PR — App B's "re-verify at build time" rule). Seed `def_ya_<lo>_<hi>` keys on those exact buckets (D21 convention, Q3 approval) + a `def_yards_allowed` raw ingestion key. Registry golden-pin test updated (full key list as literals — R23 pattern).
@@ -224,7 +226,7 @@ GATE    everything → L.A1.16
 >
 > DoD: plan §2.3 + §4.3.
 
-### L.A1.9 — Migration 046: is_template + the 6 parity template rows
+### L.A1.9 — Migration 058 *(was 046)*: is_template + the 6 parity template rows
 > Read spec §7.3.3, Appendix B.1/B.4 (+ the ⚠ re-verify rule), App A.2, this doc D34/D44. Schema lane, after L.A1.7. **Needs web access** (ESPN/Yahoo/Sleeper official help pages).
 >
 > 1. **Re-verify every Appendix B cell** against each platform's current official help pages (K distance tiers, D/ST tables, INT −2 vs −1, fumble values); record per-cell evidence (URL + value) in the PR. Divergences from App B: stop and file a spec question (parity guarantee is the product promise — never silently ship drifted values).
@@ -245,7 +247,7 @@ GATE    everything → L.A1.16
 >
 > DoD: plan §2.3 + §4.3; these tests join the M1 gate suite (L.A1.16).
 
-### L.A1.11 — Migration 047: snapshot RPC + lifecycle guard (the gate's item 2)
+### L.A1.11 — Migration 059 *(was 047)*: snapshot RPC + lifecycle guard (the gate's item 2)
 > Read spec §7.3.3 (snapshot), §7.3.8 (final validation bullet), §7.1 (status machine), this doc D43. Schema lane, after L.A1.9.
 >
 > 1. `047_scoring_snapshot.sql`: `snapshot_league_scoring(p_league_id)` — SECURITY DEFINER `SET search_path=''`, in-body commish check, copies the league's `scoring_systems.rules` into `scoring_rules_snapshot` (REVOKE PUBLIC/anon); `set_league_status(p_league_id, p_status)` — validates §7.1 transitions available in M1 (`setup ↔ scheduled`; anything → `drafting`+ is refused in M1 with "draft engine lands in M2" *except* via the M2 draft_start path to come); BEFORE UPDATE trigger on leagues: any transition into `drafting/in_season/playoffs/complete` with `scoring_rules_snapshot IS NULL` raises (D43).
@@ -292,7 +294,7 @@ GATE    everything → L.A1.16
 > Read spec §7.2 (roles/kick/capacity), §7.2.1 + D42 (pre-draft semantics), §12.22, §15.1, §17. Depends on L.A1.3 + L.A1.12.
 >
 > 1. RPCs: `add_placeholder_seat` (teams row owned by commish + league_members row user_id NULL is_placeholder — capacity-capped at team_count), `set_member_role` (promote/demote co_commissioner; exactly-one-commissioner invariant; creator never removable by a co-commish), `assign_manager` (seat a user on a franchise → open stint; §15.1), `remove_manager(p_mode)` with the full three-outcome signature, pre-draft semantics per D42 (takeover → seat swap/reseat via invite; vacate → seat reverts to placeholder; retire → friendly "not available before the draft"); `leave_league` (`end_reason='left'`; commissioner must transfer role first). **Every league_members insert here (placeholder, assign) seeds `faab_balance` from `faab_budget` (§12.2) so all seats match the create/join/claim paths.**
-> 2. Routes per §15.1 (`POST /api/leagues/[id]/members`, `PATCH/DELETE .../members/[mid]`, `POST .../teams/[tid]/assign-manager`). *(No `is_autodraft` handling: the column ships in 041 per §12.2 verbatim, but the §15.1 members-PATCH autodraft toggle has no consumer before a draft exists — deferred to M2 with the draft engine, see §11; M1's PATCH rejects it with a clear message.)* Every stint close/open inside the same txn as the league_members cache update (§12.2 note).
+> 2. Routes per §15.1 (`POST /api/leagues/[id]/members`, `PATCH/DELETE .../members/[mid]`, `POST .../teams/[tid]/assign-manager`). *(No `is_autodraft` handling: the column shipped in 052 per §12.2 verbatim, but the §15.1 members-PATCH autodraft toggle has no consumer before a draft exists — deferred to M2 with the draft engine, see §11; M1's PATCH rejects it with a clear message.)* Every stint close/open inside the same txn as the league_members cache update (§12.2 note).
 > 3. Tests: stint history integrity (remove → re-invite same user → two rows, no merge — E51 pre-draft analogue); access-derives-from-open-stint (removed member's league_members row gone/closed → member-scoped SELECTs return nothing — E50 analogue at M1 scope); role invariants (second commissioner rejected; co-commish cannot remove creator); capacity boundary (seat team_count+1 rejected).
 >
 > DoD: plan §2.3 + §4 standing rules.
@@ -381,13 +383,14 @@ GATE    everything → L.A1.16
 | 051 | `051_handle_new_user_display_name_fallback.sql` | R31 (L.A1.1 review): `display_name` derives from `effective_username` — rejected metadata never propagates | L.A1.1 |
 | 052 | `052_league_members_and_helpers.sql` | §12.2 table; §12.0 helpers (search_path='' hardening); §12.1 policy swap *(was reserved as 041; renumbered at task time — the chain moved past the reservation via 048–051)* | L.A1.2 |
 | 053 | `053_team_franchises.sql` *(was 042)* | §12.22 teams ALTER + `list_id` DROP NOT NULL (D35a); teams RLS replacement (D35b); `team_managers` | L.A1.3 |
-| 054 | `054_league_invites.sql` *(was 043)* | §12.23 (+ D46 send-tracking columns): `invite_slug` + `league_invites` *(the D36 index moved to 040 per the Q4 ruling)* | L.A1.4 |
-| 055 | `055_league_weeks.sql` *(was 044)* | §12.17 verbatim; no write policies | L.A1.5 |
-| 056 | `056_player_stats_box_columns.sql` *(was 045)* | D41: additive box-score columns for deferred core_box keys; registry storage flips | L.A1.7 |
-| 057 | `057_scoring_templates.sql` *(was 046)* | `is_template` column + template SELECT policy + 6 parity rows (idempotent seed) | L.A1.9 |
-| 058 | `058_scoring_snapshot.sql` *(was 047)* | `snapshot_league_scoring` + `set_league_status` RPCs + D43 lifecycle guard trigger | L.A1.11 |
+| 054 | `054_league_server_authoritative.sql` | Q8 ruling / M1 batch-2 review fixes (R37–R40, R43): leagues owner FOR ALL dropped; league_members commish FOR ALL → placeholder-seat INSERT/DELETE (no client UPDATE); teams status + not-self-successor CHECKs; R39 FK indexes | batch-2 remediation |
+| 055 | `055_league_invites.sql` *(was 043, then 054)* | §12.23 (+ D46 send-tracking columns): `invite_slug` + `league_invites` *(the D36 index moved to 040 per the Q4 ruling)* | L.A1.4 |
+| 056 | `056_league_weeks.sql` *(was 044, then 055)* | §12.17 verbatim; no write policies | L.A1.5 |
+| 057 | `057_player_stats_box_columns.sql` *(was 045, then 056)* | D41: additive box-score columns for deferred core_box keys; registry storage flips | L.A1.7 |
+| 058 | `058_scoring_templates.sql` *(was 046, then 057)* | `is_template` column + template SELECT policy + 6 parity rows (idempotent seed) | L.A1.9 |
+| 059 | `059_scoring_snapshot.sql` *(was 047, then 058)* | `snapshot_league_scoring` + `set_league_status` RPCs + D43 lifecycle guard trigger | L.A1.11 |
 
-Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 rehearsal waiver, D38 realtime waiver where applicable); pgTAP in the same PR *(waived for 045: additive columns on an already-tested table, no policy/constraint changes — coverage via L.A1.7's registry pins + vitest continuity, consistent with plan §2.3's "pgTAP for policies/constraints" scoping)*; typegen + alias-block re-append. M1 pgTAP files are **005–011** (004 was taken same-day by the C15 chip); migrations **048** (C15 fix) and **049–051** (L.A1.1 review fixes) took the numbers directly after 040, so the remaining schema-lane tasks renumbered **052–058** (table above corrected 2026-07-20, L.A1.2 session — task-text mentions of 041–047 for pending migrations read through this table) — Builders confirm the next free numbers at task time. **Not in M1:** `drafts`/`draft_*` (M2), `league_lists` (M2, D32), `matchups`/`league_rosters`/`transactions`/`waiver_claims`/`trades`/`lineup_swaps`/`league_player_pool`/`team_week_results`/`stat_correction_events` (M4+), `commissioner_actions` (M6), `player_stats.advanced` JSONB (funded-advanced-stats milestone, D8).
+Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 rehearsal waiver, D38 realtime waiver where applicable); pgTAP in the same PR *(waived for 057 — the box-columns migration, was 045: additive columns on an already-tested table, no policy/constraint changes — coverage via L.A1.7's registry pins + vitest continuity, consistent with plan §2.3's "pgTAP for policies/constraints" scoping)*; typegen + alias-block re-append. M1 pgTAP files are **005–011** (004 was taken same-day by the C15 chip); migrations **048** (C15 fix) and **049–051** (L.A1.1 review fixes) took the numbers directly after 040, so the remaining schema-lane tasks renumbered **052–059** (table above corrected 2026-07-20, L.A1.2 session; corrected again same day when the batch-2 review-fix migration took **054**, shifting L.A1.4–L.A1.11 to 055–059 — task-text mentions of 041–047 for pending migrations read through this table) — Builders confirm the next free numbers at task time. **Not in M1:** `drafts`/`draft_*` (M2), `league_lists` (M2, D32), `matchups`/`league_rosters`/`transactions`/`waiver_claims`/`trades`/`lineup_swaps`/`league_player_pool`/`team_week_results`/`stat_correction_events` (M4+), `commissioner_actions` (M6), `player_stats.advanced` JSONB (funded-advanced-stats milestone, D8).
 
 ---
 
@@ -411,8 +414,8 @@ Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 
 |---|---|---|---|
 | **C1** | **CLAUDE.md Key Business Rule #5** says "Leagues are Pro only. Gate league creation **and joining**" — the spec says joining is **free** (stated 3×: §3.1.6, §7.2, §19.1) | CLAUDE.md rule 5; spec lines 60/169/1637 | **RESOLVED by the Q6 ruling (2026-07-20, v2.8): creation AND joining are free.** CLAUDE.md rule 5 rewritten this session; spec swept (§3.1/§7.2/§15.1/§17/§19.1/App C); L.A1.12/L.A2.1 de-Pro'd (DoD changes flagged in-task) |
 | **C2** | **CLAUDE.md Redesign section** still says league/draft screens are "UI-only… do not invent API routes or schema" — stale since the epic was greenlit (M0 shipped schema; M1 ships routes) | CLAUDE.md Redesign bullets vs Active Builds | **Chris: update the bullet** (Q6). M1 proceeds per Active Builds |
-| **C3** | `teams.list_id UUID NOT NULL REFERENCES lists` — league franchises can't exist without a backing list; §7.2 join/placeholder teams are unbuildable as-is | 001:496 | 042 drops NOT NULL (D35a; spec erratum v2.7.1) |
-| **C4** | `teams` is client-writable ("Users can manage own teams" FOR ALL) incl. `wins`/`losses`/`league_id` — violates server-authoritative (§8.1, CLAUDE.md Active Builds) the moment teams carry league state | 001:844–848 | 042 replaces with owner-manage scoped `league_id IS NULL` (D35b; erratum v2.7.1) |
+| **C3** | `teams.list_id UUID NOT NULL REFERENCES lists` — league franchises can't exist without a backing list; §7.2 join/placeholder teams are unbuildable as-is | 001:496 | 053 *(was 042)* drops NOT NULL (D35a; spec erratum v2.7.1) |
+| **C4** | `teams` is client-writable ("Users can manage own teams" FOR ALL) incl. `wins`/`losses`/`league_id` — violates server-authoritative (§8.1, CLAUDE.md Active Builds) the moment teams carry league state | 001:844–848 | 053 *(was 042)* replaces with owner-manage scoped `league_id IS NULL` (D35b; erratum v2.7.1) |
 | **C5** | `profiles.username`: plain TEXT, no DB constraints, client regex **3–30 must-start-with-letter** vs §7.2 **citext 3–20 `[a-z0-9_]`**; and §7.2 says usernames are **changeable** (E52) while spec-auth-profiles.md says **permanent** | 001:18; username/page.tsx:13; spec §7.2 vs spec-auth-profiles:16/38 | **RULED (Q4, 2026-07-20, v2.8): 5–20, permanent, lower()-unique, no grandfathering — constraint moves into 040.** Application **halted on Q7**: the settings page ships a rename flow and persona `*-ai` handles (prod rows) violate the charset — neither surfaced by this report. See PROGRESS §3 Q7 |
 | **C6** | §7.2's **primary** invite channel is email; the repo has **zero outbound-email capability** (no lib, no edge functions, SMTP commented out) | package.json; config.toml:233–236 | **RESOLVED by the Q5 ruling (2026-07-20, v2.8): no vendor now — seam only (D37 confirmed); v1 minimum bar = the join link always visible/copyable in the invite panel (L.A2.5); vendor chosen when invite mail is ready to ship** |
 | **C7** | Spec names `scoring_systems.is_template`; table has only `is_system_default` (different meaning, in-use policy) | 001:181–190 | 046 adds `is_template` additively (D34) |
@@ -449,7 +452,7 @@ Every migration: banner citing spec §; §4 standing rules (grants doctrine, R6 
 
 ## 11. Known gaps & notes for later milestones (not M1 work)
 
-- **M2 inherits:** league_chat policy replacement (C11); draft mock-fixture reconciliation (C16); Playwright bootstrap + Phase A E2E (D39); broadcast triggers + `realtime.messages` channel auth for M1's tables (D38); `league_lists` + attach UI (D32); Phase A's "Practice this draft" entry (mock drafts, §8.8); the §15.1 commissioner autodraft toggle on `PATCH /api/leagues/[id]/members/[mid]` (the `is_autodraft` column ships in 041 per §12.2 verbatim, but the toggle has no consumer until the draft engine, which also owns the member self-service `POST .../draft/autodraft` per §15.2).
+- **M2 inherits:** league_chat policy replacement (C11); draft mock-fixture reconciliation (C16); Playwright bootstrap + Phase A E2E (D39); broadcast triggers + `realtime.messages` channel auth for M1's tables (D38); `league_lists` + attach UI (D32); Phase A's "Practice this draft" entry (mock drafts, §8.8); the §15.1 commissioner autodraft toggle on `PATCH /api/leagues/[id]/members/[mid]` (the `is_autodraft` column shipped in 052 per §12.2 verbatim, but the toggle has no consumer until the draft engine, which also owns the member self-service `POST .../draft/autodraft` per §15.2).
 - **M4 inherits:** D24/D40 source semantics on first real ingestion; `team_lineups` RLS replacement (C12); `league_weeks` population + `league-week-advance`; §7.2.1 in-season consequence machinery (D42) incl. retire-&-succeed and orphan/autopilot; `nfl_games` population via the nflverse adapter (D16 — first runtime consumer of kickoffs is M4's locks).
 - **M6 inherits:** structural-settings override path (M1 returns 409 past `scheduled`); `commissioner_actions` + audit wiring for every override-shaped action M1 stubs.
 - **M7 inherits:** ~~C15 (search_path-less SECURITY DEFINER functions)~~ *(resolved 2026-07-20 — pulled forward, migration 048 + universal pgTAP pin, D45)*; §22.5 rate limits on invites/joins; R19's TRUNCATE narrowing revisit.

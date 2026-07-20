@@ -724,13 +724,18 @@ ALTER TABLE leagues
 --   max_teams (kept in sync with team_count), scoring_system_id, roster_settings (slots),
 --   invite_code, is_active, season, created_at, updated_at.
 ```
-RLS already exists ("viewable by members", "owners can manage"); **replace** the member-check policy to use `league_members` (the old policy keyed off `teams.league_id`):
+RLS already exists ("viewable by members", "owners can manage"); **replace** the member-check policy to use `league_members` (the old policy keyed off `teams.league_id`), and **drop** the owner write policy (v2.8.2 — supersedes the earlier "keep" instruction, which predates the protected columns this section adds: `scoring_rules_snapshot`, `status`, `settings` must never be client-writable):
 ```sql
 DROP POLICY IF EXISTS "Leagues are viewable by members" ON leagues;
 CREATE POLICY "Leagues viewable by members"
   ON leagues FOR SELECT
   USING (is_league_member(id) OR owner_id = auth.uid());
--- keep "League owners can manage"; add co-commish management via RPCs (SECURITY DEFINER).
+-- v2.8.2 (Q8 ruling): once created, league state is server-authoritative — NO
+-- direct client DML. Drop "League owners can manage" (FOR ALL); owner SELECT
+-- rides the policy above. Creation = create_league RPC; settings/lifecycle =
+-- their RPCs; deletion = the §15.1 soft delete. Co-commish management via
+-- RPCs (SECURITY DEFINER) as before.
+DROP POLICY IF EXISTS "League owners can manage" ON leagues;
 ```
 
 ### 12.2 `league_members`
@@ -751,10 +756,22 @@ CREATE TABLE league_members (
 ALTER TABLE league_members ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Members viewable by league members"
   ON league_members FOR SELECT USING (is_league_member(league_id));
-CREATE POLICY "Commish manages members"
-  ON league_members FOR ALL USING (is_league_commish(league_id));
+-- v2.8.2 (Q8 ruling — replaces the earlier "Commish manages members" FOR ALL):
+-- seating (team_id), roles, and real-user membership move ONLY through the
+-- SECURITY DEFINER RPCs, which write team_managers stints in the same
+-- transaction (v2.1 note below). The client surface is placeholder seats only;
+-- there is NO client UPDATE policy.
+CREATE POLICY "Commish adds placeholder seats"
+  ON league_members FOR INSERT
+  WITH CHECK (is_league_commish(league_id) AND user_id IS NULL
+              AND team_id IS NULL AND role = 'manager' AND is_placeholder);
+CREATE POLICY "Commish removes placeholder seats"
+  ON league_members FOR DELETE
+  USING (is_league_commish(league_id) AND user_id IS NULL
+         AND team_id IS NULL AND is_placeholder);
 CREATE INDEX idx_league_members_league ON league_members(league_id);
 CREATE INDEX idx_league_members_user ON league_members(user_id);
+CREATE INDEX idx_league_members_team ON league_members(team_id);  -- v2.8.2: FK index (teams ON DELETE SET NULL)
 ```
 > **v2.1:** `user_id`/`team_id` here are a **current-state cache** for fast lookups; the historical truth of who managed which franchise when is `team_managers` (§12.22). Update both inside the same RPC transaction.
 
@@ -1222,6 +1239,12 @@ ALTER TABLE teams
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',      -- active | orphaned | retired
   ADD COLUMN IF NOT EXISTS retired_at_week INTEGER,                     -- league week the franchise was sealed
   ADD COLUMN IF NOT EXISTS successor_team_id UUID REFERENCES teams(id); -- set on the RETIRED team → its successor
+-- v2.8.2 integrity: the status enum is CHECK-enforced, and a team can never
+-- succeed itself; longer succession cycles are rejected in-body by
+-- retire_franchise (the only writer of successor_team_id).
+ALTER TABLE teams
+  ADD CONSTRAINT teams_status_valid CHECK (status IN ('active','orphaned','retired')),
+  ADD CONSTRAINT teams_successor_not_self CHECK (successor_team_id IS NULL OR successor_team_id <> id);
 -- v2.7.1 gap fixes (M1 Architect survey — the deployed 001 schema blocks §7.2 as written):
 ALTER TABLE teams ALTER COLUMN list_id DROP NOT NULL;  -- league franchises carry no backing list; standalone team-lists unaffected
 -- Replace 001's client-write policy: "Users can manage own teams" becomes owner-manage scoped to
@@ -1244,6 +1267,11 @@ CREATE TABLE team_managers (
 );
 CREATE UNIQUE INDEX one_open_stint_per_team ON team_managers(team_id) WHERE ended_at IS NULL;
 CREATE INDEX idx_team_managers_user ON team_managers(user_id);
+-- v2.8.2: FK indexes (the SELECT policy filters on league_id; the partial
+-- unique index above only covers open stints, so closed-stint history reads
+-- and the teams ON DELETE CASCADE check need the full team_id index).
+CREATE INDEX idx_team_managers_league ON team_managers(league_id);
+CREATE INDEX idx_team_managers_team ON team_managers(team_id);
 ALTER TABLE team_managers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Stints viewable by league members"
   ON team_managers FOR SELECT USING (is_league_member(league_id));
@@ -2173,6 +2201,7 @@ Draft-order reveal animation, notifications wiring (league_invite, trade_proposa
 ---
 
 ## Changelog
+- **v2.8.2 (2026-07-20):** Q8 ruling (Chris — filed by the M1 batch-2 review, PROGRESS R37/R38): **once created, league state is server-authoritative — no direct client DML.** The review live-proved an ordinary authenticated user forging `scoring_rules_snapshot` + `status='drafting'` (and hard-deleting a league) through 001's "League owners can manage" FOR ALL policy, which §12.1 previously said to keep. **(1)** §12.1: that "keep" instruction is superseded — it predates this spec's own protected columns (`scoring_rules_snapshot`, `status`, `settings`), which turned a benign legacy policy into a forgery surface; the policy is dropped with no write replacement (owner SELECT rides the swapped member policy's `owner_id` branch; creation = `create_league` RPC, settings/lifecycle = their RPCs, deletion = the §15.1 soft delete — no client DELETE verb needed). **(2)** §12.2: "Commish manages members" (FOR ALL) is replaced by a placeholder-seat-only INSERT/DELETE pair with **no client UPDATE policy** — seating (`team_id`), roles, and real-user membership move only through the SECURITY DEFINER RPCs, which write `team_managers` stints in the same transaction (closes the client path to stint-less cache rows, the cache⇄history divergence). **(3)** §12.22 integrity (review R40/R43, probed live): `teams.status` CHECK-enforced to its enum; self-succession rejected by CHECK; longer succession cycles are `retire_franchise`'s in-body duty. **(4)** FK indexes recorded (review R39, plan §8.1): `team_managers.league_id`, full `team_managers.team_id`, `league_members.team_id`. Shipped as migration 054 (pgTAP 006/008).
 - **v2.8.1 (2026-07-20):** Q7 ruling (Chris — the Q4-application conflicts, PROGRESS §3): **(1)** AI persona/system accounts are exempt from the human username contract: the DB CHECK is `human-pattern OR persona-pattern` (`^[a-z0-9_]{5,20}$` OR `^[a-z0-9]+(-[a-z0-9]+)*-ai$`), and a guard trigger blocks `authenticated`/`anon` from ever writing a persona-pattern username — the hyphen-free human charset + the guard give the `*-ai` AI-transparency convention DB-enforced namespace separation. **(2)** Permanent means **after explicit selection**: the signup-time auto-generated `user_xxxxxxxx` placeholder is pre-selection and the selection page's one UPDATE is sanctioned; the account-settings username field becomes display-only; typo/regret recovery is a support path; a DB-level permanence guard is deferred until the selection flow moves server-side (documented residual: direct-API renames to *valid human* names remain possible until then). **(3)** Dev-seed username `dev` renamed to comply. §7.2 identity table updated; implementation lands with M1 migration 040 (task L.A1.1).
 - **v2.8 (2026-07-20):** Three product rulings from Chris (PROGRESS Q4–Q6, ruled 2026-07-20). **(1) Usernames — Q4:** minimum **5** characters, maximum **20**, and **permanent** (no changing after creation) — supersedes both v2.1's 3–20/changeable identity contract (§7.2 table + prose updated; E52 marked obsolete) and the deployed client-side 3–30 rule. No production users exist, so no grandfathering: the DB constraint itself moves to 5–20 as part of the M1 schema work. Uniqueness stays case-insensitive, implemented as a `lower(username)` unique index (not a citext conversion). **Application note:** recording this ruling surfaced two codebase conflicts the M1 conflict report had missed — the account-settings page ships a live username-*change* flow, and the AI persona system stores hyphenated `*-ai` handles in `profiles.username` (production rows) that violate the §7.2 charset the constraint would inherit. The constraint work is **halted pending PROGRESS Q7** (charset/persona exemption + the rename-flow removal + what "creation" means given the pre-selection placeholder); the length/permanence ruling itself stands. **(2) Email invites — Q5:** no email vendor is chosen now; M1 builds invite sending behind a seam (interface only, no vendor binding — D37 confirmed). The v1 minimum bar, vendor-independent: **the league join link is always visible and copyable by the league manager** so they can paste it into any email/text themselves. Vendor selection is deferred until invite-send mail is ready to ship. **(3) Pro gate — Q6:** **neither creating nor joining a league requires Pro** — supersedes §7.2's "Create league (Pro only)", §3.1 goal 6, §15.1, §17, §19.1, and Appendix C L.A1 (all updated); the §20 Pro-conversion metric is retired as written; CLAUDE.md Business Rule #5 rewritten to "League creation and joining are free. Pro-level league features come later." Pro-level league features arrive later as their own features, not as create/join gates.
 - **v2.7.1 (2026-07-20):** Errata from the M1 Architect session (delivery plan principle 1 — spec never drifts behind reality). **(1)** §23.5 citation fix (pre-authorized by PROGRESS D21): `core_box` = Appendix **B.1 + B.4** — Appendix B ends at B.4; the old "B.1–B.5" reference was a miscitation. **(2)** Calculator path fix (§5, §11.4, §22.2, Appendix C L.D1): the fantasy-points utility never lived at `src/utils/calculate-fantasy-points.ts`; the legacy utility is `src/lib/scoring/default.ts` (hardcoded, legacy key namespace — research surfaces only), and league scoring uses the §7.3.3 generic dot-product calculator, home `src/lib/leagues/scoring/`. No semantic change to §7.3.3 — the contract was already the law; this names the file. **(3)** §12.1 + §12.22 gap fixes for the deployed schema (M1 survey, conflict report C3/C4/C9 in `tasks-M1-league-foundation.md`): `teams.list_id` DROPs NOT NULL (a league franchise has no backing list; 001's constraint made §7.2's auto-created join/placeholder teams uninsertable); 001's "Users can manage own teams" FOR ALL policy is replaced by an owner-manage policy scoped `league_id IS NULL` — league teams are server-authoritative-only (§8.1), world-readable SELECT retained (§17 public summary); and 001's legacy flat `roster_settings` DEFAULT is replaced with the §7.3.2 canonical default. **(4)** §12.23 alignment (post-breakdown review): the pre-auth claim preview exposes league name + team label **+ inviter display name** (the §16.2/§16.4/§16.5.2 growth-loop design — the old two-field comment was the stale text; tasks-M1 D48), and `league_invites` gains `created_at` + `last_sent_at` so §7.2's "every send/claim/revoke is recorded" is satisfiable (tasks-M1 D46/C18). M1 task breakdown: `docs/specs/tasks-M1-league-foundation.md`.
