@@ -15,7 +15,10 @@
 --     not just policy-name pins); writes are denied via RETURNING-count.
 --   * Signup safety is behavioral: real auth.users inserts drive
 --     handle_new_user — the no-metadata fallback passes the new CHECK, and
---     hostile metadata skips the profile WITHOUT breaking the auth insert.
+--     hostile/contract-violating/placeholder-shaped metadata gets the
+--     user_<8hex> FALLBACK profile without breaking the auth insert
+--     (049/050), with display_name derived from the fallback, never the
+--     rejected value (051).
 --   * Ordering: every privileged-context (postgres) test runs BEFORE any
 --     request.jwt.claims is set — set_config(..., true) persists to txn end,
 --     and auth.role() would then read 'authenticated', flipping the
