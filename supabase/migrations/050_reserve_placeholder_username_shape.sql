@@ -41,8 +41,13 @@
 --
 -- Pre-checks: existing placeholder-shaped rows are legitimate (they ARE
 -- pre-selection rows) — no data precondition beyond 040's, which already ran.
--- Dropping + re-adding the CHECK revalidates all rows; the accepted string
--- set is identical, so revalidation cannot fail on 040-clean data.
+-- Dropping + re-adding the CHECK revalidates all rows; the accepted set only
+-- narrows for personas (the R35 cap), pre-checked loudly below.
+--
+-- R35 (nit, taken here — the finding says "worth a cap whenever the
+-- constraint is next touched", and this migration touches it): the persona
+-- branch gains a 32-char length bound (longest live handle is 17;
+-- privileged-writers-only surface).
 --
 -- Grants: none (037 default-ACL model). §8.1 staging-rehearsal waiver per the
 -- R6 rule: no staging clone; fresh local `db reset` + pgTAP 005 is the
@@ -51,14 +56,33 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. CHECK: placeholder shape carved out of the human branch (R32)
+-- 0. R35 pre-check: no live persona handle may exceed the new 32-char cap
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_bad text;
+BEGIN
+  SELECT string_agg(quote_literal(username), ', ') INTO v_bad
+  FROM profiles
+  WHERE username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$'
+    AND char_length(username) > 32;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      '050: persona handle(s) exceed the 32-char cap: % — shorten before applying (R35)',
+      v_bad;
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 1. CHECK: placeholder shape carved out of the human branch (R32) +
+--    persona length cap (R35)
 -- ----------------------------------------------------------------------------
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_username_format_check;
 ALTER TABLE profiles ADD CONSTRAINT profiles_username_format_check
   CHECK (
     (username ~ '^[a-z0-9_]{5,20}$' AND username !~ '^user_[0-9a-f]{8}$')
     OR username ~ '^user_[0-9a-f]{8}$'
-    OR username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$'
+    OR (username ~ '^[a-z0-9]+(-[a-z0-9]+)*-ai$' AND char_length(username) <= 32)
   );
 
 -- ----------------------------------------------------------------------------

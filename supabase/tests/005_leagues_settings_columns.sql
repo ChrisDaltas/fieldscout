@@ -29,7 +29,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(79);
+select plan(81);
 
 -- ---------------------------------------------------------------------------
 -- A. Extension + leagues shape (spec §12.1)
@@ -254,6 +254,16 @@ select lives_ok(
   $$ update profiles set username = 'user_deadbeef'
      where id = '30000000-0000-4000-8000-000000000003' $$,
   'placeholder-pattern handle accepted for a PRIVILEGED writer (R32 — the shape stays writable by the signup trigger/service paths)');
+
+-- R35: persona handles carry a 32-char cap (edge and one past it).
+select lives_ok(
+  $$ update profiles set username = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ai'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  '32-char persona handle accepted (upper edge, R35)');
+select throws_ok(
+  $$ update profiles set username = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ai'
+     where id = '30000000-0000-4000-8000-000000000003' $$,
+  '23514', null, '33-char persona handle rejected (one past the cap, R35)');
 
 select has_trigger('public', 'profiles', 'trg_guard_username_namespace',
   'namespace guard trigger installed');
