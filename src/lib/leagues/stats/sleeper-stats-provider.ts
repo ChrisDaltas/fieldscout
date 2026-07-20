@@ -60,6 +60,13 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   fgm_40_49: 'fg_40_49',
   fgm_50p: 'fg_50_plus',
   xpm: 'pat_made',
+  // R10 caveat: `xpmiss` is the one mapping NOT evidenced by live-stats'
+  // STAT_MAP or SleeperProjectedStats — its only repo occurrence is a
+  // projections-endpoint fixture, a different endpoint from the /stats
+  // actuals polled here. Kept best-effort (if actuals spell it differently,
+  // pat_missed is silently absent — no worse than dropping the mapping);
+  // verify against the first real actuals recording (L.A0.4) as part of the
+  // M1 core_box completeness re-check.
   xpmiss: 'pat_missed',
   sack: 'def_sack',
   int: 'def_int',
@@ -74,6 +81,12 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
  * game early). The free feed has no postponement marker: a postponed game
  * surfaces as a changed date, which §23.3's evaluation-time lock derivation
  * absorbs without adapter help.
+ *
+ * R12 caveat: only 'complete' and 'pre_game' are repo-evidenced (schedule
+ * fixtures); the other recognized strings are defensive guesses — no
+ * pre-existing code branches on schedule status. A wrong guess degrades a
+ * live/final game to 'scheduled' silently, so the recognized set must be
+ * verified against the first real recording (L.A0.4, September 2026).
  */
 export function mapSleeperGameStatus(
   status: string | null | undefined,
@@ -188,6 +201,14 @@ export class SleeperStatsProvider implements StatsProvider {
     for (const position of FANTASY_POSITIONS) {
       const rows = await fetchSleeperWeekStats(season, week, position)
       for (const row of rows) {
+        // R13: the response is a cast, not a validated parse — a malformed
+        // row must not flow a non-string playerId into a string-typed field
+        // (§23.2 "never wrong numbers" extends to identities). Value-level
+        // noise is already guarded: mapToCanonicalKeys keeps finite numbers
+        // only.
+        if (typeof row?.player_id !== 'string' || row.player_id.length === 0) {
+          continue
+        }
         const stats = mapToCanonicalKeys(row.stats)
         if (Object.keys(stats).length === 0) continue // nothing canonical → noise
         out.push({
