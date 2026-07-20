@@ -22,6 +22,10 @@ const RB_ROW = {
   player_id: '9509',
   stats: { rush_att: 22, rush_yd: 118, rush_td: 1, rec: 4, rec_yd: 33, rec_2pt: 1, fum_lost: 1 },
 }
+const WR_ROW = {
+  player_id: '6794',
+  stats: { rec: 9, rec_yd: 133, rec_td: 1, rush_yd: 12, tgt: 11 },
+}
 const K_ROW = {
   player_id: '7839',
   stats: { fgm: 3, fga: 4, fgm_40_49: 2, fgm_50p: 1, xpm: 3, xpmiss: 1 },
@@ -87,7 +91,7 @@ function stubHappyPath(): void {
       const rowsByPosition: Record<string, unknown[]> = {
         QB: [QB_ROW, NOISE_ROW, NULL_STATS_ROW],
         RB: [RB_ROW],
-        WR: [],
+        WR: [WR_ROW],
         TE: [],
         K: [K_ROW],
         DEF: [DEF_ROW],
@@ -111,6 +115,34 @@ describe('SleeperStatsProvider', () => {
     const provider = new SleeperStatsProvider(frozenTime)
     expect(provider.name).toBe('sleeper')
     expect([...provider.capabilities]).toEqual(['core_box'])
+  })
+
+  it('maps exactly the expected Sleeper field set (R11 — a silently dropped mapping must fail)', () => {
+    // The cross-check test below iterates the implementation's own map, so it
+    // can never notice a DELETED mapping. This literal is the expectation.
+    expect(SLEEPER_STAT_KEY_MAP).toEqual({
+      pass_yd: 'pass_yards',
+      pass_td: 'pass_tds',
+      pass_int: 'interceptions',
+      pass_2pt: 'pass_2pt',
+      rush_yd: 'rush_yards',
+      rush_td: 'rush_tds',
+      rush_2pt: 'rush_2pt',
+      rec: 'receptions',
+      rec_yd: 'receiving_yards',
+      rec_td: 'receiving_tds',
+      rec_2pt: 'rec_2pt',
+      fum_lost: 'fumbles_lost',
+      fgm_40_49: 'fg_40_49',
+      fgm_50p: 'fg_50_plus',
+      xpm: 'pat_made',
+      xpmiss: 'pat_missed', // R10: projections-fixture evidence only — see adapter comment
+      sack: 'def_sack',
+      int: 'def_int',
+      fum_rec: 'def_fumble_rec',
+      def_td: 'def_td',
+      safe: 'def_safety',
+    })
   })
 
   it('emits only registry-canonical core_box keys (§7.3.3 one-namespace rule)', () => {
@@ -139,6 +171,11 @@ describe('SleeperStatsProvider', () => {
         advanced: {},
       },
       {
+        playerId: '6794', season: 2026, week: 2,
+        stats: { receptions: 9, receiving_yards: 133, receiving_tds: 1, rush_yards: 12 },
+        advanced: {},
+      },
+      {
         playerId: '7839', season: 2026, week: 2,
         stats: { fg_40_49: 2, fg_50_plus: 1, pat_made: 3, pat_missed: 1 },
         advanced: {},
@@ -149,6 +186,25 @@ describe('SleeperStatsProvider', () => {
         advanced: {},
       },
     ])
+  })
+
+  it('drops malformed weekly rows without a string player_id (R13 — unvalidated cast guard)', async () => {
+    stubFetch((url) => {
+      if (url.includes('/stats/nfl/')) {
+        const position = /position\[\]=(\w+)/.exec(url)?.[1]
+        if (position !== 'QB') return ok([])
+        return ok([
+          { stats: { pass_yd: 100 } }, // player_id missing entirely
+          { player_id: 42, stats: { pass_yd: 50 } }, // wrong type
+          { player_id: '', stats: { pass_yd: 25 } }, // empty
+          QB_ROW,
+        ])
+      }
+      return undefined
+    })
+    const provider = new SleeperStatsProvider(frozenTime)
+    const rows = await provider.getWeekStats(2026, 2)
+    expect(rows.map((r) => r.playerId)).toEqual(['4881'])
   })
 
   it('surfaces a failed weekly-stats poll as a throw (DegradationTracker input, §23.2)', async () => {
@@ -201,10 +257,16 @@ describe('SleeperStatsProvider', () => {
 })
 
 describe('mapSleeperGameStatus', () => {
-  it('maps known statuses and falls back to scheduled', () => {
+  it('maps every recognized status branch and falls back to scheduled (R12)', () => {
+    // R12: only 'complete'/'pre_game' are repo-evidenced; the rest of the
+    // recognized set is defensive and unverified until the first real
+    // recording (see the adapter comment). Every branch is asserted so a
+    // silent narrowing of the set fails here.
     expect(mapSleeperGameStatus('complete')).toBe('final')
+    expect(mapSleeperGameStatus('completed')).toBe('final')
     expect(mapSleeperGameStatus('post_game')).toBe('final')
     expect(mapSleeperGameStatus('in_game')).toBe('live')
+    expect(mapSleeperGameStatus('in_progress')).toBe('live')
     expect(mapSleeperGameStatus('pre_game')).toBe('scheduled')
     expect(mapSleeperGameStatus('anything_else')).toBe('scheduled')
     expect(mapSleeperGameStatus(null)).toBe('scheduled')

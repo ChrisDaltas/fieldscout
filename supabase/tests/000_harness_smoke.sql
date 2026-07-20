@@ -14,6 +14,13 @@ set local search_path = public, extensions;
 
 select plan(6);
 
+-- Seed one distinctive row (rolled back with the test) so the read-side
+-- check below can assert VISIBLE data, not merely a non-erroring query —
+-- `lives_ok(select count(*))` passes even under a policy rewritten to
+-- `using (false)` (review finding R7). player_id stays NULL (nullable FK).
+insert into public.player_stats (season, week, stat_type)
+values (1987, 1, 'weekly');
+
 select has_table('public', 'player_stats', 'player_stats table exists');
 
 select ok(
@@ -35,9 +42,9 @@ select policy_cmd_is(
 -- Behavioral half: the policy actually admits reads and denies writes.
 set local role anon;
 
-select lives_ok(
-  $$ select count(*) from public.player_stats $$,
-  'anon can SELECT player_stats'
+select is(
+  (select count(*)::int from public.player_stats where season = 1987), 1,
+  'anon SELECT actually sees rows — falsifiable against a using(false) rewrite (R7)'
 );
 
 select throws_ok(

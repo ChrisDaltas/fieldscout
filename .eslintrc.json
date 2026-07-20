@@ -13,6 +13,38 @@
           {
             "selector": "NewExpression[callee.name='Date'][arguments.length=0]",
             "message": "League-engine code reads time from an injected TimeProvider, never `new Date()` (spec §23.1/§23.6; M0 D3). Use time.now()."
+          },
+          {
+            "selector": "CallExpression[callee.name='Date']",
+            "message": "Bare Date(...) always returns the current wall time regardless of arguments (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='Date'][callee.property.value='now']",
+            "message": "Date['now']() is a wall-clock read (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "MemberExpression[object.name='globalThis'][property.name='Date']",
+            "message": "globalThis.Date routes around the time-guard (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='performance'][callee.property.name='now']",
+            "message": "performance.now() is a wall-clock read (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "MemberExpression[object.name='globalThis'][property.name='performance']",
+            "message": "globalThis.performance routes around the time-guard (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "VariableDeclarator[init.name='Date']",
+            "message": "Aliasing the Date constructor routes around the time-guard (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "AssignmentExpression[right.name='Date']",
+            "message": "Aliasing the Date constructor routes around the time-guard (D3/R15). Use the injected TimeProvider."
+          },
+          {
+            "selector": "NewExpression[callee.name='Date'] > SpreadElement",
+            "message": "new Date(...spread) can be an argless wall-clock read at runtime (D3/R15). Pass explicit arguments or use the injected TimeProvider."
           }
         ]
       }

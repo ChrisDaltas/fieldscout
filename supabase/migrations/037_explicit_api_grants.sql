@@ -5,7 +5,7 @@
 -- model: anon/authenticated/service_role hold ALL privileges on every public
 -- table, and postgres-owned default ACLs auto-grant the same to future
 -- tables/sequences/functions (verified 2026-07-19 against production
--- pg_default_acl and information_schema.role_table_grants — all 36 tables).
+-- pg_default_acl and information_schema.role_table_grants — all 40 tables).
 -- RLS is the effective gate (spec §12); grants are deliberately broad.
 --
 -- Locally the CLI's deprecated auto_expose_new_tables flag emulated that
