@@ -125,6 +125,144 @@ describe('SyntheticStatsProvider contract', () => {
   })
 })
 
+describe('golden pins (R23 — the version-bump tripwire)', () => {
+  // WHY THESE LITERALS EXIST: the determinism tests above compare two
+  // in-process runs of the same code, so an *unintended* behavior change — a
+  // draw-order refactor in finalLine, a range tweak, a PRNG edit — would
+  // change every scenario's "deterministic" world while the suite stayed
+  // green, silently diverging anything pinned against the current library
+  // version. These hardcoded DEFAULT_SEED outputs (scenario library v2) fail
+  // on ANY such change, making the D26/§23.6 contract mechanical: if a pin
+  // breaks, either revert the behavior change or bump SCENARIO_LIBRARY_VERSION
+  // (+ per-scenario versions) and update the pins deliberately in the same
+  // commit. Never "fix" a pin without a version bump.
+
+  it('pins the settled DEFAULT_SEED stat line for one player per position (happy_path, post-charted)', async () => {
+    const { provider, clock } = makeProvider('happy_path')
+    clock.advanceTo(new Date('2026-09-25T12:00:00Z')) // settled + charted posted
+    const rows = await provider.getWeekStats(SEASON, WEEK)
+    const g1 = ['syn-g1-qb', 'syn-g1-rb', 'syn-g1-wr', 'syn-g1-te', 'syn-g1-k', 'syn-g1-def']
+    expect(rows.filter((r) => g1.includes(r.playerId))).toEqual([
+      {
+        playerId: 'syn-g1-qb',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: {
+          pass_attempts: 36,
+          pass_completions: 23,
+          pass_yards: 188,
+          pass_tds: 0,
+          interceptions: 0,
+          qb_sack_taken: 3,
+          rush_attempts: 5,
+          rush_yards: 4,
+        },
+        advanced: { example_tracking_yards: 123 },
+      },
+      {
+        playerId: 'syn-g1-rb',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: {
+          rush_attempts: 18,
+          rush_yards: 100,
+          rush_tds: 1,
+          targets: 3,
+          receptions: 0,
+          receiving_yards: 36,
+          fumbles_lost: 1,
+        },
+        advanced: { example_tracking_yards: 46, example_charted_yards: 32 },
+      },
+      {
+        playerId: 'syn-g1-wr',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: {
+          targets: 12,
+          receptions: 5,
+          receiving_yards: 122,
+          receiving_tds: 2,
+          rush_yards: 10,
+        },
+        advanced: { example_tracking_yards: 66, example_charted_yards: 51 },
+      },
+      {
+        playerId: 'syn-g1-te',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: { targets: 8, receptions: 7, receiving_yards: 47, receiving_tds: 0 },
+        advanced: { example_tracking_yards: 31, example_charted_yards: 15 },
+      },
+      {
+        playerId: 'syn-g1-k',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: {
+          fg_attempted: 1,
+          fg_made: 1,
+          fg_40_49: 0,
+          fg_50_plus: 1,
+          pat_made: 3,
+          pat_attempted: 3,
+        },
+        advanced: {},
+      },
+      {
+        playerId: 'syn-g1-def',
+        season: SEASON,
+        week: WEEK,
+        gameId: '2026-wk02-DAL@PHI',
+        stats: {
+          def_sack: 4,
+          def_int: 1,
+          def_fumble_rec: 1,
+          def_td: 0,
+          def_safety: 0,
+          def_points_allowed: 30,
+        },
+        advanced: {},
+      },
+    ])
+  })
+
+  it('pins a mid-game partial line — the floor(final × progress) path (happy_path, 18:00Z)', async () => {
+    const { provider, clock } = makeProvider('happy_path')
+    clock.advanceTo(new Date('2026-09-20T18:00:00Z')) // 1h into G1's 3h20m
+    const qb = (await provider.getWeekStats(SEASON, WEEK)).find((r) => r.playerId === 'syn-g1-qb')
+    expect(qb).toEqual({
+      playerId: 'syn-g1-qb',
+      season: SEASON,
+      week: WEEK,
+      gameId: '2026-wk02-DAL@PHI',
+      stats: {
+        pass_attempts: 10,
+        pass_completions: 6,
+        pass_yards: 56,
+        pass_tds: 0,
+        interceptions: 0,
+        qb_sack_taken: 0,
+        rush_attempts: 1,
+        rush_yards: 1,
+      },
+      advanced: { example_tracking_yards: 36 },
+    })
+  })
+
+  it('pins the corrected value at the correction instant (correction_in_window)', async () => {
+    const { provider, clock } = makeProvider('correction_in_window')
+    clock.advanceTo(new Date('2026-09-22T16:00:00Z')) // exactly the correction event
+    const wr = (await provider.getWeekStats(SEASON, WEEK)).find((r) => r.playerId === 'syn-g1-wr')
+    // Settled 122 + delta 7 — same seed world as the happy_path pin above.
+    expect(wr?.stats.receiving_yards).toBe(129)
+  })
+})
+
 describe('determinism (§23.6 — same seed = same world)', () => {
   it('produces deep-equal full-week transcripts for the same (scenario, seed) — all nine scenarios', async () => {
     for (const id of SCENARIO_IDS) {
