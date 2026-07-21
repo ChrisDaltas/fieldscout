@@ -44,8 +44,15 @@ import type {
  *
  * M1 completeness re-check (L.A1.7/D41, 2026-07-20 — the evidence bar is the
  * real 2025-wk2 actuals fixture + repo evidence; NO mapping ships without
- * it). Audit result: every mapping below reproduces in the real 2025-wk2
- * actuals fixture (including xpmiss — see its note). Canonical keys that
+ * it). Audit result [corrected per R49, 2026-07-20 — the original "every
+ * mapping reproduces" overstated it]: 29 of the 30 mappings below reproduce
+ * in the real 2025-wk2 actuals fixture (including xpmiss — see its note).
+ * The exception is `safe → def_safety`, absent from all 373 fixture rows
+ * (no D/ST recorded a safety that week); its evidence is the pre-seam
+ * production STAT_MAP (`de0adfd` — the live /stats endpoint production
+ * polled), a stronger evidence class than fixture presence. September
+ * re-confirm on real 2026 actuals is F10's — which needs a week actually
+ * containing a safety (see the F10 note). Canonical keys that
  * remain UNMAPPED, each because no repo artifact evidences the /stats
  * actuals spelling (the fixture records canonical responses, so it can never
  * evidence an unmapped raw field — raw-endpoint inspection during the first
@@ -99,6 +106,10 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   int: 'def_int',
   fum_rec: 'def_fumble_rec',
   def_td: 'def_td',
+  // R49 (2026-07-20): the one mapping NOT evidenced in the 2025-wk2 actuals
+  // fixture (safeties are rare; none occurred that week). Evidence is the
+  // pre-seam production STAT_MAP (`de0adfd`); F10 re-confirms on a 2026
+  // week that contains a safety.
   safe: 'def_safety',
   pts_allow: 'def_points_allowed',
 }
