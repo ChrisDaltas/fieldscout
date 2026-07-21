@@ -1581,16 +1581,22 @@ export type Database = {
       }
       player_stats: {
         Row: {
+          def_block: number | null
           def_fumble_recoveries: number | null
           def_interceptions: number | null
           def_points_allowed: number | null
+          def_return_td: number | null
           def_sacks: number | null
           def_safeties: number | null
           def_tds: number | null
+          def_yards_allowed: number | null
+          fg_0_39: number | null
           fg_attempted: number | null
           fg_made: number | null
           fg_made_40_plus: number | null
           fg_made_50_plus: number | null
+          fg_missed: number | null
+          fumble_recovery_td: number | null
           fumbles_lost: number | null
           game_clock: string | null
           game_id: string | null
@@ -1598,15 +1604,20 @@ export type Database = {
           id: string
           interceptions: number | null
           is_live: boolean | null
+          pass_2pt: number | null
           pass_attempts: number | null
           pass_completions: number | null
           pass_tds: number | null
           pass_yards: number | null
+          pat_missed: number | null
           player_game_status: string | null
           player_id: string | null
+          rec_2pt: number | null
           receiving_tds: number | null
           receiving_yards: number | null
           receptions: number | null
+          return_td: number | null
+          rush_2pt: number | null
           rush_attempts: number | null
           rush_tds: number | null
           rush_yards: number | null
@@ -1622,16 +1633,22 @@ export type Database = {
           xp_made: number | null
         }
         Insert: {
+          def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
           def_points_allowed?: number | null
+          def_return_td?: number | null
           def_sacks?: number | null
           def_safeties?: number | null
           def_tds?: number | null
+          def_yards_allowed?: number | null
+          fg_0_39?: number | null
           fg_attempted?: number | null
           fg_made?: number | null
           fg_made_40_plus?: number | null
           fg_made_50_plus?: number | null
+          fg_missed?: number | null
+          fumble_recovery_td?: number | null
           fumbles_lost?: number | null
           game_clock?: string | null
           game_id?: string | null
@@ -1639,15 +1656,20 @@ export type Database = {
           id?: string
           interceptions?: number | null
           is_live?: boolean | null
+          pass_2pt?: number | null
           pass_attempts?: number | null
           pass_completions?: number | null
           pass_tds?: number | null
           pass_yards?: number | null
+          pat_missed?: number | null
           player_game_status?: string | null
           player_id?: string | null
+          rec_2pt?: number | null
           receiving_tds?: number | null
           receiving_yards?: number | null
           receptions?: number | null
+          return_td?: number | null
+          rush_2pt?: number | null
           rush_attempts?: number | null
           rush_tds?: number | null
           rush_yards?: number | null
@@ -1663,16 +1685,22 @@ export type Database = {
           xp_made?: number | null
         }
         Update: {
+          def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
           def_points_allowed?: number | null
+          def_return_td?: number | null
           def_sacks?: number | null
           def_safeties?: number | null
           def_tds?: number | null
+          def_yards_allowed?: number | null
+          fg_0_39?: number | null
           fg_attempted?: number | null
           fg_made?: number | null
           fg_made_40_plus?: number | null
           fg_made_50_plus?: number | null
+          fg_missed?: number | null
+          fumble_recovery_td?: number | null
           fumbles_lost?: number | null
           game_clock?: string | null
           game_id?: string | null
@@ -1680,15 +1708,20 @@ export type Database = {
           id?: string
           interceptions?: number | null
           is_live?: boolean | null
+          pass_2pt?: number | null
           pass_attempts?: number | null
           pass_completions?: number | null
           pass_tds?: number | null
           pass_yards?: number | null
+          pat_missed?: number | null
           player_game_status?: string | null
           player_id?: string | null
+          rec_2pt?: number | null
           receiving_tds?: number | null
           receiving_yards?: number | null
           receptions?: number | null
+          return_td?: number | null
+          rush_2pt?: number | null
           rush_attempts?: number | null
           rush_tds?: number | null
           rush_yards?: number | null
@@ -2699,7 +2732,6 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
 
 
 // ============================================================================

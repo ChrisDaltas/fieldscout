@@ -100,12 +100,14 @@ const UNKNOWN_PLAYER_STATS: ProviderPlayerWeekStats = {
   stats: { rush_yards: 50 },
   advanced: {},
 }
-// Only deferred-storage keys → zero columns → the row must be skipped whole.
-const DEFERRED_ONLY_STATS: ProviderPlayerWeekStats = {
+// Only non-column keys (deferred bonus + derived tier indicator) → zero
+// columns → the row must be skipped whole. (pat_missed/fg_0_39 — the pre-057
+// examples — are column-stored now, so they'd no longer exercise the skip.)
+const NON_COLUMN_ONLY_STATS: ProviderPlayerWeekStats = {
   playerId: '7839',
   season: SEASON,
   week: 2,
-  stats: { pat_missed: 1, fg_0_39: 2 },
+  stats: { pass_300_bonus: 1, def_pa_14_20: 1 },
   advanced: {},
 }
 
@@ -206,7 +208,7 @@ describe('syncLiveStats (seam integration)', () => {
     const time = new VirtualClock(IN_WINDOW_NOW)
     const { provider, getWeekStats } = stubProvider({
       name: 'stub',
-      weekStats: () => [QB_STATS, RB_STATS, DEF_STATS, UNKNOWN_PLAYER_STATS, DEFERRED_ONLY_STATS],
+      weekStats: () => [QB_STATS, RB_STATS, DEF_STATS, UNKNOWN_PLAYER_STATS, NON_COLUMN_ONLY_STATS],
     })
     const { client, upsertBatches, upsertOptions } = fakeSyncClient()
 
@@ -232,7 +234,8 @@ describe('syncLiveStats (seam integration)', () => {
           sacks_taken: 2,
           rush_yards: 42,
           rush_tds: 1,
-          two_point_conversions: 1,
+          pass_2pt: 1, // per-type column (057/D20) …
+          two_point_conversions: 1, // … AND the summed derivation, byte-identical
         },
         {
           player_id: '9509',
@@ -249,6 +252,8 @@ describe('syncLiveStats (seam integration)', () => {
           receptions: 4,
           receiving_yards: 33,
           fumbles_lost: 1,
+          rush_2pt: 1,
+          rec_2pt: 1,
           two_point_conversions: 2, // rush_2pt + rec_2pt summed writer-side
         },
         {
@@ -416,10 +421,25 @@ describe('syncLiveStats (seam integration)', () => {
 })
 
 describe('toStatColumns (D22 column surface)', () => {
-  it('writes exactly the pre-seam STAT_MAP column surface — nothing dropped, nothing invented', () => {
+  it('writes exactly the pre-seam STAT_MAP surface plus the migration-057 columns — nothing dropped, nothing invented', () => {
     // The 27 player_stats columns the pre-refactor STAT_MAP wrote (D22's
-    // enumerated non-catalog columns included). If a registry edit drops a
+    // enumerated non-catalog columns included) PLUS the 11 additive
+    // migration-057 columns (L.A1.7/D41 — the upsert-surface continuity pin
+    // extending to them, per the task text). If a registry edit drops a
     // column mapping — or adds a new write — this pin fails.
+    const MIGRATION_057_COLUMNS = [
+      'pass_2pt',
+      'rush_2pt',
+      'rec_2pt',
+      'fg_0_39',
+      'fg_missed',
+      'pat_missed',
+      'def_block',
+      'def_return_td',
+      'fumble_recovery_td',
+      'return_td',
+      'def_yards_allowed',
+    ]
     const PRE_SEAM_COLUMNS = [
       'pass_attempts',
       'pass_completions',
@@ -448,20 +468,35 @@ describe('toStatColumns (D22 column surface)', () => {
       'def_tds',
       'def_safeties',
       'def_points_allowed',
-    ].sort()
+    ]
+    const EXPECTED_SURFACE = [...PRE_SEAM_COLUMNS, ...MIGRATION_057_COLUMNS].sort()
     const writableSurface = [
       ...new Set([...Object.values(STAT_COLUMN_BY_KEY), 'two_point_conversions']),
     ].sort()
-    expect(writableSurface).toEqual(PRE_SEAM_COLUMNS)
+    expect(writableSurface).toEqual(EXPECTED_SURFACE)
   })
 
-  it('sums the per-type 2-pt keys into the single column, only when at least one is present', () => {
-    expect(toStatColumns({ pass_2pt: 1, rec_2pt: 1 })).toEqual({ two_point_conversions: 2 })
-    expect(toStatColumns({ rush_2pt: 2 })).toEqual({ two_point_conversions: 2 })
+  it('writes per-type 2-pt columns AND the summed derivation, byte-identical to pre-seam (D20/057)', () => {
+    expect(toStatColumns({ pass_2pt: 1, rec_2pt: 1 })).toEqual({
+      pass_2pt: 1,
+      rec_2pt: 1,
+      two_point_conversions: 2,
+    })
+    expect(toStatColumns({ rush_2pt: 2 })).toEqual({
+      rush_2pt: 2,
+      two_point_conversions: 2,
+    })
     expect(toStatColumns({ rush_yards: 10 })).toEqual({ rush_yards: 10 })
   })
 
-  it('drops deferred-storage keys instead of inventing columns for them', () => {
-    expect(toStatColumns({ pat_missed: 1, fg_0_39: 2, def_pa_1_6: 1 })).toEqual({})
+  it('drops derived and deferred keys instead of inventing columns for them (D44 — tier indicators are never stored)', () => {
+    expect(
+      toStatColumns({
+        pass_300_bonus: 1, // deferred (v1.1 bonus)
+        def_pa_1_6: 1, // derived (shared PA tier)
+        def_pa_18_27: 1, // derived (ESPN PA tier)
+        def_ya_0_99: 1, // derived (Q3 YA tier)
+      }),
+    ).toEqual({})
   })
 })
