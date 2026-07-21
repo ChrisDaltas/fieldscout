@@ -40,9 +40,30 @@ import type {
  *
  * Deliberately a strict subset of §23.5's core_box definition (D5): only
  * Sleeper fields already evidenced in this repo (live-stats STAT_MAP,
- * SleeperProjectedStats) are mapped. Canonical keys with no mapping here
- * (fg_0_39, fg_missed, def_block, def_pa tiers, return TDs, bonuses) are
- * part of the M1 core_box completeness re-verification.
+ * SleeperProjectedStats) are mapped.
+ *
+ * M1 completeness re-check (L.A1.7/D41, 2026-07-20 — the evidence bar is the
+ * real 2025-wk2 actuals fixture + repo evidence; NO mapping ships without
+ * it). Audit result: every mapping below reproduces in the real 2025-wk2
+ * actuals fixture (including xpmiss — see its note). Canonical keys that
+ * remain UNMAPPED, each because no repo artifact evidences the /stats
+ * actuals spelling (the fixture records canonical responses, so it can never
+ * evidence an unmapped raw field — raw-endpoint inspection during the first
+ * real 2026 recording, F10/September, is the path to evidence):
+ *   fg_0_39            — Sleeper buckets short FGs (fgm_0_19/…/fgm_30_39 in
+ *                        projections-shaped data) and would need a summed,
+ *                        multi-field mapping; no actuals evidence for any of
+ *                        the three spellings.
+ *   fg_missed          — fgmiss_40_49 appears in a projections fixture only;
+ *                        the total-miss actuals spelling is unevidenced.
+ *   def_block          — presumed blk_kick; zero repo evidence.
+ *   def_return_td      — SleeperProjectedStats carries def_kr_td + pr_td
+ *                        (projections evidence only, and a summed mapping).
+ *   fumble_recovery_td / return_td — offensive TD variants; zero repo
+ *                        evidence for actuals spellings.
+ *   def_yards_allowed  — presumed yds_allow; zero repo evidence.
+ * Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
+ * adapter concerns: derived at scoring time (D44) or deferred to v1.1.
  */
 export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   pass_att: 'pass_attempts',
@@ -68,13 +89,11 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   fgm_50p: 'fg_50_plus',
   xpm: 'pat_made',
   xpa: 'pat_attempted',
-  // R10 caveat: `xpmiss` is the one mapping NOT evidenced by live-stats'
-  // STAT_MAP or SleeperProjectedStats — its only repo occurrence is a
-  // projections-endpoint fixture, a different endpoint from the /stats
-  // actuals polled here. Kept best-effort (if actuals spell it differently,
-  // pat_missed is silently absent — no worse than dropping the mapping);
-  // verify against the first real actuals recording (L.A0.4) as part of the
-  // M1 core_box completeness re-check.
+  // R10 update (L.A1.7 re-check, 2026-07-20): originally projections-evidence
+  // only, but the real 2025-wk2 ACTUALS fixture (L.A0.4, recorded from the
+  // live /stats endpoint) contains pat_missed rows — which only this mapping
+  // can produce — so the spelling is now evidenced on real actuals data. The
+  // September 2026 recording re-confirms on current-season data (F10).
   xpmiss: 'pat_missed',
   sack: 'def_sack',
   int: 'def_int',

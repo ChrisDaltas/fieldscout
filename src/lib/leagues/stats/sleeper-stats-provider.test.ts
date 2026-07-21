@@ -144,7 +144,7 @@ describe('SleeperStatsProvider', () => {
       fgm_50p: 'fg_50_plus',
       xpm: 'pat_made',
       xpa: 'pat_attempted',
-      xpmiss: 'pat_missed', // R10: projections-fixture evidence only — see adapter comment
+      xpmiss: 'pat_missed', // R10 closed via the real 2025-wk2 actuals fixture — see adapter comment (L.A1.7)
       sack: 'def_sack',
       int: 'def_int',
       fum_rec: 'def_fumble_rec',

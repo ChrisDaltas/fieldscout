@@ -52,6 +52,101 @@ const DEF_PA_TIERS = [
   'def_pa_21_27',
   'def_pa_28_34',
   'def_pa_35_plus',
+  // ESPN's published buckets (L.A1.7 verification finding, D56): the shared
+  // family above cannot express ESPN's standard table.
+  'def_pa_14_17',
+  'def_pa_18_27',
+  'def_pa_35_45',
+  'def_pa_46_plus',
+]
+
+// The Q3 def_ya_<lo>_<hi> family, on ESPN's published yards-allowed buckets
+// (support.espn.com Scoring-Formats article, retrieved 2026-07-20): <100 /
+// 100–199 / 200–299 / 300–349 / 350–399 / 400–449 / 450–499 / 500–549 / 550+.
+const DEF_YA_TIERS = [
+  'def_ya_0_99',
+  'def_ya_100_199',
+  'def_ya_200_299',
+  'def_ya_300_349',
+  'def_ya_350_399',
+  'def_ya_400_449',
+  'def_ya_450_499',
+  'def_ya_500_549',
+  'def_ya_550_plus',
+]
+
+// R23-pattern golden pin: the COMPLETE registry key list as literals, in
+// registry order. The seeded registry contents ARE the behavior (§7.3.3 one
+// namespace — templates and the calculator both key off these), so a dropped,
+// renamed, or reordered key must fail a literal comparison, not a recompute.
+const GOLDEN_KEY_LIST = [
+  // B.1 core offense
+  'pass_yards',
+  'pass_tds',
+  'interceptions',
+  'pass_2pt',
+  'rush_yards',
+  'rush_tds',
+  'rush_2pt',
+  'receptions',
+  'receiving_yards',
+  'receiving_tds',
+  'rec_2pt',
+  'fumbles_lost',
+  'fumble_recovery_td',
+  'return_td',
+  // B.4 kicking
+  'fg_0_39',
+  'fg_40_49',
+  'fg_50_plus',
+  'pat_made',
+  'fg_missed',
+  'pat_missed',
+  // B.4 D/ST
+  'def_sack',
+  'def_int',
+  'def_fumble_rec',
+  'def_td',
+  'def_safety',
+  'def_block',
+  'def_return_td',
+  'def_pa_0',
+  'def_pa_1_6',
+  'def_pa_7_13',
+  'def_pa_14_20',
+  'def_pa_21_27',
+  'def_pa_28_34',
+  'def_pa_35_plus',
+  'def_pa_14_17',
+  'def_pa_18_27',
+  'def_pa_35_45',
+  'def_pa_46_plus',
+  'def_ya_0_99',
+  'def_ya_100_199',
+  'def_ya_200_299',
+  'def_ya_300_349',
+  'def_ya_350_399',
+  'def_ya_400_449',
+  'def_ya_450_499',
+  'def_ya_500_549',
+  'def_ya_550_plus',
+  // B.4 bonuses
+  'pass_300_bonus',
+  'rush_100_bonus',
+  // ingestion-continuity (D24)
+  'pass_attempts',
+  'pass_completions',
+  'qb_sack_taken',
+  'rush_attempts',
+  'targets',
+  'fg_made',
+  'fg_attempted',
+  'pat_attempted',
+  'def_points_allowed',
+  'def_yards_allowed',
+  // D15 placeholders
+  'example_tracking_yards',
+  'example_charted_yards',
 ]
 
 // R9: the `keyof Row` typing on `column` only rejects NON-EXISTENT columns —
@@ -73,6 +168,19 @@ const EXPECTED_COLUMN_MAPPINGS: Record<string, string> = {
   fg_40_49: 'fg_made_40_plus',
   fg_50_plus: 'fg_made_50_plus',
   pat_made: 'xp_made',
+  // Migration-057 columns (L.A1.7/D41) — named identically to their keys by
+  // design (the fg_made_40_plus lesson), so same-named pairs here.
+  pass_2pt: 'pass_2pt',
+  rush_2pt: 'rush_2pt',
+  rec_2pt: 'rec_2pt',
+  fg_0_39: 'fg_0_39',
+  fg_missed: 'fg_missed',
+  pat_missed: 'pat_missed',
+  def_block: 'def_block',
+  def_return_td: 'def_return_td',
+  fumble_recovery_td: 'fumble_recovery_td',
+  return_td: 'return_td',
+  def_yards_allowed: 'def_yards_allowed',
   def_sack: 'def_sacks',
   def_int: 'def_interceptions',
   def_fumble_rec: 'def_fumble_recoveries',
@@ -108,16 +216,49 @@ describe('STAT_KEYS registry', () => {
     }
   })
 
-  it('carries the full points-allowed tier family', () => {
+  it('pins the complete key list as literals, in registry order (R23 pattern — the seeded contents ARE the behavior)', () => {
+    expect(STAT_KEYS.map((def) => def.key)).toEqual(GOLDEN_KEY_LIST)
+  })
+
+  it('carries the full points-allowed tier family (shared + ESPN buckets), all derived (D44)', () => {
     for (const key of DEF_PA_TIERS) {
-      expect(byKey.get(key), `missing def_pa tier: ${key}`).toBeDefined()
+      const def = byKey.get(key)
+      expect(def, `missing def_pa tier: ${key}`).toBeDefined()
+      expect(def?.storage, key).toBe('derived')
+    }
+  })
+
+  it('carries the full Q3 def_ya family on ESPN’s published buckets, all derived (D44)', () => {
+    for (const key of DEF_YA_TIERS) {
+      const def = byKey.get(key)
+      expect(def, `missing def_ya tier: ${key}`).toBeDefined()
+      expect(def?.tier, key).toBe('core_box')
+      expect(def?.storage, key).toBe('derived')
+    }
+    // Counter-pin: the family is exactly these nine — a stray tenth bucket
+    // (or a def_ya key seeded with storage that would persist it) fails here.
+    const actual = STAT_KEYS.filter((def) => def.key.startsWith('def_ya_')).map(
+      (def) => def.key,
+    )
+    expect(actual).toEqual(DEF_YA_TIERS)
+  })
+
+  it('derives tier indicators only — every derived key is a def_pa_*/def_ya_* one-hot (D44)', () => {
+    for (const def of STAT_KEYS) {
+      if (def.storage === 'derived') {
+        expect(
+          def.key.startsWith('def_pa_') || def.key.startsWith('def_ya_'),
+          def.key,
+        ).toBe(true)
+      }
     }
   })
 
   it('keeps tier and storage consistent', () => {
     for (const def of STAT_KEYS) {
-      // core_box lives in typed columns (or is deferred to M1) — never in
-      // the §23.5 advanced JSONB, which is the tracking/charted home.
+      // core_box lives in typed columns, is derived at scoring time, or is
+      // genuinely deferred — never in the §23.5 advanced JSONB, which is the
+      // tracking/charted home.
       if (def.tier === 'core_box') {
         expect(def.storage, def.key).not.toBe('advanced')
       } else {
