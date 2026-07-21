@@ -59,6 +59,13 @@ describe('scorePlayerWeek — dot product + pending semantics', () => {
     expect(breakdown.total).toBe(1.01)
   })
 
+  it('golden pin (R61): total = round(full-precision sum), NOT Σ of rounded perKey — two-key literal where the two implementations diverge', () => {
+    // 0.111×3 + 0.111×3 = 0.666 → 0.67; a Σ-of-rounded impl gives 0.33 + 0.33 = 0.66
+    const breakdown = scorePlayerWeek({ a: 0.111, b: 0.111 }, { a: 3, b: 3 })
+    expect(breakdown.total).toBe(0.67)
+    expect(breakdown.perKey.a).toBeCloseTo(0.333, 12) // perKey stays full-precision (D57(3))
+  })
+
   it('E38: two different stat lines tie at exactly two decimals', () => {
     const rules = { receiving_yards: 0.1, receptions: 1, pass_yards: 0.04 }
     const lineA = { receiving_yards: 92, receptions: 6, pass_yards: 1 }
@@ -123,6 +130,7 @@ describe('scorePlayerWeek — dot product + pending semantics', () => {
         else expectPending.push(key)
       }
       expect(breakdown.total).toBe(roundHalfUp(sum))
+      expect(Number.isFinite(breakdown.total)).toBe(true) // R59 pin: NaN can never reach the return value
       expect([...breakdown.pending].sort()).toEqual(expectPending)
       expect(Object.keys(breakdown.perKey).sort()).toEqual(
         Object.keys(rules).filter((k) => k in stats).sort(),
@@ -132,6 +140,51 @@ describe('scorePlayerWeek — dot product + pending semantics', () => {
       const withGhost = scorePlayerWeek({ ...rules, zz_never_delivered: 3 }, stats)
       expect(withGhost.total).toBe(breakdown.total)
       expect(withGhost.pending).toContain('zz_never_delivered')
+    }
+  })
+})
+
+describe('R59/D58 — corrupt rules coefficients fail LOUD, never NaN-poison the total (E61)', () => {
+  // rules come from the scoring_rules_snapshot JSONB — same trust boundary
+  // as stats, but corrupt config is not missing data: pending would
+  // misbadge it as "waiting on stats," and NUMERIC(8,2) stores NaN
+  // (live-verified in the batch-5 review), so nothing downstream throws.
+  it('non-numeric coefficient throws a TypeError naming the key', () => {
+    expect(() =>
+      scorePlayerWeek({ receptions: 'abc' } as unknown as Record<string, number>, { receptions: 4 }),
+    ).toThrowError(/receptions/)
+  })
+
+  it('string-numeric coefficient ("0.5") throws — silent coercion masks a corrupt snapshot', () => {
+    expect(() =>
+      scorePlayerWeek({ receptions: '0.5' } as unknown as Record<string, number>, { receptions: 4 }),
+    ).toThrowError(TypeError)
+  })
+
+  it('NaN / ±Infinity coefficients throw; every offending key is named', () => {
+    expect(() =>
+      scorePlayerWeek({ pass_yards: NaN, receptions: 1, def_sack: Infinity }, { receptions: 4 }),
+    ).toThrowError(/pass_yards, def_sack/)
+  })
+
+  it('it throws even when the corrupt key has no delivered stat — corrupt config is never quietly parked as pending', () => {
+    expect(() =>
+      scorePlayerWeek({ receptions: 1, ghost: NaN }, { receptions: 4 }),
+    ).toThrowError(/ghost/)
+  })
+
+  it('pin: NaN can never reach the return value — every adversarial coefficient shape either throws TypeError or yields a finite total', () => {
+    const shapes: unknown[] = ['abc', '0.5', NaN, Infinity, -Infinity, null, undefined, {}, [], true]
+    for (const bad of shapes) {
+      const rules = { receptions: 1, bad_key: bad } as unknown as Record<string, number>
+      let total = 0
+      try {
+        total = scorePlayerWeek(rules, { receptions: 4, bad_key: 2 }).total
+      } catch (error) {
+        expect(error, String(bad)).toBeInstanceOf(TypeError)
+        continue
+      }
+      expect(Number.isFinite(total), String(bad)).toBe(true)
     }
   })
 })

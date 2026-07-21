@@ -118,6 +118,72 @@ describe('bucket boundary instants (every edge and one past it)', () => {
   })
 })
 
+describe('R58/D58 — unmappable source values are unreported, never an all-zero family', () => {
+  // The exact gap values the batch-5 review probed live: pre-fix these
+  // emitted the full family as delivered-zero — nothing hot, nothing
+  // pending, a silent wrong total (E61). The bucket tables are
+  // integer-gapped (ESPN prints 1–6 / 7–13 / 14–17…), so the domain is the
+  // integers and an unmappable value is unreported, not clampable.
+  const unmappable: Array<[string, number]> = [
+    ['PA=13.5 (the real-valued gap between def_pa_7_13 and def_pa_14_*)', 13.5],
+    ['PA=-3 (below def_pa_0’s pinned floor)', -3],
+    ['PA=14.5 (fractional INSIDE an interval — still outside the integer domain)', 14.5],
+  ]
+  it.each(unmappable)('%s: PA family absent → rules keys pending', (_label, pa) => {
+    const derived = deriveTierIndicators({ [DEF_PA_SOURCE_KEY]: pa, def_sack: 2 })
+    for (const key of PA_KEYS) {
+      expect(Object.prototype.hasOwnProperty.call(derived, key), key).toBe(false)
+    }
+    const breakdown = scorePlayerWeek({ def_pa_7_13: 3, def_pa_46_plus: -5 }, derived)
+    expect([...breakdown.pending].sort()).toEqual(['def_pa_46_plus', 'def_pa_7_13'])
+    expect(breakdown.total).toBe(0)
+  })
+
+  it('YA=99.5 (the review’s gap between def_ya_0_99 and def_ya_100_199): family absent → pending', () => {
+    const derived = deriveTierIndicators({ [DEF_YA_SOURCE_KEY]: 99.5 })
+    for (const key of YA_KEYS) {
+      expect(Object.prototype.hasOwnProperty.call(derived, key), key).toBe(false)
+    }
+    const breakdown = scorePlayerWeek({ def_ya_0_99: 5 }, derived)
+    expect(breakdown.pending).toEqual(['def_ya_0_99'])
+  })
+
+  it('a mappable source still delivers alongside an unmappable one — families stay independent', () => {
+    const derived = deriveTierIndicators({
+      [DEF_PA_SOURCE_KEY]: 13.5,
+      [DEF_YA_SOURCE_KEY]: 320,
+    })
+    expect(derived.def_ya_300_349).toBe(1)
+    expect(Object.prototype.hasOwnProperty.call(derived, 'def_pa_7_13')).toBe(false)
+  })
+
+  it('counter-pin: an all-zero (or partial) delivered family is UNCONSTRUCTIBLE — over integers, fractionals, negatives, and non-finites, a family is either fully absent or one-hot per platform set', () => {
+    const probes: number[] = [NaN, Infinity, -Infinity, -0.5, 0.0001, 13.5, 14.5, 99.5, 199.5, 549.5]
+    for (let v = -30; v <= 80; v++) probes.push(v)
+    for (let v = -30.5; v <= 660; v += 7.25) probes.push(v) // fractional sweep (R58: the integer-only scan missed this class)
+    for (let v = 81; v <= 660; v += 3) probes.push(v)
+
+    const families = [
+      { source: DEF_PA_SOURCE_KEY, keys: PA_KEYS, buckets: DEF_PA_BUCKETS, sets: [SHARED_PA_SET, ESPN_PA_SET] },
+      { source: DEF_YA_SOURCE_KEY, keys: YA_KEYS, buckets: DEF_YA_BUCKETS, sets: [YA_KEYS] },
+    ]
+    for (const v of probes) {
+      for (const { source, keys, buckets, sets } of families) {
+        const derived = deriveTierIndicators({ [source]: v })
+        const present = keys.filter((k) => Object.prototype.hasOwnProperty.call(derived, k))
+        const shouldDeliver =
+          Number.isInteger(v) && buckets.some(({ lo, hi }) => v >= lo && v <= hi)
+        expect(present.length > 0, `${source}=${v} delivered?`).toBe(shouldDeliver)
+        if (!shouldDeliver) continue
+        expect(present, `partial family @ ${source}=${v}`).toEqual([...keys])
+        for (const set of sets) {
+          expect(set.reduce((n, k) => n + derived[k], 0), `one-hot @ ${source}=${v}`).toBe(1)
+        }
+      }
+    }
+  })
+})
+
 describe('F20 — cold buckets are DELIVERED-ZERO (PROGRESS ledger §6, R56)', () => {
   it('normal-week derivation delivers the FULL family, cold buckets present-and-zero — an only-hot-bucket derive fails here', () => {
     const derived = deriveTierIndicators({

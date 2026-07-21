@@ -52,11 +52,30 @@ export function roundHalfUp(value: number): number {
  * The generic dot-product. `stats` values count as delivered only when they
  * are finite numbers — absent keys, and defensively NaN/±Infinity, resolve
  * as pending rather than poisoning the total.
+ *
+ * R59/D58 — the RULES side of the same trust boundary (a JSONB snapshot)
+ * fails LOUD, not pending: a coefficient that is not a finite number is a
+ * corrupt snapshot (config/programming error), not missing data — badging
+ * it pending would misreport corrupt config as "waiting on stats," and
+ * letting it through NaN-poisons a total that NUMERIC(8,2) will happily
+ * store (Postgres numeric has a NaN value; live-verified in the batch-5
+ * review). String-numerics ("0.5") throw too — silent coercion masks the
+ * corruption. Consequence, pinned by test: NaN can never reach the return
+ * value — scorePlayerWeek either throws or returns a finite total.
  */
 export function scorePlayerWeek(
   rules: Record<string, number>,
   stats: Record<string, number>,
 ): ScoreBreakdown {
+  const corrupt = Object.keys(rules).filter(
+    (key) => typeof rules[key] !== 'number' || !Number.isFinite(rules[key]),
+  )
+  if (corrupt.length > 0) {
+    throw new TypeError(
+      `scoring_rules_snapshot corrupt: non-finite-number coefficient for key(s) ${corrupt.join(', ')} (§7.3.3/E61 — refusing to score)`,
+    )
+  }
+
   const perKey: Record<string, number> = {}
   const pending: string[] = []
   let sum = 0
