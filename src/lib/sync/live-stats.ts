@@ -24,16 +24,19 @@ export const STAT_COLUMN_BY_KEY: Readonly<Record<string, string>> = Object.fromE
   ),
 )
 
-/** The canonical payload carries per-type 2-pt keys (storage deferred until
- *  M1, D20); today's schema holds one summed column. The sum is a writer-side
- *  storage derivation, byte-identical to the pre-seam STAT_MAP behavior. */
+/** The per-type 2-pt keys are column-stored since 057 (D20's M1 work, done —
+ *  the registry map above writes them); this summed `two_point_conversions`
+ *  derivation continues ALONGSIDE them, byte-identical to the pre-seam
+ *  STAT_MAP behavior (D24/D56(4)). Both are written. */
 const TWO_POINT_KEYS = ['pass_2pt', 'rush_2pt', 'rec_2pt'] as const
 
 /**
  * Canonical §23.1 stats payload → player_stats column values. Keys without a
- * column mapping (storage 'deferred') are not persisted in M0 (D5); the
- * `advanced` payload is likewise unpersisted until the milestone that adds
- * the JSONB column (D8).
+ * column mapping are not persisted: storage 'deferred' (awaiting a storage
+ * decision, D5) and — since 057 — storage 'derived' (the def_pa/def_ya
+ * tier-indicator families, never stored by design, D44). The `advanced`
+ * payload is
+ * likewise unpersisted until the milestone that adds the JSONB column (D8).
  */
 export function toStatColumns(
   stats: ProviderPlayerWeekStats['stats'],

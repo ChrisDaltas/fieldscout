@@ -50,6 +50,20 @@
 --    the standard PA *values* and the YA *buckets*, but not the standard YA
 --    values — the template task must pull those from ESPN's in-product
 --    default scoring settings when it seeds the ESPN template rows.
+--    [R50 addendum, 2026-07-20 — the published source is internally
+--    inconsistent, recorded so L.A1.9 doesn't rediscover it cold: the SAME
+--    Scoring-Formats article's custom-options list buckets points-allowed
+--    as 0 / 2–6 / 7–13 / 14–17 / 18–21 / 22–27 / 28–34 / 35–45 / 46+ —
+--    diverging from the standard-scoring list transcribed above (1–6;
+--    18–27 as one bucket) on the same page. At standard values the
+--    divergence is score-invisible (18–21 and 22–27 both sit in the
+--    0-point range; PA=1 vs 2–6 differs only for a lone-safety 1-point
+--    game), so the four keys seeded here stand; but if ESPN's PRODUCT
+--    renders the finer bucketization, def_pa_1_6/def_pa_18_27 cannot
+--    represent those rows one-for-one. Resolution is L.A1.9's, ledgered
+--    as F19. Cross-check anchor for L.A1.9's in-product pull: the D/ST
+--    article implicitly publishes one standard YA value — 0 yards allowed
+--    is worth +5, i.e. def_ya_0_99's standard value.]
 --
 -- 3. pgTAP waiver (citable, per the L.A1.7 task text): NO pgTAP file ships
 --    with this migration — additive columns on an already-tested table, no
@@ -57,6 +71,15 @@
 --    suite (stat-keys.test.ts, full key list as literals) + the upsert-
 --    surface continuity pins (live-stats.test.ts), consistent with plan
 --    §2.3's "pgTAP tests for policies/constraints" scoping.
+--    [RETIRED per R52, 2026-07-20: the cited coverage pinned the WRITER
+--    surface only — nothing executable touched the 11 columns in the
+--    database (vitest opens no DB connection; type-check reads the
+--    committed database.ts, regenerated only manually; no pgTAP file
+--    referenced the columns — deleting this ALTER TABLE failed zero
+--    tests). The "policies/constraints" scoping was also contradicted by
+--    house precedent (005/009/010 all carry columns_are shape pins).
+--    pgTAP 011_player_stats_box_columns.sql now pins the full column set
+--    + per-column type/default for the 11.]
 --
 -- Standing rules (tasks-M1 §4): grants doctrine (D18→D23) — no per-object
 -- GRANTs (037's default ACLs apply; RLS on player_stats is unchanged and
