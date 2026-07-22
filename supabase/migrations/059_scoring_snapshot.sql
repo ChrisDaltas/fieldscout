@@ -41,20 +41,31 @@
 --      scoring_systems.rules into scoring_rules_snapshot. LOUD failure —
 --      never a silent NULL snapshot — when scoring_system_id IS NULL or the
 --      referenced row is missing (the FK makes dangling unreachable today;
---      the guard is defense-in-depth per the task pointer). No status
---      restriction: §7.3.3 freezes "on draft start AND on any commissioner
---      scoring change" — pre-draft re-freeze (this task's boundary probe)
---      and M6's audited in-season change are both legitimate callers.
+--      the guard is defense-in-depth per the task pointer). Restricted to
+--      status IN ('setup','scheduled') (R69 — supersedes the shipped
+--      no-restriction reading): §7.3.3's freeze moments are draft start
+--      (M2's draft_start snapshots BEFORE transitioning, i.e. calls from
+--      'scheduled') and the audited commissioner scoring change (M6). Until
+--      the audited path exists, an unrestricted RPC lets a commissioner
+--      silently re-freeze scoring MID-DRAFT/mid-season from M2 on — the DB
+--      now refuses that instead of relying on future audit prose. M6
+--      loosens this alongside the audit log; the restriction fails LOUDLY
+--      there (P0001 naming M6), so no ledger row is needed — nothing is
+--      left silently unprotected.
 --      Row-locked (FOR UPDATE) to serialize with concurrent transitions.
 --   4. `set_league_status(p_league_id, p_status)` — same SECURITY DEFINER
 --      form + REVOKE. Validates the §7.1 transitions available in M1,
 --      checked in-body, SQL-native only (task item 2):
 --        * commish auth (42501);
---        * `setup → scheduled` requires settings->>'draft_scheduled_at'
---          present (jsonb null / '' / missing all refuse) AND castable to
---          timestamptz (a 'scheduled' league with an unparseable draft
---          instant is corrupt state the DB can trivially refuse; the cast
---          raises 22007/22008 loudly);
+--        * `setup → scheduled` requires settings->'draft'->>
+--          'draft_scheduled_at' present (jsonb null / '' / missing all
+--          refuse) AND castable to timestamptz (a 'scheduled' league with
+--          an unparseable draft instant is corrupt state the DB can
+--          trivially refuse; the cast raises 22007/22008 loudly). The path
+--          is the D60(4) NESTED draft block — the shape splitSettings
+--          (L.A1.6) actually writes; the task text's top-level
+--          `settings->>'draft_scheduled_at'` sketch predated D60(4) and is
+--          deliberately NOT read (R67 — pgTAP pins the old shape refusing);
 --        * `scheduled → setup` allowed (§7.1 backward move, pre-draft);
 --        * same-status is an idempotent no-op success (client retries must
 --          not error — the L.A1.12 double-submit concern, D63);
@@ -79,9 +90,12 @@
 -- §8.1 staging-rehearsal waiver (R6 rule): no staging clone exists; the fresh
 -- local `db reset` over 001–059 + the full pgTAP suite is the rehearsal
 -- evidence. Realtime line waived per D38 (no live subscriber in the M1 UI
--- slice). Typegen deliberately not re-run: a CHECK, a trigger, and two
--- void-returning RPCs change no schema shape (048/054 precedent; regen would
--- clobber the database.ts alias block).
+-- slice). Typegen RE-RUN (R68 — corrects this banner's original claim): the
+-- two RPCs are new PostgREST-exposed functions, so the generated Functions
+-- surface DOES change (the 048/054 no-regen precedents covered altered
+-- bodies/config of existing functions, not new ones); database.ts
+-- regenerated per standing rule §4.4 with the hand-written alias block
+-- re-appended, diff verified additive-only.
 -- Prod-safe: additive constraint on a zero-row table + new functions/trigger.
 -- ============================================================================
 
@@ -132,6 +146,7 @@ SET search_path = ''
 AS $$
 DECLARE
   v_scoring_system_id UUID;
+  v_status TEXT;
   v_rules JSONB;
 BEGIN
   -- In-body authorization (§12.0/§8.3): commissioner or co-commissioner only.
@@ -141,13 +156,26 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  SELECT l.scoring_system_id INTO v_scoring_system_id
+  SELECT l.scoring_system_id, l.status INTO v_scoring_system_id, v_status
   FROM public.leagues l
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'snapshot_league_scoring: league % not found', p_league_id
       USING ERRCODE = 'P0002';
+  END IF;
+
+  -- R69: pre-draft statuses only. §7.3.3's freeze moments are draft start
+  -- (M2's draft_start snapshots from 'scheduled', before its transition) and
+  -- the AUDITED commissioner scoring change — which is M6 work. Until the
+  -- audited path exists, refusing drafting+ closes the silent mid-draft/
+  -- mid-season re-freeze at the DB; M6 loosens this loudly alongside the
+  -- audit log (this raise names it).
+  IF v_status NOT IN ('setup', 'scheduled') THEN
+    RAISE EXCEPTION
+      'snapshot_league_scoring: league % is in % — scoring is frozen once the draft starts; in-season changes land with the audited path (M6)',
+      p_league_id, v_status
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- LOUD, never silent (task pointer): a league with no scoring reference
@@ -245,16 +273,19 @@ BEGIN
 
   -- setup → scheduled: draft_scheduled_at must be present (missing key,
   -- jsonb null, and '' all refuse) and a real instant (cast raises loudly on
-  -- garbage). SQL-native only — the full §7.3.8 validation runs in the
-  -- L.A1.13 Route Handler (task item 2).
+  -- garbage). Read at the D60(4) NESTED path settings.draft.draft_scheduled_at
+  -- — the shape the sanctioned writers (L.A1.6 splitSettings via L.A1.12/13)
+  -- actually produce; the pre-R67 top-level read could never succeed through
+  -- them. SQL-native only — the full §7.3.8 validation runs in the L.A1.13
+  -- Route Handler (task item 2).
   IF p_status = 'scheduled' THEN
-    IF NULLIF(v_settings->>'draft_scheduled_at', '') IS NULL THEN
+    IF NULLIF(v_settings->'draft'->>'draft_scheduled_at', '') IS NULL THEN
       RAISE EXCEPTION
-        'set_league_status: cannot schedule league % — settings.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)',
+        'set_league_status: cannot schedule league % — settings.draft.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)',
         p_league_id
         USING ERRCODE = 'P0001';
     END IF;
-    v_draft_scheduled_at := (v_settings->>'draft_scheduled_at')::timestamptz;
+    v_draft_scheduled_at := (v_settings->'draft'->>'draft_scheduled_at')::timestamptz;
   END IF;
 
   UPDATE public.leagues

@@ -25,6 +25,11 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { SCORING_TEMPLATES } from '../scoring/templates'
+import {
+  LEAGUE_SETTINGS_DEFAULTS,
+  splitSettings,
+  type LeagueSettings,
+} from '../settings/league-settings'
 
 // The Supabase CLI's fixed local development URL + demo keys (printed by
 // `npx supabase status`; identical for every local stack — not secrets).
@@ -37,6 +42,20 @@ const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 const LEAGUE_NAME = 'vitest-lifecycle-league'
+
+// The draft instant used everywhere below (fixed — no wall clock, D3/D17).
+const DRAFT_INSTANT = '2026-09-13T17:00:00.000Z'
+
+// R67: the settings blob is SOURCED FROM THE L.A1.6 CONTRACT, not hand-written
+// — `splitSettings` over the contract defaults with the draft instant set is
+// byte-for-byte the shape the sanctioned writers (L.A1.12 create, L.A1.13
+// PATCH) persist. The pre-fix suite hand-wrote a TOP-LEVEL
+// `draft_scheduled_at` key no sanctioned writer ever produces, which let the
+// RPC's wrong accessor pass; deriving the fixture here makes that drift
+// unrepresentable (and the cross-pin test below makes the nesting explicit).
+const scheduledSettings: LeagueSettings = structuredClone(LEAGUE_SETTINGS_DEFAULTS)
+scheduledSettings.draft.draft_scheduled_at = DRAFT_INSTANT
+const { blob: scheduledSettingsBlob } = splitSettings(scheduledSettings)
 const COMMISH = {
   email: 'lifecycle-commish@fieldscout.test',
   password: 'pgtap-lifecycle-pass-1',
@@ -149,19 +168,48 @@ describe('league lifecycle end-to-end (059 — local stack, PostgREST wire path)
     await cleanup()
   })
 
-  it('refuses scheduled while draft_scheduled_at is unset (P0001, in-body)', async () => {
+  it('the fixture blob nests draft_scheduled_at under draft — the splitSettings shape, D60(4) (R67 cross-pin)', () => {
+    // The shape the DB tests drive ≡ what splitSettings produces: the instant
+    // lives ONLY at blob.draft.draft_scheduled_at, never at the top level.
+    const blob = scheduledSettingsBlob as {
+      draft?: { draft_scheduled_at?: string | null }
+      draft_scheduled_at?: unknown
+    }
+    expect(blob.draft?.draft_scheduled_at).toBe(DRAFT_INSTANT)
+    expect(blob.draft_scheduled_at).toBeUndefined()
+  })
+
+  it('refuses scheduled while draft.draft_scheduled_at is unset (P0001, in-body)', async () => {
     const { error } = await commishClient.rpc('set_league_status', {
       p_league_id: leagueId,
       p_status: 'scheduled',
     })
     expect(error?.code).toBe('P0001')
-    expect(error?.message).toContain('draft_scheduled_at is not set')
+    expect(error?.message).toContain('settings.draft.draft_scheduled_at is not set')
   })
 
-  it('reaches scheduled once the draft instant exists, and can come back to setup', async () => {
+  it('REGRESSION TRAP (R67): the old TOP-LEVEL draft_scheduled_at shape no longer schedules', async () => {
+    // A valid instant at the pre-fix top-level key — the shape no sanctioned
+    // writer produces. An accessor reverted to `settings->>'draft_scheduled_at'`
+    // would accept this and fail the nested-shape tests below.
     const { error: setError } = await service
       .from('leagues')
-      .update({ settings: { draft_scheduled_at: '2026-09-13T17:00:00+00:00' } })
+      .update({ settings: { draft_scheduled_at: DRAFT_INSTANT } })
+      .eq('id', leagueId)
+    expect(setError).toBeNull()
+
+    const { error } = await commishClient.rpc('set_league_status', {
+      p_league_id: leagueId,
+      p_status: 'scheduled',
+    })
+    expect(error?.code).toBe('P0001')
+    expect(error?.message).toContain('settings.draft.draft_scheduled_at is not set')
+  })
+
+  it('reaches scheduled once the draft instant exists (contract-shaped blob), and can come back to setup', async () => {
+    const { error: setError } = await service
+      .from('leagues')
+      .update({ settings: scheduledSettingsBlob })
       .eq('id', leagueId)
     expect(setError).toBeNull()
 
@@ -244,5 +292,22 @@ describe('league lifecycle end-to-end (059 — local stack, PostgREST wire path)
 
     const { data } = await service.from('leagues').select('status').eq('id', leagueId).single()
     expect(data?.status).toBe('drafting')
+  })
+
+  it('snapshot is REFUSED mid-draft (R69) — scoring stays frozen from draft start until the M6 audited path', async () => {
+    const { error } = await commishClient.rpc('snapshot_league_scoring', {
+      p_league_id: leagueId,
+    })
+    expect(error?.code).toBe('P0001')
+    expect(error?.message).toContain('scoring is frozen once the draft starts')
+
+    // Nothing was written — the frozen rules still deep-equal the authored
+    // template.
+    const { data } = await service
+      .from('leagues')
+      .select('scoring_rules_snapshot')
+      .eq('id', leagueId)
+      .single()
+    expect(data?.scoring_rules_snapshot).toStrictEqual(espnStandardRules)
   })
 })

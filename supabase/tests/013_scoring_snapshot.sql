@@ -22,9 +22,21 @@
 --     keep-the-old-snapshot implementation).
 --   * Error messages are exact-matched (golden), not just SQLSTATE-matched —
 --     two different P0001 raises cannot satisfy each other's probes.
---   * Boundary values for the draft_scheduled_at presence check: missing
---     key, jsonb null, empty string (all refuse), garbage date (22007),
---     valid instant (succeeds) — the exact edge and one past it.
+--   * Boundary values for the draft_scheduled_at presence check — at the
+--     D60(4) NESTED path `settings.draft.draft_scheduled_at` (the shape
+--     splitSettings/L.A1.6 writes; R67): missing key, jsonb null, empty
+--     string (all refuse), garbage date (22007), valid instant (succeeds)
+--     — the exact edge and one past it. PLUS the R67 regression trap: the
+--     pre-fix TOP-LEVEL `settings.draft_scheduled_at` shape with a fully
+--     valid instant must REFUSE (an accessor reverted to the top level
+--     fails that pin and the nested success pins together).
+--   * R69: snapshot_league_scoring is pre-draft only — proven allowed in
+--     BOTH setup and scheduled, and REFUSED in 'drafting' (league forced
+--     there via the privileged path with the D43 guard satisfied), with a
+--     no-write pin showing the frozen rules survive the refused attempt.
+--   * The three search_path pins are EXACT (`search_path=""`), not the
+--     `~ 'search_path='` regex — a rebuild carrying search_path=public
+--     (the §12.0 violation itself) fails them (R70).
 --   * All privileged fixture work runs BEFORE any JWT claims are set
 --     (set_config persists to txn end — D49(7)); the mid-test privileged
 --     tweaks (settings/scoring_system_id flips) use `reset role`, which is
@@ -38,7 +50,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(51);
+select plan(55);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: functions, SECURITY DEFINER + search_path, ACLs, trigger, CHECK.
@@ -52,18 +64,25 @@ select is_definer('public', 'snapshot_league_scoring', array['uuid'],
 select is_definer('public', 'set_league_status', array['uuid', 'text'],
   'set_league_status is SECURITY DEFINER');
 
-select ok(
+-- R70: EXACT proconfig pins — `SET search_path = ''` stores as
+-- `search_path=""`; a rebuilt function pinning search_path=public (the
+-- precise §12.0 violation these exist to catch) fails an exact match but
+-- passed the old `~ 'search_path='` regex.
+select is(
   (select array_to_string(p.proconfig, ',') from pg_proc p
-   where p.oid = 'public.snapshot_league_scoring(uuid)'::regprocedure) ~ 'search_path=',
-  'snapshot_league_scoring pins search_path (spec §12.0 hardening)');
-select ok(
+   where p.oid = 'public.snapshot_league_scoring(uuid)'::regprocedure),
+  'search_path=""',
+  'snapshot_league_scoring pins search_path='''' exactly (spec §12.0 hardening; R70)');
+select is(
   (select array_to_string(p.proconfig, ',') from pg_proc p
-   where p.oid = 'public.set_league_status(uuid,text)'::regprocedure) ~ 'search_path=',
-  'set_league_status pins search_path');
-select ok(
+   where p.oid = 'public.set_league_status(uuid,text)'::regprocedure),
+  'search_path=""',
+  'set_league_status pins search_path='''' exactly (R70)');
+select is(
   (select array_to_string(p.proconfig, ',') from pg_proc p
-   where p.oid = 'public.leagues_snapshot_guard()'::regprocedure) ~ 'search_path=',
-  'leagues_snapshot_guard pins search_path (D49(3) plain-trigger-fn pattern)');
+   where p.oid = 'public.leagues_snapshot_guard()'::regprocedure),
+  'search_path=""',
+  'leagues_snapshot_guard pins search_path='''' exactly (D49(3) plain-trigger-fn pattern; R70)');
 
 select ok(
   not has_function_privilege('anon', 'public.snapshot_league_scoring(uuid)', 'EXECUTE'),
@@ -244,47 +263,64 @@ select throws_ok(
 select set_config('request.jwt.claims',
   '{"sub": "76000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
--- G1. setup → scheduled requires draft_scheduled_at: boundary sweep.
+-- G1. setup → scheduled requires draft_scheduled_at: boundary sweep at the
+--     D60(4) NESTED path settings.draft.draft_scheduled_at — the shape
+--     splitSettings (L.A1.6) writes and L.A1.12/13 will persist (R67; the
+--     vitest suite cross-pins this shape against splitSettings' real output).
 select throws_ok(
   $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
   'P0001',
-  'set_league_status: cannot schedule league ea000000-0000-4000-8000-000000000001 — settings.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)',
+  'set_league_status: cannot schedule league ea000000-0000-4000-8000-000000000001 — settings.draft.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)',
   'setup → scheduled with the key MISSING refuses (exact message — golden)');
 
 reset role;
-update leagues set settings = '{"draft_scheduled_at": null}'::jsonb
+update leagues set settings = '{"draft": {"draft_scheduled_at": null}}'::jsonb
 where id = 'ea000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select throws_ok(
   $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
   'P0001', null,
-  'jsonb null draft_scheduled_at refuses (boundary)');
+  'jsonb null draft.draft_scheduled_at refuses (boundary)');
 
 reset role;
-update leagues set settings = '{"draft_scheduled_at": ""}'::jsonb
+update leagues set settings = '{"draft": {"draft_scheduled_at": ""}}'::jsonb
 where id = 'ea000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select throws_ok(
   $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
   'P0001', null,
-  'empty-string draft_scheduled_at refuses (boundary — NULLIF guard)');
+  'empty-string draft.draft_scheduled_at refuses (boundary — NULLIF guard)');
 
 reset role;
-update leagues set settings = '{"draft_scheduled_at": "not-a-date"}'::jsonb
+update leagues set settings = '{"draft": {"draft_scheduled_at": "not-a-date"}}'::jsonb
 where id = 'ea000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select throws_ok(
   $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
   '22007', null,
-  'garbage draft_scheduled_at raises loudly on the timestamptz cast (22007 — corrupt state never reaches scheduled)');
+  'garbage draft.draft_scheduled_at raises loudly on the timestamptz cast (22007 — corrupt state never reaches scheduled)');
 
+-- R67 REGRESSION TRAP: the pre-fix TOP-LEVEL shape — a fully valid instant
+-- at settings.draft_scheduled_at — must REFUSE: no sanctioned writer ever
+-- produces it, and the accessor must not read it. Reverting the RPC to the
+-- top-level read makes this pin fail (and the nested successes above/below).
 reset role;
 update leagues set settings = '{"draft_scheduled_at": "2026-09-13T19:00:00+00:00"}'::jsonb
 where id = 'ea000000-0000-4000-8000-000000000001';
 set local role authenticated;
+select throws_ok(
+  $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
+  'P0001',
+  'set_league_status: cannot schedule league ea000000-0000-4000-8000-000000000001 — settings.draft.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)',
+  'the OLD top-level draft_scheduled_at shape refuses even with a valid instant (R67 regression trap — only the D60(4) nesting schedules)');
+
+reset role;
+update leagues set settings = '{"draft": {"draft_scheduled_at": "2026-09-13T19:00:00+00:00"}}'::jsonb
+where id = 'ea000000-0000-4000-8000-000000000001';
+set local role authenticated;
 select lives_ok(
   $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
-  'setup → scheduled with a real draft instant succeeds (one past the boundary)');
+  'setup → scheduled with a real draft instant at the NESTED path succeeds (one past the boundary)');
 select is(
   (select status from leagues where id = 'ea000000-0000-4000-8000-000000000001'),
   'scheduled',
@@ -349,7 +385,15 @@ select is(
     "def_ya_500_549": -6, "def_ya_550_plus": -7}'::jsonb,
   'snapshot equals the COMPLETE ESPN Standard rules literal (stored literal — cross-pins the 058 seed through the RPC)');
 
--- Boundary: pre-draft scoring change → re-snapshot OVERWRITES (task item 3).
+-- R69: the snapshot RPC is allowed in BOTH pre-draft statuses. The first
+-- freeze above ran in 'setup'; move to 'scheduled' (settings still carry the
+-- valid nested instant from G1) and run the re-snapshot there.
+select lives_ok(
+  $$ select set_league_status('ea000000-0000-4000-8000-000000000001', 'scheduled') $$,
+  'move to scheduled for the R69 allowed-in-scheduled probe');
+
+-- Boundary: pre-draft scoring change → re-snapshot OVERWRITES (task item 3),
+-- run while the league sits in 'scheduled' (R69's second allowed status).
 reset role;
 update leagues
 set scoring_system_id = (select id from scoring_systems where is_template and name = 'Yahoo Standard')
@@ -358,7 +402,7 @@ set local role authenticated;
 
 select lives_ok(
   $$ select snapshot_league_scoring('ea000000-0000-4000-8000-000000000001') $$,
-  're-snapshot after a pre-draft scoring change succeeds');
+  're-snapshot after a pre-draft scoring change succeeds — in scheduled (R69: both pre-draft statuses allowed)');
 select is(
   (select scoring_rules_snapshot from leagues where id = 'ea000000-0000-4000-8000-000000000001'),
   '{"pass_yards": 0.04, "pass_tds": 4, "interceptions": -1, "pass_2pt": 2,
@@ -371,6 +415,25 @@ select is(
     "def_pa_0": 10, "def_pa_1_6": 7, "def_pa_7_13": 4, "def_pa_14_20": 1,
     "def_pa_21_27": 0, "def_pa_28_34": -1, "def_pa_35_plus": -4}'::jsonb,
   're-snapshot OVERWROTE with the full Yahoo Standard literal (a keep-the-old COALESCE implementation fails this)');
+
+-- R69: once the draft starts, the commissioner can NO LONGER re-freeze —
+-- force L1 into 'drafting' via the privileged path (snapshot present, so the
+-- D43 guard is satisfied) and probe the refusal + that nothing was written.
+reset role;
+update leagues set status = 'drafting'
+where id = 'ea000000-0000-4000-8000-000000000001';
+set local role authenticated;
+
+select throws_ok(
+  $$ select snapshot_league_scoring('ea000000-0000-4000-8000-000000000001') $$,
+  'P0001',
+  'snapshot_league_scoring: league ea000000-0000-4000-8000-000000000001 is in drafting — scoring is frozen once the draft starts; in-season changes land with the audited path (M6)',
+  'snapshot REFUSED mid-draft (R69 — exact message; the silent mid-draft re-freeze is closed at the DB, not deferred to M6 audit prose)');
+select is(
+  (select scoring_rules_snapshot->>'interceptions' from leagues
+   where id = 'ea000000-0000-4000-8000-000000000001'),
+  '-1',
+  'the refused mid-draft attempt wrote NOTHING — the frozen Yahoo rules survive (interceptions -1; an ESPN re-freeze would read -2)');
 
 -- L2 has no scoring_system_id: LOUD refusal, never a silent NULL write.
 select throws_ok(
