@@ -285,7 +285,7 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 *Anything currently stopping forward progress — a spec question awaiting an answer, a prerequisite phase not yet landed, a flaky test blocking a merge, an infra limit. Delete once resolved.*
 
-*None currently.*
+**B4 (2026-07-22) — Q10 unruled; blocks L.A1.12 ONLY** (playoff_start_week ↔ regular_season_weeks consistency formula — §3 Q10, evidence + options + recommendation there; filed by the batch-6 remediation, R62; §5 visibility added per R65 so the pick step sees the gate). Lane heads L.A1.10 (engine) and L.A1.11 (schema) are NOT blocked — do not start L.A1.12 until Chris rules Q10.
 
 *(B3 resolved 2026-07-22: Chris ruled Q9 (option (a)+(c) — named parity exceptions); L.A1.9 resumed and landed same day, schema lane unblocked at L.A1.11. B2 resolved 2026-07-20: Chris ruled Q7 (recommendations accepted); L.A1.1 resumed. B1 resolved 2026-07-19: Docker Desktop installed. See session log.)*
 
@@ -637,6 +637,7 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 ### Nit
 
 - **R64 · nit · league-settings.ts** — Object.freeze on DL_PRESET, DEFAULT_ROSTER_SETTINGS, LEAGUE_SETTINGS_DEFAULTS is shallow; nested arrays/objects remain mutable. *Fix direction: deep-freeze the three exported constants, or document clone-before-use.*
+- **R65 · nit · PROGRESS §5 / build-next SKILL.md step 2** *(filed by the re-review of the batch-6 fix commit, post-remediation)* — the Q10→L.A1.12 gate was invisible to the orchestrator's pick step (which reads §2 + §5 only; §5 read "None currently"), so an unattended loop would spawn an L.A1.12 Builder that immediately re-halts on Q10, and Chris gets no notification until that wasted cycle. *Resolution (orchestrator, same day, this entry's PR): lane-scoped §5 entry **B4** added ("Q10 unruled; blocks L.A1.12 only") + Chris notified of Q10 at the #43 merge. The fs-builder charter's mandatory §3/§6 reading remains the backstop.*
 
 ---
 
