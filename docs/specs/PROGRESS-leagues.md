@@ -618,6 +618,16 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-22 (M1 batch 7)
+
+**Reviewer batch (fresh-context adversarial review of PR #45 — L.A1.10 template parity, `main...feat/M1-L.A1.10-template-parity`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Review substance: all 30 cent pins independently hand-recomputed from the recorded Q9 evidence (zero disagreements); break probe reproduced live (receiving_yards 0.1→0.11 → exactly the 12 RB/WR-TE pins across 6 templates); F23 negative control verified genuinely discriminating (skip-derive scores the D/ST week 13.00 vs the 15.00/14.00 pins); F14 flip verified honest (no network imports; literals ≡ the recorded boundaries); no unledgered hand-offs.
+
+### Nit
+
+- **R66 · nit · src/lib/leagues/scoring/template-parity.test.ts:239** — the test name claims `targets`/`fg_made` are pinned ignored-not-pending but the body asserts only `qb_sack_taken`; the property IS structurally covered for all context keys by the breakdown-invariant test, so nothing is untested — the name overclaims its own body. *Resolution: recorded here (orchestrator, same day); take by narrowing the name or widening the asserts at the file's next touch — no dedicated fix session warranted.*
+
+---
+
 ## Review findings — 2026-07-22 (M1 batch 6)
 
 *Reviewer session (fresh context, red-team brief): diff = PR #43 (`feat/M1-L.A1.6-settings-contract` — L.A1.6 settings contract, `src/lib/leagues/settings/`). Verdict **FIX-THEN-MERGE**; findings R62–R64 (2 should-fix, 1 nit) handed to this remediation session by the /build-next orchestrator. Findings recorded verbatim below; resolution on the SAME branch (fix-then-merge — no new PR).*
