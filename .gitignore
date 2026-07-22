@@ -35,6 +35,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# claude code local state
-.claude/
+# claude code local state (agents + skills ARE versioned — they encode the
+# build-loop process contract and its rulings; settings/worktrees stay local)
+.claude/*
+!.claude/agents/
+!.claude/skills/
 redesign_pkg.zip
