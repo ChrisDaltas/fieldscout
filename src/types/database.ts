@@ -2600,6 +2600,14 @@ export type Database = {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
       }
+      set_league_status: {
+        Args: { p_league_id: string; p_status: string }
+        Returns: undefined
+      }
+      snapshot_league_scoring: {
+        Args: { p_league_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
