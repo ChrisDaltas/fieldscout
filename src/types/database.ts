@@ -2070,6 +2070,7 @@ export type Database = {
           description: string | null
           id: string
           is_system_default: boolean | null
+          is_template: boolean
           name: string
           owner_id: string | null
           rules: Json
@@ -2080,6 +2081,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system_default?: boolean | null
+          is_template?: boolean
           name: string
           owner_id?: string | null
           rules: Json
@@ -2090,6 +2092,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system_default?: boolean | null
+          is_template?: boolean
           name?: string
           owner_id?: string | null
           rules?: Json
@@ -2734,6 +2737,7 @@ export const Constants = {
 } as const
 
 
+
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -2762,6 +2766,7 @@ export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']
 export type Player = Database['public']['Tables']['players']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
+export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
 export type TeamManager = Database['public']['Tables']['team_managers']['Row']
