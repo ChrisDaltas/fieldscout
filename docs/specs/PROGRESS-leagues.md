@@ -665,6 +665,17 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-22 (M1 batch 9)
+
+**Reviewer batch (fresh-context adversarial review of PR #48 — L.A2.2 roster-slot-builder, `main...feat/M1-L.A2.2-roster-slot-builder`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Review substance: §7.3.2 printed-example fixture machine-compared byte-identical; contract consumption verified (every emission schema-parsed; DL = spread of DL_PRESET; validator messages rendered verbatim, never reimplemented); §16.4 naming + §7.3.2 display order verified in the rendered DOM; break probe reproduced (flex2.count 1→2 → exactly 2 pins); the full D39 state walk re-driven live incl. mobile 375px; no near-duplicate (the mock read-only roster list in league-manage-view.tsx is L.A2.4's replacement target); F26 harness guard verified (NODE_ENV build-inlined → prod 404).
+
+### Nit
+
+- **R71 · nit · roster-slot-builder.tsx:224** — DL helper copy hardcodes "stays 4 weeks — OUT · IR · Doubtful" instead of interpolating from `DL_PRESET`; emission is preset-verbatim (pinned) so only the hint can drift. *Resolution: recorded here (orchestrator, same day); take at the file's next touch (L.A2.4 embeds the component).*
+- **R72 · nit · roster-slot-builder-ops.ts:214** — `addSingleSlot`'s key-collision fallback matches by preset key, not position: a hand-edited DB row like `{key:'qb', eligible:['RB']}` makes stepping the QB ghost row mutate that RB slot; unreachable through builder ops (all emissions schema-parsed). *Resolution: recorded here; take at next touch — generate a fresh key on collision with a different eligible set.*
+
+---
+
 ## Review findings — 2026-07-22 (M1 batch 8)
 
 *Reviewer session (fresh context, red-team brief): diff = PR #47 (`feat/M1-L.A1.11-scoring-snapshot` — L.A1.11, migration 059 snapshot RPC + lifecycle guard + pgTAP 013 + `lifecycle-db.test.ts`). Verdict **FIX-THEN-MERGE**; findings R67–R70 (1 blocker, 2 should-fix, 1 nit) handed to this remediation session by the /build-next orchestrator. Findings recorded verbatim below; resolution on the SAME branch (fix-then-merge — no new PR).*
