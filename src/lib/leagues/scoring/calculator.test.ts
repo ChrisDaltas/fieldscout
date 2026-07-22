@@ -190,7 +190,7 @@ describe('R59/D58 — corrupt rules coefficients fail LOUD, never NaN-poison the
 })
 
 describe('one namespace — no legacy literals in the engine modules (D33)', () => {
-  const moduleSources = ['./calculator.ts', './derive-stats.ts'].map((rel) =>
+  const moduleSources = ['./calculator.ts', './derive-stats.ts', './templates.ts'].map((rel) =>
     readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8'),
   )
   const canonical = new Set(STAT_KEYS.map((k) => k.key))
@@ -202,7 +202,7 @@ describe('one namespace — no legacy literals in the engine modules (D33)', () 
     expect(legacyOnlyKeys.length).toBeGreaterThanOrEqual(5)
   })
 
-  it('calculator + derive-stats contain no legacy-only key literals and never import the legacy module', () => {
+  it('calculator + derive-stats + templates contain no legacy-only key literals and never import the legacy module', () => {
     for (const source of moduleSources) {
       for (const legacyKey of legacyOnlyKeys) {
         expect(source).not.toContain(legacyKey)
