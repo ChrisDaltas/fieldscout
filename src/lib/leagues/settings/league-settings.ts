@@ -46,6 +46,19 @@ import { z } from 'zod'
 
 import type { Json, League } from '@/types/database'
 
+/**
+ * Recursively freeze an exported constant (R64): `Object.freeze` alone is
+ * shallow, leaving nested arrays/objects mutable. Consumers clone before
+ * editing (e.g. `structuredClone` — the schema's roster default already does).
+ */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) deepFreeze(child)
+    Object.freeze(value)
+  }
+  return value
+}
+
 // ---------------------------------------------------------------------------
 // Vocabulary
 // ---------------------------------------------------------------------------
@@ -126,7 +139,7 @@ export type IrSlotConfig = Omit<z.infer<typeof restrictedIrSlotSchema>, 'key'> |
  * designations OUT, IR, Doubtful; min_weeks 4; label "DL". Identical
  * mechanics to any Restricted spot; the label is the product promise.
  */
-export const DL_PRESET: IrSlotConfig = Object.freeze({
+export const DL_PRESET: IrSlotConfig = deepFreeze({
   label: 'DL',
   type: 'restricted',
   eligible_designations: ['OUT', 'IR', 'Doubtful'],
@@ -147,7 +160,7 @@ export type RosterSettings = z.infer<typeof rosterSettingsSchema>
  * SAME object 040's `roster_settings` DEFAULT holds and pgTAP 005 golden-pins
  * as a JSON literal (C9; the cross-pin lives in league-settings.test.ts).
  */
-export const DEFAULT_ROSTER_SETTINGS: RosterSettings = Object.freeze({
+export const DEFAULT_ROSTER_SETTINGS: RosterSettings = deepFreeze({
   starting_slots: [
     { key: 'qb', label: 'QB', eligible: ['QB'], count: 1 },
     { key: 'rb', label: 'RB', eligible: ['RB'], count: 2 },
@@ -191,13 +204,33 @@ const draftConfigSchema = z.strictObject({
 export type DraftConfig = z.infer<typeof draftConfigSchema>
 
 // ---------------------------------------------------------------------------
+// §7.3.5 — derived default: trade veto votes
+// ---------------------------------------------------------------------------
+
+/** The §7.3.1 "D" column team count — the anchor for derived defaults. */
+const DEFAULT_TEAM_COUNT = 12
+
+/**
+ * §7.3.5 "D" column: `trade_veto_votes` defaults to **⌈team_count/2⌉** — a
+ * DERIVED default, not a constant. This function is the single home of that
+ * derivation (R63): the schema's own default calls it at the default
+ * team_count, and any surface that re-defaults on a team_count change (the
+ * L.A2.1 wizard, L.A1.12 `create_league`) calls it — or `defaultsForTeamCount`
+ * — instead of hard-coding 6. The formula is the spec's ⌈/2⌉ even though every
+ * v1 team_count is even (odd-count ceiling pins keep it honest if counts widen).
+ */
+export function deriveDefaultVetoVotes(teamCount: number): number {
+  return Math.ceil(teamCount / 2)
+}
+
+// ---------------------------------------------------------------------------
 // The full §7.3 catalog — leagueSettingsSchema
 // ---------------------------------------------------------------------------
 
 export const leagueSettingsSchema = z.strictObject({
   // §7.3.1 — format & structure
   format: z.literal('redraft').default('redraft'), // keeper/dynasty/best_ball reserved (v1)
-  team_count: z.literal([8, 10, 12, 14, 16]).default(12), // even only in v1 (OQ 12)
+  team_count: z.literal([8, 10, 12, 14, 16]).default(DEFAULT_TEAM_COUNT), // even only in v1 (OQ 12)
   divisions: z.number().int().min(1).max(2).default(1),
   regular_season_weeks: z.number().int().min(12).max(15).default(14),
   playoff_teams: z.literal([0, 2, 4, 6, 8, 10, 12]).default(6), // ≤ team_count → validator
@@ -235,7 +268,7 @@ export const leagueSettingsSchema = z.strictObject({
 
   // §7.3.5 — trades
   trade_review: z.enum(['none', 'commissioner', 'league_vote']).default('commissioner'),
-  trade_veto_votes: z.number().int().min(1).max(16).default(6), // D = ⌈team_count/2⌉ at the default 12; ≤ team_count → validator
+  trade_veto_votes: z.number().int().min(1).max(16).default(() => deriveDefaultVetoVotes(DEFAULT_TEAM_COUNT)), // D = ⌈team_count/2⌉ (derived — R63); ≤ team_count → validator
   trade_review_period_hours: z.number().int().min(0).max(96).default(24),
   trade_deadline_week: z.number().int().min(1).max(15).nullable().default(11), // none → null; ≤ regular_season_weeks → validator
   allow_faab_in_trades: z.boolean().default(false),
@@ -263,15 +296,30 @@ export type LeagueSettings = z.infer<typeof leagueSettingsSchema>
 
 /**
  * Creation defaults, verbatim from the §7.3 "D" columns (v1 default chain
- * per §7.3.7; trade_veto_votes = ⌈12/2⌉ = 6 at the default team_count — the
- * creation wizard recomputes it when team_count changes).
+ * per §7.3.7; trade_veto_votes = deriveDefaultVetoVotes(12) = 6 at the
+ * default team_count — surfaces that change team_count re-derive via
+ * `defaultsForTeamCount`, R63).
  *
- * Golden-pinned by serialization in league-settings.test.ts; the roster
- * portion is the SAME JSON literal 040's pgTAP default test pins, and
- * L.A1.13's integration suite asserts a freshly-defaulted leagues row's
- * roster_settings deep-equals it.
+ * Deep-frozen (R64) — clone before editing. Golden-pinned by serialization
+ * in league-settings.test.ts; the roster portion is the SAME JSON literal
+ * 040's pgTAP default test pins, and L.A1.13's integration suite asserts a
+ * freshly-defaulted leagues row's roster_settings deep-equals it.
  */
-export const LEAGUE_SETTINGS_DEFAULTS: LeagueSettings = Object.freeze(leagueSettingsSchema.parse({})) as LeagueSettings
+export const LEAGUE_SETTINGS_DEFAULTS: LeagueSettings = deepFreeze(leagueSettingsSchema.parse({})) as LeagueSettings
+
+/**
+ * Creation defaults for a chosen team_count: LEAGUE_SETTINGS_DEFAULTS with
+ * the §7.3.5 DERIVED default applied (trade_veto_votes = ⌈team_count/2⌉) —
+ * the contract owns the derivation (R63); the L.A2.1 wizard and L.A1.12
+ * `create_league` default through THIS, never a static 6. Returns a fresh
+ * MUTABLE object (the frozen module constant is never handed out).
+ */
+export function defaultsForTeamCount(teamCount: LeagueSettings['team_count']): LeagueSettings {
+  return leagueSettingsSchema.parse({
+    team_count: teamCount,
+    trade_veto_votes: deriveDefaultVetoVotes(teamCount),
+  })
+}
 
 // ---------------------------------------------------------------------------
 // validateLeagueSettings — §7.3.8 validation bullets (cross-field; per-field

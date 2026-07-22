@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_ROSTER_SETTINGS,
+  defaultsForTeamCount,
+  deriveDefaultVetoVotes,
   DL_PRESET,
   LEAGUE_SETTINGS_DEFAULTS,
   leagueSettingsSchema,
@@ -101,6 +103,54 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
 
   it('trade_veto_votes default = ⌈team_count/2⌉ at the default 12', () => {
     expect(LEAGUE_SETTINGS_DEFAULTS.trade_veto_votes).toBe(Math.ceil(LEAGUE_SETTINGS_DEFAULTS.team_count / 2))
+    // …and the schema default IS the derivation, not a coincidentally-equal constant (R63)
+    expect(LEAGUE_SETTINGS_DEFAULTS.trade_veto_votes).toBe(deriveDefaultVetoVotes(LEAGUE_SETTINGS_DEFAULTS.team_count))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §7.3.5 derived default — trade_veto_votes = ⌈team_count/2⌉ (R63)
+// ---------------------------------------------------------------------------
+
+describe('deriveDefaultVetoVotes / defaultsForTeamCount (§7.3.5 D column, R63)', () => {
+  it('golden pins (stored literals): every v1 team_count, incl. the 8 and 16 edges', () => {
+    expect(deriveDefaultVetoVotes(8)).toBe(4)
+    expect(deriveDefaultVetoVotes(10)).toBe(5)
+    expect(deriveDefaultVetoVotes(12)).toBe(6)
+    expect(deriveDefaultVetoVotes(14)).toBe(7)
+    expect(deriveDefaultVetoVotes(16)).toBe(8)
+  })
+
+  it('the formula is the CEILING, not floor/half — odd counts pin it (v1 counts are all even; §7.3.5 prints ⌈/2⌉)', () => {
+    expect(deriveDefaultVetoVotes(9)).toBe(5)
+    expect(deriveDefaultVetoVotes(13)).toBe(7)
+  })
+
+  it('defaultsForTeamCount(12) ≡ LEAGUE_SETTINGS_DEFAULTS (identity at the default count)', () => {
+    expect(defaultsForTeamCount(12)).toStrictEqual(LEAGUE_SETTINGS_DEFAULTS)
+  })
+
+  it('golden pin: defaultsForTeamCount(8) → veto 4; nothing else differs from the defaults', () => {
+    const d8 = defaultsForTeamCount(8)
+    expect(d8.team_count).toBe(8)
+    expect(d8.trade_veto_votes).toBe(4)
+    expect({ ...d8, team_count: 12, trade_veto_votes: 6 }).toStrictEqual(LEAGUE_SETTINGS_DEFAULTS)
+  })
+
+  it('golden pin: defaultsForTeamCount(16) → veto 8', () => {
+    const d16 = defaultsForTeamCount(16)
+    expect(d16.team_count).toBe(16)
+    expect(d16.trade_veto_votes).toBe(8)
+  })
+
+  it('every v1 count validates clean through defaultsForTeamCount — the R63 drift (static 6 at non-12 counts) is unconstructible via the sanctioned path', () => {
+    for (const count of [8, 10, 12, 14, 16] as const) {
+      const derived = defaultsForTeamCount(count)
+      expect(derived.trade_veto_votes).toBe(deriveDefaultVetoVotes(count))
+      const result = validateLeagueSettings(derived)
+      expect(result.errors).toStrictEqual([])
+      expect(result.valid).toBe(true)
+    }
   })
 })
 
@@ -254,5 +304,49 @@ describe('structural strictness', () => {
     expect(parses(withPatch('draft.draft_order', null))).toBe(true)
     expect(parses(withPatch('draft.draft_order', ['00000000-0000-4000-8000-000000000101']))).toBe(true)
     expect(parses(withPatch('draft.draft_order', ['team-1']))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Deep-frozen exports (R64) — nested structures are immutable too
+// ---------------------------------------------------------------------------
+
+describe('deep-frozen exported constants (R64)', () => {
+  it('LEAGUE_SETTINGS_DEFAULTS: nested object/array mutation throws (not just the top level)', () => {
+    expect(() => {
+      ;(LEAGUE_SETTINGS_DEFAULTS.roster_settings.starting_slots[0] as { count: number }).count = 9
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(LEAGUE_SETTINGS_DEFAULTS.tiebreakers as string[]).push('coin_flip')
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(LEAGUE_SETTINGS_DEFAULTS.draft as { auction_budget: number }).auction_budget = 500
+    }).toThrow(TypeError)
+    // and the values are unchanged
+    expect(LEAGUE_SETTINGS_DEFAULTS.roster_settings.starting_slots[0].count).toBe(1)
+    expect(LEAGUE_SETTINGS_DEFAULTS.tiebreakers).toHaveLength(6)
+    expect(LEAGUE_SETTINGS_DEFAULTS.draft.auction_budget).toBe(200)
+  })
+
+  it('DEFAULT_ROSTER_SETTINGS and DL_PRESET: nested arrays are frozen', () => {
+    expect(() => {
+      ;(DEFAULT_ROSTER_SETTINGS.ir_slots[0].eligible_designations as string[]).push('PUP')
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(DEFAULT_ROSTER_SETTINGS.starting_slots as unknown[]).pop()
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(DL_PRESET.eligible_designations as string[]).pop()
+    }).toThrow(TypeError)
+    expect(DEFAULT_ROSTER_SETTINGS.ir_slots[0].eligible_designations).toStrictEqual(['OUT', 'IR'])
+    expect(DL_PRESET.eligible_designations).toStrictEqual(['OUT', 'IR', 'Doubtful'])
+  })
+
+  it('defaultsForTeamCount returns a FRESH mutable object — frozen constants are never handed out', () => {
+    const derived = defaultsForTeamCount(12)
+    expect(Object.isFrozen(derived)).toBe(false)
+    derived.trade_veto_votes = 7 // must not throw…
+    expect(derived.trade_veto_votes).toBe(7)
+    expect(LEAGUE_SETTINGS_DEFAULTS.trade_veto_votes).toBe(6) // …and never aliases the constant
   })
 })
