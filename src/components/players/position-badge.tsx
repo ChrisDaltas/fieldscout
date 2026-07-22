@@ -17,6 +17,10 @@ const STYLES: Record<string, string> = {
   DEF: 'bg-pos-def text-white',
   DST: 'bg-pos-def text-white',
   FLEX: 'bg-pos-flex text-white',
+  // IDP codes (league roster builder, spec §7.3.2) share the defense grey.
+  DL: 'bg-pos-def text-white',
+  LB: 'bg-pos-def text-white',
+  DB: 'bg-pos-def text-white',
 }
 
 // Position filters are the one exception to the black-selected rule: a
