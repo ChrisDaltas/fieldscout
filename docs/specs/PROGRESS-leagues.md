@@ -668,6 +668,16 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-22 (M1 batch 10)
+
+**Reviewer batch (fresh-context adversarial review of PR #50 — L.A2.3 scoring-template-picker, `main...feat/M1-L.A2.3-scoring-template-picker`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Review substance: compare-derivation verified rules-derived with stored-literal pins cross-checked against templates.ts and the recorded Q9 evidence; both break probes reproduced (always-'single' → exactly 3 pins; absent-key→0 → exactly 5 incl. the never-0 pin); the Q9/v2.8.5 visibility condition verified in the live DOM at desktop AND 375px (no clamp/overflow hiding the ESPN exception note); §7.3.3 card order/one-liners/platform-default markers verbatim; absence discipline pinned (exactly 6, no teasers/editor/widget); anon read path live-probed with curl over 058's policy; harness workarounds confirmed not leaked into product code.
+
+### Nit
+
+- **R73 · nit · scoring-template-picker.tsx:836** — marker badge reads generic "Platform default" where §7.3.3 prints the possessive "(Yahoo's/Sleeper's platform default)"; presence/targeting correct and pinned, card title supplies the platform. *Resolution: recorded here (orchestrator, same day); take at the file's next touch (L.A2.4 embeds the component).*
+
+---
+
 ## Review findings — 2026-07-22 (M1 batch 9)
 
 **Reviewer batch (fresh-context adversarial review of PR #48 — L.A2.2 roster-slot-builder, `main...feat/M1-L.A2.2-roster-slot-builder`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Review substance: §7.3.2 printed-example fixture machine-compared byte-identical; contract consumption verified (every emission schema-parsed; DL = spread of DL_PRESET; validator messages rendered verbatim, never reimplemented); §16.4 naming + §7.3.2 display order verified in the rendered DOM; break probe reproduced (flex2.count 1→2 → exactly 2 pins); the full D39 state walk re-driven live incl. mobile 375px; no near-duplicate (the mock read-only roster list in league-manage-view.tsx is L.A2.4's replacement target); F26 harness guard verified (NODE_ENV build-inlined → prod 404).
