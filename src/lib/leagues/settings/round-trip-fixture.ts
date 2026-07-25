@@ -47,7 +47,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   divisions: 2,
   regular_season_weeks: 13,
   playoff_teams: 4,
-  playoff_start_week: 14,
+  playoff_start_week: 14, // = regular_season_weeks + 1 (the Q10/v2.8.6 seam) while both stay non-default — validity pinned in split-merge.test.ts
   playoff_weeks_per_round: 2, // 4 teams → 2 rounds × 2 weeks → weeks 14–17 ≤ 18 ✓
   playoff_byes: 'auto', // single-option field (derived)
   playoff_reseed: false,

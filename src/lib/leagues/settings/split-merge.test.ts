@@ -213,7 +213,7 @@ function randomSettings(rng: () => number): LeagueSettings {
     divisions: int(rng, 1, 2),
     regular_season_weeks: int(rng, 12, 15),
     playoff_teams: pick(rng, [0, 2, 4, 6, 8, 10, 12] as const),
-    playoff_start_week: int(rng, 14, 17),
+    playoff_start_week: int(rng, 13, 16), // schema range per the v2.8.6/Q10 erratum (generator targets SCHEMA validity; seam consistency is validateLeagueSettings' concern)
     playoff_weeks_per_round: pick(rng, [1, 2] as const),
     playoff_byes: 'auto',
     playoff_reseed: bool(rng),
