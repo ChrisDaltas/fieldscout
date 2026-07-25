@@ -24,6 +24,15 @@
 --   * Boundary: team_count 9 (inside the 8–16 range but not in the v1 set)
 --     surfaces 040's CHECK (23514) through the RPC; 8/16 edge sizes and the
 --     full 8..16 sweep live in the stack vitest suite (leagues-api-db).
+--   * R75 regression traps (batch-12 review): the EXACT live-proven
+--     direct-RPC bypass (overlap pair 15+14) is refused in-body with a
+--     no-write pin, and the 13–16 range is probed one-past BOTH directions
+--     (12 and 17, seam-consistent so the RANGE half refuses) — these run as
+--     `authenticated` through the RPC with no API layer in the loop, which
+--     is the hole class they trap.
+--   * R76: replaying the action_id of a since-soft-deleted league refuses
+--     with the friendly terminal message instead of replaying a dead league
+--     (the happy replay is pinned BEFORE the delete in section D).
 --   * All privileged fixture work runs BEFORE any JWT claims are set
 --     (set_config persists to txn end — D49(7)); mid-test privileged reads
 --     use `reset role` (013 pattern).
@@ -36,7 +45,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(47);
+select plan(53);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: functions, SECURITY DEFINER + search_path, ACLs, column, UNIQUE.
@@ -288,6 +297,46 @@ select throws_ok(
   '23514', null,
   'team_count 9 violates the v1 {8,10,12,14,16} CHECK (23514) through the RPC');
 
+-- R75 regression traps: the Q10 seam has a DB backstop at the sanctioned
+-- writer — these calls run the RPC DIRECTLY as authenticated (no
+-- validateLeagueSettings anywhere in the loop), which is the exact
+-- live-proven bypass from the batch-12 review.
+select throws_ok(
+  $$ select public.create_league(
+       'pgtap-overlap', 2026, 12, '{}'::jsonb, '{"bench": 6}'::jsonb,
+       (select id from public.scoring_systems where is_template and name = 'ESPN Standard'),
+       null, 'ac000000-0000-4000-8000-000000000007',
+       'redraft', 15, 6, 14, 'faab', 100, 'commissioner', null, 'per_player_kickoff') $$,
+  'P0001',
+  'create_league: playoff_start_week must be the week after the regular season ends — week 16 for a 15-week regular season (currently week 14) (§7.3.8, Q10/v2.8.6)',
+  'direct-RPC overlap pair (15+14 — the live-proven R75 bypass) is refused in-body with the friendly field-named message');
+select is(
+  (select count(*) from leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000007'),
+  0::bigint,
+  'NO league row persisted on the refused overlap pair — the poisoned-blob detail-500 class is unreachable through the sanctioned writer');
+
+-- Range one-past both directions (12 and 17), with SEAM-CONSISTENT regular
+-- seasons (11+12, 16+17) so the RANGE backstop — not the seam — is what
+-- refuses (each check discriminated independently).
+select throws_ok(
+  $$ select public.create_league(
+       'pgtap-range-low', 2026, 12, '{}'::jsonb, '{"bench": 6}'::jsonb,
+       (select id from public.scoring_systems where is_template and name = 'ESPN Standard'),
+       null, 'ac000000-0000-4000-8000-000000000008',
+       'redraft', 11, 6, 12, 'faab', 100, 'commissioner', null, 'per_player_kickoff') $$,
+  'P0001',
+  'create_league: playoff_start_week must be between 13 and 16 (currently week 12) (§7.3.1, Q10/v2.8.6)',
+  'playoff_start_week 12 (one past the low edge, seam-consistent 11+12) hits the range backstop');
+select throws_ok(
+  $$ select public.create_league(
+       'pgtap-range-high', 2026, 12, '{}'::jsonb, '{"bench": 6}'::jsonb,
+       (select id from public.scoring_systems where is_template and name = 'ESPN Standard'),
+       null, 'ac000000-0000-4000-8000-000000000009',
+       'redraft', 16, 6, 17, 'faab', 100, 'commissioner', null, 'per_player_kickoff') $$,
+  'P0001',
+  'create_league: playoff_start_week must be between 13 and 16 (currently week 17) (§7.3.1, Q10/v2.8.6)',
+  'playoff_start_week 17 (one past the high edge, seam-consistent 16+17) hits the range backstop');
+
 -- v1 templates-only negatives (§7.3.3): personal system, then NULL.
 select throws_ok(
   $$ select public.create_league(
@@ -370,6 +419,27 @@ select lives_ok(
   $$ select public.soft_delete_league(
        (select id from public.leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001')) $$,
   'a retried delete is an idempotent no-op (D63 doctrine)');
+
+-- R76: retrying the ORIGINAL create against the now soft-deleted league must
+-- NOT replay success (a route 200 whose league 404s on detail) — friendly
+-- terminal refusal instead. (The HAPPY replay was pinned in section D,
+-- before the delete — both sides of the deleted_at line are covered.)
+select throws_ok(
+  $$ select public.create_league(
+       'pgtap-created-league', 2026, 12,
+       '{"divisions": 0, "median_game": true, "draft": {"draft_type": "snake"}}'::jsonb,
+       '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 6, "ir_slots": [], "swap_spots": 0}'::jsonb,
+       (select id from public.scoring_systems where is_template and name = 'ESPN Standard'),
+       'Commish Crushers',
+       'ac000000-0000-4000-8000-000000000001',
+       'redraft', 14, 6, 15, 'faab', 250, 'commissioner', null, 'per_player_kickoff') $$,
+  'P0001',
+  'create_league: this create was already completed and the league has since been deleted — start a new league with a fresh submit',
+  'replaying the action_id of a since-soft-deleted league REFUSES (R76) instead of replaying a dead league');
+select is(
+  (select count(*) from leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001'),
+  1::bigint,
+  'the R76 refusal wrote nothing — still exactly the one (soft-deleted) league on that action_id');
 
 select * from finish();
 rollback;

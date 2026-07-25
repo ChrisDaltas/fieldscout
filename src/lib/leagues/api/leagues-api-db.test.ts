@@ -75,6 +75,7 @@ const ACTION = {
   invalid: 'ad000000-0000-4000-8000-0000000000a2',
   doubleRoute: 'ad000000-0000-4000-8000-0000000000a3',
   doubleRpc: 'ad000000-0000-4000-8000-0000000000a4',
+  unknownKey: 'ad000000-0000-4000-8000-0000000000a5',
 } as const
 const sweepActionId = (teamCount: number): string =>
   ACTION[`sweep${teamCount}` as keyof typeof ACTION]
@@ -316,6 +317,20 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
       .from('leagues')
       .select('id')
       .eq('creation_action_id', ACTION.invalid)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('REJECTS a TOP-LEVEL unknown key at the Zod layer — strictObject, R77 (a plain z.object would silently strip it)', async () => {
+    const input = { ...sweepInput(12), action_id: ACTION.unknownKey, is_pro_bypass: true }
+    const result = await createLeague(creatorClient, input)
+    expect(result.status).toBe(400)
+    expect((result.body as { error: unknown }).error).toBeTruthy()
+
+    // No-write pin: the rejected body never reached the DB.
+    const { data: rows } = await service
+      .from('leagues')
+      .select('id')
+      .eq('creation_action_id', ACTION.unknownKey)
     expect(rows).toHaveLength(0)
   })
 

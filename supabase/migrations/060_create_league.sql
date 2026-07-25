@@ -44,11 +44,28 @@
 --      scoring_systems row with is_template = TRUE AND owner_id IS NULL
 --      (§7.3.3; the friendly per-field message names scoring_system_id so
 --      the route maps it to a 400 field error — messages are UX, plan §8.3).
---      Full §7.3.8 settings validation is deliberately NOT re-implemented in
---      SQL (059 precedent): the Route Handler runs validateLeagueSettings
+--      Q10 STRICT-CONTINUITY BACKSTOP (R75, batch-12 review): the playoff
+--      seam invariant (playoff_start_week = regular_season_weeks + 1, ruling
+--      v2.8.6) plus the 13–16 range are re-checked IN-BODY — a direct
+--      PostgREST caller bypasses the API's validateLeagueSettings entirely
+--      (the Q8/R37–R38 lesson: such clients exist), and a persisted overlap
+--      pair poisons every subsequent read (GET detail 500s for all members
+--      via the D58 mergeSettings throw). §7.3.8 says "enforced in API + DB
+--      constraints"; this is the DB half for the seam. SCOPE BOUNDARY
+--      (D68(3)/D69): full §7.3.8 blob-shape validation deliberately STAYS
+--      API-side — the backstop covers only the two typed-column seam
+--      invariants whose violation is invisible to 040's CHECKs; friendly
+--      field-named messages so the route maps them to per-field 400s.
+--      Remaining full §7.3.8 validation is deliberately NOT re-implemented
+--      in SQL (059 precedent): the Route Handler runs validateLeagueSettings
 --      before calling; the DB backstops are 040's CHECKs (team_count 23514
---      surfaces through the RPC) and the D43 trigger (fires on the INSERT;
---      a created league is born 'setup' with a NULL snapshot — legitimate).
+--      surfaces through the RPC), the Q10 seam IFs above, and the D43
+--      trigger (fires on the INSERT; a created league is born 'setup' with
+--      a NULL snapshot — legitimate).
+--      Replay guard (R76): the idempotent-replay lookup refuses (friendly
+--      P0001) when the matched league was since soft-deleted — replaying a
+--      dead league as success would 200 the route while detail 404s; the
+--      same guard covers the concurrent unique_violation replay path.
 --   3. `soft_delete_league(p_league_id)` — same SECURITY DEFINER form +
 --      REVOKE. In-body is_league_commish (42501; a nonexistent league yields
 --      the same 42501 — no existence leak). Sets deleted_at = NOW() (§15.1
@@ -145,12 +162,18 @@ BEGIN
 
   -- Idempotent replay (D68): a retry of an already-committed create returns
   -- the original result instead of a second league.
-  SELECT l.id, l.owner_id, l.invite_code INTO v_existing
+  SELECT l.id, l.owner_id, l.invite_code, l.deleted_at INTO v_existing
   FROM public.leagues l
   WHERE l.creation_action_id = p_action_id;
   IF FOUND THEN
     IF v_existing.owner_id <> v_uid THEN
       RAISE EXCEPTION 'create_league: this action_id was already used by another account'
+        USING ERRCODE = 'P0001';
+    END IF;
+    -- R76: a soft-deleted league must NOT replay as success (the route would
+    -- 200 while GET detail 404s) — refuse with a friendly, terminal message.
+    IF v_existing.deleted_at IS NOT NULL THEN
+      RAISE EXCEPTION 'create_league: this create was already completed and the league has since been deleted — start a new league with a fresh submit'
         USING ERRCODE = 'P0001';
     END IF;
     SELECT lm.team_id INTO v_team_id
@@ -176,6 +199,25 @@ BEGIN
       AND s.owner_id IS NULL
   ) THEN
     RAISE EXCEPTION 'create_league: scoring_system_id must reference one of the v1 scoring templates — personal scoring systems cannot be attached to a league in v1 (§7.3.3)'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- Q10 strict-continuity backstop (R75; §7.3.8 "enforced in API + DB
+  -- constraints"; ruling v2.8.6): a direct-PostgREST caller never runs
+  -- validateLeagueSettings, so the seam invariant is re-checked at the ONE
+  -- sanctioned writer. Range first (13–16, §7.3.1 R column) so a
+  -- seam-consistent-but-out-of-range pair (e.g. 16+17) names the range;
+  -- then strict continuity. Blob-shape validation stays API-side (D68(3)/
+  -- D69 boundary). Friendly field-named messages — the route maps them to
+  -- per-field 400s.
+  IF p_playoff_start_week < 13 OR p_playoff_start_week > 16 THEN
+    RAISE EXCEPTION 'create_league: playoff_start_week must be between 13 and 16 (currently week %) (§7.3.1, Q10/v2.8.6)',
+      p_playoff_start_week
+      USING ERRCODE = 'P0001';
+  END IF;
+  IF p_playoff_start_week <> p_regular_season_weeks + 1 THEN
+    RAISE EXCEPTION 'create_league: playoff_start_week must be the week after the regular season ends — week % for a %-week regular season (currently week %) (§7.3.8, Q10/v2.8.6)',
+      p_regular_season_weeks + 1, p_regular_season_weeks, p_playoff_start_week
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -214,11 +256,17 @@ BEGIN
       GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
       IF v_constraint = 'leagues_creation_action_id_key' THEN
         -- Concurrent same-action_id create committed first: replay it.
-        SELECT l.id, l.invite_code INTO v_existing
+        SELECT l.id, l.invite_code, l.deleted_at INTO v_existing
         FROM public.leagues l
         WHERE l.creation_action_id = p_action_id AND l.owner_id = v_uid;
         IF NOT FOUND THEN
           RAISE EXCEPTION 'create_league: this action_id was already used by another account'
+            USING ERRCODE = 'P0001';
+        END IF;
+        -- R76 (same guard as the primary replay path): never replay a
+        -- since-soft-deleted league as success.
+        IF v_existing.deleted_at IS NOT NULL THEN
+          RAISE EXCEPTION 'create_league: this create was already completed and the league has since been deleted — start a new league with a fresh submit'
             USING ERRCODE = 'P0001';
         END IF;
         SELECT lm.team_id INTO v_team_id

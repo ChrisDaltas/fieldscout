@@ -12,8 +12,11 @@
  * §12.0 layering (059 precedent): full §7.3.8 validation runs HERE
  * (`validateLeagueSettings` — the API half of §7.3.8's "enforced in API +
  * DB constraints" split); the DB backstops are 040's CHECKs, the D43
- * trigger, and create_league's in-body v1 templates-only check. The RPC is
- * the ONLY league writer (Q8/v2.8.2) — no client DML anywhere here.
+ * trigger, and create_league's in-body checks (v1 templates-only + the Q10
+ * strict-continuity seam and 13–16 range, R75/D69 — the direct-RPC path
+ * never runs this file, so the seam invariant lives in the RPC body too;
+ * blob-shape validation stays API-only per the D68(3)/D69 boundary). The
+ * RPC is the ONLY league writer (Q8/v2.8.2) — no client DML anywhere here.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -45,9 +48,11 @@ export interface ServiceResult {
  * settings; §15.1). `action_id` is the D68 idempotency key: ONE UUID per
  * user submit, REUSED on retry — the RPC replays instead of duplicating.
  * `settings` is the full L.A1.6 contract object (defaults fill missing
- * fields; unknown keys reject — the schema is strict).
+ * fields; unknown keys reject — the schema is strict at BOTH levels: the
+ * settings blob AND this top-level object (R77 — a plain z.object would
+ * silently strip top-level unknown keys instead of rejecting them).
  */
-export const createLeagueInputSchema = z.object({
+export const createLeagueInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   season: z.number().int().min(2020).max(2100),
   scoring_system_id: z.uuid(),
@@ -61,6 +66,10 @@ export type CreateLeagueInput = z.infer<typeof createLeagueInputSchema>
 const RPC_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
   { marker: 'scoring_system_id', field: 'scoring_system_id' },
   { marker: 'action_id', field: 'action_id' },
+  // The R75 Q10 backstops (range + seam) — validateLeagueSettings catches
+  // these first on THIS path, but if the DB refusal ever surfaces (validator
+  // drift) it still maps to the same per-field 400 shape.
+  { marker: 'playoff_start_week', field: 'playoff_start_week' },
 ]
 
 export async function createLeague(supabase: Supabase, rawBody: unknown): Promise<ServiceResult> {
