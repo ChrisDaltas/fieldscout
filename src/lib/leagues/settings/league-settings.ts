@@ -21,7 +21,8 @@
  *     of the schema (it takes an already-typed object and still re-verifies
  *     the bullet-named ranges, so a hand-built object can't skip them),
  *     plus the cross-field "R" constraints the per-field schema cannot
- *     express (playoff_teams ≤ team_count; trade_veto_votes ≤ team_count;
+ *     express (playoff_teams ≤ team_count; playoff_start_week =
+ *     regular_season_weeks + 1 (Q10, v2.8.6); trade_veto_votes ≤ team_count;
  *     trade_deadline_week ≤ regular_season_weeks).
  *   - §7.3.8's "exactly one scoring system referenced and readable" bullet is
  *     DELIBERATELY absent here — it needs a DB lookup, so it is enforced
@@ -234,7 +235,7 @@ export const leagueSettingsSchema = z.strictObject({
   divisions: z.number().int().min(1).max(2).default(1),
   regular_season_weeks: z.number().int().min(12).max(15).default(14),
   playoff_teams: z.literal([0, 2, 4, 6, 8, 10, 12]).default(6), // ≤ team_count → validator
-  playoff_start_week: z.number().int().min(14).max(17).default(15),
+  playoff_start_week: z.number().int().min(13).max(16).default(15), // R 13–16 (v2.8.6 erratum, Q10): = regular_season_weeks + 1 → validator seam check; 13 reachable only at a 12-week season, 16 only at 15
   playoff_weeks_per_round: z.union([z.literal(1), z.literal(2)]).default(1),
   playoff_byes: z.literal('auto').default('auto'), // derived from bracket size (§7.3.1)
   playoff_reseed: z.boolean().default(true),
@@ -370,6 +371,22 @@ export function validateLeagueSettings(s: LeagueSettings, ctx: { draftablePoolSi
     errors.push({
       field: 'playoff_teams',
       message: `Playoff teams (${s.playoff_teams}) cannot exceed the number of teams (${s.team_count}).`,
+    })
+  }
+
+  // §7.3.8 bullet (Q10 ruling, v2.8.6): playoff_start_week = regular_season_weeks + 1
+  // — strict continuity: the playoffs begin the week after the regular season
+  // ends (no overlap, no gap weeks). Applies regardless of playoff_teams — the
+  // ruling makes the field effectively DERIVED (§7.3.1 note), so a points-only
+  // league (playoff_teams 0) stores the consistent value too; only the
+  // END-arithmetic bullet below has the D60(5) points-only skip.
+  if (s.playoff_start_week !== s.regular_season_weeks + 1) {
+    errors.push({
+      field: 'playoff_start_week',
+      message:
+        `Playoffs must start the week after the regular season ends — ` +
+        `week ${s.regular_season_weeks + 1} for a ${s.regular_season_weeks}-week regular season ` +
+        `(currently week ${s.playoff_start_week}).`,
     })
   }
 

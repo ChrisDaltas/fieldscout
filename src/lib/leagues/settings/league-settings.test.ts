@@ -170,7 +170,7 @@ const RANGE_CASES: RangeCase[] = [
   { path: 'divisions', ok: [1, 2], bad: [0, 3] },
   { path: 'regular_season_weeks', ok: [12, 15], bad: [11, 16] },
   { path: 'playoff_teams', ok: [0, 2, 12], bad: [1, 3, 14, -2] },
-  { path: 'playoff_start_week', ok: [14, 17], bad: [13, 18] },
+  { path: 'playoff_start_week', ok: [13, 16], bad: [12, 17] }, // R 13–16 (v2.8.6/Q10 erratum); 17 rejected at parse = the old gap pair 12+17 is schema-unrepresentable
   { path: 'playoff_weeks_per_round', ok: [1, 2], bad: [0, 3] },
   { path: 'playoff_byes', ok: ['auto'], bad: ['manual', 0] },
   { path: 'format', ok: ['redraft'], bad: ['keeper', 'dynasty', 'best_ball'] },

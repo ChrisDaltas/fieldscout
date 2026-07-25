@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LeagueSettings, RosterSettings } from './league-settings'
-import { LEAGUE_SETTINGS_DEFAULTS, derivePlayoffRounds, deriveRosterSize, validateLeagueSettings } from './league-settings'
+import { LEAGUE_SETTINGS_DEFAULTS, defaultsForTeamCount, derivePlayoffRounds, deriveRosterSize, validateLeagueSettings } from './league-settings'
 
 function settings(patch: Partial<LeagueSettings> = {}): LeagueSettings {
   return { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), ...patch }
@@ -64,19 +64,72 @@ describe('§7.3.8 bullet: playoff_start_week + rounds×weeks_per_round − 1 ≤
   })
 
   it('boundary: ends exactly week 18 passes; one week later fails', () => {
+    // Fixtures below keep the Q10 seam consistent (start = regular + 1, regular
+    // defaulting to 14 unless patched) so each probes the END arithmetic alone.
     // 12 playoff teams → 4 rounds × 1 week: start 15 → ends 18 (edge)
     expect(errorFields(settings({ playoff_teams: 12, playoff_start_week: 15 }))).toStrictEqual([])
-    // start 16 → ends 19 (one past)
-    expect(errorFields(settings({ playoff_teams: 12, playoff_start_week: 16 }))).toContain('playoff_start_week')
-    // default 6-team bracket: 3 rounds; 2-week rounds from 14 → ends 19 (fails); from wk 14 with 1-week rounds → 16 (passes)
-    expect(errorFields(settings({ playoff_weeks_per_round: 2, playoff_start_week: 14 }))).toContain('playoff_start_week')
-    expect(errorFields(settings({ playoff_start_week: 14 }))).toStrictEqual([])
+    // 15-week season, start 16 → ends 19 (one past)
+    expect(errorFields(settings({ regular_season_weeks: 15, playoff_teams: 12, playoff_start_week: 16 }))).toContain('playoff_start_week')
+    // default 6-team bracket: 3 rounds; 13-week season, 2-week rounds from 14 → ends 19 (fails); 1-week rounds from 14 → 16 (passes)
+    expect(errorFields(settings({ regular_season_weeks: 13, playoff_weeks_per_round: 2, playoff_start_week: 14 }))).toContain('playoff_start_week')
+    expect(errorFields(settings({ regular_season_weeks: 13, playoff_start_week: 14 }))).toStrictEqual([])
     // 4 teams × 2-week rounds from 15 → ends 18 (edge, passes)
     expect(errorFields(settings({ playoff_teams: 4, playoff_weeks_per_round: 2, playoff_start_week: 15 }))).toStrictEqual([])
   })
 
   it('playoff_teams 0 (points-only champion) skips the arithmetic entirely', () => {
-    expect(errorFields(settings({ playoff_teams: 0, playoff_start_week: 17, playoff_weeks_per_round: 2 }))).toStrictEqual([])
+    // Seam-consistent pair (15+16) — the D60(5) skip covers the END arithmetic
+    // only; the Q10 seam check applies even points-only (see the seam suite).
+    expect(errorFields(settings({ playoff_teams: 0, regular_season_weeks: 15, playoff_start_week: 16, playoff_weeks_per_round: 2 }))).toStrictEqual([])
+  })
+})
+
+describe('§7.3.8 bullet (Q10, v2.8.6): playoff_start_week = regular_season_weeks + 1 — strict continuity', () => {
+  it('REGRESSION TRAP — the old Q10 live-probe overlap pair (regular 15 + start 14) now fails with the per-field message', () => {
+    // Pre-ruling, this exact pair parsed clean AND passed validateLeagueSettings
+    // (Q10 evidence / F25). A validator that loses the seam check re-accepts it.
+    const result = validateLeagueSettings(settings({ regular_season_weeks: 15, playoff_start_week: 14 }))
+    expect(result.valid).toBe(false)
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0].field).toBe('playoff_start_week')
+    expect(result.errors[0].message).toBe(
+      'Playoffs must start the week after the regular season ends — week 16 for a 15-week regular season (currently week 14).',
+    )
+  })
+
+  it('boundary pins: every legal (regular_season_weeks, playoff_start_week) edge passes — 12→13, 13→14, 14→15, 15→16', () => {
+    for (const [regular, start] of [
+      [12, 13],
+      [13, 14],
+      [14, 15],
+      [15, 16],
+    ] as const) {
+      expect(errorFields(settings({ regular_season_weeks: regular, playoff_start_week: start }))).toStrictEqual([])
+    }
+  })
+
+  it('the creation defaults (14 + 15) satisfy the seam — LEAGUE_SETTINGS_DEFAULTS and every defaultsForTeamCount stay clean', () => {
+    expect(LEAGUE_SETTINGS_DEFAULTS.regular_season_weeks).toBe(14)
+    expect(LEAGUE_SETTINGS_DEFAULTS.playoff_start_week).toBe(15)
+    expect(validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS).errors).toStrictEqual([])
+    for (const count of [8, 10, 12, 14, 16] as const) {
+      expect(validateLeagueSettings(defaultsForTeamCount(count)).errors).toStrictEqual([])
+    }
+  })
+
+  it('one past in both directions fails: overlap (start = regular) and gap (start = regular + 2)', () => {
+    // overlap: 14-week season starting playoffs in week 14
+    expect(errorFields(settings({ regular_season_weeks: 14, playoff_start_week: 14 }))).toContain('playoff_start_week')
+    // gap: 12-week season starting playoffs in week 14 (week 13 belongs to nothing)
+    expect(errorFields(settings({ regular_season_weeks: 12, playoff_start_week: 14 }))).toContain('playoff_start_week')
+    // the widest expressible gap under the new 13–16 schema range: 12 + 16
+    // (the old gap example 12 + 17 is now schema-unrepresentable — the range
+    // pin in league-settings.test.ts rejects 17 at parse)
+    expect(errorFields(settings({ regular_season_weeks: 12, playoff_start_week: 16 }))).toContain('playoff_start_week')
+  })
+
+  it('applies even when playoff_teams = 0 — the field is derived, not conditional (Q10 option (a))', () => {
+    expect(errorFields(settings({ playoff_teams: 0, playoff_start_week: 16 }))).toContain('playoff_start_week')
   })
 })
 
@@ -234,8 +287,9 @@ describe('§7.3.5 R columns: veto votes and trade deadline (cross-field)', () =>
   })
 
   it('violating fixture: deadline past the regular season → error on trade_deadline_week; edge passes; null (off) passes', () => {
-    expect(errorFields(settings({ regular_season_weeks: 13, trade_deadline_week: 14 }))).toContain('trade_deadline_week')
-    expect(errorFields(settings({ regular_season_weeks: 13, trade_deadline_week: 13 }))).toStrictEqual([])
+    // (playoff_start_week patched alongside regular_season_weeks to keep the Q10 seam consistent)
+    expect(errorFields(settings({ regular_season_weeks: 13, playoff_start_week: 14, trade_deadline_week: 14 }))).toContain('trade_deadline_week')
+    expect(errorFields(settings({ regular_season_weeks: 13, playoff_start_week: 14, trade_deadline_week: 13 }))).toStrictEqual([])
     expect(errorFields(settings({ trade_deadline_week: null }))).toStrictEqual([])
   })
 })
