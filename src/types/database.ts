@@ -709,6 +709,7 @@ export type Database = {
       leagues: {
         Row: {
           created_at: string | null
+          creation_action_id: string | null
           deleted_at: string | null
           description: string | null
           faab_budget: number
@@ -738,6 +739,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          creation_action_id?: string | null
           deleted_at?: string | null
           description?: string | null
           faab_budget?: number
@@ -767,6 +769,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          creation_action_id?: string | null
           deleted_at?: string | null
           description?: string | null
           faab_budget?: number
@@ -2548,6 +2551,28 @@ export type Database = {
       }
     }
     Functions: {
+      create_league: {
+        Args: {
+          p_action_id: string
+          p_faab_budget: number
+          p_format: string
+          p_lineup_lock: string
+          p_name: string
+          p_playoff_start_week: number
+          p_playoff_teams: number
+          p_regular_season_weeks: number
+          p_roster_settings: Json
+          p_scoring_system_id: string
+          p_season: number
+          p_settings: Json
+          p_team_count: number
+          p_team_name: string
+          p_trade_deadline_week: number
+          p_trade_review: string
+          p_waiver_type: string
+        }
+        Returns: Json
+      }
       duplicate_list: {
         Args: {
           p_force_public?: boolean
@@ -2608,6 +2633,7 @@ export type Database = {
         Args: { p_league_id: string }
         Returns: undefined
       }
+      soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
@@ -2743,6 +2769,8 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+
 
 
 
