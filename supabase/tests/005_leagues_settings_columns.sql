@@ -45,9 +45,11 @@ select columns_are('public', 'leagues',
         'status', 'format', 'team_count', 'regular_season_weeks',
         'playoff_teams', 'playoff_start_week', 'waiver_type', 'faab_budget',
         'trade_review', 'trade_deadline_week', 'lineup_lock', 'settings',
-        'scoring_rules_snapshot', 'deleted_at', 'invite_slug'],
+        'scoring_rules_snapshot', 'deleted_at', 'invite_slug',
+        'creation_action_id'],
   -- updated by 055/L.A1.4: +invite_slug (§7.2 custom share slug)
-  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug, exactly');
+  -- updated by 060/L.A1.12: +creation_action_id (create_league idempotency key, D68)
+  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug + 060''s creation_action_id, exactly');
 
 select col_default_is('public', 'leagues', 'status', 'setup', 'status defaults to setup');
 select col_default_is('public', 'leagues', 'format', 'redraft', 'format defaults to redraft');
