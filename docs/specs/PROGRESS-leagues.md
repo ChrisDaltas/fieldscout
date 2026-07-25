@@ -741,7 +741,7 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
-## Review findings — 2026-07-23 (M1 batch 12)
+## Review findings — 2026-07-25 (M1 batch 12)
 
 *Reviewer session (fresh context, red-team brief): diff = PR #54 (`feat/M1-L.A1.12-create-league` — L.A1.12, migration 060 create_league/soft_delete_league + pgTAP 014 + service layer/routes/hooks + `leagues-api-db.test.ts`). Verdict **FIX-THEN-MERGE**; findings R75–R77 (1 should-fix, 2 nits) handed to this remediation session by the /build-next orchestrator. Findings recorded verbatim below; resolution on the SAME branch (fix-then-merge — no new PR).*
 
