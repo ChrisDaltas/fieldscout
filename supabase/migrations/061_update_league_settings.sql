@@ -36,6 +36,19 @@
 --      direct-PostgREST caller never runs the API layer, and M2+ leagues
 --      exist from the next milestone on — the DB refuses instead of trusting
 --      route prose).
+--   3.5 SHRINK FLOOR (F28/R81, amended in place by L.A1.14 — unreleased
+--      migration, prod history still ends at 036 (F12); D64(5)/D69
+--      amend-don't-stack precedent): team_count may not drop below the
+--      number of franchises already seated (active/orphaned teams — retired
+--      franchises freed their slot, §7.2.1(b)). Before the join path landed
+--      this was unreachable (creation seats exactly one team); L.A1.14's
+--      join/claim RPCs make real occupancy reachable, so a commissioner
+--      shrink could orphan seats. The floor is enforced in-body at BOTH
+--      writers (here + the join/claim capacity check under the same
+--      league-row lock — 062), so teams count ≤ team_count holds in both
+--      directions. Friendly P0001 naming team_count (the route maps it to a
+--      per-field 400); pinned in pgTAP 016 (boundary: shrink to exactly the
+--      seated count succeeds; one past refuses with no-write).
 --   4. Q10 STRICT-CONTINUITY BACKSTOP (R75/D69 doctrine, carried to the
 --      second writer): the 13–16 range (§7.3.1 R column) checked FIRST, then
 --      strict continuity playoff_start_week = regular_season_weeks + 1
@@ -125,6 +138,7 @@ DECLARE
   v_current_faab_budget INTEGER;
   v_snapshot JSONB;
   v_new_scoring UUID;
+  v_seated INTEGER;
 BEGIN
   -- 1. In-body authorization (§12.0/§8.3): commissioner or co-commissioner.
   --    A nonexistent league yields FALSE here too — no existence leak.
@@ -152,6 +166,19 @@ BEGIN
     RAISE EXCEPTION
       'update_league_settings: league % is in % — settings are locked once the draft starts; post-draft changes are audited commissioner overrides (M6) (§7.3)',
       p_league_id, v_status
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- 3.5 F28 shrink floor: team_count >= franchises already seated (retired
+  --     franchises don't count — their slot was freed, §7.2.1(b)). The
+  --     league-row lock above serializes this count with 062's join/claim
+  --     capacity checks.
+  SELECT count(*)::int INTO v_seated
+  FROM public.teams t
+  WHERE t.league_id = p_league_id AND t.status <> 'retired';
+  IF p_team_count < v_seated THEN
+    RAISE EXCEPTION 'update_league_settings: team_count % is below the % franchises already seated in this league — remove a team first (§7.2 capacity; F28)',
+      p_team_count, v_seated
       USING ERRCODE = 'P0001';
   END IF;
 

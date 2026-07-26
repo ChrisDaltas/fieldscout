@@ -2551,6 +2551,7 @@ export type Database = {
       }
     }
     Functions: {
+      claim_league_invite: { Args: { p_token: string }; Returns: Json }
       create_league: {
         Args: {
           p_action_id: string
@@ -2570,6 +2571,16 @@ export type Database = {
           p_trade_deadline_week: number
           p_trade_review: string
           p_waiver_type: string
+        }
+        Returns: Json
+      }
+      create_league_invite: {
+        Args: {
+          p_invited_email?: string
+          p_invited_username?: string
+          p_league_id: string
+          p_max_uses?: number
+          p_target_team_id?: string
         }
         Returns: Json
       }
@@ -2615,8 +2626,20 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_join_preview: { Args: { p_value: string }; Returns: Json }
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
+      join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      notify_league_invite_internal: {
+        Args: {
+          p_league_id: string
+          p_league_name: string
+          p_team_name: string
+          p_token: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
@@ -2624,6 +2647,19 @@ export type Database = {
       reorder_list_players: {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
+      }
+      revoke_league_invite: {
+        Args: { p_invite_id: string }
+        Returns: undefined
+      }
+      rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
+      seat_league_member_internal: {
+        Args: { p_faab_budget: number; p_league_id: string; p_user_id: string }
+        Returns: string
+      }
+      set_league_invite_slug: {
+        Args: { p_league_id: string; p_slug: string }
+        Returns: Json
       }
       set_league_status: {
         Args: { p_league_id: string; p_status: string }
@@ -2788,8 +2824,6 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-
 
 
 
