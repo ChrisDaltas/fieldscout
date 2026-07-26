@@ -7,50 +7,92 @@
 -- pgTAP file is **017** (016 = invite RPCs; next free confirmed at task time).
 --
 -- Falsifiability notes (§4.3) — per group, why each assertion can only fail
--- for the reason it claims:
+-- for the reason it claims. **The letters below are the letters in this file**
+-- (re-derived against the shipped layout by the batch-15 remediation — R97
+-- found the previous map mis-lettered, 8 of 10 bullets pointing at the wrong
+-- section, which is how a note describing a real mechanism can still send a
+-- reader to the wrong place):
 --   * A (shape/ACL): the search_path pin uses the R70 exact-value form
 --     (`search_path=""`), so a rebuild that pins `public` fails; the ACL pins
 --     assert BOTH directions (anon has none, authenticated has all), so a
 --     blanket REVOKE and a missing REVOKE both trip.
---   * B (integrity, R43 class): every CHECK/unique-index pin is a PRIVILEGED
---     (postgres-context) write — the same path a SECURITY DEFINER RPC runs
---     in. An API-only guard passes the role tests and FAILS these, which is
---     the whole point (D69: a sanctioned writer is not a backstop).
---   * C (RLS surface, §4.2 per role): writes RLS filters silently
+--   * B (integrity, R43 class — EXISTENCE half): the partial unique index is
+--     pinned by name. Its behavioural half — a PRIVILEGED (postgres-context)
+--     write that an API-only guard would sail through — lives at the END of I,
+--     where the role fixtures it needs already exist (D69: a sanctioned writer
+--     is not a backstop, PostgREST reaches every RPC directly).
+--   * C: fixtures only, no assertions. Four leagues, ONE commissioner across
+--     L1/L2/L3 — which is what makes every cross-league refusal falsifiable
+--     (only the league argument can be doing the work).
+--   * D (add_placeholder_seat shape): the §7.2:170 row shape, the faab
+--     literal 777 (a hardcoded 100 fails — R79's amplification lesson), the
+--     deterministic name, and the deliberate ABSENCE of a stint.
+--   * E (RLS surface, §4.2 per role): writes RLS filters silently
 --     (UPDATE/DELETE) use the RETURNING-count pattern preceded by a same-role
 --     SELECT-sees-N pin, so "0 affected" can never mask "0 visible"; INSERT
 --     expects 42501. The commissioner's placeholder INSERT — LEGAL before 063
 --     and pinned as legal by 006 — is now asserted DENIED (the S2/D74(3)
 --     policy removal): restoring either dropped policy fails this file AND
 --     006 together.
---   * D/E (capacity): the boundary pair is exact-edge + one-past, and the
+--   * F: the S1 placeholder-claim regression is asserted on the OUTCOME (ok
+--     true, seated row shape) AND on the invite staying live — the pre-fix
+--     code returned seat_filled AND expired the invite, so both halves move.
+--   * G (assign_manager + refusals): each refusal fixture satisfies EXACTLY
+--     ONE guard, and the two that could not (R91/R92) were retargeted by the
+--     batch-15 remediation: the "already has a team" case now aims at an
+--     EMPTY seat (the occupied one also tripped the open-stint guard) and the
+--     cross-league case at a STINT-FREE seat with a user seated in neither
+--     league (the old fixture let the mutant raise a different P0001). Both
+--     now assert the MESSAGE via throws_like — an SQLSTATE alone cannot tell
+--     two P0001s apart, which is exactly how they were vacuous.
+--   * H (capacity): the boundary pair is exact-edge + one-past, and the
 --     one-past case asserts NO teams row and NO league_members row were
 --     written, not merely that an error was raised (R24's lesson: an
 --     off-by-one `>=`→`>` passes an error-only test). Cross-writer coherence
 --     re-runs the F28 pair against the THIRD writer.
---   * F (stint history, E51 analogue): the closed stint's started_at is
---     golden-pinned as a literal captured BEFORE the removal, so a
---     merge-in-place implementation (which would rewrite it) fails even
---     though the row count matches; started_at values are asserted DISTINCT
---     and the reopen path is pinned at 23505 (the index, R46's gap).
---   * G (access revocation, E50 analogue) runs in BOTH fixture shapes —
---     plain manager AND the departed CREATOR after a role transfer — because
---     leagues' SELECT policy has an `owner_id = auth.uid()` branch that a
---     manager-only fixture hides entirely (F36).
---   * H is the documentation pin for the §7.2.1:190 wording: closing ONLY
---     the stint revokes NOTHING in M1 (asserted, not commented). If a future
---     milestone moves an RLS predicate onto team_managers, H flips and forces
---     the doc update (F35).
 --   * I (role invariants): every actor fixture is a seated CO-COMMISSIONER,
 --     never a plain manager — a manager is already refused by
 --     is_league_commish, so the guard could be deleted and a manager-actor
 --     test would still pass (the R11/R14/R26/R34/R52/R70 vacuous-fixture
---     class). The API refusal and the DB index are pinned SEPARATELY.
---   * J: is_league_commish ignores deleted_at, so the P0002 assertions
---     genuinely reach the deleted branch instead of short-circuiting on authz.
---   * K: the placeholder-claim regression is asserted on the OUTCOME (ok
---     true, seated row shape) AND on the invite staying live — the pre-fix
---     code returned seat_filled AND expired the invite, so both halves move.
+--     class). The API refusal and the DB index are pinned SEPARATELY (the
+--     privileged-write block at the end of the group). The transfer REPLAY
+--     (R94) is pinned beside the transfer itself: without the idempotent arm
+--     it raises, so the assert cannot pass for another reason.
+--   * J (remove_manager, stint history, E51 analogue): the closed stint's
+--     started_at is golden-pinned as a literal captured BEFORE the removal,
+--     so a merge-in-place implementation (which would rewrite it) fails even
+--     though the row count matches; started_at values are asserted DISTINCT
+--     and the reopen path is pinned at 23505 (the index, R46's gap).
+--   * K + L (access revocation, E50 analogue) run in BOTH fixture shapes —
+--     plain manager (K) AND the departed CREATOR after a role transfer (L) —
+--     because leagues' SELECT policy has an `owner_id = auth.uid()` branch
+--     that a manager-only fixture hides entirely (F36). L also carries the
+--     R90 pin: the departing member owns NO franchise in the league
+--     afterwards, not merely their own seat.
+--   * M is the documentation pin for the §7.2.1:188 wording: closing ONLY
+--     the stint revokes NOTHING in M1 (asserted, not commented). If a future
+--     milestone moves an RLS predicate onto team_managers, M flips and forces
+--     the doc update (F35).
+--   * N: is_league_commish ignores deleted_at, so the P0002 assertions
+--     genuinely reach the deleted branch instead of short-circuiting on authz
+--     — pinned explicitly by asserting is_league_commish is still TRUE there.
+--   * O (authorization floor): outsider refusals on all five RPCs, plus the
+--     R86 cross-league member addressing with a same-league CONTROL, so the
+--     refusal cannot be a blanket denial.
+--   * P: the solo-commissioner dead end asserts the MESSAGE (throws_like),
+--     because the generic transfer-first refusal carries the same SQLSTATE.
+--   * Q: the post-draft gate takes the SANCTIONED snapshot first (the D43
+--     guard forbids drafting+ without one) rather than forcing an invalid row.
+--   * R (authorization ordering, R93): the guard is a RACE guard, so it has
+--     no single-session behavioural fixture — pinned STRUCTURALLY instead, by
+--     asserting each RPC re-reads the actor's role AFTER its first `FOR
+--     UPDATE`. Deleting a re-gate fails exactly one assert, naming its RPC.
+--   * S (notification rows): the notifier swallows every error by design, so
+--     an INSERT that stopped happening is invisible to every other assert in
+--     this file — the takeover/vacate rows are pinned by recipient AND
+--     outcome category. The LEAVE recipient is deliberately NOT pinned: spec
+--     question **Q11** (§7.2.1:190 vs the shipped commissioner-only
+--     notification) must be ruled first — ledger **F37**.
 --   * All auth.users fixtures run BEFORE any claims are set (D49(7));
 --     mid-test privileged forcing uses `reset role` (the 013/014 pattern).
 -- ============================================================================
@@ -59,7 +101,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(142);
+select plan(155);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: the five RPCs + the two internals, SECURITY DEFINER, exact
@@ -224,7 +266,7 @@ select public.add_placeholder_seat((select l1 from _ids)) as r;
 
 select is(
   (select (r ->> 'team_name') from _seat1), 'Team 2',
-  'default franchise name is the deterministic "Team N" contract (N = non-retired count + 1 — §7.2:167''s own invite copy)');
+  'default franchise name is the deterministic "Team N" contract (N = non-retired count + 1 — §7.2:165''s own invite copy)');
 
 reset role;
 select results_eq(
@@ -416,21 +458,28 @@ select throws_ok(
        '98000000-0000-4000-8000-000000000007') $$,
   'P0001', null,
   'assigning over an OPEN stint is refused — silently closing an incumbent''s stint would be an unaudited kick');
-select throws_ok(
-  $$ select public.assign_manager((select l1 from _ids),
-       (select l1_commish_team from _ids),
-       '98000000-0000-4000-8000-000000000004') $$,
-  'P0001', null,
-  'assigning a manager who already has a team in this league is refused with a friendly message (never an opaque 23505 from UNIQUE(league_id, user_id))');
-select throws_ok(
-  $$ select public.assign_manager((select l2 from _ids),
-       ((select r from _seat2) ->> 'team_id')::uuid,
-       '98000000-0000-4000-8000-000000000007') $$,
-  'P0001', null,
-  'CROSS-LEAGUE (R86 shape): the same commissioner cannot address L1''s franchise through L2 — the refusal can only come from the league argument');
+-- The next two refusals need an EMPTY, STINT-FREE seat in the OTHER league:
+-- aiming either of them at an occupied franchise let a second guard raise the
+-- same P0001 and made the assert non-discriminating (R91/R92). L2's own
+-- default seat is created first, and it doubles as the control proving the
+-- cross-league refusal below is not a blanket denial.
 select lives_ok(
   $$ select public.add_placeholder_seat((select l2 from _ids)) $$,
-  'control: the same commissioner CAN act on L2 through L2 (proving the cross-league refusal above is not a blanket denial)');
+  'control: the same commissioner CAN act on L2 through L2 (so the cross-league refusal below is not a blanket denial) — and this is the empty, stint-free target the next two refusals need');
+select throws_like(
+  $$ select public.assign_manager((select l2 from _ids),
+       (select t.id from public.teams t
+        where t.league_id = (select l2 from _ids) and t.name = 'Team 2'),
+       '98000000-0000-4000-8000-000000000001') $$,
+  '%already has a team in this league%',
+  'assigning a manager who already has a team in this league is refused with a friendly message (never an opaque 23505 from UNIQUE(league_id, user_id)) — aimed at an EMPTY seat so the open-stint guard cannot be what refuses, and pinned on the MESSAGE because deleting this guard leaves the unique_violation handler raising P0001 too (R92)');
+select throws_like(
+  $$ select public.assign_manager((select l1 from _ids),
+       (select t.id from public.teams t
+        where t.league_id = (select l2 from _ids) and t.name = 'Team 2'),
+       '98000000-0000-4000-8000-000000000007') $$,
+  '%not part of this league%',
+  'CROSS-LEAGUE (R86 shape): the same commissioner cannot address L2''s franchise through L1 — the seat is STINT-FREE and u7 is seated in NEITHER league, so dropping the league scoping seats u7 in L1 on an L2 franchise instead of raising (R91); the message is pinned because the code alone cannot tell that mutant''s P0001 from this one');
 select throws_ok(
   $$ select public.assign_manager((select l1 from _ids),
        ((select r from _seat2) ->> 'team_id')::uuid,
@@ -590,13 +639,26 @@ select is(
      'commissioner') ->> 'transferred')::boolean),
   true,
   'ATOMIC TRANSFER: the sitting commissioner promotes another member to commissioner');
+-- REPLAY of that exact call, by the SAME caller — who is a co_commissioner
+-- now, which is what makes this the natural retry rather than a contrived
+-- one (D63(5): "client retries must not error"). Before R94 the unconditional
+-- headless-league guard refused it with copy asserting the target is not
+-- commissioner, so this assert cannot pass without the idempotent arm.
+select is(
+  (select (public.set_member_role((select l2 from _ids),
+     (select lm.id from public.league_members lm
+      where lm.league_id = (select l2 from _ids)
+        and lm.user_id = '98000000-0000-4000-8000-000000000004'),
+     'commissioner') ->> 'transferred')::boolean),
+  false,
+  'REPLAYING a completed transfer is an idempotent success, not a P0001 (R94/D63) — and the retrier here is the transferor, now demoted to co_commissioner');
 reset role;
 select results_eq(
   $$ select lm.user_id, lm.role from public.league_members lm
      where lm.league_id = (select l2 from _ids) order by lm.user_id $$,
   $$ values ('98000000-0000-4000-8000-000000000001'::uuid, 'co_commissioner'),
             ('98000000-0000-4000-8000-000000000004'::uuid, 'commissioner') $$,
-  'after the transfer: exactly one commissioner and the incumbent demoted to co_commissioner — in the same statement pair, under the league lock');
+  'after the transfer AND its replay: exactly one commissioner and the incumbent demoted to co_commissioner — written in the same statement pair under the league lock, and the idempotent replay above moved nothing');
 
 -- The creator (u1) is now a CO-COMMISSIONER of L2 while owner_id still names
 -- them: the anti-coup guard must key on leagues.owner_id, not on role.
@@ -606,6 +668,12 @@ select set_config('request.jwt.claims',
 select lives_ok(
   $$ select public.add_placeholder_seat((select l2 from _ids), 'Coup Seat') $$,
   'L2 setup: the demoted creator (now co-commish) can still add a seat');
+-- R90 fixture (leave arm): a seat the CREATOR mints and nobody ever claims,
+-- so it is still owned by them when they leave L2 in §L. Without this the
+-- fixture is blind — every other L2 franchise gets its owner_id moved by a
+-- later assign/claim, which is exactly why the hole survived review.
+create temp table _r90_leave as
+select public.add_placeholder_seat((select l2 from _ids), 'Creator Seat') as r;
 select lives_ok(
   $$ select public.assign_manager((select l2 from _ids),
        (select t.id from public.teams t
@@ -623,6 +691,11 @@ select lives_ok(
   'L2 setup: u9 promoted to co-commissioner by the new commissioner');
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000009", "role": "authenticated", "email": "pgtap-mm9@fieldscout.local"}', true);
+-- R90 fixture (remove arm): a seat u9 mints while holding co-commissioner
+-- powers. u9 is removed at the end of this group; the seat must not stay
+-- owned by them.
+create temp table _r90_remove as
+select public.add_placeholder_seat((select l2 from _ids), 'Ledger Seat') as r;
 select throws_ok(
   $$ select public.set_member_role((select l2 from _ids),
        (select lm.id from public.league_members lm
@@ -675,6 +748,34 @@ select throws_ok(
              '98000000-0000-4000-8000-000000000006', 'co_manager') $$,
   '23514', null,
   'team_managers.role is CHECKed to manager (§12.22: co_manager is reserved post-v1)');
+
+-- R90: removing a member releases EVERY franchise they own in the league, not
+-- just the seat they sat in. u9 minted 'Ledger Seat' above while holding
+-- co-commissioner powers; vacating them must move it too. (Runs after the
+-- privileged block above, which addresses u9's row by user_id.)
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "98000000-0000-4000-8000-000000000004", "role": "authenticated", "email": "pgtap-mm4@fieldscout.local"}', true);
+select is(
+  (select (public.remove_manager((select l2 from _ids),
+     (select lm.id from public.league_members lm
+      where lm.league_id = (select l2 from _ids)
+        and lm.user_id = '98000000-0000-4000-8000-000000000009'),
+     'vacate') ->> 'mode')),
+  'vacate',
+  'R90 fixture: the co-commissioner who minted a seat is vacated by the sitting commissioner');
+reset role;
+select is(
+  (select count(*)::int from public.teams t
+   where t.league_id = (select l2 from _ids)
+     and t.owner_id = '98000000-0000-4000-8000-000000000009'),
+  0,
+  'R90: the removed member owns NO franchise in the league afterwards — teams.owner_id is ON DELETE CASCADE to profiles (001:495), so a franchise left owned by a proven non-member is destroyed outright by their account deletion, and league_members.team_id (ON DELETE SET NULL, 052:67) is left NULL: a seat with no franchise, invisible to every capacity count — the exact shape v2.8.8/D74(3) removed policies to make unrepresentable');
+select results_eq(
+  $$ select t.owner_id, t.status
+     from public.teams t where t.id = ((select r from _r90_remove) ->> 'team_id')::uuid $$,
+  $$ values ('98000000-0000-4000-8000-000000000004'::uuid, 'active') $$,
+  'R90: the swept seat moved to the ACTING commissioner and is otherwise untouched — still active (only the vacated franchise is orphaned), still a live franchise occupying capacity');
 
 -- ---------------------------------------------------------------------------
 -- J. remove_manager: the three outcomes (D42 pre-draft semantics).
@@ -902,7 +1003,7 @@ select ok(
   'BEFORE: the about-to-leave manager SEES member rows, stint rows and the league (so "0 rows" after cannot be confused with "0 rows exist")');
 select is(
   (select (public.leave_league((select l1 from _ids)) ->> 'ok')::boolean), true,
-  'a plain manager leaves voluntarily (§7.2.1:193)');
+  'a plain manager leaves voluntarily (§7.2.1:192)');
 select is(
   (select count(*)::int from public.league_members lm where lm.league_id = (select l1 from _ids)),
   0,
@@ -918,7 +1019,7 @@ select is(
 select ok(
   not public.is_league_member((select l1 from _ids))
   and not public.is_league_commish((select l1 from _ids)),
-  'AFTER: both membership helpers return FALSE — what revoked access is the cache row losing its user_id, NOT the stint close (§7.2.1:190''s "derives from the open stint" is aspirational in M1 — F35)');
+  'AFTER: both membership helpers return FALSE — what revoked access is the cache row losing its user_id, NOT the stint close (§7.2.1:188''s "derives from the open stint" is aspirational in M1 — F35)');
 select throws_ok(
   $$ select public.leave_league((select l1 from _ids)) $$,
   '42501', null,
@@ -950,7 +1051,22 @@ select is(
 select ok(
   not public.is_league_member((select l2 from _ids))
   and not public.is_league_commish((select l2 from _ids)),
-  'departed creator: both membership helpers FALSE — no write path survives');
+  'departed creator: both membership helpers FALSE — every league-surface write path (leagues, league_members, team_managers and all five RPCs key on these two) is gone');
+reset role;
+select results_eq(
+  $$ select t.owner_id, t.status
+     from public.teams t where t.id = ((select r from _r90_leave) ->> 'team_id')::uuid $$,
+  $$ values ('98000000-0000-4000-8000-000000000004'::uuid, 'active') $$,
+  'R90 (leave arm): the placeholder seat the DEPARTING member minted moves to the sitting commissioner too, not just the seat they sat in — otherwise it stays on an ON DELETE CASCADE owner FK held by a proven non-member');
+select is(
+  (select count(*)::int from public.teams t
+   where t.league_id = (select l2 from _ids)
+     and t.owner_id = '98000000-0000-4000-8000-000000000001'),
+  0,
+  'R90 (leave arm): NO franchise in the league is still owned by the departed creator — which is also what closes the one write path is_league_member does NOT cover, team_lineups'' unscoped owner-keyed FOR ALL policy (001:856-861; the surface itself is C12/F18, M4''s)');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated", "email": "pgtap-mm1@fieldscout.local"}', true);
 select is(
   (select count(*)::int from public.leagues l where l.id = (select l2 from _ids)),
   1,
@@ -1123,6 +1239,72 @@ select throws_ok(
   $$ select public.add_placeholder_seat((select l1 from _ids)) $$,
   'P0001', null,
   'add_placeholder_seat refuses once the draft has started (creating a franchise mid-draft would corrupt M2/M4 machinery — the 062 general-claim precedent)');
+
+-- ---------------------------------------------------------------------------
+-- R. Authorization is re-read UNDER the league lock (R93). A demotion that
+--    COMMITS while a call is blocked on the league row must not be missed:
+--    plpgsql takes a fresh snapshot per statement, so the pre-lock
+--    is_league_commish answer can be stale by the time the write runs, and a
+--    stale actor reading 'manager' is strictly MORE powerful than a
+--    legitimate co-commissioner (every anti-coup guard keys on
+--    'co_commissioner'). This is a RACE guard: no single-session fixture can
+--    reach it, because both reads hit the same table in the same txn. It is
+--    therefore pinned STRUCTURALLY — each RPC re-reads the actor's role AFTER
+--    its first FOR UPDATE. Deleting or hoisting one re-gate fails exactly one
+--    assert below, which names its RPC.
+-- ---------------------------------------------------------------------------
+reset role;
+select ok(
+  (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'v_actor_role NOT IN') > 0
+     from pg_proc p where p.oid = 'public.add_placeholder_seat(uuid,text)'::regprocedure),
+  'add_placeholder_seat re-gates on the actor''s CURRENT role AFTER the league-row FOR UPDATE (R93)');
+select ok(
+  (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'v_actor_role NOT IN') > 0
+     from pg_proc p where p.oid = 'public.set_member_role(uuid,uuid,text)'::regprocedure),
+  'set_member_role re-gates AFTER the lock — and the same read supplies the exact actor role the creator anti-coup and transfer guards key on (R93)');
+select ok(
+  (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'v_actor_role NOT IN') > 0
+     from pg_proc p where p.oid = 'public.assign_manager(uuid,uuid,uuid)'::regprocedure),
+  'assign_manager re-gates AFTER the lock (R93)');
+select ok(
+  (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'v_actor_role NOT IN') > 0
+     from pg_proc p where p.oid = 'public.remove_manager(uuid,uuid,text,uuid,text)'::regprocedure),
+  'remove_manager re-gates AFTER the lock (R93)');
+select ok(
+  (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'INTO v_self') > 0
+     from pg_proc p where p.oid = 'public.leave_league(uuid)'::regprocedure),
+  'leave_league reads the CALLER''s own role only AFTER the league-row FOR UPDATE — the ordering the other four were brought into line with (R93)');
+
+-- ---------------------------------------------------------------------------
+-- S. Notification ROWS (§7.2.1:190 "the removed user is notified with the
+--    outcome category"). notify_league_member_internal swallows EVERY error
+--    by design, so an INSERT that stopped happening is invisible to every
+--    other assert in this file — §A pins only its signature, search_path and
+--    ACLs. Sibling precedent: 016 pins its invite notification rows.
+--    DELIBERATELY NOT PINNED: the leave path's recipient. §7.2.1:190 lists
+--    "left" among the categories the REMOVED USER is notified with, while
+--    leave_league notifies the commissioner instead — spec question **Q11**,
+--    ledger **F37**. Pinning today's behaviour would cement a reading that
+--    has not been ruled. Both queries below are scoped so they assert nothing
+--    about the leave notification either way.
+-- ---------------------------------------------------------------------------
+select results_eq(
+  $$ select n.type, n.title, n.data ->> 'event'
+     from public.notifications n
+     where n.user_id = '98000000-0000-4000-8000-000000000004'
+       and n.type = 'league_member'
+       and (n.data ->> 'league_id')::uuid = (select l1 from _ids) $$,
+  $$ values ('league_member', 'You were removed from pgtap-mm-league-1', 'replaced') $$,
+  'TAKEOVER notifies the REMOVED user with the outcome category (§7.2.1:190) — pinned on the ROW, because the guarded notifier turns a failed insert into silence');
+select results_eq(
+  $$ select n.type, n.title, n.data ->> 'event'
+     from public.notifications n
+     where n.user_id = '98000000-0000-4000-8000-000000000005'
+       and n.type = 'league_member'
+       and (n.data ->> 'team_id')::uuid = ((select r from _seat2) ->> 'team_id')::uuid
+       and n.data ->> 'event' = 'removed' $$,
+  $$ values ('league_member', 'You were removed from pgtap-mm-league-1', 'removed') $$,
+  'VACATE notifies the removed user with the `removed` category — a mutant writing the stint''s end_reason (`kicked`) instead returns zero rows here');
 
 select * from finish();
 rollback;

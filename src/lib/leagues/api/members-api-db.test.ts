@@ -280,13 +280,21 @@ describe('POST .../teams/[tid]/assign-manager', () => {
     expect(stints?.[0]).toMatchObject({ user_id: targetId, ended_at: null })
   })
 
-  it('CROSS-LEAGUE (R86): addressing league 1’s franchise through league 2 is refused 400 — the same commissioner runs both, so only the league segment can be doing the work', async () => {
-    const result = await assignManager(commishClient, league2Id, seatTeamId, { user_id: successorId })
-    expect(result.status).toBe(400)
-
-    // Control: through its OWN league the same shape succeeds.
+  it('CROSS-LEAGUE (R86): addressing league 2’s franchise through league 1 is refused 400 — the same commissioner runs both, so only the league segment can be doing the work', async () => {
+    // The target is a STINT-FREE seat in league 2 and the user is seated in
+    // NEITHER league, so the league scoping is the only guard in play: drop
+    // it and the call SEATS successorId in league 1 on a league-2 franchise
+    // rather than raising. The message is asserted too — the old fixture (an
+    // occupied league-1 seat) let a different guard raise the same P0001, so
+    // the status alone could not tell the two apart (R91).
     const seat2 = await addPlaceholderSeat(commishClient, league2Id, {})
     const team2Id = (seat2.body as unknown as { team_id: string }).team_id
+
+    const result = await assignManager(commishClient, league1Id, team2Id, { user_id: successorId })
+    expect(result.status).toBe(400)
+    expect(JSON.stringify(result.body)).toContain('not part of this league')
+
+    // Control: through its OWN league the same shape succeeds.
     const ok = await assignManager(commishClient, league2Id, team2Id, { user_id: successorId })
     expect(ok.status).toBe(200)
   })
@@ -491,6 +499,16 @@ describe('DELETE .../members/[mid] — the three outcomes and the leave dispatch
     })
     expect(transferred.status).toBe(200)
     expect(transferred.body).toMatchObject({ transferred: true })
+
+    // The natural retry: the SAME client resends the SAME PATCH (a dropped
+    // response, a React Query retry). Before R94 this came back 400 with copy
+    // asserting the target is not commissioner — breaking the D63 contract
+    // this file's own service header states.
+    const replay = await patchMember(commishClient, league2Id, successorMid, {
+      role: 'commissioner',
+    })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({ role: 'commissioner', transferred: false })
 
     const left = await removeMember(commishClient, league2Id, commishMid, commishId, null)
     expect(left.status).toBe(200)

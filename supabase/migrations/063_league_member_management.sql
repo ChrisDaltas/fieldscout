@@ -19,12 +19,17 @@
 -- doctrine), D74 (this migration's mechanics). Ledger: **F3 discharged**
 -- (close-before-open + clock_timestamp at every stint insert, assign/remove
 -- half), F28 (the shrink floor's third writer — same predicate, same lock),
--- F31/F32/F33/F34/F35/F36 filed by this task.
+-- F31/F32/F33/F34/F35/F36 filed by this task, F37 by its batch-15
+-- remediation. Batch-15 review findings applied in place: **R90** (the
+-- league-wide owner sweep), **R91/R92** (two non-discriminating pgTAP
+-- asserts), **R93** (authorization re-read under the lock), **R94** (the
+-- transfer replay), **R95–R99** (nits). D75 records the remediation.
 --
--- NUMBERING (D50(1) precedent; re-confirmed on disk at task time): next free
--- migration is **063** (062 = league invite RPCs, landed); next free pgTAP
--- file is **017** (016 = invite RPCs); next free decision **D74**; next free
--- forward-obligation **F31**; next free review finding **R90**.
+-- NUMBERING (D50(1) precedent; re-confirmed on disk at task time, then again
+-- after the batch-15 remediation): this migration is **063** (062 = league
+-- invite RPCs, landed) and its pgTAP file is **017** (016 = invite RPCs).
+-- Next free AFTER this PR: decision **D76** (D74 = the task, D75 = the
+-- remediation), forward-obligation **F38**, review finding **R100**.
 --
 -- ----------------------------------------------------------------------------
 -- Contents
@@ -67,12 +72,17 @@
 --      D74(3) + spec erratum §12.2 (v2.8.8).
 --
 --   2. `notify_league_member_internal(user, type, title, body, data)` —
---      INTERNAL guarded notification insert (§7.2.1:191 "the removed user is
+--      INTERNAL guarded notification insert (§7.2.1:190 "the removed user is
 --      notified with the outcome category"). Plain (non-SECURITY-DEFINER, it
 --      runs in the calling definer's context), search_path = '', EXECUTE
 --      revoked from PUBLIC, anon AND authenticated. Failure is swallowed by
---      design (the 062:397 pattern): a notification must never break a
---      membership write.
+--      design (the 062:468 pattern): a notification must never break a
+--      membership write. Because the swallow makes a broken INSERT silent,
+--      the ROW CONTENT is pinned in pgTAP 017 §S, not just the signature —
+--      for the takeover and vacate paths. The LEAVE path's recipient is
+--      deliberately unpinned pending spec question **Q11** (§7.2.1:190 lists
+--      "left" among the categories the *removed user* is notified with, while
+--      this file notifies the commissioner; ledger **F37**).
 --
 --   3. `add_placeholder_seat(league, team_name?)` — §15.1 POST
 --      /api/leagues/[id]/members. Commish-only in-body (42501). Writes the
@@ -89,10 +99,11 @@
 --      defect this task fixes). Franchise name (Builder-finalized contract,
 --      D72 slug precedent — the spec prints none): the caller may name the
 --      seat; otherwise `Team N` where N = the non-retired franchise count + 1,
---      matching §7.2:167's own invite copy ("You've been invited to manage
+--      matching §7.2:165's own invite copy ("You've been invited to manage
 --      Team 4"). Gated to setup/scheduled (D72's class: creating a franchise
 --      mid-draft would corrupt M2/M4 machinery) and capacity-capped at
---      team_count under the league-row lock.
+--      team_count under the league-row lock. Commissioner authorization is
+--      re-read UNDER that lock (R93) — see the held-lock note below.
 --
 --   4. `set_member_role(league, member, role)` — §15.1 PATCH
 --      .../members/[mid] (role half; the autodraft half is M2 — F33).
@@ -103,7 +114,7 @@
 --      (D74(4)). **Only the sitting commissioner may transfer** (a
 --      co-commissioner promoting themselves is a coup → 42501). Why a
 --      transfer verb exists at all: §7.2 names the "exactly one
---      commissioner" invariant but no transfer, while §7.2.1:193 REQUIRES
+--      commissioner" invariant but no transfer, while §7.2.1:192 REQUIRES
 --      one ("a commissioner cannot leave without first transferring the
 --      commissioner role") — without it leave_league is unsatisfiable and no
 --      commissioner could ever leave. Recorded as D74(4) so it can be
@@ -114,7 +125,10 @@
 --      the locked row, NOT on role, because after a transfer the creator may
 --      be a co-commissioner or a plain manager); a placeholder seat has no
 --      role to change; setting the role a member already holds is an
---      idempotent success (D63).
+--      idempotent success (D63) — INCLUDING `commissioner` on the sitting
+--      commissioner, i.e. the replay of a completed transfer (R94): that arm
+--      sits ahead of the headless-league guard, which is unconditional in
+--      p_role and would otherwise fail the transferor's own retry.
 --
 --   5. `assign_manager(league, team, user)` — §15.1 POST
 --      .../teams/[tid]/assign-manager. Commish-only. Seats a user on an
@@ -150,6 +164,11 @@
 --          'orphaned' per §7.2.1(c) with owner_id moving to the acting
 --          commissioner (owner_id is NOT NULL and leaving it on the removed
 --          user would let their profile deletion CASCADE the franchise away).
+--          BOTH arms additionally sweep EVERY OTHER franchise in the league
+--          still owned by the departing user onto the acting commissioner
+--          (R90) — placeholder seats they minted while holding a commissioner
+--          role would otherwise sit on the same CASCADE FK owned by a proven
+--          non-member; see the sweep's own comment for the full failure mode.
 --          teams.status is NEVER set to 'retired' here: every capacity count
 --          is `status <> 'retired'`, so retiring would silently free a seat.
 --        * retire — friendly P0001, NO writes (D42: retire-and-succeed needs
@@ -163,7 +182,7 @@
 --      otherwise the league goes headless) and refuses a co-commissioner
 --      acting on the creator (§7.2).
 --
---   7. `leave_league(league)` — §7.2.1:193 voluntary leave. NO p_user_id
+--   7. `leave_league(league)` — §7.2.1:192 voluntary leave. NO p_user_id
 --      argument at all: it acts on auth.uid(), so it can never be an
 --      unauthorized kick path. Takes the league row FOR UPDATE **before**
 --      reading the caller's role, so a concurrent transfer cannot make them
@@ -172,16 +191,17 @@
 --      league's only remaining manager (day one of every new league), at
 --      deleting the league instead of stranding them. Otherwise: stint
 --      closed with end_reason='left' and ended_by = self, and the SAME
---      vacate semantics as above applied to the franchise (§7.2.1:193 "uses
+--      vacate semantics as above applied to the franchise (§7.2.1:192 "uses
 --      the same flow"; the leaver does not get to choose an outcome on the
---      commissioner's behalf — the spec names no chooser).
+--      commissioner's behalf — the spec names no chooser) — including the
+--      R90 league-wide owner sweep.
 --
 -- ----------------------------------------------------------------------------
 -- Access revocation — what actually revokes it in M1 (I10 of the hazard
 -- brief; the review-finding class R84/R89 exists because prose attested
 -- behavior the code did not have)
 -- ----------------------------------------------------------------------------
--- §7.2.1:190 says "league write access derives from the OPEN STINT in
+-- §7.2.1:188 says "league write access derives from the OPEN STINT in
 -- RLS/RPC checks". The shipped code does NOT do that and this migration does
 -- not change it: is_league_member (052:86) and is_league_commish (052:96)
 -- read `league_members` ONLY, and team_managers' own SELECT policy (053:98)
@@ -193,9 +213,23 @@
 -- future milestone moves an RLS predicate onto team_managers, is_league_member
 -- must be revisited — filed as ledger row **F35**.
 --
+-- SCOPE OF THAT CLAIM, stated exactly (R90): it covers every LEAGUE surface —
+-- `leagues`, `league_members`, `team_managers` and the five RPCs here, all of
+-- which key on is_league_member/is_league_commish. It does NOT cover
+-- `team_lineups`, whose 001:856-861 "Users can manage own team lineups" FOR
+-- ALL policy keys on `teams.owner_id` with NO `league_id IS NULL` scoping
+-- (unlike the teams policy 053:71-72 that D35b narrowed). A departed member
+-- therefore keeps lineup writes on any franchise still pointing at them —
+-- which is precisely why the R90 sweep above moves every franchise off the
+-- departing user, closing the reachable half. The residual surface itself is
+-- pre-dispositioned (C12/F18: team_lineups is M4's table, unbuilt and
+-- unwritten in M1); it is named here so the revocation claim is not read as
+-- covering a policy it does not.
+--
 -- ----------------------------------------------------------------------------
--- SQLSTATE convention (062:150-159; three-deep precedent 059:165, 059:246,
--- 061:159)
+-- SQLSTATE convention (062:176-184; three-deep precedent 059:165, 059:246,
+-- 061:166 — 062's own banner miscites that last one as 061:159, which is a
+-- SELECT; the P0002 RAISE is at 061:166)
 -- ----------------------------------------------------------------------------
 -- 42501 = not signed in · not a commissioner · target does not exist and we
 --         refuse to leak that it doesn't · a co-commissioner reaching for a
@@ -215,18 +249,42 @@
 -- note rather than as a submitted state (D74(7)). One style per route family.
 --
 -- ----------------------------------------------------------------------------
--- Held-lock note (plan §8.3)
+-- Held-lock note (plan §8.3) — resolved site-by-site, R98
 -- ----------------------------------------------------------------------------
--- Lock ORDER is leagues → teams, always, matching every shipped RPC
--- (claim_league_invite takes invites+leagues together at 062:722 then teams
--- at 062:790; join/settings/status/soft-delete take leagues alone). These
--- five RPCs take the league row FOR UPDATE first (which is also what
--- produces the P0002 arm), then the single teams row, then write
--- league_members/team_managers unlocked — reachable only through the
--- serialized league row. **None of them locks or updates a league_invites
--- row**, so they cannot deadlock against an in-flight claim. Each holds its
--- locks across at most one count + a handful of single-row writes; no lock
--- spans external work.
+-- Lock ORDER in this file is **leagues → league_members → teams**. Every one
+-- of the five RPCs takes the league row FOR UPDATE FIRST (which is also what
+-- produces the P0002 arm and what serializes every capacity check); the rest
+-- differ, so here is the exact set rather than a slogan:
+--   * add_placeholder_seat — leagues only. No league_members lock (it INSERTs
+--     a new row), no teams lock (it INSERTs a new franchise).
+--   * set_member_role      — leagues, then the TARGET league_members row
+--                            (the row it then UPDATEs). No teams lock at all.
+--   * assign_manager       — leagues, then teams. league_members is written
+--                            (through the 062 helper) unlocked, under the
+--                            serialized league row.
+--   * remove_manager       — leagues, then the target league_members row,
+--                            then teams.
+--   * leave_league         — leagues, then the caller's league_members row,
+--                            then teams.
+-- No two of them can take league_members and teams in OPPOSITE orders,
+-- because everything serializes on the league row before either. No RPC
+-- outside this file locks league_members at all.
+-- Against the neighbouring files: claim_league_invite takes invites+leagues
+-- together at 062:801 (`FOR UPDATE OF i, l`) then teams at 062:864;
+-- join/settings/status/soft-delete take leagues alone. **Nothing here locks
+-- or updates a league_invites row**, so none of these can deadlock against an
+-- in-flight claim. Each holds its locks across at most one count + a handful
+-- of single-row writes (the R90 owner sweep is one more such write, on teams
+-- rows in the already-serialized league); no lock spans external work.
+--
+-- What the ordering BUYS, and the R93 rule that comes with it: because roles
+-- move only under the league row lock, an authorization read taken AFTER that
+-- lock is stable for the rest of the transaction — and one taken BEFORE it is
+-- not. All five RPCs therefore re-gate on the actor's CURRENT role after the
+-- lock (leave_league inverts the whole thing and reads its caller's role only
+-- under the lock, which is where the rule came from). The pre-lock
+-- is_league_commish call is retained as a fast-fail and to keep a nonexistent
+-- league answering 42501 instead of leaking P0002 — it is not the gate.
 --
 -- ----------------------------------------------------------------------------
 -- Grants doctrine (D18 → D23 / tasks-M1 §4.1)
@@ -309,7 +367,7 @@ BEGIN
   INSERT INTO public.notifications (user_id, type, title, body, data)
   VALUES (p_user_id, p_type, p_title, p_body, p_data);
 EXCEPTION WHEN OTHERS THEN
-  NULL; -- never break a membership write over a notification (062:397)
+  NULL; -- never break a membership write over a notification (062:468)
 END;
 $$;
 
@@ -330,6 +388,7 @@ AS $$
 DECLARE
   v_uid UUID;
   v_league RECORD;
+  v_actor_role TEXT;
   v_seated INTEGER;
   v_team_id UUID;
   v_member_id UUID;
@@ -356,6 +415,21 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'add_placeholder_seat: league % not found', p_league_id
       USING ERRCODE = 'P0002';
+  END IF;
+
+  -- RE-GATE UNDER THE LOCK (R90/R93 class). The pre-lock is_league_commish
+  -- read above is a fast-fail that answers a STALE question: an actor demoted
+  -- while this call blocked on the league row would otherwise complete one
+  -- privileged write. Roles move ONLY under this same lock (set_member_role
+  -- takes it first), so a read taken here is stable for the rest of the txn.
+  -- Kept in addition to — not instead of — the pre-lock check, which is what
+  -- keeps a nonexistent league answering 42501 rather than leaking P0002.
+  SELECT lm.role INTO v_actor_role
+  FROM public.league_members lm
+  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
+  IF v_actor_role IS NULL OR v_actor_role NOT IN ('commissioner', 'co_commissioner') THEN
+    RAISE EXCEPTION 'add_placeholder_seat: not a commissioner of this league'
+      USING ERRCODE = '42501';
   END IF;
 
   IF v_league.status NOT IN ('setup', 'scheduled') THEN
@@ -439,6 +513,20 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
+  -- RE-GATE UNDER THE LOCK (R93) — see add_placeholder_seat. This read is
+  -- also the ACTOR's exact role: is_league_commish cannot tell a commissioner
+  -- from a co-commissioner, and three rules below depend on the difference.
+  -- It must be taken here, not later: a stale actor reading 'manager' misses
+  -- every co_commissioner-keyed guard below and is therefore strictly MORE
+  -- powerful than a legitimate co-commissioner.
+  SELECT lm.role INTO v_actor_role
+  FROM public.league_members lm
+  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
+  IF v_actor_role IS NULL OR v_actor_role NOT IN ('commissioner', 'co_commissioner') THEN
+    RAISE EXCEPTION 'set_member_role: not a commissioner of this league'
+      USING ERRCODE = '42501';
+  END IF;
+
   IF p_role IS NULL OR p_role NOT IN ('commissioner', 'co_commissioner', 'manager') THEN
     RAISE EXCEPTION 'set_member_role: role must be commissioner, co_commissioner, or manager'
       USING ERRCODE = '22023';
@@ -456,12 +544,6 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  -- The ACTOR's exact role: is_league_commish cannot tell a commissioner
-  -- from a co-commissioner, and three rules below depend on the difference.
-  SELECT lm.role INTO v_actor_role
-  FROM public.league_members lm
-  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
-
   IF v_target.user_id IS NULL THEN
     RAISE EXCEPTION 'set_member_role: that seat has no manager yet — invite or assign someone first'
       USING ERRCODE = 'P0001';
@@ -473,6 +555,18 @@ BEGIN
   IF v_actor_role = 'co_commissioner' AND v_target.user_id = v_league.owner_id THEN
     RAISE EXCEPTION 'set_member_role: only the commissioner can change the league creator''s role (§7.2)'
       USING ERRCODE = '42501';
+  END IF;
+
+  -- Idempotent REPLAY of a completed transfer (D63, R94): the target already
+  -- holds the role being requested, so there is nothing to do and nothing to
+  -- refuse. This must sit AHEAD of the headless guard below — that guard is
+  -- unconditional in p_role, so without this arm the natural retry (the
+  -- transferor's own client, now a co_commissioner, resending the same PATCH)
+  -- died on copy asserting the target is not commissioner. No write, no authz
+  -- consequence; the anti-coup guard above still runs first.
+  IF p_role = 'commissioner' AND v_target.role = 'commissioner' THEN
+    RETURN jsonb_build_object(
+      'member_id', p_member_id, 'role', 'commissioner', 'transferred', false);
   END IF;
 
   -- The sitting commissioner's row moves ONLY by transfer — a demote would
@@ -531,6 +625,7 @@ AS $$
 DECLARE
   v_uid UUID;
   v_league RECORD;
+  v_actor_role TEXT;
   v_team RECORD;
   v_open_stint UUID;
   v_existing RECORD;
@@ -553,6 +648,15 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'assign_manager: league % not found', p_league_id
       USING ERRCODE = 'P0002';
+  END IF;
+
+  -- RE-GATE UNDER THE LOCK (R93) — see add_placeholder_seat.
+  SELECT lm.role INTO v_actor_role
+  FROM public.league_members lm
+  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
+  IF v_actor_role IS NULL OR v_actor_role NOT IN ('commissioner', 'co_commissioner') THEN
+    RAISE EXCEPTION 'assign_manager: not a commissioner of this league'
+      USING ERRCODE = '42501';
   END IF;
 
   IF p_user_id IS NULL THEN
@@ -670,6 +774,18 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
+  -- RE-GATE UNDER THE LOCK (R93) — see add_placeholder_seat. Also the ACTOR's
+  -- exact role, which the creator anti-coup guard below keys on: a stale
+  -- actor reading 'manager' would sail past a guard written for
+  -- 'co_commissioner'.
+  SELECT lm.role INTO v_actor_role
+  FROM public.league_members lm
+  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
+  IF v_actor_role IS NULL OR v_actor_role NOT IN ('commissioner', 'co_commissioner') THEN
+    RAISE EXCEPTION 'remove_manager: not a commissioner of this league'
+      USING ERRCODE = '42501';
+  END IF;
+
   IF p_mode IS NULL OR p_mode NOT IN ('takeover', 'retire', 'vacate') THEN
     RAISE EXCEPTION 'remove_manager: mode must be takeover, retire, or vacate (§7.2.1)'
       USING ERRCODE = '22023';
@@ -690,10 +806,6 @@ BEGIN
     RAISE EXCEPTION 'remove_manager: retiring a franchise isn''t available before the draft — use takeover or vacate (§7.2.1; retire-and-succeed arrives with the in-season milestone)'
       USING ERRCODE = 'P0001';
   END IF;
-
-  SELECT lm.role INTO v_actor_role
-  FROM public.league_members lm
-  WHERE lm.league_id = p_league_id AND lm.user_id = v_uid;
 
   -- §7.2 anti-coup (keyed on the CREATOR, not on role).
   IF v_actor_role = 'co_commissioner'
@@ -813,7 +925,26 @@ BEGIN
     WHERE id = v_team.id;
   END IF;
 
-  -- §7.2.1:191 — the removed user is notified with the outcome category.
+  -- BOTH arms (R90): the removed user may own OTHER franchises in this league
+  -- — every placeholder seat they minted while holding a commissioner role
+  -- carries `owner_id = <them>` (add_placeholder_seat, item 3), as does every
+  -- franchise they orphaned by vacating someone. Moving only THEIR OWN seat
+  -- above would leave those owned by a proven non-member on
+  -- `teams.owner_id REFERENCES profiles(id) ON DELETE CASCADE` (001:495):
+  -- deleting that account would destroy the franchises outright AND — because
+  -- `league_members.team_id` is ON DELETE SET NULL (052:67) — leave their
+  -- cache rows with `team_id` NULL, a seat with no franchise, invisible to
+  -- EVERY capacity count in the build. That is the exact shape the S2 policy
+  -- removal / erratum v2.8.8 / D74(3) exists to make unrepresentable. The
+  -- acting commissioner is the same recipient the vacate arm already uses.
+  UPDATE public.teams
+  SET owner_id = v_uid,
+      updated_at = now()
+  WHERE league_id = p_league_id
+    AND owner_id = v_removed_user
+    AND id <> v_team.id;
+
+  -- §7.2.1:190 — the removed user is notified with the outcome category.
   PERFORM public.notify_league_member_internal(
     v_removed_user,
     'league_member',
@@ -838,7 +969,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION remove_manager(UUID, UUID, TEXT, UUID, TEXT) FROM PUBLIC, anon;
 
 -- ----------------------------------------------------------------------------
--- 7. leave_league — §7.2.1:193 (routed through DELETE .../members/[mid] when
+-- 7. leave_league — §7.2.1:192 (routed through DELETE .../members/[mid] when
 --    [mid] is the caller's own membership — D74(8); §15.1 prints no /leave)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION leave_league(p_league_id UUID)
@@ -910,7 +1041,7 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- Same flow as vacate (§7.2.1:193), with end_reason='left' and ended_by
+  -- Same flow as vacate (§7.2.1:192), with end_reason='left' and ended_by
   -- = self. The leaver does not choose the franchise's outcome — the spec
   -- names no chooser for the voluntary path.
   UPDATE public.team_managers
@@ -937,6 +1068,19 @@ BEGIN
       owner_id = COALESCE(v_commish, owner_id),
       updated_at = now()
   WHERE id = v_team.id;
+
+  -- Same league-wide sweep as remove_manager (R90): a leaver who once held a
+  -- commissioner role (they must have transferred it to be here at all) can
+  -- still own the placeholder/orphaned franchises they minted. Left behind,
+  -- those sit on an ON DELETE CASCADE owner FK held by a proven non-member.
+  IF v_commish IS NOT NULL THEN
+    UPDATE public.teams
+    SET owner_id = v_commish,
+        updated_at = now()
+    WHERE league_id = p_league_id
+      AND owner_id = v_uid
+      AND id <> v_team.id;
+  END IF;
 
   -- The commissioner is the party who needs to act on an open seat.
   PERFORM public.notify_league_member_internal(

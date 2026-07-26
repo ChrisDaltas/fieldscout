@@ -187,14 +187,23 @@ export async function removeMember(
   }
 
   // Whose seat is this? Visible to any member of the league under the 052
-  // SELECT policy; invisible rows fall through to the RPC, which decides
-  // (and refuses without leaking existence).
-  const { data: member } = await supabase
+  // SELECT policy; a row that is merely INVISIBLE comes back as `null` with
+  // NO error and falls through to the RPC, which decides (and refuses without
+  // leaking existence). A non-null error is therefore never that benign
+  // signal — `maybeSingle` synthesizes PGRST116 only for >1 row and returns
+  // transport failures as `{data: null, error}` — so it must not be dropped:
+  // dropping it served an infrastructure fault as a 400 Zod payload from the
+  // removal branch below (R95). Matches `readCurrentSettings` in
+  // leagues-service.ts.
+  const { data: member, error: readError } = await supabase
     .from('league_members')
     .select('id, user_id')
     .eq('id', memberId)
     .eq('league_id', leagueId)
     .maybeSingle()
+  if (readError) {
+    return { status: 500, body: { error: readError.message } }
+  }
 
   if (member && member.user_id === userId) {
     const { data, error } = await supabase.rpc('leave_league', { p_league_id: leagueId })
