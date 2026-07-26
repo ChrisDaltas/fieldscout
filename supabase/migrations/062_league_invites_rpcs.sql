@@ -174,7 +174,7 @@
 --      check, and internal-helper seating as the general claim path.
 --
 -- SQLSTATE convention for the three COMMISH RPCs (R87, batch 14 — aligned
--- with the three-deep 059/061 precedent, 059:165, 059:246, 061:159 and 061's
+-- with the three-deep 059/061 precedent, 059:165, 059:246, 061:166 and 061's
 -- banner "→ P0002 not found"): a soft-deleted (or otherwise invisible)
 -- league raises **P0002**, which the service maps to 404 — NOT P0001/400.
 -- Before this alignment a MALFORMED league id 404'd at the route while a

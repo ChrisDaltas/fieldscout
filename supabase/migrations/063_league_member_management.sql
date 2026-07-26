@@ -228,8 +228,8 @@
 --
 -- ----------------------------------------------------------------------------
 -- SQLSTATE convention (062:176-184; three-deep precedent 059:165, 059:246,
--- 061:166 — 062's own banner miscites that last one as 061:159, which is a
--- SELECT; the P0002 RAISE is at 061:166)
+-- 061:166 — the last is the P0002 RAISE. 062's own banner had miscited it as
+-- 061:159, a SELECT; corrected in place this batch, R103-class)
 -- ----------------------------------------------------------------------------
 -- 42501 = not signed in · not a commissioner · target does not exist and we
 --         refuse to leak that it doesn't · a co-commissioner reaching for a
@@ -549,24 +549,31 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- §7.2 anti-coup: "The original creator can never be removed by a
-  -- co-commissioner." Keyed on leagues.owner_id (the CREATOR record), never
-  -- on role — after a transfer the creator may hold any role.
-  IF v_actor_role = 'co_commissioner' AND v_target.user_id = v_league.owner_id THEN
-    RAISE EXCEPTION 'set_member_role: only the commissioner can change the league creator''s role (§7.2)'
-      USING ERRCODE = '42501';
-  END IF;
-
-  -- Idempotent REPLAY of a completed transfer (D63, R94): the target already
-  -- holds the role being requested, so there is nothing to do and nothing to
-  -- refuse. This must sit AHEAD of the headless guard below — that guard is
-  -- unconditional in p_role, so without this arm the natural retry (the
-  -- transferor's own client, now a co_commissioner, resending the same PATCH)
-  -- died on copy asserting the target is not commissioner. No write, no authz
-  -- consequence; the anti-coup guard above still runs first.
+  -- Idempotent REPLAY of a completed transfer (D63, R94/R100): the target
+  -- already holds the role being requested, so there is nothing to do and
+  -- nothing to refuse. Hoisted ABOVE the anti-coup guard (R100) — it performs
+  -- no write and has no authz consequence, the same reasoning that already
+  -- placed it ahead of the headless guard below. Without the hoist, replaying
+  -- a completed transfer whose target is the league CREATOR (leagues.owner_id)
+  -- hit the anti-coup guard and raised 42501 instead of returning
+  -- transferred:false — the D63 break R94 closed for NON-creator targets only.
+  -- A no-op cannot "remove the creator", so this never weakens §7.2: a REAL
+  -- role change on the creator (p_role <> the held role) still falls through to
+  -- the anti-coup guard below and 42501s.
   IF p_role = 'commissioner' AND v_target.role = 'commissioner' THEN
     RETURN jsonb_build_object(
       'member_id', p_member_id, 'role', 'commissioner', 'transferred', false);
+  END IF;
+
+  -- §7.2 anti-coup: "The original creator can never be removed by a
+  -- co-commissioner." Keyed on leagues.owner_id (the CREATOR record), never
+  -- on role — after a transfer the creator may hold any role. Sits AFTER the
+  -- idempotent replay arm (R100) so an identical replay of a completed
+  -- transfer to the creator is a no-op, not a 42501; a real role change on the
+  -- creator by a co-commissioner still reaches this guard.
+  IF v_actor_role = 'co_commissioner' AND v_target.user_id = v_league.owner_id THEN
+    RAISE EXCEPTION 'set_member_role: only the commissioner can change the league creator''s role (§7.2)'
+      USING ERRCODE = '42501';
   END IF;
 
   -- The sitting commissioner's row moves ONLY by transfer — a demote would
@@ -1069,10 +1076,15 @@ BEGIN
       updated_at = now()
   WHERE id = v_team.id;
 
-  -- Same league-wide sweep as remove_manager (R90): a leaver who once held a
-  -- commissioner role (they must have transferred it to be here at all) can
-  -- still own the placeholder/orphaned franchises they minted. Left behind,
-  -- those sit on an ON DELETE CASCADE owner FK held by a proven non-member.
+  -- Same league-wide sweep as remove_manager (R90): a leaver who holds — or
+  -- once held — a commissioner OR co-commissioner role can still own the
+  -- placeholder seats they minted (add_placeholder_seat, item 3, is open to
+  -- both roles) or the franchises they orphaned by vacating someone. The
+  -- precondition is "ever held commissioner powers", NOT "was the sitting
+  -- commissioner and transferred it away" (R100/R90 correction): a
+  -- co-commissioner needs no transfer to leave, yet can own such franchises.
+  -- Left behind, those sit on an ON DELETE CASCADE owner FK held by a proven
+  -- non-member.
   IF v_commish IS NOT NULL THEN
     UPDATE public.teams
     SET owner_id = v_commish,
@@ -1081,6 +1093,18 @@ BEGIN
       AND owner_id = v_uid
       AND id <> v_team.id;
   END IF;
+
+  -- Q11 (RULED 2026-07-26, Chris): notify BOTH the departing user AND the
+  -- sitting commissioner. §7.2.1:190 lists `left` among the categories the
+  -- departed user is notified with; the commissioner-too notification is the
+  -- ruling's explicit addition (spec erratum v2.8.9). F37 discharged.
+  PERFORM public.notify_league_member_internal(
+    v_uid,
+    'league_member',
+    'You left ' || v_league.name,
+    'You left ' || v_league.name || ' (' || v_team.name || '). You can be re-invited to any team later.',
+    jsonb_build_object(
+      'league_id', p_league_id, 'team_id', v_team.id, 'event', 'left'));
 
   -- The commissioner is the party who needs to act on an open seat.
   PERFORM public.notify_league_member_internal(

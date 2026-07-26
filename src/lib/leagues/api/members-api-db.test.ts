@@ -487,7 +487,7 @@ describe('DELETE .../members/[mid] — the three outcomes and the leave dispatch
     expect(closed?.[0]).toMatchObject({ end_reason: 'left', ended_by: coId })
   })
 
-  it('the commissioner cannot leave until the role is transferred (400), and CAN after (the §7.2.1:193 precondition, end to end)', async () => {
+  it('the commissioner cannot leave until the role is transferred (400), and CAN after (the §7.2.1:192 precondition, end to end)', async () => {
     const commishMid = await memberIdOf(league2Id, commishId)
     const blocked = await removeMember(commishClient, league2Id, commishMid, commishId, null)
     expect(blocked.status).toBe(400)
@@ -509,6 +509,29 @@ describe('DELETE .../members/[mid] — the three outcomes and the leave dispatch
     })
     expect(replay.status).toBe(200)
     expect(replay.body).toMatchObject({ role: 'commissioner', transferred: false })
+
+    // R100: the CREATOR-TARGET replay — the replay above targets the successor,
+    // NOT the creator, so it never reached the anti-coup guard. commishId is
+    // league2's creator (owner_id). Hand the role TO the creator, then have a
+    // co_commissioner replay the identical PATCH: before the R100 hoist the
+    // anti-coup guard (co-commissioner actor + creator target) answered 403
+    // here instead of the idempotent transferred:false. Round-trips back to the
+    // successor so the departed-creator shape below is unchanged.
+    const toCreator = await patchMember(successorClient, league2Id, commishMid, {
+      role: 'commissioner',
+    })
+    expect(toCreator.status).toBe(200)
+    expect(toCreator.body).toMatchObject({ transferred: true })
+    const creatorReplay = await patchMember(successorClient, league2Id, commishMid, {
+      role: 'commissioner',
+    })
+    expect(creatorReplay.status).toBe(200)
+    expect(creatorReplay.body).toMatchObject({ role: 'commissioner', transferred: false })
+    const backToSuccessor = await patchMember(commishClient, league2Id, successorMid, {
+      role: 'commissioner',
+    })
+    expect(backToSuccessor.status).toBe(200)
+    expect(backToSuccessor.body).toMatchObject({ transferred: true })
 
     const left = await removeMember(commishClient, league2Id, commishMid, commishId, null)
     expect(left.status).toBe(200)
