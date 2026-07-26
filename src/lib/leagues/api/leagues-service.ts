@@ -140,6 +140,248 @@ export async function createLeague(supabase: Supabase, rawBody: unknown): Promis
 }
 
 // ---------------------------------------------------------------------------
+// PATCH /api/leagues/[id] — settings + lifecycle (L.A1.13; §15.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * PATCH body (§15.1 "update settings"; wire shape recorded in D70, partial
+ * semantics re-ruled by D71/R79). Partial at the league-resource level —
+ * each present key is an ATOMIC unit:
+ *   - `settings`: a PARTIAL settings object, deep-merged over the CURRENT
+ *     stored settings (D71 — merge-over-current, the REST PATCH reading:
+ *     plain objects merge recursively; arrays, scalars, and null REPLACE
+ *     wholesale — null is a VALUE for the nullable fields, never an RFC 7386
+ *     delete). The MERGED WHOLE then re-enters `leagueSettingsSchema`
+ *     (strict at every level — unknown keys anywhere reject; no default can
+ *     ever fill, the current row supplies every key) and
+ *     `validateLeagueSettings` (cross-field rules run against the merged
+ *     whole). A FULL object merges to itself, so the sanctioned full-object
+ *     round-trip (GET detail → edit → PATCH back) is unchanged, and
+ *     L.A2.4's per-group saves can send just their group. The partial input
+ *     is validated POST-merge through the ONE canonical schema — no
+ *     hand-maintained deep-partial schema (the D60(10) anti-pattern R79's
+ *     default-fill hole grew from). Before D71 a one-key body default-filled
+ *     the entire surface and silently reset it to catalog defaults (the R79
+ *     catastrophic reset — pinned as a regression trap in the round-trip
+ *     suite). Last-write-wins wholesale between concurrent commissioner
+ *     edits (single-commissioner reality in M1; noted in D70) — the D71
+ *     read-merge-write extends that caveat: the current-settings read is not
+ *     held under the RPC's row lock.
+ *   - `scoring_system_id`: the §7.3.3 template choice (carried alongside the
+ *     split, never inside it). May combine with `settings` — one atomic RPC.
+ *   - `status`: the M1 lifecycle verbs only ('setup' | 'scheduled' — §7.1;
+ *     everything past scheduled is M2's draft engine, unrepresentable here).
+ *     Must be the ONLY key: a settings write and a transition are two RPCs,
+ *     and a half-applied combined PATCH would be unreportable.
+ */
+export const patchLeagueInputSchema = z
+  .strictObject({
+    // Any non-array JSON object; shape/strictness enforced POST-merge by
+    // leagueSettingsSchema over the merged whole (D71).
+    settings: z.looseObject({}).optional(),
+    scoring_system_id: z.uuid().optional(),
+    status: z.enum(['setup', 'scheduled']).optional(),
+  })
+  .refine((body) => Object.values(body).some((v) => v !== undefined), {
+    message: 'Nothing to update — send settings, scoring_system_id, or status.',
+  })
+  .refine(
+    (body) => body.status === undefined || (body.settings === undefined && body.scoring_system_id === undefined),
+    { message: 'A status transition must be its own PATCH — apply settings changes first, then transition.' },
+  )
+export type PatchLeagueInput = z.infer<typeof patchLeagueInputSchema>
+
+/** The PATCH-path RPC refusals mapped to per-field 400s (messages are UX). */
+const PATCH_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
+  { marker: 'scoring_system_id', field: 'scoring_system_id' },
+  { marker: 'playoff_start_week', field: 'playoff_start_week' },
+  { marker: 'draft_scheduled_at', field: 'draft.draft_scheduled_at' },
+]
+
+/** Shared error mapping for the two PATCH-path RPCs (D70). */
+function mapPatchRpcError(error: { code: string; message: string }): ServiceResult {
+  if (error.code === '42501') {
+    return { status: 403, body: { error: 'Only the commissioner can update this league.' } }
+  }
+  if (error.code === 'P0002') {
+    return { status: 404, body: { error: 'League not found' } }
+  }
+  if (error.code === 'P0001') {
+    // §7.3 header status gate + the M1 transition fence both surface as a
+    // clear 409 (the task text's "M1 returns a clear 409").
+    if (
+      error.message.includes('settings are locked once the draft starts') ||
+      error.message.includes('the draft engine lands in M2') ||
+      error.message.includes('transitions from draft/season states')
+    ) {
+      return { status: 409, body: { error: error.message } }
+    }
+    const match = PATCH_FIELD_ERRORS.find((m) => error.message.includes(m.marker))
+    if (match) {
+      return { status: 400, body: { error: { fieldErrors: { [match.field]: [error.message] } } } }
+    }
+    return { status: 400, body: { error: error.message } }
+  }
+  if (error.code === '23514' || error.code === '22007' || error.code === '22008') {
+    // DB CHECK / bad-timestamp backstops — client errors, not server faults.
+    return { status: 400, body: { error: error.message } }
+  }
+  return { status: 500, body: { error: error.message } }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * D71 (R79) merge-over-current: plain objects merge recursively; arrays,
+ * scalars, and null REPLACE wholesale (null is a value — the catalog has
+ * legitimately nullable fields; never RFC 7386 key-deletion); `undefined`
+ * entries are skipped (unrepresentable in a JSON wire body). Unknown keys
+ * survive the merge on purpose — the post-merge strict parse is what rejects
+ * them, with their field path.
+ */
+function deepMergePatch(current: unknown, patch: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = isPlainObject(current) ? { ...current } : {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue
+    const base = merged[key]
+    merged[key] = isPlainObject(value) && isPlainObject(base) ? deepMergePatch(base, value) : value
+  }
+  return merged
+}
+
+/** Read + merge the current settings row (RLS-scoped; 404 = invisible). */
+async function readCurrentSettings(
+  supabase: Supabase,
+  leagueId: string,
+): Promise<{ settings: LeagueSettings } | ServiceResult> {
+  const { data: league, error } = await supabase
+    .from('leagues')
+    .select('*')
+    .eq('id', leagueId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) {
+    return { status: 500, body: { error: error.message } }
+  }
+  if (!league) {
+    return { status: 404, body: { error: 'League not found' } }
+  }
+  try {
+    return { settings: mergeSettings(league as League) }
+  } catch (cause) {
+    return {
+      status: 500,
+      body: { error: `league ${leagueId} has a corrupt settings row: ${(cause as Error).message}` },
+    }
+  }
+}
+
+/**
+ * PATCH /api/leagues/[id] (L.A1.13). Two paths, both server-authoritative
+ * (Q8/v2.8.2 — clients hold no UPDATE on leagues):
+ *   - settings/scoring → `update_league_settings` RPC (commish-only in-body;
+ *     §7.3-header status gate → 409; templates-only + Q10 backstops in-body;
+ *     max_teams = team_count in the same statement, §12.1).
+ *   - status → `set_league_status` RPC (L.A1.11). For 'scheduled', THIS
+ *     route is the enforcement point for settings validity (§7.3.8's
+ *     "enforced in API + DB constraints" split; 059's banner names it):
+ *     validateLeagueSettings runs over the CURRENT stored settings first;
+ *     the RPC then enforces transition legality + draft_scheduled_at, and
+ *     the D43 trigger enforces the snapshot invariant.
+ */
+export async function patchLeague(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  const parsed = patchLeagueInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { settings: patchedSettings, scoring_system_id, status } = parsed.data
+
+  // -- Lifecycle path (status is the only key — schema-enforced) -----------
+  if (status !== undefined) {
+    if (status === 'scheduled') {
+      // The enforcement point for settings validity on the scheduled
+      // transition (task item 3): the stored settings must pass §7.3.8
+      // BEFORE the league may schedule its draft.
+      const current = await readCurrentSettings(supabase, leagueId)
+      if (!('settings' in current)) return current
+      const validation = validateLeagueSettings(current.settings)
+      if (!validation.valid) {
+        const fieldErrors: Record<string, string[]> = {}
+        for (const issue of validation.errors) {
+          ;(fieldErrors[issue.field] ??= []).push(issue.message)
+        }
+        return { status: 400, body: { error: { fieldErrors } } }
+      }
+    }
+    const { error } = await supabase.rpc('set_league_status', {
+      p_league_id: leagueId,
+      p_status: status,
+    })
+    if (error) return mapPatchRpcError(error)
+    return { status: 200, body: { ok: true, status } }
+  }
+
+  // -- Settings path --------------------------------------------------------
+  // D71 (R79): the settings path ALWAYS starts from the CURRENT stored
+  // settings — a partial body deep-merges over them and the MERGED WHOLE
+  // re-enters the canonical strict schema (unknown keys anywhere reject; no
+  // default can ever fill — the current row supplies every key); a
+  // scoring-only PATCH re-writes the full column/blob surface from the
+  // current settings unchanged (the RPC takes the complete split). The
+  // read-first order means an RLS-invisible league uniformly 404s here
+  // (matching the status path and GET detail — indistinguishable from
+  // nonexistent); a MEMBER who is not commissioner still gets the RPC's
+  // 42501 → 403.
+  const current = await readCurrentSettings(supabase, leagueId)
+  if (!('settings' in current)) return current
+  let settings: LeagueSettings
+  if (patchedSettings !== undefined) {
+    const merged = leagueSettingsSchema.safeParse(deepMergePatch(current.settings, patchedSettings))
+    if (!merged.success) {
+      return { status: 400, body: { error: z.flattenError(merged.error) as unknown as Json } }
+    }
+    settings = merged.data
+  } else {
+    settings = current.settings
+  }
+
+  // §7.3.8 API-side validation — same composition as create (D68/§12.0).
+  const validation = validateLeagueSettings(settings)
+  if (!validation.valid) {
+    const fieldErrors: Record<string, string[]> = {}
+    for (const issue of validation.errors) {
+      ;(fieldErrors[issue.field] ??= []).push(issue.message)
+    }
+    return { status: 400, body: { error: { fieldErrors } } }
+  }
+
+  const { columns, blob } = splitSettings(settings)
+  const columnArgs = Object.fromEntries(
+    Object.entries(columns).map(([key, value]) => [`p_${key}`, value]),
+  )
+
+  type UpdateLeagueArgs = Database['public']['Functions']['update_league_settings']['Args']
+  const args = {
+    p_league_id: leagueId,
+    // NULL = keep the current reference (the RPC's contract); typegen can't
+    // express per-arg nullability, hence the one targeted cast (D68 pattern).
+    p_scoring_system_id: scoring_system_id ?? null,
+    p_settings: blob,
+    ...columnArgs,
+  } as unknown as UpdateLeagueArgs
+
+  const { error } = await supabase.rpc('update_league_settings', args)
+  if (error) return mapPatchRpcError(error)
+  return { status: 200, body: { ok: true } }
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/leagues — my leagues (via league_members, task item 2)
 // ---------------------------------------------------------------------------
 

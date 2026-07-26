@@ -2634,6 +2634,25 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      update_league_settings: {
+        Args: {
+          p_faab_budget: number
+          p_format: string
+          p_league_id: string
+          p_lineup_lock: string
+          p_playoff_start_week: number
+          p_playoff_teams: number
+          p_regular_season_weeks: number
+          p_roster_settings: Json
+          p_scoring_system_id: string
+          p_settings: Json
+          p_team_count: number
+          p_trade_deadline_week: number
+          p_trade_review: string
+          p_waiver_type: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
