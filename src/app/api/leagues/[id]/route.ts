@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { deleteLeague, getLeagueDetail } from '@/lib/leagues/api/leagues-service'
+import { deleteLeague, getLeagueDetail, patchLeague } from '@/lib/leagues/api/leagues-service'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -26,6 +26,32 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
 
   const result = await getLeagueDetail(supabase, user.id, id)
+  return NextResponse.json(result.body, { status: result.status })
+}
+
+/**
+ * PATCH /api/leagues/[id] — update settings / scoring template / M1 lifecycle
+ * (§15.1; L.A1.13). The service composes Zod → validateLeagueSettings →
+ * splitSettings → update_league_settings RPC (settings path) or
+ * validateLeagueSettings → set_league_status RPC (status path — this route is
+ * the enforcement point for settings validity on the scheduled transition).
+ */
+export async function PATCH(request: Request, { params }: RouteParams) {
+  const { id } = await params
+  if (!idSchema.safeParse(id).success) {
+    return NextResponse.json({ error: 'League not found' }, { status: 404 })
+  }
+
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const result = await patchLeague(supabase, id, body)
   return NextResponse.json(result.body, { status: result.status })
 }
 
