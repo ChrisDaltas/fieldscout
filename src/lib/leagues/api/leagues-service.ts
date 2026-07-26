@@ -144,14 +144,29 @@ export async function createLeague(supabase: Supabase, rawBody: unknown): Promis
 // ---------------------------------------------------------------------------
 
 /**
- * PATCH body (§15.1 "update settings"; wire shape recorded in D70). Partial
- * at the league-resource level — each present key is an ATOMIC unit:
- *   - `settings`: the FULL L.A1.6 contract object (the sanctioned client —
- *     L.A2.4's panel / L.A2.1's wizard — round-trips GET detail → edit →
- *     PATCH back; a leaf-level diff wire shape would need a hand-maintained
- *     deep-partial schema that drifts from the catalog, the D60(10)
- *     anti-pattern). Last-write-wins wholesale between concurrent
- *     commissioner edits (single-commissioner reality in M1; noted in D70).
+ * PATCH body (§15.1 "update settings"; wire shape recorded in D70, partial
+ * semantics re-ruled by D71/R79). Partial at the league-resource level —
+ * each present key is an ATOMIC unit:
+ *   - `settings`: a PARTIAL settings object, deep-merged over the CURRENT
+ *     stored settings (D71 — merge-over-current, the REST PATCH reading:
+ *     plain objects merge recursively; arrays, scalars, and null REPLACE
+ *     wholesale — null is a VALUE for the nullable fields, never an RFC 7386
+ *     delete). The MERGED WHOLE then re-enters `leagueSettingsSchema`
+ *     (strict at every level — unknown keys anywhere reject; no default can
+ *     ever fill, the current row supplies every key) and
+ *     `validateLeagueSettings` (cross-field rules run against the merged
+ *     whole). A FULL object merges to itself, so the sanctioned full-object
+ *     round-trip (GET detail → edit → PATCH back) is unchanged, and
+ *     L.A2.4's per-group saves can send just their group. The partial input
+ *     is validated POST-merge through the ONE canonical schema — no
+ *     hand-maintained deep-partial schema (the D60(10) anti-pattern R79's
+ *     default-fill hole grew from). Before D71 a one-key body default-filled
+ *     the entire surface and silently reset it to catalog defaults (the R79
+ *     catastrophic reset — pinned as a regression trap in the round-trip
+ *     suite). Last-write-wins wholesale between concurrent commissioner
+ *     edits (single-commissioner reality in M1; noted in D70) — the D71
+ *     read-merge-write extends that caveat: the current-settings read is not
+ *     held under the RPC's row lock.
  *   - `scoring_system_id`: the §7.3.3 template choice (carried alongside the
  *     split, never inside it). May combine with `settings` — one atomic RPC.
  *   - `status`: the M1 lifecycle verbs only ('setup' | 'scheduled' — §7.1;
@@ -161,7 +176,9 @@ export async function createLeague(supabase: Supabase, rawBody: unknown): Promis
  */
 export const patchLeagueInputSchema = z
   .strictObject({
-    settings: leagueSettingsSchema.optional(),
+    // Any non-array JSON object; shape/strictness enforced POST-merge by
+    // leagueSettingsSchema over the merged whole (D71).
+    settings: z.looseObject({}).optional(),
     scoring_system_id: z.uuid().optional(),
     status: z.enum(['setup', 'scheduled']).optional(),
   })
@@ -210,6 +227,28 @@ function mapPatchRpcError(error: { code: string; message: string }): ServiceResu
     return { status: 400, body: { error: error.message } }
   }
   return { status: 500, body: { error: error.message } }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * D71 (R79) merge-over-current: plain objects merge recursively; arrays,
+ * scalars, and null REPLACE wholesale (null is a value — the catalog has
+ * legitimately nullable fields; never RFC 7386 key-deletion); `undefined`
+ * entries are skipped (unrepresentable in a JSON wire body). Unknown keys
+ * survive the merge on purpose — the post-merge strict parse is what rejects
+ * them, with their field path.
+ */
+function deepMergePatch(current: unknown, patch: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = isPlainObject(current) ? { ...current } : {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue
+    const base = merged[key]
+    merged[key] = isPlainObject(value) && isPlainObject(base) ? deepMergePatch(base, value) : value
+  }
+  return merged
 }
 
 /** Read + merge the current settings row (RLS-scoped; 404 = invisible). */
@@ -289,14 +328,26 @@ export async function patchLeague(
   }
 
   // -- Settings path --------------------------------------------------------
-  // A scoring-only PATCH still writes the full column/blob surface (the RPC
-  // takes the complete split) — sourced from the CURRENT stored settings.
+  // D71 (R79): the settings path ALWAYS starts from the CURRENT stored
+  // settings — a partial body deep-merges over them and the MERGED WHOLE
+  // re-enters the canonical strict schema (unknown keys anywhere reject; no
+  // default can ever fill — the current row supplies every key); a
+  // scoring-only PATCH re-writes the full column/blob surface from the
+  // current settings unchanged (the RPC takes the complete split). The
+  // read-first order means an RLS-invisible league uniformly 404s here
+  // (matching the status path and GET detail — indistinguishable from
+  // nonexistent); a MEMBER who is not commissioner still gets the RPC's
+  // 42501 → 403.
+  const current = await readCurrentSettings(supabase, leagueId)
+  if (!('settings' in current)) return current
   let settings: LeagueSettings
   if (patchedSettings !== undefined) {
-    settings = patchedSettings
+    const merged = leagueSettingsSchema.safeParse(deepMergePatch(current.settings, patchedSettings))
+    if (!merged.success) {
+      return { status: 400, body: { error: z.flattenError(merged.error) as unknown as Json } }
+    }
+    settings = merged.data
   } else {
-    const current = await readCurrentSettings(supabase, leagueId)
-    if (!('settings' in current)) return current
     settings = current.settings
   }
 

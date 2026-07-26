@@ -40,6 +40,11 @@
  *   - the L.A1.6 hand-off (tasks-M1 L.A1.6 item 3): a freshly-defaulted
  *     leagues row's `roster_settings` (040's column DEFAULT) deep-equals
  *     the TS `DEFAULT_ROSTER_SETTINGS` literal.
+ *   - D71 (R79, batch-13 remediation): partial settings bodies deep-merge
+ *     over the CURRENT stored settings — the catastrophic-reset probe from
+ *     the review is section C2's regression trap (one-key body must change
+ *     exactly one field), with the merged-whole cross-field pin, nested
+ *     merge, unknown-key rejects, and the full-object identity.
  *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * same precondition as `npm run test:db` (D59(5)). FAILS loudly when the
@@ -88,6 +93,7 @@ const ACTION = {
   roundTrip: 'ad200000-0000-4000-8000-000000000001',
   lifecycle: 'ad200000-0000-4000-8000-000000000002',
   locked: 'ad200000-0000-4000-8000-000000000003',
+  partial: 'ad200000-0000-4000-8000-000000000004',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -97,6 +103,7 @@ const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
 let creatorClient: SupabaseClient<Database>
 let outsiderClient: SupabaseClient<Database>
 let creatorId: string
+let outsiderId: string
 let espnStandardId: string
 let yahooStandardId: string
 let personalScoringId: string
@@ -323,6 +330,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       .eq('username', OUTSIDER.username)
       .single()
     if (!outsiderProfile) throw new Error('outsider profile missing')
+    outsiderId = outsiderProfile.id
 
     // A PERSONAL (owner-scoped, non-template) scoring system — the §7.3.3
     // templates-only negative at the PATCH surface.
@@ -516,6 +524,114 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
   })
 
   // -------------------------------------------------------------------------
+  // C2. R79 regression trap — PARTIAL settings bodies merge over CURRENT
+  //     (D71). Before D71, every leagueSettingsSchema field default-filled,
+  //     so the one-key body below silently reset the whole surface to
+  //     catalog defaults (team_count 14→12, faab_budget 777→100 re-seeded to
+  //     every seat, draft_scheduled_at NULLED while status stayed
+  //     'scheduled'). This block IS the trap: revert the merge and the first
+  //     test fails on exactly those casualties.
+  // -------------------------------------------------------------------------
+
+  describe('R79 regression trap: a partial settings body merges over CURRENT — never default-resets (D71)', () => {
+    let partialLeagueId: string
+    let before: LeagueSettings
+
+    beforeAll(async () => {
+      // The exact R79 probe state: a SCHEDULED league at non-default
+      // team_count 14 / faab_budget 777 with a draft instant set.
+      const s = defaultsForTeamCount(14)
+      s.faab_budget = 777
+      s.draft.draft_scheduled_at = '2026-09-03T00:00:00.000Z'
+      const result = await createLeague(creatorClient, {
+        name: `${LEAGUE_NAME_PREFIX}-partial`,
+        season: 2026,
+        scoring_system_id: espnStandardId,
+        action_id: ACTION.partial,
+        settings: s,
+      })
+      if (result.status !== 201) {
+        throw new Error(`partial fixture create failed (${result.status}): ${JSON.stringify(result.body)}`)
+      }
+      partialLeagueId = (result.body as { league_id: string }).league_id
+      const schedule = await patchLeague(creatorClient, partialLeagueId, { status: 'scheduled' })
+      if (schedule.status !== 200) {
+        throw new Error(`partial fixture schedule failed (${schedule.status}): ${JSON.stringify(schedule.body)}`)
+      }
+      before = await getSettings(partialLeagueId)
+    }, 30_000)
+
+    it('the exact R79 probe — {settings:{median_game:true}} — changes ONLY median_game; team_count/faab/draft instant survive', async () => {
+      const result = await patchLeague(creatorClient, partialLeagueId, {
+        settings: { median_game: true },
+      })
+      expect(result.status).toBe(200)
+      const after = await getSettings(partialLeagueId)
+      expect(after).toStrictEqual({ ...before, median_game: true }) // the WHOLE surface, exactly one delta
+      // The three R79 casualties, pinned by name:
+      expect(after.team_count).toBe(14)
+      expect(after.faab_budget).toBe(777)
+      expect(after.draft.draft_scheduled_at).toBe('2026-09-03T00:00:00.000Z')
+      expect(await readSyncPair(partialLeagueId)).toStrictEqual({ team_count: 14, max_teams: 14 })
+      const { data: league } = await service
+        .from('leagues')
+        .select('status')
+        .eq('id', partialLeagueId)
+        .single()
+      expect(league?.status).toBe('scheduled')
+      // Budget unchanged ⇒ the §12.2 re-seed must NOT ripple: the seat keeps 777.
+      const { data: members } = await service
+        .from('league_members')
+        .select('faab_balance')
+        .eq('league_id', partialLeagueId)
+      expect(members?.map((m) => m.faab_balance)).toStrictEqual([777])
+      before = after
+    })
+
+    it('a nested one-key body merges INSIDE the draft block — draft_scheduled_at and the rest survive', async () => {
+      const result = await patchLeague(creatorClient, partialLeagueId, {
+        settings: { draft: { pick_timer_seconds: 60 } },
+      })
+      expect(result.status).toBe(200)
+      const after = await getSettings(partialLeagueId)
+      expect(after).toStrictEqual({ ...before, draft: { ...before.draft, pick_timer_seconds: 60 } })
+      before = after
+    })
+
+    it('cross-field rules run against the MERGED WHOLE: a one-key body breaking the Q10 seam rejects per-field, no write', async () => {
+      // current: 14-week season, start 15. regular_season_weeks alone → 15+15
+      // violates the seam AFTER the merge — only whole-object validation sees it.
+      const result = await patchLeague(creatorClient, partialLeagueId, {
+        settings: { regular_season_weeks: 15 },
+      })
+      expect(result.status).toBe(400)
+      const body = result.body as { error: { fieldErrors: Record<string, string[]> } }
+      expect(body.error.fieldErrors.playoff_start_week?.[0]).toContain(
+        'Playoffs must start the week after the regular season ends',
+      )
+      expect(await getSettings(partialLeagueId)).toStrictEqual(before)
+    })
+
+    it('unknown keys in a partial body reject at the post-merge strict parse — top-level and nested, no write', async () => {
+      expect(
+        (await patchLeague(creatorClient, partialLeagueId, { settings: { not_a_setting: 1 } })).status,
+      ).toBe(400)
+      expect(
+        (await patchLeague(creatorClient, partialLeagueId, { settings: { draft: { bogus: 1 } } })).status,
+      ).toBe(400)
+      expect(await getSettings(partialLeagueId)).toStrictEqual(before)
+    })
+
+    it('a FULL object still merges to itself — the sanctioned full-object round-trip is unchanged', async () => {
+      const composite = arithmeticEdge()
+      composite.draft.draft_scheduled_at = '2026-09-03T00:00:00.000Z'
+      const result = await patchLeague(creatorClient, partialLeagueId, { settings: composite })
+      expect(result.status).toBe(200)
+      expect(await getSettings(partialLeagueId)).toStrictEqual(composite)
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // D. §7.3.3 templates-only at the PATCH surface + the scoring-only path
   // -------------------------------------------------------------------------
 
@@ -622,7 +738,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       expect(data?.status).toBe('setup')
     }, 30_000)
 
-    it('the wire shape is strict: empty body, combined status+settings, and non-M1 statuses all 400 at the Zod layer', async () => {
+    it('the wire shape is strict: empty body, combined status+settings, non-M1 statuses, and top-level unknown keys all 400 at the Zod layer', async () => {
       expect((await patchLeague(creatorClient, lifeLeagueId, {})).status).toBe(400)
       expect(
         (
@@ -633,6 +749,17 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
         ).status,
       ).toBe(400)
       expect((await patchLeague(creatorClient, lifeLeagueId, { status: 'drafting' })).status).toBe(400)
+      // R82 — the R77 class at the PATCH surface: a top-level unknown key
+      // REJECTS even alongside a valid key (a plain z.object would strip it
+      // and this call would 200 — the pin discriminates strictObject).
+      expect(
+        (
+          await patchLeague(creatorClient, lifeLeagueId, {
+            settings: { median_game: false },
+            bogus_top_level: true,
+          })
+        ).status,
+      ).toBe(400)
     })
   })
 
@@ -675,20 +802,49 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
   // -------------------------------------------------------------------------
 
   describe('authorization', () => {
-    it('a NON-COMMISH settings PATCH → 403, no write', async () => {
+    // D71 note: the settings path now reads the CURRENT settings first (the
+    // merge base), so an RLS-INVISIBLE league uniformly 404s — matching the
+    // status path and GET detail, and fixing the pre-D71 inconsistency where
+    // a scoring-only PATCH already 404'd while a settings PATCH 403'd. A
+    // MEMBER who is not commissioner still gets the RPC's 42501 → 403.
+    it('a NON-MEMBER settings PATCH → 404 (RLS-invisible, D71 read-first), no write', async () => {
       const before = await getSettings(rtLeagueId)
       const result = await patchLeague(outsiderClient, rtLeagueId, {
         settings: defaultsForTeamCount(12),
       })
-      expect(result.status).toBe(403)
+      expect(result.status).toBe(404)
       expect(await getSettings(rtLeagueId)).toStrictEqual(before)
     })
 
-    it('a settings PATCH on a NONEXISTENT league → the same 403 (no existence leak, RPC 42501 parity)', async () => {
+    it('a MEMBER who is not commissioner → 403 (RPC 42501), no write', async () => {
+      // Privileged seat: real-user membership is RPC-only until L.A1.14 —
+      // the service role seats the outsider directly (the pgTAP forcing
+      // pattern), removed again in the finally.
+      const { error } = await service
+        .from('league_members')
+        .insert({ league_id: rtLeagueId, user_id: outsiderId, role: 'manager' })
+      if (error) throw new Error(`privileged seat failed: ${error.message}`)
+      try {
+        const before = await getSettings(rtLeagueId)
+        const result = await patchLeague(outsiderClient, rtLeagueId, {
+          settings: { median_game: true },
+        })
+        expect(result.status).toBe(403)
+        expect(await getSettings(rtLeagueId)).toStrictEqual(before)
+      } finally {
+        await service
+          .from('league_members')
+          .delete()
+          .eq('league_id', rtLeagueId)
+          .eq('user_id', outsiderId)
+      }
+    })
+
+    it('a settings PATCH on a NONEXISTENT league → the same 404 (non-member and nonexistent stay indistinguishable — no existence leak)', async () => {
       const result = await patchLeague(creatorClient, 'ea200000-0000-4000-8000-00000000dead', {
         settings: defaultsForTeamCount(12),
       })
-      expect(result.status).toBe(403)
+      expect(result.status).toBe(404)
     })
 
     it('a status PATCH on a NONEXISTENT league → 404 (RLS-invisible, indistinguishable from non-membership)', async () => {
