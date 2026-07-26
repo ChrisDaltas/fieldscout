@@ -511,9 +511,13 @@ describe('batch-14 hardening: nested-route scoping, deleted-league status, slug 
 
   it('R88: the §15.1 CLEAR path — invite_slug: null clears the column across the PostgREST wire, stops resolving, and is idempotent', async () => {
     // This call is the one that crosses the wire with a NULL `p_slug`, the
-    // seam `as string` defeats the type checker on. Relax setSlugInputSchema's
-    // `.nullable()` to `.optional()` and PostgREST drops the key (p_slug has
-    // no DEFAULT) — this test 500s while every other call site stays green.
+    // seam `as string` defeats the type checker on — it proves a NULL p_slug
+    // survives the supabase-js/PostgREST round trip at all. Relax
+    // setSlugInputSchema's `.nullable()` to `.optional()` and `{invite_slug:
+    // null}` no longer parses: the service returns a flat 400 before the RPC
+    // call, so the 200 assertion below fails while every other call site
+    // (all non-null slugs) stays green. R89: the failure is the Zod reject,
+    // NOT a dropped key at the wire — that hazard needs a `{}` body.
     const cleared = await setInviteSlug(commishClient, league2Id, { invite_slug: null })
     expect(cleared.status).toBe(200)
     expect(cleared.body).toEqual({ invite_slug: null })

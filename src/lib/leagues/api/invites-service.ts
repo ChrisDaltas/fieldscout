@@ -209,10 +209,15 @@ export async function setInviteSlug(
     // that defeats the type checker (typegen renders p_slug as `string` —
     // PostgREST's OpenAPI carries no nullability), so the null CLEAR path is
     // pinned end-to-end (R88): pgTAP asserts the RPC + column + preview, and
-    // the stack suite drives this exact call across the PostgREST wire. If
-    // the schema above ever relaxes `.nullable()` to `.optional()`, the cast
-    // ships `undefined`, PostgREST drops the key (p_slug has no DEFAULT) and
-    // the RPC 404s at the wire — the vitest case is what catches that.
+    // the stack suite drives this exact call across the PostgREST wire —
+    // load-bearing because it proves a NULL `p_slug` survives the
+    // supabase-js/PostgREST round trip at all. If the schema above ever
+    // relaxes `.nullable()` to `.optional()`, `{invite_slug: null}` stops
+    // parsing and the service returns a flat 400 at the safeParse above,
+    // never reaching this call — which is exactly what the vitest case's
+    // 200 assertion trips on. (The `undefined`-cast/dropped-key hazard
+    // p_slug's missing DEFAULT would create is only reachable from a `{}`
+    // body, which no sanctioned caller sends — R89.)
     p_league_id: leagueId,
     p_slug: parsed.data.invite_slug as string,
   })
