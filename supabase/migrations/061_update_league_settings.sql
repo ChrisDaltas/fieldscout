@@ -46,9 +46,16 @@
 --      shrink could orphan seats. The floor is enforced in-body at BOTH
 --      writers (here + the join/claim capacity check under the same
 --      league-row lock — 062), so teams count ≤ team_count holds in both
---      directions. Friendly P0001 naming team_count (the route maps it to a
---      per-field 400); pinned in pgTAP 016 (boundary: shrink to exactly the
---      seated count succeeds; one past refuses with no-write).
+--      directions. Friendly P0001 naming team_count, mapped to a per-field
+--      400 by the `team_count` marker in leagues-service.ts's
+--      PATCH_FIELD_ERRORS (**added 2026-07-26, batch-14 R84** — this clause
+--      previously attested a marker that had never been added, so the
+--      refusal returned a flat 400 carrying the raw DB message; the marker
+--      and its service-level pin land together now). Pinned DB-side in pgTAP
+--      016 (boundary: shrink to exactly the seated count succeeds; one past
+--      refuses with no-write) and mapping-side in
+--      `settings-round-trip-db.test.ts` (fieldErrors.team_count, both
+--      directions).
 --   4. Q10 STRICT-CONTINUITY BACKSTOP (R75/D69 doctrine, carried to the
 --      second writer): the 13–16 range (§7.3.1 R column) checked FIRST, then
 --      strict continuity playoff_start_week = regular_season_weeks + 1

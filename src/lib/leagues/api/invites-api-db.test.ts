@@ -29,6 +29,7 @@ import {
   rotateInviteCode,
   setInviteSlug,
 } from './invites-service'
+import { deleteLeague } from './leagues-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -67,6 +68,9 @@ const JOINER = {
 const ACTION = {
   league1: 'ae000000-0000-4000-8000-000000000001',
   league2: 'ae000000-0000-4000-8000-000000000002',
+  /** Batch-14 R87: a league soft-deleted mid-suite (its own fixture so no
+   *  earlier assertion depends on it still being visible). */
+  league3: 'ae000000-0000-4000-8000-000000000003',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -350,7 +354,7 @@ describe('invite creation + the D37 email seam', () => {
   it('revoke → 410 revoked on a later claim; unknown token → 404', async () => {
     const create = await createInvite(commishClient, league1Id, { max_uses: 5 })
     const created = create.body as unknown as { invite_id: string; token: string }
-    const revoke = await revokeInvite(commishClient, created.invite_id)
+    const revoke = await revokeInvite(commishClient, league1Id, created.invite_id)
     expect(revoke.status).toBe(200)
     const claim = await claimInvite(wrongClient, { token: created.token })
     expect(claim.status).toBe(410)
@@ -450,5 +454,88 @@ describe('join by code/slug, rotation, capacity, F5 free-join', () => {
       .select('id', { count: 'exact', head: true })
       .eq('league_id', league2Id)
     expect(after).toBe(8)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Batch-14 remediation (R86 · R87 · R88). Runs LAST: it revokes an L1 invite,
+// soft-deletes a dedicated third league, and clears L2's slug — all states no
+// earlier assertion depends on.
+// ---------------------------------------------------------------------------
+
+describe('batch-14 hardening: nested-route scoping, deleted-league status, slug clear', () => {
+  it('R86: revoking an L1 invite through LEAGUE 2ʼs id refuses (403) and writes nothing; the same invite revokes through its own league', async () => {
+    const create = await createInvite(commishClient, league1Id, { max_uses: 1 })
+    const created = create.body as unknown as { invite_id: string }
+
+    // The commissioner of BOTH leagues does this — so a refusal can only come
+    // from the league arg, never from the authz gate (the falsifiability
+    // condition). Before R86 the [id] segment was ignored: this returned 200
+    // and revoked another league's invite.
+    const wrongLeague = await revokeInvite(commishClient, league2Id, created.invite_id)
+    expect(wrongLeague.status).toBe(403)
+    const { data: intact } = await commishClient
+      .from('league_invites')
+      .select('revoked_at')
+      .eq('id', created.invite_id)
+      .single()
+    expect(intact?.revoked_at).toBeNull()
+
+    const rightLeague = await revokeInvite(commishClient, league1Id, created.invite_id)
+    expect(rightLeague.status).toBe(200)
+    const { data: revoked } = await commishClient
+      .from('league_invites')
+      .select('revoked_at')
+      .eq('id', created.invite_id)
+      .single()
+    expect(revoked?.revoked_at).not.toBeNull()
+  })
+
+  it('R87: a SOFT-DELETED league answers 404 on all three commish invite RPCs — the same answer a malformed id already gets, never a 400 (and never an invite_slug field error)', async () => {
+    const league3Id = await createLeagueAsCommish(`${LEAGUE_NAME_PREFIX}-3`, ACTION.league3)
+    const gone = await deleteLeague(commishClient, league3Id)
+    expect(gone.status).toBe(200)
+
+    const create = await createInvite(commishClient, league3Id, { max_uses: 1 })
+    expect(create.status).toBe(404)
+
+    const rotate = await rotateInviteCode(commishClient, league3Id)
+    expect(rotate.status).toBe(404)
+
+    const slug = await setInviteSlug(commishClient, league3Id, { invite_slug: 'deleted-league' })
+    expect(slug.status).toBe(404)
+    // The specific mis-shape R87 named: "this league has been deleted"
+    // arriving as an invite_slug VALIDATION error.
+    expect(slug.body).not.toHaveProperty('error.fieldErrors')
+  })
+
+  it('R88: the §15.1 CLEAR path — invite_slug: null clears the column across the PostgREST wire, stops resolving, and is idempotent', async () => {
+    // This call is the one that crosses the wire with a NULL `p_slug`, the
+    // seam `as string` defeats the type checker on. Relax setSlugInputSchema's
+    // `.nullable()` to `.optional()` and PostgREST drops the key (p_slug has
+    // no DEFAULT) — this test 500s while every other call site stays green.
+    const cleared = await setInviteSlug(commishClient, league2Id, { invite_slug: null })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body).toEqual({ invite_slug: null })
+
+    const { data: row } = await service
+      .from('leagues')
+      .select('invite_slug')
+      .eq('id', league2Id)
+      .single()
+    expect(row?.invite_slug).toBeNull()
+
+    // The cleared slug no longer resolves pre-auth or at the join surface.
+    const { data: preview } = await anonClient.rpc('get_join_preview', {
+      p_value: 'vitest-invites-slug',
+    })
+    expect(preview).toEqual({ found: false })
+    const join = await joinLeague(wrongClient, { code: 'vitest-invites-slug' })
+    expect(join.status).toBe(404)
+    expect((join.body as { reason?: string }).reason).toBe('not_found')
+
+    const again = await setInviteSlug(commishClient, league2Id, { invite_slug: null })
+    expect(again.status).toBe(200)
+    expect(again.body).toEqual({ invite_slug: null })
   })
 })

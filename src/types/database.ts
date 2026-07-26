@@ -2649,7 +2649,7 @@ export type Database = {
         Returns: undefined
       }
       revoke_league_invite: {
-        Args: { p_invite_id: string }
+        Args: { p_invite_id: string; p_league_id: string }
         Returns: undefined
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }

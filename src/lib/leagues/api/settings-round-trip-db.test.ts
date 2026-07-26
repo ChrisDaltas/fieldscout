@@ -94,6 +94,9 @@ const ACTION = {
   lifecycle: 'ad200000-0000-4000-8000-000000000002',
   locked: 'ad200000-0000-4000-8000-000000000003',
   partial: 'ad200000-0000-4000-8000-000000000004',
+  /** Batch-14 R84: the F28 shrink-floor mapping fixture (seats real
+   *  franchises, so the floor is reachable). */
+  floor: 'ad200000-0000-4000-8000-000000000005',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -520,6 +523,57 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
         s.draft.auction_min_bid = 5 // 16-player default roster × 5 = 80 > 50
       })) as { error: { fieldErrors: Record<string, string[]> } }
       expect(body.error.fieldErrors['draft.auction_budget']?.[0]).toContain("can't fill")
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // C1b. F28 shrink floor — the SERVICE-LEVEL mapping (batch-14 R84).
+  //      061's banner and F28's ledger row both attested a `team_count`
+  //      marker in PATCH_FIELD_ERRORS that had never been added, so the
+  //      floor's refusal fell through to the flat `{error: <raw message>}`
+  //      fallback, shipping the RPC name and a spec-section citation to the
+  //      client and giving L.A2.4 nothing to render per-field. Nothing pinned
+  //      the mapping in either direction, which is why the suite was green.
+  //      Drop the marker and the first test below fails on the body shape.
+  // -------------------------------------------------------------------------
+
+  describe('F28 shrink floor maps to a per-field 400 (R84)', () => {
+    let floorLeagueId: string
+
+    beforeAll(async () => {
+      floorLeagueId = await createFixtureLeague(ACTION.floor, 'floor')
+      // Seat 9 more franchises (creation seats 1) → 10 seated, team_count 12.
+      // Privileged fixture: L.A1.15's placeholder-seat RPC doesn't exist yet.
+      const rows = Array.from({ length: 9 }, (_, i) => ({
+        owner_id: creatorId,
+        name: `vitest-rt-floor-filler-${i}`,
+        league_id: floorLeagueId,
+        list_id: null,
+      }))
+      const { error } = await service.from('teams').insert(rows)
+      if (error) throw new Error(`floor fillers failed: ${error.message}`)
+    }, 30_000)
+
+    it('shrinking team_count BELOW the seated count → 400 with fieldErrors.team_count (never a flat error string), no write', async () => {
+      const before = await getSettings(floorLeagueId)
+      const result = await patchLeague(creatorClient, floorLeagueId, {
+        settings: { ...defaultsForTeamCount(8), regular_season_weeks: 14, playoff_start_week: 15 },
+      })
+      expect(result.status).toBe(400)
+      const body = result.body as { error: { fieldErrors?: Record<string, string[]> } }
+      expect(body.error.fieldErrors?.team_count?.[0]).toContain(
+        'is below the 10 franchises already seated',
+      )
+      expect(await getSettings(floorLeagueId)).toStrictEqual(before) // no-write pin
+      expect(await readSyncPair(floorLeagueId)).toStrictEqual({ team_count: 12, max_teams: 12 })
+    })
+
+    it('shrinking to EXACTLY the seated count succeeds through the same path — the marker cannot be a blanket team_count refusal', async () => {
+      const result = await patchLeague(creatorClient, floorLeagueId, {
+        settings: { ...defaultsForTeamCount(10), regular_season_weeks: 14, playoff_start_week: 15 },
+      })
+      expect(result.status).toBe(200)
+      expect(await readSyncPair(floorLeagueId)).toStrictEqual({ team_count: 10, max_teams: 10 })
     })
   })
 

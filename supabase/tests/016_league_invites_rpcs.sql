@@ -33,6 +33,14 @@
 --     with NO teams row and the count pinned ≤ team_count.
 --   * Rotation (§22.5): old code stops joining (not_found), new code joins,
 --     custom slug still resolves (case-insensitively) after rotation.
+--   * Batch-14 (section H): R86 cross-league revoke is falsifiable BECAUSE
+--     u1 commissions both L1 and L2 — the refusal can only come from the
+--     league arg, and the control revoke through the right league succeeds.
+--     R87 pins P0002 (not P0001) on all three commish RPCs against a
+--     soft-deleted league; is_league_commish ignores deleted_at, so the
+--     assertions genuinely reach the deleted branch rather than short-
+--     circuiting on authz. R88 pins the NULL-clear half of §15.1 set/clear
+--     (RPC echo + column + pre-auth resolution + idempotent re-clear).
 --   * F28 floor: shrink below seated count refuses (exact message,
 --     no-write); shrink to EXACTLY the seated count succeeds (boundary) and
 --     re-syncs max_teams; a post-shrink join refuses league_full (the two
@@ -51,7 +59,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(115);
+select plan(125);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: functions, SECURITY DEFINER, exact search_path, ACLs (incl. the
@@ -60,7 +68,7 @@ select plan(115);
 select has_function('public', 'create_league_invite',
   array['uuid','uuid','text','text','integer'], 'create_league_invite exists');
 select has_function('public', 'revoke_league_invite',
-  array['uuid'], 'revoke_league_invite exists');
+  array['uuid','uuid'], 'revoke_league_invite exists (league-scoped — R86)');
 select has_function('public', 'rotate_invite_code',
   array['uuid'], 'rotate_invite_code exists');
 select has_function('public', 'set_league_invite_slug',
@@ -78,7 +86,7 @@ select has_function('public', 'notify_league_invite_internal',
 
 select is_definer('public', 'create_league_invite',
   array['uuid','uuid','text','text','integer'], 'create_league_invite is SECURITY DEFINER');
-select is_definer('public', 'revoke_league_invite', array['uuid'],
+select is_definer('public', 'revoke_league_invite', array['uuid','uuid'],
   'revoke_league_invite is SECURITY DEFINER');
 select is_definer('public', 'rotate_invite_code', array['uuid'],
   'rotate_invite_code is SECURITY DEFINER');
@@ -104,7 +112,7 @@ select ok(
      from pg_proc p
      where p.oid = any (array[
        'public.create_league_invite(uuid,uuid,text,text,integer)'::regprocedure,
-       'public.revoke_league_invite(uuid)'::regprocedure,
+       'public.revoke_league_invite(uuid,uuid)'::regprocedure,
        'public.rotate_invite_code(uuid)'::regprocedure,
        'public.set_league_invite_slug(uuid,text)'::regprocedure,
        'public.get_join_preview(text)'::regprocedure,
@@ -117,7 +125,7 @@ select ok(
 -- ACLs (§4.1): anon revoked everywhere EXCEPT get_join_preview.
 select ok(
   not has_function_privilege('anon', 'public.create_league_invite(uuid,uuid,text,text,integer)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.revoke_league_invite(uuid)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.revoke_league_invite(uuid,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.rotate_invite_code(uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.set_league_invite_slug(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.claim_league_invite(text)', 'EXECUTE')
@@ -129,7 +137,7 @@ select ok(
   'get_join_preview: anon + authenticated HOLD EXECUTE — the documented pre-auth carve-out (§4.1 named exception; F2 is the compensating control)');
 select ok(
   has_function_privilege('authenticated', 'public.create_league_invite(uuid,uuid,text,text,integer)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.revoke_league_invite(uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.revoke_league_invite(uuid,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.rotate_invite_code(uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.set_league_invite_slug(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.claim_league_invite(text)', 'EXECUTE')
@@ -343,14 +351,14 @@ select public.create_league_invite(
 
 -- Revoke + idempotency (D63 doctrine).
 select lives_ok(
-  $$ select public.revoke_league_invite((select (r->>'invite_id')::uuid from _inv_revoked)) $$,
+  $$ select public.revoke_league_invite((select (r->>'league_id')::uuid from _l1), (select (r->>'invite_id')::uuid from _inv_revoked)) $$,
   'commissioner revokes an invite');
 select ok(
   (select i.revoked_at is not null from league_invites i
    where i.id = (select (r->>'invite_id')::uuid from _inv_revoked)),
   'revoked_at set (§7.2 "revocable"; every revoke recorded)');
 select lives_ok(
-  $$ select public.revoke_league_invite((select (r->>'invite_id')::uuid from _inv_revoked)) $$,
+  $$ select public.revoke_league_invite((select (r->>'league_id')::uuid from _l1), (select (r->>'invite_id')::uuid from _inv_revoked)) $$,
   'revoking an already-revoked invite is an idempotent no-op (D63)');
 
 -- Expiry-boundary manipulation (privileged): pgTAP's txn-frozen now() makes
@@ -649,7 +657,7 @@ select is(
 select set_config('request.jwt.claims',
   '{"sub": "99000000-0000-4000-8000-000000000001", "role": "authenticated", "email": "pgtap-in1@fieldscout.local"}', true);
 select lives_ok(
-  $$ select public.revoke_league_invite((select (r->>'invite_id')::uuid from _inv_rev3)) $$,
+  $$ select public.revoke_league_invite((select (r->>'league_id')::uuid from _l1), (select (r->>'invite_id')::uuid from _inv_rev3)) $$,
   'commissioner revokes the partially-used multi-use invite');
 select set_config('request.jwt.claims',
   '{"sub": "99000000-0000-4000-8000-000000000012", "role": "authenticated", "email": "pgtap-in12@fieldscout.local"}', true);
@@ -849,10 +857,10 @@ select throws_ok(
   $$ select public.set_league_invite_slug((select (r->>'league_id')::uuid from _l2), 'member-slug') $$,
   '42501', null, 'a member cannot set the slug');
 select throws_ok(
-  $$ select public.revoke_league_invite((select (r->>'invite_id')::uuid from _inv_fill)) $$,
+  $$ select public.revoke_league_invite((select (r->>'league_id')::uuid from _l1), (select (r->>'invite_id')::uuid from _inv_fill)) $$,
   '42501', null, 'a member of ANOTHER league cannot revoke an L1 invite (in-body commish check)');
 select throws_ok(
-  $$ select public.revoke_league_invite('00000000-0000-4000-8000-00000000dead') $$,
+  $$ select public.revoke_league_invite((select (r->>'league_id')::uuid from _l1), '00000000-0000-4000-8000-00000000dead') $$,
   '42501', null, 'a nonexistent invite yields the SAME 42501 (no existence leak)');
 
 -- ---------------------------------------------------------------------------
@@ -907,6 +915,82 @@ select is(
   (select (public.join_league_by_code((select c from _l3code)))->>'reason'),
   'league_full',
   'F28 ⇄ D47 coherence: after the shrink the league is exactly full — a join refuses league_full (both writers hold teams ≤ team_count)');
+
+-- ---------------------------------------------------------------------------
+-- H. Batch-14 remediation pins (R86 cross-league revoke · R87 deleted-league
+--    SQLSTATE · R88 the slug CLEAR path). Each one fails without its guard.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub": "99000000-0000-4000-8000-000000000001", "role": "authenticated", "email": "pgtap-in1@fieldscout.local"}', true);
+
+-- R86: the league arg is load-bearing. A live L1 invite addressed through L2
+-- must NOT be revoked — same 42501 as non-commish/nonexistent (no leak).
+create temp table _inv_xleague as
+select public.create_league_invite(
+  (select (r->>'league_id')::uuid from _l1), null, null, null, 1) as r;
+select throws_ok(
+  $$ select public.revoke_league_invite(
+       (select (r->>'league_id')::uuid from _l2),
+       (select (r->>'invite_id')::uuid from _inv_xleague)) $$,
+  '42501', null,
+  'R86: revoking an L1 invite through L2''s id refuses with the same 42501 (the nested route''s [id] segment is enforced, no existence leak) — u1 commishes BOTH leagues, so only the league arg can produce this');
+select ok(
+  (select i.revoked_at is null from league_invites i
+   where i.id = (select (r->>'invite_id')::uuid from _inv_xleague)),
+  'R86: the cross-league revoke wrote NOTHING (revoked_at still null)');
+select lives_ok(
+  $$ select public.revoke_league_invite(
+       (select (r->>'league_id')::uuid from _l1),
+       (select (r->>'invite_id')::uuid from _inv_xleague)) $$,
+  'R86 control: the SAME invite revokes cleanly through its OWN league id');
+
+-- R88: the §15.1 "clear" half of set/clear. L2 carries 'pgtap-league-slug'
+-- from section C; NULL clears it, the column goes null, and the slug stops
+-- resolving pre-auth. (Zero coverage before batch 14 — every call site passed
+-- a non-null string, so the service's `as string` cast was unexercised.)
+select is(
+  (select public.set_league_invite_slug((select (r->>'league_id')::uuid from _l2), null)),
+  '{"invite_slug": null}'::jsonb,
+  'R88: set_league_invite_slug(league, NULL) clears the slug and echoes invite_slug: null (§15.1 set/clear)');
+select ok(
+  (select l.invite_slug is null from leagues l
+   where l.id = (select (r->>'league_id')::uuid from _l2)),
+  'R88: the leagues.invite_slug COLUMN is null after the clear (not the empty string)');
+select is(
+  (select (public.get_join_preview('pgtap-league-slug'))->>'found'),
+  'false',
+  'R88: the cleared slug stops resolving pre-auth (§16.1 — get_join_preview found: false)');
+select lives_ok(
+  $$ select public.set_league_invite_slug((select (r->>'league_id')::uuid from _l2), null) $$,
+  'R88: re-clearing an already-clear slug is an idempotent no-op (D63 retry doctrine)');
+
+-- R87: a soft-deleted league answers **P0002** (→ 404) on all three commish
+-- RPCs, matching 059/061 (059:165, 059:246, 061:159). Before this alignment
+-- they raised P0001 → 400, so a MALFORMED league id 404'd while a
+-- soft-DELETED one 400'd on the same handler — and the slug RPC's blanket
+-- P0001 arm rendered "deleted" as an invite_slug validation error.
+-- is_league_commish ignores deleted_at, so u1 still passes the authz gate and
+-- these assertions genuinely reach the deleted-league branch.
+reset role;
+update leagues set deleted_at = now()
+  where id = (select (r->>'league_id')::uuid from _l3);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "99000000-0000-4000-8000-000000000001", "role": "authenticated", "email": "pgtap-in1@fieldscout.local"}', true);
+select throws_ok(
+  $$ select public.create_league_invite(
+       (select (r->>'league_id')::uuid from _l3), null, null, null, 1) $$,
+  'P0002', null,
+  'R87: create_league_invite on a soft-deleted league raises P0002 (not found → 404), not P0001');
+select throws_ok(
+  $$ select public.rotate_invite_code((select (r->>'league_id')::uuid from _l3)) $$,
+  'P0002', null,
+  'R87: rotate_invite_code on a soft-deleted league raises P0002');
+select throws_ok(
+  $$ select public.set_league_invite_slug(
+       (select (r->>'league_id')::uuid from _l3), 'deleted-league-slug') $$,
+  'P0002', null,
+  'R87: set_league_invite_slug on a soft-deleted league raises P0002 (so it never surfaces as an invite_slug field error)');
 
 select * from finish();
 rollback;

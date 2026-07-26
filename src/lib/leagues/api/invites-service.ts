@@ -17,6 +17,12 @@
  * The body always carries {reason, message} so the claim card (L.A2.6)
  * renders states from the payload, not the status code.
  *
+ * RAISED-error mapping on the three COMMISH RPCs (D73/R87 — the 059/061
+ * convention, three-deep precedent): 42501 → 403 · **P0002 → 404** (the
+ * league is soft-deleted or invisible — same answer a malformed league id
+ * already gets at the route) · P0001 → 400 (a genuine refusal of a
+ * well-formed request against a live league) · everything else → 500.
+ *
  * Email seam (D37/Q5): invite creation records send-intent on the row
  * in-RPC (created_at/last_sent_at — D46); the route-side send goes through
  * the injected `EmailSender` AFTER the RPC commits, and a send failure
@@ -82,6 +88,9 @@ export async function createInvite(
     if (error.code === '42501') {
       return { status: 403, body: { error: 'Only the commissioner can create invites.' } }
     }
+    if (error.code === 'P0002') {
+      return { status: 404, body: { error: 'League not found' } }
+    }
     if (error.code === 'P0001' || error.code === '22023') {
       return { status: 400, body: { error: error.message } }
     }
@@ -126,12 +135,26 @@ export async function createInvite(
 // DELETE /api/leagues/[id]/invites/[iid] — revoke
 // ---------------------------------------------------------------------------
 
-export async function revokeInvite(supabase: Supabase, inviteId: string): Promise<ServiceResult> {
-  const parsed = z.uuid().safeParse(inviteId)
-  if (!parsed.success) {
+/**
+ * R86 (batch 14): the `[id]` segment of `/api/leagues/[id]/invites/[iid]` is
+ * LOAD-BEARING — it is passed to the RPC, which refuses an invite belonging
+ * to a different league with the same 42501. Before this, a mis-addressed URL
+ * revoked another league's invite and answered 200 (no authz consequence —
+ * the commish gate is derived from the invite — but the wrong resource, and
+ * the only doubly-nested route in the repo that ignored its parent).
+ */
+export async function revokeInvite(
+  supabase: Supabase,
+  leagueId: string,
+  inviteId: string,
+): Promise<ServiceResult> {
+  if (!z.uuid().safeParse(leagueId).success || !z.uuid().safeParse(inviteId).success) {
     return { status: 400, body: { error: 'Invalid invite id.' } }
   }
-  const { error } = await supabase.rpc('revoke_league_invite', { p_invite_id: inviteId })
+  const { error } = await supabase.rpc('revoke_league_invite', {
+    p_league_id: leagueId,
+    p_invite_id: inviteId,
+  })
   if (error) {
     if (error.code === '42501') {
       // Nonexistent invite and non-commish are indistinguishable (no
@@ -152,6 +175,9 @@ export async function rotateInviteCode(supabase: Supabase, leagueId: string): Pr
   if (error) {
     if (error.code === '42501') {
       return { status: 403, body: { error: 'Only the commissioner can rotate the invite code.' } }
+    }
+    if (error.code === 'P0002') {
+      return { status: 404, body: { error: 'League not found' } }
     }
     if (error.code === 'P0001') {
       return { status: 400, body: { error: error.message } }
@@ -179,12 +205,25 @@ export async function setInviteSlug(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
   const { data, error } = await supabase.rpc('set_league_invite_slug', {
+    // §15.1 "set/clear": NULL clears the slug. The cast is the ONE seam here
+    // that defeats the type checker (typegen renders p_slug as `string` —
+    // PostgREST's OpenAPI carries no nullability), so the null CLEAR path is
+    // pinned end-to-end (R88): pgTAP asserts the RPC + column + preview, and
+    // the stack suite drives this exact call across the PostgREST wire. If
+    // the schema above ever relaxes `.nullable()` to `.optional()`, the cast
+    // ships `undefined`, PostgREST drops the key (p_slug has no DEFAULT) and
+    // the RPC 404s at the wire — the vitest case is what catches that.
     p_league_id: leagueId,
-    p_slug: parsed.data.invite_slug as string, // typegen can't express nullability (D68 pattern)
+    p_slug: parsed.data.invite_slug as string,
   })
   if (error) {
     if (error.code === '42501') {
       return { status: 403, body: { error: 'Only the commissioner can set the invite slug.' } }
+    }
+    // BEFORE the P0001 arm: a missing/soft-deleted league is not an
+    // invite_slug validation error (R87 — the mis-shape that arm produced).
+    if (error.code === 'P0002') {
+      return { status: 404, body: { error: 'League not found' } }
     }
     if (error.code === 'P0001') {
       return { status: 400, body: { error: { fieldErrors: { invite_slug: [error.message] } } } }

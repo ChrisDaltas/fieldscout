@@ -191,11 +191,23 @@ export const patchLeagueInputSchema = z
   )
 export type PatchLeagueInput = z.infer<typeof patchLeagueInputSchema>
 
-/** The PATCH-path RPC refusals mapped to per-field 400s (messages are UX). */
+/**
+ * The PATCH-path RPC refusals mapped to per-field 400s (messages are UX).
+ * The markers are DISJOINT by construction — no 061/059 P0001 message names
+ * two of these fields — so first-match is order-independent; each entry has
+ * an exact-message pin in `settings-round-trip-db.test.ts`, which is what
+ * keeps that true. `team_count` covers the F28 shrink floor (added by
+ * batch-14 R84: 061's banner and F28's ledger row had both attested this
+ * marker since 2026-07-25 while it was missing, so the shrink refusal
+ * returned a flat 400 leaking the raw `update_league_settings: …` text). The
+ * 040 team_count CHECK backstop arrives as 23514 on its own branch below, so
+ * it cannot be over-matched by this marker.
+ */
 const PATCH_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
   { marker: 'scoring_system_id', field: 'scoring_system_id' },
   { marker: 'playoff_start_week', field: 'playoff_start_week' },
   { marker: 'draft_scheduled_at', field: 'draft.draft_scheduled_at' },
+  { marker: 'team_count', field: 'team_count' },
 ]
 
 /** Shared error mapping for the two PATCH-path RPCs (D70). */

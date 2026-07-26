@@ -56,10 +56,17 @@
 --      'league_invite', deep-link data {league_id, token}) — guarded so a
 --      notification failure can never break the invite write (D72).
 --
---   3. `revoke_league_invite(invite_id)` — commish-only in-body (a
+--   3. `revoke_league_invite(league_id, invite_id)` — commish-only in-body (a
 --      nonexistent invite yields the same 42501 — no existence leak, the
 --      soft_delete_league pattern); sets revoked_at; already-revoked is an
---      idempotent no-op success (D63 retry doctrine).
+--      idempotent no-op success (D63 retry doctrine). The league arg is
+--      LOAD-BEARING (R86, batch 14): the route is doubly nested
+--      (`/api/leagues/[id]/invites/[iid]`) and every other doubly-nested
+--      route in the repo constrains its parent segment, so an invite whose
+--      league_id <> p_league_id is refused with the SAME 42501 — a
+--      mis-addressed URL can no longer revoke another league's invite and
+--      report 200. Compared with IS DISTINCT FROM so a NULL league arg from
+--      a direct-PostgREST caller refuses rather than passing the test.
 --
 --   4. `rotate_invite_code(league_id)` — commish-only; regenerates
 --      leagues.invite_code (10-hex, collision-retried against the 001
@@ -139,6 +146,16 @@
 --      anywhere (F5 join half; C1: spec wins over the old CLAUDE.md rule 5).
 --      Same outcome-jsonb contract, status gate, FOR UPDATE + capacity
 --      check, and internal-helper seating as the general claim path.
+--
+-- SQLSTATE convention for the three COMMISH RPCs (R87, batch 14 — aligned
+-- with the three-deep 059/061 precedent, 059:165, 059:246, 061:159 and 061's
+-- banner "→ P0002 not found"): a soft-deleted (or otherwise invisible)
+-- league raises **P0002**, which the service maps to 404 — NOT P0001/400.
+-- Before this alignment a MALFORMED league id 404'd at the route while a
+-- soft-DELETED one 400'd on the same handler, and set_league_invite_slug's
+-- blanket P0001 → fieldErrors arm surfaced "this league has been deleted" as
+-- an `invite_slug` validation error. P0001 stays what it is everywhere else
+-- here: a genuine refusal of a well-formed request against a live league.
 --
 -- Held-lock note (plan §8.3): claim/join hold the league (and invite/team)
 -- row locks across at most one count + three single-row inserts + one
@@ -244,8 +261,8 @@ BEGIN
   FROM public.leagues l
   WHERE l.id = p_league_id AND l.deleted_at IS NULL;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'create_league_invite: this league has been deleted'
-      USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'create_league_invite: league % not found', p_league_id
+      USING ERRCODE = 'P0002';
   END IF;
 
   IF p_max_uses IS NULL OR p_max_uses < 1 THEN
@@ -388,7 +405,7 @@ REVOKE EXECUTE ON FUNCTION notify_league_invite_internal(UUID, TEXT, TEXT, UUID,
 -- ----------------------------------------------------------------------------
 -- 3. revoke_league_invite — §15.1 DELETE /api/leagues/[id]/invites/[iid]
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION revoke_league_invite(p_invite_id UUID)
+CREATE OR REPLACE FUNCTION revoke_league_invite(p_league_id UUID, p_invite_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -406,9 +423,12 @@ BEGIN
   FROM public.league_invites i
   WHERE i.id = p_invite_id
   FOR UPDATE;
-  -- Nonexistent invite and non-commish yield the SAME error (no existence
-  -- leak — the soft_delete_league pattern).
-  IF NOT FOUND OR NOT public.is_league_commish(v_invite.league_id) THEN
+  -- Nonexistent invite, an invite belonging to a DIFFERENT league (R86 — the
+  -- nested route's [id] segment is load-bearing), and non-commish all yield
+  -- the SAME error (no existence leak — the soft_delete_league pattern).
+  IF NOT FOUND
+     OR v_invite.league_id IS DISTINCT FROM p_league_id
+     OR NOT public.is_league_commish(v_invite.league_id) THEN
     RAISE EXCEPTION 'revoke_league_invite: not a commissioner of this invite''s league'
       USING ERRCODE = '42501';
   END IF;
@@ -424,7 +444,7 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION revoke_league_invite(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION revoke_league_invite(UUID, UUID) FROM PUBLIC, anon;
 
 -- ----------------------------------------------------------------------------
 -- 4. rotate_invite_code — §15.1 POST /api/leagues/[id]/invite (§7.2/§22.5)
@@ -448,8 +468,8 @@ BEGIN
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
   FOR UPDATE;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'rotate_invite_code: this league has been deleted'
-      USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'rotate_invite_code: league % not found', p_league_id
+      USING ERRCODE = 'P0002';
   END IF;
 
   -- Same generator as create_league (10 hex chars; 001 UNIQUE backs it).
@@ -497,8 +517,8 @@ BEGIN
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
   FOR UPDATE;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'set_league_invite_slug: this league has been deleted'
-      USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'set_league_invite_slug: league % not found', p_league_id
+      USING ERRCODE = 'P0002';
   END IF;
 
   -- NULL clears the slug (§15.1 "set/clear"): joins fall back to the code.
