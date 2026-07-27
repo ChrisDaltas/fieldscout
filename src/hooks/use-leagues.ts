@@ -47,8 +47,14 @@ async function parseJsonOrThrow<T>(response: Response): Promise<T> {
   return body as T
 }
 
-/** My leagues (GET /api/leagues) — M1 task L.A1.12. */
-export function useLeagues() {
+/**
+ * My leagues (GET /api/leagues) — M1 task L.A1.12.
+ *
+ * `enabled` lets an app-wide caller (the sidebar nav) skip the fetch when the
+ * leagues release is gated off, so /api/leagues isn't hit on every page load
+ * where the feature is hidden. Defaults to on for the existing callers.
+ */
+export function useLeagues(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: leaguesKeys.all,
     queryFn: async (): Promise<MyLeagueRow[]> => {
@@ -56,6 +62,7 @@ export function useLeagues() {
       const body = await parseJsonOrThrow<{ leagues: MyLeagueRow[] }>(response)
       return body.leagues
     },
+    enabled: options?.enabled ?? true,
   })
 }
 

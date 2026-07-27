@@ -3,7 +3,6 @@
 import { AiExpertShelf } from '@/components/home/ai-expert-shelf'
 import { HomeQuickActions } from '@/components/home/home-quick-actions'
 import { InjuryNewsCard } from '@/components/home/injury-news-card'
-import { LiveDraftHero } from '@/components/home/live-draft-hero'
 import { RecentlyViewed } from '@/components/home/recently-viewed'
 import { ScoutAiCard } from '@/components/home/scout-ai-card'
 import { TrendingPlayersCard } from '@/components/home/trending-players-card'
@@ -15,7 +14,7 @@ import { featureFlags } from '@/lib/feature-flags'
 
 /**
  * Home — the jump-off hub (package screen 01). Two columns ~1.55fr/1fr with a
- * 19px gap (24 × 0.8): live-draft hero + league cards on the left, Scout AI /
+ * 19px gap (24 × 0.8): the viewer's real league cards on the left, Scout AI /
  * trending / waivers / injuries on the right. FieldScout-only surfaces the
  * mock doesn't show (AI experts shelf, recently viewed) keep their data
  * wiring and render full-width below the hub grid.
@@ -29,7 +28,6 @@ export default function AppHomePage() {
         <TwoColumnLayout
           main={
             <div className="flex min-w-0 flex-col gap-[19px]">
-              <LiveDraftHero />
               <YourLeagues />
             </div>
           }

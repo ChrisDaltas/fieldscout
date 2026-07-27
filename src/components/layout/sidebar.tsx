@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 
 import { SidebarResizeHandle } from '@/components/layout/sidebar-resize-handle'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { useLeagues } from '@/hooks/use-leagues'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { SIDEBAR_DIMENSIONS, useUIStore } from '@/stores/ui-store'
@@ -58,14 +59,22 @@ const MORE_ITEMS: NavEntry[] = [
   },
 ]
 
-// TODO(live-draft): replace with the user's real teams once the league
-// backend exists. Ids/names mirror MOCK_LEAGUES so a team row opens the
-// populated league workspace (My Team tab).
-const MOCK_TEAMS: Array<{ id: string; team: string; league: string }> = [
-  { id: 'log', team: 'Gridiron Gurus', league: 'League of Ordinary Gentlemen' },
-  { id: 'din', team: 'Check Downs', league: 'Dynasty Degenerates' },
-  { id: 'wrk', team: 'Cubicle Kings', league: 'The Work League' },
-]
+const ROLE_LABEL: Record<string, string> = {
+  commissioner: 'Commissioner',
+  co_commissioner: 'Co-commissioner',
+  manager: 'Manager',
+}
+
+/** Two-letter initials for a league crest tile. */
+function leagueInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
 
 function isActive(pathname: string, item: NavEntry): boolean {
   if (item.href === '/app') return pathname === '/app'
@@ -100,14 +109,20 @@ function NavRow({
 }
 
 /** The ink sidebar — wordmark band, search, primary nav with a More
- *  expander, and the Teams section. Drag-resizable, collapses to an icon
- *  rail. */
+ *  expander, and the Leagues section (the viewer's real memberships).
+ *  Drag-resizable, collapses to an icon rail. */
 export function Sidebar() {
   const pathname = usePathname()
   const sidebarWidth = useUIStore((s) => s.sidebarWidth)
   const isCollapsed = useUIStore((s) => s.isSidebarCollapsed)
   const toggleCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const setPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
+
+  // The viewer's real league memberships (same query as home / the index).
+  // Gated off with the leagues release so /api/leagues isn't hit app-wide
+  // when the feature is hidden.
+  const { data: leagues } = useLeagues({ enabled: featureFlags.leagues })
+  const myLeagues = leagues ?? []
 
   const moreActive = MORE_ITEMS.some((i) => isActive(pathname, i))
   const [moreOpen, setMoreOpen] = useState(false)
@@ -241,8 +256,9 @@ export function Sidebar() {
             {!isCollapsed && <span>{moreOpen ? 'Less' : 'More'}</span>}
           </button>
 
-          {/* Teams section — league teams, gated with the leagues release */}
-          {featureFlags.leagues && (
+          {/* Leagues section — the viewer's real memberships, gated with the
+              leagues release and hidden entirely when they're in none. */}
+          {featureFlags.leagues && myLeagues.length > 0 && (
           <div className={cn('mt-2.5', isCollapsed && 'mt-1.5')}>
             {isCollapsed ? (
               <div className="mx-1.5 my-2 h-px bg-white/10" />
@@ -251,7 +267,7 @@ export function Sidebar() {
                 onClick={() => setTeamsOpen((o) => !o)}
                 className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-[11px] font-bold text-white/50 transition-colors hover:text-white/80"
               >
-                <span>Teams</span>
+                <span>Leagues</span>
                 <Icon
                   name="arrow-bottom"
                   size={13}
@@ -264,11 +280,11 @@ export function Sidebar() {
             )}
             {(isCollapsed || teamsOpen) && (
               <div className="flex flex-col gap-0.5">
-                {MOCK_TEAMS.map((t) => (
+                {myLeagues.map((lg) => (
                   <Link
-                    key={t.id}
-                    href={`/app/leagues/${t.id}?tab=my-team`}
-                    title={isCollapsed ? t.team : undefined}
+                    key={lg.id}
+                    href={`/app/leagues/${lg.id}`}
+                    title={isCollapsed ? lg.name : undefined}
                     className={cn(
                       'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',
                       isCollapsed
@@ -277,17 +293,13 @@ export function Sidebar() {
                     )}
                   >
                     <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
-                      {t.team
-                        .split(' ')
-                        .map((w) => w[0])
-                        .slice(0, 2)
-                        .join('')}
+                      {leagueInitials(lg.name)}
                     </span>
                     {!isCollapsed && (
                       <span className="flex min-w-0 flex-col leading-tight">
-                        <span className="truncate">{t.team}</span>
+                        <span className="truncate">{lg.name}</span>
                         <span className="truncate text-[10px] font-semibold text-white/50">
-                          {t.league}
+                          {ROLE_LABEL[lg.my_role] ?? lg.my_role}
                         </span>
                       </span>
                     )}
