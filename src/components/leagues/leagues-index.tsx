@@ -58,7 +58,7 @@ const ROLE_LABEL: Record<string, string> = {
  * the SAME pre-auth preview page (`/join/[token]`). Joining is free (Q6). A
  * pasted link is normalised to its bare code via `extractJoinCode` (R114).
  */
-function JoinLeagueDialog() {
+export function JoinLeagueDialog() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState('')
@@ -113,7 +113,7 @@ function JoinLeagueDialog() {
   )
 }
 
-function LeagueIndexCard({ league }: { league: MyLeagueRow }) {
+export function LeagueIndexCard({ league }: { league: MyLeagueRow }) {
   const badge = STATUS_BADGE[league.status] ?? { label: league.status, variant: 'stroke' as const }
   const roleLabel = ROLE_LABEL[league.my_role] ?? league.my_role
 

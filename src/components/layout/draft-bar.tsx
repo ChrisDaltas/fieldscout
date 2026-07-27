@@ -4,7 +4,6 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
-import { featureFlags } from '@/lib/feature-flags'
 
 interface DraftAlert {
   live: boolean
@@ -13,19 +12,13 @@ interface DraftAlert {
   href: string
 }
 
-// TODO(live-draft): mock live draft driving the platform-wide alert bar.
-// Swap for the real active-draft query when the league backend lands;
-// return null to hide the bar when no draft is live/scheduled.
-const MOCK_ALERT: DraftAlert = {
-  live: true,
-  league: 'The Work League',
-  detail: "Round 4 · Pick 7 · you're on the clock",
-  href: '/app/leagues/wrk/draft?format=snake',
-}
-
+// TODO(M2 draft engine — F38): wire to the real active-draft query. There is
+// no live or scheduled draft in M1 (the draft engine lands in M2), so this
+// returns null and the bar never renders — never a fabricated live draft.
+// When the draft room lands, return the viewer's active draft (or null when
+// none is live) so the bar surfaces only a REAL draft.
 function useDraftAlert(): DraftAlert | null {
-  if (!featureFlags.leagues) return null
-  return MOCK_ALERT
+  return null
 }
 
 /** Full-width lime alert bar above the header — only when a draft is live or
