@@ -374,7 +374,7 @@ function ScheduledHero({ data, settingsHref }: { data: LeagueDetail; settingsHre
   const scheduledAt = settings.draft.draft_scheduled_at
   const orderMode = settings.draft.draft_order_mode
 
-  const { data: templates } = useScoringTemplates()
+  const { data: templates, isPending: templatesPending } = useScoringTemplates()
   const templateName =
     templates?.find((t) => t.id === data.league.scoring_system_id)?.name ?? null
 
@@ -418,7 +418,12 @@ function ScheduledHero({ data, settingsHref }: { data: LeagueDetail; settingsHre
             </Button>
           </CardHeader>
           <CardContent>
-            {templateName ? (
+            {templatesPending ? (
+              // R116: don't flash the false-negative "none set" copy while the
+              // templates query is still resolving — a league WITH a template
+              // would briefly read as having none.
+              <Skeleton className="h-5 w-24 rounded-sm" />
+            ) : templateName ? (
               <Badge variant="stroke">{templateName}</Badge>
             ) : (
               <p className="text-[12px] font-semibold text-n-3">No scoring template set.</p>
