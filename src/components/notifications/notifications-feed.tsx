@@ -13,6 +13,8 @@ import {
 } from '@/hooks/use-notifications'
 import { cn } from '@/lib/utils'
 
+import { notificationHref } from './notification-href'
+
 function relativeTime(iso: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
   if (seconds < 60) return 'just now'
@@ -100,7 +102,7 @@ export function NotificationsFeed() {
 }
 
 function NotificationRow({ notification: n }: { notification: NotificationItem }) {
-  const href = n.data?.list_id ? `/app/lists/${n.data.list_id}` : null
+  const href = notificationHref(n)
 
   const body = (
     <div

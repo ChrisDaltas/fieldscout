@@ -2,17 +2,29 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { AIInsight } from '@/components/ui/ai-insight'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useAuth } from '@/hooks/use-auth'
-import { toast } from '@/hooks/use-toast'
 
 import { Crest } from './league-cells'
+import { extractJoinCode } from './invite-panel-ops'
 import { MOCK_LEAGUES, type MockLeague } from './league-mock-data'
 
 /**
@@ -34,12 +46,70 @@ function ordinal(n: number): string {
   return `${n}th`
 }
 
-// TODO(live-draft): joining needs the league backend (join is Pro-gated too).
-function joinStub() {
-  toast({
-    title: 'Join a league',
-    description: 'Ask your commissioner for an invite code — joining opens with league sync.',
-  })
+/**
+ * Join-by-code entry point (L.A2.6) — replaces the former stub. A commissioner
+ * shares an invite code or a custom `fieldscout.gg/join/<slug>` link; entering
+ * either here routes through the SAME pre-auth preview page (`/join/[token]`)
+ * that resolves seat tokens, share codes, and custom slugs (§16.1). Joining is
+ * free (business rule 5 / Q6) — no Pro gate on this path.
+ *
+ * A pasted `fieldscout.gg/join/…` link (the exact affordance this dialog's copy
+ * advertises) is normalised to its bare code via `extractJoinCode` before the
+ * push, so a whole URL resolves to the same invite a bare code would (R114).
+ */
+function JoinLeagueDialog() {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState('')
+
+  const joinCode = extractJoinCode(code)
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!joinCode) return
+    router.push(`/join/${encodeURIComponent(joinCode)}`)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button variant="stroke" size="sm" onClick={() => setOpen(true)}>
+        <Icon name="plus" size={13} />
+        Join league
+      </Button>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Join a league</DialogTitle>
+          <DialogDescription>
+            Enter the invite code your commissioner shared, or paste a{' '}
+            <span className="font-bold text-ink">fieldscout.gg/join/…</span> link.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="join-code">Invite code or link</Label>
+            <Input
+              id="join-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. a1b2c3d4e5"
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="sm">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" variant="blue" size="sm" disabled={!joinCode}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function LeagueIndexCard({ league }: { league: MockLeague }) {
@@ -149,10 +219,7 @@ export function LeaguesIndex() {
         title="Leagues"
         actions={
           <div className="flex items-center gap-2.5">
-            <Button variant="stroke" size="sm" onClick={joinStub}>
-              <Icon name="plus" size={13} />
-              Join league
-            </Button>
+            <JoinLeagueDialog />
             <Button
               variant="blue"
               size="sm"

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildJoinLink,
   deriveSeats,
+  extractJoinCode,
   formatManagerIdentity,
   inviteState,
   preferredShareCode,
@@ -300,5 +301,60 @@ describe('validateSlug', () => {
     expect(validateSlug('has space')).toContain('Letters, numbers and hyphens')
     expect(validateSlug('-leading')).toContain('Letters, numbers and hyphens')
     expect(validateSlug('trailing-')).toContain('Letters, numbers and hyphens')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 8. extractJoinCode — normalise a pasted /join/… link to the bare code (R114)
+// ---------------------------------------------------------------------------
+//
+// The finding: the join-by-code dialog pushed the pasted string verbatim, so a
+// full `${origin}/join/CODE` share link (the exact affordance its copy invites)
+// became the unresolvable `/join/https%3A%2F%2F…` segment → get_join_preview
+// {found:false} → "This link isn't valid" on a VALID invite. Every row below
+// that involves a link WOULD FAIL against the old verbatim passthrough
+// (`raw.trim()`); only the bare-code and empty rows survive it — so this table
+// is discriminating, not vacuous.
+
+const CODE = 'a1b2c3d4e5' // a real invite_code shape (lowercase alnum)
+
+describe('extractJoinCode', () => {
+  const cases: Array<[label: string, input: string, expected: string]> = [
+    // The two REAL share artifacts (the ones commissioners actually paste):
+    ['buildJoinLink absolute output', buildJoinLink('https://fieldscout.gg', CODE), CODE],
+    ['wizard SuccessPanel copied URL shape', `https://fieldscout.gg/join/${CODE}`, CODE],
+    // Every input form the field must tolerate:
+    ['full absolute URL', 'https://fieldscout.gg/join/a1b2c3d4e5', 'a1b2c3d4e5'],
+    ['bare-host (no protocol)', 'fieldscout.gg/join/a1b2c3d4e5', 'a1b2c3d4e5'],
+    ['protocol-relative', '//fieldscout.gg/join/a1b2c3d4e5', 'a1b2c3d4e5'],
+    ['path-only', '/join/a1b2c3d4e5', 'a1b2c3d4e5'],
+    ['trailing slash', 'https://fieldscout.gg/join/a1b2c3d4e5/', 'a1b2c3d4e5'],
+    ['query suffix', 'https://fieldscout.gg/join/a1b2c3d4e5?utm=share', 'a1b2c3d4e5'],
+    ['hash suffix', 'https://fieldscout.gg/join/a1b2c3d4e5#top', 'a1b2c3d4e5'],
+    ['query + trailing slash', 'https://fieldscout.gg/join/a1b2c3d4e5/?ref=x', 'a1b2c3d4e5'],
+    ['a custom slug link', 'https://fieldscout.gg/join/yardboats-2026', 'yardboats-2026'],
+    ['surrounding whitespace on a link', '  https://fieldscout.gg/join/a1b2c3d4e5  ', 'a1b2c3d4e5'],
+    // Bare code/slug passthrough (no /join/) — must survive untouched:
+    ['a bare code passes through trimmed', '  a1b2c3d4e5  ', 'a1b2c3d4e5'],
+    ['a bare custom slug passes through', 'yardboats-2026', 'yardboats-2026'],
+    // Empty / whitespace-only → empty (the dialog then no-ops the submit):
+    ['empty string', '', ''],
+    ['whitespace only', '   ', ''],
+  ]
+
+  it.each(cases)('%s → %j', (_label, input, expected) => {
+    expect(extractJoinCode(input)).toBe(expected)
+  })
+
+  it('preserves the case of a seat token (tokens are case-sensitive; only the RPC lower()s codes)', () => {
+    // A wrong-cased token would fail the exact-match resolution — so extraction
+    // must NOT lowercase. The /join/ marker match is case-insensitive; the
+    // extracted segment keeps its bytes.
+    expect(extractJoinCode('https://fieldscout.gg/join/AbC123dEf0')).toBe('AbC123dEf0')
+  })
+
+  it('yields empty for a /join/ link with no code, so the dialog no-ops rather than pushing a dead segment', () => {
+    expect(extractJoinCode('https://fieldscout.gg/join/')).toBe('')
+    expect(extractJoinCode('/join/')).toBe('')
   })
 })

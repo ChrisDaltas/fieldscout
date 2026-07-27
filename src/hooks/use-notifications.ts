@@ -5,7 +5,17 @@ export interface NotificationItem {
   type: string
   title: string
   body: string | null
-  data: { list_id?: string; actor_id?: string } | null
+  data: {
+    list_id?: string
+    actor_id?: string
+    // League notifications (spec §16.4 matrix). A `league_invite` row carries
+    // the invitee's own claim `token` for the /join/[token] deep link (F30);
+    // `league_id`/`event`/`team_id` accompany league_invite/league_member rows.
+    token?: string
+    league_id?: string
+    team_id?: string
+    event?: string
+  } | null
   read: boolean
   created_at: string
 }
