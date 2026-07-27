@@ -19,11 +19,13 @@ import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useLeagues } from '@/hooks/use-leagues'
 import {
   usePlayerStats,
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
-import { useToast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
+import { cn } from '@/lib/utils'
 
 interface PlayerDetailPageViewProps {
   playerId: string
@@ -179,97 +181,85 @@ function ScoutInsight({ data }: { data: PlayerStatsResponse }) {
 // Your leagues column
 // ---------------------------------------------------------------------------
 
-// TODO(live-draft): leagues aren't live yet — these rows are mocked
-// placeholders matching the kit layout (crest, league name, ownership,
-// Trade stub, expand). Replace with real per-league availability once
-// leagues ship. Never ship these names as data.
-const MOCK_LEAGUES: Array<{ id: string; name: string; team: string }> = [
-  { id: 'work', name: 'The Work League', team: 'The Deliverables' },
-  { id: 'dynasty', name: 'Dynasty degens', team: 'Future Picks' },
-  { id: 'gridiron', name: 'Gridiron gurus', team: 'Waiver wire wizards' },
-]
-
+/**
+ * Per-league availability for this player, wired to the viewer's REAL
+ * memberships (`useLeagues` — the same query home / sidebar / rail use). M1
+ * has leagues but no rosters or drafts yet, so a player is a free agent in
+ * every league the viewer is in; each row links to that league's home. When
+ * the leagues release is gated off the block is hidden entirely (matching the
+ * rest of the app) and only the list actions render. Real ownership /
+ * on-a-team status arrives with rosters in M2.
+ */
 function YourLeaguesColumn({ data }: { data: PlayerStatsResponse }) {
-  const { toast } = useToast()
-
-  // TODO(live-draft): stub handlers until league mutations exist.
-  const stub = () =>
-    toast({
-      title: 'Leagues are coming soon',
-      description: 'League actions unlock once leagues go live.',
-    })
+  const { data: leagues, isPending, isError } = useLeagues({
+    enabled: featureFlags.leagues,
+  })
 
   return (
     <div className="w-full shrink-0 lg:w-[264px]">
-      <p className="fs-overline mb-1 text-n-3">Your leagues</p>
-      <div>
-        {MOCK_LEAGUES.map((league, i) => (
-          <div
-            key={league.id}
-            className={
-              i === 0
-                ? 'flex items-center gap-2.5 py-2'
-                : 'flex items-center gap-2.5 border-t border-n-4 py-2'
-            }
-          >
-            <Avatar className="h-6 w-6">
-              <AvatarFallback className="text-[8px]">
-                {league.name
-                  .split(' ')
-                  .map((w) => w[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12px] font-extrabold leading-tight">
-                {league.name}
-              </span>
-              <span className="mt-0.5 block truncate text-[11px] font-semibold leading-tight text-n-3">
-                On {league.team}
-              </span>
-            </span>
-            <Button variant="stroke" size="sm" onClick={stub}>
-              Trade
-            </Button>
-            <button
-              type="button"
-              aria-label={`Open ${data.player.full_name} in ${league.name}`}
-              title="Open in this league"
-              onClick={stub}
-              className="shrink-0 rounded-sm p-1 text-ink transition-colors hover:bg-n-4 hover:text-accent"
-            >
-              <ExpandIcon size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
+      {featureFlags.leagues && (
+        <div className="mb-3">
+          <p className="fs-overline mb-1 text-n-3">Your leagues</p>
+          {isPending ? (
+            <div className="space-y-1.5">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ) : isError ? (
+            <p className="py-2 text-[12px] font-semibold text-n-3">
+              Couldn&apos;t load your leagues.
+            </p>
+          ) : leagues && leagues.length > 0 ? (
+            <div>
+              {leagues.map((league, i) => (
+                <Link
+                  key={league.id}
+                  href={`/app/leagues/${league.id}`}
+                  aria-label={`${data.player.full_name} in ${league.name}`}
+                  className={cn(
+                    'flex items-center gap-2.5 py-2 transition-colors hover:bg-n-4',
+                    i > 0 && 'border-t border-n-4',
+                  )}
+                >
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="text-[8px]">
+                      {crestInitials(league.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-extrabold leading-tight">
+                      {league.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] font-semibold leading-tight text-brand-strong">
+                      Free agent
+                    </span>
+                  </span>
+                  <Icon name="arrow-next" size={13} className="shrink-0 text-n-3" />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="py-2 text-[12px] font-medium text-n-3">
+              Join or create a league to track availability.
+            </p>
+          )}
+        </div>
+      )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <PlayerDetailActions player={data.player} onFullPage />
       </div>
     </div>
   )
 }
 
-/**
- * Filled 16×16 expand glyph (two opposite corner arrows) — the icon set has
- * no expand mark, so it's drawn in the same filled style (kit ExpandIcon).
- */
-function ExpandIcon({ size = 15 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="block shrink-0"
-    >
-      <path
-        fill="currentColor"
-        d="M9.3 2H14v4.7l-1.7-1.7-2.9 2.9-1.3-1.3 2.9-2.9L9.3 2zM6.7 14H2V9.3l1.7 1.7 2.9-2.9 1.3 1.3-2.9 2.9L6.7 14z"
-      />
-    </svg>
-  )
+/** Two-letter crest fallback from a league name (e.g. two words → first two initials). */
+function crestInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 }

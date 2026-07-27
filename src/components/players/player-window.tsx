@@ -17,11 +17,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLeagues } from '@/hooks/use-leagues'
 import {
   usePlayerStats,
   type PlayerStatsPlayer,
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import {
   usePlayerWindowsStore,
@@ -269,42 +271,57 @@ function formatAge(birthDate: string | null): string {
 // Leagues expander + actions row
 // ---------------------------------------------------------------------------
 
-// TODO(live-draft): leagues aren't live yet — these availability rows are
-// mocked placeholders so the card matches the target layout. Replace with
-// real per-league availability once leagues ship.
-const MOCK_LEAGUES: Array<{ id: string; name: string; status: string }> = [
-  { id: 'work', name: 'The Work League', status: 'Free agent' },
-  { id: 'dynasty', name: 'Dynasty degens', status: 'On Blitzkrieg' },
-]
-
+/**
+ * Per-league availability + the list actions. Wired to the viewer's REAL
+ * memberships (`useLeagues`). M1 has leagues but no rosters or drafts yet, so
+ * a player is a free agent in every league the viewer is in — the count is
+ * the viewer's real league count and the expander lists them as free agents.
+ * With no leagues, an honest prompt shows instead; when the leagues release
+ * is gated off, only the actions render. Real on-a-team status arrives with
+ * rosters in M2.
+ */
 function LeaguesAndActionsRow({ actions }: { actions: React.ReactNode }) {
   const [open, setOpen] = useState(false)
-  const freeCount = MOCK_LEAGUES.filter((l) => l.status === 'Free agent').length
+  const leaguesEnabled = featureFlags.leagues
+  const { data: leagues, isPending } = useLeagues({ enabled: leaguesEnabled })
+  const count = leagues?.length ?? 0
+  const showExpander = leaguesEnabled && count > 0
 
   return (
     <div className="border-b border-n-4 px-3 py-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="mr-auto inline-flex items-center gap-1 py-1 text-[12px] font-extrabold text-accent-strong transition-colors hover:text-accent"
-        >
-          Available in {freeCount} {freeCount === 1 ? 'league' : 'leagues'}
-          <Icon
-            name="arrow-next"
-            size={13}
-            className={cn('transition-transform', open && 'rotate-90')}
-          />
-        </button>
+        {leaguesEnabled &&
+          (isPending ? (
+            <span className="mr-auto py-1 text-[12px] font-semibold text-n-3">
+              Checking your leagues…
+            </span>
+          ) : count > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              className="mr-auto inline-flex items-center gap-1 py-1 text-[12px] font-extrabold text-accent-strong transition-colors hover:text-accent"
+            >
+              Available in {count} {count === 1 ? 'league' : 'leagues'}
+              <Icon
+                name="arrow-next"
+                size={13}
+                className={cn('transition-transform', open && 'rotate-90')}
+              />
+            </button>
+          ) : (
+            <span className="mr-auto py-1 text-[12px] font-medium text-n-3">
+              Join a league to track availability
+            </span>
+          ))}
         {/* Downsize the (shared) action buttons to the mini-card scale. */}
         <span className="flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-2.5 [&>a]:text-[11px] [&>button]:h-btn-sm [&>button]:px-2.5 [&>button]:text-[11px]">
           {actions}
         </span>
       </div>
-      {open && (
+      {open && showExpander && (
         <div className="pb-1">
-          {MOCK_LEAGUES.map((lg, i) => (
+          {leagues!.map((lg, i) => (
             <div
               key={lg.id}
               className={cn(
@@ -316,13 +333,8 @@ function LeaguesAndActionsRow({ actions }: { actions: React.ReactNode }) {
                 <span className="block truncate text-[12px] font-extrabold leading-tight">
                   {lg.name}
                 </span>
-                <span
-                  className={cn(
-                    'mt-0.5 block text-[11px] font-semibold leading-tight',
-                    lg.status === 'Free agent' ? 'text-brand-strong' : 'text-n-3',
-                  )}
-                >
-                  {lg.status}
+                <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-brand-strong">
+                  Free agent
                 </span>
               </span>
             </div>
