@@ -67,6 +67,12 @@ export interface TemplateCard {
   description: string
   /** §7.3.3 "(platform default)" marker. */
   isPlatformDefault: boolean
+  /**
+   * The §7.3.3 possessive marker copy ("Yahoo's platform default" / "Sleeper's
+   * platform default") for the platform-default rows, else null (R73 — the
+   * spec table prints the possessive, not a generic "Platform default").
+   */
+  platformDefaultMarker: string | null
   summary: TemplateSummary
 }
 
@@ -96,6 +102,16 @@ export const PLATFORM_DEFAULT_TEMPLATE_NAMES: readonly string[] = [
   'Yahoo Half PPR',
   'Sleeper Full PPR',
 ]
+
+/**
+ * §7.3.3 possessive marker copy for the platform-default rows (R73 — the spec
+ * table prints "(Yahoo's platform default)" / "(Sleeper's platform default)",
+ * not a generic "Platform default"). Keyed by the row's stable `name`.
+ */
+export const PLATFORM_DEFAULT_MARKERS: Readonly<Record<string, string>> = {
+  'Yahoo Half PPR': "Yahoo's platform default",
+  'Sleeper Full PPR': "Sleeper's platform default",
+}
 
 const num = (rules: Record<string, number>, key: string): number | null =>
   typeof rules[key] === 'number' ? rules[key] : null
@@ -147,6 +163,7 @@ export function buildTemplateCards(
           TEMPLATE_ONE_LINERS[row.name] ?? `${formatPoints(summary.ppr)} PPR`,
         description: row.description ?? '',
         isPlatformDefault: PLATFORM_DEFAULT_TEMPLATE_NAMES.includes(row.name),
+        platformDefaultMarker: PLATFORM_DEFAULT_MARKERS[row.name] ?? null,
         summary,
       }
     })

@@ -7,10 +7,9 @@ interface LeagueManagePageProps {
 }
 
 /**
- * Manage league — commissioner scaffold: members, waivers & trades, roster
- * slots, scoring summary (edits route to the scoring builder).
- *
- * TODO(live-draft): mock data + stub actions until the league backend lands.
+ * Manage league — commissioner overview (M1 task L.A2.4): real member roster +
+ * read-only roster/waivers/scoring summaries, with editing routed to the
+ * grouped settings panel (`/app/leagues/[leagueId]/settings`).
  */
 export default async function LeagueManagePage({
   params,

@@ -7,20 +7,22 @@
  * template-picker-ops precedent). The React component holds only step
  * navigation and control wiring; this module owns the settings algebra.
  *
- * The one derived-field rule the wizard MUST enforce (ledger F27, Q10 ruling
- * (a) / spec v2.8.6): `playoff_start_week` is **read-only-derived** =
- * `regular_season_weeks + 1` (strict continuity, §7.3.1/§7.3.8). The stored
- * value is kept for §12.1 compat and must equal the derived value on every
- * emission — the contract's `validateLeagueSettings` seam check is the
- * backstop, but the wizard never offers a free input for the field, so the
- * two can never diverge here. `reconcileDerived` re-applies the derivation
- * after every settings edit.
+ * The derived/dependent-field rules the wizard enforces (F27's read-only
+ * `playoff_start_week`, the §7.3.5 veto re-default, R108's re-clamps) live in
+ * the SHARED `derived-settings` module so the wizard and the L.A2.4 settings
+ * panel can never diverge; they are re-exported here for the wizard's existing
+ * callers (`league-create-wizard.tsx` + this file's test).
  */
 import {
+  derivePlayoffStartWeek,
+  reconcileDerived,
+} from '@/lib/leagues/settings/derived-settings'
+import {
   defaultsForTeamCount,
-  deriveDefaultVetoVotes,
   type LeagueSettings,
 } from '@/lib/leagues/settings/league-settings'
+
+export { derivePlayoffStartWeek, reconcileDerived }
 
 /**
  * The upcoming NFL season the wizard creates leagues for. Single active
@@ -64,44 +66,6 @@ export function initialWizardDraft(): WizardDraft {
     scoringSystemId: null,
     settings: defaultsForTeamCount(DEFAULT_WIZARD_TEAM_COUNT),
   }
-}
-
-/**
- * F27 (Q10/v2.8.6): the derived playoff start — the week after the regular
- * season ends. The wizard renders this read-only next to `regular_season_weeks`
- * and never as a free input.
- */
-export function derivePlayoffStartWeek(regularSeasonWeeks: number): number {
-  return regularSeasonWeeks + 1
-}
-
-/**
- * Re-apply the wizard's derived-field rules after a settings edit, given the
- * PREVIOUS settings (to detect what changed):
- *
- *   1. **F27 — always:** `playoff_start_week = regular_season_weeks + 1`. The
- *      field has no wizard control, so this keeps the stored value consistent
- *      on every emission (the seam check backstops it).
- *   2. **§7.3.5 derived default — on team_count change, when untouched:** if
- *      `trade_veto_votes` was still sitting at the OLD ⌈team_count/2⌉ default,
- *      follow it to the NEW one (the contract's `defaultsForTeamCount`
- *      derivation, R63). A commissioner who customized the veto count keeps
- *      their value — the equality check is what distinguishes the two.
- *
- * Pure: returns a fresh object, never mutates `next`.
- */
-export function reconcileDerived(prev: LeagueSettings, next: LeagueSettings): LeagueSettings {
-  const reconciled: LeagueSettings = {
-    ...next,
-    playoff_start_week: derivePlayoffStartWeek(next.regular_season_weeks),
-  }
-  if (
-    next.team_count !== prev.team_count &&
-    prev.trade_veto_votes === deriveDefaultVetoVotes(prev.team_count)
-  ) {
-    reconciled.trade_veto_votes = deriveDefaultVetoVotes(next.team_count)
-  }
-  return reconciled
 }
 
 /**

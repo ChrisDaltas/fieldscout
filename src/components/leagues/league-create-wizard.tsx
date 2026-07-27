@@ -10,14 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from '@/hooks/use-toast'
 import { useCreateLeague, type CreateLeagueResult } from '@/hooks/use-leagues'
@@ -39,6 +31,15 @@ import {
 } from './league-create-wizard-ops'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringTemplatePicker } from './scoring-template-picker'
+import {
+  ChoiceSelect,
+  clampInt,
+  FieldRow,
+  InlineIssue,
+  numOptions,
+  SectionLabel,
+  ToggleRow,
+} from './settings-form-controls'
 
 /**
  * League create wizard (M1 task L.A2.1; spec §16.2 league-create-wizard,
@@ -372,114 +373,6 @@ function StepStrip({
     </nav>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Shared control primitives (internal — no parallel component tree)
-// ---------------------------------------------------------------------------
-
-function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: string }) {
-  return (
-    <p
-      role={tone === 'error' ? 'alert' : 'status'}
-      className={cn(
-        'rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        tone === 'error' ? 'border-negative bg-negative-soft' : 'border-caution bg-caution-soft',
-      )}
-    >
-      {message}
-    </p>
-  )
-}
-
-function FieldRow({
-  label,
-  htmlFor,
-  hint,
-  children,
-}: {
-  label: string
-  htmlFor?: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2.5">
-      <div className="min-w-0">
-        <Label htmlFor={htmlFor} className="text-[13px] font-bold">
-          {label}
-        </Label>
-        {hint && <p className="text-[11px] font-semibold text-n-3">{hint}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  )
-}
-
-function ToggleRow({
-  id,
-  label,
-  hint,
-  checked,
-  onCheckedChange,
-}: {
-  id: string
-  label: string
-  hint?: string
-  checked: boolean
-  onCheckedChange: (next: boolean) => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <label htmlFor={id} className="text-[13px] font-bold">
-          {label}
-        </label>
-        {hint && <p className="text-[11px] font-semibold text-n-3">{hint}</p>}
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
-    </div>
-  )
-}
-
-/** A compact Select over a list of {value,label} options. Values are strings
- *  on the wire (Radix Select), converted by the caller. */
-function ChoiceSelect({
-  id,
-  ariaLabel,
-  value,
-  options,
-  onValueChange,
-  width = 'w-40',
-}: {
-  id?: string
-  ariaLabel?: string
-  value: string
-  options: ReadonlyArray<{ value: string; label: string }>
-  onValueChange: (value: string) => void
-  width?: string
-}) {
-  return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger id={id} aria-label={ariaLabel} className={cn('h-btn-md text-[12px] font-bold', width)}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="fs-overline border-t border-n-4 pt-2.5 text-[11px] text-n-3">{children}</div>
-}
-
-const numOptions = (values: readonly number[], suffix = '') =>
-  values.map((v) => ({ value: String(v), label: `${v}${suffix}` }))
 
 // ---------------------------------------------------------------------------
 // Step: Format & structure (§7.3.1)
@@ -830,7 +723,9 @@ function WaiversStep({
                 value={s.trade_veto_votes}
                 onChange={(e) =>
                   onSettings({
-                    trade_veto_votes: clampInt(e.target.value, 1, 16, s.trade_veto_votes),
+                    // R109: clamp to team_count (the field's real cap and what
+                    // the validator enforces), not a hard-coded 16.
+                    trade_veto_votes: clampInt(e.target.value, 1, s.team_count, s.trade_veto_votes),
                   })
                 }
                 className="h-btn-md w-24 text-[12px]"
@@ -1160,14 +1055,6 @@ function SuccessPanel({
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-/** Parse a number input, clamp to [min,max], falling back to `fallback` for
- *  empty/NaN so the control never emits an out-of-range or NaN value. */
-function clampInt(raw: string, min: number, max: number, fallback: number): number {
-  const n = Number.parseInt(raw, 10)
-  if (Number.isNaN(n)) return fallback
-  return Math.min(max, Math.max(min, n))
-}
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)

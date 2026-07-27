@@ -35,6 +35,7 @@ import {
   addDlSpot,
   addIrSpot,
   addSingleSlot,
+  dlPresetHint,
   isFlexSlot,
   removeIrSpot,
   removeSlot,
@@ -221,7 +222,7 @@ export function RosterSlotBuilder({
               <Icon name="plus" /> Add DL spot
             </Button>
             <span className="text-[11px] font-semibold text-n-3">
-              DL: whoever goes on it stays 4 weeks — OUT · IR · Doubtful
+              {dlPresetHint()}
             </span>
           </div>
           {errorsFor('roster_settings.ir_slots').map((e) => (

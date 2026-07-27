@@ -212,13 +212,25 @@ export function addSingleSlot(
   count = 1,
 ): RosterSettings {
   const preset = SINGLE_POSITION_PRESETS[position]
-  if (roster.starting_slots.some((s) => s.key === preset.key)) {
+  const existing = roster.starting_slots.find((s) => s.key === preset.key)
+  // R72: bump ONLY a genuine same-position row. A hand-edited JSONB row that
+  // reuses a preset key for a DIFFERENT position (e.g. {key:'qb',
+  // eligible:['RB']}) is a key collision, not this slot — stepping the QB
+  // ghost row must not mutate that RB slot. Match on key AND the
+  // single-position eligible set; on a mismatched collision, mint a fresh key.
+  const isSamePresetSlot =
+    existing !== undefined && existing.eligible.length === 1 && existing.eligible[0] === position
+  if (isSamePresetSlot) {
     return setSlotCount(roster, preset.key, count)
   }
+  const key =
+    existing === undefined
+      ? preset.key
+      : smallestFreeKey(new Set(roster.starting_slots.map((s) => s.key)), preset.key)
   return emit({
     ...roster,
     starting_slots: insertSlot(roster.starting_slots, {
-      key: preset.key,
+      key,
       label: preset.label,
       eligible: [position],
       count: clampInt(count, 0, 10),
@@ -300,6 +312,17 @@ export function addDlSpot(roster: RosterSettings): RosterSettings {
     ...DL_PRESET,
   } as IrSlot
   return emit({ ...roster, ir_slots: [...roster.ir_slots, spot] })
+}
+
+/**
+ * The DL-preset one-liner shown beside the "Add DL spot" button (§16.4 product
+ * promise). R71: interpolated from the contract's `DL_PRESET` so the copy can
+ * never drift from the emitted stint length / designations — the single source
+ * for both the hint and the actual preset.
+ */
+export function dlPresetHint(): string {
+  const weeks = DL_PRESET.type === 'restricted' ? DL_PRESET.min_weeks : 4
+  return `DL: whoever goes on it stays ${weeks} weeks — ${DL_PRESET.eligible_designations.join(' · ')}`
 }
 
 /** Remove an IR spot. */

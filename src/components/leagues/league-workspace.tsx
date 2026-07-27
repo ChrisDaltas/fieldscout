@@ -31,8 +31,8 @@ import {
  * League workspace — the league-scoped surface (package screens 10/11):
  * identity row (square crest, team + league names, meta, record/rank/playoff
  * chips), boxed sub-nav, then the active tab. League settings lives in the
- * sub-nav as a link to the scoring builder (`/app/settings/scoring`) until
- * league-scoped settings exist.
+ * sub-nav as a link to the league settings panel
+ * (`/app/leagues/[leagueId]/settings`, L.A2.4).
  *
  * TODO(live-draft): the league backend does not exist — `leagueId` resolves
  * against mock leagues (unknown ids fall back to the demo league). Swap
@@ -181,7 +181,7 @@ export function LeagueWorkspace({ leagueId, initialTab }: LeagueWorkspaceProps) 
               )
             })}
             <Link
-              href="/app/settings/scoring"
+              href={`/app/leagues/${leagueId}/settings`}
               className="shrink-0 whitespace-nowrap px-3 py-2.5 text-[12px] font-extrabold text-n-3 transition-colors hover:text-ink"
             >
               League settings
