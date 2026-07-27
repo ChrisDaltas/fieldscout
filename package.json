@@ -28,6 +28,7 @@
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "test": "vitest run",
     "test:gate": "vitest run src/lib/leagues/gate",
+    "test:gate:m1": "bash scripts/gate-m1.sh",
     "test:db": "supabase test db"
   },
   "dependencies": {
