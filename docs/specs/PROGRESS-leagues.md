@@ -928,6 +928,18 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-26 (M1 batch 19)
+
+**Reviewer batch (adversarial review of PR #64 — L.A2.5 invite panel + seat list, `main...feat/M1-L.A2.5-invite-panel`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** The crux was the privacy invariant (invited_email must never render for a claimed seat), verified THREE ways: the pure ops pin + reproduced break probe (leak injected → the still-pending-invite-on-claimed-seat pin fails, positive control proves it non-vacuous); a **live RLS probe** (a non-commish manager and a non-member each read `league_invites` for the league → **0 rows**; commissioner → 1 row with the email — the 055 §12.23 commish-only policy holds); and a static render-path sweep (email renders only on the commish-only invited-seat subline; copy-links embed the token not the email; no title/data-/aria leaks). The new read uses the browser (anon-keyed) client, never service-role. F34 narrowed to L.A2.7 honestly (stays Open); F29/F30/R83 confirmed untouched. 3 nits:
+
+### Nit
+
+- **R111 · nit · invite-panel.tsx:655 — FLAGGED FOR A PRODUCT NOD** — the D42 remove chooser pre-selects `vacate` while spec §7.2.1(a) names **takeover** "franchise continuity (default)". The builder's reasoning is defensible for the pre-draft context (vacate is non-destructive to a named person; takeover requires a successor handle) and the **L.A2.5 task text pins only "takeover/vacate; retire disabled", not the default** — so this is not a spec violation of the task's own scope. *Resolution: recorded; **if Chris wants takeover pre-selected per the spec's "(default)" designation, it's a one-line change** — surfaced as a product-nod candidate, no blocker.*
+- **R112 · nit · invite-panel.tsx:450** — open "ghost" seats carry no per-seat invite affordance (the commissioner must "Add an open seat" to materialize a placeholder first, since the seat-targeted RPC needs a real `target_team_id`). Acceptable literal reading; §16.5.1's per-empty-seat affordance is L.A2.7's home checklist. *Resolution: routed to **L.A2.7** (add one-tap ghost invites there if the home UX wants them); the always-visible share link + "Add an open seat" cover the flow at M1.*
+- **R113 · nit · invite-panel-ops.test.ts:206** — privacy pin #4a's fixture is a *spent* leftover invite (filtered by isPendingInvite before the precedence check), so #4a alone can't catch an email-leak-onto-claimed regression — #4b (the still-pending fixture) is the load-bearing pin and does. Coverage is adequate; only #4a's comment overstates what its fixture exercises. *Resolution: recorded; optional comment tightening at the file's next touch.*
+
+---
+
 ## Review findings — 2026-07-26 (M1 batch 18)
 
 **Reviewer batch (3-lens fan-out review of PR #63 — L.A2.4 settings panel + manage-view + the shared-derivation extraction + 5 nit fixes, `main...feat/M1-L.A2.4-settings-panel`; 3 refuters per candidate). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Deeper than a single reviewer because the diff refactored 5 already-merged components + extracted modules the wizard depends on. Verified: the F27 derivation moved cleanly (both surfaces compute via the same shared code path, wizard behavior preserved); all five nit fixes present (R71/R72/R73/R108/R109); F26 dev routes gone; the per-group PATCH round-trip, commish-only editing, and the past-`scheduled` 409 lock all hold; the C-note mislink repointed. 0 candidates refuted; one nit survived.
