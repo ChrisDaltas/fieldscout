@@ -8,53 +8,53 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/hooks/use-auth'
+import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { toast } from '@/hooks/use-toast'
+import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
 import { TeamCell } from './league-cells'
-import {
-  MOCK_ROSTER_SLOTS,
-  MOCK_SCORING_GROUPS,
-  MOCK_WAIVER_SETTINGS,
-  getMockLeague,
-  getMockLeagueTeams,
-} from './league-mock-data'
 
 /**
- * Manage league — commissioner scaffold (TeamView League Settings content):
- * members, waivers & trades, roster slots, and the scoring summary. Editing
- * scoring routes to the scoring builder; league-scoped scoring comes later.
+ * Manage league — commissioner overview (M1 task L.A2.4). Real league data via
+ * `useLeague`: the member roster, and read-only summaries of the roster,
+ * waivers/trades, and scoring settings. Every "Edit" affordance links to the
+ * full grouped settings panel (`/app/leagues/[leagueId]/settings`, L.A2.4) —
+ * the summaries themselves stay read-only here.
  *
- * TODO(live-draft): no league backend exists — every value is mock and every
- * action is a stub. Wire to real league settings when leagues land.
+ * Boundary: member management (invite link, per-seat invite/remove) lands with
+ * the invite panel + seat list (L.A2.5), which replaces the stubs below.
  */
 
-// TODO(live-draft): stubs — commissioner actions need the league backend.
+// TODO(L.A2.5): stubs — the invite panel + seat list replace these.
 function inviteStub() {
   toast({
     title: 'Invites are coming',
-    description: 'Invite links go out to your league mates with league sync.',
-  })
-}
-
-function editStub(section: string) {
-  toast({
-    title: `${section} locks for now`,
-    description: 'Commissioner editing ships with league sync.',
+    description: 'The invite panel and seat list ship next (L.A2.5).',
   })
 }
 
 function removeStub(team: string) {
   toast({
     title: `${team} stays in the league`,
-    description: 'Managing members ships with league sync.',
+    description: 'Managing members ships with the seat list (L.A2.5).',
   })
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  commissioner: 'Commissioner',
+  co_commissioner: 'Co-commissioner',
+  manager: 'Manager',
 }
 
 export function LeagueManageView({ leagueId }: { leagueId: string }) {
   const router = useRouter()
-  const league = getMockLeague(leagueId)
-  const teams = getMockLeagueTeams(league.id)
+  const { data, isPending, isError, refetch } = useLeague(leagueId)
+
+  const settingsHref = `/app/leagues/${leagueId}/settings`
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,49 +68,92 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
         }
       />
 
-      <div>
+      <div className="flex items-center gap-2.5">
         <Button variant="stroke" size="sm" onClick={() => router.back()}>
           <Icon name="arrow-prev" size={13} />
           Back
         </Button>
+        <Button variant="stroke" size="sm" asChild>
+          <Link href={settingsHref}>
+            <Icon name="setup" size={13} />
+            League settings
+          </Link>
+        </Button>
       </div>
 
+      {isPending ? (
+        <div className="grid grid-cols-1 gap-[19px] lg:grid-cols-[1.4fr_1fr]">
+          <Skeleton className="h-64 rounded-sm" />
+          <Skeleton className="h-64 rounded-sm" />
+        </div>
+      ) : isError || !data ? (
+        <Card className="border-negative bg-negative-soft">
+          <CardContent className="flex flex-col items-start gap-2 p-4">
+            <p className="text-[13px] font-bold" role="alert">
+              Couldn&apos;t load this league.
+            </p>
+            <Button variant="stroke" size="sm" onClick={() => refetch()}>
+              <Icon name="reset" size={13} /> Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <ManageContent data={data} settingsHref={settingsHref} />
+      )}
+    </div>
+  )
+}
+
+function ManageContent({ data, settingsHref }: { data: LeagueDetail; settingsHref: string }) {
+  const { user } = useAuth()
+  const { data: templates } = useScoringTemplates()
+  const { settings, members, teams, league } = data
+
+  const teamsById = new Map(teams.map((t) => [t.id, t]))
+  const templateName =
+    templates?.find((t) => t.id === league.scoring_system_id)?.name ?? null
+
+  return (
+    <>
       <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.4fr_1fr]">
         {/* Members */}
         <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Members</CardTitle>
             <Badge variant="stroke">
-              <span className="fs-num">{teams.length}</span> teams
+              <span className="fs-num">{members.length}</span> / {settings.team_count} seats
             </Badge>
           </CardHeader>
           <div>
-            {teams.map((team, i) => (
-              <div
-                key={team.team}
-                className={cn(
-                  'flex items-center gap-2.5 px-card-pad py-2',
-                  i < teams.length - 1 && 'border-b border-n-4',
-                  team.manager === 'You' && 'bg-accent-soft',
-                )}
-              >
-                <TeamCell team={team.team} sub={team.manager} className="mr-auto" />
-                <span className="fs-num shrink-0 text-[11px] font-extrabold">
-                  {team.w}–{team.l}
-                </span>
-                {team.manager === 'You' ? (
-                  <Badge variant="stroke">Commissioner</Badge>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeStub(team.team)}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            ))}
+            {members.map((m, i) => {
+              const teamName = m.team_id ? (teamsById.get(m.team_id)?.name ?? '—') : 'No team'
+              const profile = m.profiles
+              const manager = profile
+                ? `${profile.display_name ?? profile.username} · @${profile.username}`
+                : m.is_placeholder
+                  ? 'Open seat'
+                  : 'Unclaimed'
+              const isMe = m.user_id != null && m.user_id === user?.id
+              const isCommish = m.role === 'commissioner'
+              return (
+                <div
+                  key={m.id}
+                  className={cn(
+                    'flex items-center gap-2.5 px-card-pad py-2',
+                    i < members.length - 1 && 'border-b border-n-4',
+                    isMe && 'bg-accent-soft',
+                  )}
+                >
+                  <TeamCell team={teamName} sub={manager} className="mr-auto" />
+                  <Badge variant="stroke">{ROLE_LABELS[m.role] ?? m.role}</Badge>
+                  {!isCommish && !isMe && (
+                    <Button variant="ghost" size="sm" onClick={() => removeStub(teamName)}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </Card>
 
@@ -119,26 +162,16 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
           <Card>
             <CardHeader>
               <CardTitle>Waivers &amp; trades</CardTitle>
-              <Button
-                variant="stroke"
-                size="sm"
-                onClick={() => editStub('Waivers & trades')}
-              >
-                <Icon name="edit" size={13} />
-                Edit
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={settingsHref}>
+                  <Icon name="edit" size={13} />
+                  Edit
+                </Link>
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-2.5">
-              {MOCK_WAIVER_SETTINGS.map((setting) => (
-                <div
-                  key={setting.label}
-                  className="flex items-baseline justify-between gap-2.5 text-[12px] font-bold"
-                >
-                  <span className="whitespace-nowrap text-n-3">
-                    {setting.label}
-                  </span>
-                  <span className="text-right">{setting.value}</span>
-                </div>
+              {waiverSummary(settings).map((row) => (
+                <SummaryLine key={row.label} label={row.label} value={row.value} />
               ))}
             </CardContent>
           </Card>
@@ -147,24 +180,16 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
           <Card>
             <CardHeader>
               <CardTitle>Roster slots</CardTitle>
-              <Button
-                variant="stroke"
-                size="sm"
-                onClick={() => editStub('Roster slots')}
-              >
-                <Icon name="edit" size={13} />
-                Edit
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={settingsHref}>
+                  <Icon name="edit" size={13} />
+                  Edit
+                </Link>
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {MOCK_ROSTER_SLOTS.map((slot) => (
-                <div
-                  key={slot.abbr}
-                  className="flex items-center gap-2.5 text-[12px] font-bold"
-                >
-                  <span className="w-10 shrink-0 text-[10px] font-extrabold text-n-3">
-                    {slot.abbr}
-                  </span>
+              {rosterSummary(settings).map((slot) => (
+                <div key={slot.label} className="flex items-center gap-2.5 text-[12px] font-bold">
                   <span className="mr-auto">{slot.label}</span>
                   <span className="fs-num font-extrabold">{slot.count}</span>
                 </div>
@@ -174,49 +199,79 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
         </div>
       </div>
 
-      {/* Scoring summary — edits happen in the scoring builder. */}
+      {/* Scoring — edits happen in the settings panel. */}
       <Card>
         <CardHeader>
           <CardTitle>Scoring</CardTitle>
           <div className="flex items-center gap-2.5">
-            <Badge variant="stroke">{league.format.split(' · ')[0]}</Badge>
+            {templateName && <Badge variant="stroke">{templateName}</Badge>}
             <Button variant="stroke" size="sm" asChild>
-              <Link href="/app/settings/scoring">
+              <Link href={settingsHref}>
                 <Icon name="edit" size={13} />
                 Edit scoring
               </Link>
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-x-7 gap-y-4 sm:grid-cols-2">
-          {MOCK_SCORING_GROUPS.map((group) => (
-            <div key={group.group}>
-              <div className="fs-overline mb-2 text-[9px] text-n-3">
-                {group.group}
-              </div>
-              {group.items.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-baseline justify-between gap-2.5 border-b border-n-4 py-1.5 text-[12px] font-bold"
-                >
-                  <span>{item.label}</span>
-                  <span
-                    className={cn(
-                      'fs-num font-extrabold',
-                      item.value < 0 && 'text-negative-strong',
-                    )}
-                  >
-                    {item.value > 0 ? `+${item.value}` : item.value}{' '}
-                    <span className="text-[10px] font-semibold text-n-3">
-                      {item.abbr}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+        <CardContent>
+          <p className="text-[12px] font-semibold text-n-3">
+            {templateName
+              ? `Scoring follows the ${templateName} template. Change it in League settings.`
+              : 'Pick a scoring template in League settings.'}
+          </p>
         </CardContent>
       </Card>
+    </>
+  )
+}
+
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2.5 text-[12px] font-bold">
+      <span className="whitespace-nowrap text-n-3">{label}</span>
+      <span className="text-right">{value}</span>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Summary derivations (read-only; the panel owns editing)
+// ---------------------------------------------------------------------------
+
+const WAIVER_TYPE_LABELS: Record<string, string> = {
+  faab: 'FAAB (blind bid)',
+  rolling_priority: 'Rolling priority',
+  reverse_standings: 'Reverse standings',
+  none_fcfs: 'None (first come)',
+}
+
+const TRADE_REVIEW_LABELS: Record<string, string> = {
+  none: 'Instant',
+  commissioner: 'Commissioner',
+  league_vote: 'League vote',
+}
+
+function waiverSummary(s: LeagueSettings): Array<{ label: string; value: string }> {
+  return [
+    { label: 'Waivers', value: WAIVER_TYPE_LABELS[s.waiver_type] ?? s.waiver_type },
+    ...(s.waiver_type === 'faab' ? [{ label: 'FAAB budget', value: `$${s.faab_budget}` }] : []),
+    { label: 'Trade review', value: TRADE_REVIEW_LABELS[s.trade_review] ?? s.trade_review },
+    {
+      label: 'Trade deadline',
+      value: s.trade_deadline_week === null ? 'None' : `Week ${s.trade_deadline_week}`,
+    },
+  ]
+}
+
+function rosterSummary(s: LeagueSettings): Array<{ label: string; count: number }> {
+  const roster = s.roster_settings
+  const starters = roster.starting_slots
+    .filter((slot) => slot.count > 0)
+    .map((slot) => ({ label: slot.label, count: slot.count }))
+  return [
+    ...starters,
+    { label: 'Bench', count: roster.bench },
+    { label: 'IR', count: roster.ir_slots.length },
+    ...(roster.swap_spots === 1 ? [{ label: 'Hot Swap', count: 1 }] : []),
+  ]
 }

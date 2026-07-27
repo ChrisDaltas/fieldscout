@@ -198,12 +198,12 @@ function TemplateCardButton({
               <Icon name="check" /> Selected
             </Badge>
           ) : (
-            card.isPlatformDefault && <Badge variant="lime">Platform default</Badge>
+            card.platformDefaultMarker && <Badge variant="lime">{card.platformDefaultMarker}</Badge>
           )}
         </div>
-        {selected && card.isPlatformDefault && (
+        {selected && card.platformDefaultMarker && (
           <Badge variant="lime" className="self-start">
-            Platform default
+            {card.platformDefaultMarker}
           </Badge>
         )}
         <div className="flex flex-wrap gap-1.5">
@@ -278,9 +278,9 @@ function CompareTable({
                   )}
                 >
                   {card.name}
-                  {card.isPlatformDefault && (
+                  {card.platformDefaultMarker && (
                     <span className="block text-[10px] font-semibold text-n-3">
-                      Platform default
+                      {card.platformDefaultMarker}
                     </span>
                   )}
                 </th>

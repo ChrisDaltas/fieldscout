@@ -179,6 +179,21 @@ describe('buildTemplateCards — exactly 6, §7.3.3 order, no invented slots', (
     ])
   })
 
+  it('R73: the marker copy is the §7.3.3 POSSESSIVE, not a generic "Platform default"', () => {
+    const markers = Object.fromEntries(cards.map((c) => [c.name, c.platformDefaultMarker]))
+    // The two default rows carry the platform's possessive; nobody else does.
+    expect(markers['Yahoo Half PPR']).toBe("Yahoo's platform default")
+    expect(markers['Sleeper Full PPR']).toBe("Sleeper's platform default")
+    expect(markers['ESPN Standard']).toBeNull()
+    expect(markers['Yahoo Standard']).toBeNull()
+    // A card that is a platform default ALWAYS carries the possessive marker
+    // (the two flags never disagree) — and the generic string is gone.
+    for (const card of cards) {
+      expect(card.isPlatformDefault).toBe(card.platformDefaultMarker !== null)
+      expect(card.platformDefaultMarker).not.toBe('Platform default')
+    }
+  })
+
   it('passes each description through byte-identical — never truncated', () => {
     for (const card of cards) {
       const row = FIXTURE_ROWS.find((r) => r.name === card.name)!

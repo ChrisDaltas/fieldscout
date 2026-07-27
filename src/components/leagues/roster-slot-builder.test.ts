@@ -35,6 +35,7 @@ import {
   addIrSpot,
   addSingleSlot,
   canonicalizeEligible,
+  dlPresetHint,
   generateFlexKey,
   removeSlot,
   setBench,
@@ -189,6 +190,15 @@ describe('DL preset emission (§7.3.2 / §16.4 one-tap)', () => {
     expect(() => addDlSpot(roster)).toThrow(/at most 6 IR spots/)
   })
 
+  it('R71: the DL hint interpolates from DL_PRESET (never a hardcoded string)', () => {
+    // Derived from the contract preset — 4-week stint, OUT · IR · Doubtful.
+    expect(dlPresetHint()).toBe('DL: whoever goes on it stays 4 weeks — OUT · IR · Doubtful')
+    // And it genuinely reflects DL_PRESET, so the copy can't drift from the emission.
+    const weeks = DL_PRESET.type === 'restricted' ? DL_PRESET.min_weeks : 4
+    expect(dlPresetHint()).toContain(`${weeks} weeks`)
+    expect(dlPresetHint()).toContain(DL_PRESET.eligible_designations.join(' · '))
+  })
+
   it('type conversions keep the strict shape: restricted→unrestricted drops min_weeks', () => {
     let roster = addDlSpot(structuredClone(DEFAULT_ROSTER_SETTINGS))
     roster = updateIrSpot(roster, 'dl1', { type: 'unrestricted' })
@@ -258,5 +268,35 @@ describe('stepper ops stay inside the §7.3.2 ranges and canonical order', () =>
       eligible: ['LB'],
       count: 1,
     })
+  })
+
+  it('R72: a preset-key collision with a DIFFERENT eligible set mints a fresh key (never mutates it)', () => {
+    // A hand-edited JSONB row reusing the `qb` key for an RB slot. Stepping the
+    // QB ghost row must ADD a real QB slot, not bump the mislabeled RB row.
+    const roster: RosterSettings = {
+      ...structuredClone(DEFAULT_ROSTER_SETTINGS),
+      starting_slots: [
+        { key: 'qb', label: 'Sneaky RB', eligible: ['RB'], count: 2 },
+      ],
+    }
+    const next = addSingleSlot(roster, 'QB')
+    // The RB row is untouched (still eligible RB, count 2) …
+    const rbRow = next.starting_slots.find((s) => s.key === 'qb')
+    expect(rbRow).toStrictEqual({ key: 'qb', label: 'Sneaky RB', eligible: ['RB'], count: 2 })
+    // … and a genuine QB slot was added under a fresh, non-colliding key.
+    const qbRow = next.starting_slots.find((s) => s.eligible.length === 1 && s.eligible[0] === 'QB')
+    expect(qbRow).toBeDefined()
+    expect(qbRow!.key).not.toBe('qb')
+    expect(qbRow!.count).toBe(1)
+    // Keys stay unique (canonical shape holds).
+    const keys = next.starting_slots.map((s) => s.key)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('R72: a same-position preset row is still bumped by key (unchanged happy path)', () => {
+    const roster = structuredClone(DEFAULT_ROSTER_SETTINGS) // has qb=1 (eligible QB)
+    const next = addSingleSlot(roster, 'QB', 3)
+    expect(next.starting_slots.filter((s) => s.eligible[0] === 'QB' && s.eligible.length === 1)).toHaveLength(1)
+    expect(next.starting_slots.find((s) => s.key === 'qb')?.count).toBe(3)
   })
 })
