@@ -925,6 +925,16 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-26 (M1 batch 18)
+
+**Reviewer batch (3-lens fan-out review of PR #63 — L.A2.4 settings panel + manage-view + the shared-derivation extraction + 5 nit fixes, `main...feat/M1-L.A2.4-settings-panel`; 3 refuters per candidate). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** Deeper than a single reviewer because the diff refactored 5 already-merged components + extracted modules the wizard depends on. Verified: the F27 derivation moved cleanly (both surfaces compute via the same shared code path, wizard behavior preserved); all five nit fixes present (R71/R72/R73/R108/R109); F26 dev routes gone; the per-group PATCH round-trip, commish-only editing, and the past-`scheduled` 409 lock all hold; the C-note mislink repointed. 0 candidates refuted; one nit survived.
+
+### Nit
+
+- **R110 · nit · league-create-wizard.tsx:400** — the wizard rendered playoff-teams options from an inline `[0,2,4,6,8,10,12]` literal instead of the shared `PLAYOFF_TEAMS_OPTIONS` constant the extraction designates as the single source both surfaces filter against (and the R108 clamp snaps to). Arrays identical today (no behavior bug), but it's the exact two-surface drift the extraction exists to prevent — the wizard's list and the R108 clamp would diverge if the constant ever changed. *Resolution: taken in this PR (in-passing) — `PLAYOFF_TEAMS_OPTIONS` added to the `league-create-wizard-ops` re-export, imported in the wizard, and the inline literal replaced; behavior-preserving (grep confirms no inline literal remains), type-check + 627/627 green.*
+
+---
+
 ## Review findings — 2026-07-26 (M1 batch 17)
 
 **Reviewer batch (adversarial review of PR #61 — L.A2.1 create wizard, `main...feat/M1-L.A2.1-create-wizard`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** UI task (no new SQL/auth surface), reviewed proportionately by a single focused reviewer with a full live drive: F27 read-only-derived + live-recompute verified in the DOM AND at the DB (a real league created as a free `is_pro=false` user, row `regular_season_weeks=12, playoff_start_week=13`, then cleaned up); break probe reproduced (derive +1→+2 fails exactly the 4 F27 pins); compose-not-fork confirmed (embeds the real RosterSlotBuilder + ScoringTemplatePicker, scaffold deleted, no mock-data import survives); free-create confirmed (no Pro gate, POST 201 → navigate to the real league id); attestation audit of D77/F27-flip/session-log all truthful.

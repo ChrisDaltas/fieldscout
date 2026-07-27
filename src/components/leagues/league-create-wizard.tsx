@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 
 import {
   initialWizardDraft,
+  PLAYOFF_TEAMS_OPTIONS,
   reconcileDerived,
   SEASON_RANGE,
   toCreateInput,
@@ -397,7 +398,7 @@ function FormatStep({
   const errorsFor = (field: string) => errors.filter((e) => e.field === field)
   // §7.3.1 R: playoff_teams ≤ team_count — offer only reachable options so the
   // most common misconfiguration can't be entered at all.
-  const playoffTeamOptions = [0, 2, 4, 6, 8, 10, 12].filter((n) => n <= s.team_count)
+  const playoffTeamOptions = PLAYOFF_TEAMS_OPTIONS.filter((n) => n <= s.team_count)
 
   return (
     <Card>

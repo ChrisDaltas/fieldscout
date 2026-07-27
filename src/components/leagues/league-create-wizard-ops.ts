@@ -15,6 +15,7 @@
  */
 import {
   derivePlayoffStartWeek,
+  PLAYOFF_TEAMS_OPTIONS,
   reconcileDerived,
 } from '@/lib/leagues/settings/derived-settings'
 import {
@@ -22,7 +23,7 @@ import {
   type LeagueSettings,
 } from '@/lib/leagues/settings/league-settings'
 
-export { derivePlayoffStartWeek, reconcileDerived }
+export { derivePlayoffStartWeek, PLAYOFF_TEAMS_OPTIONS, reconcileDerived }
 
 /**
  * The upcoming NFL season the wizard creates leagues for. Single active
