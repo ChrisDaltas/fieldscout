@@ -20,16 +20,42 @@
 -- NUMBERING (D50(1) precedent): next free migration at task time is **062**
 -- (061 = update_league_settings, landed); next free pgTAP file is **016**.
 --
+-- AMENDED IN PLACE 2026-07-26 by L.A1.15 (D74(1)(2)) — legal because this
+-- migration is unreleased: prod's history still ends at 036 (F12), and 061
+-- carries the same precedent (its F28 floor was amended in by L.A1.14).
+-- The amendment is confined to `seat_league_member_internal` (new p_team_id
+-- parameter + the placeholder FILL) and `claim_league_invite`'s seat-targeted
+-- branch (now calls the helper instead of open-coding a blind INSERT). No
+-- other behavior changes; pgTAP 016's helper-signature/ACL pins moved with
+-- the signature. See item 1 below for the defect this fixes.
+--
 -- Contents (all SECURITY DEFINER, SET search_path = '', in-body auth,
 -- REVOKE FROM PUBLIC, anon — §4.1 — EXCEPT get_join_preview's deliberate,
 -- documented anon carve-out, §4.1's named exception):
 --
---   1. `seat_league_member_internal(league, user, faab_budget)` — the ONE
---      seating implementation shared by join_league_by_code and the general
---      claim path (two copies would drift): teams row (auto-named
---      "<display name>'s Team", list_id NULL — D35a) + league_members row
---      (role 'manager', faab_balance := faab_budget — §12.2) + OPEN stint,
---      one txn (§12.2 v2.1 note). Stint started_at = clock_timestamp(), not
+--   1. `seat_league_member_internal(league, user, faab_budget, team_id)` — the
+--      ONE seating implementation shared by join_league_by_code, the general
+--      claim path, the seat-targeted claim path and (from 063) assign_manager
+--      (copies would drift — CLAUDE.md's no-near-duplicate rule; D74(2)):
+--      teams row (auto-named "<display name>'s Team", list_id NULL — D35a)
+--      + league_members row (role 'manager', faab_balance := faab_budget —
+--      §12.2) + OPEN stint, one txn (§12.2 v2.1 note).
+--      **p_team_id (added 2026-07-26, L.A1.15 — amend-in-place, F12: prod
+--      history still ends at 036):** NULL = create a new franchise (join /
+--      general claim, unchanged). NON-NULL = seat onto an EXISTING franchise,
+--      which is the placeholder-fill path. There the stint INSERT runs FIRST
+--      (an occupied seat trips one_open_stint_per_team — E54's named
+--      mechanism, preserved), then the league_members write is a **fill**:
+--      UPDATE the placeholder row (user_id IS NULL) in place and only INSERT
+--      when no row exists for that seat. The blind INSERT this replaces made
+--      a §7.2:170-shaped placeholder seat UNCLAIMABLE — live-proven before
+--      the fix: UNIQUE(league_id, team_id) raised 23505, the claim's
+--      unique_violation arm swallowed it as `seat_filled`, EXPIRED the good
+--      invite and notified the commissioner (D74(1)). Finally owner_id
+--      follows the new manager and an 'orphaned' franchise (a vacated seat,
+--      063) returns to 'active' — §7.2.1(c) "orphaned is a holding state that
+--      resolves into (a) or (b)"; a claim IS resolution (a).
+--      Stint started_at = clock_timestamp(), not
 --      now(): now() is txn-frozen, so a remove→re-claim inside one txn would
 --      reuse the prior stint's started_at and hit UNIQUE(team_id, user_id,
 --      started_at) — the exact F3 failure; clock_timestamp() advances within
@@ -133,10 +159,10 @@
 --      → friendly "league is full" with NO writes (D47 — no unseated member
 --      rows in M1). The league row is FOR UPDATE-locked before the count, so
 --      concurrent joins serialize and teams count can never exceed
---      team_count. Success: seat via the internal helper (general) or
---      stint+member+teams.owner_id (seat-targeted; owner_id follows the
---      current manager — informational on league teams since D35b scopes
---      the owner-manage policy to league_id IS NULL), then use_count + 1,
+--      team_count. Success: seat via the internal helper on BOTH paths
+--      (p_team_id NULL = general/new franchise; p_team_id set = the
+--      seat-targeted FILL — amended 2026-07-26 by L.A1.15, D74(1)(2)), then
+--      use_count + 1,
 --      claimed_by/claimed_at = the most recent claim (§12.23 prints single
 --      columns; use_count is the aggregate record — D72).
 --
@@ -148,7 +174,7 @@
 --      check, and internal-helper seating as the general claim path.
 --
 -- SQLSTATE convention for the three COMMISH RPCs (R87, batch 14 — aligned
--- with the three-deep 059/061 precedent, 059:165, 059:246, 061:159 and 061's
+-- with the three-deep 059/061 precedent, 059:165, 059:246, 061:166 and 061's
 -- banner "→ P0002 not found"): a soft-deleted (or otherwise invisible)
 -- league raises **P0002**, which the service maps to 404 — NOT P0001/400.
 -- Before this alignment a MALFORMED league id 404'd at the route while a
@@ -183,7 +209,8 @@
 CREATE OR REPLACE FUNCTION seat_league_member_internal(
   p_league_id UUID,
   p_user_id UUID,
-  p_faab_budget INTEGER
+  p_faab_budget INTEGER,
+  p_team_id UUID DEFAULT NULL
 ) RETURNS UUID
 LANGUAGE plpgsql
 SET search_path = ''
@@ -191,34 +218,78 @@ AS $$
 DECLARE
   v_team_id UUID;
   v_team_name TEXT;
+  v_filled INTEGER;
 BEGIN
-  -- "<display name>'s Team" (create_league's naming; profile always exists
-  -- via handle_new_user).
-  SELECT COALESCE(NULLIF(p.display_name, ''), p.username, 'My') || '''s Team'
-    INTO v_team_name
-  FROM public.profiles p
-  WHERE p.id = p_user_id;
-  v_team_name := COALESCE(v_team_name, 'My Team');
+  IF p_team_id IS NULL THEN
+    -- ---------------------------------------------------------------------
+    -- (a) NEW franchise: join_league_by_code / general claim (unchanged).
+    -- ---------------------------------------------------------------------
+    -- "<display name>'s Team" (create_league's naming; profile always exists
+    -- via handle_new_user).
+    SELECT COALESCE(NULLIF(p.display_name, ''), p.username, 'My') || '''s Team'
+      INTO v_team_name
+    FROM public.profiles p
+    WHERE p.id = p_user_id;
+    v_team_name := COALESCE(v_team_name, 'My Team');
 
-  -- Franchise (§7.2 "On join, a teams row is created"; list_id NULL — D35a).
-  INSERT INTO public.teams (owner_id, name, league_id, list_id)
-  VALUES (p_user_id, v_team_name, p_league_id, NULL)
-  RETURNING id INTO v_team_id;
+    -- Franchise (§7.2 "On join, a teams row is created"; list_id NULL — D35a).
+    INSERT INTO public.teams (owner_id, name, league_id, list_id)
+    VALUES (p_user_id, v_team_name, p_league_id, NULL)
+    RETURNING id INTO v_team_id;
 
-  -- Current-state cache (§12.2; faab_balance seeded from faab_budget).
-  INSERT INTO public.league_members (league_id, user_id, team_id, role, faab_balance)
-  VALUES (p_league_id, p_user_id, v_team_id, 'manager', p_faab_budget);
+    -- Current-state cache (§12.2; faab_balance seeded from faab_budget).
+    INSERT INTO public.league_members (league_id, user_id, team_id, role, faab_balance)
+    VALUES (p_league_id, p_user_id, v_team_id, 'manager', p_faab_budget);
 
-  -- Open stint (§12.22 — same txn as the cache write; clock_timestamp so a
-  -- same-txn re-seat never reuses a prior stint's started_at, F3).
+    -- Open stint (§12.22 — same txn as the cache write; clock_timestamp so a
+    -- same-txn re-seat never reuses a prior stint's started_at, F3).
+    INSERT INTO public.team_managers (league_id, team_id, user_id, role, started_at)
+    VALUES (p_league_id, v_team_id, p_user_id, 'manager', clock_timestamp());
+
+    RETURN v_team_id;
+  END IF;
+
+  -- -----------------------------------------------------------------------
+  -- (b) EXISTING franchise: seat-targeted claim / assign_manager (L.A1.15).
+  --     The caller has already locked the league and the teams row.
+  -- -----------------------------------------------------------------------
+  v_team_id := p_team_id;
+
+  -- Stint FIRST so an occupied seat hits one_open_stint_per_team (E54's
+  -- named mechanism — the caller's unique_violation handler owns the copy).
   INSERT INTO public.team_managers (league_id, team_id, user_id, role, started_at)
   VALUES (p_league_id, v_team_id, p_user_id, 'manager', clock_timestamp());
+
+  -- FILL the placeholder cache row if one exists (§7.2:170 seats carry
+  -- team_id, so a blind INSERT would trip UNIQUE(league_id, team_id) —
+  -- D74(1)); otherwise create the cache row. faab_balance is re-seeded from
+  -- the CURRENT budget either way (§12.2/v2.8.7 — never trust a stored
+  -- placeholder balance).
+  UPDATE public.league_members
+  SET user_id = p_user_id,
+      is_placeholder = FALSE,
+      faab_balance = p_faab_budget
+  WHERE league_id = p_league_id AND team_id = v_team_id AND user_id IS NULL;
+  GET DIAGNOSTICS v_filled = ROW_COUNT;
+  IF v_filled = 0 THEN
+    INSERT INTO public.league_members (league_id, user_id, team_id, role, faab_balance)
+    VALUES (p_league_id, p_user_id, v_team_id, 'manager', p_faab_budget);
+  END IF;
+
+  -- owner_id follows the current manager (informational on league teams —
+  -- D35b removed all client write paths for league_id IS NOT NULL); an
+  -- orphaned franchise is resolved by being re-managed (§7.2.1(c)).
+  UPDATE public.teams
+  SET owner_id = p_user_id,
+      status = CASE WHEN status = 'orphaned' THEN 'active' ELSE status END,
+      updated_at = now()
+  WHERE id = v_team_id;
 
   RETURN v_team_id;
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION seat_league_member_internal(UUID, UUID, INTEGER)
+REVOKE EXECUTE ON FUNCTION seat_league_member_internal(UUID, UUID, INTEGER, UUID)
   FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
@@ -797,18 +868,12 @@ BEGIN
     END IF;
 
     BEGIN
-      -- Stint FIRST so an occupied seat hits the one-open-stint unique
-      -- index (E54's named mechanism). clock_timestamp: F3 — a re-claim
-      -- never reuses a prior stint's started_at.
-      INSERT INTO public.team_managers (league_id, team_id, user_id, role, started_at)
-      VALUES (v_inv.league_id, v_inv.target_team_id, v_uid, 'manager', clock_timestamp());
-      INSERT INTO public.league_members (league_id, user_id, team_id, role, faab_balance)
-      VALUES (v_inv.league_id, v_uid, v_inv.target_team_id, 'manager', v_inv.faab_budget);
-      -- owner_id follows the current manager (informational on league teams
-      -- — D35b removed all client write paths for league_id IS NOT NULL).
-      UPDATE public.teams
-      SET owner_id = v_uid, updated_at = now()
-      WHERE id = v_inv.target_team_id;
+      -- One seating implementation (D74(2)): stint FIRST (E54's named
+      -- mechanism), then FILL the placeholder cache row or create one, then
+      -- owner_id/orphan resolution. clock_timestamp: F3 — a re-claim never
+      -- reuses a prior stint's started_at.
+      PERFORM public.seat_league_member_internal(
+        v_inv.league_id, v_uid, v_inv.faab_budget, v_inv.target_team_id);
     EXCEPTION WHEN unique_violation THEN
       -- E54: the seat filled first. Mark the invite expired (expires_at =
       -- now() — instantly expired under the F6 semantics), notify the

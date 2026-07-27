@@ -80,7 +80,8 @@ select has_function('public', 'claim_league_invite',
 select has_function('public', 'join_league_by_code',
   array['text'], 'join_league_by_code exists');
 select has_function('public', 'seat_league_member_internal',
-  array['uuid','uuid','integer'], 'seat_league_member_internal exists (internal)');
+  array['uuid','uuid','integer','uuid'],
+  'seat_league_member_internal exists (internal; p_team_id added by the L.A1.15 placeholder-FILL amendment — D74(1)(2))');
 select has_function('public', 'notify_league_invite_internal',
   array['uuid','text','text','uuid','text'], 'notify_league_invite_internal exists (internal)');
 
@@ -100,7 +101,7 @@ select is_definer('public', 'join_league_by_code', array['text'],
   'join_league_by_code is SECURITY DEFINER');
 select ok(
   not (select p.prosecdef from pg_proc p
-       where p.oid = 'public.seat_league_member_internal(uuid,uuid,integer)'::regprocedure)
+       where p.oid = 'public.seat_league_member_internal(uuid,uuid,integer,uuid)'::regprocedure)
   and not (select p.prosecdef from pg_proc p
        where p.oid = 'public.notify_league_invite_internal(uuid,text,text,uuid,text)'::regprocedure),
   'the two internal helpers are PLAIN functions (they run inside the definer RPCs'' context)');
@@ -118,7 +119,7 @@ select ok(
        'public.get_join_preview(text)'::regprocedure,
        'public.claim_league_invite(text)'::regprocedure,
        'public.join_league_by_code(text)'::regprocedure,
-       'public.seat_league_member_internal(uuid,uuid,integer)'::regprocedure,
+       'public.seat_league_member_internal(uuid,uuid,integer,uuid)'::regprocedure,
        'public.notify_league_invite_internal(uuid,text,text,uuid,text)'::regprocedure])),
   'all nine functions pin search_path='''' exactly (§12.0; R70 exact-value form, every proconfig = search_path="")');
 
@@ -145,8 +146,8 @@ select ok(
   and has_function_privilege('service_role', 'public.claim_league_invite(text)', 'EXECUTE'),
   'authenticated (+ service_role) keep EXECUTE on the six user/commish RPCs (in-body checks are the gate)');
 select ok(
-  not has_function_privilege('anon', 'public.seat_league_member_internal(uuid,uuid,integer)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.seat_league_member_internal(uuid,uuid,integer)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.seat_league_member_internal(uuid,uuid,integer,uuid)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.seat_league_member_internal(uuid,uuid,integer,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.notify_league_invite_internal(uuid,text,text,uuid,text)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.notify_league_invite_internal(uuid,text,text,uuid,text)', 'EXECUTE'),
   'internal helpers: NO client role holds EXECUTE (reachable only through the definer RPCs)');

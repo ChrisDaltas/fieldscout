@@ -2551,6 +2551,14 @@ export type Database = {
       }
     }
     Functions: {
+      add_placeholder_seat: {
+        Args: { p_league_id: string; p_team_name?: string }
+        Returns: Json
+      }
+      assign_manager: {
+        Args: { p_league_id: string; p_team_id: string; p_user_id: string }
+        Returns: Json
+      }
       claim_league_invite: { Args: { p_token: string }; Returns: Json }
       create_league: {
         Args: {
@@ -2630,6 +2638,7 @@ export type Database = {
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      leave_league: { Args: { p_league_id: string }; Returns: Json }
       notify_league_invite_internal: {
         Args: {
           p_league_id: string
@@ -2640,9 +2649,29 @@ export type Database = {
         }
         Returns: undefined
       }
+      notify_league_member_internal: {
+        Args: {
+          p_body: string
+          p_data: Json
+          p_title: string
+          p_type: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
+      }
+      remove_manager: {
+        Args: {
+          p_league_id: string
+          p_member_id: string
+          p_mode: string
+          p_reason?: string
+          p_successor_user_id?: string
+        }
+        Returns: Json
       }
       reorder_list_players: {
         Args: { p_list_id: string; p_positions: Json }
@@ -2654,7 +2683,12 @@ export type Database = {
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
       seat_league_member_internal: {
-        Args: { p_faab_budget: number; p_league_id: string; p_user_id: string }
+        Args: {
+          p_faab_budget: number
+          p_league_id: string
+          p_team_id?: string
+          p_user_id: string
+        }
         Returns: string
       }
       set_league_invite_slug: {
@@ -2664,6 +2698,10 @@ export type Database = {
       set_league_status: {
         Args: { p_league_id: string; p_status: string }
         Returns: undefined
+      }
+      set_member_role: {
+        Args: { p_league_id: string; p_member_id: string; p_role: string }
+        Returns: Json
       }
       snapshot_league_scoring: {
         Args: { p_league_id: string }
@@ -2824,6 +2862,8 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+
 
 
 

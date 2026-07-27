@@ -29,7 +29,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(27);
+select plan(28);
 
 -- ---------------------------------------------------------------------------
 -- A. Constraint + index shape (054).
@@ -182,7 +182,7 @@ select results_eq(
                 where id = 'd4000000-0000-4000-8000-000000000002' returning 1)
      select count(*) from w $$,
   $$ values (0::bigint) $$,
-  'commish UPDATE of a member role affects 0 rows (role grants are L.A1.15 RPC work)');
+  'commish UPDATE of a member role affects 0 rows (role grants go through set_member_role — 063/L.A1.15)');
 select throws_ok(
   $$ insert into league_members (league_id, user_id, team_id, is_placeholder)
      values ('a4000000-0000-4000-8000-00000000000a', null,
@@ -243,10 +243,20 @@ select lives_ok(
   $$ update leagues set status = 'scheduled'
      where id = 'a4000000-0000-4000-8000-00000000000a' $$,
   'privileged UPDATE of leagues still works (the SECURITY DEFINER RPC path is unaffected)');
+-- Reconciled 2026-07-26 (L.A1.15 landed): the shape below is the one
+-- remove_manager(vacate)/leave_league actually write — user_id NULL,
+-- is_placeholder TRUE, **team_id KEPT** (the franchise stays attached to the
+-- seat; the old `team_id = null` shape was the 054 client carve-out's, which
+-- 063 dropped — D74(3)). Pins the RPC path is unaffected by the client
+-- denials above.
 select lives_ok(
-  $$ update league_members set team_id = null, is_placeholder = true, user_id = null
+  $$ update league_members set is_placeholder = true, user_id = null
      where id = 'd4000000-0000-4000-8000-000000000002' $$,
-  'privileged reseat of league_members still works (the RPC path the L.A1.12–15 functions will use)');
+  'privileged vacate of league_members still works (the shape remove_manager(vacate) writes: seat opened, team_id kept)');
+select is(
+  (select team_id from league_members where id = 'd4000000-0000-4000-8000-000000000002'),
+  'c4000000-0000-4000-8000-000000000001'::uuid,
+  'and the franchise is still attached to the vacated seat (a seat with no team is invisible to every capacity check — the reason 063 dropped the carve-out policies)');
 
 select * from finish();
 rollback;

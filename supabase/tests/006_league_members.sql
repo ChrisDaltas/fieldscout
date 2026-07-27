@@ -33,7 +33,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(81);
+select plan(77);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: §12.2 column-for-column.
@@ -69,16 +69,16 @@ select has_index('public', 'league_members', 'idx_league_members_user', 'user in
 select ok(
   (select rowsecurity from pg_tables where schemaname = 'public' and tablename = 'league_members'),
   'RLS enabled on league_members');
+-- Post-063 (L.A1.15/D74(3)): the two 054 placeholder carve-outs are GONE —
+-- they required `team_id IS NULL`, a seat with no franchise, which contradicts
+-- §7.2:170's placeholder shape and is invisible to every capacity check
+-- (spec erratum v2.8.8). league_members is SELECT-only on the client; seats
+-- are added by add_placeholder_seat and opened by remove_manager(vacate).
 select policies_are('public', 'league_members',
-  array['Members viewable by league members', 'Commish adds placeholder seats',
-        'Commish removes placeholder seats'],
-  'exactly the three post-054 policies (§12.2 as amended by erratum v2.8.2 — no client UPDATE)');
+  array['Members viewable by league members'],
+  'exactly ONE policy: the member SELECT (§12.2 as amended by errata v2.8.2 + v2.8.8 — no client INSERT/UPDATE/DELETE at all)');
 select policy_cmd_is('public', 'league_members', 'Members viewable by league members', 'SELECT',
-  'member policy is SELECT-only');
-select policy_cmd_is('public', 'league_members', 'Commish adds placeholder seats', 'INSERT',
-  'commish add policy is INSERT-only (the FOR ALL surface is gone — 054/R38)');
-select policy_cmd_is('public', 'league_members', 'Commish removes placeholder seats', 'DELETE',
-  'commish remove policy is DELETE-only');
+  'the surviving policy is SELECT-only');
 select policies_are('public', 'leagues',
   array['Leagues viewable by members'],
   'leagues carries ONLY the member/owner SELECT policy (054/Q8: league state is server-authoritative)');
@@ -317,17 +317,12 @@ select results_eq(
 -- nothing seated, nothing role-bearing, no real users, league-scoped).
 select set_config('request.jwt.claims',
   '{"sub": "70000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select lives_ok(
+select throws_ok(
   $$ insert into league_members (id, league_id, user_id, is_placeholder)
      values ('d0000000-0000-4000-8000-000000000009',
              'a0000000-0000-4000-8000-00000000000a', null, true) $$,
-  'commish INSERT of a placeholder seat succeeds (the one client-shaped write left)');
-select results_eq(
-  $$ with d as (delete from league_members
-                where id = 'd0000000-0000-4000-8000-000000000009' returning 1)
-     select count(*) from d $$,
-  $$ values (1::bigint) $$,
-  'commish DELETE of that placeholder seat succeeds (count 1)');
+  '42501', null,
+  'commish INSERT of a team-less placeholder seat is DENIED post-063 — the last client-shaped write is gone (D74(3)); seats are created by add_placeholder_seat, which attaches a real franchise and counts against capacity');
 select results_eq(
   $$ with w as (update league_members set is_autodraft = true
                 where id = 'd0000000-0000-4000-8000-000000000002' returning 1)
@@ -363,21 +358,16 @@ select throws_ok(
   '42501', null,
   'commish of L1 cannot add a seat to L2 (commish power is league-scoped)');
 
--- co-commissioner u5: same placeholder surface (policy uses is_league_commish,
--- not role = 'commissioner').
+-- co-commissioner u5: the same denial (the dropped policies used
+-- is_league_commish, so a co-commissioner had the identical surface).
 select set_config('request.jwt.claims',
   '{"sub": "70000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
-select lives_ok(
+select throws_ok(
   $$ insert into league_members (id, league_id, user_id, is_placeholder)
      values ('d0000000-0000-4000-8000-00000000000e',
              'a0000000-0000-4000-8000-00000000000a', null, true) $$,
-  'co-commissioner INSERT of a placeholder seat succeeds');
-select results_eq(
-  $$ with d as (delete from league_members
-                where id = 'd0000000-0000-4000-8000-00000000000e' returning 1)
-     select count(*) from d $$,
-  $$ values (1::bigint) $$,
-  'co-commissioner DELETE of that seat succeeds (count 1)');
+  '42501', null,
+  'co-commissioner INSERT of a placeholder seat is denied too (the carve-outs keyed on is_league_commish — dropping them closes both roles at once)');
 
 -- anon: sees nothing, writes nothing, and leagues SELECT returns EMPTY, not
 -- an error (falsifiable against a REVOKE on the policy-predicate helpers).
