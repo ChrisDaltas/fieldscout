@@ -1,30 +1,18 @@
-import { LeagueWorkspace } from '@/components/leagues/league-workspace'
+import { LeagueHomeStates } from '@/components/leagues/league-home-states'
 
 export const metadata = { title: 'League · FieldScout' }
 
 interface LeagueDetailPageProps {
   params: Promise<{ leagueId: string }>
-  searchParams: Promise<{ tab?: string | string[] }>
 }
 
 /**
- * League workspace — identity row + sub-nav tabs (Home · My team · Matchup ·
- * Players · Schedule · Stats) with League settings linking out to the
- * scoring builder. `?tab=` deep-links a tab.
- *
- * TODO(live-draft): resolves against mock leagues until the backend lands.
+ * League home — the §16.5.1 status state machine (M1 task L.A2.7). Reads the
+ * real league row and renders the hero for its status: setup checklist →
+ * draft countdown → a clearly-marked "not yet" placeholder for later
+ * statuses. Server shell; the state machine is a client component (`useLeague`).
  */
-export default async function LeagueDetailPage({
-  params,
-  searchParams,
-}: LeagueDetailPageProps) {
+export default async function LeagueDetailPage({ params }: LeagueDetailPageProps) {
   const { leagueId } = await params
-  const { tab } = await searchParams
-
-  return (
-    <LeagueWorkspace
-      leagueId={leagueId}
-      initialTab={Array.isArray(tab) ? tab[0] : tab}
-    />
-  )
+  return <LeagueHomeStates leagueId={leagueId} />
 }

@@ -9,10 +9,13 @@ import type { NotificationItem } from '@/hooks/use-notifications'
  * username-invite notification was dead text).
  *
  * The `league_member` removal/leave arm (data `{league_id, team_id, event}`,
- * no token) stays routed to **L.A2.7** (F34) — this helper leaves it `null`
- * until the notifications feed's league-link home lands there.
+ * no token) is discharged by **L.A2.7** (F34): it links to the league home
+ * (`/app/leagues/[league_id]`) — the destination that task builds. A removed /
+ * departed member may no longer have RLS access to the league, in which case
+ * the home degrades to its "couldn't load" state (§7.2.1 allows re-invite);
+ * the notification's job is only to point at the league it concerns.
  *
- * Pure (no time/DOM/fetch) so the F30 "renders as a link" contract is pinned
+ * Pure (no time/DOM/fetch) so the "renders as a link" contract is pinned
  * without a render.
  */
 export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): string | null {
@@ -20,6 +23,10 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   // F30: league_invite → the invitee's /join/[token] claim page.
   if (n.type === 'league_invite' && typeof data?.token === 'string' && data.token !== '') {
     return `/join/${encodeURIComponent(data.token)}`
+  }
+  // F34: league_member (removed / left / franchise retired) → the league home.
+  if (n.type === 'league_member' && typeof data?.league_id === 'string' && data.league_id !== '') {
+    return `/app/leagues/${data.league_id}`
   }
   // List activity (the pre-existing arm).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
