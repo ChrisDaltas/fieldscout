@@ -923,6 +923,17 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 
 ---
 
+## Review findings — 2026-07-26 (M1 batch 17)
+
+**Reviewer batch (adversarial review of PR #61 — L.A2.1 create wizard, `main...feat/M1-L.A2.1-create-wizard`). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** UI task (no new SQL/auth surface), reviewed proportionately by a single focused reviewer with a full live drive: F27 read-only-derived + live-recompute verified in the DOM AND at the DB (a real league created as a free `is_pro=false` user, row `regular_season_weeks=12, playoff_start_week=13`, then cleaned up); break probe reproduced (derive +1→+2 fails exactly the 4 F27 pins); compose-not-fork confirmed (embeds the real RosterSlotBuilder + ScoringTemplatePicker, scaffold deleted, no mock-data import survives); free-create confirmed (no Pro gate, POST 201 → navigate to the real league id); attestation audit of D77/F27-flip/session-log all truthful.
+
+### Nit
+
+- **R108 · nit · league-create-wizard.tsx:507 (+705-711)** — a dependent field isn't re-clamped when its driver shrinks (`reconcileDerived` re-derives `playoff_start_week`/`trade_veto_votes` but not `playoff_teams` vs `team_count`, nor `trade_deadline_week` vs `regular_season_weeks`), leaving the Radix Select momentarily blank. Not a data bug — `validateLeagueSettings` flags it and gates Next/Create, so no bad value persists. *Resolution: recorded here; routed to **L.A2.4** (the settings panel handles the same fields; the reviewer suggested deferring there) — clamp `playoff_teams ≤ team_count` and `trade_deadline_week ≤ regular_season_weeks` in `reconcileDerived`.*
+- **R109 · nit · league-create-wizard.tsx:833** — the veto-votes number input hard-codes `clampInt(…, 1, 16)` while the field's `max` and the validator both cap at `team_count`; cosmetic, no bad value persists (the validator rejects it). *Resolution: recorded here; take at the L.A2.4 touch — pass `s.team_count` as the clamp max.*
+
+---
+
 ## Review findings — 2026-07-26 (M1 batch 16)
 
 *Re-review of PR #60's batch-15 fix commit (f5541cb). **The re-review was a multi-agent pass that was CUT OFF by a spend limit** — it did not run to completion. The orchestrator directly verified the one load-bearing candidate (**R100**, an idempotency break surviving R94 for the creator-target case) against the code with a live repro; the remaining candidates were nits or already refuted. **VERDICT: FIX-THEN-MERGE** — one should-fix (R100), the Q11 ruling to apply, and a cluster of doc/pin nits (R101–R106); no blocker, no data-corruption path. Resolution on the SAME branch (no new PR).*
