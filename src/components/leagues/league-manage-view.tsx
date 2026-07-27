@@ -9,46 +9,20 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
-import { toast } from '@/hooks/use-toast'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
-import { cn } from '@/lib/utils'
 
-import { TeamCell } from './league-cells'
+import { InvitePanel } from './invite-panel'
 
 /**
- * Manage league — commissioner overview (M1 task L.A2.4). Real league data via
- * `useLeague`: the member roster, and read-only summaries of the roster,
- * waivers/trades, and scoring settings. Every "Edit" affordance links to the
- * full grouped settings panel (`/app/leagues/[leagueId]/settings`, L.A2.4) —
- * the summaries themselves stay read-only here.
- *
- * Boundary: member management (invite link, per-seat invite/remove) lands with
- * the invite panel + seat list (L.A2.5), which replaces the stubs below.
+ * Manage league — commissioner overview (M1 tasks L.A2.4 + L.A2.5). Real
+ * league data via `useLeague`. The seat roster, invites, roles, and removals
+ * all live in the invite panel (L.A2.5) — which replaced the L.A2.4 seat-list
+ * stubs; the read-only summaries of roster / waivers / scoring stay here and
+ * every "Edit" affordance links to the full grouped settings panel
+ * (`/app/leagues/[leagueId]/settings`, L.A2.4).
  */
-
-// TODO(L.A2.5): stubs — the invite panel + seat list replace these.
-function inviteStub() {
-  toast({
-    title: 'Invites are coming',
-    description: 'The invite panel and seat list ship next (L.A2.5).',
-  })
-}
-
-function removeStub(team: string) {
-  toast({
-    title: `${team} stays in the league`,
-    description: 'Managing members ships with the seat list (L.A2.5).',
-  })
-}
-
-const ROLE_LABELS: Record<string, string> = {
-  commissioner: 'Commissioner',
-  co_commissioner: 'Co-commissioner',
-  manager: 'Manager',
-}
 
 export function LeagueManageView({ leagueId }: { leagueId: string }) {
   const router = useRouter()
@@ -58,15 +32,7 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Manage league"
-        actions={
-          <Button variant="stroke" size="sm" onClick={inviteStub}>
-            <Icon name="send" size={13} />
-            Copy invite link
-          </Button>
-        }
-      />
+      <PageHeader title="Manage league" />
 
       <div className="flex items-center gap-2.5">
         <Button variant="stroke" size="sm" onClick={() => router.back()}>
@@ -98,64 +64,32 @@ export function LeagueManageView({ leagueId }: { leagueId: string }) {
           </CardContent>
         </Card>
       ) : (
-        <ManageContent data={data} settingsHref={settingsHref} />
+        <ManageContent leagueId={leagueId} data={data} settingsHref={settingsHref} />
       )}
     </div>
   )
 }
 
-function ManageContent({ data, settingsHref }: { data: LeagueDetail; settingsHref: string }) {
-  const { user } = useAuth()
+function ManageContent({
+  leagueId,
+  data,
+  settingsHref,
+}: {
+  leagueId: string
+  data: LeagueDetail
+  settingsHref: string
+}) {
   const { data: templates } = useScoringTemplates()
-  const { settings, members, teams, league } = data
+  const { settings, league } = data
 
-  const teamsById = new Map(teams.map((t) => [t.id, t]))
   const templateName =
     templates?.find((t) => t.id === league.scoring_system_id)?.name ?? null
 
   return (
     <>
       <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.4fr_1fr]">
-        {/* Members */}
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Members</CardTitle>
-            <Badge variant="stroke">
-              <span className="fs-num">{members.length}</span> / {settings.team_count} seats
-            </Badge>
-          </CardHeader>
-          <div>
-            {members.map((m, i) => {
-              const teamName = m.team_id ? (teamsById.get(m.team_id)?.name ?? '—') : 'No team'
-              const profile = m.profiles
-              const manager = profile
-                ? `${profile.display_name ?? profile.username} · @${profile.username}`
-                : m.is_placeholder
-                  ? 'Open seat'
-                  : 'Unclaimed'
-              const isMe = m.user_id != null && m.user_id === user?.id
-              const isCommish = m.role === 'commissioner'
-              return (
-                <div
-                  key={m.id}
-                  className={cn(
-                    'flex items-center gap-2.5 px-card-pad py-2',
-                    i < members.length - 1 && 'border-b border-n-4',
-                    isMe && 'bg-accent-soft',
-                  )}
-                >
-                  <TeamCell team={teamName} sub={manager} className="mr-auto" />
-                  <Badge variant="stroke">{ROLE_LABELS[m.role] ?? m.role}</Badge>
-                  {!isCommish && !isMe && (
-                    <Button variant="ghost" size="sm" onClick={() => removeStub(teamName)}>
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </Card>
+        {/* Seats, invites, roles, removals (L.A2.5). */}
+        <InvitePanel leagueId={leagueId} detail={data} />
 
         <div className="flex flex-col gap-[19px]">
           {/* Waivers & trades */}
