@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { AccountMenu } from '@/components/layout/account-menu'
-import { MessagesPanel, mockDmUnreadCount } from '@/components/layout/rail/messages-panel'
+import { MessagesPanel, dmUnreadCount } from '@/components/layout/rail/messages-panel'
 import { NotificationsPanel } from '@/components/layout/rail/notifications-panel'
 import { PlayersPanel } from '@/components/layout/rail/players-panel'
 import { TeamsPanel } from '@/components/layout/rail/teams-panel'
@@ -53,11 +53,12 @@ export function ResearchRail() {
       : null
 
   // Unseen counts for the strip badges. Notifications are real (shared query
-  // with the rest of the app); messages are mock until DMs have a backend.
+  // with the rest of the app); messages have no backend yet, so the count is
+  // 0 until real DM threads exist.
   const { data: notificationsData } = useNotifications(mounted)
   const unseen: Partial<Record<RailTool, number>> = {
     notifications: notificationsData?.unreadCount ?? 0,
-    ...(featureFlags.messages ? { messages: mockDmUnreadCount() } : {}),
+    ...(featureFlags.messages ? { messages: dmUnreadCount() } : {}),
   }
 
   return (

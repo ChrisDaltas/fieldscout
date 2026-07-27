@@ -34,69 +34,12 @@ export interface RailDmThread {
   trade?: RailTradeProposal
 }
 
-// TODO(live-draft): replace with real DM data. League DMs have no backend
-// yet — this mock exists so the rail UI can be evaluated. When the messages
-// API lands, feed threads through the `threads` prop and delete this block.
-export const MOCK_DM_THREADS: RailDmThread[] = [
-  {
-    id: 'dm-marcus',
-    gmName: 'Marcus Webb',
-    gmAvatarUrl: null,
-    teamName: 'Blitz Krieg',
-    leagueName: 'League of Ordinary Gentlemen',
-    lastActive: '2h',
-    unread: 2,
-    messages: [
-      { id: 'm1', text: 'You still shopping a WR2?', fromMe: false, time: 'Tue 9:14' },
-      { id: 'm2', text: 'Depends what you are offering.', fromMe: true, time: 'Tue 9:20' },
-      { id: 'm3', text: 'Sent you something — take a look.', fromMe: false, time: '2h ago' },
-    ],
-    trade: {
-      give: ['Jaylen Waddle', '2027 3rd'],
-      get: ['Tony Pollard', 'Cade Otton'],
-    },
-  },
-  {
-    id: 'dm-priya',
-    gmName: 'Priya Shah',
-    gmAvatarUrl: null,
-    teamName: 'Shah-lom Chiefs',
-    leagueName: 'League of Ordinary Gentlemen',
-    lastActive: '5h',
-    unread: 1,
-    messages: [
-      { id: 'm1', text: 'Your kicker is on bye this week btw', fromMe: false, time: '5h ago' },
-    ],
-  },
-  {
-    id: 'dm-dre',
-    gmName: 'Dre Coleman',
-    gmAvatarUrl: null,
-    teamName: 'Coleman Cookers',
-    leagueName: 'Dynasty Degenerates',
-    lastActive: '1d',
-    unread: 0,
-    messages: [
-      { id: 'm1', text: 'gg last week', fromMe: false, time: 'Mon 8:02' },
-      { id: 'm2', text: 'You got lucky on Monday night.', fromMe: true, time: 'Mon 8:15' },
-    ],
-  },
-  {
-    id: 'dm-sam',
-    gmName: 'Sam Ferris',
-    gmAvatarUrl: null,
-    teamName: 'Ferris Wheelers',
-    leagueName: 'The Work League',
-    lastActive: '3d',
-    unread: 0,
-    messages: [
-      { id: 'm1', text: 'Draft order poll is up in the group.', fromMe: false, time: 'Fri 3:40' },
-    ],
-  },
-]
-
-/** Sum of unread DMs — drives the lime badge on the rail strip. */
-export function mockDmUnreadCount(threads: RailDmThread[] = MOCK_DM_THREADS): number {
+/**
+ * Sum of unread DMs — drives the lime badge on the rail strip. League DMs
+ * have no backend yet, so there are no real threads in M1: this is 0 until
+ * the messages API feeds real threads through the `threads` prop.
+ */
+export function dmUnreadCount(threads: RailDmThread[] = []): number {
   return threads.reduce((sum, t) => sum + t.unread, 0)
 }
 
@@ -149,18 +92,18 @@ function TradeCard({ trade }: { trade: RailTradeProposal }) {
 
 interface MessagesPanelProps {
   onClose: () => void
-  /** Injectable for the real DM feed later; defaults to the mock threads. */
+  /** Injectable for the real DM feed later; empty until that backend lands. */
   threads?: RailDmThread[]
 }
 
 /**
- * Messages tool — league DMs. UI only: the backend does not exist yet, so
- * everything renders from typed mock threads (see TODO(live-draft) above).
- * GM avatar filter strip on top, thread list below; opening a thread shows
- * the conversation with an optional trade proposal card and a local-only
- * composer.
+ * Messages tool — league DMs. The backend does not exist yet, so there are
+ * no real threads in M1: the panel renders its honest empty state until the
+ * messages API feeds real threads through the `threads` prop. The GM filter
+ * strip, thread list, conversation view, trade card, and local composer are
+ * the UI scaffold that feed will render into.
  */
-export function MessagesPanel({ onClose, threads = MOCK_DM_THREADS }: MessagesPanelProps) {
+export function MessagesPanel({ onClose, threads = [] }: MessagesPanelProps) {
   const [gmFilter, setGmFilter] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -313,7 +256,7 @@ export function MessagesPanel({ onClose, threads = MOCK_DM_THREADS }: MessagesPa
             <Icon name="comments" size={16} className="text-n-3" />
             <p className="text-[12px] font-bold text-ink">No messages yet</p>
             <p className="text-[11px] font-medium text-n-3">
-              League DMs land here once your leagues go live.
+              League DMs land here once league chat ships.
             </p>
           </div>
         )}

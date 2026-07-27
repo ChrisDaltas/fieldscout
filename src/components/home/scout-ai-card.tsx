@@ -10,9 +10,10 @@ import { Icon } from '@/components/ui/icon'
  * the design system's AIInsight primitive; a shared `ui/ai-insight` should
  * absorb this once more screens need it (reported, not created here).
  *
- * TODO(live-draft): the call below references leagues/matchups, which don't
- * exist yet — mock copy until the league backend + insights source land.
- * Today's home page has no AI insight content to rewire.
+ * TODO(live-draft): this is a generic sample insight. A real Scout AI
+ * insights source doesn't exist yet, and matchup/league-specific reads need
+ * the rosters + schedule data that arrive in later milestones — the copy
+ * names no specific league until then.
  */
 export function ScoutAiCard() {
   return (
@@ -29,12 +30,11 @@ export function ScoutAiCard() {
         </Badge>
       </div>
       <div className="mb-1 text-[13px] font-extrabold">
-        You&apos;re favored in 2 of 3 this week
+        Bijan Robinson is a strong start this week
       </div>
       <div className="text-[11px] font-medium leading-[1.4]">
-        Start Bijan over Gibbs in the Work League — the Bears rank 24th vs the
-        run and Gibbs is in a committee. <span className="fs-num">+3.2</span>{' '}
-        projected.
+        Start Bijan over Gibbs — the Bears rank 24th vs the run and Gibbs is in
+        a committee. <span className="fs-num">+3.2</span> projected.
       </div>
     </Card>
   )
