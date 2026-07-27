@@ -264,6 +264,35 @@ export function buildJoinLink(origin: string, codeOrToken: string): string {
   return `${origin}/join/${codeOrToken}`
 }
 
+/**
+ * The inverse of `buildJoinLink`: normalise whatever a commissioner pasted into
+ * the join-by-code field down to the bare code / token / slug the `/join/[token]`
+ * route (and `get_join_preview`) expects. The real share artifacts ARE absolute
+ * URLs — `buildJoinLink`'s `${origin}/join/<code>` and the wizard's copied
+ * `${window.location.origin}/join/<invite_code>` — so a pasted link must resolve
+ * to the same invite a bare code would, not dead-end as an unresolvable
+ * `/join/https%3A%2F%2F…` segment (R114; the field's own copy invites the paste).
+ *
+ * Handles a full absolute URL, a protocol-relative / bare-host form, a path-only
+ * `/join/<code>`, a trailing slash, and `?query` / `#hash` suffixes: strips the
+ * query/hash, then takes the last non-empty path segment after `/join/`. A bare
+ * code/slug (no `/join/`) passes through trimmed. The extracted value keeps its
+ * original case (seat tokens are case-sensitive; the RPC lower()s codes/slugs
+ * itself) and is NOT URL-encoded — the caller encodes it for the route param.
+ */
+export function extractJoinCode(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  // Everything before the first ? or # — a query/hash never belongs to the code.
+  const path = trimmed.split(/[?#]/, 1)[0]
+  const marker = /\/join\//i.exec(path)
+  // No /join/ marker: a bare code/token/slug — pass it through as typed.
+  if (!marker) return trimmed
+  const afterJoin = path.slice(marker.index + marker[0].length)
+  const segments = afterJoin.split('/').filter((segment) => segment.length > 0)
+  return segments.length > 0 ? segments[segments.length - 1] : ''
+}
+
 // ---------------------------------------------------------------------------
 // Custom slug validation (mirrors the 062 contract so the field fails fast —
 // 3–40 chars [a-z0-9-], alphanumeric ends; the RPC is still the authority)

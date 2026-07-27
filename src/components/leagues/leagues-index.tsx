@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '@/hooks/use-auth'
 
 import { Crest } from './league-cells'
+import { extractJoinCode } from './invite-panel-ops'
 import { MOCK_LEAGUES, type MockLeague } from './league-mock-data'
 
 /**
@@ -51,18 +52,22 @@ function ordinal(n: number): string {
  * either here routes through the SAME pre-auth preview page (`/join/[token]`)
  * that resolves seat tokens, share codes, and custom slugs (§16.1). Joining is
  * free (business rule 5 / Q6) — no Pro gate on this path.
+ *
+ * A pasted `fieldscout.gg/join/…` link (the exact affordance this dialog's copy
+ * advertises) is normalised to its bare code via `extractJoinCode` before the
+ * push, so a whole URL resolves to the same invite a bare code would (R114).
  */
 function JoinLeagueDialog() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState('')
 
-  const trimmed = code.trim()
+  const joinCode = extractJoinCode(code)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!trimmed) return
-    router.push(`/join/${encodeURIComponent(trimmed)}`)
+    if (!joinCode) return
+    router.push(`/join/${encodeURIComponent(joinCode)}`)
   }
 
   return (
@@ -97,7 +102,7 @@ function JoinLeagueDialog() {
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" variant="blue" size="sm" disabled={!trimmed}>
+            <Button type="submit" variant="blue" size="sm" disabled={!joinCode}>
               Continue
             </Button>
           </DialogFooter>
