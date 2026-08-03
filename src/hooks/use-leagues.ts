@@ -13,6 +13,7 @@ export const leaguesKeys = {
 export interface MyLeagueRow {
   id: string
   name: string
+  avatar_url: string | null
   season: number
   status: string
   team_count: number

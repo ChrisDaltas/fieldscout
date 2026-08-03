@@ -55,12 +55,17 @@ export interface ScoringTemplatePickerProps {
   value: string | null
   /** Emits the clicked template's `scoring_systems.id`. */
   onChange: (scoringSystemId: string) => void
+  /** Narrow the cards by reception scoring: 'ppr' keeps templates whose
+   *  derived receptions coefficient is > 0 (full AND half PPR), 'no_ppr'
+   *  keeps the zero-reception ones. Omit for all six (the default). */
+  styleFilter?: 'ppr' | 'no_ppr'
   className?: string
 }
 
 export function ScoringTemplatePicker({
   value,
   onChange,
+  styleFilter,
   className,
 }: ScoringTemplatePickerProps) {
   const { data, isPending, isError, refetch, isRefetching } =
@@ -101,7 +106,13 @@ export function ScoringTemplatePicker({
     )
   }
 
-  const cards = buildTemplateCards(data)
+  const cards = buildTemplateCards(data).filter((card) =>
+    styleFilter === undefined
+      ? true
+      : styleFilter === 'ppr'
+        ? card.summary.ppr > 0
+        : card.summary.ppr === 0,
+  )
 
   if (cards.length === 0) {
     return (
@@ -122,9 +133,9 @@ export function ScoringTemplatePicker({
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] font-semibold text-n-3">
-          Pick one of the 6 scoring templates — each matches that
+          Pick one of the {cards.length} scoring templates — each matches that
           platform&apos;s published defaults, so a migrating league&apos;s
-          scores feel identical. Custom scoring comes later.
+          scores feel identical.
         </p>
         <Button
           type="button"

@@ -280,31 +280,51 @@ export function Sidebar() {
             )}
             {(isCollapsed || teamsOpen) && (
               <div className="flex flex-col gap-0.5">
-                {myLeagues.map((lg) => (
+                {myLeagues.map((lg) => {
+                  const leagueActive = pathname.startsWith(`/app/leagues/${lg.id}`)
+                  return (
                   <Link
                     key={lg.id}
                     href={`/app/leagues/${lg.id}`}
                     title={isCollapsed ? lg.name : undefined}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',
+                      'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
                       isCollapsed
                         ? 'h-[34px] w-[34px] justify-center self-center px-0'
                         : 'h-[45px]',
+                      leagueActive
+                        ? 'bg-accent text-white'
+                        : 'text-white/75 hover:bg-white/10 hover:text-white',
                     )}
                   >
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
-                      {leagueInitials(lg.name)}
-                    </span>
+                    {lg.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- 26px crest; next/image is overkill for the nav tile
+                      <img
+                        src={lg.avatar_url}
+                        alt=""
+                        className="h-[26px] w-[26px] shrink-0 rounded-sm border border-white/25 object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
+                        {leagueInitials(lg.name)}
+                      </span>
+                    )}
                     {!isCollapsed && (
                       <span className="flex min-w-0 flex-col leading-tight">
                         <span className="truncate">{lg.name}</span>
-                        <span className="truncate text-[10px] font-semibold text-white/50">
+                        <span
+                          className={cn(
+                            'truncate text-[10px] font-semibold',
+                            leagueActive ? 'text-white/80' : 'text-white/50',
+                          )}
+                        >
                           {ROLE_LABEL[lg.my_role] ?? lg.my_role}
                         </span>
                       </span>
                     )}
                   </Link>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

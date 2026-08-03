@@ -708,6 +708,7 @@ export type Database = {
       }
       leagues: {
         Row: {
+          avatar_url: string | null
           created_at: string | null
           creation_action_id: string | null
           deleted_at: string | null
@@ -738,6 +739,7 @@ export type Database = {
           waiver_type: string
         }
         Insert: {
+          avatar_url?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -768,6 +770,7 @@ export type Database = {
           waiver_type?: string
         }
         Update: {
+          avatar_url?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -2708,6 +2711,15 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      update_league_profile: {
+        Args: {
+          p_league_id: string
+          p_name?: string
+          p_avatar_url?: string
+          p_clear_avatar?: boolean
+        }
+        Returns: undefined
+      }
       update_league_settings: {
         Args: {
           p_faab_budget: number

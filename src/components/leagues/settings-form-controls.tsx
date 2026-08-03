@@ -99,6 +99,7 @@ export function ChoiceSelect({
   onValueChange,
   width = 'w-40',
   disabled,
+  placeholder,
 }: {
   id?: string
   ariaLabel?: string
@@ -107,11 +108,13 @@ export function ChoiceSelect({
   onValueChange: (value: string) => void
   width?: string
   disabled?: boolean
+  /** Trigger text while nothing is selected (pass value="" for that state). */
+  placeholder?: string
 }) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger id={id} aria-label={ariaLabel} className={cn('h-btn-md text-[12px] font-bold', width)}>
-        <SelectValue />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {options.map((o) => (

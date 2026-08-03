@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useMemo, useRef, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,6 +14,7 @@ import { toast } from '@/hooks/use-toast'
 import {
   LeaguePatchError,
   useLeague,
+  useLeagueProfile,
   useUpdateLeagueSettings,
   type LeagueDetail,
   type UpdateLeagueSettingsBody,
@@ -30,6 +32,7 @@ import {
 } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
+import { Crest } from './league-cells'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
@@ -130,6 +133,14 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
           message="Settings are locked once the draft starts. Changing them mid-season is a commissioner override — that arrives with the in-season tools."
         />
       )}
+      {/* League name + crest — cosmetic, commissioner-editable in EVERY
+          status (unlike the §7.1 structural lock below). */}
+      <LeagueProfileCard
+        key={data.league.name}
+        leagueId={leagueId}
+        detail={data}
+        canEdit={isCommish}
+      />
       <SettingsForm
         key={baselineKey}
         leagueId={leagueId}
@@ -140,10 +151,163 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// League profile — rename + avatar (migration 064; top of the page)
+// ---------------------------------------------------------------------------
+
+function LeagueProfileCard({
+  leagueId,
+  detail,
+  canEdit,
+}: {
+  leagueId: string
+  detail: LeagueDetail
+  canEdit: boolean
+}) {
+  const { league } = detail
+  const { rename, uploadAvatar, removeAvatar } = useLeagueProfile(leagueId)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [name, setName] = useState(league.name)
+
+  const trimmed = name.trim()
+  const nameDirty = trimmed !== league.name
+  const nameValid = trimmed.length >= 1 && trimmed.length <= 100
+
+  async function handleRename() {
+    if (!nameDirty || !nameValid || rename.isPending) return
+    try {
+      await rename.mutateAsync(trimmed)
+      toast({ title: 'League renamed', description: `Now playing as “${trimmed}”.` })
+    } catch (cause) {
+      toast({
+        title: "Couldn't rename the league",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      await uploadAvatar.mutateAsync(file)
+      toast({ title: 'League avatar updated' })
+    } catch (cause) {
+      toast({
+        title: "Couldn't upload the image",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  async function handleRemove() {
+    if (removeAvatar.isPending) return
+    try {
+      await removeAvatar.mutateAsync()
+      toast({ title: 'Avatar removed — showing initials' })
+    } catch (cause) {
+      toast({
+        title: "Couldn't remove the avatar",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3.5">
+        <div className="flex items-center gap-4">
+          <Crest
+            name={league.name}
+            src={league.avatar_url}
+            className="h-16 w-16"
+            fallbackClassName="text-[16px]"
+          />
+          {canEdit ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="stroke"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploadAvatar.isPending}
+              >
+                <Icon name="repeat" size={13} />
+                {uploadAvatar.isPending ? 'Uploading…' : 'Change image'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleRemove}
+                disabled={removeAvatar.isPending || !league.avatar_url}
+              >
+                {removeAvatar.isPending ? 'Removing…' : 'Remove'}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[12px] font-semibold text-n-3">
+              Only the commissioner can change the league name and avatar.
+            </p>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleFile}
+          />
+        </div>
+
+        {canEdit && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="league-name" className="text-[12px] font-bold">
+              League name
+            </label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="league-name"
+                value={name}
+                maxLength={100}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleRename()
+                }}
+                className="h-btn-md max-w-sm text-[12px]"
+              />
+              <Button
+                type="button"
+                variant="blue"
+                size="sm"
+                shadow
+                disabled={!nameDirty || !nameValid || rename.isPending}
+                onClick={handleRename}
+              >
+                {rename.isPending ? 'Saving…' : 'Save name'}
+              </Button>
+            </div>
+            {!nameValid && (
+              <InlineIssue tone="error" message="League name must be between 1 and 100 characters." />
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function PanelShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
       <PageHeader title="League settings" />
+      <div>
+        <Button variant="stroke" size="sm" onClick={() => router.back()}>
+          <Icon name="arrow-prev" size={13} />
+          Back
+        </Button>
+      </div>
       {children}
     </div>
   )
@@ -226,45 +390,10 @@ function SettingsForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {serverError && (serverError.status === 403 || serverError.status === 409) && (
-        <InlineIssue tone="error" message={serverError.message} />
-      )}
-
-      {/* `disabled` on the fieldset makes every native control (inputs, the
-          Radix Select/Switch triggers — all buttons) read-only in one place;
-          the div-based scoring cards get an extra pointer-events guard. */}
-      <fieldset
-        disabled={!canEdit}
-        className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
-      >
-        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
-
-        <GroupCard title="Roster & lineup slots">
-          <RosterSlotBuilder
-            value={working.roster_settings}
-            onChange={setRoster}
-            teamCount={working.team_count}
-          />
-        </GroupCard>
-
-        <GroupCard title="Scoring">
-          <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
-            <ScoringTemplatePicker value={scoringId} onChange={setScoringId} />
-          </div>
-          {errorsFor('scoring_system_id').map((e) => (
-            <InlineIssue key={e.message} tone="error" message={e.message} />
-          ))}
-        </GroupCard>
-
-        <WaiversGroup s={working} onSettings={updateSettings} />
-        <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
-        <LineupsGroup s={working} onSettings={updateSettings} />
-        <TiebreakersGroup s={working} onSettings={updateSettings} />
-        <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
-      </fieldset>
-
+      {/* Save lives at the TOP of the page (sticky) — one atomic PATCH still
+          covers everything below it, Draft setup included. */}
       {canEdit && (
-        <div className="sticky bottom-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
+        <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
           <span className="text-[12px] font-bold text-n-3">
             {dirty ? 'You have unsaved changes.' : 'All changes saved.'}
           </span>
@@ -296,21 +425,89 @@ function SettingsForm({
           </Button>
         </div>
       )}
+
+      {serverError && (serverError.status === 403 || serverError.status === 409) && (
+        <InlineIssue tone="error" message={serverError.message} />
+      )}
+
+      {/* `disabled` on the fieldset makes every native control (inputs, the
+          Radix Select/Switch triggers — all buttons) read-only in one place;
+          the div-based scoring cards get an extra pointer-events guard. */}
+      <fieldset
+        disabled={!canEdit}
+        className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
+      >
+        <PageSectionHeading>Draft setup</PageSectionHeading>
+
+        <ScheduleDraftGroup
+          value={working.draft.draft_scheduled_at}
+          year={detail.league.season}
+          onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
+        />
+        <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
+
+        <PageSectionHeading>League settings</PageSectionHeading>
+
+        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+
+        <GroupCard title="Roster & lineup slots">
+          <RosterSlotBuilder
+            value={working.roster_settings}
+            onChange={setRoster}
+            teamCount={working.team_count}
+          />
+        </GroupCard>
+
+        <GroupCard title="Scoring">
+          <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
+            <ScoringTemplatePicker value={scoringId} onChange={setScoringId} />
+          </div>
+          {errorsFor('scoring_system_id').map((e) => (
+            <InlineIssue key={e.message} tone="error" message={e.message} />
+          ))}
+        </GroupCard>
+
+        <WaiversGroup s={working} onSettings={updateSettings} />
+        <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+        <LineupsGroup s={working} onSettings={updateSettings} />
+        <TiebreakersGroup s={working} onSettings={updateSettings} />
+      </fieldset>
     </div>
   )
+}
+
+/** Page-level band between card groups ("Draft setup" / "League settings"). */
+function PageSectionHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="mt-1.5 text-h6 text-ink">{children}</h2>
 }
 
 // ---------------------------------------------------------------------------
 // Group shell
 // ---------------------------------------------------------------------------
 
+/**
+ * Collapsed by default so the panel first reads as a list of section names;
+ * each section expands independently. Native <details>/<summary> deliberately:
+ * a summary is not a form control, so the read-only `<fieldset disabled>`
+ * around the form never blocks a non-commissioner from expanding a section
+ * to view it. Content stays mounted while closed, so form state is unaffected.
+ */
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3.5">{children}</CardContent>
+      <details className="group">
+        <summary className="flex min-h-header cursor-pointer list-none items-center justify-between gap-2 px-card-pad py-2.5 [&::-webkit-details-marker]:hidden">
+          <CardTitle>{title}</CardTitle>
+          <Icon
+            name="arrow-bottom"
+            size={14}
+            className="shrink-0 -rotate-90 transition-transform group-open:rotate-0"
+          />
+        </summary>
+        <CardContent className="flex flex-col gap-3.5 border-t border-ink">
+          {children}
+        </CardContent>
+      </details>
     </Card>
   )
 }
@@ -331,7 +528,7 @@ function FormatGroup({
   const playoffTeamOptions = PLAYOFF_TEAMS_OPTIONS.filter((n) => n <= s.team_count)
 
   return (
-    <GroupCard title="Format & structure">
+    <GroupCard title="Basic settings">
       <FieldRow label="Teams" htmlFor="set-teams" hint="Even counts 8–16 (v1).">
         <ChoiceSelect
           id="set-teams"
@@ -926,6 +1123,164 @@ function TiebreakersGroup({
           </li>
         ))}
       </ol>
+    </GroupCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Schedule the draft — draft_scheduled_at (D60(4) nested path)
+// ---------------------------------------------------------------------------
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** Local wall-clock string ("YYYY-MM-DDTHH:mm") → ISO WITH the scheduler's
+ *  local offset (not Z), so the stored offset — §16.4's "league reference
+ *  time" — reads as the wall clock the commissioner actually picked
+ *  ("7:00 PM (UTC−7)", not a UTC translation). */
+function toIsoWithLocalOffset(local: string): string | null {
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return null
+  const eastMinutes = -d.getTimezoneOffset()
+  const sign = eastMinutes >= 0 ? '+' : '-'
+  return `${local}:00${sign}${pad2(Math.trunc(Math.abs(eastMinutes) / 60))}:${pad2(Math.abs(eastMinutes) % 60)}`
+}
+
+const MONTH_OPTIONS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+].map((label, i) => ({ value: String(i + 1), label }))
+
+/** Half-hour grid, "12:00 AM" … "11:30 PM", valued as 24h "HH:mm". */
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hour = Math.trunc(i / 2)
+  const minute = i % 2 === 0 ? '00' : '30'
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12
+  const ampm = hour >= 12 ? 'PM' : 'AM'
+  return { value: `${pad2(hour)}:${minute}`, label: `${hour12}:${minute} ${ampm}` }
+})
+
+/**
+ * Month → Day → Time, in that order: Day unlocks once a month is picked,
+ * Time once the day is too. The three picks are local UI state (seeded from
+ * the saved value); only a COMPLETE pick writes draft_scheduled_at into the
+ * working settings. The year is the league's season — not a fourth pick.
+ */
+function ScheduleDraftGroup({
+  value,
+  year,
+  onChange,
+}: {
+  value: string | null
+  year: number
+  onChange: (next: string | null) => void
+}) {
+  const seed = value ? new Date(value) : null
+  const seedValid = seed !== null && !Number.isNaN(seed.getTime())
+  const [month, setMonth] = useState(() => (seedValid ? String(seed.getMonth() + 1) : ''))
+  const [day, setDay] = useState(() => (seedValid ? String(seed.getDate()) : ''))
+  const [time, setTime] = useState(() =>
+    seedValid ? `${pad2(seed.getHours())}:${pad2(seed.getMinutes() < 30 ? 0 : 30)}` : '',
+  )
+
+  const daysInMonth = month ? new Date(year, Number(month), 0).getDate() : 0
+  const dayOptions = numOptions(Array.from({ length: daysInMonth }, (_, i) => i + 1))
+
+  function emit(m: string, d: string, t: string) {
+    if (m && d && t) {
+      onChange(toIsoWithLocalOffset(`${year}-${pad2(Number(m))}-${pad2(Number(d))}T${t}`))
+    }
+  }
+
+  function handleMonth(m: string) {
+    setMonth(m)
+    // A shorter month can strand the picked day (e.g. 31 → February).
+    const maxDay = new Date(year, Number(m), 0).getDate()
+    if (day && Number(day) > maxDay) {
+      setDay('')
+      return
+    }
+    emit(m, day, time)
+  }
+
+  function handleDay(d: string) {
+    setDay(d)
+    emit(month, d, time)
+  }
+
+  function handleTime(t: string) {
+    setTime(t)
+    emit(month, day, t)
+  }
+
+  function handleClear() {
+    setMonth('')
+    setDay('')
+    setTime('')
+    onChange(null)
+  }
+
+  return (
+    <GroupCard title="Schedule the draft">
+      <FieldRow
+        label="Draft date & time"
+        htmlFor="set-draft-month"
+        hint={`Drafting in the ${year} season, in your timezone — every manager sees it in theirs.`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <ChoiceSelect
+            id="set-draft-month"
+            ariaLabel="Draft month"
+            value={month}
+            placeholder="Month"
+            options={MONTH_OPTIONS}
+            onValueChange={handleMonth}
+            width="w-32"
+          />
+          <ChoiceSelect
+            ariaLabel="Draft day"
+            value={day}
+            placeholder="Day"
+            options={dayOptions}
+            onValueChange={handleDay}
+            disabled={!month}
+            width="w-20"
+          />
+          <ChoiceSelect
+            ariaLabel="Draft time"
+            value={time}
+            placeholder="Time"
+            options={TIME_OPTIONS}
+            onValueChange={handleTime}
+            disabled={!month || !day}
+            width="w-28"
+          />
+          {value && (
+            <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
+              Clear
+            </Button>
+          )}
+        </div>
+      </FieldRow>
+      <p className="text-[12px] font-semibold text-n-3">
+        {value ? (
+          <>
+            Drafting{' '}
+            <span className="fs-num text-ink">
+              {new Date(value).toLocaleString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </span>{' '}
+            — save to lock it in. The countdown appears on the league home.
+          </>
+        ) : (
+          'No draft time set yet. Pick one and save — the league home shows it to every manager.'
+        )}
+      </p>
     </GroupCard>
   )
 }
