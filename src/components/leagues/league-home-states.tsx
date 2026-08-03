@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { cn } from '@/lib/utils'
 
+import { InvitePanel } from './invite-panel'
 import { Crest } from './league-cells'
 import {
   deriveSetupChecklist,
@@ -24,16 +24,21 @@ import {
   seatCounts,
   type ChecklistItem,
 } from './league-home-states-ops'
-import { deriveSeats, type Seat } from './invite-panel-ops'
 
 /**
  * League home — the §16.5.1 status state machine (M1 task L.A2.7). Reads the
  * REAL league row via `useLeague` and renders the hero for its status:
- *   - `setup`     → the setup checklist + seat list (each empty seat carries an
- *                   invite affordance, R112) + Invite/Schedule CTAs
+ *   - `setup`     → the setup checklist + the full invite panel (share link,
+ *                   seats, roles — L.A2.5; each empty seat carries an invite
+ *                   affordance, R112)
  *   - `scheduled` → the draft countdown (league TZ + viewer-local, §16.4) with
- *                   the Enter-lobby / Practice-draft CTAs stubbed → M2
+ *                   the Enter-lobby / Practice-draft CTAs stubbed → M2, plus
+ *                   the invite panel (seats can still fill before the draft)
  *   - later       → a clearly-marked "not yet" placeholder, never mock data
+ *
+ * The separate Manage-league page folded into this one: the invite panel
+ * renders here directly, and read-only settings summaries were dropped — the
+ * grouped settings panel (`/settings`) is the single settings surface.
  *
  * Skeleton / empty / error per §16.5.4. This replaced the mock `LeagueWorkspace`
  * (deleted with its in-season tabs — the real in-season surfaces are M4).
@@ -79,7 +84,6 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
   const isCommish = my_role === 'commissioner' || my_role === 'co_commissioner'
   const state = homeStateForStatus(league.status)
 
-  const manageHref = `/app/leagues/${leagueId}/manage`
   const settingsHref = `/app/leagues/${leagueId}/settings`
 
   return (
@@ -88,20 +92,12 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
         title={league.name}
         actions={
           isCommish ? (
-            <div className="flex items-center gap-2.5">
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={manageHref}>
-                  <Icon name="team" size={13} />
-                  Manage league
-                </Link>
-              </Button>
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={settingsHref}>
-                  <Icon name="setup" size={13} />
-                  League settings
-                </Link>
-              </Button>
-            </div>
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={settingsHref}>
+                <Icon name="setup" size={13} />
+                League settings
+              </Link>
+            </Button>
           ) : undefined
         }
       />
@@ -110,13 +106,15 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
 
       {state === 'setup' && (
         <SetupHero
+          leagueId={leagueId}
           data={data}
           isCommish={isCommish}
-          manageHref={manageHref}
           settingsHref={settingsHref}
         />
       )}
-      {state === 'scheduled' && <ScheduledHero data={data} settingsHref={settingsHref} />}
+      {state === 'scheduled' && (
+        <ScheduledHero leagueId={leagueId} data={data} settingsHref={settingsHref} />
+      )}
       {state === 'later' && <LaterPlaceholder status={league.status} />}
     </div>
   )
@@ -165,54 +163,47 @@ function LeagueMetaRow({ data }: { data: LeagueDetail }) {
 // ---------------------------------------------------------------------------
 
 function SetupHero({
+  leagueId,
   data,
   isCommish,
-  manageHref,
   settingsHref,
 }: {
+  leagueId: string
   data: LeagueDetail
   isCommish: boolean
-  manageHref: string
   settingsHref: string
 }) {
   const items = deriveSetupChecklist(data)
 
   return (
-    <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.3fr_1fr]">
+    <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1fr_1.3fr]">
       <Card>
         <CardHeader>
           <CardTitle>Get your league ready</CardTitle>
-          {isCommish && (
-            <Button variant="blue" size="sm" shadow asChild>
-              <Link href={manageHref}>
-                <Icon name="send" size={13} />
-                Invite managers
-              </Link>
-            </Button>
-          )}
         </CardHeader>
         <CardContent className="flex flex-col gap-2.5">
           {items.map((item) => (
             <ChecklistRow
               key={item.key}
               item={item}
-              href={checklistHref(item.key, { manageHref, settingsHref })}
+              href={checklistHref(item.key, settingsHref)}
               actionable={isCommish}
             />
           ))}
         </CardContent>
       </Card>
 
-      <SeatListCard data={data} isCommish={isCommish} manageHref={manageHref} />
+      {/* The full L.A2.5 invite surface, in place (share link, seats, roles). */}
+      <div id="invites">
+        <InvitePanel leagueId={leagueId} detail={data} />
+      </div>
     </div>
   )
 }
 
-function checklistHref(
-  key: ChecklistItem['key'],
-  { manageHref, settingsHref }: { manageHref: string; settingsHref: string },
-): string {
-  if (key === 'seats') return manageHref
+function checklistHref(key: ChecklistItem['key'], settingsHref: string): string {
+  // Seats are handled right here on the home page by the invite panel.
+  if (key === 'seats') return '#invites'
   // settings · scoring · schedule all live in the grouped settings panel; the
   // full draft date/time surface (draft-setup-panel) is M2.
   return settingsHref
@@ -269,107 +260,18 @@ function ChecklistRow({
 }
 
 // ---------------------------------------------------------------------------
-// Seat list — each empty seat gets an invite affordance (R112)
-// ---------------------------------------------------------------------------
-
-function SeatListCard({
-  data,
-  isCommish,
-  manageHref,
-}: {
-  data: LeagueDetail
-  isCommish: boolean
-  manageHref: string
-}) {
-  const { user } = useAuth()
-  // Compose the L.A2.5 seat model (no fork). `invites: []` — the home does not
-  // read the commissioner-only invites surface (a member can view this card),
-  // so invited seats present as `placeholder`; the manage panel owns the
-  // per-invite detail. nowMs is unused with no invites.
-  const model = deriveSeats(
-    {
-      teamCount: data.league.max_teams,
-      members: data.members,
-      teams: data.teams,
-      invites: [],
-      currentUserId: user?.id ?? null,
-    },
-    0,
-  )
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          Managers{' '}
-          <span className="fs-num text-n-3">
-            {model.claimedCount}/{model.total}
-          </span>
-        </CardTitle>
-        {isCommish && (
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={manageHref}>
-              <Icon name="team" size={13} />
-              Seats
-            </Link>
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1.5">
-        {model.seats.map((seat) => (
-          <SeatRow key={seat.key} seat={seat} isCommish={isCommish} manageHref={manageHref} />
-        ))}
-      </CardContent>
-    </Card>
-  )
-}
-
-function SeatRow({
-  seat,
-  isCommish,
-  manageHref,
-}: {
-  seat: Seat
-  isCommish: boolean
-  manageHref: string
-}) {
-  // A seated manager renders "display name (@username)" — NEVER an email
-  // (invite-panel-ops derived `seat.identity`; claimed seats carry no email).
-  const claimed = seat.status === 'claimed'
-
-  return (
-    <div className="flex items-center gap-2.5 rounded-sm border border-n-4 px-2.5 py-1.5">
-      <Crest name={seat.teamName} className="h-6 w-6" fallbackClassName="text-[8px]" />
-      <div className="mr-auto min-w-0">
-        <div className="truncate text-[11px] font-extrabold leading-tight">{seat.teamName}</div>
-        <div className="truncate text-[10px] font-semibold text-n-3">
-          {claimed ? seat.identity : seat.status === 'placeholder' ? 'Awaiting manager' : 'Open seat'}
-        </div>
-      </div>
-      {claimed ? (
-        seat.isSelf && <Badge variant="stroke">You</Badge>
-      ) : isCommish ? (
-        // R112: every empty seat gets an invite affordance. Open ghosts have no
-        // target_team_id (the seat-targeted RPC needs one), so the affordance
-        // routes to the invite panel — add a seat / seat-invite / share link.
-        <Button variant="stroke" size="sm" asChild>
-          <Link href={manageHref}>
-            <Icon name="send" size={12} />
-            Invite
-          </Link>
-        </Button>
-      ) : (
-        <Badge variant="stroke">Open</Badge>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Scheduled hero — draft countdown (§16.5.1 scheduled row · §16.4)
 // ---------------------------------------------------------------------------
 
-function ScheduledHero({ data, settingsHref }: { data: LeagueDetail; settingsHref: string }) {
+function ScheduledHero({
+  leagueId,
+  data,
+  settingsHref,
+}: {
+  leagueId: string
+  data: LeagueDetail
+  settingsHref: string
+}) {
   const { settings } = data
   const scheduledAt = settings.draft.draft_scheduled_at
   const orderMode = settings.draft.draft_order_mode
@@ -443,6 +345,12 @@ function ScheduledHero({ data, settingsHref }: { data: LeagueDetail; settingsHre
             </p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Seats can still fill between scheduling and the draft — the invite
+          surface stays available here (it moved home from the manage page). */}
+      <div id="invites" className="lg:col-span-2">
+        <InvitePanel leagueId={leagueId} detail={data} />
       </div>
     </div>
   )
