@@ -25,6 +25,7 @@ import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 
 import { Crest } from './league-cells'
 import { extractJoinCode } from './invite-panel-ops'
+import { LeagueCreateModal } from './league-create-modal'
 
 /**
  * Leagues index — one card per real membership (my leagues via `useLeagues`,
@@ -158,22 +159,18 @@ export function LeagueIndexCard({ league }: { league: MyLeagueRow }) {
 }
 
 export function LeaguesIndex() {
-  const router = useRouter()
   const { data: leagues, isPending, isError, refetch } = useLeagues()
+  const [createOpen, setCreateOpen] = useState(false)
 
   return (
     <div className="flex flex-col gap-4">
+      <LeagueCreateModal open={createOpen} onOpenChange={setCreateOpen} />
       <PageHeader
         title="Leagues"
         actions={
           <div className="flex items-center gap-2.5">
             <JoinLeagueDialog />
-            <Button
-              variant="blue"
-              size="sm"
-              shadow
-              onClick={() => router.push('/app/leagues/new')}
-            >
+            <Button variant="blue" size="sm" shadow onClick={() => setCreateOpen(true)}>
               <Icon name="plus" size={13} />
               Create league
             </Button>
@@ -214,7 +211,7 @@ export function LeaguesIndex() {
           </p>
           <div className="mt-1 flex items-center gap-2.5">
             <JoinLeagueDialog />
-            <Button variant="blue" size="sm" shadow onClick={() => router.push('/app/leagues/new')}>
+            <Button variant="blue" size="sm" shadow onClick={() => setCreateOpen(true)}>
               <Icon name="plus" size={13} />
               Create league
             </Button>
