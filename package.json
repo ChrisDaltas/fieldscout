@@ -20,6 +20,7 @@
     "sync:history": "python3 scripts/load-historical-stats.py",
     "sync:mock-stats": "npx tsx scripts/generate-mock-current-stats.ts",
     "seed:dev": "npx tsx scripts/seed-dev-user.ts",
+    "restore:dev": "bash scripts/restore-dev.sh",
     "seed:personas": "npx tsx scripts/seed-ai-personas.ts",
     "scrape:personas": "npx tsx scripts/scrape-persona-sources.ts",
     "seed:persona-sources": "npx tsx scripts/seed-persona-sources.ts",
