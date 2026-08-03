@@ -390,45 +390,10 @@ function SettingsForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {serverError && (serverError.status === 403 || serverError.status === 409) && (
-        <InlineIssue tone="error" message={serverError.message} />
-      )}
-
-      {/* `disabled` on the fieldset makes every native control (inputs, the
-          Radix Select/Switch triggers — all buttons) read-only in one place;
-          the div-based scoring cards get an extra pointer-events guard. */}
-      <fieldset
-        disabled={!canEdit}
-        className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
-      >
-        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
-
-        <GroupCard title="Roster & lineup slots">
-          <RosterSlotBuilder
-            value={working.roster_settings}
-            onChange={setRoster}
-            teamCount={working.team_count}
-          />
-        </GroupCard>
-
-        <GroupCard title="Scoring">
-          <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
-            <ScoringTemplatePicker value={scoringId} onChange={setScoringId} />
-          </div>
-          {errorsFor('scoring_system_id').map((e) => (
-            <InlineIssue key={e.message} tone="error" message={e.message} />
-          ))}
-        </GroupCard>
-
-        <WaiversGroup s={working} onSettings={updateSettings} />
-        <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
-        <LineupsGroup s={working} onSettings={updateSettings} />
-        <TiebreakersGroup s={working} onSettings={updateSettings} />
-        <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
-      </fieldset>
-
+      {/* Save lives at the TOP of the page (sticky) — one atomic PATCH still
+          covers everything below it, Draft setup included. */}
       {canEdit && (
-        <div className="sticky bottom-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
+        <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
           <span className="text-[12px] font-bold text-n-3">
             {dirty ? 'You have unsaved changes.' : 'All changes saved.'}
           </span>
@@ -460,8 +425,59 @@ function SettingsForm({
           </Button>
         </div>
       )}
+
+      {serverError && (serverError.status === 403 || serverError.status === 409) && (
+        <InlineIssue tone="error" message={serverError.message} />
+      )}
+
+      {/* `disabled` on the fieldset makes every native control (inputs, the
+          Radix Select/Switch triggers — all buttons) read-only in one place;
+          the div-based scoring cards get an extra pointer-events guard. */}
+      <fieldset
+        disabled={!canEdit}
+        className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
+      >
+        <PageSectionHeading>Draft setup</PageSectionHeading>
+
+        <ScheduleDraftGroup
+          value={working.draft.draft_scheduled_at}
+          onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
+        />
+        <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
+
+        <PageSectionHeading>League settings</PageSectionHeading>
+
+        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+
+        <GroupCard title="Roster & lineup slots">
+          <RosterSlotBuilder
+            value={working.roster_settings}
+            onChange={setRoster}
+            teamCount={working.team_count}
+          />
+        </GroupCard>
+
+        <GroupCard title="Scoring">
+          <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
+            <ScoringTemplatePicker value={scoringId} onChange={setScoringId} />
+          </div>
+          {errorsFor('scoring_system_id').map((e) => (
+            <InlineIssue key={e.message} tone="error" message={e.message} />
+          ))}
+        </GroupCard>
+
+        <WaiversGroup s={working} onSettings={updateSettings} />
+        <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+        <LineupsGroup s={working} onSettings={updateSettings} />
+        <TiebreakersGroup s={working} onSettings={updateSettings} />
+      </fieldset>
     </div>
   )
+}
+
+/** Page-level band between card groups ("Draft setup" / "League settings"). */
+function PageSectionHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="mt-1.5 text-h6 text-ink">{children}</h2>
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +527,7 @@ function FormatGroup({
   const playoffTeamOptions = PLAYOFF_TEAMS_OPTIONS.filter((n) => n <= s.team_count)
 
   return (
-    <GroupCard title="Format & structure">
+    <GroupCard title="Basic settings">
       <FieldRow label="Teams" htmlFor="set-teams" hint="Even counts 8–16 (v1).">
         <ChoiceSelect
           id="set-teams"
@@ -1106,6 +1122,84 @@ function TiebreakersGroup({
           </li>
         ))}
       </ol>
+    </GroupCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Schedule the draft — draft_scheduled_at (D60(4) nested path)
+// ---------------------------------------------------------------------------
+
+/** ISO instant → the viewer-local wall-clock value a datetime-local wants. */
+function toLocalInputValue(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** datetime-local value → ISO WITH the scheduler's local offset (not Z), so
+ *  the stored offset — §16.4's "league reference time" — reads as the wall
+ *  clock the commissioner actually picked ("7:00 PM (UTC−7)", not a UTC
+ *  translation). */
+function toIsoWithLocalOffset(local: string): string | null {
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return null
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, '0')
+  const eastMinutes = -d.getTimezoneOffset()
+  const sign = eastMinutes >= 0 ? '+' : '-'
+  return `${local}:00${sign}${pad(Math.trunc(eastMinutes / 60))}:${pad(eastMinutes % 60)}`
+}
+
+function ScheduleDraftGroup({
+  value,
+  onChange,
+}: {
+  value: string | null
+  onChange: (next: string | null) => void
+}) {
+  return (
+    <GroupCard title="Schedule the draft">
+      <FieldRow
+        label="Draft date & time"
+        htmlFor="set-draft-when"
+        hint="Entered in your timezone; every manager sees it in theirs."
+      >
+        <div className="flex items-center gap-2">
+          <Input
+            id="set-draft-when"
+            type="datetime-local"
+            value={value ? toLocalInputValue(value) : ''}
+            onChange={(e) => onChange(e.target.value ? toIsoWithLocalOffset(e.target.value) : null)}
+            className="h-btn-md w-56 text-[12px]"
+          />
+          {value && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>
+              Clear
+            </Button>
+          )}
+        </div>
+      </FieldRow>
+      <p className="text-[12px] font-semibold text-n-3">
+        {value ? (
+          <>
+            Drafting{' '}
+            <span className="fs-num text-ink">
+              {new Date(value).toLocaleString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </span>{' '}
+            — save to lock it in. The countdown appears on the league home.
+          </>
+        ) : (
+          'No draft time set yet. Pick one and save — the league home shows it to every manager.'
+        )}
+      </p>
     </GroupCard>
   )
 }

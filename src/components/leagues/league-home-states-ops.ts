@@ -100,6 +100,10 @@ export function deriveSetupChecklist(detail: LeagueDetail): ChecklistItem[] {
   const hasScoring = detail.league.scoring_system_id != null
   const scheduledAt = detail.settings.draft.draft_scheduled_at
   const hasSchedule = typeof scheduledAt === 'string' && scheduledAt !== ''
+  const scheduleDetail =
+    typeof scheduledAt === 'string' && scheduledAt !== ''
+      ? describeScheduleDetail(scheduledAt)
+      : 'Not scheduled yet'
 
   return [
     {
@@ -124,9 +128,21 @@ export function deriveSetupChecklist(detail: LeagueDetail): ChecklistItem[] {
       key: 'schedule',
       label: 'Schedule the draft',
       done: hasSchedule,
-      detail: hasSchedule ? 'Draft time is set' : 'Not scheduled yet',
+      // Once scheduled, surface the actual date & time (league reference
+      // time, §16.4) right on the home checklist row.
+      detail: scheduleDetail,
     },
   ]
+}
+
+/** Checklist detail once a draft time exists — the §16.4 league-reference
+ *  half ("Scheduled for Sun, Aug 30, 2026 · 7:00 PM (UTC−4)"). */
+function describeScheduleDetail(scheduledAtIso: string): string {
+  const display = describeDraftTime(scheduledAtIso)
+  if (!display) return 'Draft time is set'
+  return `Scheduled for ${display.leagueTime}${
+    display.leagueOffset ? ` (${display.leagueOffset})` : ''
+  }`
 }
 
 /** How many of the setup checklist items are complete. */
