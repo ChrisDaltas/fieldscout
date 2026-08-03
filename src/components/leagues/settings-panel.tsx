@@ -441,6 +441,7 @@ function SettingsForm({
 
         <ScheduleDraftGroup
           value={working.draft.draft_scheduled_at}
+          year={detail.league.season}
           onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
         />
         <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
@@ -1130,51 +1131,131 @@ function TiebreakersGroup({
 // Schedule the draft — draft_scheduled_at (D60(4) nested path)
 // ---------------------------------------------------------------------------
 
-/** ISO instant → the viewer-local wall-clock value a datetime-local wants. */
-function toLocalInputValue(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+const pad2 = (n: number) => String(n).padStart(2, '0')
 
-/** datetime-local value → ISO WITH the scheduler's local offset (not Z), so
- *  the stored offset — §16.4's "league reference time" — reads as the wall
- *  clock the commissioner actually picked ("7:00 PM (UTC−7)", not a UTC
- *  translation). */
+/** Local wall-clock string ("YYYY-MM-DDTHH:mm") → ISO WITH the scheduler's
+ *  local offset (not Z), so the stored offset — §16.4's "league reference
+ *  time" — reads as the wall clock the commissioner actually picked
+ *  ("7:00 PM (UTC−7)", not a UTC translation). */
 function toIsoWithLocalOffset(local: string): string | null {
   const d = new Date(local)
   if (Number.isNaN(d.getTime())) return null
-  const pad = (n: number) => String(Math.abs(n)).padStart(2, '0')
   const eastMinutes = -d.getTimezoneOffset()
   const sign = eastMinutes >= 0 ? '+' : '-'
-  return `${local}:00${sign}${pad(Math.trunc(eastMinutes / 60))}:${pad(eastMinutes % 60)}`
+  return `${local}:00${sign}${pad2(Math.trunc(Math.abs(eastMinutes) / 60))}:${pad2(Math.abs(eastMinutes) % 60)}`
 }
 
+const MONTH_OPTIONS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+].map((label, i) => ({ value: String(i + 1), label }))
+
+/** Half-hour grid, "12:00 AM" … "11:30 PM", valued as 24h "HH:mm". */
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hour = Math.trunc(i / 2)
+  const minute = i % 2 === 0 ? '00' : '30'
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12
+  const ampm = hour >= 12 ? 'PM' : 'AM'
+  return { value: `${pad2(hour)}:${minute}`, label: `${hour12}:${minute} ${ampm}` }
+})
+
+/**
+ * Month → Day → Time, in that order: Day unlocks once a month is picked,
+ * Time once the day is too. The three picks are local UI state (seeded from
+ * the saved value); only a COMPLETE pick writes draft_scheduled_at into the
+ * working settings. The year is the league's season — not a fourth pick.
+ */
 function ScheduleDraftGroup({
   value,
+  year,
   onChange,
 }: {
   value: string | null
+  year: number
   onChange: (next: string | null) => void
 }) {
+  const seed = value ? new Date(value) : null
+  const seedValid = seed !== null && !Number.isNaN(seed.getTime())
+  const [month, setMonth] = useState(() => (seedValid ? String(seed.getMonth() + 1) : ''))
+  const [day, setDay] = useState(() => (seedValid ? String(seed.getDate()) : ''))
+  const [time, setTime] = useState(() =>
+    seedValid ? `${pad2(seed.getHours())}:${pad2(seed.getMinutes() < 30 ? 0 : 30)}` : '',
+  )
+
+  const daysInMonth = month ? new Date(year, Number(month), 0).getDate() : 0
+  const dayOptions = numOptions(Array.from({ length: daysInMonth }, (_, i) => i + 1))
+
+  function emit(m: string, d: string, t: string) {
+    if (m && d && t) {
+      onChange(toIsoWithLocalOffset(`${year}-${pad2(Number(m))}-${pad2(Number(d))}T${t}`))
+    }
+  }
+
+  function handleMonth(m: string) {
+    setMonth(m)
+    // A shorter month can strand the picked day (e.g. 31 → February).
+    const maxDay = new Date(year, Number(m), 0).getDate()
+    if (day && Number(day) > maxDay) {
+      setDay('')
+      return
+    }
+    emit(m, day, time)
+  }
+
+  function handleDay(d: string) {
+    setDay(d)
+    emit(month, d, time)
+  }
+
+  function handleTime(t: string) {
+    setTime(t)
+    emit(month, day, t)
+  }
+
+  function handleClear() {
+    setMonth('')
+    setDay('')
+    setTime('')
+    onChange(null)
+  }
+
   return (
     <GroupCard title="Schedule the draft">
       <FieldRow
         label="Draft date & time"
-        htmlFor="set-draft-when"
-        hint="Entered in your timezone; every manager sees it in theirs."
+        htmlFor="set-draft-month"
+        hint={`Drafting in the ${year} season, in your timezone — every manager sees it in theirs.`}
       >
-        <div className="flex items-center gap-2">
-          <Input
-            id="set-draft-when"
-            type="datetime-local"
-            value={value ? toLocalInputValue(value) : ''}
-            onChange={(e) => onChange(e.target.value ? toIsoWithLocalOffset(e.target.value) : null)}
-            className="h-btn-md w-56 text-[12px]"
+        <div className="flex flex-wrap items-center gap-2">
+          <ChoiceSelect
+            id="set-draft-month"
+            ariaLabel="Draft month"
+            value={month}
+            placeholder="Month"
+            options={MONTH_OPTIONS}
+            onValueChange={handleMonth}
+            width="w-32"
+          />
+          <ChoiceSelect
+            ariaLabel="Draft day"
+            value={day}
+            placeholder="Day"
+            options={dayOptions}
+            onValueChange={handleDay}
+            disabled={!month}
+            width="w-20"
+          />
+          <ChoiceSelect
+            ariaLabel="Draft time"
+            value={time}
+            placeholder="Time"
+            options={TIME_OPTIONS}
+            onValueChange={handleTime}
+            disabled={!month || !day}
+            width="w-28"
           />
           {value && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>
+            <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
               Clear
             </Button>
           )}
