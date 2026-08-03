@@ -1,11 +1,12 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -141,9 +142,16 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
       <PageHeader title="League settings" />
+      <div>
+        <Button variant="stroke" size="sm" onClick={() => router.back()}>
+          <Icon name="arrow-prev" size={13} />
+          Back
+        </Button>
+      </div>
       {children}
     </div>
   )
@@ -304,13 +312,29 @@ function SettingsForm({
 // Group shell
 // ---------------------------------------------------------------------------
 
+/**
+ * Collapsed by default so the panel first reads as a list of section names;
+ * each section expands independently. Native <details>/<summary> deliberately:
+ * a summary is not a form control, so the read-only `<fieldset disabled>`
+ * around the form never blocks a non-commissioner from expanding a section
+ * to view it. Content stays mounted while closed, so form state is unaffected.
+ */
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3.5">{children}</CardContent>
+      <details className="group">
+        <summary className="flex min-h-header cursor-pointer list-none items-center justify-between gap-2 px-card-pad py-2.5 [&::-webkit-details-marker]:hidden">
+          <CardTitle>{title}</CardTitle>
+          <Icon
+            name="arrow-bottom"
+            size={14}
+            className="shrink-0 -rotate-90 transition-transform group-open:rotate-0"
+          />
+        </summary>
+        <CardContent className="flex flex-col gap-3.5 border-t border-ink">
+          {children}
+        </CardContent>
+      </details>
     </Card>
   )
 }
