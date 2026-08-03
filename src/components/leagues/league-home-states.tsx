@@ -141,7 +141,12 @@ function LeagueMetaRow({ data }: { data: LeagueDetail }) {
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center gap-3 px-card-pad py-3">
-        <Crest name={league.name} className="h-10 w-10" fallbackClassName="text-[12px]" />
+        <Crest
+          name={league.name}
+          src={league.avatar_url}
+          className="h-10 w-10"
+          fallbackClassName="text-[12px]"
+        />
         <div className="mr-auto min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate text-[17px] font-extrabold leading-tight">{league.name}</h1>

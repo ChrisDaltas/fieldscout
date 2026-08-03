@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { PositionBadge } from '@/components/players/position-badge'
@@ -16,14 +16,18 @@ import { initialsOf, type MockInjuryStatus, type MockLineupPlayer } from './leag
 
 interface CrestProps {
   name: string
+  /** Uploaded crest art (leagues.avatar_url, migration 064); initials fallback. */
+  src?: string | null
   className?: string
   fallbackClassName?: string
 }
 
-/** Square team/league crest — initials on the sunken fill (base Avatar). */
-export function Crest({ name, className, fallbackClassName }: CrestProps) {
+/** Square team/league crest — uploaded art when present, else initials on the
+ *  sunken fill (base Avatar). */
+export function Crest({ name, src, className, fallbackClassName }: CrestProps) {
   return (
     <Avatar className={cn('h-6 w-6 shrink-0', className)}>
+      {src && <AvatarImage src={src} alt={name} className="object-cover" />}
       <AvatarFallback className={cn('text-[9px]', fallbackClassName)}>
         {initialsOf(name)}
       </AvatarFallback>

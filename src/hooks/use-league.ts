@@ -28,6 +28,7 @@ export interface LeagueDetail {
   league: {
     id: string
     name: string
+    avatar_url: string | null
     description: string | null
     season: number
     status: string
@@ -155,4 +156,67 @@ export function useDeleteLeague() {
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
     },
   })
+}
+
+/**
+ * League profile — rename + avatar (PATCH/POST/DELETE /api/leagues/[id]/
+ * profile; migration 064's update_league_profile RPC, commissioner-only).
+ * Cosmetic writes, allowed in every league status (unlike the §7.1
+ * structural lock). Success invalidates both the detail and the leagues
+ * list, so the sidebar tile and every crest refresh together.
+ */
+export function useLeagueProfile(leagueId: string) {
+  const queryClient = useQueryClient()
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+    void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
+  }
+
+  const throwOnError = async (response: Response) => {
+    const body = (await response.json().catch(() => null)) as { error?: unknown } | null
+    if (!response.ok) {
+      throw new Error(
+        typeof body?.error === 'string' ? body.error : 'Failed to update the league profile',
+      )
+    }
+    return body
+  }
+
+  const rename = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await fetch(`/api/leagues/${leagueId}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      return throwOnError(response)
+    },
+    onSuccess: invalidate,
+  })
+
+  const uploadAvatar = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData()
+      form.append('file', file)
+      const response = await fetch(`/api/leagues/${leagueId}/profile`, {
+        method: 'POST',
+        body: form,
+      })
+      return throwOnError(response)
+    },
+    onSuccess: invalidate,
+  })
+
+  const removeAvatar = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/leagues/${leagueId}/profile`, {
+        method: 'DELETE',
+      })
+      return throwOnError(response)
+    },
+    onSuccess: invalidate,
+  })
+
+  return { rename, uploadAvatar, removeAvatar }
 }

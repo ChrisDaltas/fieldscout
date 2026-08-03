@@ -297,9 +297,18 @@ export function Sidebar() {
                         : 'text-white/75 hover:bg-white/10 hover:text-white',
                     )}
                   >
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
-                      {leagueInitials(lg.name)}
-                    </span>
+                    {lg.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- 26px crest; next/image is overkill for the nav tile
+                      <img
+                        src={lg.avatar_url}
+                        alt=""
+                        className="h-[26px] w-[26px] shrink-0 rounded-sm border border-white/25 object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
+                        {leagueInitials(lg.name)}
+                      </span>
+                    )}
                     {!isCollapsed && (
                       <span className="flex min-w-0 flex-col leading-tight">
                         <span className="truncate">{lg.name}</span>

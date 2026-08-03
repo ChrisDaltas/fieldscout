@@ -401,7 +401,7 @@ export async function listMyLeagues(supabase: Supabase, userId: string): Promise
   const { data, error } = await supabase
     .from('league_members')
     .select(
-      'role, team_id, leagues!inner(id, name, season, status, team_count, created_at, deleted_at)',
+      'role, team_id, leagues!inner(id, name, avatar_url, season, status, team_count, created_at, deleted_at)',
     )
     .eq('user_id', userId)
     .is('leagues.deleted_at', null)
@@ -416,6 +416,7 @@ export async function listMyLeagues(supabase: Supabase, userId: string): Promise
       return {
         id: league.id,
         name: league.name,
+        avatar_url: league.avatar_url,
         season: league.season,
         status: league.status,
         team_count: league.team_count,
@@ -498,6 +499,7 @@ export async function getLeagueDetail(
       league: {
         id: league.id,
         name: league.name,
+        avatar_url: league.avatar_url,
         description: league.description,
         season: league.season,
         status: league.status,

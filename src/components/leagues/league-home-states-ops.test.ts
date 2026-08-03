@@ -47,6 +47,7 @@ function detail(over: {
     league: {
       id: 'lg-1',
       name: 'Test League',
+      avatar_url: null,
       description: null,
       season: 2026,
       status: over.status ?? 'setup',

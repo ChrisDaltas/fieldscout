@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,7 @@ import { toast } from '@/hooks/use-toast'
 import {
   LeaguePatchError,
   useLeague,
+  useLeagueProfile,
   useUpdateLeagueSettings,
   type LeagueDetail,
   type UpdateLeagueSettingsBody,
@@ -31,6 +32,7 @@ import {
 } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
+import { Crest } from './league-cells'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
@@ -131,6 +133,14 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
           message="Settings are locked once the draft starts. Changing them mid-season is a commissioner override — that arrives with the in-season tools."
         />
       )}
+      {/* League name + crest — cosmetic, commissioner-editable in EVERY
+          status (unlike the §7.1 structural lock below). */}
+      <LeagueProfileCard
+        key={data.league.name}
+        leagueId={leagueId}
+        detail={data}
+        canEdit={isCommish}
+      />
       <SettingsForm
         key={baselineKey}
         leagueId={leagueId}
@@ -138,6 +148,152 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
         canEdit={canEdit}
       />
     </PanelShell>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// League profile — rename + avatar (migration 064; top of the page)
+// ---------------------------------------------------------------------------
+
+function LeagueProfileCard({
+  leagueId,
+  detail,
+  canEdit,
+}: {
+  leagueId: string
+  detail: LeagueDetail
+  canEdit: boolean
+}) {
+  const { league } = detail
+  const { rename, uploadAvatar, removeAvatar } = useLeagueProfile(leagueId)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [name, setName] = useState(league.name)
+
+  const trimmed = name.trim()
+  const nameDirty = trimmed !== league.name
+  const nameValid = trimmed.length >= 1 && trimmed.length <= 100
+
+  async function handleRename() {
+    if (!nameDirty || !nameValid || rename.isPending) return
+    try {
+      await rename.mutateAsync(trimmed)
+      toast({ title: 'League renamed', description: `Now playing as “${trimmed}”.` })
+    } catch (cause) {
+      toast({
+        title: "Couldn't rename the league",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      await uploadAvatar.mutateAsync(file)
+      toast({ title: 'League avatar updated' })
+    } catch (cause) {
+      toast({
+        title: "Couldn't upload the image",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  async function handleRemove() {
+    if (removeAvatar.isPending) return
+    try {
+      await removeAvatar.mutateAsync()
+      toast({ title: 'Avatar removed — showing initials' })
+    } catch (cause) {
+      toast({
+        title: "Couldn't remove the avatar",
+        description: cause instanceof Error ? cause.message : 'Please try again.',
+      })
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3.5">
+        <div className="flex items-center gap-4">
+          <Crest
+            name={league.name}
+            src={league.avatar_url}
+            className="h-16 w-16"
+            fallbackClassName="text-[16px]"
+          />
+          {canEdit ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="stroke"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploadAvatar.isPending}
+              >
+                <Icon name="repeat" size={13} />
+                {uploadAvatar.isPending ? 'Uploading…' : 'Change image'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleRemove}
+                disabled={removeAvatar.isPending || !league.avatar_url}
+              >
+                {removeAvatar.isPending ? 'Removing…' : 'Remove'}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[12px] font-semibold text-n-3">
+              Only the commissioner can change the league name and avatar.
+            </p>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleFile}
+          />
+        </div>
+
+        {canEdit && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="league-name" className="text-[12px] font-bold">
+              League name
+            </label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="league-name"
+                value={name}
+                maxLength={100}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleRename()
+                }}
+                className="h-btn-md max-w-sm text-[12px]"
+              />
+              <Button
+                type="button"
+                variant="blue"
+                size="sm"
+                shadow
+                disabled={!nameDirty || !nameValid || rename.isPending}
+                onClick={handleRename}
+              >
+                {rename.isPending ? 'Saving…' : 'Save name'}
+              </Button>
+            </div>
+            {!nameValid && (
+              <InlineIssue tone="error" message="League name must be between 1 and 100 characters." />
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
