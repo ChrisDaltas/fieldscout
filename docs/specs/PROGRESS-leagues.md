@@ -1172,6 +1172,10 @@ pgTAP 019 **133 → 137**. Proofs (shown): fresh `db reset` 001–065 · `test:d
 - **R124 · nit — TAKEN (spec erratum v2.8.11)** — D105(7)'s §8.5.3 "fits roster" reading (capacity-only at pick time; need-fit is §8.4 autopick's; E16 slot-fit is M4's) is right but lived only in PROGRESS. Folded into the spec (§8.5 step 3 erratum parenthetical + changelog entry — the D13/D33 erratum class; cites D105(7) + tasks-M2 §1's E16 routing) so M4 doesn't re-read the clause as a missing pick-time check.
 - **R125 · nit · 066:571-576 — ROUTED to L.B1.4** — E2 replay of an action_id whose pick was later UNDONE returns a success-shaped `{draft, pick(is_undone=true)}` no-op (the replay lookup has no `is_undone` filter). Harmless until undo exists; L.B1.4 decides replay-vs-undone semantics when `draft_undo` lands. Routing made findable per R51: the caveat lives in the 066 banner's replay clause AND the in-function E2 comment, and the tasks-M2 §6 L.B1.4 prompt gained a read-list line citing the routing (verified: L.B1.4's read-list did not previously include 066).
 
+### Nit (re-review of the fix commit — VERDICT: CLEAN)
+
+- **R126 · nit · supabase/migrations/066_draft_core_rpcs.sql:467 — ROUTED** (orchestrator, same day) — the R123 guard is `v_mode <> 'random'` while every attestation says the config fallback is "manual/custom-only": an unknown/unvalidated `draft_order_mode` value would still read the settings-blob `draft_order` and honor it if valid — the R123 shape surviving for out-of-enum modes. Unreachable through the sanctioned surface (`league-settings.ts:192` pins `z.enum(['random','manual','custom'])`), so privileged/direct writes only. *Take at 066's next touch (L.B1.6's D103(2) amendment is the named next writer): tighten to `v_mode IN ('manual','custom')` or reword the banner clause to "non-random".*
+
 ### Resolution — 2026-08-03 (Builder, same branch `feat/M2-L.B1.2-draft-core`, PR #77)
 
 | Finding | Resolved by |
