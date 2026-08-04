@@ -43,13 +43,24 @@
 --     asserted. Production RPCs never accept a caller clock. All instants
 --     compute against the txn-frozen now(), so boundaries are exact.
 --   * BOTH GRACE BRANCHES (D102), boundary-instant precision: FRESH seat
---     (draft_touch'd) autopicks at deadline+1s; STALE seat NOT picked at
---     deadline+grace−1s, picked at deadline+grace+1s; a manual pick lands
---     DURING a stale hold (§8.5.5/E3); an `is_autodraft` STALE seat and a
---     NO-USER placeholder seat autopick at deadline+1s (no grace — the
---     branch discriminator + E48's autopilot). The 45s freshness constant
---     pinned from BOTH sides (liveness 46s old → stale/held; 44s old →
---     fresh/picked) and as the literal interval.
+--     (draft_touch'd; liveness pinned PRE-deadline — freshness is decided
+--     AS OF the deadline instant, R132) autopicks at deadline+1s; STALE
+--     seat NOT picked at deadline+grace−1s, picked at deadline+grace+1s;
+--     a manual pick lands DURING a stale hold (§8.5.5/E3); an
+--     `is_autodraft` STALE seat and a NO-USER placeholder seat autopick
+--     at deadline+1s (no grace — the branch discriminator + E48's
+--     autopilot). The 45s freshness constant pinned from BOTH sides
+--     (liveness 46s old → stale/held; 44s old → fresh/picked, against a
+--     1s-past deadline — the strict lower bound of the as-of-deadline
+--     window keeps both sides) and as the literal interval.
+--   * R132 RECONNECT-MID-HOLD PIN (M2 batch 4): a stale seat is held at
+--     deadline+10s (baseline), the returning manager draft_touch'es —
+--     a POST-deadline beat — and the next tick still holds (the beat
+--     restores manual control only; it must NOT grant the fresh-at-expiry
+--     branch); autopick lands only at deadline+grace+1s. THE R132 BREAK
+--     PROBE (shown + reverted in the batch-4 record): re-derive the
+--     branch from now()-freshness (the pre-fix form) → the held-after-
+--     touch pin fails (the seat autopicks mid-hold).
 --   * D94 AUTO-START PIN: a league in 'scheduled' with ONLY the settings
 --     blob carrying a past draft_scheduled_at and NO drafts row (the
 --     settings-surface end state — the 020 LJ fixture precedent) → one
@@ -73,7 +84,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(67);
+select plan(72);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; D87/D102 constants)
@@ -635,6 +646,13 @@ select lives_ok(
 reset role;
 
 -- Pick 1 — FRESH seat autopicks AT the deadline (+1s): §8.5.4.
+-- R132: the harness's txn-frozen now() would leave the touch's
+-- last_seen_at AFTER the rewound deadline (now() vs now()−1s), which
+-- post-R132 correctly reads as a mid-hold beat. The scenario's intent is
+-- a heartbeat BEFORE expiry — pin the instant pre-deadline (5s before,
+-- well inside the 45s window).
+update draft_liveness set last_seen_at = now() - interval '5 seconds'
+where user_id = '92000000-0000-4000-8000-000000000005';
 update drafts set current_deadline = now() - interval '1 second'
 where league_id = 'b3000000-0000-4000-8000-0000000000b1';
 select set_config('pgtap.tk_tick1', public.draft_tick()::text, true);
@@ -755,6 +773,48 @@ select is(
    where d.league_id = 'b3000000-0000-4000-8000-0000000000b1' and p.pick_number = 6),
   'tk-rb05|autopick',
   'liveness 44s old → FRESH (<= 2 missed beats) → autopick at the deadline — both sides of the pinned constant');
+
+-- Pick 7 — RECONNECT MID-HOLD (u10 on t7; R132, M2 batch 4): the branch is
+-- decided from freshness AS OF the deadline, so the returning manager's
+-- own post-deadline heartbeat must NOT end the D102 hold (pre-R132 the
+-- next tick autopicked them with ~2/3 of the grace remaining — E3's
+-- "reconnect restores manual control" defeated in exactly the scenario
+-- the hold exists for). Held before AND after the touch; autopick only at
+-- deadline + grace.
+update drafts set current_deadline = now() - interval '10 seconds'
+where league_id = 'b3000000-0000-4000-8000-0000000000b1';
+select set_config('pgtap.tk_tick9', public.draft_tick()::text, true);
+select is(
+  (select count(*) from draft_picks p join drafts d on d.id = p.draft_id
+   where d.league_id = 'b3000000-0000-4000-8000-0000000000b1' and p.pick_number = 7),
+  0::bigint,
+  'stale seat u10 (no heartbeat at all): held at deadline+10s — the baseline hold');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000010", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_touch((select id from drafts
+       where league_id = 'b3000000-0000-4000-8000-0000000000b1')) $$,
+  'the returning manager heartbeats MID-HOLD (draft_touch — a post-deadline beat)');
+reset role;
+select set_config('pgtap.tk_tick10', public.draft_tick()::text, true);
+select is(
+  (select count(*) from draft_picks p join drafts d on d.id = p.draft_id
+   where d.league_id = 'b3000000-0000-4000-8000-0000000000b1' and p.pick_number = 7),
+  0::bigint,
+  'R132: the mid-hold reconnect does NOT end the hold — no pick (the beat restores manual control, never the fresh-at-expiry branch)');
+select ok(
+  (current_setting('pgtap.tk_tick10')::jsonb->>'held_for_grace')::int >= 1,
+  '…and the tick summary counted a HOLD, not a fresh-branch autopick');
+update drafts set current_deadline = now() - interval '31 seconds'
+where league_id = 'b3000000-0000-4000-8000-0000000000b1';
+select set_config('pgtap.tk_tick11', public.draft_tick()::text, true);
+select is(
+  (select player_id || '|' || made_via
+   from draft_picks p join drafts d on d.id = p.draft_id
+   where d.league_id = 'b3000000-0000-4000-8000-0000000000b1' and p.pick_number = 7),
+  'tk-rb06|autopick',
+  '…and the held seat autopicks at deadline+grace+1s despite the mid-hold beat (§8.5.4 after the FULL §8.5.5 hold)');
 
 -- ---------------------------------------------------------------------------
 -- G. D94 auto-start (LE) + failure recording/retry (LF) + malformed

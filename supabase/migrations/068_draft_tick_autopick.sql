@@ -19,7 +19,9 @@
 --      interval '45 seconds' = 3 × the 15s room heartbeat cadence, i.e. a
 --      seat is FRESH while it has missed ≤ 2 beats. Named as a function so
 --      069's commissioner-outage arm reuses the SAME constant (one
---      implementation; pgTAP 022 pins the literal).
+--      implementation; pgTAP 022 pins the literal). The tick's grace
+--      branch measures it against the DEADLINE instant, not now() (R132 —
+--      see the ARM 2 notes below).
 --   3. `draft_touch(p_draft_id)` — the D102 heartbeat (real + mock rooms,
 --      ~15s cadence + visibility change): upserts (draft_id, auth.uid()).
 --      SECURITY DEFINER, in-body auth: caller must be a league member of
@@ -123,15 +125,24 @@
 --        batch-limited; loop-capped). At deadline expiry, for the on-clock
 --        seat:
 --          * `is_autodraft` seats, NO-USER seats (placeholder/vacated —
---            E48's autopilot), and seats with a FRESH `draft_liveness`
---            heartbeat (≤ 2 missed beats) autopick IMMEDIATELY (§8.5.4:
+--            E48's autopilot), and seats FRESH AS OF THE DEADLINE INSTANT
+--            (a `draft_liveness` heartbeat in (deadline − 45s, deadline] —
+--            ≤ 2 missed beats at expiry) autopick IMMEDIATELY (§8.5.4:
 --            timeout → autopick);
 --          * a STALE seat's pick is HELD OPEN until deadline +
 --            `disconnect_grace_seconds` (§7.3.8 default 30) — the deadline
 --            stays past-due and each tick re-evaluates; a returning human
 --            may pick manually during the hold ("reconnect restores
 --            manual control", §8.5.5/E3 — draft_make_pick never checks the
---            deadline) — then autopicks at deadline + grace.
+--            deadline) — then autopicks at deadline + grace. R132 (M2
+--            batch 4): the fresh/stale branch is decided AS OF the
+--            deadline, never re-derived from now() — a mid-hold heartbeat
+--            (the returning manager's own draft_touch) can NOT end the
+--            hold; pre-fix it flipped the seat FRESH and the next tick
+--            autopicked them inside the grace window. Residual (recorded):
+--            the PK upsert means a beat landing between deadline and the
+--            first tick overwrites pre-deadline evidence — that seat errs
+--            into the protective hold, never an early autopick.
 --        The autopick writes through 066's `draft_apply_pick_internal` —
 --        the SAME advance/completion path as a manual pick (reuse, never
 --        fork): is_auto=TRUE, made_via='autopick', picked_by NULL,
@@ -573,21 +584,41 @@ BEGIN
           (v_draft.config->>'disconnect_grace_seconds')::int, 30);
 
         -- D102: only a STALE HUMAN seat gets the grace hold. is_autodraft
-        -- seats, no-user seats (placeholder/vacated — E48), and FRESH
-        -- seats autopick AT the deadline (§8.5.4).
+        -- seats, no-user seats (placeholder/vacated — E48), and seats
+        -- FRESH AS OF THE DEADLINE autopick AT the deadline (§8.5.4).
         IF v_user IS NOT NULL AND NOT COALESCE(v_autodraft, FALSE) THEN
+          -- R132: the branch is decided from freshness AS OF THE DEADLINE
+          -- INSTANT — a heartbeat in (deadline − freshness, deadline].
+          -- Re-deriving it from now() each tick let a returning manager's
+          -- own post-deadline heartbeat retroactively grant the
+          -- fresh-at-expiry branch, and the next tick autopicked them
+          -- INSIDE the grace window (§8.5.5/E3 defeated in exactly the
+          -- scenario the hold exists for). The lower bound is STRICT so
+          -- the pinned 45s constant keeps both behavioral sides against a
+          -- 1s-past deadline (44s-old fresh / 46s-old stale — pgTAP 022);
+          -- the upper bound is what makes a mid-hold reconnect unable to
+          -- end the hold (it restores MANUAL control only —
+          -- draft_make_pick never checks the deadline). Recorded
+          -- residual: the PK upsert keeps ONE row per (draft, user), so a
+          -- beat landing between the deadline and the tick OVERWRITES the
+          -- pre-deadline evidence and that seat takes the hold — the
+          -- error direction is the protective §8.5.5 hold, never an early
+          -- autopick.
           v_fresh := EXISTS (
             SELECT 1 FROM public.draft_liveness dl
             WHERE dl.draft_id = v_draft.id
               AND dl.user_id = v_user
-              AND dl.last_seen_at >= now() - public.draft_liveness_freshness()
+              AND dl.last_seen_at > v_draft.current_deadline
+                                    - public.draft_liveness_freshness()
+              AND dl.last_seen_at <= v_draft.current_deadline
           );
           IF NOT v_fresh
              AND now() < v_draft.current_deadline
                          + make_interval(secs => v_grace) THEN
             -- HELD OPEN: deadline stays past-due; a returning human may
             -- pick manually during the hold (§8.5.5/E3) — re-evaluated
-            -- every tick until deadline + grace.
+            -- every tick until deadline + grace; a mid-hold heartbeat
+            -- never ends the hold (R132).
             v_held := v_held + 1;
             CONTINUE;
           END IF;
