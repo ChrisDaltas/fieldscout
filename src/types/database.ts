@@ -823,6 +823,65 @@ export type Database = {
           },
         ]
       }
+      league_lists: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_primary_board: boolean | null
+          league_id: string
+          list_id: string
+          owner_id: string
+          shared_with_league: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_primary_board?: boolean | null
+          league_id: string
+          list_id: string
+          owner_id: string
+          shared_with_league?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_primary_board?: boolean | null
+          league_id?: string
+          list_id?: string
+          owner_id?: string
+          shared_with_league?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_lists_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_lists_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_lists_list_owner_fkey"
+            columns: ["list_id", "owner_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id", "owner_id"]
+          },
+          {
+            foreignKeyName: "league_lists_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_members: {
         Row: {
           faab_balance: number | null
@@ -3120,6 +3179,7 @@ export const Constants = {
 
 
 
+
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -3135,6 +3195,7 @@ export type DraftPick = Database['public']['Tables']['draft_picks']['Row']
 export type DraftQueueEntry = Database['public']['Tables']['draft_queues']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
+export type LeagueList = Database['public']['Tables']['league_lists']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
 export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
