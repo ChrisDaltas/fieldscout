@@ -1136,6 +1136,10 @@ L.A1.9's build-time re-verification (task text item 1) ran the full sanctioned s
 - **R119 · nit · 065:217 — TAKEN** — `char_length(message) <= 500` had no lower bound; an empty-string message inserted fine. Spec silent; the reviewer routed a `>= 1` (or trim) guard to L.B3.3 (chat UI), take-now permitted if zero-risk.
 - **R120 · nit · 065:190-194 — RECORDED** — the §12.6-verbatim `draft_queues` policies validate team ownership only: an owner can insert queue rows for their team against ANY `draft_id` (incl. another league's). Harmless today (queue rows are advisory and the spec prints the policy this way); revisit if 068's autopick ever trusts queue rows without a draft-league join.
 
+### Nit (re-review of the fix commit — VERDICT: CLEAN)
+
+- **R121 · nit · supabase/tests/019_draft_tables.sql:579 — ROUTED** (orchestrator, same day) — the R119 lower bound lacks its edge-succeeds pin: 019 pins empty (0 chars) refused and the upper edge both ways (500 succeeds / 501 refused), but no 1-char-message success is pinned, so a drift of the guard to `BETWEEN 2 AND 500` would pass all 137 asserts. Every successful post fixture is ≥ 11 chars — the upper bound got both halves of the house boundary-instant pattern, the lower bound only the refusal half. *Take at 019's next touch (any M2 schema task amending 019, else the L.B7.1 gate sweep): one `lives_ok` posting a 1-char message beside the empty-string pin, plan 137 → 138.*
+
 ### Resolution — 2026-08-03 (Builder, same branch `feat/M2-L.B1.1-draft-tables`, PR #76)
 
 | Finding | Resolved by |
