@@ -262,6 +262,39 @@ export type Database = {
         }
         Relationships: []
       }
+      draft_liveness: {
+        Row: {
+          draft_id: string
+          last_seen_at: string
+          user_id: string
+        }
+        Insert: {
+          draft_id: string
+          last_seen_at?: string
+          user_id: string
+        }
+        Update: {
+          draft_id?: string
+          last_seen_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_liveness_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_liveness_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       draft_picks: {
         Row: {
           action_id: string | null
@@ -2880,13 +2913,37 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_apply_pick_internal: {
+        Args: {
+          p_action_id: string
+          p_draft_id: string
+          p_is_auto: boolean
+          p_made_via: string
+          p_picked_by: string
+          p_player_id: string
+        }
+        Returns: Json
+      }
+      draft_autopick_resolve: {
+        Args: { p_draft_id: string; p_team_id: string }
+        Returns: string
+      }
       draft_create: { Args: { p_league_id: string }; Returns: Json }
+      draft_create_internal: {
+        Args: { p_league_id: string; p_require_commish: boolean }
+        Returns: Json
+      }
+      draft_liveness_freshness: { Args: never; Returns: string }
       draft_make_pick: {
         Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
         Returns: Json
       }
       draft_rounds_from_roster: { Args: { p_roster: Json }; Returns: number }
       draft_start: { Args: { p_league_id: string }; Returns: Json }
+      draft_start_internal: {
+        Args: { p_league_id: string; p_require_commish: boolean }
+        Returns: Json
+      }
       draft_team_for_pick: {
         Args: {
           p_draft_order: Json
@@ -2896,6 +2953,8 @@ export type Database = {
         }
         Returns: string
       }
+      draft_tick: { Args: never; Returns: Json }
+      draft_touch: { Args: { p_draft_id: string }; Returns: undefined }
       duplicate_list: {
         Args: {
           p_force_public?: boolean
@@ -3008,6 +3067,10 @@ export type Database = {
         Returns: Json
       }
       snapshot_league_scoring: {
+        Args: { p_league_id: string }
+        Returns: undefined
+      }
+      snapshot_league_scoring_internal: {
         Args: { p_league_id: string }
         Returns: undefined
       }
@@ -3192,6 +3255,7 @@ export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
 export type Draft = Database['public']['Tables']['drafts']['Row']
 export type DraftPick = Database['public']['Tables']['draft_picks']['Row']
+export type DraftLiveness = Database['public']['Tables']['draft_liveness']['Row']
 export type DraftQueueEntry = Database['public']['Tables']['draft_queues']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']

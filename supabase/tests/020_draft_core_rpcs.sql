@@ -118,20 +118,23 @@ select ok(
      and p.proname in ('draft_team_for_pick', 'draft_rounds_from_roster')),
   'both helpers are plain (non-SECURITY-DEFINER) IMMUTABLE functions — pure math, no data access (D49(3))');
 
--- R122 structural pin (the R101 bounded-window pattern): in draft_start's
+-- R122 structural pin (the R101 bounded-window pattern): in the start
 -- body, exactly ONE 'FOR UPDATE' — the leagues lock — may precede the
 -- scheduled-gate message; the drafts-row lock must sit BELOW the gate
 -- (taking it above, under the held league lock, deadlocks against an
 -- in-flight pick's FK KEY SHARE on the leagues row — live-proven 40P01).
 -- Deliberately strict: the count includes comments, so even MENTIONING a
--- pre-gate FOR UPDATE forces a look at this invariant.
+-- pre-gate FOR UPDATE forces a look at this invariant. Target retargeted
+-- to draft_start_internal by the L.B1.3 amendment (a): draft_start is now
+-- a thin auth wrapper and the ONE start body — locks included — lives in
+-- the internal (066 banner).
 select is(
   (select (length(pre) - length(replace(pre, 'FOR UPDATE', ''))) / length('FOR UPDATE')
    from (select split_part(p.prosrc, 'schedule the draft first', 1) as pre
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-         where n.nspname = 'public' and p.proname = 'draft_start') s),
+         where n.nspname = 'public' and p.proname = 'draft_start_internal') s),
   1,
-  'R122: exactly one FOR UPDATE (the leagues lock) precedes the scheduled gate in draft_start — the drafts-row lock sits below it (no FK-KEY-SHARE deadlock window)');
+  'R122: exactly one FOR UPDATE (the leagues lock) precedes the scheduled gate in draft_start_internal — the drafts-row lock sits below it (no FK-KEY-SHARE deadlock window)');
 
 -- ---------------------------------------------------------------------------
 -- B. D91: total_rounds = starters + bench, IR EXCLUDED
