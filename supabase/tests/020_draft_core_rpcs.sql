@@ -42,8 +42,18 @@
 --     config and on the actual deadline.
 --   * D94 no-dead-end (manual path): draft_start on a scheduled league
 --     with NO drafts row creates + starts it in one call.
---   * Random order (D101/D105): the generated draft_order is a permutation
---     of the active team ids (length/distinct/membership pinned).
+--   * Random order (D101/D105/R123): the generated draft_order is a
+--     permutation of the active team ids (length/distinct/membership
+--     pinned, LJ); random mode IGNORES a settings-blob draft_order
+--     leftover (R123) — LK pre-creates the drafts row with a FIXED id so
+--     the seeded md5 shuffle is a stored literal, pinned equal to the
+--     shuffle and UNEQUAL to the stale config array (the batch-2 break
+--     probe restores the config fallback under random and flips both RED).
+--   * Lock order (R122): exactly one FOR UPDATE (the leagues lock)
+--     precedes the scheduled gate in draft_start's body — the drafts-row
+--     lock sits below it (taking it above deadlocks an in-flight pick's
+--     FK KEY SHARE on the leagues row: 40P01, live-proven in the batch-2
+--     R122 probe and demonstrated fixed in the same session).
 --   * Mock + auction seams: picks on an is_mock draft refuse naming
 --     L.B1.6/071 (the D103(2) seam marker); auction start/pick refuse
 --     naming M3.
@@ -58,7 +68,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(85);
+select plan(89);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form (§4.1 grants doctrine; plan §8.3)
@@ -107,6 +117,21 @@ select ok(
    where n.nspname = 'public'
      and p.proname in ('draft_team_for_pick', 'draft_rounds_from_roster')),
   'both helpers are plain (non-SECURITY-DEFINER) IMMUTABLE functions — pure math, no data access (D49(3))');
+
+-- R122 structural pin (the R101 bounded-window pattern): in draft_start's
+-- body, exactly ONE 'FOR UPDATE' — the leagues lock — may precede the
+-- scheduled-gate message; the drafts-row lock must sit BELOW the gate
+-- (taking it above, under the held league lock, deadlocks against an
+-- in-flight pick's FK KEY SHARE on the leagues row — live-proven 40P01).
+-- Deliberately strict: the count includes comments, so even MENTIONING a
+-- pre-gate FOR UPDATE forces a look at this invariant.
+select is(
+  (select (length(pre) - length(replace(pre, 'FOR UPDATE', ''))) / length('FOR UPDATE')
+   from (select split_part(p.prosrc, 'schedule the draft first', 1) as pre
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.proname = 'draft_start') s),
+  1,
+  'R122: exactly one FOR UPDATE (the leagues lock) precedes the scheduled gate in draft_start — the drafts-row lock sits below it (no FK-KEY-SHARE deadlock window)');
 
 -- ---------------------------------------------------------------------------
 -- B. D91: total_rounds = starters + bench, IR EXCLUDED
@@ -332,6 +357,10 @@ select results_eq(
 --      LI b2…a8  manual mode with an INVALID stored order (dup + missing)
 --      LJ b2…a9  random mode, NO drafts row (D94 no-dead-end + D101/D105
 --                permutation pin)
+--      LK b2…aa  random mode with a STALE settings-blob draft_order
+--                leftover (a prior manual/custom episode's); drafts row
+--                pre-created with a FIXED id so the seeded md5 shuffle is
+--                a stored literal (R123)
 --    All 'scheduled' (privileged insert) except LG; scoring = the ESPN
 --    Standard template except LE (NULL). scoring_rules_snapshot NULL
 --    everywhere — the post-start NOT-NULL pin proves draft_start took it.
@@ -425,7 +454,15 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   ('b2000000-0000-4000-8000-0000000000a9', '90000000-0000-4000-8000-000000000001',
    'pgtap-dc-LJ-random', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
-   '{"draft": {"draft_order_mode": "random", "pick_timer_seconds": 90}}');
+   '{"draft": {"draft_order_mode": "random", "pick_timer_seconds": 90}}'),
+  ('b2000000-0000-4000-8000-0000000000aa', '90000000-0000-4000-8000-000000000001',
+   'pgtap-dc-LK-stalecfg', 2026, 'scheduled', 8,
+   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+   '{"draft": {"draft_order_mode": "random", "pick_timer_seconds": 90,
+     "draft_order": ["c3000000-0000-4000-8000-00aa00000008","c3000000-0000-4000-8000-00aa00000007",
+                     "c3000000-0000-4000-8000-00aa00000006","c3000000-0000-4000-8000-00aa00000005",
+                     "c3000000-0000-4000-8000-00aa00000004","c3000000-0000-4000-8000-00aa00000003",
+                     "c3000000-0000-4000-8000-00aa00000002","c3000000-0000-4000-8000-00aa00000001"]}}');
 
 -- LD: roster override → exactly 2 draftable rounds (D91).
 update leagues
@@ -476,6 +513,12 @@ select ('c3000000-0000-4000-8000-00a9000000' || lpad(i::text, 2, '0'))::uuid,
        'pgtap-dc-a9-t' || lpad(i::text, 2, '0'),
        'b2000000-0000-4000-8000-0000000000a9'
 from generate_series(1, 8) i;
+insert into teams (id, owner_id, name, league_id)
+select ('c3000000-0000-4000-8000-00aa000000' || lpad(i::text, 2, '0'))::uuid,
+       '90000000-0000-4000-8000-000000000001',
+       'pgtap-dc-aa-t' || lpad(i::text, 2, '0'),
+       'b2000000-0000-4000-8000-0000000000aa'
+from generate_series(1, 8) i;
 
 -- Members (u01 commissioner everywhere; managers hold their seat's team).
 insert into league_members (league_id, user_id, team_id, role)
@@ -512,11 +555,15 @@ insert into league_members (league_id, user_id, team_id, role) values
   ('b2000000-0000-4000-8000-0000000000a8', '90000000-0000-4000-8000-000000000001',
    'c3000000-0000-4000-8000-00a800000001', 'commissioner'),
   ('b2000000-0000-4000-8000-0000000000a9', '90000000-0000-4000-8000-000000000001',
-   'c3000000-0000-4000-8000-00a900000001', 'commissioner');
+   'c3000000-0000-4000-8000-00a900000001', 'commissioner'),
+  ('b2000000-0000-4000-8000-0000000000aa', '90000000-0000-4000-8000-000000000001',
+   'c3000000-0000-4000-8000-00aa00000001', 'commissioner');
 
 -- Pre-created drafts rows. LC's carries a STALE config (timer 90 vs the
 -- live settings' 120) — the D95 re-hydration pin. LE/LJ deliberately have
--- NO row (create-if-absent probes).
+-- NO row (create-if-absent probes). LK's exists ONLY to fix the draft id
+-- (the md5 shuffle seed) so the R123 pin is a stored literal; its
+-- draft_order is NULL — the stale order lives in the league SETTINGS blob.
 insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e2000000-0000-4000-8000-0000000000a1', 'b2000000-0000-4000-8000-0000000000a1',
    'snake', 'scheduled', false, '{}'),
@@ -525,6 +572,8 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e2000000-0000-4000-8000-0000000000a3', 'b2000000-0000-4000-8000-0000000000a3',
    'linear', 'scheduled', false, '{"draft_type": "linear", "pick_timer_seconds": 90}'),
   ('e2000000-0000-4000-8000-0000000000a4', 'b2000000-0000-4000-8000-0000000000a4',
+   'snake', 'scheduled', false, '{}'),
+  ('e2000000-0000-4000-8000-0000000000aa', 'b2000000-0000-4000-8000-0000000000aa',
    'snake', 'scheduled', false, '{}');
 
 -- The pick-drive helper: authenticates as the on-clock seat's manager for
@@ -1149,6 +1198,36 @@ select ok(
    from drafts d
    where d.league_id = 'b2000000-0000-4000-8000-0000000000a9' and d.status = 'live'),
   'random order (D101/D105): the generated draft_order is a permutation of the 8 active team ids');
+
+-- ---------------------------------------------------------------------------
+-- O. LK: R123 — random mode ignores the settings-blob draft_order.
+--    The league settings carry a STALE draft_order leftover (the reversed
+--    t08..t01 array — what a prior manual/custom episode leaves behind and
+--    the settings PATCH stores); the drafts row was pre-created with the
+--    FIXED id e2…aa so the seeded md5(draft_id||team_id) shuffle is a
+--    stored literal. Under the pre-R123 code the reversed array started
+--    VERBATIM; under the fix it is ignored.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "90000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select ok(
+  public.draft_start('b2000000-0000-4000-8000-0000000000aa') is not null,
+  'LK (random mode + a stale settings-blob draft_order) starts');
+select is(
+  (select draft_order from drafts where id = 'e2000000-0000-4000-8000-0000000000aa'),
+  '["c3000000-0000-4000-8000-00aa00000005", "c3000000-0000-4000-8000-00aa00000004",
+    "c3000000-0000-4000-8000-00aa00000001", "c3000000-0000-4000-8000-00aa00000003",
+    "c3000000-0000-4000-8000-00aa00000007", "c3000000-0000-4000-8000-00aa00000002",
+    "c3000000-0000-4000-8000-00aa00000008", "c3000000-0000-4000-8000-00aa00000006"]'::jsonb,
+  'R123: random mode ignores the settings-blob draft_order — the started order is the seeded md5(draft_id||team_id) shuffle (stored literal; seed = the fixed draft id)');
+select isnt(
+  (select draft_order from drafts where id = 'e2000000-0000-4000-8000-0000000000aa'),
+  '["c3000000-0000-4000-8000-00aa00000008", "c3000000-0000-4000-8000-00aa00000007",
+    "c3000000-0000-4000-8000-00aa00000006", "c3000000-0000-4000-8000-00aa00000005",
+    "c3000000-0000-4000-8000-00aa00000004", "c3000000-0000-4000-8000-00aa00000003",
+    "c3000000-0000-4000-8000-00aa00000002", "c3000000-0000-4000-8000-00aa00000001"]'::jsonb,
+  'R123: the started order is NOT the stale config array (restoring the config fallback under random flips this pin RED — the batch-2 break probe)');
 
 select * from finish();
 rollback;

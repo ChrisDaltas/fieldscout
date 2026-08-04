@@ -36,12 +36,16 @@
 --   4. `draft_start(p_league_id)` — commish; the §8.5.1 manual start ("or
 --      commissioner clicks Start Draft" — early start before the scheduled
 --      instant is legal; the D94 auto-start arm lands with the tick, 068):
---        league lock → re-gate (R93) → idempotent re-start no-op (D63 class)
---        → `status='scheduled'` required → CREATE-IF-ABSENT via the
---        idempotent draft_create (the D94 no-dead-end principle applied to
---        the manual path: a league scheduled purely through the settings
---        surface has no drafts row and the Start button must still work)
---        → draft row lock → auction refusal (the M3 seam — tasks-M2 §1:
+--        league lock → re-gate (R93) → idempotent re-start no-op (D63
+--        class; a PLAIN drafts-row read, deliberately unlocked — R122: a
+--        drafts-row lock here deadlocks an in-flight pick, see the
+--        lock-order note) → `status='scheduled'` required → CREATE-IF-
+--        ABSENT via the idempotent draft_create (the D94 no-dead-end
+--        principle applied to the manual path: a league scheduled purely
+--        through the settings surface has no drafts row and the Start
+--        button must still work)
+--        → draft row lock (BELOW the scheduled gate — R122) → auction
+--        refusal (the M3 seam — tasks-M2 §1:
 --        M2 implements none of §8.6; a friendly P0001 names M3, the 059
 --        "lands in M2" precedent) → capacity: active (non-retired)
 --        franchises == team_count, friendly refusal naming placeholder
@@ -59,19 +63,23 @@
 --        widened, exactly as 059's banner prescribes).
 --      ORDER RESOLUTION (D101 + Builder mechanics, D105):
 --        * stored candidate = drafts.draft_order if it is an array (a
---          pre-start randomize/order-edit via PATCH /draft, L.B2.1), else
---          the re-hydrated config's draft_order (§7.3.8 settings field) —
---          draft-row value wins so the order the lobby displayed is the
---          order that drafts (D101 "result written before start");
+--          pre-start randomize/order-edit via PATCH /draft, L.B2.1), else —
+--          in manual/custom mode ONLY (R123) — the re-hydrated config's
+--          draft_order (§7.3.8 settings field): draft-row value wins so
+--          the order the lobby displayed is the order that drafts (D101
+--          "result written before start"); random mode NEVER reads the
+--          config fallback — no lobby ever displayed a config-sourced
+--          order under random, and a stale settings-blob leftover from a
+--          prior manual/custom episode would silently defeat the shuffle;
 --        * validity = a PERMUTATION of the active team_ids (length ==
 --          team_count, all distinct, every element an active franchise;
 --          compared as TEXT so a malformed entry fails validation, never a
 --          ::uuid cast — the R117 lesson);
 --        * `manual`/`custom`: stored candidate MUST be valid → else a
 --          friendly P0001 (re-save the order);
---        * `random`: a VALID stored candidate is honored as-is (the lobby
---          showed it — reshuffling at start would make the displayed order
---          a lie, D101); otherwise a deterministic seeded shuffle:
+--        * `random`: a VALID stored DRAFT-ROW candidate is honored as-is
+--          (the lobby showed it — reshuffling at start would make the
+--          displayed order a lie, D101); otherwise a deterministic shuffle:
 --          ORDER BY md5(draft_id || team_id) (D105 — seed = the draft row's
 --          own id, so sim replays reproduce given the row and no wall-clock
 --          or Math.random enters the engine; distinct drafts get distinct
@@ -79,15 +87,21 @@
 --   5. `draft_make_pick(p_draft_id, p_player_id, p_action_id)` — the full
 --      §8.1 five-step contract, in exactly this order:
 --        (1) LOCK the drafts row FOR UPDATE FIRST (§4.6 — the serializer;
---            the league row is deliberately NOT locked: heartbeat/lock-
---            contention doctrine D102, and taking draft→league here while
---            draft_start takes league→draft would be a deadlock cycle —
---            see the lock-order note below);
+--            the league row is deliberately not locked EXPLICITLY —
+--            heartbeat/lock-contention doctrine D102 — but the pick's
+--            INSERT at step (3) takes an implicit RI FOR KEY SHARE on it
+--            via the league_id FK, so the pick's true order is drafts →
+--            leagues(KEY SHARE) — R122; see the lock-order note below);
 --        (2) VALIDATE: 42501 no-leak (nonexistent draft and non-member get
 --            the same refusal), P0002 soft-deleted league, E2 replay
 --            short-circuit (BEFORE status/turn checks — a retried pick
 --            returns its original pick + current authoritative state as a
---            no-op even after the clock moved on), mock seam refusal
+--            no-op even after the clock moved on; **R125 caveat, ROUTED to
+--            L.B1.4:** the replay lookup does NOT filter is_undone, so
+--            replaying an action_id whose pick was later UNDONE returns a
+--            success-shaped {draft, pick(is_undone=true)} no-op — harmless
+--            until undo exists; L.B1.4 decides replay-vs-undone semantics
+--            when draft_undo lands), mock seam refusal
 --            (D103(2) — **the mock branch (launcher-only, human seat only)
 --            is amended in by L.B1.6/071**; until then no human caller is
 --            legal on an is_mock draft and this refusal marks the seam so
@@ -119,13 +133,25 @@
 --      identical to §7.2.1's "removal during a live draft flips the seat on
 --      the same pick clock" semantics; no tighter guarantee is specified.
 --
--- LOCK ORDER (banner-stated per the 063 precedent): draft_create and
--- draft_start take leagues → drafts; draft_make_pick takes drafts ONLY and
--- reads leagues/league_members/teams unlocked beneath it. No RPC takes
--- drafts before leagues, so no cycle exists; a pick racing a start
--- serializes on the drafts row alone. Each RPC holds its locks across
--- single-row writes only (held-lock < 50ms asserted in the stack vitest,
--- plan §8.3/§4.6).
+-- LOCK ORDER (banner-stated per the 063 precedent; CORRECTED by batch-2
+-- R122 — the original "no cycle exists" claim missed the FK row lock):
+-- draft_create and draft_start take leagues → drafts. draft_make_pick
+-- takes the drafts row explicitly and reads leagues/league_members/teams
+-- unlocked — BUT its draft_picks INSERT takes an implicit RI FOR KEY SHARE
+-- on the leagues row (the league_id FK, 065:152), so the pick's true order
+-- is drafts → leagues(KEY SHARE), which conflicts with FOR UPDATE. A cycle
+-- IS therefore constructible against a drafts-row FOR UPDATE taken under
+-- the league lock while a pick is in flight (live-proven 40P01 — the R122
+-- probe; the victim can be the manager's pick). The discipline that
+-- prevents it: draft_start's idempotent no-op arm reads the drafts row
+-- WITHOUT locking it, and the drafts-row FOR UPDATE is taken only BELOW
+-- the `scheduled` league gate — a state in which no pick's INSERT can be
+-- in flight on this draft (picks require 'live'; start moves draft +
+-- league in one txn under the league lock) — so the two lock orders can
+-- never interleave. pgTAP 020 pins the structural property (exactly one
+-- FOR UPDATE — the leagues lock — precedes the scheduled gate in
+-- draft_start's body). Each RPC holds its locks across single-row writes
+-- only (held-lock < 50ms asserted in the stack vitest, plan §8.3/§4.6).
 --
 -- SQLSTATE convention (062/063 verbatim): 42501 auth + no-leak · P0002 →
 -- 404 (soft-deleted/nonexistent league for a legitimate caller; unknown
@@ -340,16 +366,26 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  -- PLAIN read for the idempotent arm — deliberately NOT locked (R122):
+  -- taking the drafts-row lock here, while holding the leagues lock, races
+  -- an in-flight draft_make_pick into a deadlock cycle — the pick holds the
+  -- drafts row (its step 1) and its draft_picks INSERT takes an RI FOR KEY
+  -- SHARE on the leagues row (the league_id FK, 065:152), which conflicts
+  -- with our leagues lock. Live-proven 40P01 (the batch-2 R122 probe). The
+  -- plain read is safe for the no-op arm: creates and starts serialize on
+  -- the league lock held above, and the already-started shape's status
+  -- truth is the LEAGUE row ('drafting'), read under its own lock.
   SELECT d.* INTO v_draft
   FROM public.drafts d
   WHERE d.league_id = p_league_id
     AND d.is_mock = FALSE
-    AND d.status IN ('scheduled', 'live', 'paused')
-  FOR UPDATE;
+    AND d.status IN ('scheduled', 'live', 'paused');
 
   -- Idempotent re-start (the D63 same-status class): a double-clicked
-  -- Start must not error. A started draft and its league move in ONE txn,
-  -- so live/paused + 'drafting' is the only reachable already-started shape.
+  -- Start must not error — even while a pick is mid-flight holding the
+  -- drafts-row lock (R122: this arm returns without ever touching it). A
+  -- started draft and its league move in ONE txn, so live/paused +
+  -- 'drafting' is the only reachable already-started shape.
   IF FOUND AND v_draft.status IN ('live', 'paused') AND v_league.status = 'drafting' THEN
     RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'started', FALSE);
   END IF;
@@ -367,21 +403,28 @@ BEGIN
   -- already held and simply re-entered.
   IF v_draft.id IS NULL THEN
     PERFORM public.draft_create(p_league_id);
-    SELECT d.* INTO v_draft
-    FROM public.drafts d
-    WHERE d.league_id = p_league_id
-      AND d.is_mock = FALSE
-      AND d.status = 'scheduled'
-    FOR UPDATE;
   END IF;
+
+  -- NOW lock the draft row — BELOW the 'scheduled' gate (R122): with the
+  -- league locked at 'scheduled', no pick's INSERT can be in flight on this
+  -- draft (picks require 'live', and start moves draft + league in one txn
+  -- under the league lock), so this lock can never complete the
+  -- FK-KEY-SHARE cycle described above.
+  SELECT d.* INTO v_draft
+  FROM public.drafts d
+  WHERE d.league_id = p_league_id
+    AND d.is_mock = FALSE
+    AND d.status IN ('scheduled', 'live', 'paused')
+  FOR UPDATE;
 
   -- Defensive: a live/paused draft under a non-'drafting' league is
   -- unreachable (start moves both in one txn) — refuse LOUDLY rather than
-  -- silently resetting a live board to pick 1.
-  IF v_draft.status <> 'scheduled' THEN
+  -- silently resetting a live board to pick 1. (Also catches the
+  -- can't-happen empty re-read after create-if-absent.)
+  IF v_draft.id IS NULL OR v_draft.status <> 'scheduled' THEN
     RAISE EXCEPTION
       'draft_start: draft % is % while league % is scheduled — inconsistent state; contact support',
-      v_draft.id, v_draft.status, p_league_id
+      COALESCE(v_draft.id::text, '(missing)'), COALESCE(v_draft.status, '(missing)'), p_league_id
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -413,11 +456,16 @@ BEGIN
 
   -- Order resolution (D101/D105 — see banner). Draft-row value wins over
   -- the settings field so the order the lobby displayed is the order that
-  -- drafts.
+  -- drafts. `random` considers ONLY the draft-row candidate (R123): the
+  -- config fallback exists for manual/custom orders saved through the
+  -- settings surface; under random mode no lobby ever displayed a
+  -- config-sourced order, and honoring a stale settings-blob leftover
+  -- (from a prior manual/custom episode) would silently defeat the shuffle.
   v_mode := COALESCE(v_config->>'draft_order_mode', 'random');
   v_stored := CASE
     WHEN jsonb_typeof(v_draft.draft_order) = 'array' THEN v_draft.draft_order
-    WHEN jsonb_typeof(v_config->'draft_order') = 'array' THEN v_config->'draft_order'
+    WHEN v_mode <> 'random'
+     AND jsonb_typeof(v_config->'draft_order') = 'array' THEN v_config->'draft_order'
     ELSE NULL
   END;
   -- Permutation check, compared as TEXT (malformed entries fail validation,
@@ -567,7 +615,9 @@ BEGIN
 
   -- E2 replay short-circuit — BEFORE status/turn checks: a retried pick is
   -- a no-op returning its original pick + the current authoritative state,
-  -- even if the clock has moved on (§8.1 idempotency).
+  -- even if the clock has moved on (§8.1 idempotency). R125 (routed to
+  -- L.B1.4): no is_undone filter here — an undone pick's action_id replays
+  -- as a success-shaped no-op; decide replay-vs-undone with draft_undo.
   SELECT p.* INTO v_pick
   FROM public.draft_picks p
   WHERE p.draft_id = p_draft_id AND p.action_id = p_action_id;
