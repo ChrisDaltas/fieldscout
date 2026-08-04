@@ -2929,6 +2929,10 @@ export type Database = {
         Args: { p_draft_id: string; p_team_id: string }
         Returns: string
       }
+      draft_broadcast_payload: {
+        Args: { d: Database["public"]["Tables"]["drafts"]["Row"] }
+        Returns: Json
+      }
       draft_create: { Args: { p_league_id: string }; Returns: Json }
       draft_create_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
@@ -2964,6 +2968,10 @@ export type Database = {
       }
       draft_pause_internal: {
         Args: { p_actor: string; p_draft_id: string; p_message: string }
+        Returns: Json
+      }
+      draft_pick_broadcast_payload: {
+        Args: { p: Database["public"]["Tables"]["draft_picks"]["Row"] }
         Returns: Json
       }
       draft_reassign_pick: {
@@ -3068,6 +3076,14 @@ export type Database = {
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      league_broadcast_payload: {
+        Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
+        Returns: Json
+      }
+      league_chat_broadcast_payload: {
+        Args: { c: Database["public"]["Tables"]["league_chat"]["Row"] }
+        Returns: Json
+      }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
       notify_league_invite_internal: {
         Args: {
@@ -3305,6 +3321,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 // ============================================================================
 // Hand-written convenience aliases.

@@ -216,9 +216,35 @@
 --        NOT in this task (cross-referenced seams): the mock CPU
 --        think-time + mock stale-pause arms land with L.B1.6/071 (D93 —
 --        until then a mock draft, unreachable before create_mock_draft
---        exists, would time out like a real one); the §9.1 tick heartbeat
---        broadcast lands with L.B1.5/070 (no subscriber exists yet —
---        standing rule 5).
+--        exists, would time out like a real one).
+--        ARM 3 — THE §9.1 TICK HEARTBEAT (LANDED 2026-08-04 with
+--        L.B1.5/070 — this migration amended in place, the unreleased-
+--        chain precedent F12): after the state-changing arms, one
+--        realtime.send() per LIVE draft under a non-deleted league —
+--        event 'tick' on 'draft:<id>', payload { server_now,
+--        current_deadline } (§9.1's clock-drift beat; §9.3's subscribe-
+--        time offset correction). Vehicle finalized per the L.B1.5
+--        latitude: PER TICK PASS (~5s), not every third pass — the tick
+--        is stateless across invocations (a 1-in-3 counter would need a
+--        persisted cell or clock-modulo jitter), a ≤5s beat strictly
+--        tightens the printed 15s correction cadence, and the message
+--        cost (1 msg/5s per live draft) is bounded by the ≤25-draft M2
+--        gate (recorded residual, D109: 3× the printed volume; M7's
+--        §22.6 load gate measures message volume as part of its existing
+--        charter — no new obligation). LOCK DISCIPLINE (R135/R141): the
+--        beat is a PLAIN SELECT — no FOR UPDATE, no claim, zero new lock
+--        scope; it runs AFTER the arms so the beat reflects post-arm
+--        state (a just-made autopick's fresh deadline beats in the same
+--        pass); the deleted-league exclusion mirrors the R141 discipline
+--        (a zombie live draft under a soft-deleted league gets no beat —
+--        F50's product question owns that class). Paused drafts get no
+--        beat (their clock is frozen; current_deadline is NULL and the
+--        §16.5.2 pause display reads deadline_remaining_ms via refetch);
+--        mocks (status='live', when 071 lands) beat like real drafts —
+--        their rooms run the same clock. realtime.send() traps its own
+--        errors (verified from the local definition), and the arm is
+--        wrapped in one containment block anyway (summary keys:
+--        heartbeats, heartbeat_failures).
 --        LOCK-HOLD NOTE: a single invocation is one transaction, so claimed
 --        rows stay locked until it returns (a user pick on a JUST-CLAIMED
 --        draft waits ~ms for the batch to finish — the §22.3 "own
@@ -260,7 +286,8 @@
 --
 -- Realtime (standing rule 5): draft_liveness is NEVER broadcast (D102);
 -- the autopicked drafts/draft_picks writes get their triggers in migration
--- 070 (L.B1.5) — no subscriber exists until L.B3.1.
+-- 070 (L.B1.5), which also amends ARM 3 (the §9.1 heartbeat) into this
+-- file — the first subscriber arrives with L.B3.1.
 --
 -- Typegen: RE-RUN (new table + functions change the generated surface);
 -- alias block re-appended + `DraftLiveness` added, diff additive-only
@@ -557,6 +584,9 @@ DECLARE
   v_supervised     BOOLEAN;
   v_outage_paused  INTEGER := 0;
   v_outage_failures JSONB := '[]'::jsonb;
+  v_hb             RECORD;
+  v_heartbeats     INTEGER := 0;
+  v_heartbeat_failures JSONB := '[]'::jsonb;
 BEGIN
   -- -------------------------------------------------------------------------
   -- ARM 1 — D94 auto-start: scan scheduled LEAGUES (never the drafts
@@ -844,6 +874,45 @@ BEGIN
     EXIT WHEN v_pass = 0 OR v_loops >= c_max_loops;
   END LOOP;
 
+  -- -------------------------------------------------------------------------
+  -- ARM 3 — the §9.1 tick heartbeat (amended in by L.B1.5/070 — see the
+  -- banner). ONE realtime.send() per live draft per pass (~5s), event
+  -- 'tick' on the draft topic, payload = server-now + the authoritative
+  -- deadline (§9.3's clock-drift correction). LOCK-FREE by design
+  -- (R135/R141: a PLAIN read — the beat claims nothing, locks nothing;
+  -- a healthy live draft stays untouched by the tick's lock scope).
+  -- Runs AFTER the state-changing arms so the beat reflects post-arm
+  -- state. Deleted-league drafts excluded (the R141 discipline); paused
+  -- drafts excluded (frozen clock — nothing to correct); mock drafts
+  -- included once 071 makes them reachable (same room, same clock).
+  -- realtime.send() traps its own errors; this block is containment
+  -- symmetry with the other arms.
+  -- -------------------------------------------------------------------------
+  BEGIN
+    FOR v_hb IN
+      SELECT d.id, d.current_deadline
+      FROM public.drafts d
+      WHERE d.status = 'live'
+        AND EXISTS (
+          SELECT 1 FROM public.leagues l
+          WHERE l.id = d.league_id AND l.deleted_at IS NULL
+        )
+    LOOP
+      PERFORM realtime.send(
+        jsonb_build_object(
+          'server_now', now(),
+          'current_deadline', v_hb.current_deadline),
+        'tick',
+        'draft:' || v_hb.id::text,
+        true);
+      v_heartbeats := v_heartbeats + 1;
+    END LOOP;
+  EXCEPTION WHEN OTHERS THEN
+    v_heartbeat_failures := v_heartbeat_failures || jsonb_build_object(
+      'sqlstate', SQLSTATE, 'error', SQLERRM);
+    RAISE WARNING 'draft_tick heartbeat arm failed: % (%)', SQLERRM, SQLSTATE;
+  END;
+
   RETURN jsonb_build_object(
     'scanned_scheduled_leagues', v_scanned,
     'auto_started', v_started,
@@ -854,6 +923,8 @@ BEGIN
     'autopicked', v_picked,
     'held_for_grace', v_held,
     'pick_failures', v_pick_failures,
+    'heartbeats', v_heartbeats,
+    'heartbeat_failures', v_heartbeat_failures,
     'loops', v_loops);
 END;
 $$;
