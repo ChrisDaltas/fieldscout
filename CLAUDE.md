@@ -214,7 +214,7 @@ export function ListCard({ list }: ListCardProps) {
 ### 2026 Go-Live (free-only soft launch)
 - **Scope (Chris, 2026-08-03):** public launch on fieldscout.gg = **Lists + Stats/player research + AI stat lists** only, in the new design language. Free-only (see Pro suspension note in Key Business Rules). Audience is friends initially — 2026 is the **feedback year**.
 - All other surfaces (weekly ranks, big board, consensus, explore/community, start-or-sit, personas, teams) are **hidden from nav/flag-gated** at launch — not deleted, not restyled yet; they return as they're reskinned.
-- **Leagues = 2026 private alpha:** invite-only friends' leagues, snake-only, feature-flag gated. See delivery plan v1.4 (build order M2 → M4 → M5 → M3; M2 draft-ready by early September 2026). GA remains July 2027.
+- **Leagues = 2026 private test cohort:** invite-only friends run **test leagues** (not real leagues), feature-flag gated, no calendar deadlines — milestones keep canonical order (M2 → M3 → M4 → M5) and quality gates. **Feedback focus: auction + custom scoring** (the custom scoring editor un-punt needs a spec changelog entry before build). See delivery plan v1.4. GA remains July 2027.
 
 ### Redraft Leagues (in progress)
 - Spec (LAW): docs/specs/spec-redraft-leagues.md (v2.7)
