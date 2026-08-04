@@ -262,6 +262,7 @@ GATE    everything → L.B7.1
 
 ### L.B2.3 — Commissioner control routes + mock routes
 > Read spec §15.2 (commish block + mock-drafts), §17, this doc D97. Depends L.B1.4 + L.B1.6.
+> Read ALSO PROGRESS **D110(1)** (L.B1.6, spec v2.8.16): on a MOCK draft, `draft_pause`/`draft_resume` are LAUNCHER-only (commissioners refused — D103(2)) and every other §8.7 control refuses mocks outright — so the commish control routes need no mock affordances, and the mock surface (launch/list/delete per §15.2 + pause/resume for the launcher's own mock, riding the SAME two RPCs) is authorized by `config.mock.launched_by`, never by role. The launcher's resume path is how an E59 auto-paused mock comes back (L.B3.5's resumable card is the consumer).
 >
 > 1. Commish: `POST …/draft/pause` (+resume verb in body), `/draft/undo` (`to_pick_number?`), `/draft/reassign`, `/draft/force-pick`, `/draft/move-player`, `/draft/reset`, clock edit (fold into PATCH draft or a dedicated verb — Builder finalizes vs §15.2's list, records), **and the post-start order edit: `PATCH /api/leagues/[id]/draft` with an order body on a live draft dispatches to `draft_set_order` (E31 — §15.2's PATCH prints no pre-start restriction; reason required per D97), with the wire test (post-start order PATCH → remaining picks re-derive) here**.
 > 2. Mock: `POST /api/leagues/[id]/mock-drafts` (launch), `GET` (my active + recaps), `DELETE …/[did]`.
