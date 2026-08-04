@@ -2821,6 +2821,22 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_create: { Args: { p_league_id: string }; Returns: Json }
+      draft_make_pick: {
+        Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
+        Returns: Json
+      }
+      draft_rounds_from_roster: { Args: { p_roster: Json }; Returns: number }
+      draft_start: { Args: { p_league_id: string }; Returns: Json }
+      draft_team_for_pick: {
+        Args: {
+          p_draft_order: Json
+          p_draft_type: string
+          p_pick_number: number
+          p_snake_reversal: boolean
+        }
+        Returns: string
+      }
       duplicate_list: {
         Args: {
           p_force_public?: boolean
@@ -3100,7 +3116,6 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
 
 
 
