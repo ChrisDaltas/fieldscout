@@ -213,10 +213,32 @@
 --        (and no commissioner heartbeat) can exist in the 068→069 window;
 --        the per-draft subtransaction contains any exotic gap as a
 --        recorded failure.
---        NOT in this task (cross-referenced seams): the mock CPU
---        think-time + mock stale-pause arms land with L.B1.6/071 (D93 —
---        until then a mock draft, unreachable before create_mock_draft
---        exists, would time out like a real one).
+--        MOCK ARMS (LANDED 2026-08-04 with L.B1.6/071 — this migration
+--        amended in place, F12; D93/D103, PROGRESS D110):
+--          * ARM 1.6 (before ARM 2) — the E59 stale-pause: a live mock
+--            auto-pauses when the LAUNCHER's heartbeat is stale past
+--            disconnect_grace_seconds + one tick (the D93 threshold;
+--            keyed on config.mock.launched_by, never the seat owner);
+--            always preempts the grace-hold's deadline+grace autopick
+--            (the threshold expires ≥ 40s before any hold does — see the
+--            arm comment); claim scope = stale live mocks under alive
+--            leagues ONLY (R135/R141 — a healthy mock is never locked);
+--            resume is the launcher's action (069), never the tick's.
+--          * ARM 2 mock branch — the human seat keys freshness/grace on
+--            the LAUNCHER (seat-owner is_autodraft irrelevant); a CPU
+--            seat reaching its deadline autopicks immediately (no-user
+--            semantics).
+--          * ARM 2.5 (after ARM 2) — CPU think-time picks: due =
+--            draft_mock_cpu_due (pick start + PRNG 20–70% of clock /
+--            ~2s fast); THE PICK IS draft_autopick_resolve +
+--            draft_apply_pick_internal — the same brain and advance path
+--            as a live timeout ("one implementation, two consumers",
+--            plan §4.2); one CPU pick per mock per pass (effective fast
+--            cadence bounded by the 5s tick — the D87 granularity class,
+--            recorded); claim scope = due mocks only.
+--          * draft_autopick_resolve is mock-aware: human seat → the
+--            launcher's queue/boards; CPU seats → no-user (ADP + need —
+--            a CPU never reads its real owner's prep, pinned in 025).
 --        ARM 3 — THE §9.1 TICK HEARTBEAT (LANDED 2026-08-04 with
 --        L.B1.5/070 — this migration amended in place, the unreleased-
 --        chain precedent F12): after the state-changing arms, one
@@ -334,6 +356,72 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 2b. draft_mock_think_fraction — D93's deterministic CPU think-time PRNG
+--     (added by L.B1.6/071 — amended in place, F12; defined HERE so the
+--     tick never references a not-yet-created function during a
+--     fresh-reset cron fire). Seeded hash of (draft_id, pick_number) →
+--     a fraction in [0.20, 0.70): same inputs, same fraction, forever —
+--     no stored schedule, no wall-clock, no Math.random (D93). Occasional
+--     near-buzzer picks fall out of the distribution's tail naturally
+--     (§8.8). '00' + 6 hex chars ⇒ a provably non-negative 24-bit int;
+--     round(…, 6) keeps the literal pins stable. Pure math over
+--     arguments — broad EXECUTE deliberately (the draft_team_for_pick
+--     precedent); stored-literal-pinned in pgTAP 025.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION draft_mock_think_fraction(
+  p_draft_id UUID,
+  p_pick_number INTEGER
+) RETURNS NUMERIC
+LANGUAGE sql IMMUTABLE STRICT
+SET search_path = ''
+AS $$
+  SELECT round(
+    0.20 + 0.50 * (('x' || '00' || left(md5(p_draft_id::text || ':' || p_pick_number::text), 6))::bit(32)::int
+                   / 16777216.0),
+    6);
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2c. draft_mock_cpu_due — WHEN a mock CPU pick lands (L.B1.6/071; D93):
+--     pick start (deadline − timer for a timed draft; updated_at — the
+--     advance instant — for an untimed one) + think-time (`fast` ≈ 2s;
+--     `realistic` = think-fraction × the pick clock; an untimed draft has
+--     no clock to take a fraction of, so its CPUs think ~2s regardless of
+--     speed — recorded). ONE implementation for the ARM 2.5 claim WHERE
+--     and its under-lock re-check (the R135 claim ≡ body discipline).
+--     Pure over arguments — IMMUTABLE, broad EXECUTE (same precedent).
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION draft_mock_cpu_due(
+  p_draft_id UUID,
+  p_config JSONB,
+  p_current_deadline TIMESTAMPTZ,
+  p_updated_at TIMESTAMPTZ,
+  p_pick_number INTEGER
+) RETURNS TIMESTAMPTZ
+LANGUAGE sql IMMUTABLE
+SET search_path = ''
+AS $$
+  WITH s AS (
+    SELECT COALESCE((p_config->>'pick_timer_seconds')::int, 90) AS timer,
+           COALESCE(p_config->'mock'->>'cpu_speed', 'realistic') AS speed
+  )
+  SELECT CASE
+           WHEN s.timer > 0 AND p_current_deadline IS NOT NULL
+           THEN p_current_deadline - make_interval(secs => s.timer)
+           ELSE p_updated_at
+         END
+         + CASE
+             WHEN s.speed = 'fast' OR s.timer = 0 OR p_current_deadline IS NULL
+             THEN interval '2 seconds'
+             ELSE make_interval(secs =>
+                    s.timer * public.draft_mock_think_fraction(p_draft_id, p_pick_number))
+           END
+  FROM s;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 3. draft_touch — the D102 heartbeat (writes draft_liveness ONLY)
 -- ---------------------------------------------------------------------------
 
@@ -406,9 +494,26 @@ BEGIN
   SELECT l.* INTO v_league FROM public.leagues l WHERE l.id = v_draft.league_id;
 
   -- The seat's user (NULL row or NULL user_id = no-user seat — E48).
-  SELECT m.user_id INTO v_user
-  FROM public.league_members m
-  WHERE m.league_id = v_draft.league_id AND m.team_id = p_team_id;
+  -- MOCK-AWARE (L.B1.6/071 — amended in place, F12; D93/D103): in a mock,
+  -- the HUMAN seat resolves under the LAUNCHER's queue/boards — the
+  -- launcher is the one practicing, and the chosen seat may be a
+  -- placeholder or another member's franchise — while every CPU seat
+  -- resolves as a NO-USER seat (ADP + need, §8.8's bot behavior per D93:
+  -- a CPU seat must NEVER read its real owner's queue/boards — pinned in
+  -- 025). launched_by is RPC-written (auth.uid()::text) so the cast is
+  -- safe; a hand-crafted garbage value raises and is contained by the
+  -- tick's per-draft subtransaction.
+  IF v_draft.is_mock THEN
+    IF v_draft.config->'mock'->>'human_team_id' = p_team_id::text THEN
+      v_user := (v_draft.config->'mock'->>'launched_by')::uuid;
+    ELSE
+      v_user := NULL;
+    END IF;
+  ELSE
+    SELECT m.user_id INTO v_user
+    FROM public.league_members m
+    WHERE m.league_id = v_draft.league_id AND m.team_id = p_team_id;
+  END IF;
 
   -- Greedy model steps a–c (banner): capacities, then assign existing
   -- picks in pick order.
@@ -587,6 +692,13 @@ DECLARE
   v_hb             RECORD;
   v_heartbeats     INTEGER := 0;
   v_heartbeat_failures JSONB := '[]'::jsonb;
+  v_mk             RECORD;
+  v_mock_paused    INTEGER := 0;
+  v_mock_pause_failures JSONB := '[]'::jsonb;
+  v_mock_seen      UUID[] := '{}';
+  v_mock_picked    INTEGER := 0;
+  v_mock_cpu_failures JSONB := '[]'::jsonb;
+  v_mock_loops     INTEGER := 0;
 BEGIN
   -- -------------------------------------------------------------------------
   -- ARM 1 — D94 auto-start: scan scheduled LEAGUES (never the drafts
@@ -758,6 +870,91 @@ BEGIN
   END LOOP;
 
   -- -------------------------------------------------------------------------
+  -- ARM 1.6 — THE E59 MOCK STALE-PAUSE (L.B1.6/071 — amended in place,
+  -- F12; D93/§8.8). A live MOCK auto-pauses when the LAUNCHER's heartbeat
+  -- is stale past disconnect_grace_seconds + one tick (5s) — the D93
+  -- threshold, keyed on config.mock.launched_by (never the on-clock
+  -- seat's owner: the whole room is one human's practice, and without
+  -- them watching there is no point burning CPU picks — E59). Runs
+  -- BEFORE the timeout arm so the pause always preempts the grace-hold's
+  -- deadline+grace autopick: a seat stale AS OF its deadline last beat at
+  -- ≤ deadline − 45s, so the pause threshold (last beat + grace + 5s ≤
+  -- deadline + grace − 40s) expires strictly before the hold does — the
+  -- disconnected human never loses their pick to a timeout (pinned in
+  -- 025). CLAIM SCOPE (the R135/R141 discipline — the task charge "mock
+  -- arms must not widen any lock scope beyond due/claimable mocks"): the
+  -- WHERE is the body's predicate — live + mock + alive league + stale
+  -- launcher — so a healthy mock (fresh beat) is NEVER locked by this
+  -- arm; COALESCE(beat, started_at, created_at) guards fixture mocks
+  -- with no seeded beat (create_mock_draft always seeds one). Resume is
+  -- the LAUNCHER's action (069's draft_resume mock arm) — the tick never
+  -- auto-resumes (the ARM 1.5 symmetry: a deliberate pause must not be
+  -- fought by the clock).
+  -- -------------------------------------------------------------------------
+  FOR v_mk IN
+    SELECT d.id
+    FROM public.drafts d
+    WHERE d.status = 'live'
+      AND d.is_mock
+      AND EXISTS (
+        SELECT 1 FROM public.leagues l
+        WHERE l.id = d.league_id AND l.deleted_at IS NULL
+      )
+      AND COALESCE(
+            (SELECT dl.last_seen_at
+             FROM public.draft_liveness dl
+             WHERE dl.draft_id = d.id
+               AND dl.user_id::text = d.config->'mock'->>'launched_by'),
+            d.started_at, d.created_at)
+          < now() - (make_interval(secs => COALESCE(
+                       (d.config->>'disconnect_grace_seconds')::int, 30))
+                     + interval '5 seconds')
+    LIMIT c_batch
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      SELECT d.* INTO v_draft FROM public.drafts d WHERE d.id = v_mk.id;
+      -- Re-verify under the held lock (claim = snapshot pre-filter; body =
+      -- authoritative — the R135 discipline).
+      IF v_draft.status <> 'live' OR NOT v_draft.is_mock THEN
+        CONTINUE;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM public.leagues l
+        WHERE l.id = v_draft.league_id AND l.deleted_at IS NULL
+      ) THEN
+        CONTINUE;
+      END IF;
+      IF COALESCE(
+           (SELECT dl.last_seen_at
+            FROM public.draft_liveness dl
+            WHERE dl.draft_id = v_draft.id
+              AND dl.user_id::text = v_draft.config->'mock'->>'launched_by'),
+           v_draft.started_at, v_draft.created_at)
+         >= now() - (make_interval(secs => COALESCE(
+                       (v_draft.config->>'disconnect_grace_seconds')::int, 30))
+                     + interval '5 seconds') THEN
+        CONTINUE;
+      END IF;
+
+      -- The ONE pause-bookkeeping path (069's draft_pause_internal —
+      -- call-time-resolved, the ARM 1.5 forward-reference rationale: no
+      -- live mock can exist in the 068→071 window since create_mock_draft
+      -- is 071's); system post with NO acting user, scoped to the mock's
+      -- own chat context (zero league side effects).
+      PERFORM public.draft_pause_internal(
+        v_draft.id, NULL,
+        'Mock draft auto-paused — you left the room. Resume your practice from the league page.');
+      v_mock_paused := v_mock_paused + 1;
+    EXCEPTION WHEN OTHERS THEN
+      v_mock_pause_failures := v_mock_pause_failures || jsonb_build_object(
+        'draft_id', v_mk.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
+      RAISE WARNING 'draft_tick mock stale-pause failed for draft %: % (%)',
+        v_mk.id, SQLERRM, SQLSTATE;
+    END;
+  END LOOP;
+
+  -- -------------------------------------------------------------------------
   -- ARM 2 — timeout → autopick per the D102 contract; batch-limited loop
   -- until no due rows (§22.3), FOR UPDATE SKIP LOCKED claims (§4.6).
   -- -------------------------------------------------------------------------
@@ -800,11 +997,29 @@ BEGIN
           CONTINUE;
         END IF;
 
-        SELECT m.user_id, COALESCE(m.is_autodraft, FALSE)
-          INTO v_user, v_autodraft
-        FROM public.league_members m
-        WHERE m.league_id = v_draft.league_id
-          AND m.team_id = v_draft.on_clock_team_id;
+        -- Seat-user derivation. MOCK BRANCH (L.B1.6/071 — D93/D103): the
+        -- HUMAN seat keys freshness/grace on the LAUNCHER (the seat's
+        -- real owner and their is_autodraft are irrelevant inside a
+        -- practice room — the launcher wants the clock pressure, §8.8);
+        -- every CPU seat is a no-user seat here (immediate autopick —
+        -- normally ARM 2.5 picks it BEFORE the deadline, so reaching this
+        -- arm means the tick was down past the deadline, and the timeout
+        -- semantics are identical).
+        IF v_draft.is_mock THEN
+          IF v_draft.config->'mock'->>'human_team_id'
+             = v_draft.on_clock_team_id::text THEN
+            v_user := (v_draft.config->'mock'->>'launched_by')::uuid;
+          ELSE
+            v_user := NULL;
+          END IF;
+          v_autodraft := FALSE;
+        ELSE
+          SELECT m.user_id, COALESCE(m.is_autodraft, FALSE)
+            INTO v_user, v_autodraft
+          FROM public.league_members m
+          WHERE m.league_id = v_draft.league_id
+            AND m.team_id = v_draft.on_clock_team_id;
+        END IF;
 
         v_grace := COALESCE(
           (v_draft.config->>'disconnect_grace_seconds')::int, 30);
@@ -875,6 +1090,100 @@ BEGIN
   END LOOP;
 
   -- -------------------------------------------------------------------------
+  -- ARM 2.5 — MOCK CPU THINK-TIME PICKS (L.B1.6/071 — amended in place,
+  -- F12; D93/§8.8, plan §4.2). Every non-human seat in a live mock picks
+  -- when its think-time elapses: due = pick start + PRNG(draft_id,
+  -- pick_number) → 20–70% of the clock (`realistic`) or ~2s (`fast`) —
+  -- draft_mock_cpu_due, the ONE due computation for claim AND re-check.
+  -- THE PICK ITSELF IS THE AUTOPICK STRATEGY FN (draft_autopick_resolve →
+  -- draft_apply_pick_internal — the same brain and the same advance path
+  -- as a live timeout; "one implementation, two consumers" — the DoD
+  -- break-probe target: a forked raw-ADP CPU fails 025's need-fit board
+  -- pins). The human seat is NEVER touched by this arm (its clock is
+  -- always real — §8.8; ARM 2 owns its timeout at the deadline). CLAIM
+  -- SCOPE (R135/R141 + the task charge): the WHERE is the body's
+  -- predicate — live + mock + CPU on clock + due + alive league — so a
+  -- mock whose CPU is still thinking is NEVER locked. One CPU pick per
+  -- mock per pass (the think origin is the advance instant, so the next
+  -- pick's due is always in the future at apply time): `fast` ≈ 2s
+  -- think-time lands on the first tick after it elapses — effective
+  -- cadence bounded by the 5s tick, the same granularity class D87
+  -- records for timeout lag (recorded residual). Runs AFTER ARM 2 (a
+  -- deadline-expired mock CPU seat is ARM 2's immediate autopick; the
+  -- fresh deadline it writes puts the next due in the future) and BEFORE
+  -- ARM 3 (a just-made CPU pick's fresh deadline beats in the same pass).
+  -- -------------------------------------------------------------------------
+  LOOP
+    v_mock_loops := v_mock_loops + 1;
+    v_pass := 0;
+
+    FOR v_row IN
+      SELECT d.id
+      FROM public.drafts d
+      WHERE d.status = 'live'
+        AND d.is_mock
+        AND d.on_clock_team_id IS NOT NULL
+        AND d.config->'mock'->>'human_team_id'
+            IS DISTINCT FROM d.on_clock_team_id::text
+        AND NOT (d.id = ANY(v_mock_seen))
+        AND EXISTS (
+          SELECT 1 FROM public.leagues l
+          WHERE l.id = d.league_id AND l.deleted_at IS NULL
+        )
+        AND now() >= public.draft_mock_cpu_due(
+              d.id, d.config, d.current_deadline, d.updated_at,
+              d.current_pick_number)
+      LIMIT c_batch
+      FOR UPDATE SKIP LOCKED
+    LOOP
+      v_pass := v_pass + 1;
+      v_mock_seen := v_mock_seen || v_row.id;
+
+      BEGIN
+        SELECT d.* INTO v_draft FROM public.drafts d WHERE d.id = v_row.id;
+
+        -- Re-verify under the held lock (claim = snapshot pre-filter).
+        IF v_draft.status <> 'live'
+           OR NOT v_draft.is_mock
+           OR v_draft.on_clock_team_id IS NULL
+           OR v_draft.config->'mock'->>'human_team_id'
+              = v_draft.on_clock_team_id::text
+           OR now() < public.draft_mock_cpu_due(
+                v_draft.id, v_draft.config, v_draft.current_deadline,
+                v_draft.updated_at, v_draft.current_pick_number) THEN
+          CONTINUE;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM public.leagues l
+          WHERE l.id = v_draft.league_id AND l.deleted_at IS NULL
+        ) THEN
+          CONTINUE;
+        END IF;
+
+        -- THE SHARED BRAIN (D93/plan §4.2 — never a fork): resolution +
+        -- the ONE advance path, §12.4's system-pick shape.
+        v_player := public.draft_autopick_resolve(
+          v_draft.id, v_draft.on_clock_team_id);
+        IF v_player IS NULL THEN
+          RAISE EXCEPTION
+            'draft_tick: no available player for the CPU pick in mock draft % (pool exhausted)',
+            v_draft.id;
+        END IF;
+        PERFORM public.draft_apply_pick_internal(
+          v_draft.id, v_player, TRUE, 'autopick', NULL, NULL);
+        v_mock_picked := v_mock_picked + 1;
+      EXCEPTION WHEN OTHERS THEN
+        v_mock_cpu_failures := v_mock_cpu_failures || jsonb_build_object(
+          'draft_id', v_row.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
+        RAISE WARNING 'draft_tick mock CPU arm failed for draft %: % (%)',
+          v_row.id, SQLERRM, SQLSTATE;
+      END;
+    END LOOP;
+
+    EXIT WHEN v_pass = 0 OR v_mock_loops >= c_max_loops;
+  END LOOP;
+
+  -- -------------------------------------------------------------------------
   -- ARM 3 — the §9.1 tick heartbeat (amended in by L.B1.5/070 — see the
   -- banner). ONE realtime.send() per live draft per pass (~5s), event
   -- 'tick' on the draft topic, payload = server-now + the authoritative
@@ -923,6 +1232,10 @@ BEGIN
     'start_failures', v_start_failures,
     'outage_paused', v_outage_paused,
     'outage_failures', v_outage_failures,
+    'mock_paused', v_mock_paused,
+    'mock_pause_failures', v_mock_pause_failures,
+    'mock_cpu_picked', v_mock_picked,
+    'mock_cpu_failures', v_mock_cpu_failures,
     'claimed_due', v_claimed,
     'autopicked', v_picked,
     'held_for_grace', v_held,

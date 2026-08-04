@@ -106,11 +106,13 @@
 --            against uniq_draft_action (undone rows KEEP their action_id)
 --            ⇒ 23505 ⇒ a misleading "just went off the board". The manager
 --            re-picks with a FRESH action_id. Pinned in pgTAP 023),
---            mock seam refusal
---            (D103(2) — **the mock branch (launcher-only, human seat only)
---            is amended in by L.B1.6/071**; until then no human caller is
---            legal on an is_mock draft and this refusal marks the seam so
---            neither session misses it), auction refusal (M3), status
+--            THE D103(2) MOCK BRANCH (landed by L.B1.6/071 — this
+--            replaced the seam refusal 066 originally shipped; the 020
+--            seam pin flipped with it): launcher-only (any other member,
+--            incl. the seat's real manager and the commissioner, gets the
+--            friendly solo-practice refusal) + human seat only (checked
+--            at the TURN step — a CPU seat on the clock answers "CPU
+--            picks land on their own"), auction refusal (M3), status
 --            ('live' required — friendly per-status messages), TURN (the
 --            caller's league_members cache row manages on_clock_team_id —
 --            M1's access model; commissioners use L.B1.4's force path, NOT
@@ -233,6 +235,33 @@
 -- (an action_id is consumed forever; the no-filter replay is deliberate
 -- and pinned in pgTAP 023 — see 069's banner item 5 for the full
 -- rationale).
+--
+-- AMENDED IN PLACE 2026-08-04 (L.B1.6/071 — the unreleased-chain amend
+-- precedent, F12; see 071's banner + PROGRESS D110). Two changes:
+--   (d) THE D103(2) MOCK BRANCH lands in `draft_make_pick`, replacing the
+--       L.B1.6 seam refusal this banner cross-referenced: on an is_mock
+--       draft the ONLY legal human caller is `config.mock.launched_by`
+--       (any other member — including the on-clock seat's REAL manager
+--       and the commissioner — gets the friendly solo-practice refusal;
+--       no bypass), and only while `on_clock_team_id` equals
+--       `config.mock.human_team_id` (a CPU seat on the clock answers
+--       "CPU picks land on their own" — every other seat is tick-only,
+--       D93/071 ARM 2.5). The normal league_members turn check never runs
+--       for mocks (the launcher's chosen seat may be a placeholder or
+--       another member's franchise — "any seat selectable", §8.8).
+--       pgTAP 020's seam pin FLIPS to the launcher refusal (the pin was
+--       built to flip); both sides of D103(2) are pinned in 025.
+--   (e) `draft_resolve_order_internal` EXTRACTED from
+--       draft_start_internal's order-resolution block (the D107(2)
+--       wrapper/internal precedent) so 071's `create_mock_draft` snapshot
+--       and the real start share the ONE order-resolution implementation
+--       (candidate-wins-over-config, manual/custom permutation validation,
+--       the D105 md5 shuffle) — a fork would drift the mock's order from
+--       the order draft night produces (§8.8 "a mock that behaves
+--       differently from draft night is worse than no mock"). Behavior
+--       byte-identical for the real path (p_label = 'draft_start' keeps
+--       every pinned message; pgTAP 020's order pins prove it); plain
+--       internal, 062-form triple REVOKE.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -291,6 +320,91 @@ AS $$
     )
   END;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 2b. draft_resolve_order_internal — the ONE order-resolution
+--     implementation (L.B1.6 amendment (e); D101/D105/R123/R126).
+--     Consumers: draft_start_internal (candidate = the draft row's stored
+--     order, seed = the draft row's id, label 'draft_start') and 071's
+--     create_mock_draft (candidate = the REAL scheduled draft row's
+--     stored order if any, seed = the MOCK's own id, label
+--     'create_mock_draft'). Logic moved VERBATIM from
+--     draft_start_internal: the draft-row candidate wins so the order the
+--     lobby displayed is the order that drafts (D101); the config
+--     fallback is manual/custom-ONLY (R123/R126); manual/custom REQUIRE a
+--     permutation of the active team ids (TEXT-compared — the R117
+--     lesson) else the friendly P0001; random honors a VALID candidate
+--     as-is and otherwise shuffles deterministically by
+--     md5(seed || team_id) (D105 — no wall-clock, no Math.random).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION draft_resolve_order_internal(
+  p_league_id UUID,
+  p_team_count INTEGER,
+  p_mode TEXT,
+  p_candidate JSONB,
+  p_config_order JSONB,
+  p_seed UUID,
+  p_label TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_stored JSONB;
+  v_valid  BOOLEAN;
+  v_order  JSONB;
+BEGIN
+  -- Draft-row value wins over the settings field (D101); `random`
+  -- considers ONLY the draft-row candidate (R123/R126 — the config
+  -- fallback is manual/custom-only).
+  v_stored := CASE
+    WHEN jsonb_typeof(p_candidate) = 'array' THEN p_candidate
+    WHEN p_mode IN ('manual', 'custom')
+     AND jsonb_typeof(p_config_order) = 'array' THEN p_config_order
+    ELSE NULL
+  END;
+  -- Permutation check, compared as TEXT (malformed entries fail
+  -- validation, never a ::uuid cast — the R117 lesson).
+  v_valid := v_stored IS NOT NULL AND (
+    SELECT count(*) = p_team_count
+       AND count(DISTINCT e.val) = p_team_count
+       AND bool_and(EXISTS (
+             SELECT 1 FROM public.teams t
+             WHERE t.league_id = p_league_id
+               AND t.status <> 'retired'
+               AND t.id::text = e.val))
+    FROM jsonb_array_elements_text(v_stored) AS e(val)
+  );
+
+  IF p_mode IN ('manual', 'custom') THEN
+    IF NOT v_valid THEN
+      RAISE EXCEPTION
+        '%: league % has draft_order_mode=% but the stored draft order does not cover every active franchise exactly once — re-save the order in Draft setup (§8.3)',
+        p_label, p_league_id, p_mode
+        USING ERRCODE = 'P0001';
+    END IF;
+    v_order := v_stored;
+  ELSE
+    IF v_valid THEN
+      -- D101: a pre-start randomize already wrote (and the lobby already
+      -- showed) this order — honor it.
+      v_order := v_stored;
+    ELSE
+      -- Deterministic seeded shuffle (D105): seed = the caller's draft id.
+      SELECT jsonb_agg(to_jsonb(t.id) ORDER BY md5(p_seed::text || t.id::text))
+        INTO v_order
+      FROM public.teams t
+      WHERE t.league_id = p_league_id AND t.status <> 'retired';
+    END IF;
+  END IF;
+
+  RETURN v_order;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION
+  draft_resolve_order_internal(UUID, INTEGER, TEXT, JSONB, JSONB, UUID, TEXT)
+  FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 3. draft_create — hydrate §7.3.8 config; idempotent vs the D95 partial
@@ -426,10 +540,7 @@ DECLARE
   v_league       public.leagues;
   v_draft        public.drafts;
   v_config       JSONB;
-  v_stored       JSONB;
   v_order        JSONB;
-  v_valid        BOOLEAN;
-  v_mode         TEXT;
   v_active_count INTEGER;
   v_total_rounds INTEGER;
   v_timer        INTEGER;
@@ -541,58 +652,21 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- Order resolution (D101/D105 — see banner). Draft-row value wins over
-  -- the settings field so the order the lobby displayed is the order that
-  -- drafts. `random` considers ONLY the draft-row candidate (R123): the
-  -- config fallback exists for manual/custom orders saved through the
-  -- settings surface; under random mode no lobby ever displayed a
-  -- config-sourced order, and honoring a stale settings-blob leftover
-  -- (from a prior manual/custom episode) would silently defeat the shuffle.
-  v_mode := COALESCE(v_config->>'draft_order_mode', 'random');
-  -- R126 (taken at this touch, L.B1.3): the config fallback is
-  -- manual/custom-ONLY as the attestations state — an out-of-enum mode
-  -- value (unreachable through the Zod catalog; privileged/direct writes
-  -- only) no longer reads the settings-blob draft_order.
-  v_stored := CASE
-    WHEN jsonb_typeof(v_draft.draft_order) = 'array' THEN v_draft.draft_order
-    WHEN v_mode IN ('manual', 'custom')
-     AND jsonb_typeof(v_config->'draft_order') = 'array' THEN v_config->'draft_order'
-    ELSE NULL
-  END;
-  -- Permutation check, compared as TEXT (malformed entries fail validation,
-  -- never a ::uuid cast — the R117 lesson).
-  v_valid := v_stored IS NOT NULL AND (
-    SELECT count(*) = v_league.team_count
-       AND count(DISTINCT e.val) = v_league.team_count
-       AND bool_and(EXISTS (
-             SELECT 1 FROM public.teams t
-             WHERE t.league_id = p_league_id
-               AND t.status <> 'retired'
-               AND t.id::text = e.val))
-    FROM jsonb_array_elements_text(v_stored) AS e(val)
-  );
-
-  IF v_mode IN ('manual', 'custom') THEN
-    IF NOT v_valid THEN
-      RAISE EXCEPTION
-        'draft_start: league % has draft_order_mode=% but the stored draft order does not cover every active franchise exactly once — re-save the order in Draft setup (§8.3)',
-        p_league_id, v_mode
-        USING ERRCODE = 'P0001';
-    END IF;
-    v_order := v_stored;
-  ELSE
-    IF v_valid THEN
-      -- D101: a pre-start randomize already wrote (and the lobby already
-      -- showed) this order — honor it.
-      v_order := v_stored;
-    ELSE
-      -- Deterministic seeded shuffle (D105): seed = the draft row's own id.
-      SELECT jsonb_agg(to_jsonb(t.id) ORDER BY md5(v_draft.id::text || t.id::text))
-        INTO v_order
-      FROM public.teams t
-      WHERE t.league_id = p_league_id AND t.status <> 'retired';
-    END IF;
-  END IF;
+  -- Order resolution (D101/D105/R123/R126) via the ONE implementation
+  -- (draft_resolve_order_internal — extracted at L.B1.6 amendment (e),
+  -- logic verbatim; 071's create_mock_draft is the second consumer):
+  -- candidate = the draft row's stored order (a pre-start randomize/order
+  -- edit — it wins so the order the lobby displayed is the order that
+  -- drafts), config fallback manual/custom-only, seed = the draft row's
+  -- own id, label 'draft_start' (every pinned message unchanged).
+  v_order := public.draft_resolve_order_internal(
+    p_league_id,
+    v_league.team_count,
+    COALESCE(v_config->>'draft_order_mode', 'random'),
+    v_draft.draft_order,
+    v_config->'draft_order',
+    v_draft.id,
+    'draft_start');
 
   -- D91: rounds = starters + bench (IR excluded).
   v_total_rounds := public.draft_rounds_from_roster(v_league.roster_settings);
@@ -814,13 +888,21 @@ BEGIN
     RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'pick', to_jsonb(v_pick));
   END IF;
 
-  -- The L.B1.6 seam (D103(2)), cross-referenced in the banner: the mock
-  -- branch (launcher-only, human seat only) is amended in by 071. Until
-  -- then no human caller is legal on a mock draft — this refusal marks the
-  -- seam so the default human-turn path can never silently apply to mocks.
-  IF v_draft.is_mock THEN
+  -- THE D103(2) MOCK BRANCH (landed by L.B1.6/071 — this was the seam
+  -- refusal 066 shipped; the 020 seam pin flipped with it): on a mock the
+  -- ONLY legal human caller is the launcher (config.mock.launched_by,
+  -- TEXT-compared — R117). Any other member — including the on-clock
+  -- seat's REAL manager and the commissioner — is refused: nobody else
+  -- drives a member's solo practice, and there is no force-path bypass
+  -- for mocks (069's controls refuse them). A config-less mock (only
+  -- reachable by privileged fixture inserts — every RPC writer stamps
+  -- config.mock) has launched_by NULL and stays tick-only, the safe
+  -- default. The human-seat-only half of D103(2) lives at the TURN step
+  -- below (it needs status='live' established first so on_clock is real).
+  IF v_draft.is_mock
+     AND v_draft.config->'mock'->>'launched_by' IS DISTINCT FROM auth.uid()::text THEN
     RAISE EXCEPTION
-      'draft_make_pick: mock draft picks land with Mock Draft Mode (§8.8 — L.B1.6/071)'
+      'draft_make_pick: this mock draft is another member''s solo practice (§8.8/D103)'
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -841,19 +923,33 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- TURN: the caller manages the on-clock team (league_members cache —
-  -- M1's access model). Commissioners use the L.B1.4 force path, not this
-  -- RPC: no role bypass exists here.
-  SELECT m.team_id INTO v_my_team
-  FROM public.league_members m
-  WHERE m.league_id = v_draft.league_id AND m.user_id = auth.uid();
-  IF v_my_team IS NULL OR v_my_team IS DISTINCT FROM v_draft.on_clock_team_id THEN
-    SELECT t.name INTO v_on_clock_name
-    FROM public.teams t WHERE t.id = v_draft.on_clock_team_id;
-    RAISE EXCEPTION
-      'draft_make_pick: it is not your turn — % is on the clock',
-      COALESCE(v_on_clock_name, 'another team')
-      USING ERRCODE = 'P0001';
+  -- TURN. Mock branch (D103(2), the human-seat-only half): the launcher —
+  -- already verified above — may pick ONLY while the HUMAN seat is on the
+  -- clock (every other seat is tick-only, D93/071 ARM 2.5); the normal
+  -- league_members turn check never runs for mocks (the chosen seat may
+  -- be a placeholder or another member's franchise — "any seat
+  -- selectable", §8.8). Real drafts: the caller manages the on-clock team
+  -- (league_members cache — M1's access model). Commissioners use the
+  -- L.B1.4 force path, not this RPC: no role bypass exists here.
+  IF v_draft.is_mock THEN
+    IF v_draft.config->'mock'->>'human_team_id'
+       IS DISTINCT FROM v_draft.on_clock_team_id::text THEN
+      RAISE EXCEPTION
+        'draft_make_pick: a CPU seat is on the clock — CPU picks land on their own (§8.8)'
+        USING ERRCODE = 'P0001';
+    END IF;
+  ELSE
+    SELECT m.team_id INTO v_my_team
+    FROM public.league_members m
+    WHERE m.league_id = v_draft.league_id AND m.user_id = auth.uid();
+    IF v_my_team IS NULL OR v_my_team IS DISTINCT FROM v_draft.on_clock_team_id THEN
+      SELECT t.name INTO v_on_clock_name
+      FROM public.teams t WHERE t.id = v_draft.on_clock_team_id;
+      RAISE EXCEPTION
+        'draft_make_pick: it is not your turn — % is on the clock',
+        COALESCE(v_on_clock_name, 'another team')
+        USING ERRCODE = 'P0001';
+    END IF;
   END IF;
 
   SELECT pl.full_name INTO v_player_name

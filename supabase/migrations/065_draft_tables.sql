@@ -54,6 +54,11 @@
 --      against ANY draft_id (incl. another league's). Harmless while queue
 --      rows are advisory; 068's autopick MUST join draft→league (or treat
 --      queue rows as untrusted hints) rather than trust rows' draft_id.
+--      AMENDED IN PLACE 2026-08-04 (L.B1.6/071 — unreleased chain, F12):
+--      both policies gained the D103(3) MOCK-LAUNCHER carve-out (an OR
+--      arm: the draft is a mock, the caller is config.mock.launched_by,
+--      and the row is the human seat's queue) — the launcher owns their
+--      practice seat's queue regardless of stint. See the policy comment.
 --
 --   4. `league_chat` §12.13 extension + the C11/F18(chat half) policy
 --      replacement (D99): ADD context TEXT DEFAULT 'league' ('league' |
@@ -194,11 +199,39 @@ CREATE TABLE draft_queues (
 
 ALTER TABLE draft_queues ENABLE ROW LEVEL SECURITY;
 
--- A manager sees/edits only their own queue (§12.6 printed policies).
+-- A manager sees/edits only their own queue (§12.6 printed policies), OR —
+-- the D103(3) mock-launcher carve-out (amended in place by L.B1.6/071,
+-- unreleased chain F12) — the caller launched a MOCK draft and the row is
+-- the HUMAN seat's queue for that mock: the launcher owns their practice
+-- seat's queue regardless of stint (the chosen seat may be a placeholder
+-- or another user's franchise — §8.8 "any seat selectable"). Config values
+-- compared as TEXT (the R117 no-cast rule). The seat's REAL owner also
+-- matches via the printed owner arm (the R120 advisory-rows class,
+-- recorded — queue rows are hints, the autopick reads them launcher-keyed
+-- for mocks, 068). Behavior pinned in pgTAP 025; 019's name/cmd pins are
+-- unchanged.
 CREATE POLICY "Own queue read" ON draft_queues FOR SELECT
-  USING (EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid()));
+  USING (
+    EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM drafts d
+      WHERE d.id = draft_queues.draft_id
+        AND d.is_mock
+        AND d.config->'mock'->>'launched_by' = auth.uid()::text
+        AND d.config->'mock'->>'human_team_id' = draft_queues.team_id::text
+    )
+  );
 CREATE POLICY "Own queue write" ON draft_queues FOR ALL
-  USING (EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid()));
+  USING (
+    EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM drafts d
+      WHERE d.id = draft_queues.draft_id
+        AND d.is_mock
+        AND d.config->'mock'->>'launched_by' = auth.uid()::text
+        AND d.config->'mock'->>'human_team_id' = draft_queues.team_id::text
+    )
+  );
 
 CREATE INDEX idx_draft_queues_team ON draft_queues(draft_id, team_id, rank);
 

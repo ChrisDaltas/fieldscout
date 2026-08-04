@@ -54,9 +54,12 @@
 --     lock sits below it (taking it above deadlocks an in-flight pick's
 --     FK KEY SHARE on the leagues row: 40P01, live-proven in the batch-2
 --     R122 probe and demonstrated fixed in the same session).
---   * Mock + auction seams: picks on an is_mock draft refuse naming
---     L.B1.6/071 (the D103(2) seam marker); auction start/pick refuse
---     naming M3.
+--   * Mock branch (D103(2), landed by L.B1.6/071 — the seam pin this file
+--     originally carried FLIPPED with it): a non-launcher member's pick on
+--     an is_mock draft gets the friendly solo-practice refusal (the
+--     fixture mock is config-less, so launched_by NULL keeps it
+--     tick-only); the launcher-positive + CPU-seat sides live in pgTAP
+--     025. Auction start/pick refuse naming M3.
 --   * All privileged fixture work runs BEFORE any JWT claims (D49(7));
 --     mid-test privileged pins use `reset role` (013/014/018/019 pattern).
 --     The pick-drive helper (pg_temp.dc_drive) runs privileged and sets
@@ -923,8 +926,14 @@ select throws_ok(
 reset role;
 update drafts set status = 'live' where id = 'e2000000-0000-4000-8000-0000000000a2';
 
--- Mock seam (D103(2)/L.B1.6): a live mock coexists (D95 exempts mocks); no
--- human caller is legal on it until 071 amends the branch in.
+-- Mock branch (D103(2) — the L.B1.6 seam pin FLIPPED when 071 landed the
+-- branch, as the 066 banner's cross-reference anticipated): a live mock
+-- coexists (D95 exempts mocks). This fixture mock carries NO config.mock
+-- (a privileged fixture shape — every RPC writer stamps it), so
+-- launched_by is NULL and ANY human caller gets the solo-practice
+-- refusal: the tick-only safe default. Both REAL sides of D103(2) — the
+-- launcher picking their chosen seat, other members refused on a
+-- config-carrying mock — are pinned in pgTAP 025.
 insert into drafts (id, league_id, draft_type, status, is_mock) values
   ('e2000000-0000-4000-8000-0000000000ee', 'b2000000-0000-4000-8000-0000000000a2',
    'snake', 'live', true);
@@ -934,8 +943,8 @@ select set_config('request.jwt.claims',
 select throws_ok(
   $$ select public.draft_make_pick('e2000000-0000-4000-8000-0000000000ee',
        'pgtap-dc-p003', 'a4000000-0000-4000-8000-000000000090') $$,
-  'P0001', 'draft_make_pick: mock draft picks land with Mock Draft Mode (§8.8 — L.B1.6/071)',
-  'the L.B1.6 seam: a member''s pick on an is_mock draft refuses naming 071 (D103(2))');
+  'P0001', 'draft_make_pick: this mock draft is another member''s solo practice (§8.8/D103)',
+  'D103(2): a member''s pick on a mock they did not launch (here: a config-less fixture mock — launched_by NULL) is refused');
 reset role;
 
 -- Auction seam: a live auction draft (LH — no other active draft there).

@@ -2913,6 +2913,16 @@ export type Database = {
         }
         Returns: Json
       }
+      create_mock_draft: {
+        Args: {
+          p_action_id?: string
+          p_cpu_speed?: string
+          p_human_team_id?: string
+          p_league_id: string
+        }
+        Returns: Json
+      }
+      delete_mock_draft: { Args: { p_draft_id: string }; Returns: undefined }
       draft_actor_name: { Args: never; Returns: string }
       draft_apply_pick_internal: {
         Args: {
@@ -2952,6 +2962,20 @@ export type Database = {
         Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
         Returns: Json
       }
+      draft_mock_cpu_due: {
+        Args: {
+          p_config: Json
+          p_current_deadline: string
+          p_draft_id: string
+          p_pick_number: number
+          p_updated_at: string
+        }
+        Returns: string
+      }
+      draft_mock_think_fraction: {
+        Args: { p_draft_id: string; p_pick_number: number }
+        Returns: number
+      }
       draft_move_player: {
         Args: {
           p_draft_id: string
@@ -2986,6 +3010,18 @@ export type Database = {
       }
       draft_reset: {
         Args: { p_draft_id: string; p_reason?: string }
+        Returns: Json
+      }
+      draft_resolve_order_internal: {
+        Args: {
+          p_candidate: Json
+          p_config_order: Json
+          p_label: string
+          p_league_id: string
+          p_mode: string
+          p_seed: string
+          p_team_count: number
+        }
         Returns: Json
       }
       draft_resume: {
@@ -3085,6 +3121,7 @@ export type Database = {
         Returns: Json
       }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
+      mock_draft_expire: { Args: never; Returns: Json }
       notify_league_invite_internal: {
         Args: {
           p_league_id: string
@@ -3321,6 +3358,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 // ============================================================================

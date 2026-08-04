@@ -269,6 +269,30 @@
 -- plus pgTAP 023 in the same PR. Prod-safe: new functions + one constraint
 -- drop. F12 note: prod's migration history still ends pre-league-schema;
 -- this lands with the next normal push.
+--
+-- AMENDED IN PLACE 2026-08-04 (L.B1.6/071 — the unreleased-chain amend
+-- precedent, F12; see 071's banner + PROGRESS D110). Mock Draft Mode made
+-- mocks REACHABLE, so every control here needed a mock posture (§8.8 +
+-- D103(2) — nobody but the launcher drives a solo practice):
+--   * `draft_pause` / `draft_resume` gained the MOCK-LAUNCHER ARM: on an
+--     is_mock draft the ONLY legal human caller is config.mock.launched_by
+--     (§8.8 "pause/leave anytime … resumable from the league page" +
+--     "Same engine, literally: … pause/resume"; E59's auto-pause — 068
+--     ARM 1.6 — needs a resume path that cannot dead-end on a
+--     non-commissioner launcher). Commissioners have NO bypass (friendly
+--     P0001). The 42501 no-leak floor + message are UNCHANGED for real
+--     drafts (023's pins hold; the member gate keeps nonexistent and
+--     non-member answering the same refusal).
+--   * The other seven controls (set_clock/undo/reassign/move/force/
+--     set_order/reset) REFUSE mocks with a friendly P0001: §8.7 is the
+--     REAL-draft surface, and `draft_reset` on a mock would be an
+--     outright zero-side-effect breach (live-verified before guarding:
+--     unguarded, reset(mock) flipped leagues.status to 'scheduled' and
+--     REMOVED settings.draft.draft_scheduled_at — exactly the league
+--     write §8.8 bans). Non-commish callers keep the 42501 gate (a
+--     launcher without the commissioner role gets 42501 on these — the
+--     controls simply do not exist for mocks; recorded).
+--   All mock-posture refusals pinned in pgTAP 025; 023 untouched.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -369,10 +393,25 @@ BEGIN
   FOR UPDATE;
 
   -- (2) VALIDATE. One 42501 for nonexistent/non-member/non-commish
-  -- (no-leak; is_league_commish(NULL) is FALSE).
-  IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
+  -- (no-leak; is_league_commish(NULL) is FALSE). MOCK ARM (L.B1.6/071 —
+  -- amended in place, F12; §8.8 "pause/leave anytime … resumable" +
+  -- D103(2)): on a mock the authority is the LAUNCHER, not the
+  -- commissioner — the member gate keeps the no-leak floor (nonexistent
+  -- and non-member answer the same 42501, message unchanged for 023's
+  -- pins), the commissioner gate applies to REAL drafts only, and a
+  -- member who is not the launcher gets the friendly refusal below
+  -- (commissioners have NO bypass — nobody else drives a solo practice).
+  IF NOT FOUND
+     OR NOT public.is_league_member(v_draft.league_id)
+     OR (NOT v_draft.is_mock AND NOT public.is_league_commish(v_draft.league_id)) THEN
     RAISE EXCEPTION 'draft_pause: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  IF v_draft.is_mock
+     AND v_draft.config->'mock'->>'launched_by' IS DISTINCT FROM auth.uid()::text THEN
+    RAISE EXCEPTION
+      'draft_pause: only the member practicing this mock can pause it (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- Idempotent no-op (D63 class): a double-tapped Pause must not error —
@@ -413,9 +452,19 @@ BEGIN
   WHERE d.id = p_draft_id
   FOR UPDATE;
 
-  IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
+  -- MOCK ARM (L.B1.6/071 — the draft_pause mirror; E59's auto-pause needs
+  -- a resume path that cannot dead-end on a non-commissioner launcher).
+  IF NOT FOUND
+     OR NOT public.is_league_member(v_draft.league_id)
+     OR (NOT v_draft.is_mock AND NOT public.is_league_commish(v_draft.league_id)) THEN
     RAISE EXCEPTION 'draft_resume: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  IF v_draft.is_mock
+     AND v_draft.config->'mock'->>'launched_by' IS DISTINCT FROM auth.uid()::text THEN
+    RAISE EXCEPTION
+      'draft_resume: only the member practicing this mock can resume it (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- Idempotent no-op: resume of a live draft.
@@ -506,6 +555,17 @@ BEGIN
   IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
     RAISE EXCEPTION 'draft_set_clock: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_set_clock: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   IF v_draft.status NOT IN ('live', 'paused') THEN
@@ -614,6 +674,17 @@ BEGIN
   IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
     RAISE EXCEPTION 'draft_undo: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_undo: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   IF v_draft.status = 'complete' THEN
@@ -741,6 +812,17 @@ BEGIN
   IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
     RAISE EXCEPTION 'draft_reassign_pick: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_reassign_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   IF v_draft.status = 'complete' THEN
@@ -895,6 +977,17 @@ BEGIN
     RAISE EXCEPTION 'draft_move_player: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
   END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_move_player: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
+  END IF;
 
   IF v_draft.status = 'complete' THEN
     RAISE EXCEPTION
@@ -1022,6 +1115,17 @@ BEGIN
     RAISE EXCEPTION 'draft_force_pick: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
   END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_force_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
+  END IF;
 
   -- E2 replay short-circuit (optional idempotency — §4.6; the R125
   -- semantics apply: an action_id is consumed forever, undone or not).
@@ -1128,6 +1232,17 @@ BEGIN
   IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
     RAISE EXCEPTION 'draft_set_order: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   IF v_draft.status = 'complete' THEN
@@ -1255,6 +1370,17 @@ BEGIN
   IF NOT FOUND OR NOT public.is_league_commish(v_draft.league_id) THEN
     RAISE EXCEPTION 'draft_reset: not a commissioner of this draft''s league'
       USING ERRCODE = '42501';
+  END IF;
+  -- MOCK GUARD (L.B1.6/071 — amended in place, F12; D103(2)/§8.8): §8.7
+  -- is the REAL-draft commissioner surface. On a mock this control is
+  -- interference with a member's solo practice (and for draft_reset an
+  -- outright zero-side-effect breach — it writes leagues.status and the
+  -- stored schedule instant). The launcher's controls are
+  -- pause/resume/delete (069 mock arms + 071). Pinned in pgTAP 025.
+  IF v_draft.is_mock THEN
+    RAISE EXCEPTION
+      'draft_reset: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   IF v_draft.status = 'complete' THEN
