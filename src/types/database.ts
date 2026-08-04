@@ -411,7 +411,7 @@ export type Database = {
           draft_order: Json | null
           draft_type: string
           id: string
-          is_mock: boolean | null
+          is_mock: boolean
           league_id: string
           nomination_order: Json | null
           on_clock_team_id: string | null
@@ -433,7 +433,7 @@ export type Database = {
           draft_order?: Json | null
           draft_type?: string
           id?: string
-          is_mock?: boolean | null
+          is_mock?: boolean
           league_id: string
           nomination_order?: Json | null
           on_clock_team_id?: string | null
@@ -455,7 +455,7 @@ export type Database = {
           draft_order?: Json | null
           draft_type?: string
           id?: string
-          is_mock?: boolean | null
+          is_mock?: boolean
           league_id?: string
           nomination_order?: Json | null
           on_clock_team_id?: string | null

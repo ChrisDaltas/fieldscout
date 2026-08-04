@@ -27,11 +27,17 @@
 --     C11 ghost — reads NOTHING and posting raises 42501 (the old policy
 --     GRANTED both). Re-pointing either policy at the old check breaks both
 --     directions.
---   * Chat INSERT boundaries: 500-char message succeeds / 501 refused;
---     is_system forge refused; user_id spoof refused; draft-context
---     validity refused for a cross-league draft, a nonexistent draft, a
---     garbage context, and NULL — and ACCEPTED for a same-league real AND
---     mock draft (D99: mock chat is member-visible).
+--   * Chat INSERT boundaries: empty message refused (R119) / 500-char
+--     succeeds / 501 refused; is_system forge refused; user_id spoof
+--     refused; draft-context validity refused for a cross-league draft, a
+--     nonexistent draft, a garbage context ('lobby'), a TRAILING-JUNK
+--     context ('draft:<valid-id>:junk' — R117: the policy exact-matches
+--     the §12.13 grammar, not just segment 2), and NULL — and ACCEPTED for
+--     a same-league real AND mock draft (D99: mock chat is member-visible).
+--     Loosening the exact match back to split_part segment-2 validation
+--     fails the trailing-junk pin.
+--   * drafts.is_mock is NOT NULL (R118 — shape + behavioral 23502): a
+--     NULL is_mock can no longer escape the D95 partial predicate.
 --   * No UPDATE/DELETE for anyone on league_chat (append-only, D99) — the
 --     policies_are pin (exactly 2 policies) plus RETURNING-count zeros.
 --   * F48 counter-pin: the commissioner reads NOTHING of another team's
@@ -50,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(133);
+select plan(137);
 
 -- ---------------------------------------------------------------------------
 -- A. drafts shape (§12.3 + the R43 CHECKs + D95/§22.3 indexes)
@@ -76,6 +82,8 @@ select col_type_is('public', 'drafts', 'deadline_remaining_ms', 'integer',
 select col_default_is('public', 'drafts', 'draft_type', 'snake', $$draft_type defaults 'snake'$$);
 select col_default_is('public', 'drafts', 'status', 'scheduled', $$status defaults 'scheduled'$$);
 select col_default_is('public', 'drafts', 'is_mock', 'false', 'is_mock defaults FALSE');
+select col_not_null('public', 'drafts', 'is_mock',
+  'is_mock NOT NULL (R118 — a NULL is_mock would escape the D95 partial predicate)');
 select is(
   (select column_default from information_schema.columns
    where table_schema = 'public' and table_name = 'drafts' and column_name = 'config'),
@@ -323,6 +331,11 @@ select lives_ok(
      values ('e0000000-0000-4000-8000-00000000000c',
              'a1000000-0000-4000-8000-00000000000a', 'complete', false) $$,
   'a COMPLETE non-mock draft coexists with the scheduled real draft (complete is outside the D95 predicate — a draft history accumulates)');
+select throws_ok(
+  $$ insert into drafts (league_id, status, is_mock)
+     values ('a1000000-0000-4000-8000-00000000000a', 'live', null) $$,
+  '23502', null,
+  'R118: an explicit NULL is_mock is refused (23502) — the review-probed D95 predicate escape (a NULL-is_mock live draft beside the real scheduled one) is closed');
 
 -- R43-lesson CHECKs, behaviorally.
 select throws_ok(
@@ -535,6 +548,13 @@ select throws_ok(
 select throws_ok(
   $$ insert into league_chat (league_id, user_id, message, context)
      values ('a1000000-0000-4000-8000-00000000000a',
+             '80000000-0000-4000-8000-000000000002', 'trailing junk smuggle',
+             'draft:e0000000-0000-4000-8000-000000000001:junk') $$,
+  '42501', null,
+  $$R117: a TRAILING-JUNK context ('draft:<valid-id>:junk') is refused — the policy exact-matches the full §12.13 grammar; segment-2-only validation (split_part) passes this$$);
+select throws_ok(
+  $$ insert into league_chat (league_id, user_id, message, context)
+     values ('a1000000-0000-4000-8000-00000000000a',
              '80000000-0000-4000-8000-000000000002', 'null context', null) $$,
   '42501', null,
   'an explicit NULL context is refused (WITH CHECK treats NULL as failure)');
@@ -550,6 +570,12 @@ select throws_ok(
              '80000000-0000-4000-8000-000000000001', 'spoofed author') $$,
   '42501', null,
   'posting under ANOTHER user_id refused (own user_id only)');
+select throws_ok(
+  $$ insert into league_chat (league_id, user_id, message)
+     values ('a1000000-0000-4000-8000-00000000000a',
+             '80000000-0000-4000-8000-000000000002', '') $$,
+  '42501', null,
+  'R119: an empty-string message is refused (char_length >= 1 — the lower boundary edge)');
 select lives_ok(
   $$ insert into league_chat (league_id, user_id, message)
      values ('a1000000-0000-4000-8000-00000000000a',

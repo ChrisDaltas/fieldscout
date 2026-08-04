@@ -20,11 +20,13 @@
 --          (D95: one live/scheduled non-mock draft per league at a time; a
 --          draft row is reusable across reschedules; mocks are exempt —
 --          §8.8/E60 a live mock and a real scheduled draft coexist).
---      NOTE (recorded, not changed): §12.3 prints `is_mock BOOLEAN DEFAULT
---      FALSE` without NOT NULL — shipped verbatim. A NULL is_mock would
---      escape the D95 partial predicate, but drafts has no client write
---      path and every RPC writer (066/071) sets is_mock explicitly; pgTAP
---      019 pins the no-client-write surface that makes this unreachable.
+--      NOTE (amended 2026-08-03, R118 — batch-1 fix): §12.3 prints
+--      `is_mock BOOLEAN DEFAULT FALSE` without NOT NULL; shipped verbatim
+--      it left a NULL escape from the D95 partial predicate (review live
+--      probe: a privileged NULL-is_mock 'live' draft coexisted with the
+--      league's real scheduled draft). is_mock is now NOT NULL DEFAULT
+--      FALSE — the same one-line R43-lesson class as the CHECKs (empty,
+--      unreleased table); pgTAP 019 pins it (shape + behavioral 23502).
 --
 --   2. `draft_picks` — §12.4 DDL verbatim. Member SELECT; no client writes.
 --        * uniq_draft_player_live UNIQUE(draft_id, player_id) WHERE
@@ -47,6 +49,11 @@
 --      routes it to M6's commissioner console. NEVER broadcast (§9.2 —
 --      "Sensitive tables (waiver_claims, draft_queues) are never
 --      broadcast"); owners poll/refetch their own rows.
+--      RECORDED (R120, record-only): the §12.6-printed policies validate
+--      TEAM ownership only — an owner can insert queue rows for their team
+--      against ANY draft_id (incl. another league's). Harmless while queue
+--      rows are advisory; 068's autopick MUST join draft→league (or treat
+--      queue rows as untrusted hints) rather than trust rows' draft_id.
 --
 --   4. `league_chat` §12.13 extension + the C11/F18(chat half) policy
 --      replacement (D99): ADD context TEXT DEFAULT 'league' ('league' |
@@ -59,11 +66,16 @@
 --        * INSERT: is_league_member AND user_id = auth.uid() AND
 --          is_system = FALSE (no client can forge a system post — those are
 --          written only by the §8.7 RPCs, D97/069) AND char_length(message)
---          <= 500 (§12.13/§22.5 shape; rate limits proper are M7 — F41) AND
---          draft-context validity (context = 'league', or 'draft:<id>' where
---          that draft belongs to THIS league — cross-league and garbage
---          contexts refused; the draft lookup compares text ids so a
---          malformed context fails the policy, not a ::uuid cast).
+--          BETWEEN 1 AND 500 (§12.13/§22.5 shape; the lower bound is R119 —
+--          spec silent, empty posts refused; rate limits proper are M7 —
+--          F41) AND draft-context validity by EXACT grammar match (context
+--          = 'league', or context equals the FULL 'draft:' || d.id string
+--          of a draft in THIS league — cross-league, malformed, AND
+--          trailing-junk ('draft:<valid-id>:junk') contexts all refused).
+--          Amended 2026-08-03 (R117): the original split_part(context,':',2)
+--          check validated only segment 2 and accepted trailing junk. The
+--          text compare keeps the no-::uuid-cast property — a malformed
+--          context fails the policy, not a cast.
 --        * NO UPDATE/DELETE for anyone — chat is append-only in v1 (D99).
 --      Direct client INSERT retained: §9.3 sanctions exactly one direct
 --      client write, league_chat — no chat route is added (D99).
@@ -93,7 +105,7 @@ CREATE TABLE drafts (
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE NOT NULL,
   draft_type TEXT NOT NULL DEFAULT 'snake',        -- snake | auction | linear
   status TEXT NOT NULL DEFAULT 'scheduled',        -- scheduled | live | paused | complete
-  is_mock BOOLEAN DEFAULT FALSE,
+  is_mock BOOLEAN NOT NULL DEFAULT FALSE,           -- NOT NULL: R118 (D95 predicate escape closed)
   config JSONB NOT NULL DEFAULT '{}',              -- snapshot of draft settings (§7.3.8) at scheduling
   draft_order JSONB,                               -- ordered array of team_ids (snake/linear)
   nomination_order JSONB,                          -- ordered array of team_ids (auction)
@@ -214,16 +226,19 @@ CREATE POLICY "Members post their own chat"
     is_league_member(league_id)
     AND user_id = auth.uid()
     AND is_system = FALSE                          -- system posts are RPC-only (D97/D99)
-    AND char_length(message) <= 500
+    AND char_length(message) BETWEEN 1 AND 500     -- lower bound: R119 (empty refused)
     AND (
       context = 'league'
-      OR (
-        context LIKE 'draft:%'
-        AND EXISTS (
-          SELECT 1 FROM drafts d
-          WHERE d.id::text = split_part(league_chat.context, ':', 2)
-            AND d.league_id = league_chat.league_id
-        )
+      -- R117: EXACT grammar match — context must equal the full
+      -- 'draft:<draft_id>' string of a draft in THIS league. (The original
+      -- split_part segment-2 check let 'draft:<valid-id>:junk' through and
+      -- store verbatim — a league-visible shadow channel.) Text concat
+      -- keeps the no-::uuid-cast property: malformed contexts fail the
+      -- policy, never a cast.
+      OR EXISTS (
+        SELECT 1 FROM drafts d
+        WHERE 'draft:' || d.id::text = league_chat.context
+          AND d.league_id = league_chat.league_id
       )
     )
   );
