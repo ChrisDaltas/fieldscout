@@ -262,6 +262,226 @@ export type Database = {
         }
         Relationships: []
       }
+      draft_picks: {
+        Row: {
+          action_id: string | null
+          created_at: string | null
+          draft_id: string
+          id: string
+          is_auto: boolean | null
+          is_undone: boolean | null
+          league_id: string
+          made_via: string | null
+          pick_number: number
+          picked_by: string | null
+          player_id: string
+          price: number | null
+          round: number | null
+          team_id: string
+        }
+        Insert: {
+          action_id?: string | null
+          created_at?: string | null
+          draft_id: string
+          id?: string
+          is_auto?: boolean | null
+          is_undone?: boolean | null
+          league_id: string
+          made_via?: string | null
+          pick_number: number
+          picked_by?: string | null
+          player_id: string
+          price?: number | null
+          round?: number | null
+          team_id: string
+        }
+        Update: {
+          action_id?: string | null
+          created_at?: string | null
+          draft_id?: string
+          id?: string
+          is_auto?: boolean | null
+          is_undone?: boolean | null
+          league_id?: string
+          made_via?: string | null
+          pick_number?: number
+          picked_by?: string | null
+          player_id?: string
+          price?: number | null
+          round?: number | null
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_picks_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_picks_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_picks_picked_by_fkey"
+            columns: ["picked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_picks_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_picks_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      draft_queues: {
+        Row: {
+          created_at: string | null
+          draft_id: string
+          id: string
+          player_id: string
+          rank: number
+          team_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          draft_id: string
+          id?: string
+          player_id: string
+          rank: number
+          team_id: string
+        }
+        Update: {
+          created_at?: string | null
+          draft_id?: string
+          id?: string
+          player_id?: string
+          rank?: number
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_queues_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_queues_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_queues_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drafts: {
+        Row: {
+          completed_at: string | null
+          config: Json
+          created_at: string | null
+          current_deadline: string | null
+          current_nomination: Json | null
+          current_pick_number: number | null
+          current_round: number | null
+          deadline_remaining_ms: number | null
+          draft_order: Json | null
+          draft_type: string
+          id: string
+          is_mock: boolean | null
+          league_id: string
+          nomination_order: Json | null
+          on_clock_team_id: string | null
+          paused_at: string | null
+          started_at: string | null
+          status: string
+          total_rounds: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          config?: Json
+          created_at?: string | null
+          current_deadline?: string | null
+          current_nomination?: Json | null
+          current_pick_number?: number | null
+          current_round?: number | null
+          deadline_remaining_ms?: number | null
+          draft_order?: Json | null
+          draft_type?: string
+          id?: string
+          is_mock?: boolean | null
+          league_id: string
+          nomination_order?: Json | null
+          on_clock_team_id?: string | null
+          paused_at?: string | null
+          started_at?: string | null
+          status?: string
+          total_rounds?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          config?: Json
+          created_at?: string | null
+          current_deadline?: string | null
+          current_nomination?: Json | null
+          current_pick_number?: number | null
+          current_round?: number | null
+          deadline_remaining_ms?: number | null
+          draft_order?: Json | null
+          draft_type?: string
+          id?: string
+          is_mock?: boolean | null
+          league_id?: string
+          nomination_order?: Json | null
+          on_clock_team_id?: string | null
+          paused_at?: string | null
+          started_at?: string | null
+          status?: string
+          total_rounds?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drafts_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drafts_on_clock_team_id_fkey"
+            columns: ["on_clock_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expert_claim_requests: {
         Row: {
           email_sent_to: string | null
@@ -477,22 +697,28 @@ export type Database = {
       }
       league_chat: {
         Row: {
+          context: string | null
           created_at: string | null
           id: string
+          is_system: boolean | null
           league_id: string
           message: string
           user_id: string
         }
         Insert: {
+          context?: string | null
           created_at?: string | null
           id?: string
+          is_system?: boolean | null
           league_id: string
           message: string
           user_id: string
         }
         Update: {
+          context?: string | null
           created_at?: string | null
           id?: string
+          is_system?: boolean | null
           league_id?: string
           message?: string
           user_id?: string
@@ -2713,10 +2939,10 @@ export type Database = {
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
       update_league_profile: {
         Args: {
-          p_league_id: string
-          p_name?: string
           p_avatar_url?: string
           p_clear_avatar?: boolean
+          p_league_id: string
+          p_name?: string
         }
         Returns: undefined
       }
@@ -2889,6 +3115,9 @@ export const Constants = {
 
 export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
+export type Draft = Database['public']['Tables']['drafts']['Row']
+export type DraftPick = Database['public']['Tables']['draft_picks']['Row']
+export type DraftQueueEntry = Database['public']['Tables']['draft_queues']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
