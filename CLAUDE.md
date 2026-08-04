@@ -187,17 +187,19 @@ export function ListCard({ list }: ListCardProps) {
 
 ## Key Business Rules (Enforce These)
 
+> **Pro tier suspended pending rethink (Chris, 2026-08-03).** The app launches **free-only** — 2026 is the feedback year. Rules 2, 3, and 6 below are stale: do not enforce or extend `is_pro` gates, and don't build billing/Stripe surfaces. Keep the `is_pro` column and existing checks in place (don't rip them out); just don't gate launch features on them. Pro gets redesigned from post-launch usage data.
+
 1. **Each player can only appear once per list.** The `list_players` table has a unique constraint on `(list_id, player_id)`. Handle the duplicate gracefully in the UI with a toast message.
 
-2. **Free users: 1 private list.** Check `is_pro` on the profile before allowing `is_private = true` on list creation. Count existing private lists.
+2. ~~**Free users: 1 private list.**~~ *(Suspended 2026-08-03 — free-only launch, see note above.)*
 
-3. **Free users: 1 team.** Same check — count existing teams before allowing conversion.
+3. ~~**Free users: 1 team.**~~ *(Suspended 2026-08-03 — free-only launch, see note above.)*
 
 4. **Rankings are a free feature.** Weekly rankings and pre-draft big boards are available to everyone with no per-week or per-position limit. (There is intentionally no Pro gate on rankings — do not add one.)
 
 5. **League creation and joining are free.** Pro-level league features come later. *(Ruled by Chris 2026-07-20 — supersedes the earlier "Leagues are Pro only" rule; see spec-redraft-leagues.md changelog v2.8.)*
 
-6. **Custom scoring systems are Pro only.** System defaults available to everyone.
+6. ~~**Custom scoring systems are Pro only.**~~ *(Suspended 2026-08-03 — free-only launch, see note above. System defaults + custom scoring available to everyone for now.)*
 
 7. **Player exclusivity in leagues.** When adding a player to a team in a league, check that no other team in that league has that player.
 
@@ -209,9 +211,14 @@ export function ListCard({ list }: ListCardProps) {
 
 ## Active Builds
 
+### 2026 Go-Live (free-only soft launch)
+- **Scope (Chris, 2026-08-03):** public launch on fieldscout.gg = **Lists + Stats/player research + AI stat lists** only, in the new design language. Free-only (see Pro suspension note in Key Business Rules). Audience is friends initially — 2026 is the **feedback year**.
+- All other surfaces (weekly ranks, big board, consensus, explore/community, start-or-sit, personas, teams) are **hidden from nav/flag-gated** at launch — not deleted, not restyled yet; they return as they're reskinned.
+- **Leagues = 2026 private alpha:** invite-only friends' leagues, snake-only, feature-flag gated. See delivery plan v1.4 (build order M2 → M4 → M5 → M3; M2 draft-ready by early September 2026). GA remains July 2027.
+
 ### Redraft Leagues (in progress)
 - Spec (LAW): docs/specs/spec-redraft-leagues.md (v2.7)
-- Delivery plan: docs/specs/delivery-plan-redraft-leagues.md (v1.3)
+- Delivery plan: docs/specs/delivery-plan-redraft-leagues.md (v1.4)
 - Progress/memory: docs/specs/PROGRESS-leagues.md — read at session start, update at session end
 - M0 task breakdown (Architect, 2026-07-18): docs/specs/tasks-M0-foundations.md
 - The spec wins every disagreement. If code and spec conflict, the code is wrong.
