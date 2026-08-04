@@ -317,6 +317,8 @@ GATE    everything → L.B7.1
 ### L.B4.2 — Attach UI + My Lists panel + queue-from-list + autopick tie-in (closes §7.4/§8.9)
 > Read spec §7.4 (all bullets), §8.9 (all bullets), §16.2 (attach-list-modal/my-lists-panel), E17, this doc L.B4.1's shape. Depends L.B4.1 + L.B3.2 + L.B2.2.
 >
+> Read ALSO PROGRESS §"Review findings — 2026-08-03 (M2 batch 3)" — the **R130 routing lands here**: the §15.5 GET keeps null-embed rows (a shared attachment of a since-soft-deleted list) for ALL members, though non-owners can neither open nor detach them (D106(7) records the owner's detach rationale). This task decides the fix layer — panel filter (hide null-embed rows from non-owners) or GET filter (return them owner-only) — and pins the decision.
+>
 > 1. `attach-list-modal` + entry points (list detail/card/Big Board "Attach to league"; league side "Add a draft list"); primary-board + share toggles; smart-suggestion surface (format-match one-tap — heuristic latitude, recorded); create-flow offer per §7.4 (the modal — compose into `LeagueCreateModal`'s success step, not a new surface).
 > 2. `my-lists-panel` in the room (tab beside My Queue): attached + league-shared + Big Board; cheat-sheet side panel; pool overlay (rank/tier column + "only players on this list" filter); load-into-queue (replace/append via L.B2.2's route); best-available-from-board helper; all live off the picks channel (E17). Mobile bottom sheet.
 > 3. Autopick tie-in verified live: set primary board → timeout → the pick honors it (stack vitest against the real tick — the L.B1.3 SQL already reads `league_lists`; this is the end-to-end consumer proof).
