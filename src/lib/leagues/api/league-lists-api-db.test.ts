@@ -7,7 +7,8 @@
  * one-primary boundary, the shared-private read policies both directions);
  * this suite proves the production service composition: friendly 4xxs,
  * retry-safe replays, the clear-first primary switch, the probe-before-
- * side-effect PATCH ordering, and the shared-private reads over real JWTs.
+ * side-effect ordering on BOTH write paths (PATCH's target probe; attach's
+ * natural-key probe — R127), and the shared-private reads over real JWTs.
  *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5); FAILS loudly when the stack is down, never skips (§4.3).
@@ -317,6 +318,28 @@ describe('league-lists API over the local stack (L.B4.1)', () => {
     const theirs = await listLeagueLists(memberClient, leagueId, memberId)
     const memberPrimary = rowsOf(theirs).find((row) => row.owner_id === memberId)
     expect(memberPrimary?.is_primary_board).toBe(true)
+  })
+
+  it("attach-as-primary of an ALREADY-attached list 409s BEFORE any side effect — the caller's primary survives (R127)", async () => {
+    // State here: owner's attach1 (list1) is PRIMARY; list2's attachment is
+    // attached NON-primary. Re-attaching list2 with is_primary_board=true is
+    // the R127 case: NOT a byte-identical replay (the original attach was
+    // non-primary), so the clear-first `.neq list_id` exclusion alone would
+    // demote attach1 and then 409 on the natural key — zero primaries under
+    // an error response. The natural-key probe must answer 409 pre-demote.
+    const replay = await attachLeagueList(ownerClient, leagueId, ownerId, {
+      list_id: list2Id,
+      is_primary_board: true,
+    })
+    expect(replay.status).toBe(409)
+    expect(replay.body).toEqual({ error: ALREADY_ATTACHED_MESSAGE })
+
+    const mine = await listLeagueLists(ownerClient, leagueId, ownerId)
+    const primaries = rowsOf(mine).filter(
+      (row) => row.owner_id === ownerId && row.is_primary_board,
+    )
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]?.id).toBe(attach1Id)
   })
 
   it("refuses attaching a list you don't own — friendly 403 at the service, 23503 at the DB backstop", async () => {

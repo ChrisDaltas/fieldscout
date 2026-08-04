@@ -62,7 +62,9 @@ export function useAttachList(leagueId: string) {
         `/api/leagues/${leagueId}/lists`,
         jsonInit('POST', vars),
       ),
-    onSuccess: () => {
+    // onSettled, not onSuccess (R129): a replayed attach's 409 must still
+    // refetch so the cache converges on the server truth.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: leagueListsKeys.all(leagueId) })
     },
   })
@@ -147,7 +149,9 @@ export function useDetachList(leagueId: string) {
         `/api/leagues/${leagueId}/lists/${leagueListId}`,
         jsonInit('DELETE'),
       ),
-    onSuccess: () => {
+    // onSettled, not onSuccess (R129): a replayed detach's 404 means the row
+    // is already gone server-side — refetch so the stale row stops rendering.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: leagueListsKeys.all(leagueId) })
     },
   })

@@ -29,9 +29,11 @@
  *     primary first (switching is one tap, §7.4), but the partial unique
  *     `uniq_primary_board_per_member` remains the guarantee — a lost race
  *     surfaces as a friendly 409, never two primaries.
- *   - retry safety (DoD idempotency) → the natural key
- *     UNIQUE(league_id, list_id, owner_id): a replayed attach is a
- *     friendly 409, never a duplicate row.
+ *   - retry safety (DoD idempotency) → attach probes the natural key
+ *     (league_id, list_id, owner_id) BEFORE any side effect and 409s
+ *     pre-demote (R127 — the same probe-before-side-effect ordering as
+ *     PATCH); the UNIQUE natural key remains the race backstop: a replayed
+ *     attach is a friendly 409, never a duplicate row.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -84,7 +86,8 @@ function mapWriteError(error: { code?: string; message: string }): ServiceResult
   if (error.code === '23503') {
     // The D106 composite FK — reachable only by a race (list deleted or
     // ownership probe bypassed); the route probes make this the backstop.
-    return { status: 400, body: { error: NOT_YOUR_LIST_MESSAGE } }
+    // 403 to match the probe path's semantic for the same condition (R128).
+    return { status: 403, body: { error: NOT_YOUR_LIST_MESSAGE } }
   }
   if (error.code === '42501') {
     return { status: 403, body: { error: 'Only league members can manage league lists.' } }
@@ -228,10 +231,33 @@ export async function attachLeagueList(
     return { status: 403, body: { error: NOT_YOUR_LIST_MESSAGE } }
   }
 
+  // Probe the natural key BEFORE the clear-first side effect (R127): an
+  // attach of an ALREADY-attached list — byte-identical replay OR the
+  // neighboring attach-as-primary of a list originally attached non-primary
+  // — must 409 with ZERO side effects. Without this ordering the clear-first
+  // demote ran, the INSERT hit the natural-key 23505, and the caller was
+  // left with no primary under an error response (the same class the PATCH
+  // path's probe-before-side-effect ordering prevents). The 23505 at the
+  // INSERT remains the race backstop.
+  const { data: existing, error: existingError } = await supabase
+    .from('league_lists')
+    .select('id')
+    .eq('league_id', leagueId)
+    .eq('list_id', parsed.data.list_id)
+    .eq('owner_id', userId)
+    .maybeSingle()
+  if (existingError) {
+    return { status: 500, body: { error: existingError.message } }
+  }
+  if (existing) {
+    return { status: 409, body: { error: ALREADY_ATTACHED_MESSAGE } }
+  }
+
   if (parsed.data.is_primary_board === true) {
-    // Exclude this list's own (possibly pre-existing) attachment so a
-    // replayed attach-as-primary 409s WITHOUT demoting the primary the
-    // original call set.
+    // The `except.listId` exclusion is now a RACE backstop only (the probe
+    // above already 409s any visible pre-existing attachment): a concurrent
+    // duplicate attach that lands between the probe and this clear must not
+    // demote the primary its twin just set.
     const cleared = await clearCurrentPrimary(supabase, leagueId, userId, {
       listId: parsed.data.list_id,
     })
