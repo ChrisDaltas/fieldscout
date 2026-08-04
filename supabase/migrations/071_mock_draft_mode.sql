@@ -9,8 +9,8 @@
 --
 -- Contents of THIS file (the amendments live in the amended files — the
 -- unreleased-chain amend precedent, F12; inventory below):
---   1. `create_mock_draft(p_league_id, p_human_team_id, p_cpu_speed)` —
---      §8.8 launch: ANY member (not commish-gated — "any league member
+--   1. `create_mock_draft(p_league_id, p_human_team_id, p_cpu_speed,
+--      p_action_id)` — §8.8 launch: ANY member (not commish-gated — "any league member
 --      starts a mock"), league `setup`/`scheduled`, active franchises ==
 --      team_count (D103(1) — the order needs a full seat map and
 --      draft_picks.team_id is NOT NULL; friendly refusal names placeholder
@@ -25,8 +25,9 @@
 --      under never-randomized `random` mode the real order does not exist
 --      yet — a fresh deterministic shuffle is the honest simulation,
 --      recorded). `config.mock = {human_team_id, cpu_speed, launched_by}`
---      (no schema change — §8.8; `launched_by` is D103(2)'s authorization
---      key, folded into §8.8 as erratum v2.8.16). Human seat defaults to
+--      (+ `action_id` when the route stamps one — the E2 replay ledger,
+--      batch 7 R149; no schema change — §8.8; `launched_by` is D103(2)'s
+--      authorization key, folded into §8.8 as erratum v2.8.16). Human seat defaults to
 --      the launcher's own franchise; ANY active seat selectable (§8.8 —
 --      incl. a placeholder or another member's franchise; authorization is
 --      launcher-keyed, never seat-keyed, D103(2)/(3)). Starts IMMEDIATELY:
@@ -52,6 +53,19 @@
 --      deliberately: row locks on profiles would join the FK KEY-SHARE
 --      graph every chat INSERT touches (the R122 deadlock class); advisory
 --      locks live outside it.
+--      IDEMPOTENCY (§4 rule 6 / E2 — batch 7, R149): `p_action_id uuid
+--      DEFAULT NULL`. A retry of an already-committed launch REPLAYS the
+--      original mock (`created: false`) instead of creating a second one —
+--      the 060 replay pattern. The lookup runs AFTER the advisory lock (a
+--      concurrent double-tap serializes into create-then-replay) and
+--      BEFORE any league/cap validation (a replay is the same intent; it
+--      must not trip caps its own creation already passed — pinned at both
+--      caps' ceilings). Ledger = `config.mock.action_id` (no schema
+--      change), matched launcher-scoped as TEXT (R117) — an action_id
+--      never replays across users. NULL = no-dedupe path (the §5 sketch's
+--      3-arg call stands); the L.B2.3 route stamps one UUID per submit.
+--      A DELETED mock does not replay (row gone = ledger gone — the same
+--      surviving-rows posture as the hourly cap; M7/F41 backstop).
 --   2. `delete_mock_draft(p_draft_id)` — launcher-only (covers abandon +
 --      recap-delete, §8.8). Locks the drafts row FIRST (§4.6), one 42501
 --      no-leak for {nonexistent, non-member}, friendly P0001 for a real
@@ -214,7 +228,8 @@
 CREATE OR REPLACE FUNCTION create_mock_draft(
   p_league_id UUID,
   p_human_team_id UUID DEFAULT NULL,
-  p_cpu_speed TEXT DEFAULT 'realistic'
+  p_cpu_speed TEXT DEFAULT 'realistic',
+  p_action_id UUID DEFAULT NULL
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -253,6 +268,25 @@ BEGIN
   -- deadlock class; advisory locks live outside it).
   PERFORM pg_advisory_xact_lock(
     hashtextextended('create_mock_draft:' || auth.uid()::text, 0));
+
+  -- §4 rule 6 (E2) idempotency — batch 7, R149 (banner item 1): a retry of
+  -- an already-committed launch returns the ORIGINAL mock, not a second
+  -- one (the 060 replay pattern). AFTER the advisory lock (a concurrent
+  -- double-tap serializes into create-then-replay) and BEFORE league/cap
+  -- validation (the same intent must not trip caps its own creation
+  -- already passed). Launcher-scoped + TEXT-compared (R117): a foreign
+  -- caller's lookup simply misses and falls through to their own
+  -- validation. A deleted mock does not replay (row = ledger).
+  IF p_action_id IS NOT NULL THEN
+    SELECT d.* INTO v_draft
+    FROM public.drafts d
+    WHERE d.is_mock
+      AND d.config->'mock'->>'launched_by' = auth.uid()::text
+      AND d.config->'mock'->>'action_id' = p_action_id::text;
+    IF FOUND THEN
+      RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'created', FALSE);
+    END IF;
+  END IF;
 
   SELECT l.* INTO v_league
   FROM public.leagues l
@@ -386,10 +420,14 @@ BEGIN
   -- config.mock = {human_team_id, cpu_speed, launched_by} (§8.8 +
   -- D103(2)'s launched_by — erratum v2.8.16). Values stored as text
   -- (jsonb strings); every reader compares as TEXT (the R117 rule).
+  -- action_id (the E2 replay ledger — R149) is stamped ONLY when the
+  -- route sent one: the NULL path stores no key at all (pinned).
   v_config := jsonb_set(v_config, '{mock}', jsonb_build_object(
     'human_team_id', v_human::text,
     'cpu_speed', p_cpu_speed,
-    'launched_by', auth.uid()::text));
+    'launched_by', auth.uid()::text)
+    || CASE WHEN p_action_id IS NULL THEN '{}'::jsonb
+            ELSE jsonb_build_object('action_id', p_action_id::text) END);
 
   -- Starts immediately (§8.8): live, pick 1 on the clock. The D95 partial
   -- unique ignores mocks — the league's real scheduled draft coexists
@@ -421,7 +459,7 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION create_mock_draft(UUID, UUID, TEXT)
+REVOKE EXECUTE ON FUNCTION create_mock_draft(UUID, UUID, TEXT, UUID)
   FROM PUBLIC, anon;
 
 -- ---------------------------------------------------------------------------

@@ -2915,6 +2915,7 @@ export type Database = {
       }
       create_mock_draft: {
         Args: {
+          p_action_id?: string
           p_cpu_speed?: string
           p_human_team_id?: string
           p_league_id: string

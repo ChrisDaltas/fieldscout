@@ -8,7 +8,11 @@
 --   * THE ZERO-SIDE-EFFECT DIFF PIN (§8.8, the task's contract): §F
 --     snapshots league-scoped state (the leagues row as jsonb + row counts
 --     for league_members/teams/team_managers/league_invites/league_weeks/
---     league_rosters/league_lists/notifications/league-context chat)
+--     league_rosters/league_lists/notifications/ALL non-mock-room chat —
+--     the before capture predates the mock, so total-then must equal
+--     everything-outside-the-mock's-room-now (R150: a smuggled write into
+--     ANY other context, incl. the real draft's room, trips it) — plus the
+--     REAL draft's own pick count (R151))
 --     BEFORE a scripted mock, drives it launch → completion through the
 --     REAL tick, and pins every count identical after — with the drafts/
 --     draft_picks positive control proving the mock actually ran (a diff
@@ -59,6 +63,13 @@
 --     reachable refusal); the 6th-in-hour refusal fires with only 2
 --     actives (< 3 — the hourly message is the only reachable refusal);
 --     the hourly boundary is pinned by aging one creation past 60min.
+--   * THE E2 REPLAY PIN (§G — R149, batch 7): the replayed action_id is
+--     presented while its launcher sits at BOTH caps' ceilings (3 active,
+--     5 in-hour), so a non-replaying implementation cannot answer with
+--     anything but a cap refusal — created=false + the original id + the
+--     exactly-one-row count prove replay answers BEFORE the caps; a
+--     foreign user presenting the same id falls through to their OWN cap
+--     refusal (launcher-scoped, never cross-user).
 --   * Summary/tick assertions are containment/≥-based where committed
 --     wire-suite leftovers could contribute (the 022 rule); every pin on
 --     THIS file's mocks reads their rows directly.
@@ -70,7 +81,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(115);
+select plan(120);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; D93 constants; the cron entry)
@@ -91,8 +102,8 @@ select ok(
    where n.nspname = 'public' and p.proname = 'mock_draft_expire'),
   'mock_draft_expire is SECURITY DEFINER with the exact spec-form search_path');
 select ok(
-  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text,uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.delete_mock_draft(uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.delete_mock_draft(uuid)', 'EXECUTE'),
   'create/delete_mock_draft: anon revoked, authenticated keeps EXECUTE (in-body auth is the gate)');
@@ -448,7 +459,7 @@ select is(
     'human_team_id', 'c7000000-0000-4000-8000-00b100000002',
     'cpu_speed', 'realistic',
     'launched_by', '94000000-0000-4000-8000-000000000003'),
-  'config.mock = {human_team_id, cpu_speed, launched_by} — §8.8 + D103(2)''s authorization key (erratum v2.8.16), no schema change');
+  'config.mock = {human_team_id, cpu_speed, launched_by} — §8.8 + D103(2)''s authorization key (erratum v2.8.16), no schema change; the exact-object form also pins that the no-action_id path stamps NO action_id key (R149''s ledger exists only when the route sends one)');
 select ok(
   (select d.status = 'live'
       and d.total_rounds = 3
@@ -801,11 +812,17 @@ select
   (select count(*) from notifications where user_id in
     (select user_id from league_members
      where league_id = 'b7000000-0000-4000-8000-0000000000c1')) as notifs,
+  -- R150: ALL contexts — the capture predates the mock, so this total
+  -- must equal every-context-except-the-mock's-own-room after the run (a
+  -- smuggled write into ANY non-mock context, incl. the real draft's
+  -- room, would break the equality; the old '= league' cell couldn't see
+  -- those).
   (select count(*) from league_chat
-    where league_id = 'b7000000-0000-4000-8000-0000000000c1'
-      and context = 'league') as league_chat_rows,
+    where league_id = 'b7000000-0000-4000-8000-0000000000c1') as chat_rows,
+  -- R151: the REAL draft's own pick sheet (read by the E60 pin below —
+  -- the mock's picks all carry the mock's draft_id).
   (select count(*) from draft_picks
-    where league_id = 'b7000000-0000-4000-8000-0000000000c1') as picks;
+    where draft_id = 'e7000000-0000-4000-8000-0000000000d2') as real_picks;
 
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -941,13 +958,18 @@ select is(
 select is(
   (select count(*) from league_chat
     where league_id = 'b7000000-0000-4000-8000-0000000000c1'
-      and context = 'league'),
-  (select league_chat_rows from mk_before),
-  'zero side effects: the league''s own chat context is untouched (mock chat lives only under draft:<mock_id>)');
+      and context <> 'draft:' || (select id from mk_lz)::text),
+  (select chat_rows from mk_before),
+  'zero side effects: chat outside the mock''s OWN room is untouched — league context AND every other context incl. the real draft''s room (R150: the before capture predates the mock, so total-then = non-mock-room-now)');
 select is(
   (select status from drafts where id = 'e7000000-0000-4000-8000-0000000000d2'),
   'scheduled',
   'E60: the LZ real scheduled draft ran the whole mock beside it, untouched');
+select is(
+  (select count(*) from draft_picks
+    where draft_id = 'e7000000-0000-4000-8000-0000000000d2'),
+  (select real_picks from mk_before),
+  'E60: the real draft''s pick sheet is untouched too (R151 — the capture now read; every mock pick carries the mock''s draft_id)');
 
 -- ---------------------------------------------------------------------------
 -- G. §22.5 caps (in-body, per-user, friendly refusals — discriminating
@@ -1033,9 +1055,44 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "94000000-0000-4000-8000-000000000010", "role": "authenticated"}', true);
 select lives_ok(
-  $$ select public.create_mock_draft('b7000000-0000-4000-8000-0000000000e1') $$,
-  'the hourly window boundary: a creation aged past 60 minutes leaves the window (4 within the hour → the 6th-overall create lands)');
+  $$ select public.create_mock_draft('b7000000-0000-4000-8000-0000000000e1',
+       null, 'realistic', 'ac7e0000-0000-4000-8000-000000000001'::uuid) $$,
+  'the hourly window boundary: a creation aged past 60 minutes leaves the window (4 within the hour → the 6th-overall create lands; the route-stamped action_id rides along — R149)');
+
+-- R149 (batch 7): the E2/§4-rule-6 replay arm at the STRONGEST
+-- discriminator — u10 now sits at BOTH caps' ceilings (3 active, 5
+-- in-hour), so a non-replaying implementation cannot answer the retry
+-- with anything but a cap refusal.
+select is(
+  (select public.create_mock_draft('b7000000-0000-4000-8000-0000000000e1',
+     null, 'realistic', 'ac7e0000-0000-4000-8000-000000000001'::uuid)->>'created'),
+  'false',
+  'E2 idempotency (R149): retrying the same action_id REPLAYS (created=false) — at both caps'' ceilings, so the replay answers BEFORE the caps ever run');
+select is(
+  (select public.create_mock_draft('b7000000-0000-4000-8000-0000000000e1',
+     null, 'realistic', 'ac7e0000-0000-4000-8000-000000000001'::uuid)->'draft'->>'id'),
+  (select d.id::text from drafts d
+   where d.is_mock
+     and d.config->'mock'->>'action_id' = 'ac7e0000-0000-4000-8000-000000000001'),
+  'the replay returns the ORIGINAL mock — action_id lives in config.mock, matched as TEXT (R117)');
+-- The launcher-scoped bound: u09 (3 actives of their own) presenting
+-- u10's action_id must NOT replay u10's mock — the lookup misses
+-- (launched_by-scoped) and falls through to u09's own active-cap refusal.
+select set_config('request.jwt.claims',
+  '{"sub": "94000000-0000-4000-8000-000000000009", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.create_mock_draft('b7000000-0000-4000-8000-0000000000e1',
+       null, 'realistic', 'ac7e0000-0000-4000-8000-000000000001'::uuid) $$,
+  'P0001',
+  'create_mock_draft: you already have 3 active mock drafts — finish or delete one first (§22.5)',
+  'an action_id NEVER replays across users: u09 presenting u10''s id falls through to their OWN cap refusal (launcher-scoped ledger)');
 reset role;
+select is(
+  (select count(*) from drafts
+   where is_mock
+     and config->'mock'->>'action_id' = 'ac7e0000-0000-4000-8000-000000000001'),
+  1::bigint,
+  'the double-tap left exactly ONE row — the replays created nothing anywhere');
 
 -- ---------------------------------------------------------------------------
 -- H. delete_mock_draft: launcher-only; children + mock chat cleaned;
