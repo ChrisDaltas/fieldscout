@@ -96,12 +96,17 @@
 --            the same refusal), P0002 soft-deleted league, E2 replay
 --            short-circuit (BEFORE status/turn checks — a retried pick
 --            returns its original pick + current authoritative state as a
---            no-op even after the clock moved on; **R125 caveat, ROUTED to
---            L.B1.4:** the replay lookup does NOT filter is_undone, so
---            replaying an action_id whose pick was later UNDONE returns a
---            success-shaped {draft, pick(is_undone=true)} no-op — harmless
---            until undo exists; L.B1.4 decides replay-vs-undone semantics
---            when draft_undo lands), mock seam refusal
+--            no-op even after the clock moved on; **R125 DECIDED at
+--            L.B1.4/069 (draft_undo exists now):** the lookup deliberately
+--            does NOT filter is_undone — an action_id is CONSUMED FOREVER.
+--            A stale client retry of a pick the commissioner later undid
+--            returns the historical (undone) row + current state as a
+--            no-op and can NEVER silently re-apply the undone pick;
+--            filtering instead would route the retry into a fresh INSERT
+--            against uniq_draft_action (undone rows KEEP their action_id)
+--            ⇒ 23505 ⇒ a misleading "just went off the board". The manager
+--            re-picks with a FRESH action_id. Pinned in pgTAP 023),
+--            mock seam refusal
 --            (D103(2) — **the mock branch (launcher-only, human seat only)
 --            is amended in by L.B1.6/071**; until then no human caller is
 --            legal on an is_mock draft and this refusal marks the seam so
@@ -222,6 +227,12 @@
 --       `draft_order_mode` value could previously still read the
 --       settings-blob draft_order); attestations already said
 --       "manual/custom-only" — the code now matches them.
+--
+-- AMENDED 2026-08-04 (L.B1.4/069 — COMMENT-ONLY, no code change): the
+-- R125 routing notes above and at the replay arm rewritten to the DECISION
+-- (an action_id is consumed forever; the no-filter replay is deliberate
+-- and pinned in pgTAP 023 — see 069's banner item 5 for the full
+-- rationale).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -788,9 +799,14 @@ BEGIN
 
   -- E2 replay short-circuit — BEFORE status/turn checks: a retried pick is
   -- a no-op returning its original pick + the current authoritative state,
-  -- even if the clock has moved on (§8.1 idempotency). R125 (routed to
-  -- L.B1.4): no is_undone filter here — an undone pick's action_id replays
-  -- as a success-shaped no-op; decide replay-vs-undone with draft_undo.
+  -- even if the clock has moved on (§8.1 idempotency). R125 DECIDED
+  -- (L.B1.4/069): DELIBERATELY no is_undone filter — an action_id is
+  -- consumed forever. A stale retry of a commissioner-undone pick returns
+  -- the historical (undone) row as a no-op and never re-applies the pick;
+  -- filtering would route the retry into a 23505 on uniq_draft_action
+  -- (undone rows keep their action_id) surfaced as a misleading E1
+  -- message. Pinned in pgTAP 023; the manager re-picks with a fresh
+  -- action_id.
   SELECT p.* INTO v_pick
   FROM public.draft_picks p
   WHERE p.draft_id = p_draft_id AND p.action_id = p_action_id;

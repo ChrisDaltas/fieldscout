@@ -18,10 +18,12 @@
 --   2. `draft_liveness_freshness()` — THE pinned D102 freshness constant:
 --      interval '45 seconds' = 3 × the 15s room heartbeat cadence, i.e. a
 --      seat is FRESH while it has missed ≤ 2 beats. Named as a function so
---      069's commissioner-outage arm reuses the SAME constant (one
---      implementation; pgTAP 022 pins the literal). The tick's grace
---      branch measures it against the DEADLINE instant, not now() (R132 —
---      see the ARM 2 notes below).
+--      the commissioner-outage arm reuses the SAME constant (one
+--      implementation — it does, since the L.B1.4 amendment; pgTAP 022
+--      pins the literal). The tick's GRACE branch measures it against the
+--      DEADLINE instant (R132 — see the ARM 2 notes below); the OUTAGE
+--      arm measures it as-of-now (see ARM 1.5 — a deliberate contrast,
+--      reasoned there).
 --   3. `draft_touch(p_draft_id)` — the D102 heartbeat (real + mock rooms,
 --      ~15s cadence + visibility change): upserts (draft_id, auth.uid()).
 --      SECURITY DEFINER, in-body auth: caller must be a league member of
@@ -148,13 +150,48 @@
 --        fork): is_auto=TRUE, made_via='autopick', picked_by NULL,
 --        action_id NULL (§12.4's system-pick shape; NULL action_id
 --        coexists freely under uniq_draft_action).
---        NOT in this task (cross-referenced seams): the commissioner-
---        outage auto-pause arm lands with L.B1.4/069 (pause bookkeeping
---        lives there — D102/§8.7:478); the mock CPU think-time + mock
---        stale-pause arms land with L.B1.6/071 (D93 — until then a mock
---        draft, unreachable before create_mock_draft exists, would time
---        out like a real one); the §9.1 tick heartbeat broadcast lands
---        with L.B1.5/070 (no subscriber exists yet — standing rule 5).
+--        ARM 1.5 — THE §8.7 COMMISSIONER-OUTAGE AUTO-PAUSE (D102/§8.7:478;
+--        LANDED 2026-08-04 with L.B1.4/069 — this migration amended in
+--        place, the unreleased-chain precedent F12; it runs BETWEEN the
+--        auto-start and timeout arms so an expired deadline under an
+--        outage PAUSES instead of autopicking — "nothing runs unsupervised
+--        during an outage"): a live NON-mock draft auto-pauses when
+--        supervision was ESTABLISHED and then LOST — at least one
+--        commissioner/co-commissioner `draft_liveness` row exists for the
+--        draft AND none is newer than now() − (draft_liveness_freshness()
+--        + disconnect_grace_seconds), i.e. the "no commissioner heartbeat
+--        is fresh" condition (freshness = the ONE 45s constant) has held
+--        for more than the grace. FRESHNESS IS AS-OF-NOW here — the
+--        deliberate contrast with R132's as-of-deadline pick hold: the
+--        pick hold classifies a seat at a FIXED past instant (the
+--        deadline) and a later beat must not rewrite that classification;
+--        the outage check is a CONTINUOUS present-tense supervision
+--        question with no reference instant — every tick honestly
+--        re-asks "is any commissioner supervising NOW?", a returning
+--        commissioner ends the outage condition immediately (but NEVER
+--        auto-resumes — resume is a commissioner action, §8.7; pinned),
+--        and a newly-departed one starts the clock from their last beat.
+--        THE NEVER-CONNECTED EXEMPTION (D108): a draft whose
+--        commissioners have ZERO liveness rows (auto-started and never
+--        opened, or started and never opened) is D94's unattended
+--        autopilot ("absent rooms still draft correctly"; E48) — §8.7's
+--        word is "disconnects", which presupposes a connection; pausing
+--        never-attended drafts would dead-end every D94 auto-start.
+--        Pauses ride 069's `draft_pause_internal` — the ONE pause
+--        bookkeeping implementation (remaining persisted to the ms,
+--        deadline NULLed, system chat post with user_id NULL — the tick
+--        has no acting user). Summary keys: outage_paused,
+--        outage_failures. FORWARD REFERENCE, safe: plpgsql resolves the
+--        callee at CALL time, and in a fresh 001–069 replay no live draft
+--        (and no commissioner heartbeat) can exist in the 068→069 window;
+--        the per-draft subtransaction contains any exotic gap as a
+--        recorded failure.
+--        NOT in this task (cross-referenced seams): the mock CPU
+--        think-time + mock stale-pause arms land with L.B1.6/071 (D93 —
+--        until then a mock draft, unreachable before create_mock_draft
+--        exists, would time out like a real one); the §9.1 tick heartbeat
+--        broadcast lands with L.B1.5/070 (no subscriber exists yet —
+--        standing rule 5).
 --        LOCK-HOLD NOTE: a single invocation is one transaction, so claimed
 --        rows stay locked until it returns (a user pick on a JUST-CLAIMED
 --        draft waits ~ms for the batch to finish — the §22.3 "own
@@ -484,6 +521,12 @@ DECLARE
   v_held           INTEGER := 0;
   v_pick_failures  JSONB := '[]'::jsonb;
   v_loops          INTEGER := 0;
+  v_od             RECORD;
+  v_ograce         INTEGER;
+  v_established    BOOLEAN;
+  v_supervised     BOOLEAN;
+  v_outage_paused  INTEGER := 0;
+  v_outage_failures JSONB := '[]'::jsonb;
 BEGIN
   -- -------------------------------------------------------------------------
   -- ARM 1 — D94 auto-start: scan scheduled LEAGUES (never the drafts
@@ -528,6 +571,69 @@ BEGIN
         'league_id', v_lg.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
       RAISE WARNING 'draft_tick auto-start failed for league %: % (%)',
         v_lg.id, SQLERRM, SQLSTATE;
+    END;
+  END LOOP;
+
+  -- -------------------------------------------------------------------------
+  -- ARM 1.5 — §8.7 commissioner-outage auto-pause (D102/§8.7:478; landed
+  -- with L.B1.4/069 — see the banner). Runs BEFORE the timeout arm so an
+  -- expired deadline under an outage pauses instead of autopicking. Scans
+  -- ALL live non-mock drafts (not just due ones — the pause must freeze a
+  -- still-running clock through the outage). Freshness AS-OF-NOW; the
+  -- never-connected exemption; resume is a commissioner action (the tick
+  -- never auto-resumes).
+  -- -------------------------------------------------------------------------
+  FOR v_od IN
+    SELECT d.id
+    FROM public.drafts d
+    WHERE d.status = 'live' AND d.is_mock = FALSE
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      SELECT d.* INTO v_draft FROM public.drafts d WHERE d.id = v_od.id;
+      IF v_draft.status <> 'live' THEN
+        CONTINUE;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM public.leagues l
+        WHERE l.id = v_draft.league_id AND l.deleted_at IS NULL
+      ) THEN
+        CONTINUE;
+      END IF;
+
+      v_ograce := COALESCE(
+        (v_draft.config->>'disconnect_grace_seconds')::int, 30);
+
+      -- Supervision was ESTABLISHED: some commissioner/co-commissioner
+      -- has heartbeat this draft at least once (else: D94's unattended
+      -- autopilot — never paused; the banner's never-connected exemption).
+      SELECT
+        count(*) > 0,
+        count(*) FILTER (
+          WHERE dl.last_seen_at > now() - (public.draft_liveness_freshness()
+                                           + make_interval(secs => v_ograce))
+        ) > 0
+      INTO v_established, v_supervised
+      FROM public.draft_liveness dl
+      JOIN public.league_members m
+        ON m.league_id = v_draft.league_id AND m.user_id = dl.user_id
+      WHERE dl.draft_id = v_draft.id
+        AND m.role IN ('commissioner', 'co_commissioner');
+
+      IF v_established AND NOT v_supervised THEN
+        -- The ONE pause-bookkeeping path (069's draft_pause_internal);
+        -- system post with NO acting user (the tick has no JWT).
+        PERFORM public.draft_pause_internal(
+          v_draft.id, NULL,
+          'Draft auto-paused: no commissioner or co-commissioner is connected. '
+          || 'A commissioner can resume from the draft room.');
+        v_outage_paused := v_outage_paused + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      v_outage_failures := v_outage_failures || jsonb_build_object(
+        'draft_id', v_od.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
+      RAISE WARNING 'draft_tick outage arm failed for draft %: % (%)',
+        v_od.id, SQLERRM, SQLSTATE;
     END;
   END LOOP;
 
@@ -652,6 +758,8 @@ BEGIN
     'scanned_scheduled_leagues', v_scanned,
     'auto_started', v_started,
     'start_failures', v_start_failures,
+    'outage_paused', v_outage_paused,
+    'outage_failures', v_outage_failures,
     'claimed_due', v_claimed,
     'autopicked', v_picked,
     'held_for_grace', v_held,

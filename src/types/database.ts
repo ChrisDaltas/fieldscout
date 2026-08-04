@@ -736,7 +736,7 @@ export type Database = {
           is_system: boolean | null
           league_id: string
           message: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           context?: string | null
@@ -745,7 +745,7 @@ export type Database = {
           is_system?: boolean | null
           league_id: string
           message: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           context?: string | null
@@ -754,7 +754,7 @@ export type Database = {
           is_system?: boolean | null
           league_id?: string
           message?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -2913,6 +2913,7 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_actor_name: { Args: never; Returns: string }
       draft_apply_pick_internal: {
         Args: {
           p_action_id: string
@@ -2933,12 +2934,70 @@ export type Database = {
         Args: { p_league_id: string; p_require_commish: boolean }
         Returns: Json
       }
+      draft_force_pick: {
+        Args: {
+          p_action_id?: string
+          p_draft_id: string
+          p_player_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
       draft_liveness_freshness: { Args: never; Returns: string }
       draft_make_pick: {
         Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
         Returns: Json
       }
+      draft_move_player: {
+        Args: {
+          p_draft_id: string
+          p_from_team: string
+          p_player_id: string
+          p_reason?: string
+          p_to_team: string
+        }
+        Returns: Json
+      }
+      draft_pause: {
+        Args: { p_draft_id: string; p_reason?: string }
+        Returns: Json
+      }
+      draft_pause_internal: {
+        Args: { p_actor: string; p_draft_id: string; p_message: string }
+        Returns: Json
+      }
+      draft_reassign_pick: {
+        Args: {
+          p_draft_id: string
+          p_pick_id: string
+          p_player_id?: string
+          p_reason?: string
+          p_team_id?: string
+        }
+        Returns: Json
+      }
+      draft_reset: {
+        Args: { p_draft_id: string; p_reason?: string }
+        Returns: Json
+      }
+      draft_resume: {
+        Args: { p_draft_id: string; p_reason?: string }
+        Returns: Json
+      }
       draft_rounds_from_roster: { Args: { p_roster: Json }; Returns: number }
+      draft_set_clock: {
+        Args: {
+          p_draft_id: string
+          p_extend_current?: boolean
+          p_pick_timer_seconds: number
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      draft_set_order: {
+        Args: { p_draft_id: string; p_order: string[]; p_reason?: string }
+        Returns: Json
+      }
       draft_start: { Args: { p_league_id: string }; Returns: Json }
       draft_start_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
@@ -2955,6 +3014,14 @@ export type Database = {
       }
       draft_tick: { Args: never; Returns: Json }
       draft_touch: { Args: { p_draft_id: string }; Returns: undefined }
+      draft_undo: {
+        Args: {
+          p_draft_id: string
+          p_reason?: string
+          p_to_pick_number?: number
+        }
+        Returns: Json
+      }
       duplicate_list: {
         Args: {
           p_force_public?: boolean
@@ -3238,10 +3305,6 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-
-
-
 
 // ============================================================================
 // Hand-written convenience aliases.
