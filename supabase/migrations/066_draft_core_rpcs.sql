@@ -186,6 +186,42 @@
 -- plus pgTAP 020 in the same PR. Prod-safe: new functions only, no table
 -- changes. F12 note: prod's migration history still ends pre-league-schema;
 -- this lands with the next normal push.
+--
+-- AMENDED IN PLACE 2026-08-03 (L.B1.3/068 — the unreleased-migration amend
+-- precedent, F12; the D103(2) mock branch is still L.B1.6's future
+-- amendment, unchanged). Three mechanical changes, no semantic change to
+-- any client-visible surface (every SQLSTATE + message + return shape is
+-- byte-identical; pgTAP 020's pins prove it):
+--   (a) `draft_create` / `draft_start` are now thin auth WRAPPERS over
+--       `draft_create_internal(p_league_id, p_require_commish)` /
+--       `draft_start_internal(p_league_id, p_require_commish)` — the ONE
+--       create/start implementation each (D90's one-implementation rule
+--       applied to lifecycle): 068's `draft_tick` D94 auto-start arm runs
+--       under cron with NO JWT (auth.uid() NULL), so the commissioner
+--       gates must be the WRAPPER's job (fast-fail) + a lock-held re-gate
+--       the internal performs only when p_require_commish (R93 — roles
+--       move only under the league lock). Internals follow the 062
+--       `seat_league_member_internal` form: plain (non-SECURITY-DEFINER,
+--       they execute under their SECURITY DEFINER callers), SET
+--       search_path = '', REVOKE FROM PUBLIC, anon, authenticated.
+--       The R122 lock discipline moves with the body: pgTAP 020's
+--       structural pin now targets draft_start_internal's prosrc.
+--   (b) `draft_apply_pick_internal(draft_id, player_id, is_auto, made_via,
+--       picked_by, action_id)` extracted from draft_make_pick's steps
+--       (3) WRITE + (4) ADVANCE/COMPLETION + (5) RETURN — verbatim, same
+--       now()-based deadlines, same counted completion — so 068's autopick
+--       writes a pick through the SAME advance path (is_auto=TRUE,
+--       made_via='autopick', picked_by NULL, action_id NULL — §12.4's
+--       system-pick shape) instead of forking it (tasks-M2 L.B1.3's
+--       reuse-never-fork rule). Caller contract: the drafts row is LOCKED
+--       and the pick fully validated before calling; draft_make_pick keeps
+--       its own unique_violation → friendly-E1 handler around the call.
+--   (c) R126 TAKEN (the routed batch-2 re-review nit — 066's next touch is
+--       this amendment): the R123 guard is now `v_mode IN ('manual',
+--       'custom')`, closing the out-of-enum-mode shape (an unvalidated
+--       `draft_order_mode` value could previously still read the
+--       settings-blob draft_order); attestations already said
+--       "manual/custom-only" — the code now matches them.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -247,7 +283,10 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- 3. draft_create — hydrate §7.3.8 config; idempotent vs the D95 partial
---    unique
+--    unique. Auth WRAPPER over draft_create_internal (L.B1.3 amendment (a):
+--    068's tick auto-start arm runs with no JWT, so the ONE implementation
+--    lives in the internal and the commissioner gate lives here + in the
+--    internal's p_require_commish re-gate).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_create(p_league_id UUID)
 RETURNS JSONB
@@ -255,17 +294,31 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-DECLARE
-  v_league public.leagues;
-  v_draft  public.drafts;
-  v_config JSONB;
 BEGIN
   -- Fast-fail auth (no-leak: a nonexistent league answers 42501 too).
   IF NOT public.is_league_commish(p_league_id) THEN
     RAISE EXCEPTION 'draft_create: not a commissioner of this league'
       USING ERRCODE = '42501';
   END IF;
+  RETURN public.draft_create_internal(p_league_id, TRUE);
+END;
+$$;
 
+REVOKE EXECUTE ON FUNCTION draft_create(UUID) FROM PUBLIC, anon;
+
+CREATE OR REPLACE FUNCTION draft_create_internal(
+  p_league_id UUID,
+  p_require_commish BOOLEAN
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_league public.leagues;
+  v_draft  public.drafts;
+  v_config JSONB;
+BEGIN
   SELECT l.* INTO v_league
   FROM public.leagues l
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
@@ -277,7 +330,9 @@ BEGIN
 
   -- Re-gate on the CURRENT role under the league lock (the R93 rule —
   -- roles move only under this lock, so only a post-lock read is stable).
-  IF NOT public.is_league_commish(p_league_id) THEN
+  -- Skipped for the system caller (068's tick — no JWT; its authority is
+  -- the REVOKE-narrowed draft_tick itself, the 062-internal precedent).
+  IF p_require_commish AND NOT public.is_league_commish(p_league_id) THEN
     RAISE EXCEPTION 'draft_create: not a commissioner of this league'
       USING ERRCODE = '42501';
   END IF;
@@ -321,15 +376,39 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION draft_create(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION draft_create_internal(UUID, BOOLEAN)
+  FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- 4. draft_start — the §8.5.1 manual start (snapshot BEFORE transition)
+-- 4. draft_start — the §8.5.1 manual start (snapshot BEFORE transition).
+--    Auth WRAPPER over draft_start_internal (L.B1.3 amendment (a)): the ONE
+--    start implementation, driven by the commissioner here and by 068's
+--    D94 auto-start tick arm (p_require_commish = FALSE — cron has no JWT).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_start(p_league_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- Fast-fail auth (no-leak).
+  IF NOT public.is_league_commish(p_league_id) THEN
+    RAISE EXCEPTION 'draft_start: not a commissioner of this league'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN public.draft_start_internal(p_league_id, TRUE);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION draft_start(UUID) FROM PUBLIC, anon;
+
+CREATE OR REPLACE FUNCTION draft_start_internal(
+  p_league_id UUID,
+  p_require_commish BOOLEAN
+)
+RETURNS JSONB
+LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 DECLARE
@@ -345,12 +424,6 @@ DECLARE
   v_timer        INTEGER;
   v_first        UUID;
 BEGIN
-  -- Fast-fail auth (no-leak).
-  IF NOT public.is_league_commish(p_league_id) THEN
-    RAISE EXCEPTION 'draft_start: not a commissioner of this league'
-      USING ERRCODE = '42501';
-  END IF;
-
   SELECT l.* INTO v_league
   FROM public.leagues l
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
@@ -360,8 +433,9 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  -- Re-gate under the league lock (R93).
-  IF NOT public.is_league_commish(p_league_id) THEN
+  -- Re-gate under the league lock (R93); skipped for the system caller
+  -- (068's tick — see draft_create_internal's note).
+  IF p_require_commish AND NOT public.is_league_commish(p_league_id) THEN
     RAISE EXCEPTION 'draft_start: not a commissioner of this league'
       USING ERRCODE = '42501';
   END IF;
@@ -399,10 +473,12 @@ BEGIN
 
   -- CREATE-IF-ABSENT (the D94 no-dead-end principle on the manual path): a
   -- league scheduled purely through the settings surface has no drafts row;
-  -- the idempotent draft_create supplies it. Same txn — the league lock is
-  -- already held and simply re-entered.
+  -- the idempotent create-internal supplies it. Same txn — the league lock
+  -- is already held and simply re-entered. p_require_commish FALSE: this
+  -- caller's authorization is already established (wrapper fast-fail + the
+  -- re-gate above when required).
   IF v_draft.id IS NULL THEN
-    PERFORM public.draft_create(p_league_id);
+    PERFORM public.draft_create_internal(p_league_id, FALSE);
   END IF;
 
   -- NOW lock the draft row — BELOW the 'scheduled' gate (R122): with the
@@ -462,9 +538,13 @@ BEGIN
   -- config-sourced order, and honoring a stale settings-blob leftover
   -- (from a prior manual/custom episode) would silently defeat the shuffle.
   v_mode := COALESCE(v_config->>'draft_order_mode', 'random');
+  -- R126 (taken at this touch, L.B1.3): the config fallback is
+  -- manual/custom-ONLY as the attestations state — an out-of-enum mode
+  -- value (unreachable through the Zod catalog; privileged/direct writes
+  -- only) no longer reads the settings-blob draft_order.
   v_stored := CASE
     WHEN jsonb_typeof(v_draft.draft_order) = 'array' THEN v_draft.draft_order
-    WHEN v_mode <> 'random'
+    WHEN v_mode IN ('manual', 'custom')
      AND jsonb_typeof(v_config->'draft_order') = 'array' THEN v_config->'draft_order'
     ELSE NULL
   END;
@@ -517,8 +597,11 @@ BEGIN
   -- Snapshot BEFORE the transition (D43/D64(2)): we are in 'scheduled' —
   -- exactly 059's sanctioned window. A league that cannot snapshot (no
   -- scoring reference) fails LOUDLY here and nothing below runs; the D43
-  -- trigger on the leagues UPDATE is the backstop either way.
-  PERFORM public.snapshot_league_scoring(p_league_id);
+  -- trigger on the leagues UPDATE is the backstop either way. The INTERNAL
+  -- (059, amended alongside 068): the wrapper's commissioner gate would
+  -- refuse the cron auto-start caller (no JWT) — this caller's
+  -- authorization is already established (see the re-gate above).
+  PERFORM public.snapshot_league_scoring_internal(p_league_id);
 
   v_first := public.draft_team_for_pick(
     v_order, COALESCE(v_config->>'draft_type', 'snake'),
@@ -555,10 +638,104 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION draft_start(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION draft_start_internal(UUID, BOOLEAN)
+  FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- 5. draft_make_pick — the §8.1 five-step contract
+-- 5. draft_apply_pick_internal — steps (3) WRITE + (4) ADVANCE/COMPLETION +
+--    (5) RETURN of the §8.1 contract, extracted (L.B1.3 amendment (b)) so
+--    draft_make_pick (manual) and 068's draft_tick (autopick) write through
+--    the SAME advance path. CALLER CONTRACT: the drafts row is held FOR
+--    UPDATE and the pick is fully validated (status/turn/availability);
+--    this helper only writes, advances, and returns the new state. The
+--    caller owns any unique_violation → friendly-E1 conversion.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION draft_apply_pick_internal(
+  p_draft_id UUID,
+  p_player_id TEXT,
+  p_is_auto BOOLEAN,
+  p_made_via TEXT,
+  p_picked_by UUID,
+  p_action_id UUID
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_draft      public.drafts;
+  v_pick       public.draft_picks;
+  v_team_count INTEGER;
+  v_timer      INTEGER;
+  v_next       INTEGER;
+  v_live_picks BIGINT;
+BEGIN
+  -- Plain re-read: the caller holds the drafts-row lock (§4.6), so this is
+  -- the authoritative current state.
+  SELECT d.* INTO v_draft
+  FROM public.drafts d
+  WHERE d.id = p_draft_id;
+
+  v_team_count := jsonb_array_length(v_draft.draft_order);
+  v_timer := COALESCE((v_draft.config->>'pick_timer_seconds')::int, 90);
+
+  -- (3) WRITE.
+  INSERT INTO public.draft_picks
+    (draft_id, league_id, pick_number, round, team_id, player_id,
+     is_auto, picked_by, made_via, action_id)
+  VALUES
+    (p_draft_id, v_draft.league_id, v_draft.current_pick_number,
+     v_draft.current_round, v_draft.on_clock_team_id, p_player_id,
+     p_is_auto, p_picked_by, p_made_via, p_action_id)
+  RETURNING * INTO v_pick;
+
+  -- (4) ADVANCE. Completion = all total_rounds × team_count LIVE picks
+  -- (counted, not inferred — robust against L.B1.4's undo rewinds).
+  SELECT count(*) INTO v_live_picks
+  FROM public.draft_picks p
+  WHERE p.draft_id = p_draft_id AND p.is_undone = FALSE;
+
+  IF v_live_picks >= v_draft.total_rounds * v_team_count THEN
+    -- Completion is mock-sufficient in this task: the league transition to
+    -- in_season + league_rosters population land in L.B1.7/072 (banner
+    -- cross-reference; pgTAP 020 pins the league still 'drafting' here —
+    -- a pin 072 deliberately flips).
+    UPDATE public.drafts SET
+      status           = 'complete',
+      completed_at     = now(),
+      on_clock_team_id = NULL,
+      current_deadline = NULL,
+      updated_at       = now()
+    WHERE id = p_draft_id
+    RETURNING * INTO v_draft;
+  ELSE
+    v_next := v_draft.current_pick_number + 1;
+    UPDATE public.drafts SET
+      current_pick_number = v_next,
+      current_round       = ((v_next - 1) / v_team_count) + 1,
+      on_clock_team_id    = public.draft_team_for_pick(
+                              draft_order, draft_type,
+                              COALESCE((config->>'snake_reversal')::boolean, FALSE),
+                              v_next),
+      current_deadline    = CASE WHEN v_timer > 0
+                                 THEN now() + make_interval(secs => v_timer)
+                                 ELSE NULL END,
+      updated_at          = now()
+    WHERE id = p_draft_id
+    RETURNING * INTO v_draft;
+  END IF;
+
+  -- (5) RETURN the new authoritative state.
+  RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'pick', to_jsonb(v_pick));
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION
+  draft_apply_pick_internal(UUID, TEXT, BOOLEAN, TEXT, UUID, UUID)
+  FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 6. draft_make_pick — the §8.1 five-step contract (steps 3–5 via
+--    draft_apply_pick_internal since the L.B1.3 amendment)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_make_pick(
   p_draft_id UUID,
@@ -575,10 +752,6 @@ DECLARE
   v_my_team       UUID;
   v_on_clock_name TEXT;
   v_player_name   TEXT;
-  v_team_count    INTEGER;
-  v_timer         INTEGER;
-  v_next          INTEGER;
-  v_live_picks    BIGINT;
 BEGIN
   -- Argument shape (22023) before any data access.
   IF p_player_id IS NULL OR btrim(p_player_id) = '' THEN
@@ -688,19 +861,11 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  v_team_count := jsonb_array_length(v_draft.draft_order);
-  v_timer := COALESCE((v_draft.config->>'pick_timer_seconds')::int, 90);
-
-  -- (3) WRITE.
+  -- (3)+(4)+(5) via the ONE advance path (L.B1.3 amendment (b)): manual
+  -- pick shape — is_auto FALSE, made_via 'manager', picked_by = caller.
   BEGIN
-    INSERT INTO public.draft_picks
-      (draft_id, league_id, pick_number, round, team_id, player_id,
-       is_auto, picked_by, made_via, action_id)
-    VALUES
-      (p_draft_id, v_draft.league_id, v_draft.current_pick_number,
-       v_draft.current_round, v_draft.on_clock_team_id, p_player_id,
-       FALSE, auth.uid(), 'manager', p_action_id)
-    RETURNING * INTO v_pick;
+    RETURN public.draft_apply_pick_internal(
+      p_draft_id, p_player_id, FALSE, 'manager', auth.uid(), p_action_id);
   EXCEPTION WHEN unique_violation THEN
     -- The exotic race loser (non-RPC interleavings the row lock cannot
     -- see) gets the same friendly E1 message (§8.1).
@@ -709,45 +874,6 @@ BEGIN
       v_player_name
       USING ERRCODE = 'P0001';
   END;
-
-  -- (4) ADVANCE. Completion = all total_rounds × team_count LIVE picks
-  -- (counted, not inferred — robust against L.B1.4's undo rewinds).
-  SELECT count(*) INTO v_live_picks
-  FROM public.draft_picks p
-  WHERE p.draft_id = p_draft_id AND p.is_undone = FALSE;
-
-  IF v_live_picks >= v_draft.total_rounds * v_team_count THEN
-    -- Completion is mock-sufficient in this task: the league transition to
-    -- in_season + league_rosters population land in L.B1.7/072 (banner
-    -- cross-reference; pgTAP 020 pins the league still 'drafting' here —
-    -- a pin 072 deliberately flips).
-    UPDATE public.drafts SET
-      status           = 'complete',
-      completed_at     = now(),
-      on_clock_team_id = NULL,
-      current_deadline = NULL,
-      updated_at       = now()
-    WHERE id = p_draft_id
-    RETURNING * INTO v_draft;
-  ELSE
-    v_next := v_draft.current_pick_number + 1;
-    UPDATE public.drafts SET
-      current_pick_number = v_next,
-      current_round       = ((v_next - 1) / v_team_count) + 1,
-      on_clock_team_id    = public.draft_team_for_pick(
-                              draft_order, draft_type,
-                              COALESCE((config->>'snake_reversal')::boolean, FALSE),
-                              v_next),
-      current_deadline    = CASE WHEN v_timer > 0
-                                 THEN now() + make_interval(secs => v_timer)
-                                 ELSE NULL END,
-      updated_at          = now()
-    WHERE id = p_draft_id
-    RETURNING * INTO v_draft;
-  END IF;
-
-  -- (5) RETURN the new authoritative state.
-  RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'pick', to_jsonb(v_pick));
 END;
 $$;
 

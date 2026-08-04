@@ -35,6 +35,20 @@
 --      including service_role/postgres (BYPASSRLS does not bypass triggers)
 --      — that is the point. M2's draft_start inherits the guarantee
 --      mechanically (D43).
+--      [AMENDED IN PLACE 2026-08-03 (L.B1.3/068 — unreleased chain, F12;
+--      the 062/066 wrapper-internal precedent): `snapshot_league_scoring`
+--      is now a thin auth WRAPPER over `snapshot_league_scoring_internal`
+--      (post-auth body verbatim — status window, loud-NULL refusal,
+--      overwrite semantics, messages all unchanged). Reason: 068's D94
+--      auto-start tick arm runs 066's `draft_start_internal` under cron
+--      with NO JWT, and its snapshot-BEFORE-transition call (D43/D64(2))
+--      was refused by this fn's own commissioner gate (caught live by
+--      pgTAP 022's auto-start pin). The internal is plain
+--      (non-SECURITY-DEFINER), search_path='', REVOKE FROM PUBLIC, anon,
+--      AUTHENTICATED — callable only by SECURITY DEFINER callers whose own
+--      auth is established (draft_start's commish fast-fail, or
+--      draft_tick's REVOKE narrowing). Every 013 pin (form, REVOKEs,
+--      messages, R69 window) holds unchanged.]
 --   3. `snapshot_league_scoring(p_league_id)` — SECURITY DEFINER, SET
 --      search_path = '', in-body commish check (42501), REVOKE FROM PUBLIC,
 --      anon (038 precedent; standing rule §4.1). Copies the referenced
@@ -144,10 +158,6 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-DECLARE
-  v_scoring_system_id UUID;
-  v_status TEXT;
-  v_rules JSONB;
 BEGIN
   -- In-body authorization (§12.0/§8.3): commissioner or co-commissioner only.
   -- A nonexistent league yields FALSE here too — no existence leak.
@@ -155,7 +165,26 @@ BEGIN
     RAISE EXCEPTION 'snapshot_league_scoring: not a commissioner of this league'
       USING ERRCODE = '42501';
   END IF;
+  PERFORM public.snapshot_league_scoring_internal(p_league_id);
+END;
+$$;
 
+REVOKE EXECUTE ON FUNCTION snapshot_league_scoring(UUID) FROM PUBLIC, anon;
+
+-- The ONE snapshot implementation (L.B1.3 amendment — banner item 2 note):
+-- called by the wrapper above (commissioner surface) and by 066's
+-- draft_start_internal (the D43 snapshot-BEFORE-transition moment, which
+-- 068's cron auto-start arm drives with no JWT).
+CREATE OR REPLACE FUNCTION snapshot_league_scoring_internal(p_league_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_scoring_system_id UUID;
+  v_status TEXT;
+  v_rules JSONB;
+BEGIN
   SELECT l.scoring_system_id, l.status INTO v_scoring_system_id, v_status
   FROM public.leagues l
   WHERE l.id = p_league_id AND l.deleted_at IS NULL
@@ -209,7 +238,8 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION snapshot_league_scoring(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION snapshot_league_scoring_internal(UUID)
+  FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 4. set_league_status — §7.1 transitions available in M1
