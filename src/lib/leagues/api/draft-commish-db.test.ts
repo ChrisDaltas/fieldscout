@@ -365,6 +365,14 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
     expect(undo.response.draft.on_clock_team_id).toBe(orderedTeamIds[1])
     // R139: fold the undo sample into the §4.6 held-lock bound — the header
     // promises min() over pause/resume/undo, and this completes the set.
+    // R143 (batch-5 addendum, recorded limitation — kept deliberately): once
+    // pauseResumeMin < 50 the fold cannot flag a slow undo on its own. That
+    // is the min() family form's point: §4.6 bounds the SHARED drafts-row
+    // lock window (all three controls lock it first), and a systematic hold
+    // inflates every sample, so the min catches it; a per-control bound on
+    // this SINGLE undo sample would trade the deliberate de-flake property
+    // (D105(9): one load spike must not flake the suite) for coverage of
+    // undo-specific latency, which is not what §4.6 bounds.
     expect(
       Math.min(clockControlMinMs, undo.ms),
       `held-lock bound (§4.6, min over pause/resume/undo): pause/resume min ${clockControlMinMs.toFixed(1)}ms, undo ${undo.ms.toFixed(1)}ms`,

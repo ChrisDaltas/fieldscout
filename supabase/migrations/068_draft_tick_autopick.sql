@@ -179,12 +179,23 @@
 --        autopilot ("absent rooms still draft correctly"; E48) — §8.7's
 --        word is "disconnects", which presupposes a connection; pausing
 --        never-attended drafts would dead-end every D94 auto-start.
---        CLAIM SCOPE (R135, M2 batch 5): the claim's WHERE carries the
---        same established-then-lost supervision predicate the body
---        re-verifies under the lock, plus a LIMIT 25 batch cap (ARM 2
---        symmetry; overflow candidates wait ≤ 5s for the next tick) — so
---        a fully supervised (or never-connected) live draft is NEVER
---        locked by this arm. Pre-fix the unfiltered claim locked EVERY
+--        CLAIM SCOPE (R135, M2 batch 5; R141, batch-5 addendum): the
+--        claim's WHERE carries the same established-then-lost supervision
+--        predicate the body re-verifies under the lock, PLUS the body's
+--        deleted-league re-check mirrored in (R141 — without it a live
+--        draft under a soft-deleted league, reachable today because
+--        soft_delete_league (060) has no draft-status gate, matched the
+--        claim WHERE forever: claimed + locked every tick, body-skipped,
+--        never paused, never leaving the candidate set — a
+--        permanent-candidate class; pinned in 023 §H via pgrowlocks on the
+--        LD fixture), plus a LIMIT 25 batch cap (ARM 2 symmetry) — so a
+--        fully supervised, never-connected, or deleted-league live draft
+--        is NEVER locked by this arm. The no-loop shape's "overflow
+--        candidates wait ≤ 5s for the next tick" holds only INSIDE the
+--        ≤25-draft M2 gate (no ORDER BY/loop/v_seen = no batch rotation
+--        beyond it; persistent-failure candidates could then starve real
+--        ones — routed to M7/L.F1's §22.6 load gate as F50).
+--        Pre-fix the unfiltered claim locked EVERY
 --        live non-mock draft each tick and held the locks for the rest of
 --        the tick transaction (a two-session probe showed a pick RPC on a
 --        fully supervised, not-due draft dying on lock_timeout behind the
@@ -214,8 +225,8 @@
 --        transaction per item" ideal needs a procedure, which PostgREST
 --        cannot call; recorded residual, covered by the D87 escape hatch).
 --        R135 bounds WHAT gets claimed: only due drafts (ARM 2) and
---        outage candidates (ARM 1.5) are ever locked — a healthy live
---        draft is untouched by the tick.
+--        alive-league outage candidates (ARM 1.5 — R141) are ever locked —
+--        a healthy live draft is untouched by the tick.
 --   6. `CREATE EXTENSION pg_cron` + `cron.schedule('draft-tick',
 --      '5 seconds', …)` (D87; §22.3 — ONE cron entry, never one per
 --      league; pg_cron 1.5+ sub-minute syntax; local stack preloads
@@ -611,11 +622,21 @@ BEGIN
   -- a filter bug that over-claims costs only lock scope (pgTAP 023 §H's
   -- lock-visibility pins catch it), one that under-claims would miss the
   -- pause (023 §H's 76s-threshold pins catch that direction). Batch-capped
-  -- at c_batch for symmetry with ARM 2 — no loop: overflow candidates are
-  -- claimed on the next 5s tick (an outage pause is idempotent and not
-  -- deadline-urgent the way a timeout is). Freshness AS-OF-NOW; the
-  -- never-connected exemption; resume is a commissioner action (the tick
-  -- never auto-resumes).
+  -- at c_batch for symmetry with ARM 2 — no loop (an outage pause is
+  -- idempotent and not deadline-urgent the way a timeout is). CORRECTED,
+  -- R141 (batch-5 addendum): "overflow candidates are claimed on the next
+  -- 5s tick" is guaranteed only INSIDE the ≤25-draft M2 gate, where the
+  -- candidate set can never exceed c_batch. This claim has no ORDER BY, no
+  -- loop, and no v_seen, so beyond the gate nothing rotates the batch:
+  -- ≥ c_batch candidates that never leave the set (e.g. rows the body
+  -- persistently fails on — recorded outage_failures) could recur in every
+  -- batch while real outage candidates starve, and a starved candidate
+  -- whose deadline is due is autopicked by ARM 2 in the SAME tick. The one
+  -- known PERMANENT class (soft-deleted league) is excluded from the claim
+  -- below; the beyond-gate rotation hazard is F50's (M7/L.F1 §22.6 load
+  -- gate — the ARM-2 loop+v_seen shape is the fix when scale demands it).
+  -- Freshness AS-OF-NOW; the never-connected exemption; resume is a
+  -- commissioner action (the tick never auto-resumes).
   -- -------------------------------------------------------------------------
   FOR v_od IN
     SELECT d.id
@@ -642,6 +663,18 @@ BEGIN
           AND dl.last_seen_at > now() - (public.draft_liveness_freshness()
                 + make_interval(secs => COALESCE(
                     (d.config->>'disconnect_grace_seconds')::int, 30)))
+      )
+      -- …and the league is ALIVE (R141, batch-5 addendum — the body's
+      -- deleted-league re-check mirrored into the claim): without this, a
+      -- live draft under a soft-deleted league matched the claim WHERE
+      -- FOREVER (claimed + locked every tick, body-skipped by the
+      -- deleted-league CONTINUE, never paused, never leaving the candidate
+      -- set) — the permanent-candidate class that falsified the no-loop
+      -- rationale below. Reachable today: soft_delete_league (060) has no
+      -- draft-status gate.
+      AND EXISTS (
+        SELECT 1 FROM public.leagues l
+        WHERE l.id = d.league_id AND l.deleted_at IS NULL
       )
     LIMIT c_batch
     FOR UPDATE SKIP LOCKED

@@ -61,7 +61,7 @@
 --     mid-test privileged steps use `reset role` (013/019/020/022
 --     pattern). draft_tick()/draft_apply_pick_internal run privileged
 --     (both REVOKEd from authenticated — pinned).
---   * M2 BATCH-5 PINS (R135–R138):
+--   * M2 BATCH-5 PINS (R135–R138 + the R141 addendum):
 --     - R136 ARM ORDERING (§H): a deadline planted 61s past (beyond the
 --       30s grace) under a full commissioner outage → tick → PAUSED with
 --       deadline_remaining_ms = -61000 (the D108(2) negative-remaining
@@ -83,6 +83,16 @@
 --       so pgrowlocks must still see its FOR UPDATE after the tick (a
 --       probe that cannot see tick-held locks fails here, never passes
 --       vacuously).
+--     - R141 CLAIM EXCLUSION (§H, batch-5 addendum): LD (fabricated in
+--       §B) is a live non-mock draft under a SOFT-DELETED league with
+--       established-then-lost supervision — pre-R141 a PERMANENT ARM-1.5
+--       candidate (claimed + locked every tick, body-skipped, never
+--       paused). The claim now mirrors the body's leagues.deleted_at
+--       check; LD is pinned free of "For Update" after every tick AND
+--       still live (the tick leaves deleted-league drafts entirely
+--       alone). The beyond-gate starvation hazard the class exposed (no
+--       ORDER BY/loop/v_seen ⇒ no batch rotation past the ≤25-draft M2
+--       gate) is F50's (M7/L.F1 §22.6), not this file's.
 --     - R137 (§I): league_chat.user_id FK is SET NULL (069) — a
 --       commissioner-authored system post SURVIVES its author's account
 --       deletion (user_id NULL; §12.13 non-deletable / D97 / D99), and an
@@ -101,7 +111,7 @@ create extension if not exists pgtap with schema extensions;
 create extension if not exists pgrowlocks with schema extensions;
 set local search_path = public, extensions;
 
-select plan(161);
+select plan(163);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; the 069 surface)
@@ -158,6 +168,11 @@ select col_is_null('public', 'league_chat', 'user_id',
 --                rest placeholders)
 --      LN b4…e1  never-connected world (REAL start; u09 commish; ZERO
 --                draft_touch calls — the D94 exemption pin)
+--      LP b4…f1  R135 lock-scope probe world (fabricated live draft
+--                e4…f1; fully supervised, not due, never RPC-touched)
+--      LD b4…f2  R141 deleted-league probe world (fabricated live draft
+--                e4…f2 under a SOFT-DELETED league; established-then-lost
+--                supervision — the claim must never take it)
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -360,6 +375,45 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
    now() + interval '1 hour');
 insert into draft_liveness (draft_id, user_id, last_seen_at) values
   ('e4000000-0000-4000-8000-0000000000f1', '93000000-0000-4000-8000-000000000004', now());
+
+-- LD — the R141 DELETED-LEAGUE probe world (§H, batch-5 addendum): a live
+-- non-mock draft whose league is SOFT-DELETED (soft_delete_league (060)
+-- has no draft-status gate, so this state is reachable today) with
+-- ESTABLISHED-THEN-LOST supervision (one commissioner liveness row, 2h
+-- stale — decisively past the 45s + 30s threshold). Pre-R141 this matched
+-- ARM 1.5's claim WHERE forever: claimed + FOR-UPDATE-locked every tick,
+-- body-skipped by the deleted-league CONTINUE, never paused, never leaving
+-- the candidate set — a PERMANENT candidate. The claim now mirrors the
+-- body's deleted_at check, so — like LP — this drafts row is never
+-- legitimately claimed by anything in this file (deadline NULL keeps ARM 2
+-- off it too), making it a valid pgrowlocks negative probe. The DEEPER
+-- hazard the class exposed (no ORDER BY/loop/v_seen on the claim ⇒ ≥25
+-- never-leaving candidates starve real ones beyond the ≤25-draft M2 gate)
+-- is F50's (M7/L.F1 §22.6) — this pin covers only the claim exclusion.
+insert into leagues (id, owner_id, name, season, status, team_count,
+                     scoring_system_id, settings, deleted_at) values
+  ('b4000000-0000-4000-8000-0000000000f2', '93000000-0000-4000-8000-000000000007',
+   'pgtap-cc-LD-deleted', 2026, 'scheduled', 8, null, '{}',
+   now() - interval '1 day');
+-- (league status 'scheduled', not 'drafting': the D43 guard refuses a
+-- snapshot-less 'drafting' league, and the outage arm reads ONLY
+-- drafts.status + leagues.deleted_at — the LP fabrication precedent.)
+insert into teams (id, owner_id, name, league_id) values
+  ('c5000000-0000-4000-8000-00f200000001', '93000000-0000-4000-8000-000000000007',
+   'pgtap-cc-d2-t01', 'b4000000-0000-4000-8000-0000000000f2');
+insert into league_members (league_id, user_id, team_id, role) values
+  ('b4000000-0000-4000-8000-0000000000f2', '93000000-0000-4000-8000-000000000007',
+   'c5000000-0000-4000-8000-00f200000001', 'commissioner');
+insert into drafts (id, league_id, draft_type, status, is_mock, config,
+                    draft_order, total_rounds, current_round, current_pick_number) values
+  ('e4000000-0000-4000-8000-0000000000f2', 'b4000000-0000-4000-8000-0000000000f2',
+   'snake', 'live', false,
+   '{"pick_timer_seconds": 30, "disconnect_grace_seconds": 30}',
+   to_jsonb(array['c5000000-0000-4000-8000-00f200000001']), 1, 1, 1);
+insert into draft_liveness (draft_id, user_id, last_seen_at) values
+  ('e4000000-0000-4000-8000-0000000000f2', '93000000-0000-4000-8000-000000000007',
+   now() - interval '2 hours');
+
 -- LR: t1 holds cc-rb15 (pick 1), t2 holds cc-rb16 (pick 2) — t2 is AT
 -- capacity (total_rounds 1).
 insert into draft_picks (draft_id, league_id, pick_number, round, team_id, player_id, is_auto, made_via) values
@@ -1499,6 +1553,31 @@ select is(
      and 'For Update' = any(rl.modes)),
   1::bigint,
   'PROBE VALIDITY (positive control): the due draft ARM 2 claimed and body-skipped (on_clock NULL) IS still For-Update-visible after the tick — the probe detects tick-held locks');
+
+-- R141 (batch-5 addendum) — THE DELETED-LEAGUE CLAIM EXCLUSION: LD (§B) is
+-- a live non-mock draft under a SOFT-DELETED league with
+-- established-then-lost supervision — pre-R141 it matched ARM 1.5's claim
+-- WHERE forever (claimed + locked every tick, body-skipped, never paused —
+-- a permanent candidate). The claim now carries the body's
+-- leagues.deleted_at check, so LD — which has run through EVERY tick in
+-- this section, including the probe tick above — must carry no "For
+-- Update" and must still be live/unpaused (a deleted league's draft is not
+-- the tick's to advance OR pause). Break-probe direction: drop the
+-- deleted_at EXISTS from the claim and the lock pin goes RED (the status
+-- pin stays green either way — the body's re-check never paused it; the
+-- lock is the discriminator). The DEEPER beyond-gate starvation hazard
+-- this class exposed is recorded as F50 (M7/L.F1 §22.6), NOT pinned here.
+select is(
+  (select count(*) from extensions.pgrowlocks('public.drafts') rl
+   where rl.locked_row = (select d.ctid from drafts d
+     where d.id = 'e4000000-0000-4000-8000-0000000000f2')
+     and ('For Update' = any(rl.modes) or 'For No Key Update' = any(rl.modes))),
+  0::bigint,
+  'R141 CLAIM EXCLUSION: no tick ever FOR-UPDATE-locked the soft-deleted-league live draft LD (the claim mirrors the body''s deleted_at check — the permanent-candidate class cannot be claimed)');
+select is(
+  (select status from drafts where id = 'e4000000-0000-4000-8000-0000000000f2'),
+  'live',
+  'R141: the soft-deleted-league draft was never outage-paused either — the tick leaves deleted-league drafts entirely alone (ARM 2 body-skips them; ARM 1.5 never claims them)');
 
 -- ---------------------------------------------------------------------------
 -- I. R137 (M2 batch 5): league_chat.user_id FK = ON DELETE SET NULL — a
