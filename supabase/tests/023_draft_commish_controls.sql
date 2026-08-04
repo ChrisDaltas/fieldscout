@@ -61,13 +61,47 @@
 --     mid-test privileged steps use `reset role` (013/019/020/022
 --     pattern). draft_tick()/draft_apply_pick_internal run privileged
 --     (both REVOKEd from authenticated — pinned).
+--   * M2 BATCH-5 PINS (R135–R138):
+--     - R136 ARM ORDERING (§H): a deadline planted 61s past (beyond the
+--       30s grace) under a full commissioner outage → tick → PAUSED with
+--       deadline_remaining_ms = -61000 (the D108(2) negative-remaining
+--       bookkeeping, ms-exact) and ZERO picks. Falsifiable specifically
+--       against arm reordering: had the timeout arm run first it would
+--       have AUTOPICKED unconditionally (u05's beat is fresh-at-deadline;
+--       even a stale classification's hold expired at deadline+30s) and
+--       the pause would have persisted +30000, not -61000.
+--     - R135 LOCK SCOPE (§H): pgrowlocks lock-visibility — after the
+--       ticks, a fully SUPERVISED live draft (LP, fabricated in §B and
+--       never touched by any control RPC — tuple locks carry forward
+--       through same-txn updates, so legitimately-claimed rows like LO
+--       cannot serve as negative probes) and the NEVER-CONNECTED one (LN)
+--       are pinned free of any "For Update" mode (the outage claim is
+--       filtered to outage candidates + LIMIT 25; pre-fix every live
+--       non-mock draft was locked each tick and held for the rest of the
+--       tick txn). PROBE-VALIDITY POSITIVE CONTROL: LR is made due with
+--       on_clock NULL — ARM 2 claims it and body-skips WITHOUT writing,
+--       so pgrowlocks must still see its FOR UPDATE after the tick (a
+--       probe that cannot see tick-held locks fails here, never passes
+--       vacuously).
+--     - R137 (§I): league_chat.user_id FK is SET NULL (069) — a
+--       commissioner-authored system post SURVIVES its author's account
+--       deletion (user_id NULL; §12.13 non-deletable / D97 / D99), and an
+--       ordinary message survives authorless too (all-rows decision,
+--       D108(15)); form pin on confdeltype.
+--     - R138 (§E): extend_current on an UNTIMED current pick IMPOSES the
+--       full new timer (GREATEST(NULL, now()+45s)) — deadline pinned
+--       exact, the distinct "now on the clock" post pinned.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
+-- Lock-visibility for the R135 pins (contrib; reads tuple-header lock
+-- state, so locks held by THIS txn — e.g. the tick's claims — are
+-- observable in-session). Rolled back with the test txn.
+create extension if not exists pgrowlocks with schema extensions;
 set local search_path = public, extensions;
 
-select plan(147);
+select plan(161);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; the 069 surface)
@@ -110,7 +144,8 @@ select col_is_null('public', 'league_chat', 'user_id',
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).
---    Users u01–u09 + outsider u99. Worlds:
+--    Users u01–u10 (u10 = the R137 FK-survival author, §I) + outsider u99.
+--    Worlds:
 --      LM b4…a1  main controls (REAL draft_start; u01 commish "Commish
 --                Cara", u02 co-commish "Deputy Dana", u03/u04 managers,
 --                t5–t8 placeholders; manual order t1..t8, timer 30, grace
@@ -135,7 +170,10 @@ select
   '{"provider": "email", "providers": ["email"]}',
   jsonb_build_object('username', 'cc_user_' || lpad(i::text, 2, '0')),
   now(), now()
-from generate_series(1, 9) i;
+from generate_series(1, 10) i;
+-- u10 exists ONLY as the R137 FK-survival author (§I): no memberships, no
+-- teams, no lists — so deleting the account cascades nothing but the
+-- profile, isolating the league_chat SET NULL under test.
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -292,6 +330,36 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
    1, 1, 3),
   ('e4000000-0000-4000-8000-0000000000c1', 'b4000000-0000-4000-8000-0000000000c1',
    'snake', 'complete', false, '{}', null, 1, 1, 2);
+
+-- LP — the R135 LOCK-SCOPE probe world (§H): a live non-mock draft that is
+-- FULLY SUPERVISED (fresh commissioner liveness row, planted directly) and
+-- NOT due (deadline 1h out), and — decisively — whose drafts row is NEVER
+-- touched by any control RPC or legitimate claim in this file, so its
+-- tuple can carry NO "For Update" lock unless the tick's outage claim
+-- wrongly took one (tuple locks carry forward through same-txn updates,
+-- which is why LO — legitimately claimed by the R136 case — cannot serve
+-- as this probe). The direct liveness INSERT leaves only an RI "For Key
+-- Share" on the drafts row — the harmless share mode every FK write takes;
+-- the R135 regression signature is "For Update".
+insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings) values
+  ('b4000000-0000-4000-8000-0000000000f1', '93000000-0000-4000-8000-000000000004',
+   'pgtap-cc-LP-lockprobe', 2026, 'scheduled', 8, null, '{}');
+insert into teams (id, owner_id, name, league_id) values
+  ('c5000000-0000-4000-8000-00f100000001', '93000000-0000-4000-8000-000000000004',
+   'pgtap-cc-p1-t01', 'b4000000-0000-4000-8000-0000000000f1');
+insert into league_members (league_id, user_id, team_id, role) values
+  ('b4000000-0000-4000-8000-0000000000f1', '93000000-0000-4000-8000-000000000004',
+   'c5000000-0000-4000-8000-00f100000001', 'commissioner');
+insert into drafts (id, league_id, draft_type, status, is_mock, config,
+                    draft_order, total_rounds, current_round, current_pick_number,
+                    current_deadline) values
+  ('e4000000-0000-4000-8000-0000000000f1', 'b4000000-0000-4000-8000-0000000000f1',
+   'snake', 'live', false,
+   '{"pick_timer_seconds": 30, "disconnect_grace_seconds": 30}',
+   to_jsonb(array['c5000000-0000-4000-8000-00f100000001']), 1, 1, 1,
+   now() + interval '1 hour');
+insert into draft_liveness (draft_id, user_id, last_seen_at) values
+  ('e4000000-0000-4000-8000-0000000000f1', '93000000-0000-4000-8000-000000000004', now());
 -- LR: t1 holds cc-rb15 (pick 1), t2 holds cc-rb16 (pick 2) — t2 is AT
 -- capacity (total_rounds 1).
 insert into draft_picks (draft_id, league_id, pick_number, round, team_id, player_id, is_auto, made_via) values
@@ -600,6 +668,40 @@ select is(
   'live|NULL',
   'the untimed pause round-trips: NULL remaining resumes to a NULL deadline (no invented time)');
 
+-- R138 (M2 batch 5): an UNTIMED current pick + extend ⇒ the new timer is
+-- IMPOSED on the current pick. Decided KEEP + pin (D108(3)): extend_current
+-- with a positive timer on an untimed pick has exactly one meaning — put
+-- this pick on the clock (the §8.2-symmetric inverse of the timer-0 arm
+-- above; a stalled untimed room's only non-force recourse) — and the pick
+-- gets a FULL fresh timer, so no running countdown is ever cut (the harm
+-- E15's extend-only rule guards).
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_set_clock((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 45, true) $$,
+  'set_clock 45s + extend on an UNTIMED current pick lives (R138)');
+reset role;
+select is(
+  (select (config->>'pick_timer_seconds') || '|' || current_deadline::text
+   from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
+  '45|' || (now() + interval '45 seconds')::text,
+  'R138: extend on a NULL deadline IMPOSES the full new timer exactly (GREATEST(NULL, now()+45s) = now()+45s — the current pick is clocked, not silently left untimed)');
+select is(
+  (select count(*) from league_chat
+   where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
+     and message = 'Pick clock set to 45 seconds by Commish Cara (applies to upcoming picks). The current pick is now on the clock.'),
+  1::bigint,
+  'the impose-variant system post says "now on the clock" (distinct from the "was extended." running-clock variant)');
+-- Privileged fixture surgery: restore the state §F has always entered with
+-- (timer 30, untimed current pick) — no extra post.
+update drafts
+set config = jsonb_set(config, '{pick_timer_seconds}', to_jsonb(30)),
+    current_deadline = null,
+    updated_at = now()
+where league_id = 'b4000000-0000-4000-8000-0000000000a1';
+
 -- ---------------------------------------------------------------------------
 -- F. Picks + undo (cascade golden, single, R125) + reassign/move/force +
 --    the E31 order edit
@@ -870,8 +972,8 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system),
-  15::bigint,
-  'system-post checkpoint before the force replay: 15 posts');
+  16::bigint,
+  'system-post checkpoint before the force replay: 16 posts (15 + the R138 impose post)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -891,8 +993,8 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system),
-  15::bigint,
-  '…and no second system post was written (still 15)');
+  16::bigint,
+  '…and no second system post was written (still 16)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1311,6 +1413,125 @@ select is(
   (select status from drafts where league_id = 'b4000000-0000-4000-8000-0000000000d1'),
   'live',
   'a fresh commissioner keeps the resumed draft running');
+
+-- R136 (M2 batch 5) — THE ARM-ORDERING PIN: an EXPIRED deadline under an
+-- outage PAUSES, never autopicks (the 068 banner's "runs BETWEEN auto-start
+-- and timeout" claim, previously unpinned). The deadline is planted 61s
+-- past — BEYOND deadline + grace (30s) — so the timeout arm, had it run
+-- first, would have autopicked UNCONDITIONALLY: u05's 76s-old beat lands in
+-- the (deadline−45s, deadline] = (−106s, −61s] window (fresh-at-deadline ⇒
+-- immediate autopick), and even a stale classification's hold expired at
+-- deadline+30s = 31s ago. Falsifiable specifically against arm reordering:
+-- flipped arms give 'paused|30000' + 1 pick; the printed order gives
+-- 'paused|-61000' + 0 picks. The -61000 is also THE D108(2) PIN: pause
+-- bookkeeping persists NEGATIVE remaining ms-exact (the elapsed portion of
+-- a grace clock survives the pause — clocks never gain or lose).
+update draft_liveness set last_seen_at = now() - interval '76 seconds'
+where user_id in ('93000000-0000-4000-8000-000000000005',
+                  '93000000-0000-4000-8000-000000000006');
+update drafts set current_deadline = now() - interval '61 seconds', updated_at = now()
+where league_id = 'b4000000-0000-4000-8000-0000000000d1';
+select set_config('cc.otick2', public.draft_tick()::text, true);
+select is(
+  (select status || '|' || deadline_remaining_ms::text || '|'
+          || coalesce(current_deadline::text, 'NULL')
+   from drafts where league_id = 'b4000000-0000-4000-8000-0000000000d1'),
+  'paused|-61000|NULL',
+  'R136: an expired-past-grace deadline under an outage PAUSES with the NEGATIVE remaining persisted ms-exact (-61000 — D108(2); the outage arm ran BEFORE the timeout arm)');
+select is(
+  (select count(*) from draft_picks p
+   where p.draft_id = (select id from drafts
+     where league_id = 'b4000000-0000-4000-8000-0000000000d1')),
+  0::bigint,
+  'R136: ZERO picks — nothing autopicked under the outage despite the long-expired deadline (§8.7:478 "nothing runs unsupervised")');
+select ok(
+  (current_setting('cc.otick2')::jsonb->>'outage_paused')::int >= 1,
+  'R136: the tick summary counted the second outage pause (≥-based — concurrent actors are legal)');
+select is(
+  (select count(*) from league_chat
+   where league_id = 'b4000000-0000-4000-8000-0000000000d1' and is_system
+     and message = 'Draft auto-paused: no commissioner or co-commissioner is connected. A commissioner can resume from the draft room.'),
+  2::bigint,
+  'R136: a second outage system post (user-visible each time the arm fires)');
+
+-- R135 (M2 batch 5) — THE LOCK-SCOPE PINS (pgrowlocks lock-visibility):
+-- the outage arm's claim locks ONLY outage candidates. Pre-fix the
+-- unfiltered claim FOR UPDATE'd EVERY live non-mock draft each tick and
+-- held the locks for the rest of the tick transaction (a two-session live
+-- probe showed a pick RPC on a fully supervised, not-due draft dying on
+-- lock_timeout behind the batch — against the §22.3/§22.6 load posture and
+-- the 25-draft M2 gate). pgrowlocks reads tuple-header lock state, so
+-- locks taken by THIS session's draft_tick() calls — and still held after
+-- they return — are observable here. Tuple locks CARRY FORWARD through
+-- same-txn updates, so the negative probes must be rows no legitimate
+-- claim ever touched: LP (fabricated in §B — live, fully supervised via a
+-- planted fresh commissioner beat, not due, never touched by a control
+-- RPC; LO cannot serve — the R136 case legitimately claimed it) and LN
+-- (never-connected). The regression signature is a "For Update" mode on
+-- the row ("For Key Share" members are the harmless RI shares every FK
+-- write takes — LP carries one from its planted liveness row).
+-- PROBE-VALIDITY POSITIVE CONTROL: LR is made DUE with on_clock NULL so
+-- ARM 2 claims it and body-skips WITHOUT writing — its "For Update" MUST
+-- be visible after the tick, so a probe that cannot see tick-held locks
+-- fails loudly instead of passing vacuously.
+update drafts set current_deadline = now() - interval '1 second', updated_at = now()
+where id = 'e4000000-0000-4000-8000-0000000000b1';
+select lives_ok($$ select public.draft_tick() $$,
+  'the R135 probe tick (LP fully supervised + not due; LN never-connected; LR due-degenerate)');
+select is(
+  (select count(*) from extensions.pgrowlocks('public.drafts') rl
+   where rl.locked_row = (select d.ctid from drafts d
+     where d.id = 'e4000000-0000-4000-8000-0000000000f1')
+     and ('For Update' = any(rl.modes) or 'For No Key Update' = any(rl.modes))),
+  0::bigint,
+  'R135 LOCK SCOPE: no tick ever FOR-UPDATE-locked the fully-SUPERVISED live draft LP (the outage claim filters to established-then-lost candidates — the supervised prong)');
+select is(
+  (select count(*) from extensions.pgrowlocks('public.drafts') rl
+   where rl.locked_row = (select d.ctid from drafts d
+     where d.league_id = 'b4000000-0000-4000-8000-0000000000e1')
+     and ('For Update' = any(rl.modes) or 'For No Key Update' = any(rl.modes))),
+  0::bigint,
+  'R135 LOCK SCOPE: no tick ever FOR-UPDATE-locked the NEVER-CONNECTED live draft LN (the established prong — zero commissioner liveness rows never enter the claim)');
+select is(
+  (select count(*) from extensions.pgrowlocks('public.drafts') rl
+   where rl.locked_row = (select d.ctid from drafts d
+     where d.id = 'e4000000-0000-4000-8000-0000000000b1')
+     and 'For Update' = any(rl.modes)),
+  1::bigint,
+  'PROBE VALIDITY (positive control): the due draft ARM 2 claimed and body-skipped (on_clock NULL) IS still For-Update-visible after the tick — the probe detects tick-held locks');
+
+-- ---------------------------------------------------------------------------
+-- I. R137 (M2 batch 5): league_chat.user_id FK = ON DELETE SET NULL — a
+--    commissioner-authored system post survives its author's account
+--    deletion (§12.13 "(non-deletable)"; D97 interim audit; D99
+--    append-only). The all-rows decision (ordinary messages survive
+--    authorless too — account deletion removes identity, not the room's
+--    history) is D108(15).
+-- ---------------------------------------------------------------------------
+select is(
+  (select confdeltype::text from pg_constraint
+   where conrelid = 'public.league_chat'::regclass
+     and conname = 'league_chat_user_id_fkey'),
+  'n',
+  'R137 form pin: league_chat.user_id FK is ON DELETE SET NULL (069 — 001''s CASCADE hard-deleted the author''s posts)');
+-- u10 (no memberships, no teams, no lists) authors one post of each shape,
+-- then the account is deleted (auth.users → profiles cascade → SET NULL).
+insert into league_chat (league_id, user_id, message, context, is_system) values
+  ('b4000000-0000-4000-8000-0000000000a1', '93000000-0000-4000-8000-000000000010',
+   'pgtap-r137 system post', 'league', true),
+  ('b4000000-0000-4000-8000-0000000000a1', '93000000-0000-4000-8000-000000000010',
+   'pgtap-r137 ordinary message', 'league', false);
+delete from auth.users where id = '93000000-0000-4000-8000-000000000010';
+select is(
+  (select coalesce(user_id::text, 'NULL') || '|' || is_system::text
+   from league_chat where message = 'pgtap-r137 system post'),
+  'NULL|true',
+  'R137: the system post SURVIVES the author''s account deletion — user_id NULL, text intact (the message already names the actor)');
+select is(
+  (select coalesce(user_id::text, 'NULL') || '|' || is_system::text
+   from league_chat where message = 'pgtap-r137 ordinary message'),
+  'NULL|false',
+  'R137: an ordinary message survives authorless too (the all-rows SET NULL — D99 append-only chat is never hard-deleted by identity removal; D108(15))');
 
 select * from finish();
 rollback;

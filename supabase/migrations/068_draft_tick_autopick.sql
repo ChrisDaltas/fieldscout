@@ -155,7 +155,9 @@
 --        place, the unreleased-chain precedent F12; it runs BETWEEN the
 --        auto-start and timeout arms so an expired deadline under an
 --        outage PAUSES instead of autopicking — "nothing runs unsupervised
---        during an outage"): a live NON-mock draft auto-pauses when
+--        during an outage"; the ordering is PINNED, pgTAP 023 §H R136: an
+--        expired-past-grace deadline under an outage → paused, negative
+--        remaining persisted, zero picks): a live NON-mock draft auto-pauses when
 --        supervision was ESTABLISHED and then LOST — at least one
 --        commissioner/co-commissioner `draft_liveness` row exists for the
 --        draft AND none is newer than now() − (draft_liveness_freshness()
@@ -177,6 +179,20 @@
 --        autopilot ("absent rooms still draft correctly"; E48) — §8.7's
 --        word is "disconnects", which presupposes a connection; pausing
 --        never-attended drafts would dead-end every D94 auto-start.
+--        CLAIM SCOPE (R135, M2 batch 5): the claim's WHERE carries the
+--        same established-then-lost supervision predicate the body
+--        re-verifies under the lock, plus a LIMIT 25 batch cap (ARM 2
+--        symmetry; overflow candidates wait ≤ 5s for the next tick) — so
+--        a fully supervised (or never-connected) live draft is NEVER
+--        locked by this arm. Pre-fix the unfiltered claim locked EVERY
+--        live non-mock draft each tick and held the locks for the rest of
+--        the tick transaction (a two-session probe showed a pick RPC on a
+--        fully supervised, not-due draft dying on lock_timeout behind the
+--        batch — against §22.3/§22.6 and the 25-draft M2 gate). Pinned via
+--        pgrowlocks lock-visibility in pgTAP 023 §H (a supervised and a
+--        never-connected live draft carry NO "For Update" after the
+--        ticks; a claimed-and-skipped due draft shown still locked as the
+--        probe's positive control).
 --        Pauses ride 069's `draft_pause_internal` — the ONE pause
 --        bookkeeping implementation (remaining persisted to the ms,
 --        deadline NULLed, system chat post with user_id NULL — the tick
@@ -197,6 +213,9 @@
 --        draft waits ~ms for the batch to finish — the §22.3 "own
 --        transaction per item" ideal needs a procedure, which PostgREST
 --        cannot call; recorded residual, covered by the D87 escape hatch).
+--        R135 bounds WHAT gets claimed: only due drafts (ARM 2) and
+--        outage candidates (ARM 1.5) are ever locked — a healthy live
+--        draft is untouched by the tick.
 --   6. `CREATE EXTENSION pg_cron` + `cron.schedule('draft-tick',
 --      '5 seconds', …)` (D87; §22.3 — ONE cron entry, never one per
 --      league; pg_cron 1.5+ sub-minute syntax; local stack preloads
@@ -577,9 +596,24 @@ BEGIN
   -- -------------------------------------------------------------------------
   -- ARM 1.5 — §8.7 commissioner-outage auto-pause (D102/§8.7:478; landed
   -- with L.B1.4/069 — see the banner). Runs BEFORE the timeout arm so an
-  -- expired deadline under an outage pauses instead of autopicking. Scans
-  -- ALL live non-mock drafts (not just due ones — the pause must freeze a
-  -- still-running clock through the outage). Freshness AS-OF-NOW; the
+  -- expired deadline under an outage pauses instead of autopicking (pinned:
+  -- pgTAP 023 §H's R136 case — a deadline past deadline+grace under an
+  -- outage pauses with NEGATIVE remaining and ZERO picks). The candidacy
+  -- test covers ALL live non-mock drafts (not just due ones — the pause
+  -- must freeze a still-running clock through the outage), but the CLAIM
+  -- locks ONLY outage candidates (R135, M2 batch 5): the pre-fix
+  -- unfiltered claim FOR UPDATE'd every live non-mock draft each tick and
+  -- held the locks for the rest of the tick transaction, serializing every
+  -- pick on every live draft behind the batch every 5s — against the
+  -- §22.3/§22.6 load posture. The WHERE below is the same
+  -- established-then-lost supervision predicate the body re-verifies UNDER
+  -- the lock (claim = pre-filter against a snapshot; body = authoritative);
+  -- a filter bug that over-claims costs only lock scope (pgTAP 023 §H's
+  -- lock-visibility pins catch it), one that under-claims would miss the
+  -- pause (023 §H's 76s-threshold pins catch that direction). Batch-capped
+  -- at c_batch for symmetry with ARM 2 — no loop: overflow candidates are
+  -- claimed on the next 5s tick (an outage pause is idempotent and not
+  -- deadline-urgent the way a timeout is). Freshness AS-OF-NOW; the
   -- never-connected exemption; resume is a commissioner action (the tick
   -- never auto-resumes).
   -- -------------------------------------------------------------------------
@@ -587,6 +621,29 @@ BEGIN
     SELECT d.id
     FROM public.drafts d
     WHERE d.status = 'live' AND d.is_mock = FALSE
+      -- Supervision was ESTABLISHED (some commissioner/co-commissioner has
+      -- heartbeat this draft at least once)…
+      AND EXISTS (
+        SELECT 1
+        FROM public.draft_liveness dl
+        JOIN public.league_members m
+          ON m.league_id = d.league_id AND m.user_id = dl.user_id
+        WHERE dl.draft_id = d.id
+          AND m.role IN ('commissioner', 'co_commissioner')
+      )
+      -- …and then LOST (no commissioner beat within freshness + grace).
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.draft_liveness dl
+        JOIN public.league_members m
+          ON m.league_id = d.league_id AND m.user_id = dl.user_id
+        WHERE dl.draft_id = d.id
+          AND m.role IN ('commissioner', 'co_commissioner')
+          AND dl.last_seen_at > now() - (public.draft_liveness_freshness()
+                + make_interval(secs => COALESCE(
+                    (d.config->>'disconnect_grace_seconds')::int, 30)))
+      )
+    LIMIT c_batch
     FOR UPDATE SKIP LOCKED
   LOOP
     BEGIN

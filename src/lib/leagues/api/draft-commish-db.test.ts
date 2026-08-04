@@ -100,6 +100,14 @@ let mgr2Client: SupabaseClient<Database>
 let leagueId: string
 let draftId: string
 let orderedTeamIds: string[]
+/**
+ * min() over the pause/resume RTT samples, carried into the undo test so the
+ * §4.6 held-lock bound really spans the header's pause/resume/undo set
+ * (R139 — the undo sample was previously asserted only > 0, vacuously).
+ * Infinity until the pause/resume test runs, so a solo undo run still
+ * asserts against its own sample.
+ */
+let clockControlMinMs = Number.POSITIVE_INFINITY
 
 /** Server-timestamp parse (data, not a wall-clock read — D3/D17 clean). */
 function serverMs(ts: string | null): number {
@@ -309,10 +317,11 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
     expect(restored - resumedAt).toBe(remaining)
 
     // §4.6 held-lock bound for the controls family (min() de-flake form) —
-    // the undo sample joins after the picks below; assert the two clock
-    // controls now.
+    // the undo sample joins the bound in the pick/undo test below; assert
+    // the two clock controls now and carry the min forward (R139).
+    clockControlMinMs = Math.min(pause.ms, resume.ms)
     expect(
-      Math.min(pause.ms, resume.ms),
+      clockControlMinMs,
       `held-lock bound: pause/resume RTTs [${pause.ms.toFixed(1)}, ${resume.ms.toFixed(1)}]ms`,
     ).toBeLessThan(50)
   })
@@ -354,7 +363,12 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
     expect(undo.response.rewound_to_pick).toBe(2)
     expect(undo.response.draft.current_pick_number).toBe(2)
     expect(undo.response.draft.on_clock_team_id).toBe(orderedTeamIds[1])
-    expect(undo.ms).toBeGreaterThan(0)
+    // R139: fold the undo sample into the §4.6 held-lock bound — the header
+    // promises min() over pause/resume/undo, and this completes the set.
+    expect(
+      Math.min(clockControlMinMs, undo.ms),
+      `held-lock bound (§4.6, min over pause/resume/undo): pause/resume min ${clockControlMinMs.toFixed(1)}ms, undo ${undo.ms.toFixed(1)}ms`,
+    ).toBeLessThan(50)
 
     // Pool restored on the wire: mgr2 re-picks the player pick 3 had taken.
     const { data: repick, error: repickError } = await mgr2Client.rpc('draft_make_pick', {

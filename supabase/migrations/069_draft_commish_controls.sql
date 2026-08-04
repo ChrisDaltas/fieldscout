@@ -4,11 +4,16 @@
 -- bookkeeping + the robustness bullets), §8.8 (system posts), §8.1 five-step
 -- contract, §12.4 (soft undo), §17 (commish/co-commish row), E4/E15/E31 +
 -- E29's snake half; tasks-M2 §3 D97/D101/D102 + §4.6 lock discipline, §5
--- sketch — names contractual). Every control the §8.7 table prints for a
--- SNAKE draft, each writing a mandatory in-transaction `league_chat` system
--- post (D97 — the interim transparency until M6's `commissioner_actions`,
--- F40); the auction rows ("Adjust auction budget / undo a won bid") are
--- M3's.
+-- sketch — names contractual). The §8.7 snake-draft control surface, each
+-- RPC writing a mandatory in-transaction `league_chat` system post (D97 —
+-- the interim transparency until M6's `commissioner_actions`, F40); the
+-- auction rows ("Adjust auction budget / undo a won bid") are M3's. Two
+-- §8.7 snake rows deliberately live ELSEWHERE (R140): "Toggle autopick for
+-- any team" is L.B1.7's autodraft-toggle RPC (migration 072 — the F33
+-- route), and "Reassign a draft seat" is already satisfied by 063's
+-- `assign_manager`/`remove_manager` seat mechanics + E48's vacated-seat
+-- autopilot (M1 — swapping which user controls a team never was a
+-- draft-room RPC).
 --
 -- Contents:
 --   1. `league_chat.user_id` DROP NOT NULL: genuine system posts written by
@@ -62,7 +67,19 @@
 --          deadline"; a shorter timer with extend leaves the deadline
 --          alone). timer = 0 + extend ⇒ current_deadline := NULL (§8.2
 --          untimed semantics applied to the current pick — removing the
---          clock is not shortening it).
+--          clock is not shortening it). UNTIMED CURRENT + extend (R138,
+--          M2 batch 5 — decided KEEP + pin, recorded D108(3)): when the
+--          current pick has NO deadline, GREATEST(NULL, now()+timer)
+--          IMPOSES now()+timer — nominally the one finite-ward move under
+--          extend-only, but it is the commissioner's EXPLICIT request
+--          (extend_current=TRUE with a positive timer on an untimed pick
+--          has exactly one meaning: put this pick on the clock), it is the
+--          §8.2-symmetric inverse of the timer-0 arm, it grants the pick a
+--          FULL fresh timer (no mid-countdown clock is cut — the harm E15
+--          guards), and refusing would leave a stalled untimed room no
+--          recourse short of force-pick. The system post says "The current
+--          pick is now on the clock." for this arm (vs "was extended.") —
+--          both messages pgTAP-pinned.
 --        * on a PAUSED draft the new timer applies to subsequent picks;
 --          the PERSISTED remaining is untouched (clocks never gain/lose
 --          across pauses) and p_extend_current → friendly P0001 directing
@@ -197,11 +214,15 @@
 --      pauses when supervision was ESTABLISHED and then LOST — at least
 --      one commissioner/co-commissioner heartbeat row exists for the
 --      draft AND none is newer than now() − (draft_liveness_freshness()
---      + disconnect_grace_seconds). Pause via draft_pause_internal (the
---      ONE bookkeeping path), system post with user_id NULL, resume is a
---      commissioner action (the tick NEVER auto-resumes). Full rationale
---      incl. the as-of-NOW vs as-of-deadline freshness contrast and the
---      never-connected exemption in 068's banner + D108.
+--      + disconnect_grace_seconds). The arm's CLAIM locks only outage
+--      candidates (that same predicate in the claim WHERE, re-verified
+--      under the lock, LIMIT 25 — R135, M2 batch 5; pre-fix it locked
+--      every live non-mock draft each tick). Pause via
+--      draft_pause_internal (the ONE bookkeeping path), system post with
+--      user_id NULL, resume is a commissioner action (the tick NEVER
+--      auto-resumes). Full rationale incl. the as-of-NOW vs as-of-deadline
+--      freshness contrast and the never-connected exemption in 068's
+--      banner + D108.
 --
 -- AUTH MODEL (§17 "Draft: pause/undo/reassign/move/reset" — co-commish ✓):
 -- every RPC locks the drafts row FIRST (§4.6), then answers ONE 42501 for
@@ -252,10 +273,28 @@
 
 -- ---------------------------------------------------------------------------
 -- 1. league_chat.user_id nullable — system posts from the tick have no
---    acting user (item 1; forge-proof via the 065 INSERT policy)
+--    acting user (item 1; forge-proof via the 065 INSERT policy) — and the
+--    author FK moves CASCADE → SET NULL (R137, M2 batch 5): 001's ON DELETE
+--    CASCADE meant deleting the acting commissioner's account hard-deleted
+--    their system posts — against §12.13's "(non-deletable)" system posts,
+--    D99's append-only chat, and D97's interim-audit purpose. SET NULL
+--    applies to ALL chat rows deliberately (a plain FK cannot be partial,
+--    and splitting system from ordinary rows would need a trigger for no
+--    principled gain): account deletion removes the IDENTITY, not the
+--    room's history — the same rule the M1 membership work applies to
+--    teams/picks a departed member leaves behind, and consistent with D99
+--    (chat rows are never deleted). An authorless ordinary message renders
+--    by its is_system=FALSE shape (a "former member" fallback is the chat
+--    UI's job, L.B3.3); user_id NULL was already a legal, forge-proof
+--    shape after the DROP NOT NULL below. Full reasoning: D108(15).
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE league_chat ALTER COLUMN user_id DROP NOT NULL;
+
+ALTER TABLE league_chat DROP CONSTRAINT league_chat_user_id_fkey;
+ALTER TABLE league_chat
+  ADD CONSTRAINT league_chat_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL;
 
 -- ---------------------------------------------------------------------------
 -- 2. draft_pause_internal — the ONE pause-bookkeeping implementation
@@ -501,14 +540,25 @@ BEGIN
       v_note := ' The current pick is now untimed.';
     ELSE
       -- Extend-only: GREATEST — a shorter timer never silently shortens
-      -- the running clock (E15).
+      -- the running clock (E15). R138: on an UNTIMED current pick
+      -- (current_deadline NULL) GREATEST(NULL, now()+timer) IMPOSES the
+      -- new timer — the commissioner's explicit request (extend_current on
+      -- an untimed pick means "put this pick on the clock"; the
+      -- §8.2-symmetric inverse of the timer-0 arm; the pick gets a FULL
+      -- fresh timer, so no running countdown is ever cut). Decided + pinned
+      -- M2 batch 5; the post names the imposition distinctly. See the
+      -- banner + D108(3).
+      IF v_draft.current_deadline IS NULL THEN
+        v_note := ' The current pick is now on the clock.';
+      ELSE
+        v_note := ' The current pick was extended.';
+      END IF;
       UPDATE public.drafts SET
         current_deadline = GREATEST(current_deadline,
                                     now() + make_interval(secs => p_pick_timer_seconds)),
         updated_at       = now()
       WHERE id = p_draft_id
       RETURNING * INTO v_draft;
-      v_note := ' The current pick was extended.';
     END IF;
   END IF;
 
