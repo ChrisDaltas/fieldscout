@@ -271,7 +271,11 @@ beforeAll(async () => {
   if (!delivered) {
     throw new Error('realtime service never delivered a Broadcast-from-DB message (join or delivery pipeline still down)')
   }
-}, 180_000)
+  // Hook timeout > the gate's worst-case budget — 8 attempts x (10s join
+  // + 5 fires x 15 polls x 200ms + 3s backoff) = ~224s — plus setup slack,
+  // so terminal failure always surfaces as the diagnostic error above,
+  // never vitest's generic hook timeout (R147).
+}, 300_000)
 
 afterAll(async () => {
   for (const channel of openChannels) {

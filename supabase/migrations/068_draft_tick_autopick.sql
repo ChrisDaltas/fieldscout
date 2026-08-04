@@ -900,7 +900,11 @@ BEGIN
     LOOP
       PERFORM realtime.send(
         jsonb_build_object(
-          'server_now', now(),
+          -- clock_timestamp(), not now(): the drift-correction beat must
+          -- carry STATEMENT time — transaction_timestamp() is frozen at
+          -- tick-txn start, so it would bake the txn's own runtime into
+          -- the very drift figure the beat exists to correct (R146).
+          'server_now', clock_timestamp(),
           'current_deadline', v_hb.current_deadline),
         'tick',
         'draft:' || v_hb.id::text,
