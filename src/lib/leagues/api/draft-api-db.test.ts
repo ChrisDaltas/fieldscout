@@ -56,6 +56,12 @@ const MGR2 = {
   password: 'pgtap-draft-pass-2',
   username: 'da_wire_mgr_two',
 }
+/** R155: a NON-member — the no-leak arms need a caller outside the league. */
+const OUTSIDER = {
+  email: 'draft-api-outsider@fieldscout.test',
+  password: 'pgtap-draft-pass-3',
+  username: 'da_wire_outsider',
+}
 
 const ACTION = {
   create: 'ad600000-0000-4000-8000-000000000001',
@@ -86,6 +92,7 @@ const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
 
 let commishClient: SupabaseClient<Database>
 let mgr2Client: SupabaseClient<Database>
+let outsiderClient: SupabaseClient<Database>
 let commishId: string
 let leagueId: string
 let draftId: string
@@ -111,7 +118,7 @@ async function cleanup(): Promise<void> {
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
   }
-  for (const u of [COMMISH, MGR2]) {
+  for (const u of [COMMISH, MGR2, OUTSIDER]) {
     await deleteUserByUsername(u.username)
   }
 }
@@ -155,8 +162,10 @@ beforeAll(async () => {
   await cleanup()
   commishId = await createUser(COMMISH)
   await createUser(MGR2)
+  await createUser(OUTSIDER)
   commishClient = await signIn(COMMISH)
   mgr2Client = await signIn(MGR2)
+  outsiderClient = await signIn(OUTSIDER)
 
   // League (8 teams) via the real create path; draft_order_mode stays the
   // catalog default ('random') — draft_start honors the draft-row candidate
@@ -295,6 +304,36 @@ describe('draft schedule/start API over PostgREST (L.B2.1)', () => {
       .eq('league_id', leagueId)
       .eq('is_mock', false)
     expect(count).toBe(1)
+  })
+
+  it('OUTSIDER sweep (R155): create/start answer the member 403; the order PATCH answers the no-draft 404 — no existence leak', async () => {
+    // A non-member's create and start are 403 — INDISTINGUISHABLE from the
+    // non-commish member's refusal (the RPCs' 42501 no-leak fast-fail).
+    const create = await createDraft(outsiderClient, leagueId)
+    expect(create.status).toBe(403)
+    const start = await startDraft(outsiderClient, leagueId)
+    expect(start.status).toBe(403)
+
+    // The order PATCH probes drafts under RLS: the outsider sees NO row, so
+    // the answer is the SAME 404 a league with no draft gets — even though a
+    // scheduled draft exists right now (the previous test created it).
+    const patched = await patchDraftOrder(
+      outsiderClient,
+      leagueId,
+      { order: sortedTeamIds },
+      { randomValues: fixedEntropy(ENTROPY_8) },
+    )
+    expect(patched.status).toBe(404)
+    expect(JSON.stringify(patched.body)).toContain('No draft is scheduled')
+
+    // Nothing started, nothing reordered: the draft is untouched.
+    const { data: row } = await service
+      .from('drafts')
+      .select('status, draft_order')
+      .eq('id', draftId)
+      .single()
+    expect(row?.status).toBe('scheduled')
+    expect(row?.draft_order).toBeNull()
   })
 
   it('detail now carries the summary: id/status/type + the SETTINGS instant (D95), still mock-blind', async () => {
