@@ -63,8 +63,10 @@ type Supabase = SupabaseClient<Database>
 const NOT_COMMISH_MESSAGE = 'Only the commissioner can manage the draft.'
 const NO_ACTIVE_DRAFT_MESSAGE =
   'No draft is scheduled for this league yet — create one from Draft setup first.'
-const POST_START_ORDER_MESSAGE =
-  'The draft has already started — mid-draft order changes arrive with the commissioner draft controls in M2.'
+export const POST_START_RANDOMIZE_MESSAGE =
+  'The draft has already started — a mid-draft order change must be an explicit order (E31), not a randomize.'
+export const POST_START_REASON_REQUIRED_MESSAGE =
+  'Changing the order mid-draft is a commissioner override — include a reason (§8.7/D97).'
 
 /** Statuses that make a non-mock draft "active" (the D95 partial-unique set). */
 export const ACTIVE_DRAFT_STATUSES = ['scheduled', 'live', 'paused'] as const
@@ -179,9 +181,20 @@ export async function patchDraftOrder(
     return { status: 404, body: { error: NO_ACTIVE_DRAFT_MESSAGE } }
   }
   if (draft.status !== 'scheduled') {
-    // The L.B2.3 seam (tasks-M2 §6: "post-start order edits route through
-    // L.B2.3's dispatch") — an explicit refusal, the 059 precedent.
-    return { status: 409, body: { error: POST_START_ORDER_MESSAGE } }
+    // The L.B2.3 post-start dispatch (E31 — §15.2's PATCH prints no
+    // pre-start restriction): an order body on a live/paused draft is the
+    // §8.7 "Edit draft order" control — completed picks stand, remaining
+    // picks re-derive (069's draft_set_order owns the math). Two guards:
+    // randomize is refused (E31 is an explicit-order edit; shuffling the
+    // remaining order mid-draft is not a printed control — D114), and
+    // `reason` is REQUIRED (D97 — every route-facing control accepts one;
+    // the post-start dispatch is where the task text makes it mandatory).
+    if (parsed.data.randomize) {
+      return { status: 400, body: { error: POST_START_RANDOMIZE_MESSAGE } }
+    }
+    if (parsed.data.reason === undefined) {
+      return { status: 400, body: { error: POST_START_REASON_REQUIRED_MESSAGE } }
+    }
   }
 
   let order: string[]
@@ -666,4 +679,355 @@ export async function setAutodraft(
   })
   if (error) return mapDraftRpcError(error, AUTODRAFT_FORBIDDEN_MESSAGE)
   return { status: 200, body: data as unknown as Json }
+}
+
+// ===========================================================================
+// L.B2.3 — commissioner control routes (§15.2 commish block; §8.7 via 069)
+// + the mock surface (§15.2 mock-drafts; §8.8 via 071)
+// ===========================================================================
+//
+// Controls: every verb is a thin dispatch to its 069 RPC — authorization
+// (commissioner/co-commissioner in-body 42501, no-leak), the §4.6 lock, the
+// legality checks, and the D97 in-txn system chat post ALL live in the RPC;
+// this layer resolves the target draft (optional `draft_id`, active-non-mock
+// default — the D113(2) convention: a mock room always sends its own id) and
+// maps SQLSTATEs. `reason` is accepted + Zod-validated on every control and
+// stored nowhere (the F32 pattern; F40 carries the M6 audit obligation) —
+// OPTIONAL on the verbs (the RPCs default it NULL; the chat post is the
+// transparency), REQUIRED only on the post-start order dispatch where the
+// task text mandates it (D114).
+//
+// Mock affordances: NONE here (D110(1)) — on a mock, `draft_pause`/
+// `draft_resume` are LAUNCHER-only (commissioners refused with the RPC's
+// friendly P0001) and every other §8.7 control refuses mocks outright, so
+// pause/resume double as the launcher's own mock lifecycle surface (the E59
+// resume path — L.B3.5's resumable card is the consumer) simply by passing
+// the mock's `draft_id`, and the other verbs need no mock branch at all.
+//
+// Launch idempotency (D110(11)/R149): `POST …/mock-drafts` always sends a
+// `p_action_id` — the body's hook-minted UUID when present (the D68(1)
+// stamping pattern, L.B3.5's launcher), else one minted by the ROUTE per
+// submit (entropy injected — the determinism guard bans crypto here). The
+// RPC's E2 replay arm answers a retried submit with the ORIGINAL mock
+// (`created: false`) — treated as the same 2xx, never a duplicate-launch
+// error. NULL is the RPC's legacy no-dedupe path; production never sends it.
+
+export const MOCK_NOT_FOUND_MESSAGE = 'No such mock draft in this league.'
+
+const reasonSchema = z.string().trim().min(1).max(500).optional()
+
+/** Shared shape: every control accepts an optional target draft + reason. */
+const controlBaseShape = {
+  draft_id: z.uuid().optional(),
+  reason: reasonSchema,
+}
+
+export const pauseDraftInputSchema = z.strictObject({
+  ...controlBaseShape,
+  action: z.enum(['pause', 'resume']),
+})
+
+export const undoDraftInputSchema = z.strictObject({
+  ...controlBaseShape,
+  to_pick_number: z.number().int().min(1).optional(),
+})
+
+export const reassignPickInputSchema = z
+  .strictObject({
+    ...controlBaseShape,
+    pick_id: z.uuid(),
+    team_id: z.uuid().optional(),
+    player_id: z.string().trim().min(1).optional(),
+  })
+  .refine((body) => body.team_id !== undefined || body.player_id !== undefined, {
+    message: 'Send a new team_id, a new player_id, or both.',
+  })
+
+/** `action_id` REQUIRED wire-side (rule 6/E2 — the same stamping contract as
+ *  the pick route: the panel mints one UUID per submit, retries replay). */
+export const forcePickInputSchema = z.strictObject({
+  ...controlBaseShape,
+  player_id: z.string().trim().min(1),
+  action_id: z.uuid(),
+})
+
+export const movePlayerInputSchema = z.strictObject({
+  ...controlBaseShape,
+  player_id: z.string().trim().min(1),
+  from_team: z.uuid(),
+  to_team: z.uuid(),
+})
+
+export const resetDraftInputSchema = z.strictObject(controlBaseShape)
+
+export const setClockInputSchema = z.strictObject({
+  ...controlBaseShape,
+  pick_timer_seconds: z.number().int().min(0).max(86_400),
+  extend_current: z.boolean().optional(),
+})
+
+type ControlArgs = Record<string, unknown>
+
+/**
+ * The one control pipeline: parse → resolve the draft → dispatch to the
+ * named RPC with the per-verb args. The RPC name is switched over a closed
+ * union (never caller data).
+ */
+async function dispatchControl<S extends z.ZodType>(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+  schema: S,
+  rpc: (body: z.infer<S>, draftId: string) => { fn: ControlRpcName; args: ControlArgs },
+): Promise<ServiceResult> {
+  const parsed = schema.safeParse(rawBody)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const body = parsed.data as z.infer<S> & { draft_id?: string; reason?: string }
+  const resolved = await resolveDraftForAction(supabase, leagueId, body.draft_id)
+  if ('failure' in resolved) return resolved.failure
+
+  const { fn, args } = rpc(parsed.data, resolved.draft.id)
+  const { data, error } = await (
+    supabase.rpc as unknown as (
+      name: string,
+      params: ControlArgs,
+    ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>
+  )(fn, args)
+  if (error) return mapDraftRpcError(error)
+  return { status: 200, body: data as Json }
+}
+
+type ControlRpcName =
+  | 'draft_pause'
+  | 'draft_resume'
+  | 'draft_undo'
+  | 'draft_reassign_pick'
+  | 'draft_force_pick'
+  | 'draft_move_player'
+  | 'draft_reset'
+  | 'draft_set_clock'
+
+const withReason = (reason: string | undefined): ControlArgs =>
+  reason !== undefined ? { p_reason: reason } : {}
+
+/** POST …/draft/pause — §15.2's one route for BOTH verbs (`action` in body). */
+export async function pauseOrResumeDraft(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, pauseDraftInputSchema, (body, draftId) => ({
+    fn: body.action === 'pause' ? 'draft_pause' : 'draft_resume',
+    args: { p_draft_id: draftId, ...withReason(body.reason) },
+  }))
+}
+
+/** POST …/draft/undo — single (`to_pick_number` absent) or cascade (E4). */
+export async function undoDraft(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, undoDraftInputSchema, (body, draftId) => ({
+    fn: 'draft_undo',
+    args: {
+      p_draft_id: draftId,
+      ...(body.to_pick_number !== undefined ? { p_to_pick_number: body.to_pick_number } : {}),
+      ...withReason(body.reason),
+    },
+  }))
+}
+
+/** POST …/draft/reassign — new team and/or corrected player for one pick. */
+export async function reassignPick(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(
+    supabase,
+    leagueId,
+    rawBody,
+    reassignPickInputSchema,
+    (body, draftId) => ({
+      fn: 'draft_reassign_pick',
+      args: {
+        p_draft_id: draftId,
+        p_pick_id: body.pick_id,
+        ...(body.team_id !== undefined ? { p_team_id: body.team_id } : {}),
+        ...(body.player_id !== undefined ? { p_player_id: body.player_id } : {}),
+        ...withReason(body.reason),
+      },
+    }),
+  )
+}
+
+/** POST …/draft/force-pick — pick for the on-clock team (made_via = 'commissioner'). */
+export async function forcePick(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, forcePickInputSchema, (body, draftId) => ({
+    fn: 'draft_force_pick',
+    args: {
+      p_draft_id: draftId,
+      p_player_id: body.player_id,
+      p_action_id: body.action_id,
+      ...withReason(body.reason),
+    },
+  }))
+}
+
+/** POST …/draft/move-player — move a drafted player between teams. */
+export async function movePlayer(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, movePlayerInputSchema, (body, draftId) => ({
+    fn: 'draft_move_player',
+    args: {
+      p_draft_id: draftId,
+      p_player_id: body.player_id,
+      p_from_team: body.from_team,
+      p_to_team: body.to_team,
+      ...withReason(body.reason),
+    },
+  }))
+}
+
+/** POST …/draft/reset — wipe to pre-draft (`drafting`/`paused` only; 069). */
+export async function resetDraft(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, resetDraftInputSchema, (body, draftId) => ({
+    fn: 'draft_reset',
+    args: { p_draft_id: draftId, ...withReason(body.reason) },
+  }))
+}
+
+/** POST …/draft/clock — the E15 clock edit (dedicated verb — D114). */
+export async function setClock(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, setClockInputSchema, (body, draftId) => ({
+    fn: 'draft_set_clock',
+    args: {
+      p_draft_id: draftId,
+      p_pick_timer_seconds: body.pick_timer_seconds,
+      ...(body.extend_current !== undefined ? { p_extend_current: body.extend_current } : {}),
+      ...withReason(body.reason),
+    },
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Mock drafts (§15.2/§8.8 — launch / list / delete; authorization is the
+// RPCs' via `config.mock.launched_by`, never role — D110(1))
+// ---------------------------------------------------------------------------
+
+export const launchMockInputSchema = z.strictObject({
+  human_team_id: z.uuid().optional(),
+  cpu_speed: z.enum(['realistic', 'fast']).optional(),
+  /** Hook-minted per submit when the launcher UI sends one (D68(1)); the
+   *  route mints otherwise — the RPC ALWAYS receives a key (D110(11)). */
+  action_id: z.uuid().optional(),
+})
+
+export interface LaunchMockDeps {
+  /** One fresh UUID per submit (crypto in the route — outside the guard). */
+  mintActionId: () => string
+}
+
+export async function launchMockDraft(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+  deps: LaunchMockDeps,
+): Promise<ServiceResult> {
+  const parsed = launchMockInputSchema.safeParse(rawBody ?? {})
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { data, error } = await supabase.rpc('create_mock_draft', {
+    p_league_id: leagueId,
+    ...(parsed.data.human_team_id !== undefined
+      ? { p_human_team_id: parsed.data.human_team_id }
+      : {}),
+    ...(parsed.data.cpu_speed !== undefined ? { p_cpu_speed: parsed.data.cpu_speed } : {}),
+    p_action_id: parsed.data.action_id ?? deps.mintActionId(),
+  })
+  if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
+  const result = data as unknown as DraftStateBody
+  // created:false = the E2 replay of a retried submit — the ORIGINAL mock as
+  // a 200, never a duplicate-launch error (D110(11)).
+  return { status: result.created ? 201 : 200, body: result as unknown as Json }
+}
+
+/** The §16.5.2 list surface: my active mocks (live|paused — the resumable
+ *  cards, E59) + my recaps (complete — kept until owner-deleted, §8.8).
+ *  RLS-scoped member SELECT; launcher-filtered server-side. */
+export async function listMockDrafts(
+  supabase: Supabase,
+  leagueId: string,
+  userId: string,
+): Promise<ServiceResult> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select(
+      'id, status, draft_type, created_at, started_at, completed_at, current_pick_number, current_round, total_rounds, config',
+    )
+    .eq('league_id', leagueId)
+    .eq('is_mock', true)
+    .eq('config->mock->>launched_by' as 'id', userId)
+    .in('status', ['live', 'paused', 'complete'])
+    .order('created_at', { ascending: false })
+  if (error) {
+    return { status: 500, body: { error: error.message } }
+  }
+  const rows = data ?? []
+  return {
+    status: 200,
+    body: {
+      active: rows.filter((row) => row.status === 'live' || row.status === 'paused'),
+      recaps: rows.filter((row) => row.status === 'complete'),
+    } as unknown as Json,
+  }
+}
+
+/** DELETE …/mock-drafts/[did] — launcher-only (the RPC refuses everyone
+ *  else, commissioners included); covers abandon AND recap-delete (§8.8). */
+export async function deleteMockDraft(
+  supabase: Supabase,
+  leagueId: string,
+  draftId: string,
+): Promise<ServiceResult> {
+  if (!z.uuid().safeParse(draftId).success) {
+    return { status: 404, body: { error: MOCK_NOT_FOUND_MESSAGE } }
+  }
+  // Scope the id to THIS league under the member SELECT before the RPC —
+  // a cross-league id answers the same no-leak 404 an unknown one does.
+  const { data: row, error: probeError } = await supabase
+    .from('drafts')
+    .select('id')
+    .eq('league_id', leagueId)
+    .eq('id', draftId)
+    .eq('is_mock', true)
+    .maybeSingle()
+  if (probeError) {
+    return { status: 500, body: { error: probeError.message } }
+  }
+  if (!row) {
+    return { status: 404, body: { error: MOCK_NOT_FOUND_MESSAGE } }
+  }
+  const { error } = await supabase.rpc('delete_mock_draft', { p_draft_id: draftId })
+  if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
+  return { status: 200, body: { deleted: true, draft_id: draftId } }
 }

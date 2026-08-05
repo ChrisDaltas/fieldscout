@@ -34,10 +34,14 @@ export async function POST(_request: Request, { params }: RouteParams) {
 }
 
 /**
- * PATCH /api/leagues/[id]/draft — pre-start order edit incl. randomize
- * (§15.2; D101/D108(7)). NO schedule field — `draft_scheduled_at` flows
- * through the league-settings PATCH only (D95); the service's strict schema
- * enforces it. Randomize entropy lives HERE (crypto), outside the
+ * PATCH /api/leagues/[id]/draft — order edit (§15.2; D101/D108(7)).
+ * Pre-start: explicit order or randomize. Post-start (live/paused —
+ * L.B2.3's dispatch): an explicit order body is the §8.7 "Edit draft
+ * order" control (E31 — completed picks stand, remaining re-derive in
+ * `draft_set_order`), `reason` REQUIRED (D97), randomize refused (D114).
+ * NO schedule field — `draft_scheduled_at` flows through the
+ * league-settings PATCH only (D95); the service's strict schema enforces
+ * it. Randomize entropy lives HERE (crypto), outside the
  * `src/lib/leagues/**` determinism guard — the service's shuffle is pure
  * over these injected values and `draft_set_order` validates + writes.
  */

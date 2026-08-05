@@ -553,9 +553,11 @@ select results_eq(
   $$ values (2::bigint) $$,
   'D103(3): the launcher INSERTs the human seat''s queue — the mock carve-out is the only admitting arm (u03 does not own T2; RETURNING-count 2)');
 -- The negative uses T4 (u04's franchise) — NOT T3, which u03 happens to
--- OWN (the printed owner arm legitimately admits an owner's queue writes
--- against any draft_id, the recorded R120 class; the carve-out's bound is
--- only visible on a seat the launcher neither owns nor practices).
+-- OWN. (Historical note: pre-F51 the owner arm admitted an owner's queue
+-- writes against any draft_id, so the bound was only visible on a seat
+-- the launcher neither owns nor practices; post-F51 the owner arm is
+-- excluded on mocks and T3 would ALSO refuse — T4 stays the sharpest
+-- discriminator either way.)
 select throws_ok(
   format($$ insert into draft_queues (draft_id, team_id, player_id, rank)
             values ('%s', 'c7000000-0000-4000-8000-00b100000004', 'mk-rb07', 1) $$,
@@ -577,8 +579,8 @@ select set_config('request.jwt.claims',
   '{"sub": "94000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select is(
   (select count(*) from draft_queues q join mk_lb on mk_lb.id = q.draft_id),
-  2::bigint,
-  'the seat''s REAL owner (u02) also reads them via the printed owner arm — the recorded R120-class overlap (advisory rows; the autopick reads launcher-keyed)');
+  0::bigint,
+  'F51 (R157/L.B2.3 — flipped from the original owner-arm overlap pin): the seat''s REAL owner (u02) reads ZERO mock queue rows — 065''s owner arm is excluded on mocks, the launcher arm is the only admit (D103(2))');
 reset role;
 
 -- CPU think-time: at the frozen now the CPU''s think has NOT elapsed

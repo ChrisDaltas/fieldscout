@@ -56,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(137);
+select plan(144);
 
 -- ---------------------------------------------------------------------------
 -- A. drafts shape (§12.3 + the R43 CHECKs + D95/§22.3 indexes)
@@ -257,15 +257,21 @@ insert into players (id, full_name, position) values
   ('pgtap-dr-p3', 'PgTap Draft WR', 'WR'),
   ('pgtap-dr-p4', 'PgTap Draft TE', 'TE');
 
--- d1: L1's real scheduled draft · dm: a live MOCK in L1 (coexists — E60) ·
+-- d1: L1's real scheduled draft · dm: a live MOCK in L1 (coexists — E60;
+-- launched by u1 the commissioner, practicing from t2 — U2'S franchise —
+-- the D103 "any seat selectable" shape that makes the F51 owner-arm
+-- exclusion pins discriminating: launcher ≠ owner on the human seat) ·
 -- d2: L2's real draft (cross-league chat probe target).
-insert into drafts (id, league_id, draft_type, status, is_mock) values
+insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000000a',
-   'snake', 'scheduled', false),
+   'snake', 'scheduled', false, '{}'),
   ('e0000000-0000-4000-8000-00000000000e', 'a1000000-0000-4000-8000-00000000000a',
-   'snake', 'live', true),
+   'snake', 'live', true,
+   '{"mock": {"launched_by": "80000000-0000-4000-8000-000000000001",
+              "human_team_id": "c1000000-0000-4000-8000-000000000002",
+              "cpu_speed": "realistic"}}'),
   ('e0000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-00000000000b',
-   'snake', 'scheduled', false);
+   'snake', 'scheduled', false, '{}');
 
 -- Picks in d1: p1 live (action A1) · p2 undone THEN p2 live (the re-pick
 -- after an undo — §8.7) · p3/p4 live with NULL action_id (system picks).
@@ -640,6 +646,61 @@ select results_eq(
      select count(*) from d $$,
   $$ values (0::bigint) $$,
   'commissioner DELETE on chat affects 0 rows (system posts are non-deletable, §12.13)');
+
+-- ---------------------------------------------------------------------------
+-- I2. F51 (R157, M2 batch 10; 065 amended in place by L.B2.3): the owner
+--     arm is EXCLUDED on mocks — the D103(3) launcher arm is the ONLY mock
+--     admit. Fixture: dm is launched by u1 (still the active JWT) with
+--     human seat t2 — U2'S franchise — so launcher ≠ owner and each arm is
+--     pinned alone. Both sides per the F51 row: launcher path intact;
+--     seat-owner INSERT/SELECT refused on the mock (RETURNING-counts per
+--     §4.2); the real-draft own-queue arm untouched.
+-- ---------------------------------------------------------------------------
+select results_eq(
+  $$ with w as (
+       insert into draft_queues (draft_id, team_id, player_id, rank)
+       values ('e0000000-0000-4000-8000-00000000000e',
+               'c1000000-0000-4000-8000-000000000002', 'pgtap-dr-p1', 1)
+       returning 1)
+     select count(*)::bigint from w $$,
+  $$ values (1::bigint) $$,
+  'F51 launcher path intact: u1 (launcher, NOT t2''s owner) INSERTs the mock human seat''s queue — the carve-out is the only arm that can admit this');
+select is(
+  (select count(*) from draft_queues
+   where draft_id = 'e0000000-0000-4000-8000-00000000000e'),
+  1::bigint,
+  'F51 launcher path intact: the launcher READS the mock queue row back');
+select set_config('request.jwt.claims',
+  '{"sub": "80000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select is(
+  (select count(*) from draft_queues
+   where draft_id = 'e0000000-0000-4000-8000-00000000000e'),
+  0::bigint,
+  'F51: the human seat''s REAL owner (u2) sees ZERO mock queue rows — the owner arm no longer reads the launcher''s practice prep (D103(2))');
+select throws_ok(
+  $$ insert into draft_queues (draft_id, team_id, player_id, rank)
+     values ('e0000000-0000-4000-8000-00000000000e',
+             'c1000000-0000-4000-8000-000000000002', 'pgtap-dr-p4', 1) $$,
+  '42501', null,
+  'F51: the seat owner''s INSERT into the mock queue is REFUSED — an owner-injected row can no longer steer the launcher''s human-seat autopick (068 resolves writer-blind, ORDER BY rank)');
+select results_eq(
+  $$ with w as (update draft_queues set rank = 99
+                where draft_id = 'e0000000-0000-4000-8000-00000000000e' returning 1)
+     select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'F51: the seat owner''s UPDATE on mock queue rows affects 0 rows (RETURNING-count against the launcher-seeded row pinned above)');
+select results_eq(
+  $$ with d as (delete from draft_queues
+                where draft_id = 'e0000000-0000-4000-8000-00000000000e' returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'F51: the seat owner''s DELETE on mock queue rows affects 0 rows (RETURNING-count)');
+select is(
+  (select count(*) from draft_queues
+   where draft_id = 'e0000000-0000-4000-8000-000000000001'
+     and team_id = 'c1000000-0000-4000-8000-000000000002'),
+  2::bigint,
+  'F51 boundary: u2''s own-queue read on the REAL draft is untouched (the NOT is_mock guard narrows mocks only)');
 
 -- ---------------------------------------------------------------------------
 -- J. Teamless member (u6): the policy-swap NEW-semantics direction.
