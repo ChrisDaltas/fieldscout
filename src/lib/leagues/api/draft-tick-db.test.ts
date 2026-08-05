@@ -309,17 +309,29 @@ describe('the authoritative clock over PostgREST (migration 068)', () => {
     )
     expect(commishRound1?.player_id).toBe(QUEUED_PLAYER_ID)
 
-    // The league deliberately STAYS 'drafting' — the completion transition
-    // + league_rosters land in L.B1.7/072 (the 066/020 cross-reference,
-    // re-pinned at the wire).
+    // The completion transition (072/L.B1.7 — this pin held 'drafting' as
+    // the cross-reference until 072 flipped it, exactly as promised): the
+    // league lands 'in_season' with league_rosters populated from the
+    // non-undone picks in the same txn (§8.5 step 6, D88) — verified at
+    // the wire.
     const { data: league } = await service
       .from('leagues')
-      .select('status')
+      .select('status, scoring_rules_snapshot')
       .eq('id', leagueId)
       .single()
-    expect(league?.status).toBe('drafting')
+    expect(league?.status).toBe('in_season')
+    expect(league?.scoring_rules_snapshot).not.toBeNull() // D43 held at the flip
 
-    // Zero roster rows exist anywhere for this league (league_rosters is
-    // not even created until 072 — nothing to check beyond the status pin).
+    const { data: rosters } = await service
+      .from('league_rosters')
+      .select('team_id, player_id, acquisition_type, acquisition_cost, slot_key')
+      .eq('league_id', leagueId)
+    expect(rosters).toHaveLength(TOTAL_PICKS)
+    expect(new Set((rosters ?? []).map((r) => r.player_id)).size).toBe(TOTAL_PICKS)
+    for (const r of rosters ?? []) {
+      expect(r.acquisition_type).toBe('draft')
+      expect(r.acquisition_cost).toBeNull() // snake — D88
+      expect(r.slot_key).toBeNull() // M4's
+    }
   }, 120_000)
 })

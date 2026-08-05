@@ -34,9 +34,10 @@
 --   * Untimed (§8.2 soft timer): pick_timer_seconds = 0 leaves
 --     current_deadline NULL at start AND after a pick.
 --   * Completion: all total_rounds × team_count live picks → 'complete' +
---     completed_at; the league deliberately STAYS 'drafting' — the L.B1.7
---     cross-reference made falsifiable (072 flips that pin when the
---     transition + league_rosters land).
+--     completed_at; the league moves to 'in_season' in the same txn (the
+--     pin 020 originally held at 'drafting' as the L.B1.7 cross-reference
+--     — FLIPPED by 072/L.B1.7 exactly as promised, F12; the roster-side
+--     completion pins live in 026).
 --   * D95 re-hydration: a drafts row pre-created with a STALE config
 --     (timer 90) starts under the LIVE settings value (120) — pinned on
 --     config and on the actual deadline.
@@ -1173,8 +1174,8 @@ select is(
   'the completed board holds exactly 16 live picks');
 select is(
   (select status from leagues where id = 'b2000000-0000-4000-8000-0000000000a4'),
-  'drafting',
-  'the league deliberately STAYS drafting at completion — the in_season transition + league_rosters land in L.B1.7/072 (this pin flips there)');
+  'in_season',
+  'the league moves to in_season at completion (§8.5 step 6 — the 072/L.B1.7 completion arm; this pin held ''drafting'' until 072 flipped it as promised)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "90000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);

@@ -973,6 +973,67 @@ export type Database = {
           },
         ]
       }
+      league_rosters: {
+        Row: {
+          acquired_at: string | null
+          acquisition_cost: number | null
+          acquisition_type: string | null
+          id: string
+          ir_lock_until_week: number | null
+          ir_placed_week: number | null
+          league_id: string
+          player_id: string
+          slot_key: string | null
+          team_id: string
+        }
+        Insert: {
+          acquired_at?: string | null
+          acquisition_cost?: number | null
+          acquisition_type?: string | null
+          id?: string
+          ir_lock_until_week?: number | null
+          ir_placed_week?: number | null
+          league_id: string
+          player_id: string
+          slot_key?: string | null
+          team_id: string
+        }
+        Update: {
+          acquired_at?: string | null
+          acquisition_cost?: number | null
+          acquisition_type?: string | null
+          id?: string
+          ir_lock_until_week?: number | null
+          ir_placed_week?: number | null
+          league_id?: string
+          player_id?: string
+          slot_key?: string | null
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_rosters_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_rosters_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_rosters_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_weeks: {
         Row: {
           finalized_at: string | null
@@ -3120,6 +3181,10 @@ export type Database = {
         Args: { c: Database["public"]["Tables"]["league_chat"]["Row"] }
         Returns: Json
       }
+      league_roster_broadcast_payload: {
+        Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
+        Returns: Json
+      }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
       mock_draft_expire: { Args: never; Returns: Json }
       notify_league_invite_internal: {
@@ -3184,6 +3249,15 @@ export type Database = {
       }
       set_member_role: {
         Args: { p_league_id: string; p_member_id: string; p_role: string }
+        Returns: Json
+      }
+      set_team_autodraft: {
+        Args: {
+          p_league_id: string
+          p_on: boolean
+          p_reason?: string
+          p_team_id: string
+        }
         Returns: Json
       }
       snapshot_league_scoring: {
@@ -3379,6 +3453,7 @@ export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
 export type LeagueList = Database['public']['Tables']['league_lists']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
+export type LeagueRoster = Database['public']['Tables']['league_rosters']['Row']
 export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
