@@ -727,9 +727,16 @@ export const pauseDraftInputSchema = z.strictObject({
   action: z.enum(['pause', 'resume']),
 })
 
+/** `to_pick_number` is `min(0)`, NOT `min(1)` (R160): 0 is a DELIBERATE legal
+ *  value on the RPC side — 069 validates `p_to_pick_number >= 0` explicitly
+ *  (`draft_undo: to_pick_number must be >= 0`) and undoes every pick > v_to,
+ *  so 0 is the full rewind (all picks reverted, pick 1 back on the clock).
+ *  `draft_reset` is NOT the substitute: it flips the league back to
+ *  `scheduled` and clears the stored instant (a different operation), so a
+ *  narrower wire schema would make the RPC-legal full cascade unreachable. */
 export const undoDraftInputSchema = z.strictObject({
   ...controlBaseShape,
-  to_pick_number: z.number().int().min(1).optional(),
+  to_pick_number: z.number().int().min(0).optional(),
 })
 
 export const reassignPickInputSchema = z

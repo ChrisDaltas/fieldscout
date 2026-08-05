@@ -400,9 +400,15 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
     const status = await subscribeAndWait(outsiderChannel, 15_000)
     expect(status).not.toBe('SUBSCRIBED')
 
-    // The cron beats every ~5s; give the window two beats: the member
-    // hears them, the outsider hears nothing.
-    await waitFor(() => memberReceived[0], 20_000, 'the member-side heartbeat (positive control)')
+    // The cron beats every ~5s. This positive control is the ONE assertion
+    // in the suite with no direct tick behind it — it waits on the live cron
+    // alone, so under a full parallel `npm run test` the realtime container
+    // contends with every other stack-backed suite and two beats' worth of
+    // budget was not enough (R163: observed timing out in 2 of 4 parallel
+    // full runs, green when the file runs alone). Budget widened to ~9 beats
+    // (and the case timeout with it — two 15s subscribes precede the wait);
+    // nothing about the assertion changed, only the patience.
+    await waitFor(() => memberReceived[0], 45_000, 'the member-side heartbeat (positive control)')
     expect(received).toHaveLength(0)
-  }, 90_000)
+  }, 150_000)
 })

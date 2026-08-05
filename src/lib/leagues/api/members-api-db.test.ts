@@ -68,6 +68,8 @@ const OUTSIDER = {
   username: 'mb_out_five',
 }
 
+/** Action-id prefix `af0` — this suite owns it (the D108(14) registry).
+ *  `league-lists-api-db.test.ts` moved to `af1` in the R161 fix. */
 const ACTION = {
   league1: 'af000000-0000-4000-8000-000000000001',
   league2: 'af000000-0000-4000-8000-000000000002',

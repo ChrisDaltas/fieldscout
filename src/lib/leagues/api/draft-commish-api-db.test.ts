@@ -103,13 +103,15 @@ const PLAYERS = [
   { id: 'vitest-dcapi-p2', full_name: 'Vitest DCAPI Player Two', position: 'RB' },
   { id: 'vitest-dcapi-p3', full_name: 'Vitest DCAPI Player Three', position: 'WR' },
 ] as const
-const [P1, P2] = PLAYERS.map((p) => p.id)
+const [P1, P2, P3] = PLAYERS.map((p) => p.id)
 
 const ACTION = {
   create: 'ad800000-0000-4000-8000-000000000001',
   pick1: 'ad800000-0000-4000-8000-000000000011',
   force1: 'ad800000-0000-4000-8000-000000000021',
   forceSweep: 'ad800000-0000-4000-8000-000000000022',
+  force2: 'ad800000-0000-4000-8000-000000000023',
+  force3: 'ad800000-0000-4000-8000-000000000024',
   mockLaunch1: 'ad800000-0000-4000-8000-000000000031',
   mockLaunch2: 'ad800000-0000-4000-8000-000000000032',
   mockLaunch3: 'ad800000-0000-4000-8000-000000000033',
@@ -124,6 +126,9 @@ interface DraftBody {
   draft: Database['public']['Tables']['drafts']['Row']
   created?: boolean
   pick?: Database['public']['Tables']['draft_picks']['Row']
+  /** `draft_undo` only (069 §6). */
+  undone_count?: number
+  rewound_to_pick?: number
 }
 interface MockListBody {
   active: { id: string; status: string }[]
@@ -675,6 +680,57 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       .eq('id', livePick1!.id)
       .single()
     expect(afterMove!.team_id).toBe(mgr2TeamId)
+  })
+
+  it('undo CASCADE over the wire: `to_pick_number: 0` is the FULL rewind — every pick reverted, pick 1 back on the clock (E4; R160/R162)', async () => {
+    // Give the cascade something to cascade over: force pick 2 for the team
+    // the E31 re-derive put on the clock (placeholder 1 of the new order).
+    const forced2 = await forcePick(commishClient, leagueId, {
+      player_id: P3,
+      action_id: ACTION.force2,
+      reason: 'wire cascade setup',
+    })
+    expect(forced2.status).toBe(200)
+    const forced2Body = forced2.body as unknown as DraftBody
+    expect(forced2Body.pick!.pick_number).toBe(2)
+    expect(forced2Body.draft.current_pick_number).toBe(3)
+
+    // THE R160 PIN: 0 passes the wire schema (`min(0)`, not `min(1)`) and
+    // reaches 069's `>= 0` arm, which undoes every pick > 0 — the full
+    // rewind. `min(1)` here would 400 as a shape error and make the
+    // RPC-legal full cascade unreachable over the wire.
+    const cascade = await undoDraft(commishClient, leagueId, {
+      to_pick_number: 0,
+      reason: 'wire cascade check (full rewind)',
+    })
+    expect(cascade.status).toBe(200)
+    const cascadeBody = cascade.body as unknown as DraftBody
+    expect(cascadeBody.undone_count).toBe(2)
+    expect(cascadeBody.rewound_to_pick).toBe(1)
+    expect(cascadeBody.draft.current_pick_number).toBe(1)
+    expect(cascadeBody.draft.current_round).toBe(1)
+    // Slot 1 of the E31 order is the commissioner's team.
+    expect(cascadeBody.draft.on_clock_team_id).toBe(commishTeamId)
+    // The draft is still LIVE (reset is the other operation — it would have
+    // flipped the league to `scheduled` and cleared the stored instant).
+    expect(cascadeBody.draft.status).toBe('live')
+
+    const { count: liveCount } = await service
+      .from('draft_picks')
+      .select('id', { count: 'exact', head: true })
+      .eq('draft_id', draftId)
+      .eq('is_undone', false)
+    expect(liveCount).toBe(0)
+
+    // Restore ONE live pick so the reset test that follows still proves
+    // "every pick soft-undone" against a non-empty board (this cascade must
+    // run BEFORE reset — undo needs a live/paused draft).
+    const restored = await forcePick(commishClient, leagueId, {
+      player_id: P1,
+      action_id: ACTION.force3,
+      reason: 'wire cascade teardown (restore a live pick for the reset pin)',
+    })
+    expect(restored.status).toBe(200)
   })
 
   it('reset returns draft AND league to scheduled with every pick soft-undone (§8.7; D107(5) seam held)', async () => {
