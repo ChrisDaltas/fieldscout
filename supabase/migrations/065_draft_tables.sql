@@ -199,20 +199,29 @@ CREATE TABLE draft_queues (
 
 ALTER TABLE draft_queues ENABLE ROW LEVEL SECURITY;
 
--- A manager sees/edits only their own queue (§12.6 printed policies), OR —
--- the D103(3) mock-launcher carve-out (amended in place by L.B1.6/071,
--- unreleased chain F12) — the caller launched a MOCK draft and the row is
--- the HUMAN seat's queue for that mock: the launcher owns their practice
--- seat's queue regardless of stint (the chosen seat may be a placeholder
--- or another user's franchise — §8.8 "any seat selectable"). Config values
--- compared as TEXT (the R117 no-cast rule). The seat's REAL owner also
--- matches via the printed owner arm (the R120 advisory-rows class,
--- recorded — queue rows are hints, the autopick reads them launcher-keyed
--- for mocks, 068). Behavior pinned in pgTAP 025; 019's name/cmd pins are
--- unchanged.
+-- A manager sees/edits only their own queue (§12.6 printed policies) ON A
+-- REAL DRAFT, OR — the D103(3) mock-launcher carve-out (amended in place
+-- by L.B1.6/071, unreleased chain F12) — the caller launched a MOCK draft
+-- and the row is the HUMAN seat's queue for that mock: the launcher owns
+-- their practice seat's queue regardless of stint (the chosen seat may be
+-- a placeholder or another user's franchise — §8.8 "any seat selectable").
+-- Config values compared as TEXT (the R117 no-cast rule).
+--
+-- F51 (R157, M2 batch 10; amended in place by L.B2.3 — unreleased, F12):
+-- the owner arm is guarded with NOT d.is_mock, so on mocks the D103(3)
+-- launcher arm is the ONLY admit. The originally shipped open owner arm
+-- was a live D103(2) breach: the human seat's REAL owner could inject
+-- queue rows over raw PostgREST that steer the launcher's next human-seat
+-- autopick (068's resolve is writer-blind, ORDER BY q.rank) and read the
+-- launcher's practice prep. Pinned per-role from both sides in pgTAP 019
+-- (+ the flipped 025 owner-read pin).
 CREATE POLICY "Own queue read" ON draft_queues FOR SELECT
   USING (
-    EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid())
+    EXISTS (
+      SELECT 1 FROM teams t
+      JOIN drafts d ON d.id = draft_queues.draft_id
+      WHERE t.id = team_id AND t.owner_id = auth.uid() AND NOT d.is_mock
+    )
     OR EXISTS (
       SELECT 1 FROM drafts d
       WHERE d.id = draft_queues.draft_id
@@ -223,7 +232,11 @@ CREATE POLICY "Own queue read" ON draft_queues FOR SELECT
   );
 CREATE POLICY "Own queue write" ON draft_queues FOR ALL
   USING (
-    EXISTS (SELECT 1 FROM teams t WHERE t.id = team_id AND t.owner_id = auth.uid())
+    EXISTS (
+      SELECT 1 FROM teams t
+      JOIN drafts d ON d.id = draft_queues.draft_id
+      WHERE t.id = team_id AND t.owner_id = auth.uid() AND NOT d.is_mock
+    )
     OR EXISTS (
       SELECT 1 FROM drafts d
       WHERE d.id = draft_queues.draft_id

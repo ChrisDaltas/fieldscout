@@ -452,15 +452,31 @@ describe('draft schedule/start API over PostgREST (L.B2.1)', () => {
     expect(detail.active_draft?.started_at).not.toBeNull()
   })
 
-  it('post-start order PATCH → the 409 seam (L.B2.3 dispatch owns live edits)', async () => {
-    const result = await patchDraftOrder(
+  it('post-start order PATCH dispatches to draft_set_order (the L.B2.3 seam FLIPPED — E31): reason required, then 200', async () => {
+    // The 409 seam this pin used to hold is gone — L.B2.3's dispatch owns
+    // live edits now. Without a reason: the D97 gate (400, never the RPC).
+    const noReason = await patchDraftOrder(
       commishClient,
       leagueId,
       { order: sortedTeamIds },
       { randomValues: fixedEntropy(ENTROPY_8) },
     )
-    expect(result.status).toBe(409)
-    expect(JSON.stringify(result.body)).toContain('already started')
+    expect(noReason.status).toBe(400)
+    expect(JSON.stringify(noReason.body)).toContain('include a reason')
+
+    // With a reason the dispatch reaches draft_set_order and re-derives
+    // the remaining picks (pick 1 of a fresh draft → slot 1 of the new
+    // order). The full E31 wire matrix lives in draft-commish-api-db.
+    const dispatched = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      { order: sortedTeamIds, reason: 'seam-flip wire pin (L.B2.3)' },
+      { randomValues: fixedEntropy(ENTROPY_8) },
+    )
+    expect(dispatched.status).toBe(200)
+    const draft = (dispatched.body as unknown as DraftStateBody).draft
+    expect(draft.draft_order).toEqual(sortedTeamIds)
+    expect(draft.on_clock_team_id).toBe(sortedTeamIds[0])
   })
 
   it('a COMPLETE draft leaves the summary: active_draft returns to null (harness flip)', async () => {

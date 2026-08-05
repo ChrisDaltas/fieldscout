@@ -15,7 +15,12 @@
  *
  * Determinism: FIXED emails/usernames/action_ids/fixture ids +
  * cleanup-first. No wall-clock or random anywhere (the D3/D17 lint guard
- * covers this file).
+ * covers this file). Action-id prefix `af1` — the D108(14) registry; `af0`
+ * belongs to `members-api-db.test.ts` (R161: both suites minted
+ * `af000000-…-0001` as a `create_league` key, and `leagues.creation_action_id`
+ * is GLOBALLY unique across committed wire leagues, so whichever suite ran
+ * second failed its `beforeAll` with "this action_id was already used by
+ * another account" — an intermittent full-run failure, pre-existing on main).
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -43,7 +48,7 @@ const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 const LEAGUE_NAME = 'vitest-league-lists-league'
-const CREATE_ACTION = 'af000000-0000-4000-8000-000000000001'
+const CREATE_ACTION = 'af100000-0000-4000-8000-000000000001'
 
 const OWNER = {
   email: 'league-lists-owner@fieldscout.test',
