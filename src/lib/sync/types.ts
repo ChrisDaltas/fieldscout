@@ -20,27 +20,6 @@ export function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/**
- * Drain a paginated Supabase query. The builder MUST apply a stable
- * .order(...) — PostgREST pages are unspecified without one, and unstable
- * pages silently drop rows between requests.
- */
-export async function pageAll<T>(
-  build: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<T[]> {
-  const pageSize = 1000
-  let offset = 0
-  const out: T[] = []
-  while (true) {
-    const { data, error } = await build(offset, offset + pageSize - 1)
-    if (error) throw new Error(error.message)
-    if (!data || data.length === 0) break
-    out.push(...data)
-    if (data.length < pageSize) break
-    offset += pageSize
-  }
-  return out
-}
+// Lives in @/lib/supabase/page-all now — app routes need it too, and an
+// app → sync import reads wrong. Re-exported so sync callers are unchanged.
+export { pageAll } from '@/lib/supabase/page-all'

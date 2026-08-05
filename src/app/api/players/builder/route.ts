@@ -9,6 +9,7 @@ import {
   type StatRow,
 } from '@/lib/scoring/default'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
+import { pageAll } from '@/lib/supabase/page-all'
 import { createServerClient } from '@/lib/supabase/server'
 
 const CURRENT_SEASON = 2026
@@ -39,7 +40,13 @@ const querySchema = z.object({
         : undefined,
     ),
   scoring: z.enum(['ppr', 'standard', 'half_ppr']).default('ppr'),
-  limit: z.coerce.number().int().min(1).max(1500).default(400),
+  /**
+   * Omit for the WHOLE active pool (the default — see pageAll). Pass a limit
+   * only for a deliberately bounded widget. Capped at 1000 because that is
+   * PostgREST's per-response ceiling: a larger number is a promise the server
+   * will not keep, which is precisely how players went missing before.
+   */
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
 })
 
 const STATS_SELECT =
@@ -101,33 +108,57 @@ export async function GET(request: Request) {
         ? 'projected_pts_half_ppr'
         : 'projected_pts_ppr'
 
-  let playerQuery = supabase
-    .from('players')
-    .select(
-      `id, full_name, position, team, headshot_url, status, depth_chart_order, depth_chart_position, ${projectionColumn}`,
-    )
-    // Filter out retirees / free agents — Sleeper still flags these as
-    // active=true, so the reliable signal is having a current team.
-    .not('team', 'is', null)
-    // Order by relevance BEFORE the limit truncates: the pool is ~1000+
-    // players, so an alphabetical fetch order silently drops anyone whose
-    // first name sorts past `limit` (Justin Herbert et al.) no matter how
-    // good they are. ADP breaks ties among the projection-less tail.
-    .order(projectionColumn, { ascending: false, nullsFirst: false })
-    .order('adp', { ascending: true, nullsFirst: false })
-    .order('full_name', { ascending: true })
-    .limit(limit)
-
   const positionList =
     positions && positions.length > 0 ? positions : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
-  playerQuery = playerQuery.in('position', positionList)
-  if (teams && teams.length > 0) playerQuery = playerQuery.in('team', teams)
 
-  const { data: players, error: playersError } = await playerQuery
-  if (playersError) {
-    return NextResponse.json({ error: playersError.message }, { status: 500 })
+  const poolQuery = (from: number, to: number) => {
+    let q = supabase
+      .from('players')
+      .select(
+        `id, full_name, position, team, headshot_url, status, depth_chart_order, depth_chart_position, ${projectionColumn}`,
+        // Exact count is the finish line pageAll drains to — without it a
+        // short page is indistinguishable from a server-side cap.
+        { count: 'exact' },
+      )
+      // Filter out retirees / free agents — Sleeper still flags these as
+      // active=true, so the reliable signal is having a current team.
+      .not('team', 'is', null)
+      .in('position', positionList)
+    if (teams && teams.length > 0) q = q.in('team', teams)
+    return (
+      q
+        // Order by relevance so that any bounded caller truncates the tail
+        // rather than a random alphabetical slice (the Justin Herbert bug).
+        .order(projectionColumn, { ascending: false, nullsFirst: false })
+        .order('adp', { ascending: true, nullsFirst: false })
+        .order('full_name', { ascending: true })
+        // Unique final tiebreak — REQUIRED for stable paging. full_name is
+        // not unique, so it cannot anchor a page boundary.
+        .order('id', { ascending: true })
+        .range(from, to)
+    )
   }
-  if (!players || players.length === 0) {
+
+  let players: Record<string, unknown>[]
+  try {
+    if (limit === undefined) {
+      players = await pageAll<Record<string, unknown>>(poolQuery)
+    } else {
+      const { data, error } = await poolQuery(0, limit - 1)
+      // supabase-js RESOLVES on PostgREST errors, so this must be checked
+      // explicitly — the try/catch above only sees pageAll's throw.
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      players = data ?? []
+    }
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to load players' },
+      { status: 500 },
+    )
+  }
+  if (players.length === 0) {
     return NextResponse.json({ players: [] })
   }
 
@@ -242,10 +273,13 @@ export async function GET(request: Request) {
     }
   })
 
-  // Sort by projected so the most relevant players surface first
-  // Players without projections sort to the bottom rather than getting
-  // promoted by NaN comparisons.
-  enriched.sort((a, b) => (b.projected_pts ?? -1) - (a.projected_pts ?? -1))
+  // Sort by projected so the most relevant players surface first.
+  // -Infinity, not -1: the full pool now includes ~495 projection-less
+  // players, and in-season a negative live-pace extrapolation would
+  // otherwise sort BELOW them. Matches players-spreadsheet.tsx.
+  enriched.sort(
+    (a, b) => (b.projected_pts ?? -Infinity) - (a.projected_pts ?? -Infinity),
+  )
 
   return NextResponse.json({
     players: enriched,

@@ -19,14 +19,19 @@ interface BuilderResponse {
 
 /**
  * Real player pool from the players builder feed (read-only), minus the
- * names already on the mock draft board. Highest projection first — same
- * feed and cache the home shelves use.
+ * names already on the mock draft board. Highest projection first.
+ *
+ * Deliberately bounded: this card shows a handful of names, so it does not
+ * need the whole pool. 500 (not 200) because a full 12×16 draft removes 192
+ * players from the top of the list before this card is empty — and the
+ * server orders by projection, so the bound drops the irrelevant tail.
+ * Its own React Query key, so it shares no cache with the home shelves.
  */
 function useBestAvailable(draftedNames: ReadonlySet<string>) {
   const query = useQuery({
     queryKey: ['draft', 'best-available', 'ppr'],
     queryFn: () =>
-      fetch('/api/players/builder?scoring=ppr&limit=200').then(
+      fetch('/api/players/builder?scoring=ppr&limit=500').then(
         (res) => res.json() as Promise<BuilderResponse>,
       ),
     staleTime: 5 * 60 * 1000,

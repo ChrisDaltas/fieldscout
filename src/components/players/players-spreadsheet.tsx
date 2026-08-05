@@ -269,7 +269,9 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     setIsLoading(true)
     setError(null)
 
-    const params = new URLSearchParams({ scoring, limit: '1500' })
+    // No limit — the whole pool. This grid sorts and filters client-side, so
+    // any bound here makes players unreachable rather than merely unlisted.
+    const params = new URLSearchParams({ scoring })
     if (position !== 'All') params.set('positions', position)
     if (team) params.set('teams', team)
 
