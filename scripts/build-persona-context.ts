@@ -39,7 +39,7 @@ async function main(): Promise<void> {
 
   let query = supabase
     .from('ai_personas')
-    .select('id, username, display_name, style_profile')
+    .select('id, username, persona_name, style_profile')
     .eq('is_active', true)
     .is('deleted_at', null)
   if (usernameFilter) query = query.eq('username', usernameFilter)
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   }
 
   for (const persona of personas) {
-    console.log(`\n${persona.display_name}`)
+    console.log(`\n${persona.persona_name}`)
     try {
       const result = await refreshPersonaContext(supabase, persona)
       if (result.action === 'skipped') {

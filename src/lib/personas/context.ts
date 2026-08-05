@@ -62,7 +62,7 @@ export function seedContextFromProfile(
 }
 
 export interface SynthesizeArgs {
-  displayName: string
+  personaName: string
   styleProfile: PersonaStyleProfile
   items: ContentItemForSynthesis[]
   rankings: SourceRankingForSynthesis[]
@@ -104,13 +104,13 @@ function assertContextProseClean(ctx: PersonaContext, label: string): void {
 }
 
 export async function synthesizePersonaContext({
-  displayName,
+  personaName,
   styleProfile,
   items,
   rankings,
   asOf,
 }: SynthesizeArgs): Promise<SynthesizeResult> {
-  const prompt = `You maintain the "context file" for ${displayName}, a fictional AI fantasy football analyst persona on FieldScout. Synthesize the persona's CURRENT sourced stances from the ingested material below.
+  const prompt = `You maintain the "context file" for ${personaName}, a fictional AI fantasy football analyst persona on FieldScout. Synthesize the persona's CURRENT sourced stances from the ingested material below.
 
 Persona style profile (seed identity):
 ${JSON.stringify(styleProfile, null, 2)}
@@ -139,7 +139,7 @@ Rules:
     })
 
   // Parody firewall on user-facing prose (never on citation URLs).
-  assertContextProseClean(data, `persona context for ${displayName}`)
+  assertContextProseClean(data, `persona context for ${personaName}`)
 
   // Code-level "ground, don't invent" backstop: a stance/movement whose
   // source_url is not in the supplied material is dropped, not trusted.
@@ -172,7 +172,7 @@ Rules:
 }
 
 /** Human-readable "context file" stored in persona_context.rendered_md. */
-export function renderContextMd(displayName: string, ctx: PersonaContext): string {
+export function renderContextMd(personaName: string, ctx: PersonaContext): string {
   const stances = ctx.current_stances.length
     ? ctx.current_stances
         .map(
@@ -192,7 +192,7 @@ export function renderContextMd(displayName: string, ctx: PersonaContext): strin
         .join('\n')
     : '_None yet._'
 
-  return `# ${displayName} — Context File
+  return `# ${personaName} — Context File
 
 _As of ${ctx.as_of}_
 
@@ -310,7 +310,7 @@ export async function getPersonaContext(
 export interface PersonaForContext {
   id: string
   username: string
-  display_name: string
+  persona_name: string
   style_profile: PersonaStyleProfile
 }
 
@@ -359,7 +359,7 @@ async function writeContext(
 ): Promise<{ version: number; materialChange: boolean }> {
   const material = hasMaterialChange(existing?.context ?? null, next)
   const now = new Date().toISOString()
-  const renderedMd = renderContextMd(persona.display_name, next)
+  const renderedMd = renderContextMd(persona.persona_name, next)
 
   if (existing) {
     // Snapshot the prior version before overwriting (audit trail). Guarded
@@ -465,7 +465,7 @@ export async function refreshPersonaContext(
   try {
     const { context, droppedUngrounded, inputTokens, outputTokens, latencyMs } =
       await synthesizePersonaContext({
-        displayName: persona.display_name,
+        personaName: persona.persona_name,
         styleProfile: persona.style_profile,
         items,
         rankings,

@@ -39,7 +39,7 @@ interface GenerateAiModalProps {
 
 interface PersonaOption {
   username: string
-  display_name: string
+  persona_name: string
 }
 
 function usePersonaStyles(enabled: boolean) {
@@ -51,10 +51,10 @@ function usePersonaStyles(enabled: boolean) {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('ai_personas')
-        .select('username, display_name')
+        .select('username, persona_name')
         .eq('is_active', true)
         .is('deleted_at', null)
-        .order('display_name')
+        .order('persona_name')
       if (error) throw error
       return (data ?? []) as PersonaOption[]
     },
@@ -122,7 +122,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
       // Mirrors the server's style label; the list is retitled after
       // generation anyway if resolution drops players.
       const personaName = persona
-        ? (personas.data?.find((p) => p.username === persona)?.display_name ?? persona)
+        ? (personas.data?.find((p) => p.username === persona)?.persona_name ?? persona)
         : null
       const hasWeights = Object.keys(styleWeights).length > 0
       const styleLabel =
@@ -287,7 +287,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
                       }
                       className="w-full justify-center px-2.5"
                     >
-                      <span className="truncate">{p.display_name}</span>
+                      <span className="truncate">{p.persona_name}</span>
                     </FilterChip>
                   )
                 })}

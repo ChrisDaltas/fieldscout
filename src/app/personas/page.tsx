@@ -19,10 +19,10 @@ export default async function PersonasIndexPage() {
   const supabase = await createServerClient()
   const { data: personas } = await supabase
     .from('ai_personas')
-    .select('username, display_name, bio, avatar_url')
+    .select('username, persona_name, bio, avatar_url')
     .eq('is_active', true)
     .is('deleted_at', null)
-    .order('display_name')
+    .order('persona_name')
 
   return (
     <GuestShell>
@@ -49,7 +49,7 @@ export default async function PersonasIndexPage() {
               <li key={persona.username}>
                 <PersonaCard
                   username={persona.username}
-                  displayName={persona.display_name}
+                  personaName={persona.persona_name}
                   bio={persona.bio}
                   avatarUrl={persona.avatar_url}
                 />

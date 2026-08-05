@@ -35,9 +35,9 @@ describe('parody firewall blocklist', () => {
     }
   })
 
-  it('every persona display name is a parody name ending in (AI)', () => {
+  it('every persona name is a parody name ending in (AI)', () => {
     for (const persona of PERSONA_ROSTER) {
-      expect(persona.display_name.endsWith('(AI)')).toBe(true)
+      expect(persona.persona_name.endsWith('(AI)')).toBe(true)
       expect(persona.username.endsWith('-ai')).toBe(true)
     }
   })

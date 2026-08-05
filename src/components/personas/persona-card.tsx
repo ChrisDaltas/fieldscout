@@ -5,7 +5,7 @@ import { UserAvatar } from '@/components/ui/user-avatar'
 
 interface PersonaCardProps {
   username: string
-  displayName: string
+  personaName: string
   bio: string
   avatarUrl?: string | null
   listCount?: number
@@ -18,7 +18,7 @@ interface PersonaCardProps {
  */
 export function PersonaCard({
   username,
-  displayName,
+  personaName,
   bio,
   avatarUrl,
   listCount,
@@ -31,14 +31,14 @@ export function PersonaCard({
       <div className="flex items-start gap-3">
         <UserAvatar
           src={avatarUrl ?? undefined}
-          alt={displayName}
-          name={displayName}
+          alt={personaName}
+          name={personaName}
           className="h-10 w-10 shrink-0"
         />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13px] font-extrabold text-ink">
-              {displayName}
+              {personaName}
             </span>
             <PersonaBadge />
           </div>

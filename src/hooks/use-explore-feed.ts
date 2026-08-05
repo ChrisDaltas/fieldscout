@@ -24,9 +24,14 @@ export interface ExploreFeedItem {
   comment_count: number
   player_count: number
   created_at: string
-  /** Display identity: the persona for AI boards, else the owner profile. */
+  /**
+   * Identity: the persona for AI boards, else the owner profile. People
+   * render as their handle only — `name` is the persona's PUBLIC parody name
+   * ("Bathew Merry (AI)") and is null for a human author, whose real name is
+   * private (ruling 2026-08-05).
+   */
   author: {
-    name: string
+    name: string | null
     handle: string
     avatar_url: string | null
   }
@@ -44,13 +49,12 @@ export interface ExploreFeedItem {
 interface EmbeddedProfile {
   id: string
   username: string
-  display_name: string | null
   avatar_url: string | null
 }
 
 interface EmbeddedPersona {
   username: string
-  display_name: string
+  persona_name: string
   avatar_url: string | null
 }
 
@@ -77,8 +81,8 @@ function first<T>(value: T | T[] | null | undefined): T | null {
 }
 
 const FEED_SELECT = `id, title, slug, ranking_mode, ai_persona_id, like_count, player_count, created_at,
-  owner:profiles!lists_owner_id_fkey(id, username, display_name, avatar_url),
-  persona:ai_personas!lists_ai_persona_id_fkey(username, display_name, avatar_url),
+  owner:profiles!lists_owner_id_fkey(id, username, avatar_url),
+  persona:ai_personas!lists_ai_persona_id_fkey(username, persona_name, avatar_url),
   comments:list_comments(count),
   tag_links:list_tags(tag:tags(name, slug))`
 
@@ -103,12 +107,12 @@ function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[]
         created_at: row.created_at ?? '',
         author: persona
           ? {
-              name: persona.display_name,
+              name: persona.persona_name,
               handle: persona.username,
               avatar_url: persona.avatar_url,
             }
           : {
-              name: owner.display_name ?? owner.username,
+              name: null,
               handle: owner.username,
               avatar_url: owner.avatar_url,
             },

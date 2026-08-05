@@ -288,7 +288,9 @@ describe('invite creation + the D37 email seam', () => {
       status: 'ok',
       league_name: 'vitest-invites-league-1',
       team_label: 'vitest-invites-seat-team',
-      inviter_name: COMMISH.username,
+      // 075/ruling 2026-08-05: the inviter renders as their handle, never a
+      // real name — `profiles.full_name` is private and never leaves the DB.
+      inviter_name: `@${COMMISH.username}`,
       seats_open: null,
     })
   })

@@ -285,7 +285,7 @@ export function BigBoardDashboard() {
           query: personaQuery,
           title:
             personas.data?.find((b) => b.id === personaListId)?.persona
-              .display_name ?? 'AI board',
+              .persona_name ?? 'AI board',
         }
     }
   }, [source, mineQuery, consensusQuery, adpQuery, auctionQuery, personaQuery, personas.data, personaListId])
@@ -496,9 +496,9 @@ export function BigBoardDashboard() {
               <SelectItem value="auction">Auction price</SelectItem>
               {(personas.data ?? []).map((b) => (
                 <SelectItem key={b.id} value={`persona:${b.id}`}>
-                  {b.persona.display_name.includes('(AI)')
-                    ? b.persona.display_name
-                    : `${b.persona.display_name} (AI)`}
+                  {b.persona.persona_name.includes('(AI)')
+                    ? b.persona.persona_name
+                    : `${b.persona.persona_name} (AI)`}
                 </SelectItem>
               ))}
             </SelectContent>

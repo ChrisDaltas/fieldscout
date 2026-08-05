@@ -57,7 +57,7 @@ export const generateListRequestSchema = z.object({
     z.literal(25),
     z.literal(50),
   ]),
-  /** Active persona username (or display name) whose voice/stances ground the list. */
+  /** Active persona username (or persona name) whose voice/stances ground the list. */
   persona: z.string().trim().min(1).max(80).optional(),
   /** Weighted analytical priorities; duplicate keys are deduped server-side. */
   style_weights: z

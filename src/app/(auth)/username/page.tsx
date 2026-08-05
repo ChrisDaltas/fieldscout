@@ -115,11 +115,12 @@ export default function UsernamePage() {
 
     // Belt for the mount gate: the write itself only applies while the row
     // still holds the pre-selection placeholder (Q7.2 — one selection write).
+    // Only the handle is written: `full_name` is the private real-name field
+    // (ruling 2026-08-05) and picking a handle says nothing about it.
     const { data: updated, error: updateError } = await supabase
       .from('profiles')
       .update({
         username: username.toLowerCase(),
-        display_name: username,
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id)

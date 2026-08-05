@@ -125,7 +125,7 @@ All routes under `/app` require authentication. Unauthenticated users are redire
 | Route | Page |
 |-------|------|
 | `/app/settings` | Account settings — email, password, notifications |
-| `/app/settings/profile` | Profile settings — display name, avatar upload, bio |
+| `/app/settings/profile` | Profile settings — full name (private), avatar upload, bio |
 | `/app/settings/scoring` | Scoring systems — view/create custom scoring systems |
 | `/app/settings/billing` | Pro subscription — upgrade, manage, cancel |
 

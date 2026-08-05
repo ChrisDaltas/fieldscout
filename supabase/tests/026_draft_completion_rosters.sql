@@ -384,7 +384,7 @@ select is(
    where c.message like 'Autopick%'),
   '95000000-0000-4000-8000-000000000001|draft:'
     || (select id from lr_draft)::text
-    || '|true|Autopick turned on for pgtap-lr-a1-t02 by lr_user_01.',
+    || '|true|Autopick turned on for pgtap-lr-a1-t02 by @lr_user_01.',
   'the D97 system post: exact message, acting commissioner as author, the draft''s own context, is_system TRUE');
 set local role authenticated;
 select set_config('request.jwt.claims',

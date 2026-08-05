@@ -11,14 +11,14 @@ FieldScout ships with a roster of **AI expert personas** — fictional fantasy f
 
 ## Naming Convention
 
-Swap the first letters of the first and last name, then append **(AI)** to the display name so users immediately recognize who the persona riffs on while understanding it is not the real person.
+Swap the first letters of the first and last name, then append **(AI)** to the persona name (`ai_personas.persona_name`) so users immediately recognize who the persona riffs on while understanding it is not the real person.
 
 > Matthew Berry → **Bathew Merry (AI)**
 
 Rules:
 
 1. Swap the leading letter (or leading letter cluster where it reads better) of first and last name.
-2. Display name always ends in `(AI)`.
+2. Persona name always ends in `(AI)`.
 3. Username is the swapped name in kebab/snake form with an `-ai` suffix (e.g., `bathew-merry-ai`) — never the real person's name.
 4. The real analyst's name **never appears** in the persona's profile, bio, list titles, or rationale text. The resemblance lives entirely in the parody name and ranking style.
 
@@ -84,7 +84,7 @@ Follows the existing expert-profile pattern in `03-DATA-MODEL.md`: personas are 
 CREATE TABLE ai_personas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE NOT NULL,            -- 'bathew-merry-ai'
-  display_name TEXT NOT NULL,               -- 'Bathew Merry (AI)'
+  persona_name TEXT NOT NULL,               -- 'Bathew Merry (AI)' — PUBLIC brand copy (renamed from display_name in 075)
   bio TEXT NOT NULL,                        -- persona-voiced bio, includes parody disclaimer
   avatar_url TEXT,                          -- AI-generated cartoon avatar, never a real likeness
   style_profile JSONB NOT NULL,             -- structured tendencies (see below)

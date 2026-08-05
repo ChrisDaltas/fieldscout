@@ -284,7 +284,7 @@ select is(
   (select t.name from teams t join leagues l on l.id = t.league_id
    where l.creation_action_id = 'ac000000-0000-4000-8000-000000000002'),
   'cl_creator_one''s Team',
-  'omitted team_name falls back to "<display name>''s Team" (profile-derived)');
+  'omitted team_name falls back to "<username>''s Team" (profile-derived; 075 — the private full_name never names a franchise)');
 
 -- Boundary: team_count 9 (even-range interior, not in the v1 set) surfaces
 -- 040's CHECK through the RPC.

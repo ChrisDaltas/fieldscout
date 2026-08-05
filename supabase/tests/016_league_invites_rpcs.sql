@@ -427,7 +427,7 @@ select is(
     'found', true, 'type', 'invite', 'status', 'ok',
     'league_name', 'pgtap-inv-league-1',
     'team_label', 'pgtap-seat-two',
-    'inviter_name', 'in_commish_one',
+    'inviter_name', '@in_commish_one',
     'seats_open', null),
   'seat-token preview: EXACTLY league name + team label + inviter display name (+ found/type/status) — §12.23/D48; F2 exact-shape pin, as anon');
 select ok(
@@ -440,7 +440,7 @@ select is(
     'found', true, 'type', 'invite', 'status', 'ok',
     'league_name', 'pgtap-inv-league-1',
     'team_label', null,
-    'inviter_name', 'in_commish_one',
+    'inviter_name', '@in_commish_one',
     'seats_open', 6),
   'general-invite token preview: seats-open in place of a team label (task item 1)');
 select is(

@@ -24,7 +24,7 @@ async function loadPersona(username: string) {
 
   const { data: persona } = await supabase
     .from('ai_personas')
-    .select('id, username, display_name, bio, avatar_url, is_active')
+    .select('id, username, persona_name, bio, avatar_url, is_active')
     .eq('username', username)
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -61,7 +61,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!data) return { title: 'Persona not found' }
   const { persona } = data
   return {
-    title: `${persona.display_name} · FieldScout`,
+    title: `${persona.persona_name} · FieldScout`,
     description: persona.bio,
   }
 }
@@ -80,13 +80,13 @@ export default async function PersonaProfilePage({ params }: PageProps) {
           <div className="flex items-start gap-4">
             <UserAvatar
               src={persona.avatar_url ?? undefined}
-              alt={persona.display_name}
-              name={persona.display_name}
+              alt={persona.persona_name}
+              name={persona.persona_name}
               className="h-16 w-16 shrink-0"
             />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-h4">{persona.display_name}</h1>
+                <h1 className="truncate text-h4">{persona.persona_name}</h1>
                 <PersonaBadge />
               </div>
               <p className="mt-0.5 text-[12px] font-semibold text-n-3">
@@ -101,7 +101,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
 
         {/* AI disclosure — accent-soft tint marks the AI surface. */}
         <div className="rounded-sm border border-ink bg-accent-soft p-3 text-[12px] font-medium text-ink/70">
-          {personaDisclaimer(persona.display_name)}
+          {personaDisclaimer(persona.persona_name)}
         </div>
 
         {posts.length > 0 && (
@@ -135,7 +135,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
             <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
               <h3 className="text-h5">No rankings published yet</h3>
               <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
-                {persona.display_name}&apos;s boards will show up here as soon
+                {persona.persona_name}&apos;s boards will show up here as soon
                 as they publish.
               </p>
             </div>
@@ -160,7 +160,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
                       updatedAt={list.updated_at}
                       owner={{
                         username: persona.username,
-                        display_name: persona.display_name,
+                        name: persona.persona_name,
                         avatar_url: persona.avatar_url,
                       }}
                     />

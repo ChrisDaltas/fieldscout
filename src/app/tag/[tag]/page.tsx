@@ -31,7 +31,6 @@ interface FeedListRow {
   updated_at: string
   owner: {
     username: string
-    display_name: string | null
     avatar_url: string | null
   }
 }
@@ -58,7 +57,7 @@ async function loadFeed(slug: string, page: number, sort: 'recent' | 'popular') 
         id, owner_id, title, slug, description, position_filter,
         like_count, view_count, player_count, is_private, deleted_at,
         created_at, updated_at,
-        owner:profiles!lists_owner_id_fkey(username, display_name, avatar_url)
+        owner:profiles!lists_owner_id_fkey(username, avatar_url)
       )`,
       { count: 'exact' },
     )

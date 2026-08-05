@@ -297,7 +297,7 @@ export async function ingestPersonaContent(
 
   const { data: personasData, error: personasError } = await supabase
     .from('ai_personas')
-    .select('id, username, display_name, style_profile')
+    .select('id, username, persona_name, style_profile')
     .eq('is_active', true)
     .is('deleted_at', null)
   if (personasError) throw personasError

@@ -8,7 +8,6 @@ import { computeCredRank } from '@/lib/cred-tiers'
 
 interface ProfileHeaderProps {
   username: string
-  displayName: string | null
   bio: string | null
   avatarUrl: string | null
   isPro: boolean
@@ -20,16 +19,18 @@ interface ProfileHeaderProps {
 
 /**
  * Profile hero card — white surface, ink border, resting hard shadow (the
- * package's Profile header card). Round person avatar left; name + tier/Pro
+ * package's Profile header card). Round person avatar left; handle + tier/Pro
  * badges; meta line with linked follower/following counts in mono numerals.
  *
- * Heading semantics: the public /u/[username] page keeps the name as the
+ * The handle is the only name a person renders under (ruling 2026-08-05);
+ * `profiles.full_name` is private and never reaches this component.
+ *
+ * Heading semantics: the public /u/[username] page keeps the handle as the
  * page h1 (SEO); on /app/profile the shell PageHeader owns the page title,
- * so the name demotes to h2.
+ * so it demotes to h2.
  */
 export function ProfileHeader({
   username,
-  displayName,
   bio,
   avatarUrl,
   isPro,
@@ -45,7 +46,7 @@ export function ProfileHeader({
     <header className="flex flex-col gap-4 rounded-sm border border-ink bg-white p-card-pad shadow-hard-4 sm:flex-row sm:items-center sm:gap-[18px] sm:px-[18px] sm:py-4">
       <UserAvatar
         src={avatarUrl}
-        name={displayName ?? username}
+        name={username}
         className="h-16 w-16 shrink-0 sm:h-20 sm:w-20"
         fallbackClassName="text-lg"
       />
@@ -53,7 +54,7 @@ export function ProfileHeader({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">
           <Heading className="text-h4 leading-tight text-ink">
-            {displayName ?? `@${username}`}
+            @{username}
           </Heading>
           <Badge variant="stroke" className="gap-1.5">
             <span
@@ -66,8 +67,6 @@ export function ProfileHeader({
         </div>
 
         <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] font-bold text-n-3">
-          <span>@{username}</span>
-          <span aria-hidden>·</span>
           <Link
             href={`/u/${username}/followers`}
             className="transition-colors hover:text-ink hover:underline"

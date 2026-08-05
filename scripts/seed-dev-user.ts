@@ -78,7 +78,6 @@ async function syncProfile(userId: string, spec: DevUserSpec): Promise<void> {
       {
         id: userId,
         username: spec.username,
-        display_name: spec.username,
         is_pro: spec.isPro,
         subscription_status: spec.isPro ? 'active' : 'free',
       },

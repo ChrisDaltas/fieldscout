@@ -13,7 +13,7 @@ interface UserAvatarProps {
   alt?: string
   /** Used to compute initials when no src is supplied. */
   name?: string | null
-  /** Optional explicit initials override (e.g. for @username vs display_name). */
+  /** Optional explicit initials override (e.g. a crest's own lettering). */
   initials?: string
   /**
    * Shape per the design system: `user` (default) renders a borderless round

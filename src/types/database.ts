@@ -87,9 +87,9 @@ export type Database = {
           bio: string
           created_at: string | null
           deleted_at: string | null
-          display_name: string
           id: string
           is_active: boolean | null
+          persona_name: string
           style_profile: Json
           username: string
         }
@@ -98,9 +98,9 @@ export type Database = {
           bio: string
           created_at?: string | null
           deleted_at?: string | null
-          display_name: string
           id?: string
           is_active?: boolean | null
+          persona_name: string
           style_profile: Json
           username: string
         }
@@ -109,9 +109,9 @@ export type Database = {
           bio?: string
           created_at?: string | null
           deleted_at?: string | null
-          display_name?: string
           id?: string
           is_active?: boolean | null
+          persona_name?: string
           style_profile?: Json
           username?: string
         }
@@ -2303,9 +2303,9 @@ export type Database = {
           created_at: string | null
           cred_rank: number | null
           cred_score: number | null
-          display_name: string | null
           follower_count: number | null
           following_count: number | null
+          full_name: string | null
           id: string
           is_admin: boolean
           is_pro: boolean | null
@@ -2320,9 +2320,9 @@ export type Database = {
           created_at?: string | null
           cred_rank?: number | null
           cred_score?: number | null
-          display_name?: string | null
           follower_count?: number | null
           following_count?: number | null
+          full_name?: string | null
           id: string
           is_admin?: boolean
           is_pro?: boolean | null
@@ -2337,9 +2337,9 @@ export type Database = {
           created_at?: string | null
           cred_rank?: number | null
           cred_score?: number | null
-          display_name?: string | null
           follower_count?: number | null
           following_count?: number | null
+          full_name?: string | null
           id?: string
           is_admin?: boolean
           is_pro?: boolean | null

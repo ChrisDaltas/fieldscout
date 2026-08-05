@@ -1,6 +1,6 @@
 /**
  * Parody firewall (spec-ai-expert-personas.md): real analyst names must NEVER
- * appear in persona usernames, display names, bios, list titles, or generated
+ * appear in persona usernames, persona names, bios, list titles, or generated
  * rationale text. This module is enforced at every persona write path and in
  * the blocklist test.
  *

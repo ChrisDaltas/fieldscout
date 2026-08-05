@@ -32,7 +32,6 @@ interface UserHit {
   type: 'user'
   id: string
   username: string
-  display_name: string | null
   avatar_url: string | null
 }
 
@@ -271,22 +270,17 @@ export function CommandPalette() {
             {users.map((u) => (
               <CommandItem
                 key={u.id}
-                value={`${u.display_name ?? ''} ${u.username} ${u.id}`}
+                value={`${u.username} ${u.id}`}
                 onSelect={() => navigate(`/u/${u.username}`)}
                 className="gap-2.5"
               >
                 <UserAvatar
                   src={u.avatar_url}
-                  name={u.display_name ?? u.username}
+                  name={u.username}
                   className="h-6 w-6 shrink-0"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold">
-                    {u.display_name ?? u.username}
-                  </span>
-                  <span className="block truncate text-[11px] font-medium text-n-3">
-                    @{u.username}
-                  </span>
+                  <span className="block truncate font-bold">@{u.username}</span>
                 </span>
               </CommandItem>
             ))}

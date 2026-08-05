@@ -194,7 +194,7 @@ Follow the schemas verbatim from the spec (columns, RLS comments). Key invariant
 
 Personas are **system-written**, so the write paths are scripts/Edge Functions with the service role — not app API routes. Read paths are ordinary server components/routes.
 
-- `scripts/seed-ai-personas.ts` — insert the roster rows (username, display name, bio + parody disclaimer, `style_profile` JSONB, avatar). Then generate initial lists via Claude (ranks from source where available, else `style_profile`), writing persona-owned `lists` rows. **Phase 0:** player entries stored as text names in JSONB per `03-DATA-MODEL.md`.
+- `scripts/seed-ai-personas.ts` — insert the roster rows (username, persona name, bio + parody disclaimer, `style_profile` JSONB, avatar). Then generate initial lists via Claude (ranks from source where available, else `style_profile`), writing persona-owned `lists` rows. **Phase 0:** player entries stored as text names in JSONB per `03-DATA-MODEL.md`.
 - `scripts/scrape-persona-sources.ts` — direct fetch (no scraping service) of each persona's free, non-paywalled published rankings into `persona_source_rankings` (source URL + publish date).
 - `supabase/functions/refresh-persona-lists/` — regenerate lists on the data-pipeline cadence (weekly in-season, monthly off-season), snapshotting prior versions (reuse `big_board_snapshots` pattern). Runs with service role.
 - `src/lib/claude/persona-gen.ts` — the rationale-generation prompt builder: takes `style_profile` + the FieldScout player data packet, returns original per-player rationale + persona-voiced titles. **Ranks mirror the source; words are always ours.**
@@ -212,7 +212,7 @@ Personas are **system-written**, so the write paths are scripts/Edge Functions w
 
 ### 4.6 The parody firewall (non-negotiable, enforced in code + review)
 
-- Real analyst names **never** appear in `username`, `display_name`, `bio`, list titles, or rationale text. The resemblance lives only in the swapped-letter parody name + ranking style.
+- Real analyst names **never** appear in `username`, `persona_name`, `bio`, list titles, or rationale text. The resemblance lives only in the swapped-letter parody name + ranking style.
 - All generated prose is original; the analyst's written blurbs are never copied.
 - Only free, non-paywalled sources are scraped; `source_url` retained on everything.
 - Takedown = `is_active = FALSE` on the persona (or `deleted_at` on specific lists). Content leaves feeds/consensus/SEO immediately, no schema work.

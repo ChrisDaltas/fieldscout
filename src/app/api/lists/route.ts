@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   // The page/pageSize pagination is applied to the owned set; favorited
   // others' lists are appended after.
   const ownedSelect =
-    '*, list_tags(tag:tags(id, name, slug, is_system_tag)), owner:profiles!owner_id(username, display_name, avatar_url)'
+    '*, list_tags(tag:tags(id, name, slug, is_system_tag)), owner:profiles!owner_id(username, avatar_url)'
   let ownedQuery = supabase
     .from('lists')
     .select(ownedSelect, { count: 'exact' })
@@ -95,7 +95,6 @@ export async function GET(request: Request) {
   // boolean on the row).
   type OwnerProfile = {
     username: string
-    display_name: string | null
     avatar_url: string | null
   }
   const lists = (data ?? []).map((row) => {

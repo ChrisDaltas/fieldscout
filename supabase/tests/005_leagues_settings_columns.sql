@@ -17,8 +17,8 @@
 --     handle_new_user — the no-metadata fallback passes the new CHECK, and
 --     hostile/contract-violating/placeholder-shaped metadata gets the
 --     user_<8hex> FALLBACK profile without breaking the auth insert
---     (049/050), with display_name derived from the fallback, never the
---     rejected value (051).
+--     (049/050), with the private full_name derived from the fallback, never
+--     the rejected value (051/074; column renamed in 075).
 --   * Ordering: every privileged-context (postgres) test runs BEFORE any
 --     request.jwt.claims is set — set_config(..., true) persists to txn end,
 --     and auth.role() would then read 'authenticated', flipping the
@@ -145,14 +145,15 @@ select ok(
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
 
--- R31 (migration 051): the rejected metadata value must not resurface in
--- display_name either — pre-051 this row got display_name = 'evil-ai'
--- (laundered past the username validation; reproduced live in review).
+-- R31 (migration 051): the rejected metadata value must not resurface in the
+-- profile's name field either — pre-051 this row got 'evil-ai' there
+-- (laundered past the username validation; reproduced live in review). The
+-- column is `full_name` since 075; the guard is unchanged.
 select is(
-  (select display_name from profiles
+  (select full_name from profiles
    where id = '50000000-0000-4000-8000-000000000005'),
   'user_50000000',
-  'rejected metadata username (evil-ai) does NOT reach display_name — it derives from the effective (fallback) username (R31, 051)');
+  'rejected metadata username (evil-ai) does NOT reach full_name — it derives from the effective (fallback) username (R31, 051)');
 
 -- R32 (migration 050): the placeholder shape is reserved — metadata matches
 -- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name

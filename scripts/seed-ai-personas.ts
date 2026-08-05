@@ -54,7 +54,9 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const SYSTEM_OWNER = {
   email: 'ai-system@fieldscout.local',
   username: 'fieldscout-ai',
-  displayName: 'FieldScout AI',
+  /** PRIVATE profiles.full_name for the system account — rendered nowhere;
+   *  every persona surface renders ai_personas.persona_name or the handle. */
+  fullName: 'FieldScout AI',
 }
 
 /** Positions seeded per persona, capped by the per-run safety valve. */
@@ -74,7 +76,7 @@ async function ensureSystemOwner(): Promise<string> {
       // Never used to log in — personas can't be signed into.
       password: randomBytes(24).toString('base64url'),
       email_confirm: true,
-      user_metadata: { username: SYSTEM_OWNER.username, full_name: SYSTEM_OWNER.displayName },
+      user_metadata: { username: SYSTEM_OWNER.username, full_name: SYSTEM_OWNER.fullName },
     })
     if (createError) throw createError
     if (!created.user) throw new Error('createUser returned no user for system owner')
@@ -89,7 +91,7 @@ async function ensureSystemOwner(): Promise<string> {
     {
       id: userId,
       username: SYSTEM_OWNER.username,
-      display_name: SYSTEM_OWNER.displayName,
+      full_name: SYSTEM_OWNER.fullName,
       bio: 'System account that owns FieldScout AI persona content.',
       is_pro: true,
       subscription_status: 'active',
@@ -131,13 +133,13 @@ async function upsertPersonas(): Promise<Map<string, string>> {
 
     if (existing) {
       if (!existing.is_active || existing.deleted_at) {
-        console.log(`- persona ${persona.display_name} is taken down — leaving untouched`)
+        console.log(`- persona ${persona.persona_name} is taken down — leaving untouched`)
         continue
       }
       const { error } = await supabase
         .from('ai_personas')
         .update({
-          display_name: persona.display_name,
+          persona_name: persona.persona_name,
           bio: persona.bio,
           style_profile: persona.style_profile,
           avatar_url: personaAvatarUrl(persona.username),
@@ -150,7 +152,7 @@ async function upsertPersonas(): Promise<Map<string, string>> {
         .from('ai_personas')
         .insert({
           username: persona.username,
-          display_name: persona.display_name,
+          persona_name: persona.persona_name,
           bio: persona.bio,
           style_profile: persona.style_profile,
           avatar_url: personaAvatarUrl(persona.username),
@@ -161,7 +163,7 @@ async function upsertPersonas(): Promise<Map<string, string>> {
       if (error) throw error
       ids.set(persona.username, data.id as string)
     }
-    console.log(`✓ persona ${persona.display_name}`)
+    console.log(`✓ persona ${persona.persona_name}`)
   }
   return ids
 }
@@ -217,7 +219,7 @@ async function seedListsForPersona(
     let result
     try {
       result = await generatePersonaList({
-        displayName: persona.display_name,
+        personaName: persona.persona_name,
         styleProfile: persona.style_profile,
         position,
         scoring,
@@ -321,7 +323,7 @@ async function main(): Promise<void> {
   for (const persona of PERSONA_ROSTER) {
     const personaId = personaIds.get(persona.username)
     if (!personaId) continue
-    console.log(`\nGenerating lists for ${persona.display_name}…`)
+    console.log(`\nGenerating lists for ${persona.persona_name}…`)
     try {
       await seedListsForPersona(ownerId, persona, personaId)
     } catch (err) {

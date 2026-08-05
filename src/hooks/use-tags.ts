@@ -11,7 +11,7 @@ interface TagsResponse {
 export interface TagListItem extends List {
   owner: Pick<
     Profile,
-    'id' | 'username' | 'display_name' | 'avatar_url' | 'cred_score' | 'is_pro'
+    'id' | 'username' | 'avatar_url' | 'cred_score' | 'is_pro'
   >
 }
 

@@ -33,8 +33,8 @@ interface AdminPost {
   deleted_at: string | null
   list_id: string | null
   persona:
-    | { username: string; display_name: string; avatar_url: string | null }
-    | { username: string; display_name: string; avatar_url: string | null }[]
+    | { username: string; persona_name: string; avatar_url: string | null }
+    | { username: string; persona_name: string; avatar_url: string | null }[]
     | null
 }
 
@@ -42,7 +42,7 @@ type QueueView = 'drafts' | 'published'
 
 function personaOf(post: AdminPost) {
   const p = Array.isArray(post.persona) ? post.persona[0] : post.persona
-  return p ?? { username: '', display_name: 'Unknown', avatar_url: null }
+  return p ?? { username: '', persona_name: 'Unknown', avatar_url: null }
 }
 
 export default function AdminPostsPage() {
@@ -220,12 +220,12 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
       <div className="flex items-center gap-2">
         <UserAvatar
           src={persona.avatar_url ?? undefined}
-          alt={persona.display_name}
-          name={persona.display_name}
+          alt={persona.persona_name}
+          name={persona.persona_name}
           className="h-6 w-6 shrink-0"
         />
         <span className="truncate text-[11px] font-bold text-n-3">
-          {persona.display_name}
+          {persona.persona_name}
         </span>
         <PersonaBadge />
         <Badge variant="stroke" className="ml-auto shrink-0">

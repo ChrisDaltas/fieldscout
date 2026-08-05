@@ -15,7 +15,7 @@ export interface PersonaBoard {
   updated_at: string
   persona: {
     username: string
-    display_name: string
+    persona_name: string
     avatar_url: string | null
   }
   owner: {
@@ -32,8 +32,8 @@ interface PersonaBoardRow {
   player_count: number | null
   updated_at: string | null
   persona:
-    | { username: string; display_name: string; avatar_url: string | null; is_active: boolean | null }
-    | { username: string; display_name: string; avatar_url: string | null; is_active: boolean | null }[]
+    | { username: string; persona_name: string; avatar_url: string | null; is_active: boolean | null }
+    | { username: string; persona_name: string; avatar_url: string | null; is_active: boolean | null }[]
     | null
   owner: { username: string } | { username: string }[] | null
 }
@@ -50,7 +50,7 @@ export function usePersonaBoards(limit = 9) {
         .from('lists')
         .select(
           `id, title, slug, description, position_filter, player_count, updated_at,
-           persona:ai_personas!lists_ai_persona_id_fkey!inner(username, display_name, avatar_url, is_active),
+           persona:ai_personas!lists_ai_persona_id_fkey!inner(username, persona_name, avatar_url, is_active),
            owner:profiles!lists_owner_id_fkey(username)`,
         )
         .not('ai_persona_id', 'is', null)
@@ -76,7 +76,7 @@ export function usePersonaBoards(limit = 9) {
             updated_at: row.updated_at ?? '',
             persona: {
               username: persona.username,
-              display_name: persona.display_name,
+              persona_name: persona.persona_name,
               avatar_url: persona.avatar_url,
             },
             owner: { username: owner.username },
@@ -99,7 +99,7 @@ export interface PersonaPostCard {
   published_at: string | null
   persona: {
     username: string
-    display_name: string
+    persona_name: string
     avatar_url: string | null
   }
 }
@@ -111,8 +111,8 @@ interface PersonaPostRow {
   dek: string | null
   published_at: string | null
   persona:
-    | { username: string; display_name: string; avatar_url: string | null }
-    | { username: string; display_name: string; avatar_url: string | null }[]
+    | { username: string; persona_name: string; avatar_url: string | null }
+    | { username: string; persona_name: string; avatar_url: string | null }[]
     | null
 }
 
@@ -132,7 +132,7 @@ export function usePersonaPosts(limit = 6, enabled = true) {
         .from('persona_posts')
         .select(
           `id, title, slug, dek, published_at,
-           persona:ai_personas!persona_posts_ai_persona_id_fkey!inner(username, display_name, avatar_url, is_active)`,
+           persona:ai_personas!persona_posts_ai_persona_id_fkey!inner(username, persona_name, avatar_url, is_active)`,
         )
         .eq('ai_personas.is_active', true)
         .order('published_at', { ascending: false })

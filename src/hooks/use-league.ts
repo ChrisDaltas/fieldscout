@@ -49,7 +49,7 @@ export interface LeagueDetail {
     is_placeholder: boolean | null
     is_autodraft: boolean | null
     joined_at: string | null
-    profiles: { username: string; display_name: string | null; avatar_url: string | null } | null
+    profiles: { username: string; avatar_url: string | null } | null
   }>
   teams: Array<{
     id: string

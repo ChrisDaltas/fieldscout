@@ -28,7 +28,7 @@ type ShelfItem =
       meta: string
       date: string
       positionFilter: string | null
-      persona: { username: string; display_name: string; avatar_url: string | null }
+      persona: { username: string; persona_name: string; avatar_url: string | null }
     }
   | {
       type: 'post'
@@ -38,7 +38,7 @@ type ShelfItem =
       meta: string
       date: string
       positionFilter: null
-      persona: { username: string; display_name: string; avatar_url: string | null }
+      persona: { username: string; persona_name: string; avatar_url: string | null }
     }
 
 /**
@@ -109,12 +109,12 @@ export function AiExpertShelf() {
               <div className="flex items-center gap-1.5">
                 <UserAvatar
                   src={item.persona.avatar_url ?? undefined}
-                  alt={item.persona.display_name}
-                  name={item.persona.display_name}
+                  alt={item.persona.persona_name}
+                  name={item.persona.persona_name}
                   className="h-6 w-6 shrink-0"
                 />
                 <span className="truncate text-[10px] font-bold text-n-3">
-                  {item.persona.display_name}
+                  {item.persona.persona_name}
                 </span>
                 <Badge variant="stroke" className="ml-auto shrink-0">
                   AI

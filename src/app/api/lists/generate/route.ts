@@ -86,7 +86,7 @@ export async function POST(request: Request) {
   // reserves.
   interface ResolvedPersona {
     id: string
-    display_name: string
+    persona_name: string
     style_profile: PersonaStyleProfile
   }
   let persona: ResolvedPersona | null = null
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     const personaQuery = () =>
       supabase
         .from('ai_personas')
-        .select('id, username, display_name, style_profile')
+        .select('id, username, persona_name, style_profile')
         .eq('is_active', true)
         .is('deleted_at', null)
     let { data: found } = await personaQuery()
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       .maybeSingle()
     if (!found) {
       const byDisplayName = await personaQuery()
-        .eq('display_name', parsed.data.persona)
+        .eq('persona_name', parsed.data.persona)
         .limit(1)
         .maybeSingle()
       found = byDisplayName.data
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     }
     persona = {
       id: found.id as string,
-      display_name: found.display_name as string,
+      persona_name: found.persona_name as string,
       style_profile: found.style_profile as unknown as PersonaStyleProfile,
     }
   }
@@ -131,9 +131,9 @@ export async function POST(request: Request) {
   }
   const styleLabel =
     persona && weights.length > 0
-      ? `${persona.display_name} Blend`
+      ? `${persona.persona_name} Blend`
       : persona
-        ? persona.display_name
+        ? persona.persona_name
         : weights.length > 0
           ? 'Custom Blend'
           : 'Consensus'

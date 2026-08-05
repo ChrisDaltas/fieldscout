@@ -82,14 +82,14 @@ function ProfileCard({ profile }: { profile: Profile }) {
   const setProfile = useAuthStore((s) => s.setProfile)
   const { toast } = useToast()
 
-  const [displayName, setDisplayName] = useState(profile.display_name ?? '')
+  const [fullName, setFullName] = useState(profile.full_name ?? '')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   // Re-seed the form if the profile identity changes under us (avatar saves
   // replace the store profile — don't clobber in-progress edits for those).
   useEffect(() => {
-    setDisplayName(profile.display_name ?? '')
+    setFullName(profile.full_name ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id])
 
@@ -99,11 +99,11 @@ function ProfileCard({ profile }: { profile: Profile }) {
 
     setIsSaving(true)
     // Usernames are permanent (spec-redraft-leagues v2.8, Q4 ruling) — the
-    // form edits display_name only; username renders read-only below.
+    // form edits the private full name only; username renders read-only below.
     const { data, error: updateError } = await supabase
       .from('profiles')
       .update({
-        display_name: displayName.trim() || null,
+        full_name: fullName.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', profile.id)
@@ -131,7 +131,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
           <div className="border-b border-n-4 pb-4">
             <EditableUserAvatar
               src={profile.avatar_url}
-              name={profile.display_name ?? profile.username}
+              name={profile.username}
             />
           </div>
 
@@ -139,14 +139,22 @@ function ProfileCard({ profile }: { profile: Profile }) {
 
           <div className="mt-4 grid gap-3.5 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="settings-display-name">Display name</Label>
+              <Label htmlFor="settings-full-name">Full name</Label>
               <Input
-                id="settings-display-name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                id="settings-full-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 maxLength={50}
                 autoComplete="name"
+                aria-describedby="settings-full-name-help"
               />
+              <p
+                id="settings-full-name-help"
+                className="text-[11px] font-medium text-n-3"
+              >
+                Private — only you can see this. It is never shown publicly;
+                other scouts only ever see your username.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="settings-username">Username</Label>
@@ -157,7 +165,8 @@ function ProfileCard({ profile }: { profile: Profile }) {
                 aria-readonly="true"
               />
               <p className="text-[11px] font-medium text-n-3">
-                Usernames are permanent. Shown with your rankings and posts.
+                Usernames are permanent. This is the only name shown anywhere
+                in FieldScout — on your lists, rankings, and comments.
               </p>
             </div>
           </div>

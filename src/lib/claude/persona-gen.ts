@@ -26,7 +26,7 @@ export interface SourceRankEntry {
 export interface GenerationPromptArgs {
   position: AiPosition
   scoring: AiScoringFormat
-  /** Style label shown to the model (e.g. 'Consensus' or a persona display name). */
+  /** Style label shown to the model (e.g. 'Consensus' or a persona name). */
   style: string
   styleDescription: string
   playerCount: number
@@ -70,7 +70,7 @@ At the end of the list, include a one-sentence "style_note" explaining what this
 }
 
 export interface PersonaListArgs {
-  displayName: string
+  personaName: string
   styleProfile: PersonaStyleProfile
   position: AiPosition
   scoring: AiScoringFormat
@@ -87,7 +87,7 @@ export interface PersonaListResult {
 }
 
 export async function generatePersonaList({
-  displayName,
+  personaName,
   styleProfile,
   position,
   scoring,
@@ -98,7 +98,7 @@ export async function generatePersonaList({
   const prompt = buildGenerationPrompt({
     position,
     scoring,
-    style: displayName,
+    style: personaName,
     styleDescription: renderStyleDescription(styleProfile),
     playerCount,
     packetRendered,
@@ -115,7 +115,7 @@ export async function generatePersonaList({
   // Parody firewall: generated prose must never contain a real analyst's name.
   assertNoRealAnalystNames(
     JSON.stringify(data),
-    `generated list for ${displayName}`,
+    `generated list for ${personaName}`,
   )
 
   return { list: data, inputTokens, outputTokens, latencyMs }

@@ -157,7 +157,8 @@ select col_is_null('public', 'league_chat', 'user_id',
 --    Users u01–u10 (u10 = the R137 FK-survival author, §I) + outsider u99.
 --    Worlds:
 --      LM b4…a1  main controls (REAL draft_start; u01 commish "Commish
---                Cara", u02 co-commish "Deputy Dana", u03/u04 managers,
+--                Cara" (private full name; posts as @cc_user_01), u02
+--                co-commish "Deputy Dana" (@cc_user_02), u03/u04 managers,
 --                t5–t8 placeholders; manual order t1..t8, timer 30, grace
 --                30)
 --      LR b4…b1  capacity mini-world (fabricated live draft e4…b1,
@@ -198,12 +199,15 @@ values
    '{"provider": "email", "providers": ["email"]}', '{"username": "cc_outsider_99"}',
    now(), now());
 
--- Deterministic actor names for the message pins (they are UX).
-update profiles set display_name = 'Commish Cara'
+-- Real names on three actors. These are PRIVATE (profiles.full_name, 075 /
+-- ruling 2026-08-05) and must never surface in a chat post: every message pin
+-- below asserts the actor's HANDLE. Setting them here is what makes those
+-- pins falsifiable — re-point draft_actor_name at full_name and §D–§H fail.
+update profiles set full_name = 'Commish Cara'
 where id = '93000000-0000-4000-8000-000000000001';
-update profiles set display_name = 'Deputy Dana'
+update profiles set full_name = 'Deputy Dana'
 where id = '93000000-0000-4000-8000-000000000002';
-update profiles set display_name = 'Commish Otto'
+update profiles set full_name = 'Commish Otto'
 where id = '93000000-0000-4000-8000-000000000005';
 
 -- Players cc-rb01..cc-rb20 (RB, adp 1..20).
@@ -548,7 +552,7 @@ select is(
      and context = 'draft:' || (select id from drafts
            where league_id = 'b4000000-0000-4000-8000-0000000000a1')::text
      and is_system),
-  'Draft paused by Commish Cara.|true|93000000-0000-4000-8000-000000000001',
+  'Draft paused by @cc_user_01.|true|93000000-0000-4000-8000-000000000001',
   'the pause system post is RECIPIENT-VISIBLE to a plain manager: exact message, is_system, the acting commissioner''s user_id');
 
 -- Double-pause: idempotent no-op — no bookkeeping re-run, no second post.
@@ -597,7 +601,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Draft resumed by Deputy Dana.'),
+     and message = 'Draft resumed by @cc_user_02.'),
   1::bigint,
   'the resume system post names the acting co-commissioner');
 
@@ -637,7 +641,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick clock set to 60 seconds by Commish Cara (applies to upcoming picks).'),
+     and message = 'Pick clock set to 60 seconds by @cc_user_01 (applies to upcoming picks).'),
   1::bigint,
   'the set_clock system post (no-extension variant)');
 
@@ -685,7 +689,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick clock set to untimed by Commish Cara (applies to upcoming picks). The current pick is now untimed.'),
+     and message = 'Pick clock set to untimed by @cc_user_01 (applies to upcoming picks). The current pick is now untimed.'),
   1::bigint,
   'the set_clock system post (untimed variant)');
 
@@ -745,7 +749,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick clock set to 45 seconds by Commish Cara (applies to upcoming picks). The current pick is now on the clock.'),
+     and message = 'Pick clock set to 45 seconds by @cc_user_01 (applies to upcoming picks). The current pick is now on the clock.'),
   1::bigint,
   'the impose-variant system post says "now on the clock" (distinct from the "was extended." running-clock variant)');
 -- Privileged fixture surgery: restore the state §F has always entered with
@@ -820,7 +824,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Picks 4-8 undone by Commish Cara (5 picks reverted) — pgtap-cc-a1-t04 is back on the clock at pick 4.'),
+     and message = 'Picks 4-8 undone by @cc_user_01 (5 picks reverted) — pgtap-cc-a1-t04 is back on the clock at pick 4.'),
   1::bigint,
   'the cascade-undo system post (count + rewound team — §8.7''s clear confirm made visible)');
 
@@ -852,7 +856,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick 4 undone by Commish Cara — pgtap-cc-a1-t04 is back on the clock.'),
+     and message = 'Pick 4 undone by @cc_user_01 — pgtap-cc-a1-t04 is back on the clock.'),
   1::bigint,
   'the single-undo system post');
 
@@ -920,7 +924,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick 4 edited by Commish Cara: CC RB 05 -> CC RB 09.'),
+     and message = 'Pick 4 edited by @cc_user_01: CC RB 05 -> CC RB 09.'),
   1::bigint,
   'the reassign system post carries BEFORE -> AFTER (§8.7 row 5)');
 
@@ -950,7 +954,7 @@ reset role;
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick 4 edited by Commish Cara: moved from pgtap-cc-a1-t04 to pgtap-cc-a1-t06.'),
+     and message = 'Pick 4 edited by @cc_user_01: moved from pgtap-cc-a1-t04 to pgtap-cc-a1-t06.'),
   1::bigint,
   'the team-reassign system post carries the before/after teams');
 
@@ -975,7 +979,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'CC RB 09 moved from pgtap-cc-a1-t06 to pgtap-cc-a1-t05 by Commish Cara.'),
+     and message = 'CC RB 09 moved from pgtap-cc-a1-t06 to pgtap-cc-a1-t05 by @cc_user_01.'),
   1::bigint,
   'the move system post carries the before/after teams');
 set local role authenticated;
@@ -1020,7 +1024,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick 5 made by commissioner Commish Cara for pgtap-cc-a1-t05: CC RB 10.'),
+     and message = 'Pick 5 made by commissioner @cc_user_01 for pgtap-cc-a1-t05: CC RB 10.'),
   1::bigint,
   'the force-pick system post');
 select is(
@@ -1106,7 +1110,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Draft order changed by Commish Cara at pick 6 — remaining picks follow the new order.'),
+     and message = 'Draft order changed by @cc_user_01 at pick 6 — remaining picks follow the new order.'),
   1::bigint,
   'the post-start order-edit system post (E31: audited + announced)');
 -- The NEXT advance follows the new order: pick 6 lands on t3, pick 7
@@ -1221,7 +1225,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Draft reset by Commish Cara — 6 picks cleared; the draft is back to scheduled. Re-schedule it in Draft setup or start it manually when ready.'),
+     and message = 'Draft reset by @cc_user_01 — 6 picks cleared; the draft is back to scheduled. Re-schedule it in Draft setup or start it manually when ready.'),
   1::bigint,
   'the reset system post (hard action, plainly announced)');
 
@@ -1258,7 +1262,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Draft order updated by Commish Cara.'),
+     and message = 'Draft order updated by @cc_user_01.'),
   1::bigint,
   'the pre-start order system post');
 
@@ -1459,7 +1463,7 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000d1' and is_system
-     and message = 'Draft resumed by Commish Otto.'),
+     and message = 'Draft resumed by @cc_user_05.'),
   1::bigint,
   'the resume system post names the returning commissioner');
 select lives_ok($$ select public.draft_tick() $$, 'tick after the resume');

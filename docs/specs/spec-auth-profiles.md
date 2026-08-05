@@ -26,7 +26,7 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 **Contents:**
 - Avatar (circular, 80px)
-- Display name + username
+- @username — the only name shown anywhere (ruling 2026-08-05)
 - Bio (optional, max 160 chars)
 - List of public lists (grid)
 - Big Board link
@@ -34,7 +34,8 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 **Editing:**
 - Update avatar: upload to Supabase Storage, circular crop
-- Update bio and display name
+- Update bio
+- Update **full name** — PRIVATE, account settings only, never rendered publicly
 - Username is read-only after selection
 
 ---
@@ -43,8 +44,8 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 `profiles` table (created in Phase 0 migration):
 - `id` (FK to auth.users)
-- `username` (unique)
-- `display_name`
+- `username` (unique) — the displayed name; we do not call it that
+- `full_name` — PRIVATE real name, seeded from the OAuth `full_name` claim (was `display_name`; renamed + reclassified in migration 075)
 - `avatar_url`
 - `bio`
 - `is_pro` (boolean, default false)

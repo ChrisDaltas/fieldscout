@@ -17,7 +17,7 @@ export async function GET() {
     .from('persona_posts')
     .select(
       `id, kind, title, slug, dek, body_md, citations, status, published_at, created_at, deleted_at, list_id,
-       persona:ai_personas!persona_posts_ai_persona_id_fkey(username, display_name, avatar_url)`,
+       persona:ai_personas!persona_posts_ai_persona_id_fkey(username, persona_name, avatar_url)`,
     )
     // Drafts sort before 'published' alphabetically — review queue first,
     // and a window wide enough that drafts can't fall off the end.

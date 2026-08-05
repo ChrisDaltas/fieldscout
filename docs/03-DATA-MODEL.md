@@ -27,7 +27,7 @@ Extends Supabase `auth.users`. Created automatically via a database trigger on s
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT UNIQUE NOT NULL,
-  display_name TEXT,
+  full_name TEXT,                             -- PRIVATE real name (renamed from display_name in 075); never rendered outside account settings
   avatar_url TEXT,
   bio TEXT CHECK (char_length(bio) <= 280),
   cred_score NUMERIC DEFAULT 0,
@@ -1116,7 +1116,7 @@ DECLARE
   new_username TEXT := NEW.raw_user_meta_data->>'username';
 BEGIN
   -- Create the user profile
-  INSERT INTO profiles (id, username, display_name, avatar_url)
+  INSERT INTO profiles (id, username, full_name, avatar_url)
   VALUES (
     new_user_id,
     new_username,
