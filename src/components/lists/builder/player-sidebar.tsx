@@ -98,7 +98,9 @@ export function PlayerSidebar({
     setIsLoading(true)
     setError(null)
 
-    const params = new URLSearchParams({ scoring, limit: '400' })
+    // Full active pool (~1000). The sidebar search filters client-side over
+    // this fetch, so any smaller limit makes the excluded players unfindable.
+    const params = new URLSearchParams({ scoring, limit: '1500' })
     const effectivePositions =
       lockedPositions && lockedPositions.length > 0
         ? Array.from(lockedPositions)
