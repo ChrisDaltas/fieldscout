@@ -71,7 +71,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
     <div className="relative flex items-center gap-[11px] px-[13px] py-[11px] transition-colors hover:bg-n-4/50">
       <UserAvatar
         src={item.author.avatar_url}
-        name={item.author.name}
+        name={item.author.name ?? item.author.handle}
         className="h-8 w-8 shrink-0"
       />
 
@@ -97,7 +97,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           )}
         </div>
         <div className="mt-0.5 truncate text-[10px] font-semibold text-n-3">
-          {item.author.name} · @{item.author.handle}
+          {item.author.name ? `${item.author.name} · ` : ''}@{item.author.handle}
           {item.tag && (
             <>
               {' · '}

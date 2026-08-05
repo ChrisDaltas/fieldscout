@@ -59,7 +59,9 @@ async function ensureUser(spec: DevUserSpec): Promise<string> {
     email: spec.email,
     password: DEV_PASSWORD,
     email_confirm: true,
-    user_metadata: { username: spec.username, full_name: spec.username },
+    // Handle only — FieldScout stores no name for a person (ruling
+    // 2026-08-05); handle_new_user ignores a `full_name` claim.
+    user_metadata: { username: spec.username },
   })
   if (error) throw error
   if (!data.user) throw new Error(`createUser returned no user for ${spec.email}`)
@@ -78,7 +80,6 @@ async function syncProfile(userId: string, spec: DevUserSpec): Promise<void> {
       {
         id: userId,
         username: spec.username,
-        display_name: spec.username,
         is_pro: spec.isPro,
         subscription_status: spec.isPro ? 'active' : 'free',
       },

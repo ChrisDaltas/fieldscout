@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -17,7 +17,6 @@ import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { useAuthStore } from '@/stores/auth-store'
 import type { Profile } from '@/types/database'
 
 /**
@@ -77,97 +76,39 @@ function SettingsSkeleton() {
 
 /* ------------------------------- Profile ------------------------------- */
 
+/**
+ * Profile card — avatar + the handle, and nothing else.
+ *
+ * FieldScout stores no name for a person (Chris's ruling, 2026-08-05): an
+ * account is an email, a password and a permanent username. There is no
+ * display-name or full-name field to edit here, so the card has no form and
+ * no save button — the avatar editor persists itself.
+ */
 function ProfileCard({ profile }: { profile: Profile }) {
-  const supabase = createBrowserClient()
-  const setProfile = useAuthStore((s) => s.setProfile)
-  const { toast } = useToast()
-
-  const [displayName, setDisplayName] = useState(profile.display_name ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-
-  // Re-seed the form if the profile identity changes under us (avatar saves
-  // replace the store profile — don't clobber in-progress edits for those).
-  useEffect(() => {
-    setDisplayName(profile.display_name ?? '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.id])
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    setIsSaving(true)
-    // Usernames are permanent (spec-redraft-leagues v2.8, Q4 ruling) — the
-    // form edits display_name only; username renders read-only below.
-    const { data, error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        display_name: displayName.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', profile.id)
-      .select()
-      .single()
-
-    if (updateError) {
-      setError(updateError.message)
-      setIsSaving(false)
-      return
-    }
-
-    setProfile(data as Profile)
-    setIsSaving(false)
-    toast({ title: 'Profile saved' })
-  }
-
   return (
     <Card>
       <CardHeader>
         <CardTitle>Profile</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSave}>
-          <div className="border-b border-n-4 pb-4">
-            <EditableUserAvatar
-              src={profile.avatar_url}
-              name={profile.display_name ?? profile.username}
-            />
-          </div>
+        <div className="border-b border-n-4 pb-4">
+          <EditableUserAvatar src={profile.avatar_url} name={profile.username} />
+        </div>
 
-          {error && <ErrorChip className="mt-4">{error}</ErrorChip>}
-
-          <div className="mt-4 grid gap-3.5 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="settings-display-name">Display name</Label>
-              <Input
-                id="settings-display-name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                maxLength={50}
-                autoComplete="name"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="settings-username">Username</Label>
-              <Input
-                id="settings-username"
-                value={`@${profile.username}`}
-                readOnly
-                aria-readonly="true"
-              />
-              <p className="text-[11px] font-medium text-n-3">
-                Usernames are permanent. Shown with your rankings and posts.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Button variant="blue" size="sm" type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : 'Save changes'}
-            </Button>
-          </div>
-        </form>
+        <div className="mt-4 space-y-1.5">
+          <Label htmlFor="settings-username">Username</Label>
+          <Input
+            id="settings-username"
+            value={`@${profile.username}`}
+            readOnly
+            aria-readonly="true"
+            className="sm:max-w-[320px]"
+          />
+          <p className="text-[11px] font-medium text-n-3">
+            Usernames are permanent. This is the only name FieldScout shows —
+            on your lists, rankings, and comments.
+          </p>
+        </div>
       </CardContent>
     </Card>
   )

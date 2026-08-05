@@ -52,7 +52,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         id, owner_id, title, slug, description, position_filter,
         like_count, view_count, player_count, is_private, deleted_at,
         created_at, updated_at,
-        owner:profiles!lists_owner_id_fkey(id, username, display_name, avatar_url, cred_score, is_pro)
+        owner:profiles!lists_owner_id_fkey(id, username, avatar_url, cred_score, is_pro)
       )`,
       { count: 'exact' },
     )

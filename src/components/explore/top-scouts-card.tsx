@@ -46,7 +46,7 @@ export function TopScoutsCard() {
                 </span>
                 <UserAvatar
                   src={scout.avatar_url}
-                  name={scout.display_name ?? scout.username}
+                  name={scout.username}
                   className="h-7 w-7 shrink-0"
                 />
                 <div className="min-w-0 flex-1">

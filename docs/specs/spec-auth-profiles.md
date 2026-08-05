@@ -26,7 +26,7 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 **Contents:**
 - Avatar (circular, 80px)
-- Display name + username
+- @username — the only name shown anywhere (ruling 2026-08-05)
 - Bio (optional, max 160 chars)
 - List of public lists (grid)
 - Big Board link
@@ -34,7 +34,10 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 **Editing:**
 - Update avatar: upload to Supabase Storage, circular crop
-- Update bio and display name
+- Update bio
+- **No name field.** FieldScout stores no display name and no full name for a
+  person (ruling 2026-08-05) — an account is an email, a password and a
+  username. Do not add one back.
 - Username is read-only after selection
 
 ---
@@ -43,8 +46,8 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 `profiles` table (created in Phase 0 migration):
 - `id` (FK to auth.users)
-- `username` (unique)
-- `display_name`
+- `username` (unique) — the displayed name; we do not call it that
+- ~~`display_name`~~ — RETIRED (ruling 2026-08-05, migration 075). The column still exists but is never written and never read; `handle_new_user` no longer seeds it from the OAuth `full_name` claim. Nothing may reintroduce a name for a person.
 - `avatar_url`
 - `bio`
 - `is_pro` (boolean, default false)

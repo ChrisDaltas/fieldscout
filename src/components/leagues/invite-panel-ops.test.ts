@@ -44,20 +44,13 @@ function invite(overrides: Partial<PendingInviteInput>): PendingInviteInput {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Identity render rule (§16.4): display name (@username)
+// 1. Identity render rule (§16.4, ruling 2026-08-05): @username, only ever
 // ---------------------------------------------------------------------------
 
 describe('formatManagerIdentity', () => {
-  it('renders "display name (@username)" when a display name is set', () => {
-    expect(formatManagerIdentity({ username: 'jasonjones1995', display_name: 'Jason Jones' })).toBe(
-      'Jason Jones (@jasonjones1995)',
-    )
-  })
-
-  it('falls back to the bare handle when the display name is unset', () => {
-    expect(formatManagerIdentity({ username: 'tim_boris02', display_name: null })).toBe(
-      '@tim_boris02',
-    )
+  it('renders the handle and nothing else — never a real name', () => {
+    expect(formatManagerIdentity({ username: 'jasonjones1995' })).toBe('@jasonjones1995')
+    expect(formatManagerIdentity({ username: 'tim_boris02' })).toBe('@tim_boris02')
   })
 
   it('never emits an email — a null profile is Unclaimed, not an address', () => {
@@ -107,7 +100,7 @@ const CLAIMED_MEMBER: SeatMemberInput = {
   team_id: 'team-1',
   role: 'commissioner',
   is_placeholder: false,
-  profiles: { username: 'jasonjones1995', display_name: 'Jason Jones', avatar_url: null },
+  profiles: { username: 'jasonjones1995', avatar_url: null },
 }
 const PLACEHOLDER_MEMBER: SeatMemberInput = {
   id: 'm-placeholder',
@@ -159,7 +152,7 @@ describe('deriveSeats', () => {
 
     const claimed = model.seats[0]
     expect(claimed.teamName).toBe('Yardboats')
-    expect(claimed.identity).toBe('Jason Jones (@jasonjones1995)')
+    expect(claimed.identity).toBe('@jasonjones1995')
     expect(claimed.isSelf).toBe(true)
 
     const invited = model.seats[2]

@@ -13,7 +13,7 @@ import type { ListComment, Profile } from '@/types/database'
 export interface CommentWithAuthor extends ListComment {
   author: Pick<
     Profile,
-    'id' | 'username' | 'display_name' | 'avatar_url' | 'cred_score' | 'is_pro'
+    'id' | 'username' | 'avatar_url' | 'cred_score' | 'is_pro'
   >
 }
 

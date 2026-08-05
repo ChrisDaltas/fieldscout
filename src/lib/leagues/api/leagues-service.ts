@@ -103,7 +103,7 @@ export async function createLeague(supabase: Supabase, rawBody: unknown): Promis
     p_name: name,
     p_season: season,
     p_scoring_system_id: scoring_system_id,
-    // The RPC treats ''/whitespace as absent and derives "<display name>'s
+    // The RPC treats ''/whitespace as absent and derives "<username>'s
     // Team" (typegen can't express the arg's nullability — '' avoids a cast).
     p_team_name: team_name ?? '',
     p_action_id: action_id,
@@ -510,7 +510,7 @@ export async function getLeagueDetail(
     supabase
       .from('league_members')
       .select(
-        'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, profiles(username, display_name, avatar_url)',
+        'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, profiles(username, avatar_url)',
       )
       .eq('league_id', leagueId)
       .order('joined_at', { ascending: true }),

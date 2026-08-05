@@ -79,7 +79,6 @@ export default function ProfilePage() {
       <div className="space-y-[19px]">
         <ProfileHeader
           username={profile.username}
-          displayName={profile.display_name}
           bio={profile.bio}
           avatarUrl={profile.avatar_url}
           isPro={profile.is_pro ?? false}

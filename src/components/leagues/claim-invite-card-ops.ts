@@ -10,7 +10,7 @@
  *      `outcomeReasonToCardKind`, `STATE_COPY`).
  *
  * THE F2 INVARIANT (inviolable): `get_join_preview` (062, the §4.1 anon
- * carve-out) returns ONLY league name + team label + inviter display name —
+ * carve-out) returns ONLY league name + team label + the inviter's handle —
  * never `invited_email`/`invited_username`/token internals (F2, pinned by
  * pgTAP 016 exact-jsonb equality AS ANON). Nothing this module produces
  * displays or derives the invited email, and none of the copy here echoes an

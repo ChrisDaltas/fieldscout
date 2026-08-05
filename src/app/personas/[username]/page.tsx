@@ -160,7 +160,7 @@ export default async function PersonaProfilePage({ params }: PageProps) {
                       updatedAt={list.updated_at}
                       owner={{
                         username: persona.username,
-                        display_name: persona.display_name,
+                        name: persona.display_name,
                         avatar_url: persona.avatar_url,
                       }}
                     />

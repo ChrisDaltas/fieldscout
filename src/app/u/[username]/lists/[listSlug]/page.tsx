@@ -20,7 +20,7 @@ async function loadList(username: string, slug: string) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url, cred_score, is_pro')
+    .select('id, username, avatar_url, cred_score, is_pro')
     .eq('username', username)
     .maybeSingle()
 
@@ -108,7 +108,7 @@ export async function generateMetadata({
   const data = await loadList(username, listSlug)
   if (!data) return { title: 'List not found' }
   const { list, owner } = data
-  const handle = owner.display_name ?? `@${owner.username}`
+  const handle = `@${owner.username}`
   return {
     title: `${list.title} by ${handle} · FieldScout`,
     description:

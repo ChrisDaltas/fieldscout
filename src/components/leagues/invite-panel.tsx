@@ -67,7 +67,7 @@ import {
  * vacate; retire disabled with the "after the draft" note).
  *
  * THE PRIVACY INVARIANT (§7.2/§12.23): the seat identity comes from
- * `deriveSeats` — a claimed seat renders *Team — display name (@username)* and
+ * `deriveSeats` — a claimed seat renders *Team — @username* and
  * NEVER an email; `invited_email` shows only on a pending invited seat, where
  * the commissioner is meant to see it. The commissioner reads the invite rows
  * (email included) over the §12.23 RLS policy, but the render authority is the

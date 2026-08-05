@@ -61,7 +61,6 @@ export interface ListWithTags extends List {
    *  pinned list belonging to someone else), so the row can show whose it is. */
   owner?: {
     username: string
-    display_name: string | null
     avatar_url: string | null
   } | null
 }

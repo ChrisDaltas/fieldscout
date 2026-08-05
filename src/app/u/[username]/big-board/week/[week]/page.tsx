@@ -37,7 +37,7 @@ async function loadWeeklyBigBoard(username: string, week: number) {
   const supabase = await createServerClient()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url')
+    .select('id, username, avatar_url')
     .eq('username', username)
     .maybeSingle()
   if (!profile) return null
@@ -103,7 +103,7 @@ export async function generateMetadata({
   }
   const data = await loadWeeklyBigBoard(username, weekNum)
   if (!data) return { title: 'Big Board not found' }
-  const handle = data.profile.display_name ?? `@${data.profile.username}`
+  const handle = `@${data.profile.username}`
   const title = `${handle}'s Week ${weekNum} Big Board · FieldScout`
   const description = `${handle}'s Week ${weekNum} player rankings on FieldScout.`
   return {
@@ -122,7 +122,7 @@ export default async function PublicWeeklyBigBoardPage({ params }: PageProps) {
   const data = await loadWeeklyBigBoard(username, weekNum)
   if (!data) notFound()
 
-  const handle = data.profile.display_name ?? `@${data.profile.username}`
+  const handle = `@${data.profile.username}`
   const subtitle = data.list
     ? `${data.players.length} players · updated ${new Date(
         data.list.updated_at,

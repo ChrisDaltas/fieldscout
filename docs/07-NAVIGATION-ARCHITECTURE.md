@@ -125,7 +125,7 @@ All routes under `/app` require authentication. Unauthenticated users are redire
 | Route | Page |
 |-------|------|
 | `/app/settings` | Account settings — email, password, notifications |
-| `/app/settings/profile` | Profile settings — display name, avatar upload, bio |
+| `/app/settings/profile` | Profile settings — avatar upload, bio. No name field: FieldScout stores no name for a person (ruling 2026-08-05) |
 | `/app/settings/scoring` | Scoring systems — view/create custom scoring systems |
 | `/app/settings/billing` | Pro subscription — upgrade, manage, cancel |
 

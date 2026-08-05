@@ -54,7 +54,6 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const SYSTEM_OWNER = {
   email: 'ai-system@fieldscout.local',
   username: 'fieldscout-ai',
-  displayName: 'FieldScout AI',
 }
 
 /** Positions seeded per persona, capped by the per-run safety valve. */
@@ -74,7 +73,9 @@ async function ensureSystemOwner(): Promise<string> {
       // Never used to log in — personas can't be signed into.
       password: randomBytes(24).toString('base64url'),
       email_confirm: true,
-      user_metadata: { username: SYSTEM_OWNER.username, full_name: SYSTEM_OWNER.displayName },
+      // Handle only — FieldScout stores no name for a person (ruling
+      // 2026-08-05), and handle_new_user no longer reads a `full_name` claim.
+      user_metadata: { username: SYSTEM_OWNER.username },
     })
     if (createError) throw createError
     if (!created.user) throw new Error('createUser returned no user for system owner')
@@ -89,7 +90,6 @@ async function ensureSystemOwner(): Promise<string> {
     {
       id: userId,
       username: SYSTEM_OWNER.username,
-      display_name: SYSTEM_OWNER.displayName,
       bio: 'System account that owns FieldScout AI persona content.',
       is_pro: true,
       subscription_status: 'active',

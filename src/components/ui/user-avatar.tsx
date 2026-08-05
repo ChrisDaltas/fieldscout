@@ -13,7 +13,7 @@ interface UserAvatarProps {
   alt?: string
   /** Used to compute initials when no src is supplied. */
   name?: string | null
-  /** Optional explicit initials override (e.g. for @username vs display_name). */
+  /** Optional explicit initials override (e.g. a crest's own lettering). */
   initials?: string
   /**
    * Shape per the design system: `user` (default) renders a borderless round
@@ -26,13 +26,23 @@ interface UserAvatarProps {
 
 function computeInitials(name: string | null | undefined): string {
   if (!name) return '?'
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase()
+  const trimmed = name.trim()
+  if (trimmed.length === 0) return '?'
+
+  const parts = trimmed.split(/\s+/).filter(Boolean)
+  if (parts.length > 1) {
+    // Two words -> one letter each (persona names like "FieldScout AI").
+    return parts
+      .slice(0, 2)
+      .map((p) => p[0])
+      .join('')
+      .toUpperCase()
+  }
+
+  // Single token — which every person is now, since identity is the @handle
+  // and handles contain no spaces. Take the first two characters rather than
+  // one, or every photoless avatar in the app collapses to a lone letter.
+  return parts[0].slice(0, 2).toUpperCase()
 }
 
 /**

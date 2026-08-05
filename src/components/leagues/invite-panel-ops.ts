@@ -14,7 +14,7 @@
  * `invited_email` is commissioner-visible on PENDING invites only, and this
  * module is the render authority the panel trusts: a seat only ever exposes an
  * email when its status is `invited` (a still-pending seat-targeted invite).
- * The instant a seat is `claimed`, its identity is *display name (@username)*
+ * The instant a seat is `claimed`, its identity is its manager's *@username*
  * and it carries NO email — even if a leftover/consumed invite row for the
  * same franchise still holds one (the commissioner can see that row over RLS;
  * the seat must not render it). `deriveSeats` enforces this by attaching the
@@ -35,7 +35,7 @@ export interface SeatMemberInput {
   team_id: string | null
   role: string
   is_placeholder: boolean | null
-  profiles: { username: string; display_name: string | null; avatar_url: string | null } | null
+  profiles: { username: string; avatar_url: string | null } | null
 }
 
 export interface SeatTeamInput {
@@ -59,22 +59,20 @@ export interface PendingInviteInput {
 }
 
 // ---------------------------------------------------------------------------
-// Identity render rule (§16.4): "display name (@username)"
+// Identity render rule (§16.4, ruling 2026-08-05): "@username"
 // ---------------------------------------------------------------------------
 
 /**
- * The manager half of the §16.4 identity line — *display name (@username)* —
- * with a graceful fallback to the bare handle when the display name is unset
- * (the auto-generated pre-selection placeholder can leave it null). Never
- * renders an email: profiles carry none, and this is the only identity string
- * a claimed seat ever shows.
+ * The manager half of the §16.4 identity line — the handle, and nothing else.
+ * FieldScout stores no name for a person (ruling 2026-08-05), so there is
+ * nothing else it could render. Never renders an email: profiles carry none,
+ * and this is the only identity string a claimed seat ever shows.
  */
 export function formatManagerIdentity(
-  profile: { username: string; display_name: string | null } | null,
+  profile: { username: string } | null,
 ): string {
   if (!profile) return 'Unclaimed'
-  const handle = `@${profile.username}`
-  return profile.display_name ? `${profile.display_name} (${handle})` : handle
+  return `@${profile.username}`
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +116,7 @@ export interface Seat {
   memberId: string | null
   role: string | null
   isSelf: boolean
-  /** claimed only — *display name (@username)*; null otherwise. */
+  /** claimed only — the manager's *@username*; null otherwise. */
   identity: string | null
   /** invited only — the commissioner-visible invited email; NULL for claimed. */
   emailTarget: string | null

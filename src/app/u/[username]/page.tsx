@@ -20,7 +20,7 @@ async function loadProfile(username: string) {
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'id, username, display_name, avatar_url, bio, cred_score, is_pro, follower_count, following_count',
+      'id, username, avatar_url, bio, cred_score, is_pro, follower_count, following_count',
     )
     .eq('username', username)
     .maybeSingle()
@@ -56,7 +56,7 @@ export async function generateMetadata({
   const data = await loadProfile(username)
   if (!data) return { title: 'User not found' }
   const { profile } = data
-  const handle = profile.display_name ?? `@${profile.username}`
+  const handle = `@${profile.username}`
   return {
     title: `${handle} · FieldScout`,
     description:
@@ -76,7 +76,6 @@ export default async function PublicProfilePage({ params }: PageProps) {
       <div className="mx-auto max-w-4xl space-y-[19px]">
         <ProfileHeader
           username={profile.username}
-          displayName={profile.display_name}
           bio={profile.bio}
           avatarUrl={profile.avatar_url}
           isPro={profile.is_pro}
@@ -109,8 +108,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
             <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
               <h3 className="text-h5">No public lists yet</h3>
               <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
-                Public lists {profile.display_name ?? `@${profile.username}`}{' '}
-                publishes will show up here.
+                Public lists @{profile.username} publishes will show up here.
               </p>
             </div>
           ) : (
@@ -127,7 +125,6 @@ export default async function PublicProfilePage({ params }: PageProps) {
                     updatedAt={list.updated_at}
                     owner={{
                       username: profile.username,
-                      display_name: profile.display_name,
                       avatar_url: profile.avatar_url,
                     }}
                   />
