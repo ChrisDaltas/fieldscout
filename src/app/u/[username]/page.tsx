@@ -7,6 +7,7 @@ import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { PublicListCard } from '@/components/lists/public-list-card'
 import { Button } from '@/components/ui/button'
+import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface PageProps {
@@ -94,11 +95,15 @@ export default async function PublicProfilePage({ params }: PageProps) {
         <section>
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <h2 className="text-h6">Public lists</h2>
-            <Button asChild variant="stroke" size="sm">
-              <Link href={`/u/${profile.username}/big-board`}>
-                View big board
-              </Link>
-            </Button>
+            {/* The public big board is release-gated out of the 2026 go-live
+                scope — hide its entry point rather than 404 a visitor. */}
+            {featureFlags.bigBoard && (
+              <Button asChild variant="stroke" size="sm">
+                <Link href={`/u/${profile.username}/big-board`}>
+                  View big board
+                </Link>
+              </Button>
+            )}
           </div>
           {lists.length === 0 ? (
             <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">

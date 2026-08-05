@@ -33,25 +33,33 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
 
         <ul className="mt-3">
           <Row href="/app/stats" icon="chart" label="My stats" onClick={close} />
-          <Row
-            href="/app/big-board"
-            icon="layers"
-            label="Big Board"
-            onClick={close}
-          />
-          <Row
-            href="/app/weekly-ranks"
-            icon="calendar"
-            label="Rankings"
-            onClick={close}
-          />
-          <Row
-            href="/app/start-or-sit"
-            icon="sort"
-            label="Start or sit"
-            onClick={close}
-          />
-          <Row href="/app/teams" icon="layers" label="Teams" onClick={close} />
+          {featureFlags.bigBoard && (
+            <Row
+              href="/app/big-board"
+              icon="layers"
+              label="Big Board"
+              onClick={close}
+            />
+          )}
+          {featureFlags.weeklyRanks && (
+            <Row
+              href="/app/weekly-ranks"
+              icon="calendar"
+              label="Rankings"
+              onClick={close}
+            />
+          )}
+          {featureFlags.startOrSit && (
+            <Row
+              href="/app/start-or-sit"
+              icon="sort"
+              label="Start or sit"
+              onClick={close}
+            />
+          )}
+          {featureFlags.teams && (
+            <Row href="/app/teams" icon="layers" label="Teams" onClick={close} />
+          )}
           {featureFlags.leagues && (
             <Row href="/app/leagues" icon="cup" label="Leagues" onClick={close} />
           )}

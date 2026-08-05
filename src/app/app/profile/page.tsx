@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
+import { featureFlags } from '@/lib/feature-flags'
 
 /**
  * My stats — how the user's profile performs (package screen 09). The shell
@@ -88,17 +89,30 @@ export default function ProfilePage() {
           isOwn
         />
 
-        <TwoColumnLayout
-          main={
-            <ProfileStats
-              credScore={profile.cred_score ?? 0}
-              followerCount={profile.follower_count ?? 0}
-              followingCount={profile.following_count ?? 0}
-              showInfoPopover
-            />
-          }
-          aside={<RankingHistoryCard />}
-        />
+        {/* Ranking history is entirely big-board content (its rows and both
+            of its links point there), so it hides with the big board's
+            release gate — and My stats goes single-column rather than
+            leaving an empty context column. */}
+        {featureFlags.bigBoard ? (
+          <TwoColumnLayout
+            main={
+              <ProfileStats
+                credScore={profile.cred_score ?? 0}
+                followerCount={profile.follower_count ?? 0}
+                followingCount={profile.following_count ?? 0}
+                showInfoPopover
+              />
+            }
+            aside={<RankingHistoryCard />}
+          />
+        ) : (
+          <ProfileStats
+            credScore={profile.cred_score ?? 0}
+            followerCount={profile.follower_count ?? 0}
+            followingCount={profile.following_count ?? 0}
+            showInfoPopover
+          />
+        )}
       </div>
     </>
   )

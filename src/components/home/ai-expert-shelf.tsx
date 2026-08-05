@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { usePersonaBoards, usePersonaPosts } from '@/hooks/use-persona-boards'
+import { featureFlags } from '@/lib/feature-flags'
 
 function formatRelative(iso: string): string {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
@@ -45,10 +46,15 @@ type ShelfItem =
  * posts, merged newest-first. Hidden entirely until anything exists.
  * FieldScout-only surface (not in the package mock) — styled per the hub's
  * white-card / ink-border language.
+ *
+ * The persona profiles and posts are release-gated (out of the 2026 go-live
+ * scope), so with that flag off the shelf keeps the AI ranking boards — they
+ * are lists, a launch surface — and drops the post cards and the "Meet the
+ * experts" link rather than pointing at routes that 404.
  */
 export function AiExpertShelf() {
   const boards = usePersonaBoards(9)
-  const posts = usePersonaPosts(6)
+  const posts = usePersonaPosts(6, featureFlags.personas)
 
   if (boards.isLoading || posts.isLoading) return null
 
@@ -83,12 +89,14 @@ export function AiExpertShelf() {
     <section>
       <div className="mb-2.5 flex items-center">
         <h2 className="mr-auto text-h5">From the AI experts</h2>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/personas">
-            Meet the experts
-            <Icon name="arrow-next" />
-          </Link>
-        </Button>
+        {featureFlags.personas && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/personas">
+              Meet the experts
+              <Icon name="arrow-next" />
+            </Link>
+          </Button>
+        )}
       </div>
 
       <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
