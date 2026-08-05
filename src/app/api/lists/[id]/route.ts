@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
-  generateUniqueSlug,
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
@@ -199,7 +198,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined && !isBigBoard) {
     updates.title = input.title
-    updates.slug = await generateUniqueSlug(supabase, user.id, input.title)
+    // The slug is deliberately NOT regenerated. It is set once at creation and
+    // is the list's permanent identity: /u/{username}/lists/{slug} is what
+    // people paste into group chats. Regenerating it on rename silently 404'd
+    // every link already shared — verified in production, 2026-08-05 — with no
+    // redirect and no warning. The title is free to change above it.
   }
   if (input.description !== undefined) updates.description = input.description
   if (input.position_filter !== undefined) updates.position_filter = input.position_filter
