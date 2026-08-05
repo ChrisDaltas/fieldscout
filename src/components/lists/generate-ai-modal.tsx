@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,11 +14,11 @@ import {
 } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAiGenerationQuota } from '@/hooks/use-ai-generation-quota'
 import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useAiBuildStore } from '@/stores/ai-build-store'
-import { useAuthStore } from '@/stores/auth-store'
 import type { AnalyticalStyleKey, GenerateListRequest } from '@/types/schemas/ai'
 
 const POSITIONS = ['Overall', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'] as const
@@ -72,7 +71,9 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const queryClient = useQueryClient()
   const personas = usePersonaStyles(open)
   const startBuild = useAiBuildStore((s) => s.start)
-  const profile = useAuthStore((s) => s.profile)
+  // Refetched on every open so a generation started in another tab is
+  // reflected before the user spends a click.
+  const quota = useAiGenerationQuota(open)
 
   const [step, setStep] = useState<Step>('form')
   const [position, setPosition] = useState<Position>('WR')
@@ -83,7 +84,6 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const [persona, setPersona] = useState<string | null>(null)
   const [count, setCount] = useState<Count>(10)
   const [error, setError] = useState<string | null>(null)
-  const [upgradeRequired, setUpgradeRequired] = useState(false)
 
   // Staleness guard: bumped on every open AND close so in-flight async work
   // from a previous dialog session can never mutate fresh state.
@@ -95,9 +95,12 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
     if (open) {
       setStep('form')
       setError(null)
-      setUpgradeRequired(false)
     }
   }, [open])
+
+  // Quota unreadable → let the user try; the route is the real gate.
+  const outOfGenerations = quota.data ? quota.data.remaining <= 0 : false
+  const generationsOff = quota.data ? quota.data.limit <= 0 : false
 
   // Don't allow dismissal mid-create (Esc, overlay, X all route through here
   // in controlled mode) — the create finishing after dismissal would navigate
@@ -108,13 +111,9 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   }
 
   const handleCreate = async () => {
-    // Client-side Pro pre-check so free users get the pitch before an empty
-    // list exists. Profile not loaded yet → proceed; the generate route is
-    // the real gate and its 402 surfaces on the detail page.
-    if (profile && !profile.is_pro) {
-      setUpgradeRequired(true)
-      return
-    }
+    // Client-side pre-check so we don't create an empty list the AI can't
+    // fill. Advisory only — the route's atomic claim is the real limit.
+    if (outOfGenerations) return
     const session = sessionRef.current
     setStep('creating')
     setError(null)
@@ -195,18 +194,18 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
           </DialogTitle>
         </DialogHeader>
 
-        {upgradeRequired && (
-          <div className="rounded-sm border border-ink bg-accent-soft p-4">
+        {outOfGenerations && quota.data && (
+          <div className="rounded-sm border border-ink bg-white p-4">
             <p className="text-[13px] font-bold text-ink">
-              You need Pro for this one
+              {generationsOff
+                ? 'AI generation is paused right now'
+                : `That's your ${quota.data.limit} AI ${quota.data.limit === 1 ? 'list' : 'lists'} for today`}
             </p>
             <p className="mt-1 text-[13px] font-medium text-n-3">
-              AI list generation is a Pro feature — upgrade and you can
-              generate ranked lists in any style, instantly.
+              {generationsOff
+                ? 'It will be back shortly. Building a list by hand works exactly as always.'
+                : `A daily cap keeps FieldScout's AI costs sustainable while the app is free. You get ${quota.data.limit} more when the day rolls over at midnight UTC — and you can build a list by hand any time.`}
             </p>
-            <Button asChild variant="blue" size="md" className="mt-3">
-              <Link href="/app/settings/billing">Upgrade to Pro</Link>
-            </Button>
           </div>
         )}
 
@@ -304,22 +303,29 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
             />
           </Field>
 
-          <Button
-            variant="blue"
-            className="w-full"
-            disabled={step === 'creating'}
-            onClick={handleCreate}
-          >
-            {step === 'creating' ? (
-              <>
-                <Icon name="star" className="animate-pulse" /> Creating list…
-              </>
-            ) : (
-              <>
-                <Icon name="star" /> Create list
-              </>
+          <div>
+            <Button
+              variant="blue"
+              className="w-full"
+              disabled={step === 'creating' || outOfGenerations}
+              onClick={handleCreate}
+            >
+              {step === 'creating' ? (
+                <>
+                  <Icon name="star" className="animate-pulse" /> Creating list…
+                </>
+              ) : (
+                <>
+                  <Icon name="star" /> Create list
+                </>
+              )}
+            </Button>
+            {quota.data && quota.data.limit > 0 && (
+              <p className="fs-num mt-2 text-center text-[11px] font-bold text-n-3">
+                {quota.data.remaining} of {quota.data.limit} left today
+              </p>
             )}
-          </Button>
+          </div>
           <p className="text-center text-[11px] font-medium text-n-3">
             You&apos;ll land on the list and watch the AI build it — a starting
             point, not an oracle. Fully editable.

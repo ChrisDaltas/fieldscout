@@ -17,14 +17,28 @@ interface AiBuildBannerProps {
  */
 export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
   if (job.phase === 'error') {
+    // `blocked` = retrying cannot help (today's AI allowance is spent). That
+    // is a normal, non-punitive state, so it gets the neutral card rather
+    // than the red one — and no Retry button to bounce off.
     return (
-      <div className="rounded-sm border border-negative-strong bg-negative-soft p-4">
+      <div
+        className={
+          job.blocked
+            ? 'rounded-sm border border-ink bg-white p-4'
+            : 'rounded-sm border border-negative-strong bg-negative-soft p-4'
+        }
+      >
         <p className="text-sm font-bold text-ink">
-          {job.upgradeRequired ? 'FieldScout Pro required' : 'AI build hit a snag'}
+          {job.blocked ? 'Out of AI generations for today' : 'AI build hit a snag'}
         </p>
         <p className="mt-1 text-sm font-medium text-n-3">{job.error}</p>
+        {job.blocked && (
+          <p className="mt-1 text-sm font-medium text-n-3">
+            The list is still yours — add players by hand any time.
+          </p>
+        )}
         <div className="mt-3 flex gap-2">
-          {!job.upgradeRequired && (
+          {!job.blocked && (
             <Button size="sm" variant="blue" onClick={onRetry}>
               Retry
             </Button>

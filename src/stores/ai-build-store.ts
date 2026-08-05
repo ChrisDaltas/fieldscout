@@ -32,7 +32,9 @@ export interface AiBuildJob {
   /** player_ids confirmed on the list; a retry skips these. */
   addedIds: string[]
   error: string | null
-  upgradeRequired: boolean
+  /** The failure is not retryable right now (today's AI allowance is spent),
+   *  so the banner offers dismiss instead of retry. */
+  blocked: boolean
 }
 
 interface AiBuildStore {
@@ -46,7 +48,7 @@ interface AiBuildStore {
   setPhase: (listId: string, phase: AiBuildPhase) => void
   setResult: (listId: string, result: GenerateListResponse) => void
   markAdded: (listId: string, playerId: string) => void
-  fail: (listId: string, error: string, opts?: { upgradeRequired?: boolean }) => void
+  fail: (listId: string, error: string, opts?: { blocked?: boolean }) => void
   /** error → pending, so the orchestrator picks the job back up. */
   retry: () => void
   clear: () => void
@@ -73,7 +75,7 @@ export const useAiBuildStore = create<AiBuildStore>()(
             result: null,
             addedIds: [],
             error: null,
-            upgradeRequired: false,
+            blocked: false,
           },
         }),
       claim: (listId) => {
@@ -97,7 +99,7 @@ export const useAiBuildStore = create<AiBuildStore>()(
           ifCurrent(() => ({
             phase: 'error' as const,
             error,
-            upgradeRequired: opts?.upgradeRequired ?? false,
+            blocked: opts?.blocked ?? false,
           }))(listId),
         ),
       retry: () =>
