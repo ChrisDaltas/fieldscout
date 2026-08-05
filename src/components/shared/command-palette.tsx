@@ -54,17 +54,32 @@ interface NavTarget {
 }
 
 // Quick-nav targets mirror the sidebar IA (routes stay as-is during the
-// reskin — docs/redesign-plan.md D1/D2).
+// reskin — docs/redesign-plan.md D1/D2). Release-gated surfaces drop out so
+// the palette never offers a route that 404s.
 const NAV_TARGETS: NavTarget[] = [
   { label: 'Home', href: '/app', icon: 'dashboard', keywords: 'hub feed' },
-  {
-    label: 'Community',
-    href: '/app/explore',
-    icon: 'team',
-    keywords: 'explore social feed',
-  },
-  { label: 'Big board', href: '/app/big-board', icon: 'level' },
-  { label: 'Weekly ranks', href: '/app/weekly-ranks', icon: 'calendar' },
+  ...(featureFlags.community
+    ? [
+        {
+          label: 'Community',
+          href: '/app/explore',
+          icon: 'team',
+          keywords: 'explore social feed',
+        } as NavTarget,
+      ]
+    : []),
+  ...(featureFlags.bigBoard
+    ? [{ label: 'Big board', href: '/app/big-board', icon: 'level' } as NavTarget]
+    : []),
+  ...(featureFlags.weeklyRanks
+    ? [
+        {
+          label: 'Weekly ranks',
+          href: '/app/weekly-ranks',
+          icon: 'calendar',
+        } as NavTarget,
+      ]
+    : []),
   { label: 'My stats', href: '/app/stats', icon: 'chart', keywords: 'cred accuracy' },
   {
     label: 'Players',
@@ -73,8 +88,12 @@ const NAV_TARGETS: NavTarget[] = [
     keywords: 'research stats browse',
   },
   { label: 'Lists', href: '/app/lists', icon: 'list' },
-  { label: 'Start or sit', href: '/app/start-or-sit', icon: 'sort' },
-  { label: 'Teams', href: '/app/teams', icon: 'layers' },
+  ...(featureFlags.startOrSit
+    ? [{ label: 'Start or sit', href: '/app/start-or-sit', icon: 'sort' } as NavTarget]
+    : []),
+  ...(featureFlags.teams
+    ? [{ label: 'Teams', href: '/app/teams', icon: 'layers' } as NavTarget]
+    : []),
   // Leagues are release-gated (mock UI until the league backend ships).
   ...(featureFlags.leagues
     ? [{ label: 'Leagues', href: '/app/leagues', icon: 'cup' } as NavTarget]

@@ -1040,7 +1040,8 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   )
 }
 
-/** Disabled grouping tab — Rounds/Price need league sync data we don't have. */
+/** Disabled grouping tab — Rounds/Price need draft-round and auction-price
+ *  data, which arrives with FieldScout's own leagues and drafts. */
 function ComingSoonTab({ label }: { label: string }) {
   return (
     <Tooltip>
@@ -1051,7 +1052,7 @@ function ComingSoonTab({ label }: { label: string }) {
           </TabsTrigger>
         </span>
       </TooltipTrigger>
-      <TooltipContent>Coming with league sync</TooltipContent>
+      <TooltipContent>Coming with FieldScout drafts</TooltipContent>
     </Tooltip>
   )
 }

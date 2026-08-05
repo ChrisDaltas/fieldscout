@@ -9,7 +9,7 @@ export default async function TeamLivePage({ params }: TeamLivePageProps) {
   return (
     <PlaceholderPage
       title="Live mode"
-      description="Coming with league sync — live scoring for your matchup, play by play."
+      description="Coming with FieldScout leagues — live scoring for your matchup, play by play."
     >
       Team ID: <span className="fs-num text-[11px]">{teamId}</span>
     </PlaceholderPage>

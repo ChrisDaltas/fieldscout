@@ -117,10 +117,14 @@ interface PersonaPostRow {
 }
 
 /** Latest published persona posts. RLS exposes only published, non-deleted
- * rows to anon reads, so no status filter is needed client-side. */
-export function usePersonaPosts(limit = 6) {
+ * rows to anon reads, so no status filter is needed client-side.
+ *
+ * `enabled` lets callers skip the query entirely when the personas release
+ * gate is off, so a hidden surface isn't queried app-wide. */
+export function usePersonaPosts(limit = 6, enabled = true) {
   return useQuery({
     queryKey: ['persona-posts', limit],
+    enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: async (): Promise<PersonaPostCard[]> => {
       const supabase = createBrowserClient()
