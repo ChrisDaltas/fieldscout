@@ -24,7 +24,6 @@ import { deleteLeague, listMyLeagues, patchLeague } from './leagues-service'
 import {
   addPlaceholderSeat,
   assignManager,
-  AUTODRAFT_DEFERRED_MESSAGE,
   patchMember,
   removeMember,
 } from './members-service'
@@ -321,13 +320,43 @@ describe('PATCH .../members/[mid] — roles and the deferred autodraft toggle', 
     expect(result.body).toMatchObject({ role: 'co_commissioner', transferred: false })
   })
 
-  it('is_autodraft gets an EXPLICIT named 400 (F33), not a generic unknown-key rejection', async () => {
+  it('is_autodraft is the REAL commissioner toggle (F33 discharged by L.B2.2): flag lands, D63 replay, one verb per request', async () => {
     const mid = await memberIdOf(league1Id, targetId)
-    const result = await patchMember(commishClient, league1Id, mid, { is_autodraft: true })
-    expect(result.status).toBe(400)
-    // The MESSAGE is the assertion: a strictObject rejection would also be a
-    // 400, and the named branch could then be deleted unnoticed.
-    expect(JSON.stringify(result.body)).toContain(AUTODRAFT_DEFERRED_MESSAGE)
+
+    // The commissioner flips ANOTHER seat's flag (§8.4 "Commissioner can
+    // toggle it for any team") — the former deferred-message 400 is gone.
+    const on = await patchMember(commishClient, league1Id, mid, { is_autodraft: true })
+    expect(on.status).toBe(200)
+    expect(on.body).toMatchObject({ is_autodraft: true, changed: true })
+    const { data: row } = await service
+      .from('league_members')
+      .select('is_autodraft')
+      .eq('id', mid)
+      .single()
+    expect(row?.is_autodraft).toBe(true)
+
+    // D63/R153: the double-submitted toggle round-trips as changed:false
+    // (idempotent by value — the recorded latitude in place of action_id).
+    const replay = await patchMember(commishClient, league1Id, mid, { is_autodraft: true })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({ is_autodraft: true, changed: false })
+
+    // One verb per request: role + is_autodraft together is a 400.
+    const both = await patchMember(commishClient, league1Id, mid, {
+      is_autodraft: false,
+      role: 'manager',
+    })
+    expect(both.status).toBe(400)
+
+    // An OUTSIDER's toggle answers the no-leak 404 (the member row is
+    // invisible ≡ nonexistent under the 052 SELECT policy).
+    const foreign = await patchMember(outsiderClient, league1Id, mid, { is_autodraft: false })
+    expect(foreign.status).toBe(404)
+
+    // Restore for the role tests below (and prove the off flip is real).
+    const off = await patchMember(commishClient, league1Id, mid, { is_autodraft: false })
+    expect(off.status).toBe(200)
+    expect(off.body).toMatchObject({ is_autodraft: false, changed: true })
   })
 
   it('a co-commissioner cannot promote themselves to commissioner (403 — the coup path)', async () => {

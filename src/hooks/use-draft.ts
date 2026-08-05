@@ -152,6 +152,58 @@ export function useDraftOrder(leagueId: string) {
   })
 }
 
+/**
+ * POST /api/leagues/[id]/draft/pick — make a pick (L.B2.2). NEVER
+ * optimistic (§15.6 — picks reflect the broadcast/refetch, not the cache).
+ * Idempotency (D68(1), the create-league stamping pattern): `makePick`
+ * stamps ONE `action_id` per user submit — the mutation variables carry it,
+ * so a React Query retry REPLAYS server-side (E2) instead of double-picking.
+ * Callers use the returned `makePick`/`makePickAsync` wrappers, not
+ * `mutate` directly.
+ */
+export function useMakePick(leagueId: string, draftId: string) {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: async (variables: { player_id: string; action_id: string }) =>
+      sendLeagueAction<{ draft: Draft; pick: { id: string; player_id: string } }>(
+        `/api/leagues/${leagueId}/draft/pick`,
+        jsonInit('POST', { draft_id: draftId, ...variables }),
+      ),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
+    },
+  })
+
+  return {
+    ...mutation,
+    makePick: (playerId: string) =>
+      mutation.mutate({ player_id: playerId, action_id: crypto.randomUUID() }),
+    makePickAsync: (playerId: string) =>
+      mutation.mutateAsync({ player_id: playerId, action_id: crypto.randomUUID() }),
+  }
+}
+
+/**
+ * POST /api/leagues/[id]/draft/autodraft — "Auto-draft me" (§8.4; the SELF
+ * toggle over 072's `set_team_autodraft`; L.B2.2/F33). Idempotent by value
+ * (D63/R153: a double-submit round-trips as changed:false) — no action_id.
+ * The commissioner any-team toggle rides the members PATCH (use-league-
+ * members' surface), not this hook.
+ */
+export function useToggleAutodraft(leagueId: string) {
+  const invalidate = useInvalidateLeagueDetail(leagueId)
+  return useMutation({
+    mutationFn: async (on: boolean) =>
+      sendLeagueAction<{ team_id: string; is_autodraft: boolean; changed: boolean }>(
+        `/api/leagues/${leagueId}/draft/autodraft`,
+        jsonInit('POST', { on }),
+      ),
+    // is_autodraft lives on league_members — the league detail feeds it.
+    onSettled: invalidate,
+  })
+}
+
 /** POST /api/leagues/[id]/draft/start — the commissioner's manual start. */
 export function useStartDraft(leagueId: string) {
   const queryClient = useQueryClient()

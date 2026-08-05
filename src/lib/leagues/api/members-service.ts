@@ -97,19 +97,22 @@ export async function addPlaceholderSeat(
 // ---------------------------------------------------------------------------
 
 /**
- * §15.1's members-PATCH carries two verbs: the role change (M1) and the
- * autodraft toggle (M2 — the column shipped in 052 per §12.2 verbatim, but
- * nothing consumes it before a draft exists). `is_autodraft` is therefore a
- * KNOWN key with an explicit named refusal rather than an unknown-key
- * rejection, so the message tells the caller when it arrives (F33).
+ * §15.1's members-PATCH carries two verbs, ONE per request: the role change
+ * (M1) and the autodraft toggle (M2 — F33 DISCHARGED by L.B2.2: the former
+ * `AUTODRAFT_DEFERRED_MESSAGE` refusal is now the real commissioner/any-team
+ * toggle through `set_team_autodraft`, 072). The RPC decides authorization
+ * (seat's own manager or commish — §8.4/§8.7), the D63 no-op
+ * (changed:false), and the D97 system chat post when a live/paused non-mock
+ * draft exists. The SELF toggle also rides `POST …/draft/autodraft`
+ * (draft-service.ts) — same RPC, one implementation.
  */
 export const patchMemberInputSchema = z.strictObject({
   role: z.enum(['commissioner', 'co_commissioner', 'manager']).optional(),
   is_autodraft: z.boolean().optional(),
 })
 
-export const AUTODRAFT_DEFERRED_MESSAGE =
-  'Autodraft toggles arrive with the draft engine in M2 — this league has no draft yet.'
+export const AUTODRAFT_FORBIDDEN_MESSAGE =
+  "Only that seat's manager or a commissioner can toggle autodraft."
 
 export async function patchMember(
   supabase: Supabase,
@@ -124,11 +127,39 @@ export async function patchMember(
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  if (parsed.data.is_autodraft !== undefined) {
+  if (parsed.data.is_autodraft !== undefined && parsed.data.role !== undefined) {
     return {
       status: 400,
-      body: { error: { fieldErrors: { is_autodraft: [AUTODRAFT_DEFERRED_MESSAGE] } } },
+      body: { error: 'Send either `role` or `is_autodraft`, not both.' },
     }
+  }
+  if (parsed.data.is_autodraft !== undefined) {
+    // The commissioner any-team toggle (F33 — §8.4 "Commissioner can toggle
+    // it for any team"). Resolve the seat's franchise from the member row
+    // (member-SELECTable under 052): an INVISIBLE row answers the same 404
+    // a nonexistent id gets (no-leak); a visible seat routes to the RPC,
+    // which authorizes (fellow managers get its 42501 → 403).
+    const { data: member, error: readError } = await supabase
+      .from('league_members')
+      .select('team_id')
+      .eq('id', memberId)
+      .eq('league_id', leagueId)
+      .maybeSingle()
+    if (readError) {
+      return { status: 500, body: { error: readError.message } }
+    }
+    if (!member?.team_id) {
+      return { status: 404, body: { error: 'Member not found' } }
+    }
+    const { data, error } = await supabase.rpc('set_team_autodraft', {
+      p_league_id: leagueId,
+      p_team_id: member.team_id,
+      p_on: parsed.data.is_autodraft,
+    })
+    if (error) {
+      return mapMemberRpcError(error, AUTODRAFT_FORBIDDEN_MESSAGE)
+    }
+    return { status: 200, body: data as unknown as Json }
   }
   if (parsed.data.role === undefined) {
     return { status: 400, body: { error: { fieldErrors: { role: ['A role is required.'] } } } }
