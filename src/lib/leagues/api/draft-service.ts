@@ -262,6 +262,15 @@ type DraftActionRow = {
  * always knows and sends its id); present, the row is fetched under the same
  * member-scoped RLS. Either way a non-member answers the SAME 404 as
  * no-draft (no-leak — the R155 class).
+ *
+ * Recorded latitude (R159, M2 batch 10): the explicit-`draft_id` arm applies
+ * NO status filter, so queue writes (upsertQueue/queueFromList) are accepted
+ * against a `complete`/`cancelled` draft — advisory rows on a dead draft that
+ * nothing ever reads (068's autopick only fires on a LIVE draft; the pick
+ * path is RPC-status-guarded regardless). Deliberately left open rather than
+ * guarded: the write is harmless and a guard would add a wire behavior with
+ * no consumer. If a surface ever renders dead-draft queues, add the status
+ * guard then.
  */
 async function resolveDraftForAction(
   supabase: Supabase,

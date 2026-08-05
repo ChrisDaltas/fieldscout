@@ -442,6 +442,12 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
 })
 
 describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
+  // R158 (M2 batch 10, recorded): this "race" is SEQUENCED, not concurrent —
+  // the loser submits only after the winner's response returns, so what it
+  // exercises is the availability arm's friendly message (the task's ask).
+  // TRUE simultaneous-submit serialization rests on the RPC's FOR UPDATE
+  // lock + 065's uniq_draft_player_live index, message pinned in pgTAP
+  // 020:872. Do NOT cite this test as concurrency proof.
   it('pick 1 lands for the on-clock commissioner; the race LOSER gets the friendly E1 400, message pinned', async () => {
     const pick1 = await makePick(commishClient, leagueId, {
       player_id: P1,
