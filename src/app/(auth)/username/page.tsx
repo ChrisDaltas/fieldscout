@@ -8,26 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  PLACEHOLDER_USERNAME_REGEX,
+  USERNAME_REGEX,
+  validateUsername,
+} from '@/lib/auth/username-contract'
 import { createBrowserClient } from '@/lib/supabase/client'
 
-// Username contract (spec-redraft-leagues v2.8/v2.8.1, Q4 ruling): 5–20 chars,
-// letters/numbers/underscores, permanent after selection. Mirrors migration
-// 040's profiles_username_format_check (human pattern; case folded at save).
-const USERNAME_REGEX = /^[a-zA-Z0-9_]{5,20}$/
-
-// Pre-selection placeholder shape assigned by handle_new_user at signup.
-// Reserved (R32, migration 050): selecting a placeholder-shaped name would
-// leave the account "pre-selection" forever — this page's gate and filtered
-// UPDATE both key on the shape — so it can never be explicitly chosen.
-const PLACEHOLDER_REGEX = /^user_[0-9a-f]{8}$/
-
-function validateUsername(value: string): string | null {
-  if (value.length < 5) return 'Must be at least 5 characters'
-  if (value.length > 20) return 'Must be 20 characters or fewer'
-  if (!/^[a-zA-Z0-9_]+$/.test(value)) return 'Only letters, numbers, and underscores'
-  if (PLACEHOLDER_REGEX.test(value.toLowerCase())) return 'This username format is reserved'
-  return null
-}
 
 export default function UsernamePage() {
   const router = useRouter()
@@ -48,7 +35,7 @@ export default function UsernamePage() {
         .select('username')
         .eq('id', user.id)
         .maybeSingle()
-      if (!cancelled && profile && !PLACEHOLDER_REGEX.test(profile.username)) {
+      if (!cancelled && profile && !PLACEHOLDER_USERNAME_REGEX.test(profile.username)) {
         router.replace('/app')
       }
     }
@@ -123,12 +110,32 @@ export default function UsernamePage() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id)
-      .filter('username', 'match', '^user_[0-9a-f]{8}$')
+      .filter('username', 'match', PLACEHOLDER_USERNAME_REGEX.source)
       .select('id')
 
     if (!updateError && (updated?.length ?? 0) === 0) {
-      // Username was already selected (e.g. in another tab) — nothing written.
-      router.replace('/app')
+      // Nothing was written. Do NOT assume success — a username is permanent
+      // and is what share links are built from, so silently continuing would
+      // strand the user on a generated handle they never agreed to (this is
+      // exactly how a choice was lost in production, twice, on 2026-08-05).
+      // Re-read to find out WHY, and only proceed if it was genuinely already
+      // claimed by this account.
+      const { data: current } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (current && !PLACEHOLDER_USERNAME_REGEX.test(current.username)) {
+        // Already chosen (e.g. a second tab) — nothing to do.
+        router.replace('/app')
+        return
+      }
+
+      setError(
+        "We couldn't save that username. Please try again — you haven't been assigned one yet.",
+      )
+      setIsSubmitting(false)
       return
     }
 
