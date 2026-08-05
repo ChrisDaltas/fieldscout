@@ -1333,6 +1333,17 @@ Proofs (shown): fresh `db reset` 001–070 · `test:db` 25 files/**1538**/PASS (
 
 ---
 
+## Review findings — 2026-08-05 (M2 batch 9)
+
+**Reviewer batch (adversarial review of PR #84 — L.B2.1 draft schedule/start/lobby API + home data + R83, `main...feat/M2-L.B2.1-draft-api`). VERDICT: CLEAN — two nits, both recorded here; no fix cycle. Reviewer independently reproduced the R83 probe (guard disabled → the batch-13 `__proto__` 200 back, pin RED, restored → green), ran a live outsider security probe (404/404/403/403/403, fixture cleaned), and re-ran the proof chain green (pgTAP 27/1726 · vitest 45/744 · gates · type-check/lint clean). Guard soundness confirmed: JSON.parse makes `__proto__` an own key, so the recursive Object.keys walk sees every wire-reachable shape.**
+
+- **R155 · nit · `draft-api-db.test.ts` — no NON-MEMBER caller in the auth sweep** — the no-leak arms (outsider PATCH → 404 indistinguishable from no-draft; outsider create/start → 403) are behaviorally correct (reviewer live-probed) but asserted nowhere in the suite. **Routed:** add one outsider client to the route-auth sweep with L.B2.2's expansion (read-list line added below).
+- **R156 · nit · `draft-service.ts:186` — randomize's empty-active-teams branch answers 404 with `NO_ACTIVE_DRAFT_MESSAGE`**, a misdirecting message for a corruption-only-reachable state. **Routed:** next session that opens `draft-service.ts` (L.B2.2 or L.B2.3) makes it an invariant 500 or drops the branch with a comment.
+
+*(Both routed items carried on the tasks-M2 §6 L.B2.2 read-list per R51 findability — added in this same commit.)*
+
+---
+
 ## Review findings — 2026-08-05 (M2 batch 8)
 
 **Reviewer batch (adversarial review of PR #83 — L.B1.7 migration 072 completion → `league_rosters` + `in_season` + `set_team_autodraft`, `main...feat/M2-L.B1.7-completion-rosters`). VERDICT: CLEAN — two nits, both recorded here and routed; no fix cycle. Reviewer independently reproduced the break probe (exactly 026 tests 29/30/31/32/34/37/63 RED via a live-DB function edit, tree untouched) and re-ran the full proof chain green (27 files/1726 pgTAP · vitest 44/732 · type-check clean).**
