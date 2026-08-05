@@ -106,8 +106,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
           />
           <p className="text-[11px] font-medium text-n-3">
             Usernames are permanent. This is the only name FieldScout shows —
-            on your lists, rankings, and comments. We never ask for your real
-            name.
+            on your lists, rankings, and comments.
           </p>
         </div>
       </CardContent>
