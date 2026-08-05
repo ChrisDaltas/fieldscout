@@ -11,10 +11,6 @@
     {
       "path": "/api/cron/sync-stats",
       "schedule": "0 10 * * 2"
-    },
-    {
-      "path": "/api/cron/sync-live",
-      "schedule": "*/10 * * * *"
     }
   ]
 }
