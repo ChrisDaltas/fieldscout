@@ -6,7 +6,10 @@
  *   2. At the limit: the last allowed call still succeeds (off-by-one guard).
  *   3. Over the limit: 429 with UTC-honest copy, and NO Claude call is made —
  *      the whole point is that the Anthropic bill stops.
- *   4. A FAILED generation refunds the slot, so an error never costs quota.
+ *   4. Quota counts BILLED attempts: a dispatched call that fails still spends
+ *      a slot (it cost real money), and only a request that never reached
+ *      Anthropic is refunded. Refunding billed failures would make the UI's
+ *      Retry button an unmetered spend loop.
  *   5. Concurrency: N simultaneous submits at the limit take exactly the
  *      remaining slots, never more (the claim is atomic in Postgres; the fake
  *      below reproduces the same check-and-increment-in-one-step semantics).
@@ -123,7 +126,10 @@ vi.mock('@/lib/supabase/admin', () => {
 })
 
 vi.mock('@/lib/claude/client', () => ({ isClaudeConfigured: () => true }))
-vi.mock('@/lib/claude/structured', () => ({
+// Partial mock: the real isUnbilledClaudeError must run, since it is what
+// decides whether a failure refunds the slot.
+vi.mock('@/lib/claude/structured', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/claude/structured')>()),
   structuredClaudeCall: h.structuredClaudeCall,
 }))
 vi.mock('@/lib/claude/telemetry', () => ({ logAiCall: h.logAiCall }))
@@ -270,33 +276,50 @@ describe('over the limit', () => {
   })
 })
 
-describe('a failed generation does not consume quota', () => {
-  it('refunds the slot when the Claude call throws', async () => {
+describe('quota counts BILLED attempts, not successes', () => {
+  // The cap exists to bound the Anthropic bill. A response that arrives
+  // truncated or unparseable costs exactly what a good one costs, so it must
+  // consume a slot — otherwise the UI's Retry button is an unmetered spend
+  // loop: click forever, pay every time, counter never moves.
+  it('consumes the slot when a dispatched call fails', async () => {
     h.structuredClaudeCall.mockRejectedValue(new Error('anthropic 529 overloaded'))
 
     const res = await post()
 
     expect(res.status).toBe(500)
-    expect(usedToday()).toBe(0) // refunded — the user lost nothing
+    expect(usedToday()).toBe(1) // billed → spent
   })
 
-  it('leaves the full allowance available after repeated failures', async () => {
-    h.structuredClaudeCall.mockRejectedValue(new Error('boom'))
+  it('bounds repeated failures at the limit instead of allowing infinite retries', async () => {
+    h.structuredClaudeCall.mockRejectedValue(new Error('truncated output'))
     for (let i = 0; i < 5; i++) await post()
-    expect(usedToday()).toBe(0)
 
-    // ...and a subsequent success still has all three slots to draw from.
-    succeeds()
-    expect((await post()).status).toBe(200)
-    expect(usedToday()).toBe(1)
+    // Exactly `limit` calls reached Anthropic; the rest were refused at 429.
+    expect(usedToday()).toBe(3)
+    expect(h.structuredClaudeCall).toHaveBeenCalledTimes(3)
+    expect((await post()).status).toBe(429)
   })
 
-  it('refunds when generation resolves to no usable players', async () => {
+  it('consumes the slot when generation resolves to no usable players', async () => {
     succeeds()
     h.resolveGeneratedPlayers.mockReturnValueOnce({
       players: [],
       unresolved: ['Nobody At All'],
     })
+
+    const res = await post()
+
+    expect(res.status).toBe(500)
+    expect(usedToday()).toBe(1) // the response was billed
+  })
+
+  it('REFUNDS when the request never reached Anthropic', async () => {
+    // APIConnectionError = no response received = nothing billed. This is the
+    // only failure class that may safely give the slot back.
+    const { APIConnectionError } = await import('@anthropic-ai/sdk')
+    h.structuredClaudeCall.mockRejectedValue(
+      new APIConnectionError({ message: 'socket hang up' }),
+    )
 
     const res = await post()
 

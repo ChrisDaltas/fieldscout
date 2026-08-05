@@ -143,6 +143,14 @@ export async function claimAiGeneration(
  * Refund a slot claimed by `claimAiGeneration` when the work it guarded
  * failed. Best-effort by design: a refund failure must not turn a 500 into a
  * crash, and the counter self-corrects at the next UTC rollover regardless.
+ *
+ * ONLY refund when the provider was NOT billed — i.e. the failure happened
+ * before dispatch, or the request never reached them (see
+ * `isUnbilledClaudeError`). A truncated or unparseable response costs full
+ * price, so refunding it would uncap the bill: any retryable failure could be
+ * clicked forever, paying every time, with the counter never moving. The
+ * quota counts BILLED attempts, which is the only reading under which this
+ * module actually controls cost.
  */
 export async function releaseAiGeneration(
   userId: string,

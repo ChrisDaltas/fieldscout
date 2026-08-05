@@ -1,8 +1,22 @@
+import { APIConnectionError } from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import type { z } from 'zod'
 
 import { getClaudeClient } from '@/lib/claude/client'
 import type { ClaudeModel } from '@/lib/claude/models'
+
+/**
+ * True only when the request never reached Anthropic, so nothing was billed.
+ *
+ * Callers that hold a usage quota need this: once a response comes back it is
+ * charged even if it is truncated or fails schema validation, so refunding on
+ * those would let a repeatable failure be retried forever at full cost.
+ * APIConnectionError is the SDK's "no response received" class (DNS, TCP,
+ * timeout before headers); every other error implies a billed response.
+ */
+export function isUnbilledClaudeError(err: unknown): boolean {
+  return err instanceof APIConnectionError
+}
 
 /**
  * Structured-output helper: every AI feature returns JSON the app parses, so

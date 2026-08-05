@@ -19,7 +19,10 @@ import {
   readAiGenerationQuota,
   releaseAiGeneration,
 } from '@/lib/claude/quota'
-import { structuredClaudeCall } from '@/lib/claude/structured'
+import {
+  isUnbilledClaudeError,
+  structuredClaudeCall,
+} from '@/lib/claude/structured'
 import {
   renderStyleDescription,
   renderWeightedStyleDescription,
@@ -181,6 +184,14 @@ export async function POST(request: Request) {
   // Tracks whether a quota slot is currently held, so every failure path below
   // refunds exactly once and a path that never claimed refunds nothing.
   let claimed = false
+  // Flips the moment the Anthropic request is dispatched. After that point the
+  // call is BILLED — a truncated or unparseable response costs exactly what a
+  // good one costs — so the slot is spent and must not be refunded. Refunding
+  // billed calls would uncap the bill: the UI offers Retry on every error, so
+  // one repeatable failure could be clicked indefinitely at full price with
+  // the counter never moving. The quota therefore counts *billed attempts*,
+  // which is what "cost control" has to mean.
+  let dispatched = false
 
   try {
     const packet = await buildPlayerPacket(supabase, {
@@ -234,6 +245,7 @@ export async function POST(request: Request) {
     }
     claimed = true
 
+    dispatched = true
     const { data, inputTokens, outputTokens, latencyMs } =
       await structuredClaudeCall({
         model: CLAUDE_GENERATION_MODEL,
@@ -260,9 +272,8 @@ export async function POST(request: Request) {
     const players = resolvedAll.players.slice(0, player_count)
     const unresolved = resolvedAll.unresolved
     if (players.length === 0) {
-      // Nothing usable came back — the user got no list, so refund the slot.
-      await releaseAiGeneration(user.id, AI_GENERATION_FEATURE)
-      claimed = false
+      // No refund: this response was billed. The user gets a clear error and
+      // keeps their remaining generations, but this attempt is spent.
       return NextResponse.json(
         { error: 'Generation produced no resolvable players. Try again.' },
         { status: 500 },
@@ -280,9 +291,12 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(response)
   } catch (err) {
-    // A failed generation must not burn quota (the whole reason the claim is
-    // a reservation rather than a plain counter bump).
-    if (claimed) await releaseAiGeneration(user.id, AI_GENERATION_FEATURE)
+    // Refund ONLY when we are certain Anthropic never charged us: a failure
+    // before dispatch, or a connection error that never got a response.
+    // Anything else was billed and keeps the slot — see `dispatched` above.
+    if (claimed && (!dispatched || isUnbilledClaudeError(err))) {
+      await releaseAiGeneration(user.id, AI_GENERATION_FEATURE)
+    }
 
     const message = err instanceof Error ? err.message : String(err)
     await logAiCall({
