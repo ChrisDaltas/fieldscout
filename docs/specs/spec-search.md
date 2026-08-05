@@ -13,7 +13,7 @@ Basic search across players, lists, and users. Accessible from the top navigatio
 
 - **Players** — search by name. Results show position badge, team, headshot.
 - **Lists** — search by list title. Results show author, tags, like count.
-- **Users** — search by username or display name. Results show avatar, cred badge.
+- **Users** — search by username. Results show avatar, cred badge. *(Handle only: FieldScout stores no name for a person, so there is nothing else to match — ruling 2026-08-05.)*
 
 ---
 
@@ -39,7 +39,7 @@ Basic search across players, lists, and users. Accessible from the top navigatio
 
 - Player search: Supabase full-text search on `players.full_name`
 - List search: Supabase full-text search on `lists.title`
-- User search: Supabase full-text search on `profiles.username` and `profiles.display_name`
+- User search: Supabase full-text search on `profiles.username` only
 - All queries filtered to exclude soft-deleted content
 
 ---

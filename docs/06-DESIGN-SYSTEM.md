@@ -158,7 +158,7 @@ Pill-shaped badge showing tier name. Colors:
 - Background: `#000000` (pure black, like Spotify)
 - Logo at top: "FieldScout" wordmark in white, bold
 - Nav items: 14px, `--color-text-secondary`, hover text-white + `bg-[#282828]`, active: text-white + `bg-[#1DB95420]` with green left border (2px)
-- User section at bottom: avatar, display name, cred badge
+- User section at bottom: avatar, @username, cred badge
 
 **Bottom tabs (mobile):**
 - Background: `#000000`

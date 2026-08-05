@@ -71,12 +71,14 @@ ON CONFLICT (provider_id, provider) DO NOTHING;
 
 -- The 049 trigger swallows exceptions and assigns a placeholder username —
 -- enforce the dev identities and Pro flags on top (id-keyed, rerun-safe).
-INSERT INTO public.profiles (id, username, display_name, is_pro, subscription_status)
+-- No name column is seeded: FieldScout stores no name for a person (ruling
+-- 2026-08-05, migration 075) — an account is an email, a password and a
+-- permanent username, and every surface renders the handle.
+INSERT INTO public.profiles (id, username, is_pro, subscription_status)
 VALUES
-  ('11111111-1111-4111-8111-111111111111', 'dev_user', 'dev_user', false, 'free'),
-  ('22222222-2222-4222-8222-222222222222', 'devpro', 'devpro', true, 'active')
+  ('11111111-1111-4111-8111-111111111111', 'dev_user', false, 'free'),
+  ('22222222-2222-4222-8222-222222222222', 'devpro', true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   username = EXCLUDED.username,
-  display_name = EXCLUDED.display_name,
   is_pro = EXCLUDED.is_pro,
   subscription_status = EXCLUDED.subscription_status;

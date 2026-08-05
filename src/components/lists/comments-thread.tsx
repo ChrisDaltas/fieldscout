@@ -163,7 +163,7 @@ function CommentItem({
     <li className="flex gap-3">
       <UserAvatar
         src={comment.author.avatar_url}
-        name={comment.author.display_name ?? comment.author.username}
+        name={comment.author.username}
         className="h-8 w-8 shrink-0"
       />
       <div className="min-w-0 flex-1 rounded-sm border border-ink bg-white px-3 py-2">
@@ -172,7 +172,7 @@ function CommentItem({
             href={`/u/${comment.author.username}`}
             className="font-bold text-ink hover:underline"
           >
-            {comment.author.display_name ?? `@${comment.author.username}`}
+            @{comment.author.username}
           </Link>
           <span>·</span>
           <span>{formatRelative(comment.created_at)}</span>

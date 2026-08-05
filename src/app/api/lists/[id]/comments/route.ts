@@ -32,7 +32,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     .from('list_comments')
     .select(
       `id, list_id, author_id, body, parent_id, created_at, updated_at,
-       author:profiles!list_comments_author_id_fkey(id, username, display_name, avatar_url, cred_score, is_pro)`,
+       author:profiles!list_comments_author_id_fkey(id, username, avatar_url, cred_score, is_pro)`,
       { count: 'exact' },
     )
     .eq('list_id', id)
@@ -122,7 +122,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     })
     .select(
       `id, list_id, author_id, body, parent_id, created_at, updated_at,
-       author:profiles!list_comments_author_id_fkey(id, username, display_name, avatar_url, cred_score, is_pro)`,
+       author:profiles!list_comments_author_id_fkey(id, username, avatar_url, cred_score, is_pro)`,
     )
     .single()
 

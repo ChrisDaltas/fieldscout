@@ -12,7 +12,6 @@ import { createBrowserClient } from '@/lib/supabase/client'
 export interface TopScout {
   id: string
   username: string
-  display_name: string | null
   avatar_url: string | null
   cred_score: number
 }
@@ -27,7 +26,7 @@ export function useTopScouts() {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, cred_score')
+        .select('id, username, avatar_url, cred_score')
         .order('cred_score', { ascending: false, nullsFirst: false })
         .limit(LEADERBOARD_SIZE)
       if (error) throw error
@@ -35,7 +34,6 @@ export function useTopScouts() {
       return (data ?? []).map((row) => ({
         id: row.id,
         username: row.username,
-        display_name: row.display_name,
         avatar_url: row.avatar_url,
         cred_score: row.cred_score ?? 0,
       }))

@@ -14,8 +14,13 @@ interface PublicListCardProps {
   updatedAt: string
   owner: {
     username: string
-    display_name: string | null
     avatar_url: string | null
+    /**
+     * PUBLIC name shown before the handle — set only for AI personas, whose
+     * parody name is brand copy ("Bathew Merry (AI)"). People have no such
+     * field: a person renders as their handle alone (ruling 2026-08-05).
+     */
+    name?: string | null
   }
 }
 
@@ -45,7 +50,7 @@ export function PublicListCard({
       <div className="flex items-start gap-3">
         <UserAvatar
           src={owner.avatar_url}
-          name={owner.display_name ?? owner.username}
+          name={owner.name ?? owner.username}
           className="h-9 w-9 shrink-0"
         />
         <div className="min-w-0 flex-1">
@@ -64,7 +69,7 @@ export function PublicListCard({
           )}
           <div className="mt-2 flex items-center gap-2.5 text-[11px] font-semibold text-n-3">
             <span className="truncate">
-              {owner.display_name ?? `@${owner.username}`}
+              {owner.name ? `${owner.name} · ` : ''}@{owner.username}
             </span>
             <span>·</span>
             <span className="fs-num whitespace-nowrap">{playerCount} players</span>

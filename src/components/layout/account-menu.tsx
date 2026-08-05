@@ -91,7 +91,8 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
     )
   }
 
-  const displayName = profile.display_name ?? `@${profile.username}`
+  // The handle is the only name we render for a person (ruling 2026-08-05).
+  const handle = `@${profile.username}`
 
   return (
     <DropdownMenu>
@@ -99,7 +100,7 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
         <button
           type="button"
           aria-label="Account"
-          title={isCompact ? displayName : undefined}
+          title={isCompact ? handle : undefined}
           className={cn(
             'flex items-center rounded-sm transition-opacity duration-200 ease-linear hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
             isTopbar
@@ -113,16 +114,13 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
               (custom token), so force the people-are-round rule here. */}
           <UserAvatar
             src={profile.avatar_url}
-            name={profile.display_name ?? profile.username}
+            name={profile.username}
             className="h-7 w-7 shrink-0 !rounded-pill"
           />
           {!isCompact && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-bold leading-tight text-ink">
-                {displayName}
-              </p>
-              <p className="truncate text-[11px] font-medium leading-tight text-n-3">
-                @{profile.username}
+                {handle}
               </p>
             </div>
           )}
@@ -135,10 +133,7 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
         className="w-56"
       >
         <DropdownMenuLabel>
-          <p className="text-[13px] font-bold leading-tight text-ink">{displayName}</p>
-          <p className="mt-0.5 text-[11px] font-medium leading-tight text-n-3">
-            @{profile.username}
-          </p>
+          <p className="text-[13px] font-bold leading-tight text-ink">{handle}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>

@@ -17,7 +17,6 @@ const TIERS: ListTier[] = ['S', 'A', 'B', 'C', 'D', 'F']
 interface OwnerInfo {
   id: string
   username: string
-  display_name: string | null
   avatar_url: string | null
   cred_score: number
   is_pro: boolean
@@ -134,12 +133,10 @@ export function PublicListView({
           >
             <UserAvatar
               src={owner.avatar_url}
-              name={owner.display_name ?? owner.username}
+              name={owner.username}
               className="h-5 w-5"
             />
-            <span className="font-bold">
-              {owner.display_name ?? `@${owner.username}`}
-            </span>
+            <span className="font-bold">@{owner.username}</span>
             {owner.is_pro && <Badge variant="black">Pro</Badge>}
           </Link>
           <span className="inline-flex items-center gap-1">

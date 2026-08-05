@@ -17,8 +17,10 @@
 --     handle_new_user — the no-metadata fallback passes the new CHECK, and
 --     hostile/contract-violating/placeholder-shaped metadata gets the
 --     user_<8hex> FALLBACK profile without breaking the auth insert
---     (049/050), with display_name derived from the fallback, never the
---     rejected value (051).
+--     (049/050). Since the identity ruling (2026-08-05, migration 075) the
+--     trigger writes NO name at all, which is what retires R31/051: a
+--     rejected metadata value cannot be laundered into a name column that is
+--     never written.
 --   * Ordering: every privileged-context (postgres) test runs BEFORE any
 --     request.jwt.claims is set — set_config(..., true) persists to txn end,
 --     and auth.role() would then read 'authenticated', flipping the
@@ -145,14 +147,16 @@ select ok(
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
 
--- R31 (migration 051): the rejected metadata value must not resurface in
--- display_name either — pre-051 this row got display_name = 'evil-ai'
--- (laundered past the username validation; reproduced live in review).
+-- R31 (migration 051), superseded by the identity ruling (075): the rejected
+-- metadata value used to resurface in display_name ('evil-ai', laundered past
+-- the username validation; reproduced live in review). 075 stops the trigger
+-- writing a name at all, so the column is NULL — the strongest possible form
+-- of the R31 guard, and it also pins "no name is stored for a person".
 select is(
   (select display_name from profiles
    where id = '50000000-0000-4000-8000-000000000005'),
-  'user_50000000',
-  'rejected metadata username (evil-ai) does NOT reach display_name — it derives from the effective (fallback) username (R31, 051)');
+  null::text,
+  'handle_new_user writes NO name — nothing from signup metadata reaches profiles.display_name (075; supersedes R31/051)');
 
 -- R32 (migration 050): the placeholder shape is reserved — metadata matches
 -- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name

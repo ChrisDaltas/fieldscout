@@ -75,7 +75,7 @@ export function initialWizardDraft(): WizardDraft {
  * null while the draft is not submittable (no name, or no template chosen):
  * the invite/create step disables its button on null.
  *
- * `team_name` is omitted when blank — the RPC derives "<display name>'s Team"
+ * `team_name` is omitted when blank — the RPC derives "<username>'s Team"
  * (leagues-service treats ''/whitespace as absent).
  */
 export interface WizardCreateInput {

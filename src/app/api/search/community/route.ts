@@ -12,7 +12,6 @@ interface CommunityUserHit {
   type: 'user'
   id: string
   username: string
-  display_name: string | null
   avatar_url: string | null
 }
 
@@ -60,11 +59,12 @@ export async function GET(request: Request) {
     .order('like_count', { ascending: false })
     .limit(limit)
 
-  // Users (username or display_name match).
+  // Users — handle match only. FieldScout stores no name for a person
+  // (ruling 2026-08-05), so the handle is the only thing there is to match.
   const usersQuery = supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url')
-    .or(`username.ilike.${pattern},display_name.ilike.${pattern}`)
+    .select('id, username, avatar_url')
+    .ilike('username', pattern)
     .order('cred_score', { ascending: false })
     .limit(limit)
 
@@ -101,7 +101,6 @@ export async function GET(request: Request) {
     type: 'user',
     id: row.id,
     username: row.username,
-    display_name: row.display_name,
     avatar_url: row.avatar_url,
   }))
 
