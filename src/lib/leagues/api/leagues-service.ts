@@ -246,6 +246,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * R83 (batch-13; taken by L.B2.1 — leagues-service's first touch since the
+ * routing): `"__proto__"` can never become an ordinary own key via bracket
+ * assignment (the write goes through the prototype setter), so a
+ * `__proto__`-keyed entry in a settings partial silently VANISHED from the
+ * merge and the documented any-level unknown-key 400 answered 200. It is not
+ * a catalog key at any level — refuse the reserved names explicitly, pre-merge
+ * (the recorded "explicit reserved-key 400" arm; robust against any schema
+ * library's own prototype-pollution key handling). `Object.keys` sees the own
+ * key JSON.parse (request.json()) delivers.
+ */
+const RESERVED_SETTINGS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
+
+function findReservedKey(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const hit = findReservedKey(item)
+      if (hit) return hit
+    }
+    return null
+  }
+  if (!isPlainObject(value)) return null
+  for (const key of Object.keys(value)) {
+    if (RESERVED_SETTINGS_KEYS.has(key)) return key
+    const hit = findReservedKey(value[key])
+    if (hit) return hit
+  }
+  return null
+}
+
+/**
  * D71 (R79) merge-over-current: plain objects merge recursively; arrays,
  * scalars, and null REPLACE wholesale (null is a value — the catalog has
  * legitimately nullable fields; never RFC 7386 key-deletion); `undefined`
@@ -308,6 +338,13 @@ export async function patchLeague(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
+  // R83: reserved prototype-machinery keys refuse BEFORE any parse/merge —
+  // they cannot round-trip as ordinary own keys, so the unknown-key 400 the
+  // contract documents must be answered here.
+  const reserved = findReservedKey(rawBody)
+  if (reserved !== null) {
+    return { status: 400, body: { error: `"${reserved}" is not a valid settings key.` } }
+  }
   const parsed = patchLeagueInputSchema.safeParse(rawBody)
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
@@ -469,7 +506,7 @@ export async function getLeagueDetail(
     }
   }
 
-  const [membersResult, teamsResult] = await Promise.all([
+  const [membersResult, teamsResult, draftResult] = await Promise.all([
     supabase
       .from('league_members')
       .select(
@@ -482,6 +519,16 @@ export async function getLeagueDetail(
       .select('id, name, owner_id, status, created_at')
       .eq('league_id', leagueId)
       .order('created_at', { ascending: true }),
+    // L.B2.1: the active-draft summary (lobby/CTA/draft-bar data spine —
+    // `useActiveDraft` rides this). Non-mock only (§8.8 mocks are invisible
+    // here); the D95 partial unique guarantees at most one row.
+    supabase
+      .from('drafts')
+      .select('id, status, draft_type, started_at')
+      .eq('league_id', leagueId)
+      .eq('is_mock', false)
+      .in('status', ['scheduled', 'live', 'paused'])
+      .maybeSingle(),
   ])
   if (membersResult.error) {
     return { status: 500, body: { error: membersResult.error.message } }
@@ -489,6 +536,23 @@ export async function getLeagueDetail(
   if (teamsResult.error) {
     return { status: 500, body: { error: teamsResult.error.message } }
   }
+  if (draftResult.error) {
+    return { status: 500, body: { error: draftResult.error.message } }
+  }
+
+  // The scheduled instant comes from SETTINGS, not the drafts row — D95's
+  // single pre-start store (the ScheduleDraftGroup path); it is meaningful
+  // even when no drafts row exists yet (D94: the tick creates it at the
+  // instant), so the CTA countdown never dead-ends on a missing row.
+  const activeDraft = draftResult.data
+    ? {
+        id: draftResult.data.id,
+        status: draftResult.data.status,
+        draft_type: draftResult.data.draft_type,
+        started_at: draftResult.data.started_at,
+        scheduled_at: settings.draft.draft_scheduled_at,
+      }
+    : null
 
   const members = membersResult.data ?? []
   const myRole = members.find((m) => m.user_id === userId)?.role ?? null
@@ -515,6 +579,7 @@ export async function getLeagueDetail(
       members,
       teams: teamsResult.data ?? [],
       my_role: myRole,
+      active_draft: activeDraft,
     } as unknown as Json,
   }
 }

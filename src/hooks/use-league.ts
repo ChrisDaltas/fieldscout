@@ -59,6 +59,16 @@ export interface LeagueDetail {
     created_at: string | null
   }>
   my_role: string | null
+  /** L.B2.1: the active NON-MOCK draft summary (≤ 1 — the D95 partial
+   *  unique), or null. `scheduled_at` is settings.draft.draft_scheduled_at
+   *  (D95's single pre-start store). `useActiveDraft` rides this field. */
+  active_draft: {
+    id: string
+    status: 'scheduled' | 'live' | 'paused'
+    draft_type: string
+    started_at: string | null
+    scheduled_at: string | null
+  } | null
 }
 
 /** League detail (GET /api/leagues/[id]) — M1 task L.A1.12. */

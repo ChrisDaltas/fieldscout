@@ -63,6 +63,8 @@ function detail(over: {
     members: over.members ?? [],
     teams: over.teams ?? [],
     my_role: 'commissioner',
+    // L.B2.1 additive detail field — no drafts row in these pure fixtures.
+    active_draft: null,
   }
 }
 
