@@ -20,9 +20,13 @@
 --   as it is and keeps doing telemetry/cost attribution; this table is the
 --   quota ledger only.
 --
--- RESERVE-THEN-REFUND: the route claims a slot BEFORE the Claude call and
--- calls release_ai_generation if the call fails, so a failed generation does
--- not burn the user's quota while the claim still closes the race window.
+-- RESERVE-THEN-REFUND: the route claims a slot BEFORE the Claude call, which
+-- closes the race window. It refunds ONLY when Anthropic was never billed —
+-- a failure before dispatch, or a connection error that got no response. A
+-- truncated or unparseable response costs full price, so it keeps the slot;
+-- refunding billed calls would uncap the bill, since the UI offers Retry on
+-- every error. The counter therefore measures BILLED attempts, which is the
+-- only reading under which this table controls spend.
 --
 -- Migration checklist (delivery plan §8.1): additive-only; RLS + policy in the
 -- same migration as the table; the FK/policy lookup column is the leading
@@ -137,9 +141,9 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 4. release_ai_generation — refund a claimed slot
 -- ---------------------------------------------------------------------------
--- Called when the Claude call (or the work around it) fails, so an errored
--- generation costs the user nothing. Floors at 0 and no-ops when there is no
--- row for today, so a duplicate refund can never mint free quota.
+-- Called ONLY for failures that cost no money (see the header). Floors at 0
+-- and no-ops when there is no row for today, so a duplicate refund can never
+-- mint free quota.
 CREATE OR REPLACE FUNCTION public.release_ai_generation(
   p_user_id UUID,
   p_feature TEXT
