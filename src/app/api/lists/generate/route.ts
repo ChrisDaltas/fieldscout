@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 
-import { requireProUser } from '@/lib/auth/require-pro'
+import { requireUser } from '@/lib/auth/require-user'
 import { isClaudeConfigured } from '@/lib/claude/client'
-import { AI_LIST_GENERATION_DAILY_LIMIT } from '@/lib/claude/limits'
+import { aiListGenerationDailyLimit } from '@/lib/claude/limits'
 import { CLAUDE_GENERATION_MODEL } from '@/lib/claude/models'
 import {
   buildGenerationPrompt,
@@ -12,13 +12,20 @@ import {
   buildPlayerPacket,
   resolveGeneratedPlayers,
 } from '@/lib/claude/player-packet'
+import {
+  AI_GENERATION_FEATURE,
+  claimAiGeneration,
+  rateLimitMessage,
+  readAiGenerationQuota,
+  releaseAiGeneration,
+} from '@/lib/claude/quota'
 import { structuredClaudeCall } from '@/lib/claude/structured'
 import {
   renderStyleDescription,
   renderWeightedStyleDescription,
   styleByKey,
 } from '@/lib/claude/styles'
-import { countAiCallsToday, logAiCall } from '@/lib/claude/telemetry'
+import { logAiCall } from '@/lib/claude/telemetry'
 import { assertNoRealAnalystNames } from '@/lib/personas/blocklist'
 import {
   getPersonaContext,
@@ -35,13 +42,33 @@ import {
 
 /**
  * POST /api/lists/generate — "Generate with AI" (spec-ai-list-generation.md).
- * Pro-gated, rate-limited, structured-output, server-side ID resolution.
+ * Structured-output, server-side ID resolution, per-user daily rate limit.
  * Deliberately does NOT persist anything: the user saves explicitly via the
  * existing POST /api/lists + /api/lists/[id]/players flow.
+ *
+ * OPEN TO EVERY SIGNED-IN USER. The old requireProUser gate is gone: Pro is
+ * suspended and the 2026 launch is free-only (CLAUDE.md). What replaces it is
+ * a per-user daily cap — cost control on the Anthropic bill, applied equally
+ * to every account, with no upgrade path attached to it.
+ *
+ * GET returns the caller's remaining allowance so the modal can show it.
  */
 
+export async function GET() {
+  const gate = await requireUser()
+  if (!gate.ok) return gate.response
+
+  const quota = await readAiGenerationQuota(gate.user.id)
+  return NextResponse.json({
+    limit: quota.limit,
+    used: quota.used,
+    remaining: quota.remaining,
+    resets_at: quota.resetsAt,
+  })
+}
+
 export async function POST(request: Request) {
-  const gate = await requireProUser()
+  const gate = await requireUser()
   if (!gate.ok) return gate.response
   const { user, supabase } = gate
 
@@ -64,17 +91,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
   const { position, scoring, player_count } = parsed.data
-
-  const used = await countAiCallsToday(user.id, 'list_generation')
-  if (used >= AI_LIST_GENERATION_DAILY_LIMIT) {
-    return NextResponse.json(
-      {
-        error: `Daily limit reached (${AI_LIST_GENERATION_DAILY_LIMIT} AI generations per day). Try again tomorrow.`,
-        code: 'RATE_LIMITED',
-      },
-      { status: 429 },
-    )
-  }
 
   // Weighted ranking styles: dedupe by key (last entry wins).
   const weightByKey = new Map<StyleWeight['key'], StyleWeight>()
@@ -162,6 +178,10 @@ export async function POST(request: Request) {
   }
   const styleDescription = descriptionParts.join('\n\n')
 
+  // Tracks whether a quota slot is currently held, so every failure path below
+  // refunds exactly once and a path that never claimed refunds nothing.
+  let claimed = false
+
   try {
     const packet = await buildPlayerPacket(supabase, {
       position,
@@ -179,6 +199,41 @@ export async function POST(request: Request) {
       sourceRanks,
     })
 
+    // ---- Quota: claimed as late as possible, but strictly BEFORE the spend --
+    // Everything above this line is free (validation, our own DB reads), so a
+    // bad request or an unknown persona never costs the user a generation.
+    // The claim is an atomic check-and-increment in Postgres (migration 074),
+    // so two rapid double-submits cannot both get through.
+    const limit = aiListGenerationDailyLimit()
+    const claim = await claimAiGeneration(user.id, AI_GENERATION_FEATURE, limit)
+
+    if (!claim) {
+      // Quota bookkeeping is unavailable — fail closed rather than let
+      // uncapped spend through.
+      return NextResponse.json(
+        {
+          error: 'AI generation is briefly unavailable. Please try again in a minute.',
+          code: 'QUOTA_UNAVAILABLE',
+        },
+        { status: 503 },
+      )
+    }
+
+    if (!claim.allowed) {
+      return NextResponse.json(
+        {
+          error: rateLimitMessage(claim.limit),
+          code: 'RATE_LIMITED',
+          limit: claim.limit,
+          used: claim.used,
+          remaining: 0,
+          resets_at: claim.resetsAt,
+        },
+        { status: 429 },
+      )
+    }
+    claimed = true
+
     const { data, inputTokens, outputTokens, latencyMs } =
       await structuredClaudeCall({
         model: CLAUDE_GENERATION_MODEL,
@@ -191,7 +246,7 @@ export async function POST(request: Request) {
 
     await logAiCall({
       user_id: user.id,
-      feature: 'list_generation',
+      feature: AI_GENERATION_FEATURE,
       model: CLAUDE_GENERATION_MODEL,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
@@ -205,6 +260,9 @@ export async function POST(request: Request) {
     const players = resolvedAll.players.slice(0, player_count)
     const unresolved = resolvedAll.unresolved
     if (players.length === 0) {
+      // Nothing usable came back — the user got no list, so refund the slot.
+      await releaseAiGeneration(user.id, AI_GENERATION_FEATURE)
+      claimed = false
       return NextResponse.json(
         { error: 'Generation produced no resolvable players. Try again.' },
         { status: 500 },
@@ -222,10 +280,14 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(response)
   } catch (err) {
+    // A failed generation must not burn quota (the whole reason the claim is
+    // a reservation rather than a plain counter bump).
+    if (claimed) await releaseAiGeneration(user.id, AI_GENERATION_FEATURE)
+
     const message = err instanceof Error ? err.message : String(err)
     await logAiCall({
       user_id: user.id,
-      feature: 'list_generation',
+      feature: AI_GENERATION_FEATURE,
       model: CLAUDE_GENERATION_MODEL,
       success: false,
       error: message,

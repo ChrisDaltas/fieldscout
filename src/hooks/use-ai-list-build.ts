@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 
+import { aiQuotaKeys } from '@/hooks/use-ai-generation-quota'
 import {
   listsKeys,
   type ListPlayerWithPlayer,
@@ -109,25 +110,25 @@ async function runBuild(listId: string, qc: QueryClient) {
       return
     }
     if (!isActive(listId)) return
-    if (res.status === 402) {
-      store().fail(
-        listId,
-        'AI list generation is a FieldScout Pro feature. This list is still yours to fill in by hand.',
-        { upgradeRequired: true },
-      )
-      return
-    }
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null
-      store().fail(
-        listId,
-        typeof body?.error === 'string' ? body.error : 'Generation failed. Retry in a moment.',
-      )
+      const message =
+        typeof body?.error === 'string'
+          ? body.error
+          : 'Generation failed. Retry in a moment.'
+      // 429 = today's AI allowance is spent. Retrying can't help until the
+      // UTC day rolls over, so mark it blocked and let the banner say so.
+      store().fail(listId, message, { blocked: res.status === 429 })
+      // A 429 means the count moved (or was already at the cap) — refresh it
+      // so the modal's "N of M left today" is honest next time it opens.
+      void qc.invalidateQueries({ queryKey: aiQuotaKeys.all })
       return
     }
     result = (await res.json()) as GenerateListResponse
     if (!isActive(listId)) return
     store().setResult(listId, result)
+    // One generation just came off today's allowance.
+    void qc.invalidateQueries({ queryKey: aiQuotaKeys.all })
   }
 
   // The reveal writes into the detail cache the page's useList query owns —
