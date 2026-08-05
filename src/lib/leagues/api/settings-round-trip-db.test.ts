@@ -676,6 +676,33 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       expect(await getSettings(partialLeagueId)).toStrictEqual(before)
     })
 
+    it('R83: a "__proto__" key answers the documented unknown-key 400 — never a silent 200 no-op (top-level and nested), no write', async () => {
+      // JSON.parse builds the OWN-key shape the wire delivers (the route's
+      // request.json()); an object literal would hit the prototype setter
+      // and hide the key from the probe. Pre-fix, bracket assignment inside
+      // deepMergePatch dropped the entry the same way, so this PATCH
+      // answered 200 while claiming any-level unknown keys reject (the
+      // batch-13 R83 behavior/claim mismatch — recorded probe).
+      const topLevel = JSON.parse('{"settings":{"__proto__":{"median_game":true}}}') as Record<
+        string,
+        unknown
+      >
+      const top = await patchLeague(creatorClient, partialLeagueId, topLevel)
+      expect(top.status).toBe(400)
+      expect(JSON.stringify(top.body)).toContain('__proto__')
+
+      const nested = JSON.parse(
+        '{"settings":{"draft":{"__proto__":{"pick_timer_seconds":30}}}}',
+      ) as Record<string, unknown>
+      expect((await patchLeague(creatorClient, partialLeagueId, nested)).status).toBe(400)
+
+      // The sibling reserved names refuse through the same guard.
+      const ctor = JSON.parse('{"settings":{"constructor":{"x":1}}}') as Record<string, unknown>
+      expect((await patchLeague(creatorClient, partialLeagueId, ctor)).status).toBe(400)
+
+      expect(await getSettings(partialLeagueId)).toStrictEqual(before)
+    })
+
     it('a FULL object still merges to itself — the sanctioned full-object round-trip is unchanged', async () => {
       const composite = arithmeticEdge()
       composite.draft.draft_scheduled_at = '2026-09-03T00:00:00.000Z'
