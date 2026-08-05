@@ -7,6 +7,7 @@ import {
   type GuestBigBoardPlayer,
 } from '@/components/players/guest-big-board'
 import { Button } from '@/components/ui/button'
+import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
 // Curated top players for the guest preview big board. We look these up by
@@ -91,22 +92,28 @@ export default async function GuestHomePage() {
 
         <GuestBigBoard players={players} />
 
-        <section className="border-t border-ink pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-h6">Explore the community</h3>
-            <Link
-              href="/consensus"
-              className="text-sm font-bold text-accent hover:underline"
-            >
-              View consensus →
-            </Link>
-          </div>
-          <p className="mt-2 max-w-2xl text-sm text-n-3">
-            Public rankings, expert profiles, and weekly start or sit are open to
-            everyone. Sign up free when you want to save your work, follow rankers,
-            or start tracking accuracy.
-          </p>
-        </section>
+        {/* The community surfaces this section advertises (consensus, expert
+            profiles, start or sit) are release-gated out of the 2026 go-live
+            scope — the whole section goes with them so the landing page never
+            links a visitor into a 404. */}
+        {featureFlags.consensus && (
+          <section className="border-t border-ink pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-h6">Explore the community</h3>
+              <Link
+                href="/consensus"
+                className="text-sm font-bold text-accent hover:underline"
+              >
+                View consensus →
+              </Link>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm text-n-3">
+              Public rankings, expert profiles, and weekly start or sit are open to
+              everyone. Sign up free when you want to save your work, follow rankers,
+              or start tracking accuracy.
+            </p>
+          </section>
+        )}
       </div>
     </GuestShell>
   )

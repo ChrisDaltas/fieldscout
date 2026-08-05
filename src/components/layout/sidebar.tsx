@@ -21,20 +21,30 @@ interface NavEntry {
 // Primary nav per the redesign IA. Routes stay as-is during the reskin
 // (docs/redesign-plan.md D1/D2): "Players" points at the research table,
 // Community lives at /app/explore, My Stats at /app/stats.
+// Surfaces outside the 2026 go-live scope drop out with their own release
+// flag and come back as each one is reskinned.
 const PRIMARY: NavEntry[] = [
   { href: '/app', label: 'Home', icon: 'dashboard' },
-  {
-    href: '/app/big-board',
-    label: 'Big Board',
-    icon: 'layers',
-    matchPrefix: '/app/big-board',
-  },
-  {
-    href: '/app/weekly-ranks',
-    label: 'Rankings',
-    icon: 'level',
-    matchPrefix: '/app/weekly-ranks',
-  },
+  ...(featureFlags.bigBoard
+    ? [
+        {
+          href: '/app/big-board',
+          label: 'Big Board',
+          icon: 'layers',
+          matchPrefix: '/app/big-board',
+        } as NavEntry,
+      ]
+    : []),
+  ...(featureFlags.weeklyRanks
+    ? [
+        {
+          href: '/app/weekly-ranks',
+          label: 'Rankings',
+          icon: 'level',
+          matchPrefix: '/app/weekly-ranks',
+        } as NavEntry,
+      ]
+    : []),
   {
     href: '/app/research',
     label: 'Players',
@@ -45,12 +55,16 @@ const PRIMARY: NavEntry[] = [
 ]
 
 const MORE_ITEMS: NavEntry[] = [
-  {
-    href: '/app/explore',
-    label: 'Community',
-    icon: 'team',
-    matchPrefix: '/app/explore',
-  },
+  ...(featureFlags.community
+    ? [
+        {
+          href: '/app/explore',
+          label: 'Community',
+          icon: 'team',
+          matchPrefix: '/app/explore',
+        } as NavEntry,
+      ]
+    : []),
   {
     href: '/app/stats',
     label: 'My stats',

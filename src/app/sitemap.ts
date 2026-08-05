@@ -1,14 +1,24 @@
 import type { MetadataRoute } from 'next'
 
+import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
 /**
  * Sitemap for the public SEO surfaces (spec-ai-content-engine.md §SEO):
  * static pages, persona profiles, and published persona posts. Anon RLS
  * already scopes the queries to public content.
+ *
+ * The persona routes are release-gated out of the 2026 go-live scope and
+ * redirect home while the flag is off, so they drop out of the sitemap with
+ * it — we never advertise a URL that doesn't serve its own content.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  if (!featureFlags.personas) {
+    return [{ url: base, changeFrequency: 'daily', priority: 1 }]
+  }
+
   const supabase = await createServerClient()
 
   const [{ data: personas }, { data: posts }] = await Promise.all([

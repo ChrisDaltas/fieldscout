@@ -21,6 +21,30 @@ export const featureFlags = {
   leagues: enabled(process.env.NEXT_PUBLIC_FLAG_LEAGUES),
   /** Direct messages (rail panel) — mock-data UI, no backend yet. */
   messages: enabled(process.env.NEXT_PUBLIC_FLAG_MESSAGES),
+
+  // ---------------------------------------------------------------------
+  // 2026 go-live scope (CLAUDE.md → Active Builds). The soft launch ships
+  // Lists + Stats/player research + AI stat lists only. Everything below is
+  // built but not reskinned yet, so it stays out of the deployed app and
+  // comes back one flag at a time as each surface lands in the new design
+  // language. One flag per surface, deliberately — a single blunt "launch"
+  // flag couldn't release them independently.
+  // ---------------------------------------------------------------------
+
+  /** Pre-draft big board (/app/big-board + the public /u/[username]/big-board). */
+  bigBoard: enabled(process.env.NEXT_PUBLIC_FLAG_BIG_BOARD),
+  /** Weekly rankings (/app/weekly-ranks). */
+  weeklyRanks: enabled(process.env.NEXT_PUBLIC_FLAG_WEEKLY_RANKS),
+  /** Public cred-weighted consensus rankings (/consensus). */
+  consensus: enabled(process.env.NEXT_PUBLIC_FLAG_CONSENSUS),
+  /** Community feed (/app/explore) — social/user-generated content. */
+  community: enabled(process.env.NEXT_PUBLIC_FLAG_COMMUNITY),
+  /** Start or sit questions (/app/start-or-sit). */
+  startOrSit: enabled(process.env.NEXT_PUBLIC_FLAG_START_OR_SIT),
+  /** AI expert personas — public profiles and posts (/personas). */
+  personas: enabled(process.env.NEXT_PUBLIC_FLAG_PERSONAS),
+  /** Fantasy teams (/app/teams). */
+  teams: enabled(process.env.NEXT_PUBLIC_FLAG_TEAMS),
 } as const
 
 export type FeatureFlag = keyof typeof featureFlags
