@@ -14,7 +14,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 RESET ROLE;
 
-SELECT plan(4);
+SELECT plan(5);
 
 -- 1. Witness: the seven C15 functions exist and are still SECURITY DEFINER.
 --    Guards test 4 against a "fix" that drops SECURITY DEFINER instead of
@@ -31,18 +31,33 @@ SELECT is_empty(
      ) $$,
   'the seven C15 functions exist and are SECURITY DEFINER');
 
--- 2. The seven carry exactly the 048 pin (public, pg_temp) — falsifiable
---    against a partial 048 revert or a proconfig typo.
+-- 2. SIX of the seven carry exactly the 048 pin (public, pg_temp) —
+--    falsifiable against a partial 048 revert or a proconfig typo.
+--    handle_new_user is deliberately EXCLUDED here and pinned at its own
+--    stricter form in test 2b: migration 073 moved it to the spec form ''
+--    (+ full schema qualification) because GoTrue's minimal search_path made
+--    the unqualified body fail on every real Auth signup. Splitting the
+--    assertion keeps both forms pinned exactly, rather than loosening this
+--    one to "any value" (test 4 already owns the any-value floor).
 SELECT is_empty(
   $$ SELECT p.proname::text
      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public'
-       AND p.proname IN ('handle_new_user', 'update_follow_counts',
+       AND p.proname IN ('update_follow_counts',
                          'update_list_player_count', 'update_tag_use_count',
                          'update_expert_follower_count', 'update_list_like_count',
                          'reorder_list_players')
        AND NOT (COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=public, pg_temp']) $$,
-  'all seven C15 functions carry SET search_path = public, pg_temp');
+  'the six legacy-convention C15 functions carry SET search_path = public, pg_temp');
+
+-- 2b. handle_new_user carries the SPEC form '' (073/074). Pinned exactly, so
+--     a revert to the unqualified `public, pg_temp` body — which is what broke
+--     production signups — fails here loudly instead of passing test 4's floor.
+SELECT ok(
+  (SELECT COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']
+     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'handle_new_user'),
+  'handle_new_user carries SET search_path = '''' (073 — GoTrue signup fix)');
 
 -- 3. Non-vacuity: public holds a meaningful SECURITY DEFINER population, so
 --    test 4's empty result means "all pinned", never "nothing matched".
