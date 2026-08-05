@@ -1330,6 +1330,17 @@ Proofs (shown): fresh `db reset` 001–070 · `test:db` 25 files/**1538**/PASS (
 
 ---
 
+## Review findings — 2026-08-05 (M2 batch 8)
+
+**Reviewer batch (adversarial review of PR #83 — L.B1.7 migration 072 completion → `league_rosters` + `in_season` + `set_team_autodraft`, `main...feat/M2-L.B1.7-completion-rosters`). VERDICT: CLEAN — two nits, both recorded here and routed; no fix cycle. Reviewer independently reproduced the break probe (exactly 026 tests 29/30/31/32/34/37/63 RED via a live-DB function edit, tree untouched) and re-ran the full proof chain green (27 files/1726 pgTAP · vitest 44/732 · type-check clean).**
+
+- **R153 · nit · 072 `set_team_autodraft` — no `action_id` arm (standing rule 6) — ACCEPTED AS RECORDED LATITUDE** — the toggle is idempotent by value (a replay is the D63 no-op, pinned in 026); no row is minted, so the R149 double-mint class does not apply. D111(5) records the deviation + rationale. **Routed:** L.B2.2's route layer re-confirms a double-submitted toggle round-trips as `changed=false` (read-list line added below).
+- **R154 · nit · 072 toggle's conditional drafts-row FOR UPDATE — no held-lock <50ms assertion in a stack vitest (rule 6 "per RPC family")** — the hold is one member UPDATE + one chat INSERT (minimal risk). **Routed:** fold a held-lock assertion into L.B2.2's autodraft-route stack vitest when the route lands.
+
+*(Both routed items are carried on the tasks-M2 §6 L.B2.2 read-list per R51 findability — added in this same commit.)*
+
+---
+
 ## Review findings — 2026-08-04 (M2 batch 7)
 
 **Reviewer batch (adversarial review of PR #82 — L.B1.6 migration 071 Mock Draft Mode, `main...feat/M2-L.B1.6-mock-draft`). VERDICT: FIX-THEN-MERGE — one should-fix, three nits; resolution on the SAME branch per house precedent. Record kept deliberately minimal (the R144 lesson).**
