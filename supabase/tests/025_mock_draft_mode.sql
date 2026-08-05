@@ -941,10 +941,10 @@ select is(
   (select weeks from mk_before),
   'zero side effects: league_weeks unchanged');
 select is(
-  (select count(*) from pg_tables
-   where schemaname = 'public' and tablename = 'league_rosters'),
+  (select count(*) from league_rosters
+   where league_id = 'b7000000-0000-4000-8000-0000000000c1'),
   0::bigint,
-  'zero side effects: league_rosters cannot have been written — the table does not exist until 072/L.B1.7, whose completion arm must keep the mock bypass (re-pinned there from the completion side)');
+  'zero side effects: ZERO league_rosters rows after the completed mock — the 072/L.B1.7 completion arm''s mock bypass (this cell was a table-absence pin until 072 created the table and re-pinned it, as scheduled)');
 select is(
   (select count(*) from league_lists where league_id = 'b7000000-0000-4000-8000-0000000000c1'),
   (select llists from mk_before),

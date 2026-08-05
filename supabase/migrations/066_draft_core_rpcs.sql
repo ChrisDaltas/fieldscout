@@ -127,11 +127,16 @@
 --        (4) ADVANCE: next pick_number/round; on_clock via
 --            draft_team_for_pick; new deadline (0 ⇒ NULL); COMPLETION when
 --            live (non-undone) picks == total_rounds × team_count →
---            status='complete' + completed_at (**mock-sufficient here:
---            the league transition + league_rosters land in L.B1.7/072 —
---            cross-referenced in both banners; pgTAP 020 pins that the
---            league still reads 'drafting' after completion, a pin 072
---            deliberately flips**);
+--            status='complete' + completed_at (**amended in place by
+--            L.B1.7/072 — F12: a NON-mock completion now, in the SAME
+--            txn, populates league_rosters from the non-undone picks
+--            (acquisition_type='draft', cost NULL — D88) and moves the
+--            league to 'in_season' (§8.5 step 6; the D43 guard holds —
+--            the snapshot has existed since draft_start; pinned in 026).
+--            The MOCK branch bypasses all of it (§8.8 zero side effects
+--            — re-pinned from the completion side in 025/026). pgTAP
+--            020's "league stays 'drafting'" pin flipped with it, as its
+--            own text promised**);
 --        (5) RETURN the new authoritative state: {draft, pick} (D92's
 --            state_version = drafts.updated_at rides along).
 --      Removal race note: turn truth is read AFTER the draft-row lock from
@@ -780,10 +785,6 @@ BEGIN
   WHERE p.draft_id = p_draft_id AND p.is_undone = FALSE;
 
   IF v_live_picks >= v_draft.total_rounds * v_team_count THEN
-    -- Completion is mock-sufficient in this task: the league transition to
-    -- in_season + league_rosters population land in L.B1.7/072 (banner
-    -- cross-reference; pgTAP 020 pins the league still 'drafting' here —
-    -- a pin 072 deliberately flips).
     UPDATE public.drafts SET
       status           = 'complete',
       completed_at     = now(),
@@ -792,6 +793,36 @@ BEGIN
       updated_at       = now()
     WHERE id = p_draft_id
     RETURNING * INTO v_draft;
+
+    -- COMPLETION ARM (amended in place by L.B1.7/072 — F12; §8.5 step 6,
+    -- §12.7, D88). NON-mock only: the §8.8 zero-side-effect contract keeps
+    -- a mock at drafts.complete + recap — no rosters, no league
+    -- transition (re-pinned from this side in 025/026). In THIS txn,
+    -- under the caller's drafts-row lock (drafts → leagues — see 072's
+    -- banner lock analysis):
+    --   * league_rosters from the draft's non-undone picks
+    --     (acquisition_type='draft'; acquisition_cost NULL for snake —
+    --     D88; M3's auction writes price). slot_key/IR columns stay NULL
+    --     (M4's). The §12.7 UNIQUE(league_id, player_id) is the
+    --     exclusivity backstop — a duplicate here means engine corruption
+    --     and the 23505 aborts the completion LOUDLY (nothing to convert:
+    --     uniq_draft_player_live makes it unreachable via any RPC path).
+    --   * leagues.status = 'in_season' (§8.5 step 6). The D43 snapshot
+    --     guard fires on this UPDATE and holds — the snapshot has existed
+    --     since draft_start (pinned in 026). 070's status-column trigger
+    --     broadcasts the flip on league:<id> (home hero / draft bar).
+    IF NOT v_draft.is_mock THEN
+      INSERT INTO public.league_rosters
+        (league_id, team_id, player_id, acquisition_type, acquisition_cost)
+      SELECT p.league_id, p.team_id, p.player_id, 'draft', NULL
+      FROM public.draft_picks p
+      WHERE p.draft_id = p_draft_id
+        AND p.is_undone = FALSE;
+
+      UPDATE public.leagues
+      SET status = 'in_season', updated_at = now()
+      WHERE id = v_draft.league_id;
+    END IF;
   ELSE
     v_next := v_draft.current_pick_number + 1;
     UPDATE public.drafts SET

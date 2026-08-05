@@ -253,6 +253,7 @@ GATE    everything → L.B7.1
 
 ### L.B2.2 — Pick/queue/autodraft API (discharges F33)
 > Read spec §15.2 (pick/queue/autodraft), §15.5 (queue/from-list), §15.6 (optimistic queue ONLY — never picks), this doc D92/D93. Depends L.B1.3 + L.B1.7 (+ L.B4.1 for from-list).
+> Read ALSO PROGRESS **M2 batch 8 (R153/R154)**: `set_team_autodraft` has no `action_id` arm (recorded latitude, D111(5) — idempotent by value); the autodraft route's stack vitest must (a) re-confirm a double-submitted toggle round-trips as `changed=false` (R153) and (b) carry the toggle family's held-lock <50ms assertion (R154 — rule 6 "per RPC family", not landed with 072).
 >
 > 1. `POST …/draft/pick` (action_id minted per submit — the D68(1) stamping pattern), `POST …/draft/queue` (upsert own queue; reorder), `POST …/draft/queue/from-list/[listId]` (load attached list in order, skip drafted, append/replace per §8.9), `POST …/draft/autodraft` (self toggle → L.B1.7 RPC).
 > 2. **F33 discharge:** `members-service.ts` `patchMember` — the `AUTODRAFT_DEFERRED_MESSAGE` branch (members-service.ts:127–132) becomes the real commish toggle via the same RPC; the named-message pin flips to a real-toggle pin; **flip F33 ✅** with pointers.
