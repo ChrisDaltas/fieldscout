@@ -163,7 +163,38 @@ Every version corresponds to a real repo filename. Backup of the pre-repair
 table: `prod-history-backup-20260805.tsv` (in the session scratchpad) — the
 repair is reversible by inverting the mapping.
 
-### Step 2 — push the gap (037–040, 048–072) — PENDING A RULING
+### Step 1b — migration 037 applied 2026-08-05 ⚠️ MISLABELLED
+
+`037_explicit_api_grants` was applied through the management API. It is a no-op
+on production (only re-grants privileges the legacy grant model already holds).
+It was recorded under an auto-generated timestamp version, and the follow-up
+`UPDATE` to renumber it to `037` was refused before it could run — **the
+timestamp row still needs renumbering to `037`.**
+
+### Step 1c — migration 076 authored
+
+`076_handle_new_user_no_name_with_guards.sql` is the single authoritative
+definition of the signup trigger, and must be the last migration to touch it.
+The function has been redefined four times by changes that each knew only part
+of the intent (049/050/051 → 073 hotfix → 075 hotfix), and because 048–051 sort
+*after* the hotfixes, replaying the chain re-introduces name-writing.
+
+076 ends that: **no name stored** (the identity ruling) **plus the restored
+049/050 username guards**, with `search_path = ''` kept from 073.
+
+Verified in the rehearsal database on top of the full post-push chain:
+
+| signup metadata | username | display_name |
+|---|---|---|
+| *(none)* | `user_e1000000` | NULL ✓ |
+| `evil-ai` + `full_name` | `user_e2000000` | NULL ✓ (both refused/ignored) |
+| `user_deadbeef` | `user_e3000000` | NULL ✓ |
+| `freshhandle` + `full_name: Jane Smith` | `freshhandle` | NULL ✓ |
+
+Catalog state after 076: `search_path=""`, 049 guard present, 050 guard
+present, `display_name` not written.
+
+### Step 2 — push the gap (038–040, 048–072, 076)
 
 Requires `--include-all`, because `073`/`074` are recorded ahead of the gap and
 the CLI refuses out-of-order migrations by default:
