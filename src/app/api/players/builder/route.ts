@@ -109,6 +109,12 @@ export async function GET(request: Request) {
     // Filter out retirees / free agents — Sleeper still flags these as
     // active=true, so the reliable signal is having a current team.
     .not('team', 'is', null)
+    // Order by relevance BEFORE the limit truncates: the pool is ~1000+
+    // players, so an alphabetical fetch order silently drops anyone whose
+    // first name sorts past `limit` (Justin Herbert et al.) no matter how
+    // good they are. ADP breaks ties among the projection-less tail.
+    .order(projectionColumn, { ascending: false, nullsFirst: false })
+    .order('adp', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true })
     .limit(limit)
 
