@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -10,6 +10,7 @@ export default function StartOrSitGate({
 }: {
   children: React.ReactNode
 }) {
-  if (!featureFlags.startOrSit) notFound()
+  if (!featureFlags.startOrSit) redirect('/app')
   return <>{children}</>
 }
+

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -10,6 +10,7 @@ export default function WeeklyRanksGate({
 }: {
   children: React.ReactNode
 }) {
-  if (!featureFlags.weeklyRanks) notFound()
+  if (!featureFlags.weeklyRanks) redirect('/app')
   return <>{children}</>
 }
+

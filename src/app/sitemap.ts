@@ -9,8 +9,8 @@ import { createServerClient } from '@/lib/supabase/server'
  * already scopes the queries to public content.
  *
  * The persona routes are release-gated out of the 2026 go-live scope and
- * 404 while the flag is off, so they drop out of the sitemap with it — we
- * never advertise a URL that answers 404.
+ * redirect home while the flag is off, so they drop out of the sitemap with
+ * it — we never advertise a URL that doesn't serve its own content.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'

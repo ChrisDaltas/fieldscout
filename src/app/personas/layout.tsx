@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -11,6 +11,7 @@ export default function PersonasGate({
 }: {
   children: React.ReactNode
 }) {
-  if (!featureFlags.personas) notFound()
+  if (!featureFlags.personas) redirect('/')
   return <>{children}</>
 }
+

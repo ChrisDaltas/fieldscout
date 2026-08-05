@@ -57,13 +57,34 @@ describe('launch-scope release flags', () => {
 
 describe('gated route layouts', () => {
   for (const [file, flag] of GATES) {
-    it(`${file} 404s on featureFlags.${flag}`, () => {
+    it(`${file} redirects on featureFlags.${flag}`, () => {
       const source = readFileSync(path.resolve(process.cwd(), file), 'utf8')
       expect(source).toContain(`featureFlags.${flag}`)
-      // notFound(), never redirect() — a gated surface must be
-      // indistinguishable from one that doesn't exist.
-      expect(source).toContain('notFound()')
-      expect(source).not.toContain('redirect(')
+      // redirect(), never notFound(). These routes shipped before the gate,
+      // so real users hold bookmarks and history entries into them; a dead
+      // end reads as a broken site during the feedback year. It also matches
+      // the pre-existing leagues gate.
+      //
+      // notFound() was tried first and rejected on evidence: verified against
+      // a production build, an explicit notFound() from these routes renders
+      // Next's bare error document (<html id="__next_error__">, no
+      // stylesheet, no nav, no way back) rather than src/app/not-found.tsx —
+      // at both layout and page level, static and force-dynamic.
+      expect(source).toContain('redirect(')
+      expect(source).not.toContain('notFound()')
+    })
+  }
+})
+
+describe('404 boundaries exist for genuinely missing routes', () => {
+  // Independent of the gates: before these, any bad URL rendered Next's
+  // unbranded default. Verified in a production build — /nonexistent-page
+  // returns 404 with the FieldScout wordmark and a link home.
+  for (const file of ['src/app/not-found.tsx', 'src/app/app/not-found.tsx']) {
+    it(`${file} is branded and offers a way back`, () => {
+      const source = readFileSync(path.resolve(process.cwd(), file), 'utf8')
+      expect(source).toContain('export default function')
+      expect(source).toMatch(/href="\/(app)?"/)
     })
   }
 })

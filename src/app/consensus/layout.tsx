@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -11,6 +11,6 @@ export default function ConsensusGate({
 }: {
   children: React.ReactNode
 }) {
-  if (!featureFlags.consensus) notFound()
+  if (!featureFlags.consensus) redirect('/')
   return <>{children}</>
 }
