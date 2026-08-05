@@ -34,7 +34,9 @@ function useHomePlayers() {
   return useQuery({
     queryKey: ['home', 'players', 'ppr'],
     queryFn: () =>
-      fetch('/api/players/builder?scoring=ppr&limit=1500').then(
+      // No limit: this card ranks by a dimension orthogonal to the query's
+      // ordering, so a truncated fetch would hide legitimate leaders.
+      fetch('/api/players/builder?scoring=ppr').then(
         (res) => res.json() as Promise<HomePlayersResponse>,
       ),
     staleTime: 5 * 60 * 1000,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useDraggable } from '@dnd-kit/core'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PlayerRow, type PlayerRowStat } from '@/components/players/player-row'
 import { PositionBadge } from '@/components/players/position-badge'
@@ -98,9 +98,10 @@ export function PlayerSidebar({
     setIsLoading(true)
     setError(null)
 
-    // Full active pool (~1000). The sidebar search filters client-side over
-    // this fetch, so any smaller limit makes the excluded players unfindable.
-    const params = new URLSearchParams({ scoring, limit: '1500' })
+    // No limit — the whole active pool. Search here filters client-side over
+    // whatever was fetched, so a bound makes the excluded players unfindable
+    // no matter what the user types.
+    const params = new URLSearchParams({ scoring })
     const effectivePositions =
       lockedPositions && lockedPositions.length > 0
         ? Array.from(lockedPositions)
@@ -128,13 +129,21 @@ export function PlayerSidebar({
     return () => controller.abort()
   }, [scoring, positions, team, lockedPositions])
 
+  // Debounced so each keystroke doesn't re-filter and re-render the whole
+  // pool (~1100 rows, each a dnd-kit draggable). Matches the spreadsheet.
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 200)
+    return () => clearTimeout(t)
+  }, [query])
+
   const filtered = useMemo(() => {
     let result = players
-    const q = query.trim().toLowerCase()
+    const q = debouncedQuery.trim().toLowerCase()
     if (q) result = result.filter((p) => p.full_name.toLowerCase().includes(q))
     if (!showAdded) result = result.filter((p) => !added.has(p.id))
     return result
-  }, [players, query, showAdded, added])
+  }, [players, debouncedQuery, showAdded, added])
 
   const togglePosition = (pos: Position) => {
     setPositions((cur) => {
@@ -305,7 +314,7 @@ export function PlayerSidebar({
         )}
 
         <p className="fs-num p-3 text-center text-[10px] font-semibold text-n-3">
-          Showing {filtered.length} of top {players.length} players
+          Showing {filtered.length} of {players.length} players
         </p>
       </div>
     </aside>
@@ -369,7 +378,9 @@ interface SidebarPlayerRowProps {
  * `kind: 'players'` payload; the moving preview is the AppDndContext
  * DragOverlay chip, so the card itself never leaves the panel.
  */
-function SidebarPlayerCard({
+// Memoized: `filtered` depends on `added`, so one add-click would otherwise
+// re-render every row in the pool and re-run each useDraggable.
+const SidebarPlayerCard = memo(function SidebarPlayerCard({
   player,
   added,
   onAdd,
@@ -475,7 +486,7 @@ function SidebarPlayerCard({
       </button>
     </li>
   )
-}
+})
 
 /** Stat cells for the row layout — zeros/nulls render as an em dash so the
  *  mono columns stay aligned across rows. */
@@ -490,7 +501,12 @@ function rowStats(player: BuilderPlayer, statCols: StatColumnPrefs): PlayerRowSt
   return stats
 }
 
-function SidebarPlayerRow({ player, added, statCols, onAdd }: SidebarPlayerRowProps) {
+const SidebarPlayerRow = memo(function SidebarPlayerRow({
+  player,
+  added,
+  statCols,
+  onAdd,
+}: SidebarPlayerRowProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `sidebar:${player.id}`,
     data: { kind: 'sidebar-player', player },
@@ -519,9 +535,9 @@ function SidebarPlayerRow({ player, added, statCols, onAdd }: SidebarPlayerRowPr
       />
     </li>
   )
-}
+})
 
-function SidebarPlayerRowStatic({
+const SidebarPlayerRowStatic = memo(function SidebarPlayerRowStatic({
   player,
   added,
   statCols,
@@ -539,7 +555,7 @@ function SidebarPlayerRowStatic({
       />
     </li>
   )
-}
+})
 
 function AddButton({
   player,

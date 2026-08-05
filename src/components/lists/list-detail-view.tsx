@@ -1095,9 +1095,9 @@ function AddPlayerCombobox({
     if (!open || fetchedRef.current) return
     fetchedRef.current = true
     setLoading(true)
-    // Full active pool — this field's search filters client-side over the
-    // fetched pool, so a smaller limit makes excluded players unfindable.
-    const params = new URLSearchParams({ scoring: 'ppr', limit: '1500' })
+    // No limit — the whole active pool. This field's search filters
+    // client-side, so a bound makes the excluded players unfindable.
+    const params = new URLSearchParams({ scoring: 'ppr' })
     const positions = expandPositionFilter(positionFilter)
     if (positions) params.set('positions', positions.join(','))
     fetch(`/api/players/builder?${params}`)

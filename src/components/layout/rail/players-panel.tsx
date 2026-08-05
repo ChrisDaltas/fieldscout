@@ -53,7 +53,11 @@ function useRailPlayers(query: string, position: RailPosition | null) {
     queryKey: ['rail-players', query, position],
     queryFn: async (): Promise<RailPlayer[]> => {
       if (query) {
-        const params = new URLSearchParams({ q: query, limit: '30' })
+        // 50 = the search route's ceiling. Search is server-side and
+        // relevance-ordered, so this shows the top matches; a more specific
+        // query narrows them. (Browse below is deliberately bounded too —
+        // this is a narrow shelf, and typing is the way to reach anyone.)
+        const params = new URLSearchParams({ q: query, limit: '50' })
         if (position) params.set('position', position)
         const res = await fetch(`/api/players/search?${params}`)
         if (!res.ok) throw new Error(`Search failed (${res.status})`)
@@ -68,6 +72,9 @@ function useRailPlayers(query: string, position: RailPosition | null) {
           projected_pts: null,
         }))
       }
+      // Deliberately bounded, not an inherited default: this is a browse
+      // shelf in a narrow rail. Nobody is hidden — typing runs a server-side
+      // search over the whole pool.
       const params = new URLSearchParams({ scoring: 'ppr', limit: '120' })
       if (position) params.set('positions', position)
       const res = await fetch(`/api/players/builder?${params}`)
@@ -180,9 +187,12 @@ export function PlayersPanel({ onClose }: PlayersPanelProps) {
 
   const { data: players = [], isLoading, isError } = useRailPlayers(debounced, position)
 
-  const rows = players.filter(
-    (p) => mockIsRostered(p.id) === (pool === 'rostered'),
-  )
+  // The rostered/free-agent split is mock data keyed off a name hash. Applying
+  // it to search results silently hides ~half of what the user searched for,
+  // so searching bypasses it entirely (and the chips disable to say so).
+  const rows = debounced
+    ? players
+    : players.filter((p) => mockIsRostered(p.id) === (pool === 'rostered'))
 
   // TODO(live-draft): replace stub with the real FAAB bid flow.
   const bidStub = (player: RailPlayer) =>
@@ -224,13 +234,15 @@ export function PlayersPanel({ onClose }: PlayersPanelProps) {
 
         <div className="flex items-center gap-1">
           <FilterChip
-            pressed={pool === 'rostered'}
+            pressed={!debounced && pool === 'rostered'}
+            disabled={Boolean(debounced)}
             onPressedChange={() => setPool('rostered')}
           >
             On rosters
           </FilterChip>
           <FilterChip
-            pressed={pool === 'free-agents'}
+            pressed={!debounced && pool === 'free-agents'}
+            disabled={Boolean(debounced)}
             onPressedChange={() => setPool('free-agents')}
           >
             Free agents
@@ -266,11 +278,15 @@ export function PlayersPanel({ onClose }: PlayersPanelProps) {
 
         {!isLoading && !isError && rows.length === 0 && (
           <div className="flex flex-col items-center gap-1.5 px-4 py-12 text-center">
-            <Badge variant="stroke">
-              {pool === 'rostered' ? 'On rosters' : 'Free agents'}
-            </Badge>
+            {!debounced && (
+              <Badge variant="stroke">
+                {pool === 'rostered' ? 'On rosters' : 'Free agents'}
+              </Badge>
+            )}
             <p className="text-[11px] font-medium text-n-3">
-              No players match. Adjust the filters or search.
+              {debounced
+                ? 'No players match that search.'
+                : 'No players match. Adjust the filters or search.'}
             </p>
           </div>
         )}
