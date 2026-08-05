@@ -1,3 +1,4 @@
+import { isPlaceholderUsername } from '@/lib/auth/username-contract'
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
@@ -20,8 +21,14 @@ export async function GET(request: Request) {
           .eq('id', user.id)
           .single()
 
-        // If username starts with 'user_' (auto-generated), redirect to username selection
-        if (profile?.username?.startsWith('user_')) {
+        // Not chosen yet -> selection. Anchored via the shared contract: a
+        // startsWith('user_') check also matches a legitimately chosen name
+        // like `user_bob` and would trap that account here forever.
+        // This is a convenience redirect only — /app/layout.tsx enforces the
+        // same rule, so a user who never reaches this callback (it bounces to
+        // /login when there is no code to exchange, and they sign in with a
+        // password instead) is still asked.
+        if (isPlaceholderUsername(profile?.username)) {
           return NextResponse.redirect(`${origin}/username`)
         }
       }
