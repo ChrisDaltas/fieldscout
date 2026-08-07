@@ -1,0 +1,49 @@
+name: CI
+
+# The fast lane: runs on every PR and on main. Deliberately does NOT run
+#   - `next build`  — Vercel already builds every PR and every push to main.
+#   - `test:gate*`  — the milestone gates internally re-run `db reset`,
+#                     `test:db`, and a vitest subset. They are capstones, run
+#                     by hand at milestone close; in CI they would execute
+#                     pgTAP and vitest a second and third time.
+# Database tests live in db.yml and only run when database files change.
+# Net effect: every check runs exactly once.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to a PR cancels the previous run rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: types · lint · unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Run all three even if an earlier one fails, so a PR gets every problem
+      # in one pass instead of one per push.
+      - name: Type check
+        id: types
+        run: npm run type-check
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: npm test

@@ -263,6 +263,42 @@ npm run test:e2e         # Run Playwright E2E tests
 - **Never commit `.env.local`** — it contains secrets. Use `.env.example` as a template.
 - **Always run `npm run type-check`** before committing to catch type errors.
 - **Migrations are version controlled** in `supabase/migrations/`. Create new migrations with `npx supabase migration new <name>`.
+
+### Migration discipline (both rules were learned the hard way — 2026-08-05)
+
+- **Migrations reach production via `npx supabase db push` — never by hand.**
+  Applying SQL through the database API or dashboard records an
+  auto-generated version number that matches no file, and the next `db push`
+  then refuses to run. Production silently accumulated **36 unapplied
+  migrations** this way, and unpicking it took a dedicated runbook. If a
+  hotfix feels too urgent for a migration file, it is not: write the file,
+  push it.
+- **Author a `CREATE OR REPLACE` hotfix against the HEAD of the migration
+  chain, never against the body that happens to be deployed.** Migration 073
+  fixed a live signup outage by replacing `handle_new_user` with the deployed
+  body plus a `search_path` pin — and silently reverted the username guards
+  that 049/050/051 had added, because production had never received them.
+  Read the newest migration that defines the function, not `pg_get_functiondef`.
+  *(If production and the repo have diverged, reconcile first — see
+  `docs/specs/runbook-hosted-migration-reconciliation.md`.)*
+
+### Never let "nothing happened" mean "it worked"
+
+Four separate production bugs in one day shared this single shape. When an
+operation reports no work done, prove why before treating it as success:
+
+- An `UPDATE` matching **0 rows** meant "username already set" — it actually
+  meant the profile row did not exist, and the user's chosen handle was
+  silently discarded (twice).
+- A query returning **exactly 1000 rows** looked like the whole table — it was
+  PostgREST's cap, and 86 players were unreachable no matter what a user typed.
+- A **failed API call** was refunded as if free — the provider had already
+  billed it, so a retry loop could spend without limit.
+- A **database error** returned HTTP 200 with an empty list, rendering an empty
+  state instead of an error.
+
+Prefer loud failure over a plausible-looking empty result, and assert the
+*reason* for emptiness rather than inferring it.
 - **Player data is read-only.** The `players` and `player_stats` tables are populated by sync scripts only. Never insert/update player data from the application.
 - **Use optimistic updates** for like/unlike, follow/unfollow, and list reordering to keep the UI snappy.
 - **All public-facing pages must be server-rendered** for SEO (profiles, consensus rankings, public lists).
