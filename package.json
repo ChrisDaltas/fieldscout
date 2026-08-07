@@ -28,6 +28,8 @@
     "ingest:personas": "npx tsx scripts/ingest-persona-content.ts",
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/node_modules/**' --exclude '**/*-db.test.ts' --exclude '**/m1-gate/**'",
+    "test:stack": "vitest run 'db.test' 'm1-gate'",
     "test:gate": "vitest run src/lib/leagues/gate",
     "test:gate:m1": "bash scripts/gate-m1.sh",
     "test:db": "supabase test db"
