@@ -27,7 +27,9 @@ Extends Supabase `auth.users`. Created automatically via a database trigger on s
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT UNIQUE NOT NULL,
-  display_name TEXT,                          -- RETIRED (ruling 2026-08-05, migration 075). Never written, never read. FieldScout stores NO name for a person; the username is the identity. Kept as an inert column so the 075 deploy is order-safe — do not reintroduce a name field.
+  -- display_name: GONE. Retired by migration 075 (ruling 2026-08-05), DROPPED by
+  -- migration 077. FieldScout stores NO name for a person; the username is the
+  -- identity. Do not reintroduce a name field.
   avatar_url TEXT,
   bio TEXT CHECK (char_length(bio) <= 280),
   cred_score NUMERIC DEFAULT 0,

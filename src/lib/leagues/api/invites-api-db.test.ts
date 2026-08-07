@@ -288,9 +288,10 @@ describe('invite creation + the D37 email seam', () => {
       status: 'ok',
       league_name: 'vitest-invites-league-1',
       team_label: 'vitest-invites-seat-team',
-      // Ruling 2026-08-05: FieldScout stores no name for a person, so
-      // get_join_preview's COALESCE(display_name, username) can only ever
-      // resolve to the handle — a real name never leaves the DB.
+      // Ruling 2026-08-05: FieldScout stores no name for a person. Migration
+      // 077 dropped profiles.display_name and re-pointed get_join_preview at
+      // `username` directly (it used to COALESCE onto it), so the inviter is
+      // the bare handle — a real name never leaves the DB.
       inviter_name: COMMISH.username,
       seats_open: null,
     })

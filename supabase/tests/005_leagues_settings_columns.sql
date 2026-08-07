@@ -147,16 +147,16 @@ select ok(
    where id = '50000000-0000-4000-8000-000000000005'),
   'persona-pattern signup metadata (evil-ai) gets the FALLBACK — an anonymous signup can never mint a *-ai handle (Q7.1, 049)');
 
--- R31 (migration 051), superseded by the identity ruling (075): the rejected
--- metadata value used to resurface in display_name ('evil-ai', laundered past
--- the username validation; reproduced live in review). 075 stops the trigger
--- writing a name at all, so the column is NULL — the strongest possible form
--- of the R31 guard, and it also pins "no name is stored for a person".
-select is(
-  (select display_name from profiles
-   where id = '50000000-0000-4000-8000-000000000005'),
-  null::text,
-  'handle_new_user writes NO name — nothing from signup metadata reaches profiles.display_name (075; supersedes R31/051)');
+-- R31 (migration 051), superseded by the identity ruling (075) and closed out
+-- by 077: the rejected metadata value used to resurface in display_name
+-- ('evil-ai', laundered past the username validation; reproduced live in
+-- review). 075 stopped the trigger writing a name; 077 DROPPED the column
+-- outright. The absence of the column is the strongest possible form of the
+-- R31 guard — there is no longer a place for a laundered value to land — and
+-- it pins "no name is stored for a person" at the schema level. (The value
+-- assertion this replaces cannot be written any more: it would not parse.)
+select hasnt_column('public', 'profiles', 'display_name',
+  'profiles.display_name is GONE — a person has no name, so nothing from signup metadata has anywhere to land (077; supersedes 075 and R31/051)');
 
 -- R32 (migration 050): the placeholder shape is reserved — metadata matches
 -- the HUMAN pattern here, but explicitly claiming a placeholder-shaped name

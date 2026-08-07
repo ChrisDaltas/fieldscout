@@ -47,7 +47,7 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 `profiles` table (created in Phase 0 migration):
 - `id` (FK to auth.users)
 - `username` (unique) — the displayed name; we do not call it that
-- ~~`display_name`~~ — RETIRED (ruling 2026-08-05, migration 075). The column still exists but is never written and never read; `handle_new_user` no longer seeds it from the OAuth `full_name` claim. Nothing may reintroduce a name for a person.
+- ~~`display_name`~~ — **DROPPED** (ruling 2026-08-05; retired by migration 075, removed by migration **077**). `handle_new_user` stopped seeding it from the OAuth `full_name` claim in 075/076; 077 re-pointed the five functions that read it through a `COALESCE` onto `username` and then dropped the column. Nothing may reintroduce a name for a person.
 - `avatar_url`
 - `bio`
 - `is_pro` (boolean, default false)
