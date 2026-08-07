@@ -1,0 +1,85 @@
+name: Production drift check
+
+# Compares production's applied migration history against the repo.
+#
+# Drift is invisible until something breaks. On 2026-08-05 production was
+# missing THIRTY-SIX migrations and carried two hand-applied rows with
+# auto-generated version numbers — discovered only because a signup broke and
+# someone went looking. This job makes that state loud within a day.
+#
+# Read-only: it queries supabase_migrations.schema_migrations and nothing else.
+
+on:
+  schedule:
+    - cron: '0 14 * * *'   # 14:00 UTC daily
+  workflow_dispatch:        # and on demand
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'   # a merged migration should reach prod promptly
+
+jobs:
+  drift:
+    name: repo vs production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for the connection secret
+        id: secret
+        run: |
+          if [ -z "${{ secrets.SUPABASE_DB_URL }}" ]; then
+            echo "::warning::SUPABASE_DB_URL is not set — drift check skipped. \
+          Add it under Settings → Secrets → Actions (Supabase → Project Settings \
+          → Database → Connection string, URI form) to enable this."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare
+        if: steps.secret.outputs.configured == 'true'
+        env:
+          PGCONN: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          psql "$PGCONN" -tAc \
+            "select version from supabase_migrations.schema_migrations order by version;" \
+            | sed '/^$/d' | sort > /tmp/remote.txt
+
+          ls supabase/migrations/*.sql \
+            | xargs -n1 basename \
+            | grep -E '^[0-9]{3}_' \
+            | cut -c1-3 | sort > /tmp/local.txt
+
+          echo "applied on production: $(wc -l < /tmp/remote.txt)"
+          echo "migrations in repo:    $(wc -l < /tmp/local.txt)"
+          echo
+
+          unapplied=$(comm -23 /tmp/local.txt /tmp/remote.txt || true)
+          stray=$(comm -13 /tmp/local.txt /tmp/remote.txt || true)
+
+          status=0
+
+          if [ -n "$unapplied" ]; then
+            echo "::error::In the repo but NOT applied to production:"
+            echo "$unapplied"
+            echo "Fix: npx supabase db push"
+            status=1
+          fi
+
+          if [ -n "$stray" ]; then
+            echo "::error::Applied to production but NOT in the repo \
+          (a hand-applied migration, or an auto-generated version number):"
+            echo "$stray"
+            echo "Fix: see docs/specs/runbook-hosted-migration-reconciliation.md"
+            status=1
+          fi
+
+          if [ "$status" -eq 0 ]; then
+            echo "In sync — every migration in the repo is applied, and nothing extra."
+          fi
+
+          exit "$status"
