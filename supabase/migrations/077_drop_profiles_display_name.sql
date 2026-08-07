@@ -642,4 +642,12 @@ BEGIN
 END;
 $$;
 
+-- Bounded wait for the ACCESS EXCLUSIVE lock. The drop itself is catalog-only
+-- and instant at this table size, but `profiles` is read by every
+-- authenticated request: if the ALTER ever queued behind a long read, every
+-- request arriving after it would queue behind the ALTER. Failing fast and
+-- retrying is strictly better than a stall. SET LOCAL — scoped to this
+-- migration's transaction, restored on commit.
+SET LOCAL lock_timeout = '5s';
+
 ALTER TABLE public.profiles DROP COLUMN IF EXISTS display_name;

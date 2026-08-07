@@ -199,13 +199,27 @@ describe('migration 077 — the column is dropped', () => {
     'draft_actor_name',
   ] as const
 
-  it('is the HIGHEST-numbered migration — a fresh reset replays cleanly only if it is last', () => {
-    const numbers = readdirSync(MIGRATIONS_DIR)
-      .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .map((f) => Number(f.slice(0, 3)))
-    expect(Math.max(...numbers)).toBe(77)
-    // And nothing else claims 077.
+  it('runs after every migration that still writes the column', () => {
+    const files = readdirSync(MIGRATIONS_DIR).filter((f) =>
+      /^\d{3}_.*\.sql$/.test(f),
+    )
+    const numbers = files.map((f) => Number(f.slice(0, 3)))
+
+    // Exactly one file claims 077.
     expect(numbers.filter((n) => n === 77)).toHaveLength(1)
+
+    // The real constraint is ordering, not being last: a fresh reset replays
+    // cleanly as long as nothing that touches the column comes AFTER the drop.
+    // Pinning "077 is the highest" would fail the moment any unrelated 078 is
+    // authored, which is a false alarm rather than a caught regression.
+    const laterFilesTouchingTheColumn = files
+      .filter((f) => Number(f.slice(0, 3)) > 77)
+      .filter((f) =>
+        readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8').includes(
+          'profiles.display_name',
+        ),
+      )
+    expect(laterFilesTouchingTheColumn).toEqual([])
   })
 
   it('drops the column, guarded and idempotent', () => {
