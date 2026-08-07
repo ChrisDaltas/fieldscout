@@ -31,9 +31,10 @@ const SRC = path.join(process.cwd(), 'src')
 
 /**
  * Generated Supabase types. Excluded from the sweeps: they declare every
- * column the database has, including `profiles.display_name` (retired but not
- * dropped — migration 075 deliberately leaves the column in place so the
- * deploy is order-safe) and the dead `expert_profiles` legacy table.
+ * column the database has, including `ai_personas.display_name` and the dead
+ * `expert_profiles` legacy table. `profiles.display_name` is no longer among
+ * them — migration 077 dropped the column, and the type file was hand-edited
+ * to match (see the `migration 077` describe below, which pins that).
  */
 const GENERATED_TYPES = 'src/types/database.ts'
 
@@ -180,6 +181,137 @@ describe('migration 075', () => {
   it('leaves RLS alone', () => {
     expect(migration).not.toMatch(
       /CREATE POLICY|DROP POLICY|ALTER POLICY|ROW LEVEL SECURITY/i,
+    )
+  })
+})
+
+describe('migration 077 — the column is dropped', () => {
+  const MIGRATIONS_DIR = path.join(process.cwd(), 'supabase/migrations')
+  const FILE = '077_drop_profiles_display_name.sql'
+  const migration = readFileSync(path.join(MIGRATIONS_DIR, FILE), 'utf8')
+
+  /** The five functions that read the column through a COALESCE onto username. */
+  const REPOINTED = [
+    'notify_list_followers',
+    'create_league',
+    'seat_league_member_internal',
+    'get_join_preview',
+    'draft_actor_name',
+  ] as const
+
+  it('is the HIGHEST-numbered migration — a fresh reset replays cleanly only if it is last', () => {
+    const numbers = readdirSync(MIGRATIONS_DIR)
+      .filter((f) => /^\d{3}_.*\.sql$/.test(f))
+      .map((f) => Number(f.slice(0, 3)))
+    expect(Math.max(...numbers)).toBe(77)
+    // And nothing else claims 077.
+    expect(numbers.filter((n) => n === 77)).toHaveLength(1)
+  })
+
+  it('drops the column, guarded and idempotent', () => {
+    expect(migration).toMatch(
+      /ALTER TABLE public\.profiles DROP COLUMN IF EXISTS display_name;/,
+    )
+    // The tripwire: never destroy a value that somehow exists.
+    expect(migration).toMatch(/RAISE EXCEPTION[\s\S]{0,200}refusing to drop/i)
+  })
+
+  it('re-points every reader BEFORE the drop — Postgres tracks no body dependency, so these would break at runtime', () => {
+    const dropAt = migration.search(/ALTER TABLE public\.profiles DROP COLUMN/)
+    expect(dropAt).toBeGreaterThan(0)
+    for (const fn of REPOINTED) {
+      const replaceAt = migration.indexOf(
+        `CREATE OR REPLACE FUNCTION public.${fn}`,
+      )
+      expect(replaceAt, `${fn} is not replaced in 077`).toBeGreaterThan(-1)
+      expect(replaceAt, `${fn} is replaced AFTER the drop`).toBeLessThan(dropAt)
+    }
+  })
+
+  it('leaves no display_name read in any replaced body', () => {
+    // Comments quote the old expression on purpose; code must not.
+    const code = migration
+      .split('\n')
+      .filter((l) => !/^\s*--/.test(l))
+      .join('\n')
+    expect(code).not.toMatch(/COALESCE\([^)]*display_name/i)
+    expect(code).not.toMatch(/NULLIF\(\s*p?\.?display_name/i)
+    // The only surviving mentions in code are the drop and its guard.
+    const mentions = code.split('\n').filter((l) => /display_name/.test(l))
+    for (const line of mentions) {
+      expect(line).toMatch(
+        // the drop · the guard's catalog lookup · the guard's count · the
+        // guard's own refusal message
+        /DROP COLUMN IF EXISTS|column_name|WHERE display_name IS NOT NULL|still hold a display_name/,
+      )
+    }
+  })
+
+  it('changes no signature, no security context and no search_path pin', () => {
+    // SECURITY DEFINER is kept on exactly the three that had it, and the two
+    // INVOKER functions are not silently promoted.
+    expect(migration).toMatch(
+      /public\.notify_list_followers[\s\S]{0,200}SECURITY DEFINER/,
+    )
+    expect(migration).toMatch(/public\.create_league\([\s\S]{0,900}SECURITY DEFINER/)
+    expect(migration).toMatch(/public\.get_join_preview[\s\S]{0,200}SECURITY DEFINER/)
+    // draft_actor_name and seat_league_member_internal stay INVOKER: no
+    // SECURITY DEFINER between their CREATE line and their body opener.
+    for (const fn of ['draft_actor_name', 'seat_league_member_internal']) {
+      const start = migration.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}`)
+      const header = migration.slice(start, migration.indexOf('AS $$', start))
+      expect(header, `${fn} gained SECURITY DEFINER`).not.toMatch(/SECURITY DEFINER/)
+    }
+    // notify_list_followers keeps its legacy-app search_path; the other four
+    // keep the spec form. Losing either is how unqualified identifiers break.
+    expect(migration).toMatch(/SET search_path = public, pg_temp/)
+    expect(migration.match(/SET search_path = ''/g) ?? []).toHaveLength(4)
+  })
+
+  it('does not touch the unrelated display_name columns', () => {
+    expect(migration).not.toMatch(/ALTER TABLE public\.ai_personas/i)
+    expect(migration).not.toMatch(/ALTER TABLE public\.expert_profiles/i)
+    expect(migration).not.toMatch(/UPDATE public\.ai_personas/i)
+  })
+
+  it('touches no RLS and re-grants nothing (CREATE OR REPLACE preserves the ACL)', () => {
+    expect(migration).not.toMatch(
+      /CREATE POLICY|DROP POLICY|ALTER POLICY|ROW LEVEL SECURITY/i,
+    )
+    // 038's REVOKE must survive by being left alone, not re-issued.
+    expect(migration).not.toMatch(/^\s*GRANT /im)
+    expect(migration).not.toMatch(/^\s*REVOKE /im)
+  })
+})
+
+describe('the generated types match the post-077 schema', () => {
+  const types = readFileSync(path.join(process.cwd(), GENERATED_TYPES), 'utf8')
+
+  /** The `profiles:` table block, up to the next sibling table. */
+  const profilesBlock = (() => {
+    const start = types.indexOf('\n      profiles: {')
+    expect(start).toBeGreaterThan(-1)
+    const next = types.indexOf('\n      Relationships', start)
+    return types.slice(start, next > -1 ? next : start + 4000)
+  })()
+
+  it('profiles Row/Insert/Update no longer declare a name', () => {
+    expect(profilesBlock).not.toMatch(/display_name/)
+    expect(profilesBlock).not.toMatch(/full_name/)
+    // Non-vacuity: we sliced the right block.
+    expect(profilesBlock).toMatch(/username: string/)
+    expect(profilesBlock).toMatch(/cred_score\?: number \| null/)
+  })
+
+  it('keeps the unrelated columns — an over-broad edit would take these too', () => {
+    expect(types).toMatch(/ai_personas: \{[\s\S]{0,2000}display_name: string/)
+    expect(types).toMatch(/expert_profiles: \{[\s\S]{0,2000}display_name: string/)
+  })
+
+  it('keeps the hand-written alias block that a naive typegen clobbers', () => {
+    expect(types).toContain('// Hand-written convenience aliases.')
+    expect(types).toMatch(
+      /export type Profile = Database\['public'\]\['Tables'\]\['profiles'\]\['Row'\]/,
     )
   })
 })

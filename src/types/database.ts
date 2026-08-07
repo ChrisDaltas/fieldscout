@@ -2303,7 +2303,6 @@ export type Database = {
           created_at: string | null
           cred_rank: number | null
           cred_score: number | null
-          display_name: string | null
           follower_count: number | null
           following_count: number | null
           id: string
@@ -2320,7 +2319,6 @@ export type Database = {
           created_at?: string | null
           cred_rank?: number | null
           cred_score?: number | null
-          display_name?: string | null
           follower_count?: number | null
           following_count?: number | null
           id: string
@@ -2337,7 +2335,6 @@ export type Database = {
           created_at?: string | null
           cred_rank?: number | null
           cred_score?: number | null
-          display_name?: string | null
           follower_count?: number | null
           following_count?: number | null
           id?: string

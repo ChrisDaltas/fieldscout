@@ -186,7 +186,11 @@ select cron.unschedule('draft-tick');
 - Dropping `display_name` is now unblocked, with two constraints: it must come
   **after** this push (seven migrations here still write the column), and the
   drop must be the **last** migration numerically so a fresh `db reset` replays
-  cleanly.
+  cleanly. **Done — migration `077_drop_profiles_display_name.sql`** (2026-08-07,
+  spec v2.9.1 / PROGRESS D116). It re-points the five functions that read the
+  column *before* dropping it: Postgres records no dependency from a function
+  body to a column, so the drop would not have blocked and they would have
+  broken at runtime instead. 077 must stay the highest number.
 - PR #91 can be closed — `076` supersedes its guard restore.
 - A `CREATE OR REPLACE FUNCTION` hotfix must be authored against the current
   head of the chain, not against the body that happens to be deployed. `073` is
