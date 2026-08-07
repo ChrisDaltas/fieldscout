@@ -31,8 +31,18 @@ SELECT is_empty(
      ) $$,
   'the seven C15 functions exist and are SECURITY DEFINER');
 
--- 2. The seven carry exactly the 048 pin (public, pg_temp) — falsifiable
---    against a partial 048 revert or a proconfig typo.
+-- 2. The seven each pin search_path to one of the two SANCTIONED forms — the
+--    048 legacy convention `public, pg_temp`, or the stricter spec form `''`
+--    (plan §8.3 / spec §12.0). Falsifiable against a partial 048 revert, an
+--    unpinned function, or a proconfig typo: anything that is neither exact
+--    string fails.
+--
+--    This originally demanded `public, pg_temp` from all seven, contradicting
+--    this file's own header. It went red when 073 moved handle_new_user to
+--    `''` while fixing a production signup outage — the STRICTER pin, and the
+--    one the house rules mandate for SECURITY DEFINER work. A test that fails
+--    when a function is hardened is testing the wrong thing, and a
+--    permanently-red test hides the next real regression.
 SELECT is_empty(
   $$ SELECT p.proname::text
      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -41,8 +51,11 @@ SELECT is_empty(
                          'update_list_player_count', 'update_tag_use_count',
                          'update_expert_follower_count', 'update_list_like_count',
                          'reorder_list_players')
-       AND NOT (COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=public, pg_temp']) $$,
-  'all seven C15 functions carry SET search_path = public, pg_temp');
+       AND NOT (
+            COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=public, pg_temp']
+         OR COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']
+       ) $$,
+  'all seven C15 functions pin search_path (public, pg_temp — or the stricter '''')');
 
 -- 3. Non-vacuity: public holds a meaningful SECURITY DEFINER population, so
 --    test 4's empty result means "all pinned", never "nothing matched".
