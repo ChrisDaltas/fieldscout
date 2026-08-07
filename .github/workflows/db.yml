@@ -35,6 +35,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -47,6 +54,12 @@ jobs:
 
       - name: pgTAP
         run: supabase test db
+
+      # The vitest suites that talk to a real database. They cannot run in the
+      # fast lane, and this job already has the stack up.
+      - name: Database-backed tests
+        if: ${{ !cancelled() }}
+        run: npm run test:stack
 
       - name: Migration hygiene
         if: ${{ !cancelled() }}
