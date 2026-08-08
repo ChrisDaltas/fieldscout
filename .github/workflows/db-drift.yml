@@ -7,7 +7,11 @@ name: Production drift check
 # auto-generated version numbers — discovered only because a signup broke and
 # someone went looking. This job makes that state loud within a day.
 #
-# Read-only: it queries supabase_migrations.schema_migrations and nothing else.
+# Read-only. Reads the applied list over HTTPS via
+# public.applied_migration_versions() (migration 078) rather than a direct
+# Postgres connection: that would need the database password and the
+# region-specific pooler hostname, and the service-role key is one string from
+# the same dashboard page as the keys already in Vercel.
 
 on:
   schedule:
@@ -26,13 +30,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for the connection secret
+      - name: Check for secrets
         id: secret
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${{ secrets.SUPABASE_DB_URL }}" ]; then
-            echo "::warning::SUPABASE_DB_URL is not set — drift check skipped. \
-          Add it under Settings → Secrets → Actions (Supabase → Project Settings \
-          → Database → Connection string, URI form) to enable this."
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::warning::Drift check skipped — set SUPABASE_URL and \
+          SUPABASE_SERVICE_ROLE_KEY under Settings → Secrets and variables → \
+          Actions. Both are on the Supabase dashboard's API keys page."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -41,13 +48,21 @@ jobs:
       - name: Compare
         if: steps.secret.outputs.configured == 'true'
         env:
-          PGCONN: ${{ secrets.SUPABASE_DB_URL }}
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
 
-          psql "$PGCONN" -tAc \
-            "select version from supabase_migrations.schema_migrations order by version;" \
-            | sed '/^$/d' | sort > /tmp/remote.txt
+          response=$(curl -sS --fail-with-body --max-time 30 \
+            -X POST "${URL%/}/rest/v1/rpc/applied_migration_versions" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+
+          echo "$response" \
+            | python3 -c 'import json,sys; [print(r["version"]) for r in json.load(sys.stdin)]' \
+            | sort > /tmp/remote.txt
 
           ls supabase/migrations/*.sql \
             | xargs -n1 basename \
