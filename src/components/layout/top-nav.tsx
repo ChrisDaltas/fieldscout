@@ -37,11 +37,17 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
 
       {isSignedIn ? (
         <>
-          <div className="ml-auto min-w-0 max-w-xs flex-1">
-            <TopSearch />
-          </div>
+          {/* Search only on the guest shell, where nothing else offers it. In
+              the app shell this header is lg:hidden and the mobile tab bar
+              already carries Search — two search fields on one screen. */}
+          {variant === 'guest' && (
+            <div className="ml-auto min-w-0 max-w-xs flex-1">
+              <TopSearch />
+            </div>
+          )}
           {showAppNav && (
             <Button
+              className="ml-auto"
               variant="ghost"
               size="icon-md"
               aria-label="New list"
