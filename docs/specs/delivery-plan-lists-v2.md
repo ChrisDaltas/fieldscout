@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v2.0 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
+> **v2.1 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
 > schema changes, no new tables, no RLS work. Anything the handoff needs that
 > has no home in the current schema is either **client-side state**,
 > **computed**, or **dropped from scope** — never a new column. This is a
@@ -83,15 +83,14 @@ existing precedent.
 | `view` (list \| table \| card) | New persisted Zustand store, keyed by `listId` | small |
 | `cols` (chosen stats, ordered) | Same store | small — today it persists nowhere |
 | `costBands` labels, `budget` | Same store (precedent: `board-labels-store`) | small |
-| `org` = rank \| tier | `list_players.tier` is already server-side; ranked = array order | none |
-| `org` = round | **Computed** from list order ÷ league size — not assigned, not stored | none |
-| `org` = cost / budget | **Computed** from existing `players` auction/ADP data | none |
+| `org` = tier \| round \| cost \| budget | **One mechanism** — the bucket is `list_players.tier`; `org` only swaps the label set (D4). Ranked = array order | none |
+| editable cost-band labels | Client store (D3) | small |
 | `tags` | `list_tags` + `tags` tables already exist | none |
 | `fav` / `saved` | `is_favorites` + `list_favorites` already exist | none |
 | `stats.views/likes` | `view_count` / `like_count` already exist | none |
 | `cover.{color,emoji}` | Use existing `thumbnail_url` only — no color/emoji picker | **reduced** |
 | `visibility` (3-state) | `is_private` is 2-state → ship **private/public**; the "link" state drops | **reduced** |
-| `entries[].round` / `.cost` | Derived, never assigned (see §3 D4) | **reduced** |
+| `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
 | `scope`, `links[]` | **Dropped** — the handoff defines them but never renders them | dropped |
 
 **Accepted trade-offs**, stated plainly so nobody rediscovers them mid-build:
@@ -102,12 +101,12 @@ existing precedent.
    author arranged it; that does not happen in Round 1.
 2. `drafted` marks are **per-browser** and clear with site data.
 3. There is **no link-only visibility**. Private or public.
-4. Cost-band grouping is **read-only**: you can group by cost, but dragging a
-   player into a different band cannot change his cost, because cost is derived
-   from player data rather than stored per entry. Round grouping *can* respond
-   to drag, because moving a player changes his order and therefore his round.
 
-All four are **additively reversible.** Adding server persistence later means
+**Bucket membership is not in that list** — it lives in `list_players.tier`
+server-side, so which players sit in which tier/round/band *does* follow a
+shared list. Only the label set and any custom band names are local.
+
+All three are **additively reversible.** Adding server persistence later means
 reading from the server when present and falling back to local — not a rewrite.
 
 ---
@@ -128,19 +127,34 @@ reading from the server when present and falling back to local — not a rewrite
   holding `view`, `cols`, `costBands`, `budget`. One store, not four — these
   are always read together by the toolbar.
 
-- **D4 — Round and cost are computed groupings, not stored fields.** They
-  bucket the existing ordered array; they never write. This is the single
-  largest deviation from the handoff's data model and the reason it stays
-  UI-only. Drag into a round bucket = reorder. Drag into a cost band = no-op
-  (see §2.2 trade-off 4).
+- **D4 — Tier, round, cost and budget are one mechanism with four label sets**
+  (Chris, 2026-08-09). They all behave exactly as tiers do today: a player sits
+  in a bucket, and `org` decides whether that bucket renders as "Tier 1",
+  "Round 1", or a cost band's editable label. There is no separate `round` or
+  `cost` field, nothing is computed, and drag-to-bucket assigns in every mode
+  — it is the same write in all four.
+
+  Storage is the existing `list_players.tier` (`text`), written through the
+  existing `PATCH /api/lists/[id]/players/[playerId]/tier` route. **One
+  contained change is required**: that route's Zod schema currently validates
+  `z.enum(['S','A','B','C','D','F'])` — the legacy letter scale — while the new
+  design uses numeric buckets (`tailwind.config.ts` already carries both
+  `tier-1..7` and the S–F keys, the latter marked legacy). Widening that enum
+  is a validation change on an existing route against an existing `text`
+  column — **not** a schema change, and inside UI-only scope. It is called out
+  as its own task (LV.1.4) rather than smuggled into a screen PR.
+
+  Consequence: because buckets live server-side, grouping **does** follow a
+  shared list. Only the label set is local.
 
 - **D5 — Drag-and-drop uses the handoff's gap model** and measures with
   `offsetHeight`/`offsetWidth`. State updates only when the target slot
   changes — updating per `dragover` visibly janks.
 
-- **D6 — No new API routes in Round 1.** Existing routes cover every
-  server-side mutation. If a task believes it needs one, that is a signal it
-  has crossed out of UI-only — stop and raise it.
+- **D6 — No new API routes in Round 1**, and no schema changes. Existing
+  routes cover every server-side mutation; the only server-side edit is
+  widening one Zod enum (D4/LV.1.4). If a task believes it needs more, that is
+  a signal it has crossed out of UI-only — stop and raise it.
 
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
@@ -158,6 +172,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.1.1 | `featureFlags.listsV2` + route-level branch so old and new Lists coexist | — |
 | LV.1.2 | Consolidate `drafted` onto one global player-keyed store (D2); keep Big Board and draft-mode green | — |
 | LV.1.3 | `useListDisplayPrefs` store — `view`, `cols`, `costBands`, `budget`, persisted per `listId` (D3) | — |
+| LV.1.4 | Widen the tier route's Zod enum from the legacy S–F scale to numeric buckets (D4); keep any existing S–F rows readable | — |
 
 **Phase 2 — Lists page**
 
@@ -176,7 +191,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.3.3 | View style: List — 60px rows, stat cells, computed `minWidth = 330 + cols·72`, section cards | LV.3.2 |
 | LV.3.4 | View style: Table — 44px rows, sticky header | LV.3.2 |
 | LV.3.5 | View style: Cards — corner cells, stat strip, first-three-stats rule, 62px label rail for grouped lists (none when simply ranked) | LV.3.2 |
-| LV.3.6 | Drag-and-drop across all three views (D5); round buckets reorder, cost bands read-only (D4) | LV.3.3–3.5 |
+| LV.3.6 | Drag-and-drop across all three views (D5); drag onto a section header assigns that bucket — same write in all four grouping modes (D4) | LV.3.3–3.5, LV.1.4 |
 | LV.3.7 | Stats picker modal — grouped catalog ordered by this list's coverage, search, reorderable chips | LV.3.2 |
 | LV.3.8 | Notes: accent `comments` mark, body-portalled hover card clamped to the viewport | LV.3.3 |
 | LV.3.9 | Drafted checkbox wired to the global store (D2) + "Clear drafted" in the options menu | LV.1.2, LV.3.3 |
@@ -196,8 +211,9 @@ One task = one Builder session = one PR. `/build-next` drives.
 
 1. `npm run type-check` and `npm run lint` clean — **shown, not claimed**.
 2. `npm run test:unit` green. `share-link-permanence.test.ts` stays green.
-3. **No migration, no schema change, no new API route.** A task that thinks it
-   needs one has left scope — raise it, do not proceed (D6).
+3. **No migration, no schema change, no new API route** — the sole exception
+   is LV.1.4's Zod enum widening. A task that thinks it needs more has left
+   scope: raise it, do not proceed (D6).
 4. Verified in the browser preview with a screenshot at desktop **and** mobile.
 5. `PROGRESS-lists-v2.md` updated.
 6. Small commit citing the handoff section; branch + PR, never direct to main.
@@ -218,15 +234,21 @@ surfaces outside Lists, which is why it is off the launch path.
 ## 7. Open questions for Chris
 
 - **Q1 — Round 1 scope**: confirm §1's assumption (page + detail first).
-- **Q2 — Accepted trade-offs**: §2.2 lists four (per-browser prefs, per-browser
-  drafted, no link-only visibility, read-only cost bands). All follow from
-  UI-only. Flag any that is not acceptable — each becomes a schema change.
+- **Q2 — Accepted trade-offs**: §2.2 lists three (per-browser prefs,
+  per-browser drafted, no link-only visibility). All follow from UI-only. Flag
+  any that is not acceptable — each becomes a schema change.
 
 *(v1.0's Q1 — "what clears `drafted`" — is resolved: the browser does, per the
 existing `board-labels-store` precedent.)*
 
 ## Changelog
 
+- **v2.1 (2026-08-09)** — Chris's correction: tier, round, cost and budget are
+  **one mechanism with four label sets**, not separate or computed fields
+  (D4). Removes the "computed grouping" design and the read-only-cost-band
+  trade-off; grouping is a stored bucket, so it follows a shared list. Adds
+  LV.1.4 for the tier route's legacy S–F enum. Also confirms `drafted` needs
+  no table — v2.0 had already moved it to the existing global store.
 - **v2.0 (2026-08-09)** — UI/UX-only ruling. Migration phase removed; gaps
   re-closed via client state, computation, or reduced scope (§2.2). Found
   `drafted` already implemented three ways (§2.1), which resolves v1.0 Q1.
