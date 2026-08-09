@@ -49,7 +49,13 @@ describe('launch-scope release flags', () => {
   })
 
   it('leaves the launch surfaces ungated', () => {
-    // Lists, player research, and AI stat lists ship — no flag guards them.
+    // Lists, player research, and AI stat lists ship — no flag hides them.
+    //
+    // `featureFlags.listsV2` (LV.1.1) is not a counter-example and must not be
+    // deleted as one: it does not gate Lists off, it chooses *which* Lists
+    // screen renders, and its OFF default is the shipped one. Its own contract
+    // — default OFF, branch direction on both routes — is pinned in
+    // lists-v2-flag.test.ts.
     expect(Object.keys(featureFlags)).not.toContain('lists')
     expect(Object.keys(featureFlags)).not.toContain('research')
   })

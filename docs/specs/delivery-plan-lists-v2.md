@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.2 — 2026-08-09. UI/UX only, with exactly one data exception.**
+> **v3.3 — 2026-08-09. UI/UX only, with exactly one data exception.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -135,9 +135,29 @@ model to copy here, whatever the handoff says.
 
 ## 3. Design decisions
 
-- **D1 — Re-skin in place, per CLAUDE.md.** No parallel component tree. New
-  Lists replaces the bodies of existing components behind the flag; shared
-  primitives in `src/components/ui/` get CVA variants, never forks.
+- **D1 — Re-skin in place, per CLAUDE.md — with the two Lists screens named
+  as the exception.** *(Amended v3.3; see the note below.)*
+
+  **Shared primitives in `src/components/ui/` get CVA variants, never forks.**
+  That prohibition is absolute and survives unchanged — it is the whole of
+  what "no parallel component tree" means for this build. No task creates a
+  second `button.tsx`, `card.tsx`, `dialog.tsx`, or any other `ui/` twin.
+
+  **The Lists v2 screens themselves live in `src/components/lists/v2/`** and
+  are swapped in at the **route-level branch** on `featureFlags.listsV2`
+  (LV.1.1). Today's components stay untouched beside them, serving production
+  for the whole build, and are **retired at LV.4.4**. Do not re-derive this
+  per task: §4 already requires it. LV.1.1 mandates a branch at the *route*,
+  which necessarily means two component trees per route — a body-replacement
+  mechanism would have to branch *inside* `lists-browse.tsx` /
+  `list-detail-view.tsx` instead, which is not what LV.1.1 says. And LV.4.4's
+  "retire the old components" presupposes the old components surviving as
+  separate files right to the end.
+
+  v3.2's wording ("New Lists replaces the bodies of existing components
+  behind the flag") contradicted both of those and is withdrawn. This is
+  editorial reconciliation of D1 against §4/LV.4.4 and the shipped LV.1.1
+  structure (R168) — **no product decision is being made here.**
 
 - **D2 — `drafted` is per user, per list, and purely a display state**
   (Chris, 2026-08-09). It overrides the handoff's global rule — see §2.1.
@@ -311,6 +331,19 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.3 (2026-08-09)** — **D1 reconciled with §4, editorially** (Reviewer
+  R168, PR #107). v3.2's D1 said "New Lists replaces the bodies of existing
+  components behind the flag", which the plan's own task list contradicts:
+  LV.1.1 mandates a **route-level** branch (two component trees per route by
+  construction, not a body swap), and LV.4.4 says "retire the old components",
+  which only makes sense if they survive as separate files. D1 now states that
+  the Lists v2 screens live in `src/components/lists/v2/`, are swapped in at
+  the route branch, and are retired at LV.4.4 — with **"no forks of
+  `src/components/ui/` primitives"** kept as the surviving, absolute
+  prohibition. LV.1.1 shipped this structure and set the precedent for the
+  remaining twelve tasks; recording it here means no future Builder has to
+  re-derive it from a PROGRESS note. **No product decision, no scope change.**
 
 - **v3.2 (2026-08-09)** — Chris: `drafted` is **per user, per list** — the
   handoff's global rule is overridden, because one player is taken in one

@@ -5,18 +5,34 @@ import { use, useEffect } from 'react'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { CommentsThread } from '@/components/lists/comments-thread'
 import { ListDetailView } from '@/components/lists/list-detail-view'
+import { ListDetailPageV2 } from '@/components/lists/v2/list-detail-page-v2'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useList } from '@/hooks/use-lists'
+import { featureFlags } from '@/lib/feature-flags'
 import { useHistoryStore } from '@/stores/history-store'
 
 interface ListDetailPageProps {
   params: Promise<{ listId: string }>
 }
 
+// LV.1.1 (delivery-plan-lists-v2.md §4): route-level branch so the old and
+// new list detail screens can coexist. Flag OFF must render byte-for-byte
+// today's page, so ListDetailPageLegacy below is that page unchanged — only
+// given a name so its hooks (useList, useAiListBuild, ...) stay unconditional
+// and don't run when the branch takes the v2 placeholder instead.
 export default function ListDetailPage(props: ListDetailPageProps) {
   const params = use(props.params)
   const { listId } = params
+
+  if (featureFlags.listsV2) {
+    return <ListDetailPageV2 listId={listId} />
+  }
+
+  return <ListDetailPageLegacy listId={listId} />
+}
+
+function ListDetailPageLegacy({ listId }: { listId: string }) {
   const { data, isLoading, isError, error } = useList(listId)
   // Runs the "watch the AI build this list" sequence when the generate modal
   // queued a job for this list; `building` locks the page to read-only so the
