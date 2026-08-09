@@ -17,10 +17,12 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1 landed 2026-08-09) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1, LV.1.2, LV.1.4 landed 2026-08-09) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
-Nothing is blocked. No open questions.
+**One task is parked, the rest of the lane is clear.** LV.1.3 cannot land as
+written — see **§3 Q1**, awaiting Chris's ruling. Every other Phase 1 and
+Phase 2 task is unblocked; only LV.3.9 sits downstream of LV.1.3.
 
 ---
 
@@ -34,8 +36,8 @@ are all checked.
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
-- [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2)
-- [ ] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3)
+- [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2) — ⛔ **parked, see §3 Q1**
+- [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
 - [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4)
 
 **Phase 2 — Lists page**
@@ -73,7 +75,31 @@ picked in any order. LV.1.2 is the only schema task in the build.
 *(A Builder that finds the handoff wrong or ambiguous files the question here
 with a recommendation and HALTs — it never improvises.)*
 
-None open.
+### Q1 — LV.1.3 cannot land as written (filed 2026-08-09, orchestrator)
+
+**The conflict.** LV.1.3's task text says "point `use-draft-mode.ts` **only** at
+the new server source". That hook has exactly two consumers:
+
+| Consumer | Problem |
+| --- | --- |
+| `src/components/lists/list-detail-view.tsx:286` | the **legacy** detail view — serves production today behind flag OFF. LV.1.1 established that flag-OFF must be byte-for-byte the current experience, so rewiring it changes production |
+| `src/components/lists/draft-mode/board-column.tsx:35` | inside `src/components/lists/draft-mode/**`, which ACTIVE-BUILD declares **off limits** |
+
+There is also no v2 consumer yet — the v2 detail screen is LV.3.x, unbuilt — so a
+server-backed `use-draft-mode` would today serve only the two surfaces it must not
+change. The plan's dependency graph (LV.1.3 depends on LV.1.2 alone) is wrong: it
+also depends on a v2 consumer existing.
+
+**Recommendation.** Re-scope LV.1.3 to *add* a new server-backed hook (consuming
+`src/lib/lists/drafted-service.ts` from LV.1.2) for the v2 surface, leaving
+`use-draft-mode.ts` and both its consumers untouched. Legacy keeps localStorage
+until LV.4.4 retires it wholesale. Also fold in nits **R176** (the GET path
+collapses "no marks" with "not permitted") and **R178** (extra `auth.getUser()`
+round-trip on the retry path), both of which land in this hook's code path.
+Alternative if rejected: move LV.1.3 to depend on LV.3.9 and build it there.
+
+**Status: awaiting Chris's ruling.** LV.1.3 is parked; the loop continues on other
+unblocked Phase 1 tasks.
 
 ---
 
@@ -195,11 +221,94 @@ This section records decisions made **during** the build.
   (074), `applied_migration_versions` (078) and three RPCs that had never
   been typegen'd — pre-existing drift, additive, not scope creep.
 
+- **LV.1.4 (2026-08-09) — session display state, and the `org` call.** One new
+  file, `src/stores/list-display-store.ts`, plus its test. **No migration, no
+  schema change, no new API route** — the store never touches the network at
+  all. Five judgement calls the plan left to the Builder:
+
+  1. **`org` lives here — as an override (`ListOrg | null`), not as the
+     value.** D3 names four things (`view`, `cols`, band labels, `budget`) and
+     is silent on `org`; D4 supplies the answer — *"only the label set is
+     local"* — and `org` is exactly the label-set selector ("Tier 3" vs
+     "Round 3" vs a cost band's text), so it is session state and this store is
+     the build's one home for it. But it is **not** stored as a plain value
+     with a default, because `rank` vs `tier` **already has a server-side
+     answer today**: `lists.ranking_mode`, which the legacy List order / Tiers
+     control writes (`list-detail-view.tsx` → `ranking_mode: 'rank_and_tier'`).
+     A store that owned `org` would silently re-group every tiered list as
+     plain rank on every load. `null` means "the session has no opinion",
+     resolved by the exported `resolveOrg(override, rankingMode)`:
+     `rank_and_tier → tier`, everything else → `rank`. Round, cost and budget
+     have no server representation by design, so they can only ever be a
+     session choice. **Bucket *membership* is not in this store and must never
+     be** — it is `list_players.tier` (D4) — which is pinned by a test that
+     asserts the state shape is exactly the five keys above.
+
+  2. **The store never writes to the server, and that is a boundary, not an
+     omission.** If **LV.3.2** decides that choosing Tiers in the v2 grouping
+     dropdown should also persist `ranking_mode` the way today's control does,
+     that is a route call it makes *alongside* `setOrg`. Flagged in the store
+     header so LV.3.2 makes the call deliberately rather than inheriting it.
+
+  3. **Band labels are cost-only, and the prototype's `min` threshold is
+     dropped.** Design LAW makes cost bands the only renameable bucket
+     ("Click tier label (cost bands, owner only) → Inline rename"), and D4 says
+     nothing is computed — so a band is a bucket you drag into, exactly like a
+     tier, and `min` would encode a price rule D4 explicitly rejects. The four
+     default labels come from the prototype (`$40 and up` … `Under $10`).
+     **Their keys (`c1`–`c4`) are this store's own and are not on the wire** —
+     the bucket vocabulary sent to the tier route is **LV.1.5's** to define; if
+     the two ever need to agree, reconcile there.
+
+  4. **Every default is borrowed, not invented.** `view: 'list'` matches
+     today's `viewMode` default (`'comfortable'` = 60px rows); `cols:
+     ['proj','last','adp']` mirrors `DEFAULT_LIST_ROW_STATS` in
+     `customize-popover.tsx`; `budget: 200` is the prototype's. Stat ids stay
+     opaque `string`s — the catalog is LV.3.7's.
+
+  5. **The default is a frozen, shared object handed out by reference.**
+     zustand v5 subscribes through `useSyncExternalStore`, which loops forever
+     on a selector that builds a fresh object per call, so
+     `selectListDisplay(listId)` returns either the stored entry or the one
+     frozen `DEFAULT_LIST_DISPLAY`. Pinned by a reference-identity test.
+     Smaller calls in the same spirit: `setBudget` **refuses** a non-finite
+     number outright rather than coercing it (a cleared input arrives as `NaN`
+     and would render "$NaN" everywhere), and a blank band rename **clears the
+     override** back to the default label instead of storing `""` and
+     rendering a nameless header.
+
+  **D3 is guarded, not commented (the point of the task).** Six other stores in
+  `src/stores/` use `persist` + `createJSONStorage(localStorage)`, so the
+  absence here reads like an oversight to anyone who does not know it was
+  declined. `list-display-store.test.ts` carries **four independent detectors**
+  — the store exposes no `.persist` API; every mutator touches neither
+  `localStorage` nor `sessionStorage` (both stubbed on `globalThis`, since
+  vitest's node environment has neither and `createJSONStorage` *swallows* that,
+  which would let a genuinely-persisted store pass); state does not survive a
+  module reload; and the source names no persistence machinery. Plus a
+  **control** that builds a store with the house `persist` pattern inline and
+  shows all three runtime detectors tripping on it, so a green run means the
+  detectors work rather than that they are asleep. **Two probes shown:**
+  wrapping the store in `persist` → **4 RED**, reverted → 18 green; and a
+  hand-rolled `localStorage.setItem` inside `setView` with no middleware →
+  **6 RED** (the storage spy and the source pin catch it; the `.persist` probe
+  correctly does not — proving the layers are complementary, not redundant),
+  reverted → 18 green.
+
+  **No UI consumes this yet**, by design — the toolbar is LV.3.2 and the stats
+  picker LV.3.7 — so browser verification (plan §5.4) would have nothing to
+  show. Stated plainly in the PR rather than claiming a screenshot.
+
 ---
 
 ## 5. Blockers
 
-None for Lists v2.
+- **LV.1.3 is parked pending Chris's ruling on §3 Q1** (filed 2026-08-09) — its
+  task text rewires a hook whose only two consumers are production-legacy and
+  off-limits. Nothing else in Round 1 is blocked by it except **LV.3.9**, which
+  depends on it. Do not pick LV.1.3 until Q1 is answered.
+
+Nothing else blocks Lists v2.
 
 **Two pre-existing repo-wide test-infrastructure faults were measured during
 LV.1.2 and are NOT caused by it.** Neither blocks this build (the Lists v2
