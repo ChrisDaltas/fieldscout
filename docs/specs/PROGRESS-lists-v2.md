@@ -33,7 +33,7 @@ are all checked.
 **Phase 1 — foundations**
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
-- [ ] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2)
+- [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
 - [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2)
 - [ ] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3)
 - [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4)
@@ -116,11 +116,118 @@ This section records decisions made **during** the build.
   locally. `.env.local` itself is gitignored and was used only transiently
   for the flag-OFF browser verification.
 
+- **LV.1.2 (2026-08-09) — the drafted table, and the four judgement calls in
+  it.** Migration `079_list_player_drafted.sql` ships D2's printed DDL. This
+  is **the only schema change in the whole Lists v2 build** (plan §1/D6);
+  nothing after it may add another. Four decisions the plan did not make for
+  the Builder:
+
+  1. **The write takes an explicit desired state, not a blind toggle.** Wire
+     contract is `POST {player_id, drafted: boolean}`, and the response
+     carries `changed: boolean`. §4 calls LV.1.2 "the read/toggle route",
+     which names the user's *gesture*; the transport is idempotent on
+     purpose, because an optimistic checkbox retries and a blind toggle
+     applied twice lands on the opposite answer with nothing to notice it
+     (CLAUDE.md's "never let 'nothing happened' mean 'it worked'"). `changed`
+     is what lets a caller tell a replay from a write. Pinned by
+     `drafted-service.test.ts`, which explicitly **rejects** a toggle-shaped
+     `{player_id}` body so a later "simplification" goes red.
+
+  2. **The INSERT policy defers to `lists`'s own RLS instead of restating
+     visibility.** Its `EXISTS (SELECT 1 FROM lists WHERE id = list_id AND
+     deleted_at IS NULL)` carries no `is_private`/`owner_id` conjunct: policy
+     expressions are evaluated as the invoking role, so the subquery runs
+     under `lists`'s policies (the mechanism migration 067's D106 note
+     documents). The encoded rule is therefore **"you may mark drafted on any
+     list you can read"** — which is D2's Saved-list case for free, *and*
+     covers 067's league-shared private lists, which copying
+     `list_favorites`' hardcoded `is_private = FALSE OR owner_id = auth.uid()`
+     would have silently excluded. Both directions pinned (u2 can mark on
+     u1's public list, cannot on u1's private one). The DELETE policy is
+     `user_id = auth.uid()` **alone** — you must always be able to clean up
+     your own rows, including on a list that has since gone private or into
+     the trash — which is also why `clearDrafted` skips the visibility probe
+     that GET and POST perform.
+
+  3. **Beyond-the-print hardening: a composite FK `(list_id, player_id) →
+     list_players`, ON DELETE CASCADE**, replacing the obvious separate
+     `list_id → lists` / `player_id → players` FKs (which it subsumes
+     transitively). The D106/R43 class — it makes a mark for a player who is
+     not on that list impossible on *any* path rather than merely unlikely,
+     and it self-cleans when a player leaves the list. Checked before
+     choosing it that nothing delete-and-reinserts `list_players`:
+     `reorder_list_players` (004) is UPDATE-only and `/api/big-board/save`
+     diffs, so no reorder or board save can wipe a mark. Costs one index —
+     the cascade lookup is not a PK prefix.
+
+  4. **No UPDATE policy at all** — row presence *is* the state and
+     `drafted_at` is write-once, so §8.2's "immutable tables have no UPDATE
+     policy" applies. Proven from the row's **own user**, not a stranger: a
+     stranger being blocked would not prove immutability.
+
+  **Layering.** The 20 pre-existing `/api/lists` routes inline their logic;
+  this one does not. Everything decidable lives in
+  `src/lib/lists/drafted-service.ts` over an injected client (the leagues
+  D68/D71 thin-route pattern), because the LV.1.2 DoD requires the RLS
+  isolation to be proven through the code that actually ships.
+  `ServiceResult` is re-declared locally rather than imported from
+  `leagues-service.ts` — a two-field type is not worth pulling a paused
+  build's module onto the launch path.
+
+  **Grants.** No per-object `GRANT` (leagues D18→D23): migration 037's
+  default privileges cover the new table. Verified after a real
+  `npx supabase db reset` — `authenticated` holds SELECT/INSERT/DELETE — and
+  pinned in pgTAP 028, because no RLS assertion can see a missing grant.
+  *(Trap for the next Builder: hand-applying a migration with `psql -U
+  postgres` on a drifted local DB grants only `Dxtm`. That is an artifact of
+  hand-application, not of the migration; `db reset` is the only honest
+  check.)*
+
+  **Typegen.** `src/types/database.ts` regenerated with
+  `npx supabase gen types typescript --local`; the hand-written alias block
+  was re-appended and verified **byte-identical by sha256**, and the file
+  diff is **+89 / −0**. The regen also picked up `ai_generation_usage`
+  (074), `applied_migration_versions` (078) and three RPCs that had never
+  been typegen'd — pre-existing drift, additive, not scope creep.
+
 ---
 
 ## 5. Blockers
 
-None.
+None for Lists v2.
+
+**Two pre-existing repo-wide test-infrastructure faults were measured during
+LV.1.2 and are NOT caused by it.** Neither blocks this build (the Lists v2
+DoD, plan §5, is type-check / lint / `test:unit` / PROGRESS / branch+PR), but
+the first one **does** block the leagues M2 DoD, which includes
+`npm run test:db`. Task chips were filed for both.
+
+- **`npm run test:db` is red on `main`: the local Postgres backend
+  segfaults.** `supabase/tests/002_notify_list_followers_auth.sql:35` kills
+  the backend (`signal 11: Segmentation fault` in `docker logs
+  supabase_db_fieldscout`), which puts the DB into recovery mode so every
+  later file reports `FATAL: the database system is in recovery mode` —
+  hence `Files=29, Tests=20, Result: FAIL`. Run file-by-file, **9 of 29
+  crash**: 002, 013, 014, 015, 016, 018, 020, 022, 026; the other 20 pass.
+  Every crash is the same idiom — `throws_ok(..., '42501')` where the error
+  is *permission denied for function* on a REVOKEd SECURITY DEFINER routine
+  under `set local role anon`. Proven pre-existing by A/B: reproduced with
+  migration 079 removed from the chain (chain at 078). pgTAP **028 passes
+  47/47** — its `throws_ok` cases expect runtime errors (RLS `WITH CHECK`
+  42501, 23503, 23505), which do not trip the bug. Suspected cause is the
+  Postgres 17 image from the pinned CLI (2.109.1; 2.113.0 available).
+
+- **`npm run test:stack` is intermittently red at roughly 1 run in 3**, on a
+  different leagues suite each time (most often `draft-realtime-db.test.ts`'s
+  private-channel test, which fails on a **50-second** subscribe timeout —
+  a load symptom, not an authorization one; also seen: invites capacity,
+  `create_league` at team_count 14, draft-core picks, settings PATCH 409).
+  Measured over 17 consecutive runs: **3 failures in 9 runs without** the new
+  `drafted-api-db.test.ts` and **3 failures in 8 runs with** it — the same
+  rate, the same failure families. `drafted-api-db.test.ts` itself passed
+  **8/8**. Likely causes are parallel-run timing against one local stack plus
+  cross-suite fixture collisions (the class the R161 finding already
+  documented).
 
 ---
 
