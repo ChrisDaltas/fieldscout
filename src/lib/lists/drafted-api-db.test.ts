@@ -27,6 +27,12 @@
  * filtered away because the caller cannot speak for `userId` is a 403 rather
  * than a cheerful `changed: false`.
  *
+ * Two more again at **LV.1.3**, folding in the nits that landed in this code
+ * path (§6 R176/R178): the READ path now refuses the same conflation the
+ * un-mark path has refused since R175, and a caller that has already proven an
+ * identity may thread it so the guard costs no GoTrue round-trip — measured
+ * with a spy on the real client, not argued.
+ *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5); FAILS loudly when the stack is down, never skips.
  *
@@ -35,7 +41,7 @@
  * every other stack suite's fixture namespace.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Database } from '@/types/database'
 
@@ -531,6 +537,118 @@ describe("R175 — an un-mark that RLS filtered away is a 403, not a cheerful no
     })
     expect(result.status).toBe(200)
     expect(result.body).toMatchObject({ drafted: false, changed: false })
+  })
+})
+
+describe('R176 — an empty READ that RLS filtered away is a 403, not a cheerful []', () => {
+  // The mirror of R175, one function up. A SELECT under
+  // `USING (user_id = auth.uid())` is FILTERED, not rejected, so without this
+  // guard "you hold no marks here" and "you asked on behalf of someone you
+  // cannot speak for" arrive as the identical `200 {drafted: []}` — the exact
+  // shape this file's own un-mark path refuses eleven lines above it.
+  it("listDrafted with a userId the client cannot speak for is 403", async () => {
+    // Positive control FIRST: B really does hold a mark on this list, so the
+    // 403 is a refusal rather than a report that there was nothing there.
+    const before = await privilegedMarkCount(userB, publicListId)
+    expect(before).toBeGreaterThan(0)
+
+    const result = await listDrafted(clientA, publicListId, userB)
+    expect(result.status).toBe(403)
+    expect(result.body).toEqual({ error: CANNOT_MARK_MESSAGE })
+
+    // Nothing was read, and nothing was disturbed.
+    expect(await privilegedMarkCount(userB, publicListId)).toBe(before)
+  })
+
+  it('a genuine empty read by the rightful caller is still a plain 200', async () => {
+    // The counter-control: the identity check must not turn an honest empty
+    // list into an error. A holds no marks on their private board right now.
+    expect(await privilegedMarkCount(userA, privateListId)).toBe(0)
+
+    const result = await listDrafted(clientA, privateListId, userA)
+    expect(result.status).toBe(200)
+    expect(result.body).toEqual({ list_id: privateListId, drafted: [] })
+  })
+
+  it('a non-empty read is unaffected, because the guard is lazy', async () => {
+    const result = await listDrafted(clientA, publicListId, userA)
+    expect(result.status).toBe(200)
+    expect(draftedIds(result.body).length).toBeGreaterThan(0)
+  })
+})
+
+describe('R178 — a caller that already proved its identity pays no second round-trip', () => {
+  // `assertCallerIs` used to call `supabase.auth.getUser()`, which validates
+  // against GoTrue over the network, on EVERY empty result — including the
+  // legitimate idempotent-replay path the service header says to expect, and
+  // which LV.1.3's optimistic checkbox now drives on every un-mark. The route
+  // resolved the same identity one call earlier. Threading it makes the
+  // comparison happen in memory. Measured, not asserted.
+  let getUser: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    getUser = vi.spyOn(clientA.auth, 'getUser')
+  })
+
+  afterEach(() => {
+    getUser.mockRestore()
+  })
+
+  it('an empty read WITHOUT the threaded identity still calls getUser (the old cost)', async () => {
+    const result = await listDrafted(clientA, privateListId, userA)
+    expect(result.status).toBe(200)
+    expect(getUser.mock.calls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('the same empty read WITH it calls getUser zero times', async () => {
+    const result = await listDrafted(clientA, privateListId, userA, userA)
+    expect(result.status).toBe(200)
+    expect(result.body).toEqual({ list_id: privateListId, drafted: [] })
+    expect(getUser).toHaveBeenCalledTimes(0)
+  })
+
+  it('and still 403s on a mismatch, without a round-trip', async () => {
+    // The saving must not come from skipping the check — only from not
+    // re-proving what the caller already proved.
+    const result = await listDrafted(clientA, privateListId, userB, userA)
+    expect(result.status).toBe(403)
+    expect(result.body).toEqual({ error: CANNOT_MARK_MESSAGE })
+    expect(getUser).toHaveBeenCalledTimes(0)
+  })
+
+  it('the idempotent un-mark replay — the path R178 names — pays nothing', async () => {
+    // A holds no mark for PLAYERS[0] on the private board, so this is a real
+    // zero-row delete by the rightful caller: the retry an optimistic checkbox
+    // performs.
+    const result = await setDrafted(
+      clientA,
+      privateListId,
+      userA,
+      { player_id: PLAYERS[0].id, drafted: false },
+      userA,
+    )
+    expect(result.status).toBe(200)
+    expect(result.body).toMatchObject({ drafted: false, changed: false })
+    expect(getUser).toHaveBeenCalledTimes(0)
+
+    // ...and without threading, the same call pays the round-trip.
+    const unthreaded = await setDrafted(clientA, privateListId, userA, {
+      player_id: PLAYERS[0].id,
+      drafted: false,
+    })
+    expect(unthreaded.status).toBe(200)
+    expect(getUser.mock.calls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('clearDrafted threads it too, and keeps its 403 on a mismatch', async () => {
+    const noop = await clearDrafted(clientA, privateListId, userA, userA)
+    expect(noop.body).toEqual({ list_id: privateListId, cleared: 0 })
+    expect(getUser).toHaveBeenCalledTimes(0)
+
+    const refused = await clearDrafted(clientA, privateListId, userB, userA)
+    expect(refused.status).toBe(403)
+    expect(refused.body).toEqual({ error: CANNOT_MARK_MESSAGE })
+    expect(getUser).toHaveBeenCalledTimes(0)
   })
 })
 

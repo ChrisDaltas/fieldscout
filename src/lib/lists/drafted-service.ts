@@ -31,6 +31,10 @@
  *   - a DELETE that RLS filtered away because the caller does not speak for
  *     `userId`                                      → 403, never a cheerful
  *     `changed: false` (R175 — see `assertCallerIs`)
+ *   - a READ that RLS filtered away for the same reason
+ *                                                   → 403, never a cheerful
+ *     `{drafted: []}` (R176, folded in at LV.1.3 — the read path had the same
+ *     reachability as the un-mark path and none of its honesty)
  *
  * **The write takes an explicit desired state, not a blind toggle.** The plan
  * calls LV.1.2 "the read/toggle route", which names the user's gesture; the
@@ -80,24 +84,46 @@ function notFound(): ServiceResult {
  *
  * `userId` is a parameter, and RLS treats a disagreement between it and the
  * client's real `auth.uid()` asymmetrically: an INSERT is REJECTED by
- * `WITH CHECK` (42501 → a loud 403), but a DELETE is silently FILTERED by
- * `USING` and simply removes nothing. Left alone, that makes "you had no mark"
- * and "you are not allowed to touch that mark" the same answer on the un-mark
- * path while the mark path distinguishes them — exactly the shape CLAUDE.md
- * forbids ("never let 'nothing happened' mean 'it worked'"; prove the REASON
- * for emptiness). R175.
+ * `WITH CHECK` (42501 → a loud 403), but a SELECT or a DELETE is silently
+ * FILTERED by `USING` and simply returns/removes nothing. Left alone, that
+ * makes "you had no mark" and "you are not allowed to touch that mark" the same
+ * answer on the read and un-mark paths while the mark path distinguishes them —
+ * exactly the shape CLAUDE.md forbids ("never let 'nothing happened' mean 'it
+ * worked'"; prove the REASON for emptiness). R175 (write), R176 (read).
  *
- * Called ONLY when a delete removed nothing, so the common path pays no extra
- * auth round-trip and — deliberately — the 42501 arm of `setDrafted` stays
- * reachable through the service, which is the only thing that keeps its
- * code→copy mapping pinned. A caller in good standing (the route always passes
- * `user.id` off the same authenticated client) sees no behavior change at all;
- * a caller that has drifted gets the same 403 its `drafted: true` twin returns.
+ * Called ONLY when a query came back empty, so the common path pays nothing
+ * and — deliberately — the 42501 arm of `setDrafted` stays reachable through
+ * the service, which is the only thing that keeps its code→copy mapping pinned.
+ *
+ * **`verifiedUserId` is R178, folded in at LV.1.3.** Every route handler in
+ * `…/drafted/route.ts` has already resolved `auth.getUser()` one call earlier
+ * and passes that same id as `userId`; re-resolving it here put a second GoTrue
+ * round-trip on the *legitimate idempotent-replay path* — the path this file's
+ * own header says to expect ("a checkbox with an optimistic update retries"),
+ * and the path LV.1.3's hook now drives on every un-mark. When the caller
+ * threads what it already proved, the comparison is done in memory and no
+ * round-trip happens at all. When it does not (any caller that has not proven
+ * an identity — including this suite's deliberately-mismatched drivers), the
+ * `auth.getUser()` fallback is unchanged.
+ *
+ * **The trust boundary this does not move.** A caller could thread a
+ * `verifiedUserId` it never verified and turn the 403 back into a 200
+ * `changed:false`. That costs nothing real: this layer is friendly 4xxs, and
+ * 079's RLS — not this function — is what actually stops the rows from moving.
+ * The parameter must therefore only ever be fed from the *same client's* own
+ * `auth.getUser()`, which is exactly what the route does.
  */
 async function assertCallerIs(
   supabase: Supabase,
   userId: string,
+  verifiedUserId?: string,
 ): Promise<ServiceResult | null> {
+  if (verifiedUserId !== undefined) {
+    return verifiedUserId === userId
+      ? null
+      : { status: 403, body: { error: CANNOT_MARK_MESSAGE } }
+  }
+
   const { data, error } = await supabase.auth.getUser()
   // Never swallow this: an unprovable no-op is not a provable one.
   if (error) return { status: 500, body: { error: error.message } }
@@ -143,6 +169,7 @@ export async function listDrafted(
   supabase: Supabase,
   listId: string,
   userId: string,
+  verifiedUserId?: string,
 ): Promise<ServiceResult> {
   if (!listIdSchema.safeParse(listId).success) return notFound()
 
@@ -158,9 +185,21 @@ export async function listDrafted(
   // An error here must never render as "nobody is drafted yet".
   if (error) return { status: 500, body: { error: error.message } }
 
+  const rows = data ?? []
+
+  // R176 — an empty read is either "you hold no marks here" or "RLS filtered
+  // your SELECT because you asked on someone else's behalf". Those are not the
+  // same fact, and the un-mark path eleven lines below has refused to conflate
+  // them since R175. Same lazy placement, same reason: the path that actually
+  // has marks pays nothing.
+  if (rows.length === 0) {
+    const identityProblem = await assertCallerIs(supabase, userId, verifiedUserId)
+    if (identityProblem) return identityProblem
+  }
+
   return {
     status: 200,
-    body: { list_id: listId, drafted: (data ?? []).map((row) => row.player_id) },
+    body: { list_id: listId, drafted: rows.map((row) => row.player_id) },
   }
 }
 
@@ -175,6 +214,7 @@ export async function setDrafted(
   listId: string,
   userId: string,
   rawBody: unknown,
+  verifiedUserId?: string,
 ): Promise<ServiceResult> {
   if (!listIdSchema.safeParse(listId).success) return notFound()
 
@@ -240,7 +280,7 @@ export async function setDrafted(
   // idempotent replay) or this client cannot speak for `userId` at all, in
   // which case RLS filtered the DELETE away silently. See assertCallerIs.
   if ((removed ?? []).length === 0) {
-    const identityProblem = await assertCallerIs(supabase, userId)
+    const identityProblem = await assertCallerIs(supabase, userId, verifiedUserId)
     if (identityProblem) return identityProblem
   }
 
@@ -271,6 +311,7 @@ export async function clearDrafted(
   supabase: Supabase,
   listId: string,
   userId: string,
+  verifiedUserId?: string,
 ): Promise<ServiceResult> {
   if (!listIdSchema.safeParse(listId).success) return notFound()
 
@@ -286,7 +327,7 @@ export async function clearDrafted(
   // `cleared: 0` must mean "there was nothing to clear", never "RLS filtered
   // your DELETE because you asked on someone else's behalf".
   if ((data ?? []).length === 0) {
-    const identityProblem = await assertCallerIs(supabase, userId)
+    const identityProblem = await assertCallerIs(supabase, userId, verifiedUserId)
     if (identityProblem) return identityProblem
   }
 
