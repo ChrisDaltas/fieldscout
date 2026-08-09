@@ -25,6 +25,7 @@ interface NavEntry {
 // flag and come back as each one is reskinned.
 const PRIMARY: NavEntry[] = [
   { href: '/app', label: 'Home', icon: 'dashboard' },
+  { href: '/app/lists', label: 'Lists', icon: 'list', matchPrefix: '/app/lists' },
   ...(featureFlags.bigBoard
     ? [
         {
@@ -51,7 +52,6 @@ const PRIMARY: NavEntry[] = [
     icon: 'table',
     matchPrefix: '/app/research',
   },
-  { href: '/app/lists', label: 'Lists', icon: 'list', matchPrefix: '/app/lists' },
 ]
 
 const MORE_ITEMS: NavEntry[] = [
