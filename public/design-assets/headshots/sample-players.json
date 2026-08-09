@@ -1,0 +1,502 @@
+[
+  {
+    "rank": 1,
+    "sleeperId": "4984",
+    "name": "Josh Allen",
+    "team": "BUF",
+    "position": "QB",
+    "file": "josh-allen-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/4984.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/4984.jpg"
+  },
+  {
+    "rank": 2,
+    "sleeperId": "9509",
+    "name": "Bijan Robinson",
+    "team": "ATL",
+    "position": "RB",
+    "file": "bijan-robinson-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9509.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9509.jpg"
+  },
+  {
+    "rank": 3,
+    "sleeperId": "4881",
+    "name": "Lamar Jackson",
+    "team": "BAL",
+    "position": "QB",
+    "file": "lamar-jackson-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/4881.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/4881.jpg"
+  },
+  {
+    "rank": 4,
+    "sleeperId": "11566",
+    "name": "Jayden Daniels",
+    "team": "WAS",
+    "position": "QB",
+    "file": "jayden-daniels-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11566.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11566.jpg"
+  },
+  {
+    "rank": 5,
+    "sleeperId": "9493",
+    "name": "Puka Nacua",
+    "team": "LAR",
+    "position": "WR",
+    "file": "puka-nacua-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9493.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9493.jpg"
+  },
+  {
+    "rank": 6,
+    "sleeperId": "11564",
+    "name": "Drake Maye",
+    "team": "NE",
+    "position": "QB",
+    "file": "drake-maye-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11564.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11564.jpg"
+  },
+  {
+    "rank": 7,
+    "sleeperId": "6904",
+    "name": "Jalen Hurts",
+    "team": "PHI",
+    "position": "QB",
+    "file": "jalen-hurts-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6904.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6904.jpg"
+  },
+  {
+    "rank": 8,
+    "sleeperId": "3294",
+    "name": "Dak Prescott",
+    "team": "DAL",
+    "position": "QB",
+    "file": "dak-prescott-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/3294.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/3294.jpg"
+  },
+  {
+    "rank": 9,
+    "sleeperId": "9221",
+    "name": "Jahmyr Gibbs",
+    "team": "DET",
+    "position": "RB",
+    "file": "jahmyr-gibbs-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9221.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9221.jpg"
+  },
+  {
+    "rank": 10,
+    "sleeperId": "6770",
+    "name": "Joe Burrow",
+    "team": "CIN",
+    "position": "QB",
+    "file": "joe-burrow-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6770.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6770.jpg"
+  },
+  {
+    "rank": 11,
+    "sleeperId": "7564",
+    "name": "Ja'Marr Chase",
+    "team": "CIN",
+    "position": "WR",
+    "file": "ja-marr-chase-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/7564.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/7564.jpg"
+  },
+  {
+    "rank": 12,
+    "sleeperId": "7523",
+    "name": "Trevor Lawrence",
+    "team": "JAX",
+    "position": "QB",
+    "file": "trevor-lawrence-qb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/7523.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/7523.jpg"
+  },
+  {
+    "rank": 18,
+    "sleeperId": "4034",
+    "name": "Christian McCaffrey",
+    "team": "SF",
+    "position": "RB",
+    "file": "christian-mccaffrey-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/4034.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/4034.jpg"
+  },
+  {
+    "rank": 19,
+    "sleeperId": "9488",
+    "name": "Jaxon Smith-Njigba",
+    "team": "SEA",
+    "position": "WR",
+    "file": "jaxon-smith-njigba-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9488.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9488.jpg"
+  },
+  {
+    "rank": 22,
+    "sleeperId": "7547",
+    "name": "Amon-Ra St. Brown",
+    "team": "DET",
+    "position": "WR",
+    "file": "amon-ra-st-brown-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/7547.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/7547.jpg"
+  },
+  {
+    "rank": 26,
+    "sleeperId": "6813",
+    "name": "Jonathan Taylor",
+    "team": "IND",
+    "position": "RB",
+    "file": "jonathan-taylor-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6813.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6813.jpg"
+  },
+  {
+    "rank": 27,
+    "sleeperId": "6786",
+    "name": "CeeDee Lamb",
+    "team": "DAL",
+    "position": "WR",
+    "file": "ceedee-lamb-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6786.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6786.jpg"
+  },
+  {
+    "rank": 28,
+    "sleeperId": "9226",
+    "name": "De'Von Achane",
+    "team": "MIA",
+    "position": "RB",
+    "file": "de-von-achane-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9226.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9226.jpg"
+  },
+  {
+    "rank": 30,
+    "sleeperId": "8138",
+    "name": "James Cook",
+    "team": "BUF",
+    "position": "RB",
+    "file": "james-cook-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8138.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8138.jpg"
+  },
+  {
+    "rank": 32,
+    "sleeperId": "12527",
+    "name": "Ashton Jeanty",
+    "team": "LV",
+    "position": "RB",
+    "file": "ashton-jeanty-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12527.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12527.jpg"
+  },
+  {
+    "rank": 34,
+    "sleeperId": "6794",
+    "name": "Justin Jefferson",
+    "team": "MIN",
+    "position": "WR",
+    "file": "justin-jefferson-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6794.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6794.jpg"
+  },
+  {
+    "rank": 35,
+    "sleeperId": "10229",
+    "name": "Rashee Rice",
+    "team": "KC",
+    "position": "WR",
+    "file": "rashee-rice-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/10229.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/10229.jpg"
+  },
+  {
+    "rank": 36,
+    "sleeperId": "11632",
+    "name": "Malik Nabers",
+    "team": "NYG",
+    "position": "WR",
+    "file": "malik-nabers-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11632.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11632.jpg"
+  },
+  {
+    "rank": 37,
+    "sleeperId": "3198",
+    "name": "Derrick Henry",
+    "team": "BAL",
+    "position": "RB",
+    "file": "derrick-henry-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/3198.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/3198.jpg"
+  },
+  {
+    "rank": 38,
+    "sleeperId": "4866",
+    "name": "Saquon Barkley",
+    "team": "PHI",
+    "position": "RB",
+    "file": "saquon-barkley-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/4866.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/4866.jpg"
+  },
+  {
+    "rank": 39,
+    "sleeperId": "12507",
+    "name": "Omarion Hampton",
+    "team": "LAC",
+    "position": "RB",
+    "file": "omarion-hampton-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12507.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12507.jpg"
+  },
+  {
+    "rank": 41,
+    "sleeperId": "8130",
+    "name": "Trey McBride",
+    "team": "ARI",
+    "position": "TE",
+    "file": "trey-mcbride-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8130.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8130.jpg"
+  },
+  {
+    "rank": 42,
+    "sleeperId": "8112",
+    "name": "Drake London",
+    "team": "ATL",
+    "position": "WR",
+    "file": "drake-london-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8112.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8112.jpg"
+  },
+  {
+    "rank": 43,
+    "sleeperId": "13287",
+    "name": "Jeremiyah Love",
+    "team": "ARI",
+    "position": "RB",
+    "file": "jeremiyah-love-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/13287.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/13287.jpg"
+  },
+  {
+    "rank": 44,
+    "sleeperId": "7569",
+    "name": "Nico Collins",
+    "team": "HOU",
+    "position": "WR",
+    "file": "nico-collins-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/7569.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/7569.jpg"
+  },
+  {
+    "rank": 45,
+    "sleeperId": "8137",
+    "name": "George Pickens",
+    "team": "DAL",
+    "position": "WR",
+    "file": "george-pickens-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8137.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8137.jpg"
+  },
+  {
+    "rank": 46,
+    "sleeperId": "11604",
+    "name": "Brock Bowers",
+    "team": "LV",
+    "position": "TE",
+    "file": "brock-bowers-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11604.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11604.jpg"
+  },
+  {
+    "rank": 48,
+    "sleeperId": "5859",
+    "name": "A.J. Brown",
+    "team": "PHI",
+    "position": "WR",
+    "file": "a-j-brown-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/5859.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/5859.jpg"
+  },
+  {
+    "rank": 49,
+    "sleeperId": "9224",
+    "name": "Chase Brown",
+    "team": "CIN",
+    "position": "RB",
+    "file": "chase-brown-rb.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9224.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9224.jpg"
+  },
+  {
+    "rank": 51,
+    "sleeperId": "8146",
+    "name": "Garrett Wilson",
+    "team": "NYJ",
+    "position": "WR",
+    "file": "garrett-wilson-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8146.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8146.jpg"
+  },
+  {
+    "rank": 52,
+    "sleeperId": "8144",
+    "name": "Chris Olave",
+    "team": "NO",
+    "position": "WR",
+    "file": "chris-olave-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8144.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8144.jpg"
+  },
+  {
+    "rank": 56,
+    "sleeperId": "9997",
+    "name": "Zay Flowers",
+    "team": "BAL",
+    "position": "WR",
+    "file": "zay-flowers-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9997.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9997.jpg"
+  },
+  {
+    "rank": 59,
+    "sleeperId": "12526",
+    "name": "Tetairoa McMillan",
+    "team": "CAR",
+    "position": "WR",
+    "file": "tetairoa-mcmillan-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12526.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12526.jpg"
+  },
+  {
+    "rank": 63,
+    "sleeperId": "6801",
+    "name": "Tee Higgins",
+    "team": "CIN",
+    "position": "WR",
+    "file": "tee-higgins-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/6801.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/6801.jpg"
+  },
+  {
+    "rank": 64,
+    "sleeperId": "8148",
+    "name": "Jameson Williams",
+    "team": "DET",
+    "position": "WR",
+    "file": "jameson-williams-wr.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/8148.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/8148.jpg"
+  },
+  {
+    "rank": 70,
+    "sleeperId": "12517",
+    "name": "Colston Loveland",
+    "team": "CHI",
+    "position": "TE",
+    "file": "colston-loveland-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12517.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12517.jpg"
+  },
+  {
+    "rank": 79,
+    "sleeperId": "12518",
+    "name": "Tyler Warren",
+    "team": "IND",
+    "position": "TE",
+    "file": "tyler-warren-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12518.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12518.jpg"
+  },
+  {
+    "rank": 85,
+    "sleeperId": "12506",
+    "name": "Harold Fannin",
+    "team": "CLE",
+    "position": "TE",
+    "file": "harold-fannin-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/12506.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/12506.jpg"
+  },
+  {
+    "rank": 93,
+    "sleeperId": "10859",
+    "name": "Sam LaPorta",
+    "team": "DET",
+    "position": "TE",
+    "file": "sam-laporta-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/10859.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/10859.jpg"
+  },
+  {
+    "rank": 98,
+    "sleeperId": "7553",
+    "name": "Kyle Pitts",
+    "team": "ATL",
+    "position": "TE",
+    "file": "kyle-pitts-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/7553.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/7553.jpg"
+  },
+  {
+    "rank": 110,
+    "sleeperId": "9484",
+    "name": "Tucker Kraft",
+    "team": "GB",
+    "position": "TE",
+    "file": "tucker-kraft-te.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/9484.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/9484.jpg"
+  },
+  {
+    "rank": 162,
+    "sleeperId": "11533",
+    "name": "Brandon Aubrey",
+    "team": "DAL",
+    "position": "K",
+    "file": "brandon-aubrey-k.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11533.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11533.jpg"
+  },
+  {
+    "rank": 169,
+    "sleeperId": "2747",
+    "name": "Jason Myers",
+    "team": "SEA",
+    "position": "K",
+    "file": "jason-myers-k.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/2747.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/2747.jpg"
+  },
+  {
+    "rank": 170,
+    "sleeperId": "11786",
+    "name": "Cam Little",
+    "team": "JAX",
+    "position": "K",
+    "file": "cam-little-k.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/11786.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/11786.jpg"
+  },
+  {
+    "rank": 172,
+    "sleeperId": "3451",
+    "name": "Ka'imi Fairbairn",
+    "team": "HOU",
+    "position": "K",
+    "file": "ka-imi-fairbairn-k.jpg",
+    "thumb": "https://sleepercdn.com/content/nfl/players/thumb/3451.jpg",
+    "full": "https://sleepercdn.com/content/nfl/players/3451.jpg"
+  }
+]
