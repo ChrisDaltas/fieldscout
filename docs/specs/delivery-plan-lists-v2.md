@@ -27,7 +27,7 @@
 | **Color** | Implement from **tokens, never the handoff's literal hex**. The prototype is token-driven (19 × `var(--accent)`, zero hardcoded blues); its `#1F6BF0` describes what that token resolved to in *their* bundle. The app's `accent` is `#3d5cff`. |
 | **Flag** | All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout. |
 | **Free-only** | No `is_pro` gates. |
-| **Round 1 scope** | Lists page + list detail. Side-by-side compare and pop-out windows are **Round 2** (§6). *(Assumption — flip it before LV.1.1 if wrong.)* |
+| **Round 1 scope** | Lists page + list detail. Side-by-side compare and pop-out windows are **Round 2** (§6). *(Ruled by Chris, 2026-08-09.)* |
 
 ---
 
@@ -247,7 +247,8 @@ surfaces outside Lists, which is why it is off the launch path.
 
 ## 7. Open questions for Chris
 
-- **Q1 — Round 1 scope**: confirm §1's assumption (page + detail first).
+*(Q1 — Round 1 scope — is resolved: page + detail first, then side-by-side and
+pop-outs. Ruled by Chris 2026-08-09.)*
 - **Q2 — Accepted trade-offs**: §2.2 lists two (per-browser display prefs,
   per-browser drafted marks). Both follow from UI-only; either one you reject
   becomes a schema change. *(Visibility is resolved — private/public is the
