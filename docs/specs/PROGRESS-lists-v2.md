@@ -571,3 +571,35 @@ so a session with no opinion defers to `lists.ranking_mode` — the Reviewer
 upheld it and asked for no change. `toggleCol` kept its allocate-always body: it
 adds or removes exactly one stat, so it has no value-identical input, and the
 `update` gate covers it structurally anyway.
+
+#### Re-review — 2026-08-09 (fresh Reviewer, fix diff `27681e8`) — **VERDICT: CLEAN**
+
+*Gates re-run independently: type-check clean · lint exit 0 · `test:unit` **42 / 694** ·
+`share-link-permanence.test.ts` 6/6 · 4 files touched, no migration/schema/route ·
+`use-draft-mode.ts` and all board surfaces untouched.*
+
+*R179 confirmed genuinely discharged — the Reviewer reconstructed `f613660`'s exact
+state, planted the SSR-idiom write, and reproduced **18/18 green** (the original hole,
+independently), then showed the same probe gives **2 RED** on the fix through two
+independent layers. It isolated the `reset` seeding claim by measuring the delta (3 RED
+with seeding, 2 RED without — the difference being exactly the runtime spy), proving
+`reset`'s body was previously unobservable.*
+
+***The guard is behavioural, not name-matching*** *— the decisive probe: persistence
+planted in a **separate module** (`window.localStorage.setItem` behind the SSR guard)
+with **zero banned tokens in the store file**, caught by the runtime spy alone. That is
+the property that matters; the source pin is the belt, not the braces.*
+
+*R180's centralised gate judged a **strengthening** that strictly dominates the two
+short-circuits it replaced; no consumer depends on entry presence. R182's `Infinity`
+no-op judged correct — `moveCol(id, stat, cols.length)`, the normal insert-at-end
+convention, still clamps, so LV.3.7 loses nothing.*
+
+Four nits recorded, **not fixed**:
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| **R186** — the "consequence worth knowing" note (store `:194`, PROGRESS `:301`) is false for a list customised then written back to defaults: the `byList` entry survives and the selector returns an equal-but-distinct object, not the frozen default. Case A was already true at `f613660`, so the sentence overstates what changed. The suite's own `toBe(DEFAULT_LIST_DISPLAY)` idiom invites a consumer to use reference equality as "is this list customised?", which **LV.3.2's segmented control would silently break on the first toggle-back** | nit | **Open — read before LV.3.2.** Either narrow the wording to "never customised", or make it true by dropping the entry in `update` when it equals the default. Pin whichever |
+| **R187** — R184's anti-recurrence grep is quoted with the wrong glob in two of three places (`src/stores/*.ts` returns **8**, matching the test file's deliberate `persist` control; `src/stores/*-store.ts` returns the 7 it claims) | nit | **Open.** Fix at plan `:348` and PROGRESS `:566` |
+| **R188** — PROGRESS `:338` heading cites R181; the passage is entirely R179 (R181 is the prototype-key finding at §4 item 6) | nit | **Open.** Retitle to R179 |
+| **R189** — residual tail: a guarded write through an **unstubbed** alias (`self`, typed by lib.dom) escapes both the spies and the substring source pin — `20 passed`, `tsc` clean. Judged the obfuscation tail, not the realistic failure mode | nit | **Open.** Add `self` to the `vi.stubGlobal` set and the banned-token list — one line each |
