@@ -331,3 +331,33 @@ reset`, the honest one).*
 probe (§4's decision 2 — 079's DELETE policy is unconditional on purpose, so
 you can always clean up your own rows on a list that has since gone private
 or into the trash). R175 adds an identity check, not a visibility check.
+
+#### Re-review — 2026-08-09 (fresh Reviewer, fix diff `86a9881`) — **VERDICT: CLEAN**
+
+*Gates re-run independently: type-check clean · lint exit 0 · `test:unit` 41/674 ·
+`test:stack` 16/224 (green twice) · `drafted-api-db.test.ts` standalone 24/24 across
+four runs, no flake · pgTAP 028 **49/49** · hosted `list_migrations` head still **078**
+(079 never applied hosted) · `database.ts` alias block intact.*
+
+*Six probes, three of which the fix Builder never ran: the 013-form policy → `not ok 38`
+(the new 067 pin) byte-for-byte as claimed; the **013 form against the full stack suite →
+224/224 green**, independently substantiating that assertion 38 is the only pin anywhere
+that discriminates; a `BEFORE DELETE` cross-list wipe (different mechanism from the
+Builder's `AFTER DELETE`) → `not ok 24` with assertion 22 still green, so 24 is the sole
+per-list discriminator; the same trigger against the stack suite → 4 red; `assertCallerIs`
+call sites removed → 2 red; and `assertCallerIs` forced to always-403 → 3 red, proving
+the counter-control load-bearing rather than decorative.*
+
+*R175's **lazy** guard placement was judged sound: the Reviewer could not construct a path
+where a mismatched `userId` returns a cheerful `changed:false` — the DELETE carries
+`.eq('user_id', userId)` under RLS `USING (user_id = auth.uid())`, so on a mismatch the
+intersection is empty by construction. The Builder's argument that an eager guard would
+silently un-pin the 42501→403 mapping test was verified correct.*
+
+Three nits recorded, **not fixed**:
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| **R176** — `drafted-service.ts` `listDrafted` (GET) still collapses "you hold no marks" with "you asked on behalf of someone you cannot speak for" into `200 {drafted: []}` — the exact shape R175's contract forbids eleven lines above. Reachability is identical to the un-mark path that got a hard 403, so the asymmetry now lives inside one file | nit | **Open.** Fix direction: call `assertCallerIs` when the read returns empty, or add a header line stating the read path is deliberately unguarded and why. Fold into **LV.1.3**, which consumes `listDrafted` |
+| **R177** — two imprecisions in the newly-amended honesty text: 028's break map says the 013 substitution fails "the 067 pin and nothing else" when it measurably fails **two** (38 + the total-rows epilogue 47), disagreeing with PROGRESS §6 which records both; and 079's banner cites `drafted-service.test.ts` as corroborating green when that suite drives a `noDatabase` Proxy and **structurally cannot** redden for an RLS change | nit | **Open.** Fix direction: "assertion 38, plus the downstream epilogue count"; cite the stack suite alone as the DB-reaching green |
+| **R178** — the lazy guard adds an `auth.getUser()` round-trip on the legitimate idempotent-replay path, which this file's own header says to expect (optimistic checkbox retries); the route proved the same identity one call earlier | nit | **Open, no action at LV.1.2 scope.** If LV.1.3 shows retry volume, thread the route's already-verified user into the service instead of re-fetching |
