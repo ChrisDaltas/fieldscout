@@ -99,7 +99,18 @@
 -- private list shared with your league under 067 — and it stays correct for
 -- free if `lists` visibility ever changes again. Spelling the visibility out
 -- inline, as 013 does, would have silently excluded the 067 shared-private
--- case. Both directions are pinned in pgTAP 028 and in the stack suite.
+-- case.
+--
+-- All THREE directions are pinned in pgTAP 028 — u2 CAN mark on u1's public
+-- list, CANNOT on u1's plain private list, and CAN on u1's private list that
+-- is shared with a league they both belong to. The stack suite pins the first
+-- two on the wire; the third is pgTAP-only. **The third is the load-bearing
+-- one** (R173): it is the only assertion anywhere that distinguishes this
+-- policy from the 013-style form above. Measured, not assumed — with the
+-- 013 form substituted in, pgTAP 028 and both vitest suites stayed fully
+-- green before that pin existed, and the pin now reddens under exactly that
+-- substitution. If you are here to "simplify" this EXISTS, assertion 38 of
+-- 028 is the one telling you not to.
 --
 -- The DELETE policy is `user_id = auth.uid()` ALONE, with no list check: you
 -- must always be able to clean up your own rows, including on a list that

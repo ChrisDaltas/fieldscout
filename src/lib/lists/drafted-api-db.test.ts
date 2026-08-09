@@ -21,6 +21,12 @@
  *      case D2 exists for — with A's and B's marks on that shared list shown
  *      to be independent.
  *
+ * Two more, added in review (§6 R174/R175): the cascade does NOT reach the
+ * same player's mark on a DIFFERENT list (D2's most explicit prohibition,
+ * untestable while the victim lived on one list), and an un-mark that RLS
+ * filtered away because the caller cannot speak for `userId` is a 403 rather
+ * than a cheerful `changed: false`.
+ *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5); FAILS loudly when the stack is down, never skips.
  *
@@ -434,8 +440,21 @@ describe('a player who is not on the list cannot be marked', () => {
     expect(error?.code).toBe('23503')
   })
 
-  it('removing a player from the list takes every mark for him with it', async () => {
+  it('removing a player from the list takes every mark for him with it — and does NOT reach his mark on another list', async () => {
+    // R174: the victim has to live on a SECOND list with a mark of his own,
+    // or a cascade that wiped every list would pass this test just as
+    // happily as the per-list one D2 requires ("does not cascade to other
+    // lists"). PLAYERS[1] joins A's private board and is marked there too.
+    const { error: joinError } = await clientA
+      .from('list_players')
+      .insert({ list_id: privateListId, player_id: PLAYERS[1].id, position: 2, overall_rank: 2 })
+    expect(joinError).toBeNull()
+    await setDrafted(clientA, privateListId, userA, {
+      player_id: PLAYERS[1].id,
+      drafted: true,
+    })
     expect(await privilegedMarkCount(userA, publicListId)).toBe(2)
+    expect(await privilegedMarkCount(userA, privateListId)).toBe(1)
 
     const { error } = await clientA
       .from('list_players')
@@ -448,10 +467,70 @@ describe('a player who is not on the list cannot be marked', () => {
     expect(draftedIds(read.body)).toEqual([PLAYERS[0].id])
     expect(await privilegedMarkCount(userA, publicListId)).toBe(1)
 
-    // Restore the fixture for the clear-drafted block below.
+    // The other list still carries the very same player's mark.
+    const readPrivate = await listDrafted(clientA, privateListId, userA)
+    expect(draftedIds(readPrivate.body)).toEqual([PLAYERS[1].id])
+    expect(await privilegedMarkCount(userA, privateListId)).toBe(1)
+
+    // Restore the fixture for the clear-drafted block below: put PLAYERS[1]
+    // back on the public list and take the private-board detour back out, so
+    // the counts that block asserts are the ones it was written against.
     await clientA
       .from('list_players')
       .insert({ list_id: publicListId, player_id: PLAYERS[1].id, position: 2, overall_rank: 2 })
+    await clientA
+      .from('list_players')
+      .delete()
+      .eq('list_id', privateListId)
+      .eq('player_id', PLAYERS[1].id)
+    expect(await privilegedMarkCount(userA, privateListId)).toBe(0)
+  })
+})
+
+describe("R175 — an un-mark that RLS filtered away is a 403, not a cheerful no-op", () => {
+  // `setDrafted`'s drafted:true twin already 403s when the caller does not
+  // speak for `userId` (the 42501 arm above). These pin the other arm, which
+  // RLS refuses SILENTLY: a DELETE is filtered by USING, not rejected by it,
+  // so without the identity check both "you had no mark" and "that is not
+  // your mark" would come back as `changed: false`. LV.1.3 consumes
+  // setDrafted, so this cannot be left to a comment.
+  it('setDrafted(drafted:false) with a userId the client cannot speak for is 403', async () => {
+    // The positive control comes FIRST: B really does hold the mark that the
+    // call below fails to delete, so the 403 is a refusal rather than a
+    // report that there was nothing there.
+    const before = await privilegedMarkCount(userB, publicListId)
+    expect(before).toBeGreaterThan(0)
+
+    const result = await setDrafted(clientA, publicListId, userB, {
+      player_id: PLAYERS[0].id,
+      drafted: false,
+    })
+    expect(result.status).toBe(403)
+    expect(result.body).toEqual({ error: CANNOT_MARK_MESSAGE })
+    expect(await privilegedMarkCount(userB, publicListId)).toBe(before)
+  })
+
+  it('clearDrafted with a userId the client cannot speak for is 403', async () => {
+    const before = await privilegedMarkCount(userB, publicListId)
+    expect(before).toBeGreaterThan(0)
+
+    const result = await clearDrafted(clientA, publicListId, userB)
+    expect(result.status).toBe(403)
+    expect(result.body).toEqual({ error: CANNOT_MARK_MESSAGE })
+    expect(await privilegedMarkCount(userB, publicListId)).toBe(before)
+  })
+
+  it('a genuine no-op from the rightful caller is still a plain 200', async () => {
+    // The counter-control: the identity check must not turn honest
+    // idempotency into an error. A holds no mark for PLAYERS[1] at this point
+    // (the cascade above took it), so this is a real zero-row delete by the
+    // rightful caller — and it stays a 200.
+    const result = await setDrafted(clientA, publicListId, userA, {
+      player_id: PLAYERS[1].id,
+      drafted: false,
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toMatchObject({ drafted: false, changed: false })
   })
 })
 

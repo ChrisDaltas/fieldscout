@@ -19,8 +19,19 @@
 --     these two lives_ok pins go red.
 --   * **The RLS-deferring INSERT policy.** 079's `EXISTS (SELECT 1 FROM
 --     lists ...)` has no visibility conjunct: it runs under `lists`'s OWN
---     RLS, so "any list you can read" is the rule. Pinned in both directions
---     — u2 CAN insert on u1's public list, CANNOT on u1's private one.
+--     RLS, so "any list you can read" is the rule. Pinned in ALL THREE
+--     directions — u2 CAN insert on u1's public list, CANNOT on u1's plain
+--     private one, and CAN on u1's private list that is SHARED with a league
+--     they both belong to (067). That third pin is the one that matters
+--     (R173): it is the ONLY direction that distinguishes 079's design from
+--     the inline `is_private = FALSE OR owner_id = auth.uid()` form 013 uses
+--     and 079's banner explicitly rejects. Without it, the rejected form
+--     passes this whole file green.
+--   * **"Does not cascade to other lists"** — D2's most explicit
+--     prohibition. The cascade block's victim is marked on TWO lists, so
+--     removing him from one proves the mark on the OTHER survives (R174). A
+--     one-list victim would pass identically against a cascade that wiped
+--     every list.
 --   * **UPDATE is denied to EVERYONE, including the row's own user.** 079
 --     ships no UPDATE policy because row presence is the state. The pin uses
 --     the RETURNING-count pattern from the row's owner, not from a stranger
@@ -39,8 +50,12 @@
 --   dropping `user_id = auth.uid()` from the SELECT policy fails the
 --   cross-user read pins (u1-sees-u2, u2-sees-u1, anon); dropping the whole
 --   `EXISTS` from the INSERT policy fails the private-list and soft-deleted
---   pins; ADDING an UPDATE policy fails the immutability pins; dropping the
---   composite FK fails the 23503 and cascade pins.
+--   pins; REPLACING the `EXISTS` with 013's hardcoded-visibility form fails
+--   the 067 league-shared-private pin in section E (and nothing else — which
+--   is exactly why that pin had to be added, R173); ADDING an UPDATE policy
+--   fails the immutability pins; dropping the composite FK fails the 23503
+--   and cascade pins; widening the cascade to every list fails the
+--   "other list untouched" pin in section C (R174).
 --
 -- Determinism: fixed UUIDs, fixed player ids, fixed `drafted_at` literals.
 -- All privileged fixture work runs BEFORE any JWT claims are set (set_config
@@ -52,7 +67,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(47);
+select plan(49);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape, policy set, grants (D2's printed DDL + 079's two hardenings)
@@ -121,9 +136,14 @@ select policies_are('public', 'list_players',
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any claims, D49(7)).
---    u1 owns: lp1 PUBLIC · lp2 PRIVATE · lp3 PRIVATE soft-DELETED
+--    u1 owns: lp1 PUBLIC · lp2 PRIVATE · lp3 PRIVATE soft-DELETED ·
+--             lp5 PRIVATE but SHARED with league L1 (067) — the R173 pin
 --    u2 owns: lp4 PUBLIC        u3 = a third signed-in user with no marks
---    players p1, p2 on every list (p2 is the cascade probe's victim).
+--    League L1: u1 commissioner, u2 manager, u3 NOT a member. lp5 is
+--    attached to it with shared_with_league = TRUE, which is what makes a
+--    PRIVATE list of u1's readable — and therefore markable — by u2.
+--    p1 is on lp1/lp2/lp3/lp4/lp5; p2 (the cascade victim) is on lp1 AND
+--    lp4, so the cascade can be shown NOT to reach the second list (R174).
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -156,14 +176,36 @@ insert into lists (id, owner_id, title, slug, is_private, deleted_at) values
   ('94000000-0000-4000-8000-000000000003', '84000000-0000-4000-8000-000000000001',
    'lpd u1 private deleted', 'lpd-u1-del', true, now()),
   ('94000000-0000-4000-8000-000000000004', '84000000-0000-4000-8000-000000000002',
-   'lpd u2 public', 'lpd-u2-pub', false, null);
+   'lpd u2 public', 'lpd-u2-pub', false, null),
+  ('94000000-0000-4000-8000-000000000005', '84000000-0000-4000-8000-000000000001',
+   'lpd u1 private league-shared', 'lpd-u1-priv-shared', true, null);
+
+-- The 067 league-shared-private fixture (R173). lp5 differs from lp2 in
+-- EXACTLY one respect — u1 attached it to a league u2 is also in, with
+-- shared_with_league = TRUE — so the pair of pins in section E isolates the
+-- RLS-deferring EXISTS and nothing else.
+insert into leagues (id, owner_id, name, season) values
+  ('a4000000-0000-4000-8000-00000000000a', '84000000-0000-4000-8000-000000000001',
+   'pgtap-lpd-league', 2026);
+
+insert into league_members (league_id, user_id, role) values
+  ('a4000000-0000-4000-8000-00000000000a', '84000000-0000-4000-8000-000000000001', 'commissioner'),
+  ('a4000000-0000-4000-8000-00000000000a', '84000000-0000-4000-8000-000000000002', 'manager');
+
+insert into league_lists (league_id, list_id, owner_id, is_primary_board, shared_with_league) values
+  ('a4000000-0000-4000-8000-00000000000a', '94000000-0000-4000-8000-000000000005',
+   '84000000-0000-4000-8000-000000000001', false, true);
 
 insert into list_players (list_id, player_id, position, overall_rank) values
   ('94000000-0000-4000-8000-000000000001', 'pgtap-lpd-p1', 1, 1),
   ('94000000-0000-4000-8000-000000000001', 'pgtap-lpd-p2', 2, 2),
   ('94000000-0000-4000-8000-000000000002', 'pgtap-lpd-p1', 1, 1),
   ('94000000-0000-4000-8000-000000000003', 'pgtap-lpd-p1', 1, 1),
-  ('94000000-0000-4000-8000-000000000004', 'pgtap-lpd-p1', 1, 1);
+  ('94000000-0000-4000-8000-000000000004', 'pgtap-lpd-p1', 1, 1),
+  -- R174: the cascade victim needs a SECOND home, or "does not cascade to
+  -- other lists" is untestable.
+  ('94000000-0000-4000-8000-000000000004', 'pgtap-lpd-p2', 2, 2),
+  ('94000000-0000-4000-8000-000000000005', 'pgtap-lpd-p1', 1, 1);
 
 -- u1 and u2 BOTH mark p1 on u1's public list — the D2 per-user scope in one
 -- row pair. `drafted_at` is a fixed literal so the immutability epilogue can
@@ -198,24 +240,38 @@ select throws_ok(
   '23505', null,
   're-marking an already-marked player is 23505 — the service maps it to an idempotent no-op, never a duplicate');
 
--- Cascade: a mark seeded on (lp1, p2), then p2 is removed from the list.
+-- Cascade, and its CEILING (R174). The same user marks the same victim p2 on
+-- TWO lists — lp1 and lp4 — then p2 is removed from lp1 only. Both halves are
+-- asserted: the mark on lp1 dies, and the mark on lp4 does NOT. A victim
+-- living on one list could not tell those apart, so D2's most explicit
+-- prohibition ("does not cascade to other lists") would have been unpinned.
 insert into list_player_drafted (user_id, list_id, player_id) values
   ('84000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000001',
+   'pgtap-lpd-p2'),
+  ('84000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000004',
    'pgtap-lpd-p2');
 select is(
   (select count(*) from list_player_drafted where player_id = 'pgtap-lpd-p2'),
-  1::bigint,
-  'cascade positive control: the (lp1, p2) mark exists before the player is removed');
+  2::bigint,
+  'cascade positive control: p2 is marked on BOTH lp1 and lp4 before he is removed from lp1');
 delete from list_players
 where list_id = '94000000-0000-4000-8000-000000000001'
   and player_id = 'pgtap-lpd-p2';
 select is(
-  (select count(*) from list_player_drafted where player_id = 'pgtap-lpd-p2'),
+  (select count(*) from list_player_drafted
+   where player_id = 'pgtap-lpd-p2'
+     and list_id = '94000000-0000-4000-8000-000000000001'),
   0::bigint,
-  'removing a player from the list cascades EVERY user''s mark for him on it — no orphan marks survive (079 hardening 1)');
+  'removing a player from a list cascades EVERY user''s mark for him ON THAT LIST — no orphan marks survive (079 hardening 1)');
 select is(
-  (select count(*) from list_player_drafted), 2::bigint,
-  'privileged total-rows pin: 2 marks exist — the row-exists guard behind every 0-affected RETURNING-count below');
+  (select count(*) from list_player_drafted
+   where player_id = 'pgtap-lpd-p2'
+     and list_id = '94000000-0000-4000-8000-000000000004'),
+  1::bigint,
+  'D2''s "does not cascade to other lists" made falsifiable (R174): the SAME user''s mark for the SAME player on a DIFFERENT list is untouched — a cascade that wiped every list would fail HERE and nowhere else');
+select is(
+  (select count(*) from list_player_drafted), 3::bigint,
+  'privileged total-rows pin: 3 marks exist — the row-exists guard behind every 0-affected RETURNING-count below');
 
 -- ---------------------------------------------------------------------------
 -- D. u1 — own-row reads, the sanctioned writes, and immutability.
@@ -302,11 +358,28 @@ select throws_ok(
              'pgtap-lpd-p1') $$,
   '42501', null,
   'u2 marking on u1''s PRIVATE list is 42501 — 079''s EXISTS runs under lists'' OWN RLS, so "any list you can read" is the rule and an invisible list is unmarkable');
+
+-- THE PIN THAT MAKES THE DESIGN FALSIFIABLE (R173). lp5 is every bit as
+-- PRIVATE and as much u1's as lp2 above; the ONLY difference is that u1
+-- attached it to league L1 with shared_with_league = TRUE, which 067's
+-- "League-shared lists readable by league members" policy makes readable to
+-- fellow member u2. 079's EXISTS therefore passes for it. The hardcoded
+-- `is_private = FALSE OR owner_id = auth.uid()` form that 013 uses — the one
+-- 079's banner names as the wrong answer — would 42501 here, and would break
+-- NOTHING else in this file. This lives_ok, paired with the throws_ok
+-- immediately above it, is the whole difference.
+select lives_ok(
+  $$ insert into list_player_drafted (user_id, list_id, player_id)
+     values ('84000000-0000-4000-8000-000000000002',
+             '94000000-0000-4000-8000-000000000005',
+             'pgtap-lpd-p1') $$,
+  'u2 marks drafted on u1''s PRIVATE list that is SHARED with their league (067) — the RLS-deferring EXISTS covers it for free; spelling visibility out inline would have silently excluded it');
+
 select results_eq(
   $$ with u as (update list_player_drafted set drafted_at = '2030-01-01T00:00:00Z' returning 1)
      select count(*) from u $$,
   $$ values (0::bigint) $$,
-  'u2 UPDATE across ALL marks affects 0 rows (RETURNING-count over the privileged 2 + u1''s inserts)');
+  'u2 UPDATE across ALL marks affects 0 rows (RETURNING-count over the privileged 3 + u1''s and u2''s inserts)');
 select results_eq(
   $$ with d as (delete from list_player_drafted
                 where user_id = '84000000-0000-4000-8000-000000000001' returning 1)
@@ -364,8 +437,8 @@ select results_eq(
 reset role;
 
 select is(
-  (select count(*) from list_player_drafted), 3::bigint,
-  'total rows: u1''s lp1 mark + u2''s lp1 mark + u1''s new lp4 (saved-list) mark — u1''s lp2 mark was self-deleted; every stranger UPDATE/DELETE above was a genuine no-op, not a hit on an empty table');
+  (select count(*) from list_player_drafted), 5::bigint,
+  'total rows: u1''s lp1 mark + u2''s lp1 mark + u2''s surviving lp4 p2 mark (R174) + u1''s new lp4 (saved-list) mark + u2''s new lp5 (league-shared-private) mark (R173) — u1''s lp2 mark was self-deleted; every stranger UPDATE/DELETE above was a genuine no-op, not a hit on an empty table');
 select is(
   (select count(*) from list_player_drafted
    where user_id = '84000000-0000-4000-8000-000000000001'

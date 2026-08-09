@@ -28,6 +28,9 @@
  *   - a read that errored                           → 500, never `{drafted: []}`
  *   - already in the requested state                → 200 with `changed:
  *     false`, so the caller can tell a no-op from a write
+ *   - a DELETE that RLS filtered away because the caller does not speak for
+ *     `userId`                                      → 403, never a cheerful
+ *     `changed: false` (R175 — see `assertCallerIs`)
  *
  * **The write takes an explicit desired state, not a blind toggle.** The plan
  * calls LV.1.2 "the read/toggle route", which names the user's gesture; the
@@ -70,6 +73,39 @@ export type SetDraftedInput = z.infer<typeof setDraftedInputSchema>
 
 function notFound(): ServiceResult {
   return { status: 404, body: { error: LIST_NOT_FOUND_MESSAGE } }
+}
+
+/**
+ * Who does this client actually speak for?
+ *
+ * `userId` is a parameter, and RLS treats a disagreement between it and the
+ * client's real `auth.uid()` asymmetrically: an INSERT is REJECTED by
+ * `WITH CHECK` (42501 → a loud 403), but a DELETE is silently FILTERED by
+ * `USING` and simply removes nothing. Left alone, that makes "you had no mark"
+ * and "you are not allowed to touch that mark" the same answer on the un-mark
+ * path while the mark path distinguishes them — exactly the shape CLAUDE.md
+ * forbids ("never let 'nothing happened' mean 'it worked'"; prove the REASON
+ * for emptiness). R175.
+ *
+ * Called ONLY when a delete removed nothing, so the common path pays no extra
+ * auth round-trip and — deliberately — the 42501 arm of `setDrafted` stays
+ * reachable through the service, which is the only thing that keeps its
+ * code→copy mapping pinned. A caller in good standing (the route always passes
+ * `user.id` off the same authenticated client) sees no behavior change at all;
+ * a caller that has drifted gets the same 403 its `drafted: true` twin returns.
+ */
+async function assertCallerIs(
+  supabase: Supabase,
+  userId: string,
+): Promise<ServiceResult | null> {
+  const { data, error } = await supabase.auth.getUser()
+  // Never swallow this: an unprovable no-op is not a provable one.
+  if (error) return { status: 500, body: { error: error.message } }
+  if (!data.user) return { status: 401, body: { error: 'Unauthorized' } }
+  if (data.user.id !== userId) {
+    return { status: 403, body: { error: CANNOT_MARK_MESSAGE } }
+  }
+  return null
 }
 
 /**
@@ -200,6 +236,14 @@ export async function setDrafted(
 
   if (deleteError) return { status: 500, body: { error: deleteError.message } }
 
+  // Nothing moved — say WHY. Either the mark was already gone (a legitimate
+  // idempotent replay) or this client cannot speak for `userId` at all, in
+  // which case RLS filtered the DELETE away silently. See assertCallerIs.
+  if ((removed ?? []).length === 0) {
+    const identityProblem = await assertCallerIs(supabase, userId)
+    if (identityProblem) return identityProblem
+  }
+
   return {
     status: 200,
     body: {
@@ -220,7 +264,8 @@ export async function setDrafted(
  * 079's DELETE policy is unconditional on purpose so a user can always clean
  * up their own rows, including on a list that has since gone private or into
  * the owner's trash. `cleared` is the honest row count, so 0 means "you had no
- * marks here" — a fact, not an inference.
+ * marks here" — a fact, not an inference, which is why a 0 is made to prove
+ * itself against the caller's real identity below (R175).
  */
 export async function clearDrafted(
   supabase: Supabase,
@@ -237,6 +282,13 @@ export async function clearDrafted(
     .select('player_id')
 
   if (error) return { status: 500, body: { error: error.message } }
+
+  // `cleared: 0` must mean "there was nothing to clear", never "RLS filtered
+  // your DELETE because you asked on someone else's behalf".
+  if ((data ?? []).length === 0) {
+    const identityProblem = await assertCallerIs(supabase, userId)
+    if (identityProblem) return identityProblem
+  }
 
   return { status: 200, body: { list_id: listId, cleared: (data ?? []).length } }
 }

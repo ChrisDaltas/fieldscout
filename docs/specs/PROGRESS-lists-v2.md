@@ -142,8 +142,13 @@ This section records decisions made **during** the build.
      list you can read"** — which is D2's Saved-list case for free, *and*
      covers 067's league-shared private lists, which copying
      `list_favorites`' hardcoded `is_private = FALSE OR owner_id = auth.uid()`
-     would have silently excluded. Both directions pinned (u2 can mark on
-     u1's public list, cannot on u1's private one). The DELETE policy is
+     would have silently excluded. **All three** directions pinned in pgTAP
+     028 — u2 can mark on u1's public list, cannot on u1's plain private one,
+     **and can on u1's private list shared with a league they both belong
+     to**. The third pin was missing on the first pass and is the only one
+     that distinguishes this design from the 013 form it rejects; the
+     Reviewer proved the 013 form passed the entire suite green (R173, §6).
+     The DELETE policy is
      `user_id = auth.uid()` **alone** — you must always be able to clean up
      your own rows, including on a list that has since gone private or into
      the trash — which is also why `clearDrafted` skips the visibility probe
@@ -213,9 +218,13 @@ the first one **does** block the leagues M2 DoD, which includes
   is *permission denied for function* on a REVOKEd SECURITY DEFINER routine
   under `set local role anon`. Proven pre-existing by A/B: reproduced with
   migration 079 removed from the chain (chain at 078). pgTAP **028 passes
-  47/47** — its `throws_ok` cases expect runtime errors (RLS `WITH CHECK`
-  42501, 23503, 23505), which do not trip the bug. Suspected cause is the
-  Postgres 17 image from the pinned CLI (2.109.1; 2.113.0 available).
+  49/49** (47/47 before the R173/R174 pins) — its `throws_ok` cases expect
+  runtime errors (RLS `WITH CHECK` 42501, 23503, 23505), which do not trip
+  the bug. Suspected cause is the Postgres 17 image from the pinned CLI
+  (2.109.1; 2.113.0 available). **Run 028 on its own** —
+  `docker exec -i supabase_db_fieldscout psql -U postgres -d postgres -q -t
+  -A -f - < supabase/tests/028_list_player_drafted.sql` — rather than through
+  the whole `test:db` sweep, which the segfault zeroes.
 
 - **`npm run test:stack` is intermittently red at roughly 1 run in 3**, on a
   different leagues suite each time (most often `draft-realtime-db.test.ts`'s
@@ -287,3 +296,38 @@ idiom (the routes are `.tsx`, unparseable by Vite under Next's
 | --- | --- | --- |
 | **R171** — `src/lib/lists-v2-flag.test.ts` locates the canonical `if (featureFlags.listsV2) {` but never asserts it is the *only* decider. A reachable shadow condition inserted *above* it (probe: `if (process.env.NEXT_PUBLIC_FLAG_LISTS_V2 !== 'false') return <ListsPageV2 />`) ships v2 to production with the gate green, because the ordering assertion only searches forward from the branch | nit | **Open.** Fix direction: assert the branch is the first statement of the default export, or that `<${v2}` occurs exactly once in the file. Worth folding into LV.2.1 when that task next opens these routes |
 | **R172** — the "flag-OFF path still mounts today's Lists UI" assertion scans the whole file rather than the `*Legacy` body, so a mount dropped from the OFF render still passes if the same JSX survives elsewhere in the file. Outright deletion **is** caught; the miss window is narrow | nit | **Open.** Fix direction: slice the source to the `function ${legacy}` body before asserting mounts, or narrow the test name to what a whole-file pin can honestly claim |
+
+### LV.1.2 — 2026-08-09 (PR #108) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #108 — migration
+079 `list_player_drafted` + `/api/lists/[id]/drafted` — verified against plan
+v3.3 §1/§2.2/§3 D2/D6, the migration + RLS checklists, and the falsifiability
+floor. **R173–R175: one should-fix, two nits, no blockers.***
+
+***The finding that mattered:** the Reviewer applied, against the live local
+DB, exactly the 013-style policy that 079's own banner names as the wrong
+answer — and **nothing moved**: pgTAP 028 47/47, `drafted-api-db.test.ts`
+21/21, `drafted-service.test.ts` 11/11 all green. The regression was
+nonetheless real (their 067 fixture went from SUCCEEDED to `new row violates
+row-level security policy`). The banner's "both directions are pinned" claim
+was true of the two directions that did not distinguish the design, and the
+one that did was pinned nowhere. The forgery pin, by contrast, was shown
+load-bearing by the Reviewer's control break.*
+
+#### Resolution — 2026-08-09 (Builder, same branch `feat/LV.1.2-drafted-table-and-route`)
+
+*All three resolved on the same branch; nothing deferred, nothing escalated.
+Each fix was **shown falsifiable** — the pin reddens under the exact break it
+exists to catch, then restored (R173's restore was a full `npx supabase db
+reset`, the honest one).*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R173** — the RLS-deferring `EXISTS` was pinned only in directions the rejected 013 form satisfies too; the 067 league-shared-private case, the sole discriminator, was pinned nowhere | should-fix | **pgTAP 028 gains the 067 fixture and the pin.** New fixture: `leagues` `pgtap-lpd-league` (u1 commissioner, u2 manager, u3 deliberately not a member), `league_lists (shared_with_league = TRUE)` over a NEW private list `lpd u1 private league-shared` (`94000000-…-0005`). New assertion 38, a `lives_ok` for u2 marking on it, sits **immediately after** the existing `throws_ok` for u2 on u1's plain-private `…-0002` — the two lists differ in exactly one respect, so the pair isolates the `EXISTS` and nothing else. `plan(47)` → `plan(49)`. **Probe:** the Reviewer's exact `ALTER POLICY` → **not ok 38** (`42501: new row violates row-level security policy`) **+ not ok 47** (the downstream total-rows epilogue), `# Looks like you failed 2 tests of 49`; restored by full `db reset` → **49/49**. The 079 banner was rewritten to stop overclaiming: it now names all three directions, says which suite pins each, states that the third is the load-bearing one, and records that the 013 form was **measured** passing the whole suite green before the pin existed |
+| **R174** — "does not cascade to other lists", D2's most explicit prohibition, was indistinguishable from a cascade that wiped every list: both fixtures gave the victim exactly one list | nit | **The victim now lives on two lists in both suites.** pgTAP 028: `pgtap-lpd-p2` joins `lp4` as well as `lp1` and is marked on both; the positive control asserts 2 marks, then removing him from `lp1` asserts **0 on lp1 and 1 on lp4** (new assertion 24). `drafted-api-db.test.ts`: the cascade test puts `PLAYERS[1]` on the private board too, marks him there, and asserts that mark survives the public-list removal — then restores the fixture so the downstream clear-drafted counts are unchanged. **Probe:** an `AFTER DELETE` trigger on `list_players` wiping marks for that player across every list → **not ok 24** (+ the two total-rows guards), `# Looks like you failed 3 tests of 49`; dropped by the same `db reset` → 49/49 |
+| **R175** — the un-mark path collapsed "you had no mark" and "the delete was not permitted" into one `changed: false`, while its `drafted: true` twin distinguishes them (42501 → 403) | nit | **Hard assertion, not a comment** (LV.1.3 consumes `setDrafted`). New `assertCallerIs(supabase, userId)` in `drafted-service.ts` compares `userId` against the client's real `auth.uid()` and returns the same **403 `CANNOT_MARK_MESSAGE`** the twin returns. It is called **only when the DELETE removed nothing** — in `setDrafted`'s un-mark arm and in `clearDrafted` — which is deliberate on two counts: the happy path pays no extra auth round-trip, and the 42501 arm of `setDrafted` stays **reachable through the service**, so the existing "a 42501 the probe cannot foresee becomes a friendly 403" test keeps pinning that code→copy mapping instead of being short-circuited into dead code by an eager guard. `getUser()` failing is a 500, never a swallowed no-op. Three new stack tests: the two 403s (each with a privileged positive control proving the row the call failed to delete really exists) plus a **counter-control** — a genuine zero-row un-mark by the rightful caller is still a plain 200 `changed:false`. **Probe:** both `assertCallerIs` call sites removed → **2 RED** (`expected 200 to be 403`) with the counter-control still green; reverted → 24/24 |
+
+**Not changed, and why:** `clearDrafted` still skips the list-readability
+probe (§4's decision 2 — 079's DELETE policy is unconditional on purpose, so
+you can always clean up your own rows on a list that has since gone private
+or into the trash). R175 adds an identity check, not a visibility check.
