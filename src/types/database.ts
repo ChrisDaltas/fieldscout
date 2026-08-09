@@ -81,6 +81,41 @@ export type Database = {
           },
         ]
       }
+      ai_generation_usage: {
+        Row: {
+          created_at: string
+          feature: string
+          updated_at: string
+          usage_date: string
+          used: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          feature: string
+          updated_at?: string
+          usage_date: string
+          used?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          feature?: string
+          updated_at?: string
+          usage_date?: string
+          used?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generation_usage_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_personas: {
         Row: {
           avatar_url: string | null
@@ -1345,6 +1380,42 @@ export type Database = {
           },
           {
             foreignKeyName: "list_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      list_player_drafted: {
+        Row: {
+          drafted_at: string
+          list_id: string
+          player_id: string
+          user_id: string
+        }
+        Insert: {
+          drafted_at?: string
+          list_id: string
+          player_id: string
+          user_id: string
+        }
+        Update: {
+          drafted_at?: string
+          list_id?: string
+          player_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_player_drafted_list_player_fkey"
+            columns: ["list_id", "player_id"]
+            isOneToOne: false
+            referencedRelation: "list_players"
+            referencedColumns: ["list_id", "player_id"]
+          },
+          {
+            foreignKeyName: "list_player_drafted_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -2934,9 +3005,23 @@ export type Database = {
         Args: { p_league_id: string; p_team_name?: string }
         Returns: Json
       }
+      applied_migration_versions: {
+        Args: never
+        Returns: {
+          version: string
+        }[]
+      }
       assign_manager: {
         Args: { p_league_id: string; p_team_id: string; p_user_id: string }
         Returns: Json
+      }
+      claim_ai_generation: {
+        Args: { p_feature: string; p_limit: number; p_user_id: string }
+        Returns: {
+          daily_limit: number
+          is_allowed: boolean
+          used_today: number
+        }[]
       }
       claim_league_invite: { Args: { p_token: string }; Returns: Json }
       create_league: {
@@ -3207,6 +3292,10 @@ export type Database = {
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
+      }
+      release_ai_generation: {
+        Args: { p_feature: string; p_user_id: string }
+        Returns: number
       }
       remove_manager: {
         Args: {
