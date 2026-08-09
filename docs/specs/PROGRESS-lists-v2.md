@@ -20,9 +20,14 @@
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1, LV.1.2, LV.1.4 landed 2026-08-09) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
-**One task is parked, the rest of the lane is clear.** LV.1.3 cannot land as
-written — see **§3 Q1**, awaiting Chris's ruling. Every other Phase 1 and
-Phase 2 task is unblocked; only LV.3.9 sits downstream of LV.1.3.
+**Two tasks are parked; Phase 2 is clear.** LV.1.3 cannot land as written — see
+**§3 Q1**. **LV.1.5 cannot land as written either — see §3 Q2** (`list_players.tier`
+carries a live CHECK constraint, so widening the Zod enum alone cannot work and
+the fix is a migration this build forbids). Both await Chris's ruling.
+
+Everything in **Phase 2** (LV.2.1–2.3) and **LV.3.1** is unblocked and needs
+neither ruling. Downstream of the two parked tasks: LV.3.9 (Q1) and LV.3.6 (Q2);
+LV.3.2 and LV.3.5 inherit Q2's vocabulary but are not blocked by it.
 
 ---
 
@@ -38,7 +43,7 @@ are all checked.
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
 - [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2) — ⛔ **parked, see §3 Q1**
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
-- [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183)
+- [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183) — ⛔ **parked, see §3 Q2.** D4's premise that this is "not a schema change" is **factually wrong**: `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, migration `003_lists.sql:42-43`) pinning it to NULL or S–F, on **both** the local chain and hosted production. Widening Zod alone makes every round write a Postgres `23514`, which this route returns as an HTTP **500**. **The recommended vocabulary is fully specified in §3 Q2** — it needs a ruling, not a redesign
 
 **Phase 2 — Lists page**
 
@@ -49,11 +54,11 @@ are all checked.
 **Phase 3 — list detail**
 
 - [ ] **LV.3.1** — hero: cover, inline rename, byline, action cluster, options menu (LV.1.1)
-- [ ] **LV.3.2** — tabs + toolbar: grouping dropdown, view-style toggle, Stats, Add players (LV.3.1, LV.1.4)
+- [ ] **LV.3.2** — tabs + toolbar: grouping dropdown, view-style toggle, Stats, Add players (LV.3.1, LV.1.4). ⚠️ **The dropdown's non-tier options depend on §3 Q2** — until Q2 is ruled, only `tier` (and plain `rank`) can be written to the server at all. Build the control so the option set is data-driven, and do not ship Round/Cost/Budget entries that would 500 on first use
 - [ ] **LV.3.3** — view style List: 60px rows, stat cells, computed `minWidth` (LV.3.2). ⚠️ **Read the `budget` note below before rendering anything budget-shaped** (R185)
 - [ ] **LV.3.4** — view style Table: 44px rows, sticky header (LV.3.2)
 - [ ] **LV.3.5** — view style Cards: corner cells, stat strip, label rail (LV.3.2). ⚠️ **Same `budget` note** (R185)
-- [ ] **LV.3.6** — drag-and-drop across all three views; header drop assigns the bucket (LV.3.3–3.5, LV.1.5)
+- [ ] **LV.3.6** — drag-and-drop across all three views; header drop assigns the bucket (LV.3.3–3.5, LV.1.5). ⛔ **Blocked by §3 Q2 for every mode except tier** — the drop *is* the tier write (D4), so a drop onto a Round header is a `23514` today
 - [ ] **LV.3.7** — stats picker modal: grouped catalog, search, reorderable chips (LV.3.2)
 - [ ] **LV.3.8** — notes: accent mark + body-portalled hover card (LV.3.3)
 - [ ] **LV.3.9** — drafted checkbox + "Clear drafted" (LV.1.3, LV.3.3)
@@ -117,6 +122,138 @@ Alternative if rejected: move LV.1.3 to depend on LV.3.9 and build it there.
 
 **Status: awaiting Chris's ruling.** LV.1.3 is parked; the loop continues on other
 unblocked Phase 1 tasks.
+
+### Q2 — LV.1.5 cannot land as written: `list_players.tier` has a CHECK constraint (filed 2026-08-09, Builder)
+
+**The conflict.** Plan §3 **D4** says, of widening the tier route's Zod enum:
+
+> The column is already `text`, so this is a validation change on an existing
+> route — **not** a schema change, and inside UI-only scope.
+
+**That premise is false.** The column is `text` **with a CHECK constraint**:
+
+```
+supabase/migrations/003_lists.sql:40-43
+  ALTER TABLE list_players DROP COLUMN IF EXISTS tier;
+  ALTER TABLE list_players
+    ADD COLUMN tier TEXT
+    CHECK (tier IS NULL OR tier IN ('S', 'A', 'B', 'C', 'D', 'F'));
+```
+
+No later migration alters it (`ALTER TABLE list_players` appears in only 001,
+003 and 015; 015 touches `slot`, not `tier`). It is **live in both places**:
+
+| Where | `pg_constraint` says |
+| --- | --- |
+| Local, fresh full chain | `list_players_tier_check` → `CHECK (((tier IS NULL) OR (tier = ANY (ARRAY['S','A','B','C','D','F']))))` |
+| **Hosted production** | byte-identical (read via `pg_get_constraintdef`, read-only query) |
+
+Proven end-to-end against a live DB, not inferred from the file — one real
+`list_players` row, one transaction, rolled back:
+
+```
+tier = S  -> ACCEPTED
+ERROR:  new row for relation "list_players" violates check constraint
+        "list_players_tier_check"
+DETAIL: Failing row contains (…, 1, r1, null).
+psql exit=3
+```
+
+So widening the Zod enum alone does not deliver round buckets — it moves the
+rejection from a clean **400** (Zod) to a Postgres `23514`, which
+`…/tier/route.ts:56-58` returns as an **HTTP 500 with a raw database message**.
+That is strictly worse than today. And the only way to make the widening
+actually work is `ALTER TABLE … CONSTRAINT`, i.e. **a migration** — which plan
+§1, **D6**, §5 DoD item 3 and `ACTIVE-BUILD.md` all forbid ("LV.1.2's table was
+the ONLY permitted schema change"). Plan §5 DoD item 3 says what to do about
+exactly this: *"A task that thinks it needs more has left scope: raise it, do
+not proceed."*
+
+This is a spec-vs-codebase conflict, not an implementation problem: **no
+implementation exists** that widens the accepted bucket set without a schema
+change.
+
+**Blast radius, so the ruling is priced correctly.** Anything that widens the
+*stored* set also touches, and none of it is optional:
+
+| Surface | Why it is implicated |
+| --- | --- |
+| `src/types/schemas/lists.ts:4` `TIER_VALUES` | exported and **used nowhere**; the route inlines its own duplicate at `:7`. Whoever lands the widening should collapse these to one source rather than widening a second copy |
+| `src/types/database.ts:3564` `ListTier = 'S'\|'A'\|…\|'F'` | hand-written alias block (the one typegen clobbers). Recommend it stays **exactly S–F** as the tier-mode subset, with a new `ListBucketKey` for the full wire set — so the legacy views keep compiling |
+| `tier-badge.tsx` `TIER_BG` / `TIER_BAND_BG` (`Record<ListTier, string>`) | **total maps with no fallback.** `TIER_BAND_BG['r1']` is `undefined` → `cn(undefined)` → a silently uncolored band. Both the flag-OFF legacy detail view and the public share view (`/u/[username]/lists/[slug]`, SEO-critical per D7) render through these |
+| `list-detail-view.tsx:103` `TIERS: ListTier[]` | the legacy six-section layout |
+| `duplicate_list` RPC (`017_duplicate_list_rpc.sql:66-70`) | copies `tier` verbatim, bypassing Zod entirely — which is the concrete reason a DB-side CHECK is worth keeping rather than dropping |
+
+Not implicated, checked: `/api/lists/big-board/route.ts` and
+`/api/big-board/{route,save,week}` only **read** `tier` in a SELECT list or do
+not mention it at all — no validation, no write. **A tier-vocabulary change
+alters no board behaviour**, so nothing here requires opening the off-limits
+board components.
+
+**The vocabulary itself — designed, so the ruling is a yes/no and not a design
+session.** One closed, bounded set; `null` stays "ungrouped".
+
+| `org` label set | Wire keys | n | Rendered as |
+| --- | --- | --- | --- |
+| tier | `S` `A` `B` `C` `D` `F` | 6 | today's `TierBadge`, unchanged |
+| round | `r1` … `r30` | 30 | "Round 1" … "Round 30" |
+| cost | `c1` `c2` `c3` `c4` | 4 | `DEFAULT_COST_BANDS` labels, owner-renameable |
+| budget | *(reuses `c1`–`c4`)* | 0 new | same buckets, different label set |
+
+Matched by `^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$` — 40 values plus `null`.
+
+1. **`DEFAULT_COST_BANDS`' `c1`–`c4` are adopted on the wire** (the
+   reconciliation the LV.1.5 task text demands, R183). There is no reason to
+   mint a second alphabet, and adopting them means **every key the route
+   accepts has a default label**, so `resolveBandLabel` never falls through to
+   rendering a raw key — precisely the failure §2 records for the prototype's
+   `b1`–`b4`. Deliberately **not** widened to `c5`+: a fifth band would have no
+   default label and would render the literal `c5` in the rail.
+2. **Budget mints no keys.** D4 makes budget a *label set* over the same
+   bucket mechanism, and plan v3.4/R185 records that budget has no consumer at
+   all. Minting `b1`–`b4` would create label-less keys for a mode that may not
+   ship. If budget mode ever ships, it relabels `c1`–`c4`.
+3. **Round ceiling 30, and it is a judgement call worth challenging.** D4 says
+   a draft runs 12–16. Thirty is the deepest draft the app's own league
+   settings can construct (`league-settings.ts:153` caps `bench` at 20, plus
+   starting slots; D91: `total_rounds` = Σ starters + bench, IR excluded), it
+   nearly doubles D4's stated range, and it keeps every key ≤ 3 characters.
+   Raising it later is one edit to the regex and one to the CHECK.
+4. **What must NOT be accepted is enforced by the shape, not by a comment.**
+   The set is closed, so: max length **3** (nothing can overflow LV.3.5's 62px
+   label rail or a section header); `[A-Za-z0-9]` only (no control characters,
+   no whitespace, no Unicode, no bidi overrides, nothing needing escaping in a
+   React `key` or a URL); **`__proto__` / `constructor` / `hasOwnProperty` are
+   unreachable**, closing the R181/R183 hazard at the source as well as at the
+   reader — `resolveBandLabel`'s `hasOwnProperty` guard **stays** as defence in
+   depth, since it is correct for any caller-supplied record; and `''` is not a
+   bucket (ungrouped is `null`, as today).
+
+**Options.**
+
+| | Option | Cost | Verdict |
+| --- | --- | --- | --- |
+| **A** | **Widen the CHECK to mirror the Zod set exactly**, then widen Zod. One migration, `080_list_players_tier_vocabulary.sql`: `DROP CONSTRAINT IF EXISTS list_players_tier_check` then re-add with the regex above. Strictly a **superset** of the old predicate, so no backfill and no data migration — every existing row already satisfies it. Fully reversible. Reaches production by `npx supabase db push`, never by hand | one migration file; D6 goes from two named server-side changes to two-and-a-half | **Recommended.** The only option that delivers D4 as written. D6 already blesses "widening one Zod enum" as a deliberate server-side change — it simply under-counted what that requires. The DB-side CHECK is also the *strongest* answer to the task's own "what must NOT be accepted", and the only one that covers `duplicate_list`, which never sees Zod |
+| **B** | Drop the CHECK entirely; Zod becomes the only gate | same migration cost | **Rejected.** Does not avoid the scope question, and is strictly worse than A: `duplicate_list` copies `tier` verbatim, so the free-text exposure R181 flagged becomes fully real at the DB |
+| **C** | **Cut round/cost/budget grouping from Round 1**; tier grouping only | no migration; a product reduction | **Acceptable fallback.** LV.1.5 shrinks to a coherence task (make the route import `TIER_VALUES` instead of inlining a duplicate). D4 collapses to one label set, LV.3.2's dropdown ships Tier-only, LV.3.6 still works in tier mode, and R185's budget tension dissolves. Only Chris can take this — it removes a feature D4 names |
+| **D** | Store round/cost buckets outside `list_players.tier` | larger schema change | **Rejected by D4** — *"There is no separate `round` or `cost` field"* |
+
+**Recommendation: A**, with **C** as the fallback if the migration budget is
+genuinely closed. Under A, LV.1.5 lands as one PR: migration 080 + the widened
+Zod set sourced from `TIER_VALUES`' file + `ListBucketKey` + tests pinning
+S–F-still-works, `r1`/`r30`/`c4`-now-accepted, and `r31`/`c5`/`''`/`__proto__`/
+a 200-char string all rejected — with the DB reached, not just the schema.
+
+**Fold-back deferred on purpose.** D4's "not a schema change" sentence and §5
+DoD item 3 both need a plan edit, but the edit differs per option, so the plan
+is **left untouched** rather than amended toward an unruled outcome (the Q1
+precedent). Whoever lands the ruling folds it into the plan changelog as v3.5
+and ticks the §2 rows here.
+
+**Status: awaiting Chris's ruling.** LV.1.5 is parked. LV.3.6 is blocked for
+every mode except tier; LV.3.2 and LV.3.5 inherit the vocabulary but can
+proceed tier-only. **Phase 2 (LV.2.1–2.3) and LV.3.1 need neither ruling** —
+the loop should continue there.
 
 ---
 
@@ -354,6 +491,17 @@ This section records decisions made **during** the build.
   picker LV.3.7 — so browser verification (plan §5.4) would have nothing to
   show. Stated plainly in the PR rather than claiming a screenshot.
 
+- **LV.1.5 (2026-08-09) — the bucket vocabulary is designed but NOT decided.**
+  The LV.1.5 task text directs the wire vocabulary to be recorded here, since
+  LV.3.2, LV.3.5 and LV.3.6 all inherit it. It is **not** recorded here, because
+  it was not ruled: the task halted before implementation on **§3 Q2**
+  (`list_players.tier` carries a live CHECK constraint pinning it to S–F, so the
+  widening needs a migration this build forbids). The full proposal — the key
+  sets, the `c1`–`c4` reconciliation with `DEFAULT_COST_BANDS`, why budget mints
+  no keys, the round ceiling and its justification, and what the closed shape
+  rules out — lives in **§3 Q2** and moves here, unchanged or amended, when
+  Chris rules. **Do not treat the Q2 proposal as decided.**
+
 ---
 
 ## 5. Blockers
@@ -363,7 +511,17 @@ This section records decisions made **during** the build.
   off-limits. Nothing else in Round 1 is blocked by it except **LV.3.9**, which
   depends on it. Do not pick LV.1.3 until Q1 is answered.
 
-Nothing else blocks Lists v2.
+- **LV.1.5 is parked pending Chris's ruling on §3 Q2** (filed 2026-08-09) — D4's
+  "the column is already `text`, so this is not a schema change" is factually
+  wrong; `list_players_tier_check` (migration `003_lists.sql:42-43`) is live on
+  the local chain **and** on hosted production, so widening the Zod enum alone
+  converts a clean 400 into a Postgres `23514` surfaced as an HTTP 500. Making
+  it work requires a migration, which plan §1 / D6 / §5 DoD item 3 /
+  `ACTIVE-BUILD.md` all forbid. **LV.3.6** is blocked with it for every mode
+  except tier. LV.3.2 and LV.3.5 inherit the vocabulary but can ship tier-only.
+
+Nothing else blocks Lists v2. **Phase 2 (LV.2.1, LV.2.2, LV.2.3) and LV.3.1 are
+clear of both Q1 and Q2** — that is where the loop should go next.
 
 **Two pre-existing repo-wide test-infrastructure faults were measured during
 LV.1.2 and are NOT caused by it.** Neither blocks this build (the Lists v2
