@@ -30,16 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for secrets
+      - name: Check for the secret
         id: secret
         env:
-          URL: ${{ secrets.SUPABASE_URL }}
           KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "$URL" ] || [ -z "$KEY" ]; then
-            echo "::warning::Drift check skipped — set SUPABASE_URL and \
-          SUPABASE_SERVICE_ROLE_KEY under Settings → Secrets and variables → \
-          Actions. Both are on the Supabase dashboard's API keys page."
+          if [ -z "$KEY" ]; then
+            echo "::warning::Drift check skipped — set the repository secret \
+          SUPABASE_SERVICE_ROLE_KEY (Settings → Secrets and variables → Actions)."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -48,7 +46,9 @@ jobs:
       - name: Compare
         if: steps.secret.outputs.configured == 'true'
         env:
-          URL: ${{ secrets.SUPABASE_URL }}
+          # Not a secret: this URL ships in the browser bundle. Hardcoding it
+          # halves the setup — only the service-role key needs protecting.
+          URL: https://xhqrdzllcsrvbbcygilv.supabase.co
           KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
