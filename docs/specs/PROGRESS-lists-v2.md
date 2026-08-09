@@ -159,3 +159,24 @@ pre-existing `auction-draft-room.tsx:105` warning) · `test:unit` **40 files /
 | **R168** — plan §3 D1 ("New Lists replaces the bodies of existing components") contradicts the shipped `src/components/lists/v2/` structure, and the Builder resolved it unilaterally in PROGRESS §4 | should-fix | **Plan amended in place to v3.3** (changelog entry added). D1 now states that Lists v2 screens live in `src/components/lists/v2/`, are swapped in at the route branch, and are retired at LV.4.4 — with **"no forks of `src/components/ui/` primitives"** kept as the surviving absolute prohibition, and the §4/LV.4.4 derivation spelled out so none of the remaining twelve tasks re-derives it. §4 below now points at D1 instead of arguing with it. **Editorial reconciliation — no product decision** |
 | **R169** — §1 Round 1 still read "🟡 Not started" with LV.1.1 ticked in §2 | nit | §1 Round 1 status → **🔵 In progress (LV.1.1 landed 2026-08-09)** |
 | **R170** — `.env.example` documented only the `"true"` case; unset also routes to v2 in local dev, taking away a shipped surface | nit | `.env.example` comment expanded to say outright that blank = ON locally, that `npm run dev` therefore shows placeholders where Lists is today until LV.2.1/LV.3.1 land, and that `NEXT_PUBLIC_FLAG_LISTS_V2=false` in `.env.local` restores today's Lists. Same note added to the §4 decision entry |
+
+#### Re-review — 2026-08-09 (fresh Reviewer, fix diff `2c17a76`) — **VERDICT: CLEAN**
+
+*Re-ran the full gate independently (type-check clean · lint exit 0 · `test:unit`
+40 files / 663 tests) and corroborated the R167 fixture against the local DB —
+tier counts and player rows matched the PR's rendered-text extract, so it could
+not have been fabricated from the diff. R166 confirmed **load-bearing** by six
+break-probes, four of which the fix Builder never claimed to cover: inverted
+branch → 2 RED · flag read deleted → 1 RED · coherent flag rename across all
+three files → 5 RED · `enabled(...) || true` (defeats the source pin, trips the
+behavioral pin) → 1 RED · swapped return bodies → 1 RED. Behavioral and source
+pins proved complementary rather than redundant.*
+
+Two nits recorded, **not fixed** — both are inherent ceilings of the source-pin
+idiom (the routes are `.tsx`, unparseable by Vite under Next's
+`jsx: "preserve"`, which is why the house source-pins at all):
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| **R171** — `src/lib/lists-v2-flag.test.ts` locates the canonical `if (featureFlags.listsV2) {` but never asserts it is the *only* decider. A reachable shadow condition inserted *above* it (probe: `if (process.env.NEXT_PUBLIC_FLAG_LISTS_V2 !== 'false') return <ListsPageV2 />`) ships v2 to production with the gate green, because the ordering assertion only searches forward from the branch | nit | **Open.** Fix direction: assert the branch is the first statement of the default export, or that `<${v2}` occurs exactly once in the file. Worth folding into LV.2.1 when that task next opens these routes |
+| **R172** — the "flag-OFF path still mounts today's Lists UI" assertion scans the whole file rather than the `*Legacy` body, so a mount dropped from the OFF render still passes if the same JSX survives elsewhere in the file. Outright deletion **is** caught; the miss window is narrow | nit | **Open.** Fix direction: slice the source to the `function ${legacy}` body before asserting mounts, or narrow the test name to what a whole-file pin can honestly claim |
