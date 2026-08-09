@@ -22,6 +22,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   { label: 'Home', icon: 'dashboard', href: '/app', matchPrefix: '/app' },
+  { label: 'Lists', icon: 'list', href: '/app/lists', matchPrefix: '/app/lists' },
   {
     label: 'Players',
     icon: 'table',
@@ -29,12 +30,6 @@ const TABS: TabConfig[] = [
     matchPrefix: '/app/players',
   },
   { label: 'Search', icon: 'search', isSearch: true },
-  {
-    label: 'My stats',
-    icon: 'chart',
-    href: '/app/profile',
-    matchPrefix: '/app/profile',
-  },
   { label: 'More', icon: 'dots', isMore: true },
 ]
 

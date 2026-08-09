@@ -1,0 +1,10 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Field Scout app icon: ink field carrying the logo mark in brand lime.
+       The mark is drawn on a 9-unit grid (0/9/18/27/36/45), so it is scaled to
+       40 units and inset 12: at a 16px favicon each 9-unit step lands on
+       exactly 2 device pixels and every structural edge stays crisp. -->
+  <rect width="64" height="64" fill="#0B0C10"/>
+  <g transform="translate(12 12) scale(0.888889)">
+    <path d="M29 45C27.8954 45 27 44.1046 27 43V27H18V18H2C0.89543 18 0 17.1046 0 16V2C0 0.895431 0.895431 0 2 0H16C17.1046 0 18 0.895431 18 2V18H27V27H43C44.1046 27 45 27.8954 45 29V43C45 44.1046 44.1046 45 43 45H29ZM27 18V2C27 0.895431 27.8954 0 29 0H34C35.1046 0 36 0.895431 36 2V16C36 17.1046 35.1046 18 34 18H27ZM11 45C9.89543 45 9 44.1046 9 43V29C9 27.8954 9.89543 27 11 27H18V43C18 44.1046 17.1046 45 16 45H11Z" fill="#b4ff89"/>
+  </g>
+</svg>
