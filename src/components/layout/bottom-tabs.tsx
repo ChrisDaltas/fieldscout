@@ -22,6 +22,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   { label: 'Home', icon: 'dashboard', href: '/app', matchPrefix: '/app' },
+  { label: 'Lists', icon: 'list', href: '/app/lists', matchPrefix: '/app/lists' },
   {
     label: 'Players',
     icon: 'table',
