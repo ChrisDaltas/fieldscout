@@ -1,13 +1,15 @@
 # Delivery Plan: Lists v2
 
-> **v3.4 — 2026-08-09. UI/UX only, with exactly one data exception.**
+> **v3.5 — 2026-08-09. UI/UX only, with exactly two data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
-> from scope** — with a single deliberate exception: **`drafted` persists
-> server-side** — per user, per list — because seeing who is already gone
-> from your phone is the point of the feature. That exception buys one new
-> table and nothing else; `lists` and `list_players` are untouched.
+> from scope** — with two deliberate exceptions, both ruled by Chris on
+> 2026-08-09: **(1) `drafted` persists server-side** — per user, per list —
+> because seeing who is already gone from your phone is the point of the
+> feature; and **(2) `list_players.tier`'s CHECK constraint widens**, because
+> round grouping cannot represent a 12–16 round draft against six buckets.
+> Between them that is one new table and one `ALTER TABLE`. Nothing else.
 >
 > Everything else that only affects how a list *looks* — view style, chosen
 > stat columns, band labels, budget — is **deliberately not saved**. Chris:
@@ -29,7 +31,7 @@
 
 | Ruling | Detail |
 | --- | --- |
-| **UI/UX only, one exception** | No schema changes except the `drafted` table (D2/LV.1.2). See §2.2. |
+| **UI/UX only, two exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2) and (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**). Nothing else. See §2.2. |
 | **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
 | **Boards are off limits** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**`, `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
@@ -218,14 +220,27 @@ model to copy here, whatever the handoff says.
   tier mode, and `tailwind.config.ts` already carries the S–F color keys
   alongside `tier-1..7`.
 
-  **Round mode still needs more bucket keys than the enum allows.** That
-  route validates `z.enum(['S','A','B','C','D','F'])` — six values. A fantasy
-  draft runs 12–16 rounds, so round grouping cannot represent a real draft
-  against a six-value enum. LV.1.5 widens it to accept round/band keys as
-  well; S–F stays valid so nothing existing breaks. The column is already
-  `text`, so this is a validation change on an existing route — **not** a
-  schema change, and inside UI-only scope. It stays its own task rather than
-  being smuggled into a screen PR.
+  **Round mode needs more bucket keys than six, and that IS a schema change**
+  — v3.4 and earlier claimed otherwise; **that was wrong** (erratum, LV.1.5
+  Builder 2026-08-09). `list_players.tier` is `text` **but carries a live CHECK
+  constraint** from migration `003_lists.sql:40-43`:
+
+  ```sql
+  CHECK (tier IS NULL OR tier IN ('S','A','B','C','D','F'))
+  ```
+
+  It is live locally **and on hosted production**. Widening the Zod enum alone
+  would only move the rejection from a clean 400 to a Postgres `23514` surfaced
+  as a **500 with a raw DB message**. A fantasy draft runs 12–16 rounds, so
+  round grouping cannot represent a real draft against six buckets.
+
+  **Ruled by Chris 2026-08-09: widen the CHECK.** This is the build's **second
+  and final** schema exception (§1). One migration, `ALTER TABLE` only — no new
+  table, no new column. S–F stays valid so nothing existing breaks.
+
+  A DB CHECK is also the strongest available guard on what a bucket key may be:
+  it covers `duplicate_list`, which copies `tier` verbatim and never passes
+  through the API's validation.
 
   Note the color ramp has 6–7 hues against up to 16 rounds, so round mode
   cycles colors rather than assigning a unique one per bucket.
@@ -237,10 +252,12 @@ model to copy here, whatever the handoff says.
   `offsetHeight`/`offsetWidth`. State updates only when the target slot
   changes — updating per `dragover` visibly janks.
 
-- **D6 — Two server-side changes in Round 1, both named.** (a) the `drafted`
-  table and its route (D2/LV.1.2); (b) widening one Zod enum (D4/LV.1.5).
-  Existing routes cover every other mutation. A task that believes it needs
-  more has crossed out of scope — stop and raise it, do not proceed.
+- **D6 — Two server-side changes in Round 1, both named and both ruled.**
+  (a) the `drafted` table and its route (D2/LV.1.2); (b) widening
+  `list_players.tier`'s CHECK constraint plus the matching Zod enum
+  (D4/LV.1.5). Existing routes cover every other mutation. **These two are the
+  whole budget** — a task that believes it needs a third has crossed out of
+  scope: stop and raise it, do not proceed.
 
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
@@ -338,6 +355,15 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.5 (2026-08-09)** — **Erratum + ruling.** D4 claimed widening the tier
+  vocabulary was "not a schema change" because the column is `text`. That was
+  **false**: `list_players.tier` carries a live CHECK constraint from
+  `003_lists.sql` restricting it to S–F, on local and production alike, so the
+  Zod enum was never the binding gate. Found by the LV.1.5 Builder, which
+  correctly HALTED rather than shipping a widening that would have 500'd.
+  Chris ruled: **widen the CHECK** — the build's second and final schema
+  exception. §1, D4 and D6 updated.
 
 - **v3.4 (2026-08-09)** — **§2's persisted-store list corrected: seven, not
   six** (Reviewer R184, PR #109). `ui-store` was missing. The count is not
