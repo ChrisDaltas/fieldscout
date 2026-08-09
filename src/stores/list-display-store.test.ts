@@ -27,14 +27,23 @@ import {
  * Two jobs, in two describes:
  *
  *   1. the state layer behaves — per-list isolation, ordered `cols`, band-label
- *      fallback, budget clamping, and a reference-stable default (zustand v5
- *      re-renders forever if a selector builds a fresh object each call);
+ *      fallback, budget clamping, and **reference identity on both sides of the
+ *      store**: the selector never builds a fresh object, and no mutator
+ *      allocates one on a write that changes nothing (zustand v5 subscribes
+ *      through `useSyncExternalStore`, so either mistake re-renders forever);
  *   2. **D3 holds and stays held.** "No `persist` middleware" is a decision
  *      that reads like an oversight — every other store in `src/stores/` is
  *      persisted — so it is guarded, not merely commented. The second describe
  *      is that guard, and it carries its own control: the same three
  *      assertions are shown tripping on a store that *is* persisted, so a
  *      green run means the detectors work, not that they are asleep.
+ *
+ *      That guard shipped with a hole (R179) and the fix is easy to undo by
+ *      accident, so: it stubs **`window`** as well as the bare `localStorage` /
+ *      `sessionStorage` globals. Without it, any write behind the house
+ *      `typeof window === 'undefined'` guard — `use-draft-mode.ts:19` is the
+ *      pattern — takes its early return under vitest's node environment and no
+ *      spy ever fires.
  */
 
 const STORE_FILE = 'src/stores/list-display-store.ts'
@@ -185,6 +194,16 @@ describe('list display store — session state (LV.1.4)', () => {
     const before = selectListDisplay(LIST_A)(useListDisplayStore.getState())
     store.moveCol(LIST_A, 'not-a-stat', 0)
     expect(selectListDisplay(LIST_A)(useListDisplayStore.getState())).toBe(before)
+
+    // A non-finite index is refused, not clamped. NaN walks straight through
+    // Math.trunc/min/max and `splice` then reads it as 0, so an unmeasurable
+    // drop would silently move the chip to the *front* — the loudest possible
+    // wrong answer to "I don't know". Same call `setBudget` makes on NaN.
+    store.moveCol(LIST_A, 'bye', Number.NaN)
+    expect(selectListDisplay(LIST_A)(useListDisplayStore.getState())).toBe(before)
+    store.moveCol(LIST_A, 'bye', Number.POSITIVE_INFINITY)
+    expect(selectListDisplay(LIST_A)(useListDisplayStore.getState())).toBe(before)
+    expect(before.cols).toEqual(['proj', 'adp', 'bye'])
   })
 
   it('colsForView gives card view the first three stats and every other view all of them', () => {
@@ -213,6 +232,93 @@ describe('list display store — session state (LV.1.4)', () => {
     bandLabels = selectListDisplay(LIST_A)(useListDisplayStore.getState()).bandLabels
     expect(bandLabels).not.toHaveProperty(firstBand.key)
     expect(resolveBandLabel(firstBand.key, bandLabels)).toBe(firstBand.label)
+  })
+
+  it('a bucket key that collides with an Object member is stored and read like any other', () => {
+    // Band keys are free text, and stop being the closed `c1`–`c4` set as soon
+    // as LV.1.5 widens the tier enum to DB-sourced `list_players.tier` values —
+    // so `__proto__` and `constructor` are reachable input, not hypotheticals.
+    // On a plain `{}` the first returns a *function* from a `: string` API and
+    // the second is swallowed by the prototype setter and stored nowhere.
+    expect(resolveBandLabel('constructor', {})).toBe('constructor')
+    expect(resolveBandLabel('__proto__', {})).toBe('__proto__')
+    expect(resolveBandLabel('toString', { toString: 'Bench' })).toBe('Bench')
+
+    const store = useListDisplayStore.getState()
+    store.setBandLabel(LIST_A, '__proto__', 'Studs')
+    const { bandLabels } = selectListDisplay(LIST_A)(useListDisplayStore.getState())
+
+    expect(Object.keys(bandLabels)).toEqual(['__proto__'])
+    expect(resolveBandLabel('__proto__', bandLabels)).toBe('Studs')
+    expect(Object.getPrototypeOf(bandLabels)).toBeNull()
+
+    // …and clearing it still restores the default, on the same key.
+    store.setBandLabel(LIST_A, '__proto__', '  ')
+    expect(
+      Object.keys(selectListDisplay(LIST_A)(useListDisplayStore.getState()).bandLabels),
+    ).toEqual([])
+  })
+
+  it('every mutator hands back the same object on a value-identical write', () => {
+    const s = () => useListDisplayStore.getState()
+    const read = () => selectListDisplay(LIST_A)(useListDisplayStore.getState())
+
+    // Start customised, so what follows is identity on a real stored entry and
+    // not the frozen default trivially comparing equal to itself.
+    s().setView(LIST_A, 'card')
+    s().setOrg(LIST_A, 'cost')
+    s().setCols(LIST_A, ['proj', 'adp', 'bye'])
+    s().setBandLabel(LIST_A, 'c1', 'Studs')
+    s().setBudget(LIST_A, 300)
+    const before = read()
+
+    // One write per mutator that leaves the value exactly as it is — every one
+    // a shape a real toolbar produces: re-picking the current view, handing
+    // back a copy of `cols`, dropping a chip where it already sits,
+    // re-submitting a label the user never edited, clearing an unset override.
+    s().setView(LIST_A, before.view)
+    s().setOrg(LIST_A, before.org)
+    s().setCols(LIST_A, [...before.cols])
+    s().setCols(LIST_A, [...before.cols, 'adp'])
+    s().moveCol(LIST_A, 'adp', 1)
+    s().moveCol(LIST_A, 'not-a-stat', 0)
+    s().moveCol(LIST_A, 'adp', Number.NaN)
+    s().setBandLabel(LIST_A, 'c1', '  Studs  ')
+    s().setBandLabel(LIST_A, 'c2', '   ')
+    s().setBudget(LIST_A, 300.2)
+    s().reset(LIST_B)
+
+    // `toBe`, not `toEqual` — an equal-but-new object is the whole bug. LV.3.7's
+    // reorderable chip picker derives its next `setCols` from the `cols` it just
+    // read, so a fresh array per no-op write is an infinite render loop that
+    // leaves nothing red anywhere.
+    expect(read()).toBe(before)
+
+    // `toggleCol` is the one mutator with no value-identical input by
+    // construction — it always adds or removes exactly one stat. Its round trip
+    // is therefore two genuine changes and *should* notify twice.
+    s().toggleCol(LIST_A, 'sos')
+    s().toggleCol(LIST_A, 'sos')
+    expect(read()).toEqual(before)
+    expect(read()).not.toBe(before)
+
+    // A mutator added later gets a line above rather than inheriting this
+    // silently: this fails the moment the surface changes.
+    expect(
+      Object.entries(useListDisplayStore.getState())
+        .filter(([, value]) => typeof value === 'function')
+        .map(([name]) => name)
+        .sort(),
+    ).toEqual([
+      'moveCol',
+      'reset',
+      'setBandLabel',
+      'setBudget',
+      'setCols',
+      'setOrg',
+      'setView',
+      'toggleCol',
+    ])
   })
 
   it('setBudget clamps to whole dollars in range and refuses a non-number outright', () => {
@@ -252,13 +358,7 @@ describe('list display store — session state (LV.1.4)', () => {
     // The whole of D4 is that which player sits in which bucket lives in
     // `list_players.tier` and travels with a shared list; only the label set is
     // local. A "players" or "tiers" key appearing here means that line moved.
-    expect(Object.keys(display).sort()).toEqual([
-      'bandLabels',
-      'budget',
-      'cols',
-      'org',
-      'view',
-    ])
+    expect(Object.keys(display).sort()).toEqual(['bandLabels', 'budget', 'cols', 'org', 'view'])
   })
 })
 
@@ -287,6 +387,18 @@ describe('D3 — display state is session-only, deliberately unpersisted', () =>
     sessionStorageStub = fakeStorage()
     vi.stubGlobal('localStorage', localStorageStub)
     vi.stubGlobal('sessionStorage', sessionStorageStub)
+    // `window` too, and this one is load-bearing rather than belt-and-braces
+    // (R179). Node has no `window`, so the house SSR idiom — `if (typeof window
+    // === 'undefined') return` and then `window.localStorage.setItem(...)`,
+    // exactly what `src/hooks/use-draft-mode.ts` does — takes its early return
+    // under vitest and the bare-global spies above never fire. A store that
+    // genuinely persisted `view` in every real browser would sail through this
+    // describe. Stubbing `window` puts the guard on the side of the branch that
+    // actually writes.
+    vi.stubGlobal('window', {
+      localStorage: localStorageStub,
+      sessionStorage: sessionStorageStub,
+    })
     vi.resetModules()
   })
 
@@ -307,7 +419,15 @@ describe('D3 — display state is session-only, deliberately unpersisted', () =>
     s.moveCol(LIST_A, 'bye', 0)
     s.setBandLabel(LIST_A, 'c1', 'Studs')
     s.setBudget(LIST_A, 300)
+
+    // `reset` returns early on a list it has never heard of, so resetting an
+    // untouched id exercises the guard and never the body (R179). Seed one
+    // first, and assert both halves, so the seeding cannot rot back into a
+    // no-op without this failing.
+    s.setView(LIST_B, 'card')
+    expect(store.getState().byList[LIST_B]).toBeDefined()
     s.reset(LIST_B)
+    expect(store.getState().byList[LIST_B]).toBeUndefined()
   }
 
   it('exposes no persist API — nothing wrapped this store in the middleware', async () => {
@@ -344,13 +464,10 @@ describe('D3 — display state is session-only, deliberately unpersisted', () =>
     // is the house persistence pattern (see rail-store / ui-store), and all
     // three checks that just passed fail against it.
     const persisted = create<{ view: string; setView: (v: string) => void }>()(
-      persist(
-        (set) => ({ view: 'list', setView: (view) => set({ view }) }),
-        {
-          name: 'fieldscout.test.control',
-          storage: createJSONStorage(() => localStorage),
-        },
-      ),
+      persist((set) => ({ view: 'list', setView: (view) => set({ view }) }), {
+        name: 'fieldscout.test.control',
+        storage: createJSONStorage(() => localStorage),
+      }),
     )
 
     expect((persisted as { persist?: unknown }).persist).toBeDefined()
@@ -384,6 +501,10 @@ describe('D3 — display state is session-only, deliberately unpersisted', () =>
         )
       })
 
+    // `window` and `globalThis` are here because the bare names above are
+    // trivially aliased — `window['local' + 'Storage']` names neither
+    // `localStorage` nor any other token on this list (R179). Nothing in a
+    // pure state module has any business reaching for either global.
     for (const banned of [
       'zustand/middleware',
       'persist',
@@ -392,6 +513,8 @@ describe('D3 — display state is session-only, deliberately unpersisted', () =>
       'sessionStorage',
       'indexedDB',
       'document.cookie',
+      'window',
+      'globalThis',
     ]) {
       const offending = codeLines.filter((line) => line.includes(banned))
       expect(offending, `${STORE_FILE} must not reference ${banned} (D3)`).toEqual([])

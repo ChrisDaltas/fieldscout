@@ -14,15 +14,18 @@ import type { RankingMode } from '@/types/schemas/lists'
  * columns. They reset on reload, like a search filter. Do not add persistence
  * 'for convenience' — it was considered and declined."*
  *
- * Six other stores in this directory (`ai-build-store`, `list-order-store`,
- * `history-store`, `rail-store`, `board-labels-store`, `player-windows-store`)
- * wrap themselves in `persist` + `createJSONStorage(() => localStorage)`. This
- * one follows their code style and **not** their persistence, on purpose. The
- * absence is a product decision, not an oversight — so it is pinned by tests
- * rather than left to a comment: `list-display-store.test.ts` fails if this
- * module ever imports the persistence middleware, touches web storage, or
- * survives a module reload. If you are here to add persistence, you need a
- * ruling from Chris and a plan changelog entry first, not a green build.
+ * **Seven** other stores in this directory — `ai-build-store`,
+ * `list-order-store`, `history-store`, `rail-store`, `ui-store`,
+ * `board-labels-store`, `player-windows-store` — wrap themselves in `persist` +
+ * `createJSONStorage(() => localStorage)`. This one follows their code style and
+ * **not** their persistence, on purpose. The absence is a product decision, not
+ * an oversight — so it is pinned by tests rather than left to a comment:
+ * `list-display-store.test.ts` fails if this module ever imports the
+ * persistence middleware, touches web storage *(including behind the house
+ * `typeof window === 'undefined'` guard — the suite stubs `window`, not just
+ * the bare globals)*, or survives a module reload. If you are here to add
+ * persistence, you need a ruling from Chris and a plan changelog entry first,
+ * not a green build.
  *
  * ## What lives here, and what deliberately does not
  *
@@ -136,7 +139,10 @@ export const DEFAULT_LIST_DISPLAY: ListDisplay = Object.freeze({
   view: 'list',
   org: null,
   cols: DEFAULT_COLS,
-  bandLabels: Object.freeze({}),
+  // Null-prototype for the same reason `copyLabels` is: an un-renamed band
+  // whose key happens to be `constructor` must read as "no override", not as
+  // `Object.prototype.constructor`.
+  bandLabels: Object.freeze(Object.create(null) as Record<string, string>),
   budget: DEFAULT_BUDGET,
 })
 
@@ -151,7 +157,10 @@ interface ListDisplayState {
   setCols: (listId: string, cols: readonly string[]) => void
   /** Adds an unchosen stat at the end of the chips, or removes a chosen one. */
   toggleCol: (listId: string, statId: string) => void
-  /** Moves a chosen stat to `toIndex` (clamped). Unknown stat = no-op. */
+  /**
+   * Moves a chosen stat to `toIndex`, clamped into range. An unknown stat or a
+   * non-finite index is refused outright — see {@link setBudget}'s NaN arm.
+   */
   moveCol: (listId: string, statId: string, toIndex: number) => void
   /** Renames a cost band. A blank label restores the default. */
   setBandLabel: (listId: string, bandKey: string, label: string) => void
@@ -166,29 +175,42 @@ interface ListDisplayState {
 
 export const useListDisplayStore = create<ListDisplayState>()((set) => {
   /**
-   * Applies `next` to one list. Returning the same object the updater was given
-   * is a true no-op: zustand skips notifying when `set` returns the state
-   * unchanged, so unaffected components never re-render.
+   * Applies `next` to one list — and is the **single** place a write is judged
+   * to have changed anything.
+   *
+   * A value-identical write must hand the caller back the *same* object, not an
+   * equal one. zustand skips notifying when `set` returns the state unchanged,
+   * so a no-op write re-renders nobody; more sharply, a consumer that derives
+   * its next write from what it just read loops forever otherwise. LV.3.7's
+   * reorderable chip picker is exactly that shape — `cols` → chips → `setCols`
+   * → new `cols` array → new chips → … — and nothing about it would look wrong
+   * in review.
+   *
+   * Individual mutators therefore carry no value-equality checks of their own.
+   * They hold only the guards that mean something beyond equality (an unknown
+   * stat, a non-finite number), and {@link sameDisplay} decides the rest, so a
+   * mutator added later cannot forget to opt in.
+   *
+   * Consequence worth knowing: a list written back to its exact defaults keeps
+   * **no** entry in `byList`, so {@link selectListDisplay} goes on returning the
+   * one frozen {@link DEFAULT_LIST_DISPLAY}.
    */
   const update = (listId: string, next: (current: ListDisplay) => ListDisplay) =>
     set((state) => {
       const current = state.byList[listId] ?? DEFAULT_LIST_DISPLAY
       const updated = next(current)
-      if (updated === current) return state
+      if (updated === current || sameDisplay(updated, current)) return state
       return { byList: { ...state.byList, [listId]: updated } }
     })
 
   return {
     byList: {},
 
-    setView: (listId, view) =>
-      update(listId, (current) => (current.view === view ? current : { ...current, view })),
+    setView: (listId, view) => update(listId, (current) => ({ ...current, view })),
 
-    setOrg: (listId, org) =>
-      update(listId, (current) => (current.org === org ? current : { ...current, org })),
+    setOrg: (listId, org) => update(listId, (current) => ({ ...current, org })),
 
-    setCols: (listId, cols) =>
-      update(listId, (current) => ({ ...current, cols: dedupe(cols) })),
+    setCols: (listId, cols) => update(listId, (current) => ({ ...current, cols: dedupe(cols) })),
 
     toggleCol: (listId, statId) =>
       update(listId, (current) => ({
@@ -200,10 +222,16 @@ export const useListDisplayStore = create<ListDisplayState>()((set) => {
 
     moveCol: (listId, statId, toIndex) =>
       update(listId, (current) => {
+        // A miss must return early, not fall through: `splice(-1, 1)` would cut
+        // the *last* chip rather than nothing at all.
         const from = current.cols.indexOf(statId)
         if (from < 0) return current
+        // Refused, not clamped — `Math.max`/`Math.min`/`Math.trunc` all pass NaN
+        // straight through and `splice` then reads it as 0, so a drop whose
+        // index could not be measured would silently move the stat to the front.
+        // Same call as `setBudget`'s below: decline the write, keep the state.
+        if (!Number.isFinite(toIndex)) return current
         const to = Math.max(0, Math.min(current.cols.length - 1, Math.trunc(toIndex)))
-        if (to === from) return current
         const cols = [...current.cols]
         cols.splice(from, 1)
         cols.splice(to, 0, statId)
@@ -213,7 +241,7 @@ export const useListDisplayStore = create<ListDisplayState>()((set) => {
     setBandLabel: (listId, bandKey, label) =>
       update(listId, (current) => {
         const trimmed = label.trim()
-        const bandLabels = { ...current.bandLabels }
+        const bandLabels = copyLabels(current.bandLabels)
         // Clearing the text is how you get the default back — storing "" would
         // render a nameless band header that no longer says what it holds.
         if (trimmed) bandLabels[bandKey] = trimmed
@@ -227,8 +255,10 @@ export const useListDisplayStore = create<ListDisplayState>()((set) => {
         // "$NaN" in every budget header, so the call is refused outright rather
         // than coerced into a plausible-looking number.
         if (!Number.isFinite(budget)) return current
-        const clamped = Math.max(MIN_BUDGET, Math.min(MAX_BUDGET, Math.round(budget)))
-        return clamped === current.budget ? current : { ...current, budget: clamped }
+        return {
+          ...current,
+          budget: Math.max(MIN_BUDGET, Math.min(MAX_BUDGET, Math.round(budget))),
+        }
       }),
 
     reset: (listId) =>
@@ -248,6 +278,50 @@ export const useListDisplayStore = create<ListDisplayState>()((set) => {
 /** Drops duplicates, keeping first-chosen order, and copies the caller's array. */
 function dedupe(ids: readonly string[]): readonly string[] {
   return [...new Set(ids)]
+}
+
+/**
+ * A mutable copy of a label map with **no prototype chain**.
+ *
+ * Bucket keys are free text — `c1`–`c4` today, but `list_players.tier` values
+ * once LV.1.5 widens the tier enum — so `__proto__` and `constructor` are
+ * reachable keys, not hypotheticals. On a plain `{}` a `__proto__` rename is
+ * swallowed by the setter and stored nowhere; on a null-prototype object it is
+ * an ordinary own property like any other.
+ */
+function copyLabels(from: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.assign(Object.create(null) as Record<string, string>, from)
+}
+
+/**
+ * Whether two display states are the same *value* — `cols` element-wise,
+ * `bandLabels` key-for-key.
+ *
+ * The gate in `update` above; see its doc comment for why equal-but-new is the
+ * bug and not the optimisation.
+ */
+function sameDisplay(a: ListDisplay, b: ListDisplay): boolean {
+  return (
+    a.view === b.view &&
+    a.org === b.org &&
+    a.budget === b.budget &&
+    sameCols(a.cols, b.cols) &&
+    sameLabels(a.bandLabels, b.bandLabels)
+  )
+}
+
+/** Chosen stats are ordered, so this is element-wise and not set equality. */
+function sameCols(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
+function sameLabels(
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+): boolean {
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && a[key] === b[key])
 }
 
 /**
@@ -288,11 +362,15 @@ export function resolveBandLabel(
   bandKey: string,
   bandLabels: Readonly<Record<string, string>>,
 ): string {
-  return (
-    bandLabels[bandKey] ??
-    DEFAULT_COST_BANDS.find((band) => band.key === bandKey)?.label ??
-    bandKey
-  )
+  // `hasOwnProperty`, not a bare lookup. Callers hand in ordinary object
+  // literals — a plain `bandLabels['constructor']` returns a *function* out of
+  // a `: string` API, and bucket keys stop being a closed `c1`–`c4` set the
+  // moment LV.1.5 widens the tier enum to DB-sourced text.
+  const override = Object.prototype.hasOwnProperty.call(bandLabels, bandKey)
+    ? bandLabels[bandKey]
+    : undefined
+
+  return override ?? DEFAULT_COST_BANDS.find((band) => band.key === bandKey)?.label ?? bandKey
 }
 
 /**

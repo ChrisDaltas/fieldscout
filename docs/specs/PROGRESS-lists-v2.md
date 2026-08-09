@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v3.3) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v3.4) > this file.
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -38,7 +38,7 @@ are all checked.
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
 - [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2) — ⛔ **parked, see §3 Q1**
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
-- [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4)
+- [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183)
 
 **Phase 2 — Lists page**
 
@@ -50,9 +50,9 @@ are all checked.
 
 - [ ] **LV.3.1** — hero: cover, inline rename, byline, action cluster, options menu (LV.1.1)
 - [ ] **LV.3.2** — tabs + toolbar: grouping dropdown, view-style toggle, Stats, Add players (LV.3.1, LV.1.4)
-- [ ] **LV.3.3** — view style List: 60px rows, stat cells, computed `minWidth` (LV.3.2)
+- [ ] **LV.3.3** — view style List: 60px rows, stat cells, computed `minWidth` (LV.3.2). ⚠️ **Read the `budget` note below before rendering anything budget-shaped** (R185)
 - [ ] **LV.3.4** — view style Table: 44px rows, sticky header (LV.3.2)
-- [ ] **LV.3.5** — view style Cards: corner cells, stat strip, label rail (LV.3.2)
+- [ ] **LV.3.5** — view style Cards: corner cells, stat strip, label rail (LV.3.2). ⚠️ **Same `budget` note** (R185)
 - [ ] **LV.3.6** — drag-and-drop across all three views; header drop assigns the bucket (LV.3.3–3.5, LV.1.5)
 - [ ] **LV.3.7** — stats picker modal: grouped catalog, search, reorderable chips (LV.3.2)
 - [ ] **LV.3.8** — notes: accent mark + body-portalled hover card (LV.3.3)
@@ -67,6 +67,23 @@ are all checked.
 
 **Lane note:** LV.1.1, LV.1.2, LV.1.4 and LV.1.5 are independent and may be
 picked in any order. LV.1.2 is the only schema task in the build.
+
+**Forward note — `budget` is held but nothing can render it (R185, filed
+2026-08-09 by the LV.1.4 Reviewer).** LV.1.4 stores `budget` faithfully because
+**D3** names it. But **D4** and plan §2.2 delete per-player `cost` outright, and
+share-of-budget from a player's `cost` is the *only* thing the prototype ever
+computes from `budget` (`docs/design/lists/design/ListsBody.jsx:109`,
+`lists.js:440-455`). So under our own decisions the number has no consumer.
+Related: the prototype's budget bands (`b1`–`b4`, `lists.js:442-445`) are
+threshold-derived and have **no defaults** on our side, so
+`resolveBandLabel('b1', {})` renders the raw key `b1`.
+
+This is a **plan-level tension, not a Builder error** — nobody is to "fix" it by
+reintroducing a `cost` field, which D4 rejects. LV.3.3 and LV.3.5 are where it
+surfaces. Whoever gets there first: if budget grouping is meant to ship, it needs
+a product answer (default band labels, and what the number means with nothing to
+divide by) — **file it in §3 and HALT**, do not invent one. If it is not meant to
+ship in Round 1, say so in the plan and drop `budget` from the toolbar.
 
 ---
 
@@ -266,34 +283,72 @@ This section records decisions made **during** the build.
      `customize-popover.tsx`; `budget: 200` is the prototype's. Stat ids stay
      opaque `string`s — the catalog is LV.3.7's.
 
-  5. **The default is a frozen, shared object handed out by reference.**
-     zustand v5 subscribes through `useSyncExternalStore`, which loops forever
-     on a selector that builds a fresh object per call, so
-     `selectListDisplay(listId)` returns either the stored entry or the one
-     frozen `DEFAULT_LIST_DISPLAY`. Pinned by a reference-identity test.
+  5. **Reference identity is a single gate in `update`, not per-mutator
+     checks.** *(Rewritten after review — R180.)* The read path was always
+     right: `selectListDisplay(listId)` returns either the stored entry or the
+     one frozen `DEFAULT_LIST_DISPLAY`, because zustand v5 subscribes through
+     `useSyncExternalStore` and loops forever on a selector that builds a fresh
+     object per call. The **write** path was not: `setCols`, `toggleCol` and
+     `setBandLabel` each allocated a new `ListDisplay` even when the value was
+     unchanged, and nothing pinned that. The fix is one structural-equality
+     check (`sameDisplay`) inside the shared `update` helper — `cols`
+     element-wise, `bandLabels` key-for-key — after which **every** mutator
+     returns the identical object on a value-identical write, including any
+     mutator added later. The per-mutator `current.view === view` style checks
+     were deleted as redundant so there is exactly **one** mechanism and
+     exactly one test pinning it. Guards that mean something beyond equality
+     stayed: an unknown stat in `moveCol`, and a non-finite number in
+     `setBudget`/`moveCol`. Side-effect worth knowing — a list written back to
+     its exact defaults now keeps **no** `byList` entry at all.
+
      Smaller calls in the same spirit: `setBudget` **refuses** a non-finite
      number outright rather than coercing it (a cleared input arrives as `NaN`
-     and would render "$NaN" everywhere), and a blank band rename **clears the
-     override** back to the default label instead of storing `""` and
-     rendering a nameless header.
+     and would render "$NaN" everywhere); `moveCol` now refuses one too, for
+     the same reason (R182 — `NaN` survives `Math.trunc`/`min`/`max` untouched
+     and `splice` reads it as `0`, so an unmeasurable drop silently moved the
+     chip to the front); and a blank band rename **clears the override** back
+     to the default label instead of storing `""` and rendering a nameless
+     header.
 
-  **D3 is guarded, not commented (the point of the task).** Six other stores in
-  `src/stores/` use `persist` + `createJSONStorage(localStorage)`, so the
-  absence here reads like an oversight to anyone who does not know it was
+  6. **Band-label maps have no prototype chain.** *(Added after review —
+     R181.)* Bucket keys are free text, and become DB-sourced
+     `list_players.tier` values the moment LV.1.5 widens the enum — so
+     `__proto__` and `constructor` are reachable input, not hypotheticals. On a
+     plain `{}` the first is swallowed by the prototype setter and stored
+     nowhere, and the second makes `resolveBandLabel` return a **function** out
+     of a `: string` API. `DEFAULT_LIST_DISPLAY.bandLabels` and every copy
+     `setBandLabel` makes are now `Object.create(null)`, and `resolveBandLabel`
+     reads through `Object.prototype.hasOwnProperty.call` so it is correct for
+     any caller-supplied record, not just the store's own.
+
+  **D3 is guarded, not commented (the point of the task).** **Seven** other
+  stores in `src/stores/` use `persist` + `createJSONStorage(localStorage)`
+  (`ai-build-store`, `list-order-store`, `history-store`, `rail-store`,
+  `ui-store`, `board-labels-store`, `player-windows-store` — the store header
+  and plan §2 both said *six* until R184; `ui-store` was missing from both), so
+  the absence here reads like an oversight to anyone who does not know it was
   declined. `list-display-store.test.ts` carries **four independent detectors**
   — the store exposes no `.persist` API; every mutator touches neither
-  `localStorage` nor `sessionStorage` (both stubbed on `globalThis`, since
-  vitest's node environment has neither and `createJSONStorage` *swallows* that,
-  which would let a genuinely-persisted store pass); state does not survive a
-  module reload; and the source names no persistence machinery. Plus a
-  **control** that builds a store with the house `persist` pattern inline and
-  shows all three runtime detectors tripping on it, so a green run means the
-  detectors work rather than that they are asleep. **Two probes shown:**
-  wrapping the store in `persist` → **4 RED**, reverted → 18 green; and a
-  hand-rolled `localStorage.setItem` inside `setView` with no middleware →
-  **6 RED** (the storage spy and the source pin catch it; the `.persist` probe
-  correctly does not — proving the layers are complementary, not redundant),
-  reverted → 18 green.
+  `localStorage` nor `sessionStorage`; state does not survive a module reload;
+  and the source names no persistence machinery. Plus a **control** that builds
+  a store with the house `persist` pattern inline and shows all three runtime
+  detectors tripping on it, so a green run means the detectors work rather than
+  that they are asleep.
+
+  **The guard's own hole, found in review and closed (R181/R179 — read this
+  before extending it).** The storage spies were stubbed on `globalThis`
+  **only**, and vitest's node environment has no `window`. The house SSR idiom
+  — `if (typeof window === 'undefined') return` then
+  `window.localStorage.setItem(...)`, which is literally what
+  `src/hooks/use-draft-mode.ts:19` does — therefore took its early return under
+  test and the spies never fired. A store that persisted `view` to
+  `localStorage` in **every real browser** passed all four detectors. The
+  describe now stubs `window` too, `window`/`globalThis` joined the banned-token
+  list (a computed key like `w['local' + 'Storage']` names none of the other
+  banned tokens), and `exerciseEveryMutator` **seeds `LIST_B` before resetting
+  it** — it was resetting a list that had never been set, so `reset`'s early
+  return ran and its real body never did, hiding a whole mutator from the
+  runtime detectors.
 
   **No UI consumes this yet**, by design — the toolbar is LV.3.2 and the stats
   picker LV.3.7 — so browser verification (plan §5.4) would have nothing to
@@ -470,3 +525,49 @@ Three nits recorded, **not fixed**:
 | **R176** — `drafted-service.ts` `listDrafted` (GET) still collapses "you hold no marks" with "you asked on behalf of someone you cannot speak for" into `200 {drafted: []}` — the exact shape R175's contract forbids eleven lines above. Reachability is identical to the un-mark path that got a hard 403, so the asymmetry now lives inside one file | nit | **Open.** Fix direction: call `assertCallerIs` when the read returns empty, or add a header line stating the read path is deliberately unguarded and why. Fold into **LV.1.3**, which consumes `listDrafted` |
 | **R177** — two imprecisions in the newly-amended honesty text: 028's break map says the 013 substitution fails "the 067 pin and nothing else" when it measurably fails **two** (38 + the total-rows epilogue 47), disagreeing with PROGRESS §6 which records both; and 079's banner cites `drafted-service.test.ts` as corroborating green when that suite drives a `noDatabase` Proxy and **structurally cannot** redden for an RLS change | nit | **Open.** Fix direction: "assertion 38, plus the downstream epilogue count"; cite the stack suite alone as the DB-reaching green |
 | **R178** — the lazy guard adds an `auth.getUser()` round-trip on the legitimate idempotent-replay path, which this file's own header says to expect (optimistic checkbox retries); the route proved the same identity one call earlier | nit | **Open, no action at LV.1.2 scope.** If LV.1.3 shows retry volume, thread the route's already-verified user into the service instead of re-fetching |
+
+### LV.1.4 — 2026-08-09 (PR #109) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #109 —
+`src/stores/list-display-store.ts` + its test — verified against plan v3.3 §4,
+**D3** and D4, and the falsifiability floor. **R179–R185: two should-fix, five
+nits, no blockers.** The `org` design (`ListOrg | null` + `resolveOrg`) was
+explicitly **upheld** as a correct engineering judgement needing no ruling.*
+
+***The finding that mattered:** the whole point of LV.1.4 was that D3 be
+*guarded*, and the guard did not hold. Its `beforeEach` stubbed `localStorage`
+and `sessionStorage` on `globalThis` but never `window` — and vitest runs on the
+node environment, where `typeof window === 'undefined'`. So the house SSR idiom,
+which is exactly what `src/hooks/use-draft-mode.ts:19` uses, took its early
+return under test and the spies never fired. The Reviewer put a real
+`window['local' + 'Storage'].setItem(...)` in `setView` and the suite reported
+**18 passed (18)** — reproduced here before fixing anything. A store that
+persisted `view` in every real browser shipped with all four detectors green,
+and the PR's stated backstop ("the runtime spies are the backstop") was false.
+A second variant was invisible for a different reason: `exerciseEveryMutator`
+called `reset(LIST_B)` on a list that had never been set, so `reset`'s early
+return ran and its real body never did.*
+
+#### Resolution — 2026-08-09 (Builder, same branch `feat/LV.1.4-session-display-state`)
+
+*All seven addressed on the same branch; nothing deferred, nothing escalated.
+Both should-fixes **shown falsifiable** — the pin reddens under the exact break
+it exists to catch, then reverted. `test:unit` **42 files / 694 tests** (baseline
+692; +2). Type-check clean, lint exit 0 (only the pre-existing
+`auction-draft-room.tsx:105` warning), prettier clean.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R179** — the D3 guard is fully defeated by persistence written in this codebase's own SSR-safe idiom; `reset`'s real body was never exercised | should-fix | **Three changes, each independently probed.** (a) the D3 `beforeEach` now also `vi.stubGlobal('window', { localStorage, sessionStorage })`, putting the guard on the side of the branch that actually writes; (b) `window` and `globalThis` joined the banned-token list, because a computed key (`w['local' + 'Storage']`) names none of the existing tokens; (c) `exerciseEveryMutator` seeds `LIST_B` with `setView` before `reset(LIST_B)`, and asserts the entry exists **and then does not**, so the seeding cannot rot back into a no-op silently. **Probes:** the Reviewer's exact `setView` probe on the *unfixed* test → **18/18 green** (hole reproduced); the same probe against the hardened test → **2 RED** — the runtime storage spy **and** the source pin, so the layers really are complementary; reverted → 18 green. Then, isolating (c): the same idiom inside `reset`'s post-guard body → **2 RED** with the seeding in place, but **1 RED** (source pin only, spy green) with the seeding removed — which is the direct measurement that seeding `LIST_B` is what makes `reset` observable at all |
+| **R180** — `setCols`, `toggleCol` and `setBandLabel` allocate a new `ListDisplay` on value-identical writes; PROGRESS's "pinned by a reference-identity test" covered only the selector's read path | should-fix | **One structural-equality gate in the shared `update` helper**, rather than three separate short-circuits: `sameDisplay` compares `cols` element-wise and `bandLabels` key-for-key, and `update` returns the state untouched when nothing changed. Chosen over per-mutator checks because it cannot be forgotten by a mutator added later — and the now-redundant `current.view === view` / `clamped === current.budget` checks were **deleted**, so there is exactly one mechanism and one test pinning it. Guards carrying meaning beyond equality stayed (unknown stat, non-finite number). New test **`every mutator hands back the same object on a value-identical write`** issues one no-op write per mutator and asserts `toBe` identity, plus a coverage assertion that the mutator surface is exactly the eight named — so a ninth mutator fails until it gets a line. `toggleCol` is called out in the test as the one mutator with **no** value-identical input by construction; its round trip is two genuine changes and correctly notifies twice. **Probes:** gate removed → **1 RED** (`serializes to the same string`, i.e. equal-but-new, the exact bug); `cols` compared by reference instead of element-wise → **1 RED**; `bandLabels` compared by reference instead of key-for-key → **1 RED**; all reverted → green. The two partial probes matter because `dedupe` always allocates, so a reference comparison would have looked like a gate and gated nothing |
+| **R181** — `resolveBandLabel` uses a plain-object `Record` as a map, so a prototype-named key violates its declared `: string` return and `setBandLabel` silently discards a `__proto__` rename | nit | **Both halves fixed, because they fail differently.** `DEFAULT_LIST_DISPLAY.bandLabels` and every copy `setBandLabel` makes are now built with `Object.create(null)` (new `copyLabels` helper), so a `__proto__` rename is an ordinary own property; and `resolveBandLabel` reads through `Object.prototype.hasOwnProperty.call`, so it is correct for **any** caller-supplied record and not only the store's own. New test pins `resolveBandLabel('constructor', {}) === 'constructor'`, a `__proto__` rename round-tripping through store → selector → resolver, and the null prototype itself. **Probe:** both reverted to the plain-object idiom → **1 RED**; restored → green. Reachability rises at LV.1.5, which is now flagged on that checklist row (R183) |
+| **R182** — `moveCol`'s doc says "clamped", but a non-finite `toIndex` is not clamped and silently moves the stat to the front | nit | `if (!Number.isFinite(toIndex)) return current`, placed and commented as the deliberate twin of `setBudget`'s NaN refusal — decline the write, keep the state, rather than return a plausible-looking wrong answer (CLAUDE.md's "never let 'nothing happened' mean 'it worked'", in its inverse form). The `moveCol` JSDoc now says "refused", not "clamped". Pinned in the existing `moveCol` test for both `NaN` and `Infinity`. **Probe:** guard removed → **2 RED** (the `moveCol` test and R180's identity test); restored → green |
+| **R183** — the `c1`–`c4` / LV.1.5 reconciliation pointer lived only in the store's JSDoc and PROGRESS §4, neither of which the LV.1.5 Builder reads for its task text | nit | Clause added to the **LV.1.5 checklist row in §2** naming `DEFAULT_COST_BANDS` and the file it lives in, stating that LV.1.4's keys are session-local and not on the wire, and that LV.1.5 owns what the route accepts. The row also now records the consequence R181 turns on: widening the enum makes bucket keys DB-sourced free text |
+| **R184** — the header says "Six other stores … wrap themselves in `persist`"; there are **seven** (`ui-store` omitted), and the miscount was inherited verbatim from delivery-plan §2 | nit | Fixed in **both** places. Plan bumped to **v3.4** with a changelog entry — the count is load-bearing for D3's argument ("every other store persists, this one deliberately does not"), so an undercount weakens the case the store header makes to its next reader, which is precisely what happened. §2 now also records how to check it: `grep -ln "persist(" src/stores/*.ts`. Store header and §4 above corrected to seven, with `ui-store` named |
+| **R185** — `budget` is held per D3 but has no renderable meaning under D4, and the tension is recorded nowhere the tasks that hit it will look | nit (plan-level) | **Recorded, not resolved** — per the Reviewer's own disposition and because resolving it is a product call. Full note added to **§2** with the prototype citations (`ListsBody.jsx:109`, `lists.js:440-455`, and `b1`–`b4` at `lists.js:442-445`), plus ⚠️ pointers on the **LV.3.3** and **LV.3.5** checklist rows and a changelog paragraph in plan v3.4. The note says explicitly that the wrong fix is reintroducing a per-player `cost` field (D4 rejects it), and instructs whoever reaches it to **file in §3 and HALT** rather than invent default band labels |
+
+**Not changed, and why:** the `org` design — `ListOrg | null` plus `resolveOrg`,
+so a session with no opinion defers to `lists.ranking_mode` — the Reviewer
+upheld it and asked for no change. `toggleCol` kept its allocate-always body: it
+adds or removes exactly one stat, so it has no value-identical input, and the
+`update` gate covers it structurally anyway.

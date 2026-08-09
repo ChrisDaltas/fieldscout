@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.3 — 2026-08-09. UI/UX only, with exactly one data exception.**
+> **v3.4 — 2026-08-09. UI/UX only, with exactly one data exception.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -57,8 +57,15 @@
   not regenerate its slug; `share-link-permanence.test.ts` guards it.
   **Do not touch slug generation.**
 - **Client-persisted UI state is an established pattern** — Zustand `persist` +
-  `createJSONStorage(localStorage)` in `ai-build-store`, `list-order-store`,
-  `history-store`, `rail-store`, `board-labels-store`, `player-windows-store`.
+  `createJSONStorage(localStorage)` in **seven** stores: `ai-build-store`,
+  `list-order-store`, `history-store`, `rail-store`, `ui-store`,
+  `board-labels-store`, `player-windows-store`. *(`ui-store` was missing from
+  this list through v3.3 and the miscount was inherited verbatim by LV.1.4's
+  store header — Reviewer R184. Verify with
+  `grep -ln "persist(" src/stores/*-store.ts` before quoting it again — that
+  glob deliberately excludes `list-display-store.test.ts`, whose D3 control
+  builds a persisted store on purpose.)* Anything **not** persisted in `src/stores/` is
+  therefore a deliberate exception and needs to say so — see D3.
 - **Stat columns are a fixed 7-option chip picker** (`customize-popover.tsx`,
   102 lines: proj, current, last, adp, sos, auction, bye) with **no
   persistence at all**. The handoff wants a searchable, grouped, reorderable
@@ -331,6 +338,26 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.4 (2026-08-09)** — **§2's persisted-store list corrected: seven, not
+  six** (Reviewer R184, PR #109). `ui-store` was missing. The count is not
+  decorative — D3's whole force is "every other store in `src/stores/` persists
+  and this one deliberately does not", so an undercount weakens the argument
+  the LV.1.4 store header makes to the next reader, which is exactly what
+  happened: that header inherited the list verbatim. §2 now says how to check
+  it (`grep -ln "persist(" src/stores/*.ts`). **Factual correction — no
+  product decision.**
+
+  Also recorded here because it was found in the same review: **`budget` has
+  no consumer under D4** (R185). §2.2 keeps `budget` as session state per D3,
+  but D4 deletes per-player `cost` — and share-of-budget is the only thing the
+  prototype ever computes from `budget` (`lists.js:440-455`). Nothing in Round
+  1 can render it, and the prototype's budget bands (`b1`–`b4`) have no
+  defaults on our side, so a budget grouping would render raw keys. This is a
+  **plan-level tension, not a build error**; it is flagged on the LV.3.3 /
+  LV.3.5 checklist rows in `PROGRESS-lists-v2.md` §2 rather than resolved here,
+  because resolving it is a product call about whether budget mode ships at
+  all.
 
 - **v3.3 (2026-08-09)** — **D1 reconciled with §4, editorially** (Reviewer
   R168, PR #107). v3.2's D1 said "New Lists replaces the bodies of existing
