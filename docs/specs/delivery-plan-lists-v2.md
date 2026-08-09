@@ -1,13 +1,13 @@
 # Delivery Plan: Lists v2
 
-> **v3.1 — 2026-08-09. UI/UX only, with exactly one data exception.**
+> **v3.2 — 2026-08-09. UI/UX only, with exactly one data exception.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
 > from scope** — with a single deliberate exception: **`drafted` persists
-> server-side** (Chris, 2026-08-09), because seeing who is already gone from
-> your phone is the point of the feature. That exception buys one new table
-> and nothing else — no changes to `lists` or `list_players`.
+> server-side** — per user, per list — because seeing who is already gone
+> from your phone is the point of the feature. That exception buys one new
+> table and nothing else; `lists` and `list_players` are untouched.
 >
 > Everything else that only affects how a list *looks* — view style, chosen
 > stat columns, band labels, budget — is **deliberately not saved**. Chris:
@@ -64,11 +64,20 @@
   persistence at all**. The handoff wants a searchable, grouped, reorderable
   catalog — a rebuild, but one that can only improve on "not saved anywhere".
 
-### 2.1 `drafted` already exists — three times
+### 2.1 `drafted` — the handoff is overridden here
 
-The handoff's headline store rule ("`drafted` is global — toggling it marks
-that player in *every* list containing him") is **already 80% built**, just
-inconsistently:
+The handoff's store rule says `drafted` is **global**: "toggling a player
+drafted sets the flag on that player in *every* list that contains him."
+
+**That is rejected** (Chris, 2026-08-09). Drafted is **per user, per list**.
+The reason is concrete: *"players will have multiple lists for multiple
+leagues"* — a player taken in your Tuesday auction is not taken in Thursday's
+redraft, and a global flag would wipe him off boards for drafts that have not
+happened. This is the one place Round 1 deviates from the design LAW, and it
+is deliberate.
+
+It also means the existing behavior is already correct. Three
+implementations exist:
 
 | Implementation | Scope | Storage |
 | --- | --- | --- |
@@ -76,23 +85,19 @@ inconsistently:
 | `src/stores/board-labels-store.ts` | **per player, global** — `'drafted' \| 'dnd'` | Zustand + localStorage |
 | `src/components/lists/draft-mode/use-board-marks.ts` | per *set* of lists, 3-state cycle | localStorage |
 
-**Only the first one is in Round 1 scope.** `use-draft-mode.ts` is what list
-detail uses, and it is the one that moves to the server. The other two belong
-to **board** surfaces — Big Board and draft-mode — which are not part of this
-build (Chris, 2026-08-09). They keep their local storage; unifying all three
-waits until those surfaces are reskinned.
+**`use-draft-mode.ts` is already keyed by list** — `fieldscout.drafted.${listId}`
+— which is exactly the semantics we want. **Nothing about its behavior
+changes; only where it stores.** That is the whole of LV.1.3.
 
-`board-labels-store` is nonetheless the useful precedent: already global and
-keyed by `playerId`, and its own comment argues the local behavior is
-*correct* — labels reset with the browser, *"which matches how a draft board
-actually gets used season to season."* Moving list detail server-side throws
-that away, which is why D2 buys it back with season scoping.
+The other two belong to **board** surfaces and are not opened at all (§1).
+`board-labels-store` being global-per-player is precisely why it is the wrong
+model to copy here, whatever the handoff says.
 
 ### 2.2 Closing the data-model gap
 
 | Handoff need | How it is met | Cost |
 | --- | --- | --- |
-| `entries[].drafted` (global) | **Server-side** — one new table, season-scoped, cross-device (D2/LV.1.2). Scopes the marks, never the list | the one exception |
+| `entries[].drafted` | **Server-side** — one new table, **per user per list**, cross-device (D2/LV.1.2). The handoff's global rule is overridden (§2.1) | the one exception |
 | `view` (list \| table \| card) | Session state, **not persisted** — a customization, like a search filter | none |
 | `cols` (chosen stats, ordered) | Same — session only | none |
 | `costBands` labels, `budget` | Same — session only | none |
@@ -118,12 +123,13 @@ that away, which is why D2 buys it back with season scoping.
 3. **Bucket membership does travel** — it lives in `list_players.tier`
    server-side, so which players sit in which tier/round/band follows a shared
    list on any device. Only the *label set* is session state.
-4. **`drafted` travels too** — server-side, per user, across every list and
-   every device (D2). This is the one thing that had to leave UI-only, and the
-   reason is concrete: a list that forgets who is gone the moment you pick up
-   your phone is useless on draft night.
-5. **Lists are permanent.** They do not expire or roll over by season. Only
-   the drafted marks carry a season; `lists` gets no season column, ever.
+4. **`drafted` travels between devices, not between lists** — server-side,
+   scoped to one user and one list (D2). It had to leave UI-only for one
+   reason: a list that forgets who is gone the moment you pick up your phone
+   is useless on draft night. It is still only a display treatment.
+5. **Lists are permanent.** They do not expire or roll over by season, and
+   `lists` gets no season column, ever. Neither does the drafted table —
+   per-list scoping already separates one draft from the next.
 
 ---
 
@@ -133,40 +139,37 @@ that away, which is why D2 buys it back with season scoping.
   Lists replaces the bodies of existing components behind the flag; shared
   primitives in `src/components/ui/` get CVA variants, never forks.
 
-- **D2 — `drafted` is server-side, per user, global across lists**
-  (Chris, 2026-08-09). One new table, the plan's only schema change:
+- **D2 — `drafted` is per user, per list, and purely a display state**
+  (Chris, 2026-08-09). It overrides the handoff's global rule — see §2.1.
+
+  Chris: *"marking as drafted should be nothing more than telling the UI to
+  display that player differently in that list."* Treat that as the ceiling on
+  this feature. It is a strikethrough/dim treatment plus a checkbox. It does
+  **not** reorder, filter, cascade to other lists, affect rank, or feed
+  anything downstream.
+
+  It persists server-side only so the marks follow you between devices
+  mid-draft — that is the entire reason it earns a table:
 
   ```
-  user_drafted_players (user_id, player_id, season, drafted_at)
-    primary key (user_id, player_id, season)
+  list_player_drafted (user_id, list_id, player_id, drafted_at)
+    primary key (user_id, list_id, player_id)
     RLS: every operation requires auth.uid() = user_id
   ```
 
-  Nothing on `lists` or `list_players` changes.
+  **Why `user_id` when a list already has an owner:** so that marking drafted
+  on a *saved* list (someone else's, per the handoff's Saved tab) records your
+  marks rather than editing their list. A `drafted` column on `list_players`
+  would be simpler, but two people using the same shared board on draft night
+  would overwrite each other. The extra column is the cheaper bug.
 
-  **`season` scopes the drafted marks — never the list** (Chris, 2026-08-09).
-  *"Lists can persist forever… boards are tied to a season for sure."* A list
-  is a durable object: it does not expire, roll over, or get archived by
-  season, and **no season column goes anywhere near `lists`**. But being
-  *drafted* is a board fact about one particular draft, so the marks are
-  season-scoped. Server persistence is what forces the question — in the
-  browser these cleared themselves, and `board-labels-store`'s own comment
-  called that correct: *"labels reset with the browser, which matches how a
-  draft board actually gets used season to season."* Storing them server-side
-  throws that away unless the rows carry a season. Reads filter to
-  `CURRENT_SEASON` (`src/lib/stats/aggregate-fantasy`), so each season starts
-  clean while the list it decorates is untouched and permanent.
+  **No season column.** Per-list scoping already does that work — a 2026
+  auction list is a different row set from next year's — and adding season on
+  top would be speculative. Reusing the same list next season means clearing
+  it, which is what the manual **"Clear drafted"** in the options menu is for.
 
-  A manual **"Clear drafted"** in the list options menu ships alongside it —
-  season handles next year, the button handles a mistake tonight.
-
-  **Round 1 rewires exactly one caller.** `use-draft-mode.ts` — the
-  implementation behind list detail — moves to the server source. Big Board's
-  `board-labels-store` and draft-mode's `use-board-marks` are **not opened at
-  all** (§1, boards are off limits). They keep their local storage and their
-  current behavior. Unifying all three is a later job, for whoever reskins
-  those surfaces; doing it here would put a flag-gated surface's regression
-  risk on the launch path for no launch benefit.
+  Round 1 rewires **`use-draft-mode.ts` only** (§2.1). Its per-list semantics
+  are already right; swap localStorage for the table and stop.
 
 - **D3 — Display preferences are session state, deliberately unsaved**
   (Chris, 2026-08-09). `view`, `cols`, cost-band labels and `budget` live in
@@ -226,7 +229,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | id | task | depends on |
 | --- | --- | --- |
 | LV.1.1 | `featureFlags.listsV2` + route-level branch so old and new Lists coexist | — |
-| LV.1.2 | **Migration**: `user_drafted_players` (+ season scoping, RLS, indexes) and its read/toggle route (D2). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
+| LV.1.2 | **Migration**: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
 | LV.1.3 | Point **`use-draft-mode.ts` only** at the new server source (D2). Do not open `board-labels-store.ts` or `use-board-marks.ts` | LV.1.2 |
 | LV.1.4 | Session-only display state — `view`, `cols`, band labels, `budget`. **No `persist` middleware** (D3) | — |
 | LV.1.5 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
@@ -296,22 +299,28 @@ surfaces outside Lists, which is why it is off the launch path.
 
 *(Q1 — Round 1 scope — is resolved: page + detail first, then side-by-side and
 pop-outs. Ruled by Chris 2026-08-09.)*
-- **Q2 — Confirm `drafted` is global, not per-list.** Marking Bijan drafted
-  removes him from *every* list you own, on every device — which is what the
-  handoff specifies and what "see who was drafted from my phone" implies.
-  Flagged explicitly because an earlier draft of this plan got a correction on
-  exactly this point; if drafted should instead be per-list, say so before
-  LV.1.2 — it changes the table's primary key.
+*(All prior open questions are resolved. Display prefs deliberately do not
+persist. `drafted` does — server-side, per user per list, overriding the
+handoff's global rule (§2.1). Round 1 scope, tier labels, visibility and
+grouping are all ruled in §1 and §3.)*
 
-*(v2.x's trade-off questions are resolved: display prefs deliberately do not
-persist; `drafted` does, server-side.)*
+**Nothing is blocking. `/build-next` can start on LV.1.1.**
 
-*(v1.0's Q1 — "what clears `drafted`" — is resolved, but not the way v2.0
-resolved it. Server persistence means the browser no longer clears anything:
-season scoping starts each year empty, and a manual "Clear drafted" handles
-tonight's mistakes. See D2.)*
+*(v1.0's Q1 — "what clears `drafted`" — is resolved: the manual "Clear
+drafted" in the options menu. Per-list scoping means a new draft is a new
+list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.2 (2026-08-09)** — Chris: `drafted` is **per user, per list** — the
+  handoff's global rule is overridden, because one player is taken in one
+  league's draft and not another's. Recorded as the plan's only deliberate
+  deviation from the design LAW. Also capped in scope to a display treatment:
+  *"nothing more than telling the UI to display that player differently in
+  that list."* Table becomes `list_player_drafted (user_id, list_id,
+  player_id)`; the season column is dropped, since per-list scoping already
+  separates one draft from the next. `use-draft-mode.ts` turns out to be
+  per-list already, so LV.1.3 changes storage and nothing else.
 
 - **v3.1 (2026-08-09)** — Chris, two boundaries. **Lists persist forever;
   boards are season-bound** — so `season` scopes the drafted marks and never
