@@ -20,14 +20,13 @@
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1, LV.1.2, LV.1.4 landed 2026-08-09) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
-**Two tasks are parked; Phase 2 is clear.** LV.1.3 cannot land as written — see
-**§3 Q1**. **LV.1.5 cannot land as written either — see §3 Q2** (`list_players.tier`
-carries a live CHECK constraint, so widening the Zod enum alone cannot work and
-the fix is a migration this build forbids). Both await Chris's ruling.
+**Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
+LV.1.3 as written (no users exist, so there are no drafted marks to preserve).
+**Q2** — widen the tier CHECK constraint, the build's second and final schema
+exception. Every Phase 1 task is pickable and no ruling is outstanding.
 
-Everything in **Phase 2** (LV.2.1–2.3) and **LV.3.1** is unblocked and needs
-neither ruling. Downstream of the two parked tasks: LV.3.9 (Q1) and LV.3.6 (Q2);
-LV.3.2 and LV.3.5 inherit Q2's vocabulary but are not blocked by it.
+Every task is unblocked. LV.3.9 depends on LV.1.3 and LV.3.6 on LV.1.5, both
+of which are now buildable.
 
 ---
 
@@ -41,9 +40,9 @@ are all checked.
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
-- [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2) — ⛔ **parked, see §3 Q1**
+- [ ] **LV.1.3** — ✅ **Q1 RULED (build as written)** — point `use-draft-mode.ts` at the new server source (LV.1.2). No file in `src/components/lists/draft-mode/**` may be edited; that surface's behavior changes through the shared hook and that is accepted (§3 Q1). Folds in nits R176 + R178
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
-- [ ] **LV.1.5** — widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183) — ⛔ **parked, see §3 Q2.** D4's premise that this is "not a schema change" is **factually wrong**: `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, migration `003_lists.sql:42-43`) pinning it to NULL or S–F, on **both** the local chain and hosted production. Widening Zod alone makes every round write a Postgres `23514`, which this route returns as an HTTP **500**. **The recommended vocabulary is fully specified in §3 Q2** — it needs a ruling, not a redesign
+- [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
 **Phase 2 — Lists page**
 
@@ -120,8 +119,35 @@ collapses "no marks" with "not permitted") and **R178** (extra `auth.getUser()`
 round-trip on the retry path), both of which land in this hook's code path.
 Alternative if rejected: move LV.1.3 to depend on LV.3.9 and build it there.
 
-**Status: awaiting Chris's ruling.** LV.1.3 is parked; the loop continues on other
-unblocked Phase 1 tasks.
+#### ✅ RULED — Chris, 2026-08-09: **build it as originally written.**
+
+*"We don't have any users yet so no one has marked anyone as drafted."*
+
+That dissolves the premise the recommendation rested on. The objection was
+"rewiring the shared hook changes production behavior" — but there are **no
+users and therefore no existing drafted marks**, so there is no data to
+preserve and no behavior anyone would notice changing. LV.1.3 is **unparked**
+and proceeds as its task text says: point `use-draft-mode.ts` itself at the
+server source. One mechanism, no duplicate hook to delete at LV.4.4.
+
+**Accepted consequences, recorded so they are not rediscovered as bugs:**
+
+1. **The Lists draft-mode board (`/app/lists/draft-mode`) also gains
+   account-persisted marks**, because `draft-mode/board-column.tsx:35` consumes
+   the same hook. **No file inside `src/components/lists/draft-mode/**` may be
+   edited** — the boards-off-limits rule (§1) still holds on the *diff*. The
+   behavior change flows through the shared hook and is accepted; it is
+   arguably an improvement, and that surface is flag-gated at launch.
+2. **The flag-OFF legacy list detail view starts making network calls** for
+   drafted marks where it previously read localStorage. With no users this is
+   tolerable, and LV.4.4 retires that view. It must still not throw — a failed
+   read renders as "no marks", never a crashed page.
+3. The migration from any existing localStorage marks is **not** required — no
+   users, nothing to migrate. Do not build a migration path.
+
+Also fold in the two open nits that land in this code path: **R176** (the GET
+path collapses "no marks" with "not permitted") and **R178** (extra
+`auth.getUser()` round-trip on the retry path).
 
 ### Q2 — LV.1.5 cannot land as written: `list_players.tier` has a CHECK constraint (filed 2026-08-09, Builder)
 
@@ -250,10 +276,31 @@ is **left untouched** rather than amended toward an unruled outcome (the Q1
 precedent). Whoever lands the ruling folds it into the plan changelog as v3.5
 and ticks the §2 rows here.
 
-**Status: awaiting Chris's ruling.** LV.1.5 is parked. LV.3.6 is blocked for
-every mode except tier; LV.3.2 and LV.3.5 inherit the vocabulary but can
-proceed tier-only. **Phase 2 (LV.2.1–2.3) and LV.3.1 need neither ruling** —
-the loop should continue there.
+#### ✅ RULED — Chris, 2026-08-09: **Option A. Widen the CHECK.**
+
+*"That's fine, do the database change."* LV.1.5 is **unparked** and now includes
+one migration (`ALTER TABLE list_players` — drop the S–F CHECK, add the wider
+one). This is the build's **second and final** schema exception; plan §1 and D6
+updated, D4's false "not a schema change" sentence replaced with the erratum,
+plan → **v3.5**.
+
+The proposed vocabulary in this question is **approved as proposed** unless the
+LV.1.5 Builder finds cause to change it, in which case it records why:
+`^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$` — S–F tiers, rounds 1–30, cost
+bands `c1`–`c4` adopted on the wire so every accepted key has a default label
+and `resolveBandLabel` never renders a raw key. Budget mints no keys (D4 makes
+it a label set, and R185 records it has no consumer).
+
+**Both the CHECK and the Zod enum must be widened together**, and the migration
+reaches production only via `npx supabase db push` — never by hand
+(CLAUDE.md migration discipline).
+
+Carry forward from the halt report — the Builder flagged, unfixed:
+`TIER_BG`/`TIER_BAND_BG` in `src/components/lists/tier-badge.tsx` are total
+`Record<ListTier, string>` maps with **no fallback**, so `TIER_BAND_BG['r1']`
+is `undefined` → a silently uncolored band, in both the flag-OFF legacy view
+and the SEO-critical public share view (D7). LV.1.5 should address or
+explicitly defer it.
 
 ---
 
@@ -506,19 +553,20 @@ This section records decisions made **during** the build.
 
 ## 5. Blockers
 
-- **LV.1.3 is parked pending Chris's ruling on §3 Q1** (filed 2026-08-09) — its
-  task text rewires a hook whose only two consumers are production-legacy and
-  off-limits. Nothing else in Round 1 is blocked by it except **LV.3.9**, which
-  depends on it. Do not pick LV.1.3 until Q1 is answered.
+- **LV.1.3 — RESOLVED 2026-08-09, no longer a blocker.** Q1 ruled: build it as
+  written. The finding stands as recorded — the hook's only two consumers are
+  the production-legacy detail view and an off-limits board surface — but with
+  **no users and therefore no drafted marks**, there is nothing to preserve.
+  The boards rule still binds the *diff*: no file under
+  `src/components/lists/draft-mode/**` may be edited.
 
-- **LV.1.5 is parked pending Chris's ruling on §3 Q2** (filed 2026-08-09) — D4's
-  "the column is already `text`, so this is not a schema change" is factually
-  wrong; `list_players_tier_check` (migration `003_lists.sql:42-43`) is live on
-  the local chain **and** on hosted production, so widening the Zod enum alone
-  converts a clean 400 into a Postgres `23514` surfaced as an HTTP 500. Making
-  it work requires a migration, which plan §1 / D6 / §5 DoD item 3 /
-  `ACTIVE-BUILD.md` all forbid. **LV.3.6** is blocked with it for every mode
-  except tier. LV.3.2 and LV.3.5 inherit the vocabulary but can ship tier-only.
+- **LV.1.5 — RESOLVED 2026-08-09, no longer a blocker.** Q2 was ruled: widen
+  the CHECK. The finding stands as recorded — `list_players_tier_check`
+  (`003_lists.sql:42-43`) is live locally **and** on hosted production, so
+  widening the Zod enum alone would convert a clean 400 into a Postgres `23514`
+  surfaced as an HTTP 500. The fix is one `ALTER TABLE`, now the build's second
+  and final sanctioned schema change (plan §1, D4, D6 — v3.5). LV.3.6 unblocks
+  with it.
 
 Nothing else blocks Lists v2. **Phase 2 (LV.2.1, LV.2.2, LV.2.3) and LV.3.1 are
 clear of both Q1 and Q2** — that is where the loop should go next.

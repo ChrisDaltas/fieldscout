@@ -23,8 +23,11 @@
 
 **Standing constraints for every task in this build** (full text in the plan §1):
 
-- UI/UX only, with one exception: the `drafted` table (LV.1.2). No other
-  schema change, no other new API route.
+- UI/UX only, with **two** exceptions, both ruled by Chris 2026-08-09:
+  (a) the `drafted` table (LV.1.2), and (b) widening `list_players.tier`'s
+  CHECK constraint (LV.1.5 — one `ALTER TABLE`, no new table or column).
+  **That is the whole budget** — no third schema change, no other new API
+  route. A task that thinks it needs one has left scope: stop and raise it.
 - **Boards are off limits.** No task opens `src/components/big-board/**`,
   `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`.
 - Everything lands behind `featureFlags.listsV2`.
