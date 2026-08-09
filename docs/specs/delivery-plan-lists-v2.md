@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.0 — 2026-08-09. UI/UX only, with exactly one data exception.**
+> **v3.1 — 2026-08-09. UI/UX only, with exactly one data exception.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -31,6 +31,7 @@
 | --- | --- |
 | **UI/UX only, one exception** | No schema changes except the `drafted` table (D2/LV.1.2). See §2.2. |
 | **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
+| **Boards are off limits** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**`, `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
 | **Color** | Implement from **tokens, never the handoff's literal hex**. The prototype is token-driven (19 × `var(--accent)`, zero hardcoded blues); its `#1F6BF0` describes what that token resolved to in *their* bundle. The app's `accent` is `#3d5cff`. |
 | **Flag** | All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout. |
@@ -75,23 +76,23 @@ inconsistently:
 | `src/stores/board-labels-store.ts` | **per player, global** — `'drafted' \| 'dnd'` | Zustand + localStorage |
 | `src/components/lists/draft-mode/use-board-marks.ts` | per *set* of lists, 3-state cycle | localStorage |
 
-`board-labels-store` is already the right *shape* — global, keyed by
-`playerId` — it is simply wired only to Big Board, and stores locally.
+**Only the first one is in Round 1 scope.** `use-draft-mode.ts` is what list
+detail uses, and it is the one that moves to the server. The other two belong
+to **board** surfaces — Big Board and draft-mode — which are not part of this
+build (Chris, 2026-08-09). They keep their local storage; unifying all three
+waits until those surfaces are reskinned.
 
-**Storage is what changes** (D2): all three point at one server-side source so
-marks follow you between devices. The shape work is largely done; the
-persistence work is new.
-
-Note what this costs. `board-labels-store`'s own comment argues the local
-behavior is *correct* — labels reset with the browser, *"which matches how a
-draft board actually gets used season to season."* Moving server-side throws
-that away, which is why D2 adds season scoping to get it back deliberately.
+`board-labels-store` is nonetheless the useful precedent: already global and
+keyed by `playerId`, and its own comment argues the local behavior is
+*correct* — labels reset with the browser, *"which matches how a draft board
+actually gets used season to season."* Moving list detail server-side throws
+that away, which is why D2 buys it back with season scoping.
 
 ### 2.2 Closing the data-model gap
 
 | Handoff need | How it is met | Cost |
 | --- | --- | --- |
-| `entries[].drafted` (global) | **Server-side** — one new table, cross-device (D2/LV.1.2) | the one exception |
+| `entries[].drafted` (global) | **Server-side** — one new table, season-scoped, cross-device (D2/LV.1.2). Scopes the marks, never the list | the one exception |
 | `view` (list \| table \| card) | Session state, **not persisted** — a customization, like a search filter | none |
 | `cols` (chosen stats, ordered) | Same — session only | none |
 | `costBands` labels, `budget` | Same — session only | none |
@@ -119,8 +120,10 @@ that away, which is why D2 adds season scoping to get it back deliberately.
    list on any device. Only the *label set* is session state.
 4. **`drafted` travels too** — server-side, per user, across every list and
    every device (D2). This is the one thing that had to leave UI-only, and the
-   reason is concrete: a draft board that forgets who is gone the moment you
-   pick up your phone is not a draft board.
+   reason is concrete: a list that forgets who is gone the moment you pick up
+   your phone is useless on draft night.
+5. **Lists are permanent.** They do not expire or roll over by season. Only
+   the drafted marks carry a season; `lists` gets no season column, ever.
 
 ---
 
@@ -139,22 +142,31 @@ that away, which is why D2 adds season scoping to get it back deliberately.
     RLS: every operation requires auth.uid() = user_id
   ```
 
-  Nothing on `lists` or `list_players` changes. The three client
-  implementations in §2.1 collapse onto this one source of truth; Big Board and
-  draft-mode must keep working — verify both, they are the regression risk.
+  Nothing on `lists` or `list_players` changes.
 
-  **`season` exists because server persistence re-opens a question that
-  localStorage answered for free.** When marks lived in the browser they
-  cleared themselves, and `board-labels-store`'s own comment called that
-  correct: *"labels reset with the browser, which matches how a draft board
-  actually gets used season to season."* Persist them server-side and next
-  August your board still shows last year's draft. Scoping rows by season
-  makes each season start empty on its own, and costs one column.
+  **`season` scopes the drafted marks — never the list** (Chris, 2026-08-09).
+  *"Lists can persist forever… boards are tied to a season for sure."* A list
+  is a durable object: it does not expire, roll over, or get archived by
+  season, and **no season column goes anywhere near `lists`**. But being
+  *drafted* is a board fact about one particular draft, so the marks are
+  season-scoped. Server persistence is what forces the question — in the
+  browser these cleared themselves, and `board-labels-store`'s own comment
+  called that correct: *"labels reset with the browser, which matches how a
+  draft board actually gets used season to season."* Storing them server-side
+  throws that away unless the rows carry a season. Reads filter to
+  `CURRENT_SEASON` (`src/lib/stats/aggregate-fantasy`), so each season starts
+  clean while the list it decorates is untouched and permanent.
 
   A manual **"Clear drafted"** in the list options menu ships alongside it —
-  season scoping handles next year, the button handles a mistake tonight.
+  season handles next year, the button handles a mistake tonight.
 
-  Reads filter to `CURRENT_SEASON` (`src/lib/stats/aggregate-fantasy`).
+  **Round 1 rewires exactly one caller.** `use-draft-mode.ts` — the
+  implementation behind list detail — moves to the server source. Big Board's
+  `board-labels-store` and draft-mode's `use-board-marks` are **not opened at
+  all** (§1, boards are off limits). They keep their local storage and their
+  current behavior. Unifying all three is a later job, for whoever reskins
+  those surfaces; doing it here would put a flag-gated surface's regression
+  risk on the launch path for no launch benefit.
 
 - **D3 — Display preferences are session state, deliberately unsaved**
   (Chris, 2026-08-09). `view`, `cols`, cost-band labels and `budget` live in
@@ -215,7 +227,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | --- | --- | --- |
 | LV.1.1 | `featureFlags.listsV2` + route-level branch so old and new Lists coexist | — |
 | LV.1.2 | **Migration**: `user_drafted_players` (+ season scoping, RLS, indexes) and its read/toggle route (D2). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
-| LV.1.3 | Point all three client `drafted` implementations at the new server source (D2); Big Board and draft-mode stay green — verify both | LV.1.2 |
+| LV.1.3 | Point **`use-draft-mode.ts` only** at the new server source (D2). Do not open `board-labels-store.ts` or `use-board-marks.ts` | LV.1.2 |
 | LV.1.4 | Session-only display state — `view`, `cols`, band labels, `budget`. **No `persist` middleware** (D3) | — |
 | LV.1.5 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
 
@@ -300,6 +312,14 @@ season scoping starts each year empty, and a manual "Clear drafted" handles
 tonight's mistakes. See D2.)*
 
 ## Changelog
+
+- **v3.1 (2026-08-09)** — Chris, two boundaries. **Lists persist forever;
+  boards are season-bound** — so `season` scopes the drafted marks and never
+  the list, and no season column goes near `lists`. And **boards are off
+  limits entirely**: Round 1 rewires `use-draft-mode.ts` alone, leaving
+  `board-labels-store` and `use-board-marks` unopened. v3.0 had all three
+  consolidating, which would have put a flag-gated surface's regression risk
+  on the launch path.
 
 - **v3.0 (2026-08-09)** — Chris reversed the trade-off recommendation, and the
   reversal is the point. **`drafted` persists server-side** (one new table,
