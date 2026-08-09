@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v2.1 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
+> **v2.2 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
 > schema changes, no new tables, no RLS work. Anything the handoff needs that
 > has no home in the current schema is either **client-side state**,
 > **computed**, or **dropped from scope** — never a new column. This is a
@@ -135,14 +135,23 @@ reading from the server when present and falling back to local — not a rewrite
   — it is the same write in all four.
 
   Storage is the existing `list_players.tier` (`text`), written through the
-  existing `PATCH /api/lists/[id]/players/[playerId]/tier` route. **One
-  contained change is required**: that route's Zod schema currently validates
-  `z.enum(['S','A','B','C','D','F'])` — the legacy letter scale — while the new
-  design uses numeric buckets (`tailwind.config.ts` already carries both
-  `tier-1..7` and the S–F keys, the latter marked legacy). Widening that enum
-  is a validation change on an existing route against an existing `text`
-  column — **not** a schema change, and inside UI-only scope. It is called out
-  as its own task (LV.1.4) rather than smuggled into a screen PR.
+  existing `PATCH /api/lists/[id]/players/[playerId]/tier` route.
+
+  **Tier labels stay S/A/B/C/D/F** (Chris, 2026-08-09) — no change needed for
+  tier mode, and `tailwind.config.ts` already carries the S–F color keys
+  alongside `tier-1..7`.
+
+  **Round mode still needs more bucket keys than the enum allows.** That
+  route validates `z.enum(['S','A','B','C','D','F'])` — six values. A fantasy
+  draft runs 12–16 rounds, so round grouping cannot represent a real draft
+  against a six-value enum. LV.1.4 widens it to accept round/band keys as
+  well; S–F stays valid so nothing existing breaks. The column is already
+  `text`, so this is a validation change on an existing route — **not** a
+  schema change, and inside UI-only scope. It stays its own task rather than
+  being smuggled into a screen PR.
+
+  Note the color ramp has 6–7 hues against up to 16 rounds, so round mode
+  cycles colors rather than assigning a unique one per bucket.
 
   Consequence: because buckets live server-side, grouping **does** follow a
   shared list. Only the label set is local.
@@ -172,7 +181,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.1.1 | `featureFlags.listsV2` + route-level branch so old and new Lists coexist | — |
 | LV.1.2 | Consolidate `drafted` onto one global player-keyed store (D2); keep Big Board and draft-mode green | — |
 | LV.1.3 | `useListDisplayPrefs` store — `view`, `cols`, `costBands`, `budget`, persisted per `listId` (D3) | — |
-| LV.1.4 | Widen the tier route's Zod enum from the legacy S–F scale to numeric buckets (D4); keep any existing S–F rows readable | — |
+| LV.1.4 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
 
 **Phase 2 — Lists page**
 
@@ -243,6 +252,10 @@ existing `board-labels-store` precedent.)*
 
 ## Changelog
 
+- **v2.2 (2026-08-09)** — Chris: tier labels stay **S/A/B/C/D/F**; no numeric
+  migration of the tier scale. LV.1.4 narrows accordingly — it now exists only
+  so round grouping can exceed six buckets (a draft runs 12–16 rounds against
+  a six-value enum), with S–F still valid.
 - **v2.1 (2026-08-09)** — Chris's correction: tier, round, cost and budget are
   **one mechanism with four label sets**, not separate or computed fields
   (D4). Removes the "computed grouping" design and the read-only-cost-band
