@@ -20,15 +20,13 @@
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1, LV.1.2, LV.1.4 landed 2026-08-09) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
-**One task is parked; everything else is clear.** **LV.1.3** cannot land as
-written and awaits a ruling — see **§3 Q1**; only LV.3.9 sits downstream of it.
-**LV.1.5 is unparked** — Q2 was ruled on 2026-08-09 (widen the CHECK; see §3
-Q2), so it is now the next pickable Phase 1 task. Phase 2 (LV.2.1–2.3) and
-LV.3.1 need no ruling at all.
+**Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
+LV.1.3 as written (no users exist, so there are no drafted marks to preserve).
+**Q2** — widen the tier CHECK constraint, the build's second and final schema
+exception. Every Phase 1 task is pickable and no ruling is outstanding.
 
-Everything in **Phase 2** (LV.2.1–2.3) and **LV.3.1** is unblocked. Downstream
-of the one parked task: **LV.3.9** (Q1). LV.3.6 is no longer blocked — Q2's
-ruling gives it the full bucket vocabulary once LV.1.5 lands.
+Every task is unblocked. LV.3.9 depends on LV.1.3 and LV.3.6 on LV.1.5, both
+of which are now buildable.
 
 ---
 
@@ -42,7 +40,7 @@ are all checked.
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
-- [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2) — ⛔ **parked, see §3 Q1**
+- [ ] **LV.1.3** — ✅ **Q1 RULED (build as written)** — point `use-draft-mode.ts` at the new server source (LV.1.2). No file in `src/components/lists/draft-mode/**` may be edited; that surface's behavior changes through the shared hook and that is accepted (§3 Q1). Folds in nits R176 + R178
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
 - [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
@@ -121,8 +119,35 @@ collapses "no marks" with "not permitted") and **R178** (extra `auth.getUser()`
 round-trip on the retry path), both of which land in this hook's code path.
 Alternative if rejected: move LV.1.3 to depend on LV.3.9 and build it there.
 
-**Status: awaiting Chris's ruling.** LV.1.3 is parked; the loop continues on other
-unblocked Phase 1 tasks.
+#### ✅ RULED — Chris, 2026-08-09: **build it as originally written.**
+
+*"We don't have any users yet so no one has marked anyone as drafted."*
+
+That dissolves the premise the recommendation rested on. The objection was
+"rewiring the shared hook changes production behavior" — but there are **no
+users and therefore no existing drafted marks**, so there is no data to
+preserve and no behavior anyone would notice changing. LV.1.3 is **unparked**
+and proceeds as its task text says: point `use-draft-mode.ts` itself at the
+server source. One mechanism, no duplicate hook to delete at LV.4.4.
+
+**Accepted consequences, recorded so they are not rediscovered as bugs:**
+
+1. **The Lists draft-mode board (`/app/lists/draft-mode`) also gains
+   account-persisted marks**, because `draft-mode/board-column.tsx:35` consumes
+   the same hook. **No file inside `src/components/lists/draft-mode/**` may be
+   edited** — the boards-off-limits rule (§1) still holds on the *diff*. The
+   behavior change flows through the shared hook and is accepted; it is
+   arguably an improvement, and that surface is flag-gated at launch.
+2. **The flag-OFF legacy list detail view starts making network calls** for
+   drafted marks where it previously read localStorage. With no users this is
+   tolerable, and LV.4.4 retires that view. It must still not throw — a failed
+   read renders as "no marks", never a crashed page.
+3. The migration from any existing localStorage marks is **not** required — no
+   users, nothing to migrate. Do not build a migration path.
+
+Also fold in the two open nits that land in this code path: **R176** (the GET
+path collapses "no marks" with "not permitted") and **R178** (extra
+`auth.getUser()` round-trip on the retry path).
 
 ### Q2 — LV.1.5 cannot land as written: `list_players.tier` has a CHECK constraint (filed 2026-08-09, Builder)
 
@@ -528,10 +553,12 @@ This section records decisions made **during** the build.
 
 ## 5. Blockers
 
-- **LV.1.3 is parked pending Chris's ruling on §3 Q1** (filed 2026-08-09) — its
-  task text rewires a hook whose only two consumers are production-legacy and
-  off-limits. Nothing else in Round 1 is blocked by it except **LV.3.9**, which
-  depends on it. Do not pick LV.1.3 until Q1 is answered.
+- **LV.1.3 — RESOLVED 2026-08-09, no longer a blocker.** Q1 ruled: build it as
+  written. The finding stands as recorded — the hook's only two consumers are
+  the production-legacy detail view and an off-limits board surface — but with
+  **no users and therefore no drafted marks**, there is nothing to preserve.
+  The boards rule still binds the *diff*: no file under
+  `src/components/lists/draft-mode/**` may be edited.
 
 - **LV.1.5 — RESOLVED 2026-08-09, no longer a blocker.** Q2 was ruled: widen
   the CHECK. The finding stands as recorded — `list_players_tier_check`
