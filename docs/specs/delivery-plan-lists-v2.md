@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v2.2 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
+> **v2.3 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
 > schema changes, no new tables, no RLS work. Anything the handoff needs that
 > has no home in the current schema is either **client-side state**,
 > **computed**, or **dropped from scope** — never a new column. This is a
@@ -89,7 +89,7 @@ existing precedent.
 | `fav` / `saved` | `is_favorites` + `list_favorites` already exist | none |
 | `stats.views/likes` | `view_count` / `like_count` already exist | none |
 | `cover.{color,emoji}` | Use existing `thumbnail_url` only — no color/emoji picker | **reduced** |
-| `visibility` (3-state) | `is_private` is 2-state → ship **private/public**; the "link" state drops | **reduced** |
+| `visibility` | **Private or public only** (Chris, 2026-08-09) — the handoff's third "link" state is not wanted. Existing `is_private` covers it exactly | none |
 | `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
 | `scope`, `links[]` | **Dropped** — the handoff defines them but never renders them | dropped |
 
@@ -100,14 +100,19 @@ existing precedent.
    not sync across devices. The handoff implies a shared list opens the way its
    author arranged it; that does not happen in Round 1.
 2. `drafted` marks are **per-browser** and clear with site data.
-3. There is **no link-only visibility**. Private or public.
 
-**Bucket membership is not in that list** — it lives in `list_players.tier`
-server-side, so which players sit in which tier/round/band *does* follow a
-shared list. Only the label set and any custom band names are local.
+**Visibility is not a trade-off** — private/public is the intended design
+(Chris, 2026-08-09), not a reduction forced by UI-only. The handoff's "link"
+state is simply not wanted; do not build toward it.
 
-All three are **additively reversible.** Adding server persistence later means
-reading from the server when present and falling back to local — not a rewrite.
+**Bucket membership is not on that list either** — it lives in
+`list_players.tier` server-side, so which players sit in which tier/round/band
+*does* follow a shared list. Only the label set and any custom band names are
+local.
+
+Both remaining trade-offs are **additively reversible.** Adding server
+persistence later means reading from the server when present and falling back
+to local — not a rewrite.
 
 ---
 
@@ -243,14 +248,20 @@ surfaces outside Lists, which is why it is off the launch path.
 ## 7. Open questions for Chris
 
 - **Q1 — Round 1 scope**: confirm §1's assumption (page + detail first).
-- **Q2 — Accepted trade-offs**: §2.2 lists three (per-browser prefs,
-  per-browser drafted, no link-only visibility). All follow from UI-only. Flag
-  any that is not acceptable — each becomes a schema change.
+- **Q2 — Accepted trade-offs**: §2.2 lists two (per-browser display prefs,
+  per-browser drafted marks). Both follow from UI-only; either one you reject
+  becomes a schema change. *(Visibility is resolved — private/public is the
+  design, not a compromise.)*
 
 *(v1.0's Q1 — "what clears `drafted`" — is resolved: the browser does, per the
 existing `board-labels-store` precedent.)*
 
 ## Changelog
+
+- **v2.3 (2026-08-09)** — Chris: list visibility is **private or public only**;
+  the handoff's third "link" state is not wanted. Recorded as the intended
+  design rather than a UI-only compromise, and removed from the trade-off
+  list. Two trade-offs remain, both about per-browser state.
 
 - **v2.2 (2026-08-09)** — Chris: tier labels stay **S/A/B/C/D/F**; no numeric
   migration of the tier scale. LV.1.4 narrows accordingly — it now exists only
