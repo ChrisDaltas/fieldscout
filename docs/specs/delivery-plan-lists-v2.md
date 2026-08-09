@@ -1,10 +1,17 @@
 # Delivery Plan: Lists v2
 
-> **v2.3 — 2026-08-09. UI/UX ONLY (Chris, 2026-08-09).** No migrations, no
-> schema changes, no new tables, no RLS work. Anything the handoff needs that
-> has no home in the current schema is either **client-side state**,
-> **computed**, or **dropped from scope** — never a new column. This is a
-> restyle-and-rebuild of the Lists surface, not a data feature.
+> **v3.0 — 2026-08-09. UI/UX only, with exactly one data exception.**
+>
+> Everything the handoff needs that has no home in the current schema is
+> **client-side state**, **relabelled onto an existing field**, or **dropped
+> from scope** — with a single deliberate exception: **`drafted` persists
+> server-side** (Chris, 2026-08-09), because seeing who is already gone from
+> your phone is the point of the feature. That exception buys one new table
+> and nothing else — no changes to `lists` or `list_players`.
+>
+> Everything else that only affects how a list *looks* — view style, chosen
+> stat columns, band labels, budget — is **deliberately not saved**. Chris:
+> *"just customizations that don't need to save, like search filters."*
 >
 > Ships **ahead of M2 leagues**, on its own track. M2 pauses at L.B3.1.
 >
@@ -22,7 +29,8 @@
 
 | Ruling | Detail |
 | --- | --- |
-| **UI/UX only** | No schema changes. See §2.2 for how each gap is closed without one. |
+| **UI/UX only, one exception** | No schema changes except the `drafted` table (D2/LV.1.2). See §2.2. |
+| **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
 | **Color** | Implement from **tokens, never the handoff's literal hex**. The prototype is token-driven (19 × `var(--accent)`, zero hardcoded blues); its `#1F6BF0` describes what that token resolved to in *their* bundle. The app's `accent` is `#3d5cff`. |
 | **Flag** | All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout. |
@@ -42,7 +50,8 @@
 - **20 API route files** under `src/app/api/lists/` already cover
   `players/reorder`, `players/[playerId]/tier`, `players/[playerId]/slot`,
   `players/bulk`, `duplicate`, `favorite`, `comments`, `like`, `thumbnail`,
-  `trash`, `restore`, `generate` (AI). **Round 1 adds no API routes.**
+  `trash`, `restore`, `generate` (AI). Round 1 adds **one** — the `drafted`
+  toggle (LV.1.2).
 - **Share-link permanence is already correct and tested.** Renaming a list does
   not regenerate its slug; `share-link-permanence.test.ts` guards it.
   **Do not touch slug generation.**
@@ -66,25 +75,27 @@ inconsistently:
 | `src/stores/board-labels-store.ts` | **per player, global** — `'drafted' \| 'dnd'` | Zustand + localStorage |
 | `src/components/lists/draft-mode/use-board-marks.ts` | per *set* of lists, 3-state cycle | localStorage |
 
-`board-labels-store` is already the shape the handoff wants — global, keyed by
-`playerId` — and its own comment already reasons the way the handoff does:
-labels reset with the browser, *"which matches how a draft board actually gets
-used season to season."* It is simply wired only to Big Board today.
+`board-labels-store` is already the right *shape* — global, keyed by
+`playerId` — it is simply wired only to Big Board, and stores locally.
 
-**So the work is consolidation, not construction** (D2), and it answers the
-open question from v1.0 about what clears `drafted`: the browser does, by
-existing precedent.
+**Storage is what changes** (D2): all three point at one server-side source so
+marks follow you between devices. The shape work is largely done; the
+persistence work is new.
 
-### 2.2 Closing the data-model gap without schema changes
+Note what this costs. `board-labels-store`'s own comment argues the local
+behavior is *correct* — labels reset with the browser, *"which matches how a
+draft board actually gets used season to season."* Moving server-side throws
+that away, which is why D2 adds season scoping to get it back deliberately.
+
+### 2.2 Closing the data-model gap
 
 | Handoff need | How it is met | Cost |
 | --- | --- | --- |
-| `entries[].drafted` (global) | Unify onto the existing global player-keyed store (§2.1) | none — already built |
-| `view` (list \| table \| card) | New persisted Zustand store, keyed by `listId` | small |
-| `cols` (chosen stats, ordered) | Same store | small — today it persists nowhere |
-| `costBands` labels, `budget` | Same store (precedent: `board-labels-store`) | small |
+| `entries[].drafted` (global) | **Server-side** — one new table, cross-device (D2/LV.1.2) | the one exception |
+| `view` (list \| table \| card) | Session state, **not persisted** — a customization, like a search filter | none |
+| `cols` (chosen stats, ordered) | Same — session only | none |
+| `costBands` labels, `budget` | Same — session only | none |
 | `org` = tier \| round \| cost \| budget | **One mechanism** — the bucket is `list_players.tier`; `org` only swaps the label set (D4). Ranked = array order | none |
-| editable cost-band labels | Client store (D3) | small |
 | `tags` | `list_tags` + `tags` tables already exist | none |
 | `fav` / `saved` | `is_favorites` + `list_favorites` already exist | none |
 | `stats.views/likes` | `view_count` / `like_count` already exist | none |
@@ -93,26 +104,23 @@ existing precedent.
 | `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
 | `scope`, `links[]` | **Dropped** — the handoff defines them but never renders them | dropped |
 
-**Accepted trade-offs**, stated plainly so nobody rediscovers them mid-build:
+**What is deliberate, not a compromise** — stated plainly so nobody
+"fixes" it later:
 
-1. Display preferences (`view`, `cols`, cost-band labels, `budget`) are
-   **per-browser**. They do not follow a shared list to another viewer, and do
-   not sync across devices. The handoff implies a shared list opens the way its
-   author arranged it; that does not happen in Round 1.
-2. `drafted` marks are **per-browser** and clear with site data.
-
-**Visibility is not a trade-off** — private/public is the intended design
-(Chris, 2026-08-09), not a reduction forced by UI-only. The handoff's "link"
-state is simply not wanted; do not build toward it.
-
-**Bucket membership is not on that list either** — it lives in
-`list_players.tier` server-side, so which players sit in which tier/round/band
-*does* follow a shared list. Only the label set and any custom band names are
-local.
-
-Both remaining trade-offs are **additively reversible.** Adding server
-persistence later means reading from the server when present and falling back
-to local — not a rewrite.
+1. **Display preferences do not persist.** View style, chosen stat columns,
+   band labels and budget reset like a search filter does. This is a decision
+   (Chris, 2026-08-09), not a limitation. The handoff implies a shared list
+   opens the way its author arranged it — **it does not, and that is fine.**
+   Do not add columns for these.
+2. **Visibility is private/public.** The handoff's third "link" state is not
+   wanted; `is_private` covers it exactly. Do not build toward it.
+3. **Bucket membership does travel** — it lives in `list_players.tier`
+   server-side, so which players sit in which tier/round/band follows a shared
+   list on any device. Only the *label set* is session state.
+4. **`drafted` travels too** — server-side, per user, across every list and
+   every device (D2). This is the one thing that had to leave UI-only, and the
+   reason is concrete: a draft board that forgets who is gone the moment you
+   pick up your phone is not a draft board.
 
 ---
 
@@ -122,15 +130,37 @@ to local — not a rewrite.
   Lists replaces the bodies of existing components behind the flag; shared
   primitives in `src/components/ui/` get CVA variants, never forks.
 
-- **D2 — One global drafted store.** Consolidate the three implementations in
-  §2.1 onto a single player-keyed persisted store. `use-draft-mode.ts`
-  (per-list) is the one whose *semantics* change — that is the handoff's
-  intent, and it is the only behavioral change in this task. Big Board and
-  draft-mode must keep working; verify both.
+- **D2 — `drafted` is server-side, per user, global across lists**
+  (Chris, 2026-08-09). One new table, the plan's only schema change:
 
-- **D3 — One `useListDisplayPrefs` store**, persisted, keyed by `listId`,
-  holding `view`, `cols`, `costBands`, `budget`. One store, not four — these
-  are always read together by the toolbar.
+  ```
+  user_drafted_players (user_id, player_id, season, drafted_at)
+    primary key (user_id, player_id, season)
+    RLS: every operation requires auth.uid() = user_id
+  ```
+
+  Nothing on `lists` or `list_players` changes. The three client
+  implementations in §2.1 collapse onto this one source of truth; Big Board and
+  draft-mode must keep working — verify both, they are the regression risk.
+
+  **`season` exists because server persistence re-opens a question that
+  localStorage answered for free.** When marks lived in the browser they
+  cleared themselves, and `board-labels-store`'s own comment called that
+  correct: *"labels reset with the browser, which matches how a draft board
+  actually gets used season to season."* Persist them server-side and next
+  August your board still shows last year's draft. Scoping rows by season
+  makes each season start empty on its own, and costs one column.
+
+  A manual **"Clear drafted"** in the list options menu ships alongside it —
+  season scoping handles next year, the button handles a mistake tonight.
+
+  Reads filter to `CURRENT_SEASON` (`src/lib/stats/aggregate-fantasy`).
+
+- **D3 — Display preferences are session state, deliberately unsaved**
+  (Chris, 2026-08-09). `view`, `cols`, cost-band labels and `budget` live in
+  plain component/Zustand state with **no `persist` middleware and no
+  columns**. They reset on reload, like a search filter. Do not add
+  persistence "for convenience" — it was considered and declined.
 
 - **D4 — Tier, round, cost and budget are one mechanism with four label sets**
   (Chris, 2026-08-09). They all behave exactly as tiers do today: a player sits
@@ -149,7 +179,7 @@ to local — not a rewrite.
   **Round mode still needs more bucket keys than the enum allows.** That
   route validates `z.enum(['S','A','B','C','D','F'])` — six values. A fantasy
   draft runs 12–16 rounds, so round grouping cannot represent a real draft
-  against a six-value enum. LV.1.4 widens it to accept round/band keys as
+  against a six-value enum. LV.1.5 widens it to accept round/band keys as
   well; S–F stays valid so nothing existing breaks. The column is already
   `text`, so this is a validation change on an existing route — **not** a
   schema change, and inside UI-only scope. It stays its own task rather than
@@ -165,10 +195,10 @@ to local — not a rewrite.
   `offsetHeight`/`offsetWidth`. State updates only when the target slot
   changes — updating per `dragover` visibly janks.
 
-- **D6 — No new API routes in Round 1**, and no schema changes. Existing
-  routes cover every server-side mutation; the only server-side edit is
-  widening one Zod enum (D4/LV.1.4). If a task believes it needs more, that is
-  a signal it has crossed out of UI-only — stop and raise it.
+- **D6 — Two server-side changes in Round 1, both named.** (a) the `drafted`
+  table and its route (D2/LV.1.2); (b) widening one Zod enum (D4/LV.1.5).
+  Existing routes cover every other mutation. A task that believes it needs
+  more has crossed out of scope — stop and raise it, do not proceed.
 
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
@@ -184,9 +214,10 @@ One task = one Builder session = one PR. `/build-next` drives.
 | id | task | depends on |
 | --- | --- | --- |
 | LV.1.1 | `featureFlags.listsV2` + route-level branch so old and new Lists coexist | — |
-| LV.1.2 | Consolidate `drafted` onto one global player-keyed store (D2); keep Big Board and draft-mode green | — |
-| LV.1.3 | `useListDisplayPrefs` store — `view`, `cols`, `costBands`, `budget`, persisted per `listId` (D3) | — |
-| LV.1.4 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
+| LV.1.2 | **Migration**: `user_drafted_players` (+ season scoping, RLS, indexes) and its read/toggle route (D2). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
+| LV.1.3 | Point all three client `drafted` implementations at the new server source (D2); Big Board and draft-mode stay green — verify both | LV.1.2 |
+| LV.1.4 | Session-only display state — `view`, `cols`, band labels, `budget`. **No `persist` middleware** (D3) | — |
+| LV.1.5 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
 
 **Phase 2 — Lists page**
 
@@ -201,14 +232,14 @@ One task = one Builder session = one PR. `/build-next` drives.
 | id | task | depends on |
 | --- | --- | --- |
 | LV.3.1 | Hero: cover, inline rename (hover pencil, owner-only, Enter saves / Esc cancels, no modal), byline, action cluster, options menu | LV.1.1 |
-| LV.3.2 | Tabs (List/Details/Comments) + toolbar: bare-select grouping dropdown, view-style toggle, Stats, Add players | LV.3.1, LV.1.3 |
+| LV.3.2 | Tabs (List/Details/Comments) + toolbar: bare-select grouping dropdown, view-style toggle, Stats, Add players | LV.3.1, LV.1.4 |
 | LV.3.3 | View style: List — 60px rows, stat cells, computed `minWidth = 330 + cols·72`, section cards | LV.3.2 |
 | LV.3.4 | View style: Table — 44px rows, sticky header | LV.3.2 |
 | LV.3.5 | View style: Cards — corner cells, stat strip, first-three-stats rule, 62px label rail for grouped lists (none when simply ranked) | LV.3.2 |
-| LV.3.6 | Drag-and-drop across all three views (D5); drag onto a section header assigns that bucket — same write in all four grouping modes (D4) | LV.3.3–3.5, LV.1.4 |
+| LV.3.6 | Drag-and-drop across all three views (D5); drag onto a section header assigns that bucket — same write in all four grouping modes (D4) | LV.3.3–3.5, LV.1.5 |
 | LV.3.7 | Stats picker modal — grouped catalog ordered by this list's coverage, search, reorderable chips | LV.3.2 |
 | LV.3.8 | Notes: accent `comments` mark, body-portalled hover card clamped to the viewport | LV.3.3 |
-| LV.3.9 | Drafted checkbox wired to the global store (D2) + "Clear drafted" in the options menu | LV.1.2, LV.3.3 |
+| LV.3.9 | Drafted checkbox wired to the server source (D2) + "Clear drafted" in the options menu | LV.1.3, LV.3.3 |
 
 **Phase 4 — states and cutover**
 
@@ -225,9 +256,13 @@ One task = one Builder session = one PR. `/build-next` drives.
 
 1. `npm run type-check` and `npm run lint` clean — **shown, not claimed**.
 2. `npm run test:unit` green. `share-link-permanence.test.ts` stays green.
-3. **No migration, no schema change, no new API route** — the sole exception
-   is LV.1.4's Zod enum widening. A task that thinks it needs more has left
-   scope: raise it, do not proceed (D6).
+3. **No migration, no schema change, no new API route** outside the two named
+   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum). A task that thinks
+   it needs more has left scope: raise it, do not proceed.
+   LV.1.2 additionally satisfies checklists §8.1–8.2 (RLS, indexes,
+   `IF NOT EXISTS`, banner comment citing the handoff) and reaches production
+   via `npx supabase db push` — **never** by hand (CLAUDE.md migration
+   discipline).
 4. Verified in the browser preview with a screenshot at desktop **and** mobile.
 5. `PROGRESS-lists-v2.md` updated.
 6. Small commit citing the handoff section; branch + PR, never direct to main.
@@ -249,15 +284,31 @@ surfaces outside Lists, which is why it is off the launch path.
 
 *(Q1 — Round 1 scope — is resolved: page + detail first, then side-by-side and
 pop-outs. Ruled by Chris 2026-08-09.)*
-- **Q2 — Accepted trade-offs**: §2.2 lists two (per-browser display prefs,
-  per-browser drafted marks). Both follow from UI-only; either one you reject
-  becomes a schema change. *(Visibility is resolved — private/public is the
-  design, not a compromise.)*
+- **Q2 — Confirm `drafted` is global, not per-list.** Marking Bijan drafted
+  removes him from *every* list you own, on every device — which is what the
+  handoff specifies and what "see who was drafted from my phone" implies.
+  Flagged explicitly because an earlier draft of this plan got a correction on
+  exactly this point; if drafted should instead be per-list, say so before
+  LV.1.2 — it changes the table's primary key.
 
-*(v1.0's Q1 — "what clears `drafted`" — is resolved: the browser does, per the
-existing `board-labels-store` precedent.)*
+*(v2.x's trade-off questions are resolved: display prefs deliberately do not
+persist; `drafted` does, server-side.)*
+
+*(v1.0's Q1 — "what clears `drafted`" — is resolved, but not the way v2.0
+resolved it. Server persistence means the browser no longer clears anything:
+season scoping starts each year empty, and a manual "Clear drafted" handles
+tonight's mistakes. See D2.)*
 
 ## Changelog
+
+- **v3.0 (2026-08-09)** — Chris reversed the trade-off recommendation, and the
+  reversal is the point. **`drafted` persists server-side** (one new table,
+  season-scoped, cross-device) because seeing who is gone from your phone is
+  the feature. **Display prefs deliberately do not persist** — "just
+  customizations that don't need to save, like search filters" — so they are
+  now a decision to defend, not a limitation to apologise for. Adds a migration task
+  (LV.1.2) and re-opens what clears `drafted`, which localStorage
+  had been answering for free: season scoping plus a manual clear.
 
 - **v2.3 (2026-08-09)** — Chris: list visibility is **private or public only**;
   the handoff's third "link" state is not wanted. Recorded as the intended
