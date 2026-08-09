@@ -45,6 +45,17 @@ export const featureFlags = {
   personas: enabled(process.env.NEXT_PUBLIC_FLAG_PERSONAS),
   /** Fantasy teams (/app/teams). */
   teams: enabled(process.env.NEXT_PUBLIC_FLAG_TEAMS),
+
+  // ---------------------------------------------------------------------
+  // Lists v2 (ACTIVE-BUILD.md / delivery-plan-lists-v2.md). The Lists page
+  // and list detail are being rebuilt in the new design language behind
+  // this flag so the current (shipped, in-scope) Lists surface keeps
+  // serving production for the whole build. Flipped on for real once
+  // LV.4.4 retires the old components.
+  // ---------------------------------------------------------------------
+
+  /** Rebuilt Lists page + list detail (/app/lists, /app/lists/[listId]). */
+  listsV2: enabled(process.env.NEXT_PUBLIC_FLAG_LISTS_V2),
 } as const
 
 export type FeatureFlag = keyof typeof featureFlags

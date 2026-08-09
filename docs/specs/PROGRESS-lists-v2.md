@@ -32,7 +32,7 @@ are all checked.
 
 **Phase 1 — foundations**
 
-- [ ] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist
+- [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [ ] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2)
 - [ ] **LV.1.3** — point `use-draft-mode.ts` **only** at the new server source (LV.1.2)
 - [ ] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3)
@@ -82,7 +82,28 @@ None open.
 Design decisions D1–D7 live in delivery plan §3 and are not duplicated here.
 This section records decisions made **during** the build.
 
-- *(none yet)*
+- **LV.1.1 (2026-08-09) — branch mechanism.** Both routes
+  (`src/app/app/lists/page.tsx`, `src/app/app/lists/[listId]/page.tsx`) now
+  check `featureFlags.listsV2` as the first statement in the default export
+  and return early to a new `*V2` component when on. The pre-existing body
+  of each page moved, unedited, into a same-file `*Legacy` component
+  (`ListsPageLegacy`, `ListDetailPageLegacy`) — this was required, not
+  stylistic: `useList`/`useAiListBuild`/`useHistoryStore`/`useState` are real
+  hooks, so they can't sit in the branch itself without violating
+  react-hooks/rules-of-hooks (confirmed clean via `npm run lint`). `use(props.params)`
+  is exempt from that rule per React/Next 15 and stays in the outer
+  component so both branches can read `listId`. New placeholder components
+  live at `src/components/lists/v2/{lists-page-v2,list-detail-page-v2}.tsx`,
+  built on the existing `PlaceholderPage` shared component (same pattern as
+  `src/app/app/teams/[teamId]/page.tsx`) rather than inventing new markup —
+  D1 (re-skin in place, no parallel primitives) reads as "don't fork
+  `src/components/ui/`", not "don't add new top-level screen files", which
+  the task text's own "minimal placeholder... a new (as-yet-unbuilt)
+  surface" and the plan's "one task per PR, not one big branch" note (§2)
+  both confirm. Added `NEXT_PUBLIC_FLAG_LISTS_V2` to `.env.example` beside
+  the other flags for documentation parity; `.env.local` was used only
+  transiently for OFF-state screenshots and left unmodified in the final
+  diff.
 
 ---
 
