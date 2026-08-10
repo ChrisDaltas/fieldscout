@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useToast } from '@/hooks/use-toast'
 
@@ -51,9 +51,23 @@ import { useToast } from '@/hooks/use-toast'
  * the very next toggle-off issues an unconditional DELETE that destroys the
  * real rows on every device. Measured, not theorised: 2 marks → forced 500 on
  * the GET → one click of "Draft mode" → 0 marks. So `clearDrafted` now refuses
- * to run while the read is failed or has not landed, and says so — see
- * `runClearDrafted`. A clear the user asked for still clears; a clear over
- * marks nobody has seen is the one thing this hook will not do.
+ * to run while the marks are unknown, and says so — see `runClearDrafted`. A
+ * clear the user asked for still clears; a clear over marks nobody has seen is
+ * the one thing this hook will not do.
+ *
+ * **"Unknown" is a property of the READ, not of the query status (R195).** The
+ * first cut of that guard asked React Query whether the query was in `error` or
+ * `pending`, which sounds like the same question and is not: this hook's own
+ * optimistic mark calls `setQueryData`, and React Query dispatches that as a
+ * *manual success* — an errored query flips to `status: 'success'`,
+ * `isError: false`, `isPending: false` on the spot (measured). So one tap on a
+ * player re-opened the whole R190 path, and `cancelQueries` in the same
+ * `onMutate` killed the failing refetch that would have closed it again, which
+ * made it a *continuous* window for as long as the user kept marking rather
+ * than a race. The bit the guard actually needs can only come from the read
+ * itself, so it does: `draftedQueryOptions` raises `landed`/`failed` from
+ * inside the `queryFn`, the hook records the list id the last landed read was
+ * for, and `hasRead` is that id matching this one. No cache write can forge it.
  */
 
 /** Draft mode's on/off toggle — a view state of one tab, never server state. */
@@ -102,9 +116,18 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 /**
  * GET my marks on this list. Exported so the wire contract is unit-pinnable
  * without a DOM — the suite stubs `fetch` and asserts the method and the URL.
+ *
+ * The optional `signal` is React Query's, threaded through so a cancelled read
+ * really is cancelled (R195). Every mark calls `cancelQueries`; without the
+ * signal the underlying request runs to completion and resolves into a promise
+ * nobody is listening to any more, which would let a *discarded* read tell the
+ * clear guard that the marks are known. With it, a cancelled read rejects.
+ * Omitted → no second argument at all, i.e. still a plain GET.
  */
-export async function fetchDraftedIds(listId: string): Promise<string[]> {
-  const body = await jsonOrThrow<DraftedReadResponse>(await fetch(`/api/lists/${listId}/drafted`))
+export async function fetchDraftedIds(listId: string, signal?: AbortSignal): Promise<string[]> {
+  const body = await jsonOrThrow<DraftedReadResponse>(
+    await fetch(`/api/lists/${listId}/drafted`, signal ? { signal } : undefined),
+  )
   // A 200 whose body carries no id array is a broken server, not an empty list.
   if (!Array.isArray(body.drafted)) {
     throw new Error('Drafted read succeeded but carried no player ids')
@@ -187,26 +210,64 @@ export function desiredStateFor(current: readonly string[] | undefined, playerId
   return !toDraftedSet(current).has(playerId)
 }
 
-/** The two bits of the drafted read that decide whether a clear may run. */
+/** The three bits of the drafted read that decide whether a clear may run. */
 export interface DraftedReadState {
   isError: boolean
   isPending: boolean
+  /**
+   * **The load-bearing one (R195).** A real server read has landed for *this*
+   * list, and no later read attempt has failed. It comes from the `queryFn` —
+   * see `draftedQueryOptions` — never from the query's status, because the
+   * hook's own optimistic `setQueryData` manufactures `status: 'success'` over
+   * an errored read and would otherwise hand the guard a forged answer.
+   */
+  hasRead: boolean
+}
+
+/** Why a clear was refused. `null` = it may run. */
+export type ClearRefusal = 'read-failed' | 'read-in-flight' | 'never-read'
+
+/**
+ * **R190/R195 — the whole decision, as the reason.** A clear is only honest
+ * over marks that have actually been read. An errored read, a read still in
+ * flight, and a cache holding nothing but this tab's own optimistic marks all
+ * present as "no marks" or "these marks" on the page (see `toDraftedSet`) while
+ * the account may hold rows nobody has seen — and a DELETE issued there
+ * destroys them with nothing on screen to suggest it happened.
+ *
+ * The reason is returned rather than a bare boolean because the user is told
+ * which one it was, and the three are *not* the same news (R197): a read still
+ * in flight has not failed, and telling someone their marks "could not be
+ * loaded" during an ordinary page load blames a failure that did not happen.
+ *
+ * A *background refetch* over data already read keeps `status: 'success'` and
+ * leaves `hasRead` alone, so the everyday case — mark, mark, toggle off — is
+ * unaffected.
+ */
+export function clearRefusalReason(read: DraftedReadState): ClearRefusal | null {
+  if (read.isError) return 'read-failed'
+  if (read.isPending) return 'read-in-flight'
+  if (!read.hasRead) return 'never-read'
+  return null
+}
+
+/** `clearRefusalReason` as a yes/no, for callers that do not need the copy. */
+export function canClearDrafted(read: DraftedReadState): boolean {
+  return clearRefusalReason(read) === null
 }
 
 /**
- * **R190.** A clear is only honest over marks that have actually been read. An
- * errored read and a read still in flight both present as "no marks" on the
- * page (see `toDraftedSet`) — so in both states the user is looking at an empty
- * list while the account may hold rows, and a DELETE issued there destroys them
- * with nothing on screen to suggest it happened.
- *
- * Success is the only state that permits it. A *background refetch* over data
- * already read keeps `status: 'success'`, so the everyday case — mark, mark,
- * toggle off — is unaffected; this refuses exactly the states where the marks
- * are unknown.
+ * What the refusal toast says, per reason (R197). Exported so the copy is
+ * pinnable: the point of branching at all is that the wrong branch tells the
+ * user something untrue about their own data.
  */
-export function canClearDrafted(read: DraftedReadState): boolean {
-  return !read.isError && !read.isPending
+export const CLEAR_REFUSAL_COPY: Record<ClearRefusal, string> = {
+  'read-failed':
+    'Your drafted players could not be loaded, so none were cleared. Reload the page and try again.',
+  'read-in-flight':
+    'Your drafted players are still loading, so none were cleared. Try again in a moment.',
+  'never-read':
+    'Your drafted players have not loaded on this device, so none were cleared. Reload the page and try again.',
 }
 
 /**
@@ -215,16 +276,68 @@ export function canClearDrafted(read: DraftedReadState): boolean {
  * (R190/R191). `refuse` must be loud: a clear that silently does nothing is the
  * same "nothing happened means it worked" failure in the opposite direction
  * (CLAUDE.md).
+ *
+ * Returns whether the clear actually ran, because the caller's *own* success
+ * message is the same failure one layer up: `list-detail-view.tsx`'s "Reset
+ * list" used to toast "List reset — drafted marks cleared" unconditionally,
+ * which is a lie in every refused state (R195).
  */
 export function runClearDrafted(
   read: DraftedReadState,
-  effects: { clear: () => void; refuse: () => void },
-): void {
-  if (!canClearDrafted(read)) {
-    effects.refuse()
-    return
+  effects: { clear: () => void; refuse: (reason: ClearRefusal) => void },
+): boolean {
+  const refusal = clearRefusalReason(read)
+  if (refusal) {
+    effects.refuse(refusal)
+    return false
   }
   effects.clear()
+  return true
+}
+
+/**
+ * What the read tells the clear guard (R195). Raised from inside the `queryFn`,
+ * which is the only place in this file that knows whether the *server* answered
+ * — every other signal React Query exposes can be manufactured by a cache
+ * write, and `setQueryData` is exactly such a write.
+ */
+export interface DraftedReadSignals {
+  /** A read landed: the server delivered this list's marks into this tab. */
+  landed: (listId: string) => void
+  /** A read attempt failed: the marks are unknown again. Aborts are not this. */
+  failed: (listId: string) => void
+}
+
+/** The `hasRead` bit, and the two signals that move it. */
+export interface ReadLandedFlag {
+  signals: DraftedReadSignals
+  hasRead: (listId: string) => boolean
+}
+
+/**
+ * **`hasRead`, whole (R195).** Exported and closed over a plain variable rather
+ * than left in the hook body, for R191's reason: a decision the hook body makes
+ * is pinned by nothing this repo can run.
+ *
+ * It holds the **list id** the last landed read was for, not a boolean, so
+ * switching lists can never leave a stale `true` behind and there is no effect
+ * to race — the only writer is the read itself.
+ */
+export function createReadLandedFlag(): ReadLandedFlag {
+  let landedFor: string | null = null
+  return {
+    signals: {
+      landed: (listId) => {
+        landedFor = listId
+      },
+      failed: (listId) => {
+        // Only the list that failed loses its flag. A flag held for a different
+        // list is already `false` for this one, by the comparison below.
+        if (landedFor === listId) landedFor = null
+      },
+    },
+    hasRead: (listId) => landedFor === listId,
+  }
 }
 
 /**
@@ -232,10 +345,24 @@ export function runClearDrafted(
  * rather than asserted — the suite drives these through a real `QueryObserver`
  * with a failing `fetch` and shows the result is an error carrying no data.
  */
-export function draftedQueryOptions(listId: string) {
+export function draftedQueryOptions(listId: string, signals?: DraftedReadSignals) {
   return {
     queryKey: draftedKeys.list(listId),
-    queryFn: () => fetchDraftedIds(listId),
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      try {
+        const ids = await fetchDraftedIds(listId, signal)
+        signals?.landed(listId)
+        return ids
+      } catch (error) {
+        // An abort is this tab cancelling its own read — every mark's
+        // `onMutate` calls `cancelQueries` — not an answer about the marks, so
+        // it must not move the flag in either direction. Measured: React Query
+        // aborts the signal it hands the `queryFn`, so a cancelled read rejects
+        // here with `signal.aborted === true` while a real fault does not.
+        if (!signal.aborted) signals?.failed(listId)
+        throw error
+      }
+    },
     enabled: Boolean(listId),
     /**
      * A 4xx is an answer, not a hiccup: retrying a 401 or a 404 only delays
@@ -278,7 +405,19 @@ export function useDraftMode(listId: string) {
   }, [enabled, hydrated, listId])
 
   const key = useMemo(() => draftedKeys.list(listId), [listId])
-  const marks = useQuery(draftedQueryOptions(listId))
+
+  /**
+   * **Whether a real read has delivered these marks (R195).** A ref, not state:
+   * nothing renders off it, and re-rendering on it would be a lie about what
+   * changed. Lazily initialised so the flag survives every render — `useMemo`
+   * is a cache React is allowed to drop, and dropping this one would refuse a
+   * clear the user is entitled to.
+   */
+  const flagRef = useRef<ReadLandedFlag | null>(null)
+  if (flagRef.current === null) flagRef.current = createReadLandedFlag()
+  const readLanded = flagRef.current
+
+  const marks = useQuery(draftedQueryOptions(listId, readLanded.signals))
 
   // The query's data is undefined while loading AND when the read failed. Both
   // render as "no marks" — see `toDraftedSet`. The memo keeps the Set
@@ -355,24 +494,30 @@ export function useDraftMode(listId: string) {
     [qc, listId, setMarkMutate],
   )
 
-  const refuseClear = useCallback(() => {
-    toast({
-      title: 'Nothing was cleared',
-      description:
-        'Your drafted players could not be loaded, so none were cleared. Reload the page and try again.',
-      variant: 'destructive',
-    })
-  }, [toast])
+  const refuseClear = useCallback(
+    (reason: ClearRefusal) => {
+      toast({
+        title: 'Nothing was cleared',
+        description: CLEAR_REFUSAL_COPY[reason],
+        variant: 'destructive',
+      })
+    },
+    [toast],
+  )
 
-  // R190: the clear is durable now, so it refuses to run against a read that
-  // failed or has not landed — those states render as "no marks", and clearing
-  // them would delete rows the user was never shown.
+  // R190/R195: the clear is durable now, so it refuses to run unless a real
+  // read has delivered this list's marks. The status bits alone would not do —
+  // one optimistic mark rewrites them into `success` (see the header).
   const clearDrafted = useCallback(() => {
-    runClearDrafted(
-      { isError: marks.isError, isPending: marks.isPending },
+    return runClearDrafted(
+      {
+        isError: marks.isError,
+        isPending: marks.isPending,
+        hasRead: readLanded.hasRead(listId),
+      },
       { clear: clearMarksMutate, refuse: refuseClear },
     )
-  }, [marks.isError, marks.isPending, clearMarksMutate, refuseClear])
+  }, [marks.isError, marks.isPending, readLanded, listId, clearMarksMutate, refuseClear])
 
   return {
     enabled,

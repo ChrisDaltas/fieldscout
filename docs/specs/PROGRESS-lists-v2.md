@@ -40,7 +40,7 @@ are all checked.
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
-- [x] **LV.1.3** — `use-draft-mode.ts` points at the LV.1.2 server source; no file under `src/components/lists/draft-mode/**` was touched, and that surface's account-persisted marks were *shown* flowing through the shared hook (§3 Q1). Folded in nits R176 + R178; review findings **R190–R194** resolved on the same branch — the durable clear now refuses marks the read never delivered (2026-08-09)
+- [x] **LV.1.3** — `use-draft-mode.ts` points at the LV.1.2 server source; no file under `src/components/lists/draft-mode/**` was touched, and that surface's account-persisted marks were *shown* flowing through the shared hook (§3 Q1). Folded in nits R176 + R178; review findings **R190–R194** and re-review findings **R195–R198** resolved on the same branch — the durable clear now refuses marks the read never delivered, and the bit that decides that comes from the read itself rather than the query status, which an optimistic mark can forge (2026-08-09)
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
 - [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
@@ -60,7 +60,7 @@ are all checked.
 - [ ] **LV.3.6** — drag-and-drop across all three views; header drop assigns the bucket (LV.3.3–3.5, LV.1.5). ⛔ **Blocked by §3 Q2 for every mode except tier** — the drop *is* the tier write (D4), so a drop onto a Round header is a `23514` today
 - [ ] **LV.3.7** — stats picker modal: grouped catalog, search, reorderable chips (LV.3.2)
 - [ ] **LV.3.8** — notes: accent mark + body-portalled hover card (LV.3.3)
-- [ ] **LV.3.9** — drafted checkbox + "Clear drafted" (LV.1.3, LV.3.3)
+- [ ] **LV.3.9** — drafted checkbox + "Clear drafted" (LV.1.3, LV.3.3). **Read `use-draft-mode.ts`'s header before wiring either control (R190/R195).** `clearDrafted` is *guarded*: it refuses when the read failed, is still in flight, or never landed, returns `false` when it refused, and raises its own destructive toast saying which. Two consequences for this task: (a) the v2 "Clear drafted" control must **not** announce a clear it did not get — check the return value, as `list-detail-view.tsx`'s `handleReset` now does; (b) do **not** gate the control on the rendered drafted count as a safety measure — that was the legacy view's accidental guard, and R195 measured one optimistic mark re-opening it. The guard lives in the hook because only the hook knows whether a read landed
 
 **Phase 4 — states and cutover**
 
@@ -569,11 +569,29 @@ This section records decisions made **during** the build.
      Making the clear durable crossed it with item 4's silent degradation, and
      the pair was a data-loss path: with the GET failing the page shows zero
      drafted, and the next toggle-off DELETEd the real rows (measured live,
-     2 → 0). `clearDrafted` now refuses while the read is errored or still in
-     flight, and toasts. The gesture is unchanged in every state where the
-     marks are known — including a background refetch, which keeps
-     `status: 'success'` — so this narrows the clear to the honest case rather
-     than changing what the button does.
+     2 → 0). `clearDrafted` now refuses while the marks are unknown, and
+     toasts. The gesture is unchanged in every state where the marks *are*
+     known, so this narrows the clear to the honest case rather than changing
+     what the button does.
+
+     **Amended again by R195 (LV.1.3 re-review) — and the first version of
+     this paragraph was false.** It said "success is the only state that
+     permits it… this refuses exactly the states where the marks are unknown".
+     It did not: the guard read the query's `isError`/`isPending`, and this
+     hook's own optimistic mark calls `setQueryData`, which React Query
+     dispatches as a **manual success** — an errored query flips to
+     `status: 'success'`, `isError: false`, `isPending: false` on the spot
+     (measured, both by the Reviewer and again here). So one tap re-opened the
+     whole R190 path, and because the same `onMutate` calls `cancelQueries`,
+     killing the failing refetch, a marking session held the window open
+     continuously rather than for an instant. The permitting bit now comes
+     from the **read** — `draftedQueryOptions` raises `landed`/`failed` from
+     inside the `queryFn`, `createReadLandedFlag` records the list id the last
+     landed read was for, and no cache write can forge it. Live, same rig,
+     both directions: with the status-only guard, 2 unseen rows + 1 fresh mark
+     → **0**; with this one, → **3**, refusal toast shown, and both
+     counter-controls (healthy read → clear; healthy read + mark → clear)
+     still take the marks to 0.
 
   3. **The write is optimistic with a rollback AND a toast.** The consumers
      handle no errors — `toggleDrafted` returns `void`. A failed POST that only
@@ -619,10 +637,12 @@ This section records decisions made **during** the build.
   hook body is pinned by nothing at all — measured, twice, each a total feature
   break passing the whole gate green. The rule this build now follows: if the
   hook body decides something, export the decision (`desiredStateFor`,
-  `canClearDrafted`, `runClearDrafted`) and leave the body as wiring, then pin
-  the wiring with `callbackBody`, which slices the callback out of the
-  comment-stripped source instead of scanning the whole file (R172's miss
-  window). Adding jsdom + `@testing-library/react` remains the real fix and
+  `clearRefusalReason`, `canClearDrafted`, `runClearDrafted`, and — after R195
+  — `createReadLandedFlag`, which is why the "has a read landed" bit is a
+  factory rather than a `useRef` comparison inline) and leave the body as
+  wiring, then pin the wiring with `callbackBody`, which slices the callback
+  out of the comment-stripped source instead of scanning the whole file
+  (R172's miss window; its own limitation is now stated in its JSDoc — R196). Adding jsdom + `@testing-library/react` remains the real fix and
   remains out of scope for a UI task.
 
 - **LV.1.5 (2026-08-09) — the bucket vocabulary is designed but NOT decided.**
@@ -654,6 +674,16 @@ This section records decisions made **during** the build.
   them — a silent failed read plus a clear that had just become durable — was a
   data-loss path neither review nor build had priced. Consequences accepted
   singly still have to be crossed with each other before a task is done.
+
+  **And the second lesson, from the re-review (R195): a guard must gate on the
+  fact, not on a signal that correlates with it.** The R190 fix asked React
+  Query whether the query was in `error` or `pending` — a reasonable proxy for
+  "the marks are unknown", and wrong, because the hook's own optimistic
+  `setQueryData` rewrites those bits to `success`. The whole data-loss path
+  re-opened on the first tap. The rule this build now follows: when a guard
+  protects data, take its input from the event that actually establishes the
+  fact (here, the `queryFn` returning), not from state that something else in
+  the same file is allowed to write.
 
 - **LV.1.5 — RESOLVED 2026-08-09, no longer a blocker.** Q2 was ruled: widen
   the CHECK. The finding stands as recorded — `list_players_tier_check`
@@ -695,7 +725,13 @@ the first one **does** block the leagues M2 DoD, which includes
   different leagues suite each time (most often `draft-realtime-db.test.ts`'s
   private-channel test, which fails on a **50-second** subscribe timeout —
   a load symptom, not an authorization one; also seen: invites capacity,
-  `create_league` at team_count 14, draft-core picks, settings PATCH 409).
+  `create_league` at team_count 14, draft-core picks, settings PATCH 409,
+  and — **added at the LV.1.3 re-review, R198** —
+  `src/lib/leagues/api/league-lists-api-db.test.ts`, which the LV.1.3 Reviewer
+  saw red on 2 tests in 1 of 8 branch runs while passing **3/3 in isolation**,
+  on a suite that diff does not touch. The family is "leagues stack suites
+  under parallel load", not a fixed list; treat a red in any of them the way
+  R161 says — re-run it alone before believing it).
   Measured over 17 consecutive runs: **3 failures in 9 runs without** the new
   `drafted-api-db.test.ts` and **3 failures in 8 runs with** it — the same
   rate, the same failure families. `drafted-api-db.test.ts` itself passed
@@ -896,19 +932,54 @@ schema, no new route, nothing under `draft-mode/**`, `big-board/**` or
 
 | Finding | Severity | Resolved by |
 | --- | --- | --- |
-| **R190** — `clearDrafted` issued an unconditional durable DELETE even when the drafted read had failed, so a transient read fault silently destroyed real marks | should-fix | **The clear now refuses marks it cannot see.** New exported `canClearDrafted` / `runClearDrafted` in `use-draft-mode.ts`: success is the only read state that permits the DELETE — an errored read and a read still in flight both present as "no marks" on the page, so a clear issued there deletes rows the user was never shown. The refusal is **loud** (destructive toast: *"Nothing was cleared — your drafted players could not be loaded…"*), never a silent return, which is CLAUDE.md's rule in its mirror image. A *background* refetch over already-read data keeps `status: 'success'`, so the everyday mark → mark → toggle-off gesture is untouched. **Live reproduction, both directions, same rig:** with the pre-fix body restored, 2 marks → forced 500 → one click of Draft mode → **0 marks** (the Reviewer's finding, independently reproduced, so the rig demonstrably reaches the bug); with the fix, 2 marks → forced 500 (page: 12 players rendered, no badge, nothing struck, "Reset list" disabled, no error boundary) → **three** toggle-off clicks → **2 marks**, zero DELETEs on the wire, refusal toast shown. Fault reverted → "2 drafted" renders again. **Counter-control, live:** healthy read + toggle off → DELETE issued, 2 → **0**, so decision 2 still holds. **Probe:** guard removed → **4 RED**; pre-fix `clearDrafted` body restored → **1 RED** on the wiring pin; both reverted → 34/34 |
+| **R190** — `clearDrafted` issued an unconditional durable DELETE even when the drafted read had failed, so a transient read fault silently destroyed real marks | should-fix | ⚠️ **Superseded in part by R195 below — this row's "success is the only state that permits it" was false, and the corrected mechanism is in the R195 row.** **The clear now refuses marks it cannot see.** New exported `canClearDrafted` / `runClearDrafted` in `use-draft-mode.ts`: an errored read and a read still in flight both present as "no marks" on the page, so a clear issued there deletes rows the user was never shown. The refusal is **loud** (destructive toast: *"Nothing was cleared — your drafted players could not be loaded…"*), never a silent return, which is CLAUDE.md's rule in its mirror image. A *background* refetch over already-read data keeps `status: 'success'`, so the everyday mark → mark → toggle-off gesture is untouched. **Live reproduction, both directions, same rig:** with the pre-fix body restored, 2 marks → forced 500 → one click of Draft mode → **0 marks** (the Reviewer's finding, independently reproduced, so the rig demonstrably reaches the bug); with the fix, 2 marks → forced 500 (page: 12 players rendered, no badge, nothing struck, "Reset list" disabled, no error boundary) → **three** toggle-off clicks → **2 marks**, zero DELETEs on the wire, refusal toast shown. Fault reverted → "2 drafted" renders again. **Counter-control, live:** healthy read + toggle off → DELETE issued, 2 → **0**, so decision 2 still holds. **Probe:** guard removed → **4 RED**; pre-fix `clearDrafted` body restored → **1 RED** on the wiring pin; both reverted → 34/34 |
 | **R191** — the hook body's two decidable wiring facts were unpinned; `type-check` pins shape, not behavior | should-fix | **Both decisions exported and pinned, and the wiring pinned separately.** `desiredStateFor(current, playerId)` is now the whole of `toggleDrafted`'s decision (`undefined → true`, `['p1'],'p1' → false`, plus the same-tick double-tap sending the **same** value twice — §4 decision 3, made falsifiable); `runClearDrafted` is the whole of the clear. The wiring is pinned with a **`callbackBody` slicer** that reads the callback's own body out of the comment-stripped source rather than the whole file — a whole-file pin survives the fact being deleted from the callback that needed it, which is exactly R172's miss window. The slicer throws on a missing callback and has its own control test (each body is a real slice and does not contain the other), so a rename fails loudly instead of turning the pins vacuous. **Probes — the Reviewer's own two, now RED:** inverted `toggleDrafted` (their exact edit, `drafted: toDraftedSet(current).has(playerId)`) → **1 RED** (`test:unit` 727/728) with type-check still clean, which is the point; the same inversion moved inside `desiredStateFor` → **3 RED**; `clearDrafted` made a no-op → **2 RED** (`test:unit` 726/728). All reverted → 728/728 |
 | **R192** — `draft-mode/use-board-marks.ts:15-17` carries a now-false claim ("never written to the DB — same philosophy as `use-draft-mode.ts`"), in a file this build may not open, with no deferral recorded | nit | **Recorded as a deferral, file untouched** — the boards rule binds the diff, so correcting it here would be the violation. Clause added to the **LV.4.4 checklist row in §2** naming the file, the line range, the sentence that went stale and why (after LV.1.3 `use-draft-mode.ts` **is** written to the DB), so the task that reopens that tree fixes it rather than inheriting a comment that misdirects |
 | **R193** — the R176/R178 rows never state that both identity guards are unreachable through the shipped route | nit | **One clause on both rows** (§6, LV.1.2 re-review table): every handler passes `user.id` twice, so `verifiedUserId === userId` by construction and `assertCallerIs` returns `null` without consulting reality — the guards are **service-layer contracts for non-route callers**; through `…/drafted/route.ts` they are tautological. Recorded as *not a regression* (pre-R178 the fallback called `getUser()` on the same client and also always matched), so R176's row can no longer be read as promising a 403 the API will never return |
 | **R194** — two pasted evidence blocks in the PR body did not match what they claimed to show | nit | **Both re-pasted from the branch, not from a working tree.** The `git diff --stat` block is now generated from `git diff --stat main...HEAD` at the tip; the consequence-2 block's `playersRendered` figure now agrees with its prose (12), and the counts under it were re-measured on this session's rig rather than carried over |
 
 **Not changed, and why:** the R178 trust boundary and the Q1-consequence-2 pin
-set — both explicitly upheld by the Reviewer. `list-detail-view.tsx` is still
-**not** edited: `handleReset` ("Reset list") also calls `clearDrafted`, but it
-is gated on `draftedCount === 0`, which is `0` in precisely the degraded state
-R190 describes, so the button cannot be clicked there — measured, not assumed.
-The guard belongs in the hook regardless, because it is the hook that knows
-whether the marks were ever read.
+set — both explicitly upheld by the Reviewer.
+
+⚠️ **The rest of this paragraph was false and is corrected by R195 below.** It
+argued `list-detail-view.tsx` needed no edit because `handleReset` ("Reset
+list") is gated on `draftedCount === 0` and so "cannot be clicked" in the
+degraded state. One optimistic mark makes that count `1`, which re-enables the
+button — the same cache write that forged the guard's status bits. It is edited
+now (six lines), and the reasoning that survives is only the last sentence: the
+guard belongs in the hook, because the hook is what knows whether the marks were
+ever read.
+
+#### Re-review — 2026-08-09 (fresh Reviewer, fix diff `8f3a2d6`) — **VERDICT: FIX-THEN-MERGE** — **R195–R198: one should-fix, three nits**
+
+***The finding that mattered (R195): R190's guard asked the wrong question, and
+the hook's own optimistic mark answered it.*** *`canClearDrafted` inferred "the
+marks have been read" from `status === 'success'` — but `setMark.onMutate` calls
+`qc.setQueryData`, which React Query dispatches as a **manual success**: an
+errored query flips to `status:'success'`, `isError:false`, `isPending:false`.
+The Reviewer measured it live against the local stack — after a forced 500 the
+guard correctly refused, then **one tap** gave `{ status:'success',
+isError:false, isPending:false, data:['vitest-rvp-p3'], dbRows: 3 }` → clear
+permitted → `ROWS AFTER THE PERMITTED CLEAR → 0`, destroying the 2 rows the user
+was never shown. Not a race, either: `onMutate` also calls `cancelQueries`,
+which kills the failing refetch, so a marking session holds the window open
+continuously (`ever closed during the session → false`).*
+
+#### Resolution — 2026-08-09 (Builder, same branch, second fix round)
+
+*All four addressed on the same branch; nothing escalated, no ruling needed.
+`test:unit` **43 files / 749 tests** (was 728; +21). Scope held: 3 source files
+(the hook, its suite, six lines of `list-detail-view.tsx`) + PROGRESS. No
+migration, no schema, no new route, nothing under `draft-mode/**`,
+`big-board/**` or `board-labels-store.ts`.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R195** — `canClearDrafted` inferred "the marks have been read" from the query *status*, which the hook's own optimistic `setQueryData` manufactures, so R190's data-loss path re-opened for as long as the user kept marking | should-fix | **The permitting bit now comes from the read, and no cache write can forge it.** `draftedQueryOptions(listId, signals)` raises `landed(listId)` from inside the `queryFn` when the server actually delivers the marks, and `failed(listId)` when a read attempt genuinely fails; `createReadLandedFlag()` (exported, so the bit is falsifiable rather than hook-body logic — R191's rule) holds the **list id** the last landed read was for, which is why switching lists cannot inherit a stale `true` and there is no effect to race. `DraftedReadState` gains `hasRead`, and the decision is now `clearRefusalReason` returning *which* of three refusals it is (`read-failed` / `read-in-flight` / `never-read`), with `canClearDrafted` derived from it. **Aborts are neutral in both directions** — every mark calls `cancelQueries`, so React Query's signal is threaded into the request (`fetchDraftedIds(listId, signal)`) and a cancelled read neither opens the flag (a discarded read must not vouch for marks the cache never received) nor closes it (or two quick marks would refuse the clear for the rest of the session). **Live reproduction, same rig, both directions, real rows and real DELETEs:** with the status-only decision restored → `ROWS BEFORE 2` → forced 500 → optimistic mark (`{status:'success', isError:false, isPending:false, data:['vitest-r195-p3'], dbRows:3}`, the Reviewer's state reproduced exactly) → clear **ran** → **ROWS 0**; with the fix, the identical sequence → clear refused (`never-read`), a second mark and a second attempt → refused again → **ROWS 3**. **Counter-controls, live, both green in both directions:** healthy read + toggle off → 2 → **0**; healthy read + mark + toggle off → 3 → **0** (§4 decision 2 survives). **Probes:** the `hasRead` term deleted from `clearRefusalReason` → **7 RED**; aborts treated as failures → **2 RED**; the signal not threaded into the request → **3 RED**; all reverted → 55/55 |
+| **R195 (second half)** — "Reset list" is gated on `draftedCount === 0`, which one optimistic mark re-opens, so **both** destructive controls are live in that state | should-fix | **`list-detail-view.tsx` edited — six lines, in scope.** The hook guard already refuses for both controls, but `handleReset` toasted *"List reset — drafted marks cleared"* unconditionally, so a refused clear still announced success: CLAUDE.md's "nothing happened means it worked", one layer up. `runClearDrafted` (and therefore `clearDrafted`) now returns whether the clear ran, and `handleReset` claims the reset only when it did. The Draft-mode toggle is deliberately unchanged: it is a view state, it should still toggle, and the refusal toast is what tells the truth there. Pinned with a brace-balance `arrowBody` slicer over the comment-stripped view source, plus a counter-control that the toggle still calls the clear at all (§4 decision 2). **Probe:** the pre-fix unconditional toast restored → **1 RED**; reverted → 55/55. The whole-file prettier reformat this edit provoked was **reverted** — the file is 80-col legacy and reformatting it would have been a 439-line drive-by |
+| **R196** — `callbackBody`'s paren-balance scan is not string- or regex-literal aware | nit | **Documented, not widened** — per the Reviewer's own first option. The JSDoc now states the limitation outright, says it is a text scanner and not a parser, records that no callback here holds a paren-bearing literal today, notes that the failure is loud (the slice stops early and the `toContain` pins redden), and tells the next author to parse it or move the decision out of the callback rather than relax the scan. The new `arrowBody` slicer carries the same caveat in the brace dialect |
+| **R197** — the refusal toast said the marks "could not be loaded" in the `isPending` case, blaming a failure that had not happened during an ordinary page load | nit | **Three reasons, three copies, none of them a guess.** `clearRefusalReason` names which state refused, and `CLEAR_REFUSAL_COPY` maps each to its own sentence: *could not be loaded… reload* (failed), *are still loading… try again in a moment* (in flight — no "could not", no "reload"), *have not loaded on this device… reload* (never read). Pinned per branch, including a direct assertion that the in-flight copy does not match `/could not/i` |
+| **R198** — the recorded `test:stack` flake family is narrower than what actually flakes | nit | `league-lists-api-db.test.ts` added to the §5 flake-family note, with the Reviewer's measurement (7× 232/232 and one red on 2 tests of a suite this diff does not touch, 3/3 in isolation) and this session's own runs |
 
 ### LV.1.4 — 2026-08-09 (PR #109) — verdict **FIX-THEN-MERGE**
 

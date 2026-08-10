@@ -331,9 +331,15 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
     )
   }
 
+  // R195: `clearDrafted` refuses over marks the read never delivered, and toasts
+  // why. This button is gated on `draftedCount === 0`, which one optimistic mark
+  // re-opens — so it IS reachable in that state, and announcing a reset that was
+  // refused is "nothing happened means it worked" in the UI (CLAUDE.md). Claim
+  // it only when the hook says the clear actually ran.
   const handleReset = () => {
-    draft.clearDrafted()
-    toast({ title: 'List reset — drafted marks cleared' })
+    if (draft.clearDrafted()) {
+      toast({ title: 'List reset — drafted marks cleared' })
+    }
   }
 
   const toggleStat = (key: ListRowStatKey) => {

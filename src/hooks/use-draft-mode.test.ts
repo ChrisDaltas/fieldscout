@@ -28,6 +28,16 @@
  *      real rows. Two marks were destroyed this way in a live reproduction.
  *      `runClearDrafted` is that guard, and it is driven here off a **real**
  *      failed read's state, not a hand-written literal.
+ *   5. **…and that guard cannot be forged by a cache write (R195).** The first
+ *      cut asked the query's *status*, which the hook's own optimistic
+ *      `setQueryData` rewrites to `success` — re-opening the whole path for as
+ *      long as the user keeps marking. The bit now comes from the `queryFn`
+ *      itself (`createReadLandedFlag`), and the pin drives a real
+ *      `QueryClient`: a failed read, then the hook's own `onMutate` verbatim,
+ *      and the clear still refuses. Both counter-controls are here too — a
+ *      healthy read clears, and a healthy read *plus* a mark clears — because a
+ *      guard that refuses everything would satisfy the finding and break the
+ *      feature.
  *
  * No DOM: this repo's vitest runs on node with no jsdom, so the hook body
  * itself is out of reach. What that costs is stated rather than papered over —
@@ -50,7 +60,10 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  CLEAR_REFUSAL_COPY,
   canClearDrafted,
+  clearRefusalReason,
+  createReadLandedFlag,
   deleteDrafted,
   desiredStateFor,
   draftedKeys,
@@ -77,7 +90,9 @@ const code = (file: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
 const HOOK_FILE = 'src/hooks/use-draft-mode.ts'
+const VIEW_FILE = 'src/components/lists/list-detail-view.tsx'
 const LIST_ID = '22222222-2222-4222-8222-222222222222'
+const OTHER_LIST_ID = '33333333-3333-4333-8333-333333333333'
 
 /**
  * The body of one `useCallback` in the hook, sliced by paren balance from the
@@ -87,6 +102,16 @@ const LIST_ID = '22222222-2222-4222-8222-222222222222'
  * on the LV.1.1 pins, is that exact failure). This throws rather than returning
  * `''` if the callback is gone, so a rename fails loudly instead of turning
  * every pin below it vacuous.
+ *
+ * **Known limitation (R196), stated so the next author does not trust it too
+ * far:** the balance scan is not string- or regex-literal aware, so a callback
+ * body containing an unbalanced `(` or `)` *inside a string* — `'a :-)'`,
+ * `/\(/` — slices short or long. It is a text scanner, not a parser. Today
+ * neither callback here holds such a literal, and the failure is loud rather
+ * than silent (the slice stops early, the `toContain` pins redden, and the
+ * control test below catches a slice that has swallowed the wrong region). If a
+ * callback ever needs a paren-bearing string, parse it or move the decision out
+ * of the body — do not widen this.
  */
 function callbackBody(source: string, name: string): string {
   const start = source.indexOf(`const ${name} = useCallback(`)
@@ -100,6 +125,28 @@ function callbackBody(source: string, name: string): string {
     }
   }
   throw new Error(`unbalanced \`${name}\` useCallback in ${HOOK_FILE}`)
+}
+
+/**
+ * The same idea for a plain `const x = () => { … }`, sliced by **brace**
+ * balance — used for `handleReset` in the legacy detail view (R195's second
+ * half). It carries `callbackBody`'s limitation in the brace dialect: a `{` or
+ * `}` inside a string or a regex literal would mis-slice. `handleReset` holds
+ * one template-free string with no braces, and the control test asserts the
+ * slice is a real one.
+ */
+function arrowBody(source: string, declaration: string, file: string): string {
+  const start = source.indexOf(declaration)
+  if (start === -1) throw new Error(`no \`${declaration}\` in ${file}`)
+  let depth = 0
+  for (let i = source.indexOf('{', start); i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    else if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, i + 1)
+    }
+  }
+  throw new Error(`unbalanced \`${declaration}\` in ${file}`)
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -135,6 +182,22 @@ describe('the wire — marks come from the server, not localStorage', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/lists/${LIST_ID}/drafted`)
     // No second argument at all = a GET.
     expect(fetchMock.mock.calls[0][1]).toBeUndefined()
+  })
+
+  it('threads a cancellation signal when given one, and is still a GET (R195)', async () => {
+    // React Query's signal has to reach the request, or `cancelQueries` — which
+    // every mark calls — leaves a live request that resolves into a promise
+    // nobody is listening to. A discarded read must not be able to tell the
+    // clear guard that the marks are known.
+    const fetchMock = respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: [] }))
+    const controller = new AbortController()
+
+    await fetchDraftedIds(LIST_ID, controller.signal)
+
+    const init = fetchMock.mock.calls[0][1]
+    expect(init?.signal).toBe(controller.signal)
+    expect(init?.method).toBeUndefined() // no method = still a GET
+    expect(init?.body).toBeUndefined()
   })
 
   it('writes an explicit desired STATE, in both directions — never a toggle', async () => {
@@ -226,17 +289,20 @@ describe('a failed read is loud at the wire and quiet on the page', () => {
  */
 describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () => {
   let client: QueryClient
+  let flag: ReturnType<typeof createReadLandedFlag>
 
   beforeEach(() => {
     client = new QueryClient()
+    flag = createReadLandedFlag()
   })
 
   afterEach(() => {
     client.clear()
   })
 
+  /** Drives the REAL query options, with the REAL read signals wired in. */
   async function observeUntilSettled(status: 'error' | 'success') {
-    const observer = new QueryObserver(client, draftedQueryOptions(LIST_ID))
+    const observer = new QueryObserver(client, draftedQueryOptions(LIST_ID, flag.signals))
     const unsubscribe = observer.subscribe(() => {})
     try {
       await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe(status), {
@@ -248,6 +314,13 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
       unsubscribe()
     }
   }
+
+  /** Exactly what the hook hands the guard, off a real read. */
+  const readState = (result: { isError: boolean; isPending: boolean }) => ({
+    isError: result.isError,
+    isPending: result.isPending,
+    hasRead: flag.hasRead(LIST_ID),
+  })
 
   it('an unauthenticated read leaves an error with NO data, and an empty Set', async () => {
     respondWith(() => jsonResponse(401, { error: 'Unauthorized' }))
@@ -299,11 +372,15 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
 
     const clear = vi.fn()
     const refuse = vi.fn()
-    runClearDrafted({ isError: result.isError, isPending: result.isPending }, { clear, refuse })
+    runClearDrafted(readState(result), { clear, refuse })
 
     expect(toDraftedSet(result.data).size).toBe(0) // the page says "no marks"…
     expect(clear).not.toHaveBeenCalled() // …and nothing is destroyed over it
     expect(refuse).toHaveBeenCalledTimes(1) // …and the user is told
+    expect(refuse).toHaveBeenCalledWith('read-failed') // …the truth, specifically
+    // The read never landed either — the failure is visible in BOTH bits, which
+    // is what R195 turns on: only one of them survives an optimistic mark.
+    expect(flag.hasRead(LIST_ID)).toBe(false)
   })
 
   it('R190 counter-control — after a successful read the clear still runs', async () => {
@@ -312,9 +389,10 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
     respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
     const result = await observeUntilSettled('success')
 
+    expect(flag.hasRead(LIST_ID)).toBe(true) // the read really landed
     const clear = vi.fn()
     const refuse = vi.fn()
-    runClearDrafted({ isError: result.isError, isPending: result.isPending }, { clear, refuse })
+    expect(runClearDrafted(readState(result), { clear, refuse })).toBe(true)
 
     expect(clear).toHaveBeenCalledTimes(1)
     expect(refuse).not.toHaveBeenCalled()
@@ -342,6 +420,268 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
     const provider = code('src/components/providers/query-provider.tsx')
     expect(provider).not.toContain('throwOnError')
     expect(provider).not.toContain('suspense')
+  })
+})
+
+/**
+ * **R195 — the hole R190's first fix left open, and the reason `hasRead` is not
+ * a status bit.** The guard used to ask React Query whether the query was in
+ * `error` or `pending`. But this hook's own optimistic mark calls
+ * `setQueryData`, which React Query dispatches as a **manual success**: an
+ * errored query flips to `status: 'success'`, `isError: false`,
+ * `isPending: false` on the spot. So one tap on a player re-opened the entire
+ * R190 data-loss path — and because the same `onMutate` calls `cancelQueries`,
+ * killing the failing refetch that would have closed the window again, a
+ * marking session held it open continuously rather than for a moment.
+ *
+ * Every test below drives the **real** `draftedQueryOptions` through a **real**
+ * `QueryClient`, and performs the hook's own `onMutate` verbatim
+ * (`cancelQueries` → `setQueryData(nextDraftedIds(...))`). Nothing here is a
+ * hand-written read state.
+ */
+describe('R195 — an optimistic mark cannot forge "these marks are known"', () => {
+  let client: QueryClient
+  let flag: ReturnType<typeof createReadLandedFlag>
+
+  beforeEach(() => {
+    client = new QueryClient()
+    flag = createReadLandedFlag()
+  })
+
+  afterEach(() => {
+    client.clear()
+  })
+
+  const key = draftedKeys.list(LIST_ID)
+
+  function observe() {
+    const observer = new QueryObserver(client, draftedQueryOptions(LIST_ID, flag.signals))
+    const unsubscribe = observer.subscribe(() => {})
+    return { observer, unsubscribe }
+  }
+
+  const settle = (observer: { getCurrentResult: () => { status: string } }, status: string) =>
+    vi.waitFor(() => expect(observer.getCurrentResult().status).toBe(status), {
+      timeout: 4000,
+      interval: 10,
+    })
+
+  const state = (result: { isError: boolean; isPending: boolean }) => ({
+    isError: result.isError,
+    isPending: result.isPending,
+    hasRead: flag.hasRead(LIST_ID),
+  })
+
+  /** `setMark.onMutate`, verbatim from the hook. */
+  async function optimisticMark(playerId: string) {
+    await client.cancelQueries({ queryKey: key })
+    const previous = client.getQueryData<string[]>(key)
+    client.setQueryData<string[]>(key, nextDraftedIds(previous, playerId, true))
+  }
+
+  /** A request that never answers but honours the signal, like the real one. */
+  function hangingFetch() {
+    let seen: AbortSignal | undefined
+    const fetchMock = vi.fn<FetchLike>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init?.signal ?? undefined
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          )
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return { signal: () => seen }
+  }
+
+  it('THE FINDING — a mark over a failed read looks like success, and is refused', async () => {
+    respondWith(() => jsonResponse(500, { error: 'boom' }))
+    const { observer, unsubscribe } = observe()
+    await settle(observer, 'error')
+
+    // Before the mark, R190's own guard is already refusing.
+    expect(canClearDrafted(state(observer.getCurrentResult()))).toBe(false)
+
+    await optimisticMark('p3')
+    const after = observer.getCurrentResult()
+
+    // Measured, not assumed — this is the manufactured status the old guard
+    // trusted. If React Query ever stops doing this, THIS is the line that
+    // says so, rather than the guard quietly becoming decorative.
+    expect(after.status).toBe('success')
+    expect(after.isError).toBe(false)
+    expect(after.isPending).toBe(false)
+    expect(after.data).toEqual(['p3'])
+
+    // …and the clear refuses anyway, because no READ ever landed.
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+    expect(canClearDrafted(state(after))).toBe(false)
+    expect(clearRefusalReason(state(after))).toBe('never-read')
+
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    expect(runClearDrafted(state(after), { clear, refuse })).toBe(false)
+    expect(clear).not.toHaveBeenCalled()
+    expect(refuse).toHaveBeenCalledWith('never-read')
+
+    unsubscribe()
+  })
+
+  it('and it stays refused across a whole marking session, not just one tap', async () => {
+    // The Reviewer's timeline: three marks 700ms apart held the window open for
+    // the entire session, because `cancelQueries` kills the failing refetch.
+    respondWith(() => jsonResponse(500, { error: 'boom' }))
+    const { observer, unsubscribe } = observe()
+    await settle(observer, 'error')
+
+    for (const playerId of ['p1', 'p2', 'p3']) {
+      await optimisticMark(playerId)
+      expect(observer.getCurrentResult().status).toBe('success') // still forged
+      expect(canClearDrafted(state(observer.getCurrentResult()))).toBe(false)
+    }
+    expect(observer.getCurrentResult().data).toEqual(['p1', 'p2', 'p3'])
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+
+    unsubscribe()
+  })
+
+  it('COUNTER-CONTROL — a healthy read, then a mark, and the clear still runs', async () => {
+    // The everyday draft-night gesture: mark, mark, toggle off. §4 decision 2
+    // must survive the guard, or the fix is just a different bug.
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1', 'p2'] }))
+    const { observer, unsubscribe } = observe()
+    await settle(observer, 'success')
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+
+    await optimisticMark('p3')
+    const after = observer.getCurrentResult()
+    expect(after.data).toEqual(['p1', 'p2', 'p3'])
+
+    expect(clearRefusalReason(state(after))).toBeNull()
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    expect(runClearDrafted(state(after), { clear, refuse })).toBe(true)
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(refuse).not.toHaveBeenCalled()
+
+    unsubscribe()
+  })
+
+  it('a read still in flight, cancelled by a mark, is neither a landing nor a failure', async () => {
+    // The pending twin of the finding: the first read has not answered, the
+    // user marks somebody, `cancelQueries` aborts the read. The signal is
+    // React Query's own, threaded into the request — so the request really is
+    // cancelled instead of resolving into a promise nobody is listening to.
+    const { signal } = hangingFetch()
+    const { observer, unsubscribe } = observe()
+    await vi.waitFor(() => expect(signal()).toBeDefined(), { timeout: 2000, interval: 5 })
+    expect(signal()?.aborted).toBe(false)
+
+    await optimisticMark('p3')
+    expect(signal()?.aborted).toBe(true) // the threading, proven at the wire
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(observer.getCurrentResult().data).toEqual(['p3'])
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+    expect(clearRefusalReason(state(observer.getCurrentResult()))).toBe('never-read')
+
+    unsubscribe()
+  })
+
+  it('a cancelled REFETCH does not close a flag a real read opened', async () => {
+    // The other side of the abort rule. Every mark cancels the in-flight read,
+    // so treating an abort as a failure would refuse the clear for the rest of
+    // any session in which somebody marks two players quickly.
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const { observer, unsubscribe } = observe()
+    await settle(observer, 'success')
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+
+    const { signal } = hangingFetch()
+    void observer.refetch().catch(() => {})
+    await vi.waitFor(() => expect(signal()).toBeDefined(), { timeout: 2000, interval: 5 })
+
+    await optimisticMark('p2')
+    expect(signal()?.aborted).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(flag.hasRead(LIST_ID)).toBe(true) // untouched by the abort
+    expect(canClearDrafted(state(observer.getCurrentResult()))).toBe(true)
+
+    unsubscribe()
+  })
+
+  it('a genuinely failed refetch DOES close it again', async () => {
+    // …so `failed` is not dead code, and the flag cannot go stale-true.
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const { observer, unsubscribe } = observe()
+    await settle(observer, 'success')
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+
+    respondWith(() => jsonResponse(401, { error: 'Unauthorized' })) // 4xx: no retry
+    await observer.refetch().catch(() => {})
+    await vi.waitFor(() => expect(flag.hasRead(LIST_ID)).toBe(false), {
+      timeout: 2000,
+      interval: 10,
+    })
+
+    // React Query keeps the last data, so the page still shows p1 — and the
+    // clear refuses on the status bit alone in this state. Then a mark forges
+    // the status back to success, and `hasRead` is what still refuses.
+    expect(observer.getCurrentResult().data).toEqual(['p1'])
+    expect(clearRefusalReason(state(observer.getCurrentResult()))).toBe('read-failed')
+
+    await optimisticMark('p2')
+    const after = observer.getCurrentResult()
+    expect(after.isError).toBe(false) // forged again
+    expect(clearRefusalReason(state(after))).toBe('never-read')
+
+    unsubscribe()
+  })
+})
+
+/**
+ * `createReadLandedFlag` on its own — the bit R195 turns on, exported out of the
+ * hook body for R191's reason (a decision left in the body is pinned by nothing
+ * this repo can run).
+ */
+describe('createReadLandedFlag — "a read landed for THIS list"', () => {
+  it('starts closed, for every list', () => {
+    const flag = createReadLandedFlag()
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(false)
+  })
+
+  it('opens for the list that landed, and only that one', () => {
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(false)
+  })
+
+  it('closes when a read for that list fails', () => {
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    flag.signals.failed(LIST_ID)
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+  })
+
+  it("ignores another list's failure", () => {
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    flag.signals.failed(OTHER_LIST_ID)
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+  })
+
+  it('cannot leave a stale TRUE behind when the list changes', () => {
+    // Why it holds an id rather than a boolean: switching lists must not
+    // inherit the previous list's permission, and there is no effect to race.
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    flag.signals.landed(OTHER_LIST_ID)
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(true)
   })
 })
 
@@ -404,42 +744,95 @@ describe('desiredStateFor — the state a tap asks for (R191)', () => {
  */
 describe('runClearDrafted — a clear over marks nobody has read is refused (R190)', () => {
   const spies = () => ({ clear: vi.fn(), refuse: vi.fn() })
+  const READ = { isError: false, isPending: false, hasRead: true }
 
-  it('clears when the read succeeded — §4 decision 2 survives the guard', () => {
+  it('clears when a read landed — §4 decision 2 survives the guard', () => {
     const { clear, refuse } = spies()
-    runClearDrafted({ isError: false, isPending: false }, { clear, refuse })
+    expect(runClearDrafted(READ, { clear, refuse })).toBe(true)
     expect(clear).toHaveBeenCalledTimes(1)
     expect(refuse).not.toHaveBeenCalled()
   })
 
   it('REFUSES when the read failed — the live data-loss path', () => {
     const { clear, refuse } = spies()
-    runClearDrafted({ isError: true, isPending: false }, { clear, refuse })
+    expect(runClearDrafted({ ...READ, isError: true }, { clear, refuse })).toBe(false)
     expect(clear).not.toHaveBeenCalled()
-    expect(refuse).toHaveBeenCalledTimes(1)
+    expect(refuse).toHaveBeenCalledWith('read-failed')
   })
 
   it('refuses while the read is still in flight — same empty picture', () => {
     const { clear, refuse } = spies()
-    runClearDrafted({ isError: false, isPending: true }, { clear, refuse })
+    expect(runClearDrafted({ ...READ, isPending: true }, { clear, refuse })).toBe(false)
     expect(clear).not.toHaveBeenCalled()
-    expect(refuse).toHaveBeenCalledTimes(1)
+    expect(refuse).toHaveBeenCalledWith('read-in-flight')
+  })
+
+  it('REFUSES when the status says success but no read ever landed (R195)', () => {
+    const { clear, refuse } = spies()
+    expect(runClearDrafted({ ...READ, hasRead: false }, { clear, refuse })).toBe(false)
+    expect(clear).not.toHaveBeenCalled()
+    expect(refuse).toHaveBeenCalledWith('never-read')
   })
 
   it('refuses loudly, never silently — the refusal is an effect, not a return', () => {
     // A guard that just returns is CLAUDE.md's failure in mirror image: the
     // user asked for something, nothing happened, and nothing said so.
     const { clear, refuse } = spies()
-    runClearDrafted({ isError: true, isPending: true }, { clear, refuse })
+    runClearDrafted({ isError: true, isPending: true, hasRead: false }, { clear, refuse })
     expect(refuse).toHaveBeenCalledTimes(1)
     expect(clear).not.toHaveBeenCalled()
   })
 
-  it('canClearDrafted is the whole decision table — success and nothing else', () => {
-    expect(canClearDrafted({ isError: false, isPending: false })).toBe(true)
-    expect(canClearDrafted({ isError: true, isPending: false })).toBe(false)
-    expect(canClearDrafted({ isError: false, isPending: true })).toBe(false)
-    expect(canClearDrafted({ isError: true, isPending: true })).toBe(false)
+  it('canClearDrafted is the whole decision table — all three bits, no exceptions', () => {
+    for (const isError of [false, true]) {
+      for (const isPending of [false, true]) {
+        for (const hasRead of [false, true]) {
+          expect(canClearDrafted({ isError, isPending, hasRead })).toBe(
+            hasRead && !isError && !isPending,
+          )
+        }
+      }
+    }
+  })
+})
+
+/**
+ * **R197.** The refusal used to say the marks "could not be loaded" in every
+ * state, including the one where they simply had not arrived yet — and the
+ * legacy view wires Draft mode to `clearDrafted()` unconditionally, so an
+ * ordinary page load could raise a destructive toast blaming a failure that
+ * never happened. Three states, three answers, and none of them guesses.
+ */
+describe('the refusal says which of the three it was (R197)', () => {
+  it('names the reason, most-specific first', () => {
+    expect(clearRefusalReason({ isError: true, isPending: false, hasRead: false })).toBe(
+      'read-failed',
+    )
+    expect(clearRefusalReason({ isError: false, isPending: true, hasRead: false })).toBe(
+      'read-in-flight',
+    )
+    expect(clearRefusalReason({ isError: false, isPending: false, hasRead: false })).toBe(
+      'never-read',
+    )
+    expect(clearRefusalReason({ isError: false, isPending: false, hasRead: true })).toBeNull()
+  })
+
+  it('the in-flight copy does not blame a failure that did not happen', () => {
+    // The R197 bug, verbatim: "could not be loaded" during a normal page load.
+    expect(CLEAR_REFUSAL_COPY['read-in-flight']).not.toMatch(/could not/i)
+    expect(CLEAR_REFUSAL_COPY['read-in-flight']).toMatch(/still loading/i)
+    // …and it does not tell the user to reload a page that is loading fine.
+    expect(CLEAR_REFUSAL_COPY['read-in-flight']).not.toMatch(/reload/i)
+  })
+
+  it('every reason has its own copy, and every copy says nothing was cleared', () => {
+    const copies = Object.values(CLEAR_REFUSAL_COPY)
+    expect(copies).toHaveLength(3)
+    expect(new Set(copies).size).toBe(3)
+    for (const copy of copies) expect(copy).toMatch(/none were cleared/)
+    // The failure case keeps the advice that actually helps.
+    expect(CLEAR_REFUSAL_COPY['read-failed']).toMatch(/reload/i)
+    expect(CLEAR_REFUSAL_COPY['never-read']).toMatch(/reload/i)
   })
 })
 
@@ -466,10 +859,72 @@ describe('the hook body wires those decisions in', () => {
     // The real read state, not literals that would make the guard decorative.
     expect(body).toContain('isError: marks.isError')
     expect(body).toContain('isPending: marks.isPending')
+    expect(body).toContain('hasRead: readLanded.hasRead(listId)')
     expect(body).toContain('clear: clearMarksMutate')
     expect(body).toContain('refuse:')
     // The pre-R190 body, verbatim: an unconditional durable DELETE.
     expect(body).not.toMatch(/clearMarksMutate\(\)/)
+    // R195: the bit must come from the READ. A literal, or the query's own
+    // status standing in for it, is the bug this finding was about.
+    expect(body).not.toMatch(/hasRead:\s*(true|!marks|marks\.)/)
+  })
+
+  it('the read that feeds hasRead is the one the hook actually runs (R195)', () => {
+    const source = code(HOOK_FILE)
+    // The flag is threaded INTO the query — an options object built without it
+    // raises no signals at all, and `hasRead` would then be false forever.
+    expect(source).toContain('useQuery(draftedQueryOptions(listId, readLanded.signals))')
+    // …and the flag is created once per hook instance, not per render: a
+    // `useMemo` is a cache React may drop, and dropping it would refuse a clear
+    // the user is entitled to.
+    expect(source).toContain('useRef<ReadLandedFlag | null>(null)')
+    expect(source).toContain(
+      'if (flagRef.current === null) flagRef.current = createReadLandedFlag()',
+    )
+  })
+
+  it('the queryFn raises landed/failed itself, and stays neutral on aborts', () => {
+    const source = code(HOOK_FILE)
+    expect(source).toContain('signals?.landed(listId)')
+    expect(source).toContain('if (!signal.aborted) signals?.failed(listId)')
+    // The signal reaches the request, or "cancelled" would not mean cancelled.
+    expect(source).toContain('fetchDraftedIds(listId, signal)')
+  })
+
+  /**
+   * **R195's second half.** The Reviewer's point was that *both* destructive
+   * controls are live in the degraded state: "Reset list" is gated on
+   * `draftedCount === 0`, and one optimistic mark makes that count 1. The hook
+   * guard now refuses in both, but `handleReset` announced a reset regardless —
+   * "nothing happened means it worked" one layer up (CLAUDE.md). It may claim
+   * the reset only when the hook says the clear actually ran.
+   */
+  it('the legacy view only claims a reset that really happened (R195)', () => {
+    const body = arrowBody(code(VIEW_FILE), 'const handleReset = () => {', VIEW_FILE)
+    const compact = body.replace(/\s+/g, ' ')
+    expect(compact).toMatch(/if \(draft\.clearDrafted\(\)\)\s*\{?\s*toast\(/)
+    // The pre-fix body, verbatim: clear, then announce whatever happened.
+    expect(compact).not.toMatch(/draft\.clearDrafted\(\);? toast\(/)
+    // …and the toast that would be the lie appears nowhere outside the guard.
+    expect(compact.indexOf('toast(')).toBeGreaterThan(compact.indexOf('draft.clearDrafted()'))
+  })
+
+  it('turning Draft mode off still clears — §4 decision 2 is still wired', () => {
+    // The counter-control for the pin above: a "fix" that stops calling the
+    // clear at all would satisfy every refusal assertion in this file.
+    expect(code(VIEW_FILE)).toContain('if (!next) draft.clearDrafted()')
+  })
+
+  it('the slicers return real bodies (control for the pins above)', () => {
+    const view = code(VIEW_FILE)
+    const reset = arrowBody(view, 'const handleReset = () => {', VIEW_FILE)
+    expect(reset).toContain('draft.clearDrafted()')
+    expect(reset.length).toBeLessThan(view.length)
+    // It really stops at the end of the function, rather than running on.
+    expect(reset).not.toContain('const toggleStat')
+    expect(() => arrowBody(view, 'const noSuchHandler = () => {', VIEW_FILE)).toThrow(
+      /no `const noSuchHandler/,
+    )
   })
 
   it('the slicer returns real callback bodies (control for the two pins above)', () => {
