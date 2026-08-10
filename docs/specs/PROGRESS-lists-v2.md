@@ -1058,3 +1058,30 @@ Four nits recorded, **not fixed**:
 | **R187** — R184's anti-recurrence grep is quoted with the wrong glob in two of three places (`src/stores/*.ts` returns **8**, matching the test file's deliberate `persist` control; `src/stores/*-store.ts` returns the 7 it claims) | nit | **Open.** Fix at plan `:348` and PROGRESS `:566` |
 | **R188** — PROGRESS `:338` heading cites R181; the passage is entirely R179 (R181 is the prototype-key finding at §4 item 6) | nit | **Open.** Retitle to R179 |
 | **R189** — residual tail: a guarded write through an **unstubbed** alias (`self`, typed by lib.dom) escapes both the spies and the substring source pin — `20 passed`, `tsc` clean. Judged the obfuscation tail, not the realistic failure mode | nit | **Open.** Add `self` to the `vi.stubGlobal` set and the banned-token list — one line each |
+
+#### Final re-review — 2026-08-09 (fresh Reviewer, fix diff `e94aa45`) — **VERDICT: CLEAN, but two SHOULD-FIX open**
+
+*Gates re-run independently: type-check clean · lint exit 0 · `test:unit` **43 / 749** ·
+`drafted-api-db` 32/32 ×3 · pgTAP 028 alone 49/49 · `test:stack` ×4 with two reds, both
+in the §5 leagues flake family and both green in isolation. All five of the round-2
+Builder's break probes reproduced at the exact claimed counts.*
+
+**The class that consumed both fix rounds is demonstrably closed.** The Reviewer built an
+independent live rig, proved it reaches the bug (pre-fix guard restored → real rows
+destroyed), then showed the fix refuses over an optimistic mark on a failed read with
+rows intact, and that both honest counter-controls still clear. It attacked six paths
+neither prior round covered — successful-read-then-failed-refetch, listId switching,
+in-flight mark, external `invalidateQueries`, mutation-error rollback, SSR first paint.
+
+**Orchestrator decision (2026-08-09): NOT merged.** The verdict is CLEAN and the merge
+conditions are formally met, but R199 is a residual path to the same permanent
+cross-device data loss that consumed two fix rounds. Merging a known data-loss race —
+however remote — when the fix is a one-line symmetry change is the wrong call. Two fix
+rounds are spent, so per the house rule this goes to Chris rather than a third round.
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| **R199** — `use-draft-mode.ts:351-364`: the `queryFn`'s **success** arm calls `signals.landed(listId)` without checking `signal.aborted`, while the catch arm *is* guarded. A read resolving after `cancelQueries` discarded it therefore vouches for marks the cache never received. Live rig: in-flight read → mark (aborts it) → response resolves anyway → clear permitted → **rows destroyed, never shown**. Measured window ~0.088 ms avg / 0.60 ms max of a ~42 ms read (~0.2%), and loss additionally needs the clear to beat the follow-up refetch — so incidence is remote, but the path is real. Three docs assert the property this violates | **should-fix** | **Open — recommended before merge.** One-line fix: `if (!signal.aborted) signals?.landed(listId)`, pin it (the existing pin covers only the catch arm), and soften the three claims |
+| **R200** — `use-draft-mode.ts:416-418`: `hasRead` lives in a per-**mount** `useRef`, but the cached read outlives the mount (`staleTime: 60_000`). Remounting inside 60 s renders the real marks while `hasRead` is false, so the clear refuses with copy that contradicts the screen — the exact failure mode R197 was filed to eliminate. Reachable by ordinary navigation. **Not** data loss, not permanent | **should-fix** | **Open — recommended before merge.** Give the flag the cache's lifetime: module-scoped `createReadLandedFlag()` (already keyed by list id) instead of a per-mount ref |
+| **R201** — `list-detail-view.tsx:339-343`: `clearDrafted()` returns `true` when the DELETE is *issued*, not when it succeeds, so the success toast can precede a failing DELETE. Standard optimistic-UI behavior, but §6's "claims the reset only when it did" reads stronger than the code guarantees | nit | Open. Reword the ledger, or move the toast into `onSuccess` |
+| **R202** — `supabase/tests/028_list_player_drafted.sql:441` (LV.1.2's file, unmodified here): the final assertion counts **all** rows in `list_player_drafted`, so 028 reports a false red whenever another suite holds rows — including the `test:stack` run §5 tells you to run. Verified: concurrent → `not ok 47 … have: 8 want: 5`; alone immediately after → 49/49 | nit | Open. Scope the count to the suite's own ids, as the surrounding assertions already do |
