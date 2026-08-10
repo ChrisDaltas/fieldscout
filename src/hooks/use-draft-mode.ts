@@ -1,7 +1,8 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { QueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useToast } from '@/hooks/use-toast'
 
@@ -66,8 +67,26 @@ import { useToast } from '@/hooks/use-toast'
  * made it a *continuous* window for as long as the user kept marking rather
  * than a race. The bit the guard actually needs can only come from the read
  * itself, so it does: `draftedQueryOptions` raises `landed`/`failed` from
- * inside the `queryFn`, the hook records the list id the last landed read was
- * for, and `hasRead` is that id matching this one. No cache write can forge it.
+ * inside the `queryFn`, and `hasRead` asks whether a landing is on record for
+ * this list. No cache write can forge it.
+ *
+ * **Two corrections the final review made to that bit, both about its edges.**
+ *
+ *   * **R199 — an abort answers nothing in *either* direction.** The first cut
+ *     guarded only the failure arm, on the belief that a cancelled read always
+ *     rejects. It does not: an abort landing after `res.json()` has been
+ *     entered on a buffered body resolves anyway (measured against a real
+ *     server, 200/200 in that window), and React Query then discards the value
+ *     — so the success arm could vouch for marks the cache never received, and
+ *     a clear over them destroyed real rows. Both arms now check
+ *     `signal.aborted`.
+ *   * **R200 — the flag lives as long as the cache, not as long as the mount.**
+ *     It hung off a `useRef`, but `query-provider.tsx` keeps the read fresh for
+ *     60 s, so navigating away and back re-rendered the real marks with the
+ *     flag reset to `false` — refusing both destructive controls with copy that
+ *     contradicted the screen. It now hangs off the QueryClient
+ *     (`readLandedFlagFor`), keyed per list, and is dropped when React Query
+ *     removes the cache entry it vouched for.
  */
 
 /** Draft mode's on/off toggle — a view state of one tab, never server state. */
@@ -121,7 +140,15 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
  * really is cancelled (R195). Every mark calls `cancelQueries`; without the
  * signal the underlying request runs to completion and resolves into a promise
  * nobody is listening to any more, which would let a *discarded* read tell the
- * clear guard that the marks are known. With it, a cancelled read rejects.
+ * clear guard that the marks are known.
+ *
+ * **Threading it is necessary and NOT sufficient (R199).** With the signal, a
+ * cancelled read *usually* rejects — measured against a real server, an abort
+ * landing before `res.json()` rejected 200/200 — but an abort landing after
+ * `res.json()` has been entered on an already-buffered body **resolves**
+ * 200/200, which is exactly the shape `jsonOrThrow` has. So the `queryFn` does
+ * not trust the rejection: it checks `signal.aborted` on *both* arms.
+ *
  * Omitted → no second argument at all, i.e. still a plain GET.
  */
 export async function fetchDraftedIds(listId: string, signal?: AbortSignal): Promise<string[]> {
@@ -215,11 +242,14 @@ export interface DraftedReadState {
   isError: boolean
   isPending: boolean
   /**
-   * **The load-bearing one (R195).** A real server read has landed for *this*
-   * list, and no later read attempt has failed. It comes from the `queryFn` —
-   * see `draftedQueryOptions` — never from the query's status, because the
-   * hook's own optimistic `setQueryData` manufactures `status: 'success'` over
-   * an errored read and would otherwise hand the guard a forged answer.
+   * **The load-bearing one (R195/R199).** A real server read has landed for
+   * *this* list — the server delivered the marks AND the read was not
+   * discarded by a cancellation before the cache could receive them (R199) —
+   * and no later read attempt has failed, and the cache entry it vouched for
+   * still exists (R200). It comes from the `queryFn` — see
+   * `draftedQueryOptions` — never from the query's status, because the hook's
+   * own optimistic `setQueryData` manufactures `status: 'success'` over an
+   * errored read and would otherwise hand the guard a forged answer.
    */
   hasRead: boolean
 }
@@ -308,10 +338,17 @@ export interface DraftedReadSignals {
   failed: (listId: string) => void
 }
 
-/** The `hasRead` bit, and the two signals that move it. */
+/** The `hasRead` bit, the two signals that move it, and the cache's eraser. */
 export interface ReadLandedFlag {
   signals: DraftedReadSignals
   hasRead: (listId: string) => boolean
+  /**
+   * The cache entry a landing vouched for is gone — garbage-collected after
+   * `gcTime` with no observers, `removeQueries`d, or wiped by `clear()` — so
+   * the landing goes with it (R200). Not a failure: nothing went wrong, the
+   * marks are simply unknown again.
+   */
+  forget: (listId: string) => void
 }
 
 /**
@@ -319,25 +356,88 @@ export interface ReadLandedFlag {
  * than left in the hook body, for R191's reason: a decision the hook body makes
  * is pinned by nothing this repo can run.
  *
- * It holds the **list id** the last landed read was for, not a boolean, so
- * switching lists can never leave a stale `true` behind and there is no effect
- * to race — the only writer is the read itself.
+ * **Keyed by list id, one entry per list (R200).** The first cut held a single
+ * slot — *the* list the last landed read was for — which is stricter than the
+ * property actually needed and cost more than it bought: `list A → list B →
+ * back to A` inside `staleTime` re-rendered A's real marks off the cache while
+ * A's landing had been evicted by B's, i.e. R200's own symptom via a second
+ * route. A per-list set cannot leak a landing across lists either — `hasRead(B)`
+ * is false until B's own read lands — and it keeps A's when B arrives.
  */
 export function createReadLandedFlag(): ReadLandedFlag {
-  let landedFor: string | null = null
+  const landed = new Set<string>()
+  // "The marks for this list are unknown again." Only that list is affected;
+  // a list with no entry is already `false` by the lookup below.
+  const drop = (listId: string) => {
+    landed.delete(listId)
+  }
   return {
     signals: {
       landed: (listId) => {
-        landedFor = listId
+        landed.add(listId)
       },
-      failed: (listId) => {
-        // Only the list that failed loses its flag. A flag held for a different
-        // list is already `false` for this one, by the comparison below.
-        if (landedFor === listId) landedFor = null
-      },
+      failed: drop,
     },
-    hasRead: (listId) => landedFor === listId,
+    hasRead: (listId) => landed.has(listId),
+    forget: drop,
   }
+}
+
+/** This key's list id, or `null` if the key is not a drafted key at all. */
+export function listIdFromDraftedKey(queryKey: readonly unknown[]): string | null {
+  const [scope, kind, listId] = queryKey
+  if (scope !== draftedKeys.all[0] || kind !== draftedKeys.all[1]) return null
+  return typeof listId === 'string' ? listId : null
+}
+
+/**
+ * One flag per **QueryClient**, not per mount — **R200**.
+ *
+ * The flag guards a clear over *the cache*, so it has to live exactly as long
+ * as the cache does. A `useRef` lives as long as one **mount**, and those two
+ * lifetimes are not the same: `query-provider.tsx` sets `staleTime: 60_000`, so
+ * navigating away and back inside a minute re-renders the real marks off the
+ * cache with **no refetch** — and a per-mount flag came back `false`, refusing
+ * both destructive controls with copy ("have not loaded on this device") that
+ * contradicts the marks on screen. That is the exact class R197 was filed to
+ * eliminate. A remount must inherit the landing that the cache inherited.
+ *
+ * **The hazard a longer-lived flag introduces is a flag that never resets, and
+ * every route out of `true` is covered:**
+ *
+ *   * **list switch** — the flag is keyed by list id, so a landing for one list
+ *     is never a permission for another;
+ *   * **read failure** — `signals.failed` drops that list's entry, so a
+ *     genuinely failed refetch closes it again (R195's rule, unchanged);
+ *   * **cancellation** — a discarded read never opens it at all (R199);
+ *   * **the cache going away** — the subscription below. When React Query
+ *     removes the query (gc after `gcTime` with no observers, `removeQueries`,
+ *     or `clear()` — the wipe a future sign-out reset would perform), the
+ *     landing is dropped with it. Without this, a cache gc'd while the user was
+ *     elsewhere would leave `hasRead` true over an empty cache, and an
+ *     optimistic mark on the way back would forge the status to `success` and
+ *     permit a clear over marks nobody had read — R195, again.
+ *
+ * Keyed by a `WeakMap`, so the flag is unreachable the moment its client is,
+ * and so an SSR render — where each request builds its own `QueryClient` in
+ * `QueryProvider` — cannot share one tab's landings with another request's.
+ * The subscription is deliberately never torn down: it is scoped to the client,
+ * not to a component, and there is no mount whose unmount should end it.
+ */
+const flagsByClient = new WeakMap<QueryClient, ReadLandedFlag>()
+
+export function readLandedFlagFor(client: QueryClient): ReadLandedFlag {
+  const existing = flagsByClient.get(client)
+  if (existing) return existing
+
+  const flag = createReadLandedFlag()
+  flagsByClient.set(client, flag)
+  client.getQueryCache().subscribe((event) => {
+    if (event.type !== 'removed') return
+    const listId = listIdFromDraftedKey(event.query.queryKey)
+    if (listId !== null) flag.forget(listId)
+  })
+  return flag
 }
 
 /**
@@ -351,14 +451,24 @@ export function draftedQueryOptions(listId: string, signals?: DraftedReadSignals
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       try {
         const ids = await fetchDraftedIds(listId, signal)
-        signals?.landed(listId)
+        // **Symmetric with the catch arm — R199 is the finding that made it
+        // so.** An abort usually makes the request *reject*, but not reliably:
+        // once `jsonOrThrow` has entered `res.json()` on a body that is
+        // already buffered, the parse runs to completion and the read resolves
+        // *after* the abort that discarded it (measured against a real server:
+        // in that window, 200/200 resolved). React Query throws that resolved
+        // value away — the cache never receives these ids — so raising
+        // `landed` here would vouch for marks this tab was never shown, which
+        // is R190/R195's data loss reached by a different route. An abort
+        // answers nothing about the marks, in EITHER direction.
+        if (!signal.aborted) signals?.landed(listId)
         return ids
       } catch (error) {
-        // An abort is this tab cancelling its own read — every mark's
-        // `onMutate` calls `cancelQueries` — not an answer about the marks, so
-        // it must not move the flag in either direction. Measured: React Query
-        // aborts the signal it hands the `queryFn`, so a cancelled read rejects
-        // here with `signal.aborted === true` while a real fault does not.
+        // The same rule on the failure side: an abort is this tab cancelling
+        // its own read — every mark's `onMutate` calls `cancelQueries` — not
+        // an answer about the marks. Measured: React Query aborts the signal
+        // it hands the `queryFn`, so a cancelled read carries
+        // `signal.aborted === true` here, while a real fault never does.
         if (!signal.aborted) signals?.failed(listId)
         throw error
       }
@@ -407,15 +517,15 @@ export function useDraftMode(listId: string) {
   const key = useMemo(() => draftedKeys.list(listId), [listId])
 
   /**
-   * **Whether a real read has delivered these marks (R195).** A ref, not state:
+   * **Whether a real read has delivered these marks (R195/R200).** Not state —
    * nothing renders off it, and re-rendering on it would be a lie about what
-   * changed. Lazily initialised so the flag survives every render — `useMemo`
-   * is a cache React is allowed to drop, and dropping this one would refuse a
-   * clear the user is entitled to.
+   * changed. And not a `useRef` either: a ref lives for one mount, while the
+   * marks it vouches for live in the cache for `staleTime`/`gcTime` past it, so
+   * a remount within the minute rendered real marks under a `false` flag. It
+   * hangs off the QueryClient instead — see `readLandedFlagFor`, which also
+   * owns every route back to `false`.
    */
-  const flagRef = useRef<ReadLandedFlag | null>(null)
-  if (flagRef.current === null) flagRef.current = createReadLandedFlag()
-  const readLanded = flagRef.current
+  const readLanded = readLandedFlagFor(qc)
 
   const marks = useQuery(draftedQueryOptions(listId, readLanded.signals))
 

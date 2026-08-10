@@ -335,7 +335,16 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   // why. This button is gated on `draftedCount === 0`, which one optimistic mark
   // re-opens — so it IS reachable in that state, and announcing a reset that was
   // refused is "nothing happened means it worked" in the UI (CLAUDE.md). Claim
-  // it only when the hook says the clear actually ran.
+  // it only when the hook says the clear was permitted and issued.
+  //
+  // R201: "permitted and issued" is the honest reading, and it is deliberately
+  // weaker than "the rows are gone". `clearDrafted` returns `true` when the
+  // DELETE is dispatched, because the marks are an optimistic surface
+  // (CLAUDE.md endorses that) — the rows vanish from the page immediately and
+  // the request settles after. A DELETE that then FAILS is not silent: the
+  // mutation rolls the cache back, the marks reappear, and the hook raises its
+  // own destructive "Could not update drafted" toast. So the only thing this
+  // toast over-claims is timing, and the failure is still loud.
   const handleReset = () => {
     if (draft.clearDrafted()) {
       toast({ title: 'List reset — drafted marks cleared' })

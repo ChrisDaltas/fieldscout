@@ -38,6 +38,20 @@
  *      healthy read clears, and a healthy read *plus* a mark clears — because a
  *      guard that refuses everything would satisfy the finding and break the
  *      feature.
+ *   6. **…and an ABORTED read cannot forge it either (R199).** The success arm
+ *      of the `queryFn` did not check `signal.aborted` while the catch arm did,
+ *      so a read resolving after `cancelQueries` discarded it vouched for marks
+ *      the cache never received. `lateFetch` reproduces the exact production
+ *      window — a response that ignores the abort, as `res.json()` does on an
+ *      already-buffered body — and its counter-control proves the same rig
+ *      *does* open the flag when nothing cancels it.
+ *   7. **The flag lives as long as the CACHE, not as long as the mount (R200).**
+ *      `staleTime: 60_000` means a remount inside a minute re-renders the real
+ *      marks with no refetch, and a `useRef` flag came back `false` there —
+ *      refusing both destructive controls with copy that contradicted the
+ *      screen. It hangs off the QueryClient now, and every route back to
+ *      `false` is pinned: list switch, read failure, cancellation, and the
+ *      cache entry being removed (gc / `removeQueries` / `clear()`).
  *
  * No DOM: this repo's vitest runs on node with no jsdom, so the hook body
  * itself is out of reach. What that costs is stated rather than papered over —
@@ -69,8 +83,10 @@ import {
   draftedKeys,
   draftedQueryOptions,
   fetchDraftedIds,
+  listIdFromDraftedKey,
   nextDraftedIds,
   postDrafted,
+  readLandedFlagFor,
   runClearDrafted,
   toDraftedSet,
 } from './use-draft-mode'
@@ -479,6 +495,83 @@ describe('R195 — an optimistic mark cannot forge "these marks are known"', () 
     client.setQueryData<string[]>(key, nextDraftedIds(previous, playerId, true))
   }
 
+  /**
+   * A request that **ignores** the abort and resolves anyway — R199's shape,
+   * and the one the production `jsonOrThrow` actually has. Measured against a
+   * real localhost server over 300–400 iterations: an abort landing *before*
+   * `res.json()` rejects 200/200, but an abort landing *after* `res.json()` has
+   * been entered on a buffered body resolves 200/200. `hangingFetch` above
+   * models the first window; this models the second, which is the one nothing
+   * was guarding.
+   */
+  function lateFetch() {
+    let settle: ((response: Response) => void) | undefined
+    const fetchMock = vi.fn<FetchLike>(
+      () =>
+        new Promise<Response>((resolve) => {
+          settle = resolve
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return {
+      started: () => fetchMock.mock.calls.length > 0,
+      calls: () => fetchMock.mock.calls.length,
+      /** The response the wire had already produced, delivered late. */
+      resolveWith: (ids: string[]) =>
+        settle?.(jsonResponse(200, { list_id: LIST_ID, drafted: ids })),
+    }
+  }
+
+  it('R199 — a read that RESOLVES after its own abort still vouches for nothing', async () => {
+    // The residual path the final review found: the catch arm checked
+    // `signal.aborted` and the success arm did not, so a read discarded by
+    // `cancelQueries` could still report "the marks are known" — over a cache
+    // that never received them. Live, that permitted a clear and destroyed
+    // rows the user had never been shown.
+    const late = lateFetch()
+    const { observer, unsubscribe } = observe()
+    await vi.waitFor(() => expect(late.started()).toBe(true), { timeout: 2000, interval: 5 })
+
+    await optimisticMark('p3') // cancelQueries aborts the in-flight read…
+    late.resolveWith(['p1', 'p2']) // …and the response lands anyway.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // React Query threw the resolved value away — this is the whole point:
+    // the ids the read carried are NOT what the page is showing.
+    expect(observer.getCurrentResult().data).toEqual(['p3'])
+    // …so nothing may vouch for them, and the clear must refuse.
+    expect(flag.hasRead(LIST_ID)).toBe(false)
+    const after = observer.getCurrentResult()
+    expect(after.isError).toBe(false) // status forged by the mark, as ever
+    expect(clearRefusalReason(state(after))).toBe('never-read')
+
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    expect(runClearDrafted(state(after), { clear, refuse })).toBe(false)
+    expect(clear).not.toHaveBeenCalled()
+    expect(refuse).toHaveBeenCalledWith('never-read')
+
+    unsubscribe()
+  })
+
+  it('R199 COUNTER-CONTROL — the same late read, NOT cancelled, does open the flag', async () => {
+    // Without this the test above would pass against a rig whose read never
+    // completes at all, which proves nothing about the abort check.
+    const late = lateFetch()
+    const { observer, unsubscribe } = observe()
+    await vi.waitFor(() => expect(late.started()).toBe(true), { timeout: 2000, interval: 5 })
+
+    late.resolveWith(['p1', 'p2'])
+    await settle(observer, 'success')
+
+    expect(observer.getCurrentResult().data).toEqual(['p1', 'p2'])
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+    expect(canClearDrafted(state(observer.getCurrentResult()))).toBe(true)
+    expect(late.calls()).toBe(1)
+
+    unsubscribe()
+  })
+
   /** A request that never answers but honours the signal, like the real one. */
   function hangingFetch() {
     let seen: AbortSignal | undefined
@@ -675,13 +768,226 @@ describe('createReadLandedFlag — "a read landed for THIS list"', () => {
   })
 
   it('cannot leave a stale TRUE behind when the list changes', () => {
-    // Why it holds an id rather than a boolean: switching lists must not
-    // inherit the previous list's permission, and there is no effect to race.
+    // Why it is keyed by id rather than a bare boolean: switching lists must
+    // not inherit the previous list's permission, and there is no effect to
+    // race — the only writers are the read and the cache.
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(false)
+    flag.signals.landed(OTHER_LIST_ID)
+    flag.signals.failed(OTHER_LIST_ID)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(false)
+  })
+
+  it('keeps each list its OWN landing — list A → list B → back to A (R200)', () => {
+    // The first cut held a single slot, so B's read evicted A's landing and
+    // going back to A inside `staleTime` refused a clear over marks that were
+    // on the screen: R200's symptom by a second route.
     const flag = createReadLandedFlag()
     flag.signals.landed(LIST_ID)
     flag.signals.landed(OTHER_LIST_ID)
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(true)
+  })
+
+  it('forgets a list when its cache entry goes away — and only that list', () => {
+    const flag = createReadLandedFlag()
+    flag.signals.landed(LIST_ID)
+    flag.signals.landed(OTHER_LIST_ID)
+    flag.forget(LIST_ID)
     expect(flag.hasRead(LIST_ID)).toBe(false)
     expect(flag.hasRead(OTHER_LIST_ID)).toBe(true)
+  })
+})
+
+describe('listIdFromDraftedKey — which cache removals the flag cares about', () => {
+  it('reads the list id out of a drafted key', () => {
+    expect(listIdFromDraftedKey(draftedKeys.list(LIST_ID))).toBe(LIST_ID)
+  })
+
+  it('is null for every other key, so no other query can clear a landing', () => {
+    expect(listIdFromDraftedKey(['auth', 'session'])).toBeNull()
+    expect(listIdFromDraftedKey(['lists', 'byUser', LIST_ID])).toBeNull()
+    expect(listIdFromDraftedKey(['players', 'drafted', LIST_ID])).toBeNull()
+    expect(listIdFromDraftedKey([...draftedKeys.all])).toBeNull() // no list id
+    expect(listIdFromDraftedKey([])).toBeNull()
+  })
+})
+
+/**
+ * **R200 — the flag has the CACHE's lifetime, not the MOUNT's.**
+ *
+ * `query-provider.tsx` keeps a read fresh for 60 s, so navigating away and back
+ * inside a minute re-renders the real marks off the cache with **no refetch**.
+ * A per-mount `useRef` came back `false` there, and both destructive controls
+ * refused with copy — *"have not loaded on this device"* — that flatly
+ * contradicted the marks on screen: the failure mode R197 exists to prevent.
+ *
+ * Each `mount()` below is one component instance: a fresh `QueryObserver` over
+ * the client-scoped flag, exactly as `useDraftMode` wires it. The client is
+ * built with the app's own defaults, and the pin below ties that number to
+ * `query-provider.tsx` so the two cannot drift apart silently.
+ */
+describe('R200 — a remount inherits the landing the cache inherited', () => {
+  let client: QueryClient
+
+  beforeEach(() => {
+    client = new QueryClient({
+      defaultOptions: { queries: { staleTime: 60 * 1000, refetchOnWindowFocus: false, retry: 1 } },
+    })
+  })
+
+  afterEach(() => {
+    client.clear()
+  })
+
+  const key = draftedKeys.list(LIST_ID)
+
+  /** One mount of `useDraftMode`, as far as node can go without a DOM. */
+  function mount(listId = LIST_ID) {
+    const flag = readLandedFlagFor(client)
+    const observer = new QueryObserver(client, draftedQueryOptions(listId, flag.signals))
+    const unmount = observer.subscribe(() => {})
+    return { flag, observer, unmount }
+  }
+
+  const settled = (observer: { getCurrentResult: () => { status: string } }, status: string) =>
+    vi.waitFor(() => expect(observer.getCurrentResult().status).toBe(status), {
+      timeout: 4000,
+      interval: 10,
+    })
+
+  const stateOf = (
+    flag: ReturnType<typeof createReadLandedFlag>,
+    result: { isError: boolean; isPending: boolean },
+    listId = LIST_ID,
+  ) => ({ isError: result.isError, isPending: result.isPending, hasRead: flag.hasRead(listId) })
+
+  it('the staleTime this finding turns on is the one the app actually sets', () => {
+    // If the provider's number changes, the rig above stops modelling the app
+    // and this line says so rather than the suite quietly testing fiction.
+    expect(code('src/components/providers/query-provider.tsx')).toContain('staleTime: 60 * 1000')
+  })
+
+  it('THE FINDING — land a read, unmount, remount inside staleTime: marks render AND the clear runs', async () => {
+    const fetchMock = respondWith(() =>
+      jsonResponse(200, { list_id: LIST_ID, drafted: ['p1', 'p2'] }),
+    )
+
+    const first = mount()
+    await settled(first.observer, 'success')
+    expect(first.flag.hasRead(LIST_ID)).toBe(true)
+    first.unmount() // navigate away — /app/lists, or the draft-mode board
+
+    const second = mount() // …and straight back in, well inside the minute
+    const rendered = second.observer.getCurrentResult()
+
+    // The real marks are on the screen, off the cache…
+    expect(toDraftedSet(rendered.data)).toEqual(new Set(['p1', 'p2']))
+    // …with no refetch, which is why nothing would ever reopen a mount-scoped
+    // flag: `refetchOnMount` does not refire over fresh data.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    // …and the clear is permitted, because the landing came with the cache.
+    expect(second.flag.hasRead(LIST_ID)).toBe(true)
+    expect(clearRefusalReason(stateOf(second.flag, rendered))).toBeNull()
+
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    expect(runClearDrafted(stateOf(second.flag, rendered), { clear, refuse })).toBe(true)
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(refuse).not.toHaveBeenCalled()
+
+    second.unmount()
+  })
+
+  it('COUNTER-CONTROL — a remount on a DIFFERENT list inherits nothing', async () => {
+    // The keying, at the level the hook uses it: permission is per list, so
+    // arriving at another list must not carry this one's.
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const first = mount()
+    await settled(first.observer, 'success')
+    first.unmount()
+
+    const flag = readLandedFlagFor(client)
+    expect(flag.hasRead(OTHER_LIST_ID)).toBe(false)
+    expect(
+      clearRefusalReason({ isError: false, isPending: false, hasRead: flag.hasRead(OTHER_LIST_ID) }),
+    ).toBe('never-read')
+  })
+
+  it('the landing dies with the cache entry it vouched for (gc / removeQueries)', async () => {
+    // The hazard a longer-lived flag introduces, closed. `removeQueries` is the
+    // same `QueryCache.remove` path that garbage collection takes after
+    // `gcTime` with no observers — without this, a cache collected while the
+    // user was elsewhere would leave `hasRead` true over an EMPTY cache, and an
+    // optimistic mark on the way back would forge the status and permit a clear
+    // over marks nobody had read. R195, again, by the back door.
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const first = mount()
+    await settled(first.observer, 'success')
+    expect(first.flag.hasRead(LIST_ID)).toBe(true)
+    first.unmount()
+
+    client.removeQueries({ queryKey: key, exact: true })
+
+    expect(readLandedFlagFor(client).hasRead(LIST_ID)).toBe(false)
+    expect(client.getQueryData(key)).toBeUndefined() // the cache really is gone
+  })
+
+  it('a whole-cache clear() takes it too — the wipe a sign-out reset would perform', async () => {
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const first = mount()
+    await settled(first.observer, 'success')
+    first.unmount()
+
+    client.clear()
+
+    expect(readLandedFlagFor(client).hasRead(LIST_ID)).toBe(false)
+  })
+
+  it('another query being removed leaves the landing alone', () => {
+    // The counter-control for the two above: if ANY removal cleared the flag,
+    // an unrelated eviction would refuse a clear the user is entitled to.
+    const flag = readLandedFlagFor(client)
+    flag.signals.landed(LIST_ID)
+    client.setQueryData(['auth', 'session'], null)
+    client.removeQueries({ queryKey: ['auth', 'session'], exact: true })
+    expect(flag.hasRead(LIST_ID)).toBe(true)
+  })
+
+  it('one flag per QueryClient, and never one shared between clients (SSR)', () => {
+    // Per client, not per module: `QueryProvider` builds a client per render,
+    // so on the server each REQUEST has its own — one visitor's landings can
+    // never answer for another's.
+    const other = new QueryClient()
+    expect(readLandedFlagFor(client)).toBe(readLandedFlagFor(client))
+    expect(readLandedFlagFor(other)).not.toBe(readLandedFlagFor(client))
+
+    readLandedFlagFor(client).signals.landed(LIST_ID)
+    expect(readLandedFlagFor(other).hasRead(LIST_ID)).toBe(false)
+    other.clear()
+  })
+
+  it('a genuinely failed refetch still closes it, across the remount (R195 holds)', async () => {
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const first = mount()
+    await settled(first.observer, 'success')
+    first.unmount()
+
+    respondWith(() => jsonResponse(401, { error: 'Unauthorized' })) // 4xx: no retry
+    const second = mount()
+    await second.observer.refetch().catch(() => {})
+    await vi.waitFor(() => expect(second.flag.hasRead(LIST_ID)).toBe(false), {
+      timeout: 2000,
+      interval: 10,
+    })
+
+    // React Query keeps the last data, so p1 is still on screen — and this is
+    // precisely the state a clear must refuse.
+    expect(second.observer.getCurrentResult().data).toEqual(['p1'])
+    expect(canClearDrafted(stateOf(second.flag, second.observer.getCurrentResult()))).toBe(false)
+
+    second.unmount()
   })
 })
 
@@ -874,19 +1180,29 @@ describe('the hook body wires those decisions in', () => {
     // The flag is threaded INTO the query — an options object built without it
     // raises no signals at all, and `hasRead` would then be false forever.
     expect(source).toContain('useQuery(draftedQueryOptions(listId, readLanded.signals))')
-    // …and the flag is created once per hook instance, not per render: a
-    // `useMemo` is a cache React may drop, and dropping it would refuse a clear
-    // the user is entitled to.
-    expect(source).toContain('useRef<ReadLandedFlag | null>(null)')
-    expect(source).toContain(
-      'if (flagRef.current === null) flagRef.current = createReadLandedFlag()',
-    )
+    // …and the flag comes from the QUERY CLIENT, never from the mount (R200):
+    // the marks it vouches for outlive the mount by `staleTime`/`gcTime`, so a
+    // mount-scoped flag refuses clears the user is entitled to.
+    expect(source).toContain('const readLanded = readLandedFlagFor(qc)')
+    expect(source).not.toContain('useRef')
+    // The flag is built once per client, and the cache's removals reach it.
+    expect(code(HOOK_FILE)).toContain('flagsByClient.set(client, flag)')
+    expect(code(HOOK_FILE)).toContain('client.getQueryCache().subscribe(')
   })
 
-  it('the queryFn raises landed/failed itself, and stays neutral on aborts', () => {
+  it('the queryFn raises landed/failed itself, and BOTH arms check the abort (R199)', () => {
     const source = code(HOOK_FILE)
-    expect(source).toContain('signals?.landed(listId)')
-    expect(source).toContain('if (!signal.aborted) signals?.failed(listId)')
+    // Every raise of either signal, with the line it sits on — so an unguarded
+    // one re-introduced anywhere in the file reddens this, rather than the pin
+    // being satisfied by the one guarded call that happens to remain.
+    const landed = source.match(/[^\n]*signals\?\.landed\(listId\)/g) ?? []
+    const failed = source.match(/[^\n]*signals\?\.failed\(listId\)/g) ?? []
+    expect(landed).toHaveLength(1)
+    expect(failed).toHaveLength(1)
+    // R199: the SUCCESS arm's guard is the fix. A read that resolves after its
+    // own cancellation was discarded by React Query and must vouch for nothing.
+    expect(landed[0]).toContain('if (!signal.aborted)')
+    expect(failed[0]).toContain('if (!signal.aborted)')
     // The signal reaches the request, or "cancelled" would not mean cancelled.
     expect(source).toContain('fetchDraftedIds(listId, signal)')
   })
