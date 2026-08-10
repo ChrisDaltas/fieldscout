@@ -1174,3 +1174,41 @@ counter-controls green.
 | **R204** — §5's crasher list was promoted 9 → 10 by adding `025`; **factually wrong** | should-fix | ✅ **FIXED 2026-08-10 (orchestrator).** Verified directly rather than adjudicated: 025 returns `Wstat: 0, Tests: 120, Failed: 2` — whole plan runs, backend survives — and contains **zero** `set local role anon`. §5 restored to 9, with 025's two real failures (tests 46, 79) recorded as **M2 work, not waived** |
 | **R205** — the `test:stack` flake family is one member short; `draft-core-db` went red 1 of 6 runs, green 3/3 in isolation, untouched by this diff | nit | Open. Add `draft-core-db` to the §5 family note |
 | **R206** — nothing in the flag machinery is user-scoped; a landing survives `signOut()` because `use-auth.ts` never clears the `QueryClient`. **Not reachable today** — every sign-in path is a hard navigation that tears the client down — but the code comment already anticipates a sign-out reset that does not exist | nit | Open. One line of insurance: `qc.clear()` in `signOut()` |
+
+---
+
+### Ruling — 2026-08-10: the drafted interaction, and why it closes four findings
+
+Chris settled how drafted actually works, and it dissolves the bug class that
+consumed three fix rounds rather than guarding against it:
+
+> *"No longer will the user have to turn on 'draft mode' within a list to check
+> players off as drafted, the default mode of any list is that the user can
+> click that box and the player will take on the 'drafted' appearance. We can
+> delete the existing 3-state cycle."*
+
+**The handoff already agreed** — verified, not assumed: side-by-side rows carry
+a *permanent* drafted checkbox (§"Side by side"), card view shows it on hover
+and keeps it once drafted (§"Cards"), the row menu **omits** "Mark drafted"
+because the checkbox covers it (§"Cards"), and drafted renders as a visual
+treatment (`--surface-sunken` recessed row; 45% dim in the pop-out). **There is
+no draft-mode gate anywhere in the design.** The v1 toggle was never in it.
+
+**What this changes**
+
+1. **A view control must never delete.** `list-detail-view.tsx`'s Draft-mode
+   toggle called `clearDrafted()` on toggle-off. That is the single gesture
+   **R190, R195, R199 and R203 all orbited** — four findings, three fix rounds,
+   one root cause. Removed at LV.1.3 (2026-08-10); deleting is now only ever
+   explicit, via "Reset list", which keeps the read guard. The old pin
+   asserting the toggle *does* clear was inverted, and shown falsifiable:
+   restoring the destructive line reddens it, reverting turns it green.
+2. **`use-board-marks.ts` is deleted, not preserved** — scheduled with LV.4.4,
+   under §1's boards amendment.
+3. **The old and new side-by-side are different surfaces.** Worth recording
+   because it was mis-stated during LV.1.3: the *old* `/app/lists/draft-mode`
+   **cannot mark drafted at all.** `board-column.tsx:35` only *reads*
+   `useDraftMode(list.id)` for the strikethrough and the "N drafted" count;
+   its taps write the separate browser-only 3-state. So the surface most likely
+   to be used on draft night is the one that never persisted — and the *new*
+   side-by-side (Round 2) fixes that by carrying the real checkbox.

@@ -668,11 +668,14 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
               <Button
                 variant={draft.enabled ? 'dark' : 'stroke'}
                 size="sm"
-                onClick={() => {
-                  const next = !draft.enabled
-                  draft.setEnabled(next)
-                  if (!next) draft.clearDrafted()
-                }}
+                // Toggling this OFF used to delete every drafted mark. That was
+                // defensible when marks were throwaway browser state; since
+                // LV.1.2 they are durable and cross-device, so a *view* control
+                // silently destroying server data is not (Chris, 2026-08-10 —
+                // and the v2 design has no draft-mode gate at all: the checkbox
+                // is permanent, handoff §"Side by side"/§"Cards"). Deleting is
+                // now only ever an explicit act — "Reset list" below.
+                onClick={() => draft.setEnabled(!draft.enabled)}
               >
                 <Icon name="table" size={13} /> Draft mode
               </Button>

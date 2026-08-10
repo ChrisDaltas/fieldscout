@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.5 — 2026-08-09. UI/UX only, with exactly two data exceptions.**
+> **v3.6 — 2026-08-10. UI/UX only, with exactly two data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -33,7 +33,7 @@
 | --- | --- |
 | **UI/UX only, two exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2) and (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**). Nothing else. See §2.2. |
 | **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
-| **Boards are off limits** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**`, `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`. A list is not a board: **lists persist forever, boards are season-bound.** |
+| **Boards are off limits — one amendment** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**` or `src/stores/board-labels-store.ts`. **Amended 2026-08-10:** `src/components/lists/draft-mode/**` is reopened for **deletion of the 3-state cycle only** (`use-board-marks.ts` and its wiring), superseded by the permanent drafted checkbox (D2). Nothing else in that tree is in scope. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
 | **Color** | Implement from **tokens, never the handoff's literal hex**. The prototype is token-driven (19 × `var(--accent)`, zero hardcoded blues); its `#1F6BF0` describes what that token resolved to in *their* bundle. The app's `accent` is `#3d5cff`. |
 | **Flag** | All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout. |
@@ -98,9 +98,17 @@ implementations exist:
 — which is exactly the semantics we want. **Nothing about its behavior
 changes; only where it stores.** That is the whole of LV.1.3.
 
-The other two belong to **board** surfaces and are not opened at all (§1).
-`board-labels-store` being global-per-player is precisely why it is the wrong
-model to copy here, whatever the handoff says.
+`board-labels-store` (Big Board) stays untouched — global-per-player is
+precisely the wrong model here, whatever the handoff says.
+
+`use-board-marks.ts` is **deleted, not preserved** (Chris, 2026-08-10). Its
+tap-cycle is superseded by the permanent drafted checkbox, and keeping both
+would leave two overlapping mark systems rendering in the same column with
+different lifetimes — which is what the old `/app/lists/draft-mode` does
+today: it *reads* `use-draft-mode`'s marks for the strikethrough and count,
+while its own taps write a separate browser-only 3-state. Chris: *"I think
+there is a use case for that functionality but not at this time with our list
+feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 
 ### 2.2 Closing the data-model gap
 
@@ -197,8 +205,31 @@ model to copy here, whatever the handoff says.
   top would be speculative. Reusing the same list next season means clearing
   it, which is what the manual **"Clear drafted"** in the options menu is for.
 
-  Round 1 rewires **`use-draft-mode.ts` only** (§2.1). Its per-list semantics
-  are already right; swap localStorage for the table and stop.
+  **There is no draft-mode gate** (Chris, 2026-08-10). The drafted checkbox is
+  **always available on any list** — it is permanent in side-by-side rows
+  (handoff §"Side by side"), appears on hover in card view and stays once
+  drafted (§"Cards"), and the row menu deliberately omits "Mark drafted"
+  because the checkbox covers it. Drafted is a **visual treatment**: recessed
+  row (`--surface-sunken`), dimmed to 45% in the pop-out. The legacy "Draft
+  mode" toggle is a v1 concept and does not survive into v2.
+
+  **Toggling a view control must never delete.** The legacy toggle-off called
+  `clearDrafted()`, which was defensible while marks were throwaway browser
+  state and is not now they are durable and cross-device. That single gesture
+  is what R190, R195, R199 and R203 all orbited — four findings across three
+  fix rounds, one root cause. Removed from the toggle at LV.1.3 (2026-08-10);
+  **deleting is only ever explicit**, via "Reset list" / "Clear drafted",
+  which keeps the read guard.
+
+  **The 3-state board cycle is deleted, not preserved.** `use-board-marks.ts`
+  (tap-cycle: *marked by me* / *drafted by others*, localStorage, keyed by the
+  set of lists on the board) is superseded by the checkbox. Chris: *"I think
+  there is a use case for that functionality but not at this time with our
+  list feature."* This **amends the boards-off-limits rule** for that one file
+  — see §1.
+
+  Round 1 rewires **`use-draft-mode.ts`** (§2.1): its per-list semantics are
+  already right; swap localStorage for the table.
 
 - **D3 — Display preferences are session state, deliberately unsaved**
   (Chris, 2026-08-09). `view`, `cols`, cost-band labels and `budget` live in
@@ -307,7 +338,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.4.1 | Loading / empty / error / overflow states across both screens | LV.3.* |
 | LV.4.2 | AI list generation + persona surfaces restyled into the new language (CLAUDE.md: never leave them in the old style, never remove them) | LV.3.* |
 | LV.4.3 | Public share view in the new language, still server-rendered (D7) | LV.3.* |
-| LV.4.4 | Flag flip + retire the old components | all |
+| LV.4.4 | Flag flip + retire the old components — including **deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle** (D2; §1's boards amendment scopes this), and correcting that file's now-false header comment (R192) | all |
 
 ---
 
@@ -330,7 +361,10 @@ One task = one Builder session = one PR. `/build-next` drives.
 
 ## 6. Round 2 (deferred)
 
-Side-by-side compare, and pop-out windows. Both stay UI-only:
+Side-by-side compare, and pop-out windows. **The new side-by-side is where
+draft night actually happens** — its rows carry a permanent drafted checkbox
+(handoff §"Side by side"), so it writes real account-persisted marks rather
+than the browser-only tap-cycle the old board used. Both stay UI-only:
 `player-windows-store.ts` already models floating windows with positions
 persisted across reloads and back-to-front z-ordering, which is most of the
 pop-out infrastructure. Pop-outs are hosted by the **app shell** so they
@@ -355,6 +389,15 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.6 (2026-08-10)** — **Chris settles the drafted interaction, and it
+  dissolves a whole bug class.** There is no draft-mode gate: the checkbox is
+  permanent on any list and drafted is a visual treatment (the handoff already
+  said so — the v1 toggle was never in the design). A *view* control therefore
+  must never delete, so the legacy toggle-off no longer calls `clearDrafted()`
+  — the single gesture R190/R195/R199/R203 all orbited. And the 3-state board
+  cycle (`use-board-marks.ts`) is **deleted**, not preserved, which amends the
+  boards-off-limits rule for that one file. D2 and §1 updated.
 
 - **v3.5 (2026-08-09)** — **Erratum + ruling.** D4 claimed widening the tier
   vocabulary was "not a schema change" because the column is `text`. That was

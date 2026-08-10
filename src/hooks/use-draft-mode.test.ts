@@ -1225,10 +1225,26 @@ describe('the hook body wires those decisions in', () => {
     expect(compact.indexOf('toast(')).toBeGreaterThan(compact.indexOf('draft.clearDrafted()'))
   })
 
-  it('turning Draft mode off still clears — §4 decision 2 is still wired', () => {
-    // The counter-control for the pin above: a "fix" that stops calling the
-    // clear at all would satisfy every refusal assertion in this file.
-    expect(code(VIEW_FILE)).toContain('if (!next) draft.clearDrafted()')
+  it('turning Draft mode off does NOT clear — deleting is only ever explicit', () => {
+    // Reversed 2026-08-10 (Chris). §4 decision 2 used to require the opposite,
+    // and it is the single gesture R190/R195/R199/R203 all orbited: a *view*
+    // control that silently destroyed durable, cross-device marks. It was
+    // defensible while marks were throwaway browser state; since LV.1.2 they
+    // are not. The v2 design settles it — there is no draft-mode gate at all,
+    // the drafted checkbox is permanent (handoff §"Side by side" / §"Cards").
+    //
+    // So the toggle must show and hide, never delete. "Reset list" is the one
+    // explicit destructive control, and it keeps the guard.
+    const view = code(VIEW_FILE)
+    expect(view).toContain('onClick={() => draft.setEnabled(!draft.enabled)}')
+    expect(view).not.toContain('if (!next) draft.clearDrafted()')
+    // `clearDrafted` must survive in exactly one call site now — the reset.
+    expect(view.match(/draft\.clearDrafted\(\)/g) ?? []).toHaveLength(1)
+    // Counter-control: the explicit reset must still call it, or this pin would
+    // pass against a build where nothing can ever clear.
+    expect(arrowBody(code(VIEW_FILE), 'const handleReset = () => {', VIEW_FILE)).toContain(
+      'draft.clearDrafted()',
+    )
   })
 
   it('the slicers return real bodies (control for the pins above)', () => {
