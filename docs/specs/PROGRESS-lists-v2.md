@@ -739,13 +739,28 @@ the first one **does** block the leagues M2 DoD, which includes
   the backend (`signal 11: Segmentation fault` in `docker logs
   supabase_db_fieldscout`), which puts the DB into recovery mode so every
   later file reports `FATAL: the database system is in recovery mode` —
-  hence `Files=29, Tests=20, Result: FAIL`. Run file-by-file, **10 of 29
-  crash**: 002, 013, 014, 015, 016, 018, 020, 022, **025**, 026; the other 19
-  pass. (**025 added at the LV.1.3 round-3 fix session**, 2026-08-10, on a
-  file-by-file sweep of all 29 — same idiom, same crash. Re-confirmed
-  pre-existing that session by A/B: 002 reproduces the backend crash with the
-  round-3 diff stashed *and* on `main` itself, and this branch touches no
-  pgTAP file other than 028.)
+  hence `Files=29, Tests=20, Result: FAIL`. Run file-by-file, **9 of 29
+  crash**: 002, 013, 014, 015, 016, 018, 020, 022, 026. (Re-confirmed
+  pre-existing at the LV.1.3 round-3 session by A/B: 002 reproduces the
+  backend crash with the round-3 diff stashed *and* on `main` itself, and
+  that branch touches no pgTAP file other than 028.)
+
+  > ⚠️ **025 is NOT a crasher — corrected 2026-08-10 (orchestrator, R204).**
+  > The round-3 session added it to this list; that was wrong, and the error
+  > mattered because it filed two *genuine* failures as a harness crash, which
+  > is exactly how they get waved through at the M2 DoD. Measured directly:
+  > `npx supabase test db supabase/tests/025_mock_draft_mode.sql` →
+  > `Wstat: 0, Tests: 120, Failed: 2` — the file **runs its whole plan** and
+  > the backend stays up; contrast 002, which returns `wstat 512` and leaves
+  > `database system was not properly shut down; automatic recovery in
+  > progress` in the container log. The "same idiom" attribution was also
+  > false: `grep -c "set local role anon" supabase/tests/025_mock_draft_mode.sql`
+  > → **0**.
+  >
+  > **025 has two real, pre-existing failing assertions — tests 46 and 79**
+  > (CPU-autopick behaviour). They belong to leagues M2, not Lists v2, and are
+  > **not** covered by the crash waiver above. Whoever resumes M2 must treat
+  > them as failures to fix, not noise to skip.
   Every crash is the same idiom — `throws_ok(..., '42501')` where the error
   is *permission denied for function* on a REVOKEd SECURITY DEFINER routine
   under `set local role anon`. Proven pre-existing by A/B: reproduced with
@@ -1137,3 +1152,25 @@ A/B on `main`.
 | **R200** — `use-draft-mode.ts:416-418`: `hasRead` lives in a per-**mount** `useRef`, but the cached read outlives the mount (`staleTime: 60_000`). Remounting inside 60 s renders the real marks while `hasRead` is false, so the clear refuses with copy that contradicts the screen — the exact failure mode R197 was filed to eliminate. Reachable by ordinary navigation. **Not** data loss, not permanent | **should-fix** | **RESOLVED (round 3, PR #112).** The flag now has the cache's lifetime: `readLandedFlagFor(client)`, one flag per **QueryClient**, held in a module-scoped `WeakMap`. Two deliberate departures from the literal "module-scoped singleton" the finding proposed, both because the singleton is not quite enough: (a) it is **keyed per list** (a `Set`, not one slot) — a single slot fixes `A → back to A` but re-breaks `A → B → back to A` inside `staleTime`, R200's own symptom by a second route; (b) it hangs off the **client**, not the module, so `QueryProvider`'s per-request client on the server cannot share one visitor's landings with another's. **Every route back to `false` is pinned**: list switch (the keying), read failure (`signals.failed`, R195's rule unchanged), cancellation (R199), and — the hazard a longer-lived flag introduces — **the cache entry going away**, via a `QueryCache` subscription that drops the landing on `removed` (gc after `gcTime`, `removeQueries`, and `clear()` — the wipe a future sign-out cache reset would perform). Without that last one a cache collected while the user was elsewhere would leave `hasRead` true over an *empty* cache, and one optimistic mark on the way back forges the status: R195 by the back door. **Live rig, real rows:** pre-fix remount → `{renderedMarks:['vitest-rvw-p1','vitest-rvw-p2'], dbRows:[same], hasRead:false, refusal:'never-read', canClear:false, fetchCalls:1}` — the Reviewer's measurement reproduced exactly, `fetchCalls:1` confirming `refetchOnMount` never reopens it; with the fix, same sequence → `hasRead:true, refusal:null, clearRan:true`, rows 2 → **0**. **Probes:** the per-client cache made to miss → **2 RED**; the cache-removal subscription made a no-op → **2 RED**; both reverted → 69/69. The `staleTime` the finding turns on is itself pinned against `query-provider.tsx`, so the rig cannot drift into testing fiction |
 | **R201** — `list-detail-view.tsx:339-343`: `clearDrafted()` returns `true` when the DELETE is *issued*, not when it succeeds, so the success toast can precede a failing DELETE. Standard optimistic-UI behavior, but §6's "claims the reset only when it did" reads stronger than the code guarantees | nit | **RESOLVED by rewording (round 3)** — the Reviewer's first option, chosen because moving the toast into `onSuccess` would trade an optimistic surface CLAUDE.md endorses for a slower one and change LV.3.9's contract. The R195 second-half row below now says **"claims the reset only when the clear was permitted and issued"**, and the comment at `list-detail-view.tsx` states the same, plus the fact that makes it safe: a DELETE that then fails is **not** silent — the mutation rolls the cache back, the marks reappear, and the hook raises its own destructive *"Could not update drafted"* toast. What the toast over-claims is timing, not outcome |
 | **R202** — `supabase/tests/028_list_player_drafted.sql:441` (LV.1.2's file, unmodified here): the final assertion counts **all** rows in `list_player_drafted`, so 028 reports a false red whenever another suite holds rows — including the `test:stack` run §5 tells you to run. Verified: concurrent → `not ok 47 … have: 8 want: 5`; alone immediately after → 49/49 | nit | **RESOLVED (round 3, PR #112) — and it was TWO assertions, not one.** Reproducing it deterministically (3 committed rows held for a user outside 028's fixture set, instead of racing a `test:stack` run) reddened **both** privileged unscoped counts: the epilogue at `:441` (`have: 8 want: 5` — the Reviewer's exact numbers) **and** `:273`, the section-C total-rows guard (`have: 6 want: 3`), which the finding did not name. Both are now scoped to the suite's own three `user_id`s, as the surrounding assertions already were; the other counts in the file run under RLS as a suite user or under a suite-specific `player_id`, so they were never exposed. **Both directions shown:** unscoped + 3 foreign rows → `Failed 2/49`; scoped + the *same* 3 foreign rows still held → **49/49**; holder removed, alone → **49/49**. Editing a SQL **test** fixture is not a schema change — migration 079 is untouched |
+
+#### Round-3 verification — 2026-08-10 (fresh Reviewer, diff `e94aa45..67c4c28`) — **VERDICT: FIX-THEN-MERGE**
+
+*Gates re-run independently: type-check clean · lint exit 0 · `test:unit` **43 / 763** ·
+`test:gate` 24/24 · pgTAP 028 49/49 alone **and** with foreign rows held · `test:stack` ×6,
+one red in the §5 leagues flake family. Scope clean — 5 files, no migration edit, no
+schema, no new route, nothing off-limits.*
+
+**R199 and R200 are genuinely closed.** The Reviewer added an *extra unguarded* raise of
+`landed` elsewhere in the `queryFn` → **3 RED**, proving the pin is not
+substring-satisfiable. It independently exercised R200's other routes: 50 calls to
+`readLandedFlagFor` → **1** cache listener (no accumulation), gc / `clear()` /
+`removeQueries` each drain a landing, a foreign key's removal does not, two clients never
+share a flag, and an optimistic `setQueryData` with no read never opens one. All four
+counter-controls green.
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| **R203** — `use-draft-mode.ts:435-439`: the `QueryCache` subscription forgets a landing on **any** `removed` event carrying a drafted key, including a *stale* query object destroyed while a live entry at the same key still holds the data (`query-core` deletes only when `queryInMap === query` but notifies either way). Production route: a failed mark's `rollback(undefined)` calls `removeQueries` on a mounted query; the rebuild moves the observer off `q1`, the refetch lands, and `gcTime` later `q1`'s gc **silently flips `hasRead` to false over a live cache** — the clear is then refused with "have not loaded on this device" while the marks are on screen. **Not data loss**; self-heals on the next mark or reload. Falsifies this round's own claim that "every route back to `false` is pinned" | **should-fix** | **Open.** Fix direction: forget only when the key has no entry left — `if (listId !== null && !client.getQueryCache().get(event.query.queryHash)) flag.forget(listId)` |
+| **R204** — §5's crasher list was promoted 9 → 10 by adding `025`; **factually wrong** | should-fix | ✅ **FIXED 2026-08-10 (orchestrator).** Verified directly rather than adjudicated: 025 returns `Wstat: 0, Tests: 120, Failed: 2` — whole plan runs, backend survives — and contains **zero** `set local role anon`. §5 restored to 9, with 025's two real failures (tests 46, 79) recorded as **M2 work, not waived** |
+| **R205** — the `test:stack` flake family is one member short; `draft-core-db` went red 1 of 6 runs, green 3/3 in isolation, untouched by this diff | nit | Open. Add `draft-core-db` to the §5 family note |
+| **R206** — nothing in the flag machinery is user-scoped; a landing survives `signOut()` because `use-auth.ts` never clears the `QueryClient`. **Not reachable today** — every sign-in path is a hard navigation that tears the client down — but the code comment already anticipates a sign-out reset that does not exist | nit | Open. One line of insurance: `qc.clear()` in `signOut()` |
