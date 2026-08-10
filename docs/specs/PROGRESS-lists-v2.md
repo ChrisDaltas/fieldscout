@@ -40,7 +40,7 @@ are all checked.
 
 - [x] **LV.1.1** — `featureFlags.listsV2` + route-level branch so old and new Lists coexist (2026-08-09)
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
-- [x] **LV.1.3** — `use-draft-mode.ts` points at the LV.1.2 server source; no file under `src/components/lists/draft-mode/**` was touched, and that surface's account-persisted marks were *shown* flowing through the shared hook (§3 Q1). Folded in nits R176 + R178 (2026-08-09)
+- [x] **LV.1.3** — `use-draft-mode.ts` points at the LV.1.2 server source; no file under `src/components/lists/draft-mode/**` was touched, and that surface's account-persisted marks were *shown* flowing through the shared hook (§3 Q1). Folded in nits R176 + R178; review findings **R190–R194** resolved on the same branch — the durable clear now refuses marks the read never delivered (2026-08-09)
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
 - [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
@@ -67,7 +67,7 @@ are all checked.
 - [ ] **LV.4.1** — loading / empty / error / overflow states (LV.3.*)
 - [ ] **LV.4.2** — AI list generation + persona surfaces restyled (LV.3.*)
 - [ ] **LV.4.3** — public share view, still server-rendered (LV.3.*)
-- [ ] **LV.4.4** — flag flip + retire old components (all)
+- [ ] **LV.4.4** — flag flip + retire old components (all). **Carries one deferred correction (R192, filed by the LV.1.3 Reviewer):** `src/components/lists/draft-mode/use-board-marks.ts:15-17` says its marks are "UI-only state, never written to the DB — same philosophy as `use-draft-mode.ts`". That comparison went **false** at LV.1.3: `use-draft-mode.ts` now writes to `list_player_drafted`. LV.1.3 correctly did not edit it (the boards rule binds the diff, not just the intent), so the sentence must be corrected by the first task that legitimately opens `draft-mode/**` — this one
 
 **Lane note:** LV.1.1, LV.1.2, LV.1.4 and LV.1.5 are independent and may be
 picked in any order. LV.1.2 is the only schema task in the build.
@@ -565,6 +565,16 @@ This section records decisions made **during** the build.
      place where a pre-existing gesture became a durable deletion. Exercised in
      the browser: "Reset list" → `remaining_marks = 0` in the DB.
 
+     **Amended by R190 (LV.1.3 review) — it clears only marks it has seen.**
+     Making the clear durable crossed it with item 4's silent degradation, and
+     the pair was a data-loss path: with the GET failing the page shows zero
+     drafted, and the next toggle-off DELETEd the real rows (measured live,
+     2 → 0). `clearDrafted` now refuses while the read is errored or still in
+     flight, and toasts. The gesture is unchanged in every state where the
+     marks are known — including a background refetch, which keeps
+     `status: 'success'` — so this narrows the clear to the honest case rather
+     than changing what the button does.
+
   3. **The write is optimistic with a rollback AND a toast.** The consumers
      handle no errors — `toggleDrafted` returns `void`. A failed POST that only
      silently un-sticks the checkbox is precisely "nothing happened means it
@@ -572,6 +582,11 @@ This section records decisions made **during** the build.
      A same-tick double-tap converges rather than inverting, because LV.1.2's
      wire carries a desired STATE: both taps read the pre-mutation cache and
      send the same value, which is a no-op, not a flip. Noted in the hook.
+
+     **R191: that convergence claim is now falsifiable.** It was asserted here
+     and pinned nowhere — inverting the decision inside the hook body passed
+     the entire gate. The decision is the exported `desiredStateFor`, and the
+     double-tap property is a test.
 
   4. **The failure path is degradation, and the pin says what actually holds it
      up.** Q1 consequence 2 requires a failed read to render as "no marks". The
@@ -599,6 +614,17 @@ This section records decisions made **during** the build.
   forbids `throwOnError` reddened the pin forbidding it — a source pin must
   read the code, not the prose about it.
 
+  **R191 corrected the load-bearing half of that argument: `type-check` pins
+  the return SHAPE, not behavior.** Anything left as a decision *inside* the
+  hook body is pinned by nothing at all — measured, twice, each a total feature
+  break passing the whole gate green. The rule this build now follows: if the
+  hook body decides something, export the decision (`desiredStateFor`,
+  `canClearDrafted`, `runClearDrafted`) and leave the body as wiring, then pin
+  the wiring with `callbackBody`, which slices the callback out of the
+  comment-stripped source instead of scanning the whole file (R172's miss
+  window). Adding jsdom + `@testing-library/react` remains the real fix and
+  remains out of scope for a UI task.
+
 - **LV.1.5 (2026-08-09) — the bucket vocabulary is designed but NOT decided.**
   The LV.1.5 task text directs the wire vocabulary to be recorded here, since
   LV.3.2, LV.3.5 and LV.3.6 all inherit it. It is **not** recorded here, because
@@ -622,6 +648,12 @@ This section records decisions made **during** the build.
   (and correctly *not* showing it on a second list sharing the same players),
   the legacy detail view rendering intact under a real 500 from the drafted
   route, and the old localStorage key left inert with no migration path.
+
+  **What the review then found, and it is the lesson worth carrying (R190):**
+  each of those three consequences was accepted on its own, and the *pair* of
+  them — a silent failed read plus a clear that had just become durable — was a
+  data-loss path neither review nor build had priced. Consequences accepted
+  singly still have to be crossed with each other before a task is done.
 
 - **LV.1.5 — RESOLVED 2026-08-09, no longer a blocker.** Q2 was ruled: widen
   the CHECK. The finding stands as recorded — `list_players_tier_check`
@@ -791,11 +823,11 @@ Three nits recorded, **not fixed**:
 
 | Finding | Severity | Disposition |
 | --- | --- | --- |
-| **R176** — `drafted-service.ts` `listDrafted` (GET) still collapses "you hold no marks" with "you asked on behalf of someone you cannot speak for" into `200 {drafted: []}` — the exact shape R175's contract forbids eleven lines above. Reachability is identical to the un-mark path that got a hard 403, so the asymmetry now lives inside one file | nit | **RESOLVED at LV.1.3** (PR #112). `listDrafted` now calls `assertCallerIs` when the read comes back empty — same lazy placement, same 403 `CANNOT_MARK_MESSAGE`, so the read path and the un-mark path finally give the same answer to the same question. Three new stack tests: the 403 (with a privileged positive control proving the marks it failed to read really exist), a **counter-control** that a rightful caller holding genuinely zero marks is still a plain `200 {drafted: []}`, and one showing a non-empty read is untouched because the guard is lazy. **Probe:** guard removed → **3 RED**; reverted → 32/32 |
+| **R176** — `drafted-service.ts` `listDrafted` (GET) still collapses "you hold no marks" with "you asked on behalf of someone you cannot speak for" into `200 {drafted: []}` — the exact shape R175's contract forbids eleven lines above. Reachability is identical to the un-mark path that got a hard 403, so the asymmetry now lives inside one file | nit | **RESOLVED at LV.1.3** (PR #112). `listDrafted` now calls `assertCallerIs` when the read comes back empty — same lazy placement, same 403 `CANNOT_MARK_MESSAGE`, so the read path and the un-mark path finally give the same answer to the same question. Three new stack tests: the 403 (with a privileged positive control proving the marks it failed to read really exist), a **counter-control** that a rightful caller holding genuinely zero marks is still a plain `200 {drafted: []}`, and one showing a non-empty read is untouched because the guard is lazy. **Probe:** guard removed → **3 RED**; reverted → 32/32. **Reachability, stated plainly (R193, LV.1.3 review):** every handler in `src/app/api/lists/[id]/drafted/route.ts` passes `user.id` twice, so `verifiedUserId === userId` by construction and the guard returns `null` without consulting reality — proved directly, `listDrafted(clientA, listId, userB, userB)` → **200** from a client that is not B. This is a **service-layer contract for non-route callers**; through the shipped route it is tautological, so nothing here promises a 403 the API will ever return. Not a regression: pre-R178 the fallback called `getUser()` on the same client and also always matched |
 | **R177** — two imprecisions in the newly-amended honesty text: 028's break map says the 013 substitution fails "the 067 pin and nothing else" when it measurably fails **two** (38 + the total-rows epilogue 47), disagreeing with PROGRESS §6 which records both; and 079's banner cites `drafted-service.test.ts` as corroborating green when that suite drives a `noDatabase` Proxy and **structurally cannot** redden for an RLS change | nit | **Open.** Fix direction: "assertion 38, plus the downstream epilogue count"; cite the stack suite alone as the DB-reaching green |
-| **R178** — the lazy guard adds an `auth.getUser()` round-trip on the legitimate idempotent-replay path, which this file's own header says to expect (optimistic checkbox retries); the route proved the same identity one call earlier | nit | **RESOLVED at LV.1.3** (PR #112). LV.1.3's hook drives the replay path on every un-mark, so the round-trip stopped being theoretical. `assertCallerIs` takes an optional `verifiedUserId`; all three route handlers pass `user.id` twice — once as the marks' owner, once as the identity they already resolved — and the comparison happens in memory. Callers that have proven nothing (including this suite's deliberately-mismatched drivers) keep the `auth.getUser()` fallback unchanged, so R175's pins stay live. The trust boundary is documented, not hand-waved: a caller could thread an unverified id and turn the 403 into a 200 `changed:false`, which costs nothing real because 079's RLS — not this function — stops the rows moving. **Measured with a `vi.spyOn` on the real client**: threaded empty read → `getUser` **0 calls**; identical unthreaded read → **≥1**; threaded mismatch → 403 with **0 calls**. **Probe:** short-circuit removed → **4 RED**; reverted → 32/32 |
+| **R178** — the lazy guard adds an `auth.getUser()` round-trip on the legitimate idempotent-replay path, which this file's own header says to expect (optimistic checkbox retries); the route proved the same identity one call earlier | nit | **RESOLVED at LV.1.3** (PR #112). LV.1.3's hook drives the replay path on every un-mark, so the round-trip stopped being theoretical. `assertCallerIs` takes an optional `verifiedUserId`; all three route handlers pass `user.id` twice — once as the marks' owner, once as the identity they already resolved — and the comparison happens in memory. Callers that have proven nothing (including this suite's deliberately-mismatched drivers) keep the `auth.getUser()` fallback unchanged, so R175's pins stay live. The trust boundary is documented, not hand-waved: a caller could thread an unverified id and turn the 403 into a 200 `changed:false`, which costs nothing real because 079's RLS — not this function — stops the rows moving. **Measured with a `vi.spyOn` on the real client**: threaded empty read → `getUser` **0 calls**; identical unthreaded read → **≥1**; threaded mismatch → 403 with **0 calls**. **Probe:** short-circuit removed → **4 RED**; reverted → 32/32. **Upheld at the LV.1.3 review** — the Reviewer probed a caller threading a lie and confirmed the trade: honesty is lost, authority is not, because 079's RLS is the enforcement. **And (R193) both guards are unreachable through the shipped route** — all three handlers pass `user.id` twice, so the comparison is tautological there; the guards exist for non-route callers |
 
-### LV.1.3 — 2026-08-09 (PR #112) — awaiting review
+### LV.1.3 — 2026-08-09 (PR #112) — verdict **FIX-THEN-MERGE**
 
 *Builder session. `use-draft-mode.ts` repointed at LV.1.2's server source
 (§2.1, D2, §3 Q1), plus the two LV.1.2 nits that live in this code path —
@@ -823,6 +855,60 @@ boundary — then the probe was reverted and the mark came back. **Consequence 1
 likewise**: `/app/lists/draft-mode` shows the account-persisted mark struck
 through with "1 drafted", through zero edits to that tree, and correctly shows
 **no** drafted count on a second list sharing four of the same players.
+
+#### Review — 2026-08-09 (fresh Reviewer, red-team brief) — **R190–R194: two should-fix, three nits, no blockers**
+
+*Verified against plan v3.5 §2.1, **D2**, §3 **Q1** and the falsifiability
+floor. The R178 trust boundary was **upheld** (the Reviewer probed a lying
+caller: honesty is lost, authority is not — 079's RLS still enforces), and no
+second crash vector for Q1 consequence 2 was found. Neither is to be
+redesigned.*
+
+***The finding that mattered (R190): a silent, durable data-loss path that
+nobody priced, because it lives in the intersection of two separately-accepted
+consequences.*** *The Reviewer ran it live on the flag-OFF legacy view: 2 real
+rows in `list_player_drafted` → the GET forced to 500 → the page renders with
+**no badge, no strikethrough, no toast, no console error** ("zero drafted",
+from the user's side) → one click of **Draft mode**, a view-mode toggle that
+`list-detail-view.tsx:659` wires straight to `clearDrafted()` → **0 rows**,
+permanently, on every device. The codebase already had the right instinct
+elsewhere: the other destructive control, "Reset list", measures as `disabled`
+in that same state because it is gated on `draftedCount === 0`. Only the toggle
+path lacked a guard.*
+
+***The second (R191): the hook body's two decidable wiring facts were pinned by
+nothing.*** *`type-check` pins the return **shape**, not behavior — so the PR's
+own §4 decisions asserted behavior no suite could falsify. Two probes, each a
+total feature break, each fully green: inverting `toggleDrafted`'s desired
+state (no player can ever be marked; decision 3's "a same-tick double-tap
+converges" becomes false) and making `clearDrafted` a no-op (decision 2's
+"turning draft mode off still clears the marks" becomes false) — both passed
+type-check, `test:unit` **715/715** and `drafted-api-db` **32/32**.*
+
+#### Resolution — 2026-08-09 (Builder, same branch `feat/LV.1.3-drafted-hook-server-source`)
+
+*All five addressed on the same branch; nothing escalated, no ruling needed.
+Both should-fixes **shown falsifiable** — each pin reddens under the exact
+break it exists to catch, then reverted. `test:unit` **43 files / 728 tests**
+(baseline 715; +13). Scope held: 2 source files + PROGRESS, no migration, no
+schema, no new route, nothing under `draft-mode/**`, `big-board/**` or
+`board-labels-store.ts`.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R190** — `clearDrafted` issued an unconditional durable DELETE even when the drafted read had failed, so a transient read fault silently destroyed real marks | should-fix | **The clear now refuses marks it cannot see.** New exported `canClearDrafted` / `runClearDrafted` in `use-draft-mode.ts`: success is the only read state that permits the DELETE — an errored read and a read still in flight both present as "no marks" on the page, so a clear issued there deletes rows the user was never shown. The refusal is **loud** (destructive toast: *"Nothing was cleared — your drafted players could not be loaded…"*), never a silent return, which is CLAUDE.md's rule in its mirror image. A *background* refetch over already-read data keeps `status: 'success'`, so the everyday mark → mark → toggle-off gesture is untouched. **Live reproduction, both directions, same rig:** with the pre-fix body restored, 2 marks → forced 500 → one click of Draft mode → **0 marks** (the Reviewer's finding, independently reproduced, so the rig demonstrably reaches the bug); with the fix, 2 marks → forced 500 (page: 12 players rendered, no badge, nothing struck, "Reset list" disabled, no error boundary) → **three** toggle-off clicks → **2 marks**, zero DELETEs on the wire, refusal toast shown. Fault reverted → "2 drafted" renders again. **Counter-control, live:** healthy read + toggle off → DELETE issued, 2 → **0**, so decision 2 still holds. **Probe:** guard removed → **4 RED**; pre-fix `clearDrafted` body restored → **1 RED** on the wiring pin; both reverted → 34/34 |
+| **R191** — the hook body's two decidable wiring facts were unpinned; `type-check` pins shape, not behavior | should-fix | **Both decisions exported and pinned, and the wiring pinned separately.** `desiredStateFor(current, playerId)` is now the whole of `toggleDrafted`'s decision (`undefined → true`, `['p1'],'p1' → false`, plus the same-tick double-tap sending the **same** value twice — §4 decision 3, made falsifiable); `runClearDrafted` is the whole of the clear. The wiring is pinned with a **`callbackBody` slicer** that reads the callback's own body out of the comment-stripped source rather than the whole file — a whole-file pin survives the fact being deleted from the callback that needed it, which is exactly R172's miss window. The slicer throws on a missing callback and has its own control test (each body is a real slice and does not contain the other), so a rename fails loudly instead of turning the pins vacuous. **Probes — the Reviewer's own two, now RED:** inverted `toggleDrafted` (their exact edit, `drafted: toDraftedSet(current).has(playerId)`) → **1 RED** (`test:unit` 727/728) with type-check still clean, which is the point; the same inversion moved inside `desiredStateFor` → **3 RED**; `clearDrafted` made a no-op → **2 RED** (`test:unit` 726/728). All reverted → 728/728 |
+| **R192** — `draft-mode/use-board-marks.ts:15-17` carries a now-false claim ("never written to the DB — same philosophy as `use-draft-mode.ts`"), in a file this build may not open, with no deferral recorded | nit | **Recorded as a deferral, file untouched** — the boards rule binds the diff, so correcting it here would be the violation. Clause added to the **LV.4.4 checklist row in §2** naming the file, the line range, the sentence that went stale and why (after LV.1.3 `use-draft-mode.ts` **is** written to the DB), so the task that reopens that tree fixes it rather than inheriting a comment that misdirects |
+| **R193** — the R176/R178 rows never state that both identity guards are unreachable through the shipped route | nit | **One clause on both rows** (§6, LV.1.2 re-review table): every handler passes `user.id` twice, so `verifiedUserId === userId` by construction and `assertCallerIs` returns `null` without consulting reality — the guards are **service-layer contracts for non-route callers**; through `…/drafted/route.ts` they are tautological. Recorded as *not a regression* (pre-R178 the fallback called `getUser()` on the same client and also always matched), so R176's row can no longer be read as promising a 403 the API will never return |
+| **R194** — two pasted evidence blocks in the PR body did not match what they claimed to show | nit | **Both re-pasted from the branch, not from a working tree.** The `git diff --stat` block is now generated from `git diff --stat main...HEAD` at the tip; the consequence-2 block's `playersRendered` figure now agrees with its prose (12), and the counts under it were re-measured on this session's rig rather than carried over |
+
+**Not changed, and why:** the R178 trust boundary and the Q1-consequence-2 pin
+set — both explicitly upheld by the Reviewer. `list-detail-view.tsx` is still
+**not** edited: `handleReset` ("Reset list") also calls `clearDrafted`, but it
+is gated on `draftedCount === 0`, which is `0` in precisely the degraded state
+R190 describes, so the button cannot be clicked there — measured, not assumed.
+The guard belongs in the hook regardless, because it is the hook that knows
+whether the marks were ever read.
 
 ### LV.1.4 — 2026-08-09 (PR #109) — verdict **FIX-THEN-MERGE**
 
