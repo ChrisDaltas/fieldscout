@@ -43,6 +43,17 @@ import { useToast } from '@/hooks/use-toast'
  * wiped localStorage. It now wipes rows. Same gesture, same outcome, durable
  * storage: plan §2.1's "nothing about its behavior changes; only where it
  * stores", applied to the clear as well as to the mark.
+ *
+ * **…but only over marks it can actually see (R190).** Moving the clear to
+ * durable storage crossed it with the *other* accepted consequence — a failed
+ * read renders as "no marks", silently. Together those two shipped a data-loss
+ * path nobody priced: with the GET failing, the page shows zero drafted, and
+ * the very next toggle-off issues an unconditional DELETE that destroys the
+ * real rows on every device. Measured, not theorised: 2 marks → forced 500 on
+ * the GET → one click of "Draft mode" → 0 marks. So `clearDrafted` now refuses
+ * to run while the read is failed or has not landed, and says so — see
+ * `runClearDrafted`. A clear the user asked for still clears; a clear over
+ * marks nobody has seen is the one thing this hook will not do.
  */
 
 /** Draft mode's on/off toggle — a view state of one tab, never server state. */
@@ -93,9 +104,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
  * without a DOM — the suite stubs `fetch` and asserts the method and the URL.
  */
 export async function fetchDraftedIds(listId: string): Promise<string[]> {
-  const body = await jsonOrThrow<DraftedReadResponse>(
-    await fetch(`/api/lists/${listId}/drafted`),
-  )
+  const body = await jsonOrThrow<DraftedReadResponse>(await fetch(`/api/lists/${listId}/drafted`))
   // A 200 whose body carries no id array is a broken server, not an empty list.
   if (!Array.isArray(body.drafted)) {
     throw new Error('Drafted read succeeded but carried no player ids')
@@ -160,6 +169,62 @@ export function nextDraftedIds(
   if (drafted) next.add(playerId)
   else next.delete(playerId)
   return Array.from(next)
+}
+
+/**
+ * **The whole of `toggleDrafted`'s decision**, exported so it is falsifiable
+ * (R191). The hook body itself is unreachable under this repo's vitest — node,
+ * no jsdom — so a decision left inline is pinned by nothing: inverting it was
+ * measured passing type-check, `test:unit` 715/715 and `drafted-api-db` 32/32,
+ * while making it impossible to mark anybody drafted.
+ *
+ * Note what it is *not*: a toggle sent to the server. It reads the freshest
+ * marks this tab knows about and returns the STATE the tap is asking for, which
+ * is why two taps in the same tick converge (both read the same pre-mutation
+ * cache, both send the same value) instead of inverting each other.
+ */
+export function desiredStateFor(current: readonly string[] | undefined, playerId: string): boolean {
+  return !toDraftedSet(current).has(playerId)
+}
+
+/** The two bits of the drafted read that decide whether a clear may run. */
+export interface DraftedReadState {
+  isError: boolean
+  isPending: boolean
+}
+
+/**
+ * **R190.** A clear is only honest over marks that have actually been read. An
+ * errored read and a read still in flight both present as "no marks" on the
+ * page (see `toDraftedSet`) — so in both states the user is looking at an empty
+ * list while the account may hold rows, and a DELETE issued there destroys them
+ * with nothing on screen to suggest it happened.
+ *
+ * Success is the only state that permits it. A *background refetch* over data
+ * already read keeps `status: 'success'`, so the everyday case — mark, mark,
+ * toggle off — is unaffected; this refuses exactly the states where the marks
+ * are unknown.
+ */
+export function canClearDrafted(read: DraftedReadState): boolean {
+  return !read.isError && !read.isPending
+}
+
+/**
+ * The guarded clear, whole, as a pure function of the read state and its two
+ * effects — so the guard is *exercised* rather than read out of the source
+ * (R190/R191). `refuse` must be loud: a clear that silently does nothing is the
+ * same "nothing happened means it worked" failure in the opposite direction
+ * (CLAUDE.md).
+ */
+export function runClearDrafted(
+  read: DraftedReadState,
+  effects: { clear: () => void; refuse: () => void },
+): void {
+  if (!canClearDrafted(read)) {
+    effects.refuse()
+    return
+  }
+  effects.clear()
 }
 
 /**
@@ -282,19 +347,32 @@ export function useDraftMode(listId: string) {
   const toggleDrafted = useCallback(
     (playerId: string) => {
       // Read the cache, not a render-time closure, so the desired state is
-      // computed against the freshest marks this tab knows about. Two taps in
-      // the SAME tick both read the pre-mutation cache and therefore send the
-      // same desired state twice — a no-op, not an inversion, which is
-      // precisely why LV.1.2's wire takes a state rather than a toggle.
+      // computed against the freshest marks this tab knows about. The decision
+      // itself lives in `desiredStateFor`, where the suite can falsify it.
       const current = qc.getQueryData<string[]>(draftedKeys.list(listId))
-      setMarkMutate({ playerId, drafted: !toDraftedSet(current).has(playerId) })
+      setMarkMutate({ playerId, drafted: desiredStateFor(current, playerId) })
     },
     [qc, listId, setMarkMutate],
   )
 
+  const refuseClear = useCallback(() => {
+    toast({
+      title: 'Nothing was cleared',
+      description:
+        'Your drafted players could not be loaded, so none were cleared. Reload the page and try again.',
+      variant: 'destructive',
+    })
+  }, [toast])
+
+  // R190: the clear is durable now, so it refuses to run against a read that
+  // failed or has not landed — those states render as "no marks", and clearing
+  // them would delete rows the user was never shown.
   const clearDrafted = useCallback(() => {
-    clearMarksMutate()
-  }, [clearMarksMutate])
+    runClearDrafted(
+      { isError: marks.isError, isPending: marks.isPending },
+      { clear: clearMarksMutate, refuse: refuseClear },
+    )
+  }, [marks.isError, marks.isPending, clearMarksMutate, refuseClear])
 
   return {
     enabled,

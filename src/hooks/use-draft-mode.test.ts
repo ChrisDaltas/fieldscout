@@ -22,16 +22,27 @@
  *   3. **A failed write is loud.** A non-OK response throws so React Query
  *      rolls the optimistic mark back and toasts; it must never resolve to a
  *      plausible-looking empty result (CLAUDE.md).
+ *   4. **The clear refuses to run over marks nobody has read (R190).**
+ *      Consequence 2 and the durable clear intersect: with the GET failing the
+ *      page shows zero drafted, and the toggle-off gesture then DELETEs the
+ *      real rows. Two marks were destroyed this way in a live reproduction.
+ *      `runClearDrafted` is that guard, and it is driven here off a **real**
+ *      failed read's state, not a hand-written literal.
  *
  * No DOM: this repo's vitest runs on node with no jsdom, so the hook body
  * itself is out of reach. What that costs is stated rather than papered over —
  * the *return shape* the two closed consumers destructure
  * (`list-detail-view.tsx`, `draft-mode/board-column.tsx`, neither editable) is
  * pinned by `npm run type-check`, which fails if a key is renamed or retyped.
- * Everything reachable without a DOM is pinned behaviourally below, and the two
- * genuinely-source-level facts (no suspense, no `throwOnError` — either would
- * route a failed read to an error boundary and crash the very page consequence
- * 2 protects) are pinned as source, with the reason recorded.
+ * **Shape is not behavior (R191):** inverting `toggleDrafted`'s desired state,
+ * and separately making `clearDrafted` a no-op, were each measured passing the
+ * whole gate while breaking the feature outright. The answer is that both
+ * decisions are now *exported pure functions* — pinned behaviourally below —
+ * and the hook body's job is reduced to wiring, which is pinned as source with
+ * a slicer that reads the callback body itself rather than the whole file.
+ * The same source-pin idiom covers the two facts that have no runtime surface
+ * at all (no suspense, no `throwOnError` — either would route a failed read to
+ * an error boundary and crash the very page consequence 2 protects).
  */
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { readFileSync } from 'node:fs'
@@ -39,12 +50,15 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  canClearDrafted,
   deleteDrafted,
+  desiredStateFor,
   draftedKeys,
   draftedQueryOptions,
   fetchDraftedIds,
   nextDraftedIds,
   postDrafted,
+  runClearDrafted,
   toDraftedSet,
 } from './use-draft-mode'
 
@@ -64,6 +78,29 @@ const code = (file: string) =>
 
 const HOOK_FILE = 'src/hooks/use-draft-mode.ts'
 const LIST_ID = '22222222-2222-4222-8222-222222222222'
+
+/**
+ * The body of one `useCallback` in the hook, sliced by paren balance from the
+ * comment-stripped source. Whole-file source pins have a miss window a mile
+ * wide — a fact asserted about "the file" survives being deleted from the
+ * callback that needed it, as long as the same text lives anywhere else (R172,
+ * on the LV.1.1 pins, is that exact failure). This throws rather than returning
+ * `''` if the callback is gone, so a rename fails loudly instead of turning
+ * every pin below it vacuous.
+ */
+function callbackBody(source: string, name: string): string {
+  const start = source.indexOf(`const ${name} = useCallback(`)
+  if (start === -1) throw new Error(`no \`${name}\` useCallback in ${HOOK_FILE}`)
+  let depth = 0
+  for (let i = source.indexOf('(', start); i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1
+    else if (source[i] === ')') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, i + 1)
+    }
+  }
+  throw new Error(`unbalanced \`${name}\` useCallback in ${HOOK_FILE}`)
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -202,10 +239,10 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
     const observer = new QueryObserver(client, draftedQueryOptions(LIST_ID))
     const unsubscribe = observer.subscribe(() => {})
     try {
-      await vi.waitFor(
-        () => expect(observer.getCurrentResult().status).toBe(status),
-        { timeout: 4000, interval: 10 },
-      )
+      await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe(status), {
+        timeout: 4000,
+        interval: 10,
+      })
       return observer.getCurrentResult()
     } finally {
       unsubscribe()
@@ -251,6 +288,38 @@ describe('Q1 consequence 2 — a failed drafted read renders as "no marks"', () 
     expect(toDraftedSet(result.data).size).toBe(0)
   })
 
+  it('R190 — and the durable clear refuses to run in that state', async () => {
+    // The intersection that shipped a data-loss path: the page above renders
+    // "nobody is drafted", and the toggle-off gesture used to DELETE the real
+    // rows over that empty picture. The read state here is taken from a REAL
+    // failed read, so the guard is pinned against the thing it will actually
+    // be handed rather than against a literal someone wrote to match it.
+    respondWith(() => jsonResponse(500, { error: 'boom' }))
+    const result = await observeUntilSettled('error')
+
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    runClearDrafted({ isError: result.isError, isPending: result.isPending }, { clear, refuse })
+
+    expect(toDraftedSet(result.data).size).toBe(0) // the page says "no marks"…
+    expect(clear).not.toHaveBeenCalled() // …and nothing is destroyed over it
+    expect(refuse).toHaveBeenCalledTimes(1) // …and the user is told
+  })
+
+  it('R190 counter-control — after a successful read the clear still runs', async () => {
+    // Without this the guard could refuse everything and look correct, which
+    // would break §4 decision 2 (turning draft mode off clears the marks).
+    respondWith(() => jsonResponse(200, { list_id: LIST_ID, drafted: ['p1'] }))
+    const result = await observeUntilSettled('success')
+
+    const clear = vi.fn()
+    const refuse = vi.fn()
+    runClearDrafted({ isError: result.isError, isPending: result.isPending }, { clear, refuse })
+
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(refuse).not.toHaveBeenCalled()
+  })
+
   it('the counter-control: a successful read really does produce marks', async () => {
     // Without this, every assertion above would pass against a hook that never
     // reads anything at all.
@@ -287,6 +356,138 @@ describe('toDraftedSet — the fallback consequence 2 rests on', () => {
     expect(set.has('p1')).toBe(true)
     expect(set.has('p3')).toBe(false)
     expect(set.size).toBe(2)
+  })
+})
+
+/**
+ * **R191.** These two decisions used to live inline in the hook body, which no
+ * test in this repo can reach. The Reviewer measured what that cost: inverting
+ * the desired state (nobody can ever be marked drafted) and separately gutting
+ * the clear both passed type-check, `test:unit` **715/715** and
+ * `drafted-api-db` **32/32**. Behavior is pinned here; the wiring that reaches
+ * it is pinned as source below.
+ */
+describe('desiredStateFor — the state a tap asks for (R191)', () => {
+  it('asks for TRUE when the player is not marked — including with no marks at all', () => {
+    expect(desiredStateFor(undefined, 'p1')).toBe(true) // read failed / not landed
+    expect(desiredStateFor([], 'p1')).toBe(true)
+    expect(desiredStateFor(['p2'], 'p1')).toBe(true)
+  })
+
+  it('asks for FALSE when the player is already marked', () => {
+    expect(desiredStateFor(['p1'], 'p1')).toBe(false)
+    expect(desiredStateFor(['p1', 'p2'], 'p1')).toBe(false)
+  })
+
+  it('a same-tick double-tap sends the SAME state twice, never an inversion', () => {
+    // §4 decision 3's claim, made falsifiable: both taps read the same
+    // pre-mutation cache, so the second is a replay of the first — which is
+    // the entire reason LV.1.2's wire carries a STATE and not a toggle.
+    const current = ['p2']
+    const first = desiredStateFor(current, 'p1')
+    const second = desiredStateFor(current, 'p1')
+    expect(second).toBe(first)
+    expect(first).toBe(true)
+
+    const marked = ['p1']
+    expect(desiredStateFor(marked, 'p1')).toBe(desiredStateFor(marked, 'p1'))
+  })
+})
+
+/**
+ * **R190 — the finding that mattered.** Live, on the flag-OFF legacy view:
+ * 2 rows in `list_player_drafted` → the GET forced to 500 → the page renders
+ * "no drafted" with no toast and no console error → one click of "Draft mode"
+ * → **0 rows**, permanently, on every device. The clear became durable at
+ * LV.1.3 and the failed read was already silent; nobody priced the two
+ * together.
+ */
+describe('runClearDrafted — a clear over marks nobody has read is refused (R190)', () => {
+  const spies = () => ({ clear: vi.fn(), refuse: vi.fn() })
+
+  it('clears when the read succeeded — §4 decision 2 survives the guard', () => {
+    const { clear, refuse } = spies()
+    runClearDrafted({ isError: false, isPending: false }, { clear, refuse })
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(refuse).not.toHaveBeenCalled()
+  })
+
+  it('REFUSES when the read failed — the live data-loss path', () => {
+    const { clear, refuse } = spies()
+    runClearDrafted({ isError: true, isPending: false }, { clear, refuse })
+    expect(clear).not.toHaveBeenCalled()
+    expect(refuse).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses while the read is still in flight — same empty picture', () => {
+    const { clear, refuse } = spies()
+    runClearDrafted({ isError: false, isPending: true }, { clear, refuse })
+    expect(clear).not.toHaveBeenCalled()
+    expect(refuse).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses loudly, never silently — the refusal is an effect, not a return', () => {
+    // A guard that just returns is CLAUDE.md's failure in mirror image: the
+    // user asked for something, nothing happened, and nothing said so.
+    const { clear, refuse } = spies()
+    runClearDrafted({ isError: true, isPending: true }, { clear, refuse })
+    expect(refuse).toHaveBeenCalledTimes(1)
+    expect(clear).not.toHaveBeenCalled()
+  })
+
+  it('canClearDrafted is the whole decision table — success and nothing else', () => {
+    expect(canClearDrafted({ isError: false, isPending: false })).toBe(true)
+    expect(canClearDrafted({ isError: true, isPending: false })).toBe(false)
+    expect(canClearDrafted({ isError: false, isPending: true })).toBe(false)
+    expect(canClearDrafted({ isError: true, isPending: true })).toBe(false)
+  })
+})
+
+/**
+ * **The wiring (R190/R191).** Exported decisions are worth nothing if the hook
+ * stops calling them, and the hook body has no runtime surface here. Each pin
+ * reads the *callback's own body*, not the file — see `callbackBody`.
+ */
+describe('the hook body wires those decisions in', () => {
+  it('toggleDrafted sends desiredStateFor, un-negated and not re-derived', () => {
+    const body = callbackBody(code(HOOK_FILE), 'toggleDrafted')
+    expect(body).toContain(
+      'setMarkMutate({ playerId, drafted: desiredStateFor(current, playerId) })',
+    )
+    // The two edits that put the feature back where R191 found it: negate the
+    // call, or inline the decision again where nothing can falsify it.
+    expect(body).not.toContain('!desiredStateFor')
+    expect(body).not.toContain('.has(')
+  })
+
+  it('clearDrafted goes through the guard and cannot reach the mutation directly', () => {
+    const body = callbackBody(code(HOOK_FILE), 'clearDrafted')
+    expect(body).toContain('runClearDrafted(')
+    // The real read state, not literals that would make the guard decorative.
+    expect(body).toContain('isError: marks.isError')
+    expect(body).toContain('isPending: marks.isPending')
+    expect(body).toContain('clear: clearMarksMutate')
+    expect(body).toContain('refuse:')
+    // The pre-R190 body, verbatim: an unconditional durable DELETE.
+    expect(body).not.toMatch(/clearMarksMutate\(\)/)
+  })
+
+  it('the slicer returns real callback bodies (control for the two pins above)', () => {
+    // Without this a slicer that returned '' would make every pin above pass,
+    // and one that returned the whole file would make them pass for the wrong
+    // reason — the R172 miss window, re-opened.
+    const source = code(HOOK_FILE)
+    const toggle = callbackBody(source, 'toggleDrafted')
+    const clear = callbackBody(source, 'clearDrafted')
+
+    expect(toggle).toContain('setMarkMutate')
+    expect(clear).toContain('clearMarksMutate')
+    // Each body is genuinely a slice: it does not contain the other one.
+    expect(toggle).not.toContain('runClearDrafted')
+    expect(clear).not.toContain('setMarkMutate')
+    expect(clear.length).toBeLessThan(source.length)
+    // A missing callback throws instead of silently pinning nothing.
+    expect(() => callbackBody(source, 'noSuchCallback')).toThrow(/no `noSuchCallback`/)
   })
 })
 
