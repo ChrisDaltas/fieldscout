@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v3.4) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v3.8) > this file.
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11** — the screen exists and is comparable against `screens/`. Remaining: LV.1.5, LV.4–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -48,9 +48,11 @@ are all checked.
 
 - [x] **LV.2** — **the Lists page, whole** (2026-08-11). Built from
   `docs/design/lists/screens/*.png`, not from the prose. Page header, rail mode
-  with the **complete open list** in the right panel (§7 gap 1), cards gallery
-  with the correct solid-block cover (§7 gap 2), and loading / empty / error
-  states. The warm `tier-1..7` ramp is used throughout (§7 gap 4). Shipped
+  with the **complete open list** in the right panel (§7 gap 1), cards gallery,
+  and loading / empty / error states. **The cover it shipped was wrong and was
+  corrected the same day** (`LV.2-fix`, §4): covers are player headshots over a
+  `pos-*` fill keyed to `position_filter`, not a solid block with a glyph —
+  §7 gap 2 is reversed. The warm `tier-1..7` ramp is used throughout (§7 gap 4). Shipped
   together with LV.3 in one PR, because §7 is explicit that they are one screen
   and splitting them is what guaranteed an empty frame. Original text:
 - [x] ~~**LV.2** — **the Lists page, whole.**~~ Page header (heading, view-mode
@@ -95,16 +97,62 @@ are all checked.
   Also address or explicitly defer `TIER_BG`/`TIER_BAND_BG` in
   `tier-badge.tsx`: total maps with no fallback, so a round key renders an
   uncolored band in both the legacy view and the public share view
-- [ ] **LV.4** — drag-and-drop across all three view styles (needs LV.3, and
+- [x] **LV.4** — **drag-and-drop across all three view styles** (2026-08-11).
+  The handoff's drop-gap model, over the existing
+  `PATCH …/players/reorder` and `…/players/[playerId]/tier` routes — **no
+  migration, no schema change, no new API route**. Reordering works in List,
+  Table and Cards; a drop on a section header assigns that bucket **in tier
+  mode**, and the two modes that cannot be written say why rather than
+  no-oping (see §4). Landed **without LV.1.5**: the dependency was on non-tier
+  bucket *assignment*, which is refused with its reason, not faked.
+  Original text: *"drag-and-drop across all three view styles (needs LV.3, and
   LV.1.5 for non-tier buckets). The handoff's drop-gap model: the gap opens
   where the player will land, sized to the dragged element's `offsetHeight` /
   `offsetWidth`, state updated **only** when the target slot changes —
   updating per `dragover` visibly janks. A drop onto a section header assigns
-  that bucket, and under D4 that is the same write in all four modes
+  that bucket, and under D4 that is the same write in all four modes"* — the
+  last clause is wrong and the plan now carries the erratum (D4, plan v3.8):
+  cost and budget membership is **computed**, so there is no write to make
 - [ ] **LV.5** — AI list generation + persona surfaces restyled into the new
   language (CLAUDE.md: never leave them in the old style, never remove them)
 - [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
   server-rendered (D7)
+- [x] **LV.8** — **attached links** (2026-08-11). Migration
+  `080_list_links.sql` + RLS + indexes, the `/api/lists/[id]/links` routes
+  (add / remove / reorder), and the Details tab wired to them. The **third and
+  final** schema exception, ruled by Chris 2026-08-11 (plan **D8**, plan
+  → v3.7). Closes the disabled action LV.3 shipped and flagged. Reads follow
+  the list's own visibility; writes are owner-only. The reorder **route** is
+  server-complete and stack-proven; its **client** waits for LV.4, because the
+  reference screen shows no reorder affordance and inventing one would be UI
+  the design LAW does not ask for
+- [x] **LV.9** — **one tab/segment component** (2026-08-11, ruled by Chris the
+  same day — plan **D9**, plan → v3.9). `src/components/ui/tabs.tsx` extended
+  (never forked) into one style source with three content variations — icon +
+  label, label only, icon only — each taking an optional count, and two
+  wrappers over it: Radix `Tabs*` where the usage is a genuine tab set, and a
+  presentational `Segment` / `SegmentItem` where there is no panel to associate.
+  The four hand-rolled `lists/v2` controls and `player-detail-panels.tsx`'s
+  Fantasy/NFL toggle converted; the six other Radix call sites picked up the
+  look with no edit. `list-detail-view.tsx` (legacy, retired at LV.7) was **not
+  opened** — it inherits the look through the primitive. **`week-tabs.tsx` and
+  `public-big-board.tsx`'s week strip are the same look again and are deferred**
+  to whichever task reopens `src/components/big-board/**` (§4)
+- [x] **LV.10** — **DEF renders the team logo, and the image fallback actually
+  fires** (2026-08-11, ruled by Chris the same day: *"for DEF use the team's
+  logo — that's what all platforms do"*). UI/UX only — **no migration, no
+  schema change, no new API route**; `players.headshot_url` is sync-owned and
+  is *not* rewritten, the substitution happens at render.
+  `src/lib/player-image.ts` is the one place that decides a player's picture
+  (DEF → `…/team_logos/nfl/<abbr-lowercased>.png`; the path is case-sensitive
+  and uppercase 404s, which is what the new `player-image.test.ts` pins), and
+  `src/components/players/player-image.tsx` is the one component that renders
+  it. Fourteen call sites converted. The second, larger fix: the two surfaces
+  that had hand-rolled an `<img>` fell back to initials only on a **missing
+  URL**, never on a **failed load** — they now use the shared `Avatar`
+  primitive, which already handled both. **`lists/draft-mode/board-column.tsx`
+  has the same bug and is off limits — LV.7 must take the conversion with it**
+  (§4)
 - [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
@@ -821,6 +869,425 @@ This section records decisions made **during** the build.
   only** — tiers S–F on one list, a Favorites list, three notes, five drafted
   marks, two comments, three tags.
 
+- **LV.8 (2026-08-11) — `list_links`, and the judgement calls the ruling left
+  open.** Migration `080_list_links.sql`, `src/lib/lists/links-service.ts`,
+  `/api/lists/[id]/links` (+ `/[linkId]`), and the Details tab's links section.
+  The build's **third and final** schema exception (plan D8, plan → v3.7;
+  `ACTIVE-BUILD.md` §1 updated to match, since it carried the "two" count too).
+  This closes the gap LV.3 correctly refused to improvise around: it shipped
+  the section with a **disabled** action and said why, rather than a dialog
+  that would discard the link on submit.
+
+  1. **The columns, and why each one is there.** `list_links (id, list_id,
+     kind, url, title, source_label, duration_label, position, created_at,
+     updated_at)`. Every one is a fact `screens/detail-tab-details.png`
+     renders: the bold title, the muted `source · duration` line, the ordered
+     stack, the remove control. Nothing speculative — there is no `note`, no
+     `added_by`, no `thumbnail_url`.
+     - **A surrogate `id`, unlike 079's natural key.** 079 could key on
+       `(user, list, player)` because row *presence* was the entire state. A
+       link has a mutable payload and needs a stable handle for
+       `DELETE .../links/[linkId]` and for the reorder contract to name rows.
+     - **`position` is stored** because the design shows a list, not a set. It
+       is deliberately **not** `UNIQUE (list_id, position)`: uniqueness would
+       force every reorder into a two-phase shuffle to dodge transient
+       collisions, and buys nothing, because the read path orders by
+       `(position, created_at, id)` — **total** — so even a duplicated position
+       renders deterministically.
+     - **`duration_label` is text with a CLOCK regex** (`18:42`, `1:02:33`),
+       not an interval. The screenshot renders it verbatim beside the source;
+       an unbounded string there would be a second caption on a public page.
+     - **`UNIQUE (list_id, url)`** — attaching the same resource twice is a
+       mistake, not an intent, and the service normalises through
+       `new URL().href` first so `https://x` and `https://x/` collide as they
+       should. 23505 maps to a specific 409, never a silent second card.
+
+  2. **RLS: reads defer, writes do not — and the asymmetry is the design.**
+     The SELECT policy is a bare `EXISTS (SELECT 1 FROM lists WHERE id = ...)`
+     with **no** visibility conjunct, so it runs under `lists`'s own RLS (the
+     mechanism 067's D106 note documents and LV.1.2 adopted). The writes spell
+     `owner_id = auth.uid()` out explicitly, because "owner-only" is a
+     *different* rule from "readable" — a league member who can read a shared
+     private list must not be able to staple their own video onto it. That
+     exact row is pinned as an adjacent lives/throws pair in pgTAP 029 §E.
+     Also pinned: **anon CAN read a public list's links**, because the share
+     view (D7) renders signed-out and a policy tightened to
+     `auth.uid() IS NOT NULL` would break that page with no RLS assertion
+     noticing.
+
+  3. **The URL is guarded twice, and the two layers are pinned to each other.**
+     `normalizeLinkUrl` parses with the WHATWG `new URL()`, asserts the
+     protocol is `http:`/`https:`, and stores `.href`; 080's
+     `list_links_url_scheme_check` enforces `^https?://[^[:space:]]+$` at the
+     database. Parse-then-check beats regex-on-raw-input on the case a regex
+     misses — browsers strip TAB out of a scheme, so `java<TAB>script:` is a
+     live `javascript:` URL, and `new URL()` normalises it *into*
+     `javascript:` where the protocol check catches it explicitly (measured,
+     not argued). The DB layer is not redundant: `duplicate_list` is this
+     codebase's standing proof that a write path which never sees Zod will
+     exist. `links-service.test.ts` carries the load-bearing pin — **every URL
+     the service accepts is asserted to satisfy 080's CHECK regex**, so if a
+     future edit loosens one layer, that test reddens instead of a `23514`
+     surfacing as an HTTP 500.
+
+  4. **Nothing is scraped.** `title`, `source_label` and `duration_label` are
+     typed by the author; the service makes no network call. That is CLAUDE.md's
+     standing rule, restated at the decision level in D8 so it is not
+     re-litigated. Auto-filling from a YouTube URL is a **follow-up to
+     propose**, and it is worth proposing — typing "18:42" by hand is the
+     weakest part of this UX.
+
+  5. **`links` rides on the existing list GET rather than a new fetch.**
+     `/api/lists/[id]` embeds them (as it already does tags), so the Details
+     tab costs no extra round-trip and LV.6's server-rendered share view gets
+     them for free. **A failed links query 500s that route** rather than
+     returning `[]` — this section has a real "Nothing attached" empty state,
+     and rendering it because a query errored is verbatim the production bug
+     CLAUDE.md records. Contrast `aggregateFantasyStats` on the same route,
+     which *is* caught and degraded: that is a deliberate difference, because
+     a missing stat renders as an em dash and a missing link renders as a lie.
+
+  6. **No reorder UI, on purpose.** `PATCH .../links` exists and is
+     stack-proven, but the reference shows no handle and no arrows on a link
+     card. Inventing one would be UI the design LAW does not ask for, so the
+     client half is left to **LV.4**, which owns the drag gesture — and
+     `useReorderLinks` was deliberately **not** added to `use-lists.ts`, since
+     an unused hook with a plausible name is just dead code. Recorded in the
+     hook file so the omission reads as a decision.
+
+  7. **Three interpretations where the reference is silent**, named rather
+     than passed off as the design: the coloured block is a **placeholder, not
+     a poster** (nothing scrapes a thumbnail), so it carries a glyph the way
+     `ListCoverTile` does; its colour comes from the warm ramp (`tier-2` for
+     video, `tier-4` for article) rather than `negative`, whose token comment
+     reserves it for football semantics — the reference's rose reads closest to
+     `negative`, and plan §1 says implement from tokens, never the handoff's
+     hex; and the attach form is **inline**, matching this tab's own Description
+     and Add-tag editing, because the design shows no dialog anywhere on it.
+
+  8. **`duplicate_list` does not copy links.** 017's RPC predates this table
+     and was deliberately left alone — modifying an existing SECURITY DEFINER
+     RPC is scope this task does not hold. Recorded in D8 so it is a known
+     boundary, not a rediscovered bug.
+
+  **Typegen.** `src/types/database.ts` regenerated with
+  `npx supabase gen types typescript --local`; the hand-written alias block was
+  re-appended and verified **byte-identical by sha256**
+  (`76970642dcc9d707…` both sides), and the file diff is **+48 / −0**. No
+  `ListLink` alias was added to that block on purpose: the app consumes the
+  *wire* shape (`ListLink` in `links-service.ts`, which omits the timestamps),
+  and a same-named Row alias beside it would be a trap.
+
+- **LV.2-fix (2026-08-11) — the cover treatment is headshots, and the
+  screenshots were the thing that misled.** §7 gap 2 scrapped a PR for *reusing*
+  `ListThumbnail`, on the strength of `screens/cards-gallery.png`. Chris,
+  2026-08-11: *"we actually had them the way they were supposed to be before,
+  using the headshots of the players. And then the background color is dependent
+  on what position group the user selects for the list."* The prototype's
+  glyphs (`★`, `BB`, `WR`, `$`, `11`, `RK`, `0R`) are **artefacts of its fake
+  data**. Gap 2 is hereby **reversed** — see the boxed exception now at the top
+  of `screens/README.md`, added so the next reader cannot repeat this.
+
+  What the fix does, and the calls the ruling left open:
+
+  1. **One colour rule, one map.** `POS_TINTS` in
+     `src/components/lists/list-thumbnail.tsx` is now exported and is the single
+     source: `lists.position_filter` → `bg-pos-*`, and `null` → `bg-ink`. The
+     hashed six-colour `COVER_PALETTE` and the `coverGlyph` derivation are gone.
+     **Favorites loses its lime cover** — it carries no position filter, so it
+     lands on ink like any other all-players list. That follows the ruling
+     literally; the lime went with the glyph treatment, and no carve-out was
+     asked for. Flag it if the identity cue is missed.
+
+  2. **Small covers delegate rather than duplicate.** `ListCoverTile` is now a
+     thin adapter over `ListThumbnail` — the same component, restored, not a
+     v2 re-implementation of it (CLAUDE.md, *no near-duplicate components*).
+     `ListThumbnail.size` gained a **numeric px** form for the design's 24px
+     rail and 51px hero, which fall between the named steps; named sizes keep
+     their literal Tailwind classes, so no pre-existing screen moves a pixel.
+
+  3. **The label is now sized to fit its quadrant, at numeric sizes only.**
+     `FLEX` — the one four-character label — overflowed its 12px quadrant and
+     bled across the neighbouring headshot at 24px, and clipped at 51px; `DEF`
+     clipped at 24px. `fitFontPx` caps the font at whatever fits (~0.6em per
+     mono glyph) so `FLEX` shrinks rather than clips. This is a *legibility*
+     fix inside the restored component, not a redesign: the **fill colour** is
+     what identifies the position group, and the letters only confirm it.
+
+  4. **The gallery stack: 24px chips, 8px overlap, left-on-top.** Four squares
+     overlapping by 8px occupy 72px — a third of the 214px card — so the
+     cluster reads as a corner motif rather than a row of thumbnails filling
+     the band. `z-index` **descends** with list order, so the list's #1 is whole
+     and each player behind him is progressively occluded; flex siblings paint
+     in DOM order otherwise, which would bury #1 under #4. Each chip carries the
+     design's 1px `border-ink` and `rounded-sm` — the hard-edged language, not
+     the round avatar stack of other apps. Under four it draws fewer chips and
+     stays right-anchored, so one headshot sits exactly where the fourth would;
+     with none, a dashed ghost chip with a `+` holds the same spot, because an
+     empty band reads as a rendering failure.
+
+  5. **`/api/lists` now returns four players per list, not three** — a cap
+     bumped on an **existing** query, not a new route, and the budget in
+     `ACTIVE-BUILD.md` closes *schema changes and new routes*, neither of which
+     this is. Three could not satisfy "the top four players". Every other
+     consumer slices to three and is unaffected.
+
+  **Observed, not fixed (out of scope, worth its own task):** `DEF` players'
+  `headshot_url` values are team-abbreviation URLs (`…/thumb/PHI.jpg`) that
+  404, so a DEF list's cover shows broken-image glyphs. `ListThumbnail` has
+  always behaved this way — it falls back to initials only when the URL is
+  *null*, not when the image fails — so this predates the cover work and shows
+  everywhere headshots render. An `onError` fallback would fix it globally.
+
+- **LV.4 (2026-08-11) — drag-and-drop, and the two modes that had to refuse.**
+  Three new files in `src/components/lists/v2/` (`list-reorder.ts` + its test,
+  `use-list-drag.tsx`), plus wiring in `list-body.tsx`, `list-row-parts.tsx`,
+  `list-buckets.ts` and `list-detail-panel.tsx`. **No migration, no schema
+  change, no new API route** — both writes go through routes that already
+  existed (`PATCH …/players/reorder`, `PATCH …/players/[playerId]/tier`) and
+  through the hooks that already wrapped them optimistically. Six judgement
+  calls the task text did not make:
+
+  1. **dnd-kit is the sensor layer and nothing else.** It is already the app's
+     drag library (`AppDndContext`, big board, legacy detail), so nothing was
+     added to `package.json`. But `@dnd-kit/sortable` is **not** used: its
+     model is "the other rows transform out of the way", which is the exact
+     behaviour the design LAW rules out in its first sentence ("rows never
+     highlight themselves"). Its **droppables** are not used either, and that
+     is correctness rather than taste — dnd-kit caches droppable rects, and
+     this model changes layout mid-drag by design, so hit-testing against
+     cached rects aims at where a row *used to be* and the gap oscillates
+     between two slots. The target is resolved from `document.elementFromPoint`
+     on every move instead: always live, one rect on the hovered row, and
+     self-stabilising because the open gap carries its own slot in
+     `data-drop-gap` and re-aims at itself when the pointer lands inside it —
+     which is the property the prototype gets free from native `dragover`.
+
+  2. **Native HTML5 drag was the other candidate and was rejected.** It is what
+     `docs/design/lists/design/ListsCommon.jsx` uses, so it would have been the
+     higher-fidelity mechanism. It does not work on touch devices **at all**,
+     and the 2026 audience is friends testing on phones. `MouseSensor`
+     (6px distance) + `TouchSensor` (220ms press, 6px tolerance) instead of the
+     single `PointerSensor` `AppDndContext` uses: a pointer sensor on touch
+     either hijacks the page scroll or is cancelled by it.
+
+  3. **Cost and Budget do not offer the drag at all, and say why on the grip.**
+     Their sections are computed from `players.auction_value` and re-sorted by
+     price on every render (`byCostDesc`), so a hand ordering would be
+     discarded the moment React re-rendered — the drag would look like it
+     worked and snap back, which is precisely CLAUDE.md's "never let *nothing
+     happened* mean *it worked*". The rows carry no drag listeners in those two
+     modes (verified in the browser: `onMouseDown`/`onTouchStart` are absent
+     from the row's props) and the grip is faded with the reason in its
+     `title`. **This contradicts plan D4's "the same write in all four modes"**
+     — a sentence `screens/README.md` had already falsified for stats and which
+     LV.3 shipped against. Folded back into the plan as an erratum on D4,
+     plan → **v3.8**, rather than left for the next reader to rediscover.
+
+  4. **Round buckets refuse with their reason, and the "start tier N" zone is
+     withheld in round mode.** `list_players_tier_check` still pins the column
+     to NULL or S–F (§3 Q2), so an `r3` write is a Postgres `23514` the tier
+     route returns as a 500. `bucketDrop` answers `{ok:false, reason}` for
+     round sections and the panel raises a destructive toast. The affordance
+     that *can* only fail — the dashed "Drop a player here to start round N" —
+     is not rendered at all; in tier mode it renders with the first free
+     letter. This is the "gate it or fail loudly" choice, taken **both** ways:
+     gated where the affordance would be pure furniture, loud where the section
+     header exists anyway. It all reverses at LV.1.5, and `TIER_ORDER` is now
+     typed `readonly ListTier[]` so the compiler names the places that change.
+
+  5. **The two writes are sequenced, never fired together.** A cross-bucket
+     move implies a tier write *and* an order write, and both hooks patch the
+     same React Query cache inside `onMutate`. Issued in the same tick,
+     whichever reads the cache first can be clobbered by the other's snapshot,
+     and the rollback contexts cross. So the bucket write goes first (it is the
+     one the server can refuse) and the order write follows in its `onSuccess`.
+     A same-bucket reorder — the overwhelmingly common case and the literal ask
+     — is a single optimistic call with nothing to sequence.
+
+  6. **Order is written for the whole list, not just the moved player.** Design
+     LAW: *"Moving an entry into a bucket assigns `tier`… then **keeps bucket
+     members contiguous in the array**."* The new order is the buckets
+     flattened in render order, which is what makes members contiguous — and it
+     can move players the user never touched, when the stored array had tiers
+     interleaved. That is the rule, not a side effect: after a drop the stored
+     order matches the order on screen. `reorder_list_players` (004) only
+     updates the rows it is given and the legacy view already sends the
+     complete list, so the payload shape is established, not new.
+
+  **A break probe found a real bug before it shipped.** The first build
+  resolved the target inside a `requestAnimationFrame` and committed whatever
+  the last frame had computed. A single-step programmatic drag — press, one
+  move, release — produced **no** reorder at all, because no frame ran between
+  the activating move and the release. rAF is also throttled outright in a
+  background tab. Two fixes: the drop resolves once more at the release point,
+  and the hit test is no longer frame-throttled (D5's warning is about
+  *state*, which `aim` already writes only when the slot changes; frame-gating
+  the *read* silently drops the last move of a fast drag).
+
+  **Known gap, recorded rather than mimed:** there is no keyboard drag.
+  dnd-kit's `KeyboardSensor` moves between *droppables*, and this model has
+  none, so `useDraggable`'s `attributes` are deliberately not spread — they
+  would put `role="button"` + `tabIndex=0` around the row's real buttons and
+  advertise a capability that does not exist. A keyboard/AT path for reordering
+  is worth its own task.
+
+- **LV.9 (2026-08-11) — one tab/segment component, and the census that decided
+  what "all of them" means.** Chris: *"Right now I see like 3 or 4 different
+  versions of tabs. Let's use just that one."* He was counting accurately. The
+  ruling and the design of the component are plan **D9**; what follows is the
+  build's own record.
+
+  **The inventory, and the disposition of every hit.** Surveyed by aria grep
+  *and* by the idioms an aria grep misses (`.map` over a const array with a
+  conditional active class, `aria-pressed`, `border-r … last:border-r-0`,
+  `aria-current`, single-select `FilterChip` rows):
+
+  | control | classification | done |
+  | --- | --- | --- |
+  | `ui/tabs.tsx` (the Radix primitive) | the style source | extended in place |
+  | `lists/v2/lists-page-v2.tsx` page mode | segment (header lives in another React tree) | → `Segment`, boxed, icon + label |
+  | `lists/v2/lists-page-v2.tsx` My lists / Saved | segment (same reason) | → `Segment`, bare, label × count |
+  | `lists/v2/list-toolbar.tsx` view style | segment (restyles rows in place, no panel) | → `Segment`, boxed, icon only |
+  | `lists/v2/list-detail-panel.tsx` List/Details/Comments | **genuine tab set** | → Radix, an *upgrade*: it had no `tabpanel` and no arrow keys |
+  | `lists/v2/list-details-tab.tsx` video / article | segment (two-option kind picker) | → `Segment`, boxed, label only |
+  | `players/player-detail-panels.tsx` Fantasy / NFL | segment (panels are the caller's) | → `Segment`; deleted its private `ToggleSegment` |
+  | `players/players-spreadsheet.tsx` positions | Radix-without-panels: a **picker** | kept, `appearance="boxed"`; its `POSITION_TAB_ACTIVE` override still wins |
+  | `home/trending-players-card`, `players/player-detail-page-view`, `shared/window-shell` | genuine tab sets | Radix kept, **no edit** — they inherit the look |
+  | `explore/explore-feed` | Radix-without-panels | Radix kept, no edit; classified, not rewritten |
+  | `lists/list-detail-view.tsx` (legacy) | Radix-without-panels ×2 | **not opened** — retired at LV.7; inherits the look |
+  | `big-board/week-tabs.tsx`, `big-board/public-big-board.tsx` week strip | same look, hand-rolled | **off limits — deferred**, see below |
+  | `FilterChip` single-select rows (10 sites), `bottom-tabs.tsx`, the research rail's tool strip, steppers, radio-cards | not tabs or segments | left alone, see D9 |
+
+  **The judgement that mattered, and the evidence for it.** Radix `Tabs` is not
+  a skin — it carries `tabpanel` association, roving focus and arrow keys, and
+  ripping that out to make things look the same would be a bad trade. So the
+  primitive keeps Radix and the *look* moved underneath it: six call sites
+  converged with **zero edits**. Conversely the Lists page header cannot be a
+  Radix tab set however much it reads like one — `PageHeader` pushes it into the
+  app shell through a Zustand store (`app-header.tsx:69-79`), so no root can
+  enclose the control and the content, and the same control renders a second
+  time in-page below `lg`. That is a structural fact, not a preference, and it
+  is why `Segment` exists at all.
+
+  **Two escape hatches were measured, not assumed**, because both would have
+  failed silently: `window-shell.tsx`'s `flex w-full` + `flex-1` equal-width
+  tabs (`cn` resolves to `shrink-0 items-stretch gap-1 flex w-full` — the
+  group's `inline-flex w-fit` correctly drops out) and
+  `players-spreadsheet.tsx`'s per-position active fill (resolves to
+  `data-[state=active]:bg-pos-rb`, measured live as `rgb(44,111,214)`).
+
+  **`w-fit` on the group is load-bearing.** `inline-flex` sizes to content only
+  until the group lands in a column flex parent, where `align-self: stretch`
+  blows it out — found in the browser as the attach-link form's kind picker
+  spanning the whole form. Caught by looking, which is the process §2 asks for
+  on these screens.
+
+  **The probe.** The handoff's critical note says an inline `background`
+  outranks `:hover` and kills it silently. That mistake was made on purpose —
+  `style={{ background: '#ffffff' }}` on `SegmentItem` — and measured: every
+  active segment lost its accent fill and hover measured `rgb(255,255,255)`
+  where the class rule gives `rgb(220,228,255)`. Reverted; hover measures
+  `rgb(220,228,255)` again and every item carries `style === null`.
+
+  **Deferred into the off-limits tree.** `src/components/big-board/week-tabs.tsx`
+  and `public-big-board.tsx`'s `PublicWeekStrip` are the same boxed-tab recipe
+  hand-rolled a third and fourth time (`h-tab`, `bg-ink` active). The strip is
+  additionally `<Link>`-based, so converting it needs an `asChild` on
+  `SegmentItem` that does not exist yet. Whichever task reopens
+  `src/components/big-board/**` should convert both and decide whether
+  `SegmentItem` grows `asChild`.
+
+  **Interpretations worth flagging.** (a) Type sizes converged on the house
+  `text-[11px]/700`, which moved the page-mode label up from 10px and the
+  My lists/Saved label from 10.5px — uniformity was the point. (b) The
+  video/article picker went 21px → 26px, the design's control height.
+  (c) `ui/tabs.tsx`'s old comment claiming *"content tabs select to black;
+  accent/blue is reserved for do-a-thing controls"* is gone: the screenshot
+  fills tabs with accent, the design LAW lists **selection** under accent, and
+  the styleguide's own caption had said so since the reskin. That comment was
+  the last written trace of the treatment being replaced.
+
+- **LV.10 (2026-08-11) — DEF renders the team logo, and the fallback that was
+  never a fallback.** Chris: *"for DEF use the team's logo — that's what all
+  platforms do."* Two fixes, one cause, and the second is the more valuable one.
+
+  **The bug.** `players.headshot_url` is written by the Sleeper sync as
+  `…/content/nfl/players/thumb/<sleeper_id>.jpg`, and for a team defense the
+  Sleeper id **is the team abbreviation** — so every DEF row stores
+  `…/thumb/PHI.jpg`, a URL that has never existed. Measured live: that path is
+  **403**, `…/images/team_logos/nfl/phi.png` is **200** (12 KB PNG), and
+  `…/team_logos/nfl/PHI.png` is **404**. **The logo path is case-sensitive**;
+  all 32 abbreviations were checked lowercased against the CDN and every one
+  returned 200. Same host the app already uses for headshots — no new
+  dependency, nothing scraped.
+
+  **Resolved at render, never written back.** `players` is sync-owned and the
+  app must never write to it (CLAUDE.md), and the schema budget is closed at
+  three, so this is a substitution made every time an image is drawn:
+  `src/lib/player-image.ts` → `getPlayerImageUrl(player)`. It prefers `team`
+  and falls back to `id` — for a DEF row the two are equal, but `team` is the
+  field that *means* "which team" and `id` is only equal to it by the accident
+  of Sleeper's keying, so a future id scheme cannot quietly become the source.
+  An abbreviation outside `NFL_TEAMS` returns `null` (→ initials) rather than a
+  request known in advance to 404.
+
+  **The class names could not live in the lib, and that is not cosmetic.**
+  `src/lib/**` is outside Tailwind's `content` globs, so `object-contain` named
+  only there would be purged — and because `tailwind-merge` *does* remove the
+  base `object-cover`, the result would have been an image with no object-fit at
+  all: a stretched logo, from a class that looked right in the source. The URL
+  lives in the lib; the fit decision lives in
+  `src/components/players/player-image.tsx`, inside the scanned tree.
+
+  **The second fix — the one worth carrying.** The survey found the general
+  fallback was broken in exactly the two places that had hand-rolled an `<img>`
+  instead of using the shared primitive: `list-thumbnail.tsx`'s quadrant and
+  `cover-tile.tsx`'s stacked chip. Both did
+  `player.headshot_url ? <img> : <initials>` — which handles a **missing URL**
+  and not a **failed load**, so a 403 painted the browser's broken-image glyph.
+  That is CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* in
+  visual form. The fix is **not** a new `onError` handler: Radix's
+  `Avatar.Image` already reports `error` for both cases and `Avatar.Fallback`
+  renders whenever the status is not `loaded`, so the two raw `<img>`s were
+  converted to the primitive the other twelve call sites already use. The bug
+  was the fork, and deleting the fork is the fix. (`Avatar.Root`/`Fallback` are
+  `<span>`s, which is why the cover band's span tree stays legal.)
+
+  **Every call site now goes through one component.** `PlayerAvatarImage`
+  replaced the `{player.headshot_url && <AvatarImage …/>}` idiom in 14 files:
+  `lists/list-thumbnail`, `lists/v2/cover-tile`, `lists/v2/list-row-parts`,
+  `lists/builder/player-sidebar`, `players/player-card` (×2),
+  `players/player-detail-header`, `players/player-row`, `players/player-search`,
+  `players/player-window`, `players/players-spreadsheet`,
+  `shared/command-palette`, `teams/team-roster`, `home/home-player-row`,
+  `draft/draft-queue-card`. `home-player-row` takes flat props rather than a
+  player, so it gained a `team` prop (passed by `trending-players-card`; the two
+  mock cards render no headshot and were left alone).
+
+  **Off limits, recorded rather than edited.** `lists/draft-mode/board-column.tsx`
+  renders a player headshot and carries the *same* DEF bug — it is in the boards
+  tree, so it was not opened; **LV.7 retires that surface and should take the
+  conversion with it**. `src/components/big-board/**` was checked and renders no
+  player image at all (zero `<img>`, zero `AvatarImage`), so the boards rule
+  costs nothing there. `leagues/league-cells.tsx`'s `Crest` is a league/team
+  crest on mock data, not a player headshot — out of scope by kind, not by tree.
+
+  **Interpretation flagged.** `draft/draft-queue-card.tsx` was converted even
+  though `ACTIVE-BUILD.md` warns about `src/components/draft/**`. That warning
+  is about *picking `L.*` tasks* while Lists v2 is active; this is a one-token
+  `src` swap under an app-wide ruling, and leaving a known-403 image on a
+  surface the ruling covers seemed worse than the scope question. Trivially
+  reverted if a reviewer disagrees.
+
+  **The probe.** `.toLowerCase()` was removed from `getTeamLogoUrl` — the exact
+  regression the test exists for, and one break that proves both fixes at once.
+  Unit: **6 of 12 tests RED**. Browser: the DEF list rendered **AC / AF / BR**
+  initials in the hero quadrants, the rail tile and the player rows —
+  `logoImgsInDom: 0`, `brokenGlyphs: 0`, i.e. Radix pulled the failed `<img>`
+  and drew the fallback. Reverted; 12/12 green and all four logos back to
+  `naturalWidth 150`.
+
 ---
 
 ## 5. Blockers
@@ -1407,6 +1874,21 @@ alone is not trustworthy.
    `#df5551 / #e58033 / #e6b422 / #3fa055 / #1f9aa6`. The tokens were right and
    the prose misled. General lesson: where the two disagree, the screenshots
    and the tokens win.
+
+### ⚠️ Gap 2 was WRONG and is reversed — 2026-08-11
+
+**Cover tiles were never the wrong object.** Gap 2 below reads the prototype's
+glyphs as the intended treatment and calls `ListThumbnail` *"different
+component, different idea"*. Chris ruled the opposite the same day: the
+headshots were right all along, and only the **fill** changes — the list's
+position group, ink when there is no filter. The gallery band swaps the 2×2
+quadrants for four 24px headshots stacked in the bottom-right. See §4's
+`LV.2-fix` entry and the boxed exception at the top of `screens/README.md`.
+
+**Read gap 2 as a record of a mistake, not as instruction.** Its own general
+lesson — *where the screenshots and the prose disagree, the screenshots win* —
+survives; what it missed is that a screenshot of **fake data** is not a
+statement of intent, and neither outranks a ruling.
 
 ### ✅ Closed by the rebuild — 2026-08-11
 

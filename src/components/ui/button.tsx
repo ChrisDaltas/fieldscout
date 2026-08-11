@@ -9,8 +9,13 @@ import { cn } from "@/lib/utils"
  *
  * Hover escalation by richness: ghost (text only) gains a background; stroke
  * (outline) inverts to solid ink; filled variants (blue/green/lime/dark) lift
- * up-left onto a hard shadow. With `shadow`, the button rests on a hard
- * shadow, lifts further on hover, and presses flat on click.
+ * up-left onto a hard shadow.
+ *
+ * **No variant is elevated at rest.** Elevation is a hover/press affordance,
+ * never a resting state (CLAUDE.md → "Elevation"; docs/design/lists/README.md
+ * §Geometry: "Buttons press flat on `:active`"). `shadow` is the *emphasis*
+ * lift — a page's primary action rests flat like everything else and then
+ * lifts further than a plain filled button on hover (`hard-6` vs `hard-4`).
  *
  * Canonical variants: blue ("do a thing" primary), stroke, ghost, dark,
  * green (start/confirm), lime (brand-strong). Legacy aliases kept for
@@ -26,7 +31,7 @@ const buttonVariants = cva(
         stroke: "bg-transparent text-ink hover:bg-ink hover:text-white",
         ghost:
           "border-transparent bg-transparent text-ink hover:bg-n-4 hover:text-accent",
-        dark: "bg-ink text-white hover:bg-ink-2 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3.2px_3.2px_0_#3d5cff] active:translate-x-0 active:translate-y-0 active:shadow-none",
+        dark: "bg-ink text-white hover:bg-ink-2 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-accent-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
         green:
           "bg-positive text-ink hover:brightness-[0.94] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
         lime: "bg-brand-strong text-ink hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
@@ -50,18 +55,19 @@ const buttonVariants = cva(
         "icon-md": "h-btn-md w-btn-md px-0 [&_svg]:size-[13px]",
         "icon-sm": "h-btn-sm w-btn-sm px-0 [&_svg]:size-[13px]",
       },
-      /** Resting hard shadow — "liftable/pressable". Ink fills take the
-       *  accent shadow (an ink shadow disappears into the fill). */
+      /** Emphasis lift — the page's primary action. Rests flat like every
+       *  other control and lifts one step further than a plain filled
+       *  variant on hover (hard-6, not hard-4). Ink fills take the accent
+       *  shadow (an ink shadow disappears into the fill). */
       shadow: {
-        true: "shadow-hard-4 hover:shadow-hard-6 hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-[3.2px] active:translate-y-[3.2px] active:shadow-none",
+        true: "hover:shadow-hard-6 hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 active:shadow-none",
       },
     },
     compoundVariants: [
       {
         variant: "dark",
         shadow: true,
-        className:
-          "shadow-[3.2px_3.2px_0_#3d5cff] hover:shadow-[4.8px_4.8px_0_#3d5cff] active:shadow-none",
+        className: "hover:shadow-hard-accent active:shadow-none",
       },
     ],
     defaultVariants: {

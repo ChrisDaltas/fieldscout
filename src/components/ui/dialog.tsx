@@ -44,6 +44,8 @@ const DialogContent = React.forwardRef<
 >(({ className, children, hideClose = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
+    {/* Elevation exception: a modal genuinely floats above the page, so it
+        keeps its resting shadow. See CLAUDE.md → "Elevation". */}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

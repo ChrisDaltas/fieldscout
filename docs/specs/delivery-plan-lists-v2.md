@@ -1,15 +1,20 @@
 # Delivery Plan: Lists v2
 
-> **v3.6 — 2026-08-10. UI/UX only, with exactly two data exceptions.**
+> **v3.9 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
-> from scope** — with two deliberate exceptions, both ruled by Chris on
-> 2026-08-09: **(1) `drafted` persists server-side** — per user, per list —
-> because seeing who is already gone from your phone is the point of the
-> feature; and **(2) `list_players.tier`'s CHECK constraint widens**, because
-> round grouping cannot represent a 12–16 round draft against six buckets.
-> Between them that is one new table and one `ALTER TABLE`. Nothing else.
+> from scope** — with three deliberate exceptions, each individually ruled by
+> Chris: **(1) `drafted` persists server-side** — per user, per list — because
+> seeing who is already gone from your phone is the point of the feature
+> (2026-08-09); **(2) `list_players.tier`'s CHECK constraint widens**, because
+> round grouping cannot represent a 12–16 round draft against six buckets
+> (2026-08-09); and **(3) `list_links`**, so a list can link back to the
+> resources it drew on and a creator can attach their own video (2026-08-11).
+> Between them that is two new tables and one `ALTER TABLE`. Nothing else.
+>
+> **The budget is now closed at three.** A task that believes it needs a fourth
+> has left scope: stop and raise it.
 >
 > Everything else that only affects how a list *looks* — view style, chosen
 > stat columns, band labels, budget — is **deliberately not saved**. Chris:
@@ -31,7 +36,7 @@
 
 | Ruling | Detail |
 | --- | --- |
-| **UI/UX only, two exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2) and (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**). Nothing else. See §2.2. |
+| **UI/UX only, three exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2), (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**), and (c) the `list_links` table (D8/LV.8, **ruled by Chris 2026-08-11**). Nothing else — the budget is **closed at three**. See §2.2. |
 | **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
 | **Boards are off limits — one amendment** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**` or `src/stores/board-labels-store.ts`. **Amended 2026-08-10:** `src/components/lists/draft-mode/**` is reopened for **deletion of the 3-state cycle only** (`use-board-marks.ts` and its wiring), superseded by the permanent drafted checkbox (D2). Nothing else in that tree is in scope. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
@@ -126,7 +131,7 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 | `visibility` | **Private or public only** (Chris, 2026-08-09) — the handoff's third "link" state is not wanted. Existing `is_private` covers it exactly | none |
 | `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
 | `scope` | **Dropped** — defined but never rendered | dropped |
-| `links[]` | **NOT dropped — corrected 2026-08-10 from the screenshots.** `screens/detail-tab-details.png` renders an **Attached links** section (YouTube video with title, source, duration, remove control) plus an "Attach a video or article" action | in scope |
+| `links[]` | **NOT dropped — corrected 2026-08-10 from the screenshots**, then **built at LV.8** (2026-08-11). `screens/detail-tab-details.png` renders an **Attached links** section (video with title, source, duration, remove control) plus an "Attach a video or article" action. Stored in the new `list_links` table (D8) — reads follow the list, writes are owner-only | the third exception |
 
 **What is deliberate, not a compromise** — stated plainly so nobody
 "fixes" it later:
@@ -242,11 +247,31 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   (Chris, 2026-08-09). They all behave exactly as tiers do today: a player sits
   in a bucket, and `org` decides whether that bucket renders as "Tier 1",
   "Round 1", or a cost band's editable label. There is no separate `round` or
-  `cost` field, nothing is computed, and drag-to-bucket assigns in every mode
-  — it is the same write in all four.
+  `cost` field.
 
   Storage is the existing `list_players.tier` (`text`), written through the
   existing `PATCH /api/lists/[id]/players/[playerId]/tier` route.
+
+  **Erratum (v3.8, LV.4 Builder 2026-08-11) — "nothing is computed, and
+  drag-to-bucket assigns in every mode, the same write in all four" was wrong
+  about two of the four.** `screens/README.md` had already recorded half of
+  this against the prototype's own model: `detail-grouping-budget-pct.png`
+  computes Budget % from `Cost PPR`, and the prototype keeps a stored `tier` /
+  `round` on the entry while *deriving* the cost bands from a price. LV.3
+  shipped that way. So the mechanism is one shape with **two** sources:
+
+  | Grouping | Bucket membership | A drop can assign it |
+  | --- | --- | --- |
+  | Ranked | array order | n/a — one section |
+  | Tiers | stored `list_players.tier` ∈ S–F | **yes** |
+  | Rounds | stored `list_players.tier` = `r1`…`rN` | not until **LV.1.5** widens the CHECK — refused with its reason |
+  | Avg cost / Budget % | **computed** from `players.auction_value` | **no — there is nothing to write** |
+
+  The consequence LV.4 had to take: in Avg cost and Budget %, dragging is not
+  offered at all (the section re-sorts by price on every render, so a hand
+  ordering would snap back), and the grip carries the reason. Bucket membership
+  travelling with a shared list (§2.2, point 3) is unaffected — it was only
+  ever true of the stored groupings.
 
   **Tier labels stay S/A/B/C/D/F** (Chris, 2026-08-09) — no change needed for
   tier mode, and `tailwind.config.ts` already carries the S–F color keys
@@ -284,15 +309,117 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   `offsetHeight`/`offsetWidth`. State updates only when the target slot
   changes — updating per `dragover` visibly janks.
 
-- **D6 — Two server-side changes in Round 1, both named and both ruled.**
+- **D6 — Three server-side changes in Round 1, each named and each ruled.**
   (a) the `drafted` table and its route (D2/LV.1.2); (b) widening
   `list_players.tier`'s CHECK constraint plus the matching Zod enum
-  (D4/LV.1.5). Existing routes cover every other mutation. **These two are the
-  whole budget** — a task that believes it needs a third has crossed out of
-  scope: stop and raise it, do not proceed.
+  (D4/LV.1.5); (c) the `list_links` table and its routes (D8/LV.8). Existing
+  routes cover every other mutation. **These three are the whole budget** — a
+  task that believes it needs a fourth has crossed out of scope: stop and
+  raise it, do not proceed.
+
+  *(v3.6 and earlier said "two". The third was ruled on 2026-08-11 — see D8.
+  Note the pattern across all three: each was a real product need the UI-only
+  framing could not hold, each was raised rather than improvised around, and
+  each was ruled individually. That is the process working, not the budget
+  eroding.)*
+
+- **D8 — `list_links`: attribution, and the creator's own video**
+  (Chris, 2026-08-11). Verbatim: *"lets create the table for storing the link,
+  we need a way to link back to resources used and a way for creators to
+  attached videos to their lists."*
+
+  Two purposes, and they are the ceiling on the feature:
+
+  1. **Attribution** — linking back to the resources a list drew on.
+  2. **Creator video** — attaching a video to a list you made.
+
+  Both are the author speaking about their own list, which decides the access
+  rules: **reads follow the list's own visibility** (if you can see the list,
+  you can see its links) while **writes are owner-only** (a link is the
+  author's attribution, not a viewer's annotation). The read policy defers to
+  `lists`' RLS through a bare `EXISTS`, the same form LV.1.2 landed and for the
+  same reason — it covers 067's league-shared private lists for free, which a
+  hardcoded `is_private = FALSE OR owner_id = auth.uid()` would silently
+  exclude (R173).
+
+  Storage is `list_links (id, list_id, kind, url, title, source_label,
+  duration_label, position, created_at, updated_at)` — every column a fact
+  `screens/detail-tab-details.png` actually renders. `position` is stored
+  because the design shows an ordered list.
+
+  **Nothing is scraped, fetched, or derived.** Titles, source labels and
+  durations are typed by the person attaching the link. That is CLAUDE.md's
+  standing rule (ingestion is plain fetch of RSS/YouTube feeds only), not a
+  shortcut. Auto-filling a YouTube title/duration is a follow-up to **propose**,
+  never to smuggle in.
+
+  **The URL is guarded twice, because it renders as an `href` on the public,
+  server-rendered share view (D7).** `links-service.ts` parses with the WHATWG
+  `new URL()` and asserts the protocol is `http:`/`https:`; migration 080's
+  `list_links_url_scheme_check` enforces `^https?://[^[:space:]]+$` at the
+  database, so every future route, RPC or seed script inherits it. The DB layer
+  is not redundant — `duplicate_list` is this codebase's standing proof that a
+  write path which never sees Zod will eventually exist.
+
+  **Duplicating a list does not copy its links.** `duplicate_list` (017)
+  predates this table and was deliberately not modified — that is a scope call,
+  not an oversight, and it is recorded so nobody rediscovers it as a bug.
 
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
+
+- **D9 — One component for every tab and segment** (Chris, 2026-08-11).
+  Verbatim: *"Could you standardize all the tab and segment UI controls to the
+  same component? The one that's being used List / Cards / Side by side. There
+  should be 3 variations of this — icons + label, label only, and icon only —
+  × count. Count = # of lists for example. Right now I see like 3 or 4
+  different versions of tabs. Let's use just that one."*
+
+  **The three variations are content, not style**: an item takes an optional
+  icon, an optional label and an optional count, and `count` is a modifier on
+  any of them. All of it lives in `src/components/ui/tabs.tsx` — extended, not
+  forked, per D1's absolute prohibition.
+
+  **Two wrappers over one style source**, because the look is not the same
+  thing as tab semantics:
+
+  - `Tabs` / `TabsList` / `TabsTrigger` / `TabsContent` — Radix, kept wherever
+    the usage is a genuine tab set (a `tabpanel` per trigger, roving focus,
+    arrow keys). Visual uniformity is never bought by deleting those.
+  - `Segment` / `SegmentItem` — presentational, for a mutually-exclusive picker
+    with no panel to associate, or a tab row that *cannot* enclose its content.
+    The Lists page header is the second case and it is structural, not a
+    preference: `PageHeader` pushes the header into the app shell through a
+    Zustand store, so a `Tabs.Root` around the control and its content is not
+    expressible, and the same control also renders twice (desktop header and
+    in-page below `lg`).
+
+  Both key off the same `data-state` attribute — Radix writes it, `SegmentItem`
+  writes it by hand — so exactly one CVA states a colour.
+
+  **Frame follows role; colour never changes.** `appearance="boxed"` is the
+  joined ink-bordered segment and `"bare"` the un-framed chip row. Both are in
+  `screens/list-rail-list-view.png` **side by side**: List / Cards / Side by
+  side and the view-style toggle are boxed; `My lists 7 / Saved 2` and
+  `List / Details / Comments 0` are bare. Active is an accent fill with white
+  text in *both*.
+
+  **The screenshot overrules the handoff prose here**, on the §7-gap-4
+  precedent. The prose says chip tabs are *"active = `--accent` text"*; the
+  screenshot fills them. It also overrules `ui/tabs.tsx`'s former comment
+  (*"content tabs select to black; accent/blue is reserved for do-a-thing
+  controls"*) — the design LAW lists **selection** under accent, and the
+  styleguide's own caption had said "active is accent fill with white text"
+  since the reskin while the primitive rendered ink.
+
+  **Out of scope, deliberately.** `FilterChip` rows (`ui/badge.tsx`) are a
+  different shared component with a different job and a deliberate ink-fill
+  selected state; several are single-select and could arguably be segments, but
+  converting them is a design change nobody asked for and it would blur
+  "filter" against "tab". Navigation (`bottom-tabs.tsx`, the sidebar), steppers
+  and radio-card pickers are not segments either. `week-tabs.tsx` and
+  `public-big-board.tsx`'s week strip are the same look again and are **off
+  limits** — recorded for whichever task reopens boards.
 
 ---
 
@@ -341,17 +468,30 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.4.3 | Public share view in the new language, still server-rendered (D7) | LV.3.* |
 | LV.4.4 | Flag flip + retire the old components — including **deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle** (D2; §1's boards amendment scopes this), and correcting that file's now-false header comment (R192) | all |
 
+**Phase 5 — attached links** *(added v3.7, ruled 2026-08-11)*
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.8 | **Migration `080_list_links.sql`** + RLS + indexes, the `/api/lists/[id]/links` routes (add, remove, reorder), and the Details tab wired to them (D8). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | LV.3 |
+
+**Phase 6 — the shared control** *(added v3.9, ruled 2026-08-11)*
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.9 | **One tab/segment component** — three variations × count, in `src/components/ui/tabs.tsx`; the hand-rolled Lists v2 controls converted onto it, the genuine tab sets kept on Radix and restyled, and all three variations added to the styleguide (D9). **UI only** — the schema budget stays closed at three | LV.2, LV.3 |
+
 ---
 
 ## 5. Definition of Done (per task)
 
 1. `npm run type-check` and `npm run lint` clean — **shown, not claimed**.
 2. `npm run test:unit` green. `share-link-permanence.test.ts` stays green.
-3. **No migration, no schema change, no new API route** outside the two named
-   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum). A task that thinks
-   it needs more has left scope: raise it, do not proceed.
-   LV.1.2 additionally satisfies checklists §8.1–8.2 (RLS, indexes,
-   `IF NOT EXISTS`, banner comment citing the handoff) and reaches production
+3. **No migration, no schema change, no new API route** outside the three named
+   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum, LV.8's `list_links`
+   table + routes). A task that thinks it needs more has left scope: raise it,
+   do not proceed.
+   LV.1.2 and LV.8 additionally satisfy checklists §8.1–8.2 (RLS, indexes,
+   `IF NOT EXISTS`, banner comment citing the ruling) and reach production
    via `npx supabase db push` — **never** by hand (CLAUDE.md migration
    discipline).
 4. Verified in the browser preview with a screenshot at desktop **and** mobile.
@@ -390,6 +530,59 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.9 (2026-08-11)** — **One control for every tab and segment (new D9,
+  new LV.9).** Chris: *"Right now I see like 3 or 4 different versions of tabs.
+  Let's use just that one."* He was counting accurately — the app carried the
+  Radix primitive's ink-filled boxed tabs, four hand-rolled controls in
+  `lists/v2`, a fifth in `player-detail-panels.tsx`, and `week-tabs.tsx`, which
+  is off limits.
+
+  Two things D9 settles that were not obvious going in. **Radix stays wherever
+  the usage is a real tab set** — the ruling is about the look, and a
+  `tabpanel` association with arrow-key navigation is not a look. And the
+  Lists page header **cannot** be a Radix tab set even though it reads like
+  one, because `PageHeader` pushes it into the app shell through a store, so
+  no root can enclose both the control and its content.
+
+  Also recorded here because it is a second instance of the §7 gap-4 lesson:
+  the handoff's prose says chip tabs go *accent text* on select, and
+  `screens/list-rail-list-view.png` fills them. **The screenshot wins**, and
+  the styleguide's caption had already been describing the filled version
+  while the primitive rendered ink.
+
+- **v3.8 (2026-08-11)** — **D4 erratum, folded back from LV.4.** "Nothing is
+  computed, and drag-to-bucket assigns in every mode — it is the same write in
+  all four" was false for Avg cost and Budget %, whose membership is derived
+  from `players.auction_value`; `screens/README.md` recorded half of this on
+  2026-08-10 and LV.3 shipped against it. D4 now carries the four-row table and
+  the consequence LV.4 took: those two groupings do not offer the drag, and say
+  why. No product decision — this is the plan catching up with a screenshot and
+  a shipped screen.
+
+- **v3.7 (2026-08-11)** — **The third and final schema exception: `list_links`.**
+  Chris: *"lets create the table for storing the link, we need a way to link
+  back to resources used and a way for creators to attached videos to their
+  lists."* Two purposes — **attribution** and a **creator video** — recorded in
+  the new **D8**.
+
+  This closes the gap v3.5 opened and LV.3 could only name: §2.2 had already
+  put `links[]` back in scope from the screenshots (2026-08-10), but there was
+  nowhere to store one, so the LV.3 builder shipped the section with its action
+  **disabled** and flagged it as needing a ruling rather than building a dialog
+  that would throw the link away on submit. That was the right call, and this
+  is the ruling it asked for.
+
+  The header, §1, §2.2, D6 and §5 DoD item 3 all move from **two** exceptions
+  to **three**, and §4 gains a Phase 5 with **LV.8**. The budget is now stated
+  as **closed at three** in both the header and D6 — the previous wording
+  ("these two are the whole budget") had to be edited twice, so it is now
+  written as a rule with a stop condition rather than a count.
+
+  Two things D8 fixes in place rather than leaving for a reviewer to find: the
+  **no-scraping rule** is restated at the decision level (labels are typed, not
+  fetched — CLAUDE.md), and **`duplicate_list` does not copy links**, recorded
+  deliberately so it is a known scope boundary and not a rediscovered bug.
 
 - **v3.6 (2026-08-10)** — **Chris settles the drafted interaction, and it
   dissolves a whole bug class.** There is no draft-mode gate: the checkbox is

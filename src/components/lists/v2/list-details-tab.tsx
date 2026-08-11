@@ -6,8 +6,9 @@ import { PositionBadge } from '@/components/players/position-badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import type { ListWithDetails } from '@/hooks/use-lists'
+import type { AddLinkInput, ListWithDetails } from '@/hooks/use-lists'
 import { MAX_TAGS_PER_LIST } from '@/types/schemas/lists'
 
 /**
@@ -17,19 +18,18 @@ import { MAX_TAGS_PER_LIST } from '@/types/schemas/lists'
  * `+ Add tag`), description with an inline `Edit`, **Attached links**, and the
  * position mix.
  *
- * ## Two honest gaps, both visible on this tab
+ * ## One honest gap left on this tab
  *
- * 1. **Scope is not a chip here.** The reference's fixed chips read
- *    `Ranking · Pre-draft · Public`. `lists` has no scope column and the
- *    build's schema budget is closed (plan §1/D6 — plan §2.2 already lists
- *    scope as dropped), so the second chip is the list's **visibility**, which
- *    is real data. Two chips, not three.
- * 2. **Attached links cannot be stored.** The section renders, because
- *    `screens/README.md` corrected the plan to put it back in scope — but
- *    `lists` has no `links` column and there is no table for one, so nothing
- *    can be attached. The action is disabled and says why rather than opening
- *    a dialog that would throw the link away on submit. Storing links needs a
- *    ruling and a schema exception this build does not hold.
+ * **Scope is not a chip here.** The reference's fixed chips read
+ * `Ranking · Pre-draft · Public`. `lists` has no scope column (plan §2.2 lists
+ * scope as dropped), so the second chip is the list's **visibility**, which is
+ * real data. Two chips, not three.
+ *
+ * *(The tab's second gap — "attached links cannot be stored" — is **closed**.
+ * Chris ruled on 2026-08-11: "lets create the table for storing the link, we
+ * need a way to link back to resources used and a way for creators to attached
+ * videos to their lists." Migration `080_list_links.sql` is the build's third
+ * and final schema exception; the action below is live.)*
  *
  * Tags render **as stored**, not upper-cased. The prototype styles them
  * `text-transform: uppercase`; the design's own copy rule is "never all caps —
@@ -41,6 +41,9 @@ interface DetailsTabProps {
   canEdit: boolean
   onSaveDescription: (description: string) => void
   onSaveTags: (tags: string[]) => void
+  onAddLink: (input: AddLinkInput) => void
+  onRemoveLink: (linkId: string) => void
+  linksBusy: boolean
 }
 
 export function ListDetailsTab({
@@ -48,6 +51,9 @@ export function ListDetailsTab({
   canEdit,
   onSaveDescription,
   onSaveTags,
+  onAddLink,
+  onRemoveLink,
+  linksBusy,
 }: DetailsTabProps) {
   const positionMix = React.useMemo(() => {
     const mix = new Map<string, number>()
@@ -62,7 +68,13 @@ export function ListDetailsTab({
     <div className="flex max-w-[608px] flex-col gap-5">
       <TagsSection list={list} canEdit={canEdit} onSaveTags={onSaveTags} />
       <DescriptionSection list={list} canEdit={canEdit} onSave={onSaveDescription} />
-      <LinksSection canEdit={canEdit} />
+      <LinksSection
+        list={list}
+        canEdit={canEdit}
+        onAdd={onAddLink}
+        onRemove={onRemoveLink}
+        busy={linksBusy}
+      />
 
       <section>
         <SectionLabel>Position mix</SectionLabel>
@@ -264,26 +276,244 @@ function DescriptionSection({
   )
 }
 
-function LinksSection({ canEdit }: { canEdit: boolean }) {
+/**
+ * **Attached links** (migration 080). Ruled by Chris 2026-08-11: attribution
+ * back to the resources a list drew on, plus a creator's own video.
+ *
+ * ## What the reference fixes, and what it leaves to us
+ *
+ * `screens/detail-tab-details.png` shows the card exactly: a solid colour block
+ * on the left, the title in bold, a muted `source · duration` line beneath it,
+ * and a bare `×` on the right, inside a 1px ink-bordered box. All of that is
+ * implemented as drawn.
+ *
+ * It shows **one** card, a video, and no form — so three things are extended
+ * per CLAUDE.md's "where the prototype is silent, extend the new design
+ * language", and named here rather than passed off as the design:
+ *
+ * 1. **The block is a placeholder, not a poster.** There is no scraping in this
+ *    codebase (CLAUDE.md), so we have no thumbnail image to show and nothing
+ *    auto-fills the title or duration. The block therefore carries a glyph, the
+ *    way `ListCoverTile` does: `arrow-next` for a video (the reference's own
+ *    `›`), `document` for an article.
+ * 2. **Colour comes from tokens, never the handoff's hex** (plan §1). The
+ *    reference's rose reads closest to `negative`, which the token file
+ *    reserves for football semantics ("never identity") — so video takes the
+ *    warm ramp's `tier-2` at 50% and an article takes `tier-4`, both with ink
+ *    glyphs. Same warmth, no borrowed meaning.
+ * 3. **The attach form is inline, not a modal.** This tab already edits in
+ *    place — Description's `Edit`, Tags' `+ Add tag` — and the design shows no
+ *    dialog anywhere on it.
+ *
+ * There is **no reorder affordance**, deliberately: the reference shows none,
+ * and `PATCH /api/lists/[id]/links` waits for LV.4 to give it a gesture.
+ *
+ * ## The href is the security-shaped part
+ *
+ * A link renders on the PUBLIC, server-rendered share view (plan D7), so the
+ * URL is validated in `links-service.ts` and again by 080's CHECK — `http`/
+ * `https` only. `rel` carries `ugc nofollow noopener noreferrer`: `ugc
+ * nofollow` because these are reader-supplied outbound links on an
+ * SEO-critical page, `noopener noreferrer` because `target="_blank"` otherwise
+ * hands the opened page a handle on ours.
+ */
+function LinksSection({
+  list,
+  canEdit,
+  onAdd,
+  onRemove,
+  busy,
+}: {
+  list: ListWithDetails
+  canEdit: boolean
+  onAdd: (input: AddLinkInput) => void
+  onRemove: (linkId: string) => void
+  busy: boolean
+}) {
+  const [attaching, setAttaching] = React.useState(false)
+
+  React.useEffect(() => {
+    setAttaching(false)
+  }, [list.id])
+
   return (
     <section>
       <div className="mb-1.5 flex items-center gap-2">
         <span className="mr-auto text-[11px] font-bold text-ink">Attached links</span>
-        {canEdit && (
+        {canEdit && !attaching && (
           <button
             type="button"
-            disabled
-            title="Attachments have nowhere to be stored yet — see the Details tab notes."
-            className="text-[10px] font-medium text-accent opacity-45"
+            onClick={() => setAttaching(true)}
+            className="text-[10px] font-medium text-accent transition-colors hover:text-accent-strong"
           >
             Attach a video or article
           </button>
         )}
       </div>
-      <p className="text-[12px] font-medium leading-relaxed text-n-3">
-        Nothing attached. A film breakdown or an article gives readers the reasoning behind the
-        order — attachments are not stored yet.
-      </p>
+
+      {list.links.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {list.links.map((link) => (
+            <li key={link.id} className="flex items-center gap-2.5 border border-ink bg-white p-2">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-sm border border-ink',
+                  link.kind === 'video' ? 'bg-tier-2/50' : 'bg-tier-4/50',
+                )}
+              >
+                <Icon name={link.kind === 'video' ? 'arrow-next' : 'document'} size={13} />
+              </span>
+
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="ugc nofollow noopener noreferrer"
+                  className="truncate text-[12px] font-bold text-ink underline-offset-2 hover:underline"
+                >
+                  {link.title}
+                </a>
+                <span className="truncate text-[10px] font-medium text-n-3">
+                  {[link.source_label, link.duration_label].filter(Boolean).join(' · ') || link.url}
+                </span>
+              </span>
+
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={`Remove “${link.title}”`}
+                  aria-label={`Remove ${link.title}`}
+                  onClick={() => onRemove(link.id)}
+                  className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors hover:bg-n-4 disabled:opacity-45"
+                >
+                  <Icon name="close" size={11} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {list.links.length === 0 && !attaching && (
+        <p className="text-[12px] font-medium leading-relaxed text-n-3">
+          {canEdit
+            ? 'Nothing attached yet. A film breakdown or an article gives readers the reasoning behind the order.'
+            : 'Nothing attached to this list.'}
+        </p>
+      )}
+
+      {attaching && (
+        <AttachLinkForm
+          busy={busy}
+          onCancel={() => setAttaching(false)}
+          onSubmit={(input) => {
+            onAdd(input)
+            setAttaching(false)
+          }}
+        />
+      )}
     </section>
+  )
+}
+
+/**
+ * The inline attach form. Kind is a two-way segmented choice because 080's
+ * `kind` is a closed set of exactly those two values; URL and title are
+ * required (both are NOT NULL); source and duration are optional, because with
+ * nothing scraping them a card with a bare title is a legitimate card.
+ *
+ * The duration placeholder shows the shape the CHECK accepts (`18:42`) rather
+ * than describing it — a wrong format is refused by the server with a specific
+ * message, never silently dropped.
+ */
+function AttachLinkForm({
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (input: AddLinkInput) => void
+}) {
+  const [kind, setKind] = React.useState<'video' | 'article'>('video')
+  const [url, setUrl] = React.useState('')
+  const [title, setTitle] = React.useState('')
+  const [source, setSource] = React.useState('')
+  const [duration, setDuration] = React.useState('')
+
+  const ready = url.trim().length > 0 && title.trim().length > 0
+
+  return (
+    <form
+      className="mt-1.5 flex flex-col gap-2 border border-ink bg-white p-2.5"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!ready) return
+        onSubmit({
+          kind,
+          url: url.trim(),
+          title: title.trim(),
+          source_label: source.trim() || null,
+          duration_label: duration.trim() || null,
+        })
+      }}
+    >
+      {/* The **label-only** variation of the shared control (`ui/tabs.tsx`).
+          Two mutually-exclusive kinds, so a `Segment` rather than the pair of
+          hand-rolled chips this replaced — those carried their own copy of the
+          accent-active treatment. Sentence case, per the design LAW's copy
+          rule; the previous `capitalize` was doing the same job by CSS. */}
+      <Segment aria-label="Link kind">
+        <SegmentItem active={kind === 'video'} onClick={() => setKind('video')}>
+          Video
+        </SegmentItem>
+        <SegmentItem active={kind === 'article'} onClick={() => setKind('article')}>
+          Article
+        </SegmentItem>
+      </Segment>
+
+      <Input
+        autoFocus
+        value={url}
+        onChange={(event) => setUrl(event.target.value)}
+        placeholder="https://youtube.com/watch?v=…"
+        aria-label="Link address"
+        className="h-[24px] text-[11px]"
+      />
+      <Input
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+        placeholder="Title — what is this?"
+        aria-label="Link title"
+        className="h-[24px] text-[11px]"
+      />
+      <div className="flex gap-2">
+        <Input
+          value={source}
+          onChange={(event) => setSource(event.target.value)}
+          placeholder="Source (optional) — Field Scout on YouTube"
+          aria-label="Link source"
+          className="h-[24px] flex-1 text-[11px]"
+        />
+        <Input
+          value={duration}
+          onChange={(event) => setDuration(event.target.value)}
+          placeholder="18:42"
+          aria-label="Link duration"
+          className="h-[24px] w-[74px] text-[11px]"
+        />
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="stroke" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="blue" size="sm" disabled={!ready || busy}>
+          Attach
+        </Button>
+      </div>
+    </form>
   )
 }

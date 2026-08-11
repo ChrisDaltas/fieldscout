@@ -1,6 +1,7 @@
 'use client'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { PositionBadge } from '@/components/players/position-badge'
 import { cn } from '@/lib/utils'
@@ -117,13 +118,7 @@ export function PlayerRow({
       )}
 
       <Avatar className={cn('shrink-0', compact ? 'h-6 w-6' : 'h-8 w-8')}>
-        {player.headshot_url && (
-          <AvatarImage
-            src={player.headshot_url}
-            alt={player.full_name}
-            className="h-full w-full object-cover object-top"
-          />
-        )}
+        <PlayerAvatarImage player={player} alt={player.full_name} />
         <AvatarFallback className={cn(compact ? 'text-[9px]' : 'text-[10px]')}>
           {initials}
         </AvatarFallback>

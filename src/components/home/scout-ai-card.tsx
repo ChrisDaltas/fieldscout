@@ -17,7 +17,7 @@ import { Icon } from '@/components/ui/icon'
  */
 export function ScoutAiCard() {
   return (
-    <Card className="bg-accent-soft px-[14px] py-[13px] shadow-hard-4">
+    <Card className="bg-accent-soft px-[14px] py-[13px]">
       <div className="mb-2 flex flex-wrap items-center gap-2 gap-y-1">
         <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-pill border border-ink bg-accent text-accent-foreground">
           <Icon name="star" size={13} />

@@ -3,20 +3,24 @@
 import * as React from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
 import {
+  useAddLink,
   useAddPlayer,
   useDeleteList,
   useDuplicateList,
   useList,
+  useRemoveLink,
   useRemovePlayer,
+  useReorderPlayers,
+  useSetPlayerTier,
   useUpdateList,
   type ListPlayerWithPlayer,
   type ListWithTags,
 } from '@/hooks/use-lists'
-import { cn } from '@/lib/utils'
 import {
   colsForView,
   resolveOrg,
@@ -25,8 +29,9 @@ import {
   type ListOrg,
 } from '@/stores/list-display-store'
 
-import { buildBuckets, type Bucket } from './list-buckets'
+import { bucketDrop, buildBuckets, type Bucket } from './list-buckets'
 import { ListBody, type RowHandlers } from './list-body'
+import { planDrop, positionsFor, type DropTarget } from './list-reorder'
 import { ListCommentsTab } from './list-comments-tab'
 import { ListDetailHero, type HeroOwner } from './list-detail-hero'
 import { ListDetailsTab } from './list-details-tab'
@@ -75,6 +80,10 @@ export function ListDetailPanel({
   const deleteList = useDeleteList()
   const addPlayer = useAddPlayer(listId)
   const removePlayer = useRemovePlayer(listId)
+  const addLink = useAddLink(listId)
+  const removeLink = useRemoveLink(listId)
+  const reorderPlayers = useReorderPlayers(listId)
+  const setPlayerTier = useSetPlayerTier(listId)
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
 
   const display = useListDisplay(listId)
@@ -107,6 +116,78 @@ export function ListDetailPanel({
   )
 
   const canEdit = Boolean(list?.is_owner)
+
+  /**
+   * A drop landed (LV.4). Both writes go through routes that already exist —
+   * `PATCH …/players/reorder` and `PATCH …/players/[playerId]/tier` — and both
+   * of those hooks are already optimistic with a rollback in `onError`, which is
+   * what CLAUDE.md asks for on list reordering.
+   *
+   * Two rules worth reading before changing anything here:
+   *
+   * 1. **A refused drop says so.** `bucketDrop` is the only thing that knows
+   *    whether a section can be written; a round bucket cannot until LV.1.5
+   *    widens `list_players_tier_check`, and a cost/budget band never can
+   *    because it is computed from the player's auction value. Both surface the
+   *    reason instead of no-oping (CLAUDE.md: never let "nothing happened" mean
+   *    "it worked").
+   * 2. **The two writes are sequenced, not fired together.** They patch the same
+   *    React Query cache in `onMutate`; issued in the same tick, whichever reads
+   *    the cache first can be overwritten by the other's snapshot. The bucket
+   *    write goes first because it is the one that can be refused by the server,
+   *    and the order write follows on its success.
+   */
+  const handleDrop = React.useCallback(
+    (entryId: string, target: DropTarget) => {
+      if (!canEdit) return
+
+      const rule =
+        target.kind === 'new'
+          ? ({ ok: true, tier: target.tier } as const)
+          : bucketDrop(org, target.bucketKey)
+
+      if (!rule.ok) {
+        toast({
+          title: 'That section cannot be assigned',
+          description: rule.reason,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const plan = planDrop({ buckets, entryId, target, tier: rule.tier })
+      // Dropped exactly where it started: no request, and nothing to announce.
+      if (!plan) return
+
+      const applyOrder = (order: string[]) =>
+        reorderPlayers.mutate(positionsFor(order), {
+          onError: (error) =>
+            toast({
+              title: 'Could not save the new order',
+              description: error.message,
+              variant: 'destructive',
+            }),
+        })
+
+      if (plan.tier) {
+        setPlayerTier.mutate(plan.tier, {
+          onError: (error) =>
+            toast({
+              title: 'Could not move that player',
+              description: error.message,
+              variant: 'destructive',
+            }),
+          onSuccess: () => {
+            if (plan.order) applyOrder(plan.order)
+          },
+        })
+        return
+      }
+
+      if (plan.order) applyOrder(plan.order)
+    },
+    [buckets, canEdit, org, reorderPlayers, setPlayerTier, toast],
+  )
 
   const handlers: RowHandlers = {
     canEdit,
@@ -197,40 +278,35 @@ export function ListDetailPanel({
         }
       />
 
-      <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
-        {(
-          [
-            { id: 'list', label: 'List', count: null },
-            { id: 'details', label: 'Details', count: null },
-            { id: 'comments', label: 'Comments', count: comments.data?.pagination.total ?? null },
-          ] as const
-        ).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={tab === item.id}
-            onClick={() => setTab(item.id)}
-            className={cn(
-              'inline-flex h-tab items-center gap-1.5 rounded-sm px-3 text-[11px] font-bold transition-colors',
-              tab === item.id
-                ? 'bg-accent text-accent-foreground'
-                : 'bg-transparent text-ink hover:bg-accent-soft',
-            )}
-          >
-            {item.label}
-            {item.count != null && (
-              <span className="fs-num text-[10px] font-medium opacity-75">{item.count}</span>
-            )}
-          </button>
-        ))}
-        <span className="ml-auto flex items-center gap-1.5 pb-1.5 text-[10px] font-medium text-n-3">
-          <Icon name="eye" size={12} />
-          <span className="fs-num">{formatCount(list.view_count)}</span>
-        </span>
-      </div>
+      {/*
+        The **label + count** variation of the shared control (`ui/tabs.tsx`),
+        bare, per `screens/list-rail-list-view.png`.
 
-      {tab === 'list' && (
-        <>
+        This one *is* a genuine tab set — each trigger owns a sibling panel —
+        so it runs on Radix rather than on `Segment`. That is an upgrade, not a
+        restyle: the hand-rolled buttons it replaces had no `tabpanel`
+        association and no arrow-key navigation.
+      */}
+      <Tabs
+        value={tab}
+        onValueChange={(next) => setTab(next as DetailTab)}
+        className="flex flex-col gap-3"
+      >
+        <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
+          <TabsList aria-label="List sections" className="flex-wrap">
+            <TabsTrigger value="list">List</TabsTrigger>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="comments" count={comments.data?.pagination.total ?? null}>
+              Comments
+            </TabsTrigger>
+          </TabsList>
+          <span className="ml-auto flex items-center gap-1.5 pb-1.5 text-[10px] font-medium text-n-3">
+            <Icon name="eye" size={12} />
+            <span className="fs-num">{formatCount(list.view_count)}</span>
+          </span>
+        </div>
+
+        <TabsContent value="list" className="mt-0 flex flex-col gap-3">
           <ListToolbar
             org={org}
             onOrgChange={(next) => setOrg(listId, next)}
@@ -260,33 +336,62 @@ export function ListDetailPanel({
               buckets={buckets}
               stats={stats}
               view={display.view}
+              org={org}
               showBudgetShare={org === 'budget'}
               budget={display.budget}
               handlers={handlers}
               onRenameBand={(bandKey, label) => setBandLabel(listId, bandKey, label)}
               onAddToBucket={() => setAddOpen(true)}
+              onDrop={handleDrop}
             />
           )}
-        </>
-      )}
+        </TabsContent>
 
-      {tab === 'details' && (
-        <ListDetailsTab
-          list={list}
-          canEdit={canEdit}
-          onSaveDescription={(description) => updateList.mutate({ description })}
-          onSaveTags={(tags) => updateList.mutate({ tags })}
-        />
-      )}
+        <TabsContent value="details" className="mt-0">
+          <ListDetailsTab
+            list={list}
+            canEdit={canEdit}
+            onSaveDescription={(description) => updateList.mutate({ description })}
+            onSaveTags={(tags) => updateList.mutate({ tags })}
+            // A rejected link must SAY why. The service answers with a specific
+            // message for every refusal — bad scheme, duplicate, over the cap —
+            // and swallowing it would leave the form looking like it worked
+            // (CLAUDE.md: never let "nothing happened" mean "it worked").
+            onAddLink={(input) =>
+              addLink.mutate(input, {
+                onError: (error) =>
+                  toast({
+                    title: 'Could not attach that link',
+                    description: error.message,
+                    variant: 'destructive',
+                  }),
+              })
+            }
+            onRemoveLink={(linkId) =>
+              removeLink.mutate(linkId, {
+                onError: (error) =>
+                  toast({
+                    title: 'Could not remove that link',
+                    description: error.message,
+                    variant: 'destructive',
+                  }),
+              })
+            }
+            linksBusy={addLink.isPending || removeLink.isPending}
+          />
+        </TabsContent>
 
-      {tab === 'comments' && <ListCommentsTab listId={listId} viewer={viewer} />}
+        <TabsContent value="comments" className="mt-0">
+          <ListCommentsTab listId={listId} viewer={viewer} />
+        </TabsContent>
+      </Tabs>
     </PanelShell>
   )
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 border border-ink bg-white p-[18px] shadow-hard-4">
+    <div className="flex flex-col gap-3 border border-ink bg-white p-[18px]">
       {children}
     </div>
   )

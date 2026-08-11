@@ -61,7 +61,7 @@ export function ListGalleryCard({
   return (
     <div className="flex flex-col border border-ink bg-white transition-shadow hover:shadow-hard-4">
       <button type="button" onClick={onOpen} className="block text-left">
-        <ListCoverBand list={list} />
+        <ListCoverBand list={list} players={list.first_players} />
       </button>
 
       <div className="flex flex-1 flex-col gap-2 p-2.5">

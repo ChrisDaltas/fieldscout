@@ -14,6 +14,9 @@ import {
   rankingModeToLegacyFlags,
 } from '@/types/schemas/lists'
 
+/** How many players each list carries for its cover. See the GET body. */
+const COVER_PLAYERS = 4
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const parsed = listsQuerySchema.safeParse({
@@ -119,8 +122,11 @@ export async function GET(request: Request) {
     } as Record<string, unknown> & { id: string }
   })
 
-  // Attach first 3 players per list so cards can render the quadrant
-  // thumbnail without an N+1 fetch.
+  // Attach the first few players per list so covers render without an N+1
+  // fetch. Four, not three: the square rail/hero tile draws three headshots
+  // beside its position label, but Lists v2's gallery band stacks the **top
+  // four** (Chris, 2026-08-11). This is a cap on an existing query, not a new
+  // route — every other consumer slices to three and is unaffected.
   const listIds = lists.map((l) => l.id)
   const firstPlayersByList = new Map<
     string,
@@ -150,7 +156,7 @@ export async function GET(request: Request) {
         }
         if (!r.player) continue
         const existing = firstPlayersByList.get(r.list_id) ?? []
-        if (existing.length >= 3) continue
+        if (existing.length >= COVER_PLAYERS) continue
         existing.push(r.player)
         firstPlayersByList.set(r.list_id, existing)
       }

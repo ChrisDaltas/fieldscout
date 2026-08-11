@@ -32,6 +32,8 @@ const ToastViewport = React.forwardRef<
 ))
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 
+// Elevation exception: a toast floats over the whole app, so it keeps its
+// resting shadow. See CLAUDE.md → "Elevation".
 const toastVariants = cva(
   "group pointer-events-auto relative flex w-auto max-w-[336px] items-center gap-2 overflow-hidden rounded-sm border border-ink bg-white py-2 pl-3 pr-2 text-[13px] font-bold text-ink shadow-hard-4 transition-all duration-200 data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[swipe=end]:animate-out",
   {

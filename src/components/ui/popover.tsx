@@ -24,6 +24,8 @@ const PopoverContent = React.forwardRef<
       ref={ref}
       align={align}
       sideOffset={sideOffset}
+      // Elevation exception: an overlay panel really does sit above the page,
+      // so it keeps its resting shadow. See CLAUDE.md → "Elevation".
       className={cn(
         "z-50 w-72 rounded-sm border border-ink bg-white p-card-pad text-ink shadow-hard-4 outline-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className

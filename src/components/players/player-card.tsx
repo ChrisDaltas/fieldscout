@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { PositionBadge } from '@/components/players/position-badge'
 import { cn } from '@/lib/utils'
@@ -276,13 +277,7 @@ export function PlayerCard({
             dimContent && 'opacity-40 grayscale',
           )}
         >
-          {player.headshot_url && (
-            <AvatarImage
-              src={player.headshot_url}
-              alt={player.full_name}
-              className="h-full w-full object-cover object-top"
-            />
-          )}
+          <PlayerAvatarImage player={player} alt={player.full_name} />
           <AvatarFallback className="rounded-none text-sm">{initials}</AvatarFallback>
         </Avatar>
 
@@ -473,13 +468,7 @@ export function PlayerCard({
         )}
       >
         <Avatar className={cn('shrink-0', compact ? 'h-9 w-9' : 'h-14 w-14')}>
-          {player.headshot_url && (
-            <AvatarImage
-              src={player.headshot_url}
-              alt={player.full_name}
-              className="h-full w-full object-cover object-top"
-            />
-          )}
+          <PlayerAvatarImage player={player} alt={player.full_name} />
           <AvatarFallback className="text-xs">{initials}</AvatarFallback>
         </Avatar>
         <FittedName

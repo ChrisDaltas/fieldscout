@@ -6,6 +6,7 @@ import {
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
+import { fetchListLinks, type ListLink } from '@/lib/lists/links-service'
 import { aggregateFantasyStats } from '@/lib/stats/aggregate-fantasy'
 import { createServerClient } from '@/lib/supabase/server'
 import { rankingModeToLegacyFlags, updateListSchema } from '@/types/schemas/lists'
@@ -47,7 +48,21 @@ export async function GET(_request: Request, { params }: RouteParams) {
     viewerFavorited = Boolean(favRow)
   }
 
-  const [{ data: players, error: playersError }, { data: tags, error: tagsError }] =
+  // Attached links ride along with the list rather than costing a second
+  // round-trip (migration 080; the Details tab renders them, and the
+  // server-rendered share view will get them for free under D7). A failure
+  // here is a 500, NOT an empty array: this section has a real "Nothing
+  // attached" empty state, and rendering it because a query errored is exactly
+  // the production bug CLAUDE.md records — "a database error returned HTTP 200
+  // with an empty list, rendering an empty state instead of an error".
+  const linksPromise: Promise<{ links: ListLink[] } | { error: string }> = fetchListLinks(
+    supabase,
+    id,
+  )
+    .then((links) => ({ links }))
+    .catch((err: Error) => ({ error: err.message }))
+
+  const [{ data: players, error: playersError }, { data: tags, error: tagsError }, linksResult] =
     await Promise.all([
       supabase
         .from('list_players')
@@ -73,6 +88,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
         .from('list_tags')
         .select('tag:tags(id, name, slug, is_system_tag)')
         .eq('list_id', id),
+      linksPromise,
     ])
 
   if (playersError) {
@@ -80,6 +96,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
   if (tagsError) {
     return NextResponse.json({ error: tagsError.message }, { status: 500 })
+  }
+  if ('error' in linksResult) {
+    return NextResponse.json({ error: linksResult.error }, { status: 500 })
   }
 
   const flatTags = (tags ?? [])
@@ -114,6 +133,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     is_favorited: viewerFavorited,
     players: enrichedPlayers,
     tags: flatTags,
+    links: linksResult.links,
   })
 }
 

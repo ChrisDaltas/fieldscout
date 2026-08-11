@@ -1,6 +1,7 @@
 'use client'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PositionBadge } from '@/components/players/position-badge'
 
 /**
@@ -16,6 +17,13 @@ interface HomePlayerRowProps {
   name: string
   position: string
   headshotUrl?: string | null
+  /**
+   * The player's NFL team. Only read to pick the image: a `DEF` row's picture
+   * is its team logo, not the headshot the sync stored (see
+   * `src/lib/player-image.ts`). Callers that render the team in `meta` should
+   * pass it here too rather than relying on the meta text.
+   */
+  team?: string | null
   /** Small text after the position badge (team, rostered %, …). */
   meta?: React.ReactNode
   /** Chip rendered inline after the name (e.g. "On your team"). */
@@ -42,6 +50,7 @@ export function HomePlayerRow({
   name,
   position,
   headshotUrl,
+  team,
   meta,
   nameBadge,
   note,
@@ -51,13 +60,10 @@ export function HomePlayerRow({
   return (
     <div className="flex items-start gap-2.5 px-[13px] py-2">
       <Avatar className="h-8 w-8">
-        {headshotUrl && (
-          <AvatarImage
-            src={headshotUrl}
-            alt={name}
-            className="object-cover object-top"
-          />
-        )}
+        <PlayerAvatarImage
+          player={{ position, team, headshot_url: headshotUrl }}
+          alt={name}
+        />
         <AvatarFallback>{initialsOf(name)}</AvatarFallback>
       </Avatar>
 

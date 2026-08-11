@@ -43,7 +43,7 @@ export function ProfileHeader({
   const Heading = isOwn ? ('h2' as const) : ('h1' as const)
 
   return (
-    <header className="flex flex-col gap-4 rounded-sm border border-ink bg-white p-card-pad shadow-hard-4 sm:flex-row sm:items-center sm:gap-[18px] sm:px-[18px] sm:py-4">
+    <header className="flex flex-col gap-4 rounded-sm border border-ink bg-white p-card-pad sm:flex-row sm:items-center sm:gap-[18px] sm:px-[18px] sm:py-4">
       <UserAvatar
         src={avatarUrl}
         name={username}

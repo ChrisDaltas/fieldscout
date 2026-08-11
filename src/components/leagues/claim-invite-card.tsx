@@ -97,7 +97,7 @@ export function ClaimInviteCard({
   }
 
   return (
-    <Card className="shadow-hard-4">
+    <Card>
       {preview.found && <PreviewHeader preview={preview} />}
 
       <CardContent className="space-y-4 py-5">

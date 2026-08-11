@@ -1387,6 +1387,53 @@ export type Database = {
           },
         ]
       }
+      list_links: {
+        Row: {
+          created_at: string
+          duration_label: string | null
+          id: string
+          kind: string
+          list_id: string
+          position: number
+          source_label: string | null
+          title: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          duration_label?: string | null
+          id?: string
+          kind: string
+          list_id: string
+          position?: number
+          source_label?: string | null
+          title: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          duration_label?: string | null
+          id?: string
+          kind?: string
+          list_id?: string
+          position?: number
+          source_label?: string | null
+          title?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_links_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       list_player_drafted: {
         Row: {
           drafted_at: string
@@ -3518,6 +3565,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 

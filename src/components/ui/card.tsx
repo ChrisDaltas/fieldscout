@@ -4,9 +4,13 @@ import { cn } from "@/lib/utils"
 
 /**
  * Field Scout card — white surface, 1px ink border, near-square corners.
- * No resting shadow: cards sit flat. Clickable cards opt in to lift via
- * className (e.g. `hover:shadow-hard-4`); hero cards may rest on
- * `shadow-hard-4`/`shadow-hard-6`.
+ *
+ * **No resting shadow, ever.** Cards sit flat; the ink border is what
+ * separates them from the page. Clickable cards opt in to lift via className
+ * (`transition-shadow hover:shadow-hard-4`) — and only clickable ones, since
+ * a card that lifts under the cursor but does nothing on click is a lie about
+ * its own affordance. There is no "hero card rests elevated" escape hatch:
+ * elevation is a hover/press affordance (CLAUDE.md → "Elevation").
  */
 const Card = React.forwardRef<
   HTMLDivElement,

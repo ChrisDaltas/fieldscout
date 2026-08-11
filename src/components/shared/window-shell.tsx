@@ -166,6 +166,8 @@ export function WindowShell({
     }
   }
 
+  // Elevation exception: a portalled, position-fixed floating window is the
+  // literal case elevation is for. See CLAUDE.md → "Elevation".
   return createPortal(
     <div
       role="dialog"

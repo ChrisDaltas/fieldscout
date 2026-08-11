@@ -42,6 +42,18 @@ A whole-app visual overhaul is underway. The **Claude Design prototype ("Field S
 - **Responsive design:** Mobile-first. Use Tailwind breakpoints (`sm:`, `md:`, `lg:`).
 - **Theming: single blended mode.** No dark/light toggle. Legacy `next-themes` / `dark:` variants are being removed as part of the redesign — don't add new ones.
 
+#### Elevation is a hover state, never a resting one
+
+*(Ruled by Chris 2026-08-11. Not a new preference — the design system already said it and the app had drifted: `docs/design/lists/README.md` §Geometry, "**Elevation is a hover affordance only.** Nothing carries a resting shadow.")*
+
+- **Nothing in normal page flow is elevated at rest.** The 1px ink border is what separates a surface from the page. The hard shadow means "you are pointing at this" or "you are pressing this" — if it's always on, it means nothing.
+- Reach for `shadow-hard-4` / `-6` / `-8` (and `shadow-hard-accent*` on ink fills) **only behind an interaction prefix**: `hover:`, `active:`, `focus-visible:`, `group-hover:`. Pair it with `transition-shadow` (or `transition-all` if the element also translates).
+- **Only elevate something that's actually interactive.** A non-interactive panel that lifts under the cursor lies about its affordance — that one loses the shadow entirely rather than gaining a `hover:`.
+- **Don't use elevation to encode state.** Selected / on-the-clock / active is a *resting* condition, so it's carried by fill (`bg-accent-soft`) or border (`border-accent`), never by a shadow.
+- **The exception is a true overlay** — something that genuinely floats above the page, where a shadow that appeared only on hover would be wrong. That's: dialogs/modals, popovers, dropdown and select menus, toasts, tooltips, absolutely-positioned suggestion menus and hover cards, drag ghosts and `isDragging` rows, floating/pop-out windows, and bars pinned over scrolling content. These keep their resting shadow; say why in a comment next to it.
+- Shadows come from the `boxShadow` tokens in `tailwind.config.ts` — never a literal `shadow-[…px…#hex]`.
+- `src/components/ui/elevation-rule.test.ts` pins this for the shared primitives, with the overlay allowlist and its reasons.
+
 ### Components
 - **No near-duplicate components.** Before creating any component, search `components/` for one that already does the job. Prefer adding a CVA variant or prop to an existing component over creating a new one. New shared components require explicit approval; small visual differences from a mock never justify forking a component.
 

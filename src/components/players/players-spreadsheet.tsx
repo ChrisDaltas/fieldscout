@@ -8,7 +8,8 @@ import {
   PositionBadge,
   POSITION_TAB_ACTIVE,
 } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -459,7 +460,12 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             value={position}
             onValueChange={(v) => setPosition(v as PositionFilter)}
           >
-            <TabsList>
+            {/* Boxed, not the bare default: this row filters the table in
+                place rather than swapping panels, so it reads as a segmented
+                picker — the same frame as the Lists page-mode control. The
+                active fill is the position colour instead of accent, which is
+                the one sanctioned override of the shared look. */}
+            <TabsList appearance="boxed">
               {POSITION_FILTERS.map((p) => (
                 <TabsTrigger key={p} value={p} className={POSITION_TAB_ACTIVE[p]}>
                   {POSITION_LABELS[p]}
@@ -770,13 +776,7 @@ function PlayerTableRow({
       <StickyTd leftOffset="106px" width="230px">
         <div className="flex items-center gap-2.5">
           <Avatar className="h-6 w-6">
-            {row.headshot_url && (
-              <AvatarImage
-                src={row.headshot_url}
-                alt={row.full_name}
-                className="h-full w-full object-cover object-top"
-              />
-            )}
+            <PlayerAvatarImage player={row} alt={row.full_name} />
             <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">

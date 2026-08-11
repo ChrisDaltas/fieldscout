@@ -3,7 +3,8 @@
 import * as React from 'react'
 
 import { PositionBadge } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,9 +55,7 @@ export function PlayerFace({
       className={cn('shrink-0', round && 'rounded-pill')}
       style={{ width: size, height: size }}
     >
-      {entry.player.headshot_url ? (
-        <AvatarImage src={entry.player.headshot_url} alt="" />
-      ) : null}
+      <PlayerAvatarImage player={entry.player} />
       <AvatarFallback
         className={cn('fs-num font-bold', round && 'rounded-pill')}
         style={{ fontSize: Math.round(size * 0.36) }}
@@ -219,20 +218,133 @@ export function RowMenu({ actions, className }: { actions: RowMenuActions; class
 // -----------------------------------------------------------------------------
 
 /**
- * The grip dots. Rendered, not wired — drag-and-drop is its own task (LV.4) —
- * so it is inert decoration and says so to assistive tech.
+ * The grip dots — the drag affordance (LV.4). The whole row is draggable, as in
+ * the prototype; the grip is what says so.
+ *
+ * When a grouping cannot be reordered by hand it still renders, faded, carrying
+ * the reason on hover. That is deliberate: the alternative — an affordance that
+ * accepts the drag and then snaps back, because cost bands re-sort by price — is
+ * exactly the "nothing happened" failure CLAUDE.md forbids.
  */
-export function Grip({ className }: { className?: string }) {
+export function Grip({
+  className,
+  draggable,
+  reason,
+}: {
+  className?: string
+  draggable?: boolean
+  reason?: string
+}) {
   return (
     <span
-      aria-hidden="true"
-      className={cn('h-[14px] w-[9px] shrink-0 opacity-35', className)}
+      aria-hidden={reason ? undefined : 'true'}
+      title={reason}
+      className={cn(
+        'h-[14px] w-[9px] shrink-0',
+        draggable ? 'cursor-grab opacity-45 hover:opacity-100' : 'opacity-25',
+        className,
+      )}
       style={{
         backgroundImage: 'radial-gradient(circle, currentColor 0.9px, transparent 0.9px)',
         backgroundSize: '4px 4px',
         backgroundPosition: '1px 2px',
       }}
     />
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Drop gap
+// -----------------------------------------------------------------------------
+
+/**
+ * The hole the dragged player will land in (design LAW §"Drag and drop"): sized
+ * to exactly the dragged element's `offsetHeight` / `offsetWidth`, filled
+ * `--accent-soft` with a dashed `--accent` edge, carrying the player's name.
+ *
+ * It exists only while a drag is running, and it carries its own slot in
+ * `data-drop-gap`, so a pointer that ends up inside the open gap re-aims at the
+ * same slot instead of flipping to whichever row the gap just pushed under it.
+ * That is what keeps the gap from oscillating.
+ *
+ * **Vertical (list and table):** every slot is mounted at zero height and the
+ * open one animates to size, which is the prototype's behaviour and needs
+ * containers that space rows with borders, not a flex `gap`.
+ * **Horizontal (cards):** only the open slot is mounted, because that container
+ * *is* a `flex-wrap` with a gap and a row of zero-width placeholders would each
+ * claim their own 8px. The prototype solves that with per-card margins; changing
+ * the shipped card layout for a mid-drag detail is not worth it, and the only
+ * thing lost is the 120ms open animation.
+ */
+export function DropGap({
+  bucketKey,
+  index,
+  open,
+  height,
+  width,
+  name,
+  axis = 'y',
+  minWidth,
+}: {
+  bucketKey: string
+  index: number
+  open: boolean
+  height: number
+  width: number
+  name: string
+  axis?: 'x' | 'y'
+  minWidth?: number
+}) {
+  const horizontal = axis === 'x'
+  if (horizontal && !open) return null
+
+  const slot = `${bucketKey}:${index}`
+  return (
+    <div
+      data-drop-gap={slot}
+      style={
+        horizontal
+          ? { width, height, flexShrink: 0, overflow: 'hidden' }
+          : {
+              height: open ? height : 0,
+              minWidth,
+              overflow: 'hidden',
+              transition: 'height 120ms linear',
+            }
+      }
+    >
+      <div
+        className="flex h-full items-center gap-1.5 border border-dashed border-accent bg-accent-soft px-2.5"
+        style={{ width: horizontal ? width : undefined }}
+      >
+        <Icon name="arrow-next" size={11} className="shrink-0 text-accent-strong" />
+        <span className="truncate text-[11px] font-medium text-accent-strong">{name}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * "A dashed *Drop a player here to start tier N* zone sits below the last
+ * section" (design LAW §"Drag and drop").
+ *
+ * Only rendered where the assignment can actually be written — tier mode, with a
+ * letter still free. The prototype offers it in round mode too; that would
+ * `23514` against `list_players_tier_check` until LV.1.5, so it is withheld
+ * rather than shown as a target that 500s (`nextTierBucket`).
+ */
+export function NewBucketZone({ tier, over }: { tier: string; over: boolean }) {
+  return (
+    <div
+      data-drop-new={tier}
+      className={cn(
+        'flex h-[42px] items-center justify-center gap-2 border border-dashed text-[11px] font-bold transition-colors',
+        over ? 'border-accent bg-accent-soft text-accent-strong' : 'border-ink text-n-3',
+      )}
+    >
+      <Icon name="plus" size={12} />
+      <span>Drop a player here to start tier {tier}</span>
+    </div>
   )
 }
 

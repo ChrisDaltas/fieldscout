@@ -3,7 +3,8 @@
 import Link from 'next/link'
 
 import { PositionBadge } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { getNflTeam } from '@/lib/nfl-teams'
 import { cn } from '@/lib/utils'
@@ -70,13 +71,7 @@ export function PlayerDetailHeader({
         <Avatar
           className={cn('shrink-0', expanded ? 'h-[70px] w-[70px]' : 'h-12 w-12')}
         >
-          {player.headshot_url && (
-            <AvatarImage
-              src={player.headshot_url}
-              alt={player.full_name}
-              className="object-cover object-top"
-            />
-          )}
+          <PlayerAvatarImage player={player} alt={player.full_name} />
           <AvatarFallback className={expanded ? 'text-[21px]' : 'text-[14px]'}>
             {initials}
           </AvatarFallback>

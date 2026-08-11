@@ -80,6 +80,8 @@ const SelectContent = React.forwardRef<
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      // Elevation exception: the listbox overlays the page, so it keeps its
+      // resting shadow. See CLAUDE.md → "Elevation".
       className={cn(
         "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-sm border border-ink bg-white text-ink shadow-hard-4 data-[state=open]:animate-fade-in",
         position === "popper" &&

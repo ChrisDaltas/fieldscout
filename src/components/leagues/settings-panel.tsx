@@ -391,7 +391,10 @@ function SettingsForm({
   return (
     <div className="flex flex-col gap-4">
       {/* Save lives at the TOP of the page (sticky) — one atomic PATCH still
-          covers everything below it, Draft setup included. */}
+          covers everything below it, Draft setup included.
+          Elevation exception: this bar is pinned above content that scrolls
+          underneath it, so the resting shadow is what makes the overlap
+          legible. See CLAUDE.md → "Elevation". */}
       {canEdit && (
         <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
           <span className="text-[12px] font-bold text-n-3">

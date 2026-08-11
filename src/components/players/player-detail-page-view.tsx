@@ -102,7 +102,7 @@ export function PlayerDetailPageView({ playerId }: PlayerDetailPageViewProps) {
       {pageHeader}
 
       {/* Hero — identity left, leagues + actions right */}
-      <Card className="shadow-hard-4">
+      <Card>
         <div className="flex flex-col gap-6 p-card-pad sm:p-5 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <PlayerDetailHeader player={data.player} size="expanded" />

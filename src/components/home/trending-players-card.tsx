@@ -75,6 +75,7 @@ function TrendRows({
             name={player.full_name}
             position={player.position}
             headshotUrl={player.headshot_url}
+            team={player.team}
             onOpen={() => onOpenPlayer(player.id)}
             meta={
               <>

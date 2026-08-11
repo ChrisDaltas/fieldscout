@@ -5,6 +5,7 @@ import * as React from 'react'
 import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useDeleteList, useDuplicateList, useLists, type ListWithTags } from '@/hooks/use-lists'
@@ -111,60 +112,57 @@ export function ListsPageV2() {
   const loaded = lists.isSuccess
   const paused = lists.fetchStatus === 'paused' && !lists.isSuccess
 
+  /**
+   * Page mode — the **icon + label** variation of the shared control
+   * (`ui/tabs.tsx`), boxed, exactly as `screens/list-rail-list-view.png` draws
+   * it. It is a `Segment` and not a Radix `Tabs` for a structural reason:
+   * `PageHeader` pushes this row into the app shell through a Zustand store,
+   * so the control and the content it switches are in different React trees
+   * and a `Tabs.Root` cannot enclose both. It also renders twice — here and
+   * in-page below `lg` — which a single `Tabs.Root` could not do either.
+   */
   const modeSwitch = (
-    <div className="flex shrink-0 border border-ink bg-white">
-      {MODES.map((item) => {
-        const active = mode === item.id
-        return (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={active}
-            onClick={() => {
-              setMode(item.id)
-              setOpenedId(null)
-              setExpanded(false)
-            }}
-            className={cn(
-              'inline-flex h-btn-sm items-center gap-1.5 whitespace-nowrap border-r border-n-4 px-2.5 text-[10px] font-bold transition-colors last:border-r-0',
-              active ? 'bg-accent text-accent-foreground' : 'bg-white text-ink hover:bg-accent-soft',
-            )}
-          >
-            <Icon name={item.icon} size={12} />
-            {item.label}
-          </button>
-        )
-      })}
-    </div>
+    <Segment aria-label="Page mode">
+      {MODES.map((item) => (
+        <SegmentItem
+          key={item.id}
+          icon={item.icon}
+          active={mode === item.id}
+          onClick={() => {
+            setMode(item.id)
+            setOpenedId(null)
+            setExpanded(false)
+          }}
+        >
+          {item.label}
+        </SegmentItem>
+      ))}
+    </Segment>
   )
 
+  /** The **label + count** variation, bare — same reasoning as `modeSwitch`. */
   const tabSwitch =
     mode === 'compare' ? null : (
-      <div className="flex shrink-0 items-stretch gap-0.5">
+      <Segment appearance="bare" aria-label="Which lists">
         {(
           [
             { id: 'mine', label: 'My lists', count: mine.length },
             { id: 'saved', label: 'Saved', count: saved.length },
           ] as const
         ).map((item) => (
-          <button
+          <SegmentItem
             key={item.id}
-            type="button"
-            aria-pressed={tab === item.id}
+            active={tab === item.id}
+            count={item.count}
             onClick={() => {
               setTab(item.id)
               setOpenedId(null)
             }}
-            className={cn(
-              'inline-flex h-btn-sm items-center gap-1.5 whitespace-nowrap rounded-sm px-3 text-[10.5px] font-bold transition-colors hover:bg-accent-soft',
-              tab === item.id ? 'text-accent' : 'text-ink',
-            )}
           >
             {item.label}
-            <span className="fs-num text-[9.5px] font-medium opacity-75">{item.count}</span>
-          </button>
+          </SegmentItem>
         ))}
-      </div>
+      </Segment>
     )
 
   return (
@@ -368,7 +366,7 @@ function Gallery({
 
 function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center shadow-hard-4">
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
       <Icon name="list" size={21} className="text-n-3" />
       <span className="text-[13px] font-bold">
         {loading ? 'Loading your lists…' : 'Select or create a new list'}
@@ -384,7 +382,7 @@ function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center shadow-hard-4">
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
       <Icon name="info-circle" size={21} className="text-negative-strong" />
       <span className="text-[13px] font-bold">Your lists could not be loaded.</span>
       <p className="max-w-[360px] text-[11px] font-medium text-n-3">{message}</p>
