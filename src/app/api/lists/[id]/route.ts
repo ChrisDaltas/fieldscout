@@ -53,8 +53,19 @@ export async function GET(_request: Request, { params }: RouteParams) {
         .from('list_players')
         // `*` (rather than an explicit column list) so the response includes
         // `slot` once migration 015 lands without 500ing before it does.
+        //
+        // The embedded player carries the columns the list row's stat picker
+        // offers. `bye_week`, `sos` and `auction_value` were missing here while
+        // `list-detail-view.tsx` read all three — so Bye / SOS / Auction have
+        // been rendering as an em dash on every list that is not the big board,
+        // whose own route (`/api/lists/big-board`) already selects exactly this
+        // set. Widening a SELECT on an existing GET: no migration, no schema
+        // change, no new route, and no column another route does not already
+        // return.
         .select(
-          `*, player:players(id, full_name, position, team, headshot_url, status, adp)`,
+          `*, player:players(id, full_name, position, team, headshot_url, status, adp,
+             bye_week, sos, auction_value, projected_pts_ppr, projected_pts_half_ppr,
+             projected_pts_standard)`,
         )
         .eq('list_id', id)
         .order('position', { ascending: true }),
