@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { ScoutAiMark } from '@/components/ui/ai-insight'
 import { Button } from '@/components/ui/button'
 import { FilterChip } from '@/components/ui/badge'
 import {
@@ -18,6 +19,7 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useAiGenerationQuota } from '@/hooks/use-ai-generation-quota'
 import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
+import { featureFlags } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
@@ -64,9 +66,16 @@ function usePersonaStyles(enabled: boolean) {
 
 /**
  * "Create with AI" — collects the brief, creates the (empty) list, queues the
- * AI build job, and immediately navigates to the List Detail page where the
- * user watches the AI add players and put them in order (useAiListBuild).
+ * AI build job, and immediately navigates to wherever the open list lives so
+ * the user watches the AI add players and put them in order (useAiListBuild).
  * Scout AI surface: accent-blue moments, never lime.
+ *
+ * **Already largely in the new design language before LV.5**: LV.9 and LV.11
+ * converted its single-select rows onto the shared segment control and its
+ * multi-select rows stayed on `FilterChip`. LV.5 finished the job — the shared
+ * `ScoutAiMark` instead of a fourth hand-copy of it, the v2 state cards for the
+ * quota and error notices, and the navigation fix above, which is the part that
+ * actually mattered.
  */
 export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const router = useRouter()
@@ -165,7 +174,13 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
 
       queryClient.invalidateQueries({ queryKey: listsKeys.all })
       onOpenChange(false)
-      router.push(`/app/lists/${created.id}`)
+      // **Where the build show runs differs by flag (LV.5).** Lists v2 has no
+      // standalone detail screen — a list opens in the right-hand panel of the
+      // Lists page (§7 gap 1), and `/app/lists/[listId]` is still a placeholder
+      // behind the flag, so pushing it would strand the build on a "coming
+      // soon" card. The page reads the queued job to know which list to open,
+      // so no query parameter is needed. The ternary collapses at LV.7.
+      router.push(featureFlags.listsV2 ? '/app/lists' : `/app/lists/${created.id}`)
     } catch (err) {
       if (sessionRef.current !== session) return
       setError(err instanceof Error ? err.message : 'Could not create the list.')
@@ -189,21 +204,24 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-accent text-white">
-              <Icon name="star" size={13} />
-            </span>
+            <ScoutAiMark />
             Generate with AI
           </DialogTitle>
         </DialogHeader>
 
+        {/* Both notices follow the v2 state cards (LV.5): square ink frame, a
+            13px bold headline over an 11px detail, the red frame reserved for
+            an actual failure. "Out of generations" is a normal state, not an
+            error, so it keeps the neutral card — the same split the build
+            banner makes for a `blocked` job. */}
         {outOfGenerations && quota.data && (
-          <div className="rounded-sm border border-ink bg-white p-4">
+          <div className="border border-ink bg-white p-card-pad">
             <p className="text-[13px] font-bold text-ink">
               {generationsOff
                 ? 'AI generation is paused right now'
                 : `That's your ${quota.data.limit} AI ${quota.data.limit === 1 ? 'list' : 'lists'} for today`}
             </p>
-            <p className="mt-1 text-[13px] font-medium text-n-3">
+            <p className="mt-1 text-[11px] font-medium text-n-3">
               {generationsOff
                 ? 'It will be back shortly. Building a list by hand works exactly as always.'
                 : `A daily cap keeps FieldScout's AI costs sustainable while the app is free. You get ${quota.data.limit} more when the day rolls over at midnight UTC — and you can build a list by hand any time.`}
@@ -212,9 +230,12 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
         )}
 
         {error && (
-          <div className="rounded-sm border border-negative-strong bg-negative-soft p-3">
-            <p className="text-[13px] font-bold text-ink">Could not create the list</p>
-            <p className="mt-0.5 text-[13px] font-medium text-n-3">{error}</p>
+          <div className="border border-negative-strong bg-negative-soft p-card-pad">
+            <div className="flex items-center gap-2">
+              <Icon name="info-circle" size={14} className="text-negative-strong" />
+              <p className="text-[13px] font-bold text-ink">Could not create the list</p>
+            </div>
+            <p className="mt-1 text-[11px] font-medium text-n-3">{error}</p>
           </div>
         )}
 
