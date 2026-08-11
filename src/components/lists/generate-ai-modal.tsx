@@ -14,10 +14,12 @@ import {
 } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useAiGenerationQuota } from '@/hooks/use-ai-generation-quota'
 import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
 import type { AnalyticalStyleKey, GenerateListRequest } from '@/types/schemas/ai'
 
@@ -219,6 +221,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
         <div className="space-y-5">
           <Field label="Position">
             <ChipGroup
+              label="Position"
               options={POSITIONS.map((p) => ({ value: p, label: p }))}
               value={position}
               onChange={(v) => setPosition(v as Position)}
@@ -228,6 +231,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
 
           <Field label="Scoring">
             <ChipGroup
+              label="Scoring"
               options={SCORINGS.map((s) => ({ value: s, label: s }))}
               value={scoring}
               onChange={(v) => setScoring(v as Scoring)}
@@ -239,6 +243,8 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
             label="Ranking style"
             hint="Optional — tap a style to cycle its importance: 1 (least) to 3 (most), tap past 3 to clear."
           >
+            {/* Stays a FilterChip (LV.11): multi-select, and each chip carries
+                its own 1–3 weight. Not one-of-many, so not a segment. */}
             <div className="grid grid-cols-2 gap-1.5">
               {ANALYTICAL_STYLES.map((s) => {
                 const weight = styleWeights[s.key] ?? 0
@@ -274,6 +280,9 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
                 ))}
               </div>
             ) : (
+              /* Stays a FilterChip (LV.11): the field is Optional and starts
+                 with **no persona chosen**, and tapping the chosen one clears
+                 it. A segment asserts one item is always active. */
               <div className="grid grid-cols-2 gap-1.5">
                 {(personas.data ?? []).map((p) => {
                   const active = persona === p.username
@@ -296,6 +305,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
 
           <Field label="Players">
             <ChipGroup
+              label="Players"
               options={COUNTS.map((c) => ({ value: String(c), label: String(c) }))}
               value={String(count)}
               onChange={(v) => setCount(Number(v) as Count)}
@@ -354,33 +364,48 @@ function Field({
   )
 }
 
-/** Single-select chip row — FilterChips on a fixed grid. */
+/**
+ * Single-select picker — exactly one option is always chosen, so it is the
+ * shared segment control rather than a chip row (LV.11).
+ *
+ * The grid arrives through `className`, not through an inline style:
+ * `gridTemplateColumns` as an inline style was fine on a plain `div`, but the
+ * handoff's critical note (see `ui/tabs.tsx`) is that inline styles on this
+ * control outrank its `:hover` rule — so this file keeps *no* inline style at
+ * all rather than leaving one for someone to extend with a colour. The three
+ * column counts in use are literal classes so Tailwind's scanner emits them.
+ */
+const GRID_COLUMNS: Record<number, string> = {
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+}
+
 function ChipGroup({
+  label,
   options,
   value,
   onChange,
   columns,
 }: {
+  label: string
   options: { value: string; label: string }[]
   value: string
   onChange: (value: string) => void
-  columns: number
+  columns: 3 | 4 | 5
 }) {
   return (
-    <div
-      className="grid gap-1.5"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-    >
+    <Segment aria-label={label} className={cn('grid w-full', GRID_COLUMNS[columns])}>
       {options.map((opt) => (
-        <FilterChip
+        <SegmentItem
           key={opt.value}
-          pressed={value === opt.value}
+          active={value === opt.value}
           onClick={() => onChange(opt.value)}
           className="w-full justify-center px-1.5"
         >
           <span className="truncate">{opt.label}</span>
-        </FilterChip>
+        </SegmentItem>
       ))}
-    </div>
+    </Segment>
   )
 }

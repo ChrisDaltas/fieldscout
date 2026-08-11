@@ -18,14 +18,15 @@ import { BigBoardGrid } from '@/components/big-board/big-board-grid'
 import { SortableBoardRow } from '@/components/big-board/board-row'
 import { WeekTabs, type WeekTabValue } from '@/components/big-board/week-tabs'
 import { PageHeader } from '@/components/layout/app-header'
-import { POSITION_FILTER_ACTIVE } from '@/components/players/position-badge'
+import { POSITION_TAB_ACTIVE } from '@/components/players/position-badge'
 import { AIInsight } from '@/components/ui/ai-insight'
-import { Badge, FilterChip } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { bigBoardKeys, useWeeklyBigBoard } from '@/hooks/use-big-board'
 import { useReorderPlayers } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
@@ -263,18 +264,20 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
             </Button>
           </div>
 
-          <div className="mb-3 flex flex-wrap gap-1.5">
+          {/* Single-select — a week's board is always one position — so it is
+              the shared segment control (LV.11). */}
+          <Segment aria-label="Position" className="mb-3 flex flex-wrap">
             {POSITIONS.map((p) => (
-              <FilterChip
+              <SegmentItem
                 key={p}
-                pressed={pos === p}
-                onPressedChange={() => setPos(p)}
-                className={pos === p ? POSITION_FILTER_ACTIVE[p] : undefined}
+                active={pos === p}
+                onClick={() => setPos(p)}
+                className={POSITION_TAB_ACTIVE[p]}
               >
                 {p}
-              </FilterChip>
+              </SegmentItem>
             ))}
-          </div>
+          </Segment>
 
           <WeekTabs
             className="mb-4"

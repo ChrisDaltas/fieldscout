@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.9 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v4.0 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -412,14 +412,46 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   styleguide's own caption had said "active is accent fill with white text"
   since the reskin while the primitive rendered ink.
 
-  **Out of scope, deliberately.** `FilterChip` rows (`ui/badge.tsx`) are a
-  different shared component with a different job and a deliberate ink-fill
-  selected state; several are single-select and could arguably be segments, but
-  converting them is a design change nobody asked for and it would blur
-  "filter" against "tab". Navigation (`bottom-tabs.tsx`, the sidebar), steppers
-  and radio-card pickers are not segments either. `week-tabs.tsx` and
-  `public-big-board.tsx`'s week strip are the same look again and are **off
-  limits** — recorded for whichever task reopens boards.
+  **Out of scope, deliberately — superseded for the single-select case by D10.**
+  `FilterChip` rows (`ui/badge.tsx`) are a different shared component with a
+  different job and a deliberate ink-fill selected state; several are
+  single-select and could arguably be segments, but converting them is a design
+  change nobody asked for and it would blur "filter" against "tab". *(Chris
+  ruled on that question the same day — see **D10**. The multi-select rows stay
+  out of scope permanently; the single-select ones came in.)* Navigation
+  (`bottom-tabs.tsx`, the sidebar), steppers and radio-card pickers are not
+  segments either. `week-tabs.tsx` and `public-big-board.tsx`'s week strip are
+  the same look again and are **off limits** — recorded for whichever task
+  reopens boards.
+
+- **D10 — Single-select filter rows use the tab component, *for now*** (Chris,
+  2026-08-11). Verbatim: *"Use the tab component for now, we can create one for
+  filters later."* This answers the question D9 deliberately left open.
+
+  **It is a temporary unification and the plan says so on purpose.** A
+  purpose-built filter control is still wanted; until it exists, a row that is
+  genuinely one-of-many wears the segment. The rows that borrowed it are listed
+  in `ui/tabs.tsx`'s header and are the first candidates to move back — that
+  list is the hand-off to whoever builds the filter control, and it is in the
+  code rather than only here so it cannot be missed.
+
+  **The line is one-of-many, and it is a behaviour rule, not a taste rule.** A
+  segment asserts that **exactly one item is active**. Two shapes therefore stay
+  on `FilterChip`, and converting either would be a regression wearing a
+  restyle:
+
+  1. **Multi-select** — several on at once.
+  2. **Single-select where zero selected is valid** — tapping the on chip clears
+     it and nothing is active. The research rail's position row (clear = all
+     positions) and the AI modal's optional expert picker are both this.
+
+  `src/components/ui/filter-chip-split.test.ts` pins the split: every file that
+  still imports `FilterChip` must be on an allow-list **with one of those two
+  reasons**, and every converted file must import the shared control.
+
+  **Frame follows role, as in D9.** Fixed, known option sets are `boxed`. Where
+  eight options overflow a phone, the group is a `grid` (4×2) rather than a
+  wrapping flex row, which strands the last option alone on a second line.
 
 ---
 
@@ -479,6 +511,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | id | task | depends on |
 | --- | --- | --- |
 | LV.9 | **One tab/segment component** — three variations × count, in `src/components/ui/tabs.tsx`; the hand-rolled Lists v2 controls converted onto it, the genuine tab sets kept on Radix and restyled, and all three variations added to the styleguide (D9). **UI only** — the schema budget stays closed at three | LV.2, LV.3 |
+| LV.11 | **Single-select `FilterChip` rows onto that control** (D10). Survey every call site, classify each single-select / multi-select / zero-selected-is-valid, convert only the first kind, and pin the split with a test. **UI only** — the schema budget stays closed at three | LV.9 |
 
 ---
 
@@ -530,6 +563,25 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v4.0 (2026-08-11)** — **Single-select filter rows join the tab control, for
+  now (new D10, new LV.11).** Chris, answering the question LV.9 raised and
+  refused to improvise around: *"Use the tab component for now, we can create
+  one for filters later."*
+
+  The ruling is narrower than it sounds, and the narrowing is the whole task.
+  **A segment asserts exactly one item is active**, so only genuinely
+  one-of-many rows moved. Multi-select rows, and single-select rows where the
+  user can clear back to nothing, stayed on `FilterChip` — converting those
+  would have been a behaviour regression dressed as a restyle, and two of the
+  ten surveyed sites were exactly that. D9's "out of scope" paragraph is
+  amended in place rather than deleted, because its *reasoning* still holds for
+  everything that did not move.
+
+  Recorded as temporary in three places on purpose — this plan, `ui/tabs.tsx`'s
+  header (which lists the rows that borrowed the control) and `ui/badge.tsx`'s
+  (which lists the rows that must never be folded in). A test asserts all three
+  still say so.
 
 - **v3.9 (2026-08-11)** — **One control for every tab and segment (new D9,
   new LV.9).** Chris: *"Right now I see like 3 or 4 different versions of tabs.

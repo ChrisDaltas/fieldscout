@@ -5,10 +5,11 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { PersonaBadge } from '@/components/personas/persona-badge'
-import { Badge, FilterChip } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -106,22 +107,24 @@ export default function AdminPostsPage() {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip
-          pressed={view === 'drafts'}
-          onPressedChange={() => setView('drafts')}
+      {/* Single-select, so it is the shared segment control, not a chip row
+          (LV.11). The count is the component's own `count` prop. */}
+      <Segment aria-label="Which posts">
+        <SegmentItem
+          count={drafts.length}
+          active={view === 'drafts'}
+          onClick={() => setView('drafts')}
         >
           Drafts
-          <span className="fs-num">{drafts.length}</span>
-        </FilterChip>
-        <FilterChip
-          pressed={view === 'published'}
-          onPressedChange={() => setView('published')}
+        </SegmentItem>
+        <SegmentItem
+          count={published.length}
+          active={view === 'published'}
+          onClick={() => setView('published')}
         >
           Published
-          <span className="fs-num">{published.length}</span>
-        </FilterChip>
-      </div>
+        </SegmentItem>
+      </Segment>
 
       {isLoading && (
         <div className="space-y-2.5">

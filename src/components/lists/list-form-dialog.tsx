@@ -3,7 +3,6 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useCreateList, useUpdateList } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -215,19 +215,25 @@ export function ListFormDialog({
 
           {!isTeam && (
             <Field label="Position group">
-              <div className="flex flex-wrap gap-1.5">
+              {/* Exactly one option is always chosen ('' = All players), so this
+                  is a segment rather than a chip row (LV.11). A **grid**, not a
+                  wrapping flex row: eight options overflow 375px, and a wrapped
+                  flex row strands 'K' alone on a second line with a ragged gap
+                  above it. 4×2 is the same shape the AI modal's position picker
+                  uses for the same choice. */}
+              <Segment aria-label="Position group" className="grid w-full grid-cols-4">
                 {POSITION_OPTIONS.map((opt) => (
-                  <FilterChip
+                  <SegmentItem
                     key={opt.value || 'all'}
-                    pressed={form.positionFilter === opt.value}
-                    onPressedChange={() =>
+                    active={form.positionFilter === opt.value}
+                    onClick={() =>
                       setForm((s) => ({ ...s, positionFilter: opt.value }))
                     }
                   >
                     {opt.label}
-                  </FilterChip>
+                  </SegmentItem>
                 ))}
-              </div>
+              </Segment>
             </Field>
           )}
 
@@ -314,22 +320,20 @@ export function ListFormDialog({
           )}
 
           <Field label="Visibility">
-            <div className="flex gap-1.5">
-              <FilterChip
-                pressed={!form.isPrivate}
-                onPressedChange={() =>
-                  setForm((s) => ({ ...s, isPrivate: false }))
-                }
+            <Segment aria-label="Visibility">
+              <SegmentItem
+                active={!form.isPrivate}
+                onClick={() => setForm((s) => ({ ...s, isPrivate: false }))}
               >
                 Public
-              </FilterChip>
-              <FilterChip
-                pressed={form.isPrivate}
-                onPressedChange={() => setForm((s) => ({ ...s, isPrivate: true }))}
+              </SegmentItem>
+              <SegmentItem
+                active={form.isPrivate}
+                onClick={() => setForm((s) => ({ ...s, isPrivate: true }))}
               >
                 Private
-              </FilterChip>
-            </div>
+              </SegmentItem>
+            </Segment>
           </Field>
 
           <DialogFooter>
