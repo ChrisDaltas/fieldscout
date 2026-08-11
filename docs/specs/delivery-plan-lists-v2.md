@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v4.0 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v4.1 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -295,12 +295,33 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   and final** schema exception (§1). One migration, `ALTER TABLE` only — no new
   table, no new column. S–F stays valid so nothing existing breaks.
 
+  **Shipped at LV.1.5 (2026-08-11), migration
+  `081_list_players_tier_vocabulary.sql`.** The vocabulary is
+  `^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$` — 40 keys plus `NULL` — mirrored
+  by `BUCKET_KEY_PATTERN` / `bucketKeySchema` in `src/types/schemas/lists.ts`,
+  which the tier route now imports instead of restating. The two layers are
+  pinned to each other by `src/types/schemas/bucket-keys.test.ts`, which reads
+  the migration off disk: **anything Zod accepts satisfies the CHECK and vice
+  versa**, or that suite goes red. Rounds became drag-assignable in the same
+  PR; cost and budget did not, and the reason is in D4's own erratum below —
+  their membership is *computed*, so there is nothing to write.
+
+  **`c1`–`c4` are accepted but nothing writes them today**, deliberately. They
+  are the keys `DEFAULT_COST_BANDS` already uses, so every accepted key has a
+  default label and `resolveBandLabel` can never render a raw key; and because
+  the schema budget closes with this migration, provisioning them now costs one
+  character class where adding them later would cost a fourth exception.
+
   A DB CHECK is also the strongest available guard on what a bucket key may be:
   it covers `duplicate_list`, which copies `tier` verbatim and never passes
   through the API's validation.
 
-  Note the color ramp has 6–7 hues against up to 16 rounds, so round mode
-  cycles colors rather than assigning a unique one per bucket.
+  Note the color ramp has 6–7 hues against up to 30 rounds, so round mode
+  cycles colors rather than assigning a unique one per bucket. LV.1.5 made that
+  literal: `bucket-colors.ts` maps a key to a ramp step, `r8` wraps back to
+  step 1, and **an unrecognised key gets a named neutral fallback rather than
+  `undefined`** — the two `Record<ListTier, string>` maps it replaced rendered
+  an uncoloured band for every key 081 newly allows.
 
   Consequence: because buckets live server-side, grouping **does** follow a
   shared list. Only the label set is local.
@@ -467,7 +488,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.1.2 | **Migration**: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
 | LV.1.3 | Point **`use-draft-mode.ts` only** at the new server source (D2). Do not open `board-labels-store.ts` or `use-board-marks.ts` | LV.1.2 |
 | LV.1.4 | Session-only display state — `view`, `cols`, band labels, `budget`. **No `persist` middleware** (D3) | — |
-| LV.1.5 | Widen the tier route's Zod enum so round/band buckets beyond six are accepted (D4). **S–F stays valid** — tier labels are unchanged | — |
+| LV.1.5 | **Migration `081_list_players_tier_vocabulary.sql`** — widen `list_players_tier_check`, and the tier route's Zod enum with it (D4). **S–F stays valid** — tier labels are unchanged. Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | — |
 
 **Phase 2 — Lists page**
 
@@ -520,13 +541,13 @@ One task = one Builder session = one PR. `/build-next` drives.
 1. `npm run type-check` and `npm run lint` clean — **shown, not claimed**.
 2. `npm run test:unit` green. `share-link-permanence.test.ts` stays green.
 3. **No migration, no schema change, no new API route** outside the three named
-   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum, LV.8's `list_links`
-   table + routes). A task that thinks it needs more has left scope: raise it,
-   do not proceed.
-   LV.1.2 and LV.8 additionally satisfy checklists §8.1–8.2 (RLS, indexes,
-   `IF NOT EXISTS`, banner comment citing the ruling) and reach production
-   via `npx supabase db push` — **never** by hand (CLAUDE.md migration
-   discipline).
+   in D6 (LV.1.2's `drafted` table + route, LV.1.5's **CHECK widening**, LV.8's
+   `list_links` table + routes). **All three are now spent.** A task that thinks
+   it needs more has left scope: raise it, do not proceed.
+   LV.1.2, LV.1.5 and LV.8 additionally satisfy checklists §8.1–8.2 (RLS,
+   indexes, `IF NOT EXISTS`, banner comment citing the ruling) and reach
+   production via `npx supabase db push` — **never** by hand (CLAUDE.md
+   migration discipline).
 4. Verified in the browser preview with a screenshot at desktop **and** mobile.
 5. `PROGRESS-lists-v2.md` updated.
 6. Small commit citing the handoff section; branch + PR, never direct to main.
@@ -563,6 +584,31 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v4.1 (2026-08-11)** — **The tier CHECK is widened; the second schema
+  exception is spent (LV.1.5).** Migration `081_list_players_tier_vocabulary.sql`
+  replaces 003's `tier IN ('S',…,'F')` with the §3 Q2 vocabulary. D4's erratum
+  is discharged: rounds are stored *and* assignable, and D4's round-mode note
+  is corrected from "up to 16 rounds" to 30, which is what the ceiling actually
+  is.
+
+  Three things worth carrying forward, none of which the task text predicted:
+
+  1. **Widening the column would have 500'd the public share view.**
+     `PublicTierView` seeded its `Map` with S–F and then did
+     `grouped.get(key)!.push(p)` — `undefined.push` on the first round-bucketed
+     player, on a **server-rendered, SEO-critical** page (D7). The legacy detail
+     view had the same shape in three places. Both are now keyed through
+     `isTierKey`. Shown crashing in the browser and shown fixed.
+  2. **The colour maps became functions.** `TIER_BG` / `TIER_BAND_BG` were total
+     over `ListTier` and `undefined` for everything else; `cn(undefined)` is
+     silent. They live in `bucket-colors.ts` now, total over `string` with a
+     named fallback — and in a `.ts` file rather than a `.tsx` one, because
+     `jsx: "preserve"` makes any `.tsx` module unimportable under vitest, which
+     is why the old maps had no test at all.
+  3. **The two layers are pinned to each other, not merely both edited.**
+     `bucket-keys.test.ts` reads the migration off disk and asserts Zod and the
+     CHECK regex agree over an exhaustive scan. Widening one alone goes red.
 
 - **v4.0 (2026-08-11)** — **Single-select filter rows join the tab control, for
   now (new D10, new LV.11).** Chris, answering the question LV.9 raised and

@@ -14,6 +14,7 @@ import type {
 } from '@/types/schemas/lists'
 import type { ListLink } from '@/lib/lists/links-service'
 import type { List, ListPlayer, ListTier, Player, TeamSlot } from '@/types/database'
+import type { ListBucketKey } from '@/types/schemas/lists'
 
 export type { ListLink }
 
@@ -360,10 +361,19 @@ export function useSetPlayerSlot(listId: string) {
   })
 }
 
+/**
+ * Move a player into a bucket, or out of one with `null`.
+ *
+ * `ListBucketKey`, not `ListTier`: since LV.1.5 the column and the route accept
+ * rounds `r1`–`r30` and cost bands `c1`–`c4` alongside the S–F letters (plan
+ * **D4**, migration `081_list_players_tier_vocabulary.sql`). The narrower type
+ * was the compile-time half of the old refusal and would now reject a legal
+ * write.
+ */
 export function useSetPlayerTier(listId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ playerId, tier }: { playerId: string; tier: ListTier | null }) =>
+    mutationFn: ({ playerId, tier }: { playerId: string; tier: ListBucketKey | null }) =>
       fetch(`/api/lists/${listId}/players/${playerId}/tier`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },

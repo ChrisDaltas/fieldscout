@@ -1,0 +1,104 @@
+-- ============================================================================
+-- list_players.tier — widen the bucket vocabulary (LV.1.5)
+--
+-- This is the SECOND of the Lists v2 build's three sanctioned schema
+-- exceptions (delivery-plan-lists-v2.md §1 / **D4** / **D6**, ACTIVE-BUILD.md
+-- §1). It is one `ALTER TABLE` on an existing CHECK constraint: **no new
+-- table, no new column, no new index, no policy touched.**
+--
+-- THE RULING THAT AUTHORISES IT — Chris, 2026-08-09, verbatim:
+--   *"That's fine, do the database change."*
+--
+-- WHY IT EXISTS. Migration `003_lists.sql:40-43` pinned the column to
+--
+--     CHECK (tier IS NULL OR tier IN ('S','A','B','C','D','F'))
+--
+-- Six buckets. Plan **D4** makes tier / round / cost one mechanism with four
+-- label sets over this single column, and a fantasy draft runs 12–16 rounds —
+-- so round grouping could not represent a real draft. Widening the route's Zod
+-- enum alone would only have moved the rejection from a clean 400 to a Postgres
+-- `23514` that `…/players/[playerId]/tier/route.ts` returns as an HTTP 500 with
+-- a raw database message. That was raised as PROGRESS-lists-v2.md §3 **Q2**
+-- rather than improvised around, and ruled above.
+--
+-- THE VOCABULARY, approved in §3 Q2 and mirrored exactly by
+-- `BUCKET_KEY_PATTERN` in `src/types/schemas/lists.ts`:
+--
+--   S A B C D F   tiers, unchanged — the letter scale stays (Chris, 2026-08-09)
+--   r1 … r30      rounds. 30 is the deepest draft this app's own league
+--                 settings can construct: `league-settings.ts` caps bench at
+--                 20, plus starters (leagues D91: total_rounds = Σ starters +
+--                 bench, IR excluded)
+--   c1 … c4       cost bands, adopted on the wire so every accepted key has a
+--                 default label in `DEFAULT_COST_BANDS`
+--                 (`src/stores/list-display-store.ts`) and `resolveBandLabel`
+--                 can never render a raw key
+--
+-- 40 values plus NULL, which stays "ungrouped". Budget mints no keys — D4 makes
+-- it a label set over the same buckets.
+--
+-- WHAT THE CLOSED SHAPE BUYS, enforced by the shape rather than by a comment:
+-- max length 3 (nothing can overflow a section header or the Cards view's 62px
+-- label rail); `[A-Za-z0-9]` only — no whitespace, no control characters, no
+-- Unicode, no bidi overrides, nothing needing escaping in a React `key` or a
+-- URL; and `__proto__` / `constructor` / `hasOwnProperty` are **unreachable**,
+-- which closes the R181/R183 prototype-pollution hazard at the source as well
+-- as at the reader (`resolveBandLabel`'s `hasOwnProperty` guard stays as
+-- defence in depth — it is correct for any caller-supplied record).
+--
+-- WHY THE CHECK IS WORTH KEEPING AT ALL rather than deferring to Zod (option B
+-- in §3 Q2, rejected): `duplicate_list` (`017_duplicate_list_rpc.sql:66-70`)
+-- copies `tier` verbatim and never passes through the API's validation. A
+-- write path that never sees Zod already exists in this codebase.
+--
+-- Migration checklist (delivery-plan-redraft-leagues.md §8.1 — the house
+-- standard, applied here per the LV.1.2 / LV.8 precedent):
+--   * ADDITIVE ONLY, and provably so: the new predicate is a strict SUPERSET
+--     of the old one (every one of 'S','A','B','C','D','F' matches the new
+--     pattern), so no existing row can violate it, no backfill is needed and
+--     no data migration is possible. `ALTER TABLE … ADD CONSTRAINT` validates
+--     the whole table and would fail loudly if that were untrue — this
+--     migration does not use NOT VALID.
+--   * No RLS change owed: no table is created and no policy is added, altered
+--     or dropped. The 001+067 policy sets on `list_players` survive
+--     byte-for-byte (pinned by pgTAP 030 with `policies_are`).
+--   * No index owed: a CHECK constraint is not queried.
+--   * No grant owed (leagues D18→D23): no new object.
+--   * Re-runnable: `DROP CONSTRAINT IF EXISTS` then `ADD CONSTRAINT`. Postgres
+--     has no `ADD CONSTRAINT IF NOT EXISTS`, so the drop-then-add form is the
+--     house equivalent of the `DROP POLICY IF EXISTS` idiom.
+--   * The constraint keeps its NAME, `list_players_tier_check`, so every
+--     existing reference — error messages, pgTAP, the §3 Q2 evidence — stays
+--     true.
+--   * Staging-clone rehearsal: **R6 waiver cited** — no staging environment
+--     exists for this project. The recorded rehearsal is a fresh
+--     `npx supabase db reset` replaying the full 001→081 chain plus
+--     `supabase test db supabase/tests/030_list_players_tier_vocabulary.sql`,
+--     both shown in the PR.
+--   * Typegen (`src/types/database.ts`) regenerated in the same PR with the
+--     hand-written alias block preserved byte-identically. `tier` is `text`
+--     before and after, so the expected diff is EMPTY — and an empty diff is
+--     the evidence, not the absence of it.
+--   * Realtime broadcast trigger: **not owed**. No new table; the column's
+--     existing write path is unchanged.
+--   * Reaches production via `npx supabase db push` — NEVER by hand, never
+--     through the dashboard or the database API (CLAUDE.md migration
+--     discipline; the 36-unapplied-migrations lesson). **This migration has
+--     been applied LOCALLY ONLY. Pushing it is Chris's separate step.**
+--
+-- IF YOU ARE HERE TO ADD A KEY: the pattern below and `BUCKET_KEY_PATTERN` in
+-- `src/types/schemas/lists.ts` are pinned to each other by
+-- `src/types/schemas/bucket-keys.test.ts`, which reads THIS FILE from disk.
+-- Change one and that suite goes red. Change both and pgTAP 030 tells you what
+-- the database now really accepts. That pairing is the point.
+-- ============================================================================
+
+ALTER TABLE public.list_players
+  DROP CONSTRAINT IF EXISTS list_players_tier_check;
+
+ALTER TABLE public.list_players
+  ADD CONSTRAINT list_players_tier_check
+  CHECK (tier IS NULL OR tier ~ '^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$');
+
+COMMENT ON COLUMN public.list_players.tier IS
+  'Bucket key (Lists v2 D4): S-F tiers, r1-r30 rounds, c1-c4 cost bands, or NULL for ungrouped. Constrained by list_players_tier_check, which mirrors BUCKET_KEY_PATTERN in src/types/schemas/lists.ts.';

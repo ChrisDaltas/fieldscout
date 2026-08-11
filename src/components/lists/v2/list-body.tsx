@@ -11,7 +11,8 @@ import {
   budgetShare,
   canReorder,
   COMPUTED_ORDER_REASON,
-  nextTierBucket,
+  bucketZoneLabel,
+  nextBucket,
   type Bucket,
 } from './list-buckets'
 import {
@@ -105,7 +106,7 @@ export function ListBody(props: BodyProps) {
     dragName,
   }
 
-  const fresh = nextTierBucket(props.org, props.buckets)
+  const fresh = nextBucket(props.org, props.buckets)
 
   return (
     <ListDragContext drag={drag}>
@@ -119,9 +120,14 @@ export function ListBody(props: BodyProps) {
         )}
         {/* "A dashed 'Drop a player here to start tier N' zone sits below the
             last section" — list and cards only, as in the prototype, and only
-            where the assignment can actually be written (see nextTierBucket). */}
+            where the assignment can actually be written (see nextBucket, which
+            answers for rounds as well as tiers since LV.1.5). */}
         {canDrag && fresh && props.view !== 'table' && (
-          <NewBucketZone tier={fresh} over={drag.isOverNew()} />
+          <NewBucketZone
+            bucketKey={fresh}
+            label={bucketZoneLabel(props.org, fresh)}
+            over={drag.isOverNew()}
+          />
         )}
       </div>
     </ListDragContext>

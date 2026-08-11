@@ -54,7 +54,7 @@ import {
 } from '@/components/lists/customize-popover'
 import { EditableThumbnail } from '@/components/lists/editable-thumbnail'
 import { TagChip } from '@/components/lists/tag-chip'
-import { TIER_BAND_BG } from '@/components/lists/tier-badge'
+import { bucketBandClass } from '@/components/lists/bucket-colors'
 import type { BuilderPlayer } from '@/components/lists/builder/types'
 import { PlayerCard } from '@/components/players/player-card'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -95,12 +95,32 @@ import {
 } from '@/lib/lists/roster'
 import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
 import { cn } from '@/lib/utils'
+import { isTierKey } from '@/types/schemas/lists'
 
 import type { ListRosterSettings, ListTier, TeamSlot } from '@/types/database'
 
 type ViewMode = 'cards' | 'comfortable' | 'compact'
 
 const TIERS: ListTier[] = ['S', 'A', 'B', 'C', 'D', 'F']
+
+/**
+ * The tier-section key a stored bucket value falls into, for **this** view.
+ *
+ * Since migration 081 (LV.1.5) `list_players.tier` also accepts `r1`–`r30` and
+ * `c1`–`c4` (plan **D4**). This screen is the six-section tier layout and knows
+ * nothing else, and every `Map` below is seeded with `TIERS` + `'untiered'` —
+ * so the old `groups.get(p.tier ?? 'untiered')!.push(p)` dereferenced
+ * `undefined` and **threw** the first time a round-bucketed player reached it.
+ *
+ * Anything that is not a tier letter files with the ungrouped here, which is
+ * the same answer `lists/v2/list-buckets.ts` gives (`bucketKeyFor` returns null
+ * for a round key in tier mode). This view is retired at **LV.7**; it needs to
+ * survive the widening, not to grow round sections.
+ */
+const UNTIERED = 'untiered'
+function tierSectionKey(tier: unknown): string {
+  return isTierKey(tier) ? tier : UNTIERED
+}
 
 /** Vertical lists feel much steadier when the drag can't wander sideways. */
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
@@ -483,7 +503,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
     ) => {
       if (newTier !== undefined) {
         const moved = players.find((p) => p.player_id === movedId)
-        if (moved && ((moved.tier as ListTier | null) ?? null) !== newTier) {
+        if (moved && (isTierKey(moved.tier) ? moved.tier : null) !== newTier) {
           setPlayerTier.mutate({ playerId: movedId, tier: newTier })
         }
       }
@@ -507,15 +527,15 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
   const groupByTier = useCallback(() => {
     const groups = new Map<string, ListPlayerWithPlayer[]>()
     for (const t of TIERS) groups.set(t, [])
-    groups.set('untiered', [])
+    groups.set(UNTIERED, [])
     for (const p of players) {
-      groups.get(((p.tier as ListTier | null) ?? 'untiered') as string)!.push(p)
+      groups.get(tierSectionKey(p.tier))!.push(p)
     }
     return groups
   }, [players])
 
   const flattenGroups = (groups: Map<string, ListPlayerWithPlayer[]>) =>
-    [...TIERS, 'untiered'].flatMap((k) => groups.get(k) ?? [])
+    [...TIERS, UNTIERED].flatMap((k) => groups.get(k) ?? [])
 
   // Reorder within a single tier (used when a tier drag drops onto a player in
   // the same tier — the drop's tier is unchanged so onTierDrop wouldn't fire).
@@ -525,8 +545,8 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
       const a = players.find((p) => p.player_id === activeId)
       const b = players.find((p) => p.player_id === overId)
       if (!a || !b) return
-      const key = ((a.tier as ListTier | null) ?? 'untiered') as string
-      if (key !== (((b.tier as ListTier | null) ?? 'untiered') as string)) return
+      const key = tierSectionKey(a.tier)
+      if (key !== tierSectionKey(b.tier)) return
       const groups = groupByTier()
       const members = groups.get(key)!
       const from = members.findIndex((p) => p.player_id === activeId)
@@ -554,11 +574,9 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
         return
       }
 
-      const SEQ: string[] = [...TIERS, 'untiered']
+      const SEQ: string[] = [...TIERS, UNTIERED]
       const groups = groupByTier()
-      const curKey = ((players.find((p) => p.player_id === id)?.tier as
-        | ListTier
-        | null) ?? 'untiered') as string
+      const curKey = tierSectionKey(players.find((p) => p.player_id === id)?.tier)
       const members = groups.get(curKey)!
       const pos = members.findIndex((p) => p.player_id === id)
       if (pos < 0) return
@@ -584,7 +602,7 @@ export function ListDetailView({ list, isOwner, aiBuilding = false }: ListDetail
       commitOrder(
         flattenGroups(groups),
         id,
-        targetKey === 'untiered' ? null : (targetKey as ListTier),
+        targetKey === UNTIERED ? null : (targetKey as ListTier),
       )
     },
     [
@@ -1484,10 +1502,9 @@ function TierBoard({
   const grouped = useMemo(() => {
     const map = new Map<string, ListPlayerWithPlayer[]>()
     for (const tier of TIERS) map.set(tier, [])
-    map.set('untiered', [])
+    map.set(UNTIERED, [])
     for (const p of players) {
-      const key = (p.tier as ListTier | null) ?? 'untiered'
-      map.get(key as string)!.push(p)
+      map.get(tierSectionKey(p.tier))!.push(p)
     }
     return map
   }, [players])
@@ -1507,13 +1524,15 @@ function TierBoard({
       newTier = (overData?.tier as ListTier | null | undefined) ?? null
     } else {
       const target = players.find((p) => p.player_id === String(over.id))
-      newTier = target ? ((target.tier as ListTier | null) ?? null) : undefined
+      // The target's stored value may be a round/cost key (081); this view
+      // only writes tier letters, so anything else reads as ungrouped.
+      newTier = target ? (isTierKey(target.tier) ? target.tier : null) : undefined
     }
     if (newTier === undefined) return
 
     const player = players.find((p) => p.player_id === playerId)
     if (!player) return
-    if (((player.tier as ListTier | null) ?? null) === newTier) {
+    if ((isTierKey(player.tier) ? player.tier : null) === newTier) {
       // Same tier — a drop onto another player reorders within the tier
       // (the tier itself is unchanged, so onTierDrop would be a no-op).
       if (!overIsContainer && String(over.id) !== playerId) {
@@ -1655,7 +1674,7 @@ function TierRow({
         chip={tier}
         label={`Tier ${tier}`}
         count={players.length}
-        className={TIER_BAND_BG[tier]}
+        className={bucketBandClass(tier)}
       />
       <div
         ref={setRefs}

@@ -12,9 +12,11 @@ import { budgetShare, buildBuckets } from './list-buckets'
  *    The screenshots corrected the plan on this (see the module header); a
  *    later reader who only has plan D4's "nothing is computed" in front of them
  *    would reasonably delete the arithmetic.
- * 2. **Rounds is empty until LV.1.5 widens the tier CHECK**, and that is the
- *    designed state rather than a bug. When LV.1.5 lands, the `r1` case here
- *    starts passing real data and this test says so.
+ * 2. **Rounds was empty until LV.1.5 widened the tier CHECK**, and that was the
+ *    designed state rather than a bug. LV.1.5 has landed (migration
+ *    `081_list_players_tier_vocabulary.sql`), so the `r1` case here is now the
+ *    live one — the case kept below is the *shape* a tier-only list still has
+ *    when you look at it in round mode.
  */
 
 const NO_LABELS: Readonly<Record<string, string>> = Object.freeze(Object.create(null))
@@ -94,9 +96,10 @@ describe('buildBuckets', () => {
     expect(buckets.map((b) => b.label)).toEqual(['S', 'Ungrouped'])
   })
 
-  it('rounds read r1…rN out of the same tier column — empty until LV.1.5', () => {
-    // What every row in the database looks like today: the live
-    // `list_players_tier_check` cannot hold a round key.
+  it('rounds read r1…r30 out of the same tier column', () => {
+    // A tier-bucketed list looked at in round mode: no round keys, so every
+    // player is ungrouped. This was every row in every database before LV.1.5,
+    // and is still what a tier list looks like here.
     const today = buildBuckets({
       org: 'round',
       entries: [entry('1', { tier: 'S' }), entry('2', { tier: 'A' })],
@@ -105,7 +108,7 @@ describe('buildBuckets', () => {
     })
     expect(today.map((b) => b.label)).toEqual([null])
 
-    // What LV.1.5 opens, without another line of UI work.
+    // What LV.1.5 opened, without another line of UI work.
     const afterLv15 = buildBuckets({
       org: 'round',
       entries: [entry('1', { tier: 'r2' }), entry('2', { tier: 'r1' }), entry('3', { tier: 'r10' })],
@@ -114,6 +117,17 @@ describe('buildBuckets', () => {
     })
     // Numeric order, not lexical — 'r10' must not sort between 'r1' and 'r2'.
     expect(afterLv15.map((b) => b.label)).toEqual(['1', '2', '10'])
+
+    // The read is no looser than the write. `r31` is outside the vocabulary
+    // migration 081 accepts, so it can only arrive from a bug — and it is filed
+    // as ungrouped rather than rendered as a 31st round section.
+    const outOfRange = buildBuckets({
+      org: 'round',
+      entries: [entry('1', { tier: 'r30' }), entry('2', { tier: 'r31' })],
+      bandLabels: NO_LABELS,
+      budget: 200,
+    })
+    expect(outOfRange.map((b) => b.label)).toEqual(['30', 'Ungrouped'])
   })
 
   it('cost bands are computed from the auction price and keep empty bands', () => {

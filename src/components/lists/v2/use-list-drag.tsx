@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core'
 import * as React from 'react'
 
-import { TIER_VALUES } from '@/types/schemas/lists'
+import { isBucketKey } from '@/types/schemas/lists'
 
 import { dropTargetKey, type DropTarget } from './list-reorder'
 
@@ -104,7 +104,7 @@ export const DROP_ATTR = {
   gap: 'data-drop-gap',
   /** `<bucketKey>` — the section: its header, padding and empty space. */
   bucket: 'data-drop-bucket',
-  /** The tier value the "start tier N" zone would assign. */
+  /** The bucket key the "start tier/round N" zone would assign. */
   fresh: 'data-drop-new',
   /** `list_players.id`, so the dragged row can be measured with `offset*`. */
   entry: 'data-drag-id',
@@ -267,12 +267,12 @@ function hitTest(x: number, y: number, horizontal: boolean): DropTarget | null {
     }
   }
 
-  // The zone only ever renders a value `nextTierBucket` produced, but it comes
-  // back through a DOM attribute as a bare string — so it is re-checked against
-  // the vocabulary the tier route actually accepts rather than asserted.
+  // The zone only ever renders a value `nextBucket` produced, but it comes back
+  // through a DOM attribute as a bare string — so it is re-checked against the
+  // vocabulary the tier route actually accepts rather than asserted. Since
+  // LV.1.5 that vocabulary is the full bucket set, not just the tier letters.
   const fresh = at.closest(`[${DROP_ATTR.fresh}]`)?.getAttribute(DROP_ATTR.fresh)
-  const tier = TIER_VALUES.find((value) => value === fresh)
-  if (tier) return { kind: 'new', tier }
+  if (isBucketKey(fresh)) return { kind: 'new', tier: fresh }
 
   const bucket = at.closest(`[${DROP_ATTR.bucket}]`)
   const bucketKey = bucket?.getAttribute(DROP_ATTR.bucket)
