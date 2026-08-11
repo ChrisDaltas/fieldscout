@@ -1260,3 +1260,65 @@ no draft-mode gate anywhere in the design.** The v1 toggle was never in it.
    its taps write the separate browser-only 3-state. So the surface most likely
    to be used on draft night is the one that never persisted — and the *new*
    side-by-side (Round 2) fixes that by carrying the real checkbox.
+
+---
+
+## 7. LV.2 design-gap review — 2026-08-10 (Chris sent prototype screenshots)
+
+**PR #114 is to be scrapped, not patched.** It is built on the wrong structure.
+
+**Root cause: nobody building this had ever seen the design.** The handoff
+package contains a prose spec and four `.jsx` files, **no images**, and is
+missing `index.html` / `players.js`, so the prototype cannot be run locally
+either. Every fidelity decision so far was made from a written description.
+Chris: *"it's so far off I'm not really sure I can give you any feedback."*
+
+**⚠️ Before the rebuild: `docs/design/lists/screens/` must exist**, holding the
+prototype screenshots (`list-rail`, `cards`, `side-by-side`,
+`side-by-side-picker`, `detail-cards`, `detail-table`). Chris is adding them.
+**Compare against the images, not the prose** — see gap 4 for why the prose
+alone is not trustworthy.
+
+### The four gaps, observed from the screenshots
+
+1. **Rail mode *is* the list detail — this is the structural error.** The
+   design's right-hand panel carries the *complete* open list: hero with cover,
+   name, `@handle` byline and created date; the Share (lime) / dots / expand /
+   pop-out / close cluster; List · Details · Comments tabs with the view count
+   right-aligned; the toolbar (`Ranked ⌄` bare-select, three view-style icons,
+   `Stats 4`, `Add players`); and the player rows themselves. **LV.2 shipped a
+   cover, a name and an "Open list" button in a thin strip**, with ~80% of the
+   page blank. The README says it in its second line — *"List (rail + open
+   list)"* — and the plan still split LV.2 from LV.3, which guaranteed an empty
+   frame. **They are one screen and must be one task.**
+
+2. **Cover tiles are the wrong object.** The design uses a solid saturated
+   block with large initials or a glyph — `★`, `BB`, `WR`, `$`, `11`, `RK`,
+   `0R` — in bright green / blue / purple / orange / teal / pink. In Cards mode
+   it becomes a full-bleed colour band with the initials at display size and a
+   category icon top-right. LV.2 reused the existing `ListThumbnail`, which
+   renders a 2×2 grid of player headshots, tinted by position. Different
+   component, different idea.
+
+3. **Side by side is not Round 2.** It is fully realised in the prototype and
+   is the draft-night surface: a picker screen ("Pick the lists to compare"),
+   then columns showing `5 of 6 left`, per-row drafted checkboxes, strikethrough
+   on drafted players, and tier bands carrying through each column. LV.2 shipped
+   it disabled with a "coming in round 2" tooltip. **Reconsider the Round 1 /
+   Round 2 split** — this is where Chris's own drafted-checkbox ruling lands.
+
+4. **The tier ramp is warm, and the written spec is wrong about it.** The
+   handoff says *"`--tier-1` … `--tier-6` | indigo ramp"*, and LV.2 built to
+   that. The screenshots show red → orange → gold → green → teal — which is
+   what `tailwind.config.ts` **already ships**: `tier-2..6` =
+   `#df5551 / #e58033 / #e6b422 / #3fa055 / #1f9aa6`. The tokens were right and
+   the prose misled. General lesson: where the two disagree, the screenshots
+   and the tokens win.
+
+### Process note
+
+LV.2's builder did its job — it verified hover states live, caught a real
+false-empty-state bug in its own code by breaking the API deliberately, and
+recorded every interpretation it made. **It could not catch this class of
+error, because it was checking its work against the same prose that was
+wrong.** No amount of review discipline substitutes for seeing the design.
