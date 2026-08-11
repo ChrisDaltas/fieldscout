@@ -29,7 +29,9 @@ that's settled — implement from the tokens.
 | `detail-note-hover-card.png` | A player note rendered as a hover card |
 | `detail-tab-details.png` | The **Details** tab — tags, description, attached links, position mix |
 | `detail-tab-comments.png` | The **Comments** tab |
-| `_competitor-sleeper-propose-trade.png` | **Not our design** — a Sleeper screen, kept as competitor reference. Underscore-prefixed so it sorts away from the real references |
+
+**Only Field Scout prototype screens belong here.** A competitor capture was
+filed here in error on 2026-08-10 and removed the same day.
 
 ## ⚠️ These corrected the delivery plan (2026-08-10)
 
