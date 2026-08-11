@@ -293,6 +293,13 @@ export default function StyleGuidePage() {
             </FilterChip>
           </div>
           <p className="text-[12px] font-medium text-n-3">
+            <span className="font-bold text-ink">FilterChip</span> — multi-select
+            rows, and single-select rows where <em>nothing</em> selected is a real
+            state. Everything one-of-many moved to the segment below (LV.11,
+            Chris 2026-08-11: “use the tab component for now, we can create one
+            for filters later”), so this is a temporary split, not a final one.
+          </p>
+          <p className="text-[12px] font-medium text-n-3">
             One control for every tab and segment (Chris, 2026-08-11). Three
             variations — icon + label, label only, icon only — each taking an
             optional count. Active is an accent fill with white text; inactive

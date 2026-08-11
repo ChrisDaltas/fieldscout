@@ -11,6 +11,7 @@ import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -220,6 +221,10 @@ export function PlayersPanel({ onClose }: PlayersPanelProps) {
           />
         </div>
 
+        {/* Stays a FilterChip (LV.11): clicking the pressed chip clears it back
+            to `null` = all positions, so **no position selected** is a real and
+            common state. A segment asserts one item is always active, which
+            would be a lie here. */}
         <div className="flex flex-wrap gap-1">
           {RAIL_POSITIONS.map((pos) => (
             <FilterChip
@@ -232,22 +237,26 @@ export function PlayersPanel({ onClose }: PlayersPanelProps) {
           ))}
         </div>
 
-        <div className="flex items-center gap-1">
-          <FilterChip
-            pressed={!debounced && pool === 'rostered'}
+        {/* Single-select — one pool is always the one shown — so it is the
+            shared segment control (LV.11). While a search is running the pool
+            split does not apply, so the whole group goes disabled and neither
+            item is active; that is a disabled state, not a user deselection. */}
+        <Segment aria-label="Availability">
+          <SegmentItem
+            active={!debounced && pool === 'rostered'}
             disabled={Boolean(debounced)}
-            onPressedChange={() => setPool('rostered')}
+            onClick={() => setPool('rostered')}
           >
             On rosters
-          </FilterChip>
-          <FilterChip
-            pressed={!debounced && pool === 'free-agents'}
+          </SegmentItem>
+          <SegmentItem
+            active={!debounced && pool === 'free-agents'}
             disabled={Boolean(debounced)}
-            onPressedChange={() => setPool('free-agents')}
+            onClick={() => setPool('free-agents')}
           >
             Free agents
-          </FilterChip>
-        </div>
+          </SegmentItem>
+        </Segment>
 
         <p className="text-[10px] font-medium leading-snug text-n-3">
           Roster split is mocked until league rosters go live. Drag a row onto

@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v3.8) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v4.0) > this file.
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -153,6 +153,17 @@ are all checked.
   primitive, which already handled both. **`lists/draft-mode/board-column.tsx`
   has the same bug and is off limits — LV.7 must take the conversion with it**
   (§4)
+- [x] **LV.11** — **single-select `FilterChip` rows onto the shared tab/segment
+  control** (2026-08-11, ruled by Chris the same day — plan **D10**, plan
+  → v4.0). *"Use the tab component for now, we can create one for filters
+  later."* This is the answer to the question LV.9 filed and refused to
+  improvise around. **UI/UX only — no migration, no schema change, no new API
+  route**; the budget stays closed at three. Eleven `FilterChip` rows were
+  surveyed and classified before anything was edited: **seven converted**, two
+  left multi-select, **two left because zero-selected is a valid state** (§4),
+  and the two in `components/leagues/**` needed no edit because they are
+  multi-select anyway. `src/components/ui/filter-chip-split.test.ts` pins the
+  classification so a later "tidy-up" cannot fold the wrong rows in
 - [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
@@ -1287,6 +1298,108 @@ This section records decisions made **during** the build.
   `logoImgsInDom: 0`, `brokenGlyphs: 0`, i.e. Radix pulled the failed `<img>`
   and drew the fallback. Reverted; 12/12 green and all four logos back to
   `naturalWidth 150`.
+
+- **LV.11 (2026-08-11) — the single-select filter rows joined the tab control,
+  and the classification is the deliverable.** Chris: *"Use the tab component
+  for now, we can create one for filters later."* The ruling and the rule are
+  plan **D10**; what follows is the build's record. **UI/UX only — no
+  migration, no schema change, no new API route.**
+
+  **"For now" is recorded in four places, deliberately.** Plan D10, the plan
+  changelog, `ui/tabs.tsx`'s header (which *names the rows that borrowed the
+  control*, so the future filter-control task has its work list in the code)
+  and `ui/badge.tsx`'s header (which names the rows that must **never** be
+  folded in). `filter-chip-split.test.ts` asserts the first two headers still
+  say so, because a header comment is the only artifact here that a refactor
+  can silently delete.
+
+  **The census — every `FilterChip` row, classified before anything was
+  edited.** Fifteen rows across ten files. The classification, not the restyle,
+  is what took the time: three of them look convertible and are not.
+
+  | row | classification | disposition |
+  | --- | --- | --- |
+  | `app/admin/posts` Drafts / Published | single-select | → `Segment` boxed, label **× count** (the counts were hand-rolled `<span className="fs-num">`; they are now the component's own `count` prop) |
+  | `lists/list-form-dialog` Position group | single-select (`''` = All players is an option) | → `Segment` boxed, **`grid grid-cols-4`** |
+  | `lists/list-form-dialog` Public / Private | single-select | → `Segment` boxed |
+  | `layout/rail/players-panel` On rosters / Free agents | single-select | → `Segment` boxed |
+  | `lists/generate-ai-modal` `ChipGroup` ×3 (Position, Scoring, Players) | single-select | → `Segment` boxed grid; **one helper edit covered all three** |
+  | `lists/lists-browse` position row | single-select ('All' is the zero option) | → `Segment` boxed |
+  | `weekly-ranks/weekly-ranks-view` positions | single-select | → `Segment` boxed |
+  | `explore/explore-feed` topics | single-select ('All' is `tagId === null`) | → `Segment` boxed — see the frame note below |
+  | `lists/lists-browse` tag row | **multi-select** | left alone |
+  | `lists/builder/player-sidebar` positions (`Set`) | **multi-select** | left alone |
+  | `lists/generate-ai-modal` ranking styles (1–3 weight each) | **multi-select** | left alone |
+  | `layout/rail/players-panel` position row | **zero selected is valid** | left alone — tapping the pressed chip sets `null` = all positions |
+  | `lists/generate-ai-modal` AI expert | **zero selected is valid** | left alone — the field is Optional and starts with none chosen |
+  | `leagues/roster-slot-builder` flex positions, IR designations | **multi-select** | left alone — and so **no file under `src/components/leagues/**` was opened**, which resolves the ACTIVE-BUILD tension by evidence rather than by exemption |
+  | `app/styleguide` chip demo | demo | kept, and its caption now states the split |
+
+  **`POSITION_FILTER_ACTIVE` was orphaned by this change and is deleted.** It
+  was the plain-class twin of `POSITION_TAB_ACTIVE`, and both its consumers
+  (`lists-browse`, `weekly-ranks`) moved to the `data-state` form — which they
+  had to: a plain `bg-pos-qb` **loses** to the primitive's
+  `data-[state=active]:bg-accent`, because the latter carries an extra
+  attribute selector. Measured, not assumed: RB active renders
+  `rgb(44,111,214)` = `bg-pos-rb`, the same value LV.9 measured on
+  `players-spreadsheet.tsx`. `position-badge.tsx`'s header records where to
+  find the deleted map if the filter control wants it back.
+
+  **Two frame decisions, both made by looking, both worth the words.**
+  (a) `explore-feed`'s topic row was built boxed, **tried bare, and put back**:
+  bare is the right frame for a variable-length wrapping row, but the Radix
+  tab set (Trending / Newest / Following) sits directly above it and is also
+  bare, and un-framed the two read as one control — the exact filter-vs-tab
+  blur D9 worried about. The frame is load-bearing; the cost is a ragged wrap
+  below `sm`. (b) `list-form-dialog`'s eight positions were a wrapping flex row
+  until the mobile screenshot showed **'K' stranded alone on a second line**
+  with a gap above it; they are a `grid grid-cols-4` now, the same 4×2 the AI
+  modal uses for the same choice.
+
+  **The inline style that was already there is gone.** `ChipGroup` set
+  `gridTemplateColumns` as an inline style. That was harmless on a plain `div`,
+  but on this control an inline style is the documented way to kill `:hover`
+  silently (the handoff's critical note, probed at LV.9) — so the column count
+  is now a literal class and the file carries **no inline style at all**,
+  rather than one for someone to extend with a colour. Verified live:
+  `anyInlineStyle: false` on every converted group.
+
+  **Measured, not asserted** (`getComputedStyle`, dev-local, desktop 1280 and
+  mobile 375): active `rgb(61,92,255)` = `accent` with white text; inactive
+  `rgb(255,255,255)` on `rgb(11,12,16)` = full-contrast ink; **hover
+  `rgb(220,228,255)` = `accent-soft`**, measured twice (Visibility/Private and
+  the AI modal's Position/QB) with a real pointer, matching LV.9's number;
+  `boxShadow: none` at rest on every item; height 26px (`h-tab`) — identical to
+  `FilterChip`'s `h-btn-sm`, so nothing moved. No horizontal overflow at 375px
+  on any converted row.
+
+  **Behaviour proven per row, not inferred.** Rail pool: Free agents **68**
+  rows → On rosters **52**, different players. Legacy lists browse: **14** list
+  cards → **3** on QB. Weekly ranks: heading "Week 1 · QB board" → "Week 1 · RB
+  board". Explore: feed → "No sleepers lists yet" → back to the feed on
+  re-tapping the active topic. Admin: "No drafts waiting" → "Nothing published
+  yet". List form: created a list through the two converted rows and read the
+  row back from the local DB — `position_filter: "QB"`, `is_private: true`.
+  Also pinned the one **disabled** case: while the rail search is running both
+  pool items go `disabled` at 40% opacity with neither active, which is a
+  disabled state and not a user deselection — the same behaviour `FilterChip`
+  had.
+
+  **The probe, and it is the one that matters for this task.** The rail's
+  position row — the "zero selected is valid" case — was converted to a
+  `Segment` on purpose, i.e. exactly the mistake a later tidy-up would make.
+  `filter-chip-split.test.ts` went **RED** on "the two rows that must never
+  become segments are still chips", and the browser showed the regression
+  itself: clicking the active QB a second time left `QB=active`, with no way
+  back to all-positions. Reverted; the test is green and the same gesture
+  measures `QB=false, RB=false, WR=false, TE=false` again.
+
+  **Deferred, unchanged from LV.9.** `big-board/week-tabs.tsx` and
+  `public-big-board.tsx`'s week strip are still the hand-rolled black-active
+  recipe and are still off limits. The weekly-ranks screen now shows the new
+  segment sitting directly above the old week strip, which makes the
+  inconsistency more visible than it was — worth knowing, not worth breaking
+  the boards rule for.
 
 ---
 

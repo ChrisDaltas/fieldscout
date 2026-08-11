@@ -23,22 +23,18 @@ const STYLES: Record<string, string> = {
   DB: 'bg-pos-def text-white',
 }
 
-// Position filters are the one exception to the black-selected rule: a
-// selected position chip fills with that position's colour. Applied via
-// className so it overrides FilterChip's default ink "on" state. Full literal
-// strings so Tailwind's scanner emits them. 'All' has no entry → stays black.
-export const POSITION_FILTER_ACTIVE: Record<string, string> = {
-  QB: 'bg-pos-qb text-white hover:bg-pos-qb',
-  RB: 'bg-pos-rb text-white hover:bg-pos-rb',
-  WR: 'bg-pos-wr text-white hover:bg-pos-wr',
-  TE: 'bg-pos-te text-white hover:bg-pos-te',
-  FLEX: 'bg-pos-flex text-white hover:bg-pos-flex',
-  K: 'bg-pos-k text-white hover:bg-pos-k',
-  DEF: 'bg-pos-def text-white hover:bg-pos-def',
-  DST: 'bg-pos-def text-white hover:bg-pos-def',
-}
-
-// Same idea for Tabs-based position filters (data-state driven).
+// Position pickers are the one exception to the accent-selected rule: the
+// selected position fills with that position's own colour. Applied via
+// className over the shared tab/segment control, so it must be `data-state`
+// driven — a plain `bg-pos-*` loses to the primitive's
+// `data-[state=active]:bg-accent`, which carries an extra attribute selector.
+// Full literal strings so Tailwind's scanner emits them. A key with no entry
+// ('All', 'Overall') has no override → stays the accent fill.
+//
+// LV.11 deleted this map's `FilterChip` twin (`POSITION_FILTER_ACTIVE`, plain
+// `bg-pos-*` + a `hover:` repeat) when the last single-select position chip
+// row moved onto `Segment`. A future filter control that needs it again should
+// take it from git history rather than re-deriving it.
 export const POSITION_TAB_ACTIVE: Record<string, string> = {
   QB: 'data-[state=active]:bg-pos-qb data-[state=active]:text-white',
   RB: 'data-[state=active]:bg-pos-rb data-[state=active]:text-white',

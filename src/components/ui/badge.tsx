@@ -57,9 +57,29 @@ function Badge({ className, variant, ...props }: BadgeProps) {
 /**
  * Toggleable filter chip — the interactive sibling of the badge. 26px tall,
  * ink outline; off = white with a sunken-grey hover, on = ink fill with white
- * text (content filters select to black). Position filters override the on
- * state to the position colour via `className`. Button semantics with
- * `aria-pressed`.
+ * text. Button semantics with `aria-pressed`.
+ *
+ * **What is left here after LV.11, and why.** Chris ruled the single-select
+ * chip rows onto the shared tab/segment control (*"Use the tab component for
+ * now, we can create one for filters later"*), so this component is no longer
+ * the app's general filter chip. It now covers exactly the two shapes a
+ * segment cannot express, because a segment asserts **one item is always
+ * active**:
+ *
+ * 1. **Multi-select** — several on at once. `lists/lists-browse.tsx` tag
+ *    filters, `lists/builder/player-sidebar.tsx` positions,
+ *    `lists/generate-ai-modal.tsx` ranking styles (which also carry a 1–3
+ *    weight per chip), `leagues/roster-slot-builder.tsx` flex positions and IR
+ *    designations.
+ * 2. **Single-select where zero selected is valid** — tapping the on chip
+ *    clears it and nothing is active. `layout/rail/players-panel.tsx`'s
+ *    position row (clear = all positions) and `generate-ai-modal.tsx`'s
+ *    optional AI-expert picker (starts with none chosen).
+ *
+ * Converting either of those would be a behaviour regression dressed as a
+ * restyle. **Do not "finish the job" by folding them in.** The purpose-built
+ * filter control Chris deferred is where they and the segment-borrowing rows
+ * listed in `ui/tabs.tsx` are meant to end up together.
  */
 export interface FilterChipProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {

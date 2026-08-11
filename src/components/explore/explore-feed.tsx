@@ -5,11 +5,11 @@ import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { FollowButton } from '@/components/explore/follow-button'
-import { Badge, FilterChip } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Segment, SegmentItem, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import {
   exploreFeedKeys,
@@ -178,20 +178,32 @@ export function ExploreFeed() {
       </Tabs>
 
       {topics.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          <FilterChip pressed={tagId === null} onPressedChange={() => setTagId(null)}>
+        /* Single-select: 'All' is `tagId === null`, so exactly one item is
+           always active and clearing a topic just moves the fill back to All.
+           That makes it the shared segment control (LV.11). The clear-by-
+           re-tapping gesture is kept deliberately — it is the only way back to
+           All without moving the pointer.
+
+           Boxed, not bare, and the frame is load-bearing: the Radix tab row
+           (Trending / Newest / Following) sits directly above and is bare.
+           Un-framed, the two read as the same control — a tab set and a filter
+           blurring together is the exact confusion D9 worried about. Measured
+           both ways in the browser before choosing. The cost is a ragged wrap
+           below `sm`, which is the lesser problem. */
+        <Segment aria-label="Filter by topic" className="mb-4 flex flex-wrap">
+          <SegmentItem active={tagId === null} onClick={() => setTagId(null)}>
             All
-          </FilterChip>
+          </SegmentItem>
           {topics.map((topic) => (
-            <FilterChip
+            <SegmentItem
               key={topic.id}
-              pressed={tagId === topic.id}
-              onPressedChange={(pressed) => setTagId(pressed ? topic.id : null)}
+              active={tagId === topic.id}
+              onClick={() => setTagId(tagId === topic.id ? null : topic.id)}
             >
               {topic.name}
-            </FilterChip>
+            </SegmentItem>
           ))}
-        </div>
+        </Segment>
       )}
 
       <Card>

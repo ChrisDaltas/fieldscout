@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { ListCard } from '@/components/lists/list-card'
-import { POSITION_FILTER_ACTIVE } from '@/components/players/position-badge'
+import { POSITION_TAB_ACTIVE } from '@/components/players/position-badge'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useDeleteFolder, useFolders } from '@/hooks/use-folders'
 import { useLists } from '@/hooks/use-lists'
 import { useTags } from '@/hooks/use-tags'
@@ -148,21 +149,27 @@ export function ListsBrowse() {
         </p>
       </div>
 
-      {/* Filter rows */}
+      {/* Filter rows. The position row is single-select with 'All' as its
+          always-present zero option, so it is the shared segment control
+          (LV.11); the tag row below it is multi-select and stays chips. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {POSITION_FILTERS.map((pos) => (
-          <FilterChip
-            key={pos}
-            pressed={position === pos}
-            onPressedChange={() => setPosition(pos)}
-            className={position === pos ? POSITION_FILTER_ACTIVE[pos] : undefined}
-          >
-            {pos}
-          </FilterChip>
-        ))}
+        <Segment aria-label="Filter by position" className="flex flex-wrap">
+          {POSITION_FILTERS.map((pos) => (
+            <SegmentItem
+              key={pos}
+              active={position === pos}
+              onClick={() => setPosition(pos)}
+              className={POSITION_TAB_ACTIVE[pos]}
+            >
+              {pos}
+            </SegmentItem>
+          ))}
+        </Segment>
         {tagChips.length > 0 && (
           <span className="mx-1.5 h-[18px] w-px shrink-0 bg-n-4" aria-hidden />
         )}
+        {/* Multi-select — several tags can be on at once — so these stay
+            FilterChips (LV.11). */}
         {tagChips.map((tag) => (
           <FilterChip
             key={tag.slug}

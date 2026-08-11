@@ -223,6 +223,8 @@ export function PlayerSidebar({
           </Popover>
         </div>
 
+        {/* Stays a FilterChip (LV.11): `positions` is a Set and every chip
+            toggles independently — multi-select, so not a segment. */}
         {!isLocked && (
           <div className="flex flex-wrap gap-1.5">
             {POSITION_FILTERS.map((pos) => (

@@ -58,6 +58,32 @@ import { cn } from "@/lib/utils"
  * critical note. An inline `background` outranks the `:hover` rule and kills
  * the hover state silently, which is how the prototype's segmented control
  * lost its own.
+ *
+ * ---
+ *
+ * **Single-select filter rows live here too — deliberately, and for now.**
+ * Chris, 2026-08-11: *"Use the tab component for now, we can create one for
+ * filters later."* LV.9 left `FilterChip` rows alone and asked, because a
+ * filter is not a tab; LV.11 is the answer, and it is a **temporary
+ * unification, not a final answer**. So the callers below are a *filter*
+ * wearing a *segment*, and are the first candidates to move back when the
+ * purpose-built filter control is built:
+ *
+ * | caller | row |
+ * | --- | --- |
+ * | `lists/lists-browse.tsx` | position filter (All + 7) |
+ * | `weekly-ranks/weekly-ranks-view.tsx` | position board picker |
+ * | `explore/explore-feed.tsx` | topic filter (All + trending tags) |
+ * | `layout/rail/players-panel.tsx` | On rosters / Free agents |
+ * | `lists/generate-ai-modal.tsx` | `ChipGroup` — position, scoring, count |
+ * | `lists/list-form-dialog.tsx` | position group, visibility |
+ * | `app/admin/posts/page.tsx` | Drafts / Published |
+ *
+ * **The line that decides it is one-of-many, and it is not negotiable.** A
+ * segment asserts that exactly one item is active. Rows where several can be
+ * on at once, or where *none* selected is a real state, stayed on `FilterChip`
+ * — converting them would be a behaviour regression wearing a restyle. See
+ * `ui/badge.tsx` for that side of the split.
  */
 
 type SegmentAppearance = "boxed" | "bare"
