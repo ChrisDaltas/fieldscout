@@ -125,7 +125,8 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 | `cover.{color,emoji}` | Use existing `thumbnail_url` only — no color/emoji picker | **reduced** |
 | `visibility` | **Private or public only** (Chris, 2026-08-09) — the handoff's third "link" state is not wanted. Existing `is_private` covers it exactly | none |
 | `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
-| `scope`, `links[]` | **Dropped** — the handoff defines them but never renders them | dropped |
+| `scope` | **Dropped** — defined but never rendered | dropped |
+| `links[]` | **NOT dropped — corrected 2026-08-10 from the screenshots.** `screens/detail-tab-details.png` renders an **Attached links** section (YouTube video with title, source, duration, remove control) plus an "Attach a video or article" action | in scope |
 
 **What is deliberate, not a compromise** — stated plainly so nobody
 "fixes" it later:
