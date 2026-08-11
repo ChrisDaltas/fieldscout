@@ -38,7 +38,8 @@ export function DraftPick({
       <div
         className={cn(
           'flex min-h-[51px] items-center justify-center rounded-sm border border-dashed border-n-3 bg-white',
-          onClock && 'bg-accent-soft shadow-hard-4',
+          // On-the-clock is a status, not a hover state — the fill says it.
+          onClock && 'bg-accent-soft',
           className,
         )}
       >

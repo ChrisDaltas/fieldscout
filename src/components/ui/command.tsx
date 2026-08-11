@@ -33,7 +33,9 @@ const CommandDialog = ({ children, ...props }: DialogProps) => {
   return (
     <Dialog {...props}>
       {/* The command panel carries the surface (ink border + hard shadow);
-          the dialog shell goes transparent so borders don't double up. */}
+          the dialog shell goes transparent so borders don't double up. The
+          resting shadow is the *dialog's* — an elevation exception, since a
+          modal genuinely floats. See CLAUDE.md → "Elevation". */}
       <DialogContent className="overflow-hidden border-none bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">Search</DialogTitle>
         <Command className="shadow-hard-6">{children}</Command>

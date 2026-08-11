@@ -394,7 +394,7 @@ export function ListDetailPanel({
 
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 border border-ink bg-white p-[18px] shadow-hard-4">
+    <div className="flex flex-col gap-3 border border-ink bg-white p-[18px]">
       {children}
     </div>
   )

@@ -27,6 +27,8 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
 const menuItemClasses =
   "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-[7px] text-[13px] font-medium text-ink outline-none transition-colors focus:bg-accent-soft focus:text-ink data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
 
+// Elevation exception: a menu overlays the page, so it keeps its resting
+// shadow. See CLAUDE.md → "Elevation".
 const menuSurfaceClasses =
   "z-50 min-w-[8rem] rounded-sm border border-ink bg-white p-1.5 text-ink shadow-hard-4"
 

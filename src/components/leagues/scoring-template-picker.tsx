@@ -193,7 +193,9 @@ function TemplateCardButton({
       }}
       className={cn(
         'cursor-pointer text-left transition-shadow hover:shadow-hard-4',
-        selected && 'border-accent shadow-hard-4',
+        // Selection is carried by the accent border, not by elevation — a
+        // resting shadow here would make the chosen card float permanently.
+        selected && 'border-accent',
       )}
     >
       <CardContent className="flex h-full flex-col gap-2 p-4">

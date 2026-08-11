@@ -50,8 +50,10 @@ function TeamBudgetCard({
     <div
       className={cn(
         'min-w-[104px] flex-1 rounded-sm border border-ink px-2.5 py-2',
+        // "Nominating" is a resting status, not a hover — the accent-soft
+        // fill carries it. Elevation stays a hover/press affordance.
         team.nominating
-          ? 'bg-accent-soft shadow-hard-4'
+          ? 'bg-accent-soft'
           : leader
             ? 'bg-positive-soft'
             : 'bg-white',
@@ -173,7 +175,7 @@ export function AuctionDraftRoom({
         <div className="grid items-start gap-5 lg:grid-cols-[1.5fr_1fr]">
           {/* Live auction */}
           <div className="flex min-w-0 flex-col gap-5">
-            <div className="overflow-hidden rounded-sm border-2 border-ink bg-white shadow-hard-8">
+            <div className="overflow-hidden rounded-sm border-2 border-ink bg-white">
               {/* Ink head band */}
               <div className="flex items-center gap-2.5 bg-ink px-3.5 py-2.5 text-white">
                 <Badge variant="lime" className="shrink-0">

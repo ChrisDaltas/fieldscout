@@ -142,7 +142,15 @@ const config: Config = {
         pill: '999px',
       },
       // Hard un-blurred offset shadows — the neo-brutalist signature.
-      // Shadow = "liftable/pressable". No soft shadows anywhere.
+      // No soft shadows anywhere.
+      //
+      // ELEVATION IS A HOVER/PRESS AFFORDANCE, NEVER A RESTING STATE.
+      // Reach for these only behind `hover:` (or a genuine active-interaction
+      // state such as `isDragging`). The single exception is a true overlay —
+      // dialog, popover, dropdown, select, toast, drag ghost, floating window
+      // — which really does sit above the page and so carries its shadow at
+      // rest. Everything in normal page flow rests flat.
+      // See CLAUDE.md → "Elevation" and docs/design/lists/README.md §Geometry.
       boxShadow: {
         'hard-4': '3.2px 3.2px 0 #000000',
         'hard-6': '4.8px 4.8px 0 #000000',
@@ -150,6 +158,8 @@ const config: Config = {
         'hard-up-4': '3.2px -3.2px 0 #000000',
         'hard-up-6': '4.8px -4.8px 0 #000000',
         'hard-up-8': '6.4px -6.4px 0 #000000',
+        // Ink fills take an accent shadow — an ink shadow disappears into them.
+        'hard-accent-4': '3.2px 3.2px 0 #3d5cff',
         'hard-accent': '4.8px 4.8px 0 #3d5cff',
       },
       // Heading scale (pre-scaled ×0.8; weight applied by base styles).

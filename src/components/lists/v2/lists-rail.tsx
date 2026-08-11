@@ -44,7 +44,10 @@ export function ListsRail({
   return (
     <div
       className={cn(
-        'flex flex-col overflow-y-auto border border-ink bg-white shadow-hard-4 lg:sticky lg:top-3 lg:max-h-[calc(100vh-120px)] lg:border-r-0',
+        // `.fs-lift` per docs/design/lists/README.md §Geometry: flat at rest,
+        // shadow on hover. The rail is a list of clickable rows, so the lift
+        // is an affordance for the thing you are about to click.
+        'flex flex-col overflow-y-auto border border-ink bg-white transition-shadow hover:shadow-hard-4 lg:sticky lg:top-3 lg:max-h-[calc(100vh-120px)] lg:border-r-0',
         className,
       )}
     >

@@ -368,7 +368,7 @@ function Gallery({
 
 function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center shadow-hard-4">
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
       <Icon name="list" size={21} className="text-n-3" />
       <span className="text-[13px] font-bold">
         {loading ? 'Loading your lists…' : 'Select or create a new list'}
@@ -384,7 +384,7 @@ function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center shadow-hard-4">
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
       <Icon name="info-circle" size={21} className="text-negative-strong" />
       <span className="text-[13px] font-bold">Your lists could not be loaded.</span>
       <p className="max-w-[360px] text-[11px] font-medium text-n-3">{message}</p>

@@ -36,7 +36,7 @@ export default async function JoinPage({
   if (!featureFlags.leagues) {
     return (
       <JoinShell>
-        <div className="rounded-sm border border-ink bg-white px-card-pad py-10 text-center text-ink shadow-hard-4">
+        <div className="rounded-sm border border-ink bg-white px-card-pad py-10 text-center text-ink">
           <p className="text-h5">Leagues aren&apos;t available yet</p>
           <p className="mt-1.5 text-[12px] font-medium text-n-3">
             League invites open up soon — check back shortly.
