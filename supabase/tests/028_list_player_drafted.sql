@@ -269,9 +269,16 @@ select is(
      and list_id = '94000000-0000-4000-8000-000000000004'),
   1::bigint,
   'D2''s "does not cascade to other lists" made falsifiable (R174): the SAME user''s mark for the SAME player on a DIFFERENT list is untouched — a cascade that wiped every list would fail HERE and nowhere else');
+-- Scoped for R202's reason, same as the epilogue's pin at the end of the file:
+-- privileged means RLS is off, so an unscoped count here counts every OTHER
+-- suite's rows too. Measured with 3 foreign rows held: `have: 6 want: 3`.
 select is(
-  (select count(*) from list_player_drafted), 3::bigint,
-  'privileged total-rows pin: 3 marks exist — the row-exists guard behind every 0-affected RETURNING-count below');
+  (select count(*) from list_player_drafted
+   where user_id in ('84000000-0000-4000-8000-000000000001',
+                     '84000000-0000-4000-8000-000000000002',
+                     '84000000-0000-4000-8000-000000000003')),
+  3::bigint,
+  'privileged total-rows pin (this suite''s users only): 3 marks exist — the row-exists guard behind every 0-affected RETURNING-count below');
 
 -- ---------------------------------------------------------------------------
 -- D. u1 — own-row reads, the sanctioned writes, and immutability.
@@ -436,9 +443,19 @@ select results_eq(
 -- ---------------------------------------------------------------------------
 reset role;
 
+-- Scoped to THIS suite's own seeded users (R202, LV.1.3 final review). The
+-- privileged epilogue runs with RLS off, so an unscoped `count(*)` here counts
+-- every other suite's rows too and reports a false red whenever anything else
+-- holds marks — including the `test:stack` run the Lists v2 PROGRESS §5 tells
+-- you to make. Measured concurrent with `test:stack`: `have: 8 want: 5`. The
+-- surrounding assertions were already scoped this way; this one was the outlier.
 select is(
-  (select count(*) from list_player_drafted), 5::bigint,
-  'total rows: u1''s lp1 mark + u2''s lp1 mark + u2''s surviving lp4 p2 mark (R174) + u1''s new lp4 (saved-list) mark + u2''s new lp5 (league-shared-private) mark (R173) — u1''s lp2 mark was self-deleted; every stranger UPDATE/DELETE above was a genuine no-op, not a hit on an empty table');
+  (select count(*) from list_player_drafted
+   where user_id in ('84000000-0000-4000-8000-000000000001',
+                     '84000000-0000-4000-8000-000000000002',
+                     '84000000-0000-4000-8000-000000000003')),
+  5::bigint,
+  'total rows (this suite''s users only): u1''s lp1 mark + u2''s lp1 mark + u2''s surviving lp4 p2 mark (R174) + u1''s new lp4 (saved-list) mark + u2''s new lp5 (league-shared-private) mark (R173) — u1''s lp2 mark was self-deleted; every stranger UPDATE/DELETE above was a genuine no-op, not a hit on an empty table');
 select is(
   (select count(*) from list_player_drafted
    where user_id = '84000000-0000-4000-8000-000000000001'
