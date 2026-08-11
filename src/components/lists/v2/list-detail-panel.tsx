@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
@@ -20,7 +21,6 @@ import {
   type ListPlayerWithPlayer,
   type ListWithTags,
 } from '@/hooks/use-lists'
-import { cn } from '@/lib/utils'
 import {
   colsForView,
   resolveOrg,
@@ -278,40 +278,35 @@ export function ListDetailPanel({
         }
       />
 
-      <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
-        {(
-          [
-            { id: 'list', label: 'List', count: null },
-            { id: 'details', label: 'Details', count: null },
-            { id: 'comments', label: 'Comments', count: comments.data?.pagination.total ?? null },
-          ] as const
-        ).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={tab === item.id}
-            onClick={() => setTab(item.id)}
-            className={cn(
-              'inline-flex h-tab items-center gap-1.5 rounded-sm px-3 text-[11px] font-bold transition-colors',
-              tab === item.id
-                ? 'bg-accent text-accent-foreground'
-                : 'bg-transparent text-ink hover:bg-accent-soft',
-            )}
-          >
-            {item.label}
-            {item.count != null && (
-              <span className="fs-num text-[10px] font-medium opacity-75">{item.count}</span>
-            )}
-          </button>
-        ))}
-        <span className="ml-auto flex items-center gap-1.5 pb-1.5 text-[10px] font-medium text-n-3">
-          <Icon name="eye" size={12} />
-          <span className="fs-num">{formatCount(list.view_count)}</span>
-        </span>
-      </div>
+      {/*
+        The **label + count** variation of the shared control (`ui/tabs.tsx`),
+        bare, per `screens/list-rail-list-view.png`.
 
-      {tab === 'list' && (
-        <>
+        This one *is* a genuine tab set — each trigger owns a sibling panel —
+        so it runs on Radix rather than on `Segment`. That is an upgrade, not a
+        restyle: the hand-rolled buttons it replaces had no `tabpanel`
+        association and no arrow-key navigation.
+      */}
+      <Tabs
+        value={tab}
+        onValueChange={(next) => setTab(next as DetailTab)}
+        className="flex flex-col gap-3"
+      >
+        <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
+          <TabsList aria-label="List sections" className="flex-wrap">
+            <TabsTrigger value="list">List</TabsTrigger>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="comments" count={comments.data?.pagination.total ?? null}>
+              Comments
+            </TabsTrigger>
+          </TabsList>
+          <span className="ml-auto flex items-center gap-1.5 pb-1.5 text-[10px] font-medium text-n-3">
+            <Icon name="eye" size={12} />
+            <span className="fs-num">{formatCount(list.view_count)}</span>
+          </span>
+        </div>
+
+        <TabsContent value="list" className="mt-0 flex flex-col gap-3">
           <ListToolbar
             org={org}
             onOrgChange={(next) => setOrg(listId, next)}
@@ -350,44 +345,46 @@ export function ListDetailPanel({
               onDrop={handleDrop}
             />
           )}
-        </>
-      )}
+        </TabsContent>
 
-      {tab === 'details' && (
-        <ListDetailsTab
-          list={list}
-          canEdit={canEdit}
-          onSaveDescription={(description) => updateList.mutate({ description })}
-          onSaveTags={(tags) => updateList.mutate({ tags })}
-          // A rejected link must SAY why. The service answers with a specific
-          // message for every refusal — bad scheme, duplicate, over the cap —
-          // and swallowing it would leave the form looking like it worked
-          // (CLAUDE.md: never let "nothing happened" mean "it worked").
-          onAddLink={(input) =>
-            addLink.mutate(input, {
-              onError: (error) =>
-                toast({
-                  title: 'Could not attach that link',
-                  description: error.message,
-                  variant: 'destructive',
-                }),
-            })
-          }
-          onRemoveLink={(linkId) =>
-            removeLink.mutate(linkId, {
-              onError: (error) =>
-                toast({
-                  title: 'Could not remove that link',
-                  description: error.message,
-                  variant: 'destructive',
-                }),
-            })
-          }
-          linksBusy={addLink.isPending || removeLink.isPending}
-        />
-      )}
+        <TabsContent value="details" className="mt-0">
+          <ListDetailsTab
+            list={list}
+            canEdit={canEdit}
+            onSaveDescription={(description) => updateList.mutate({ description })}
+            onSaveTags={(tags) => updateList.mutate({ tags })}
+            // A rejected link must SAY why. The service answers with a specific
+            // message for every refusal — bad scheme, duplicate, over the cap —
+            // and swallowing it would leave the form looking like it worked
+            // (CLAUDE.md: never let "nothing happened" mean "it worked").
+            onAddLink={(input) =>
+              addLink.mutate(input, {
+                onError: (error) =>
+                  toast({
+                    title: 'Could not attach that link',
+                    description: error.message,
+                    variant: 'destructive',
+                  }),
+              })
+            }
+            onRemoveLink={(linkId) =>
+              removeLink.mutate(linkId, {
+                onError: (error) =>
+                  toast({
+                    title: 'Could not remove that link',
+                    description: error.message,
+                    variant: 'destructive',
+                  }),
+              })
+            }
+            linksBusy={addLink.isPending || removeLink.isPending}
+          />
+        </TabsContent>
 
-      {tab === 'comments' && <ListCommentsTab listId={listId} viewer={viewer} />}
+        <TabsContent value="comments" className="mt-0">
+          <ListCommentsTab listId={listId} viewer={viewer} />
+        </TabsContent>
+      </Tabs>
     </PanelShell>
   )
 }

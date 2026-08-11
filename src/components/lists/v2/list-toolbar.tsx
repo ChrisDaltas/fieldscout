@@ -12,6 +12,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
   LIST_VIEWS,
@@ -96,29 +97,25 @@ export function ListToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="flex shrink-0 border border-ink bg-white">
+      {/* The **icon-only** variation of the shared control (`ui/tabs.tsx`).
+          A `Segment`, not a Radix `Tabs`: it restyles the rows already on the
+          page rather than swapping one panel for another, so there is no
+          `tabpanel` to associate and `role="tab"` would promise one. */}
+      <Segment aria-label="View style">
         {LIST_VIEWS.map((id) => {
           const meta = VIEW_META[id]
-          const active = view === id
           return (
-            <button
+            <SegmentItem
               key={id}
-              type="button"
+              icon={meta.icon}
+              active={view === id}
               title={`${meta.label} view`}
-              aria-pressed={active}
+              aria-label={`${meta.label} view`}
               onClick={() => onViewChange(id)}
-              className={cn(
-                'inline-flex h-btn-sm w-[29px] items-center justify-center border-r border-n-4 transition-colors last:border-r-0',
-                active
-                  ? 'bg-accent text-accent-foreground'
-                  : 'bg-white text-ink hover:bg-accent-soft',
-              )}
-            >
-              <Icon name={meta.icon} size={13} />
-            </button>
+            />
           )
         })}
-      </div>
+      </Segment>
 
       <StatsPicker cols={cols} onToggleCol={onToggleCol} />
 

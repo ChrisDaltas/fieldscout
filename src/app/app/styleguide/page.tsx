@@ -52,7 +52,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Segment,
+  SegmentItem,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
+import { POSITION_TAB_ACTIVE } from '@/components/players/position-badge'
 
 const SWATCHES: Array<{ name: string; className: string; ink?: boolean }> = [
   { name: 'Page', className: 'bg-page', ink: true },
@@ -94,6 +102,8 @@ const TIERS = [1, 2, 3, 4, 5, 6, 7]
 
 export default function StyleGuidePage() {
   const [chipOn, setChipOn] = useState(true)
+  const [segMode, setSegMode] = useState<'rail' | 'gallery' | 'compare'>('rail')
+  const [segTab, setSegTab] = useState<'mine' | 'saved'>('mine')
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6 p-6">
@@ -282,22 +292,139 @@ export default function StyleGuidePage() {
               Breakout
             </FilterChip>
           </div>
-          <Tabs defaultValue="list">
-            <TabsList>
-              <TabsTrigger value="list">List order</TabsTrigger>
-              <TabsTrigger value="tiers">Tiers</TabsTrigger>
-              <TabsTrigger value="rounds">Rounds</TabsTrigger>
-            </TabsList>
-            <TabsContent value="list" className="pt-3 text-[13px] text-n-3">
-              Boxed tabs — active is accent fill with white text.
-            </TabsContent>
-            <TabsContent value="tiers" className="pt-3 text-[13px] text-n-3">
-              Tier bands use the tier ramp.
-            </TabsContent>
-            <TabsContent value="rounds" className="pt-3 text-[13px] text-n-3">
-              Round bands are labeled groups.
-            </TabsContent>
-          </Tabs>
+          <p className="text-[12px] font-medium text-n-3">
+            One control for every tab and segment (Chris, 2026-08-11). Three
+            variations — icon + label, label only, icon only — each taking an
+            optional count. Active is an accent fill with white text; inactive
+            is full-contrast ink, never grey; hover is an accent-soft wash.
+          </p>
+
+          <div className="space-y-2">
+            <p className="fs-overline text-n-3">
+              Segment, boxed — icon + label, label only, icon only
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Segment aria-label="Page mode">
+                <SegmentItem
+                  icon="list"
+                  active={segMode === 'rail'}
+                  onClick={() => setSegMode('rail')}
+                >
+                  List
+                </SegmentItem>
+                <SegmentItem
+                  icon="layers"
+                  active={segMode === 'gallery'}
+                  onClick={() => setSegMode('gallery')}
+                >
+                  Cards
+                </SegmentItem>
+                <SegmentItem
+                  icon="table"
+                  active={segMode === 'compare'}
+                  onClick={() => setSegMode('compare')}
+                >
+                  Side by side
+                </SegmentItem>
+              </Segment>
+
+              <Segment aria-label="Stat view">
+                <SegmentItem active={segMode === 'rail'} onClick={() => setSegMode('rail')}>
+                  Fantasy
+                </SegmentItem>
+                <SegmentItem active={segMode !== 'rail'} onClick={() => setSegMode('gallery')}>
+                  NFL
+                </SegmentItem>
+              </Segment>
+
+              <Segment aria-label="View style">
+                <SegmentItem
+                  icon="list"
+                  aria-label="List view"
+                  active={segMode === 'rail'}
+                  onClick={() => setSegMode('rail')}
+                />
+                <SegmentItem
+                  icon="table"
+                  aria-label="Table view"
+                  active={segMode === 'compare'}
+                  onClick={() => setSegMode('compare')}
+                />
+                <SegmentItem
+                  icon="layers"
+                  aria-label="Cards view"
+                  active={segMode === 'gallery'}
+                  onClick={() => setSegMode('gallery')}
+                />
+              </Segment>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="fs-overline text-n-3">Segment, bare — label only × count</p>
+            <Segment appearance="bare" aria-label="Which lists">
+              <SegmentItem
+                count={7}
+                active={segTab === 'mine'}
+                onClick={() => setSegTab('mine')}
+              >
+                My lists
+              </SegmentItem>
+              <SegmentItem
+                count={2}
+                active={segTab === 'saved'}
+                onClick={() => setSegTab('saved')}
+              >
+                Saved
+              </SegmentItem>
+            </Segment>
+          </div>
+
+          <div className="space-y-2">
+            <p className="fs-overline text-n-3">
+              Tabs (Radix) — same look, real tabpanels and arrow-key navigation
+            </p>
+            <Tabs defaultValue="list">
+              <TabsList>
+                <TabsTrigger value="list">List</TabsTrigger>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="comments" count={3}>
+                  Comments
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="list" className="pt-3 text-[13px] text-n-3">
+                Bare chips — the default for a Radix tab set, because a tab row
+                sits above its own panel rather than framing itself.
+              </TabsContent>
+              <TabsContent value="details" className="pt-3 text-[13px] text-n-3">
+                Arrow keys move between triggers; each one owns this panel.
+              </TabsContent>
+              <TabsContent value="comments" className="pt-3 text-[13px] text-n-3">
+                The count is a mono numeral at 70% of the item’s own colour, so
+                it de-emphasises on white and on the accent fill alike.
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          <div className="space-y-2">
+            <p className="fs-overline text-n-3">
+              Tabs (Radix), boxed — a picker that filters in place
+            </p>
+            <Tabs defaultValue="all">
+              <TabsList appearance="boxed">
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="qb" className={POSITION_TAB_ACTIVE.QB}>
+                  QB
+                </TabsTrigger>
+                <TabsTrigger value="rb" className={POSITION_TAB_ACTIVE.RB}>
+                  RB
+                </TabsTrigger>
+                <TabsTrigger value="wr" className={POSITION_TAB_ACTIVE.WR}>
+                  WR
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </CardContent>
       </Card>
 

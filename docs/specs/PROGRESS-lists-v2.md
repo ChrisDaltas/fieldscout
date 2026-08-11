@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -126,6 +126,18 @@ are all checked.
   server-complete and stack-proven; its **client** waits for LV.4, because the
   reference screen shows no reorder affordance and inventing one would be UI
   the design LAW does not ask for
+- [x] **LV.9** — **one tab/segment component** (2026-08-11, ruled by Chris the
+  same day — plan **D9**, plan → v3.9). `src/components/ui/tabs.tsx` extended
+  (never forked) into one style source with three content variations — icon +
+  label, label only, icon only — each taking an optional count, and two
+  wrappers over it: Radix `Tabs*` where the usage is a genuine tab set, and a
+  presentational `Segment` / `SegmentItem` where there is no panel to associate.
+  The four hand-rolled `lists/v2` controls and `player-detail-panels.tsx`'s
+  Fantasy/NFL toggle converted; the six other Radix call sites picked up the
+  look with no edit. `list-detail-view.tsx` (legacy, retired at LV.7) was **not
+  opened** — it inherits the look through the primitive. **`week-tabs.tsx` and
+  `public-big-board.tsx`'s week strip are the same look again and are deferred**
+  to whichever task reopens `src/components/big-board/**` (§4)
 - [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
@@ -1104,6 +1116,82 @@ This section records decisions made **during** the build.
   would put `role="button"` + `tabIndex=0` around the row's real buttons and
   advertise a capability that does not exist. A keyboard/AT path for reordering
   is worth its own task.
+
+- **LV.9 (2026-08-11) — one tab/segment component, and the census that decided
+  what "all of them" means.** Chris: *"Right now I see like 3 or 4 different
+  versions of tabs. Let's use just that one."* He was counting accurately. The
+  ruling and the design of the component are plan **D9**; what follows is the
+  build's own record.
+
+  **The inventory, and the disposition of every hit.** Surveyed by aria grep
+  *and* by the idioms an aria grep misses (`.map` over a const array with a
+  conditional active class, `aria-pressed`, `border-r … last:border-r-0`,
+  `aria-current`, single-select `FilterChip` rows):
+
+  | control | classification | done |
+  | --- | --- | --- |
+  | `ui/tabs.tsx` (the Radix primitive) | the style source | extended in place |
+  | `lists/v2/lists-page-v2.tsx` page mode | segment (header lives in another React tree) | → `Segment`, boxed, icon + label |
+  | `lists/v2/lists-page-v2.tsx` My lists / Saved | segment (same reason) | → `Segment`, bare, label × count |
+  | `lists/v2/list-toolbar.tsx` view style | segment (restyles rows in place, no panel) | → `Segment`, boxed, icon only |
+  | `lists/v2/list-detail-panel.tsx` List/Details/Comments | **genuine tab set** | → Radix, an *upgrade*: it had no `tabpanel` and no arrow keys |
+  | `lists/v2/list-details-tab.tsx` video / article | segment (two-option kind picker) | → `Segment`, boxed, label only |
+  | `players/player-detail-panels.tsx` Fantasy / NFL | segment (panels are the caller's) | → `Segment`; deleted its private `ToggleSegment` |
+  | `players/players-spreadsheet.tsx` positions | Radix-without-panels: a **picker** | kept, `appearance="boxed"`; its `POSITION_TAB_ACTIVE` override still wins |
+  | `home/trending-players-card`, `players/player-detail-page-view`, `shared/window-shell` | genuine tab sets | Radix kept, **no edit** — they inherit the look |
+  | `explore/explore-feed` | Radix-without-panels | Radix kept, no edit; classified, not rewritten |
+  | `lists/list-detail-view.tsx` (legacy) | Radix-without-panels ×2 | **not opened** — retired at LV.7; inherits the look |
+  | `big-board/week-tabs.tsx`, `big-board/public-big-board.tsx` week strip | same look, hand-rolled | **off limits — deferred**, see below |
+  | `FilterChip` single-select rows (10 sites), `bottom-tabs.tsx`, the research rail's tool strip, steppers, radio-cards | not tabs or segments | left alone, see D9 |
+
+  **The judgement that mattered, and the evidence for it.** Radix `Tabs` is not
+  a skin — it carries `tabpanel` association, roving focus and arrow keys, and
+  ripping that out to make things look the same would be a bad trade. So the
+  primitive keeps Radix and the *look* moved underneath it: six call sites
+  converged with **zero edits**. Conversely the Lists page header cannot be a
+  Radix tab set however much it reads like one — `PageHeader` pushes it into the
+  app shell through a Zustand store (`app-header.tsx:69-79`), so no root can
+  enclose the control and the content, and the same control renders a second
+  time in-page below `lg`. That is a structural fact, not a preference, and it
+  is why `Segment` exists at all.
+
+  **Two escape hatches were measured, not assumed**, because both would have
+  failed silently: `window-shell.tsx`'s `flex w-full` + `flex-1` equal-width
+  tabs (`cn` resolves to `shrink-0 items-stretch gap-1 flex w-full` — the
+  group's `inline-flex w-fit` correctly drops out) and
+  `players-spreadsheet.tsx`'s per-position active fill (resolves to
+  `data-[state=active]:bg-pos-rb`, measured live as `rgb(44,111,214)`).
+
+  **`w-fit` on the group is load-bearing.** `inline-flex` sizes to content only
+  until the group lands in a column flex parent, where `align-self: stretch`
+  blows it out — found in the browser as the attach-link form's kind picker
+  spanning the whole form. Caught by looking, which is the process §2 asks for
+  on these screens.
+
+  **The probe.** The handoff's critical note says an inline `background`
+  outranks `:hover` and kills it silently. That mistake was made on purpose —
+  `style={{ background: '#ffffff' }}` on `SegmentItem` — and measured: every
+  active segment lost its accent fill and hover measured `rgb(255,255,255)`
+  where the class rule gives `rgb(220,228,255)`. Reverted; hover measures
+  `rgb(220,228,255)` again and every item carries `style === null`.
+
+  **Deferred into the off-limits tree.** `src/components/big-board/week-tabs.tsx`
+  and `public-big-board.tsx`'s `PublicWeekStrip` are the same boxed-tab recipe
+  hand-rolled a third and fourth time (`h-tab`, `bg-ink` active). The strip is
+  additionally `<Link>`-based, so converting it needs an `asChild` on
+  `SegmentItem` that does not exist yet. Whichever task reopens
+  `src/components/big-board/**` should convert both and decide whether
+  `SegmentItem` grows `asChild`.
+
+  **Interpretations worth flagging.** (a) Type sizes converged on the house
+  `text-[11px]/700`, which moved the page-mode label up from 10px and the
+  My lists/Saved label from 10.5px — uniformity was the point. (b) The
+  video/article picker went 21px → 26px, the design's control height.
+  (c) `ui/tabs.tsx`'s old comment claiming *"content tabs select to black;
+  accent/blue is reserved for do-a-thing controls"* is gone: the screenshot
+  fills tabs with accent, the design LAW lists **selection** under accent, and
+  the styleguide's own caption had said so since the reskin. That comment was
+  the last written trace of the treatment being replaced.
 
 ---
 

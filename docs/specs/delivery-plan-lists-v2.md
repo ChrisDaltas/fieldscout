@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.8 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v3.9 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -368,6 +368,59 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
 
+- **D9 — One component for every tab and segment** (Chris, 2026-08-11).
+  Verbatim: *"Could you standardize all the tab and segment UI controls to the
+  same component? The one that's being used List / Cards / Side by side. There
+  should be 3 variations of this — icons + label, label only, and icon only —
+  × count. Count = # of lists for example. Right now I see like 3 or 4
+  different versions of tabs. Let's use just that one."*
+
+  **The three variations are content, not style**: an item takes an optional
+  icon, an optional label and an optional count, and `count` is a modifier on
+  any of them. All of it lives in `src/components/ui/tabs.tsx` — extended, not
+  forked, per D1's absolute prohibition.
+
+  **Two wrappers over one style source**, because the look is not the same
+  thing as tab semantics:
+
+  - `Tabs` / `TabsList` / `TabsTrigger` / `TabsContent` — Radix, kept wherever
+    the usage is a genuine tab set (a `tabpanel` per trigger, roving focus,
+    arrow keys). Visual uniformity is never bought by deleting those.
+  - `Segment` / `SegmentItem` — presentational, for a mutually-exclusive picker
+    with no panel to associate, or a tab row that *cannot* enclose its content.
+    The Lists page header is the second case and it is structural, not a
+    preference: `PageHeader` pushes the header into the app shell through a
+    Zustand store, so a `Tabs.Root` around the control and its content is not
+    expressible, and the same control also renders twice (desktop header and
+    in-page below `lg`).
+
+  Both key off the same `data-state` attribute — Radix writes it, `SegmentItem`
+  writes it by hand — so exactly one CVA states a colour.
+
+  **Frame follows role; colour never changes.** `appearance="boxed"` is the
+  joined ink-bordered segment and `"bare"` the un-framed chip row. Both are in
+  `screens/list-rail-list-view.png` **side by side**: List / Cards / Side by
+  side and the view-style toggle are boxed; `My lists 7 / Saved 2` and
+  `List / Details / Comments 0` are bare. Active is an accent fill with white
+  text in *both*.
+
+  **The screenshot overrules the handoff prose here**, on the §7-gap-4
+  precedent. The prose says chip tabs are *"active = `--accent` text"*; the
+  screenshot fills them. It also overrules `ui/tabs.tsx`'s former comment
+  (*"content tabs select to black; accent/blue is reserved for do-a-thing
+  controls"*) — the design LAW lists **selection** under accent, and the
+  styleguide's own caption had said "active is accent fill with white text"
+  since the reskin while the primitive rendered ink.
+
+  **Out of scope, deliberately.** `FilterChip` rows (`ui/badge.tsx`) are a
+  different shared component with a different job and a deliberate ink-fill
+  selected state; several are single-select and could arguably be segments, but
+  converting them is a design change nobody asked for and it would blur
+  "filter" against "tab". Navigation (`bottom-tabs.tsx`, the sidebar), steppers
+  and radio-card pickers are not segments either. `week-tabs.tsx` and
+  `public-big-board.tsx`'s week strip are the same look again and are **off
+  limits** — recorded for whichever task reopens boards.
+
 ---
 
 ## 4. Task breakdown (dependency order)
@@ -421,6 +474,12 @@ One task = one Builder session = one PR. `/build-next` drives.
 | --- | --- | --- |
 | LV.8 | **Migration `080_list_links.sql`** + RLS + indexes, the `/api/lists/[id]/links` routes (add, remove, reorder), and the Details tab wired to them (D8). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | LV.3 |
 
+**Phase 6 — the shared control** *(added v3.9, ruled 2026-08-11)*
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.9 | **One tab/segment component** — three variations × count, in `src/components/ui/tabs.tsx`; the hand-rolled Lists v2 controls converted onto it, the genuine tab sets kept on Radix and restyled, and all three variations added to the styleguide (D9). **UI only** — the schema budget stays closed at three | LV.2, LV.3 |
+
 ---
 
 ## 5. Definition of Done (per task)
@@ -471,6 +530,26 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.9 (2026-08-11)** — **One control for every tab and segment (new D9,
+  new LV.9).** Chris: *"Right now I see like 3 or 4 different versions of tabs.
+  Let's use just that one."* He was counting accurately — the app carried the
+  Radix primitive's ink-filled boxed tabs, four hand-rolled controls in
+  `lists/v2`, a fifth in `player-detail-panels.tsx`, and `week-tabs.tsx`, which
+  is off limits.
+
+  Two things D9 settles that were not obvious going in. **Radix stays wherever
+  the usage is a real tab set** — the ruling is about the look, and a
+  `tabpanel` association with arrow-key navigation is not a look. And the
+  Lists page header **cannot** be a Radix tab set even though it reads like
+  one, because `PageHeader` pushes it into the app shell through a store, so
+  no root can enclose both the control and its content.
+
+  Also recorded here because it is a second instance of the §7 gap-4 lesson:
+  the handoff's prose says chip tabs go *accent text* on select, and
+  `screens/list-rail-list-view.png` fills them. **The screenshot wins**, and
+  the styleguide's caption had already been describing the filled version
+  while the primitive rendered ink.
 
 - **v3.8 (2026-08-11)** — **D4 erratum, folded back from LV.4.** "Nothing is
   computed, and drag-to-bucket assigns in every mode — it is the same write in

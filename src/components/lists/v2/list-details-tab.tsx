@@ -6,6 +6,7 @@ import { PositionBadge } from '@/components/players/position-badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { AddLinkInput, ListWithDetails } from '@/hooks/use-lists'
 import { MAX_TAGS_PER_LIST } from '@/types/schemas/lists'
@@ -459,24 +460,19 @@ function AttachLinkForm({
         })
       }}
     >
-      <div className="flex items-center gap-1">
-        {(['video', 'article'] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={kind === option}
-            onClick={() => setKind(option)}
-            className={cn(
-              'inline-flex h-[21px] items-center rounded-sm border border-ink px-2 text-[10px] font-bold capitalize transition-colors',
-              kind === option
-                ? 'bg-accent text-accent-foreground'
-                : 'bg-white text-ink hover:bg-accent-soft',
-            )}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
+      {/* The **label-only** variation of the shared control (`ui/tabs.tsx`).
+          Two mutually-exclusive kinds, so a `Segment` rather than the pair of
+          hand-rolled chips this replaced — those carried their own copy of the
+          accent-active treatment. Sentence case, per the design LAW's copy
+          rule; the previous `capitalize` was doing the same job by CSS. */}
+      <Segment aria-label="Link kind">
+        <SegmentItem active={kind === 'video'} onClick={() => setKind('video')}>
+          Video
+        </SegmentItem>
+        <SegmentItem active={kind === 'article'} onClick={() => setKind('article')}>
+          Article
+        </SegmentItem>
+      </Segment>
 
       <Input
         autoFocus

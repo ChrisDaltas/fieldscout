@@ -459,7 +459,12 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             value={position}
             onValueChange={(v) => setPosition(v as PositionFilter)}
           >
-            <TabsList>
+            {/* Boxed, not the bare default: this row filters the table in
+                place rather than swapping panels, so it reads as a segmented
+                picker — the same frame as the Lists page-mode control. The
+                active fill is the position colour instead of accent, which is
+                the one sanctioned override of the shared look. */}
+            <TabsList appearance="boxed">
               {POSITION_FILTERS.map((p) => (
                 <TabsTrigger key={p} value={p} className={POSITION_TAB_ACTIVE[p]}>
                   {POSITION_LABELS[p]}

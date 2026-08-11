@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import type {
   GameLogRow,
   PlayerStatsPlayer,
@@ -579,50 +580,27 @@ export function Stat({
   )
 }
 
-/** Fantasy / NFL segmented toggle — boxed segments, accent fill when active. */
+/**
+ * Fantasy / NFL — the **label-only** variation of the shared segmented control
+ * (`ui/tabs.tsx`). It was hand-rolled with its own near-copy of the same
+ * treatment (`hover:bg-n-4` rather than the `accent-soft` wash, `font-extrabold`
+ * rather than bold), which is one of the four looks Chris asked to collapse
+ * into one (2026-08-11).
+ *
+ * A `Segment` and not a Radix `Tabs`: the panels it switches are rendered by
+ * this component's callers, above and outside the toggle, so there is no
+ * sibling `tabpanel` to associate.
+ */
 function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
   return (
-    <div className="flex overflow-hidden rounded-sm border border-ink">
-      <ToggleSegment active={view === 'fantasy'} onClick={() => onChange('fantasy')}>
+    <Segment aria-label="Stat view">
+      <SegmentItem active={view === 'fantasy'} onClick={() => onChange('fantasy')}>
         Fantasy
-      </ToggleSegment>
-      <ToggleSegment
-        active={view === 'nfl'}
-        onClick={() => onChange('nfl')}
-        className="border-l border-ink"
-      >
+      </SegmentItem>
+      <SegmentItem active={view === 'nfl'} onClick={() => onChange('nfl')}>
         NFL
-      </ToggleSegment>
-    </div>
-  )
-}
-
-function ToggleSegment({
-  active,
-  onClick,
-  className,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        'h-btn-sm px-3 text-[11px] font-extrabold leading-none transition-colors',
-        active
-          ? 'bg-accent text-accent-foreground'
-          : 'bg-white text-ink hover:bg-n-4',
-        className,
-      )}
-    >
-      {children}
-    </button>
+      </SegmentItem>
+    </Segment>
   )
 }
 
