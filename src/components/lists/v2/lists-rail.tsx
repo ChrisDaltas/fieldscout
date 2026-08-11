@@ -82,7 +82,7 @@ export function ListsRail({
                 : 'border-l-[3px] border-l-transparent hover:bg-accent-soft',
             )}
           >
-            <ListCoverTile list={list} size={24} />
+            <ListCoverTile list={list} players={list.first_players} size={24} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[10.5px] font-bold leading-tight">
                 {list.title}

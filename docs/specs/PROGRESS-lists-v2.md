@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -48,9 +48,11 @@ are all checked.
 
 - [x] **LV.2** — **the Lists page, whole** (2026-08-11). Built from
   `docs/design/lists/screens/*.png`, not from the prose. Page header, rail mode
-  with the **complete open list** in the right panel (§7 gap 1), cards gallery
-  with the correct solid-block cover (§7 gap 2), and loading / empty / error
-  states. The warm `tier-1..7` ramp is used throughout (§7 gap 4). Shipped
+  with the **complete open list** in the right panel (§7 gap 1), cards gallery,
+  and loading / empty / error states. **The cover it shipped was wrong and was
+  corrected the same day** (`LV.2-fix`, §4): covers are player headshots over a
+  `pos-*` fill keyed to `position_filter`, not a solid block with a glyph —
+  §7 gap 2 is reversed. The warm `tier-1..7` ramp is used throughout (§7 gap 4). Shipped
   together with LV.3 in one PR, because §7 is explicit that they are one screen
   and splitting them is what guaranteed an empty frame. Original text:
 - [x] ~~**LV.2** — **the Lists page, whole.**~~ Page header (heading, view-mode
@@ -949,6 +951,67 @@ This section records decisions made **during** the build.
   *wire* shape (`ListLink` in `links-service.ts`, which omits the timestamps),
   and a same-named Row alias beside it would be a trap.
 
+- **LV.2-fix (2026-08-11) — the cover treatment is headshots, and the
+  screenshots were the thing that misled.** §7 gap 2 scrapped a PR for *reusing*
+  `ListThumbnail`, on the strength of `screens/cards-gallery.png`. Chris,
+  2026-08-11: *"we actually had them the way they were supposed to be before,
+  using the headshots of the players. And then the background color is dependent
+  on what position group the user selects for the list."* The prototype's
+  glyphs (`★`, `BB`, `WR`, `$`, `11`, `RK`, `0R`) are **artefacts of its fake
+  data**. Gap 2 is hereby **reversed** — see the boxed exception now at the top
+  of `screens/README.md`, added so the next reader cannot repeat this.
+
+  What the fix does, and the calls the ruling left open:
+
+  1. **One colour rule, one map.** `POS_TINTS` in
+     `src/components/lists/list-thumbnail.tsx` is now exported and is the single
+     source: `lists.position_filter` → `bg-pos-*`, and `null` → `bg-ink`. The
+     hashed six-colour `COVER_PALETTE` and the `coverGlyph` derivation are gone.
+     **Favorites loses its lime cover** — it carries no position filter, so it
+     lands on ink like any other all-players list. That follows the ruling
+     literally; the lime went with the glyph treatment, and no carve-out was
+     asked for. Flag it if the identity cue is missed.
+
+  2. **Small covers delegate rather than duplicate.** `ListCoverTile` is now a
+     thin adapter over `ListThumbnail` — the same component, restored, not a
+     v2 re-implementation of it (CLAUDE.md, *no near-duplicate components*).
+     `ListThumbnail.size` gained a **numeric px** form for the design's 24px
+     rail and 51px hero, which fall between the named steps; named sizes keep
+     their literal Tailwind classes, so no pre-existing screen moves a pixel.
+
+  3. **The label is now sized to fit its quadrant, at numeric sizes only.**
+     `FLEX` — the one four-character label — overflowed its 12px quadrant and
+     bled across the neighbouring headshot at 24px, and clipped at 51px; `DEF`
+     clipped at 24px. `fitFontPx` caps the font at whatever fits (~0.6em per
+     mono glyph) so `FLEX` shrinks rather than clips. This is a *legibility*
+     fix inside the restored component, not a redesign: the **fill colour** is
+     what identifies the position group, and the letters only confirm it.
+
+  4. **The gallery stack: 24px chips, 8px overlap, left-on-top.** Four squares
+     overlapping by 8px occupy 72px — a third of the 214px card — so the
+     cluster reads as a corner motif rather than a row of thumbnails filling
+     the band. `z-index` **descends** with list order, so the list's #1 is whole
+     and each player behind him is progressively occluded; flex siblings paint
+     in DOM order otherwise, which would bury #1 under #4. Each chip carries the
+     design's 1px `border-ink` and `rounded-sm` — the hard-edged language, not
+     the round avatar stack of other apps. Under four it draws fewer chips and
+     stays right-anchored, so one headshot sits exactly where the fourth would;
+     with none, a dashed ghost chip with a `+` holds the same spot, because an
+     empty band reads as a rendering failure.
+
+  5. **`/api/lists` now returns four players per list, not three** — a cap
+     bumped on an **existing** query, not a new route, and the budget in
+     `ACTIVE-BUILD.md` closes *schema changes and new routes*, neither of which
+     this is. Three could not satisfy "the top four players". Every other
+     consumer slices to three and is unaffected.
+
+  **Observed, not fixed (out of scope, worth its own task):** `DEF` players'
+  `headshot_url` values are team-abbreviation URLs (`…/thumb/PHI.jpg`) that
+  404, so a DEF list's cover shows broken-image glyphs. `ListThumbnail` has
+  always behaved this way — it falls back to initials only when the URL is
+  *null*, not when the image fails — so this predates the cover work and shows
+  everywhere headshots render. An `onError` fallback would fix it globally.
+
 - **LV.4 (2026-08-11) — drag-and-drop, and the two modes that had to refuse.**
   Three new files in `src/components/lists/v2/` (`list-reorder.ts` + its test,
   `use-list-drag.tsx`), plus wiring in `list-body.tsx`, `list-row-parts.tsx`,
@@ -1628,6 +1691,21 @@ alone is not trustworthy.
    `#df5551 / #e58033 / #e6b422 / #3fa055 / #1f9aa6`. The tokens were right and
    the prose misled. General lesson: where the two disagree, the screenshots
    and the tokens win.
+
+### ⚠️ Gap 2 was WRONG and is reversed — 2026-08-11
+
+**Cover tiles were never the wrong object.** Gap 2 below reads the prototype's
+glyphs as the intended treatment and calls `ListThumbnail` *"different
+component, different idea"*. Chris ruled the opposite the same day: the
+headshots were right all along, and only the **fill** changes — the list's
+position group, ink when there is no filter. The gallery band swaps the 2×2
+quadrants for four 24px headshots stacked in the bottom-right. See §4's
+`LV.2-fix` entry and the boxed exception at the top of `screens/README.md`.
+
+**Read gap 2 as a record of a mistake, not as instruction.** Its own general
+lesson — *where the screenshots and the prose disagree, the screenshots win* —
+survives; what it missed is that a screenshot of **fake data** is not a
+statement of intent, and neither outranks a ruling.
 
 ### ✅ Closed by the rebuild — 2026-08-11
 

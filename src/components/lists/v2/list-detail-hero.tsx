@@ -88,7 +88,13 @@ export function ListDetailHero({
   return (
     <div className="flex flex-wrap items-start gap-3">
       {/* 64px in the handoff → 51 at this app's ×0.8 scale. */}
-      <ListCoverTile list={list} size={51} />
+      <ListCoverTile
+        list={list}
+        // The detail route returns the whole list, so the hero's headshots come
+        // straight off it rather than from the collection's `first_players`.
+        players={list.players.slice(0, 3).map((entry) => entry.player)}
+        size={51}
+      />
 
       <div className="min-w-[180px] flex-[1_1_240px]">
         {renaming ? (
