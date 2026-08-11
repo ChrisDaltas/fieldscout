@@ -44,50 +44,98 @@ are all checked.
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
 - [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
-**Phase 2 — Lists page**
+**Phase 2 — the screens** *(restructured 2026-08-10 — read the note at the end of this section)*
 
-- [ ] **LV.2.1** — page header: heading, view-mode segmented control, My lists / Saved tabs, New list (LV.1.1)
-- [ ] **LV.2.2** — rail mode: 200px sticky rail, shared edge, selected-row treatment (LV.2.1)
-- [ ] **LV.2.3** — cards mode: responsive gallery, flat at rest, lift on hover (LV.2.1)
+- [ ] **LV.2** — **the Lists page, whole.** Page header (heading, view-mode
+  segmented control, My lists / Saved tabs, New list), rail mode (200px sticky
+  rail, shared edge, selected-row treatment), cards gallery (responsive, flat
+  at rest, lift on hover), and its loading / empty / error states. One branch,
+  one PR. Needs only LV.1.1 (merged).
+  **Handoff §"Lists page"** — and heed its critical note: resting/hover/active
+  colors for the segmented and tab controls belong in **CSS classes, not inline
+  styles**; an inline `background` outranks `:hover` and silently kills it.
+- [ ] **LV.3** — **list detail, whole.** Hero + inline rename, tabs, toolbar,
+  all three view styles (list / table / cards), stats picker, notes, the
+  drafted checkbox, and its states. One branch, one PR. Needs only LV.1.1.
+  **Handoff §"List detail"**. Two things carried from earlier reviews:
+  - **The grouping dropdown is data-driven.** Until LV.1.5 lands, only `tier`
+    and plain `rank` can be written to the server — a Round/Cost entry would
+    `23514` on first use. Build the option set so LV.1.5 opens it, don't
+    hardcode all five.
+  - **The drafted checkbox is permanent** (Chris, 2026-08-10 — no draft-mode
+    gate; handoff §"Side by side"/§"Cards"). Read `use-draft-mode.ts`'s header
+    before wiring "Clear drafted": it is *guarded* — it refuses when the read
+    failed, is in flight, or never landed, returns `false` when it refused, and
+    raises its own toast saying which. So (a) do not announce a clear you did
+    not get — check the return value, as `list-detail-view.tsx`'s `handleReset`
+    does; `true` means *permitted and issued*, not *rows gone* (R201), and the
+    hook already reports a failed DELETE, so don't add a second message; and
+    (b) do **not** gate the control on the rendered drafted count — that was
+    the legacy view's accidental guard and R195 measured one optimistic mark
+    re-opening it. Only the hook knows whether a read landed.
 
-**Phase 3 — list detail**
+**Phase 3 — the rest** *(genuinely separate work, not screen slices)*
+- [ ] **LV.1.5** — widen the tier CHECK constraint + the route's Zod enum (a
+  migration — **keeps the careful process**). Vocabulary approved in §3 Q2.
+  Also address or explicitly defer `TIER_BG`/`TIER_BAND_BG` in
+  `tier-badge.tsx`: total maps with no fallback, so a round key renders an
+  uncolored band in both the legacy view and the public share view
+- [ ] **LV.4** — drag-and-drop across all three view styles (needs LV.3, and
+  LV.1.5 for non-tier buckets). The handoff's drop-gap model: the gap opens
+  where the player will land, sized to the dragged element's `offsetHeight` /
+  `offsetWidth`, state updated **only** when the target slot changes —
+  updating per `dragover` visibly janks. A drop onto a section header assigns
+  that bucket, and under D4 that is the same write in all four modes
+- [ ] **LV.5** — AI list generation + persona surfaces restyled into the new
+  language (CLAUDE.md: never leave them in the old style, never remove them)
+- [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
+  server-rendered (D7)
+- [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
+  `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
+  (§1's boards amendment scopes this). Also fixes that file's now-false header
+  comment (R192) — it claims parity with `use-draft-mode.ts`, which went false
+  at LV.1.3 when that hook started writing to the database
 
-- [ ] **LV.3.1** — hero: cover, inline rename, byline, action cluster, options menu (LV.1.1)
-- [ ] **LV.3.2** — tabs + toolbar: grouping dropdown, view-style toggle, Stats, Add players (LV.3.1, LV.1.4). ⚠️ **The dropdown's non-tier options depend on §3 Q2** — until Q2 is ruled, only `tier` (and plain `rank`) can be written to the server at all. Build the control so the option set is data-driven, and do not ship Round/Cost/Budget entries that would 500 on first use
-- [ ] **LV.3.3** — view style List: 60px rows, stat cells, computed `minWidth` (LV.3.2). ⚠️ **Read the `budget` note below before rendering anything budget-shaped** (R185)
-- [ ] **LV.3.4** — view style Table: 44px rows, sticky header (LV.3.2)
-- [ ] **LV.3.5** — view style Cards: corner cells, stat strip, label rail (LV.3.2). ⚠️ **Same `budget` note** (R185)
-- [ ] **LV.3.6** — drag-and-drop across all three views; header drop assigns the bucket (LV.3.3–3.5, LV.1.5). ⛔ **Blocked by §3 Q2 for every mode except tier** — the drop *is* the tier write (D4), so a drop onto a Round header is a `23514` today
-- [ ] **LV.3.7** — stats picker modal: grouped catalog, search, reorderable chips (LV.3.2)
-- [ ] **LV.3.8** — notes: accent mark + body-portalled hover card (LV.3.3)
-- [ ] **LV.3.9** — drafted checkbox + "Clear drafted" (LV.1.3, LV.3.3). **Read `use-draft-mode.ts`'s header before wiring either control (R190/R195).** `clearDrafted` is *guarded*: it refuses when the read failed, is still in flight, or never landed, returns `false` when it refused, and raises its own destructive toast saying which. Two consequences for this task: (a) the v2 "Clear drafted" control must **not** announce a clear it did not get — check the return value, as `list-detail-view.tsx`'s `handleReset` now does. `true` means *permitted and issued*, not *rows gone* (R201): a DELETE that then fails rolls the cache back and the hook raises its own destructive toast, so do not add a second failure message; (b) do **not** gate the control on the rendered drafted count as a safety measure — that was the legacy view's accidental guard, and R195 measured one optimistic mark re-opening it. The guard lives in the hook because only the hook knows whether a read landed
+> **Why this was restructured (2026-08-10).** The previous breakdown cut two
+> screens into **twelve** tasks — "page header" and "rail mode" as separate
+> milestones — each carrying a full builder + reviewer cycle. Four cycles ran
+> and produced only plumbing: a flag, a table, a store with no consumer, a
+> rewired hook. Nothing visible. Chris: *"Claude Design was able to do all the
+> front end work in my HTML prototype in a few minutes and this job has already
+> been running for hours and we can't even see it yet."*
+>
+> Two compounding errors. **Sequencing** — Phase 2 depended only on LV.1.1 and
+> was unblocked from the first merge, but the checklist ran top-down through the
+> plumbing first. **Process** — the leagues review protocol (adversarial
+> reviewer, break-probes, falsifiability proofs, multi-round fixes) was applied
+> uniformly. It is right for a migration; it caught a real data-loss path three
+> times. It is overhead on a page header, where the failure mode is "looks
+> wrong" and a screenshot shows you that.
+>
+> **The unlock:** because LV.1.1 landed a route branch, the v2 screens are *new
+> files* in `src/components/lists/v2/`. There is no legacy component to unpick —
+> the old one serves production until LV.7 flips the flag. **Building them is
+> greenfield**, the same job the prototype was, rendering real players instead of
+> mock data. It was being treated as surgery on a running system; the surgery was
+> LV.1.1 and it is done.
+>
+> **So for LV.2 and LV.3: build the screen, verify by looking** — screenshots at
+> desktop and mobile against the handoff — **and one review pass on design
+> fidelity**, not break-probes. Keep the heavy process for LV.1.5, which touches
+> the database.
 
-**Phase 4 — states and cutover**
+**Lane note:** LV.2 and LV.3 are independent of each other and of everything
+outstanding — both need only LV.1.1, which merged first. LV.4 needs LV.3;
+LV.1.5 is independent and is the only remaining schema task.
 
-- [ ] **LV.4.1** — loading / empty / error / overflow states (LV.3.*)
-- [ ] **LV.4.2** — AI list generation + persona surfaces restyled (LV.3.*)
-- [ ] **LV.4.3** — public share view, still server-rendered (LV.3.*)
-- [ ] **LV.4.4** — flag flip + retire old components (all). **Carries one deferred correction (R192, filed by the LV.1.3 Reviewer):** `src/components/lists/draft-mode/use-board-marks.ts:15-17` says its marks are "UI-only state, never written to the DB — same philosophy as `use-draft-mode.ts`". That comparison went **false** at LV.1.3: `use-draft-mode.ts` now writes to `list_player_drafted`. LV.1.3 correctly did not edit it (the boards rule binds the diff, not just the intent), so the sentence must be corrected by the first task that legitimately opens `draft-mode/**` — this one
+**Note on `budget`:** the store holds it because D3 names it, but nothing can
+render it — under D4 there is no per-player `cost` to divide by. **Budget
+grouping is not in Round 1**, and it is not to be "fixed" by reintroducing
+`cost`. If it is ever wanted it needs a product answer first.
 
-**Lane note:** LV.1.1, LV.1.2, LV.1.4 and LV.1.5 are independent and may be
-picked in any order. LV.1.2 is the only schema task in the build.
-
-**Forward note — `budget` is held but nothing can render it (R185, filed
-2026-08-09 by the LV.1.4 Reviewer).** LV.1.4 stores `budget` faithfully because
-**D3** names it. But **D4** and plan §2.2 delete per-player `cost` outright, and
-share-of-budget from a player's `cost` is the *only* thing the prototype ever
-computes from `budget` (`docs/design/lists/design/ListsBody.jsx:109`,
-`lists.js:440-455`). So under our own decisions the number has no consumer.
-Related: the prototype's budget bands (`b1`–`b4`, `lists.js:442-445`) are
-threshold-derived and have **no defaults** on our side, so
-`resolveBandLabel('b1', {})` renders the raw key `b1`.
-
-This is a **plan-level tension, not a Builder error** — nobody is to "fix" it by
-reintroducing a `cost` field, which D4 rejects. LV.3.3 and LV.3.5 are where it
-surfaces. Whoever gets there first: if budget grouping is meant to ship, it needs
-a product answer (default band labels, and what the number means with nothing to
-divide by) — **file it in §3 and HALT**, do not invent one. If it is not meant to
-ship in Round 1, say so in the plan and drop `budget` from the toolbar.
+*(This was six paragraphs until 2026-08-10. The length was the plan
+manufacturing work — it ended by instructing a future agent to HALT over a
+number no screen shows. Trimmed deliberately.)*
 
 ---
 
