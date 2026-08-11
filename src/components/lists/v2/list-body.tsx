@@ -5,19 +5,29 @@ import * as React from 'react'
 import { Icon } from '@/components/ui/icon'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
-import type { ListView } from '@/stores/list-display-store'
+import type { ListOrg, ListView } from '@/stores/list-display-store'
 
-import { budgetShare, type Bucket } from './list-buckets'
+import {
+  budgetShare,
+  canReorder,
+  COMPUTED_ORDER_REASON,
+  nextTierBucket,
+  type Bucket,
+} from './list-buckets'
 import {
   BucketHeader,
   DraftedCheckbox,
+  DropGap,
   Grip,
+  NewBucketZone,
   NoteMark,
   PlayerFace,
   PlayerMeta,
   RowMenu,
 } from './list-row-parts'
+import type { DropTarget } from './list-reorder'
 import { formatStat, type StatDef } from './list-stats'
+import { ListDragContext, useDragHandle, useListDrag, type ListDragApi } from './use-list-drag'
 
 /**
  * Lists v2 — the list body in its three view styles.
@@ -29,9 +39,11 @@ import { formatStat, type StatDef } from './list-stats'
  * and a strikethrough on the name. It never reorders or filters — every
  * screenshot with drafted players keeps them exactly where they sat.
  *
- * Drag-and-drop is **not** here. It is LV.4, with its own gap model (D5). The
- * grip renders because the row is 4px shorter without it and the design shows
- * one; it is inert and marked `aria-hidden`.
+ * **Drag-and-drop is the gap model** (design LAW §"Drag and drop", plan D5,
+ * LV.4): the row being dragged dims, and the hole it will drop into opens at
+ * exactly its own size. Rows never highlight themselves. The mechanics live in
+ * `use-list-drag.tsx`; what a drop *means* lives in `list-reorder.ts`; this file
+ * only places the targets.
  */
 
 export interface RowHandlers {
@@ -46,18 +58,74 @@ interface BodyProps {
   buckets: Bucket[]
   stats: StatDef[]
   view: ListView
+  /** Decides both the label set and whether a section can be rearranged. */
+  org: ListOrg
   /** Budget grouping adds a share-of-budget column (`screens/detail-grouping-budget-pct.png`). */
   showBudgetShare: boolean
   budget: number
   handlers: RowHandlers
   onRenameBand: (bandKey: string, label: string) => void
   onAddToBucket: (bucket: Bucket) => void
+  onDrop: (entryId: string, target: DropTarget) => void
+}
+
+/** What each view style receives once the drag layer is resolved. */
+interface ViewProps extends BodyProps {
+  drag: ListDragApi
+  canDrag: boolean
+  /** Why dragging is unavailable, shown on the grip. `null` when it is. */
+  dragReason: string | null
+  /** The dragged player's name — it rides inside the open gap. */
+  dragName: string
 }
 
 export function ListBody(props: BodyProps) {
-  if (props.view === 'table') return <TableBody {...props} />
-  if (props.view === 'card') return <CardsBody {...props} />
-  return <RowsBody {...props} />
+  const reorderable = canReorder(props.org)
+  const canDrag = props.handlers.canEdit && reorderable
+  const drag = useListDrag({
+    enabled: canDrag,
+    horizontal: props.view === 'card',
+    onDrop: props.onDrop,
+  })
+
+  const dragName = React.useMemo(() => {
+    if (!drag.dragId) return ''
+    for (const bucket of props.buckets) {
+      const found = bucket.entries.find((entry) => entry.id === drag.dragId)
+      if (found) return found.player.full_name
+    }
+    return ''
+  }, [drag.dragId, props.buckets])
+
+  const view: ViewProps = {
+    ...props,
+    drag,
+    canDrag,
+    dragReason: props.handlers.canEdit && !reorderable ? COMPUTED_ORDER_REASON : null,
+    dragName,
+  }
+
+  const fresh = nextTierBucket(props.org, props.buckets)
+
+  return (
+    <ListDragContext drag={drag}>
+      <div className="flex flex-col gap-2.5">
+        {props.view === 'table' ? (
+          <TableBody {...view} />
+        ) : props.view === 'card' ? (
+          <CardsBody {...view} />
+        ) : (
+          <RowsBody {...view} />
+        )}
+        {/* "A dashed 'Drop a player here to start tier N' zone sits below the
+            last section" — list and cards only, as in the prototype, and only
+            where the assignment can actually be written (see nextTierBucket). */}
+        {canDrag && fresh && props.view !== 'table' && (
+          <NewBucketZone tier={fresh} over={drag.isOverNew()} />
+        )}
+      </div>
+    </ListDragContext>
+  )
 }
 
 /** A running `#N` across every bucket, as the prototype numbers them. */
@@ -77,25 +145,30 @@ function useRanks(buckets: Bucket[]): Map<string, number> {
 
 const EMPTY_BUCKET = 'Nothing in this section yet.'
 
+/** The accent outline the prototype puts on a section a drop would land in. */
+function bucketOutline(drag: ListDragApi, bucketKey: string): string | false {
+  return drag.isOverBucket(bucketKey) && 'outline outline-2 -outline-offset-2 outline-accent'
+}
+
 // =============================================================================
 // List view — 48px rows, each stat a right-aligned cell with a caption
 // =============================================================================
 
-function RowsBody({
-  buckets,
-  stats,
-  handlers,
-  onRenameBand,
-  onAddToBucket,
-}: BodyProps) {
+function RowsBody(props: ViewProps) {
+  const { buckets, stats, handlers, onRenameBand, onAddToBucket, drag, dragName } = props
   const ranks = useRanks(buckets)
+  const minWidth = 264 + stats.length * 58
 
   return (
     <div className="flex flex-col gap-2.5">
       {buckets.map((bucket) => (
         <div
           key={bucket.key}
-          className="border border-ink bg-white transition-shadow hover:shadow-hard-4"
+          data-drop-bucket={bucket.key}
+          className={cn(
+            'border border-ink bg-white transition-shadow hover:shadow-hard-4',
+            bucketOutline(drag, bucket.key),
+          )}
         >
           {bucket.label !== null && (
             <BucketHeader
@@ -106,16 +179,42 @@ function RowsBody({
             />
           )}
           <div className="overflow-x-auto">
-            <div style={{ minWidth: 264 + stats.length * 58 }}>
-              {bucket.entries.map((entry) => (
-                <ListRow
-                  key={entry.id}
-                  entry={entry}
-                  rank={ranks.get(entry.id) ?? 0}
-                  stats={stats}
-                  handlers={handlers}
-                />
+            <div style={{ minWidth }}>
+              {bucket.entries.map((entry, index) => (
+                <React.Fragment key={entry.id}>
+                  {drag.active && (
+                    <DropGap
+                      bucketKey={bucket.key}
+                      index={index}
+                      open={drag.isOpen(bucket.key, index)}
+                      height={drag.size.height}
+                      width={drag.size.width}
+                      name={dragName}
+                      minWidth={minWidth}
+                    />
+                  )}
+                  <ListRow
+                    entry={entry}
+                    rank={ranks.get(entry.id) ?? 0}
+                    stats={stats}
+                    handlers={handlers}
+                    bucketKey={bucket.key}
+                    index={index}
+                    view={props}
+                  />
+                </React.Fragment>
               ))}
+              {drag.active && bucket.entries.length > 0 && (
+                <DropGap
+                  bucketKey={bucket.key}
+                  index={bucket.entries.length}
+                  open={drag.isOpen(bucket.key, bucket.entries.length)}
+                  height={drag.size.height}
+                  width={drag.size.width}
+                  name={dragName}
+                  minWidth={minWidth}
+                />
+              )}
               {bucket.entries.length === 0 && (
                 <div className="p-4 text-center text-[11px] font-semibold text-n-3">
                   {EMPTY_BUCKET}
@@ -134,21 +233,36 @@ function ListRow({
   rank,
   stats,
   handlers,
+  bucketKey,
+  index,
+  view,
 }: {
   entry: ListPlayerWithPlayer
   rank: number
   stats: StatDef[]
   handlers: RowHandlers
+  bucketKey: string
+  index: number
+  view: ViewProps
 }) {
   const drafted = handlers.isDrafted(entry.player_id)
+  const { listeners, setNodeRef } = useDragHandle(entry.id, !view.canDrag)
+  const dragging = view.drag.dragId === entry.id
+
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      data-drop-row={`${bucketKey}:${index}`}
+      data-drag-id={entry.id}
       className={cn(
-        'flex h-12 items-center gap-2.5 border-b border-n-4 px-2.5 transition-colors last:border-b-0',
+        'flex h-12 items-center gap-2.5 border-b border-n-4 px-2.5 transition-[background-color,opacity] last:border-b-0',
         drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft',
+        view.canDrag && 'touch-manipulation',
+        dragging && 'opacity-35',
       )}
     >
-      <Grip />
+      <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
       <PlayerFace entry={entry} size={24} />
       <span className="min-w-0 flex-1">
@@ -192,15 +306,17 @@ function ListRow({
 // Table view — 36px rows under one sticky column header
 // =============================================================================
 
-function TableBody({
-  buckets,
-  stats,
-  showBudgetShare,
-  budget,
-  handlers,
-  onRenameBand,
-  onAddToBucket,
-}: BodyProps) {
+function TableBody(props: ViewProps) {
+  const {
+    buckets,
+    stats,
+    showBudgetShare,
+    handlers,
+    onRenameBand,
+    onAddToBucket,
+    drag,
+    dragName,
+  } = props
   const ranks = useRanks(buckets)
   const minWidth = 270 + (showBudgetShare ? 112 : 0) + stats.length * 70
 
@@ -231,7 +347,11 @@ function TableBody({
         </div>
 
         {buckets.map((bucket) => (
-          <div key={bucket.key}>
+          <div
+            key={bucket.key}
+            data-drop-bucket={bucket.key}
+            className={cn(bucketOutline(drag, bucket.key))}
+          >
             {bucket.label !== null && (
               <BucketHeader
                 compact
@@ -241,17 +361,41 @@ function TableBody({
                 onAdd={() => onAddToBucket(bucket)}
               />
             )}
-            {bucket.entries.map((entry) => (
-              <TableRow
-                key={entry.id}
-                entry={entry}
-                rank={ranks.get(entry.id) ?? 0}
-                stats={stats}
-                showBudgetShare={showBudgetShare}
-                budget={budget}
-                handlers={handlers}
-              />
+            {bucket.entries.map((entry, index) => (
+              <React.Fragment key={entry.id}>
+                {drag.active && (
+                  <DropGap
+                    bucketKey={bucket.key}
+                    index={index}
+                    open={drag.isOpen(bucket.key, index)}
+                    height={drag.size.height}
+                    width={drag.size.width}
+                    name={dragName}
+                    minWidth={minWidth}
+                  />
+                )}
+                <TableRow
+                  entry={entry}
+                  rank={ranks.get(entry.id) ?? 0}
+                  stats={stats}
+                  handlers={handlers}
+                  bucketKey={bucket.key}
+                  index={index}
+                  view={props}
+                />
+              </React.Fragment>
             ))}
+            {drag.active && bucket.entries.length > 0 && (
+              <DropGap
+                bucketKey={bucket.key}
+                index={bucket.entries.length}
+                open={drag.isOpen(bucket.key, bucket.entries.length)}
+                height={drag.size.height}
+                width={drag.size.width}
+                name={dragName}
+                minWidth={minWidth}
+              />
+            )}
             {bucket.entries.length === 0 && (
               <div className="border-b border-n-4 p-3 text-center text-[11px] font-semibold text-n-3">
                 {EMPTY_BUCKET}
@@ -268,28 +412,38 @@ function TableRow({
   entry,
   rank,
   stats,
-  showBudgetShare,
-  budget,
   handlers,
+  bucketKey,
+  index,
+  view,
 }: {
   entry: ListPlayerWithPlayer
   rank: number
   stats: StatDef[]
-  showBudgetShare: boolean
-  budget: number
   handlers: RowHandlers
+  bucketKey: string
+  index: number
+  view: ViewProps
 }) {
   const drafted = handlers.isDrafted(entry.player_id)
-  const share = showBudgetShare ? budgetShare(entry, budget) : null
+  const share = view.showBudgetShare ? budgetShare(entry, view.budget) : null
+  const { listeners, setNodeRef } = useDragHandle(entry.id, !view.canDrag)
+  const dragging = view.drag.dragId === entry.id
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      data-drop-row={`${bucketKey}:${index}`}
+      data-drag-id={entry.id}
       className={cn(
-        'flex h-9 items-center gap-2.5 border-b border-n-4 px-2.5 transition-colors',
+        'flex h-9 items-center gap-2.5 border-b border-n-4 px-2.5 transition-[background-color,opacity]',
         drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft',
+        view.canDrag && 'touch-manipulation',
+        dragging && 'opacity-35',
       )}
     >
-      <Grip />
+      <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
       <PlayerFace entry={entry} size={21} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -304,7 +458,7 @@ function TableRow({
         <PlayerMeta entry={entry} />
       </span>
 
-      {showBudgetShare && (
+      {view.showBudgetShare && (
         <span className="flex w-[104px] shrink-0 items-center gap-1.5">
           <span className="relative h-[7px] flex-1 border border-ink bg-n-4">
             <span
@@ -351,7 +505,8 @@ function TableRow({
  * colour; a plain ranked list has **no rail and no container at all** — the
  * cards sit straight on the page (design LAW, "View style: Cards").
  */
-function CardsBody({ buckets, stats, handlers, onAddToBucket }: BodyProps) {
+function CardsBody(props: ViewProps) {
+  const { buckets, stats, handlers, onAddToBucket, drag, dragName } = props
   const ranks = useRanks(buckets)
   const posRanks = usePositionRanks(buckets)
   // Card view renders the first three chosen stats; list and table show all
@@ -365,9 +520,11 @@ function CardsBody({ buckets, stats, handlers, onAddToBucket }: BodyProps) {
         return (
           <div
             key={bucket.key}
+            data-drop-bucket={bucket.key}
             className={cn(
               'flex items-stretch',
               grouped && 'border border-ink bg-white transition-shadow hover:shadow-hard-4',
+              bucketOutline(drag, bucket.key),
             )}
           >
             {grouped && (
@@ -406,17 +563,43 @@ function CardsBody({ buckets, stats, handlers, onAddToBucket }: BodyProps) {
                 grouped && 'p-2',
               )}
             >
-              {bucket.entries.map((entry) => (
-                <PlayerTile
-                  key={entry.id}
-                  entry={entry}
-                  rank={ranks.get(entry.id) ?? 0}
-                  positionRank={posRanks.get(entry.id) ?? 0}
-                  stats={cardStats}
-                  bandClassName={grouped ? bucket.className : null}
-                  handlers={handlers}
-                />
+              {bucket.entries.map((entry, index) => (
+                <React.Fragment key={entry.id}>
+                  {drag.active && drag.isOpen(bucket.key, index) && (
+                    <DropGap
+                      axis="x"
+                      bucketKey={bucket.key}
+                      index={index}
+                      open
+                      height={drag.size.height}
+                      width={drag.size.width}
+                      name={dragName}
+                    />
+                  )}
+                  <PlayerTile
+                    entry={entry}
+                    rank={ranks.get(entry.id) ?? 0}
+                    positionRank={posRanks.get(entry.id) ?? 0}
+                    stats={cardStats}
+                    bandClassName={grouped ? bucket.className : null}
+                    handlers={handlers}
+                    bucketKey={bucket.key}
+                    index={index}
+                    view={props}
+                  />
+                </React.Fragment>
               ))}
+              {drag.active && drag.isOpen(bucket.key, bucket.entries.length) && (
+                <DropGap
+                  axis="x"
+                  bucketKey={bucket.key}
+                  index={bucket.entries.length}
+                  open
+                  height={drag.size.height}
+                  width={drag.size.width}
+                  name={dragName}
+                />
+              )}
               {bucket.entries.length === 0 && (
                 <div className="px-1.5 py-4 text-[11px] font-medium text-n-3">{EMPTY_BUCKET}</div>
               )}
@@ -469,6 +652,9 @@ function PlayerTile({
   stats,
   bandClassName,
   handlers,
+  bucketKey,
+  index,
+  view,
 }: {
   entry: ListPlayerWithPlayer
   rank: number
@@ -476,14 +662,25 @@ function PlayerTile({
   stats: StatDef[]
   bandClassName: string | null
   handlers: RowHandlers
+  bucketKey: string
+  index: number
+  view: ViewProps
 }) {
   const drafted = handlers.isDrafted(entry.player_id)
+  const { listeners, setNodeRef } = useDragHandle(entry.id, !view.canDrag)
+  const dragging = view.drag.dragId === entry.id
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      data-drop-row={`${bucketKey}:${index}`}
+      data-drag-id={entry.id}
       className={cn(
-        'group relative flex w-[131px] shrink-0 flex-col self-start border-1 border-ink transition-shadow hover:shadow-hard-4',
+        'group relative flex w-[131px] shrink-0 flex-col self-start border-1 border-ink transition-[box-shadow,opacity] hover:shadow-hard-4',
         drafted ? 'bg-n-4' : 'bg-white',
+        view.canDrag && 'cursor-grab touch-manipulation',
+        dragging && 'opacity-35',
       )}
     >
       <div className="relative flex flex-col items-center gap-1 px-1.5 pb-1.5 pt-1.5">

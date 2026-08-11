@@ -14,6 +14,8 @@ import {
   useList,
   useRemoveLink,
   useRemovePlayer,
+  useReorderPlayers,
+  useSetPlayerTier,
   useUpdateList,
   type ListPlayerWithPlayer,
   type ListWithTags,
@@ -27,8 +29,9 @@ import {
   type ListOrg,
 } from '@/stores/list-display-store'
 
-import { buildBuckets, type Bucket } from './list-buckets'
+import { bucketDrop, buildBuckets, type Bucket } from './list-buckets'
 import { ListBody, type RowHandlers } from './list-body'
+import { planDrop, positionsFor, type DropTarget } from './list-reorder'
 import { ListCommentsTab } from './list-comments-tab'
 import { ListDetailHero, type HeroOwner } from './list-detail-hero'
 import { ListDetailsTab } from './list-details-tab'
@@ -79,6 +82,8 @@ export function ListDetailPanel({
   const removePlayer = useRemovePlayer(listId)
   const addLink = useAddLink(listId)
   const removeLink = useRemoveLink(listId)
+  const reorderPlayers = useReorderPlayers(listId)
+  const setPlayerTier = useSetPlayerTier(listId)
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
 
   const display = useListDisplay(listId)
@@ -111,6 +116,78 @@ export function ListDetailPanel({
   )
 
   const canEdit = Boolean(list?.is_owner)
+
+  /**
+   * A drop landed (LV.4). Both writes go through routes that already exist —
+   * `PATCH …/players/reorder` and `PATCH …/players/[playerId]/tier` — and both
+   * of those hooks are already optimistic with a rollback in `onError`, which is
+   * what CLAUDE.md asks for on list reordering.
+   *
+   * Two rules worth reading before changing anything here:
+   *
+   * 1. **A refused drop says so.** `bucketDrop` is the only thing that knows
+   *    whether a section can be written; a round bucket cannot until LV.1.5
+   *    widens `list_players_tier_check`, and a cost/budget band never can
+   *    because it is computed from the player's auction value. Both surface the
+   *    reason instead of no-oping (CLAUDE.md: never let "nothing happened" mean
+   *    "it worked").
+   * 2. **The two writes are sequenced, not fired together.** They patch the same
+   *    React Query cache in `onMutate`; issued in the same tick, whichever reads
+   *    the cache first can be overwritten by the other's snapshot. The bucket
+   *    write goes first because it is the one that can be refused by the server,
+   *    and the order write follows on its success.
+   */
+  const handleDrop = React.useCallback(
+    (entryId: string, target: DropTarget) => {
+      if (!canEdit) return
+
+      const rule =
+        target.kind === 'new'
+          ? ({ ok: true, tier: target.tier } as const)
+          : bucketDrop(org, target.bucketKey)
+
+      if (!rule.ok) {
+        toast({
+          title: 'That section cannot be assigned',
+          description: rule.reason,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const plan = planDrop({ buckets, entryId, target, tier: rule.tier })
+      // Dropped exactly where it started: no request, and nothing to announce.
+      if (!plan) return
+
+      const applyOrder = (order: string[]) =>
+        reorderPlayers.mutate(positionsFor(order), {
+          onError: (error) =>
+            toast({
+              title: 'Could not save the new order',
+              description: error.message,
+              variant: 'destructive',
+            }),
+        })
+
+      if (plan.tier) {
+        setPlayerTier.mutate(plan.tier, {
+          onError: (error) =>
+            toast({
+              title: 'Could not move that player',
+              description: error.message,
+              variant: 'destructive',
+            }),
+          onSuccess: () => {
+            if (plan.order) applyOrder(plan.order)
+          },
+        })
+        return
+      }
+
+      if (plan.order) applyOrder(plan.order)
+    },
+    [buckets, canEdit, org, reorderPlayers, setPlayerTier, toast],
+  )
 
   const handlers: RowHandlers = {
     canEdit,
@@ -264,11 +341,13 @@ export function ListDetailPanel({
               buckets={buckets}
               stats={stats}
               view={display.view}
+              org={org}
               showBudgetShare={org === 'budget'}
               budget={display.budget}
               handlers={handlers}
               onRenameBand={(bandKey, label) => setBandLabel(listId, bandKey, label)}
               onAddToBucket={() => setAddOpen(true)}
+              onDrop={handleDrop}
             />
           )}
         </>

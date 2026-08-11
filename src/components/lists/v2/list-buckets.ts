@@ -1,4 +1,5 @@
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
+import type { ListTier } from '@/types/database'
 import {
   DEFAULT_COST_BANDS,
   resolveBandLabel,
@@ -79,8 +80,15 @@ export function bandStyle(index: number): string {
   return BAND_STYLES[index % BAND_STYLES.length]
 }
 
-/** Stored tier vocabulary, best first — matches `TIER_VALUES`. */
-const TIER_ORDER = ['S', 'A', 'B', 'C', 'D', 'F'] as const
+/**
+ * Stored tier vocabulary, best first — matches `TIER_VALUES`.
+ *
+ * Typed as `ListTier` on purpose: it is what the tier route and the live
+ * `list_players_tier_check` accept **today**, so a drop that would write a round
+ * key cannot typecheck its way into the mutation. When LV.1.5 widens both, this
+ * is one of the places that has to change, and the compiler will say so.
+ */
+const TIER_ORDER = ['S', 'A', 'B', 'C', 'D', 'F'] as const satisfies readonly ListTier[]
 
 const ROUND_KEY = /^r(\d{1,2})$/
 
@@ -301,6 +309,72 @@ export function budgetShare(
   const cost = playerCost(entry)
   if (cost == null) return null
   return Math.round((cost / (budget > 0 ? budget : 1)) * 100)
+}
+
+// =============================================================================
+// Drag and drop (LV.4) — which groupings can be rearranged, and what a drop on
+// a section header is allowed to write
+// =============================================================================
+
+/**
+ * Can this grouping be reordered by hand?
+ *
+ * Only where a section's member order **is** the array order. The cost and
+ * budget bands are computed and re-sorted by price on every render
+ * (`byCostDesc` above), so a manual order there would be discarded the instant
+ * React re-rendered — the drag would look like it worked and then snap back.
+ * The affordance is therefore withheld in those two modes and says why on
+ * hover, rather than being offered and silently undone (CLAUDE.md: never let
+ * "nothing happened" mean "it worked").
+ */
+export function canReorder(org: ListOrg): boolean {
+  return org === 'rank' || org === 'tier' || org === 'round'
+}
+
+export const COMPUTED_ORDER_REASON =
+  'These sections are ordered by each player’s auction value, so they can’t be rearranged by hand. Switch to Ranked or Tiers to reorder.'
+
+/**
+ * Rounds are real buckets in the design and unwritable in the database *today*:
+ * `list_players_tier_check` still pins the column to NULL or S–F until LV.1.5
+ * widens it (PROGRESS §3 Q2), so a `r3` write returns a Postgres `23514` that
+ * the tier route surfaces as a 500. The refusal is stated here, in the one place
+ * that knows what a bucket means, and it disappears the day LV.1.5 lands.
+ */
+export const ROUND_BUCKET_REASON =
+  'Round buckets can’t be assigned yet — this list still stores tiers S–F. Group by Tiers to move players between sections.'
+
+export type BucketDrop =
+  /** `tier: undefined` means "this grouping does not own the stored value". */
+  | { ok: true; tier: ListTier | null | undefined }
+  | { ok: false; reason: string }
+
+/** What dropping a player into `bucketKey` writes, or why it cannot. */
+export function bucketDrop(org: ListOrg, bucketKey: string): BucketDrop {
+  if (org === 'cost' || org === 'budget') return { ok: false, reason: COMPUTED_ORDER_REASON }
+  // The single unlabelled section (`rank`, or a tier list with nothing bucketed
+  // yet) carries no stored value at all — a drop there is a pure reorder.
+  if (bucketKey === 'all') return { ok: true, tier: undefined }
+  if (bucketKey === 'ungrouped') return { ok: true, tier: null }
+  if (org === 'round') return { ok: false, reason: ROUND_BUCKET_REASON }
+  const tier = TIER_ORDER.find((value) => value === bucketKey)
+  if (org === 'tier' && tier) return { ok: true, tier }
+  return { ok: true, tier: undefined }
+}
+
+/**
+ * The value the dashed "Drop a player here to start tier N" zone would assign —
+ * the first tier letter this list is not already using, or `null` when all six
+ * are taken.
+ *
+ * Tier mode only. Round mode has the same zone in the prototype and cannot write
+ * one yet (see `ROUND_BUCKET_REASON`), so the zone is withheld there rather than
+ * rendered as a target that 500s.
+ */
+export function nextTierBucket(org: ListOrg, buckets: Bucket[]): ListTier | null {
+  if (org !== 'tier') return null
+  const used = new Set(buckets.map((bucket) => bucket.key))
+  return TIER_ORDER.find((tier) => !used.has(tier)) ?? null
 }
 
 export const ORG_OPTIONS: ReadonlyArray<{ id: ListOrg; label: string }> = [

@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v3.7 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v3.8 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -247,11 +247,31 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   (Chris, 2026-08-09). They all behave exactly as tiers do today: a player sits
   in a bucket, and `org` decides whether that bucket renders as "Tier 1",
   "Round 1", or a cost band's editable label. There is no separate `round` or
-  `cost` field, nothing is computed, and drag-to-bucket assigns in every mode
-  — it is the same write in all four.
+  `cost` field.
 
   Storage is the existing `list_players.tier` (`text`), written through the
   existing `PATCH /api/lists/[id]/players/[playerId]/tier` route.
+
+  **Erratum (v3.8, LV.4 Builder 2026-08-11) — "nothing is computed, and
+  drag-to-bucket assigns in every mode, the same write in all four" was wrong
+  about two of the four.** `screens/README.md` had already recorded half of
+  this against the prototype's own model: `detail-grouping-budget-pct.png`
+  computes Budget % from `Cost PPR`, and the prototype keeps a stored `tier` /
+  `round` on the entry while *deriving* the cost bands from a price. LV.3
+  shipped that way. So the mechanism is one shape with **two** sources:
+
+  | Grouping | Bucket membership | A drop can assign it |
+  | --- | --- | --- |
+  | Ranked | array order | n/a — one section |
+  | Tiers | stored `list_players.tier` ∈ S–F | **yes** |
+  | Rounds | stored `list_players.tier` = `r1`…`rN` | not until **LV.1.5** widens the CHECK — refused with its reason |
+  | Avg cost / Budget % | **computed** from `players.auction_value` | **no — there is nothing to write** |
+
+  The consequence LV.4 had to take: in Avg cost and Budget %, dragging is not
+  offered at all (the section re-sorts by price on every render, so a hand
+  ordering would snap back), and the grip carries the reason. Bucket membership
+  travelling with a shared list (§2.2, point 3) is unaffected — it was only
+  ever true of the stored groupings.
 
   **Tier labels stay S/A/B/C/D/F** (Chris, 2026-08-09) — no change needed for
   tier mode, and `tailwind.config.ts` already carries the S–F color keys
@@ -451,6 +471,15 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.8 (2026-08-11)** — **D4 erratum, folded back from LV.4.** "Nothing is
+  computed, and drag-to-bucket assigns in every mode — it is the same write in
+  all four" was false for Avg cost and Budget %, whose membership is derived
+  from `players.auction_value`; `screens/README.md` recorded half of this on
+  2026-08-10 and LV.3 shipped against it. D4 now carries the four-row table and
+  the consequence LV.4 took: those two groupings do not offer the drag, and say
+  why. No product decision — this is the plan catching up with a screenshot and
+  a shipped screen.
 
 - **v3.7 (2026-08-11)** — **The third and final schema exception: `list_links`.**
   Chris: *"lets create the table for storing the link, we need a way to link
