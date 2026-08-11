@@ -14,7 +14,8 @@ import {
   WindowShell,
   type DetailWindowTab,
 } from '@/components/shared/window-shell'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLeagues } from '@/hooks/use-leagues'
@@ -156,13 +157,7 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       <Avatar className="h-9 w-9">
-        {player.headshot_url && (
-          <AvatarImage
-            src={player.headshot_url}
-            alt={player.full_name}
-            className="object-cover object-top"
-          />
-        )}
+        <PlayerAvatarImage player={player} alt={player.full_name} />
         <AvatarFallback>{initials}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">

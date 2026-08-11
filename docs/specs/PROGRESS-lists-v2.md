@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -138,6 +138,21 @@ are all checked.
   opened** — it inherits the look through the primitive. **`week-tabs.tsx` and
   `public-big-board.tsx`'s week strip are the same look again and are deferred**
   to whichever task reopens `src/components/big-board/**` (§4)
+- [x] **LV.10** — **DEF renders the team logo, and the image fallback actually
+  fires** (2026-08-11, ruled by Chris the same day: *"for DEF use the team's
+  logo — that's what all platforms do"*). UI/UX only — **no migration, no
+  schema change, no new API route**; `players.headshot_url` is sync-owned and
+  is *not* rewritten, the substitution happens at render.
+  `src/lib/player-image.ts` is the one place that decides a player's picture
+  (DEF → `…/team_logos/nfl/<abbr-lowercased>.png`; the path is case-sensitive
+  and uppercase 404s, which is what the new `player-image.test.ts` pins), and
+  `src/components/players/player-image.tsx` is the one component that renders
+  it. Fourteen call sites converted. The second, larger fix: the two surfaces
+  that had hand-rolled an `<img>` fell back to initials only on a **missing
+  URL**, never on a **failed load** — they now use the shared `Avatar`
+  primitive, which already handled both. **`lists/draft-mode/board-column.tsx`
+  has the same bug and is off limits — LV.7 must take the conversion with it**
+  (§4)
 - [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
@@ -1192,6 +1207,86 @@ This section records decisions made **during** the build.
   fills tabs with accent, the design LAW lists **selection** under accent, and
   the styleguide's own caption had said so since the reskin. That comment was
   the last written trace of the treatment being replaced.
+
+- **LV.10 (2026-08-11) — DEF renders the team logo, and the fallback that was
+  never a fallback.** Chris: *"for DEF use the team's logo — that's what all
+  platforms do."* Two fixes, one cause, and the second is the more valuable one.
+
+  **The bug.** `players.headshot_url` is written by the Sleeper sync as
+  `…/content/nfl/players/thumb/<sleeper_id>.jpg`, and for a team defense the
+  Sleeper id **is the team abbreviation** — so every DEF row stores
+  `…/thumb/PHI.jpg`, a URL that has never existed. Measured live: that path is
+  **403**, `…/images/team_logos/nfl/phi.png` is **200** (12 KB PNG), and
+  `…/team_logos/nfl/PHI.png` is **404**. **The logo path is case-sensitive**;
+  all 32 abbreviations were checked lowercased against the CDN and every one
+  returned 200. Same host the app already uses for headshots — no new
+  dependency, nothing scraped.
+
+  **Resolved at render, never written back.** `players` is sync-owned and the
+  app must never write to it (CLAUDE.md), and the schema budget is closed at
+  three, so this is a substitution made every time an image is drawn:
+  `src/lib/player-image.ts` → `getPlayerImageUrl(player)`. It prefers `team`
+  and falls back to `id` — for a DEF row the two are equal, but `team` is the
+  field that *means* "which team" and `id` is only equal to it by the accident
+  of Sleeper's keying, so a future id scheme cannot quietly become the source.
+  An abbreviation outside `NFL_TEAMS` returns `null` (→ initials) rather than a
+  request known in advance to 404.
+
+  **The class names could not live in the lib, and that is not cosmetic.**
+  `src/lib/**` is outside Tailwind's `content` globs, so `object-contain` named
+  only there would be purged — and because `tailwind-merge` *does* remove the
+  base `object-cover`, the result would have been an image with no object-fit at
+  all: a stretched logo, from a class that looked right in the source. The URL
+  lives in the lib; the fit decision lives in
+  `src/components/players/player-image.tsx`, inside the scanned tree.
+
+  **The second fix — the one worth carrying.** The survey found the general
+  fallback was broken in exactly the two places that had hand-rolled an `<img>`
+  instead of using the shared primitive: `list-thumbnail.tsx`'s quadrant and
+  `cover-tile.tsx`'s stacked chip. Both did
+  `player.headshot_url ? <img> : <initials>` — which handles a **missing URL**
+  and not a **failed load**, so a 403 painted the browser's broken-image glyph.
+  That is CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* in
+  visual form. The fix is **not** a new `onError` handler: Radix's
+  `Avatar.Image` already reports `error` for both cases and `Avatar.Fallback`
+  renders whenever the status is not `loaded`, so the two raw `<img>`s were
+  converted to the primitive the other twelve call sites already use. The bug
+  was the fork, and deleting the fork is the fix. (`Avatar.Root`/`Fallback` are
+  `<span>`s, which is why the cover band's span tree stays legal.)
+
+  **Every call site now goes through one component.** `PlayerAvatarImage`
+  replaced the `{player.headshot_url && <AvatarImage …/>}` idiom in 14 files:
+  `lists/list-thumbnail`, `lists/v2/cover-tile`, `lists/v2/list-row-parts`,
+  `lists/builder/player-sidebar`, `players/player-card` (×2),
+  `players/player-detail-header`, `players/player-row`, `players/player-search`,
+  `players/player-window`, `players/players-spreadsheet`,
+  `shared/command-palette`, `teams/team-roster`, `home/home-player-row`,
+  `draft/draft-queue-card`. `home-player-row` takes flat props rather than a
+  player, so it gained a `team` prop (passed by `trending-players-card`; the two
+  mock cards render no headshot and were left alone).
+
+  **Off limits, recorded rather than edited.** `lists/draft-mode/board-column.tsx`
+  renders a player headshot and carries the *same* DEF bug — it is in the boards
+  tree, so it was not opened; **LV.7 retires that surface and should take the
+  conversion with it**. `src/components/big-board/**` was checked and renders no
+  player image at all (zero `<img>`, zero `AvatarImage`), so the boards rule
+  costs nothing there. `leagues/league-cells.tsx`'s `Crest` is a league/team
+  crest on mock data, not a player headshot — out of scope by kind, not by tree.
+
+  **Interpretation flagged.** `draft/draft-queue-card.tsx` was converted even
+  though `ACTIVE-BUILD.md` warns about `src/components/draft/**`. That warning
+  is about *picking `L.*` tasks* while Lists v2 is active; this is a one-token
+  `src` swap under an app-wide ruling, and leaving a known-403 image on a
+  surface the ruling covers seemed worse than the scope question. Trivially
+  reverted if a reviewer disagrees.
+
+  **The probe.** `.toLowerCase()` was removed from `getTeamLogoUrl` — the exact
+  regression the test exists for, and one break that proves both fixes at once.
+  Unit: **6 of 12 tests RED**. Browser: the DEF list rendered **AC / AF / BR**
+  initials in the hero quadrants, the rail tile and the player rows —
+  `logoImgsInDom: 0`, `brokenGlyphs: 0`, i.e. Radix pulled the failed `<img>`
+  and drew the fallback. Reverted; 12/12 green and all four logos back to
+  `naturalWidth 150`.
 
 ---
 

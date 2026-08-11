@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
   Command,
@@ -144,13 +145,7 @@ export function PlayerSearch({
                 className="flex items-center gap-3 py-2"
               >
                 <Avatar className="h-8 w-8">
-                  {player.headshot_url && (
-                    <AvatarImage
-                      src={player.headshot_url}
-                      alt={player.full_name}
-                      className="h-full w-full object-cover object-top"
-                    />
-                  )}
+                  <PlayerAvatarImage player={player} alt={player.full_name} />
                   <AvatarFallback className="text-[9px]">
                     {player.full_name
                       .split(' ')

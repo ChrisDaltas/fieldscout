@@ -5,7 +5,8 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PlayerRow, type PlayerRowStat } from '@/components/players/player-row'
 import { PositionBadge } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -452,13 +453,7 @@ const SidebarPlayerCard = memo(function SidebarPlayerCard({
         </span>
 
         <Avatar className="h-12 w-12 shrink-0">
-          {player.headshot_url && (
-            <AvatarImage
-              src={player.headshot_url}
-              alt={player.full_name}
-              className="h-full w-full object-cover object-top"
-            />
-          )}
+          <PlayerAvatarImage player={player} alt={player.full_name} />
           <AvatarFallback className="text-[11px]">{initials}</AvatarFallback>
         </Avatar>
 

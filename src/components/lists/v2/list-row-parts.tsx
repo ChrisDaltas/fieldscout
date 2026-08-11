@@ -3,7 +3,8 @@
 import * as React from 'react'
 
 import { PositionBadge } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,9 +55,7 @@ export function PlayerFace({
       className={cn('shrink-0', round && 'rounded-pill')}
       style={{ width: size, height: size }}
     >
-      {entry.player.headshot_url ? (
-        <AvatarImage src={entry.player.headshot_url} alt="" />
-      ) : null}
+      <PlayerAvatarImage player={entry.player} />
       <AvatarFallback
         className={cn('fs-num font-bold', round && 'rounded-pill')}
         style={{ fontSize: Math.round(size * 0.36) }}

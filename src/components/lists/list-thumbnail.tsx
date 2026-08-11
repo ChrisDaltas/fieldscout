@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react'
 
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
@@ -232,31 +234,32 @@ function PlayerQuadrant({
     .slice(0, 2)
     .join('')
 
+  // The base `Avatar` primitive rather than a bare `<img>`: it is what gives
+  // this quadrant an *error* fallback and not just a *missing-URL* one. The
+  // previous `player.headshot_url ? <img> : <initials>` painted the browser's
+  // broken-image glyph on any 403/404 — which every team defense produced, and
+  // which is precisely "nothing happened" being displayed as content
+  // (CLAUDE.md). `PlayerAvatarImage` also resolves DEF to its team logo.
+  //
+  // The quadrant is a seam in a 2×2 grid, so the primitive's own tile chrome
+  // (`rounded-sm border border-ink`, `bg-n-4`) is turned off — the team colour
+  // is the fill, and the tile's border belongs to the wrapper.
   return (
-    <div
-      className="relative flex items-center justify-center overflow-hidden"
+    <Avatar
+      className="h-full w-full rounded-none border-0"
       style={{ backgroundColor: primary }}
     >
-      {player.headshot_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={player.headshot_url}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top"
-          draggable={false}
-        />
-      ) : (
-        <span
-          className={cn(
-            'font-mono font-bold uppercase tracking-tight text-white/90',
-            metrics.labelClass,
-          )}
-          style={metrics.initialsStyle}
-        >
-          {initials}
-        </span>
-      )}
-    </div>
+      <PlayerAvatarImage player={player} draggable={false} />
+      <AvatarFallback
+        className={cn(
+          'bg-transparent font-mono font-bold uppercase tracking-tight text-white/90',
+          metrics.labelClass,
+        )}
+        style={metrics.initialsStyle}
+      >
+        {initials}
+      </AvatarFallback>
+    </Avatar>
   )
 }
 

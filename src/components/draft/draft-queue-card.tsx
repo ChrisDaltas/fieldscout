@@ -1,6 +1,7 @@
 'use client'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { BuilderPlayer } from '@/components/lists/builder/types'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,13 +48,7 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
                   {i + 1}
                 </span>
                 <Avatar className="h-6 w-6 shrink-0">
-                  {player.headshot_url && (
-                    <AvatarImage
-                      src={player.headshot_url}
-                      alt={player.full_name}
-                      className="h-full w-full object-cover object-top"
-                    />
-                  )}
+                  <PlayerAvatarImage player={player} alt={player.full_name} />
                   <AvatarFallback className="text-[9px]">
                     {initialsFor(player.full_name)}
                   </AvatarFallback>

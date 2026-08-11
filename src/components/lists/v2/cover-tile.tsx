@@ -8,6 +8,8 @@ import {
   listThumbnailLabel,
   type ListThumbnailSize,
 } from '@/components/lists/list-thumbnail'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
@@ -194,9 +196,14 @@ function StackedHeadshot({
     .slice(0, 2)
     .join('')
 
+  // `Avatar` (a `<span>`, so it stays legal inside this band's span tree) is
+  // used for the same reason the rail tile's quadrant uses it: it falls back to
+  // initials when the image *fails*, not merely when the URL is absent. Its
+  // default chrome already matches this chip — `rounded-sm border border-ink` —
+  // so only the fill and the stacking geometry are supplied here.
   return (
-    <span
-      className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-sm border border-ink"
+    <Avatar
+      className="shrink-0"
       style={{
         width: STACK_CHIP,
         height: STACK_CHIP,
@@ -207,19 +214,10 @@ function StackedHeadshot({
         zIndex: total - index,
       }}
     >
-      {player.headshot_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={player.headshot_url}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top"
-          draggable={false}
-        />
-      ) : (
-        <span className="font-mono text-[8px] font-bold uppercase leading-none tracking-tight text-white/90">
-          {initials}
-        </span>
-      )}
-    </span>
+      <PlayerAvatarImage player={player} draggable={false} />
+      <AvatarFallback className="bg-transparent font-mono text-[8px] font-bold uppercase leading-none tracking-tight text-white/90">
+        {initials}
+      </AvatarFallback>
+    </Avatar>
   )
 }

@@ -8,7 +8,8 @@ import {
   PositionBadge,
   POSITION_TAB_ACTIVE,
 } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -775,13 +776,7 @@ function PlayerTableRow({
       <StickyTd leftOffset="106px" width="230px">
         <div className="flex items-center gap-2.5">
           <Avatar className="h-6 w-6">
-            {row.headshot_url && (
-              <AvatarImage
-                src={row.headshot_url}
-                alt={row.full_name}
-                className="h-full w-full object-cover object-top"
-              />
-            )}
+            <PlayerAvatarImage player={row} alt={row.full_name} />
             <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">

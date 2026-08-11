@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
 import { PositionBadge } from '@/components/players/position-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerAvatarImage } from '@/components/players/player-image'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   CommandDialog,
   CommandEmpty,
@@ -211,13 +212,7 @@ export function CommandPalette() {
                 className="gap-2.5"
               >
                 <Avatar className="h-6 w-6">
-                  {player.headshot_url && (
-                    <AvatarImage
-                      src={player.headshot_url}
-                      alt={player.full_name}
-                      className="object-cover object-top"
-                    />
-                  )}
+                  <PlayerAvatarImage player={player} alt={player.full_name} />
                   <AvatarFallback className="text-[9px]">
                     {initialsOf(player.full_name)}
                   </AvatarFallback>
