@@ -4,9 +4,10 @@ import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 
 import {
   bucketDrop,
+  bucketZoneLabel,
   buildBuckets,
   canReorder,
-  nextTierBucket,
+  nextBucket,
   type Bucket,
 } from './list-buckets'
 import { dropTargetKey, planDrop, positionsFor, type DropTarget } from './list-reorder'
@@ -25,9 +26,10 @@ import { dropTargetKey, planDrop, positionsFor, type DropTarget } from './list-r
  *    moved no rows is exactly the "nothing happened means it worked" trap.
  * 3. Bucket membership and array order are two writes, and a move can imply
  *    either, both, or neither.
- * 4. Sections that cannot be written say why. Round buckets are refused until
- *    LV.1.5 widens `list_players_tier_check`; cost/budget bands are computed
- *    from auction value and can never be assigned by hand.
+ * 4. Sections that cannot be written say why. **Round buckets became writable at
+ *    LV.1.5**, which widened `list_players_tier_check`; cost/budget bands are
+ *    computed from auction value and can never be assigned by hand, so they
+ *    still refuse with their reason.
  */
 
 const NO_LABELS: Readonly<Record<string, string>> = Object.freeze(Object.create(null))
@@ -194,10 +196,18 @@ describe('which sections accept a drop', () => {
     expect(canReorder('budget')).toBe(false)
   })
 
-  it('refuses round buckets until LV.1.5, with the reason', () => {
-    const drop = bucketDrop('round', 'r3')
-    expect(drop.ok).toBe(false)
-    if (!drop.ok) expect(drop.reason).toMatch(/tiers S–F/)
+  it('writes the round key itself, now that LV.1.5 has widened the CHECK', () => {
+    expect(bucketDrop('round', 'r3')).toEqual({ ok: true, tier: 'r3' })
+    expect(bucketDrop('round', 'r1')).toEqual({ ok: true, tier: 'r1' })
+    expect(bucketDrop('round', 'r30')).toEqual({ ok: true, tier: 'r30' })
+    // Ungrouped clears the bucket in round mode exactly as in tier mode.
+    expect(bucketDrop('round', 'ungrouped')).toEqual({ ok: true, tier: null })
+    // The key arrives from a DOM attribute, so it is re-checked rather than
+    // trusted: anything outside the vocabulary leaves `tier` alone rather than
+    // becoming a 23514 the route returns as a 500.
+    expect(bucketDrop('round', 'r31')).toEqual({ ok: true, tier: undefined })
+    expect(bucketDrop('round', 'r0')).toEqual({ ok: true, tier: undefined })
+    expect(bucketDrop('round', 'S')).toEqual({ ok: true, tier: undefined })
   })
 
   it('refuses computed bands, with the reason', () => {
@@ -214,17 +224,18 @@ describe('which sections accept a drop', () => {
     expect(bucketDrop('rank', 'all')).toEqual({ ok: true, tier: undefined })
   })
 
-  it('offers a new tier only in tier mode, and only while letters are free', () => {
+  it('offers a new bucket in tier AND round mode, while any are free', () => {
     const some = buildBuckets({
       org: 'tier',
       entries: [entry('1', { tier: 'S' })],
       bandLabels: NO_LABELS,
       budget: 200,
     })
-    expect(nextTierBucket('tier', some)).toBe('A')
-    // Round mode has the same zone in the prototype and cannot write one yet.
-    expect(nextTierBucket('round', some)).toBeNull()
-    expect(nextTierBucket('rank', ranked(['1']))).toBeNull()
+    expect(nextBucket('tier', some)).toBe('A')
+    // Groupings that own no stored value have no zone at all.
+    expect(nextBucket('rank', ranked(['1']))).toBeNull()
+    expect(nextBucket('cost', some)).toBeNull()
+    expect(nextBucket('budget', some)).toBeNull()
 
     const all = buildBuckets({
       org: 'tier',
@@ -234,7 +245,37 @@ describe('which sections accept a drop', () => {
       bandLabels: NO_LABELS,
       budget: 200,
     })
-    expect(nextTierBucket('tier', all)).toBeNull()
+    expect(nextBucket('tier', all)).toBeNull()
+  })
+
+  it('round mode fills the first gap, and runs out at r30', () => {
+    // An empty round list starts at r1, not at "the round after the last one".
+    expect(nextBucket('round', buildBuckets({
+      org: 'round', entries: [entry('1')], bandLabels: NO_LABELS, budget: 200,
+    }))).toBe('r1')
+
+    // r1 and r3 in use → the zone offers r2, the first hole. `buildBuckets`
+    // renders sections in numeric order, so this also pins that the search is
+    // over the used SET rather than over the last rendered section.
+    expect(nextBucket('round', buildBuckets({
+      org: 'round',
+      entries: [entry('1', { tier: 'r3' }), entry('2', { tier: 'r1' })],
+      bandLabels: NO_LABELS,
+      budget: 200,
+    }))).toBe('r2')
+
+    const everyRound = Array.from({ length: 30 }, (_, i) =>
+      entry(String(i + 1), { tier: `r${i + 1}` }),
+    )
+    expect(nextBucket('round', buildBuckets({
+      org: 'round', entries: everyRound, bandLabels: NO_LABELS, budget: 200,
+    }))).toBeNull()
+  })
+
+  it('the zone says tier or round, never the wrong noun', () => {
+    expect(bucketZoneLabel('tier', 'A')).toBe('start tier A')
+    expect(bucketZoneLabel('round', 'r4')).toBe('start round 4')
+    expect(bucketZoneLabel('round', 'r30')).toBe('start round 30')
   })
 })
 

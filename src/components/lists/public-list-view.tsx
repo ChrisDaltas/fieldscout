@@ -2,13 +2,16 @@ import Link from 'next/link'
 
 import { PinListButton } from '@/components/lists/pin-list-button'
 import { TagChip } from '@/components/lists/tag-chip'
-import { TierBadge, TIER_BAND_BG } from '@/components/lists/tier-badge'
+import { bucketBandClass } from '@/components/lists/bucket-colors'
+import { TierBadge } from '@/components/lists/tier-badge'
 import { PlayerRow } from '@/components/players/player-row'
 import { PositionBadge } from '@/components/players/position-badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Badge } from '@/components/ui/badge'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+
+import { isTierKey } from '@/types/schemas/lists'
 
 import type { ListTier } from '@/types/database'
 
@@ -41,7 +44,7 @@ interface ListInfo {
 interface PlayerEntry {
   player_id: string
   position: number
-  tier: ListTier | null
+  tier: string | null
   player: {
     id: string
     full_name: string
@@ -177,7 +180,18 @@ function PublicTierView({ players }: { players: PlayerEntry[] }) {
   for (const tier of TIERS) grouped.set(tier, [])
   grouped.set('untiered', [])
   for (const p of players) {
-    const key = p.tier ?? 'untiered'
+    // `isTierKey`, not `p.tier ?? 'untiered'` — and this is a crash fix, not a
+    // tidy-up. `list_players.tier` accepts `r1`–`r30` and `c1`–`c4` since
+    // migration 081 (LV.1.5), and this map is seeded with S–F plus 'untiered'
+    // only, so the old `grouped.get(key)!.push(p)` dereferenced `undefined` on
+    // the first round-bucketed player and threw — on a **server-rendered**,
+    // SEO-critical page (plan D7), i.e. a 500 rather than a page.
+    //
+    // A round key is not a tier, so this view files it with the ungrouped, the
+    // same answer `lists/v2/list-buckets.ts` gives (`bucketKeyFor` returns null
+    // for a round key in tier mode). Rendering round *bands* on the share view
+    // belongs to **LV.6**, which rebuilds this screen in the new language.
+    const key = isTierKey(p.tier) ? p.tier : 'untiered'
     grouped.get(key)!.push(p)
   }
 
@@ -194,7 +208,7 @@ function PublicTierView({ players }: { players: PlayerEntry[] }) {
             <div
               className={cn(
                 'flex min-h-[38px] items-center gap-2.5 border-b border-ink px-4 py-1.5',
-                TIER_BAND_BG[tier],
+                bucketBandClass(tier),
               )}
             >
               <TierBadge tier={tier} className="h-6 w-6 border-ink bg-white text-[13px] text-ink" />

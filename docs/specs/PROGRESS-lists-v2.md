@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. Remaining: LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -42,7 +42,7 @@ are all checked.
 - [x] **LV.1.2** — migration: `list_player_drafted (user_id, list_id, player_id)` + RLS + indexes, and its read/toggle route (D2) (2026-08-09)
 - [x] **LV.1.3** — `use-draft-mode.ts` points at the LV.1.2 server source; no file under `src/components/lists/draft-mode/**` was touched, and that surface's account-persisted marks were *shown* flowing through the shared hook (§3 Q1). Folded in nits R176 + R178; review findings **R190–R194**, re-review findings **R195–R198** and final-review findings **R199–R202** resolved on the same branch — the durable clear now refuses marks the read never delivered; the bit that decides that comes from the read itself rather than the query status (which an optimistic mark can forge), an aborted read cannot open it in *either* arm (R199), and it lives as long as the cache rather than as long as the mount (R200) (2026-08-09; round-3 fixes 2026-08-10)
 - [x] **LV.1.4** — session-only display state: `view`, `cols`, band labels, `budget`; **no `persist` middleware** (D3) (2026-08-09)
-- [ ] **LV.1.5** — ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
+- [x] **LV.1.5** — **LANDED 2026-08-11** (migration `081_list_players_tier_vocabulary.sql`; see §4). ✅ **Q2 RULED (widen the CHECK)** — one migration + widen the tier route's Zod enum for round/band buckets beyond six; S–F stays valid (D4). **Reconcile the bucket vocabulary with `DEFAULT_COST_BANDS` in `src/stores/list-display-store.ts`** — LV.1.4 chose `c1`–`c4` for cost bands as *session-local* keys that are explicitly **not on the wire**; this task owns what the route actually accepts, so either adopt them or decide the wire keys differ and say so. Widening the enum also turns bucket keys into DB-sourced free text, which is why `resolveBandLabel` is `hasOwnProperty`-guarded (R181/R183). **Includes one migration** — `list_players.tier` carries a live CHECK constraint (`list_players_tier_check`, `003_lists.sql:42-43`) pinning it to NULL or S–F on local **and** hosted production, so widening Zod alone would make every round write a Postgres `23514` returned as an HTTP 500. Vocabulary approved in §3 Q2
 
 **Phase 2 — the screens** *(restructured 2026-08-10 — read the note at the end of this section)*
 
@@ -92,11 +92,14 @@ are all checked.
     re-opening it. Only the hook knows whether a read landed.
 
 **Phase 3 — the rest** *(genuinely separate work, not screen slices)*
-- [ ] **LV.1.5** — widen the tier CHECK constraint + the route's Zod enum (a
-  migration — **keeps the careful process**). Vocabulary approved in §3 Q2.
-  Also address or explicitly defer `TIER_BG`/`TIER_BAND_BG` in
-  `tier-badge.tsx`: total maps with no fallback, so a round key renders an
-  uncolored band in both the legacy view and the public share view
+- [x] **LV.1.5** — **the tier CHECK is widened** (2026-08-11). Migration
+  `081_list_players_tier_vocabulary.sql` + the route's Zod enum, from one shared
+  vocabulary in `src/types/schemas/lists.ts`. The build's **second** schema
+  exception, and with LV.8 the budget is now **spent**: three of three.
+  Vocabulary exactly as §3 Q2 approved it. `TIER_BG`/`TIER_BAND_BG` were
+  addressed rather than deferred — and the survey that went with it found the
+  same widening would have **500'd the public share view**, which was a crash
+  and not a colour (§4)
 - [x] **LV.4** — **drag-and-drop across all three view styles** (2026-08-11).
   The handoff's drop-gap model, over the existing
   `PATCH …/players/reorder` and `…/players/[playerId]/tier` routes — **no
@@ -794,16 +797,17 @@ This section records decisions made **during** the build.
      subscription that catches gc, `removeQueries` and `clear()`). Lengthening
      a guard's lifetime is only safe if you can name every way it ends.
 
-- **LV.1.5 (2026-08-09) — the bucket vocabulary is designed but NOT decided.**
-  The LV.1.5 task text directs the wire vocabulary to be recorded here, since
-  LV.3.2, LV.3.5 and LV.3.6 all inherit it. It is **not** recorded here, because
-  it was not ruled: the task halted before implementation on **§3 Q2**
-  (`list_players.tier` carries a live CHECK constraint pinning it to S–F, so the
-  widening needs a migration this build forbids). The full proposal — the key
-  sets, the `c1`–`c4` reconciliation with `DEFAULT_COST_BANDS`, why budget mints
-  no keys, the round ceiling and its justification, and what the closed shape
-  rules out — lives in **§3 Q2** and moves here, unchanged or amended, when
-  Chris rules. **Do not treat the Q2 proposal as decided.**
+- **LV.1.5 (2026-08-09) — the bucket vocabulary was designed but NOT decided.**
+  *(Superseded 2026-08-11 by the entry at the end of this section — the
+  vocabulary is now ruled, shipped and live. Kept because the halt is the reason
+  it exists.)* The LV.1.5 task text directed the wire vocabulary to be recorded
+  here, since LV.3.2, LV.3.5 and LV.3.6 all inherit it. It was **not** recorded
+  here, because it was not ruled: the task halted before implementation on
+  **§3 Q2** (`list_players.tier` carries a live CHECK constraint pinning it to
+  S–F, so the widening needs a migration this build forbade). The full proposal
+  — the key sets, the `c1`–`c4` reconciliation with `DEFAULT_COST_BANDS`, why
+  budget mints no keys, the round ceiling and its justification, and what the
+  closed shape rules out — lives in **§3 Q2**.
 
 ---
 
@@ -1401,6 +1405,146 @@ This section records decisions made **during** the build.
   inconsistency more visible than it was — worth knowing, not worth breaking
   the boards rule for.
 
+- **LV.1.5 (2026-08-11) — the tier CHECK is widened, and the widening turned out
+  to be a read-side change too.** Migration
+  `081_list_players_tier_vocabulary.sql` (one `ALTER TABLE`, one constraint, no
+  new table, no new column, no new route), the tier route's Zod enum, one shared
+  vocabulary module, and the LV.4 refusals it was blocking. The build's
+  **second** schema exception, ruled by Chris 2026-08-09 (*"That's fine, do the
+  database change."*); with LV.8 the budget is now **spent, three of three**.
+
+  1. **The vocabulary shipped exactly as §3 Q2 approved it** —
+     `^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$`, 40 keys plus `NULL`. Nothing
+     was changed, so nothing needed a reason. Two things *are* worth recording
+     about it:
+
+     - **`c1`–`c4` are accepted and nothing writes them.** LV.2/LV.3 shipped
+       cost bands as **computed** from `players.auction_value` (D4 erratum,
+       plan v3.8), so no `c*` key can be stored by any path today. They are in
+       the vocabulary anyway, on purpose: they are the keys `DEFAULT_COST_BANDS`
+       already uses, so *every* accepted key has a default label and
+       `resolveBandLabel` can never render a raw key (the R181/R183 hazard); and
+       **the schema budget closes with this migration**, so provisioning them
+       now costs one character class where adding them later would cost a fourth
+       exception. Recorded so a later reader does not delete them as dead.
+     - **The round ceiling is 30 and the regex, not a comment, is what enforces
+       it.** `r0`, `r31`, `r99` and `r01` are all `23514` at the database, each
+       pinned in pgTAP 030 — because an off-by-one in a character class is
+       invisible in the middle of a range.
+
+  2. **The two layers are pinned to each other, not merely both edited.**
+     `src/types/schemas/bucket-keys.test.ts` reads migration 081 off disk, lifts
+     the regex out of the CHECK, and asserts Zod and the database agree over an
+     exhaustive scan of every string of length 0–3 across the alphabet the
+     vocabulary is built from (11,155 candidates) **plus** that the set they
+     agree on is the vocabulary — two identically-broken layers would otherwise
+     pass. Probed: adding `'c5'` to `COST_BAND_VALUES` alone reddens four
+     assertions. This is the LV.8 `list_links.url` pin applied again, and it is
+     the thing that stops the failure §3 Q2 named — a key Zod accepts becoming a
+     `23514` the route returns as an HTTP 500.
+
+     The route now **imports** `bucketKeySchema` rather than restating an enum,
+     which is what §3 Q2 asked for when it noticed `TIER_VALUES` was exported
+     and unused while the route inlined its own copy. A source pin in the same
+     suite fails if an inline `z.enum([...])` comes back.
+
+  3. **THE FINDING THIS TASK DID NOT EXPECT: widening the column would have
+     crashed the public share view.** §3 Q2's blast-radius table asked what
+     *writes* `tier`. It did not ask what *reads* it and assumes a closed set —
+     and two surfaces did:
+
+     ```ts
+     const grouped = new Map<ListTier | 'untiered', PlayerEntry[]>()
+     for (const tier of TIERS) grouped.set(tier, [])   // S–F only
+     grouped.set('untiered', [])
+     for (const p of players) grouped.get(p.tier ?? 'untiered')!.push(p)
+     ```
+
+     With `p.tier = 'r4'` that is `undefined.push` — a **TypeError**, and
+     `public-list-view.tsx` is a **server component** on the SEO-critical share
+     route (D7), so it is an HTTP 500 rather than a degraded page. The legacy
+     detail view has the same shape in three places (`groupByTier`, the
+     `TierGrid` memo, and `moveSelected`'s adjacent-tier carry). Both now key
+     through `isTierKey`, which files anything that is not a tier letter with
+     the ungrouped — the same answer `list-buckets.ts` already gave. Reproduced
+     live with the fix reverted (*"Application error: a server-side exception
+     has occurred"*, `TypeError: Cannot read properties of undefined (reading
+     'push')` in the server log) and shown rendering with it back.
+
+     **Rendering round *bands* on the share view is LV.6's**, not this task's.
+     Round-bucketed players show as Untiered there for now, which is honest
+     rather than wrong.
+
+  4. **`TIER_BG` / `TIER_BAND_BG` were addressed, not deferred — and they moved
+     house to be testable at all.** They were total `Record<ListTier, string>`
+     maps with no fallback, so `TIER_BAND_BG['r1']` was `undefined` →
+     `cn(undefined)` → a silently uncoloured band. They are now
+     `bucketBandClass` / `bucketBadgeClass` in **`src/components/lists/
+     bucket-colors.ts`**: total over `string`, with a *named* neutral fallback
+     (`UNKNOWN_BUCKET_STYLE`) rather than a colour, because a bucket nobody can
+     name should not be dressed as tier 1.
+
+     Two reasons it is a new `.ts` file and not a rewrite inside
+     `tier-badge.tsx`. **(a)** `tsconfig.json` sets `jsx: "preserve"` for Next,
+     so vitest's esbuild leaves JSX in place and **any `.tsx` module is
+     unimportable from a test** — which is exactly why these maps had no test
+     for their whole life. Measured: importing `tier-badge.tsx` from a `.ts`
+     test fails the file with *"content contains invalid JS syntax"*. **(b)**
+     `list-buckets.ts` needed the same seven-step ramp and was carrying its own
+     copy of the strings. `tier-badge.tsx` re-exports `TIER_RAMP` unchanged so
+     `big-board/big-board-dashboard.tsx` — off limits — keeps its import path
+     and its six-entry positional ramp; the seventh step lives only on
+     `BAND_RAMP`.
+
+     S–F colours are byte-identical before and after, pinned. Probed: returning
+     `''` instead of the fallback reddens `bucket-colors.test.ts`.
+
+  5. **What LV.4's refusals became. Rounds: real writes. Cost/budget: still
+     refused, and that is the right answer, not a half-done one.** The task text
+     asked for a judgement here rather than a flag flip, so:
+
+     - **Round headers are now assignable** (`bucketDrop` returns the round key),
+       and the dashed **"Drop a player here to start round N"** zone renders in
+       round mode with the first unused round — `nextTierBucket` is renamed
+       `nextBucket` because the old name became a lie the moment it could return
+       `r7`. Both proven in the browser against the real routes: dragging Chase
+       Brown onto the Round 2 header wrote `tier='r2'` **and** rewrote the whole
+       order so bucket members stay contiguous (design LAW); dropping Jayden
+       Daniels on the zone wrote `tier='r4'` and the section appeared between 3
+       and 10. Read back from Postgres both times.
+     - **Cost and budget stay computed and stay unassignable.** Enabling them is
+       *not* a flag flip: `costBuckets` derives membership from
+       `COST_BAND_MINIMUMS` and re-sorts `byCostDesc` on every render, so a
+       stored `c2` would be ignored on read and the drag would visibly snap back
+       — CLAUDE.md's "never let *nothing happened* mean *it worked*". Making
+       them stored means ruling on whether a stored band overrides the computed
+       one, what happens to unassigned players, and whether a band label may
+       still *state* a threshold (`$40 and up`) it no longer enforces. That is a
+       product question and it is **not** LV.1.5's to answer.
+     - `ROUND_BUCKET_REASON` is kept and marked `@deprecated` rather than
+       deleted, so the refusal reads as retired rather than lost.
+
+  6. **The read is no looser than the write.** `list-buckets.ts` had its own
+     `/^r(\d{1,2})$/`, which would have filed a hypothetical `r99` into a round
+     section the vocabulary does not contain. Every membership test now comes
+     from the same module the Zod schema and the migration are pinned to, and
+     `list-buckets.test.ts` pins that `r31` renders as Ungrouped rather than as a
+     31st section.
+
+  **Typegen.** `src/types/database.ts` regenerated with
+  `npx supabase gen types typescript --local` after a fresh `db reset` over the
+  full 001→081 chain; the hand-written alias block re-appended and verified
+  **byte-identical by sha256** (`d95ef0e6e048ac9d…` both sides). The file diff is
+  **EMPTY**, and that is the evidence rather than the absence of it: 081 changes
+  a CHECK, and `tier` is `text` before and after. `ListTier` in that block is
+  deliberately left at exactly S–F — it is the tier-mode subset the legacy views
+  compile against; the full wire set is `ListBucketKey` in
+  `src/types/schemas/lists.ts`.
+
+  **The migration has been applied LOCALLY ONLY.** `npx supabase db push` is
+  Chris's separate step (CLAUDE.md migration discipline); the hosted project was
+  not touched.
+
 ---
 
 ## 5. Blockers
@@ -1438,13 +1582,24 @@ This section records decisions made **during** the build.
   attacking the *edges* of a mechanism two reviews had already accepted at its
   centre. Round 3 resolved R199–R202; see §6.
 
-- **LV.1.5 — RESOLVED 2026-08-09, no longer a blocker.** Q2 was ruled: widen
-  the CHECK. The finding stands as recorded — `list_players_tier_check`
-  (`003_lists.sql:42-43`) is live locally **and** on hosted production, so
-  widening the Zod enum alone would convert a clean 400 into a Postgres `23514`
-  surfaced as an HTTP 500. The fix is one `ALTER TABLE`, now the build's second
-  and final sanctioned schema change (plan §1, D4, D6 — v3.5). LV.3.6 unblocks
-  with it.
+- **LV.1.5 — LANDED 2026-08-11.** Q2 was ruled "widen the CHECK" and it was
+  widened: migration `081_list_players_tier_vocabulary.sql`. The original
+  finding held all the way to the database — the pre-migration predicate was
+  golden-pinned, re-applied by hand as a probe, and pgTAP 030 went **red on 11
+  assertions** under it, then green again on 081. Measured through the real
+  HTTP route, the failure Q2 predicted no longer exists in either direction:
+  `S`/`F`/`null`/`r7`/`r30`/`c1` → **200**, and `r31`/`c5`/`''`/`Z`/`__proto__`/
+  a 200-char string → **400**, never a 500 carrying a raw `23514`.
+
+  **The lesson this one adds: a widening is a read-side event too.** Q2 priced
+  the blast radius carefully and still under-counted, because it asked "what
+  writes this column" and not "what *reads* it and assumes a closed set". Two
+  surfaces built a `Map` seeded with S–F and then did `map.get(key)!.push(p)`;
+  the first round-bucketed player made that `undefined.push`. On the public
+  share view — server-rendered, SEO-critical (D7) — that is a 500, not a
+  degraded page. It was found by grepping every consumer of the column rather
+  than every writer, and both halves were shown: the crash reproduced live,
+  then fixed.
 
 Nothing else blocks Lists v2. **Phase 2 (LV.2.1, LV.2.2, LV.2.3) and LV.3.1 are
 clear of both Q1 and Q2** — that is where the loop should go next.

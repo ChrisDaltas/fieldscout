@@ -1,23 +1,33 @@
 import { cn } from '@/lib/utils'
 
-import type { ListTier } from '@/types/database'
-
-interface TierBadgeProps {
-  tier: ListTier
-  className?: string
-}
+import { bucketBadgeClass } from './bucket-colors'
 
 /**
- * Tier chip on the Field Scout tier ramp (1 = best). The app's S–F grades map
- * onto ramp steps 1–6; tiers 3–4 (orange/yellow) take ink text, the rest white.
+ * Tier/bucket chip on the Field Scout ramp (1 = best).
+ *
+ * The colour rules moved to `bucket-colors.ts` at **LV.1.5** and are documented
+ * there — including why `TIER_BG` / `TIER_BAND_BG` stopped being
+ * `Record<ListTier, string>` maps (they rendered `undefined`, i.e. an uncoloured
+ * band, for every key migration 081 newly allows) and why they had to live in a
+ * `.ts` file to be testable at all.
  */
-const TIER_BG: Record<ListTier, string> = {
-  S: 'bg-tier-1 text-white',
-  A: 'bg-tier-2 text-white',
-  B: 'bg-tier-3 text-ink',
-  C: 'bg-tier-4 text-ink',
-  D: 'bg-tier-5 text-white',
-  F: 'bg-tier-6 text-white',
+
+/**
+ * Re-exported so `big-board/big-board-dashboard.tsx` keeps importing it from
+ * here. `src/components/big-board/**` is off limits to this build
+ * (ACTIVE-BUILD.md §1), so its import path must not move.
+ */
+export { TIER_RAMP } from './bucket-colors'
+
+interface TierBadgeProps {
+  /**
+   * A bucket key. Typed `string` rather than `ListBucketKey` on purpose: this
+   * value comes off `list_players.tier`, i.e. out of the database, and the whole
+   * point of `bucketBadgeClass` is that an unexpected one renders legibly
+   * instead of uncoloured.
+   */
+  tier: string
+  className?: string
 }
 
 export function TierBadge({ tier, className }: TierBadgeProps) {
@@ -25,33 +35,11 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
     <span
       className={cn(
         'fs-num inline-flex h-7 w-7 items-center justify-center rounded-sm border border-ink text-sm font-extrabold',
-        TIER_BG[tier],
+        bucketBadgeClass(tier),
         className,
       )}
     >
       {tier}
     </span>
   )
-}
-
-/** Numeric tier ramp (bands 1-6): fill + contrast text in one recipe.
- *  Shared by list tier headers and the Big Board tier bands — tweak the
- *  ramp here and every surface follows. */
-export const TIER_RAMP: readonly string[] = [
-  'bg-tier-1 text-white',
-  'bg-tier-2 text-white',
-  'bg-tier-3 text-ink',
-  'bg-tier-4 text-ink',
-  'bg-tier-5 text-white',
-  'bg-tier-6 text-white',
-]
-
-/** Band recipe shared by the tier group headers (detail + public views). */
-export const TIER_BAND_BG: Record<ListTier, string> = {
-  S: TIER_RAMP[0],
-  A: TIER_RAMP[1],
-  B: TIER_RAMP[2],
-  C: TIER_RAMP[3],
-  D: TIER_RAMP[4],
-  F: TIER_RAMP[5],
 }

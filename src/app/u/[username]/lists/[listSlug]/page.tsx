@@ -9,7 +9,6 @@ import { PublicListView } from '@/components/lists/public-list-view'
 import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
-import type { ListTier } from '@/types/database'
 
 interface PageProps {
   params: Promise<{ username: string; listSlug: string }>
@@ -41,7 +40,10 @@ async function loadList(username: string, slug: string) {
   interface PlayerJoin {
     player_id: string
     position: number
-    tier: ListTier | null
+    // Whatever the column holds. `list_players_tier_check` accepts round and
+    // cost keys as well as S–F since migration 081 (LV.1.5), so narrowing this
+    // to `ListTier` here would be a type that lies to a server component.
+    tier: string | null
     player: {
       id: string
       full_name: string

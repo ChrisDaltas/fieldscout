@@ -1,0 +1,230 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  BUCKET_KEYS,
+  BUCKET_KEY_PATTERN,
+  COST_BAND_VALUES,
+  ROUND_MAX,
+  ROUND_VALUES,
+  TIER_VALUES,
+  bucketKeySchema,
+  isBucketKey,
+  isTierKey,
+  roundKeyFor,
+  roundNumberOf,
+} from './lists'
+
+/**
+ * LV.1.5 — **the two layers cannot drift.**
+ *
+ * `list_players.tier` is guarded twice: by `bucketKeySchema` on the way in
+ * through `PATCH /api/lists/[id]/players/[playerId]/tier`, and by
+ * `list_players_tier_check` at the database (migration
+ * `081_list_players_tier_vocabulary.sql`). Neither layer is redundant —
+ * `duplicate_list` (`017_duplicate_list_rpc.sql:66-70`) copies `tier` verbatim
+ * and never passes through Zod, so the database guard is the only one on that
+ * path; and Zod is what turns a bad key into a clean 400 instead of a `23514`
+ * surfaced as an HTTP 500.
+ *
+ * That only holds while the two accept **exactly** the same strings. So this
+ * suite reads the migration off disk, lifts the regex out of the CHECK, and
+ * compares the two over a corpus rather than trusting that someone updated both.
+ * This is the same pin LV.8 used for `list_links.url` (§4), and it is the one
+ * the build has found load-bearing on every piece of schema work.
+ *
+ * A deliberate break to try if you are reviewing this: widen
+ * `BUCKET_KEY_PATTERN` to `c[1-5]` without touching 081, or add `'c5'` to
+ * `COST_BAND_VALUES` alone. Either turns this file red.
+ */
+
+const MIGRATION_PATH = join(
+  process.cwd(),
+  'supabase/migrations/081_list_players_tier_vocabulary.sql',
+)
+
+/**
+ * The regex the live CHECK actually enforces, read from the migration.
+ *
+ * Anchored on `tier ~ '…'` so it cannot accidentally match the pattern quoted
+ * in the file's banner comment: the banner spells the vocabulary out in prose
+ * and never in that syntax.
+ */
+function checkPatternFromMigration(): string {
+  const sql = readFileSync(MIGRATION_PATH, 'utf8')
+  const executable = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
+  const match = /tier\s*~\s*'([^']+)'/.exec(executable)
+  if (!match) throw new Error('Migration 081 no longer constrains tier with a regex')
+  return match[1]
+}
+
+/**
+ * Every string worth asking both layers about.
+ *
+ * Deliberately includes the shapes that break naive guards: the boundaries
+ * either side of every range, zero-padded and lower/upper-cased variants,
+ * whitespace and newlines (POSIX ARE has a newline-sensitive mode and Python's
+ * `$` matches before a trailing newline — JavaScript's does not, and that
+ * asymmetry is exactly what a shared corpus catches), the prototype-pollution
+ * keys R181 found reachable, SQL- and injection-shaped payloads, and something
+ * long enough to overflow any header.
+ */
+const REJECT_CORPUS: readonly string[] = [
+  // The boundaries just outside each range.
+  'r0', 'r31', 'r99', 'c0', 'c5', 'c10', 'G', 'E', 'Z',
+  // Zero-padding and casing.
+  'r01', 'r001', 'R1', 'C1', 's', 'a', 'f', 'sS',
+  // Not a bucket: ungrouped is NULL.
+  '', ' ', '  ',
+  // Whitespace and control characters around an otherwise-valid key.
+  ' S', 'S ', '\tS', 'S\t', '\nS', 'S\n', 'r1\n', '\nr1', 'S\nr1', 'r1 r2',
+  // Prototype pollution (R181/R183) — unreachable by shape, asserted anyway.
+  '__proto__', 'constructor', 'hasOwnProperty', 'prototype', 'toString',
+  // Injection-shaped and structural payloads.
+  "S'; DROP TABLE list_players; --",
+  'r1; DROP TABLE list_players',
+  'r1 OR 1=1',
+  '<script>alert(1)</script>',
+  '../../etc/passwd',
+  '{"tier":"S"}',
+  'S%00',
+  'S\u0000', 'r1\u0000',
+  // Unicode, homoglyphs and bidi overrides. Written as escapes on purpose: a
+  // literal bidi override in source is invisible to a reviewer.
+  '\uFF33', '\u0455', 'r\uFF11', '\u202eS', 'S\u200b', '\uD83C\uDFC8',
+  // Long.
+  'r'.repeat(200),
+  'S'.repeat(200),
+  `r1${'0'.repeat(200)}`,
+  // Near-misses on the alternation itself.
+  'r', 'c', 'r1c1', 'Sr1', 'rr1', 'cc1', 'r-1', 'r+1', 'r1.0', '1', '30',
+]
+
+describe('bucket key vocabulary', () => {
+  it('is the 40 keys §3 Q2 approved, and nothing else', () => {
+    expect(TIER_VALUES).toEqual(['S', 'A', 'B', 'C', 'D', 'F'])
+    expect(ROUND_VALUES).toHaveLength(30)
+    expect(ROUND_VALUES[0]).toBe('r1')
+    expect(ROUND_VALUES[29]).toBe('r30')
+    expect(COST_BAND_VALUES).toEqual(['c1', 'c2', 'c3', 'c4'])
+    expect(BUCKET_KEYS).toHaveLength(40)
+    expect(new Set(BUCKET_KEYS).size).toBe(40)
+  })
+
+  it('keeps every key ≤ 3 characters and alphanumeric', () => {
+    // The closed shape is what rules out overflowing a section header or the
+    // Cards view's 62px label rail, and what makes every key safe as a React
+    // `key` and in a URL — §3 Q2 point 4.
+    for (const key of BUCKET_KEYS) {
+      expect(key.length).toBeLessThanOrEqual(3)
+      expect(key).toMatch(/^[A-Za-z0-9]+$/)
+    }
+  })
+
+  it('S–F is a subset, so every tier that works today still works', () => {
+    for (const tier of TIER_VALUES) {
+      expect(isBucketKey(tier)).toBe(true)
+      expect(isTierKey(tier)).toBe(true)
+      expect(bucketKeySchema.safeParse(tier).success).toBe(true)
+    }
+  })
+
+  it('round helpers round-trip across the whole range and refuse outside it', () => {
+    for (let n = 1; n <= ROUND_MAX; n += 1) {
+      const key = roundKeyFor(n)
+      expect(key).toBe(`r${n}`)
+      expect(roundNumberOf(key)).toBe(n)
+      expect(isBucketKey(key)).toBe(true)
+      expect(isTierKey(key)).toBe(false)
+    }
+    expect(roundKeyFor(0)).toBeNull()
+    expect(roundKeyFor(ROUND_MAX + 1)).toBeNull()
+    expect(roundKeyFor(1.5)).toBeNull()
+    expect(roundKeyFor(Number.NaN)).toBeNull()
+    expect(roundNumberOf('r0')).toBeNull()
+    expect(roundNumberOf('r31')).toBeNull()
+    expect(roundNumberOf('S')).toBeNull()
+    expect(roundNumberOf(null)).toBeNull()
+  })
+})
+
+describe('Zod and the database CHECK accept the same set', () => {
+  const dbPattern = checkPatternFromMigration()
+  const dbRegex = new RegExp(dbPattern)
+
+  it('the migration on disk carries the pattern this module exports', () => {
+    // The literal comparison, not just a behavioural one: if someone edits the
+    // SQL by hand this fails with the two strings side by side.
+    expect(dbPattern).toBe(BUCKET_KEY_PATTERN)
+  })
+
+  it('the pattern is anchored at both ends', () => {
+    expect(dbPattern.startsWith('^')).toBe(true)
+    expect(dbPattern.endsWith('$')).toBe(true)
+  })
+
+  it('accepts all 40 keys on both sides', () => {
+    for (const key of BUCKET_KEYS) {
+      expect(bucketKeySchema.safeParse(key).success).toBe(true)
+      expect(dbRegex.test(key)).toBe(true)
+    }
+  })
+
+  it('rejects the whole hostile corpus on both sides', () => {
+    for (const value of REJECT_CORPUS) {
+      expect(
+        bucketKeySchema.safeParse(value).success,
+        `Zod accepted ${JSON.stringify(value)}`,
+      ).toBe(false)
+      expect(dbRegex.test(value), `the CHECK regex accepted ${JSON.stringify(value)}`).toBe(false)
+    }
+  })
+
+  it('agrees on every string an exhaustive scan can build from the alphabet', () => {
+    // Brute force rather than a hand-picked list: every string of length 0–3
+    // over the characters the vocabulary and its near-misses are built from —
+    // every digit (so every one of r1…r30 and c1…c4 is reachable), the tier
+    // letters plus the two that look like tiers but are not, both cases of the
+    // prefixes, a space and a newline. 22^3 + 22^2 + 22 + 1 = 11,155
+    // candidates, which is where an off-by-one in a character class or an
+    // alternation actually lives.
+    const alphabet = [...'SABCDFEGrRcC0123456789 \n']
+    const candidates = new Set<string>([''])
+    for (const a of alphabet) {
+      candidates.add(a)
+      for (const b of alphabet) {
+        candidates.add(a + b)
+        for (const c of alphabet) candidates.add(a + b + c)
+      }
+    }
+
+    const zodAccepts: string[] = []
+    const dbAccepts: string[] = []
+    for (const candidate of candidates) {
+      if (bucketKeySchema.safeParse(candidate).success) zodAccepts.push(candidate)
+      if (dbRegex.test(candidate)) dbAccepts.push(candidate)
+    }
+
+    expect(zodAccepts.sort()).toEqual(dbAccepts.sort())
+    // …and the set they agree on is the vocabulary, not merely each other:
+    // two identically-broken layers would otherwise pass this.
+    expect(zodAccepts.sort()).toEqual([...BUCKET_KEYS].sort())
+  })
+
+  it('the tier route imports the shared schema instead of restating it', () => {
+    // Source pin. The route inlined its own six-letter enum until this task,
+    // and a duplicated enum is precisely how the two layers drift apart.
+    const route = readFileSync(
+      join(process.cwd(), 'src/app/api/lists/[id]/players/[playerId]/tier/route.ts'),
+      'utf8',
+    )
+    const code = route.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+    expect(code).toContain('bucketKeySchema')
+    expect(code).not.toMatch(/z\.enum\(\s*\[/)
+  })
+})

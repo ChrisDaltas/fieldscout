@@ -1,5 +1,5 @@
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
-import type { ListTier } from '@/types/database'
+import type { ListBucketKey } from '@/types/schemas/lists'
 
 import type { Bucket } from './list-buckets'
 
@@ -38,14 +38,14 @@ export type DropTarget =
   | { kind: 'slot'; bucketKey: string; index: number }
   /** A bucket header, or the empty space in a bucket: append to that bucket. */
   | { kind: 'bucket'; bucketKey: string }
-  /** The dashed "start tier N" zone below the last section. */
-  | { kind: 'new'; tier: ListTier }
+  /** The dashed "start tier/round N" zone below the last section. */
+  | { kind: 'new'; tier: ListBucketKey }
 
 export interface DropPlan {
   /** Player ids in their new order (1-based positions), or `null` if unchanged. */
   order: string[] | null
   /** The bucket write this move implies, or `null` when the bucket is unchanged. */
-  tier: { playerId: string; tier: ListTier | null } | null
+  tier: { playerId: string; tier: ListBucketKey | null } | null
 }
 
 export function dropTargetKey(target: DropTarget | null): string {
@@ -68,7 +68,7 @@ interface PlanArgs {
    * shows before anything is bucketed). `null` clears it — that is the
    * Ungrouped section, and the tier route accepts `null` today.
    */
-  tier: ListTier | null | undefined
+  tier: ListBucketKey | null | undefined
 }
 
 export function planDrop({ buckets, entryId, target, tier }: PlanArgs): DropPlan | null {

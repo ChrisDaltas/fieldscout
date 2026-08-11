@@ -331,19 +331,29 @@ export function DropGap({
  * Only rendered where the assignment can actually be written — tier mode, with a
  * letter still free. The prototype offers it in round mode too; that would
  * `23514` against `list_players_tier_check` until LV.1.5, so it is withheld
- * rather than shown as a target that 500s (`nextTierBucket`).
+ * rather than shown as a target that 500s. Since LV.1.5 round mode renders it
+ * too — `nextBucket` decides, and `bucketZoneLabel` words it.
  */
-export function NewBucketZone({ tier, over }: { tier: string; over: boolean }) {
+export function NewBucketZone({
+  bucketKey,
+  label,
+  over,
+}: {
+  bucketKey: string
+  /** "start tier A" / "start round 4" — `bucketZoneLabel` owns the wording. */
+  label: string
+  over: boolean
+}) {
   return (
     <div
-      data-drop-new={tier}
+      data-drop-new={bucketKey}
       className={cn(
         'flex h-[42px] items-center justify-center gap-2 border border-dashed text-[11px] font-bold transition-colors',
         over ? 'border-accent bg-accent-soft text-accent-strong' : 'border-ink text-n-3',
       )}
     >
       <Icon name="plus" size={12} />
-      <span>Drop a player here to start tier {tier}</span>
+      <span>Drop a player here to {label}</span>
     </div>
   )
 }

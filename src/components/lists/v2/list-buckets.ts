@@ -1,10 +1,19 @@
+import { BAND_RAMP } from '@/components/lists/bucket-colors'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
-import type { ListTier } from '@/types/database'
 import {
   DEFAULT_COST_BANDS,
   resolveBandLabel,
   type ListOrg,
 } from '@/stores/list-display-store'
+import {
+  ROUND_MAX,
+  TIER_VALUES,
+  isTierKey,
+  roundKeyFor,
+  roundNumberOf,
+  type ListBucketKey,
+  type ListTierValue,
+} from '@/types/schemas/lists'
 
 import { playerCost } from './list-stats'
 
@@ -27,18 +36,28 @@ import { playerCost } from './list-stats'
  * | --- | --- | --- |
  * | Ranked | array order (`position`) | n/a |
  * | Tiers | `list_players.tier` ∈ S–F | yes |
- * | Rounds | `list_players.tier` matching `r1`…`rN` | **no — LV.1.5** |
+ * | Rounds | `list_players.tier` matching `r1`…`r30` | yes, since **LV.1.5** |
  * | Avg cost | computed from `players.auction_value` | n/a (computed) |
  * | Budget % | computed from `auction_value ÷ budget` | n/a (computed) |
  *
- * **Rounds renders correctly and will be empty until LV.1.5 lands**, and that
- * is deliberate rather than a stub. `list_players.tier` still carries the live
- * `list_players_tier_check` CHECK pinning it to S–F (PROGRESS §3 Q2), so no row
- * in any database can hold `r1` yet: every player falls into the ungrouped
- * bucket. The alternative — chunking the ranked order into rounds of twelve —
- * would have matched no screenshot (the reference's rounds hold 4/3/4/3/3
- * players, i.e. stored membership), invented a picks-per-round number no screen
- * shows, and quietly changed meaning the day LV.1.5 shipped real round buckets.
+ * **Rounds went live with LV.1.5.** It rendered correctly and empty from LV.3,
+ * because the live `list_players_tier_check` pinned the column to S–F (PROGRESS
+ * §3 Q2) and no row in any database could hold `r1`. Migration
+ * `081_list_players_tier_vocabulary.sql` widened it to `r1`–`r30` and `c1`–`c4`,
+ * so this module now groups and, through `bucketDrop`, assigns them. Nothing
+ * about the *rendering* changed with that migration — which was the point of
+ * shipping it data-empty rather than chunking the ranked order into rounds of
+ * twelve (that would have matched no screenshot, invented a picks-per-round
+ * number no screen shows, and quietly changed meaning on the day LV.1.5 landed).
+ *
+ * **Cost and Budget stay computed and stay unassignable**, and that is not an
+ * oversight LV.1.5 left behind: their membership is derived from
+ * `players.auction_value` and re-sorted by price on every render, so a stored
+ * `c2` would be ignored on read and the drag would snap back. Making them
+ * assignable means deciding whether a stored band overrides the computed one,
+ * what happens to unassigned players, and whether a band label may still state
+ * a threshold (`$40 and up`) it no longer enforces. That is a product question,
+ * not a flag flip — see PROGRESS §4, LV.1.5.
  *
  * ## Colour
  *
@@ -62,16 +81,15 @@ export interface Bucket {
   entries: ListPlayerWithPlayer[]
 }
 
-/** Band fills, cycled. Tiers 3–4 take ink text per `tailwind.config.ts`. */
-const BAND_STYLES = [
-  'bg-tier-1 text-white',
-  'bg-tier-2 text-white',
-  'bg-tier-3 text-ink',
-  'bg-tier-4 text-ink',
-  'bg-tier-5 text-white',
-  'bg-tier-6 text-white',
-  'bg-tier-7 text-white',
-] as const
+/**
+ * Band fills, cycled. Tiers 3–4 take ink text per `tailwind.config.ts`.
+ *
+ * The seven strings used to be spelled out here as well as in the tier badge.
+ * One ramp, one definition (LV.1.5) — the two files still *colour* by different
+ * rules (a section here takes the step matching its render order; a letter there
+ * always takes its own step) but they no longer disagree about the steps.
+ */
+const BAND_STYLES = BAND_RAMP
 
 /** Neutral fill for the "these have no bucket yet" section. */
 const UNGROUPED_STYLE = 'bg-n-4 text-ink'
@@ -81,16 +99,14 @@ export function bandStyle(index: number): string {
 }
 
 /**
- * Stored tier vocabulary, best first — matches `TIER_VALUES`.
+ * Stored tier vocabulary, best first — `TIER_VALUES` itself, not a copy of it.
  *
- * Typed as `ListTier` on purpose: it is what the tier route and the live
- * `list_players_tier_check` accept **today**, so a drop that would write a round
- * key cannot typecheck its way into the mutation. When LV.1.5 widens both, this
- * is one of the places that has to change, and the compiler will say so.
+ * It was a local literal `satisfies readonly ListTier[]` so that a drop writing
+ * a round key could not typecheck its way into the mutation while the CHECK
+ * still forbade one. LV.1.5 widened both layers together, so the guard's job is
+ * over and the duplicate is now just a place to drift from.
  */
-const TIER_ORDER = ['S', 'A', 'B', 'C', 'D', 'F'] as const satisfies readonly ListTier[]
-
-const ROUND_KEY = /^r(\d{1,2})$/
+const TIER_ORDER: readonly ListTierValue[] = TIER_VALUES
 
 /**
  * Cost-band lower bounds, in display order, paired with
@@ -207,16 +223,29 @@ function storedBuckets(org: ListOrg, entries: ListPlayerWithPlayer[]): Bucket[] 
   return buckets
 }
 
+/**
+ * Which section a stored value belongs to in this grouping — or `null` for the
+ * Ungrouped pile.
+ *
+ * The membership tests come from `@/types/schemas/lists`, the same module the
+ * route's Zod schema and migration 081 are pinned to. Reading the column with a
+ * *looser* rule than the one that wrote it is its own bug: the old local
+ * `/^r(\d{1,2})$/` would have filed a hypothetical `r99` into a round section
+ * the vocabulary does not contain.
+ *
+ * A round key in tier mode (or a tier letter in round mode) is Ungrouped, not
+ * hidden — the same answer the legacy detail view and the public share view
+ * give.
+ */
 function bucketKeyFor(org: ListOrg, tier: string | null): string | null {
   if (!tier) return null
-  if (org === 'round') return ROUND_KEY.test(tier) ? tier : null
-  return (TIER_ORDER as readonly string[]).includes(tier) ? tier : null
+  if (org === 'round') return roundNumberOf(tier) === null ? null : tier
+  return isTierKey(tier) ? tier : null
 }
 
 function roundOrder(keys: Iterable<string>): string[] {
-  return [...keys].sort(
-    (a, b) => Number(ROUND_KEY.exec(a)?.[1] ?? 0) - Number(ROUND_KEY.exec(b)?.[1] ?? 0),
-  )
+  // Numeric, not lexical — `r10` must not sort between `r1` and `r2`.
+  return [...keys].sort((a, b) => (roundNumberOf(a) ?? 0) - (roundNumberOf(b) ?? 0))
 }
 
 /**
@@ -335,18 +364,22 @@ export const COMPUTED_ORDER_REASON =
   'These sections are ordered by each player’s auction value, so they can’t be rearranged by hand. Switch to Ranked or Tiers to reorder.'
 
 /**
- * Rounds are real buckets in the design and unwritable in the database *today*:
- * `list_players_tier_check` still pins the column to NULL or S–F until LV.1.5
- * widens it (PROGRESS §3 Q2), so a `r3` write returns a Postgres `23514` that
- * the tier route surfaces as a 500. The refusal is stated here, in the one place
- * that knows what a bucket means, and it disappears the day LV.1.5 lands.
+ * **Rounds became assignable at LV.1.5** and this constant is the record of why
+ * it could not be before: `list_players_tier_check` pinned the column to NULL
+ * or S–F, so an `r3` write was a Postgres `23514` the tier route surfaced as a
+ * 500. Migration `081_list_players_tier_vocabulary.sql` widened it. Kept as a
+ * named export rather than deleted because `bucketDrop` still has to refuse
+ * *something*, and the next reader should be able to see that the round refusal
+ * was retired deliberately rather than lost.
+ *
+ * @deprecated Unreachable since LV.1.5 — round drops are writes now.
  */
 export const ROUND_BUCKET_REASON =
   'Round buckets can’t be assigned yet — this list still stores tiers S–F. Group by Tiers to move players between sections.'
 
 export type BucketDrop =
   /** `tier: undefined` means "this grouping does not own the stored value". */
-  | { ok: true; tier: ListTier | null | undefined }
+  | { ok: true; tier: ListBucketKey | null | undefined }
   | { ok: false; reason: string }
 
 /** What dropping a player into `bucketKey` writes, or why it cannot. */
@@ -356,25 +389,44 @@ export function bucketDrop(org: ListOrg, bucketKey: string): BucketDrop {
   // yet) carries no stored value at all — a drop there is a pure reorder.
   if (bucketKey === 'all') return { ok: true, tier: undefined }
   if (bucketKey === 'ungrouped') return { ok: true, tier: null }
-  if (org === 'round') return { ok: false, reason: ROUND_BUCKET_REASON }
-  const tier = TIER_ORDER.find((value) => value === bucketKey)
-  if (org === 'tier' && tier) return { ok: true, tier }
+  if (org === 'tier' && isTierKey(bucketKey)) return { ok: true, tier: bucketKey }
+  // Round mode writes the round key itself. Re-checked against the vocabulary
+  // rather than trusted: `bucketKey` arrives from a DOM attribute.
+  if (org === 'round' && roundNumberOf(bucketKey) !== null) {
+    return { ok: true, tier: bucketKey as ListBucketKey }
+  }
   return { ok: true, tier: undefined }
 }
 
 /**
- * The value the dashed "Drop a player here to start tier N" zone would assign —
- * the first tier letter this list is not already using, or `null` when all six
- * are taken.
+ * The value the dashed "Drop a player here to start tier/round N" zone would
+ * assign — the first bucket this list is not already using — or `null` when the
+ * grouping has no assignable buckets left.
  *
- * Tier mode only. Round mode has the same zone in the prototype and cannot write
- * one yet (see `ROUND_BUCKET_REASON`), so the zone is withheld there rather than
- * rendered as a target that 500s.
+ * Tier mode: the first unused letter of S–F. Round mode: the first unused round
+ * of `r1`–`r30`, which LV.1.5 opened; before it, the zone was withheld here
+ * rather than rendered as a target that 500s. `rank`, `cost` and `budget` own no
+ * stored value, so they have no zone.
+ *
+ * Renamed from `nextTierBucket` at LV.1.5 — the old name became a lie the moment
+ * it could return `r7`, and a stale name on a widened function is how the next
+ * reader concludes rounds are still tier-only.
  */
-export function nextTierBucket(org: ListOrg, buckets: Bucket[]): ListTier | null {
-  if (org !== 'tier') return null
+export function nextBucket(org: ListOrg, buckets: Bucket[]): ListBucketKey | null {
   const used = new Set(buckets.map((bucket) => bucket.key))
-  return TIER_ORDER.find((tier) => !used.has(tier)) ?? null
+  if (org === 'tier') return TIER_ORDER.find((tier) => !used.has(tier)) ?? null
+  if (org !== 'round') return null
+  for (let round = 1; round <= ROUND_MAX; round += 1) {
+    const key = roundKeyFor(round)
+    if (key && !used.has(key)) return key
+  }
+  return null
+}
+
+/** How the zone names the bucket it would create. */
+export function bucketZoneLabel(org: ListOrg, key: ListBucketKey): string {
+  const round = roundNumberOf(key)
+  return round === null ? `start tier ${key}` : `start round ${round}`
 }
 
 export const ORG_OPTIONS: ReadonlyArray<{ id: ListOrg; label: string }> = [
