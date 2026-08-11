@@ -1,6 +1,6 @@
 # Spec: Scout — advanced metrics, explained (LAW)
 
-**Status:** v1.7 — draft for Chris's sign-off
+**Status:** v2.5 — draft for Chris's sign-off
 **Owner:** Chris
 **Depends on:** 2026 go-live scope (CLAUDE.md → Active Builds). Scout is an extension of **Stats / player research**, which is in launch scope.
 **Related:** `spec-player-research.md`, `spec-ai-list-generation.md`, `docs/03-DATA-MODEL.md`, `docs/redesign-plan.md`
@@ -13,41 +13,39 @@
 
 ## 1. What this is
 
-**One metric knowledge layer, shipped as two products.**
+**Three surfaces, one metric layer.**
 
-Every advanced metric FieldScout knows about is defined exactly once, in a typed
-registry (§4). That single definition feeds both halves of this spec:
+| | Surface | Its job | Account? |
+|---|---|---|---|
+| **1** | **Scout AI rankings** | A board per position with **levers**. Move Opportunity up, touchdowns down, get your own rankings. | Needs one |
+| **2** | **Player detail** | The advanced metrics with percentile context, on the in-app player page. | Needs one |
+| **3** | **The Guide** | The content explaining *why the levers are what they are*. | No |
 
-### Part A — Metrics in the product *(in-app, signed in)*
+> **Vocabulary.** Scout is **entirely free** — there is no paid tier and nothing here
+> may ever sit behind `is_pro`. The only line anywhere in this spec is **signed out vs.
+> signed in.** Say "needs an account", never "free vs paid" — the second implies a
+> price that does not exist.
 
-The advanced data itself, woven into surfaces that already exist:
+**The rankings are the product.** The guide is the marketing for it, and the player
+pages are the depth behind it. Every metric in all three comes from one typed registry
+(§4) — one definition, three renderings, no second glossary.
 
-1. **A hover tooltip** anywhere a metric appears — the stat center, the player profile, a list.
-2. **A column** in the stat center with correct formatting, sort direction and qualification rules.
-3. **A percentile bar** on the player profile's new Advanced tab.
+**The line is the build, not the read.** All four position guides and every metric page
+are readable signed out, in full. The **in-app player page is the app** and requires an
+account, like lists and the big board. A separate, thinner **public player page** lives
+in the guide and does the search-traffic job (§8.5). See §8.4.
 
-Part A has no new navigation and no new page. It makes the app FieldScout already
-has smarter, and it is the half that belongs to launch scope.
+### 1.0 How the three fit together
 
-### Part B — The Scout guide *(standalone, public)*
+The guide and the product reinforce each other, which is the point of building both:
 
-A self-contained mini-app at `/scout`, launched from a button on the marketing
-homepage and opened in its own tab. Its own shell — not the app sidebar, not the
-app chrome. A visitor can land on it having never heard of FieldScout, read it end
-to end, and leave smarter.
+> The guide teaches that opportunity repeats and touchdowns don't → so the rankings
+> have an **Opportunity** lever and no touchdown lever → so when you move it, you
+> already know why.
 
-The homepage entry point is the product's first promise:
-
-> **Become a Field Scout** — our free guide to spotting the best players before
-> your leaguemates.
-
-Part B is the acquisition surface. Part A is the retention payoff. They share a
-registry and nothing else — **Part B must never import the app shell, and Part A
-must never depend on Part B being built.** Either can ship without the other.
-
-There is no second glossary, no separate copy deck, no duplicated formula. One
-registry entry, every rendering. Anything that can't be expressed as a registry
-entry is not a metric — it's a lesson, and it lives in `/scout/lessons/`.
+Every lesson is the manual for a lever. Every lever is the payoff for a lesson. A
+reader who finishes the WR guide has exactly one obvious next action, and it needs an
+account.
 
 ### 1.1 Why it exists (product goals, in priority order)
 
@@ -401,26 +399,43 @@ Part B runs on a `ScoutShell` — its own header, its own footer, its own nav. I
 **not** mount `GuestShell` or the app sidebar. A visitor should be able to tell they're
 in a guide, not in a logged-out view of an app.
 
-| Route | Purpose | Rendering |
+**The path is three pages. Everything else is a leaf off it.**
+
+```
+homepage button → /scout landing → /scout/<position> → [create account] → rankings
+                   welcome            the swaps,                            the board
+                   one example        each with a player
+                   pick a position
+```
+
+| Route | Purpose | On the path? |
 |---|---|---|
-| `/scout` | Hub. The path, the swap grid, the evidence, the stat cards | Static |
-| `/scout/lessons/<slug>` | One lesson in the path — numbered, prev/next, ends in an action | Static |
-| `/scout/<metric>` | One metric: leads with its swap, then what it is, why you care, watch-outs, evidence, distribution, live top-10 | `generateStaticParams` over the registry, ISR for the top-10 |
-| `/scout/<metric>/leaders` | Full leaderboard, sortable, filterable by position | ISR |
-| `/scout/<metric>/leaders/<season>` | Archived season | Static after season close |
-| `/scout/positions/<position>` | "What actually matters for a WR" — every metric ranked by how well it repeats, with an explicit below-this-line-is-luck divider | Static |
+| `/scout` | Welcome · **one worked example** · pick your position | **Yes — step 1** |
+| `/scout/<position>` | 3–4 swaps, each with a real player showing both sides, then the unlock | **Yes — step 2** |
+| Rankings board | The payoff. Needs an account. | **Yes — step 3** |
+| `/scout/<metric>` | One metric in depth. Long-tail search. | Leaf |
+| `/scout/players/<name>` | Public player page, partial reveal (§8.5) | Leaf |
+| `/scout/<metric>/leaders` | Full leaderboard | Leaf |
 
-**Structure: a path over a reference.** The guide is five numbered lessons in order —
-that's what "Become a Field Scout" promises and what the homepage card advertises — but
-every metric, leaderboard and position page stands alone and is individually indexed.
-A visitor arriving from search on "what is target share" never sees a course; a visitor
-arriving from the homepage button gets one. Progress is a local view preference
-(localStorage), never an account requirement.
+**Three page types on the path, not six.** An earlier draft had a five-lesson curriculum,
+a swap grid, an evidence table, a stat-card grid and separate lesson pages — six surfaces
+with no corridor through them. Chris's read was that it was impossible to tell how you
+were meant to move through it, and he was right.
 
-**Every lesson ends in an action, not a summary.** "Sort last season by touchdowns, then
-by target share — anyone high on the second list and low on the first is your buy list,"
-with a button straight to that leaderboard. A lesson that ends in a recap has taught
-nothing the reader will act on.
+**Lessons are absorbed, not deleted.** Each swap on a position page *is* the lesson: the
+pairing, one paragraph of why, and a real player as the worked example. The Cooper Kupp
+case that was a standalone lesson is now the landing page's single example. Long-form
+lesson pages may still exist as leaves, but nothing on the path depends on them.
+
+**The example format is one player, two seasons.** Same player, same role, one year
+apart — it shows what the wrong stat said *and* what the right one predicted, in one
+table. Kupp 2020→2021, Evans 2015→2016, DeVonta Smith 2021→2022, St. Brown's rookie
+split. **Only verified cases.** WR has four; RB, TE and QB need cases found and checked
+before those pages ship (§3.1 — never invent one).
+
+**Every position page ends in the unlock.** Not a footer banner — a full-width block:
+*"Now see every receiver ranked this way."* That is the conversion moment, and it is the
+only thing on the guide that needs an account.
 
 **Leaderboards close the loop.** A `buy` chip marks players whose role rank is well
 ahead of their scoring rank — the exact pattern the touchdown lesson just described.
@@ -676,52 +691,70 @@ legitimate *if and only if* each page carries substance no template can fake.
 **Ship in waves of 10–15, not all at once**, with a human editorial pass per page.
 Never auto-generate `<metric> × <team> × <week>` combinatorial pages.
 
-### 8.4 Conversion, and the metering question
+### 8.4 The line — read signed out, build signed in
 
-Chris raised a free-preview model: a few pages open, then an account required to
-explore further. **The recommendation is to meter capability, not pages** — and the
-reasoning matters, because the two look similar and behave very differently.
+**Decided 2026-08-07 (Chris).** Two earlier proposals were considered and rejected:
+asking for an account nowhere (weak conversion), and putting three of four position
+guides behind one (forfeits
+the traffic the guide exists to earn — and would have made the *tight end* page the
+free sample, which is the position people care least about).
 
-**Why not meter pages.** Part B's entire job is to be found by people who have never
-heard of FieldScout. A page behind a counter can still be indexed — Google supports
-it via `isAccessibleForFree: false` plus a `hasPart` block naming the gated selector —
-but three things follow:
-
-1. Serving Googlebot the full article while showing users a wall **without** that
-   structured data is cloaking, and it's a policy violation, not a grey area.
-2. Even done correctly, gated content competes at a disadvantage against the free
-   equivalents already ranking (PlayerProfiler's glossary, PFR's, FantasyPros').
-   We'd be entering a race carrying weight, for the one asset whose only purpose is
-   to win that race.
-3. It breaks the promise the homepage button just made. "Free guide" followed by a
-   wall on page four is the kind of thing that costs more trust than it converts.
-
-**What to gate instead.** The wall goes where the user stops *reading* and starts
-*doing* — which costs nothing in search, because there's no prose behind it:
-
-| Free, always | Account required |
+| No account needed · indexed | Needs an account |
 |---|---|
-| Every guide page, every lesson, end to end | **Saving** anything — a list, a filter preset, a comparison |
-| Every metric definition, formula, limitation, stability figure | Custom weightings and personal scoring |
-| Top 25 of any leaderboard, sortable and filterable | The **full** leaderboard beyond 25, and CSV export |
-| Distribution context and worked examples | Following a player, alerts on role changes |
+| All four position guides, end to end | **Your board** — the rankings with your lever settings |
+| Every metric page, formula, limitation, stability figure | Saving anything: a list, a preset, a comparison |
+| The free half of a **public** player page (§8.5) | The **in-app** player page — that's the app |
 | — | Applying a metric across **your league's** rosters |
+| Top 25 of any leaderboard, sortable | The full board beyond 25, and CSV export |
+| Every lesson | Following a player, alerts on role changes |
 
-That last row is the real conversion engine. "See this for the players actually on
-your roster" is a far stronger ask than "read more", it arrives at genuine peak
-intent, and it's the natural bridge from Part B into Part A.
+**Why this line and not another one.** The guide's entire job is credibility and
+signups. A page behind a wall earns neither, because nobody arrives at it — gated
+content can be indexed via `isAccessibleForFree`, but it enters the race against
+PlayerProfiler's and PFR's free glossaries carrying weight, for the one asset whose
+only purpose is to win that race.
+
+Meanwhile the rankings were never going to rank in Google anyway. Gating them costs
+nothing in search and asks for the account at the moment the reader most wants it:
+they have just finished learning why target share matters, and the next button says
+*build your own WR board.*
+
+### 8.5 Public player pages — partial reveal
+
+Player-name search is the highest-volume query class in fantasy football, and every
+competitor runs public player pages to catch it. FieldScout runs a **thin** one inside
+the guide, separate from the in-app player page.
+
+**Open half — real values, in the HTML, indexed.** Three headline metrics with Scout's
+plain-English read: target share, WOPR, and touchdowns vs. expected. **These must
+actually answer the query.** Someone searching "puka nacua target share" who lands on
+a page where target share is the blurred part will bounce, and bounce rate is what
+kills the ranking. The open metrics are the ones people search for.
+
+**Signed-in half — the depth.** Scout grade, the full metric table with percentiles,
+weekly role trends, comparisons. Rendered as a blurred placeholder with a
+*Create free account* overlay.
+
+**The rule that makes the blur legal:**
+
+> **Never render the real values and hide them with CSS.** Googlebot would read the
+> numbers the user cannot see — that is cloaking, and it's a policy violation rather
+> than a grey area. The locked region ships **placeholder shapes only**; real values
+> are fetched after auth. Crawler and user see the same page.
+
+Verified in the prototype: the only text inside the locked region is the CTA copy.
+A test should assert this — no metric value may appear in the gated DOM for an
+anonymous request.
+
+**Scope:** top ~150 fantasy-relevant players at launch, not every player in the
+league. Each page must clear the §8.3 substance bar; a player with no qualified data
+gets no page rather than an empty one.
 
 **Mechanics:**
-- "Save these 24 WRs as a list" on a leaderboard — highest-intent moment on the page, lands directly in the existing Lists feature.
-- Star a player — first is free, the prompt comes on the second or third.
-- Sticky footer CTA after ~60% scroll. **Never a modal on load; never an interstitial** (mobile interstitial penalty).
-- **Never truncate prose behind a wall.** Truncating rows 26+ of a table is fine; truncating a paragraph is not.
-
-If Chris still wants page metering after this, it is implementable — but it needs
-`isAccessibleForFree` structured data on every gated page, and it should be measured
-against a free control group before it goes global. Recorded as open question #6.
-
----
+- Every guide ends in its build CTA. That's the conversion moment, not a footer banner.
+- Sticky footer CTA after ~60% scroll. **Never a modal on load; never an interstitial.**
+- **Never truncate prose.** Truncating rows 26+ of a table is fine; truncating a paragraph is not.
+- A logged-out visitor can *see* the ranking board with default levers. Moving a lever is what prompts signup — feel it, then join.
 
 ## 9. States
 
@@ -756,7 +789,7 @@ Explicitly out of scope. Each is a future spec, not a stretch goal:
 
 ## 11. Business rules
 
-1. **Scout's written content is free, forever, in full.** No `is_pro` gate and no signup wall on any prose, definition, formula, lesson or stability figure — logged out, end to end. Interactive depth (saving, full leaderboards, custom weightings, league-aware views) may require a free account; **none of it may require Pro.** Scout is the acquisition surface, and pricing it defeats its purpose. (Consistent with the Pro suspension in CLAUDE.md.)
+1. **Scout is entirely free. There is no paid tier and never an `is_pro` gate — on anything, ever.** The only distinction is signed out vs. signed in: all prose, definitions, formulas, lessons, stability figures, position guides and the open half of a public player page are readable **signed out**; **building** — your board, your levers, saved lists, league-aware views — needs an account. Never describe any part of Scout as "premium" or "paid". (Consistent with the Pro suspension in CLAUDE.md.)
 2. **Metric definitions are read-only application data.** Users never edit them; they ship in code and change via PR.
 3. **`player_metrics` is read-only player data.** Populated by sync only, exactly like `players` and `player_stats`.
 4. **Attribution is mandatory** on every surface rendering nflverse-derived data.
@@ -823,8 +856,8 @@ Grade the axes that move fantasy points, in fantasy language, not scouting langu
 
 | Trait | Question it answers | Kind |
 |---|---|---|
-| **Workload** | How much of this offense is his? | grade |
-| **Territory** | Where on the field does he get the ball? | grade |
+| **Opportunity** | How much of this offense is his? | grade |
+| **Target quality** (RB: **Scoring chances**) | Is it the valuable kind of volume? | grade |
 | **Efficiency** | What does he do with the chances? | grade, low confidence |
 | **Finishing luck** | Did the scoring match the chances? | **flag** |
 | **Availability** | Did he stay on the field? | **flag** |
@@ -833,7 +866,7 @@ Position variants for RB and QB in `scout-content/traits.ts`.
 
 ### 16.3 The three rules that make it honest
 
-1. **Default weights are derived, not chosen.** A metric's weight inside its trait comes from its published year-over-year stability. The model's only opinion is "trust what repeats" — which is testable, and is the same argument the rest of the guide makes. Hand-tuning a weight requires a written reason.
+1. **Default weights are derived, not chosen.** A metric's weight comes from its published year-over-year stability **times its relevance at the user's PPR setting** (§16.6) — never from taste. The model's only opinion is "trust what repeats" — which is testable, and is the same argument the rest of the guide makes. Hand-tuning a weight requires a written reason.
 2. **Every grade shows its receipts.** Opening a trait lists its metrics, their percentiles and their weights. No unfalsifiable number anywhere.
 3. **Flags are never graded.** Finishing luck and availability are reported and never scored into the composite. **A player in the 95th percentile of touchdown luck is not better — he is more expensive.** Scoring him higher for it would invert the advice the whole product gives.
 
@@ -842,21 +875,106 @@ Two further rules from `traits.ts`:
 - A trait returns **null**, not a number, when under half its input weight is present. A grade built on one of three inputs is not a grade (§9).
 - Weights renormalise over the inputs that qualified, so a player missing one metric isn't silently penalised.
 
-### 16.4 Build your own model
+### 16.4 Naming
+
+**"Opportunity", not "Workload".** It is the word the registry already uses
+(`type: 'opportunity'`) and the word the thesis uses — *"Opportunity is a skill."*
+One concept, one name, on every surface.
+
+The second trait takes a different name per position, because it measures a genuinely
+different thing: **Target quality** for pass catchers (air yards share, red zone share,
+aDOT — is the volume the valuable kind?), **Scoring chances** for backs (goal-line
+carry share, target share).
+
+An earlier draft called it "Territory". It was cut for the reason any label gets cut:
+Chris had to ask what it meant, and this label appears on every player page.
+
+### 16.5 Build your own model — weights nest, they do not go flat
 
 Sliders over trait weights, re-ranking the board live. The default position is the
-evidence-derived model; a user can disagree, and moving a slider shows exactly how
-much their opinion costs or gains each player.
+evidence-derived model; a user can disagree, and moving a slider shows exactly what
+their opinion costs or gains each player.
 
-This is the feature the original brief was most excited about, and it only became
-possible once traits existed — which is why §10 sequenced it after the metric layer
-rather than dropping it.
+**Trait sliders set share-of-grade. Metric sliders live inside a trait and
+renormalise**, so tuning within a trait can never change how much of the grade that
+trait owns. Expanding is progressive — three sliders by default, more on request.
+
+**This is not a UI preference. A flat list of per-metric sliders is quietly broken.**
+Target share, targets per game and snap share are near-proxies for each other. Three
+sliders at 100% is not "I value volume" — it is *volume counts three times*, and the
+user cannot see it happening. Worse, it moves when they aren't looking: zeroing two
+efficiency metrics pushes opportunity from 33% to 43% of the grade without the user
+touching that slider. Grouping the correlated metrics and weighting over roughly
+independent axes is the entire reason traits exist.
 
 **Guardrail:** raising a low-confidence trait must surface its caveat, not hide it.
-The user is allowed to weight efficiency at 90%. They are not allowed to do it
-without being told efficiency barely repeats.
+The user is allowed to weight efficiency at 90%. They are not allowed to do it without
+being told efficiency barely repeats.
 
-### 16.5 Not in this model
+### 16.6 Scoring format — the league lever
+
+**The gap this closes.** The trait metrics are scoring-agnostic — target share
+describes a role, not points. So without this, a WR's grade would be identical in
+standard and full PPR, which is plainly wrong: a 110-catch slot receiver and a
+1,300-yard deep threat are not the same asset in the two formats.
+
+**PPR is a league fact, not a preference.** It sits in its own **Your league** zone
+above the trait levers, not among them. The trait levers are opinion ("I care more
+about opportunity"); PPR is a description of the rules you play under. Signed in it
+reads from the user's saved scoring system; signed out it defaults to half-PPR.
+
+**Each position gets exactly one league lever — whichever rule most moves its rankings.**
+
+| Position | Lever | Steps |
+|---|---|---|
+| WR · TE · RB | **Points per reception** | 0 · .25 · .5 · .75 · 1 |
+| QB | **Points per passing TD** | 4 · 5 · 6 |
+
+One lever per position, not a settings panel. If a rule doesn't materially reorder that
+position, it doesn't earn a lever.
+
+**Why passing TD value is the QB lever.** Rushing touchdowns are 6 points in every
+league. At a 4-point passing TD a running quarterback's scores are worth **1.5× a
+passer's**, which is a large part of why rushing carries the position. At 6 that
+asymmetry disappears and pocket volume gains. So passing TD value interpolates
+**Rushing down and Passing volume up** — the mirror image of what PPR does to
+Opportunity and Target quality.
+
+Verified in the prototype: at 4 points the top five is Allen, Lamar, Daniels, Hurts,
+Mahomes. At 6, Mahomes climbs to third and Burrow enters the top five while Hurts drops
+out of it.
+
+**What a lever changes: the weights, not the metrics.** The metrics describe usage and
+are format-agnostic. The lever changes what that usage is *worth*, and so interpolates
+the trait weights between two endpoints.
+
+**This forces a correction to §16.3 rule 1.** "Weights derive from stability" is
+incomplete, because **stability is format-agnostic** — target share repeats at R² 0.401
+regardless of your league's rules. A weight needs two inputs:
+
+> **weight ∝ stability × relevance(ppr)**
+> **Stability** — will this number come back next year? Published, format-independent.
+> **Relevance** — does it turn into points in *my* format? Computed, format-dependent.
+
+**Relevance must be backtested, not chosen.** FieldScout already has everything needed:
+`src/lib/scoring/default.ts` carries `PPR_SCORING` / `HALF_PPR_SCORING` /
+`STANDARD_SCORING`, and there is a generic dot-product calculator. The sync scores
+historical player-seasons at each PPR step and correlates each metric against
+**next-season** points at that setting. No new machinery, no hand-tuned numbers.
+
+Until that backtest runs, **ship half-PPR only and say so.** Three formats with invented
+weights is worse than one format with real ones (§3.1).
+
+**Per position:**
+- **WR / TE** — the lever matters most. It is the difference between a volume slot receiver and a downfield threat.
+- **RB** — matters more than people expect. Pass-catching backs live and die on this; at PPR 1 the receiving side of Opportunity should dominate, at PPR 0 goal-line carries should.
+- **QB** — receptions don't exist, so PPR never appears here. The passing-TD lever takes its place.
+- **Every position shows exactly one lever.** Never show a lever that does nothing; never disable one — swap it.
+
+**Changing a lever re-baselines the board.** The move column (▲▼) compares against the
+default board *at that lever setting*, not against a stale one from another format.
+
+### 16.7 Not in this model
 
 Player similarity, positional scarcity, and any grade that blends across positions.
 A WR's 82 and a RB's 82 mean "82nd percentile among his own position" and nothing more —
@@ -908,6 +1026,42 @@ Per the redraft-leagues convention (delivery plan §2.3), every Scout task lands
 
 ## Changelog
 
+- **v2.5** — **Guide simplified to a three-page path** (Chris): landing → position →
+  rankings. The five-lesson curriculum, swap grid, evidence table and stat-card grid
+  collapse into the position pages; metric pages, public player pages and leaderboards
+  become leaves off the path rather than destinations on it. Each swap now carries a
+  **one player, two seasons** worked example. Every position page ends in the unlock.
+- **v2.4** — Generalised §16.6 from "the PPR lever" to **one league lever per position**.
+  QB gets **points per passing TD (4 / 5 / 6)** instead of PPR: rushing TDs are 6 in
+  every league, so at 4 a running quarterback's scores are worth 1.5× a passer's, and
+  at 6 that edge vanishes. The lever moves Rushing down and Passing volume up — the
+  mirror of what PPR does at receiver. Never disable a lever that doesn't apply; swap it.
+- **v2.3** — **Scoring format added (§16.6)**, from Chris's observation that PPR moves
+  rankings substantially. A **PPR lever, 0 → 1 in .25 steps**, sits in its own "Your
+  league" zone — it's a fact about your rules, not a preference, so it sets the trait
+  defaults rather than sitting among them. This corrects §16.3 rule 1: stability alone
+  cannot set a weight, because stability is format-agnostic. **weight ∝ stability ×
+  relevance(ppr)**, with relevance backtested using the existing scoring engine.
+- **v2.2** — Vocabulary fix (Chris): Scout is **entirely free**, so "free vs paid"
+  framing is wrong throughout and implies a price that doesn't exist. The only line is
+  **signed out vs. signed in**. Rule added at §1.
+- **v2.1** — Corrects §1: the **in-app player page requires an account** — it's the app,
+  not content. Adds §8.5, **public player pages with a partial reveal**: three headline
+  metrics free and indexed, the depth behind a *Create free account* overlay. Binding
+  rule attached — the locked region ships placeholder shapes, never real values under a
+  CSS blur, because that would serve Googlebot what the user can't see.
+- **v2.0** — **Restructured around three surfaces** (Chris, 2026-08-07): **Scout AI
+  rankings** as the product, **player detail** as the depth, **the Guide** as the
+  marketing. The trait model is promoted from a player-page widget (§16) to the
+  headline feature — it *is* the levers. §8.4 replaced: the gate moves to **build, not
+  read**. All four position guides stay free and indexed; an account unlocks your board.
+  Delivery plan collapsed from seven milestones to three phases.
+- **v1.8** — Trait renames and the nesting rule (§16.4–16.5). **Workload → Opportunity**
+  (matches the registry's own `type` and the thesis headline); **Territory → Target
+  quality**, or **Scoring chances** at RB. Weight sliders **nest rather than going flat**:
+  trait weights set share-of-grade, metric weights renormalise inside a trait. A flat
+  per-metric list double-counts correlated volume metrics invisibly — zeroing two
+  efficiency metrics silently moves opportunity from 33% to 43% of the grade.
 - **v1.7** — **Trait model added (§16), lifting two §10 non-goals.** Composite grades
   return with the scope narrowed to axes the data supports — Workload, Territory,
   Efficiency — with finishing luck and availability as flags that are reported but

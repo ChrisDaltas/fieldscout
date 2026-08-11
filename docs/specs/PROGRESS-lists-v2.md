@@ -128,10 +128,13 @@ are all checked.
 outstanding — both need only LV.1.1, which merged first. LV.4 needs LV.3;
 LV.1.5 is independent and is the only remaining schema task.
 
-**Note on `budget`:** the store holds it because D3 names it, but nothing can
-render it — under D4 there is no per-player `cost` to divide by. **Budget
-grouping is not in Round 1**, and it is not to be "fixed" by reintroducing
-`cost`. If it is ever wanted it needs a product answer first.
+**Note on `budget` — ✅ RESOLVED 2026-08-10 by the screenshots.** Budget
+grouping **does** render, and well: `docs/design/lists/screens/detail-grouping-budget-pct.png`
+shows a *Share of budget* column — a filled bar plus a percentage per player,
+under bucket headers "Over 20% of budget" / "10–20%". It is computed from
+**`Cost PPR`, a selectable stat column**, not from a bucket assignment. So D4's
+*"nothing is computed"* is true of bucket membership and false of stats.
+**Budget grouping is in scope.**
 
 *(This was six paragraphs until 2026-08-10. The length was the plan
 manufacturing work — it ended by instructing a future agent to HALT over a

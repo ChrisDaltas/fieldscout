@@ -33,6 +33,29 @@
  *      touchdown luck is not better, he is more expensive. Grading him higher
  *      for it would invert the advice.
  *
+ * NAMING
+ * -------
+ * "Opportunity" is deliberate: it is the word the registry already uses for
+ * these metrics (type: 'opportunity') and the word the guide's thesis uses
+ * ("Opportunity is a skill"). One concept, one name, everywhere.
+ *
+ * The second trait is "Target quality" for pass catchers and "Scoring chances"
+ * for backs — the same idea (is the volume the valuable kind?) measured by
+ * different things at each position, so it earns different names.
+ *
+ * WHY WEIGHTS NEST INSTEAD OF GOING FLAT
+ * --------------------------------------
+ * Per-metric sliders over a flat list look like more control and deliver less.
+ * Target share, targets per game and snap share are near-proxies for one
+ * another. Three sliders at 100% is not "I value volume" — it is "volume
+ * counts three times", and the user cannot see it happening. Zeroing two
+ * efficiency metrics silently pushes opportunity from 33% to 43% of the grade
+ * without the user touching it.
+ *
+ * So: TRAIT weights set share-of-grade. METRIC weights are tunable INSIDE a
+ * trait and renormalise, so tuning within a trait can never change that
+ * trait's total influence. Same power, no invisible double-counting.
+ *
  * Spec: docs/specs/spec-scout.md §10 lists composite grades as a v1 non-goal.
  * This file is the proposal to lift that, with the scope narrowed to what the
  * data supports.
@@ -84,8 +107,8 @@ export interface PositionTraitModel {
 // ---------------------------------------------------------------------------
 const RECEIVER_TRAITS: Trait[] = [
   {
-    id: 'workload',
-    name: 'Workload',
+    id: 'opportunity',
+    name: 'Opportunity',
     question: 'How much of this offense is his?',
     kind: 'grade',
     confidence: 'high',
@@ -98,9 +121,9 @@ const RECEIVER_TRAITS: Trait[] = [
     defaultWeight: 0.5,
   },
   {
-    id: 'territory',
-    name: 'Territory',
-    question: 'Where on the field does he get the ball?',
+    id: 'target-quality',
+    name: 'Target quality',
+    question: 'Is it the valuable kind of volume?',
     kind: 'grade',
     confidence: 'high',
     caveat: null,
@@ -158,8 +181,8 @@ const RECEIVER_TRAITS: Trait[] = [
 // ---------------------------------------------------------------------------
 const RB_TRAITS: Trait[] = [
   {
-    id: 'workload',
-    name: 'Workload',
+    id: 'opportunity',
+    name: 'Opportunity',
     question: 'How often does he touch the ball?',
     kind: 'grade',
     confidence: 'high',
@@ -172,8 +195,8 @@ const RB_TRAITS: Trait[] = [
     defaultWeight: 0.55,
   },
   {
-    id: 'territory',
-    name: 'Territory',
+    id: 'scoring-chances',
+    name: 'Scoring chances',
     question: 'Does he get the ball where it scores?',
     kind: 'grade',
     confidence: 'medium',
@@ -236,7 +259,7 @@ const QB_TRAITS: Trait[] = [
     defaultWeight: 0.45,
   },
   {
-    id: 'volume',
+    id: 'opportunity',
     name: 'Passing volume',
     question: 'Does his offense throw?',
     kind: 'grade',
