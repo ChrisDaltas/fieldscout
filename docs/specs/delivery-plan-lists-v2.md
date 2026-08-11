@@ -1,15 +1,20 @@
 # Delivery Plan: Lists v2
 
-> **v3.6 — 2026-08-10. UI/UX only, with exactly two data exceptions.**
+> **v3.7 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
-> from scope** — with two deliberate exceptions, both ruled by Chris on
-> 2026-08-09: **(1) `drafted` persists server-side** — per user, per list —
-> because seeing who is already gone from your phone is the point of the
-> feature; and **(2) `list_players.tier`'s CHECK constraint widens**, because
-> round grouping cannot represent a 12–16 round draft against six buckets.
-> Between them that is one new table and one `ALTER TABLE`. Nothing else.
+> from scope** — with three deliberate exceptions, each individually ruled by
+> Chris: **(1) `drafted` persists server-side** — per user, per list — because
+> seeing who is already gone from your phone is the point of the feature
+> (2026-08-09); **(2) `list_players.tier`'s CHECK constraint widens**, because
+> round grouping cannot represent a 12–16 round draft against six buckets
+> (2026-08-09); and **(3) `list_links`**, so a list can link back to the
+> resources it drew on and a creator can attach their own video (2026-08-11).
+> Between them that is two new tables and one `ALTER TABLE`. Nothing else.
+>
+> **The budget is now closed at three.** A task that believes it needs a fourth
+> has left scope: stop and raise it.
 >
 > Everything else that only affects how a list *looks* — view style, chosen
 > stat columns, band labels, budget — is **deliberately not saved**. Chris:
@@ -31,7 +36,7 @@
 
 | Ruling | Detail |
 | --- | --- |
-| **UI/UX only, two exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2) and (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**). Nothing else. See §2.2. |
+| **UI/UX only, three exceptions** | No schema changes except (a) the `drafted` table (D2/LV.1.2), (b) widening `list_players.tier`'s CHECK constraint (D4/LV.1.5, **ruled by Chris 2026-08-09**), and (c) the `list_links` table (D8/LV.8, **ruled by Chris 2026-08-11**). Nothing else — the budget is **closed at three**. See §2.2. |
 | **Display prefs don't persist** | View style, stat columns, band labels, budget are session customizations — like search filters. Not saved, by decision, not by constraint. |
 | **Boards are off limits — one amendment** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**` or `src/stores/board-labels-store.ts`. **Amended 2026-08-10:** `src/components/lists/draft-mode/**` is reopened for **deletion of the 3-state cycle only** (`use-board-marks.ts` and its wiring), superseded by the permanent drafted checkbox (D2). Nothing else in that tree is in scope. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
@@ -126,7 +131,7 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 | `visibility` | **Private or public only** (Chris, 2026-08-09) — the handoff's third "link" state is not wanted. Existing `is_private` covers it exactly | none |
 | `entries[].round` / `.cost` | Not separate fields — they are the same bucket as `tier`, relabelled (D4) | none |
 | `scope` | **Dropped** — defined but never rendered | dropped |
-| `links[]` | **NOT dropped — corrected 2026-08-10 from the screenshots.** `screens/detail-tab-details.png` renders an **Attached links** section (YouTube video with title, source, duration, remove control) plus an "Attach a video or article" action | in scope |
+| `links[]` | **NOT dropped — corrected 2026-08-10 from the screenshots**, then **built at LV.8** (2026-08-11). `screens/detail-tab-details.png` renders an **Attached links** section (video with title, source, duration, remove control) plus an "Attach a video or article" action. Stored in the new `list_links` table (D8) — reads follow the list, writes are owner-only | the third exception |
 
 **What is deliberate, not a compromise** — stated plainly so nobody
 "fixes" it later:
@@ -284,12 +289,61 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   `offsetHeight`/`offsetWidth`. State updates only when the target slot
   changes — updating per `dragover` visibly janks.
 
-- **D6 — Two server-side changes in Round 1, both named and both ruled.**
+- **D6 — Three server-side changes in Round 1, each named and each ruled.**
   (a) the `drafted` table and its route (D2/LV.1.2); (b) widening
   `list_players.tier`'s CHECK constraint plus the matching Zod enum
-  (D4/LV.1.5). Existing routes cover every other mutation. **These two are the
-  whole budget** — a task that believes it needs a third has crossed out of
-  scope: stop and raise it, do not proceed.
+  (D4/LV.1.5); (c) the `list_links` table and its routes (D8/LV.8). Existing
+  routes cover every other mutation. **These three are the whole budget** — a
+  task that believes it needs a fourth has crossed out of scope: stop and
+  raise it, do not proceed.
+
+  *(v3.6 and earlier said "two". The third was ruled on 2026-08-11 — see D8.
+  Note the pattern across all three: each was a real product need the UI-only
+  framing could not hold, each was raised rather than improvised around, and
+  each was ruled individually. That is the process working, not the budget
+  eroding.)*
+
+- **D8 — `list_links`: attribution, and the creator's own video**
+  (Chris, 2026-08-11). Verbatim: *"lets create the table for storing the link,
+  we need a way to link back to resources used and a way for creators to
+  attached videos to their lists."*
+
+  Two purposes, and they are the ceiling on the feature:
+
+  1. **Attribution** — linking back to the resources a list drew on.
+  2. **Creator video** — attaching a video to a list you made.
+
+  Both are the author speaking about their own list, which decides the access
+  rules: **reads follow the list's own visibility** (if you can see the list,
+  you can see its links) while **writes are owner-only** (a link is the
+  author's attribution, not a viewer's annotation). The read policy defers to
+  `lists`' RLS through a bare `EXISTS`, the same form LV.1.2 landed and for the
+  same reason — it covers 067's league-shared private lists for free, which a
+  hardcoded `is_private = FALSE OR owner_id = auth.uid()` would silently
+  exclude (R173).
+
+  Storage is `list_links (id, list_id, kind, url, title, source_label,
+  duration_label, position, created_at, updated_at)` — every column a fact
+  `screens/detail-tab-details.png` actually renders. `position` is stored
+  because the design shows an ordered list.
+
+  **Nothing is scraped, fetched, or derived.** Titles, source labels and
+  durations are typed by the person attaching the link. That is CLAUDE.md's
+  standing rule (ingestion is plain fetch of RSS/YouTube feeds only), not a
+  shortcut. Auto-filling a YouTube title/duration is a follow-up to **propose**,
+  never to smuggle in.
+
+  **The URL is guarded twice, because it renders as an `href` on the public,
+  server-rendered share view (D7).** `links-service.ts` parses with the WHATWG
+  `new URL()` and asserts the protocol is `http:`/`https:`; migration 080's
+  `list_links_url_scheme_check` enforces `^https?://[^[:space:]]+$` at the
+  database, so every future route, RPC or seed script inherits it. The DB layer
+  is not redundant — `duplicate_list` is this codebase's standing proof that a
+  write path which never sees Zod will eventually exist.
+
+  **Duplicating a list does not copy its links.** `duplicate_list` (017)
+  predates this table and was deliberately not modified — that is a scope call,
+  not an oversight, and it is recorded so nobody rediscovers it as a bug.
 
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
@@ -341,17 +395,24 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.4.3 | Public share view in the new language, still server-rendered (D7) | LV.3.* |
 | LV.4.4 | Flag flip + retire the old components — including **deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle** (D2; §1's boards amendment scopes this), and correcting that file's now-false header comment (R192) | all |
 
+**Phase 5 — attached links** *(added v3.7, ruled 2026-08-11)*
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.8 | **Migration `080_list_links.sql`** + RLS + indexes, the `/api/lists/[id]/links` routes (add, remove, reorder), and the Details tab wired to them (D8). Satisfies checklists §8.1–8.2; reaches production via `npx supabase db push`, never by hand | LV.3 |
+
 ---
 
 ## 5. Definition of Done (per task)
 
 1. `npm run type-check` and `npm run lint` clean — **shown, not claimed**.
 2. `npm run test:unit` green. `share-link-permanence.test.ts` stays green.
-3. **No migration, no schema change, no new API route** outside the two named
-   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum). A task that thinks
-   it needs more has left scope: raise it, do not proceed.
-   LV.1.2 additionally satisfies checklists §8.1–8.2 (RLS, indexes,
-   `IF NOT EXISTS`, banner comment citing the handoff) and reaches production
+3. **No migration, no schema change, no new API route** outside the three named
+   in D6 (LV.1.2's `drafted` table + route, LV.1.5's enum, LV.8's `list_links`
+   table + routes). A task that thinks it needs more has left scope: raise it,
+   do not proceed.
+   LV.1.2 and LV.8 additionally satisfy checklists §8.1–8.2 (RLS, indexes,
+   `IF NOT EXISTS`, banner comment citing the ruling) and reach production
    via `npx supabase db push` — **never** by hand (CLAUDE.md migration
    discipline).
 4. Verified in the browser preview with a screenshot at desktop **and** mobile.
@@ -390,6 +451,30 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v3.7 (2026-08-11)** — **The third and final schema exception: `list_links`.**
+  Chris: *"lets create the table for storing the link, we need a way to link
+  back to resources used and a way for creators to attached videos to their
+  lists."* Two purposes — **attribution** and a **creator video** — recorded in
+  the new **D8**.
+
+  This closes the gap v3.5 opened and LV.3 could only name: §2.2 had already
+  put `links[]` back in scope from the screenshots (2026-08-10), but there was
+  nowhere to store one, so the LV.3 builder shipped the section with its action
+  **disabled** and flagged it as needing a ruling rather than building a dialog
+  that would throw the link away on submit. That was the right call, and this
+  is the ruling it asked for.
+
+  The header, §1, §2.2, D6 and §5 DoD item 3 all move from **two** exceptions
+  to **three**, and §4 gains a Phase 5 with **LV.8**. The budget is now stated
+  as **closed at three** in both the header and D6 — the previous wording
+  ("these two are the whole budget") had to be edited twice, so it is now
+  written as a rule with a stop condition rather than a count.
+
+  Two things D8 fixes in place rather than leaving for a reviewer to find: the
+  **no-scraping rule** is restated at the decision level (labels are typed, not
+  fetched — CLAUDE.md), and **`duplicate_list` does not copy links**, recorded
+  deliberately so it is a known scope boundary and not a rediscovered bug.
 
 - **v3.6 (2026-08-10)** — **Chris settles the drafted interaction, and it
   dissolves a whole bug class.** There is no draft-mode gate: the checkbox is

@@ -7,10 +7,12 @@ import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
 import {
+  useAddLink,
   useAddPlayer,
   useDeleteList,
   useDuplicateList,
   useList,
+  useRemoveLink,
   useRemovePlayer,
   useUpdateList,
   type ListPlayerWithPlayer,
@@ -75,6 +77,8 @@ export function ListDetailPanel({
   const deleteList = useDeleteList()
   const addPlayer = useAddPlayer(listId)
   const removePlayer = useRemovePlayer(listId)
+  const addLink = useAddLink(listId)
+  const removeLink = useRemoveLink(listId)
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
 
   const display = useListDisplay(listId)
@@ -276,6 +280,31 @@ export function ListDetailPanel({
           canEdit={canEdit}
           onSaveDescription={(description) => updateList.mutate({ description })}
           onSaveTags={(tags) => updateList.mutate({ tags })}
+          // A rejected link must SAY why. The service answers with a specific
+          // message for every refusal — bad scheme, duplicate, over the cap —
+          // and swallowing it would leave the form looking like it worked
+          // (CLAUDE.md: never let "nothing happened" mean "it worked").
+          onAddLink={(input) =>
+            addLink.mutate(input, {
+              onError: (error) =>
+                toast({
+                  title: 'Could not attach that link',
+                  description: error.message,
+                  variant: 'destructive',
+                }),
+            })
+          }
+          onRemoveLink={(linkId) =>
+            removeLink.mutate(linkId, {
+              onError: (error) =>
+                toast({
+                  title: 'Could not remove that link',
+                  description: error.message,
+                  variant: 'destructive',
+                }),
+            })
+          }
+          linksBusy={addLink.isPending || removeLink.isPending}
         />
       )}
 

@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v3.4) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v3.7) > this file.
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11** — the screen exists and is comparable against `screens/`. Remaining: LV.1.5, LV.4–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11** — the screen exists and is comparable against `screens/`. Remaining: LV.1.5, LV.4–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -105,6 +105,15 @@ are all checked.
   language (CLAUDE.md: never leave them in the old style, never remove them)
 - [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
   server-rendered (D7)
+- [x] **LV.8** — **attached links** (2026-08-11). Migration
+  `080_list_links.sql` + RLS + indexes, the `/api/lists/[id]/links` routes
+  (add / remove / reorder), and the Details tab wired to them. The **third and
+  final** schema exception, ruled by Chris 2026-08-11 (plan **D8**, plan
+  → v3.7). Closes the disabled action LV.3 shipped and flagged. Reads follow
+  the list's own visibility; writes are owner-only. The reorder **route** is
+  server-complete and stack-proven; its **client** waits for LV.4, because the
+  reference screen shows no reorder affordance and inventing one would be UI
+  the design LAW does not ask for
 - [ ] **LV.7** — cutover: flag flip, retire the old components, and **delete
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
@@ -820,6 +829,115 @@ This section records decisions made **during** the build.
   gallery, the note hover card, and the inline band rename. Seeded **locally
   only** — tiers S–F on one list, a Favorites list, three notes, five drafted
   marks, two comments, three tags.
+
+- **LV.8 (2026-08-11) — `list_links`, and the judgement calls the ruling left
+  open.** Migration `080_list_links.sql`, `src/lib/lists/links-service.ts`,
+  `/api/lists/[id]/links` (+ `/[linkId]`), and the Details tab's links section.
+  The build's **third and final** schema exception (plan D8, plan → v3.7;
+  `ACTIVE-BUILD.md` §1 updated to match, since it carried the "two" count too).
+  This closes the gap LV.3 correctly refused to improvise around: it shipped
+  the section with a **disabled** action and said why, rather than a dialog
+  that would discard the link on submit.
+
+  1. **The columns, and why each one is there.** `list_links (id, list_id,
+     kind, url, title, source_label, duration_label, position, created_at,
+     updated_at)`. Every one is a fact `screens/detail-tab-details.png`
+     renders: the bold title, the muted `source · duration` line, the ordered
+     stack, the remove control. Nothing speculative — there is no `note`, no
+     `added_by`, no `thumbnail_url`.
+     - **A surrogate `id`, unlike 079's natural key.** 079 could key on
+       `(user, list, player)` because row *presence* was the entire state. A
+       link has a mutable payload and needs a stable handle for
+       `DELETE .../links/[linkId]` and for the reorder contract to name rows.
+     - **`position` is stored** because the design shows a list, not a set. It
+       is deliberately **not** `UNIQUE (list_id, position)`: uniqueness would
+       force every reorder into a two-phase shuffle to dodge transient
+       collisions, and buys nothing, because the read path orders by
+       `(position, created_at, id)` — **total** — so even a duplicated position
+       renders deterministically.
+     - **`duration_label` is text with a CLOCK regex** (`18:42`, `1:02:33`),
+       not an interval. The screenshot renders it verbatim beside the source;
+       an unbounded string there would be a second caption on a public page.
+     - **`UNIQUE (list_id, url)`** — attaching the same resource twice is a
+       mistake, not an intent, and the service normalises through
+       `new URL().href` first so `https://x` and `https://x/` collide as they
+       should. 23505 maps to a specific 409, never a silent second card.
+
+  2. **RLS: reads defer, writes do not — and the asymmetry is the design.**
+     The SELECT policy is a bare `EXISTS (SELECT 1 FROM lists WHERE id = ...)`
+     with **no** visibility conjunct, so it runs under `lists`'s own RLS (the
+     mechanism 067's D106 note documents and LV.1.2 adopted). The writes spell
+     `owner_id = auth.uid()` out explicitly, because "owner-only" is a
+     *different* rule from "readable" — a league member who can read a shared
+     private list must not be able to staple their own video onto it. That
+     exact row is pinned as an adjacent lives/throws pair in pgTAP 029 §E.
+     Also pinned: **anon CAN read a public list's links**, because the share
+     view (D7) renders signed-out and a policy tightened to
+     `auth.uid() IS NOT NULL` would break that page with no RLS assertion
+     noticing.
+
+  3. **The URL is guarded twice, and the two layers are pinned to each other.**
+     `normalizeLinkUrl` parses with the WHATWG `new URL()`, asserts the
+     protocol is `http:`/`https:`, and stores `.href`; 080's
+     `list_links_url_scheme_check` enforces `^https?://[^[:space:]]+$` at the
+     database. Parse-then-check beats regex-on-raw-input on the case a regex
+     misses — browsers strip TAB out of a scheme, so `java<TAB>script:` is a
+     live `javascript:` URL, and `new URL()` normalises it *into*
+     `javascript:` where the protocol check catches it explicitly (measured,
+     not argued). The DB layer is not redundant: `duplicate_list` is this
+     codebase's standing proof that a write path which never sees Zod will
+     exist. `links-service.test.ts` carries the load-bearing pin — **every URL
+     the service accepts is asserted to satisfy 080's CHECK regex**, so if a
+     future edit loosens one layer, that test reddens instead of a `23514`
+     surfacing as an HTTP 500.
+
+  4. **Nothing is scraped.** `title`, `source_label` and `duration_label` are
+     typed by the author; the service makes no network call. That is CLAUDE.md's
+     standing rule, restated at the decision level in D8 so it is not
+     re-litigated. Auto-filling from a YouTube URL is a **follow-up to
+     propose**, and it is worth proposing — typing "18:42" by hand is the
+     weakest part of this UX.
+
+  5. **`links` rides on the existing list GET rather than a new fetch.**
+     `/api/lists/[id]` embeds them (as it already does tags), so the Details
+     tab costs no extra round-trip and LV.6's server-rendered share view gets
+     them for free. **A failed links query 500s that route** rather than
+     returning `[]` — this section has a real "Nothing attached" empty state,
+     and rendering it because a query errored is verbatim the production bug
+     CLAUDE.md records. Contrast `aggregateFantasyStats` on the same route,
+     which *is* caught and degraded: that is a deliberate difference, because
+     a missing stat renders as an em dash and a missing link renders as a lie.
+
+  6. **No reorder UI, on purpose.** `PATCH .../links` exists and is
+     stack-proven, but the reference shows no handle and no arrows on a link
+     card. Inventing one would be UI the design LAW does not ask for, so the
+     client half is left to **LV.4**, which owns the drag gesture — and
+     `useReorderLinks` was deliberately **not** added to `use-lists.ts`, since
+     an unused hook with a plausible name is just dead code. Recorded in the
+     hook file so the omission reads as a decision.
+
+  7. **Three interpretations where the reference is silent**, named rather
+     than passed off as the design: the coloured block is a **placeholder, not
+     a poster** (nothing scrapes a thumbnail), so it carries a glyph the way
+     `ListCoverTile` does; its colour comes from the warm ramp (`tier-2` for
+     video, `tier-4` for article) rather than `negative`, whose token comment
+     reserves it for football semantics — the reference's rose reads closest to
+     `negative`, and plan §1 says implement from tokens, never the handoff's
+     hex; and the attach form is **inline**, matching this tab's own Description
+     and Add-tag editing, because the design shows no dialog anywhere on it.
+
+  8. **`duplicate_list` does not copy links.** 017's RPC predates this table
+     and was deliberately left alone — modifying an existing SECURITY DEFINER
+     RPC is scope this task does not hold. Recorded in D8 so it is a known
+     boundary, not a rediscovered bug.
+
+  **Typegen.** `src/types/database.ts` regenerated with
+  `npx supabase gen types typescript --local`; the hand-written alias block was
+  re-appended and verified **byte-identical by sha256**
+  (`76970642dcc9d707…` both sides), and the file diff is **+48 / −0**. No
+  `ListLink` alias was added to that block on purpose: the app consumes the
+  *wire* shape (`ListLink` in `links-service.ts`, which omits the timestamps),
+  and a same-named Row alias beside it would be a trap.
 
 ---
 

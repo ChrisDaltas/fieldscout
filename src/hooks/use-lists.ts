@@ -12,7 +12,10 @@ import type {
   ReorderPlayersInput,
   UpdateListInput,
 } from '@/types/schemas/lists'
+import type { ListLink } from '@/lib/lists/links-service'
 import type { List, ListPlayer, ListTier, Player, TeamSlot } from '@/types/database'
+
+export type { ListLink }
 
 export interface ListPlayerStats {
   current_pts: number
@@ -44,6 +47,11 @@ export interface ListWithDetails extends List {
   /** Server-computed: is the current viewer the owner? Use this instead of a
    *  client-side auth comparison, which races with session loading. */
   is_owner: boolean
+  /** Attached links (migration 080), already in the owner's chosen order.
+   *  Embedded by `/api/lists/[id]` rather than fetched separately — and a
+   *  failed links query 500s that route, so `[]` here always means "none
+   *  attached" and never "the query broke". */
+  links: ListLink[]
 }
 
 export interface ThumbnailPlayer {
@@ -418,5 +426,81 @@ export function useToggleLike(listId: string) {
     },
   })
 }
+
+// =============================================================================
+// ATTACHED LINKS (migration 080 — Chris's 2026-08-11 ruling: attribution back
+// to the resources a list drew on, plus a creator's own video)
+// =============================================================================
+
+/**
+ * Every links mutation answers with the list's FULL resulting order, so the
+ * cache is written from the server's truth rather than patched from a guess.
+ * That is on purpose: `addLink` computes `position` from `max + 1`, and a
+ * reorder can be refused outright as a set mismatch — an optimistic local
+ * splice would be a second, divergent opinion about the order. Links are a
+ * handful of rows behind a deliberate click, so there is nothing to gain from
+ * optimism and a real inconsistency to lose. (Contrast the drafted checkbox,
+ * which IS optimistic — it is tapped continuously during a live draft.)
+ */
+interface LinksResponse {
+  list_id: string
+  links: ListLink[]
+}
+
+function writeLinks(
+  qc: ReturnType<typeof useQueryClient>,
+  listId: string,
+  links: ListLink[],
+): void {
+  const prev = qc.getQueryData<ListWithDetails>(listsKeys.detail(listId))
+  if (prev) qc.setQueryData<ListWithDetails>(listsKeys.detail(listId), { ...prev, links })
+}
+
+export interface AddLinkInput {
+  kind: 'video' | 'article'
+  url: string
+  title: string
+  source_label?: string | null
+  duration_label?: string | null
+}
+
+export function useAddLink(listId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AddLinkInput) =>
+      fetch(`/api/lists/${listId}/links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }).then(jsonOrThrow<LinksResponse & { link: ListLink }>),
+    onSuccess: (data) => writeLinks(qc, listId, data.links),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: listsKeys.detail(listId) })
+    },
+  })
+}
+
+export function useRemoveLink(listId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (linkId: string) =>
+      fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' }).then(
+        jsonOrThrow<LinksResponse & { removed: boolean; link_id: string }>,
+      ),
+    onSuccess: (data) => writeLinks(qc, listId, data.links),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: listsKeys.detail(listId) })
+    },
+  })
+}
+
+/**
+ * There is deliberately **no `useReorderLinks`**. `PATCH /api/lists/[id]/links`
+ * exists and is proven at the stack layer, but the reference screen shows no
+ * reorder affordance on a link card — no handle, no arrows — and inventing one
+ * would be UI the design LAW does not ask for. The client half lands with
+ * **LV.4** (drag-and-drop), which owns the gap model these cards would use.
+ * Shipping an unused hook now would just be dead code with a plausible name.
+ */
 
 export type { ListTier }
