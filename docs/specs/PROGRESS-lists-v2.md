@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v3.7) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v3.8) > this file.
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11** — the screen exists and is comparable against `screens/`. Remaining: LV.1.5, LV.4–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. Remaining: LV.1.5, LV.5–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -95,12 +95,22 @@ are all checked.
   Also address or explicitly defer `TIER_BG`/`TIER_BAND_BG` in
   `tier-badge.tsx`: total maps with no fallback, so a round key renders an
   uncolored band in both the legacy view and the public share view
-- [ ] **LV.4** — drag-and-drop across all three view styles (needs LV.3, and
+- [x] **LV.4** — **drag-and-drop across all three view styles** (2026-08-11).
+  The handoff's drop-gap model, over the existing
+  `PATCH …/players/reorder` and `…/players/[playerId]/tier` routes — **no
+  migration, no schema change, no new API route**. Reordering works in List,
+  Table and Cards; a drop on a section header assigns that bucket **in tier
+  mode**, and the two modes that cannot be written say why rather than
+  no-oping (see §4). Landed **without LV.1.5**: the dependency was on non-tier
+  bucket *assignment*, which is refused with its reason, not faked.
+  Original text: *"drag-and-drop across all three view styles (needs LV.3, and
   LV.1.5 for non-tier buckets). The handoff's drop-gap model: the gap opens
   where the player will land, sized to the dragged element's `offsetHeight` /
   `offsetWidth`, state updated **only** when the target slot changes —
   updating per `dragover` visibly janks. A drop onto a section header assigns
-  that bucket, and under D4 that is the same write in all four modes
+  that bucket, and under D4 that is the same write in all four modes"* — the
+  last clause is wrong and the plan now carries the erratum (D4, plan v3.8):
+  cost and budget membership is **computed**, so there is no write to make
 - [ ] **LV.5** — AI list generation + persona surfaces restyled into the new
   language (CLAUDE.md: never leave them in the old style, never remove them)
 - [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
@@ -938,6 +948,99 @@ This section records decisions made **during** the build.
   `ListLink` alias was added to that block on purpose: the app consumes the
   *wire* shape (`ListLink` in `links-service.ts`, which omits the timestamps),
   and a same-named Row alias beside it would be a trap.
+
+- **LV.4 (2026-08-11) — drag-and-drop, and the two modes that had to refuse.**
+  Three new files in `src/components/lists/v2/` (`list-reorder.ts` + its test,
+  `use-list-drag.tsx`), plus wiring in `list-body.tsx`, `list-row-parts.tsx`,
+  `list-buckets.ts` and `list-detail-panel.tsx`. **No migration, no schema
+  change, no new API route** — both writes go through routes that already
+  existed (`PATCH …/players/reorder`, `PATCH …/players/[playerId]/tier`) and
+  through the hooks that already wrapped them optimistically. Six judgement
+  calls the task text did not make:
+
+  1. **dnd-kit is the sensor layer and nothing else.** It is already the app's
+     drag library (`AppDndContext`, big board, legacy detail), so nothing was
+     added to `package.json`. But `@dnd-kit/sortable` is **not** used: its
+     model is "the other rows transform out of the way", which is the exact
+     behaviour the design LAW rules out in its first sentence ("rows never
+     highlight themselves"). Its **droppables** are not used either, and that
+     is correctness rather than taste — dnd-kit caches droppable rects, and
+     this model changes layout mid-drag by design, so hit-testing against
+     cached rects aims at where a row *used to be* and the gap oscillates
+     between two slots. The target is resolved from `document.elementFromPoint`
+     on every move instead: always live, one rect on the hovered row, and
+     self-stabilising because the open gap carries its own slot in
+     `data-drop-gap` and re-aims at itself when the pointer lands inside it —
+     which is the property the prototype gets free from native `dragover`.
+
+  2. **Native HTML5 drag was the other candidate and was rejected.** It is what
+     `docs/design/lists/design/ListsCommon.jsx` uses, so it would have been the
+     higher-fidelity mechanism. It does not work on touch devices **at all**,
+     and the 2026 audience is friends testing on phones. `MouseSensor`
+     (6px distance) + `TouchSensor` (220ms press, 6px tolerance) instead of the
+     single `PointerSensor` `AppDndContext` uses: a pointer sensor on touch
+     either hijacks the page scroll or is cancelled by it.
+
+  3. **Cost and Budget do not offer the drag at all, and say why on the grip.**
+     Their sections are computed from `players.auction_value` and re-sorted by
+     price on every render (`byCostDesc`), so a hand ordering would be
+     discarded the moment React re-rendered — the drag would look like it
+     worked and snap back, which is precisely CLAUDE.md's "never let *nothing
+     happened* mean *it worked*". The rows carry no drag listeners in those two
+     modes (verified in the browser: `onMouseDown`/`onTouchStart` are absent
+     from the row's props) and the grip is faded with the reason in its
+     `title`. **This contradicts plan D4's "the same write in all four modes"**
+     — a sentence `screens/README.md` had already falsified for stats and which
+     LV.3 shipped against. Folded back into the plan as an erratum on D4,
+     plan → **v3.8**, rather than left for the next reader to rediscover.
+
+  4. **Round buckets refuse with their reason, and the "start tier N" zone is
+     withheld in round mode.** `list_players_tier_check` still pins the column
+     to NULL or S–F (§3 Q2), so an `r3` write is a Postgres `23514` the tier
+     route returns as a 500. `bucketDrop` answers `{ok:false, reason}` for
+     round sections and the panel raises a destructive toast. The affordance
+     that *can* only fail — the dashed "Drop a player here to start round N" —
+     is not rendered at all; in tier mode it renders with the first free
+     letter. This is the "gate it or fail loudly" choice, taken **both** ways:
+     gated where the affordance would be pure furniture, loud where the section
+     header exists anyway. It all reverses at LV.1.5, and `TIER_ORDER` is now
+     typed `readonly ListTier[]` so the compiler names the places that change.
+
+  5. **The two writes are sequenced, never fired together.** A cross-bucket
+     move implies a tier write *and* an order write, and both hooks patch the
+     same React Query cache inside `onMutate`. Issued in the same tick,
+     whichever reads the cache first can be clobbered by the other's snapshot,
+     and the rollback contexts cross. So the bucket write goes first (it is the
+     one the server can refuse) and the order write follows in its `onSuccess`.
+     A same-bucket reorder — the overwhelmingly common case and the literal ask
+     — is a single optimistic call with nothing to sequence.
+
+  6. **Order is written for the whole list, not just the moved player.** Design
+     LAW: *"Moving an entry into a bucket assigns `tier`… then **keeps bucket
+     members contiguous in the array**."* The new order is the buckets
+     flattened in render order, which is what makes members contiguous — and it
+     can move players the user never touched, when the stored array had tiers
+     interleaved. That is the rule, not a side effect: after a drop the stored
+     order matches the order on screen. `reorder_list_players` (004) only
+     updates the rows it is given and the legacy view already sends the
+     complete list, so the payload shape is established, not new.
+
+  **A break probe found a real bug before it shipped.** The first build
+  resolved the target inside a `requestAnimationFrame` and committed whatever
+  the last frame had computed. A single-step programmatic drag — press, one
+  move, release — produced **no** reorder at all, because no frame ran between
+  the activating move and the release. rAF is also throttled outright in a
+  background tab. Two fixes: the drop resolves once more at the release point,
+  and the hit test is no longer frame-throttled (D5's warning is about
+  *state*, which `aim` already writes only when the slot changes; frame-gating
+  the *read* silently drops the last move of a fast drag).
+
+  **Known gap, recorded rather than mimed:** there is no keyboard drag.
+  dnd-kit's `KeyboardSensor` moves between *droppables*, and this model has
+  none, so `useDraggable`'s `attributes` are deliberately not spread — they
+  would put `role="button"` + `tabIndex=0` around the row's real buttons and
+  advertise a capability that does not exist. A keyboard/AT path for reordering
+  is worth its own task.
 
 ---
 
