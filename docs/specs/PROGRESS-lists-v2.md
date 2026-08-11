@@ -46,14 +46,16 @@ are all checked.
 
 **Phase 2 — the screens** *(restructured 2026-08-10 — read the note at the end of this section)*
 
-- [ ] **LV.2** — **the Lists page, whole.** Page header (heading, view-mode
-  segmented control, My lists / Saved tabs, New list), rail mode (200px sticky
-  rail, shared edge, selected-row treatment), cards gallery (responsive, flat
-  at rest, lift on hover), and its loading / empty / error states. One branch,
-  one PR. Needs only LV.1.1 (merged).
-  **Handoff §"Lists page"** — and heed its critical note: resting/hover/active
-  colors for the segmented and tab controls belong in **CSS classes, not inline
-  styles**; an inline `background` outranks `:hover` and silently kills it.
+- [x] **LV.2** — **the Lists page, whole** (2026-08-10). Page header, rail mode,
+  cards gallery and every state, in `src/components/lists/v2/`, rendering the
+  real `useLists` collection. **No migration, no schema change, no new route.**
+  The handoff's critical note is satisfied *structurally*: the header file
+  contains no `style` prop at all, and the hover was **measured live** (the
+  inactive `Cards` segment computes `rgba(0,0,0,0)` at rest and `rgb(220,228,255)`
+  = `accent-soft` under a real pointer, with `getAttribute('style') === null`).
+  Side by side renders **present but disabled** — round 2 (plan §6) — pinned by
+  a test on `PAGE_MODES`. See §4 for the five judgement calls, including the
+  empty-state bug a deliberate 500 probe caught.
 - [ ] **LV.3** — **list detail, whole.** Hero + inline rename, tabs, toolbar,
   all three view styles (list / table / cards), stats picker, notes, the
   drafted checkbox, and its states. One branch, one PR. Needs only LV.1.1.
@@ -356,6 +358,95 @@ explicitly defer it.
 
 Design decisions D1–D7 live in delivery plan §3 and are not duplicated here.
 This section records decisions made **during** the build.
+
+- **LV.2 (2026-08-10) — the Lists page, and the six calls the handoff left
+  open.** Five new files in `src/components/lists/v2/`
+  (`lists-page-v2.tsx`, `lists-page-header.tsx`, `lists-rail.tsx`,
+  `list-gallery-card.tsx`, `lists-view-state.ts` + its test), plus three
+  additive exports on the shared `list-thumbnail.tsx`. **No migration, no
+  schema change, no new API route** — the screen reads `useLists(1, 100)`, the
+  hook the legacy page already uses, and mutates only through existing
+  `useDuplicateList` / `useDeleteList` / the shell's create-list dialog.
+
+  1. **The tab split is the server's answer, not a client auth comparison.**
+     `GET /api/lists` returns owned lists **plus** lists the viewer has
+     favorited from other people, and populates `owner` **only** on the ones
+     they do not own (`route.ts`, "Only surface the owner for lists the viewer
+     doesn't own"). So *My lists* = `owner == null`, *Saved* = `owner != null`.
+     Comparing `owner_id` to a client-side session id would race session
+     loading — the same trap `ListWithDetails.is_owner` exists to avoid.
+     Favorites floats to the top of My lists, matching the prototype's
+     `myLists()` (`design/lists.js:242`). Pinned in `lists-view-state.test.ts`.
+
+  2. **The page header renders in the shell header on desktop and in the page
+     on mobile — one component, two mount points.** The prototype's header *is*
+     the app-shell header (`window.FS_ListsHeader`), so `PageHeader` is the
+     faithful home for it. But `app-shell.tsx` renders `AppHeader` inside
+     `hidden lg:block`, so below `lg` the shell header does not exist and the
+     controls would vanish. `ListsPageHeader` is therefore also rendered in the
+     page inside `lg:hidden`. **Not a fork** — same component, same props; the
+     `New list` cluster is a slot (`actions`) precisely so the shell can own it
+     in its own actions column on desktop. Anything that reworks the shell's
+     mobile header should collapse this back to one mount.
+
+  3. **Side by side is present-but-disabled, not omitted.** Round 2 (plan §6).
+     Omitting it would silently reshape a control the design defines as three
+     segments and would read as "not planned"; disabled with
+     `title="Side by side arrives in round 2"` reads as "not yet". The whole
+     decision lives in one place — `PAGE_MODES` in `lists-view-state.ts` — and a
+     test asserts `compare` is the only disabled entry, so Round 2 turns it on
+     by deleting two lines and watching that test go red.
+
+  4. **The rail's right-hand panel is a seam, and it is named in the source.**
+     The handoff puts the *list detail* there; that is LV.3's whole task. Until
+     then the panel shows the selected list's identity (cover, title, byline,
+     description, tags) and an `Open list` button to `/app/lists/[id]` — the
+     same destination the gallery cards use, so nothing is a dead end. LV.3
+     replaces the panel wholesale; the shared-edge border treatment is what it
+     inherits.
+
+  5. **Cover colour comes from the list's position identity, not a new token.**
+     Plan §2.2 drops `cover.{color, emoji}` and keeps `thumbnail_url` only, so
+     the gallery card's cover band needed a fallback. It reuses
+     `ListThumbnail`'s own `POS_TINTS` (now exported, with
+     `listThumbnailLabel()`) — a QB list's card and its cover tile therefore
+     agree by construction rather than by coincidence, and no colour was
+     invented. A neutral `n-4` band was tried first and read as broken: at
+     `#e7e8e9` it is one step from the `#e4e5e8` page, so cards dissolved into
+     the background.
+
+  6. **Scale and type: control geometry converted ×0.8, body type follows the
+     app's own reskinned precedent.** Plan §1's scale ruling converts the
+     handoff's 1× numbers down, so the 200px rail is **160px**, the 30px cover
+     tile is **24px** (a new additive `xs` size on `ListThumbnail`), the 268px
+     gallery column is **214px** and the 116px cover band is **93px**. Row
+     *type* is the one place this was not applied literally: 13px/10.5px at
+     ×0.8 is 10.4px/8.4px, and the app's nearest already-reskinned surface —
+     the sidebar's list rows (`sidebar.tsx`: 26px tile, 13px name, 10px meta) —
+     sits well above that. The rail uses **11px/9px**, between the two. Flagged
+     here rather than buried: if a reviewer wants the literal conversion, it is
+     two class changes in `lists-rail.tsx`.
+
+  **The bug the probe caught, which is the part worth reading.** The first
+  build ordered the body as `isLoading → isError → empty`. A deliberate probe
+  (a temporary `return 500` at the top of `GET /api/lists`, shown failing and
+  **reverted** — `git diff` on that file is empty) rendered **"No lists yet"**
+  over a completely broken API. Cause, measured via a temporary debug
+  attribute: React Query left the query at `status: 'pending'` /
+  `fetchStatus: 'paused'` with `failureCount: 1` — its default
+  `networkMode: 'online'` retryer *parks* a failed attempt rather than
+  surfacing it — so `isLoading` **and** `isError` were both `false` with no
+  data, and the chain fell through to the empty state. That is exactly
+  CLAUDE.md's fourth production bug ("a database error returned HTTP 200 with
+  an empty list, rendering an empty state instead of an error"), rebuilt from
+  scratch in a new file.
+
+  The fix is structural, not another condition: **the empty state now requires
+  a payload.** `if (data) { … } else if (isError) { … } else if (fetchStatus
+  === 'paused') { … } else { loading }`. "No lists yet" is unreachable without
+  an answer from the server. A failed *refetch* on top of lists already on
+  screen keeps them and adds a warning strip instead — throwing away good data
+  is its own version of the same lie.
 
 - **LV.1.1 (2026-08-09) — branch mechanism.** Both routes
   (`src/app/app/lists/page.tsx`, `src/app/app/lists/[listId]/page.tsx`) now

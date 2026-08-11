@@ -15,7 +15,12 @@ export type ListThumbnailLabel =
   | 'AP'
   | 'TM'
 
-const POS_TINTS: Record<ListThumbnailLabel, { bg: string; fg: string }> = {
+/**
+ * The list's identity colour, keyed by its position label. Exported so other
+ * list surfaces (the Lists v2 gallery cover band) tint from the same source
+ * instead of minting a second map.
+ */
+export const POS_TINTS: Record<ListThumbnailLabel, { bg: string; fg: string }> = {
   QB: { bg: 'bg-pos-qb', fg: 'text-white' },
   RB: { bg: 'bg-pos-rb', fg: 'text-white' },
   WR: { bg: 'bg-pos-wr', fg: 'text-white' },
@@ -39,11 +44,14 @@ interface ListThumbnailProps {
   imageUrl?: string | null
   /** First 1–3 players on the list. Renders one per quadrant after Q1. */
   players?: ThumbnailPlayer[] | null
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   className?: string
 }
 
 const SIZE_CLASSES: Record<NonNullable<ListThumbnailProps['size']>, string> = {
+  // 24px — the Lists v2 rail row's cover tile (the handoff's 30px at the
+  // app's ×0.8 scale). Additive: no existing call site passes `xs`.
+  xs: 'h-6 w-6',
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
   lg: 'h-14 w-14',
@@ -51,6 +59,7 @@ const SIZE_CLASSES: Record<NonNullable<ListThumbnailProps['size']>, string> = {
 }
 
 const LABEL_SIZE: Record<NonNullable<ListThumbnailProps['size']>, string> = {
+  xs: 'text-[7px]',
   sm: 'text-[8px]',
   md: 'text-[9px]',
   lg: 'text-[10px]',
@@ -58,6 +67,7 @@ const LABEL_SIZE: Record<NonNullable<ListThumbnailProps['size']>, string> = {
 }
 
 const EMPTY_HINT_ICON_SIZE: Record<NonNullable<ListThumbnailProps['size']>, number> = {
+  xs: 8,
   sm: 10,
   md: 12,
   lg: 14,
@@ -185,6 +195,14 @@ function PlayerQuadrant({
       )}
     </div>
   )
+}
+
+/** Public form of the label rule, for callers tinting from `POS_TINTS`. */
+export function listThumbnailLabel(
+  positionFilter: string | null | undefined,
+  isTeam = false,
+): ListThumbnailLabel {
+  return isTeam ? 'TM' : normalizeLabel(positionFilter)
 }
 
 function normalizeLabel(input: string | null | undefined): ListThumbnailLabel {
