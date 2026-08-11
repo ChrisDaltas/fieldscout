@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. Remaining: LV.5–LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. Remaining: LV.6, LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -116,8 +116,20 @@ are all checked.
   that bucket, and under D4 that is the same write in all four modes"* — the
   last clause is wrong and the plan now carries the erratum (D4, plan v3.8):
   cost and budget membership is **computed**, so there is no write to make
-- [ ] **LV.5** — AI list generation + persona surfaces restyled into the new
-  language (CLAUDE.md: never leave them in the old style, never remove them)
+- [x] **LV.5** — **AI list generation + persona surfaces in the new language**
+  (2026-08-11). **UI/UX only — no migration, no schema change, no new API
+  route**; the budget stays closed at three. The survey found something bigger
+  than a restyle: **the v2 screens had no AI surfaces at all.** LV.2/LV.3 built
+  `lists/v2/` as new files and neither carried the "Create with AI" trigger nor
+  the build banner across, so behind `featureFlags.listsV2` — the launch
+  configuration — AI list generation had **no entry point**, a queued job was
+  never claimed, and the dialog's `router.push('/app/lists/<id>')` landed on the
+  still-placeholder detail route. That is the removal CLAUDE.md → Redesign
+  forbids, and nothing failed because nothing asked. Restored, restyled, and
+  pinned by `src/components/lists/ai-surfaces.test.ts`. **Personas were taken
+  shallow, deliberately and on the record** (§4). Original text: *"AI list
+  generation + persona surfaces restyled into the new language (CLAUDE.md: never
+  leave them in the old style, never remove them)"*
 - [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
   server-rendered (D7)
 - [x] **LV.8** — **attached links** (2026-08-11). Migration
@@ -171,7 +183,13 @@ are all checked.
   `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle**
   (§1's boards amendment scopes this). Also fixes that file's now-false header
   comment (R192) — it claims parity with `use-draft-mode.ts`, which went false
-  at LV.1.3 when that hook started writing to the database
+  at LV.1.3 when that hook started writing to the database.
+  **Carries LV.5's forward obligation (§4):** `/app/lists/[listId]` is still
+  `ListDetailPageV2`, a placeholder, whenever the flag is ON — reachable from
+  "Recently viewed", search and any saved link. Decide whether it renders the
+  real panel or redirects to `/app/lists`. Also collapse the
+  `featureFlags.listsV2` ternary in `generate-ai-modal.tsx` when the legacy arm
+  goes
 
 > **Why this was restructured (2026-08-10).** The previous breakdown cut two
 > screens into **twelve** tasks — "page header" and "rail mode" as separate
@@ -1544,6 +1562,113 @@ This section records decisions made **during** the build.
   **The migration has been applied LOCALLY ONLY.** `npx supabase db push` is
   Chris's separate step (CLAUDE.md migration discipline); the hosted project was
   not touched.
+
+- **LV.5 (2026-08-11) — the AI surfaces had not drifted in style; they had
+  vanished.** **UI/UX only — no migration, no schema change, no new API route.**
+  The task reads as a restyle, and the restyle turned out to be the small half
+  of it.
+
+  **What the survey found.** Eleven AI/persona surfaces exist. Two of them —
+  `generate-ai-button.tsx` and `ai-build-banner.tsx` — mount **only** inside
+  `ListsPageLegacy` and `ListDetailPageLegacy`. `lists/v2/` contained the string
+  "ai" nowhere. So with the flag ON:
+
+  | | Behaviour before LV.5 |
+  | --- | --- |
+  | Create with AI | **no entry point anywhere on the Lists surface** |
+  | A queued build job | never claimed — `useAiListBuild` had no v2 caller, so the loop never ran |
+  | The build banner | never rendered; an errored job sat in `sessionStorage` narrating nothing (screenshotted before/after) |
+  | `router.push('/app/lists/<id>')` | lands on `ListDetailPageV2`, **still a placeholder** |
+
+  CLAUDE.md → Active Builds puts **AI stat lists** in the 2026 go-live scope, and
+  LV.7 flips this flag. So the feature was one merge away from disappearing from
+  the launch build with no error anywhere. This is the "never let *nothing
+  happened* mean *it worked*" shape at the level of a whole feature.
+
+  Four judgement calls the task text did not make:
+
+  1. **The queued job is the deep link — no `?list=` parameter.** Lists v2 has no
+     standalone detail screen; a list opens in the right-hand panel of the Lists
+     page (§7 gap 1). The dialog therefore pushes `/app/lists`, and
+     `ListsPageV2` reads `useAiBuildStore` to learn which list to open. A query
+     parameter was the first design and was dropped: it needs `useSearchParams`
+     (a Suspense boundary in a statically-rendered client route), and it carries
+     no information the store does not already hold. **The selection is pinned
+     while a build is live** — the list was created seconds ago and the
+     collection query may not carry it yet, so the existing "selection follows
+     the visible set" effect would read "not in `visible`" as "stale selection"
+     and bounce to the first list, stranding the show off-screen. The pin
+     releases when the job clears, by which point `use-ai-list-build` has
+     invalidated the collection. The `featureFlags.listsV2` ternary in the dialog
+     collapses at LV.7.
+  2. **The banner is a `PanelShell` slot, not part of `children`.** The user
+     arrives from the dialog *before* the detail query lands, so the banner has
+     to render in all three panel states — loaded, skeleton, error. Composing it
+     into the body would have shown it in one.
+  3. **`canEdit` now excludes `aiBuild.building`**, matching the legacy page's
+     `data.is_owner && !aiBuild.building`. Without it the user can drag rows
+     while the ordering pass is rewriting them, and the two writes race over the
+     same reorder route. Note the deliberate asymmetry inherited from the hook:
+     an **error** job leaves the list editable (`building` is
+     `job && job.phase !== 'error'`), which is right — a failed build should not
+     lock the board.
+  4. **`ScoutAiMark` extracted into `ui/ai-insight.tsx`** rather than hand-copied
+     a fourth time. Three surfaces already carried the same eleven classes and
+     the banner had drifted off them into a bare accent glyph. CLAUDE.md forbids
+     near-duplicate components; the glyph is a prop so the banner uses the mark
+     itself as its phase indicator (star → scouting, plus-circle → adding,
+     sort → ordering) instead of a second icon beside a constant one.
+
+  **The restyle proper**, derived from LV.2/LV.3 rather than invented — there is
+  no reference screen for any of this: the square ink-bordered state cards, the
+  explicit ×0.8 scale (`text-[13px]` / `text-[11px]`, replacing `text-sm` /
+  `text-xs`), counts in `fs-num` **including the ones inside a sentence**, the
+  v2 error card's `info-circle` + `Icon name="reset"` on Retry, and `shadow` on
+  primary blue buttons. The **one** inline style left in the banner is the
+  progress bar's `width`, which is data — there is no colour in an inline style
+  anywhere in the diff, and the test pins that specifically rather than banning
+  inline styles wholesale.
+
+  **Personas: shallow, deliberately.** They are flag-gated off at launch
+  (`featureFlags.personas`), and — measured, not assumed — they were already
+  carried into the token language by the phase-4 reskin: `PersonaCard` rests at
+  `box-shadow: none` / `transform: none` and lifts to `shadow-hard-4` with the
+  −2/−2 translate on hover, no inline style, no literal hex. Redesigning a screen
+  nobody sees at launch, with no reference in the design package, is exactly the
+  improvisation the redesign rules warn against, so the depth went into the AI
+  generation flow instead. **Shallow is not unguarded:** the persona components
+  are pinned by the same colour/inline-style/resting-elevation assertions, which
+  `ui/elevation-rule.test.ts` does not reach (it covers `src/components/ui/**`
+  only). Where personas actually touch a launch surface — the dialog's "AI
+  expert" row — they are in scope and were handled; LV.11 correctly left that row
+  on `FilterChip` because zero-selected is a valid state.
+
+  **Proof, and what was deliberately not spent.** The whole flow was exercised
+  end to end in the browser with **`/api/lists/generate` stubbed client-side** —
+  list creation, the six player POSTs, the reorder PATCH, the toast and the cache
+  invalidation all real, only the Claude call intercepted. Six rows landed in the
+  AI's rank order and `ai_call_log` stayed at **0**: no Anthropic call was made
+  at any point in this session, and `seed:personas` was run with
+  `ANTHROPIC_API_KEY` forced empty so it seeded the roster without generating
+  lists. One thing worth recording because it looked like a defect and was not:
+  the stub counted **two** hits on `/api/lists/generate`, which is
+  `useAiGenerationQuota` reading the **same URL by GET** plus the one real POST —
+  stack traces captured. Exactly one generation per build. The same over-broad
+  matcher is why the "N of M left today" line was blank during the stubbed run.
+
+  **Left alone, on purpose, and named rather than silently skipped:**
+  `home/scout-ai-card.tsx` and `home/ai-expert-shelf.tsx` are Home surfaces, not
+  Lists — the first still hand-rolls a `rounded-pill` variant of the Scout mark
+  and should adopt `ScoutAiMark` whenever Home is reskinned. `list-detail-view.tsx`
+  (legacy) was not opened; it is retired at LV.7.
+
+- **LV.5 forward obligation → LV.7.** `/app/lists/[listId]` renders
+  `ListDetailPageV2`, **a placeholder**, whenever the flag is ON. LV.5 routed the
+  AI build show around it, but that route is reachable from the history store's
+  "Recently viewed", from search, and from any saved link, and all of those land
+  on a "coming soon" card today. **LV.7 must decide whether that route renders
+  the real panel or redirects to `/app/lists`** — it is not the AI flow's problem
+  to solve alone, and it is bigger than LV.5's scope.
 
 ---
 

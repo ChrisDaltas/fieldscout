@@ -2,8 +2,10 @@
 
 import * as React from 'react'
 
+import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
@@ -45,6 +47,19 @@ import { AddPlayersPopover, ListToolbar } from './list-toolbar'
  * plus a teaser: the right-hand panel carries the *complete* list — hero, tabs,
  * toolbar and rows (PROGRESS §7 gap 1, `screens/list-rail-list-view.png`). The
  * same panel is what Cards mode opens into.
+ *
+ * **Because it is the whole open list, it is also where the AI build show runs
+ * (LV.5).** The legacy detail page mounts `AiBuildBanner` and `useAiListBuild`;
+ * this file did not, so behind `featureFlags.listsV2` a queued build was never
+ * claimed and narrated nothing. Two rules carried across from that page:
+ *
+ * 1. **The banner renders in every state of the panel**, including the loading
+ *    skeleton — the user arrives here straight from the dialog, before the
+ *    detail query has landed, and an unexplained empty frame is the worst
+ *    moment to say nothing. That is why it is a `PanelShell` prop.
+ * 2. **The list is read-only while the AI owns it**, so the user cannot fight
+ *    the build over the order mid-show (legacy: `data.is_owner &&
+ *    !aiBuild.building`).
  */
 
 type DetailTab = 'list' | 'details' | 'comments'
@@ -85,6 +100,10 @@ export function ListDetailPanel({
   const reorderPlayers = useReorderPlayers(listId)
   const setPlayerTier = useSetPlayerTier(listId)
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
+  // Claims a queued job for THIS list and runs the generate → add → order
+  // sequence. Returns a null job for every other list, so only the panel
+  // showing the list being built ever starts the loop.
+  const aiBuild = useAiListBuild(listId)
 
   const display = useListDisplay(listId)
   const setOrg = useListDisplayStore((state) => state.setOrg)
@@ -115,7 +134,14 @@ export function ListDetailPanel({
     [org, list?.players, display.bandLabels, display.budget],
   )
 
-  const canEdit = Boolean(list?.is_owner)
+  // Read-only while the AI owns the list (LV.5) — the same guard the legacy
+  // page applies. Drag-and-drop, Add players, rename, the drafted checkbox and
+  // the row menu all key off this one flag.
+  const canEdit = Boolean(list?.is_owner) && !aiBuild.building
+
+  const aiBanner = aiBuild.job ? (
+    <AiBuildBanner job={aiBuild.job} onRetry={aiBuild.retry} onDismiss={aiBuild.dismiss} />
+  ) : null
 
   /**
    * A drop landed (LV.4). Both writes go through routes that already exist —
@@ -203,7 +229,7 @@ export function ListDetailPanel({
 
   if (detail.isError) {
     return (
-      <PanelShell>
+      <PanelShell banner={aiBanner}>
         <div className="flex flex-col items-center gap-2.5 py-12 text-center">
           <Icon name="info-circle" size={22} className="text-negative-strong" />
           <p className="text-[13px] font-bold">This list could not be loaded.</p>
@@ -217,7 +243,7 @@ export function ListDetailPanel({
 
   if (!list) {
     return (
-      <PanelShell>
+      <PanelShell banner={aiBanner}>
         <DetailSkeleton />
       </PanelShell>
     )
@@ -245,7 +271,7 @@ export function ListDetailPanel({
   const addedIds = new Set(list.players.map((entry) => entry.player_id))
 
   return (
-    <PanelShell>
+    <PanelShell banner={aiBanner}>
       <ListDetailHero
         list={list}
         owner={owner}
@@ -389,9 +415,23 @@ export function ListDetailPanel({
   )
 }
 
-function PanelShell({ children }: { children: React.ReactNode }) {
+/**
+ * `banner` is a slot rather than something the caller composes into `children`
+ * so the AI build narration renders above the hero in **all three** panel
+ * states — loaded, loading skeleton, and load error. The user arrives here from
+ * the generate dialog while the detail query is still in flight, which is
+ * precisely the state where saying nothing would be worst.
+ */
+function PanelShell({
+  banner,
+  children,
+}: {
+  banner?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <div className="flex flex-col gap-3 border border-ink bg-white p-[18px]">
+      {banner}
       {children}
     </div>
   )

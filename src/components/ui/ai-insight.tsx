@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import { Icon } from '@/components/ui/icon'
+import { Icon, type IconName } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
 type Confidence = 'high' | 'medium' | 'low'
@@ -8,6 +8,44 @@ const CONFIDENCE_LABEL: Record<Confidence, string> = {
   high: 'High confidence',
   medium: 'Medium confidence',
   low: 'Low confidence',
+}
+
+/**
+ * The Scout AI mark — an accent square holding one glyph. It anchors every AI
+ * moment in the app, and AI moments are always ultramarine, never lime.
+ *
+ * **Extracted at LV.5, not invented there.** Three surfaces had hand-copied the
+ * same eleven classes: `AIInsight` below, the "Generate with AI" dialog title,
+ * and the AI build banner. CLAUDE.md forbids near-duplicate components, and
+ * three copies of one mark is that rule's plainest case — the banner had
+ * already drifted to a bare accent glyph with no square at all.
+ *
+ * The glyph is a prop because the build banner uses the mark itself as its
+ * phase indicator (star → scouting, plus-circle → adding, sort → ordering)
+ * rather than putting a second icon beside it.
+ */
+export function ScoutAiMark({
+  icon = 'star',
+  size = 'md',
+  className,
+}: {
+  icon?: IconName
+  /** `md` (24px) beside a heading; `sm` (20px) inline in a banner row. */
+  size?: 'sm' | 'md'
+  className?: string
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-sm border border-ink bg-accent text-accent-foreground',
+        size === 'sm' ? 'h-5 w-5' : 'h-6 w-6',
+        className,
+      )}
+    >
+      <Icon name={icon} size={size === 'sm' ? 11 : 13} />
+    </span>
+  )
 }
 
 interface AIInsightProps {
@@ -35,9 +73,7 @@ export function AIInsight({
       )}
     >
       <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-accent text-white">
-          <Icon name="star" size={13} />
-        </span>
+        <ScoutAiMark />
         <span className="text-[12px] font-extrabold">Scout AI</span>
         {confidence && (
           <Badge variant="stroke" className="ml-auto bg-white">

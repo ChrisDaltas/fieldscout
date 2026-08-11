@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
@@ -10,6 +11,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useDeleteList, useDuplicateList, useLists, type ListWithTags } from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
+import { useAiBuildStore } from '@/stores/ai-build-store'
 import { useUIStore } from '@/stores/ui-store'
 
 import { ListGalleryCard, NewListTile } from './list-gallery-card'
@@ -32,6 +34,14 @@ import { ListsRail } from './lists-rail'
  * The header's resting / hover / active colours are Tailwind classes, never
  * inline styles — the handoff's own critical note, and the reason its
  * segmented control lost its hover state.
+ *
+ * **Create with AI lives in this header (LV.5).** It is not decoration: the
+ * 2026 go-live ships "Lists + Stats/player research + **AI stat lists**"
+ * (CLAUDE.md → Active Builds), and this screen is what LV.7 flips the flag to.
+ * Rebuilding the page as a new file quietly dropped the trigger the legacy page
+ * carries, which is exactly the outcome CLAUDE.md → Redesign forbids ("never
+ * remove them"). `ai-surfaces.test.ts` pins it so a later tidy-up cannot repeat
+ * the omission silently.
  */
 
 type PageMode = 'rail' | 'gallery' | 'compare'
@@ -58,6 +68,16 @@ export function ListsPageV2() {
   const duplicateList = useDuplicateList()
   const deleteList = useDeleteList()
 
+  /**
+   * **The AI build job is the deep link (LV.5).** Lists v2 has no standalone
+   * detail screen — a list opens in this page's right-hand panel (§7 gap 1) —
+   * so the generate dialog creates the list, queues the job, and navigates
+   * here. The job already names its list, which makes a `?list=` query
+   * parameter unnecessary: while a build is live, its list is by definition the
+   * one to show.
+   */
+  const buildingListId = useAiBuildStore((state) => state.job?.listId ?? null)
+
   const viewer = React.useMemo(
     () => ({ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }),
     [profile?.username, profile?.avatar_url],
@@ -75,13 +95,29 @@ export function ListsPageV2() {
 
   const visible = tab === 'mine' ? mine : saved
 
+  // A build that just started takes the frame, in whichever mode the page is
+  // in — `detailId` reads `openedId` in Cards mode and `selectedId` otherwise,
+  // so both are set.
+  React.useEffect(() => {
+    if (!buildingListId) return
+    setSelectedId(buildingListId)
+    setOpenedId(buildingListId)
+  }, [buildingListId])
+
   // Selection follows the visible set: opening the page, or switching tabs,
   // lands on the first list rather than an empty frame.
   React.useEffect(() => {
     if (mode !== 'rail') return
+    // ...except while the AI is building, when the selection is pinned to its
+    // list. The list was created seconds ago and the collection query may not
+    // carry it yet; without this the line below would read "not in `visible`"
+    // as "stale selection", bounce to the first list, and strand the build show
+    // off-screen. The pin releases when the job clears — by which point
+    // `use-ai-list-build` has invalidated the collection.
+    if (buildingListId && selectedId === buildingListId) return
     if (selectedId && visible.some((list) => list.id === selectedId)) return
     setSelectedId(visible[0]?.id ?? null)
-  }, [mode, visible, selectedId])
+  }, [mode, visible, selectedId, buildingListId])
 
   const summaryById = React.useMemo(
     () => new Map((lists.data?.lists ?? []).map((list) => [list.id, list])),
@@ -176,9 +212,12 @@ export function ListsPageV2() {
           </div>
         }
         actions={
-          <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
-            <Icon name="plus" size={13} /> New list
-          </Button>
+          <div className="flex items-center gap-2">
+            <GenerateAiButton size="sm" />
+            <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
+              <Icon name="plus" size={13} /> New list
+            </Button>
+          </div>
         }
       />
 
@@ -189,6 +228,10 @@ export function ListsPageV2() {
           it rather than dropping the controls. */}
       <div className="mb-3 flex flex-wrap items-center gap-2 lg:hidden">
         <h3 className="mr-auto text-h5">Lists</h3>
+        {/* Create with AI rides along here too — the shell's header is hidden
+            below `lg`, so leaving it out of this row would put AI list
+            generation out of reach on a phone entirely. */}
+        <GenerateAiButton size="sm" />
         <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
           <Icon name="plus" size={13} /> New list
         </Button>
