@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1, LV.1.2, LV.1.3, LV.1.4 landed 2026-08-09) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11** — the screen exists and is comparable against `screens/`. Remaining: LV.1.5, LV.4–LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -46,7 +46,14 @@ are all checked.
 
 **Phase 2 — the screens** *(restructured 2026-08-10 — read the note at the end of this section)*
 
-- [ ] **LV.2** — **the Lists page, whole.** Page header (heading, view-mode
+- [x] **LV.2** — **the Lists page, whole** (2026-08-11). Built from
+  `docs/design/lists/screens/*.png`, not from the prose. Page header, rail mode
+  with the **complete open list** in the right panel (§7 gap 1), cards gallery
+  with the correct solid-block cover (§7 gap 2), and loading / empty / error
+  states. The warm `tier-1..7` ramp is used throughout (§7 gap 4). Shipped
+  together with LV.3 in one PR, because §7 is explicit that they are one screen
+  and splitting them is what guaranteed an empty frame. Original text:
+- [x] ~~**LV.2** — **the Lists page, whole.**~~ Page header (heading, view-mode
   segmented control, My lists / Saved tabs, New list), rail mode (200px sticky
   rail, shared edge, selected-row treatment), cards gallery (responsive, flat
   at rest, lift on hover), and its loading / empty / error states. One branch,
@@ -54,7 +61,15 @@ are all checked.
   **Handoff §"Lists page"** — and heed its critical note: resting/hover/active
   colors for the segmented and tab controls belong in **CSS classes, not inline
   styles**; an inline `background` outranks `:hover` and silently kills it.
-- [ ] **LV.3** — **list detail, whole.** Hero + inline rename, tabs, toolbar,
+- [x] **LV.3** — **list detail, whole** (2026-08-11, same PR as LV.2). Hero
+  with inline rename and the Share / dots / expand / pop-out / close cluster,
+  List · Details · Comments tabs, the toolbar, **all three view styles**, and
+  **all five groupings** including the Avg cost band-rename and the Budget %
+  share column. **Three carve-outs, all named rather than approximated:** the
+  note *editor* (the mark and its hover card ship; writing a note does not),
+  the searchable/grouped stat catalog (the picker ships over the seven stats
+  the app holds data for), and drag-and-drop, which is LV.4. Original text:
+- [x] ~~**LV.3** — **list detail, whole.**~~ Hero + inline rename, tabs, toolbar,
   all three view styles (list / table / cards), stats picker, notes, the
   drafted checkbox, and its states. One branch, one PR. Needs only LV.1.1.
   **Handoff §"List detail"**. Two things carried from earlier reviews:
@@ -733,6 +748,81 @@ This section records decisions made **during** the build.
 
 ---
 
+- **LV.2 + LV.3 (2026-08-11) — the Lists screen, rebuilt against the
+  screenshots.** One PR, because §7 rules that the page and the detail are one
+  screen. Everything lives in `src/components/lists/v2/`; nothing outside it was
+  restyled. **No migration, no schema change, no new API route.** The judgement
+  calls the task text did not make:
+
+  1. **Bucket membership is stored for tier/round and *computed* for
+     cost/budget — and that is the prototype's own model, not a shortcut.**
+     `lists.js` keeps `tier` and `round` on the entry and derives the cost bands
+     and budget share from `cost` with `min` thresholds. `screens/README.md`
+     corrected plan D4 in the same direction: *"nothing is computed" holds for
+     bucket membership and is wrong about stats*. So Avg cost and Budget % read
+     `players.auction_value` (the `Cost PPR` column) and need no write at all —
+     which is also why they render today while Rounds cannot.
+
+  2. **Rounds ships rendering-complete and data-empty, deliberately.** It reads
+     `r1`…`rN` out of `list_players.tier`, which the live
+     `list_players_tier_check` still forbids, so every player falls into the
+     ungrouped section until **LV.1.5** lands. The alternative — chunking the
+     ranked order into rounds of twelve — was rejected: it matches no
+     screenshot (the reference's rounds hold 4/3/4/3/3, i.e. stored
+     membership), invents a picks-per-round number no screen shows, and would
+     have silently changed meaning the day LV.1.5 shipped. `list-buckets.test.ts`
+     pins both the empty-today case and the `r1`/`r2`/`r10` case LV.1.5 opens,
+     including numeric (not lexical) ordering.
+
+  3. **`/api/lists/[id]` now selects `bye_week`, `sos`, `auction_value` and the
+     three `projected_pts_*` columns on the embedded player.** This is the one
+     server-side edit and it is deliberately **not** a third D6 change: no
+     migration, no schema change, no new route, no new mutation, and not one
+     column that `/api/lists/big-board` does not already select from the same
+     table. It was also a standing bug — `list-detail-view.tsx` has been reading
+     `player.sos` / `player.auction_value` / `player.bye_week` since before this
+     build while the route never returned them, so Bye / SOS / Auction rendered
+     as an em dash on every list that is not the big board. Revert it and the
+     design's own five-stat set (`ADP · Cost PPR · Proj · Bye · SOS`) cannot be
+     shown at all.
+
+  4. **Everything the schema cannot carry is named on screen, never faked.**
+     There is no `cover` column, so the tile's colour is a stable FNV-1a hash of
+     the list id over five tokens (brand lime reserved for Favorites) and its
+     glyph is the title's word initials — the prototype's hand-picked `BB` /
+     `11` / `0R` are not derivable. There is no `scope` column, so the second
+     chip is **visibility**. There is no `links` table, so **Attached links**
+     renders its section and empty state with the action disabled and the
+     reason stated, rather than opening a dialog that would discard the link.
+     Comment likes render 0 and are inert. The gallery's comments pill carries
+     no count (`/api/lists` returns none and per-card fetching is an N+1).
+
+  5. **A mobile control row was added, because the shell hides its header below
+     `lg`.** `app-shell.tsx` renders `AppHeader` inside `hidden lg:block`, so a
+     phone would have had no way to change page mode or tab at all. The same
+     two controls render in-page under `lg:hidden`. The design package shows no
+     mobile screens; this extends it rather than dropping the controls.
+
+  **A break probe found a real bug and it is fixed.** Forcing `/api/lists` to
+  500 rendered *"No lists yet. Start one with New list."* in the rail plus a
+  permanent "Loading your lists…" — a confident empty state over a request that
+  had never succeeded, which is the exact shape CLAUDE.md names. The cause was
+  asking `isPending`, which misses React Query's third state: `fetchStatus:
+  'paused'`, entered when it believes the browser is offline. Every "no rows"
+  branch now gates on `isSuccess`, the rail renders a skeleton until the data is
+  real, and `paused` gets its own loud message with a retry. *(Note for whoever
+  repeats this: in the automated browser the 500 tips React Query into `paused`
+  rather than `error`, so the `error` branch itself was not exercised live —
+  only the `paused` branch, which shares the fix.)*
+
+  **Verified in the browser at 1728×1000 and 375×812**, against every reference
+  image: all three view styles, all five groupings, both tabs, the cards
+  gallery, the note hover card, and the inline band rename. Seeded **locally
+  only** — tiers S–F on one list, a Favorites list, three notes, five drafted
+  marks, two comments, three tags.
+
+---
+
 ## 5. Blockers
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
@@ -1317,6 +1407,15 @@ alone is not trustworthy.
    `#df5551 / #e58033 / #e6b422 / #3fa055 / #1f9aa6`. The tokens were right and
    the prose misled. General lesson: where the two disagree, the screenshots
    and the tokens win.
+
+### ✅ Closed by the rebuild — 2026-08-11
+
+All four gaps are addressed in the LV.2 + LV.3 PR; see §4's entry for the
+judgement calls. **Gap 3 is the one that did *not* change**: side by side is
+still not built. It renders its segment and says so in plain words rather than
+a "coming in round 2" tooltip, so the header stays honest about the three modes
+the design has. Whether it moves into Round 1 is Chris's call, not a Builder's —
+the drafted checkbox it needs is already permanent and already shipped.
 
 ### Process note
 
