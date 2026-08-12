@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all (§6) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all. **A second independent review returned FIX-THEN-MERGE with no blockers; the second fix round (2026-08-12) closed R231–R234** — that Escape guard covered Radix and *only* Radix, because `defaultPrevented` needs the consumer to have called `preventDefault()` and four of the app's own handlers do not, so an Escape typed into the player-search box **on `/app/players`** destroyed the pop-out; and `PROGRESS-scout.md`, an unrelated build's memory document, had been swept into the previous round's commit undisclosed and is now back out of the branch and untouched on disk (§6) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -410,7 +410,16 @@ checked.
   render-nothing contract anchored on the *first* `return null` rather than the
   guard's, so a `useEffect` running on every route in the app left the suite
   green; and the one behaviour change is **Escape closing the top pop-out**,
-  because a window met by a smaller viewport had no reachable way to close (§6)
+  because a window met by a smaller viewport had no reachable way to close (§6).
+  **A second independent review then returned FIX-THEN-MERGE with no blockers;
+  the second fix round closed R231–R234** — that new Escape guard covered Radix
+  and *only* Radix, so an Escape typed into the player-search input on
+  **`/app/players`** — a route the app-shell-hosted window survives to — closed
+  the pop-out instead of the dropdown. It now also asks *where the key came
+  from*, with `button` and `[role=dialog]` deliberately **out** of that selector
+  because the window is itself a `role="dialog"` and focus rests on buttons
+  constantly. The round also took `docs/specs/PROGRESS-scout.md` — another
+  build's memory document, swept in undisclosed — back out of the branch (§6)
 - [ ] **LV.16** — dark-inverted window content (LV.15) — **carries F-LV15.1 and
   F-LV15.2** (delete `ListWindowBodyPending`; add `gear` + `dots`), now also in
   the plan's own §6 row (R230)
@@ -2889,8 +2898,9 @@ This section records decisions made **during** the build.
   `partialize` writes, driven through the **real** middleware) and
   `src/components/lists/v2/list-windows-host.test.ts` (**17 source pins**).
   1032 → **1073**, and 24 + 17 = **41** = 1073 − 1032. *(Both numbers are what
-  LV.15 landed with and are left as the record of that. The review round took
-  the source pins to **19** and the suite to **1075** — see §6.)*
+  LV.15 landed with and are left as the record of that. The first review round
+  took the source pins to **19** and the suite to **1075**, and the second
+  (R231) to **21** and **1077** — see §6.)*
 
   *Getting the persistence test to be about anything took two corrections, both
   worth recording:* `persist` reads **`window.localStorage`** at store creation
@@ -2994,7 +3004,7 @@ This section records decisions made **during** the build.
   | --- | --- | --- |
   | **F-LV15.1** | **`ListWindowBodyPending` must be deleted, not decorated.** `list-window.tsx` ships a marked scaffold body — the same device as LV.12's `ComparisonPending`, which LV.13 duly deleted — reading *"Rows, stats and the dark inversion arrive with LV.16."* Its branch becomes the inversion wrapper + the 36px rows + the footer | **LV.16.** The rows and the wrapper *are* that task. Nothing pins the scaffold's existence, deliberately: a pin the next task must delete is friction, and this row is the record instead |
   | **F-LV15.2** | **The header is two controls short of the design LAW.** *"cover, name 12.5px/600, then gear (stat picker), `dots` (grouping menu), collapse, close"* — LV.15 ships cover, name, collapse, close, and a marked gap where the other two go. They were left out rather than rendered inert because a control that does nothing is the live-but-false affordance **R220** found one task earlier | **LV.16.** The gear opens the Stats modal that task must render *outside* the inversion wrapper (design LAW), and the `dots` grouping menu regroups rows that do not exist until then. The menu itself is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it |
-  | **F-LV15.4** | **The precedent this build mirrors closes its window on an Escape that a Radix overlay already handled** — found while proving R227's own guard, and **reproduced live**. `window-shell.tsx`:123–129 has no `defaultPrevented` check, and Radix's `DismissableLayer` listens on `document` in the **capture** phase and only calls `preventDefault()`, so a bubble-phase listener still runs. Measured on `/app/lists`, local stack: player mini card open (`[role=dialog] "Josh Allen"`, `z:60`) **plus** the account dropdown open → **one** Escape → menu `data-state="closed"` *and* `[role=dialog]` count **0**. The user aimed at the menu and lost the mini card too | **Not LV.15, and not Lists.** `src/components/shared/window-shell.tsx` is the *Players* mini card, outside this task's diff and outside Round 2's surface; changing it would be the drive-by fix the charter forbids. The pop-out is **not** affected — LV.15 carries the guard, and both directions were measured this round (with it: dialog dismissed, window survives; without it: both close). Worth its own commit because the fix is one line and the same one, and because a reader comparing the two files will otherwise read the difference as an unexplained divergence from the precedent |
+  | **F-LV15.4** | **The precedent this build mirrors closes its window on an Escape that a Radix overlay already handled** — found while proving R227's own guard, and **reproduced live**. `window-shell.tsx`:123–129 has no `defaultPrevented` check, and Radix's `DismissableLayer` listens on `document` in the **capture** phase and only calls `preventDefault()`, so a bubble-phase listener still runs. Measured on `/app/lists`, local stack: player mini card open (`[role=dialog] "Josh Allen"`, `z:60`) **plus** the account dropdown open → **one** Escape → menu `data-state="closed"` *and* `[role=dialog]` count **0**. The user aimed at the menu and lost the mini card too | **Not LV.15, and not Lists — but it now has an owner, which it did not (R233).** `src/components/shared/window-shell.tsx` is the *Players* mini card, outside this task's diff and outside Round 2's surface; changing it would be the drive-by fix the charter forbids, and it is the only row in this table describing a **live defect on a shipped surface** rather than a build hand-off, so "LV.16" / "LV.17" were never available to it. It is filed as a **task chip — `task_c1e3da1c`, *"Fix player mini card closing on a handled Escape"*** — carrying the file, the line numbers, the cause, the reproduction and the fix to copy, so a one-line fix with a proven reproduction does not rot in §5. ~~The pop-out is **not** affected — LV.15 carries the guard~~ — ***that claim was too broad and is corrected by R231***: `defaultPrevented` covers Radix and only Radix, and the pop-out **was** affected by the app's own Escape handlers, which do not `preventDefault()`. Both windows had the same defect; only its Radix half differed. The pop-out's is fixed (R231, `escapeBelongsToTarget`), the mini card's is the chip, and **the chip points at the fixed file rather than restating the fix** |
   | **F-LV15.3** | **The phone question is open, and LV.15 answered only the part that would have shipped broken.** A cascaded window now fits the viewport (§4), so the close button and the grip are reachable at 375px — but a 352 × 416 window still covers most of a phone screen, **touch resize is unverified** (the grip carries `touch-none` and takes pointer events, but no touch drag was exercised), and there is no answer for what a phone *should* get instead of a floating window. Chris's *"leave the phone version as is"* (D14) was about **Side by side**, not pop-outs, so nothing here is ruled | **LV.17**, which owns *"the mobile answer (a floating draggable window has none — say what small screens get instead)"* in as many words |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
@@ -3794,12 +3804,105 @@ defects.** (1) `resize_window` below **768px** switches the tab into **mobile
 device emulation** (UA becomes `Android 14; Pixel 8`) and trusted key injection
 stops arriving — a `computer{action:"key"}` Escape appeared to do nothing at
 700×700 while a JS-dispatched one closed the window immediately. The 800×700
-re-run is the one in the table above, and it stays desktop. (2) Key injection is
-also dropped while `document.visibilityState === 'hidden'`, which a resize
-leaves behind; a click into the page restores it. Neither is a product
-behaviour, and both cost a false negative before being run down — which is
-CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* in the reverse
-direction: **a no-op that is the harness, not the code.**
+re-run is the one in the table above, and it stays desktop. **This one is a
+genuine harness artefact and the Reviewer re-derived it independently**: the
+product code is width-independent, and an identical *in-page* Escape at 700×700
+under mobile emulation closes the window, so Chris's "no special treatment"
+ruling is not violated.
+
+(2) ~~Key injection is also dropped while `document.visibilityState ===
+'hidden'`~~ — **wrong as stated, and corrected at R234 by measurement.** The
+predictor is not `visibilityState`, and it is not width either: **injected keys
+are dropped until the page has received one real click since the last load.**
+A/B, desktop 1280×900, `vis: "hidden"` throughout, with a `window` + `document`
+keydown trace installed on a fresh load:
+
+| Sequence | Trace |
+| --- | --- |
+| fresh load → Escape → Escape | `[]`, **both dropped** — and `document.hasFocus()` had already flipped to `true` by the second, so it misleads too |
+| …then one `left_click` into the page → Escape | `[{document, Escape, trusted:true}, {window, Escape, trusted:true}]` |
+| fresh load → one `left_click` → Escape | lands on the **first** press — the click is the enabling event, not the second keypress |
+| fresh load at 700×700, mobile emulation → Escape | `[]`, as in (1) |
+
+Six consecutive injected Escapes then landed at `vis: "hidden"` while proving
+R231 both ways, which is what rules `visibilityState` out. **The operational
+advice is unchanged and gains a clause: stay ≥768px, and click into the page
+once after every load.** R234 proposed re-attributing (2) to (1)'s mobile
+emulation; that does not survive the first row of the table above — a *desktop*
+fresh load drops the press just the same — and a note whose whole purpose is to
+prevent a false diagnosis is the wrong place to install a second one.
+
+Neither is a product behaviour, and both cost a false negative before being run
+down — which is CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* in
+the reverse direction: **a no-op that is the harness, not the code.**
+
+#### Second review — 2026-08-12 (independent Reviewer, on the fix diff) — verdict **FIX-THEN-MERGE**
+
+*A second Reviewer, fresh context, re-reviewed the R226–R230 fix diff.* **No
+blockers, and a great deal was independently re-derived and is not re-opened**:
+all nine widened pins fire (it broke each one); the Escape behaviour live —
+three windows, one press each, front-to-back, top-follows-focus, zero-windows a
+no-op, a collapsed window closes, no leaked or duplicated handler; the
+`defaultPrevented` guard as genuinely load-bearing (measured both ways, with a
+full reload to force effect re-registration); the sub-768px claim as a **genuine
+harness artefact** (the product code is width-independent — an identical in-page
+Escape at 700×700 under mobile emulation closes the window, so Chris's *"no
+special treatment"* ruling is not violated); **F-LV15.4 as a real defect
+correctly filed rather than fixed**; and the whole proof chain and scope.
+**R231–R234: two should-fix, two nits.**
+
+***The finding that mattered (R231) — the guard was narrower than the document
+claiming it.*** *`if (e.defaultPrevented) return` only covers a consumer that
+calls `preventDefault()`, which is Radix's habit and not the app's. Four of the
+app's own Escape handlers skip it —* `players-spreadsheet.tsx`:1092,
+`list-detail-hero.tsx`:121, `list-row-parts.tsx`:531, `list-builder.tsx`:294 *—
+and the first is on **Players**, a route the app-shell-hosted window survives
+to. Reproduced live at 1280×900: pop-out open on `/app/players`, focus in the
+player-search input with* `alle` *typed, one Escape →* `popouts 1 → 0` *while
+focus never left the input. **The user aimed at a search dropdown and lost a
+window, on a page that is not Lists** — and §5's F-LV15.4 row said in as many
+words that the pop-out was* not *affected.*
+
+#### Resolution — 2026-08-12 (second fix Builder, same branch `feat/LV15-popout-host-store`)
+
+*All four resolved on the same branch; nothing deferred, nothing escalated.*
+**One behaviour changed, deliberately and as directed** *— R231's target guard.
+R232 removes a file. Everything else is a pin or a document.*
+*Proof re-run this session:* **`type-check` clean · `lint` exit 0** *(the one
+pre-existing `auction-draft-room.tsx:107` warning) ·* **`test:unit` 58 files /
+1077 tests** *(1075 → 1077: R231's two new pins, `list-windows-host.test.ts`
+19 → 21).* `settings-round-trip-db.test.ts` *is the known §5 leagues
+parallel-race flake, outside `test:unit` and in the paused build — not chased.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R232** — `docs/specs/PROGRESS-scout.md`, **an unrelated build's memory document, was swept into the fix-round commit `417aa16` undisclosed**: not on `main`, listed by `gh pr view 136 --json files`, absent from the PR body, and absent from *"Not changed, and why"*, which enumerated only `PROGRESS-lists-v2.md` and the plan | should-fix | ✅ **Out of the branch, still on disk, byte-identical.** `git rm --cached` and a commit of its own — not a working-tree delete: the file is **Chris's**, it belongs to a different build, and it survives untracked exactly as it was (`md5 e6a6e35d…`, mtime unchanged at Aug 11 19:03). Verified after: `git ls-files docs/specs/PROGRESS-scout.md` → **empty**, `ls` → **present**, `git diff main...HEAD --stat -- docs/specs/PROGRESS-scout.md` → **empty**. Its internal inconsistency is confirmed and recorded rather than fixed — the authority header cites `spec-scout.md` **v2.7** / `delivery-plan-scout.md` **v2.7**, both of which read **v2.5** on this branch; resolving that is Chris's, not this build's. **How it got staged, so the next task does not repeat it:** the file has been untracked-but-present in `docs/specs/` since **before this branch existed**, and LV.15's own commit `d4f5b5d` **does not contain it** — so the fix round staged by directory (`git add docs/specs`) or with `-A` rather than by explicit path. Every prior Builder in this build left it alone and said so. **Stage by explicit path** |
+| **R231** — the Escape guard covers Radix and only Radix: `defaultPrevented` needs the consumer to have called `preventDefault()`, and four of the app's own Escape handlers do not. Reproduced live on `/app/players`, focus in the player-search input → one Escape → `popouts 1 → 0`. `PROGRESS:2997` **overstates the coverage** | should-fix | ✅ **Widened to ask where the key came from, and pinned in both directions — after being reproduced first.** `list-window.tsx` gains `escapeBelongsToTarget(e.target)` beside the existing `defaultPrevented` check, driven by a named `ESCAPE_BELONGS_TO_TARGET` selector that carries the whole decision. **The defect was reproduced before the fix** (R218's precedent): `before {"url":"/app/players","popouts":1,"store":["00ab01"],"active":"INPUT/Search players…"}` → one injected Escape → `after {…"popouts":0,"store":[]…}`. **Both halves then proven live, local stack, 1280×900** — (a) same setup, `dropdown: true → false` and **`popouts` stays `1`**, store unchanged; (b) focus on `<body>`, one Escape → `popouts 1 → 0`. **The two deliberate *exclusions* were proven live too**, which is the half a selector-only pin cannot show: with focus on the window's own `<button aria-label="Expand">` — inside its own `[role="dialog"]`, `matchesGuard: false` — one Escape still closed the top window of two (`["00ef01","00ab01"] → ["00ef01"]`), front-to-back. Had `button` or `[role=dialog]` been in the selector, that press would have done nothing. **Two new `it`s (19 → 21), and five probes each shown red then reverted**: delete the guard line (the pre-fix state) → **1 red** at the new assertion; drop `input` from the selector → **1 red** (`expected [ 'textarea', … ] to include 'input'`); add `[role="dialog"]` → **1 red**; the lazy `'*'` → **2 red**, one per half; rename the constant away → the locator **throws** on both, *"the Escape guard is back to covering only Radix, which is R231"*. `git diff` on `list-window.tsx` clean of every probe. **The four consumers were left alone as directed** — three are outside this surface and one is on Players; changing four to fix one guard is the wider blast radius. **§5's overstated claim is struck through and corrected in place** |
+| **R233** — **F-LV15.4 is the only row in its table with no owning task**, and the only one describing a *live defect on a shipped surface* rather than a build hand-off | nit | ✅ **Given a home outside this build, via the task-chip mechanism.** Chip **`task_c1e3da1c`** — *"Fix player mini card closing on a handled Escape"* — carrying the file and line numbers (`window-shell.tsx`:123–129), the cause (no `defaultPrevented` check against Radix's capture-phase `preventDefault()`, **plus** the four app handlers R231 found), the full reproduction, and the instruction to **copy `list-window.tsx`'s now-fixed guard rather than re-invent it** — including its comment on what is deliberately excluded, since `button` or `[role=dialog]` in that selector would disable the keyboard close outright. The chip id is recorded in the F-row, and the F-row now says why "LV.16" / "LV.17" were never available to it |
+| **R234** — recorded harness artefact **(2) is wrong as stated**, in a note whose whole purpose is to save the next task from a false diagnosis: injection is **not** dropped merely because `document.visibilityState === 'hidden'` | nit | ✅ **Struck and replaced with an A/B table of what was actually measured — and the prescribed rewording did not survive that measurement either, which is said out loud.** R234 proposed re-attributing (2) to (1)'s mobile emulation; a **desktop** 1280×900 fresh load drops the press just the same (`trace: []` on **two** consecutive Escapes, with `document.hasFocus()` already `true` by the second — so it misleads too). The predictor that fits every observation: **injected keys are dropped until the page has received one real click since the last load**. Isolated: fresh load → one `left_click` → the **first** Escape lands, `trusted: true`, still at `vis: "hidden"`; and six consecutive Escapes landed under `vis: "hidden"` while proving R231. `visibilityState` is ruled out, (1) is untouched and upheld, and the operational advice stands with one clause added: **stay ≥768px, and click into the page once after every load** |
+
+**Not changed, and why (second pass).** The store's shape, the `z`-as-index
+decision, the z-layer numbers, both clamps, the cascade and its fit,
+`partialize`, the no-shadow stroke, every ×0.8 conversion, and R226's five
+widened pins are **untouched** — the second review upheld all of them. The
+`isTop` scoping, the `defaultPrevented` check and the front-to-back unwind are
+unchanged; R231 **adds** a second question to the same handler rather than
+replacing the first. The schema budget is still the ruled three: **no migration,
+no column, no new API route**; boards untouched;
+`src/components/ui/elevation-rule.test.ts` untouched. **The four Escape handlers
+R231 names were deliberately not edited** — `players-spreadsheet.tsx`,
+`list-detail-hero.tsx`, `list-row-parts.tsx`, `list-builder.tsx` all keep their
+`preventDefault()`-less Escape, per the Reviewer's direction. LV.16's and
+LV.17's work was not started. **Files changed this round: three** —
+`list-window.tsx`, `list-windows-host.test.ts`, this document — plus the
+`git rm --cached` of `PROGRESS-scout.md`.
+
+**Verification environment (second pass).** Local stack only —
+`.claude/launch.json` **`dev-local`** on port 3123, `127.0.0.1:54321` returning
+the `dev@fieldscout.local` profile `11111111-…`. **Nothing hosted was read or
+written, and this round wrote nothing to any database.** The same temporary
+two-line `__listWindows` harness was used again and **reverted before the
+commit** — `grep -rn "__listWindows" src/` returns nothing.
 
 ---
 

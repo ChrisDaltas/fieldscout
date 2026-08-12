@@ -121,6 +121,55 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+/**
+ * Where an Escape is **someone else's**, so this window must not answer it
+ * (**R231**).
+ *
+ * `defaultPrevented` alone covers only Radix, because it is Radix that calls
+ * `preventDefault()`. The app's own Escape handlers do not — measured on four:
+ * `players-spreadsheet.tsx`:1092 (`if (e.key === 'Escape') setOpen(false)`),
+ * `list-detail-hero.tsx`:121, `list-row-parts.tsx`:531 and
+ * `list-builder.tsx`:294 — so before this selector existed, an Escape aimed at
+ * the **player search dropdown on `/app/players`** closed the pop-out instead.
+ * That route matters: the host mounts in the app shell, so a window survives to
+ * every screen, and the user who lost it was not even on Lists.
+ *
+ * ## What is in it, and why each
+ *
+ * `input` / `textarea` / `select` / `[contenteditable]` are the native controls
+ * where Escape conventionally cancels an edit or closes an attached popup, and
+ * `[role=combobox|listbox|searchbox|textbox]` are the ARIA spellings of the same
+ * things — included so the guard does not depend on which spelling a component
+ * happened to use. `input` deliberately is **not** split by `type`: a selector
+ * that excludes checkboxes and radios is one nobody maintains correctly, and a
+ * focused form control is a context where Escape plausibly means "cancel this".
+ *
+ * ## What is deliberately **out**, which is the half that keeps R227 working
+ *
+ * - **`button`, `[role=button]`, `a`.** None of them handles Escape, and focus
+ *   rests on a button after almost every click in this app — bailing there would
+ *   leave the escape hatch working only while focus is on `<body>`. A button
+ *   that *does* own Escape is a menu trigger, i.e. a Radix layer, i.e. the
+ *   `defaultPrevented` check above.
+ * - **`[role=dialog]` — and this one is not merely unnecessary, it is wrong.**
+ *   *This window is a `role="dialog"`.* Bailing on it would switch Escape off
+ *   the moment focus landed inside the very window Escape exists to close —
+ *   after a click on its own collapse button, say. A foreign dialog is Radix and
+ *   `preventDefault`s. Pinned in `list-windows-host.test.ts`.
+ * - **`[tabindex]` / anything focus-shaped.** Focusable is not "owns Escape".
+ *
+ * The accepted cost, stated rather than glossed: with a **closed** combobox
+ * trigger focused, Escape no longer closes the window. That is one press wasted
+ * next to a visible close button, against the alternative of destroying a window
+ * the user never aimed at — which is the defect this is.
+ */
+const ESCAPE_BELONGS_TO_TARGET =
+  'input, textarea, select, [contenteditable], [role="combobox"], [role="listbox"], [role="searchbox"], [role="textbox"]'
+
+function escapeBelongsToTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(ESCAPE_BELONGS_TO_TARGET) !== null
+}
+
 export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProps) {
   const detail = useList(listId)
   const saved = useListWindowsStore((state) => state.geometry[listId])
@@ -192,19 +241,28 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
    * just on Lists. Measured before this existed: rect `[1050, 400, 352, 416]`
    * at 700×700, `visibleWidth: 0`, close button not hit-testable.
    *
-   * **The one addition to the precedent, and why it is not a divergence.**
+   * **The two additions to the precedent, and why neither is a divergence.**
    * Radix's `DismissableLayer` listens on `document` in the **capture** phase
    * and calls `preventDefault()` when it dismisses (`useEscapeKeydown`), so a
    * bubble-phase listener still fires afterwards. Without the
    * `defaultPrevented` check, one Escape aimed at an open dialog — or at the
    * `dots` menu **LV.16** puts in this very header — would dismiss the overlay
    * *and* close the window underneath it.
+   *
+   * That check covers Radix and **only** Radix, because `preventDefault()` is
+   * Radix's habit and not the app's (**R231**). The second guard therefore asks
+   * where the key came from rather than what was done with it — see
+   * {@link ESCAPE_BELONGS_TO_TARGET}, which carries the whole decision about
+   * what counts.
    */
   React.useEffect(() => {
     if (!isTop) return
     const onKey = (e: KeyboardEvent) => {
       // A Radix overlay above this window has already handled it.
       if (e.defaultPrevented) return
+      // R231: and the app's own Escape handlers, which mostly do not
+      // `preventDefault()` — an Escape typed into a search box is not ours.
+      if (escapeBelongsToTarget(e.target)) return
       if (e.key === 'Escape') close(listId)
     }
     window.addEventListener('keydown', onKey)

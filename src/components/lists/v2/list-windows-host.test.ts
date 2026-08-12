@@ -135,6 +135,30 @@ const escapeEffect = () => {
   return match[1]
 }
 
+/**
+ * The Escape target guard's selector, split into its parts (**R231**).
+ *
+ * Read from the **named constant** rather than from the effect body, because
+ * `list-window.tsx` already contains a second `closest('…')` — the
+ * `closest('button, a')` that keeps a press on a header control from starting a
+ * drag — and a bare `closest\(…\)` regex would happily assert about whichever
+ * came first. That is R226's `classNameContaining` lesson applied before the
+ * ambiguity bites rather than after.
+ *
+ * Throws if the constant is gone: the two pins below would otherwise be
+ * guarding nothing.
+ */
+const escapeTargetSelector = (): string[] => {
+  const match = code(WINDOW).match(/const ESCAPE_BELONGS_TO_TARGET =\s*'([^']+)'/)
+  if (!match) {
+    throw new Error(
+      `LV.15: no \`ESCAPE_BELONGS_TO_TARGET\` selector in ${WINDOW} — the Escape guard is back ` +
+        'to covering only Radix, which is R231.',
+    )
+  }
+  return match[1].split(',').map((part) => part.trim())
+}
+
 const handlerBody = (file: string, name: string) => {
   const match = code(file).match(new RegExp(`const ${name} = [\\s\\S]*?\\n  \\}\\n`))
   if (!match) {
@@ -286,6 +310,76 @@ describe('LV.15 — Escape closes the top window, and only the top one (R227)', 
 
     // The precedent really does say what this claims to mirror.
     expect(code(PRECEDENT_WINDOW)).toContain('if (!isTop) return')
+  })
+
+  /**
+   * **R231 — half one: an Escape the focused control already owns is not ours.**
+   *
+   * `defaultPrevented` covers Radix and only Radix, because `preventDefault()`
+   * is Radix's habit and not the app's. Four of the app's own Escape handlers
+   * skip it — `players-spreadsheet.tsx`:1092, `list-detail-hero.tsx`:121,
+   * `list-row-parts.tsx`:531, `list-builder.tsx`:294 — and the first of those is
+   * on **Players**, a route the app-shell-hosted window survives to. Measured
+   * before this pin existed: pop-out open on `/app/players`, focus in the player
+   * search input with `alle` typed, one Escape → `popouts 1 → 0` while focus
+   * never left the input.
+   */
+  it('…and not an Escape the focused control already owns (R231)', () => {
+    // The effect asks where the key came from, not only what was done with it.
+    expect(escapeEffect()).toContain('escapeBelongsToTarget(e.target)')
+
+    const parts = escapeTargetSelector()
+    // The native controls where Escape cancels an edit or closes a popup, and
+    // the ARIA spellings of the same things — so the guard does not depend on
+    // which spelling a component happened to reach for.
+    for (const selector of [
+      'input',
+      'textarea',
+      'select',
+      '[contenteditable]',
+      '[role="combobox"]',
+      '[role="listbox"]',
+      '[role="searchbox"]',
+      '[role="textbox"]',
+    ]) {
+      expect(parts, selector).toContain(selector)
+    }
+  })
+
+  /**
+   * **R231 — half two, and it is the half that keeps R227 alive.** A guard wide
+   * enough to be safe is one edit away from being wide enough to be useless: the
+   * escape hatch only exists while *some* Escape still reaches it.
+   */
+  it('…and the guard stays narrow enough that the hatch still exists (R231)', () => {
+    const parts = escapeTargetSelector()
+
+    // This window IS a role=dialog, which is why that one is not merely
+    // unnecessary but wrong: it would switch Escape off the moment focus landed
+    // inside the very window Escape exists to close. The assertion is written
+    // against the fact rather than beside it, so the two cannot drift apart.
+    expect(code(WINDOW)).toContain('role="dialog"')
+    // A button does not handle Escape, and focus rests on one after almost
+    // every click in this app — bailing there would leave the hatch working
+    // only while focus is on <body>. A button that *does* own Escape is a menu
+    // trigger, i.e. Radix, i.e. the `defaultPrevented` check.
+    for (const selector of [
+      '[role="dialog"]',
+      'button',
+      '[role="button"]',
+      'a',
+      '[tabindex]',
+      '*',
+    ]) {
+      expect(parts, selector).not.toContain(selector)
+    }
+
+    // The ordinary path is still reached: nothing returns before the close.
+    const effect = escapeEffect()
+    expect(effect.indexOf('escapeBelongsToTarget')).toBeLessThan(
+      effect.indexOf("e.key === 'Escape'"),
+    )
+    expect(effect).toContain('close(listId)')
   })
 
   it('exactly one window is top: the last of the back-to-front array', () => {
