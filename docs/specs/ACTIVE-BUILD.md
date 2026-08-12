@@ -9,9 +9,16 @@
 
 ---
 
-## Active: Lists v2
+## Active: Lists v2 — **Round 1 COMPLETE 2026-08-11**
 
 *(Set 2026-08-09. Lists v2 ships ahead of M2 leagues — Chris, 2026-08-09.)*
+
+**Every LV.* task in the Round 1 checklist is done.** `/build-next` has nothing
+left to pick here: Round 2 (side-by-side compare, pop-out windows) is deferred
+by plan §6 and has no task breakdown, and the seven LV.7 follow-ups are in
+`PROGRESS-lists-v2.md` §5 as filed items, not as queued tasks. **Switching back
+to Redraft Leagues M2 (paused at L.B3.1) is a Chris decision** — follow
+"Switching builds" below; do not repoint this file unasked.
 
 | | |
 | --- | --- |
@@ -36,7 +43,9 @@
   count moving is the process working, not the budget eroding.)*
 - **Boards are off limits.** No task opens `src/components/big-board/**`,
   `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`.
-- Everything lands behind `featureFlags.listsV2`.
+- ~~Everything lands behind `featureFlags.listsV2`.~~ **The flag was removed at
+  LV.7 (2026-08-11)** — `/app/lists` serves the rebuilt page unconditionally and
+  the legacy components are deleted. Nothing left to gate.
 - Keep the app's ×0.8 token scale; implement colors from tokens, not the
   handoff's literal hex.
 

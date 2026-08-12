@@ -66,6 +66,79 @@ export function PlayerFace({
   )
 }
 
+/**
+ * The player's name, and the affordance the design LAW asks for twice:
+ * §"View style: List" — *"name 14px/600 on line one (**opens the player mini
+ * card on click**)"* — and again for Cards, *"name 15px/600 centered (opens the
+ * mini card)"*.
+ *
+ * **The card is the app's existing one** — `player-window.tsx`, driven by
+ * `player-windows-store`, mounted once at the app root by
+ * `PlayerWindowsLayer`. This opens it; it does not build a second one. Without
+ * `onOpen` the name renders as inert text, which is what the public share view
+ * (LV.6) wants: a stranger has no research panel to open.
+ *
+ * **Why `role="button"` and not `<button>`.** The whole row is the drag surface
+ * (LV.4), and `use-list-drag.tsx`'s `guardListeners` refuses to start a drag
+ * from anything matching `button, a, input, textarea, select, [role="menuitem"],
+ * [contenteditable]`. A real `<button>` here would therefore make the name a
+ * dead zone for dragging — the row would refuse to pick up from the largest
+ * target on it. A `role="button"` span keeps both gestures.
+ *
+ * **Which also means this element has to tell a click from a drag itself**, and
+ * it does it by measuring the press rather than by asking the drag hook: a
+ * release more than 6px from the press — dnd-kit's own `MouseSensor` activation
+ * distance — was a drag, and opens nothing. Reading a "did a drag just end"
+ * flag instead would be a race with dnd-kit's own teardown.
+ */
+export function PlayerName({
+  name,
+  drafted,
+  onOpen,
+  className,
+}: {
+  name: string
+  drafted?: boolean
+  onOpen?: () => void
+  className?: string
+}) {
+  const pressedAt = React.useRef<{ x: number; y: number } | null>(null)
+
+  if (!onOpen) {
+    return <span className={cn(drafted && 'line-through', className)}>{name}</span>
+  }
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={`Open ${name}`}
+      onPointerDown={(event) => {
+        pressedAt.current = { x: event.clientX, y: event.clientY }
+      }}
+      onClick={(event) => {
+        event.stopPropagation()
+        const from = pressedAt.current
+        pressedAt.current = null
+        if (from && Math.hypot(event.clientX - from.x, event.clientY - from.y) > 6) return
+        onOpen()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onOpen()
+      }}
+      className={cn(
+        'cursor-pointer underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent',
+        drafted && 'line-through',
+        className,
+      )}
+    >
+      {name}
+    </span>
+  )
+}
+
 /** Position badge + team code, and the injury flag the design shows beside it. */
 export function PlayerMeta({
   entry,

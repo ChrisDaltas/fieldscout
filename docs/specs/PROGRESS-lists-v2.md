@@ -17,23 +17,25 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. Remaining: LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
-**🔴 One ruling is outstanding: §3 Q3, and it blocks the last task.** LV.7 —
-the cutover — **halted 2026-08-11 before deleting anything.** Its capability
-diff found that list **folders** (table + four API routes + hooks) exist only
-in the two components LV.7 is told to delete, with no v2 equivalent and no
-mention in the design package: deleting them silently removes a shipped
-feature, which is the removal CLAUDE.md forbids and LV.5 already caught once
-here. Recommendation: **drop folders on the record** (Q3, option A). Q3 also
-lists four live behaviours LV.7 should carry across in the same PR, and the
-`ranking_mode` consequence. Nothing else in the build is blocked, because
-nothing else is left.
+**✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
+every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
+the rebuilt page unconditionally, `featureFlags.listsV2` no longer exists, and
+`list-detail-view.tsx`, `lists-browse.tsx`, `list-card.tsx`, the whole
+`lists/draft-mode/**` tree and three orphaned components are deleted — 3,700
+lines out.
 
-**Q1 and Q2 were ruled on 2026-08-09.** **Q1** — build LV.1.3 as written (no
-users exist, so there are no drafted marks to preserve). **Q2** — widen the
-tier CHECK constraint, the build's second and final schema exception.
+**All three questions were ruled.** **Q1** (2026-08-09) — build LV.1.3 as
+written; no users exist, so there are no drafted marks to preserve. **Q2**
+(2026-08-09) — widen the tier CHECK constraint, the build's second schema
+exception. **Q3** (2026-08-11) — **keep all four**: folders, right-rail
+dragging, the player mini card, and pin/unpin. See Q3's ruling block for what
+that changed and why the recommendation was wrong.
+
+Round 2 (side-by-side compare, pop-out windows) remains deferred per plan §6,
+and the follow-ups LV.7 filed rather than absorbed are in §5.
 
 ---
 
@@ -197,7 +199,23 @@ are all checked.
   and the two in `components/leagues/**` needed no edit because they are
   multi-select anyway. `src/components/ui/filter-chip-split.test.ts` pins the
   classification so a later "tidy-up" cannot fold the wrong rows in
-- [ ] **LV.7** — 🔴 **HALTED 2026-08-11 on §3 Q3 — nothing deleted, no flag
+- [x] **LV.7** — **the cutover LANDED 2026-08-11.** **UI/UX only — no
+  migration, no schema change, no new API route**; the budget stays closed at
+  three. Chris ruled §3 Q3 the same day and **all four survive**: *"Right rail
+  dragging is a MUST. Yes mini player card 100%, MUST. Just use the one that's
+  already there… Folders yes keep folders. Pin and Unpin great keep it."* So
+  the task became a **port**, not a rebuild — every one of the four was mounted
+  from the component or hook that already existed (§4). Also carried: the
+  Recently-viewed push, a writer for `ranking_mode = 'rank_and_tier'` (the
+  grouping control inherited the one write the retired Tiers tab made), and
+  `/app/lists/[listId]` turned from a placeholder into a redirect that opens the
+  panel on the right list. Deleted: the flag, its `.env.example` block, its
+  test, `list-detail-view.tsx`, `lists-browse.tsx`, `list-card.tsx`,
+  `comments-thread.tsx`, `customize-popover.tsx`, `editable-thumbnail.tsx`,
+  `list-detail-page-v2.tsx` and the five-file `lists/draft-mode/**` tree.
+  **Both parked obligations discharged by deletion** (LV.10's `board-column.tsx`
+  DEF fix, R192's stale `use-board-marks.ts` header). Original text:
+  🔴 **HALTED 2026-08-11 on §3 Q3 — nothing deleted, no flag
   flipped.** The capability diff the task text demands *before* the delete
   found one item in the "needs a ruling" bucket: **folders** live only in
   `lists-browse.tsx` + `list-card.tsx`, have no v2 equivalent and appear
@@ -626,6 +644,52 @@ either obligation. They are discharged by deletion, not by a fix.
 goes, but the edit differs per option, so the plan is **left untouched** rather
 than amended toward an unruled outcome — the Q1/Q2 precedent. Whoever lands the
 ruling folds it into the plan changelog and ticks §2.
+
+#### ✅ RULED — Chris, 2026-08-11: **keep all four. The recommendation was wrong.**
+
+> *"Right rail dragging is a MUST. Yes mini player card 100%, MUST. Just use
+> the one that's already there. This is why I didn't want to rebuild from
+> scratch, I didn't think this was necessary. Folders yes keep folders. Pin and
+> Unpin great keep it."*
+
+**Folders stay** — option A is rejected. Nothing on the PORT list is dropped
+either; the question had put three of them in a "no ruling needed" bucket and
+the ruling closed all four together.
+
+**The second half of that ruling is the more important one, and it is a
+correction to how this build has been working.** CLAUDE.md → Redesign says it
+first:
+
+> **Re-skin in place.** Restyle the existing shadcn/Radix/CVA components in
+> `src/components/ui/` via tokens and variant styles. **Do not generate a
+> replacement component library or parallel component tree.**
+
+`lists/v2/**` was built as a parallel tree anyway, and a rebuild loses
+accumulated behaviour *by default* — which is exactly what this capability diff
+caught, one task before the deletion would have made it permanent. So LV.7 was
+executed as a **port**: for each item, find the thing that already works and
+mount it.
+
+| Ruled item | What was mounted, not rebuilt |
+| --- | --- |
+| Right-rail drag | one `useDroppable({ id: \`list-drop:detail:\${listId}\` })` on the panel shell. `app-dnd-context.tsx` was **not edited** — it already parses that id shape |
+| Player mini card | `usePlayerWindowsStore().open()` → the existing `player-window.tsx` / `player-windows-layer.tsx`, with the list context that puts *Remove from list* in it. No second card component exists |
+| Folders | the existing `use-folders.ts` hooks and `folder-form-dialog.tsx`, with the retired page's grid and scope crumb carried across (`v2/lists-folders.tsx`), minus the per-folder *Draft mode* button, whose destination this task deletes |
+| Pin / unpin | `useToggleFavorite`, in the hero menu and the gallery card menu — the two surfaces that replaced `list-card.tsx` |
+
+**The `folder-drop:` arm in `app-dnd-context.tsx` was left in place and left
+dormant.** Reviving it needs a `kind: 'list'` draggable, and nothing in v2 makes
+a list draggable — building one would be inventing a gesture the design package
+does not describe, which is the improvisation this question exists to avoid. The
+carried UI files lists through the same *Move to folder* menu it always used, so
+nothing is unreachable.
+
+**The `ranking_mode` consequence is closed, not just recorded** — see the LV.7
+entry in §4.
+
+**The design-package gaps (Change image, List type, Insights, Archive, likes on
+the tab row) are filed in §5 as follow-ups**, exactly as this question asked,
+and none was silently picked up.
 
 ---
 
@@ -1935,48 +1999,156 @@ This section records decisions made **during** the build.
   leaking into the body, and the `anon` role reads **0 rows** from both `lists`
   and `list_players` for it.
 
-- **LV.5 forward obligation → LV.7.** `/app/lists/[listId]` renders
-  `ListDetailPageV2`, **a placeholder**, whenever the flag is ON. LV.5 routed the
-  AI build show around it, but that route is reachable from the history store's
-  "Recently viewed", from search, and from any saved link, and all of those land
-  on a "coming soon" card today. **LV.7 must decide whether that route renders
-  the real panel or redirects to `/app/lists`** — it is not the AI flow's problem
-  to solve alone, and it is bigger than LV.5's scope.
+- **LV.5 forward obligation → LV.7. ✅ DISCHARGED 2026-08-11.** `/app/lists/[listId]`
+  renders `ListDetailPageV2`, **a placeholder**, whenever the flag is ON. LV.5
+  routed the AI build show around it, but that route is reachable from the
+  history store's "Recently viewed", from search, and from any saved link, and
+  all of those land on a "coming soon" card today. **LV.7 must decide whether
+  that route renders the real panel or redirects to `/app/lists`** — it is not
+  the AI flow's problem to solve alone, and it is bigger than LV.5's scope.
+  *LV.7's answer: it redirects. See the LV.7 entry below.*
+
+- **LV.7 (2026-08-11) — the cutover, and the six decisions in it.**
+  **UI/UX only — no migration, no schema change, no new API route.** Chris ruled
+  §3 Q3 the same day (*"all four survive"*), and the ruling's second half —
+  *"This is why I didn't want to rebuild from scratch"* — set the method: every
+  ported item is the **existing** component or hook, mounted. Not one of the
+  four was reimplemented.
+
+  1. **The rail's drop zone goes on the panel shell, not in `ListBody`** — and
+     that is a correctness constraint, not a layout preference. `ListBody`
+     mounts its **own nested `DndContext`** for LV.4's gap model, and
+     `useDroppable` binds to the nearest context; registered inside the body it
+     would join the nested one, which the rail's app-level drag never enters, and
+     the drop would silently land on nothing. `app-dnd-context.tsx` needed **no
+     edit at all** — it already parses `list-drop:detail:<id>` with
+     `overId.split(':').pop()`. Proven end to end in the browser: a rail row
+     dragged onto the open list, *"Added 1 player"*, and the player still there
+     after a full reload.
+
+  2. **The player name is `role="button"`, not `<button>`, and it measures its
+     own press.** The whole row is the drag surface (LV.4), and
+     `use-list-drag.tsx`'s `guardListeners` refuses to start a drag from
+     anything matching `button, a, input, textarea, select, [role="menuitem"],
+     [contenteditable]` — so a real `<button>` would have made the name a dead
+     zone for dragging, i.e. would have broken ruling (1) to satisfy ruling (2).
+     A `role="button"` span keeps both. It then has to tell a click from a drag
+     itself, which it does by measuring the press against dnd-kit's own 6px
+     `MouseSensor` threshold rather than by reading a "a drag just ended" flag,
+     which would race dnd-kit's teardown. Wired in all three view styles;
+     **deliberately not passed on the public share view**, so LV.6's subtraction
+     list is unchanged and a stranger still sees inert text.
+
+  3. **Folders are carried, not redesigned.** The design package defines no
+     folders screen, so `v2/lists-folders.tsx` is the retired page's grid and
+     scope crumb over the same `use-folders.ts` and the same
+     `folder-form-dialog.tsx`. Two forced differences, both stated in the file:
+     the per-folder *Draft mode* button is gone (its destination is deleted by
+     this same task), and folders appear on **My lists** only, because
+     `lists.folder_id` is the owner's field and a saved list has nothing to file.
+     `app-dnd-context.tsx`'s `folder-drop:` arm is **left in place and left
+     dormant** — reviving it needs a `kind: 'list'` draggable that v2 does not
+     have, and inventing one is the improvisation §3 Q3 refused.
+
+  4. **`ranking_mode = 'rank_and_tier'` keeps a writer, and it is the same
+     write the retired control made.** The grouping control persists exactly one
+     thing: **Tier** → `rank_and_tier`, and **Rank** → `ranked` *only when the
+     list is currently `rank_and_tier`* — that pair is "flip tiers on / off",
+     which is what the deleted *List order / Tiers* tabs did. An `unranked` list
+     stays `unranked` (the retired control was hidden entirely on `hide_order`
+     lists, so promoting one would be a behaviour this task invented rather than
+     carried), and round/cost/budget persist nothing because D4 makes them label
+     sets over computed membership. **D3 still holds** — the display store
+     writes nothing; this is the route call its own header always said would sit
+     *alongside* `setOrg`. Both directions proven against the live API: picking
+     Tiers wrote `ranking_mode: "rank_and_tier", tiers_enabled: true`, picking
+     Ranked wrote `"ranked"` with `hide_order` untouched.
+
+  5. **`/app/lists/[listId]` redirects rather than renders.** Rendering the
+     panel standalone would need its own page shell — a rail-less hero, its own
+     close/expand semantics, its own selection state — which is the
+     two-Lists-pages state this whole task exists to end. So the URL points at
+     the panel: a **server component** issuing `redirect('/app/lists?list=<id>')`,
+     which means no placeholder flash and no client round-trip. The page seeds
+     its selection from `?list=`, and **pins it**, so a list the viewer can see
+     but neither owns nor saved — which that route could always open — is not
+     bounced to whatever sits first in the rail.
+
+     **The first cut of this was broken, and the browser is what caught it.**
+     Written as a `useEffect`, the seed was overwritten inside the same commit:
+     the auto-selection effect ran with a closure that still saw
+     `selectedId === null` and an empty collection, and wrote `null` over the
+     deep link. The URL said one list and the panel showed another. Fixed by
+     seeding `useState` instead, so the pin is live on the effect's very first
+     run. No test would have found this — it is a render-order fact.
+
+  6. **The old `/app/lists/draft-mode` redirects to `/app/lists` rather than
+     404ing.** That URL is in histories and bookmarks because *the app* sent
+     people there — a lime CTA and every folder tile linked to it. Its
+     `?folder=<id>` scope is dropped rather than translated: v2 scopes folders in
+     page state, not in the URL, and minting a URL contract for it here would be
+     inventing UI the design LAW does not ask for.
+
+  **Deleted, with the count reconciled:** the flag, its `.env.example` block,
+  `src/lib/lists-v2-flag.test.ts` (7 tests), `list-detail-view.tsx`,
+  `lists-browse.tsx`, `list-card.tsx`, `comments-thread.tsx`,
+  `customize-popover.tsx`, `editable-thumbnail.tsx`, `list-detail-page-v2.tsx`,
+  and `lists/draft-mode/**` (5 files). `customize-popover.tsx` could not simply
+  go: `v2/list-stats.ts` imported its `ListRowStatKey` union, so the **type
+  moved** into `list-stats.ts` rather than a whole component file being kept
+  alive to export a string union. Unit tests: **931 → 949**, which is
+  `931 − 7 + 25` — the 25 being the replacement pin,
+  `src/components/lists/lists-cutover.test.ts`.
+
+  **One latent bug in a shared test helper was fixed because the pin could not
+  move without it.** `use-draft-mode.test.ts`'s `code()` stripped block comments
+  first and line comments second, so a line comment *containing* `/*` — the
+  panel's own ``// … `/app/**` is behind auth …`` — was read as an opening token
+  and swallowed half the file. Both `code()` helpers now strip in one
+  alternating pass, which is order-correct by construction.
+
+  **`use-draft-mode.ts`'s header was corrected in the same PR** (the R192-shaped
+  hazard, one file over): it named two consumers that no longer exist and said
+  turning draft mode off clears the marks — there is no draft-mode toggle any
+  more. Its `enabled` / `setEnabled` are now consumer-less and are **left in
+  place** with an F-row rather than ripped out mid-cutover.
 
 ---
 
 ## 5. Blockers
 
-- **🔴 LV.7 — HALTED 2026-08-11 on §3 Q3. Nothing was deleted and no flag was
-  flipped; the branch carries documentation only.** The task's own instruction
-  is to produce the capability inventory *before* the delete and to halt on
-  anything that "needs a ruling". One item does: **folders** are a
-  database-backed feature (`list_folders`, four `/api/folders` routes,
-  `use-folders.ts`) whose **entire** UI lives in the two files LV.7 deletes,
-  with no equivalent in `lists/v2/**` and no mention anywhere in the design
-  package. Continuing means a silent feature removal, which CLAUDE.md →
-  Redesign forbids and which **LV.5 already caught once** in this same build;
-  building a v2 folders UI means improvising against silent design LAW, which
-  plan §1 forbids. Recommendation is **drop it, on the record** (§3 Q3,
-  option A) — there are no users, so nothing is lost but the option.
+- **✅ LV.7 — LANDED 2026-08-11. The halt worked exactly as it is supposed
+  to.** It stopped one commit before an irreversible deletion, produced the
+  capability diff, and Chris's ruling reversed the Builder's own recommendation
+  on every item: **all four survive**, and the reason given —
+  *"This is why I didn't want to rebuild from scratch"* — is the standing
+  correction, not a one-off. CLAUDE.md → Redesign already said it
+  (*"Do not generate a replacement component library or parallel component
+  tree"*); `lists/v2/**` was built as one anyway, and a parallel tree loses
+  behaviour by default. **The lesson to carry: when a rebuild replaces a
+  surface, the diff of *capabilities* is the deliverable, not the diff of
+  files.** Nothing on the PORT list would have failed a test, a type-check or a
+  screenshot review — they would simply have stopped existing.
 
-  **The other 30-odd capabilities are classified in §3 Q3 and need no ruling**,
-  but four of them are live behaviours that would have disappeared with no
-  record and should ride in the same PR: **pin/unpin a list** (`list-card.tsx`
-  is `useToggleFavorite`'s only consumer — the signed-in app would lose the
-  gesture entirely), the **right rail's player drop zone** (the deleted view
-  holds the codebase's only `list-drop:` droppable, so the rail's drag would
-  land on nothing), the **Recently-viewed history push**, and **click a player
-  name to open the mini card**, which the design LAW asks for twice and v2
-  never built. Plus one consequence worth its own ruling: the deleted Tiers
-  control is the **last writer of `ranking_mode = 'rank_and_tier'`**, so after
-  the cutover no list can ever be stored as tiered again.
+  Both parked obligations are **discharged by deletion**: LV.10's
+  `board-column.tsx` DEF-headshot fix and R192's stale `use-board-marks.ts`
+  header were inside the `draft-mode/**` tree this task removed whole.
+  `src/components/big-board/**` is confirmed **still off limits** and LV.9's /
+  LV.11's `week-tabs.tsx` / `PublicWeekStrip` deferral stands unchanged — it was
+  re-recorded here rather than quietly picked up.
 
-  Both of LV.7's parked obligations (LV.10's `board-column.tsx` DEF fix, R192's
-  stale header) **dissolve** — both files are inside the `draft-mode/**` tree
-  LV.7 deletes whole. `src/components/big-board/**` is confirmed **still off
-  limits**; LV.9's and LV.11's `week-tabs.tsx` / `PublicWeekStrip` deferral
-  stands unchanged and is re-recorded here rather than quietly picked up.
+- **Follow-ups LV.7 filed rather than absorbed.** Each was in scope to *notice*
+  and out of scope to fix; none is a blocker and none is silently dropped.
+
+  | id | What | Why it is not in LV.7 |
+  | --- | --- | --- |
+  | **F-LV7.1** | **Change image** — the design LAW's options menu leads with it, and `editable-thumbnail.tsx` (the upload/replace UI) was deleted as an orphan. The v2 cover still *renders* `thumbnail_url`, so existing images show; nothing can set or clear one | Design-package gap LV.3 never filed. The component is recoverable from this PR's parent commit |
+  | **F-LV7.2** | **List type**, **Insights**, **Archive** — the other three items in the design LAW's options menu, none of which v2 has | Same gap. Each is a screen decision before it is a build |
+  | **F-LV7.3** | **Likes on the tab row** — design LAW: *"Views and likes sit right-aligned on the tab row."* The panel renders views only; LV.6 put the like **count** on the public view as a number, not a control | `useToggleLike` survives via `explore-feed.tsx` (flag-gated off), so nothing is orphaned — but the app has no like control for a list |
+  | **F-LV7.4** | **`use-draft-mode.ts`'s `enabled` / `setEnabled` have no consumer.** There is no draft-mode gate any more (Chris, 2026-08-10 — the drafted checkbox is permanent), so nothing reads them | Removing them touches a hook with 69 pinned tests whose guard semantics R190/R195/R199/R200 all fought over. Not a drive-by in a UI task |
+  | **F-LV7.5** | **`useSetPlayerSlot` (`use-lists.ts:333`) and `/api/lists/[id]/players/[playerId]/slot` lost their only consumer** with the team `PositionBoard` (§3 Q3, deliberately dropped — `featureFlags.teams` is off and the teams page is already a placeholder) | Deleting a route is server-side and outside LV.7's UI-only scope |
+  | **F-LV7.6** | **Delete-list has no confirm dialog.** The retired card and detail view both put one in front of it; v2 deletes straight off the menu item. It is a soft delete with a toast and Trash restore, so a mis-click costs a round trip rather than data | Recorded at §3 Q3 as ported-minus-the-confirmation. Adding a dialog v2 never had is a design call |
+  | **F-LV7.7** | **There is still no keyboard drag.** LV.4 filed it; LV.7 inherits rather than widens it. The player *name* is now keyboard-reachable (`Enter` / `Space` opens the mini card), which is new — reordering is not | An AT/keyboard path for the gap model is its own task, as LV.4 said |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
   built as written. The boards rule held on the *diff* — zero files under

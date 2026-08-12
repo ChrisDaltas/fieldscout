@@ -19,7 +19,6 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useAiGenerationQuota } from '@/hooks/use-ai-generation-quota'
 import { listsKeys } from '@/hooks/use-lists'
 import { ANALYTICAL_STYLES } from '@/lib/claude/styles'
-import { featureFlags } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
@@ -174,13 +173,11 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
 
       queryClient.invalidateQueries({ queryKey: listsKeys.all })
       onOpenChange(false)
-      // **Where the build show runs differs by flag (LV.5).** Lists v2 has no
-      // standalone detail screen — a list opens in the right-hand panel of the
-      // Lists page (§7 gap 1), and `/app/lists/[listId]` is still a placeholder
-      // behind the flag, so pushing it would strand the build on a "coming
-      // soon" card. The page reads the queued job to know which list to open,
-      // so no query parameter is needed. The ternary collapses at LV.7.
-      router.push(featureFlags.listsV2 ? '/app/lists' : `/app/lists/${created.id}`)
+      // **Where the build show runs (LV.5, collapsed at LV.7).** Lists v2 has
+      // no standalone detail screen — a list opens in the right-hand panel of
+      // the Lists page (§7 gap 1) — and the page reads the queued job to know
+      // which list to open, so no `?list=` parameter is needed here.
+      router.push('/app/lists')
     } catch (err) {
       if (sessionRef.current !== session) return
       setError(err instanceof Error ? err.message : 'Could not create the list.')

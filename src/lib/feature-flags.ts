@@ -46,16 +46,11 @@ export const featureFlags = {
   /** Fantasy teams (/app/teams). */
   teams: enabled(process.env.NEXT_PUBLIC_FLAG_TEAMS),
 
-  // ---------------------------------------------------------------------
-  // Lists v2 (ACTIVE-BUILD.md / delivery-plan-lists-v2.md). The Lists page
-  // and list detail are being rebuilt in the new design language behind
-  // this flag so the current (shipped, in-scope) Lists surface keeps
-  // serving production for the whole build. Flipped on for real once
-  // LV.4.4 retires the old components.
-  // ---------------------------------------------------------------------
-
-  /** Rebuilt Lists page + list detail (/app/lists, /app/lists/[listId]). */
-  listsV2: enabled(process.env.NEXT_PUBLIC_FLAG_LISTS_V2),
+  // `listsV2` lived here from LV.1.1 to LV.7. It is gone, along with the
+  // components it branched away from: /app/lists serves the rebuilt page
+  // unconditionally, so there is no second Lists surface and nothing left to
+  // flip. Do not reintroduce it — a flag with one branch is a lie about what
+  // ships.
 } as const
 
 export type FeatureFlag = keyof typeof featureFlags

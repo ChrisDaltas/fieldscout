@@ -16,20 +16,21 @@ import { describe, expect, it } from 'vitest'
  * They *were* removed, and silently. LV.2 and LV.3 rebuilt the Lists page and
  * the open list as new files under `lists/v2/`, and neither carried the
  * "Create with AI" trigger or the build banner across. Nothing failed, because
- * nothing asked: the legacy page still had both, and the flag that decides
- * which one production serves is OFF until LV.7. So behind
- * `featureFlags.listsV2` — the launch configuration — AI list generation had no
- * entry point at all, and a queued build was never claimed and narrated
- * nothing. That is a launch-scope surface: CLAUDE.md → Active Builds ships
- * "Lists + Stats/player research + **AI stat lists**".
+ * nothing asked: the legacy page still had both, and `featureFlags.listsV2`
+ * decided which one production served. Behind that flag — the launch
+ * configuration — AI list generation had no entry point at all, and a queued
+ * build was never claimed and narrated nothing. That is a launch-scope surface:
+ * CLAUDE.md → Active Builds ships "Lists + Stats/player research + **AI stat
+ * lists**".
  *
  * A prose rule in CLAUDE.md did not stop that happening once, so it is pinned
- * here instead. Deleting either mount, or pointing the build show back at the
- * placeholder detail route, turns this file red.
+ * here instead. **LV.7 removed the flag and the legacy page**, which makes these
+ * mounts the only ones there are: deleting either, or pointing the build show at
+ * a route that no longer renders a list, turns this file red.
  *
  * **Source pins, not renders** — the same idiom and the same reason as
- * `src/lib/lists-v2-flag.test.ts` and `src/components/ui/elevation-rule.test.ts`:
- * these are `.tsx`, which Vite cannot parse under Next's `jsx: "preserve"`.
+ * `src/components/ui/elevation-rule.test.ts`: these are `.tsx`, which Vite
+ * cannot parse under Next's `jsx: "preserve"`.
  */
 
 const read = (file: string) => readFileSync(path.resolve(process.cwd(), file), 'utf8')
@@ -91,14 +92,16 @@ describe('AI list generation survives the v2 rebuild (LV.5)', () => {
     expect(read(DETAIL_PANEL_V2)).toContain('!aiBuild.building')
   })
 
-  it('the build show is not sent to the placeholder detail route', () => {
+  it('the build show lands on the Lists page, where a list actually opens', () => {
     const source = read(GENERATE_MODAL)
-    // `/app/lists/[listId]` still renders `ListDetailPageV2`, a placeholder, so
-    // behind the flag the push has to go to the Lists page — which is where a
-    // list opens in v2 (PROGRESS §7 gap 1). The flag must be consulted.
-    expect(source).toContain('featureFlags.listsV2')
-    // The legacy arm is still production until LV.7 and must keep its route.
-    expect(source).toContain('`/app/lists/${created.id}`')
+    // A list opens in the Lists page's right-hand panel (PROGRESS §7 gap 1), and
+    // the page pins its selection to the queued job — so this is the push, with
+    // no query parameter and no flag left to consult (LV.7 collapsed both arms).
+    expect(source).toContain("router.push('/app/lists')")
+    // `/app/lists/<id>` is a redirect back into that same panel now, so pushing
+    // it would be a pointless extra hop through the router.
+    expect(source).not.toContain('`/app/lists/${created.id}`')
+    expect(source).not.toContain('featureFlags')
   })
 
   it('the Lists page knows which list the AI is building', () => {

@@ -1,21 +1,32 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useAuth } from '@/hooks/use-auth'
+import { useDeleteFolder, useFolders, useMoveListToFolder } from '@/hooks/use-folders'
 import { useToast } from '@/hooks/use-toast'
-import { useDeleteList, useDuplicateList, useLists, type ListWithTags } from '@/hooks/use-lists'
+import {
+  useDeleteList,
+  useDuplicateList,
+  useLists,
+  useToggleFavorite,
+  type ListWithTags,
+} from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
 import { useUIStore } from '@/stores/ui-store'
+import type { ListFolder } from '@/types/database'
 
 import { ListGalleryCard, NewListTile } from './list-gallery-card'
 import { ListDetailPanel } from './list-detail-panel'
+import { FolderScopeCrumb, ListFoldersSection } from './lists-folders'
 import { ListsRail } from './lists-rail'
 
 /**
@@ -58,15 +69,43 @@ export function ListsPageV2() {
   const { profile } = useAuth()
   const openCreateList = useUIStore((state) => state.setCreateListOpen)
 
+  /**
+   * **The deep link (LV.7).** `/app/lists/[listId]` used to be a whole page; in
+   * Lists v2 a list opens in this page's right-hand panel (§7 gap 1), so that
+   * route now redirects here carrying `?list=<id>` and this reads it.
+   *
+   * It is a *seed*, not a controlled value: once the page is open, clicking a
+   * different list must not have to rewrite the URL.
+   *
+   * **It seeds `useState`, and it has to — an effect is too late.** Written as
+   * a `useEffect` this was measurably broken: on the first commit the seeding
+   * effect set the selection to the deep-linked id, and the auto-selection
+   * effect below ran in the same commit with a closure that still saw
+   * `selectedId === null` and an empty collection, so it immediately wrote
+   * `null` over it. The URL then said one list and the panel showed another
+   * (caught in the browser at `/app/lists/<id>`, not by a test). Seeding the
+   * initial state means the auto-selection effect sees the pin
+   * (`selectedId === deepLinkId`) from its very first run.
+   */
+  const deepLinkId = useSearchParams().get('list')
+
   const [mode, setMode] = React.useState<PageMode>('rail')
   const [tab, setTab] = React.useState<ListsTab>('mine')
-  const [selectedId, setSelectedId] = React.useState<string | null>(null)
-  const [openedId, setOpenedId] = React.useState<string | null>(null)
+  const [selectedId, setSelectedId] = React.useState<string | null>(deepLinkId)
+  const [openedId, setOpenedId] = React.useState<string | null>(deepLinkId)
   const [expanded, setExpanded] = React.useState(false)
+  const [folderId, setFolderId] = React.useState<string | null>(null)
+  const [newFolderOpen, setNewFolderOpen] = React.useState(false)
+  const [editFolder, setEditFolder] = React.useState<ListFolder | null>(null)
+  const tabSeededRef = React.useRef(false)
 
   const lists = useLists(1, 50)
   const duplicateList = useDuplicateList()
   const deleteList = useDeleteList()
+  const toggleFavorite = useToggleFavorite()
+  const folders = useFolders()
+  const deleteFolder = useDeleteFolder()
+  const moveToFolder = useMoveListToFolder()
 
   /**
    * **The AI build job is the deep link (LV.5).** Lists v2 has no standalone
@@ -93,7 +132,17 @@ export function ListsPageV2() {
     return { mine: own, saved: all.filter((list) => Boolean(list.owner)) }
   }, [lists.data?.lists])
 
-  const visible = tab === 'mine' ? mine : saved
+  const openFolder = folderId
+    ? (folders.data ?? []).find((folder) => folder.id === folderId) ?? null
+    : null
+
+  // Folders scope only your own lists: `lists.folder_id` is the owner's field,
+  // so a saved list has nothing to be filed into (LV.7).
+  const visible = React.useMemo(() => {
+    const set = tab === 'mine' ? mine : saved
+    if (!openFolder) return set
+    return set.filter((list) => list.folder_id === openFolder.id)
+  }, [tab, mine, saved, openFolder])
 
   // A build that just started takes the frame, in whichever mode the page is
   // in — `detailId` reads `openedId` in Cards mode and `selectedId` otherwise,
@@ -103,6 +152,21 @@ export function ListsPageV2() {
     setSelectedId(buildingListId)
     setOpenedId(buildingListId)
   }, [buildingListId])
+
+  /**
+   * The one part of the deep link an effect still owns: **which tab**. A link to
+   * a *saved* list would otherwise land on "My lists" and be filtered out of the
+   * rail, and that answer needs the collection, which has not arrived at mount.
+   * Once, and only while the selection is still the one the URL asked for — so
+   * it can never yank the tab out from under a click.
+   */
+  React.useEffect(() => {
+    if (!deepLinkId || tabSeededRef.current || !lists.isSuccess) return
+    tabSeededRef.current = true
+    if (selectedId === deepLinkId && saved.some((list) => list.id === deepLinkId)) {
+      setTab('saved')
+    }
+  }, [deepLinkId, saved, selectedId, lists.isSuccess])
 
   // Selection follows the visible set: opening the page, or switching tabs,
   // lands on the first list rather than an empty frame.
@@ -115,9 +179,14 @@ export function ListsPageV2() {
     // off-screen. The pin releases when the job clears — by which point
     // `use-ai-list-build` has invalidated the collection.
     if (buildingListId && selectedId === buildingListId) return
+    // The same pin for a deep link. `/app/lists/<id>` could open any list the
+    // viewer is allowed to see, including one that is neither owned nor saved
+    // and so never appears in this collection — bouncing it to `visible[0]`
+    // would turn a working URL into "here is some other list".
+    if (deepLinkId && selectedId === deepLinkId) return
     if (selectedId && visible.some((list) => list.id === selectedId)) return
     setSelectedId(visible[0]?.id ?? null)
-  }, [mode, visible, selectedId, buildingListId])
+  }, [mode, visible, selectedId, buildingListId, deepLinkId])
 
   const summaryById = React.useMemo(
     () => new Map((lists.data?.lists ?? []).map((list) => [list.id, list])),
@@ -132,6 +201,36 @@ export function ListsPageV2() {
       .then(() => toast({ title: 'Link copied', description: link }))
       .catch(() => toast({ title: 'Could not copy the link', description: link, variant: 'destructive' }))
   }
+
+  const pinList = (list: ListWithTags) =>
+    toggleFavorite.mutate(list.id, {
+      onSuccess: (result) =>
+        toast({ title: result.is_favorited ? 'Pinned' : 'Unpinned', description: list.title }),
+      onError: (error) =>
+        toast({
+          title: 'Could not update the pin',
+          description: error.message,
+          variant: 'destructive',
+        }),
+    })
+
+  const fileList = (list: ListWithTags, nextFolderId: string | null) =>
+    moveToFolder.mutate(
+      { listId: list.id, folderId: nextFolderId },
+      {
+        onSuccess: () =>
+          toast({
+            title: nextFolderId ? 'Moved to folder' : 'Removed from folder',
+            description: list.title,
+          }),
+        onError: (error) =>
+          toast({
+            title: 'Could not move the list',
+            description: error.message,
+            variant: 'destructive',
+          }),
+      },
+    )
 
   const detailId = mode === 'gallery' ? openedId : selectedId
 
@@ -193,6 +292,8 @@ export function ListsPageV2() {
             onClick={() => {
               setTab(item.id)
               setOpenedId(null)
+              // Folders are your own lists' filing; Saved has nothing to file.
+              if (item.id === 'saved') setFolderId(null)
             }}
           >
             {item.label}
@@ -214,6 +315,12 @@ export function ListsPageV2() {
         actions={
           <div className="flex items-center gap-2">
             <GenerateAiButton size="sm" />
+            {/* Folders survive the cutover (LV.7, Chris 2026-08-11), so their
+                one entry point does too — the retired Lists page carried this
+                button in exactly this slot. */}
+            <Button variant="stroke" size="sm" onClick={() => setNewFolderOpen(true)}>
+              <Icon name="folder" size={13} /> New folder
+            </Button>
             <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
               <Icon name="plus" size={13} /> New list
             </Button>
@@ -232,6 +339,9 @@ export function ListsPageV2() {
             below `lg`, so leaving it out of this row would put AI list
             generation out of reach on a phone entirely. */}
         <GenerateAiButton size="sm" />
+        <Button variant="stroke" size="sm" onClick={() => setNewFolderOpen(true)}>
+          <Icon name="folder" size={13} /> New folder
+        </Button>
         <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
           <Icon name="plus" size={13} /> New list
         </Button>
@@ -240,6 +350,43 @@ export function ListsPageV2() {
           {tabSwitch}
         </div>
       </div>
+
+      {/* Folders (LV.7). Above the content in both page modes, which is where
+          the retired Lists page put them — the design package defines no
+          folders screen, so this is a carry rather than a new placement. */}
+      {mode !== 'compare' && tab === 'mine' && !lists.isError && !paused && (
+        openFolder ? (
+          <FolderScopeCrumb
+            folder={openFolder}
+            count={visible.length}
+            onClear={() => setFolderId(null)}
+          />
+        ) : (
+          <ListFoldersSection
+            folders={folders.data ?? []}
+            countFor={(folder) => mine.filter((list) => list.folder_id === folder.id).length}
+            onOpen={(folder) => {
+              setFolderId(folder.id)
+              setOpenedId(null)
+            }}
+            onRename={setEditFolder}
+            onDelete={(folder) =>
+              deleteFolder.mutate(folder.id, {
+                onSuccess: () => {
+                  if (folderId === folder.id) setFolderId(null)
+                  toast({ title: 'Folder deleted — lists kept', description: folder.name })
+                },
+                onError: (error) =>
+                  toast({
+                    title: 'Could not delete the folder',
+                    description: error.message,
+                    variant: 'destructive',
+                  }),
+              })
+            }
+          />
+        )
+      )}
 
       {lists.isError ? (
         <ErrorState message={lists.error.message} onRetry={() => void lists.refetch()} />
@@ -269,6 +416,9 @@ export function ListsPageV2() {
             loading={!loaded}
             tab={tab}
             viewer={viewer}
+            folders={folders.data ?? []}
+            onTogglePin={pinList}
+            onMoveToFolder={fileList}
             onOpen={(list) => {
               setSelectedId(list.id)
               setOpenedId(list.id)
@@ -337,6 +487,19 @@ export function ListsPageV2() {
           </div>
         </div>
       )}
+
+      {/* Folder create / rename — the existing dialog, unchanged (LV.7). */}
+      <FolderFormDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} mode="create" />
+      {editFolder && (
+        <FolderFormDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditFolder(null)
+          }}
+          mode="edit"
+          folder={editFolder}
+        />
+      )}
     </>
   )
 }
@@ -346,21 +509,27 @@ function Gallery({
   loading,
   tab,
   viewer,
+  folders,
   onOpen,
   onShare,
   onDuplicate,
   onDelete,
   onNew,
+  onTogglePin,
+  onMoveToFolder,
 }: {
   lists: ListWithTags[]
   loading: boolean
   tab: ListsTab
   viewer: { username: string | null; avatarUrl: string | null }
+  folders: ListFolder[]
   onOpen: (list: ListWithTags) => void
   onShare: (list: ListWithTags) => void
   onDuplicate: (list: ListWithTags) => void
   onDelete: (list: ListWithTags) => void
   onNew: () => void
+  onTogglePin: (list: ListWithTags) => void
+  onMoveToFolder: (list: ListWithTags, folderId: string | null) => void
 }) {
   if (loading) {
     return (
@@ -400,6 +569,9 @@ function Gallery({
           onShare={() => onShare(list)}
           onDuplicate={() => onDuplicate(list)}
           onDelete={() => onDelete(list)}
+          folders={folders}
+          onTogglePin={() => onTogglePin(list)}
+          onMoveToFolder={(folderId) => onMoveToFolder(list, folderId)}
         />
       ))}
       {tab === 'mine' && <NewListTile onClick={onNew} />}

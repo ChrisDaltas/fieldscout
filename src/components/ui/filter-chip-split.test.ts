@@ -24,7 +24,7 @@ import { execSync } from 'node:child_process'
  * only keep `FilterChip` if it is named here **with a reason**, and a converted
  * file may not reintroduce it.
  *
- * This is a source pin, the same idiom as `src/lib/lists-v2-flag.test.ts` — it
+ * This is a source pin, the same idiom as `lists/lists-cutover.test.ts` — it
  * reads files rather than rendering, because the thing being protected is a
  * *decision*, not a rendered pixel.
  */
@@ -41,8 +41,10 @@ type Reason = 'multi-select' | 'zero-selected-is-valid' | 'styleguide-demo'
  * `Segment`.
  */
 const FILTER_CHIP_CALLERS: Record<string, Reason> = {
-  // Tag filters: several tags can be on at once.
-  'components/lists/lists-browse.tsx': 'multi-select',
+  // `components/lists/lists-browse.tsx` was here for its multi-select tag row.
+  // LV.7 deleted that page whole (the design's Lists page carries the mode
+  // segment and My lists / Saved and nothing else), so the row is gone with it
+  // — not converted, and not silently moved somewhere else.
   // Position filter is a Set; each chip toggles independently.
   'components/lists/builder/player-sidebar.tsx': 'multi-select',
   // Ranking styles are multi-select AND carry a 1-3 weight each; the AI-expert
@@ -68,7 +70,10 @@ const CONVERTED: string[] = [
   'components/layout/rail/players-panel.tsx',
   'components/lists/generate-ai-modal.tsx',
   'components/lists/list-form-dialog.tsx',
-  'components/lists/lists-browse.tsx',
+  // `components/lists/lists-browse.tsx`'s position row was converted at LV.11
+  // and the file was deleted at LV.7 — recorded here rather than dropped
+  // silently, because "the entry vanished" and "the row reverted" look the same
+  // in a diff.
   'components/weekly-ranks/weekly-ranks-view.tsx',
 ]
 

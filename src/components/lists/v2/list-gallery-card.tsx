@@ -6,11 +6,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ListWithTags } from '@/hooks/use-lists'
+import type { ListFolder } from '@/types/database'
 
 import { ListCoverBand } from './cover-tile'
 import { formatCount, formatCreated } from './list-stats'
@@ -36,19 +40,26 @@ import { formatCount, formatCreated } from './list-stats'
 export function ListGalleryCard({
   list,
   viewer,
+  folders,
   onOpen,
   onShare,
   onDuplicate,
   onDelete,
   onOpenComments,
+  onTogglePin,
+  onMoveToFolder,
 }: {
   list: ListWithTags
   viewer: { username: string | null; avatarUrl: string | null }
+  /** Folders the viewer owns; empty means the submenu never renders (LV.7). */
+  folders: ListFolder[]
   onOpen: () => void
   onShare: () => void
   onDuplicate: () => void
   onDelete: () => void
   onOpenComments: () => void
+  onTogglePin: () => void
+  onMoveToFolder: (folderId: string | null) => void
 }) {
   const positions = [
     ...new Set((list.first_players ?? []).map((player) => player.position).filter(Boolean)),
@@ -83,6 +94,40 @@ export function ListGalleryCard({
                 <Icon name="send" size={13} />
                 Copy share link
               </DropdownMenuItem>
+              {/* Pin / unpin and Move to folder are LV.7 ports: this card
+                  replaced `list-card.tsx`, which held the app's only pin
+                  control and its only folder gesture. */}
+              <DropdownMenuItem onSelect={onTogglePin}>
+                <Icon name="marker" size={13} />
+                {list.is_favorited ? 'Unpin' : 'Pin'}
+              </DropdownMenuItem>
+              {!list.owner && folders.length > 0 && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Icon name="folder" size={13} />
+                    Move to folder
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {folders.map((folder) => (
+                      <DropdownMenuItem
+                        key={folder.id}
+                        disabled={list.folder_id === folder.id}
+                        onSelect={() => onMoveToFolder(folder.id)}
+                      >
+                        {folder.name}
+                      </DropdownMenuItem>
+                    ))}
+                    {list.folder_id && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => onMoveToFolder(null)}>
+                          Remove from folder
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
               <DropdownMenuItem onSelect={onDuplicate}>
                 <Icon name="layers" size={13} />
                 Duplicate
@@ -103,6 +148,14 @@ export function ListGalleryCard({
         <button type="button" onClick={onOpen} className="text-left">
           <span className="block text-[12px] font-bold leading-tight tracking-[-0.01em]">
             {list.title}
+            {list.is_favorited && (
+              <Icon
+                name="marker"
+                size={10}
+                className="ml-1.5 inline-block text-accent"
+                aria-label="Pinned"
+              />
+            )}
           </span>
         </button>
 

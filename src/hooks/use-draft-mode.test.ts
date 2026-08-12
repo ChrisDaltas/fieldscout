@@ -101,12 +101,24 @@ const read = (file: string) => readFileSync(path.resolve(process.cwd(), file), '
  * that forbids it.)
  */
 const code = (file: string) =>
-  read(file)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+  // **One pass, alternating**, not two sequential passes. A line comment can
+  // contain `/*` — `// … `/app/**` is behind auth …` in the open list does
+  // exactly that — and a block-comment strip run first sees that `/*` as an
+  // opening token and swallows everything up to the next `*/`, silently eating
+  // half the file and turning every pin below into "the string is not there".
+  // Alternation scans left to right, so whichever token genuinely comes first
+  // wins. (Found by LV.7 when this pin followed the guarded clear onto the
+  // panel; `[^:]` still keeps `https://` out of it.)
+  read(file).replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, (_match, before) => before ?? '')
 
 const HOOK_FILE = 'src/hooks/use-draft-mode.ts'
-const VIEW_FILE = 'src/components/lists/list-detail-view.tsx'
+/**
+ * The hook's only consumer since **LV.7**. It was `list-detail-view.tsx` — the
+ * legacy detail page — until the cutover deleted it; the three pins below
+ * followed the behaviour rather than the file, because what R195 protects is
+ * *the guarded clear*, and that moved onto the panel intact.
+ */
+const VIEW_FILE = 'src/components/lists/v2/list-detail-panel.tsx'
 const LIST_ID = '22222222-2222-4222-8222-222222222222'
 const OTHER_LIST_ID = '33333333-3333-4333-8333-333333333333'
 
@@ -144,12 +156,12 @@ function callbackBody(source: string, name: string): string {
 }
 
 /**
- * The same idea for a plain `const x = () => { … }`, sliced by **brace**
- * balance — used for `handleReset` in the legacy detail view (R195's second
- * half). It carries `callbackBody`'s limitation in the brace dialect: a `{` or
- * `}` inside a string or a regex literal would mis-slice. `handleReset` holds
- * one template-free string with no braces, and the control test asserts the
- * slice is a real one.
+ * The same idea for a plain `x = () => { … }`, sliced by **brace** balance —
+ * used for the open list's `onClearDrafted` handler (R195's second half). It
+ * carries `callbackBody`'s limitation in the brace dialect: a `{` or `}`
+ * inside a string or a regex literal would mis-slice. That handler holds one
+ * template-free string with no braces, and the control test asserts the slice
+ * is a real one.
  */
 function arrowBody(source: string, declaration: string, file: string): string {
   const start = source.indexOf(declaration)
@@ -1215,47 +1227,49 @@ describe('the hook body wires those decisions in', () => {
    * "nothing happened means it worked" one layer up (CLAUDE.md). It may claim
    * the reset only when the hook says the clear actually ran.
    */
-  it('the legacy view only claims a reset that really happened (R195)', () => {
-    const body = arrowBody(code(VIEW_FILE), 'const handleReset = () => {', VIEW_FILE)
+  it('the open list only claims a clear that really happened (R195)', () => {
+    const body = arrowBody(code(VIEW_FILE), 'onClearDrafted={() => {', VIEW_FILE)
     const compact = body.replace(/\s+/g, ' ')
-    expect(compact).toMatch(/if \(draft\.clearDrafted\(\)\)\s*\{?\s*toast\(/)
+    expect(compact).toMatch(/if \(clearDrafted\(\)\)\s*\{?\s*toast\(/)
     // The pre-fix body, verbatim: clear, then announce whatever happened.
-    expect(compact).not.toMatch(/draft\.clearDrafted\(\);? toast\(/)
+    expect(compact).not.toMatch(/clearDrafted\(\);? toast\(/)
     // …and the toast that would be the lie appears nowhere outside the guard.
-    expect(compact.indexOf('toast(')).toBeGreaterThan(compact.indexOf('draft.clearDrafted()'))
+    expect(compact.indexOf('toast(')).toBeGreaterThan(compact.indexOf('clearDrafted()'))
   })
 
-  it('turning Draft mode off does NOT clear — deleting is only ever explicit', () => {
+  it('there is no draft-mode gate left to clear on — deleting is only ever explicit', () => {
     // Reversed 2026-08-10 (Chris). §4 decision 2 used to require the opposite,
     // and it is the single gesture R190/R195/R199/R203 all orbited: a *view*
     // control that silently destroyed durable, cross-device marks. It was
     // defensible while marks were throwaway browser state; since LV.1.2 they
-    // are not. The v2 design settles it — there is no draft-mode gate at all,
-    // the drafted checkbox is permanent (handoff §"Side by side" / §"Cards").
+    // are not.
     //
-    // So the toggle must show and hide, never delete. "Reset list" is the one
-    // explicit destructive control, and it keeps the guard.
+    // LV.7 finished the reversal by deleting the surface that carried the
+    // toggle. The v2 design has no draft-mode gate at all — the drafted
+    // checkbox is permanent (handoff §"Side by side" / §"Cards") — so the pin
+    // is now the stronger one: the toggle cannot delete marks because there is
+    // no toggle, and `clearDrafted` survives in exactly one explicit call site.
     const view = code(VIEW_FILE)
-    expect(view).toContain('onClick={() => draft.setEnabled(!draft.enabled)}')
-    expect(view).not.toContain('if (!next) draft.clearDrafted()')
-    // `clearDrafted` must survive in exactly one call site now — the reset.
-    expect(view.match(/draft\.clearDrafted\(\)/g) ?? []).toHaveLength(1)
-    // Counter-control: the explicit reset must still call it, or this pin would
+    expect(view).not.toContain('setEnabled')
+    expect(view).not.toContain('if (!next) clearDrafted()')
+    expect(view.match(/[^.\w]clearDrafted\(\)/g) ?? []).toHaveLength(1)
+    // Counter-control: the explicit clear must still call it, or this pin would
     // pass against a build where nothing can ever clear.
-    expect(arrowBody(code(VIEW_FILE), 'const handleReset = () => {', VIEW_FILE)).toContain(
-      'draft.clearDrafted()',
+    expect(arrowBody(code(VIEW_FILE), 'onClearDrafted={() => {', VIEW_FILE)).toContain(
+      'clearDrafted()',
     )
   })
 
   it('the slicers return real bodies (control for the pins above)', () => {
     const view = code(VIEW_FILE)
-    const reset = arrowBody(view, 'const handleReset = () => {', VIEW_FILE)
-    expect(reset).toContain('draft.clearDrafted()')
-    expect(reset.length).toBeLessThan(view.length)
-    // It really stops at the end of the function, rather than running on.
-    expect(reset).not.toContain('const toggleStat')
-    expect(() => arrowBody(view, 'const noSuchHandler = () => {', VIEW_FILE)).toThrow(
-      /no `const noSuchHandler/,
+    const clear = arrowBody(view, 'onClearDrafted={() => {', VIEW_FILE)
+    expect(clear).toContain('clearDrafted()')
+    expect(clear.length).toBeLessThan(view.length)
+    // It really stops at the end of the handler, rather than running on into
+    // the next prop.
+    expect(clear).not.toContain('onDelete=')
+    expect(() => arrowBody(view, 'onNoSuchHandler={() => {', VIEW_FILE)).toThrow(
+      /no `onNoSuchHandler/,
     )
   })
 
