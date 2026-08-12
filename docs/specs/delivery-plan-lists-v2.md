@@ -1,6 +1,8 @@
 # Delivery Plan: Lists v2
 
-> **v5.8 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> **v6.0 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> *(The header read v5.8 while the changelog was at v5.9 — corrected here, and
+> v6.0 is the bump for Chris's two LV.17 rulings, which are now §1 rulings.)*
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -53,6 +55,8 @@
 | **Flag** | ~~All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout.~~ **Spent and removed at LV.7 (2026-08-11).** The flag, its `.env.example` block, its test and both route branches are gone; `/app/lists` serves the rebuilt page unconditionally. Do not reintroduce it — a flag with one branch is a lie about what ships. |
 | **Free-only** | No `is_pro` gates. |
 | **Round 1 scope** | Lists page + list detail. Side-by-side compare and pop-out windows are **Round 2** (§6). *(Ruled by Chris, 2026-08-09.)* |
+| **A pop-out of a list that is gone closes, with a toast** | *"Close it, with a toast."* — Chris, 2026-08-12 (PROGRESS §3 **Q5**). Window closes; the toast reads **"This list is no longer available."** The copy is **neutral about cause on purpose**: the 404 behind it is *also* a list that is alive and merely no longer visible to the viewer, so no surface may say "deleted". Reverses LV.17's persist-and-explain. |
+| **Pop-outs get a real mobile variant** | *"On a mobile the pop out window is full width but only 60% of the screen height. the tool bar only shows Close and Options. All options go into the option menu."* — Chris, 2026-08-12 (PROGRESS §3 **Q6**). Below **768px** (one breakpoint, `WINDOW_MOBILE_MAX_W`). Overrules LV.17's *"the phone gets the same window"*, which was a Builder decision. **This ruling is about pop-outs only** — D14's *"leave the phone version as is"* still governs Side by side, and neither is inferred onto the other. |
 
 ---
 
@@ -753,7 +757,7 @@ behaviour is the failure this build already paid for once.**
 | --- | --- | --- |
 | LV.15 | **The host and the store (D13)** — `list-windows-store.ts` (`{id,x,y,w,h,z,min}`, `partialize` → geometry only), and the **app-shell host**. Drag anywhere on the 44px header; resize grip 16px bottom-right, clamped 330–1200 × 220–900; collapse; close; back-to-front z-ordering; survives navigation. **Renders nothing at all when no window is open — pinned by a test**, because this is the one Round 2 file that mounts on every route. **LANDED 2026-08-12** — the store is `player-windows-store.ts` line for line where it can be, plus `w`/`h`/`min`; **the handoff's `z` is the array index**, not a stored field, because two sources of truth for stacking mean the one that is *not* the render order silently wins (D13 asks for the array, and the store header maps every handoff field to where it lives). 44px → **36**, `440 × 520` → **352 × 416**, `330–1200 × 220–900` → **264–960 × 176–720** at this app's ×0.8 — but the **16px grip is not converted** (a hit target, not a rhythm measure) and the pointer maths has no `/ ZOOM` (this app has no zoom to undo). Pop-outs are **one** z layer at **45**: above page chrome, below Radix (50) so LV.16's `dots` opens above its own window, and below the player mini cards (60) so a card opened *from* a row lands in front. `gear` and `dots` are **absent rather than inert** (R220) and the body is a marked `ListWindowBodyPending` — both are LV.16's, filed as **F-LV15.1/2** rather than left implicit | LV.7 |
 | LV.16 | **Window content** — the dark inversion done by scoping the colour custom properties on an **inner wrapper** (children invert without restyling), with the Stats modal deliberately rendered **outside** it. 36px rows, 14px checkbox, name **13px/400**, drafted dims to 45%, hover `rgba(255,255,255,.09)`. Drag-reorder via the existing `use-list-drag.tsx` gap model. Footer: views / comments + a brand-lime Share with **literal `#000`** text (inside the wrapper `--n-1` resolves to white). **Outer stroke 1.25px, no shadow** — see the elevation note below. **This row discharges LV.15's two hand-offs** (PROGRESS §5): **F-LV15.1** — delete `ListWindowBodyPending` from `list-window.tsx` outright and replace its branch with the inversion wrapper, as LV.13 deleted LV.12's `ComparisonPending`; and **F-LV15.2** — add the `gear` (stat picker) and `dots` (grouping menu) the design LAW's header lists, which LV.15 left *absent rather than inert* (**R220**) because each needs what this task brings. The `dots` menu is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it. **LANDED 2026-08-12** — the wrapper is one `fs-dark` div and its five values are custom properties in `globals.css`, with a short, enumerated redirect for the palette utilities that appear inside a pop-out, **because this app's palette is literal hex in `tailwind.config.ts` rather than custom properties** (see the changelog and PROGRESS §4; `text-ink` is deliberately *not* inverted, since here it means "ink on a light fill"). 36px rows → **29** at ×0.8, the 14px checkbox unconverted, name **10.5px Regular**. `use-list-drag.tsx` runs the gesture and what a drop *writes* moved out of `list-detail-panel.tsx` into **`use-list-drop.ts`**, verbatim, so the two surfaces cannot drift. **Both hand-offs discharged**, and a tick here is **one tick on one list** — measured, with a list holding the same player gaining 0 | LV.15 |
-| LV.17 | **Wiring and states** — `pop out` in the detail hero action cluster and in the column menu; loading / empty / error **inside** a window; what happens at 6+ windows; a pop-out of a list you then delete; and the mobile answer (a floating draggable window has none — say what small screens get instead). **LANDED 2026-08-12 — Round 2 is complete.** Both entry points go through one `list-windows-store.open`, and popping a column out **does not remove it** (the comparison set is what a tick fans out over, D12). The states are `error → !entries → empty → rows` — LV.13's order, and the order the data forces, since an errored read keeps its last good `data`; `ListReadFailure` and `ListRowsSkeleton` moved into `list-row-parts.tsx` so the column and the window cannot spell one situation two ways. **A deleted list keeps its window and says so**, footer suppressed — the prototype splices the pop-out away (`design/lists.js`:253) and this diverges deliberately, because the LAW says pop-outs *"stay until closed"* and the delete may not be the viewer's own action. **6+ = no cap** (Q4's ruling, one screen along); the cascade wraps after six, measured with seven open at one z layer. **The phone answer is "the same window", decided here and not inherited from D14** — F-LV15.3 discharged, with the *size* half of LV.15's fit added, the grip started from the painted corner, and touch drag/resize measured at 375 × 812. One change reaches outside the diff and is stated: `useList` no longer retries a 4xx, because the deleted state was otherwise unreachable | LV.16 |
+| LV.17 | **Wiring and states** — `pop out` in the detail hero action cluster and in the column menu; loading / empty / error **inside** a window; what happens at 6+ windows; a pop-out of a list you then delete; and the mobile answer (a floating draggable window has none — say what small screens get instead). **LANDED 2026-08-12 — Round 2 is complete.** Both entry points go through one `list-windows-store.open`, and popping a column out **does not remove it** (the comparison set is what a tick fans out over, D12). The states are `error → !entries → empty → rows` — LV.13's order, and the order the data forces, since an errored read keeps its last good `data`; `ListReadFailure` and `ListRowsSkeleton` moved into `list-row-parts.tsx` so the column and the window cannot spell one situation two ways. ~~**A deleted list keeps its window and says so**~~ and ~~**the phone answer is "the same window"**~~ — **both were Builder decisions and Chris overruled both on 2026-08-12 (§1, PROGRESS §3 Q5/Q6); the fix round rebuilt them.** A pop-out of a list that is gone now **closes with a neutral toast**, and a phone gets a **real bottom-sheet variant**. **6+ = no cap** (Q4's ruling, one screen along); the cascade wraps after six, measured with seven open at one z layer — and on a phone the pile is geometrically identical windows unwound one `Close` at a time, still with no cap. **F-LV15.3 stays discharged** — the *size* half of LV.15's fit, and the grip started from the painted corner, are the desktop answer and are untouched. One change reaches outside the diff and is stated: `useList` no longer retries a **404** — narrowed from `< 500` at **R252**, and the premise recorded for it (*"the state was not reachable at all"*) was **false and is corrected at R249**: it was reachable one retry later | LV.16 |
 
 **Elevation, for the avoidance of doubt.** A pop-out is a true overlay, so
 CLAUDE.md's rule would let it carry a resting shadow — but the handoff
@@ -786,7 +790,53 @@ list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
 
-- **v5.9 (2026-08-12)** — **LV.17 landed and Round 2 is complete.** Two things
+- **v6.0 (2026-08-12)** — **Chris ruled on both of v5.9's two decisions, and
+  reversed both.** They are now rulings in **§1** rather than a Builder's
+  reasoning in a changelog entry, and §6's LV.17 row is struck through where it
+  described the overruled behaviour.
+
+  **(a) A pop-out of a list that is gone closes, with a toast.** *"Close it,
+  with a toast."* The toast reads **"This list is no longer available."** That
+  lands on the prototype's own `store.destroy` (`design/lists.js`:253) — v5.9
+  argued the divergence from persistence and lost, which is the right outcome:
+  the LAW's *"stay until closed"* is about **navigation**, and a window over a
+  list nobody can read is not a window that is still doing its job.
+
+  **The neutral copy is not a paraphrase — it is also the fix for a false
+  statement the app was making.** A 404 from `GET /api/lists/[id]` collapses
+  three situations, and only one is a deletion: the third is a list that is
+  **alive with `deleted_at` NULL and merely no longer visible to this viewer**,
+  which the owner produces with one click in the hero's visibility control.
+  Measured on the local stack: the public `LV12` fixture flipped to
+  `is_private = true` → the viewer's pop-out closed with the neutral toast,
+  where the shipped code would have said *"Its owner deleted it."* No surface
+  may name a cause the client cannot see (**R248**).
+
+  **(b) Pop-outs get a real mobile variant.** *"On a mobile the pop out window
+  is full width but only 60% of the screen height. the tool bar only shows Close
+  and Options. All options go into the option menu."* Below **768px** — one
+  breakpoint, `WINDOW_MOBILE_MAX_W`, executed by a store test rather than
+  sprinkled as `md:` variants. v5.9's *"the phone gets the same window"* was a
+  Builder decision explicitly offered for overruling, and was overruled.
+
+  **This does not disturb D14.** *"Leave the phone version as is"* was ruled
+  about **Side by side** and still governs it; that this build refuses to infer
+  one surface's ruling onto another is what left the pop-out question open for
+  Chris to answer, and it is why the two answers can differ.
+
+  **Three things Chris did not state were decided by the Builder and are flagged
+  derived-not-ruled** (PROGRESS §4): the sheet is **bottom-anchored**; **drag
+  and resize are switched off** on a phone rather than left as dead gestures,
+  and no geometry is written from one; and **several windows pile** with no cap
+  invented (Q4's precedent is that Chris rules caps), filed as **F-LV17.4**.
+
+  Desktop is bit-identical and that is under test. No scope, dependency, schema
+  or D-decision changed.
+
+- **v5.9 (2026-08-12)** — **⛔ BOTH DECISIONS IN THIS ENTRY WERE OVERRULED BY
+  CHRIS THE SAME DAY — see v6.0 above.** Left unedited as the record of what was
+  built and argued, because v6.0 engages with the reasoning rather than replacing
+  it silently. **LV.17 landed and Round 2 is complete.** Two things
   in that row are decisions rather than implementation, and both are recorded
   here because a later reader will otherwise re-litigate them from the design
   package. **(a) A pop-out of a deleted list stays and says so.** The prototype

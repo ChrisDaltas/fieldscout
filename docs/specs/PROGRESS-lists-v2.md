@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v5.7) > this file. **That ordering is
+> (`docs/specs/delivery-plan-lists-v2.md` v6.0) > this file. **That ordering is
 > load-bearing, not decorative** — LV.12 used it to settle a plan clause the
 > design package contradicts (§4).
 >
@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all. **A second independent review returned FIX-THEN-MERGE with no blockers; the second fix round (2026-08-12) closed R231–R234** — that Escape guard covered Radix and *only* Radix, because `defaultPrevented` needs the consumer to have called `preventDefault()` and four of the app's own handlers do not, so an Escape typed into the player-search box **on `/app/players`** destroyed the pop-out; and `PROGRESS-scout.md`, an unrelated build's memory document, had been swept into the previous round's commit undisclosed and is now back out of the branch and untouched on disk (§6) **LV.16 (the window's content) landed 2026-08-12** — the pop-out is a working list now: the dark inversion is **one `fs-dark` wrapper** whose five values live as custom properties in `globals.css`, so the shared row parts invert with no dark variant of any of them (the same `text-n-3` class reads `#b3b9c0` inside the window and `rgb(95,100,109)` on the page behind it) — the LAW's mechanism implemented against a token layer that is **literal hex rather than custom properties**, which is the one thing the LAW's wording assumes and this app does not have. 29px rows, the 14px checkbox at 1:1 with its 75% white stroke, name at **Regular**, hover 9%, drafted 45% over 5%; drag-reorder through the shared gap model with the drop *commit* moved out of the detail panel into `use-list-drop.ts` so the two cannot drift; the Stats picker opens **light, outside the wrapper**, and it is the toolbar's own catalog; the footer's Share is ink-on-lime by the LAW's one sanctioned literal. **Both LV.15 hand-offs discharged** (F-LV15.1, F-LV15.2), and a tick here is one tick on one list — measured, with a list holding the same player gaining zero. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R235–R242** — the headline is that this task made the app's **drag layer** ambiguous: `use-list-drag.tsx` read the live DOM through `document`, which was right while the detail panel was its only consumer, and a pop-out floats over the panel writing the same `data-drop-row="all:0"` into the same namespace, so a drop released over the *other* surface silently reordered the dragged list to the foreign surface's slot index and **persisted it** (shown both ways, then refused both ways). Every DOM read is now scoped to a root the drag context renders itself. The window also stopped handing out the viewer's own handle as the owner of a **saved** list once the collections cache ages out — that link was shown 404ing — and the hand-maintained `.fs-dark` redirect list is now **audited by a test**, which found `bg-n-4` already broken in the tree at 1.61:1 (§6). **A second independent review of that round returned CLEAN** (R243–R247, five nits), all five carried into LV.17's PR rather than re-opening a merged branch (§6). **LV.17 (wiring, states and the phone answer) landed 2026-08-12 and closes Round 2** — `pop out` is real in the hero and in a column's `dots` menu, both through one store; the window has four states with the branch order the data forces, two of them literally shared with the column; **a deleted list keeps its window and says so** rather than vanishing (the prototype's own `destroy` splices it away — diverged from deliberately, because the LAW says pop-outs stay until closed and the delete may not be the viewer's action), with the footer suppressed because Share would copy a link that 404s; **6+ is "no cap"** (Q4 one screen along), measured with seven open and the seventh back at the cascade origin, all at one z layer, one Escape closing one; and **F-LV15.3 is discharged** — small screens get the same window, decided here rather than inherited from D14, with the size half of the fit added, the grip started from the painted corner, and touch drag + touch resize measured at 375 × 812. **Finding the deleted state also found that it was not reachable**: with the app-wide `retry: 1` TanStack Query keeps the last good data while a retry is outstanding, and the retryer was measured **paused indefinitely**, so `useList` now refuses to retry a 4xx — `use-draft-mode.ts`'s own rule, on a shared hook, called out because it reaches past the diff's obvious surface |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all. **A second independent review returned FIX-THEN-MERGE with no blockers; the second fix round (2026-08-12) closed R231–R234** — that Escape guard covered Radix and *only* Radix, because `defaultPrevented` needs the consumer to have called `preventDefault()` and four of the app's own handlers do not, so an Escape typed into the player-search box **on `/app/players`** destroyed the pop-out; and `PROGRESS-scout.md`, an unrelated build's memory document, had been swept into the previous round's commit undisclosed and is now back out of the branch and untouched on disk (§6) **LV.16 (the window's content) landed 2026-08-12** — the pop-out is a working list now: the dark inversion is **one `fs-dark` wrapper** whose five values live as custom properties in `globals.css`, so the shared row parts invert with no dark variant of any of them (the same `text-n-3` class reads `#b3b9c0` inside the window and `rgb(95,100,109)` on the page behind it) — the LAW's mechanism implemented against a token layer that is **literal hex rather than custom properties**, which is the one thing the LAW's wording assumes and this app does not have. 29px rows, the 14px checkbox at 1:1 with its 75% white stroke, name at **Regular**, hover 9%, drafted 45% over 5%; drag-reorder through the shared gap model with the drop *commit* moved out of the detail panel into `use-list-drop.ts` so the two cannot drift; the Stats picker opens **light, outside the wrapper**, and it is the toolbar's own catalog; the footer's Share is ink-on-lime by the LAW's one sanctioned literal. **Both LV.15 hand-offs discharged** (F-LV15.1, F-LV15.2), and a tick here is one tick on one list — measured, with a list holding the same player gaining zero. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R235–R242** — the headline is that this task made the app's **drag layer** ambiguous: `use-list-drag.tsx` read the live DOM through `document`, which was right while the detail panel was its only consumer, and a pop-out floats over the panel writing the same `data-drop-row="all:0"` into the same namespace, so a drop released over the *other* surface silently reordered the dragged list to the foreign surface's slot index and **persisted it** (shown both ways, then refused both ways). Every DOM read is now scoped to a root the drag context renders itself. The window also stopped handing out the viewer's own handle as the owner of a **saved** list once the collections cache ages out — that link was shown 404ing — and the hand-maintained `.fs-dark` redirect list is now **audited by a test**, which found `bg-n-4` already broken in the tree at 1.61:1 (§6). **A second independent review of that round returned CLEAN** (R243–R247, five nits), all five carried into LV.17's PR rather than re-opening a merged branch (§6). **LV.17 (wiring, states and the phone answer) landed 2026-08-12 and closes Round 2** — `pop out` is real in the hero and in a column's `dots` menu, both through one store; the window has four states with the branch order the data forces, two of them literally shared with the column; **6+ is "no cap"** (Q4 one screen along), measured with seven open and the seventh back at the cascade origin, all at one z layer, one Escape closing one. **Its review returned ESCALATE, and Chris ruled on both escalated questions (2026-08-12); the fix round closed R248–R255** — the two things LV.17 had *decided* rather than asked were both reversed, and both are now rulings in plan §1 (v6.0). **A pop-out of a list that is gone closes with a toast** reading *"This list is no longer available."* — neutral on purpose, because that is also the fix for the round's real finding: **the app was stating a cause it cannot know** (**R248**). A 404 from `GET /api/lists/[id]` collapses three situations and only one is a deletion — the third is a list **alive with `deleted_at` NULL** and merely no longer visible to the viewer, which the owner produces with one click; the shipped copy said *"Its owner deleted it."* over all three, and it was reproduced false twice, including live with the DOM and the DB side by side. That surface also **re-worded a merged one** (`Could not load` → `Deleted` in a Side by side column), now restored. **Phones get a real variant**: full width × 60% height, bottom-anchored, toolbar = `Options` + `Close` with everything else folded into that menu — one breakpoint at 768, executed in the store test, with desktop bit-identical and measured to the pixel. **F-LV15.3 stays discharged.** And **the record was corrected**: LV.17 wrote down that the deleted state was *"not reachable at all"*, which was **false** (**R249**) — it was reachable one retry later, and the `fetchStatus: 'paused'` behind that claim is React Query's *offline* pause, which a resolved 404 does not cause. `useList` still refuses to retry, now narrowed to **404 only** (**R252**), on the true and narrower argument: a 404 surfaced one retry late, and a shared hook was changed to make it immediate |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -472,22 +472,26 @@ checked.
   `list-row-parts.tsx` and are rendered by the column *and* the window, so the two
   surfaces cannot spell one situation two ways, and the window's branch order is
   LV.13's — `error → !entries → empty → rows`, which is also the order the data
-  forces. **A deleted list is separated from a failed read** on the error's own
-  404 and the window **stays and says so** rather than vanishing (the prototype
-  splices it away; the LAW says pop-outs stay until closed, and the delete may
-  not be the viewer's action) — with the footer suppressed, because Share would
-  copy a link that 404s. **6+ windows: no cap** (Q4's ruling, one screen along);
-  the cascade wraps after six, measured with **seven** open — the seventh back at
-  `96,96`, all at `z-index: 45`, one Escape closing exactly one. **The phone gets
-  the same window, and F-LV15.3 is discharged**: no breakpoint treatment, the
-  size half of LV.15's fit added so a window we place opens whole, the grip
-  started from the painted corner, and touch drag + touch resize measured at
-  375 × 812. Popping a column out **does not remove it** — the comparison set is
-  what a tick fans out over (D12). **One change reaches outside the diff and is
-  called out**: `useList` no longer retries a 4xx (`use-draft-mode.ts`:518's
-  rule), because with the app-wide `retry: 1` the deleted state was **not
-  reachable at all** — measured stuck at `fetchStatus: 'paused'` with the stale
-  rows on screen. R243–R247 from LV.16's review are carried in §6
+  forces. **A list that is gone is separated from a failed read** on the error's
+  own 404 — and, since the fix round, **the window closes with a neutral toast**
+  (*"This list is no longer available."*, Chris's own words, §3 **Q5**) rather
+  than staying and naming a cause it cannot know (**R248**: that same 404 is also
+  a list that is alive and merely no longer visible to you). **6+ windows: no
+  cap** (Q4's ruling, one screen along); the cascade wraps after six, measured
+  with **seven** open — the seventh back at `96,96`, all at `z-index: 45`, one
+  Escape closing exactly one. **F-LV15.3 is discharged**, and the answer it was
+  discharged with — *"the phone gets the same window"* — was **overruled by Chris
+  (§3 Q6)** and rebuilt as a real bottom-sheet variant: full width × 60% height,
+  toolbar = `Options` + `Close`, one breakpoint at **768**, desktop
+  bit-identical. LV.15's size fit and the grip started from the painted corner
+  are the desktop half and stand. Popping a column out **does not remove it** —
+  the comparison set is what a tick fans out over (D12). **One change reaches
+  outside the diff and is called out**: `useList` no longer retries a **404**
+  (narrowed from `< 500` at **R252**). The premise recorded for it — that the
+  state was *"not reachable at all"* — was **false and is corrected at R249**: it
+  was reachable one retry later, and the change stands on being immediate.
+  R243–R247 from LV.16's review are carried in §6, and **R248–R255 from LV.17's
+  own review are resolved there too**
 
 The seven LV.7 follow-ups (**F-LV7.1 – F-LV7.7**, §5) remain **filed items, not
 queued tasks** — Round 2 does not absorb them.
@@ -976,6 +980,67 @@ The ruling is about what to *build*, not about what to verify: LV.13 still
 checked 375px and reported it (§4). Pinned by
 `side-by-side-columns.test.ts` — "carries no breakpoint override of the column
 width" — so the "fix" this ruling declines cannot arrive later as a tidy-up.
+
+---
+
+### Q5 — what should a pop-out do when the list under it is gone? (raised 2026-08-12 by LV.17's second review, from finding **R250**)
+
+**Status: ✅ RULED — Chris, 2026-08-12.** Recorded here because LV.17 *decided*
+this rather than asking, and the Reviewer escalated it: the decision reversed
+the prototype on the strength of a Builder's reading of the LAW, which is
+exactly the class of call this build sends to Chris.
+
+**The gap.** The design LAW says pop-outs *"stay until closed"* (a statement
+about **navigation**), and the prototype's own `store.destroy` splices the
+window away when its list is destroyed (`docs/design/lists/design/lists.js`:253).
+LV.17 read the first as governing the second and shipped **persist-and-explain**:
+the window stays, the body says the list is gone, the footer is suppressed. The
+argument was that a window vanishing with no word is CLAUDE.md's *"nothing
+happened"* with the evidence removed.
+
+#### ✅ RULED — Chris, 2026-08-12: **"Close it, with a toast."**
+
+> Window closes. Toast: **"This list is no longer available."**
+
+Both halves matter, and the fix round pins both: a silent close is the defect
+LV.17 was right to fear, and a toast without the close leaves the stale window
+the ruling exists to remove.
+
+**The neutral copy is deliberate and is also the fix for R248.** Do not write
+"deleted" into it — see Q6's neighbour finding and `listReadIsGone`'s header in
+`list-row-parts.tsx`: the 404 behind this state is *also* a list that is alive
+and merely no longer visible to the viewer.
+
+---
+
+### Q6 — what does a phone get instead of a floating draggable window? (raised 2026-08-12 by LV.17's second review, from finding **R251**)
+
+**Status: ✅ RULED — Chris, 2026-08-12.** LV.17 discharged **F-LV15.3** by
+deciding *"the phone gets the same window"* — defended on three verified
+properties, and explicitly offered for overruling ("Hiding `pop out` below a
+breakpoint was considered and NOT done… it is a one-line change"). The Reviewer
+escalated it as a product call that had been made rather than asked.
+
+#### ✅ RULED — Chris, 2026-08-12: **a real mobile variant.**
+
+> *"On a mobile the pop out window is full width but only 60% of the screen
+> height. the tool bar only shows Close and Options. All options go into the
+> option menu."*
+
+So below **768px**: width **100%**, height **60%** of the viewport, and a header
+of **`Options` + `Close`** only — the `gear` (stats), the `dots` (grouping) and
+`Collapse` all move **into** that menu.
+
+**This does not contradict D14.** *"Leave the phone version as is"* (2026-08-11)
+was ruled about **Side by side**, a different surface. This build's standing
+rule is that a ruling is not inferred onto another surface, which is precisely
+what left this question open to be asked — and why the two answers differ
+without either being wrong.
+
+**Three things the ruling does not state were decided by the Builder and are
+flagged derived-not-ruled** so Chris can overrule any of them cheaply — see §4's
+fix-round entry: **bottom-anchored**; **drag and resize switched off** rather
+than left dead; **several windows pile, with no cap invented** (**F-LV17.4**).
 
 ---
 
@@ -3261,36 +3326,49 @@ This section records decisions made **during** the build.
   window, at the column's scale, which already survives a 240px panel (narrower
   than the window's 264px minimum), so neither surface needs a variant.
 
-  **3. A pop-out of a list you then delete: it stays, and says so.** The
-  prototype splices the window away (`design/lists.js`:253) and this
-  deliberately diverges. That is an in-memory demo with one actor, no soft
+  **3. A pop-out of a list you then delete: ~~it stays, and says so~~.**
+  > **⛔ OVERRULED — Chris, 2026-08-12 (§3 Q5): *"Close it, with a toast."***
+  > The paragraph below is left as the record of what was built and why, because
+  > the *reasoning* is what the ruling engages with. What ships is in the
+  > fix-round entry below: the window **closes**, and the toast reads **"This
+  > list is no longer available."**
+
+  The prototype splices the window away (`design/lists.js`:253) and this
+  deliberately diverged. That is an in-memory demo with one actor, no soft
   delete and no Trash; here the host is app-wide, so the delete may not be the
   viewer's action and a window that vanishes with no word while you are on
   `/app/players` is CLAUDE.md's *"nothing happened"* with the evidence removed.
-  The LAW's own persistence bullet is the other half — pop-outs *"stay until
-  closed"*. So `ListReadFailure` splits **deleted** from **failed** on the
-  error's own status (`GET /api/lists/[id]` answers 404 for `deleted_at IS NOT
-  NULL` or no such id — definitive either way), the copy branches on ownership
-  because Trash only lists your own, and the **footer is not rendered at all**
-  over a gone list: Share would copy `/u/{owner}/lists/{slug}`, now a 404 page,
-  and announce *"Link copied"* (**R220**'s shape). Measured live: deleted
-  `LV17 tmp B` with its pop-out open → the window kept its name and its close
-  button, showed *"This list was deleted. / Deleted lists go to Trash, where you
-  can restore it."*, **0** rows and **no Share**.
+  The LAW's own persistence bullet was read as the other half — pop-outs *"stay
+  until closed"*. So `ListReadFailure` split **deleted** from **failed** on the
+  error's own status, the copy branched on ownership because Trash only lists
+  your own, and the **footer was not rendered at all** over a gone list: Share
+  would copy `/u/{owner}/lists/{slug}`, now a 404 page, and announce *"Link
+  copied"* (**R220**'s shape — that half survives the reversal, for the one frame
+  before the window goes). Measured live: deleted `LV17 tmp B` with its pop-out
+  open → the window kept its name and its close button, showed *"This list was
+  deleted. / Deleted lists go to Trash, where you can restore it."*, **0** rows
+  and **no Share**. ***That sentence was also false for a second reason the
+  ruling then fixed anyway — see R248.***
 
-  **⚠️ That state was not reachable at first, and finding out why changed a
-  shared hook.** With the app-wide `retry: 1`, TanStack Query keeps
-  `status: 'success'` and the **last good data** while a retry is outstanding —
-  so the window went on painting the deleted list's rows. Measured on the local
-  stack, the retryer then sat at `fetchStatus: 'paused'` with
-  `failureReason: 'List not found'` and **never resolved**, which makes the stale
-  rows permanent on precisely the surface built to outlive the page that would
-  invalidate it. `useList` now carries `use-draft-mode.ts`:518's rule verbatim in
-  intent — *a 4xx is an answer, not a hiccup* — and a 5xx keeps the single retry.
-  This is a **shared** hook (panel, columns, window); it is strictly more correct
-  for all three and it is the house's own rule, not a new one. Recorded here
-  because it is the one change in this task that reaches outside the diff's
-  obvious surface.
+  **⚠️ Reaching that state changed a shared hook — and ~~it was not reachable at
+  all~~ is FALSE (corrected by R249, 2026-08-12).** With the app-wide
+  `retry: 1`, TanStack Query keeps the **last good data** while a retry is
+  outstanding and reports the failure only through `failureReason` — so the
+  window went on painting the vanished list's rows **until the retry was
+  exhausted**. That is a **delay, not a dead end**. Reproduced against this
+  repo's own `@tanstack/react-query`: one successful read, then every read 404s
+  → `retry: 1` reaches `status: 'error'` after **3** `queryFn` calls, no-retry
+  after **2**, `data` retained either way. The `fetchStatus: 'paused'` recorded
+  above is React Query's **offline** pause (`networkMode: 'online'`), which a
+  resolved HTTP 404 does not trigger; it was written down as the finding instead
+  of being diagnosed. **The true and sufficient claim: a 404 surfaced one retry
+  late, and a shared hook was changed to make it immediate.** `useList` carries
+  `use-draft-mode.ts`:518's rule in intent — *a 404 is an answer, not a hiccup* —
+  **narrowed at R252 from `status < 500` to `status === 404`**, because this same
+  route answers 401/403/400 on `PATCH`/`DELETE` and 408/429 are canonically
+  retryable. This is a **shared** hook (panel, columns, window); it is strictly
+  more correct for all three. Recorded here because it is the one change in this
+  task that reaches outside the diff's obvious surface.
 
   **4. Six windows, seven, twelve — no cap.** Q4's ruling (Chris, 2026-08-11:
   no cap, no search, no truncation on the picker) applied to the surface one
@@ -3305,11 +3383,19 @@ This section records decisions made **during** the build.
   caller was added: the design package has no such affordance, and Escape already
   unwinds the stack one press at a time.
 
-  **5. The phone answer — F-LV15.3, and this task owns it.** **Small screens get
-  the same window.** No breakpoint, no variant, and the `pop out` control is not
-  hidden below any width. That is a decision made here and **not** an extension
+  **5. The phone answer — F-LV15.3, and this task owns it.** ~~**Small screens
+  get the same window.**~~
+  > **⛔ OVERRULED — Chris, 2026-08-12 (§3 Q6): a real mobile variant.** Kept as
+  > the record: the decision was explicitly offered for overruling in its own
+  > last paragraph, and it was taken up. **F-LV15.3 stays discharged** — the
+  > obligation was *"say what small screens get"*, and they now get an answer
+  > with an author who could rule it. The three desktop properties below are
+  > unchanged and still hold; they are what the ≥768px window rests on.
+
+  No breakpoint, no variant, and the `pop out` control was not
+  hidden below any width. That was a decision made here and **not** an extension
   of Chris's *"leave the phone version as is"* (D14), which was ruled about Side
-  by side; it is defended on its own three properties rather than inherited:
+  by side; it was defended on its own three properties rather than inherited:
 
   - **A window the store places opens whole.** LV.15 fitted the *position*;
     LV.17 fits the **size**, which is the half that was missing — the frame caps
@@ -3379,6 +3465,156 @@ This section records decisions made **during** the build.
   protects that is `touch-action: none`, measured on both surfaces. The
   `computer` tool's drags time out under this harness's mobile emulation, which
   is why the synthetic route was needed at all.
+
+- **LV.17 fix round (2026-08-12) — Chris's two rulings built, and four findings
+  that were all about the same failure: stating more than you know.**
+
+  **1. Ruling 1 (§3 Q5) — a pop-out of a list that is gone closes, with a
+  toast.** One effect in `list-window.tsx`, guarded on the same `gone` the
+  previous round computed: `close(listId)` and `toast({ title:
+  LIST_UNAVAILABLE })`. **Both halves are pinned**, because either alone is the
+  defect the other prevents — a silent close is "nothing happened" with the
+  evidence removed, and a toast without the close leaves the stale window. The
+  copy is an **exported constant** shared with the on-surface state, so "matching
+  Chris's toast copy exactly" is structural rather than two files remembering.
+  `TOAST_LIMIT` is 1, so N windows dying together leave one toast carrying the
+  identical sentence — LV.14's reasoning for the fan-out's single report.
+  Measured live on the local stack: deleting `LV17fix tmp A` from the hero while
+  its pop-out floated over the page → **windows 1 → 0** and the toast
+  *"This list is no longer available."*
+
+  **2. R248 — the app stated a cause it cannot know, and it re-worded a merged
+  surface doing it.** `GET /api/lists/[id]` reads
+  `.eq('id', id).is('deleted_at', null)` and 404s on no row, and **three**
+  situations collapse into that: a soft delete, a missing id, and **a list that
+  is alive and merely no longer visible to this viewer** — the `lists` SELECT
+  policy is `((is_private = false AND deleted_at IS NULL) OR auth.uid() =
+  owner_id)`, and visibility is one click in the hero's options menu. LV.17
+  wrote *"This list was deleted. / Its owner deleted it."* over all three.
+
+  **Reproduced end to end, twice.** In a rolled-back transaction: as `dev@`, the
+  public `LV12` fixture returned **1** row; after the owner set
+  `is_private = true` the identical query returned **0** with `deleted_at` still
+  `NULL`. Then live, with the pop-out open: `psql` flipped `LV12` private, the
+  next list mutation invalidated `listsKeys.all`, and the window closed with the
+  **neutral** toast — where the shipped copy would have named a deletion that
+  never happened. DB ground truth captured at that moment:
+  `LV12 … is_private = t, deleted_at NULL`. The fixture was restored (`f`) and
+  re-verified.
+
+  **What changed.** `ListReadFailure`'s gone branch is one neutral sentence, the
+  same constant as the toast; the only thing left for an owner is a **condition**
+  — *"If you deleted it, you can restore it from Trash."* — which asserts nothing
+  about why the read failed. `listReadIsGone`'s header now carries all three
+  situations, and the predicate is documented as *"gone from here"*, never as a
+  cause. **And the Side by side column's sub-line is restored to LV.13's `Could
+  not load`**: LV.17 had changed a merged surface to `Deleted` on the same
+  inference, and re-wording a shipped surface was not a pop-out task's to do
+  even where the word had been true. The column's *body* stays the shared
+  component — that is LV.17's D11 win, and its copy is fixed upstream in one
+  place.
+
+  **3. Ruling 2 (§3 Q6) — the mobile variant.** Below **768px**
+  (`WINDOW_MOBILE_MAX_W`, Tailwind's `md`, deliberately not the shell's `lg`):
+  the window is a bottom sheet at **100% width × 60% height**, and the header is
+  **`Options` + `Close`** with the `gear`, the `dots` menu and `Collapse` folded
+  into that menu. **There is exactly one breakpoint in `list-window.tsx` and it
+  is a number in the store** — `isSmallViewport`, executed by a node test
+  (R191's rule), read through a `useSyncExternalStore` + `matchMedia`
+  subscription so it survives a rotation, with the media query built from the
+  same constant so the CSS boundary and the predicate cannot drift by a pixel.
+  The file carries **no** `sm:`/`md:`/`lg:` variant at all, which is pinned.
+
+  Measured at **375 × 812**: width **375 = 100.00%**, height **487.2 = 60.00%**,
+  **bottom gap 0**, inline style **`z-index: 45` and nothing else**, **no grip**,
+  header buttons **`["Options", "Close"]`**, header `cursor: auto` /
+  `touch-action: auto`, `box-shadow: none`, `z-index 45`. The Options menu, in
+  order: **Choose stats · ─── · Ranked / Tiers / Rounds / Avg cost / Budget % ·
+  ─── · Expand**.
+
+  `dvh` rather than `vh` for the 60%: on a phone *"the screen height"* is the
+  **visible** viewport, and `vh` is the URL-bar-collapsed one, which would put
+  roughly a tenth of the sheet under browser chrome.
+
+  **4. The three things Chris did not state — DERIVED, NOT RULED.** Each is
+  minimal and each is cheap to overrule:
+
+  - **Bottom-anchored.** A full-width, fixed-height window has nowhere
+    meaningful to drag to, so it must be anchored; the bottom is the mobile
+    convention (sheets rise from it) and the thumb-reachable end. It therefore
+    covers the bottom tab bar (45 against 40) while open — deliberate, and one
+    tap from gone.
+  - **Drag and resize switched off, not left dead.** Both are meaningless at a
+    fixed size, and a `cursor-grab` header that does nothing is R220's
+    live-but-false affordance. The grip is **not rendered**, the header drops its
+    grab cursor *and* its `touch-none` together, and both pointer-down handlers
+    bail. Gating the **gesture start** is what makes the stronger claim true:
+    `dragRef`/`sizeRef` are the only things that unlock the two store writes, so
+    **no geometry is written from a phone**.
+  - **Several windows pile, and no cap is invented.** Q4's precedent is that
+    Chris rules caps. Every mobile window has identical geometry, so the cascade
+    is a no-op and the front one is the one you see; each carries its own
+    `Close`. Measured: three open, all at `[0, 325, 375, 487]`, all `z-index 45`,
+    closing the top revealing the next — **3 → 2 → 1 → 0**, `Secret sleepers` →
+    `LV13 local fixture` → `Consensus WR top 10`. The honest cost — a pile of
+    three looks like one until you close the top — is **F-LV17.4**, not a
+    switcher invented here.
+
+  **5. Desktop is bit-identical, and it is measured, not asserted.** Every mobile
+  branch is `mobile ? … : <what shipped>`. At 1280 × 900: window opens at
+  `[96, 96, 352, 416]`, `z 45`, `box-shadow: none`, grip present, header buttons
+  `["Choose stats", "Grouping", "Collapse", "Close"]`, header class token-for-token
+  LV.16's. A real header drag moved it to **`[464, 382]`** — the predicted pixel —
+  and persisted `{x: 464, y: 382}`; a real grip drag took `352 × 416` → **`472 ×
+  496`**, again the predicted pixels, persisted. The grouping menu is still
+  exactly five items at **136px**. The `gear` still opens the Stats picker, and
+  Escape over that picker still dismisses the picker and **not** the window
+  (R227/R231 intact).
+
+  **6. R251's own case, round-tripped.** A window sized and positioned on a wide
+  viewport → opened on a phone → back to the desktop. Stored geometry
+  `{x: 301, y: 150, w: 472, h: 496}` before; the phone painted the bottom sheet
+  and wrote **nothing**; on return the window restored to exactly
+  `[301, 150, 472, 496]`. That is the whole point of switching the geometry off
+  rather than re-fitting it.
+
+  **7. R255 — the R246 pin's residual hole, closed with the hole demonstrated.**
+  The old pin was *"shallower than `{children}`, and after it"*, which a host
+  placed **inside `<main>` after the content wrapper** satisfies while sitting in
+  the page tree. `ancestorsOf()` now walks the enclosing chain by indentation
+  (resolving Prettier's multi-line opening tags to their `<tag` head) and asserts
+  that **no element enclosing the page encloses the host**, with a control test
+  proving the walk finds ancestors at all. **Both were shown**: with the host
+  moved inside `<main>`, the new pin is **red** and the pin *as it shipped* —
+  re-run verbatim in a scratch file against the same broken shell — is **green**.
+  Reverted; `app-shell.tsx` is not in this diff. **The mobile variant does not
+  move the host**, which is the thing R246 exists to protect.
+
+  **8. Verification environment.** **Local stack only** — `.claude/launch.json`
+  `dev-local` on port **3123**, `dev@fieldscout.local`. Nothing hosted was read
+  or written. Three temporary lists (`LV17fix tmp A/B/C`) were created and **all
+  three deleted from the local DB afterwards**; `LV12`'s visibility was flipped
+  and restored; a Pin/Unpin round-trip on `LV13` (the only mutation available
+  that invalidates the right key) left `list_favorites` at its documented single
+  row. Both fixtures re-verified after cleanup: `LV12` favourited by `dev_user`,
+  `is_private = f`, `deleted_at NULL`; `LV13` still `r1,r1,r2,r2,r3,r3,r4,r4`;
+  `…ab01` 10 rows, `…ab99` 2 rows; `list_player_drafted` **0** rows.
+
+  **9. The harness, and what it does not prove (R254 is unresolved and now
+  matters more).** At 375 the tooling's own pointer input **times out** — the
+  same failure the Reviewer hit — so the mobile interactions were driven by
+  synthesised pointer/mouse sequences on the shipped controls. That proves the
+  handlers, the rendered variant and the geometry; it does **not** prove Chrome's
+  touch → pointer synthesis. Ruling 2 makes mobile a *designed* surface rather
+  than an incidental one, so a real-device pass is now a first-class gap:
+  **F-LV17.5**. Two further tooling facts are worth recording for the next
+  session: the tool's `computer` coordinates are **screenshot pixels** (0.625 ×
+  CSS at 1280 wide), not CSS pixels — an hour of "the drag does nothing" was
+  that; and `resize_window` fires **neither** `resize` nor a `matchMedia`
+  `change` event, so the rotation path could not be exercised through it. The
+  variant was still shown switching live on a re-render at 375, which is
+  `useSyncExternalStore` re-reading its snapshot — the subscription is the
+  belt-and-braces half, not the only path.
 
 ---
 
@@ -3459,7 +3695,13 @@ This section records decisions made **during** the build.
   | **F-LV15.2** | **The header is two controls short of the design LAW.** *"cover, name 12.5px/600, then gear (stat picker), `dots` (grouping menu), collapse, close"* — LV.15 ships cover, name, collapse, close, and a marked gap where the other two go. They were left out rather than rendered inert because a control that does nothing is the live-but-false affordance **R220** found one task earlier | **LV.16.** The gear opens the Stats modal that task must render *outside* the inversion wrapper (design LAW), and the `dots` grouping menu regroups rows that do not exist until then. The menu itself is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it |
   | **F-LV15.4** | **The precedent this build mirrors closes its window on an Escape that a Radix overlay already handled** — found while proving R227's own guard, and **reproduced live**. `window-shell.tsx`:123–129 has no `defaultPrevented` check, and Radix's `DismissableLayer` listens on `document` in the **capture** phase and only calls `preventDefault()`, so a bubble-phase listener still runs. Measured on `/app/lists`, local stack: player mini card open (`[role=dialog] "Josh Allen"`, `z:60`) **plus** the account dropdown open → **one** Escape → menu `data-state="closed"` *and* `[role=dialog]` count **0**. The user aimed at the menu and lost the mini card too | **Not LV.15, and not Lists — but it now has an owner, which it did not (R233).** `src/components/shared/window-shell.tsx` is the *Players* mini card, outside this task's diff and outside Round 2's surface; changing it would be the drive-by fix the charter forbids, and it is the only row in this table describing a **live defect on a shipped surface** rather than a build hand-off, so "LV.16" / "LV.17" were never available to it. It is filed as a **task chip — `task_c1e3da1c`, *"Fix player mini card closing on a handled Escape"*** — carrying the file, the line numbers, the cause, the reproduction and the fix to copy, so a one-line fix with a proven reproduction does not rot in §5. ~~The pop-out is **not** affected — LV.15 carries the guard~~ — ***that claim was too broad and is corrected by R231***: `defaultPrevented` covers Radix and only Radix, and the pop-out **was** affected by the app's own Escape handlers, which do not `preventDefault()`. Both windows had the same defect; only its Radix half differed. The pop-out's is fixed (R231, `escapeBelongsToTarget`), the mini card's is the chip, and **the chip points at the fixed file rather than restating the fix** |
   > **✅ F-LV15.3 is DISCHARGED by LV.17 (2026-08-12), in the same PR as the
-  > work.** The answer is *"a small screen gets the same window"*, decided here
+  > work — and it STAYS discharged.** The obligation was *"say what small
+  > screens get"*; LV.17's answer to it was **overruled by Chris on 2026-08-12
+  > (§3 Q6)** and replaced by a real bottom-sheet variant, which is the
+  > obligation being met by the only person who could rule it, not re-opened.
+  > The paragraph below is left as written, as the record; its three *desktop*
+  > properties are all still true and are what the ≥768px window rests on.
+  > The answer *was* *"a small screen gets the same window"*, decided here
   > rather than inherited from D14 — Chris's *"leave the phone version as is"*
   > was about **Side by side**, and this task deliberately did not extend it, nor
   > hide the `pop out` control below a breakpoint (a product decision of the same
@@ -3493,7 +3735,10 @@ This section records decisions made **during** the build.
   | id | What | Why it is not in LV.17 |
   | --- | --- | --- |
   | **F-LV17.1** | **The prototype puts `Pop out into a window` in the list *row* menu too** — `design/ListsScreen.jsx`:119, the menu that became this app's `list-gallery-card.tsx` / rail row menu. The app now has two entry points (the detail hero and a Side by side column); the prototype has three, and the third is the one that pops a list out **without opening it first** | The task text names two in as many words — *"`pop out` in the detail hero action cluster and in the column menu"* — and a third entry point is a design call on a surface this task never opened. It is a two-line addition wherever it is wanted |
-  | **F-LV17.2** | **The detail panel's own failed-read state is a third spelling of `ListReadFailure`.** LV.17 collapsed the column's and the window's into one shared component; `list-detail-panel.tsx`:298–310 still has its own — a 22px icon and 13px/11px type, the page's scale rather than the panel's — and so it does **not** get the deleted/failed split. Not currently reachable (the panel's own delete calls `onDeleted`, which closes it, and the gallery-card delete happens in a mode where no panel is mounted), which is why it was left | Changing the panel's error state means deciding whether the page-scale treatment folds into the shared one or takes a `size` prop — a design call, on the one Lists surface this task otherwise never touched. Filed rather than swept in with the two that had to move |
+  | **F-LV17.2** | **The detail panel's own failed-read state is a third spelling of `ListReadFailure`.** LV.17 collapsed the column's and the window's into one shared component; `list-detail-panel.tsx`:300–312 still has its own — a 22px icon and 13px/11px type, the page's scale rather than the panel's — and so it does **not** get the unavailable/failed split. ~~Not currently reachable~~ — **that reason was wrong and is corrected (R253, 2026-08-12): it is reachable**, by the same two routes the window's state is (a delete from another tab or device, and the visibility flip R248 measured), and R249's retry removal makes it land immediately. What is true is that **its copy is not wrong** — *"This list could not be loaded."* claims no cause — so nothing false is shown; the split is a design call, not a defect | Changing the panel's error state means deciding whether the page-scale treatment folds into the shared one or takes a `size` prop — a design call, on the one Lists surface this task otherwise never touched. Filed rather than swept in with the two that had to move |
+  | **F-LV17.3** | **`window-shell.tsx`'s player mini card has no equivalent of Ruling 1 or Ruling 2.** Chris ruled about *pop-outs*; the player mini card is the surface this window was modelled on (D11/D13), it floats at z 60, and it neither closes over a vanished player nor has a small-screen variant. Whether the rulings extend to it is a Chris call, not an inference | This build's rule is that a ruling is not inferred onto another surface — which is exactly what left Q6 open to be asked. The mini card is a *Players* surface, outside Lists v2's diff, and F-LV15.4's chip is the precedent for how a mini-card change gets an owner |
+  | **F-LV17.4** | **Several pop-outs on a phone pile with no visual evidence that there is more than one.** Every mobile window has identical geometry (Ruling 2), so three open look like one until you close the top and the next appears. Measured: three at `[0, 325, 375, 487]`, unwound `3 → 2 → 1 → 0`. **No cap was invented** — Q4's precedent is that Chris rules caps — and no switcher was invented either, since the design package has neither | A mobile window switcher, a count badge, or a cap are each a product decision with design-package consequences. Filed so the cost is on the record rather than discovered on a phone |
+  | **F-LV17.5** | **No pop-out gesture has ever been driven by a real browser touch event, in three sessions** (carried from **R254**). Two Builders and a Reviewer all hit the same wall: the tooling's pointer input **times out** under its mobile emulation, so every mobile interaction has been synthesised. What *is* proven, executably: `touch-action: none` on both desktop grab surfaces, the geometry maths, the rendered variant, and the store writes. **Ruling 2 raises the stakes** — mobile is now a designed surface, not an incidental one | A real-device (or real-touch-harness) pass is an environment problem, not a code change. Filed as an explicit gap so the limitation stops being restated in prose each round |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
   built as written. The boards rule held on the *diff* — zero files under
@@ -4511,6 +4756,65 @@ All five are resolved in LV.17.
 | **R245** — `handlerBody()` was the **sixth** instance of the first-match-locator shape, unhardened, in the file R240 had just hardened `indentOf` in. It backs the four geometry-commit pins | nit | ✅ **Collects the declarations and throws on more than one**, as `indentOf`, `declarationSource` and `classNameContaining` now do. **Reproduced both ways**: a second `const onGripPointerDown` against the old first-match locator → **86 passed**; against the hardened one → **1 red**, *"`const onGripPointerDown` is declared 2 times … it no longer identifies one handler."* Reverted |
 | **R246** — `use-list-drag.tsx`'s containment gate asks *"does this root contain the point"*, not *"is this the **nearest** root"*, so **nested** drag surfaces would restore R235 outer→inner. Not reachable because `<ListWindowsHost />` is a **sibling** of `{children}` — *"and LV.17 is the task most likely to change that"* | nit | ✅ **Both halves, as the finding preferred.** A pin: the host's line in `app-shell.tsx` is **shallower** than `{children}` and **after** it, so it cannot be a descendant of anything `{children}` sits in (indentation as a depth proxy, the idiom `indentOf` already documents). And a paragraph in `use-list-drag.tsx`'s header naming the precondition where the next reader is. Probe: `<ListWindowsHost />` moved inside the content wrapper beside `{children}` → **1 red**. LV.17 did **not** move the host |
 | **R247** — the local fixture `Secret sleepers` (`aaaa1111-…ab99`) carried `lists.player_count = 3` against **2** `list_players` rows, so the picker card and the rail said *"3 players"* for a 2-player list. Pre-existing drift | nit | ✅ **Corrected in the local DB** (`update lists set player_count = (select count(*) …)`), verified by a whole-table check that now returns **0 rows** of drift, and observed in the UI: the rail and the picker both read **2 players**. Noted beside the LV12/LV13 fixtures in `ACTIVE-BUILD.md` so a `db reset` does not silently reintroduce it |
+
+### LV.17 — 2026-08-12 (PR #138) — verdict **ESCALATE**, then **RULED** and fixed
+
+*Reviewer session (fresh context, red-team brief) against PR #138 — pop-out
+wiring, states and the phone answer.* **A great deal was independently
+re-derived and is not re-opened**: the proof chain at **1148** with per-file
+arithmetic confirmed against a `main` worktree; the schema budget closed; boards
+and `elevation-rule.test.ts` untouched; `box-shadow: none` at `z-index 45`; D12
+measured with `psql` (one tick in a pop-out, on a player sitting on four lists,
+wrote exactly **one** row); D3 (reload → windows gone, geometry kept);
+**R243–R247 all genuinely closed** — R244 reproduced both ways and R245
+reproduced by the Reviewer itself; and **R246 did not regress**: the host is
+still a sibling and the pin goes red when it is moved.
+
+**Two questions were escalated rather than filed, and Chris ruled on both**
+(2026-08-12). They are §3 **Q5** and **Q6**, and they are now rulings in the
+delivery plan's §1 (v6.0). **R250 and R251 are therefore not "findings the
+Builder resolved" — they are findings that correctly refused to resolve
+themselves.** That is the escalation working: both were product calls a Builder
+had *made*, and one of them (the phone answer) had said so in its own last
+paragraph.
+
+***The finding that mattered (R248) — the app stated a cause it cannot know, and
+it re-worded a merged surface doing it.*** A 404 from `GET /api/lists/[id]`
+collapses **three** situations and the shipped copy named one of them:
+*"This list was deleted. / Its owner deleted it."* The third situation is a list
+that is **alive with `deleted_at` NULL** and merely no longer visible to this
+viewer — one click of a shipped visibility control. Both the Reviewer and this
+round reproduced it, in a rolled-back transaction and then live with the DOM and
+the DB read side by side. **CLAUDE.md's rule inverted**: the reason *inferred*
+from a status the server collapses, on the one build whose whole idiom is
+asserting the reason for emptiness.
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R250** — a pop-out of a deleted list persists-and-explains, reversing the prototype's `store.destroy` on a Builder's reading of the LAW | escalate | ✅ **RULED by Chris: *"Close it, with a toast."*** Built: a `gone`-guarded effect closing the window and raising **"This list is no longer available."** Recorded in §3 **Q5**, plan §1 and plan v6.0. Measured live — deleting `LV17fix tmp A` with its pop-out open → **windows 1 → 0** and the toast. **Both halves pinned**, since either alone is the other's defect. Probe: the close removed, toast kept → **1 red** (*"expected 'toast({ title: LIST_UNAVAILABLE })' to contain 'close(listId)'"*), reverted |
+| **R251** — pop-outs need a real mobile variant; "the phone gets the same window" is a product decision a Builder made | escalate | ✅ **RULED by Chris: full width, 60% height, toolbar = Close + Options, everything else into the menu.** Built and measured at 375 × 812: **100.00% × 60.00%**, bottom gap **0**, inline style `z-index: 45` only, no grip, `["Options", "Close"]`, menu = *Choose stats · ─ · five grouping modes · ─ · Expand*. **One breakpoint**, `WINDOW_MOBILE_MAX_W = 768`, executed by `isSmallViewport` in the store test; **no `sm:`/`md:`/`lg:` anywhere in `list-window.tsx`**, pinned. Desktop bit-identical and measured: drag → `[464, 382]`, resize → `472 × 496`, both to the predicted pixel, both persisted. Probes: the mobile drag guard removed → **1 red**; the sheet un-anchored (`top-10`, `vh`) → **1 red**. Both reverted |
+| **R248** — `listReadIsGone` treats every 404 as *"deleted"*, and the copy says so; **and it changed a merged surface** (`side-by-side-columns.tsx`:275, `'Could not load'` → `'Deleted'`) | should-fix | ✅ **One neutral state, and the merged surface restored.** `ListReadFailure`'s gone branch is `LIST_UNAVAILABLE` — *"This list is no longer available."*, the **same exported constant** as Chris's toast — and the only thing left for an owner is a **condition** (*"If you deleted it, you can restore it from Trash."*). `listReadIsGone`'s header now carries all three situations with the measurement. The column's sub-line is back to LV.13's **`Could not load`** and no longer imports the predicate; its *body* stays the shared component, fixed upstream in one place. **Reproduced live before and after**: `LV12` flipped `is_private = true` with `deleted_at NULL`, pop-out open → the window closed with the neutral toast where the shipped code named a deletion that never happened. Fixture restored and re-verified. Pin: with the conditional clause removed, `ListReadFailure` must contain no *"deleted / removed / owner"* at all. Probe: `'This list was deleted.'` reinstated → **1 red**, reverted |
+| **R249** — the ledger records a false premise as measured fact: *"the deleted state was **not reachable at all**"* | should-fix | ✅ **Record corrected in all four places it appears** — PROGRESS §1's round row, §2b's LV.17 checklist row, §4 item 3, and plan v5.9 (via v6.0 and the §6 row) — to *"a 404 surfaced one retry late, and a shared hook was changed to make it immediate."* The `fetchStatus: 'paused'` observation is **diagnosed rather than dropped**: it is React Query's **offline** pause (`networkMode: 'online'`), which a resolved HTTP 404 does not trigger. The counts the Reviewer measured are recorded (`retry: 1` → 3 `queryFn` calls, no-retry → 2, `data` retained either way). **The change is kept on its true merits**, as directed. `useList`'s own JSDoc carries the correction, so the next reader meets it at the line rather than in a document |
+| **R252** — the predicate is `status < 500`, materially wider than the 404-only argument above it | nit | ✅ **`if (status === 404) return false`.** Everything else keeps the app-wide single retry: this same route answers 401/403/400 on `PATCH`/`DELETE` (`route.ts`:147, 176, 302, 319), and 408/429 are canonically retryable. Pinned both ways — the new predicate present **and** `status < 500` absent. Probe: the old predicate restored → **1 red**, reverted |
+| **R253** — F-LV17.2's deferral reason (*"Not currently reachable"*) is wrong | nit | ✅ **Reworded to the accurate reason**: it *is* reachable, by the same two routes, and R249's retry removal makes it immediate — but **its copy is not wrong**, so the split is a design call rather than a defect. The line reference is corrected to `list-detail-panel.tsx`:300–312 |
+| **R254** — the touch claim still rests on synthetic pointer events; no real browser touch gesture has driven this window in any session | nit | ✅ **Filed as F-LV17.5 rather than restated in prose**, since Ruling 2 makes mobile a designed surface. The limitation is stated where the claim is (`list-window.tsx`, §4), and this round hit the identical wall — the tooling's pointer input times out under mobile emulation. Two tooling facts are recorded for the next session so the hour is not spent again: `computer` coordinates are **screenshot pixels** (0.625 × CSS at 1280), and `resize_window` fires **neither** `resize` nor a `matchMedia` `change`. **No code fix**, as directed |
+| **R255** — the R246 indentation proxy has a residual hole: a host inside `<main>` but after the content wrapper passes both assertions while still sitting in the page tree | nit | ✅ **Replaced with a containment walk.** `ancestorsOf()` climbs the enclosing chain by indentation (resolving Prettier's multi-line opening tags to their `<tag` head) and the pin asserts that **no element enclosing the page encloses the host**, plus the host's depth equals `<BottomTabs />`'s — the sibling it shares — with a **control test** proving the walk finds ancestors at all. **The hole was demonstrated, not just closed**: with the host moved inside `<main>`, the new pin is **red** and the pin *as it shipped* — re-run verbatim in a scratch file against the same tree — is **green**. Reverted; `app-shell.tsx` is not in this diff, and the mobile variant does **not** move the host |
+
+**Scope discipline.** Files changed this round: **eight** —
+`list-window.tsx`, `list-row-parts.tsx`, `side-by-side-columns.tsx`,
+`use-lists.ts`, `list-windows-store.ts`, and three test files — plus this
+document and the delivery plan. `app-shell.tsx`, `elevation-rule.test.ts`, the
+boards tree and every leagues surface are untouched; no migration, no column, no
+route; `docs/specs/PROGRESS-scout.md` stays untracked and unmodified
+(md5 `e6a6e35d89ea102b7142fbdfdacf4765`). **No `.fs-dark` redirect was added** —
+the R238 audit stayed green with the two new components in its set.
+
+**Proofs.** `npm run test:unit` **1159 passed / 58 files** (baseline 1148, **+11**:
++4 executed in `list-windows-store.test.ts`, +7 source-pinned in
+`list-windows-host.test.ts`). `npm run type-check` clean; `npm run lint` clean
+apart from the pre-existing unrelated `auction-draft-room.tsx` warning. **Six
+break-probes, each shown red and reverted**, plus the R255 hole shown green
+under the shipped pin.
 
 ---
 
