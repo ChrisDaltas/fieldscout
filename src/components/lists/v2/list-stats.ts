@@ -1,15 +1,34 @@
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
-import type { ListRowStatKey } from '@/components/lists/customize-popover'
+
+/**
+ * Which per-player stat a list row can show.
+ *
+ * **This union is the retired `customize-popover.tsx`'s, moved rather than
+ * rewritten (LV.7).** That file's popover had exactly one consumer — the
+ * legacy detail view this task deletes — but its *type* had two, and
+ * `list-display-store.ts`'s `DEFAULT_COLS` is keyed by these ids. Keeping a
+ * whole component file alive to export a string union would have been the dead
+ * code the cutover is meant to remove; changing the ids would have desynced the
+ * store from the catalog below.
+ */
+export type ListRowStatKey =
+  | 'proj'
+  | 'current'
+  | 'last'
+  | 'adp'
+  | 'sos'
+  | 'auction'
+  | 'bye'
 
 /**
  * Lists v2 — the stat catalog the toolbar's `Stats N` picker chooses from.
  *
- * **Deliberately the *existing* seven options**, ids and all
- * (`customize-popover.tsx`'s `ListRowStatKey`), rather than a new vocabulary:
- * `list-display-store.ts`'s `DEFAULT_COLS` already names three of them
- * (`proj`, `last`, `adp`) and treats stat ids as opaque strings, so anything
- * else would have desynced the store from its only consumer on day one.
+ * **Deliberately the *existing* seven options**, ids and all, rather than a new
+ * vocabulary: `list-display-store.ts`'s `DEFAULT_COLS` already names three of
+ * them (`proj`, `last`, `adp`) and treats stat ids as opaque strings, so
+ * anything else would have desynced the store from its only consumer on day
+ * one.
  *
  * The design's own catalog is larger and richer — searchable, grouped by how
  * much of *this* list each group covers, and carrying stats we hold no data

@@ -24,26 +24,32 @@ import { useToast } from '@/hooks/use-toast'
  * state of one browser tab — it has no server representation, and giving it one
  * would be a third schema change, which plan §3 **D6** forbids outright.
  *
- * **Two consumers, both closed (PROGRESS §3 Q1, ruled by Chris 2026-08-09).**
+ * **UPDATED AT LV.7 — one consumer, and no toggle.** This header used to name
+ * two (`list-detail-view.tsx` and `draft-mode/board-column.tsx`, PROGRESS §3 Q1)
+ * and to record that turning draft mode *off* cleared the marks on the way out.
+ * The cutover deleted both files, so:
  *
- *   * `src/components/lists/list-detail-view.tsx:286` — the flag-OFF legacy
- *     detail view, which serves production. It now makes network calls where it
- *     read localStorage. **A failed read must render as "no marks", never as a
- *     crashed page** — see `toDraftedSet` for exactly what holds that up.
- *   * `src/components/lists/draft-mode/board-column.tsx:35` — inside the
- *     off-limits `draft-mode/**` tree. It gains account-persisted marks through
- *     this hook without a single byte of its own changing. Accepted, recorded,
- *     not a bug.
+ *   * The only consumer is now
+ *     `src/components/lists/v2/list-detail-panel.tsx`, the open list. **A failed
+ *     read must render as "no marks", never as a crashed page** — see
+ *     `toDraftedSet` for exactly what holds that up.
+ *   * **Nothing turns draft mode off any more**, because there is no draft-mode
+ *     gate: the drafted checkbox is permanent (Chris, 2026-08-10; handoff
+ *     §"Side by side"/§"Cards"). `clearDrafted` is reached only from the open
+ *     list's explicit *Clear drafted*, which is the safer end of the reversal
+ *     R190/R195/R199/R203 all orbited — the destructive path is now the only
+ *     deliberate one.
+ *   * Consequently **`enabled` / `setEnabled` have no consumer at all.** They
+ *     are left in place rather than ripped out mid-cutover; removing them is a
+ *     follow-up (PROGRESS §5 F-row), not a drive-by in a UI task.
  *
  * There is **no localStorage migration path**, on purpose: the ruling that
  * unparked this task is that no user has ever marked anyone drafted, so there
  * is nothing to migrate (Q1, consequence 3).
  *
- * **Turning draft mode off still clears the marks** (`list-detail-view.tsx:659`
- * calls `clearDrafted` on the way out). That was true before this task too — it
- * wiped localStorage. It now wipes rows. Same gesture, same outcome, durable
- * storage: plan §2.1's "nothing about its behavior changes; only where it
- * stores", applied to the clear as well as to the mark.
+ * The paragraphs below are kept as written because the hazards they describe
+ * are still live on the one remaining path — read "the caller" as the open
+ * list.
  *
  * **…but only over marks it can actually see (R190).** Moving the clear to
  * durable storage crossed it with the *other* accepted consequence — a failed
@@ -308,9 +314,10 @@ export const CLEAR_REFUSAL_COPY: Record<ClearRefusal, string> = {
  * (CLAUDE.md).
  *
  * Returns whether the clear actually ran, because the caller's *own* success
- * message is the same failure one layer up: `list-detail-view.tsx`'s "Reset
+ * message is the same failure one layer up: the retired detail view's "Reset
  * list" used to toast "List reset — drafted marks cleared" unconditionally,
- * which is a lie in every refused state (R195).
+ * which is a lie in every refused state (R195). The open list's *Clear drafted*
+ * checks this return value (LV.7).
  */
 export function runClearDrafted(
   read: DraftedReadState,

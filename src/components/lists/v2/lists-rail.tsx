@@ -1,5 +1,6 @@
 'use client'
 
+import { Icon } from '@/components/ui/icon'
 import type { ListWithTags } from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
 
@@ -86,6 +87,17 @@ export function ListsRail({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[10.5px] font-bold leading-tight">
                 {list.title}
+                {/* Pinned. The control lives in the hero's dots menu (LV.7);
+                    this is the state it produces, so a pin taken in Cards mode
+                    is legible here too. */}
+                {list.is_favorited && (
+                  <Icon
+                    name="marker"
+                    size={9}
+                    className="ml-1 inline-block text-accent"
+                    aria-label="Pinned"
+                  />
+                )}
               </span>
               <span className="mt-px block truncate text-[9px] font-medium leading-tight text-n-3">
                 {list.player_count ?? 0} players · {formatCreated(list.created_at)}

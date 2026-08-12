@@ -24,6 +24,7 @@ import {
   NoteMark,
   PlayerFace,
   PlayerMeta,
+  PlayerName,
   RowMenu,
 } from './list-row-parts'
 import type { DropTarget } from './list-reorder'
@@ -55,6 +56,17 @@ export interface RowHandlers {
   onEditNote?: (entry: ListPlayerWithPlayer) => void
   /** Omitted where `canEdit` is false, and unreachable when it is. */
   onRemove?: (entry: ListPlayerWithPlayer) => void
+  /**
+   * Click the player's name → the app's existing floating player card
+   * (`player-window.tsx` via `player-windows-store`). The design LAW names this
+   * for the List and Cards styles; it is offered in all three, because a name
+   * that opens research in two of three view styles is a worse rule than one
+   * that always does.
+   *
+   * Optional, and omitted by the public share view (LV.6) — a signed-out
+   * stranger has no research panel, and LV.6's subtractions are deliberate.
+   */
+  onOpenPlayer?: (entry: ListPlayerWithPlayer) => void
   /** Owner (and not mid-AI-build): rename, remove, reorder, add. */
   canEdit: boolean
   /**
@@ -320,14 +332,12 @@ function ListRow({
       <PlayerFace entry={entry} size={24} />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={cn(
-              'min-w-0 truncate text-[11.5px] font-semibold leading-tight',
-              drafted && 'line-through',
-            )}
-          >
-            {entry.player.full_name}
-          </span>
+          <PlayerName
+            name={entry.player.full_name}
+            drafted={drafted}
+            onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
+            className="min-w-0 truncate text-[11.5px] font-semibold leading-tight"
+          />
           <NoteMark note={entry.notes} />
         </span>
         <PlayerMeta entry={entry} className="mt-1" />
@@ -503,14 +513,12 @@ function TableRow({
       <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
       <PlayerFace entry={entry} size={21} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span
-          className={cn(
-            'min-w-0 truncate text-[11px] font-bold',
-            drafted && 'line-through',
-          )}
-        >
-          {entry.player.full_name}
-        </span>
+        <PlayerName
+          name={entry.player.full_name}
+          drafted={drafted}
+          onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
+          className="min-w-0 truncate text-[11px] font-bold"
+        />
         <PlayerMeta entry={entry} />
       </span>
 
@@ -764,14 +772,12 @@ function PlayerTile({
           {ordinal(positionRank)}
         </span>
         <PlayerFace entry={entry} size={30} round />
-        <span
-          className={cn(
-            'max-w-full truncate text-center text-[12px] font-semibold leading-none',
-            drafted && 'line-through',
-          )}
-        >
-          {entry.player.full_name}
-        </span>
+        <PlayerName
+          name={entry.player.full_name}
+          drafted={drafted}
+          onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
+          className="max-w-full truncate text-center text-[12px] font-semibold leading-none"
+        />
         <span className="flex items-center gap-1">
           {handlers.canMark && (
             <span className={cn(drafted ? 'flex' : 'hidden group-hover:flex')}>

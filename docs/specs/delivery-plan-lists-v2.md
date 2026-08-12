@@ -1,6 +1,10 @@
 # Delivery Plan: Lists v2
 
-> **v4.2 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v4.3 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+>
+> **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
+> surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
+> capabilities *ported* rather than lost, per Chris's §3 Q3 ruling (**D11**).
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -41,7 +45,7 @@
 | **Boards are off limits — one amendment** | *"We should not be touching boards at all right now"* (Chris, 2026-08-09). No task opens `src/components/big-board/**` or `src/stores/board-labels-store.ts`. **Amended 2026-08-10:** `src/components/lists/draft-mode/**` is reopened for **deletion of the 3-state cycle only** (`use-board-marks.ts` and its wiring), superseded by the permanent drafted checkbox (D2). Nothing else in that tree is in scope. A list is not a board: **lists persist forever, boards are season-bound.** |
 | **Scale** | The app's ×0.8 tokens **stay**. Convert the handoff's 1× numbers down: a stated 32px control is `h-btn-sm` (26); a stated 1.25px border is `border-1`. Re-tokenizing is post-launch. |
 | **Color** | Implement from **tokens, never the handoff's literal hex**. The prototype is token-driven (19 × `var(--accent)`, zero hardcoded blues); its `#1F6BF0` describes what that token resolved to in *their* bundle. The app's `accent` is `#3d5cff`. |
-| **Flag** | All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout. |
+| **Flag** | ~~All of it behind `featureFlags.listsV2`. On in local dev, off deployed, until Chris flips it. The current Lists page serves production throughout.~~ **Spent and removed at LV.7 (2026-08-11).** The flag, its `.env.example` block, its test and both route branches are gone; `/app/lists` serves the rebuilt page unconditionally. Do not reintroduce it — a flag with one branch is a lie about what ships. |
 | **Free-only** | No `is_pro` gates. |
 | **Round 1 scope** | Lists page + list detail. Side-by-side compare and pop-out windows are **Round 2** (§6). *(Ruled by Chris, 2026-08-09.)* |
 
@@ -550,7 +554,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | LV.4.1 | Loading / empty / error / overflow states across both screens | LV.3.* |
 | LV.4.2 | AI list generation + persona surfaces restyled into the new language (CLAUDE.md: never leave them in the old style, never remove them) | LV.3.* |
 | LV.4.3 | Public share view in the new language, still server-rendered (D7). **UI only** — the schema budget stays closed at three | LV.3.* |
-| LV.4.4 | Flag flip + retire the old components — including **deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle** (D2; §1's boards amendment scopes this), and correcting that file's now-false header comment (R192) | all |
+| LV.4.4 → **LV.7** | **DONE 2026-08-11.** Flag removal + retire the old components — including deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle (D2; §1's boards amendment scopes this). R192's now-false header **discharged by deletion**, not by a fix. Preceded by the capability diff that PROGRESS §3 Q3 records, and by Chris's ruling that **four capabilities are ported rather than dropped** — see **D11** | all |
 
 **Phase 5 — attached links** *(added v3.7, ruled 2026-08-11)*
 
@@ -615,6 +619,55 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v4.3 (2026-08-11)** — **LV.7, the cutover, and the ruling that changed what
+  a "rebuild" task is allowed to lose (D11).**
+
+  **D11 — a rebuilt surface owes a capability diff, and the diff is the
+  deliverable.** LV.7 halted before deleting anything and produced one; Chris
+  ruled *"Right rail dragging is a MUST. Yes mini player card 100%, MUST. Just
+  use the one that's already there… Folders yes keep folders. Pin and Unpin
+  great keep it"* — reversing the Builder's own recommendation on every item —
+  and added the reason: *"This is why I didn't want to rebuild from scratch, I
+  didn't think this was necessary."*
+
+  That is a correction to method, and it is already CLAUDE.md's rule
+  (*"Re-skin in place… Do not generate a replacement component library or
+  parallel component tree"*). `lists/v2/**` was built as a parallel tree, and a
+  parallel tree loses behaviour **by default**: none of the four losses would
+  have failed a test, a type-check or a screenshot review. They would simply
+  have stopped existing. So:
+
+  1. **Port, do not reimplement.** Each ruled item was mounted from the thing
+     that already worked — one `useDroppable` for the rail drag (with **no**
+     edit to `app-dnd-context.tsx`, which already parsed the id), the existing
+     `player-windows-store` for the mini card, the existing `use-folders.ts` and
+     `folder-form-dialog.tsx` for folders, the existing `useToggleFavorite` for
+     pin/unpin.
+  2. **A deletion PR states what it deletes, in tests.** `lists-v2-flag.test.ts`
+     pinned a branch that no longer exists, so it was replaced rather than
+     edited: `lists/lists-cutover.test.ts` asserts the retired files are *gone*,
+     that no branch on the removed flag survives, that every Lists URL still
+     resolves, and that each of the four ported capabilities is mounted.
+  3. **D3 is unchanged, and D4's `org` gains exactly one server write.** The
+     retired *List order / Tiers* control was the last writer of
+     `ranking_mode = 'rank_and_tier'` anywhere in the codebase, so the grouping
+     control inherited that one write — Tier → `rank_and_tier`, Rank → `ranked`
+     **only** when flipping tiers back off. The display store still writes
+     nothing; this is the route call its own header always said would sit
+     alongside `setOrg`. Without it no list could ever have been tiered again,
+     while the create dialog went on promising *"Flip on the tiers view any
+     time."*
+  4. **`/app/lists/[listId]` is a redirect, not a second detail screen** —
+     `redirect('/app/lists?list=<id>')` from a server component, with the
+     selection pinned so a list that is neither owned nor saved is not bounced.
+     Rendering the panel standalone would have needed its own page shell, which
+     is the two-Lists-pages state the cutover exists to end. The old
+     `/app/lists/draft-mode` redirects too rather than 404ing: the app itself
+     sent people to that URL.
+
+  The schema budget is **untouched and still closed at three** — LV.7 shipped no
+  migration, no schema change and no new API route.
 
 - **v4.2 (2026-08-11)** — **The public share view is rebuilt, and D7 grows from
   one sentence into five rules (LV.6).** The original decision said only that

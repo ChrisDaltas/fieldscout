@@ -1,5 +1,6 @@
 'use client'
 
+import { useDroppable } from '@dnd-kit/core'
 import * as React from 'react'
 
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
@@ -9,6 +10,7 @@ import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
+import { useFolders, useMoveListToFolder } from '@/hooks/use-folders'
 import {
   useAddLink,
   useAddPlayer,
@@ -19,10 +21,14 @@ import {
   useRemovePlayer,
   useReorderPlayers,
   useSetPlayerTier,
+  useToggleFavorite,
   useUpdateList,
   type ListPlayerWithPlayer,
   type ListWithTags,
 } from '@/hooks/use-lists'
+import { cn } from '@/lib/utils'
+import { useHistoryStore } from '@/stores/history-store'
+import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import {
   colsForView,
   resolveOrg,
@@ -61,6 +67,20 @@ import { AddPlayersPopover, ListToolbar } from './list-toolbar'
  * 2. **The list is read-only while the AI owns it**, so the user cannot fight
  *    the build over the order mid-show (legacy: `data.is_owner &&
  *    !aiBuild.building`).
+ *
+ * ## What LV.7 carried here from the retired detail page
+ *
+ * The panel *is* the detail view now, so four live behaviours that lived on
+ * `list-detail-view.tsx` moved onto it rather than being lost with it
+ * (PROGRESS §3 Q3, ruled by Chris 2026-08-11 — *"all four survive"*):
+ *
+ * * **A drop zone for players dragged from the right rail.** The rail makes
+ *   every row a `kind: 'players'` draggable (`layout/rail/players-panel.tsx`);
+ *   the retired view held the only `list-drop:` droppable left in the app.
+ * * **The Recently-viewed push** — nothing had recorded a list view behind the
+ *   flag since LV.1.1, because only the legacy `[listId]` route did it.
+ * * **Pin / unpin**, whose only consumer was `list-card.tsx`.
+ * * **Move to folder**, whose only consumer was the same card's submenu.
  */
 
 type DetailTab = 'list' | 'details' | 'comments'
@@ -100,7 +120,12 @@ export function ListDetailPanel({
   const removeLink = useRemoveLink(listId)
   const reorderPlayers = useReorderPlayers(listId)
   const setPlayerTier = useSetPlayerTier(listId)
+  const toggleFavorite = useToggleFavorite()
+  const moveToFolder = useMoveListToFolder()
+  const folders = useFolders()
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
+  const openPlayerWindow = usePlayerWindowsStore((state) => state.open)
+  const pushHistory = useHistoryStore((state) => state.push)
   // Claims a queued job for THIS list and runs the generate → add → order
   // sequence. Returns a null job for every other list, so only the panel
   // showing the list being built ever starts the loop.
@@ -139,6 +164,111 @@ export function ListDetailPanel({
   // page applies. Drag-and-drop, Add players, rename, the drafted checkbox and
   // the row menu all key off this one flag.
   const canEdit = Boolean(list?.is_owner) && !aiBuild.building
+
+  /**
+   * The drop target for players dragged out of the right rail (LV.7).
+   *
+   * The id shape is the one `app-dnd-context.tsx` already parses —
+   * `list-drop:detail:<listId>`, read with `overId.split(':').pop()` — so this
+   * needs no change to the app-level handler at all. It has to be registered
+   * **here**, on the panel shell, and not inside `ListBody`: the body mounts its
+   * own nested `DndContext` for the LV.4 gap model, and a `useDroppable` under
+   * that would register with the nested context, which the rail's drag never
+   * enters.
+   */
+  const playerDrop = useDroppable({ id: `list-drop:detail:${listId}`, disabled: !canEdit })
+  const railDragOver =
+    playerDrop.isOver &&
+    (playerDrop.active?.data.current as { kind?: string } | undefined)?.kind === 'players'
+
+  /**
+   * "Recently viewed" on Home (LV.7). Only the legacy `[listId]` route recorded
+   * a list view, so behind the flag nothing had recorded one since LV.1.1. The
+   * `href` stays `/app/lists/<id>`, which is a real, resolving URL — that route
+   * now redirects into this panel with the list selected.
+   */
+  React.useEffect(() => {
+    if (!list) return
+    pushHistory({
+      type: 'list',
+      href: `/app/lists/${list.id}`,
+      name: list.title,
+      subtitle: `${list.player_count ?? list.players.length} players`,
+      imageUrl: list.thumbnail_url ?? undefined,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list?.id, list?.title, list?.player_count, list?.thumbnail_url, pushHistory])
+
+  /**
+   * Click a player's name → the app's **existing** floating player card
+   * (`player-window.tsx`, via `player-windows-store`; `PlayerWindowsLayer` is
+   * mounted once in the root layout). An owned list passes its context, which is
+   * what puts *Remove from list* in the window's action row — exactly as the
+   * retired detail view did.
+   */
+  const openPlayer = React.useCallback(
+    (entry: ListPlayerWithPlayer) =>
+      openPlayerWindow(entry.player_id, {
+        listContext: canEdit && list ? { listId: list.id, listTitle: list.title } : null,
+      }),
+    [openPlayerWindow, canEdit, list],
+  )
+
+  /**
+   * Choosing a grouping is session-only (**D3**) — with one exception, and it is
+   * a restoration rather than a new rule.
+   *
+   * The retired detail view carried a *List order / Tiers* control that wrote
+   * `lists.ranking_mode`, and it was the **last writer of `rank_and_tier`
+   * anywhere in the codebase**: `list-form-dialog.tsx` sends only `unranked` or
+   * `ranked`, and `/api/lists` reaches `rank_and_tier` only from a
+   * `tiers_enabled: true` payload nothing sends. Deleting that control without
+   * putting the write somewhere would have meant **no list could ever be tiered
+   * again** — `resolveOrg(null, …)` would answer `'rank'` forever — while the
+   * create dialog goes on promising *"Numbered 1–N. Flip on the tiers view any
+   * time."* (PROGRESS §3 Q3.)
+   *
+   * So the grouping control inherits that one write, and nothing more:
+   *
+   * * **Tier** persists `rank_and_tier` — this is "flip tiers on".
+   * * **Rank** persists `ranked` **only when the list is currently
+   *   `rank_and_tier`** — this is "flip tiers off", the other half of the same
+   *   control. An `unranked` list stays `unranked`: the retired control was
+   *   hidden entirely on `hide_order` lists, so silently promoting one to
+   *   `ranked` would be a behaviour this task invented rather than carried.
+   * * **Round / cost / budget** persist nothing. D4 makes them label sets over
+   *   the same bucket mechanism, and cost/budget membership is computed — there
+   *   is no `ranking_mode` value that means either.
+   *
+   * The display store still never writes (its own header says a persist is "a
+   * route call it makes *alongside* `setOrg`" — this is that call).
+   */
+  const chooseOrg = React.useCallback(
+    (next: ListOrg) => {
+      setOrg(listId, next)
+      if (!canEdit || !list || list.is_big_board) return
+      const current = list.ranking_mode
+      const persisted =
+        next === 'tier' && current !== 'rank_and_tier'
+          ? 'rank_and_tier'
+          : next === 'rank' && current === 'rank_and_tier'
+            ? 'ranked'
+            : null
+      if (!persisted) return
+      updateList.mutate(
+        { ranking_mode: persisted },
+        {
+          onError: (error) =>
+            toast({
+              title: 'Could not save the grouping',
+              description: error.message,
+              variant: 'destructive',
+            }),
+        },
+      )
+    },
+    [canEdit, list, listId, setOrg, toast, updateList],
+  )
 
   const aiBanner = aiBuild.job ? (
     <AiBuildBanner job={aiBuild.job} onRetry={aiBuild.retry} onDismiss={aiBuild.dismiss} />
@@ -230,11 +360,12 @@ export function ListDetailPanel({
         description: 'The note editor arrives with the rest of the row menu.',
       }),
     onRemove: (entry: ListPlayerWithPlayer) => removePlayer.mutate(entry.player_id),
+    onOpenPlayer: openPlayer,
   }
 
   if (detail.isError) {
     return (
-      <PanelShell banner={aiBanner}>
+      <PanelShell banner={aiBanner} dropRef={playerDrop.setNodeRef} dropActive={railDragOver}>
         <div className="flex flex-col items-center gap-2.5 py-12 text-center">
           <Icon name="info-circle" size={22} className="text-negative-strong" />
           <p className="text-[13px] font-bold">This list could not be loaded.</p>
@@ -248,7 +379,7 @@ export function ListDetailPanel({
 
   if (!list) {
     return (
-      <PanelShell banner={aiBanner}>
+      <PanelShell banner={aiBanner} dropRef={playerDrop.setNodeRef} dropActive={railDragOver}>
         <DetailSkeleton />
       </PanelShell>
     )
@@ -276,7 +407,7 @@ export function ListDetailPanel({
   const addedIds = new Set(list.players.map((entry) => entry.player_id))
 
   return (
-    <PanelShell banner={aiBanner}>
+    <PanelShell banner={aiBanner} dropRef={playerDrop.setNodeRef} dropActive={railDragOver}>
       <ListDetailHero
         list={list}
         owner={owner}
@@ -292,6 +423,40 @@ export function ListDetailPanel({
           })
         }
         onSetPrivate={(isPrivate) => updateList.mutate({ is_private: isPrivate })}
+        onTogglePin={() =>
+          toggleFavorite.mutate(list.id, {
+            onSuccess: (result) =>
+              toast({
+                title: result.is_favorited ? 'Pinned' : 'Unpinned',
+                description: list.title,
+              }),
+            onError: (error) =>
+              toast({
+                title: 'Could not update the pin',
+                description: error.message,
+                variant: 'destructive',
+              }),
+          })
+        }
+        folders={folders.data ?? []}
+        onMoveToFolder={(folderId) =>
+          moveToFolder.mutate(
+            { listId: list.id, folderId },
+            {
+              onSuccess: () =>
+                toast({
+                  title: folderId ? 'Moved to folder' : 'Removed from folder',
+                  description: list.title,
+                }),
+              onError: (error) =>
+                toast({
+                  title: 'Could not move the list',
+                  description: error.message,
+                  variant: 'destructive',
+                }),
+            },
+          )
+        }
         onClearDrafted={() => {
           // `clearDrafted` is guarded: it refuses when the marks were never
           // read, returns false, and raises its own toast saying which. Never
@@ -340,7 +505,7 @@ export function ListDetailPanel({
         <TabsContent value="list" className="mt-0 flex flex-col gap-3">
           <ListToolbar
             org={org}
-            onOrgChange={(next) => setOrg(listId, next)}
+            onOrgChange={chooseOrg}
             view={display.view}
             onViewChange={(next) => setView(listId, next)}
             cols={display.cols}
@@ -433,13 +598,29 @@ export function ListDetailPanel({
  */
 function PanelShell({
   banner,
+  dropRef,
+  dropActive,
   children,
 }: {
   banner?: React.ReactNode
+  /** The app-level `list-drop:` droppable for rail drags (LV.7). */
+  dropRef?: (element: HTMLElement | null) => void
+  /** A `kind: 'players'` drag is over the panel right now. */
+  dropActive?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-3 border border-ink bg-white p-[18px]">
+    <div
+      ref={dropRef}
+      className={cn(
+        'flex flex-col gap-3 border bg-white p-[18px]',
+        // A drop target has to say it is one *while you are over it*, or the
+        // gesture is a guess. This is an active drag state, not a resting
+        // elevation, so it is a border/fill change — CLAUDE.md, "Elevation is a
+        // hover state, never a resting one".
+        dropActive ? 'border-accent bg-accent-soft' : 'border-ink',
+      )}
+    >
       {banner}
       {children}
     </div>
