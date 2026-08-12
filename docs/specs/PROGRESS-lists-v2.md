@@ -2324,7 +2324,7 @@ This section records decisions made **during** the build.
 
      | Step | Evidence |
      | --- | --- |
-     | Second account owns a list | `LV12 local fixture — dev-pro's WR room` (6 WRs), owner `22222222-…` = `dev-pro@fieldscout.local`, `is_private=false`. **Seeded into the local DB only** — the R167 precedent |
+     | Second account owns a list | `LV12 local fixture — dev-pro's WR room` (6 WRs), owner `22222222-…` = `dev-pro@fieldscout.local`, `is_private=false`. **Seeded into the local DB only** — the R167 precedent. **Left in place on purpose**: the next Builder's local stack now has a non-empty `saved` half by default, which is the condition LV.12 never had. A `supabase db reset` wipes it — re-create it (a public list on the `dev-pro` account, favourited from `dev@`) before verifying anything about saved lists |
      | Saved through the shipped path | `POST /api/lists/bbbb2222-…-cd01/favorite` → **`200 {"is_favorited":true}`** (the real route, real cookie, RLS as the viewer) |
      | Collection now carries it | `GET /api/lists` → `Secret sleepers (own)`, `Consensus WR top 10 (own)`, `LV12 local fixture… (owner: devpro)` — so `saved.length === 1`, not 0 |
      | The tab really is on **My lists** | `My lists 2` `aria-pressed="true"`, `Saved 1` `aria-pressed="false"`, checked *before* entering compare mode |
