@@ -170,40 +170,64 @@ function StatsPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[212px] p-0">
-        <div className="border-b border-n-4 px-2.5 py-1.5">
-          <span className="fs-overline text-n-3">Show stats</span>
-        </div>
-        <div className="py-1">
-          {STAT_CATALOG.map((stat) => {
-            const checked = cols.includes(stat.id)
-            return (
-              <button
-                key={stat.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={checked}
-                onClick={() => onToggleCol(stat.id)}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft"
-              >
-                <span
-                  className={cn(
-                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
-                    checked ? 'border-accent bg-accent text-accent-foreground' : 'border-ink bg-white',
-                  )}
-                >
-                  {checked && <Icon name="check" size={12} />}
-                </span>
-                <span className="flex-1">{stat.full}</span>
-                <span className="fs-num text-[10px] text-n-3">{stat.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        <p className="border-t border-n-4 px-2.5 py-1.5 text-[10px] font-medium leading-snug text-n-3">
-          Cards view shows the first three.
-        </p>
+        <StatsCatalog cols={cols} onToggleCol={onToggleCol} />
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * The catalog itself, without the surface it is shown on.
+ *
+ * Exported at **LV.16** so the pop-out window's `gear` opens *this* picker
+ * rather than a second one (D11). The window shows it in a `Dialog` — the
+ * design LAW calls it the Stats **modal** and requires it rendered *outside* the
+ * window's dark wrapper, because it belongs to the light page — while the
+ * toolbar keeps the anchored popover it has always had. Two surfaces, one
+ * catalog, one `toggleCol`.
+ */
+export function StatsCatalog({
+  cols,
+  onToggleCol,
+}: {
+  cols: readonly string[]
+  onToggleCol: (statId: string) => void
+}) {
+  return (
+    <>
+      <div className="border-b border-n-4 px-2.5 py-1.5">
+        <span className="fs-overline text-n-3">Show stats</span>
+      </div>
+      <div className="py-1">
+        {STAT_CATALOG.map((stat) => {
+          const checked = cols.includes(stat.id)
+          return (
+            <button
+              key={stat.id}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={checked}
+              onClick={() => onToggleCol(stat.id)}
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft"
+            >
+              <span
+                className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
+                  checked ? 'border-accent bg-accent text-accent-foreground' : 'border-ink bg-white',
+                )}
+              >
+                {checked && <Icon name="check" size={12} />}
+              </span>
+              <span className="flex-1">{stat.full}</span>
+              <span className="fs-num text-[10px] text-n-3">{stat.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="border-t border-n-4 px-2.5 py-1.5 text-[10px] font-medium leading-snug text-n-3">
+        Cards view shows the first three.
+      </p>
+    </>
   )
 }
 
