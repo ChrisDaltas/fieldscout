@@ -28,6 +28,27 @@ const code = (file: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
 
+/**
+ * The full-bleed scroller's **own** class string, isolated from the file.
+ *
+ * `flex-col` is legitimate several times over in this component — the column
+ * `<section>`, the loading skeleton, the error block — so a file-wide ban on it
+ * would be a false positive. The one element that must never stack is the
+ * scroller, and it is identifiable by the negative margin no other element
+ * carries. A rename that loses that marker throws rather than passing silently:
+ * a guard that cannot find what it guards is not green, it is broken.
+ */
+const scrollerClass = (source: string) => {
+  const match = source.match(/className="([^"]*-mx-4[^"]*)"/)
+  if (!match) {
+    throw new Error(
+      'LV.13: no className containing `-mx-4` — the full-bleed scroller could not be located, ' +
+        'so the no-stacking pin below is guarding nothing.',
+    )
+  }
+  return match[1]
+}
+
 const COLUMNS = 'src/components/lists/v2/side-by-side-columns.tsx'
 const PAGE = 'src/components/lists/v2/lists-page-v2.tsx'
 const SHELL = 'src/components/layout/app-shell.tsx'
@@ -70,9 +91,32 @@ describe('LV.13 — the scroller is full-bleed against the shell’s real gutter
    * "fix" for a 240px column on a 375px screen.
    */
   it('carries no breakpoint override of the column width', () => {
+    expect(code(COLUMNS)).not.toMatch(/(sm|md|lg|xl):w-(full|\[)/)
+  })
+
+  /**
+   * The other half of the same ruling — **no stacking**, in whichever spelling.
+   *
+   * This assertion was originally only `not.toMatch(/(sm|md|lg|xl):flex-col/)`,
+   * which catches the *desktop-first* spelling and nothing else. The LV.13
+   * Reviewer showed the gap by changing the scroller to
+   * `-mx-4 flex flex-col lg:flex-row items-start` — the idiomatic **mobile-first**
+   * way to stack on a phone, and precisely the "fix" D14 declines — and the file
+   * stayed 21/21 green (**R218**). PROGRESS §3 Q4 and plan D14 both cited this
+   * test as what makes the ruling un-re-addable, so the pin was documented as
+   * protection it did not provide: worse than no pin, because the next Builder
+   * reads the claim and not the regex.
+   *
+   * So: **no breakpoint flex-direction change at all**, in either direction —
+   * `lg:flex-col` and `lg:flex-row` are equally forbidden, since a `lg:flex-row`
+   * only exists to undo a `flex-col` below it — plus a bare `flex-col` on the
+   * scroller itself, which would stack at every width with no breakpoint to
+   * spot.
+   */
+  it('the scroller cannot stack, in either spelling of it', () => {
     const source = code(COLUMNS)
-    expect(source).not.toMatch(/(sm|md|lg|xl):w-(full|\[)/)
-    expect(source).not.toMatch(/(sm|md|lg|xl):flex-col/)
+    expect(source).not.toMatch(/(sm|md|lg|xl):flex-(col|row)/)
+    expect(scrollerClass(source)).not.toMatch(/\bflex-col\b/)
   })
 })
 

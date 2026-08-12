@@ -89,6 +89,25 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   Full detail in `PROGRESS-lists-v2.md` §4 item 6. *(Added 2026-08-11, LV.12
   review **R215** — the same "put it where the next Builder reads it" argument
   R207 made, applied to R207's own round's artefact.)*
+- **There is a second deliberate local fixture, and the same reset destroys
+  it.** LV.13 left **`LV13 local fixture — round board`** in the **local** DB on
+  purpose: owned by `dev@fieldscout.local`, 8 players carrying tiers `r1`–`r4`.
+  It is the **only** list on the local stack that can render a *round*-grouped
+  column, which is what makes "each column groups independently" observable —
+  without it every column groups by tier and a build that ignored per-column
+  grouping entirely would produce identical-looking evidence. To re-create it
+  after a reset: make a list on `dev@` in the UI, add ~8 players, then set the
+  rounds directly —
+  `docker exec supabase_db_fieldscout psql -U postgres -d postgres -c "update list_players set tier = 'r' || ((position - 1) / 2 + 1) where list_id = '<id>'"`
+  — and switch the column's `dots` menu to **Rounds**. (`r1`–`r30` are legal
+  because LV.1.5 widened `list_players.tier`'s CHECK constraint to
+  `^([SABCDF]|r([1-9]|[12][0-9]|30)|c[1-4])$`; that is exception (b) above, not
+  a new one.) The `update` was run to verify it — `UPDATE 8`, reproducing the
+  fixture's exact `r1,r1,r2,r2,r3,r3,r4,r4` — so it is a tested instruction, not
+  a remembered one. *(Added 2026-08-12, LV.13 review
+  **R219** — R215's argument applied to R215's own round's successor: the
+  fixture was documented only in `PROGRESS-lists-v2.md` §4, which is the
+  placement R215 corrected one task earlier.)*
 
 ---
 
