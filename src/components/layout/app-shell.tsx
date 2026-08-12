@@ -12,6 +12,7 @@ import { ResearchRail } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
 import { ListFormDialog } from '@/components/lists/list-form-dialog'
+import { ListWindowsHost } from '@/components/lists/v2/list-windows-host'
 import { CommandPalette } from '@/components/shared/command-palette'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
@@ -85,6 +86,11 @@ export function AppShell({ children }: AppShellProps) {
 
         <BottomTabs onMoreClick={() => setMoreOpen(true)} />
         <MoreSheet open={moreOpen} onOpenChange={setMoreOpen} />
+        {/* Lists v2 pop-outs (LV.15, D13). Hosted here rather than on the Lists
+            page so they survive navigation, and **renders nothing at all** when
+            no window is open — this is the one Round 2 component that mounts on
+            every route. */}
+        <ListWindowsHost />
         <CommandPalette />
         <ListFormDialog
           open={createListOpen}
