@@ -1,8 +1,9 @@
 # Delivery Plan: Lists v2
 
-> **v6.0 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
-> *(The header read v5.8 while the changelog was at v5.9 — corrected here, and
-> v6.0 is the bump for Chris's two LV.17 rulings, which are now §1 rulings.)*
+> **v6.1 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> *(v6.0 was the bump for Chris's two LV.17 rulings; v6.1 adds his third — the
+> sheet rests on the bottom tab bar and a tap outside dismisses it — and
+> corrects one claim v6.0 made that was false, **R257**.)*
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -57,6 +58,7 @@
 | **Round 1 scope** | Lists page + list detail. Side-by-side compare and pop-out windows are **Round 2** (§6). *(Ruled by Chris, 2026-08-09.)* |
 | **A pop-out of a list that is gone closes, with a toast** | *"Close it, with a toast."* — Chris, 2026-08-12 (PROGRESS §3 **Q5**). Window closes; the toast reads **"This list is no longer available."** The copy is **neutral about cause on purpose**: the 404 behind it is *also* a list that is alive and merely no longer visible to the viewer, so no surface may say "deleted". Reverses LV.17's persist-and-explain. |
 | **Pop-outs get a real mobile variant** | *"On a mobile the pop out window is full width but only 60% of the screen height. the tool bar only shows Close and Options. All options go into the option menu."* — Chris, 2026-08-12 (PROGRESS §3 **Q6**). Below **768px** (one breakpoint, `WINDOW_MOBILE_MAX_W`). Overrules LV.17's *"the phone gets the same window"*, which was a Builder decision. **This ruling is about pop-outs only** — D14's *"leave the phone version as is"* still governs Side by side, and neither is inferred onto the other. |
+| **The sheet rests on the tab bar, and a tap outside dismisses it** | *"add tap outside to dismiss but also the bottom should be right at the top of the bottom bar"* — Chris, 2026-08-12 (**R258**). Amends the ruling above, which as first built anchored the sheet at the viewport floor and **completely covered the bottom tab bar** — measured at 375 × 812, nav `[0, 748, 375, 64]` under a sheet `[0, 324.8, 375, 487.2]`, so a phone could not navigate at all while a pop-out was open, with the header `Close` the only way out. **The 60% is unchanged and is still of the viewport** — the sheet moved up, it did not shrink into what was left. **Phones only**: a desktop pop-out is not modal and must never close on an outside click. |
 
 ---
 
@@ -790,6 +792,34 @@ list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
 
+- **v6.1 (2026-08-12)** — **Chris amended the mobile ruling, and one claim this
+  plan made was false.** Both come out of LV.17's third review (R256–R259).
+
+  **A third ruling, in §1.** *"add tap outside to dismiss but also the bottom
+  should be right at the top of the bottom bar"* (Chris, 2026-08-12). v6.0's
+  sheet was anchored at the viewport floor and **completely covered the bottom
+  tab bar** — nav `[0, 748, 375, 64]` under a sheet `[0, 324.8, 375, 487.2]` at
+  375 × 812 — so a phone user could not navigate at all with a pop-out open, and
+  the header `Close` was the only way out. The sheet now rests on the bar
+  (`[0, 260.8, 375, 487.2]`, bottom edge flush at 748) and an outside tap
+  dismisses the **top** sheet without swallowing the tap, so a tab both navigates
+  and dismisses. **The 60% is still of the viewport, as ruled.** Desktop is
+  untouched: an outside click there closes nothing, which is pinned.
+
+  **And the correction: *"no geometry is written from a phone"* was false**
+  (**R257**), here in the v6.0 entry and in five other places including the
+  component that claimed it. `Collapse` — the item v6.0's own ruling moved into
+  the Options menu — writes `min` into the persisted `geometry[listId]` record,
+  so collapsing a sheet and widening past 768 returns a collapsed desktop
+  window. The write is **kept** (it is the same promise position and size make,
+  and removing it would change desktop behaviour no ruling asked to change) and
+  the claim is narrowed to **no position or size**, with a pin that fails if a
+  third writer of either ever appears.
+
+  No scope, dependency, schema or D-decision changed; the budget is still closed
+  at three, and no route was opened (**F-LV17.6** carries the one change that
+  would have needed one).
+
 - **v6.0 (2026-08-12)** — **Chris ruled on both of v5.9's two decisions, and
   reversed both.** They are now rulings in **§1** rather than a Builder's
   reasoning in a changelog entry, and §6's LV.17 row is struck through where it
@@ -827,8 +857,12 @@ list, so nothing accumulates across seasons on its own. See D2.)*
   **Three things Chris did not state were decided by the Builder and are flagged
   derived-not-ruled** (PROGRESS §4): the sheet is **bottom-anchored**; **drag
   and resize are switched off** on a phone rather than left as dead gestures,
-  and no geometry is written from one; and **several windows pile** with no cap
-  invented (Q4's precedent is that Chris rules caps), filed as **F-LV17.4**.
+  and ~~no geometry is written from one~~ **no position or size is written from
+  one** *(corrected at v6.1 — **R257**: `Collapse`, the item this very ruling
+  moved into the Options menu, writes `min` into the persisted geometry record.
+  The claim was false here and in five other places)*; and **several windows
+  pile** with no cap invented (Q4's precedent is that Chris rules caps), filed as
+  **F-LV17.4**.
 
   Desktop is bit-identical and that is under test. No scope, dependency, schema
   or D-decision changed.
