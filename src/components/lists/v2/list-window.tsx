@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
@@ -32,10 +33,12 @@ import {
 } from '@/stores/list-display-store'
 import {
   clampWindowSize,
+  isSmallViewport,
   resolveWindowGeometry,
   useListWindowsStore,
   WINDOW_EDGE_KEEP_X,
   WINDOW_EDGE_KEEP_Y,
+  WINDOW_MOBILE_MAX_W,
 } from '@/stores/list-windows-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
@@ -52,6 +55,7 @@ import {
   DraftedCheckbox,
   DropGap,
   EmptyListState,
+  LIST_UNAVAILABLE,
   listReadIsGone,
   ListReadFailure,
   ListRowsSkeleton,
@@ -102,41 +106,79 @@ import { useListDropCommit } from './use-list-drop'
  * Escape and the stack unwinds one press at a time, and each carries its own
  * close button.
  *
- * ## The phone answer (**F-LV15.3**): the same window, and here is why that holds
+ * ## Ruling 1 — a pop-out of a list that is gone **closes, with a toast**
  *
- * There is **no breakpoint treatment and no phone variant** — the `pop out`
- * control is not hidden below any width, and a small screen gets the floating
- * window everything else gets. That is a decision this task owns rather than an
- * inheritance: Chris's *"leave the phone version as is"* (D14) was ruled about
- * **Side by side**, and is not extended here by assumption. What makes it a
- * claim rather than a shrug is that the three things a phone could break are
- * each closed:
+ * > *"Close it, with a toast."* — Chris, 2026-08-12 (PROGRESS §3 **Q5**)
  *
- * 1. **A window we place opens whole**, which matters more here than anywhere
- *    else because a phone has no Escape key, so the R227 hatch does not exist on
- *    one and the close button is the only way out. Position was fitted at LV.15;
- *    **size** is fitted here (`resolveWindowGeometry`), and the frame's
- *    `max-w`/`max-h` cap the paint at the viewport regardless. **A window the
- *    *user* placed is only rescued**, to {@link WINDOW_EDGE_KEEP_X} of grabbable
- *    header — that strip is the drag handle, not the control cluster, so one
- *    carried across from a wider viewport takes **one drag** before its close
- *    button is reachable. That is the trade LV.15 made deliberately and two
- *    reviews upheld: a position you chose is never re-fitted. Measured at 375px:
- *    restored at `x 275` (close off-screen) → one touch-drag → `[10, 142]`,
- *    whole window on screen.
+ * This **reverses what LV.17 first shipped** (persist-and-explain) and lands on
+ * the prototype's own `store.destroy` (`design/lists.js`:253) without the silent
+ * vanishing that made this build diverge from it: the window closes and the app
+ * says {@link LIST_UNAVAILABLE} — *"This list is no longer available."*
+ *
+ * **The neutral copy is the ruling, not a paraphrase of it.** A 404 from
+ * `GET /api/lists/[id]` is three situations collapsed into one status, and only
+ * one of them is a deletion — the third is a list that is alive and merely no
+ * longer visible to this viewer, which the owner produces with one click in the
+ * hero's options menu. `listReadIsGone`'s header in `list-row-parts.tsx` carries
+ * the measurement (**R248**). Nothing here may say "deleted".
+ *
+ * ## Ruling 2 — a phone gets a real variant, and this file has **one** breakpoint
+ *
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height. the tool bar only shows Close and Options. All options go into the
+ * > option menu."* — Chris, 2026-08-12 (PROGRESS §3 **Q6**)
+ *
+ * So below {@link WINDOW_MOBILE_MAX_W} the window is a bottom sheet: `100%`
+ * wide, `WINDOW_MOBILE_HEIGHT_RATIO` (0.6) of the viewport high, header =
+ * `Options` + `Close`, and the `gear`, the `dots` menu and `Collapse` all move
+ * **into** that menu ({@link WindowMenu}). It replaces LV.17's *"the phone gets
+ * the same window"*, which was a Builder decision and is now overruled by the
+ * only person who could.
+ *
+ * **Three things follow that Chris did not state.** Each is minimal, each is
+ * derived-not-ruled, and each is cheap to overrule:
+ *
+ * 1. **Where it sits: the bottom.** A full-width, fixed-height window has
+ *    nowhere meaningful to drag to, so it has to be anchored, and the bottom is
+ *    both the mobile convention (sheets rise from it) and the thumb-reachable
+ *    end of a phone. It therefore also sits over the bottom tab bar (45 against
+ *    40) — deliberately, because it is modal-ish while open and one tap from
+ *    gone.
+ * 2. **Drag and resize are switched off, not left dead.** Both are meaningless
+ *    at fixed full-width / 60%-height, and a `cursor-grab` header that does
+ *    nothing is the live-but-false affordance **R220** named. So the grip is not
+ *    rendered at all, the header drops its grab cursor and its `touch-none`
+ *    (the gesture belongs to the browser again), and both pointer-down handlers
+ *    bail. **No geometry is written from a phone** — which is what keeps a
+ *    window you positioned on a desktop exactly where you left it when you next
+ *    open the app there.
+ * 3. **Several windows open: they pile, and nothing is capped.** Every mobile
+ *    window has the same geometry, so the cascade is a no-op and the front one
+ *    is the one you see; each carries its own `Close`, and closing it reveals
+ *    the next. Inventing a cap is Chris's call, not a Builder's (Q4's
+ *    precedent), so there is none. The honest cost — a pile of three looks like
+ *    one until you close the top — is filed as **F-LV17.4** rather than solved
+ *    by inventing a switcher the design package does not have.
+ *
+ * **Desktop is bit-identical.** Every mobile branch is `mobile ? … : <what
+ * shipped>`, the {@link WINDOW_EDGE_KEEP_X} rescue and `resolveWindowGeometry`
+ * are untouched, and the geometry store is still written only by a desktop
+ * pointer-up. What the *desktop* answer rests on is unchanged and still true:
+ *
+ * 1. **A window we place opens whole.** Position was fitted at LV.15; **size**
+ *    is fitted here (`resolveWindowGeometry`), and the frame's `max-w`/`max-h`
+ *    cap the paint at the viewport regardless. **A window the *user* placed is
+ *    only rescued**, to {@link WINDOW_EDGE_KEEP_X} of grabbable header — a
+ *    position you chose is never re-fitted, which is the trade LV.15 made and
+ *    two reviews upheld.
  * 2. **Drag and resize are pointer events**, so they are touch events on a
- *    phone — no mouse-only path anywhere in this file. The header and the grip
- *    both carry `touch-none` so the browser does not claim the gesture for a
- *    scroll.
+ *    touch screen — no mouse-only path anywhere in this file. On a **tablet**,
+ *    which is above the breakpoint and still gets the floating window, that is
+ *    what makes it usable; the header and the grip both carry `touch-none` there
+ *    so the browser does not claim the gesture for a scroll.
  * 3. **The grip starts from the painted corner**, so the one place where a
  *    narrow viewport used to make the window jump is closed (see
  *    `onGripPointerDown`).
- *
- * The honest cost, stated rather than glossed: a 352 × 416 window covers most of
- * a 375px screen while it is open, and it floats over the bottom tab bar (z 45
- * against 40) if you drag it down there. Both are true of the player mini card
- * this window mirrors, both are one drag or one close from being fixed by the
- * user, and neither is a trap.
  *
  * ## The dark inversion — one wrapper, no restyled children
  *
@@ -267,6 +309,33 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * Is this a phone (Ruling 2)? — **the only breakpoint in this file**, read from
+ * the store's constant so the number lives in one place and is executed by a
+ * node test (`isSmallViewport`, R191).
+ *
+ * `useSyncExternalStore` rather than an effect + state: the answer must survive
+ * a **rotation**, and a window open at 812 × 375 that does not re-read its own
+ * variant is the "nothing happened" shape one more time. The server snapshot is
+ * `false` and cannot be wrong — the open stack is never persisted, so no window
+ * exists at SSR or at hydration on any route (`list-windows-host.tsx`).
+ *
+ * The query mirrors {@link WINDOW_MOBILE_MAX_W} rather than restating it, so the
+ * CSS breakpoint and the predicate cannot drift by a pixel.
+ */
+function useIsSmallViewport(): boolean {
+  const subscribe = React.useCallback((onChange: () => void) => {
+    const query = window.matchMedia(`(max-width: ${WINDOW_MOBILE_MAX_W - 1}px)`)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+  return React.useSyncExternalStore(
+    subscribe,
+    () => isSmallViewport(viewportNow()),
+    () => false,
+  )
+}
+
+/**
  * Where an Escape is **someone else's**, so this window must not answer it
  * (**R231**).
  *
@@ -322,6 +391,9 @@ function rowMinWidth(statCount: number): number {
 
 export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProps) {
   const { toast } = useToast()
+  // Ruling 2's single branch. Everything it changes is `mobile ? … : <what
+  // shipped>`, so desktop is bit-identical.
+  const mobile = useIsSmallViewport()
   const detail = useList(listId)
   const comments = useComments(listId)
   const saved = useListWindowsStore((state) => state.geometry[listId])
@@ -370,29 +442,24 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
    * **The list under this window is gone** (LV.17).
    *
    * A pop-out is hosted by the app shell and survives navigation (design LAW),
-   * so the list it shows can be deleted from a screen the user is not even
-   * looking at — their own Lists page in another tab, or by the owner of a
-   * saved list. `useDeleteList` invalidates `listsKeys.all`, which matches this
-   * window's own detail key, so the next read is a **404** and React Query keeps
-   * the last good `data` alongside the error. Left alone, that is a window
-   * showing a deleted list's rows for as long as it stays open.
+   * so the list it shows can stop being readable from a screen the user is not
+   * even looking at — their own Lists page in another tab, or by the owner of a
+   * saved list deleting it *or making it private*. `useDeleteList` invalidates
+   * `listsKeys.all`, which matches this window's own detail key, so the next
+   * read is a **404** and React Query keeps the last good `data` alongside the
+   * error. Left alone, that is a window showing rows for a list nobody can
+   * reach, for as long as it stays open.
    *
-   * **It does not close itself.** The prototype's `store.destroy` does splice
-   * the pop-out away (`design/lists.js`:253), and this deliberately diverges:
-   * that is an in-memory demo with one actor, no soft delete and no Trash. Here
-   * the delete may not be the viewer's action at all, and a window that vanishes
-   * without a word while you are on `/app/players` is CLAUDE.md's "nothing
-   * happened" with the evidence removed. The LAW's own persistence bullet is the
-   * other half — pop-outs *"stay until closed"* — so the window stays, says what
-   * happened, and the close button it already has is how you dismiss it.
+   * **So it closes, with a toast** — Chris, 2026-08-12 (§3 Q5), reversing the
+   * persist-and-explain this task first shipped. See the file header.
    */
   const gone = detail.isError && listReadIsGone(detail.error)
   // The header is honest about the states it can be in. `Loading…` forever over
   // a failed read is CLAUDE.md's "never let 'nothing happened' mean 'it worked'"
-  // — the same call `side-by-side-columns.tsx` made for its subline. A deleted
-  // list keeps the **name** it had: that is the only thing on screen that still
-  // identifies which window just died, and it is not a claim about the read.
-  const title = list?.title ?? (gone ? 'Deleted list' : detail.isError ? 'Could not load' : 'Loading…')
+  // — the same call `side-by-side-columns.tsx` made for its subline. There is no
+  // *gone* spelling here any more: that window is closing, and the title it
+  // carries for the one frame before it goes is the name it always had.
+  const title = list?.title ?? (detail.isError ? 'Could not load' : 'Loading…')
   const cover = list ?? null
   const coverPlayers = React.useMemo(
     () => list?.players.slice(0, 3).map((entry) => entry.player) ?? null,
@@ -522,6 +589,36 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
       )
   }
 
+  // ---- the list is gone: close, with a toast (Ruling 1) --------------------
+
+  /**
+   * **Chris, 2026-08-12: *"Close it, with a toast."*** (§3 Q5.)
+   *
+   * In an effect rather than in render, because closing is a store write and a
+   * component may not mutate anything during render. The cost is one frame in
+   * which the window paints its error state before it goes; the branch it paints
+   * is `ListReadFailure`'s neutral one, so nothing false is shown even then.
+   *
+   * `close()` filters this `listId` out of `windows`, so the effect cannot run
+   * twice for one window — the component unmounts. `toast` is the module-level
+   * dispatcher (`use-toast.ts`:143), stable across renders, so it is an honest
+   * dependency rather than a lint appeasement.
+   *
+   * **`TOAST_LIMIT` is 1** (`use-toast.ts`:11), so N windows dying together
+   * leave one toast on screen rather than a queue — and since every one of them
+   * would carry the identical sentence, that reads as the truth rather than as
+   * a loss. It is the same reasoning LV.14 used for the fan-out's single report.
+   *
+   * The copy is {@link LIST_UNAVAILABLE}, imported rather than retyped, so the
+   * toast and the state a Side by side column paints for the same 404 cannot
+   * drift apart — and neither of them says *"deleted"* (**R248**).
+   */
+  React.useEffect(() => {
+    if (!gone) return
+    close(listId)
+    toast({ title: LIST_UNAVAILABLE })
+  }, [gone, close, listId, toast])
+
   // ---- Escape closes the top window ---------------------------------------
 
   /**
@@ -569,6 +666,11 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   // ---- drag: anywhere on the header (design LAW) --------------------------
 
   const onHeaderPointerDown = (e: React.PointerEvent) => {
+    // Ruling 2, derived: a bottom-anchored full-width sheet has nowhere to drag
+    // to. Gating the *gesture start* is what makes "no geometry is written from
+    // a phone" true — `dragRef` is the only thing that unlocks the `setPosition`
+    // in `onHeaderPointerUp`, and it can only be set here.
+    if (mobile) return
     if (e.button !== 0) return
     // The controls live on the header, so a press on one is not a drag.
     if ((e.target as HTMLElement).closest('button, a')) return
@@ -633,6 +735,10 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   const frameRef = React.useRef<HTMLDivElement | null>(null)
 
   const onGripPointerDown = (e: React.PointerEvent) => {
+    // Ruling 2, derived: the size is the ruling's, so there is nothing to
+    // resize. The grip is not rendered on a phone either — this is the second
+    // half of the same gate, for the same reason as the header's.
+    if (mobile) return
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
@@ -675,21 +781,38 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
       aria-label={`${title} (pop-out)`}
       data-list-window={listId}
       onPointerDownCapture={() => focus(listId)}
-      style={{
-        zIndex,
-        left: box.x,
-        top: box.y,
-        width: box.w,
-        height: minimized ? undefined : box.h,
-      }}
+      // Ruling 2: on a phone the geometry is the ruling's, so none of the
+      // dragged/resized model reaches the paint — and, just as importantly,
+      // nothing writes back to it. `box` is still resolved on mount and still
+      // remembered, which is what makes a window positioned on a wide viewport
+      // and then opened on a phone come back to its desktop place unchanged.
+      style={
+        mobile
+          ? { zIndex }
+          : {
+              zIndex,
+              left: box.x,
+              top: box.y,
+              width: box.w,
+              height: minimized ? undefined : box.h,
+            }
+      }
       className={cn(
         'fixed flex flex-col overflow-hidden rounded-sm border border-n-3 bg-n-2 text-white',
         // Elevation: the stroke *is* the lift here — no shadow, ever. See the
         // header of this file.
         'transition-colors hover:border-brand',
-        // A window wider or taller than the viewport can still be reached; the
-        // stored size is untouched by this cap.
-        'max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)]',
+        mobile
+          ? // *"full width but only 60% of the screen height"*, anchored to the
+            // bottom (derived — see the file header). `dvh` rather than `vh`
+            // because "the screen height" on a phone is the *visible* viewport,
+            // and `vh` is the URL-bar-collapsed one, which would put ~10% of the
+            // sheet under the browser chrome. Collapsed, the sheet is its header
+            // and nothing else, so the height is dropped rather than animated.
+            cn('inset-x-0 bottom-0 w-full', !minimized && 'h-[60dvh]')
+          : // A window wider or taller than the viewport can still be reached;
+            // the stored size is untouched by this cap.
+            'max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)]',
       )}
     >
       {/* The inversion wrapper (design LAW). Everything inside inherits white
@@ -703,7 +826,13 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           onPointerMove={onHeaderPointerMove}
           onPointerUp={onHeaderPointerUp}
           onPointerCancel={onHeaderPointerUp}
-          className="flex h-9 shrink-0 cursor-grab touch-none items-center gap-[7px] border-b border-ink pl-2 pr-1.5 active:cursor-grabbing"
+          className={cn(
+            'flex h-9 shrink-0 items-center gap-[7px] border-b border-ink pl-2 pr-1.5',
+            // Desktop only: the whole bar is the drag handle (design LAW). On a
+            // phone the sheet is anchored, so a grab cursor would be a lie and
+            // `touch-none` would take a gesture from the browser for nothing.
+            !mobile && 'cursor-grab touch-none active:cursor-grabbing',
+          )}
         >
           {cover ? (
             <ListCoverTile list={cover} players={coverPlayers} size={19} />
@@ -717,36 +846,36 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           {/* gear → the stat picker; `dots` → the grouping menu (design LAW's
               header order: cover, name, gear, dots, collapse, close).
               **F-LV15.2** — LV.15 left both out rather than inert, because each
-              needs what this task brings. */}
-          <WindowChromeButton label="Choose stats" onClick={() => setStatsOpen(true)}>
-            <Icon name="gear" size={13} />
-          </WindowChromeButton>
+              needs what this task brings.
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <WindowChromeButton label="Grouping">
-                <Icon name="dots" size={13} />
-              </WindowChromeButton>
-            </DropdownMenuTrigger>
-            {/* A compose, not a build: the same five options and the same
-                per-list `setOrg` a Side by side column's menu uses. Radix
-                portals it, so it opens on the light page above the window
-                (z 50 > 45) rather than inheriting the inversion. */}
-            <DropdownMenuContent align="end" className="w-[136px]">
-              {ORG_OPTIONS.map((option) => (
-                <DropdownMenuItem key={option.id} onSelect={() => setOrg(listId, option.id)}>
-                  {option.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              **On a phone the bar is `Options` + `Close`, and nothing else**
+              (Ruling 2). The gear and the collapse are not hidden so much as
+              *moved*: {@link WindowMenu} is the same `dots` menu with both
+              folded into it, which is Chris's *"All options go into the option
+              menu"* taken literally. */}
+          {!mobile && (
+            <WindowChromeButton label="Choose stats" onClick={() => setStatsOpen(true)}>
+              <Icon name="gear" size={13} />
+            </WindowChromeButton>
+          )}
 
-          <WindowChromeButton
-            label={minimized ? 'Expand' : 'Collapse'}
-            onClick={() => setMinimized(listId, !minimized)}
-          >
-            <Icon name={minimized ? 'arrow-bottom' : 'arrow-up'} size={13} />
-          </WindowChromeButton>
+          <WindowMenu
+            listId={listId}
+            mobile={mobile}
+            minimized={minimized}
+            onChooseStats={() => setStatsOpen(true)}
+            onToggleMinimized={() => setMinimized(listId, !minimized)}
+            setOrg={setOrg}
+          />
+
+          {!mobile && (
+            <WindowChromeButton
+              label={minimized ? 'Expand' : 'Collapse'}
+              onClick={() => setMinimized(listId, !minimized)}
+            >
+              <Icon name={minimized ? 'arrow-bottom' : 'arrow-up'} size={13} />
+            </WindowChromeButton>
+          )}
           <WindowChromeButton label="Close" onClick={() => close(listId)}>
             <Icon name="close" size={13} />
           </WindowChromeButton>
@@ -852,7 +981,10 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
         </PopoverContent>
       </Popover>
 
-      {!minimized && (
+      {/* Not rendered on a phone at all (Ruling 2, derived): the size is the
+          ruling's, and a grip that cannot resize is R220's live-but-false
+          affordance drawn in the corner. */}
+      {!minimized && !mobile && (
         <span
           onPointerDown={onGripPointerDown}
           onPointerMove={onGripPointerMove}
@@ -872,6 +1004,84 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
         />
       )}
     </div>
+  )
+}
+
+/**
+ * The header's `dots` menu — **the grouping menu on a desktop, and the whole
+ * option menu on a phone** (Ruling 2).
+ *
+ * > *"the tool bar only shows Close and Options. All options go into the option
+ * > menu."* — Chris, 2026-08-12
+ *
+ * One component with a `mobile` branch rather than two clusters, because the
+ * desktop menu is a strict subset of the mobile one: the five grouping options
+ * are the middle of it either way, and the phone adds the two controls the
+ * header gave up, in the LAW's own header order — stats, grouping, collapse.
+ *
+ * With `mobile` false this renders **exactly** the markup LV.16 shipped: the
+ * two `{mobile && …}` branches produce nothing, the trigger label is
+ * `Grouping`, and the content keeps its `w-[136px]`.
+ *
+ * It is a compose, not a build: the same five options and the same per-list
+ * `setOrg` a Side by side column's menu uses. Radix portals it, so it opens on
+ * the light page above the window (z 50 > 45) rather than inheriting the
+ * inversion — which is also why the `Choose stats` item can hand off to a
+ * Popover that lives outside the dark wrapper.
+ */
+function WindowMenu({
+  listId,
+  mobile,
+  minimized,
+  onChooseStats,
+  onToggleMinimized,
+  setOrg,
+}: {
+  listId: string
+  mobile: boolean
+  minimized: boolean
+  onChooseStats: () => void
+  onToggleMinimized: () => void
+  setOrg: (listId: string, org: ListOrg) => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <WindowChromeButton label={mobile ? 'Options' : 'Grouping'}>
+          <Icon name="dots" size={13} />
+        </WindowChromeButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[136px]">
+        {mobile && (
+          <>
+            {/* The one hand-off worth naming: this closes a Radix menu and
+                opens a Radix popover, and the two layers can race — a popover
+                opened in the same tick as a menu's focus restoration is
+                sometimes dismissed by it. **Measured at 375 × 812 and it does
+                not happen here**: tapping this item left the Stats picker open
+                at `x 127, w 212` inside the 375px sheet, so no deferral is
+                added for a race that is not there. (The tap was synthesised —
+                the tooling's own input times out under mobile emulation, which
+                is F-LV17.5's whole subject.) */}
+            <DropdownMenuItem onSelect={onChooseStats}>Choose stats</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {ORG_OPTIONS.map((option) => (
+          <DropdownMenuItem key={option.id} onSelect={() => setOrg(listId, option.id)}>
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+        {mobile && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onToggleMinimized}>
+              {minimized ? 'Expand' : 'Collapse'}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

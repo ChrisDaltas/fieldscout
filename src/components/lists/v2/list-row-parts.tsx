@@ -476,15 +476,46 @@ export function EmptyListState({ canEdit }: { canEdit: boolean }) {
 // -----------------------------------------------------------------------------
 
 /**
- * Is this read's failure the list being **gone**, rather than something that
- * might work on a retry?
+ * **The one sentence the app is allowed to say about a list it can no longer
+ * read** — Chris's own words for the pop-out toast (2026-08-12, §3 Q5), reused
+ * verbatim as the on-surface state so the two cannot drift into two spellings.
  *
- * `GET /api/lists/[id]` answers `404` in exactly two cases: the row has a
- * `deleted_at` (business rule 8 — deletes are always soft), or the id resolves
- * to nothing at all. Both mean *there is no list here any more*, and neither is
- * transient — which is what lets a surface say so instead of offering the
- * "could not be loaded" that invites a reload. Anything else (a 500, a dropped
- * connection) keeps the retryable wording.
+ * It is deliberately neutral about *why*, and that is not incidental: see
+ * {@link listReadIsGone} for the three situations the server collapses into one
+ * status, only one of which is a deletion (**R248**).
+ */
+export const LIST_UNAVAILABLE = 'This list is no longer available.'
+
+/**
+ * Is this read's failure the list being **no longer available to this viewer**,
+ * rather than something that might work on a retry?
+ *
+ * ## It is not a cause, and no surface may word it as one (**R248**)
+ *
+ * `GET /api/lists/[id]` reads `.eq('id', id).is('deleted_at', null)` and answers
+ * `404` whenever that returns no row (`route.ts`:30–36) — and **three different
+ * situations collapse into that one status**:
+ *
+ * 1. the row carries a `deleted_at` (business rule 8 — deletes are always soft);
+ * 2. the id resolves to nothing at all;
+ * 3. **the list is alive and merely no longer visible to this viewer.** The
+ *    `lists` SELECT policy is
+ *    `((is_private = false AND deleted_at IS NULL) OR auth.uid() = owner_id)`,
+ *    so an owner flipping a public list to private makes the identical read
+ *    return zero rows with `deleted_at` still `NULL`. Visibility is a shipped
+ *    control in the hero's options menu; that flip is one click.
+ *
+ * This shipped as *"This list was deleted. / Its owner deleted it."* and was
+ * **false** — measured in a rolled-back transaction: as `dev@`, the public
+ * `LV12` fixture returned 1 row; after the owner set `is_private = true` the
+ * same query returned **0** rows, `deleted_at` still `NULL`, while the DOM went
+ * on naming a deletion. That is CLAUDE.md's rule inverted — the reason
+ * *inferred* from a status the server collapses rather than asserted.
+ *
+ * What the three do share is that **none of them is transient**, which is the
+ * whole of what the split buys: a surface can say the list is not available
+ * instead of offering the "could not be loaded" that invites a reload. Anything
+ * else (a 500, a dropped connection) keeps the retryable wording.
  *
  * The `status` field is put on the error by `use-lists.ts`'s `jsonOrThrow`;
  * `use-draft-mode.ts`:518 reads it the same way to decide what is worth
@@ -501,16 +532,18 @@ export function listReadIsGone(error: unknown): boolean {
  *
  * CLAUDE.md, "Never let 'nothing happened' mean 'it worked'": *"prefer loud
  * failure over a plausible-looking empty result, and assert the reason for
- * emptiness rather than inferring it."* So the reason is asserted here rather
- * than flattened — a deleted list is not a failure and must not read like one,
- * and a real fault must not read like an empty list.
+ * emptiness rather than inferring it."* So this asserts what it knows — the
+ * list is not available, or the read faulted — and **stops there**. The version
+ * that shipped in this PR went one step further and named a *cause* the client
+ * cannot see; the correction is {@link listReadIsGone}'s header, and the copy
+ * below is {@link LIST_UNAVAILABLE}.
  *
- * **A pop-out is the surface that made this worth splitting.** It is rendered by
- * the app shell and survives navigation (design LAW §Pop-out window), so the
- * list underneath it can be deleted from another screen — or by its owner, while
- * you are looking at a saved copy of it on a different route. A window showing
- * stale rows forever is the failure mode; a window that vanishes without a word
- * is the same failure with the evidence removed.
+ * **A pop-out is the surface that made this worth splitting** — but it is no
+ * longer the surface that *renders* it: Chris ruled (2026-08-12, §3 Q5) that a
+ * pop-out of an unavailable list **closes, with a toast**, so the branch a
+ * window paints here lives for one frame before the window goes. The column is
+ * the real consumer of the unavailable state, and a comparison routinely holds
+ * someone else's list.
  *
  * The scale is the **column's**, which already survives a 240px panel — narrower
  * than the window's 264px minimum — so neither surface needs a variant.
@@ -522,14 +555,22 @@ export function ListReadFailure({
   /** The query's error. `null` is not a state this renders — callers branch first. */
   error: unknown
   /**
-   * Whether the viewer owns the list, taken from the last good read. Only
-   * changes the *deleted* copy: Trash lists your own soft-deleted lists, so
-   * pointing a stranger at it would be a dead end.
+   * Whether the viewer owns the list, taken from the last good read. It buys
+   * exactly one thing: a **conditional** pointer at Trash, which asserts nothing
+   * about why the read failed and would be a dead end for a stranger (Trash
+   * lists only your own soft-deleted lists).
    */
   canEdit: boolean
 }) {
   const gone = listReadIsGone(error)
   const message = error instanceof Error ? error.message : null
+  // Never a cause. The owner's line is phrased as a condition (*"if you deleted
+  // it"*) precisely because the 404 does not say whether they did.
+  const detail = gone
+    ? canEdit
+      ? 'If you deleted it, you can restore it from Trash.'
+      : null
+    : message
 
   return (
     <div className="flex flex-col items-center gap-1.5 px-3 py-6 text-center">
@@ -539,15 +580,9 @@ export function ListReadFailure({
         className={gone ? 'text-n-3' : 'text-negative-strong'}
       />
       <p className="text-[11px] font-bold">
-        {gone ? 'This list was deleted.' : 'This list could not be loaded.'}
+        {gone ? LIST_UNAVAILABLE : 'This list could not be loaded.'}
       </p>
-      <p className="text-[9px] font-medium text-n-3">
-        {gone
-          ? canEdit
-            ? 'Deleted lists go to Trash, where you can restore it.'
-            : 'Its owner deleted it.'
-          : message}
-      </p>
+      {detail !== null && <p className="text-[9px] font-medium text-n-3">{detail}</p>}
     </div>
   )
 }

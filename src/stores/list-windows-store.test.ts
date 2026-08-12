@@ -12,12 +12,16 @@ import {
   WINDOW_DEFAULT_W,
   WINDOW_EDGE_KEEP_X,
   WINDOW_EDGE_KEEP_Y,
+  WINDOW_EDGE_MARGIN,
   WINDOW_MAX_H,
   WINDOW_MAX_W,
   WINDOW_MIN_H,
   WINDOW_MIN_W,
+  WINDOW_MOBILE_HEIGHT_RATIO,
+  WINDOW_MOBILE_MAX_W,
   cascadePlacement,
   clampWindowSize,
+  isSmallViewport,
   resolveWindowGeometry,
   useListWindowsStore,
 } from '@/stores/list-windows-store'
@@ -397,9 +401,11 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
 
   it('a size the user chose is NOT re-fitted either', () => {
     // Resized to 900 wide on a desktop, then opened on a 375px phone: the store
-    // still says 900. The frame's `max-w` paints it narrower and the grip reads
-    // the paint (`list-window.tsx`), so nothing lies — but the remembered size
-    // is theirs and survives the trip back to a big screen.
+    // still says 900. Below `WINDOW_MOBILE_MAX_W` the ruled bottom sheet ignores
+    // the stored box entirely and writes nothing back to it (Ruling 2); on a
+    // narrow *desktop* the frame's `max-w` paints it narrower and the grip reads
+    // the paint (`list-window.tsx`). Either way the remembered size is theirs
+    // and survives the trip back to a big screen.
     expect(
       resolveWindowGeometry({ w: 900, h: 700 }, 0, { width: 375, height: 812 }),
     ).toMatchObject({ w: 900, h: 700 })
@@ -438,6 +444,63 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
       y: 700,
       w: WINDOW_DEFAULT_W,
       h: WINDOW_DEFAULT_H,
+      min: false,
+    })
+  })
+})
+
+/**
+ * **Ruling 2 (Chris, 2026-08-12) — the mobile variant's one number, executed.**
+ *
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height."*
+ *
+ * The *shape* of that variant is CSS and is source-pinned in
+ * `list-windows-host.test.ts`; what lives here is the only part of it that is a
+ * decision rather than markup — **which viewports get it**. It is in the store
+ * for R191's reason: a breakpoint left inside a `.tsx` is guarded by nothing in
+ * this repo, and "below `md`" is exactly the kind of number that is quietly
+ * re-tuned to `lg` a task later.
+ */
+describe('Ruling 2 — which viewports get the mobile variant, and which do not', () => {
+  it('is a strict `< 768`, so the boundary itself is a desktop window', () => {
+    expect(WINDOW_MOBILE_MAX_W).toBe(768)
+    // A phone, portrait and landscape…
+    expect(isSmallViewport({ width: 375, height: 812 })).toBe(true)
+    expect(isSmallViewport({ width: 812, height: 375 })).toBe(false)
+    // …the boundary, exactly, from both sides.
+    expect(isSmallViewport({ width: 767, height: 1024 })).toBe(true)
+    expect(isSmallViewport({ width: 768, height: 1024 })).toBe(false)
+    // …a tablet and a laptop keep the floating window the design LAW describes.
+    expect(isSmallViewport({ width: 1024, height: 768 })).toBe(false)
+    expect(isSmallViewport({ width: 1280, height: 900 })).toBe(false)
+  })
+
+  it('the server is not a phone — and nothing depends on that being right', () => {
+    // `windows` is never persisted, so no window exists at SSR or at hydration
+    // on any route; this is the safe default rather than a load-bearing one.
+    expect(isSmallViewport(null)).toBe(false)
+  })
+
+  it('60% of the height is a ratio, so the ruling and the class cannot drift', () => {
+    expect(WINDOW_MOBILE_HEIGHT_RATIO).toBe(0.6)
+    // `list-windows-host.test.ts` builds `h-[60dvh]` from this number rather
+    // than restating it, which is what makes that the same claim as this one.
+    expect(`h-[${WINDOW_MOBILE_HEIGHT_RATIO * 100}dvh]`).toBe('h-[60dvh]')
+  })
+
+  it('the phone variant costs the desktop nothing — the maths is untouched', () => {
+    // The rescue and the fit are the *desktop* answer and Ruling 2 does not
+    // re-tune them: a 375px viewport still resolves exactly as it did before,
+    // because on a phone nothing reads the result.
+    expect(resolveWindowGeometry(undefined, 0, { width: 375, height: 812 })).toEqual({
+      // 352 already fits inside 375 − 2×8, so the size is the design's default…
+      w: WINDOW_DEFAULT_W,
+      h: WINDOW_DEFAULT_H,
+      // …and the cascade's 96 is pulled left to the last x that shows the whole
+      // window: 375 − 352 − 8. The vertical has room, so 96 stands.
+      x: 375 - WINDOW_DEFAULT_W - WINDOW_EDGE_MARGIN,
+      y: WINDOW_CASCADE_ORIGIN,
       min: false,
     })
   })

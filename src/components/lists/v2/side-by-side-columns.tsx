@@ -34,7 +34,6 @@ import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-bucket
 import {
   DraftedCheckbox,
   EmptyListState,
-  listReadIsGone,
   ListReadFailure,
   ListRowsSkeleton,
   PlayerMeta,
@@ -62,7 +61,7 @@ import {
  * | drafted marks | `use-draft-mode.ts` — the account-persisted source LV.1.3 pointed it at |
  * | the player mini card | `usePlayerWindowsStore`, opened exactly as `list-detail-panel.tsx` opens it |
  * | which grouping this list is showing | `list-display-store.ts` (`useListDisplay` / `setOrg`), session-only (**D3**) |
- * | the failed / loading states | `list-row-parts.tsx` (`ListReadFailure`, `ListRowsSkeleton`) — shared with the pop-out window at LV.17, rather than a second spelling of the same three sentences |
+ * | the failed / loading states | `list-row-parts.tsx` (`ListReadFailure`, `ListRowsSkeleton`) — shared with the pop-out window at LV.17, rather than a second spelling of the same three sentences. The column's **sub-line** is unchanged from LV.13 (`Could not load`): R248 restored it after LV.17 briefly re-worded a merged surface |
  * | `Pop out into a window` | `list-windows-store.ts` (LV.15), the same `open` the detail hero calls |
  *
  * ## Each column groups independently — and that is what the store already does
@@ -270,12 +269,13 @@ function ComparisonColumn({
    * loading and failed reads therefore say what they are.
    */
   const left = (entries ?? []).filter((entry) => !drafted.has(entry.player_id)).length
-  // A deleted list is not a failed read, and this subline is the one line a user
-  // scanning five columns actually reads (LV.17).
+  // **Restored to the merged surface's own wording (R248).** LV.17 briefly split
+  // this into `Deleted` / `Could not load` on the read's 404 — but a 404 is not
+  // a deletion (see `listReadIsGone`), and re-wording a shipped surface was not
+  // this task's to do even where the word had been true. `Could not load` claims
+  // nothing about cause and is what a column has always said.
   const subline = detail.isError
-    ? listReadIsGone(detail.error)
-      ? 'Deleted'
-      : 'Could not load'
+    ? 'Could not load'
     : entries
       ? `${left} of ${entries.length} left`
       : 'Loading…'
@@ -349,9 +349,11 @@ function ComparisonColumn({
 
       {detail.isError ? (
         // Shared with the pop-out window (LV.17) — including the split between
-        // "deleted" and "could not be loaded", which a column needs for the
-        // same reason a window does: a comparison routinely holds someone
-        // else's list, and they can delete it while you are looking at it.
+        // *unavailable* (a 404: gone, or no longer visible to you) and *could
+        // not be loaded* (a fault worth retrying). A column needs that split for
+        // the same reason a window did: a comparison routinely holds someone
+        // else's list, and it can stop being readable while you are looking at
+        // it. **Neither branch names a cause** — R248.
         <ListReadFailure error={detail.error} canEdit={canEdit} />
       ) : !entries ? (
         <ListRowsSkeleton rowHeight={30} />

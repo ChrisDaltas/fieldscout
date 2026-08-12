@@ -149,6 +149,53 @@ export const WINDOW_EDGE_KEEP_Y = 48
  */
 export const WINDOW_EDGE_MARGIN = 8
 
+// ---------------------------------------------------------------------------
+// The mobile variant (**ruled by Chris, 2026-08-12** — PROGRESS §3 Q6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Below this width a pop-out is **not** the floating window at all:
+ *
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height. the tool bar only shows Close and Options. All options go into the
+ * > option menu."* — Chris, 2026-08-12
+ *
+ * `768` is Tailwind's `md`, the conventional phone/tablet line, and it is
+ * **the one breakpoint the pop-out has**: `list-window.tsx` reads it through
+ * {@link isSmallViewport} and branches once, rather than sprinkling `sm:` / `md:`
+ * variants across a frame whose geometry is inline style anyway. A tablet at
+ * 768 and up keeps the desktop window, which is the surface the design LAW
+ * describes.
+ *
+ * Deliberately **not** the shell's own `lg` (1024): that is where the sidebar
+ * and the desktop header switch, and a 900px browser window is a place a
+ * draggable window still makes sense.
+ */
+export const WINDOW_MOBILE_MAX_W = 768
+
+/**
+ * *"only 60% of the screen height"*, as a ratio so the class and the ruling
+ * cannot drift — `list-windows-host.test.ts` builds the expected Tailwind class
+ * from this number rather than restating it.
+ */
+export const WINDOW_MOBILE_HEIGHT_RATIO = 0.6
+
+/**
+ * Does this viewport get the ruled mobile variant?
+ *
+ * Pure, and in the store rather than in the component, for R191's reason: this
+ * repo's vitest has no jsdom, so a decision left inside a `.tsx` is guarded by
+ * nothing. The one thing the component adds is a `matchMedia` subscription so
+ * the answer survives a rotation.
+ *
+ * `null` — the server, where there is no viewport — is **not** mobile. Nothing
+ * hangs on that: `windows` is never persisted (see `partialize`), so no window
+ * exists at SSR or at hydration, on any route.
+ */
+export function isSmallViewport(viewport: WindowViewport | null): boolean {
+  return viewport !== null && viewport.width < WINDOW_MOBILE_MAX_W
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }

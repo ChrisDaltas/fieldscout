@@ -147,9 +147,13 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
       'PlayerMeta',
       'PlayerName',
       // LV.17 — the two states a column and a window must not spell differently.
+      // (`listReadIsGone` came through here too until **R248**: the column's
+      // sub-line was split on it into `Deleted` / `Could not load`, which
+      // re-worded a merged surface *and* named a cause a 404 does not carry.
+      // The sub-line is back to LV.13's, and the predicate is only used inside
+      // the shared component now.)
       'ListReadFailure',
       'ListRowsSkeleton',
-      'listReadIsGone',
     ]) {
       expect(imported, `${part} must come from ./list-row-parts`).toContain(part)
     }
@@ -329,12 +333,13 @@ describe('LV.14 — a tick fans out across the comparison set, and no further (D
    */
   it('the count is not claimed over an unloaded or failed read', () => {
     const source = code(COLUMNS)
-    // LV.17 split the failed arm in two — a deleted list is not a failed read —
-    // so the pin is that `detail.isError` is still the FIRST question, and that
-    // neither of its two answers is a number.
-    expect(source).toMatch(
-      /const subline = detail\.isError\s*\?\s*listReadIsGone\(detail\.error\)\s*\?\s*'Deleted'\s*:\s*'Could not load'/,
-    )
+    // `detail.isError` is the FIRST question, and its answer is not a number.
+    // (LV.17 briefly split this arm into `Deleted` / `Could not load` on the
+    // read's 404 — **R248** put it back: a 404 is also a list that is alive and
+    // merely no longer visible to this viewer, and re-wording a merged surface
+    // was not a pop-out task's to do.)
+    expect(source).toMatch(/const subline = detail\.isError\s*\?\s*'Could not load'/)
+    expect(source).not.toContain("'Deleted'")
     expect(source).toMatch(/:\s*entries\s*\?\s*`\$\{left\} of \$\{entries\.length\} left`/)
     expect(source).toMatch(/:\s*'Loading…'/)
   })

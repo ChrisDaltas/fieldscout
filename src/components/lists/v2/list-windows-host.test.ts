@@ -4,6 +4,15 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
+ * The **only** import from the app in this suite, and it is deliberate: Ruling
+ * 2's *"60% of the screen height"* must be one number, so the pin below builds
+ * the expected Tailwind class from the store's own constant instead of
+ * restating `0.6`. The store is a `.ts` with no JSX (its sibling suite imports
+ * and executes it), and `persist` degrades quietly with no `window` here.
+ */
+import { WINDOW_MOBILE_HEIGHT_RATIO } from '@/stores/list-windows-store'
+
+/**
  * LV.15 — the app-shell host and the window frame, pinned at the source.
  *
  * **Source pins, not renders** — the same idiom and the same reason as
@@ -81,6 +90,15 @@ const PLAYER_IMAGE = 'src/components/players/player-image.tsx'
 const HERO = 'src/components/lists/v2/list-detail-hero.tsx'
 const COLUMNS = 'src/components/lists/v2/side-by-side-columns.tsx'
 const LISTS_HOOK = 'src/hooks/use-lists.ts'
+
+/**
+ * **Chris's own words**, written out here rather than imported: `list-row-parts`
+ * is a `.tsx` this suite cannot parse (see the file header), so the constant is
+ * asserted at its declaration and at both call sites instead. It is the toast
+ * copy for Ruling 1 and the on-surface copy for R248, and the point of it being
+ * one constant is that those cannot become two sentences.
+ */
+const UNAVAILABLE = 'This list is no longer available.'
 
 /**
  * The body of `ListWindowsHost`, isolated from the file, so "returns null
@@ -187,6 +205,75 @@ const indentOf = (file: string, marker: string): number => {
     )
   }
   return lines[0].length - lines[0].trimStart().length
+}
+
+/**
+ * Every element that **encloses** `marker`, innermost first, as trimmed source
+ * lines (**R255**).
+ *
+ * In Prettier-formatted JSX every child of one parent sits at the same
+ * indentation, and a closing tag sits at its opening tag's — so scanning
+ * upwards, the first line with *strictly smaller* indentation is the enclosing
+ * element's opening tag, and repeating that walk gives the ancestor chain. A
+ * sibling's closing tag can never be shallower than the marker while the marker
+ * is still inside the parent, which is what makes the step sound.
+ *
+ * This is the same indentation-as-depth proxy {@link indentOf} documents, asked
+ * as *"what contains this"* rather than as *"is this shallower than that"* —
+ * which is the difference R255 identified: shallower-and-after is implied by
+ * non-containment but does not imply it.
+ *
+ * Throws on missing **and** on ambiguous, the standard R240 named.
+ */
+const ancestorsOf = (file: string, marker: string): string[] => {
+  const lines = code(file).split('\n')
+  const hits = lines.flatMap((line, index) => (line.includes(marker) ? [index] : []))
+  if (hits.length === 0) {
+    throw new Error(
+      `R255: \`${marker}\` is not in ${file} — the containment pin below is guarding nothing.`,
+    )
+  }
+  if (hits.length > 1) {
+    throw new Error(
+      `R255: \`${marker}\` is on ${hits.length} lines in ${file} — it no longer identifies one ` +
+        'element, so the containment pin below is asserting about whichever came first.',
+    )
+  }
+  /**
+   * The *head* of the element whose line this is. Prettier splits a long
+   * opening tag over several lines and leaves its `>` alone at the tag's own
+   * indentation — so the shallower line found by the walk is often `>` rather
+   * than `<div`, and reporting it would hide which element it was.
+   */
+  const head = (index: number, indent: number): string => {
+    const line = lines[index].trim()
+    if (line.startsWith('<')) return line
+    for (let above = index - 1; above >= 0; above -= 1) {
+      const candidate = lines[above]
+      if (candidate.trim() === '') continue
+      const candidateIndent = candidate.length - candidate.trimStart().length
+      // The tag's own attributes are indented deeper than the tag.
+      if (candidateIndent > indent) continue
+      if (candidateIndent === indent && candidate.trimStart().startsWith('<')) {
+        return candidate.trim()
+      }
+      break
+    }
+    return line
+  }
+
+  const chain: string[] = []
+  let depth = lines[hits[0]].length - lines[hits[0]].trimStart().length
+  for (let index = hits[0] - 1; index >= 0 && depth > 0; index -= 1) {
+    const line = lines[index]
+    if (line.trim() === '') continue
+    const indent = line.length - line.trimStart().length
+    if (indent < depth) {
+      chain.push(head(index, indent))
+      depth = indent
+    }
+  }
+  return chain
 }
 
 /**
@@ -647,13 +734,23 @@ describe('LV.15 — the frame: stroke carries the lift, and there is no shadow',
 
 describe('LV.15 — the design LAW’s numbers, converted (and the two that are not)', () => {
   it('the header is 36px (44 × 0.8) and the whole bar is the drag handle', () => {
+    // The bar itself, by a class only it carries. (`h-9` is not that class —
+    // it is one token inside it, and the locator wants a marker, not a value.)
+    expect(classNameContaining(WINDOW, 'gap-[7px]')).toContain('h-9')
+
+    // The drag *affordance* is now its own conditional string, because
+    // **Ruling 2** makes it desktop-only: an anchored bottom sheet has nothing
+    // to drag to, so a grab cursor there would be R220's live-but-false
+    // affordance and a `touch-none` would take the gesture from the browser for
+    // nothing. The two travel together or not at all — a `touch-none` left
+    // behind on a phone is a header that eats a scroll and does nothing with it.
     // `active:cursor-grabbing` rather than `cursor-grab` since **LV.16**: the
     // rows are draggable now, so `cursor-grab` names two things and the locator
     // above throws on it. The grabbing state belongs to the handle alone.
-    const header = classNameContaining(WINDOW, 'active:cursor-grabbing')
-    expect(header).toContain('h-9')
+    const grab = classNameContaining(WINDOW, 'active:cursor-grabbing')
+    expect(grab).toContain('cursor-grab')
     // Touch drag needs the browser to stop scrolling the page instead.
-    expect(header).toContain('touch-none')
+    expect(grab).toContain('touch-none')
     const source = code(WINDOW)
     expect(source).toContain('onPointerDown={onHeaderPointerDown}')
     expect(source).toContain('onPointerMove={onHeaderPointerMove}')
@@ -875,10 +972,12 @@ describe('LV.16 — the dark inversion is one wrapper, and no child is restyled 
       ...rowParts[1]
         .split(',')
         .map((part) => part.trim())
-        // Components only. LV.17's `listReadIsGone` comes through the same
-        // import and is a predicate, not a child — `childClassNames` would
-        // (correctly) throw that it is never rendered as an element.
-        .filter((part) => /^[A-Z]/.test(part)),
+        // Components only — **PascalCase**, which is this repo's convention
+        // (CLAUDE.md → Naming). LV.17's `listReadIsGone` comes through the same
+        // import and is a predicate, not a child, and its fix round added
+        // `LIST_UNAVAILABLE`, a string constant; `childClassNames` would
+        // (correctly) throw that neither is ever rendered as an element.
+        .filter((part) => /^[A-Z][a-z]/.test(part)),
       'ListCoverTile',
       'PositionBadge',
     ]
@@ -1100,15 +1199,31 @@ describe('LV.16 — the scaffold is gone and the header is complete (F-LV15.1, F
 
   it('the header carries cover, name, gear, dots, collapse, close — in that order', () => {
     const source = code(WINDOW)
+    /**
+     * **Throws on ambiguous as well as on missing** — the R240/R245/R255
+     * standard, applied here because Ruling 2's fix round is exactly the kind of
+     * edit that duplicates a marker: it moved the `dots` menu into its own
+     * component and gave the phone a second cluster. A bare `indexOf` would
+     * order whichever came first and say nothing when a second appeared.
+     */
     const at = (needle: string) => {
-      const index = source.indexOf(needle)
-      if (index < 0) throw new Error(`LV.16: \`${needle}\` is not in ${WINDOW}.`)
-      return index
+      const hits = [...source.matchAll(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))]
+      if (hits.length !== 1) {
+        throw new Error(
+          `LV.16: \`${needle}\` appears ${hits.length} times in ${WINDOW} — the header order pin ` +
+            'would be asserting about whichever came first.',
+        )
+      }
+      return hits[0].index as number
     }
     expect(at('<ListCoverTile')).toBeLessThan(at('name="gear"'))
-    expect(at('name="gear"')).toBeLessThan(at('name="dots"'))
-    expect(at('name="dots"')).toBeLessThan(at("label={minimized ? 'Expand' : 'Collapse'}"))
+    // The `dots` slot is `<WindowMenu>`, whose own declaration sits *below*
+    // `ListWindow` in the file — so the marker is the element in the cluster,
+    // and what it renders is asserted separately rather than by file position.
+    expect(at('name="gear"')).toBeLessThan(at('<WindowMenu'))
+    expect(at('<WindowMenu')).toBeLessThan(at("label={minimized ? 'Expand' : 'Collapse'}"))
     expect(at("label={minimized ? 'Expand' : 'Collapse'}")).toBeLessThan(at('label="Close"'))
+    expect(declarationSource(WINDOW, 'WindowMenu')).toContain('name="dots"')
   })
 
   /**
@@ -1476,113 +1591,254 @@ describe('LV.17 — loading / empty / failed / deleted, inside a window', () => 
   })
 
   /**
-   * **A pop-out of a list you then delete.**
+   * **A 404 is three situations, and only one of them is a deletion (R248).**
    *
-   * The prototype splices the window away (`design/lists.js`:253). This does
-   * not, and the divergence is deliberate: the LAW's persistence bullet says
-   * pop-outs *"stay until closed"*, the delete may not be the viewer's own
-   * action (the host mounts app-wide, so the window outlives the page the
-   * delete happened on), and a window that vanishes with no word is CLAUDE.md's
-   * "nothing happened" with the evidence removed.
+   * `GET /api/lists/[id]` reads `.eq('id', id).is('deleted_at', null)` and 404s
+   * on no row — which covers a soft-deleted list, an id that resolves to
+   * nothing, **and a list that is alive and merely no longer visible to this
+   * viewer**, since the SELECT policy is
+   * `((is_private = false AND deleted_at IS NULL) OR auth.uid() = owner_id)` and
+   * visibility is one click in the hero's options menu. LV.17 shipped *"This
+   * list was deleted. / Its owner deleted it."* over all three, which is
+   * CLAUDE.md's rule inverted: the reason **inferred** from a status the server
+   * collapses. Probed in a rolled-back transaction — as `dev@`, the public
+   * `LV12` fixture returned 1 row; after the owner set `is_private = true` the
+   * identical query returned **0**, `deleted_at` still `NULL`.
+   *
+   * So the split survives (not-transient vs worth-retrying) and the *cause* does
+   * not. These pin both halves, including the words that must not come back.
    */
-  it('a deleted list is separated from a failed read, on the error’s own status', () => {
+  it('the unavailable state names no cause the client cannot know (R248)', () => {
     const parts = code(ROW_PARTS)
-    // 404 is the answer `GET /api/lists/[id]` gives for `deleted_at IS NOT NULL`
-    // and for an id that resolves to nothing — definitive either way, which is
-    // what makes it safe to word differently from a 500.
-    expect(declarationSource(ROW_PARTS, 'listReadIsGone')).toContain('status')
-    expect(declarationSource(ROW_PARTS, 'listReadIsGone')).toContain('404')
-    const failure = declarationSource(ROW_PARTS, 'ListReadFailure')
-    expect(failure).toContain('This list was deleted.')
-    expect(failure).toContain('This list could not be loaded.')
-    // The retryable wording is never used for a list that is gone, and vice
-    // versa: one `gone` decides both.
-    expect(failure).toMatch(/gone \? 'This list was deleted\.' : 'This list could not be loaded\.'/)
+    const gone = declarationSource(ROW_PARTS, 'listReadIsGone')
+    // Still the read's own status, and still only 404 — the split is about
+    // *transience*, which is the one thing all three situations share.
+    expect(gone).toContain('status')
+    expect(gone).toContain('404')
     expect(parts).toContain('export function listReadIsGone')
+
+    const failure = declarationSource(ROW_PARTS, 'ListReadFailure')
+    // One neutral sentence, and it is the same constant Chris's toast uses, so
+    // the two cannot drift into two spellings of one situation.
+    expect(parts).toContain(`export const LIST_UNAVAILABLE = '${UNAVAILABLE}'`)
+    expect(failure).toMatch(/gone \? LIST_UNAVAILABLE : 'This list could not be loaded\.'/)
+
+    // **The one thing the owner branch may still say is a condition, not an
+    // assertion**: Trash exists, *if* you deleted it. That is the only place
+    // the word may appear at all…
+    expect(failure).toContain('If you deleted it, you can restore it from Trash.')
+    // …and this is the claim in the title, stated as itself: with the
+    // conditional removed, no spelling of a cause survives anywhere in the
+    // component. A future edit that reintroduces one fails here rather than
+    // shipping a false sentence.
+    const withoutTheCondition = failure.split('If you deleted it').join('')
+    for (const claim of ['deleted', 'Deleted', 'removed', 'owner', 'Owner']) {
+      expect(withoutTheCondition, claim).not.toContain(claim)
+    }
   })
 
   /**
-   * **The deleted state is only reachable because the 404 is not retried**, and
-   * that was found by trying to reach it.
+   * **R249 — the record said the state was unreachable; it was reachable one
+   * retry later.** Reproduced against this repo's own `@tanstack/react-query`:
+   * one successful read, then every read 404s, `retry: 1` → `status: 'error'`
+   * after **3** `queryFn` calls; no-retry → after **2**; `data` retained in
+   * both. The `fetchStatus: 'paused'` in the original evidence is React Query's
+   * **offline** pause (`networkMode: 'online'`), which a resolved 404 does not
+   * cause.
    *
-   * The app-wide default is `retry: 1`, and while a retry is outstanding
-   * TanStack Query keeps `status: 'success'` with the **last good data** — so a
-   * surface reading `isError` goes on painting the deleted list's rows. Measured
-   * on the local stack, the retryer sat at `fetchStatus: 'paused'` with
-   * `failureReason: 'List not found'` and **never resolved**, which makes the
-   * stale rows permanent on exactly the surface that outlives the page. The rule
-   * is `use-draft-mode.ts`:518's, applied to the query that needed it most.
+   * **The change is kept on its true merits — a 404 surfaced one retry late,
+   * and a shared hook was changed to make it immediate** — and narrowed to the
+   * status that argument is about (**R252**): `< 500` also swallowed the 401 /
+   * 403 / 400 this same route answers on `PATCH`/`DELETE` (`route.ts`:147, 176,
+   * 302, 319) and the canonically-retryable 408 / 429.
    */
-  it('a 4xx is an answer, not a hiccup — `useList` does not retry one', () => {
+  it('a 404 is an answer, not a hiccup — and only a 404 (R249, R252)', () => {
     const source = code(LISTS_HOOK)
     const useList = declarationSource(LISTS_HOOK, 'useList')
     expect(useList).toContain('retry: (failureCount: number, error: Error) =>')
-    expect(useList).toContain('if (typeof status === \'number\' && status < 500) return false')
-    // …and a server fault keeps the single retry the rest of the app gets.
+    expect(useList).toContain('if (status === 404) return false')
+    // The predicate that was too wide, by the string that was in the file.
+    expect(useList).not.toContain('status < 500')
+    // …and everything else keeps the single retry the rest of the app gets.
     expect(useList).toContain('return failureCount < 1')
-    // The same shape the house already had, not a second convention.
+    // `status` is what `jsonOrThrow` puts on the error — the pin is blind if it goes.
+    expect(source).toContain('error.status = res.status')
+    // The house rule this narrows rather than contradicts: `use-draft-mode.ts`
+    // refuses to retry a 4xx write, where 401/403 really are terminal.
     expect(code('src/hooks/use-draft-mode.ts')).toContain(
       "if (typeof status === 'number' && status < 500) return false",
     )
-    // `status` is what `jsonOrThrow` puts on the error — the pin is blind if it goes.
-    expect(source).toContain('error.status = res.status')
   })
 
-  it('a window over a deleted list drops the footer and refuses the drag', () => {
+  /**
+   * **Ruling 1 — Chris, 2026-08-12: *"Close it, with a toast."*** (§3 Q5.)
+   *
+   * This reverses LV.17's persist-and-explain and lands on the prototype's own
+   * `store.destroy` (`design/lists.js`:253) without its silence. The pin is both
+   * halves — the window goes **and** the app says so — because either one alone
+   * is a defect: a silent close is CLAUDE.md's "nothing happened" with the
+   * evidence removed, and a toast without the close leaves the stale rows the
+   * ruling exists to get rid of.
+   */
+  it('a pop-out of an unavailable list closes, and says so (Ruling 1)', () => {
     const source = code(WINDOW)
     expect(source).toContain('const gone = detail.isError && listReadIsGone(detail.error)')
-    // Share would copy `/u/{owner}/lists/{slug}` — now a 404 page — and
-    // announce "Link copied"; the view/comment counts are the dead list's last
-    // known ones. R220's live-but-false affordance, so the footer is not
-    // rendered at all.
+
+    // An effect, not a render-phase call: closing is a store write.
+    const effect = source.match(/React\.useEffect\(\(\) => \{\s*if \(!gone\) return\n([\s\S]*?)\n {2}\}, \[/)
+    if (!effect) {
+      throw new Error(
+        `Ruling 1: no \`gone\`-guarded effect in ${WINDOW} — the window either does not close, or ` +
+          'closes on something other than the read being gone.',
+      )
+    }
+    expect(effect[1]).toContain('close(listId)')
+    expect(effect[1]).toContain('toast({ title: LIST_UNAVAILABLE })')
+    // The copy is imported, never retyped — that is what makes "matching the
+    // toast exactly" structural rather than two files remembering.
+    expect(source).toContain('LIST_UNAVAILABLE')
+    expect(source).not.toContain("'This list is no longer available.'")
+    // And the reversed decision is gone from the surface, not merely unused:
+    // there is no *deleted* title, and no window-scoped spelling of the state.
+    expect(source).not.toContain('Deleted list')
+    expect(source).not.toContain('deleted')
+  })
+
+  /**
+   * The one frame before the effect runs still paints, so it still has to be
+   * right — and these three were LV.17's answers to "what does a window over a
+   * dead list do". They are kept: the footer's Share would copy a link that
+   * 404s and announce "Link copied" (**R220**'s shape), and a reorder PATCH
+   * against a list nobody can read can only 404.
+   */
+  it('…and for the frame before it goes, the footer and the drag are already off', () => {
+    const source = code(WINDOW)
     expect(source).toMatch(/\{!minimized && !gone && \(/)
-    // …and a reorder PATCH against a deleted list can only 404.
     expect(source).toMatch(/const canDrag = [^\n]*!gone/)
-    // The header keeps the name it had: it is the only thing left identifying
-    // which window just died.
-    expect(source).toMatch(/const title = list\?\.title \?\?/)
+    // The title it carries out is the name it always had — no gone-specific
+    // wording anywhere on the way past.
+    expect(source).toMatch(
+      /const title = list\?\.title \?\? \(detail\.isError \? 'Could not load' : 'Loading…'\)/,
+    )
+  })
+
+  /**
+   * **The merged Side by side surface is not silently re-worded by this PR**
+   * (R248, second half). LV.17 changed the column's sub-line from
+   * `Could not load` to `Deleted` on a 404 — a shipped surface, re-worded in a
+   * pop-out task, to a word the status does not support.
+   */
+  it('the column’s sub-line is back to the wording it shipped with (R248)', () => {
+    const source = code(COLUMNS)
+    expect(source).toMatch(/const subline = detail\.isError\s*\n?\s*\?\s*'Could not load'/)
+    expect(source).not.toContain("'Deleted'")
+    // The *body* is still the shared component, which is LV.17's D11 win and is
+    // kept — with its copy corrected upstream, in one place.
+    expect(source).toContain('<ListReadFailure error={detail.error} canEdit={canEdit} />')
+    // The predicate it no longer needs is no longer imported.
+    expect(source).not.toContain('listReadIsGone')
   })
 })
 
 /**
- * **The phone answer** — F-LV15.3, which LV.15 filed and this task owns.
+ * **Ruling 2 — Chris, 2026-08-12 (§3 Q6): a phone gets a real variant.**
  *
- * A small screen gets the same floating window: no breakpoint, no variant, and
- * the `pop out` control is not hidden below any width. That is a decision made
- * here, **not** an extension of Chris's *"leave the phone version as is"* (D14),
- * which was ruled about Side by side. What holds it up is that the three things
- * a phone could break are each closed, and the pins are those three — not the
- * absence of a treatment, which is unfalsifiable on its own.
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height. the tool bar only shows Close and Options. All options go into the
+ * > option menu."*
+ *
+ * That **overrules LV.17's "the phone gets the same window"**, which was a
+ * Builder decision (F-LV15.3) taken because nothing was broken — not an
+ * inheritance from D14, and now not the answer either. The describe it replaces
+ * pinned the *absence* of a treatment; this one pins the treatment, plus the
+ * three things Chris did not state and this round decided (bottom-anchored;
+ * drag and resize off rather than dead; a pile with no cap).
+ *
+ * **Desktop is bit-identical**, and that is a claim under test rather than an
+ * intention: every pin LV.15/LV.17 made about the floating window is below,
+ * unchanged, because the mobile variant is a branch beside it and not a
+ * re-tuning of it.
  */
-describe('LV.17 — the phone gets the same window, and here is what makes that safe', () => {
-  it('nothing hides the pop-out control, or the window, at a breakpoint', () => {
-    // The shape of a quiet "desktop only": a responsive `hidden`/`sm:flex` on
-    // the control, or on the frame. LV.13's no-stacking pin, aimed one surface
-    // over.
-    const button = code(HERO).match(/<Button[^>]*onClick=\{onPopOut\}[\s\S]*?<\/Button>/)
-    expect(button?.[0]).not.toMatch(/(sm|md|lg|xl):(hidden|flex|inline-flex|block)/)
-    expect(button?.[0]).not.toMatch(/\bhidden\b/)
-    expect(classNameContaining(WINDOW, 'fixed')).not.toMatch(/(sm|md|lg|xl):/)
-    expect(code(WINDOW)).not.toMatch(/(sm|md|lg|xl):hidden/)
+describe('Ruling 2 — the mobile variant, and the desktop window it does not touch', () => {
+  it('there is exactly ONE breakpoint, it is a number in the store, and no CSS variant', () => {
+    const source = code(WINDOW)
+    // The whole variant turns on one predicate, executed in
+    // `list-windows-store.test.ts`. A `md:` sprinkled onto the frame would be a
+    // second, silent breakpoint that no test could hold to the ruling.
+    expect(source).toContain('isSmallViewport(viewportNow())')
+    expect(source).toContain('const mobile = useIsSmallViewport()')
+    expect(source).not.toMatch(/(sm|md|lg|xl):/)
+    // …and the media query is built from the same constant, so the CSS boundary
+    // and the predicate cannot drift by a pixel.
+    expect(source).toContain('`(max-width: ${WINDOW_MOBILE_MAX_W - 1}px)`')
+    // It survives a rotation: a subscription, not a one-shot read at mount.
+    expect(source).toContain('React.useSyncExternalStore')
+    expect(source).toContain("query.addEventListener('change', onChange)")
+    expect(source).toContain("query.removeEventListener('change', onChange)")
+  })
+
+  it('full width, 60% of the height, anchored to the bottom', () => {
+    const frame = classStringsContaining(WINDOW, 'inset-x-0')
+    expect(frame, 'the mobile frame classes').toHaveLength(1)
+    // Full width…
+    expect(frame[0]).toContain('w-full')
+    // …bottom-anchored, which is the derived half: a fixed-size sheet has
+    // nowhere to drag to, and the bottom is the thumb-reachable end of a phone.
+    expect(frame[0]).toContain('bottom-0')
+    // …and 60% of the height, built from the ruling's own ratio rather than
+    // restated, so the two are one number. `dvh`, not `vh`: "the screen height"
+    // on a phone is the visible viewport, and `vh` is the URL-bar-collapsed one.
+    expect(code(WINDOW)).toContain(`h-[${WINDOW_MOBILE_HEIGHT_RATIO * 100}dvh]`)
+    expect(code(WINDOW)).not.toContain(`h-[${WINDOW_MOBILE_HEIGHT_RATIO * 100}vh]`)
+    // The stored box is not painted at all — which is also why nothing on a
+    // phone can overwrite a geometry chosen on a desktop.
+    expect(code(WINDOW)).toMatch(/mobile\s*\?\s*\{ zIndex \}/)
+  })
+
+  it('the toolbar is Options and Close, and everything else moved INTO the menu', () => {
+    const source = code(WINDOW)
+    // The two controls the header gives up, each behind the same one branch.
+    expect(source).toMatch(/\{!mobile && \(\s*<WindowChromeButton label="Choose stats"/)
+    expect(source).toMatch(/\{!mobile && \(\s*<WindowChromeButton\s*\n\s*label=\{minimized \? 'Expand' : 'Collapse'\}/)
+    // Close is not conditional — it is the only way out of a window on a device
+    // with no Escape key.
+    expect(source).toMatch(/<WindowChromeButton label="Close" onClick=\{\(\) => close\(listId\)\}>/)
+
+    // …and they are *moved*, not dropped: the menu carries both, and calls the
+    // same two handlers the header buttons call.
+    const menu = declarationSource(WINDOW, 'WindowMenu')
+    expect(menu).toContain("label={mobile ? 'Options' : 'Grouping'}")
+    expect(menu).toContain('Choose stats')
+    expect(menu).toContain("{minimized ? 'Expand' : 'Collapse'}")
+    expect(menu).toContain('onSelect={onChooseStats}')
+    expect(menu).toContain('onSelect={onToggleMinimized}')
+    // The grouping options are the middle of it either way — one menu, not two.
+    expect(menu).toContain('ORG_OPTIONS.map((option)')
+    expect(menu).toContain('setOrg(listId, option.id)')
+    // Both extra items are behind `mobile`, which is what keeps the desktop
+    // menu byte-for-byte the five options LV.16 shipped.
+    expect(menu.match(/\{mobile && \(/g)).toHaveLength(2)
+  })
+
+  it('drag and resize are switched off on a phone, not left as dead gestures', () => {
+    const source = code(WINDOW)
+    // Gated at gesture *start*, which is the only place that matters: `dragRef`
+    // / `sizeRef` are what unlock the two store writes in the pointer-up
+    // handlers, and neither can be set without passing these.
+    expect(handlerBody(WINDOW, 'onHeaderPointerDown')).toContain('if (mobile) return')
+    expect(handlerBody(WINDOW, 'onGripPointerDown')).toContain('if (mobile) return')
+    // The grip is not painted at all — a resize handle that cannot resize is
+    // R220's live-but-false affordance, drawn in the corner.
+    expect(source).toMatch(/\{!minimized && !mobile && \(\s*<span\s*\n\s*onPointerDown=\{onGripPointerDown\}/)
+    // And the header drops its grab cursor with its `touch-none`, together.
+    expect(source).toMatch(/!mobile && 'cursor-grab touch-none active:cursor-grabbing'/)
   })
 
   /**
-   * A phone has no Escape key, so R227's hatch does not exist on one and the
-   * **close button is the only way out**. The guarantee is therefore in two
-   * parts, and it is worth stating precisely because the first is stronger than
-   * the second:
-   *
-   * - a window the **store** placed opens whole — fitted in position *and* size
-   *   — so every control is on screen;
-   * - a window the **user** placed is only *rescued*, to
-   *   {@link WINDOW_EDGE_KEEP_X} of grabbable header. That strip is the drag
-   *   handle, not the control cluster, so a window dragged off the right edge
-   *   (or carried across from a wider viewport) needs **one drag** before its
-   *   close button is reachable again. Measured on a 375px viewport: restored at
-   *   `x 275` with the close button off-screen, one touch-drag → `[10, 142]`,
-   *   fully on screen. Re-fitting a position the user chose is the thing two
-   *   reviews explicitly upheld *not* doing (LV.15), so this is the trade, not
-   *   an oversight.
+   * **Everything below this line is the desktop window, unchanged.** These are
+   * LV.15's and LV.17's own pins, kept verbatim in claim: if the mobile branch
+   * had been built by re-tuning the desktop one instead of beside it, they are
+   * what would go red.
    */
   it('the window we place opens whole; the one you place stays grabbable', () => {
     const source = code(WINDOW)
@@ -1601,7 +1857,8 @@ describe('LV.17 — the phone gets the same window, and here is what makes that 
   it('drag and resize are touch gestures, because they are pointer gestures', () => {
     const source = code(WINDOW)
     // No mouse-only path anywhere: `onMouseDown`/`onMouseMove` is what the
-    // prototype uses and what would silently exclude a phone.
+    // prototype uses. Above the breakpoint this is what makes a **tablet**
+    // usable, which is now the touch device that gets the floating window.
     expect(source).not.toMatch(/onMouse(Down|Move|Up)/)
     for (const handler of ['onPointerDown', 'onPointerMove', 'onPointerUp']) {
       expect(source, handler).toContain(handler)
@@ -1615,13 +1872,21 @@ describe('LV.17 — the phone gets the same window, and here is what makes that 
   it('the resize grip starts from the painted corner, not from the stored size', () => {
     const body = handlerBody(WINDOW, 'onGripPointerDown')
     // The model and the paint disagree whenever `max-w` is doing work — which,
-    // on a phone with remembered desktop geometry, is always. Starting from
+    // on a narrow desktop with remembered geometry, is always. Starting from
     // `box.w` snapped the window out to the model width on the first move.
     expect(body).toContain('frameRef.current?.getBoundingClientRect()')
     expect(body).toContain('origW: painted?.width ?? box.w')
     expect(body).toContain('origH: painted?.height ?? box.h')
     // …and the ref is on the frame itself, which is the box `max-w` caps.
     expect(code(WINDOW)).toMatch(/<div\n {6}ref=\{frameRef\}/)
+  })
+
+  it('nothing hides the pop-out control at a breakpoint — mobile got a variant, not a removal', () => {
+    // The shape of a quiet "desktop only": a responsive `hidden`/`sm:flex` on
+    // the control. Ruling 2 changes what a phone *gets*, not whether it can ask.
+    const button = code(HERO).match(/<Button[^>]*onClick=\{onPopOut\}[\s\S]*?<\/Button>/)
+    expect(button?.[0]).not.toMatch(/(sm|md|lg|xl):(hidden|flex|inline-flex|block)/)
+    expect(button?.[0]).not.toMatch(/\bhidden\b/)
   })
 })
 
@@ -1635,16 +1900,59 @@ describe('LV.17 — the phone gets the same window, and here is what makes that 
  * this is the pin that says so rather than the memory of it.
  */
 describe('LV.17 — the pop-out host is a sibling of the page, never inside it (R246)', () => {
-  it('the host is not a descendant of whatever renders the page', () => {
-    const children = indentOf(SHELL, '{children}')
-    const host = indentOf(SHELL, '<ListWindowsHost />')
-    const source = code(SHELL)
-    // Shallower than `{children}`, so it cannot be inside any element that
-    // `{children}` sits in — and after it, so that element has closed. Prettier
-    // makes indentation a reliable depth proxy here, as `indentOf`'s own header
-    // records.
-    expect(host).toBeLessThan(children)
-    expect(source.indexOf('<ListWindowsHost />')).toBeGreaterThan(source.indexOf('{children}'))
+  /**
+   * **R255 — the indentation proxy had a residual hole, and this closes it.**
+   *
+   * The pin was *"shallower than `{children}`, and after it"*. A host placed
+   * **inside `<main>`** but after the content wrapper satisfies both — it is
+   * shallower than `{children}` (which is one level deeper still) and later in
+   * the file — while sitting squarely in the page tree, which is the one thing
+   * the pin exists to forbid. It went red for the realistic move, but its stated
+   * claim did not follow from its assertions.
+   *
+   * So this asks the question directly: **is any page-tree element an ancestor
+   * of the host?** {@link ancestorsOf} walks up by indentation, and the control
+   * below proves the walk actually detects containment rather than always
+   * returning an empty set.
+   */
+  it('no element that encloses the page encloses the host (R255)', () => {
+    const host = ancestorsOf(SHELL, '<ListWindowsHost />')
+    const children = ancestorsOf(SHELL, '{children}')
+
+    // The claim, stated as itself: `<main>` — and every element inside it — is
+    // an ancestor of the page's content and of nothing else.
+    expect(children.some((line) => line.startsWith('<main'))).toBe(true)
+    expect(host.some((line) => line.startsWith('<main'))).toBe(false)
+    // …and nothing that wraps `{children}` wraps the host either, which is the
+    // general form of that and covers a wrapper added later.
+    const pageOnly = children.filter((line) => !host.includes(line))
+    expect(pageOnly.length).toBeGreaterThan(0)
+    for (const enclosing of pageOnly) {
+      expect(host, enclosing).not.toContain(enclosing)
+    }
+
+    // The host's own enclosing element is the shell root the other app-level
+    // siblings share — pinned against `<BottomTabs`, which is page chrome
+    // rendered at exactly the same depth, so "sibling" is a measured fact.
+    expect(indentOf(SHELL, '<ListWindowsHost />')).toBe(indentOf(SHELL, '<BottomTabs'))
+    expect(ancestorsOf(SHELL, '<BottomTabs')).toEqual(host)
+  })
+
+  it('…and the ancestor walk really does find ancestors (control for the pin above)', () => {
+    // Without this, an `ancestorsOf` that returned `[]` for everything would
+    // make the pin above pass for the wrong reason — the fourth time this build
+    // has had a locator quietly assert nothing (R226, R240, R245).
+    const children = ancestorsOf(SHELL, '{children}')
+    // It finds a real enclosing element by name…
+    expect(children).toContain('<main className="min-h-0 flex-1 overflow-y-auto">')
+    // …including one whose opening tag Prettier split over four lines, which is
+    // the case a naive walk reports as a bare `>`.
+    expect(children.some((line) => line.startsWith('<div'))).toBe(true)
+    expect(children).not.toContain('>')
+    // Innermost first, outermost last, ending above the JSX entirely.
+    expect(children[children.length - 1]).toMatch(/^export function AppShell/)
+    // A leaf's chain is strictly longer than its own parent's.
+    expect(children.length).toBeGreaterThan(ancestorsOf(SHELL, '<main').length)
   })
 
   it('…which is the precondition the one-containment-check hit test relies on', () => {
