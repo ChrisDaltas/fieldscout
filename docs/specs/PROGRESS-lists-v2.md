@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v5.2) > this file. **That ordering is
+> (`docs/specs/delivery-plan-lists-v2.md` v5.3) > this file. **That ordering is
 > load-bearing, not decorative** — LV.12 used it to settle a plan clause the
 > design package contradicts (§4).
 >
@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -29,7 +29,9 @@ the rebuilt page unconditionally, `featureFlags.listsV2` no longer exists, and
 `lists/draft-mode/**` tree and three orphaned components are deleted — 3,700
 lines out.
 
-**All three questions were ruled.** **Q1** (2026-08-09) — build LV.1.3 as
+**All four questions were ruled.** **Q4** (2026-08-11, Round 2) — Side by side
+gets no cap, no search field and no truncation, and no phone-specific treatment;
+revisit on real usage. **Q1** (2026-08-09) — build LV.1.3 as
 written; no users exist, so there are no drafted marks to preserve. **Q2**
 (2026-08-09) — widen the tier CHECK constraint, the build's second schema
 exception. **Q3** (2026-08-11) — **keep all four**: folders, right-rail
@@ -324,13 +326,42 @@ checked.
   the original run was against **hosted production** and over a `saved` set
   that was empty every time, so it never once showed the behaviour the erratum
   exists to protect
-- [ ] **LV.13** — **the 300px columns**, full-bleed scroller, per-column
-  grouping menu, and `Change lists` in the page header (LV.12). *LV.12 left the
-  seam: `compareIds` lives in `lists-page-v2.tsx`, and `ComparisonPending` is
-  the temporary branch LV.13 replaces — **delete that function** (now also
-  stated in the plan §6 row itself, R209).*
+- [x] **LV.13** — **the columns** (2026-08-11).
+  `src/components/lists/v2/side-by-side-columns.tsx`: 240px fixed panels (the
+  design's 300px at this app's ×0.8) in a full-bleed horizontal scroller whose
+  negative margin is the **shell's own gutter** (`-mx-4 px-4 / lg:-mx-7
+  lg:px-7`, and 28px *is* 36 × 0.8); column header with a 21px cover, the name,
+  a live `N of M left` and the `dots` menu — the five grouping modes plus
+  `Remove column` under a separator; 30px rows with the permanent drafted
+  checkbox, `#N`, the name opening the mini card, position badge and team; and
+  tier/round bands carrying their colour through. **UI/UX only — no migration,
+  no schema change, no new API route**; the budget stays closed at three.
+  **`ComparisonPending` and its `isList` guard are deleted**, and `Change lists`
+  is in the page header beside `New list` (rendered twice, so a phone that has
+  no shell header still has a way back to the picker). **Composes Round 1 rather
+  than re-solving it (D11)**: `list-buckets.ts` groups, `list-row-parts.tsx`
+  supplies the checkbox / name / meta / empty state, `cover-tile.tsx` covers,
+  `use-draft-mode.ts` marks, `usePlayerWindowsStore` opens the mini card —
+  and two shared rules moved *into* `list-buckets.ts` so the panel and a column
+  cannot disagree (`bucketHeading`, `rankMap`; §4). **§3 Q4 ruled the same day
+  (no cap, no search, no truncation) and the phone question with it (no
+  breakpoint treatment)** — both are pinned, not merely obeyed.
+  **A tick here is still one tick on one list**; the fan-out across the
+  comparison set is LV.14's, governed by D12.
+  **Fix round 2026-08-12 (R217–R223, §6):** no behaviour changed — the columns
+  were upheld in full. The round widened the no-stacking pin, which caught only
+  the desktop-first spelling while `flex flex-col lg:flex-row` (the one a
+  developer reaches for) passed green **although two documents cite that pin as
+  what makes Chris's phone ruling un-re-addable**; recorded that the picker's
+  sub-line is a promise LV.14 has to keep; restored D13's closing paragraph,
+  which D14 had been inserted into; and moved the new local fixture's
+  re-creation steps into `ACTIVE-BUILD.md`
 - [ ] **LV.14** — **drafted fan-out across the comparison set** (D12) (LV.13,
-  LV.1.3)
+  LV.1.3). **Carries a forward obligation from LV.13's review (R220):** the
+  picker's design-verbatim sub-line — *"…and every column updates"* — has been
+  live since LV.12 and is **false until this task lands**. LV.14 makes it true
+  and then clears the interval note from `side-by-side-picker.tsx`'s JSDoc and
+  from §4. **The copy itself is not to be edited** — the fix is the behaviour
 
 **Phase 8 — Pop-out windows**
 
@@ -755,8 +786,13 @@ and none was silently picked up.
 
 ### Q4 — the picker (and therefore LV.13's columns) has no upper bound (filed 2026-08-11, LV.12 fix-round Builder, from review finding **R212**)
 
-**Status: 🟡 OPEN — needs a ruling before LV.13 builds columns.** Nothing is
-blocked *today*: LV.12 is correct as shipped and this is not a defect in it.
+**Status: ✅ RULED — Chris, 2026-08-11 (option A + no phone variant).** Both
+rulings are in full below, and both are folded into delivery plan **D14**.
+Nothing was ever blocked: LV.12 was correct as shipped and this was never a
+defect in it. *(The header read "🟡 OPEN — needs a ruling before LV.13 builds
+columns" until the LV.13 review round — **R222** — even though this very PR
+recorded the ruling and shipped the columns. The recommendation line below was
+already correctly marked overtaken; only the header was stale.)*
 
 **The gap.** The design LAW's *Mode: Side by side* → *Picker* bullet
 (`docs/design/lists/README.md:181`) describes *"a 232px-min grid of selectable
@@ -795,6 +831,32 @@ Chris, not to a Builder.
 
 **A Builder must not build a search, a cap, or a truncation on the strength of
 this entry** — it is filed to be answered, not to be actioned.
+
+#### ✅ RULED — Chris, 2026-08-11: **Option A. Nothing is built; revisit on real usage.**
+
+Side by side gets **no cap, no search field, and no truncation.** The picker
+offers every list, the CTA commits every pick, and the scroller is as long as it
+is. **B is not adopted "when LV.13 lands"** — the recommendation's own second
+clause is overtaken by this ruling; a limit of any kind now needs a fresh ruling
+from Chris, not this entry.
+
+**If the scroller feels wrong at 20 columns, that is a finding to file, not a cap
+to add.** LV.13 built it this way: `ids.map` over the whole comparison, no slice,
+no ceiling.
+
+#### ✅ ALSO RULED — Chris, 2026-08-11: **Side by side gets no phone-specific treatment.**
+
+> *"id say leave the phone version as is"*
+
+The columns scroll horizontally at **every** width — no stacking, no
+single-column collapse, no breakpoint width override, no "compare is desktop
+only" empty state, no warning. A 240px column on a 375px screen is a sideways
+scroll through the columns, and that is the intended behaviour rather than a gap.
+
+The ruling is about what to *build*, not about what to verify: LV.13 still
+checked 375px and reported it (§4). Pinned by
+`side-by-side-columns.test.ts` — "carries no breakpoint override of the column
+width" — so the "fix" this ruling declines cannot arrive later as a tidy-up.
 
 ---
 
@@ -2359,6 +2421,163 @@ This section records decisions made **during** the build.
      user forever. An 18th pin now covers both selections, shown red under each
      break and reverted; §6 carries the probe evidence.
 
+- **LV.13 (2026-08-11) — the columns, and the two rules that had to be shared
+  rather than copied.** **UI/UX only — no migration, no schema change, no new
+  API route**; the budget stays closed at three. Five things worth carrying
+  forward.
+
+  1. **The full-bleed scroller is pinned to the *shell's* gutter, not to a
+     number.** The design LAW's `margin: 0 -36px; padding: 0 36px 8px` only
+     works when the 36 is the page's own horizontal padding. This app's is
+     `px-4 lg:px-7` (`app-shell.tsx`; `/app/lists` with no trailing slash is
+     **not** in `FULL_BLEED_PREFIXES`, so it really is padded) — and 28px *is*
+     36 × 0.8, which is the conversion landing on the token that already
+     existed. The two numbers must move together: a negative margin larger than
+     the padding pushes the whole page into a horizontal scroll, a smaller one
+     stops the strip short and the bleed silently does nothing. **Both halves
+     are pinned, and the break was measured, not reasoned about**: `lg:-mx-10`
+     against `lg:px-7` turned the pin red *and*, live in the browser,
+     `main.scrollWidth 982 > clientWidth 970` — a real page-level horizontal
+     scroll. Reverted; back to `false` and 21/21.
+
+  2. **Two rules moved into `list-buckets.ts` instead of being written twice.**
+     A column and the detail panel now render the same list at the same time, so
+     a second copy of either rule is a chance for them to disagree on screen.
+     * **`bucketHeading(org, bucket)`** — a column's band says `Tier 1`,
+       `Round 4`; the detail view's says `S`, `4`. That is not an inconsistency
+       to tidy up: the LAW forbids the panel's sections repeating the word
+       because the grouping dropdown sits directly above them, and a column has
+       no such dropdown (its grouping is inside the `dots` menu). Only the two
+       *stored* vocabularies take a prefix — `Ungrouped`, `$40 and up` and
+       `Over 20% of budget` are already sentences, and the prefix is keyed off
+       the bucket **key** so an out-of-vocabulary `r31` cannot become
+       "Round Ungrouped".
+     * **`rankMap(buckets)`** — the running `#N`. `useRanks` in `list-body.tsx`
+       is now just its memo. Without this a player could be #9 in the panel and
+       #10 in the column he is being compared against.
+     Both are **executed** in `list-buckets.test.ts` (+6 tests — 4 for
+     `bucketHeading`, 2 for `rankMap`; the file goes 10 → 16), not source-pinned
+     — which is why they are where they are.
+
+  3. **The grouping menu writes to the session store and nothing else.**
+     `list-display-store` is keyed by list id, so `setOrg(thisList, …)` *is*
+     "each column groups independently" with no new state (the prototype does
+     the same, `st.patch(list, { org })`) — and a column and the panel showing
+     the same list agree because they read one value. The menu deliberately does
+     **not** persist `lists.ranking_mode`: the panel's control does, and that
+     write is a restoration of the last `rank_and_tier` writer in the codebase
+     (§3 Q3, LV.7), not a rule about grouping. D3 governs the rest, and a
+     comparison routinely holds lists you do not own, where that write is not
+     yours to make.
+
+  4. **A tick is one tick on one list, and the count is honest about what it
+     knows.** `useDraftMode(listId)` per column, one row in
+     `list_player_drafted` — the fan-out is LV.14's (D12). The header's
+     `N of M left` is derived per column from that column's own rows, which is
+     the count D12 asks for as well. It reads `Loading…` before the rows land
+     and `Could not load` when the read failed, rather than `0 of 0 left`:
+     a headline number claimed over a request that has not answered is
+     CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* on the one
+     screen where that number is the entire point.
+
+  5. **Column headers are named explicitly, because LV.12 warned they would need
+     to be.** `ListThumbnail` is `aria-hidden` and the title sits in a nested
+     span, so each column is a `<section aria-label={title}>` and each `dots`
+     button an `aria-label={`Options for ${title}`}`. Confirmed in the a11y
+     tree, not assumed — `read_page` reads back
+     `button "Options for Consensus WR top 10"`, four named column landmarks.
+
+  **Verification environment, stated rather than implied (R207).** Local stack
+  only: `.claude/launch.json` config **`dev-local`** on port 3123, and the
+  browser's network log shows `GET http://127.0.0.1:54321/auth/v1/user → 200`
+  and the `dev@fieldscout.local` profile id `11111111-…`. Nothing hosted was
+  read or written.
+
+  | Observation | Evidence (local, 1280×900 unless stated) |
+  | --- | --- |
+  | Four columns, top-aligned, different heights, flat with a 1px ink border | matches `screens/side-by-side-columns.png`; `boxShadow: "none"` on all four at rest, `hover:shadow-hard-4` present |
+  | Column geometry | `getComputedStyle` → column `width: 240px`, row `height: 30px` |
+  | Full bleed | scroller margin `-28px/-28px` against padding `28px/28px` at `lg`; `−16/16` at 375 — the shell's own gutter at both |
+  | No page-level horizontal scroll | `document`, `body` and `main` all `scrollWidth === clientWidth`, at 1280 **and** at 375 |
+  | Bands carry colour through, per column | `Tier S · Tier A · Tier B · Tier C · Ungrouped` on one column while another shows `Round 1 · Round 2 · Round 3 · Round 4` — the `tier-*` ramp, red → orange → gold, dark text on gold |
+  | Each column groups independently | the `dots` menu on the round-board column switched it to **Rounds** and no other column moved |
+  | The menu is the LAW's | `Ranked · Tiers · Rounds · Avg cost · Budget %`, separator, `Remove column` — widened to 168px because `Remove column` wrapped at 144 |
+  | One tick, one list | ticked A.J. Brown in the round-board column → that row struck and greyed, header `8 of 8 left` → **`7 of 8 left`**; the *other three* columns all contain A.J. Brown and **none** of them changed. `list_player_drafted` holds exactly **one** row |
+  | Drafted is fill + strike-through, never elevation | row `bg-n-4`, name `text-decoration-line: line-through`, `opacity 0.6`, no shadow |
+  | The mini card is the app's existing one | clicking a name opened `player-window.tsx` with list context (its `Remove` action present on an owned list) |
+  | `Remove column` narrows rather than clears | 4 columns → removed the saved one → 3 remain |
+  | `Change lists` | present in the header only past the picker; clicking it returned to the picker and the button disappeared with it |
+  | 375px, per the ruling | the 240px columns are unchanged and the strip scrolls sideways (`scrollWidth 772 > clientWidth 375`); `touch-action: auto` the whole ancestor chain and no `touchmove` preventDefault, so a swipe pans it; `Change lists` / `New list` wrap onto their own row in the in-page header instead of colliding |
+  | Clean | zero console errors across the run |
+
+  **Both of the column's non-happy states *were* exercised live — the LV.13
+  Reviewer got there, and the method is the deliverable** (**R223**; this
+  paragraph previously recorded them as source-pinned only). Two things are
+  worth carrying into LV.15 – LV.17, which will need exactly this to show a
+  pop-out's loading and error states:
+
+  1. **Why a `fetch` monkey-patch looks installed and still does nothing.**
+     **React Query pauses retries while `document.hasFocus()` is false**, so an
+     unfocused automation tab parks the query in `pending` forever rather than
+     resolving to `error`. Read off the fiber, that state is
+     `status:'pending', fetchStatus:'fetching', failureCount:1,
+     failureReason:'List not found'` — the failure *has* happened and is simply
+     not being surfaced. Dispatching a bubbling `visibilitychange` releases it.
+     A patched `fetch` that appears to be ignored is very often this, not the
+     patch.
+  2. **The route that just works** — make the server say no, from outside the
+     browser:
+     `docker exec supabase_db_fieldscout psql -U postgres -d postgres -c "update lists set deleted_at = now() where id='<id>'"`,
+     **after** the picker's collection query has cached (so the list is still
+     offered), then commit the comparison. `GET /api/lists/<id>` → **404**, and
+     the column renders `Could not load` in the header with *"This list could
+     not be loaded. / List not found"* in the body — **never an empty column**,
+     which is the outcome that would have mattered. `Loading…` was captured at
+     commit, on the way in.
+
+  The branch order — `isError` before `!entries` before rows — is what makes
+  those two distinguishable, and it is now observed rather than only read.
+
+  **Local fixture added, and left in place** for the same reason R215 left
+  LV.12's: `LV13 local fixture — round board`, owned by `dev@fieldscout.local`,
+  8 players carrying `r1`–`r4`, so a *round*-grouped column exists to compare a
+  tier-grouped one against. It is the **only** list on the local stack that can
+  produce a round-grouped column, which is what makes "each column groups
+  independently" observable at all. Local DB only; `supabase db reset` wipes it.
+  The LV.12 saved-list fixture was **not** touched. **The re-creation steps live
+  in `ACTIVE-BUILD.md`'s standing constraints**, beside LV.12's — this entry
+  originally carried them only here, which is the exact placement R215 had
+  corrected one task earlier (**R219**).
+
+  Pinned by `src/components/lists/v2/side-by-side-columns.test.ts` (**22** source
+  pins after the review round's R218) and `list-buckets.test.ts` (**+6**
+  executed — the file goes 10 → 16). **Every assertion in the new file reads the
+  comment-stripped source** — LV.12's review twice found a pin green for the
+  wrong reason, one of them satisfied by a *comment*, and this file documents the
+  decisions its own negative assertions forbid. **Two probes, each shown red and
+  reverted:** `bucketHeading` collapsed back to the value-only rule → 2 red
+  (`expected [ 'S', 'A' ] to deeply equal [ 'Tier S', 'Tier A' ]`); the
+  full-bleed pairing broken to `lg:-mx-10` → 1 red *and* a measured page-level
+  horizontal overflow in the browser. Suite 967 → **994**, and → **995** with
+  R218's added pin. **The arithmetic reconciles**: 21 new source pins + 6 new
+  executed tests = 27 = 994 − 967. *(It read "+10 executed" in two places until
+  the review round — **R221** — which reconciled to nothing and, worse, would
+  have taught the next Builder to trust a stated delta over a counted one.)*
+
+  **One state ships with the copy ahead of it, and the interval is recorded
+  rather than papered over** (**R220**). The picker's sub-line — *"Mark players
+  off as they go in your draft and every column updates"* — is the design's
+  verbatim copy, shipped since LV.12, and **LV.13 is the release that makes it
+  observably false**: ticking A.J. Brown in one column moved that column
+  `2 of 2 left → 1 of 2 left` while the other three columns containing him
+  stayed `aria-pressed="false"` with unchanged counts. That is not a defect in
+  LV.13 — one tick, one list is exactly what D12 assigns to LV.14 — but before
+  LV.13 there were no columns on screen to contradict the sentence, and now there
+  are. **The copy is not to be edited**; **LV.14 discharges it** by making the
+  fan-out real and clearing this note plus the interval paragraph in
+  `side-by-side-picker.tsx`'s JSDoc. Recorded in the plan's §6 **LV.14 row**, so
+  the next Builder reads it in the task text rather than here.
+
 ---
 
 ## 5. Blockers
@@ -3034,6 +3253,74 @@ untouched; D3 selection still session-only; D11 composition unchanged. `route.ts
 received a comment and nothing else. **No browser verification was run this
 round and none is claimed** — nothing user-visible changed, and the honest local
 evidence for the picker remains the R208 run in §4 item 6.
+
+---
+
+### LV.13 — 2026-08-11 (PR #134) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #134 — the Side by
+side columns and the two rulings that sized them — verified against plan v5.3
+§1/§6, D3, D11, D12, D14, the design LAW's* Columns *bullets and the ×0.8 rule.*
+**A great deal was re-verified independently and is not re-opened**: the shared
+extraction is safe (`rankMap` a byte-identical move; `bucketHeading` genuinely
+new, not moved; both surfaces exercised in one session with the panel rendering
+value-only `1·2·3·4` while the column renders `Round 1…`), no fan-out (re-proved
+live — one DB row), the full-bleed probe to the pixel, D11 composition real, the
+schema budget untouched, boards untouched, elevation correct, the verification
+genuinely local, and `type-check` / `lint` / `test:unit` **994** green. *The
+Reviewer also ran five falsifiability probes of its own, each red-then-reverted.*
+**R217–R223: four should-fix, three nits, no blockers.**
+
+***The finding that mattered (R218) — the pin two documents cite as making
+Chris's ruling un-re-addable missed the spelling a developer would actually
+use.*** *`side-by-side-columns.test.ts` forbade `(sm|md|lg|xl):flex-col` — the
+**desktop-first** spelling. The Reviewer changed the scroller to
+`-mx-4 flex flex-col lg:flex-row items-start`, which is the standard
+**mobile-first** way to stack on small screens and exactly the stacking D14
+forbids, and the suite stayed* **21 passed, green**. *The width half was
+genuinely falsifiable (`lg:w-full` → 1 red), so this was a half-built guard
+rather than an absent one — but PROGRESS §3 Q4 and plan D14 both said "no
+stacking… Pinned by `side-by-side-columns.test.ts`", which **overstated** it.
+The reason it is a should-fix and not a nit is social, not technical: Chris ruled*
+"id say leave the phone version as is" *and was told the ruling was pinned. **A
+guard that misses the obvious spelling is worse than no guard, because it is
+documented as protection.***
+
+#### Resolution — 2026-08-12 (fix Builder, same branch `feat/LV13-side-by-side-columns`)
+
+*All four should-fix and all three nits resolved on the same branch; nothing
+deferred, nothing escalated, and* **no behaviour changed anywhere** *— the one
+source file edited outside tests and docs received JSDoc and a comment.*
+*Proof re-run this session:* **`type-check` clean · `lint` exit 0** *(the one
+pre-existing `auction-draft-room.tsx:107` warning) ·* **`test:unit` 55 files /
+995 tests** *(994 → 995: R218's added pin).* `settings-round-trip-db.test.ts`
+*is the known §5 leagues parallel-race flake, outside `test:unit` and in the
+paused build — not chased.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R218** — the no-stacking pin catches only the desktop-first spelling; the Reviewer's mobile-first `flex flex-col lg:flex-row` probe — the stacking D14 forbids — left the suite 21/21 **green**, while two documents cite the pin as what makes the ruling un-re-addable | should-fix | ✅ **Widened, and shown failing three times before being trusted.** The old one-line assertion is split into its own `it` (**21 → 22**) forbidding a breakpoint flex-direction change **in either direction** — `not.toMatch(/(sm\|md\|lg\|xl):flex-(col\|row)/)`, since a `lg:flex-row` exists only to undo a `flex-col` beneath it — **plus** `not.toMatch(/\bflex-col\b/)` scoped to the scroller's own class string. The scoping is load-bearing: `flex-col` is legitimate three times in this file (the column `<section>`, the loading skeleton, the error block), so a file-wide ban would be a false positive. A `scrollerClass()` helper isolates the one element that must never stack by the `-mx-4` no other element carries, and **throws** if it cannot find it — a guard that cannot locate what it guards is broken, not green. **The gap was reproduced first**: the Reviewer's exact probe applied to the *unfixed* pin → **21 passed, green**, confirming the finding rather than taking it on trust. Then, against the fixed pin — **probe 1**, that same `flex flex-col lg:flex-row` → **1 red at the new line 118**; **probe 1b**, a bare `flex-col` with no breakpoint (invisible to the first assertion) → **1 red on the second assertion**, proving both halves carry weight; **probe 2**, `lg:w-full` re-run → **1 red at line 94**, the width half still honest. All three reverted; `git diff` on `side-by-side-columns.tsx` **empty**, 22/22 green |
+| **R220** — the picker's design-verbatim sub-line (*"…and every column updates"*) is **live and false** as of this PR: ticking a player in one column leaves the other three containing him unchanged. The JSDoc at `side-by-side-picker.tsx:45-55` describes **LV.14's** behaviour in the present tense | should-fix | ✅ **Recorded as an interval, in the three places that will be read — and the copy is untouched, as directed.** The JSDoc section is retitled *"The copy's promise, what ships today, and what LV.14 adds"* and now says outright that the sentence is ahead of the behaviour, what LV.13 actually does (`useDraftMode(listId)` per column — one strike, three unmoved headers), that **LV.14 makes it true**, and that the wording is the design's and stays. The JSX comment beside the copy carries the same pointer, so a reader who lands on line 132 is not left to infer. **The plan's §6 LV.14 row now carries the obligation as task text** — make the sentence true, then clear this note and the JSDoc paragraph — because an obligation stated only where the *previous* Builder wrote it is R209's finding repeating. §4's LV.13 entry records the measurement (`2 of 2 left → 1 of 2 left` in one column, `aria-pressed="false"` and unchanged counts in the other three) and says plainly that this is not a defect in LV.13: one tick, one list is what D12 assigns to LV.14. Plan → **v5.4**. `side-by-side-columns.tsx` was already clean and is unchanged |
+| **R217** — **D14 was inserted between D13's body and D13's closing paragraph**, so LV.15's *"the app-shell host renders nothing when no window is open"* now reads as part of a decision about column caps and phone variants | should-fix | ✅ **Moved back**, to exactly where `git show main:…` has it — D13's third paragraph, directly after *"…a pop-out reads the same server source as everything else."* D13 has its conclusion again and D14 no longer ends on a non-sequitur. Nothing was lost while it was misplaced (`ACTIVE-BUILD.md` and §6's LV.15 row both carry the clause), which is why this is a should-fix on *readability of the law* rather than a blocker. D14's tail instead now records that its own no-stacking pin was widened by R218 — the decision text and the guard it cites no longer disagree. Plan → **v5.4**, with a changelog entry naming the insertion so the same edit is not made again |
+| **R219** — the new deliberately-retained local fixture is documented **only** in PROGRESS §4 — *precisely the placement R215 corrected one task earlier*; `git diff --stat main...HEAD -- docs/specs/ACTIVE-BUILD.md` was empty | should-fix | ✅ **One bullet in `ACTIVE-BUILD.md`'s standing constraints, directly beside LV.12's**, in the same form R215 used: what it is (`LV13 local fixture — round board`, `dev@fieldscout.local`, 8 players, `r1`–`r4`), **why it is load-bearing** (the only list on the local stack that can render a round-grouped column — without it every column groups by tier and a build that ignored per-column grouping entirely would produce identical-looking evidence), that `supabase db reset` destroys it, and the steps to re-create it. **The prescribed SQL was executed, not composed**: `docker exec supabase_db_fieldscout psql … "update list_players set tier = 'r' \|\| ((position - 1) / 2 + 1) where list_id = '<id>'"` → `UPDATE 8`, reproducing the fixture's exact `r1,r1,r2,r2,r3,r3,r4,r4` — local stack only, and idempotent against the live fixture. It also names why `r1`–`r4` are legal (LV.1.5's widened CHECK, schema exception (b)) so the next Builder does not read the fixture as a fourth schema change. §4's entry now points here rather than holding the steps itself |
+| **R221** — the ledger states the executed-test delta as **"+10"** twice, contradicting its own suite total | nit | ✅ **Corrected to +6 in both places, with the arithmetic written out so it can be checked rather than trusted.** Counted, not inferred: `list-buckets.test.ts` `it(` count **10 on `main` → 16 on branch = +6** (4 `bucketHeading`, 2 `rankMap`); new file 21; **21 + 6 = 27 = 994 − 967**, the delta the same entry and the PR body both report. 21 + 10 = 31 reconciles with nothing. The second site also now reads **22** source pins, post-R218. A parenthetical says why it is worth fixing a number that harmed nothing: a stated delta that disagrees with a counted one teaches the next Builder to trust the statement |
+| **R222** — §3 Q4's status header still read *"🟡 OPEN — needs a ruling before LV.13 builds columns"* though this PR recorded the ruling and shipped the columns | nit | ✅ **Applied.** Now *"✅ RULED — Chris, 2026-08-11 (option A + no phone variant)"*, cross-referencing D14 and noting that the recommendation line below was already correctly marked overtaken — only the header was stale. §1's *"All four questions were ruled"* line already agreed with the fix. **R216's own row above is left as written** (it says Q4's status *stays* open): it is the record of what was true at that time, not a live instruction — the same rule that round applied to R212's row |
+| **R223** — §4's disclosure that the loading and error branches are "source-pinned only" is **out of date**; the Reviewer exercised both live and found the root cause of the failed `fetch` patch | nit | ✅ **Replaced with the method, aimed at the tasks that will need it.** §4 now records (1) **why a `fetch` monkey-patch looks installed and does nothing** — React Query pauses retries while `document.hasFocus()` is false, so an unfocused automation tab parks the query in `pending` forever (`status:'pending', fetchStatus:'fetching', failureCount:1, failureReason:'List not found'` off the fiber); a bubbling `visibilitychange` releases it — and (2) **the route that works**: soft-delete via `docker exec … psql` *after* the picker's collection query has cached, then commit the comparison → `GET /api/lists/<id>` → **404** → `Could not load` in the header and *"This list could not be loaded. / List not found"* in the body, **never an empty column**. `Loading…` was captured at commit. Written as a technique the **LV.15 – LV.17** pop-out states inherit, since they face the same problem, rather than as a gap in LV.13's evidence |
+
+**Not changed, and why.** **No behaviour, anywhere.** The columns, the
+full-bleed pairing, the per-column grouping, the one-tick-one-list mark, the
+count's three states, every ×0.8 conversion and the two Chris rulings are
+untouched — the review upheld all of them, and this round is a guard, a
+disclosure and four documentation corrections. `side-by-side-columns.tsx` ends
+the round **byte-identical to how it was reviewed** (all three R218 probes
+reverted, `git diff` empty). The schema budget is still the ruled three — no
+migration, no column, no new route; boards untouched; D3 still session-only; D11
+composition unchanged. **The one write this round made to any database was to
+the local stack**, and it was the idempotent `UPDATE 8` that proves R219's
+re-creation SQL runs — it set the fixture's tiers to the values they already
+held. **No new browser verification was run and none is claimed**: nothing
+user-visible changed, and the live evidence for the columns remains the §4 run,
+now including the loading/error states the Reviewer contributed.
 
 ---
 

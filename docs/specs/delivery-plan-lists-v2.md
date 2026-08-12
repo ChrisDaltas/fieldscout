@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.2 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v5.4 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -581,6 +581,34 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   no wrapper, no portal, no layout box — when no window is open, and that is a
   test, not an intention.
 
+- **D14 — Side by side has no ceiling and no phone variant.**
+  *(Round 2, added v5.3. Ruled by Chris 2026-08-11 — `PROGRESS-lists-v2.md` §3
+  **Q4**, filed by the LV.12 fix-round Builder from review finding R212.)*
+
+  **No cap, no search field, no truncation.** The picker offers every list the
+  account holds, the CTA commits every pick, and the column scroller is as long
+  as it is. Q4's own recommendation ended *"B when LV.13 lands"* — a cap on the
+  comparison — and that clause is **overtaken**: a limit of any kind now needs a
+  fresh ruling, not Q4.
+
+  **No phone-specific treatment either** — *"id say leave the phone version as
+  is"*. The 240px columns and the full-bleed horizontal scroller are the same at
+  every width; you scroll sideways through the columns on a 375px screen, and
+  that is the intended behaviour rather than a gap. No stacking, no breakpoint
+  width override, no desktop-only empty state.
+
+  What this does **not** excuse is verification. The ruling is about what to
+  build; LV.13 still checked 375px and proved the things that would be real bugs
+  — the strip scrolls with touch, the page body does not scroll horizontally
+  (the full-bleed `margin`/`padding` trick is exactly where that leaks), and the
+  header actions wrap rather than collide. Both halves are pinned by
+  `src/components/lists/v2/side-by-side-columns.test.ts`, so the "fix" this
+  decision declines cannot arrive later as a tidy-up. **The no-stacking half of
+  that pin was widened at the LV.13 review (R218)**: it originally forbade only
+  `lg:flex-col`, which left `flex flex-col lg:flex-row` — the mobile-first
+  spelling of the same stacking, and the one a developer actually reaches for —
+  passing green. Both spellings are now forbidden, shown red and reverted.
+
 ---
 
 ## 4. Task breakdown (dependency order)
@@ -690,8 +718,8 @@ behaviour is the failure this build already paid for once.**
 | id | task | depends on |
 | --- | --- | --- |
 | LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). ~~Honours the My lists / Saved tab~~ — **see the erratum below**. **LANDED 2026-08-11** | LV.9 |
-| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list`, and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes (see the erratum below) | LV.12 |
-| LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route** | LV.13, LV.1.3 |
+| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list`, and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes (see the erratum below). **LANDED 2026-08-11** — 300px → **240px** at this app's ×0.8, and the full-bleed margin is pinned to the shell's own gutter (`-mx-4 px-4 / lg:-mx-7 lg:px-7`) rather than to a converted number, because the two have to move together or the page gains a horizontal scroll | LV.12 |
+| LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route**. **This task discharges a live-but-false promise**: the picker's sub-line — *"Mark players off as they go in your draft and every column updates"* — is the design's verbatim copy and has shipped since LV.12, but it is **true only once LV.14 lands** (LV.13 review, **R220**). Until then a tick moves one column and the others do not budge. LV.14 must (a) make the sentence true, and (b) clear the interval note from `side-by-side-picker.tsx`'s JSDoc and from `PROGRESS-lists-v2.md` §4. **The copy itself is not to be edited** — the fix is the behaviour | LV.13, LV.1.3 |
 
 > **Erratum (v5.1, LV.12 Builder 2026-08-11) — the picker does *not* honour the
 > My lists / Saved tab, and the v5.0 row that said so was wrong against the
@@ -757,6 +785,34 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.4 (2026-08-12)** — **LV.13's review round: D13 gets its conclusion back,
+  and LV.14 inherits a promise the copy is already making** (**R217**, **R220**).
+  D14 was inserted *between* D13's body and D13's closing paragraph, so
+  *"the app-shell host renders nothing when no window is open"* — a statement
+  about LV.15 — ended up reading as part of a decision about column caps and
+  phone variants. The paragraph is moved back above the D14 bullet, where it has
+  been since v5.0; nothing was lost in the meantime (`ACTIVE-BUILD.md` and §6's
+  LV.15 row both carry the clause), but D13 was left without its conclusion and
+  D14 ended on a non-sequitur. **§6's LV.14 row additionally now carries the
+  R220 obligation**: the picker's design-verbatim sub-line has promised *"every
+  column updates"* since LV.12, and as of LV.13 that is **live and false** — one
+  tick moves one column. Nothing prompted it before, because before LV.13 there
+  were no columns to contradict it. LV.14 discharges it by making the sentence
+  true and clearing the interval note; the copy itself is not to be edited.
+  D14's own text also records that its no-stacking pin was widened (**R218**).
+  Editorial plus one forward obligation: no scope, dependency or decision
+  changed.
+
+- **v5.3 (2026-08-11)** — **LV.13, the columns, landed, and §3 gains D14** —
+  the two rulings Chris took on Side by side's scale the same day
+  (`PROGRESS-lists-v2.md` §3 **Q4**): **no cap, no search field, no truncation**,
+  and **no phone-specific treatment**. Both are now decisions rather than open
+  questions, so a later task cannot re-derive a limit from the scale worry Q4
+  was filed over. §6's LV.13 row is marked landed and carries the one number the
+  task had to *choose* rather than convert — the full-bleed margin is pinned to
+  the shell's real gutter, not to 36 × 0.8 in the abstract. No scope, dependency
+  or other decision changed.
 
 - **v5.2 (2026-08-11)** — **LV.13's row now carries the `ComparisonPending`
   deletion** (LV.12 review, **R209**). The obligation already existed in four

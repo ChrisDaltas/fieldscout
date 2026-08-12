@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 
-import { budgetShare, buildBuckets } from './list-buckets'
+import { bucketHeading, budgetShare, buildBuckets, rankMap } from './list-buckets'
 
 /**
  * Pins the two decisions in `list-buckets.ts` that are easy to "simplify" back
@@ -177,6 +177,93 @@ describe('buildBuckets', () => {
     // "Under 5%" is the fourth band, so it keeps tier-4 even though the two
     // bands above it were dropped.
     expect(buckets[1].className).toContain('tier-4')
+  })
+})
+
+/**
+ * **LV.13.** A Side by side column has no grouping dropdown above it — its
+ * grouping is inside the header's `dots` menu — so its band headers carry the
+ * word, which is what `screens/side-by-side-columns.png` draws (`Tier 1`,
+ * `Round 4`). The detail view's headers still carry the value alone, and that
+ * difference is the *whole* reason this function exists: collapsing the two
+ * spellings back into one breaks whichever surface loses.
+ */
+describe('bucketHeading — the standalone label a column needs', () => {
+  const headings = (org: Parameters<typeof bucketHeading>[0], entries: ListPlayerWithPlayer[]) =>
+    buildBuckets({ org, entries, bandLabels: NO_LABELS, budget: 200 }).map((bucket) =>
+      bucketHeading(org, bucket),
+    )
+
+  it('prefixes the two stored vocabularies and nothing else', () => {
+    expect(headings('tier', [entry('1', { tier: 'S' }), entry('2', { tier: 'A' })])).toEqual([
+      'Tier S',
+      'Tier A',
+    ])
+    expect(headings('round', [entry('1', { tier: 'r1' }), entry('2', { tier: 'r10' })])).toEqual([
+      'Round 1',
+      'Round 10',
+    ])
+  })
+
+  it('leaves labels that are already sentences alone', () => {
+    // Ungrouped, the cost bands and the budget bands all read as words already;
+    // "Tier Ungrouped" and "Round $40 and up" are what a blanket prefix gives.
+    expect(headings('tier', [entry('1', { tier: 'S' }), entry('2')])).toEqual([
+      'Tier S',
+      'Ungrouped',
+    ])
+    expect(headings('cost', [entry('1', { cost: 63 })])[0]).toBe('$40 and up')
+    expect(headings('budget', [entry('1', { cost: 63 })])[0]).toBe('Over 20% of budget')
+  })
+
+  it('plain rank draws no band at all', () => {
+    expect(headings('rank', [entry('1'), entry('2')])).toEqual([null])
+  })
+
+  /**
+   * The prefix is keyed off the bucket **key**, not off the org alone, so a key
+   * the vocabulary does not contain cannot be dressed up as a round. `r31` is
+   * outside migration 081's CHECK, so it reaches Ungrouped — and must stay a
+   * word there rather than becoming "Round Ungrouped".
+   */
+  it('an out-of-vocabulary key is not prefixed on the strength of the mode', () => {
+    expect(headings('round', [entry('1', { tier: 'r30' }), entry('2', { tier: 'r31' })])).toEqual([
+      'Round 30',
+      'Ungrouped',
+    ])
+  })
+})
+
+/**
+ * **LV.13.** `#N` is a running number across every bucket, and now two surfaces
+ * render it for the same list — the detail panel's three view styles and a
+ * comparison column. One rule, so a player cannot be #9 in the panel and #10 in
+ * the column he is being compared against.
+ */
+describe('rankMap', () => {
+  it('numbers across bucket boundaries, in render order', () => {
+    const entries = [
+      entry('1', { tier: 'A' }),
+      entry('2', { tier: 'S' }),
+      entry('3', { tier: 'A' }),
+      entry('4'),
+    ]
+    const buckets = buildBuckets({ org: 'tier', entries, bandLabels: NO_LABELS, budget: 200 })
+
+    // Sections render S, A, Ungrouped — so the numbering follows *that* order,
+    // not the array order the entries arrived in.
+    expect(buckets.map((b) => b.label)).toEqual(['S', 'A', 'Ungrouped'])
+    const ranks = rankMap(buckets)
+    expect([...ranks.entries()].sort()).toEqual([
+      ['1', 2],
+      ['2', 1],
+      ['3', 3],
+      ['4', 4],
+    ])
+  })
+
+  it('is empty for an empty list rather than absent', () => {
+    expect(rankMap([]).size).toBe(0)
   })
 })
 
