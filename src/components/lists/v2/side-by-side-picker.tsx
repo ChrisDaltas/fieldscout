@@ -42,23 +42,24 @@ import { ListCoverTile } from './cover-tile'
  * local deviation, and `side-by-side-picker.test.ts` pins it so a later
  * "tidy-up" cannot quietly reinstate the filter.
  *
- * ## The copy's promise, what ships today, and what LV.14 adds
+ * ## The copy's promise, and what it means
  *
  * The sub-line — *"Mark players off as they go in your draft and every column
- * updates"* — is the design's own copy and ships verbatim.
+ * updates"* — is the design's own copy, ships verbatim, and **describes what
+ * happens**: a tick writes across every column in the comparison that contains
+ * the player, so a player sitting in four columns strikes through in all four
+ * and all four headers move. That is **LV.14** (plan §6, **D12**), and the
+ * mechanism is `drafted-fan-out.ts`.
  *
- * **Today it is ahead of the behaviour, and that interval is deliberate**
- * (LV.13 review, **R220**). As of LV.13 a tick is *one tick on one list*:
- * `side-by-side-columns.tsx` marks through `useDraftMode(listId)` for the column
- * you clicked in, so a player sitting in four columns strikes through in one and
- * the other three headers do not move. **LV.14 is what makes the sentence true**
- * — plan §6, D12 — and discharging this note is part of that task's row. Until
- * it lands, do not read the copy as a description of shipped behaviour, and do
- * not "fix" it: the wording is the design's and stays.
+ * *(It was ahead of the behaviour between LV.12 and LV.14 — a tick moved one
+ * column and the others did not budge — and that interval was recorded here
+ * rather than papered over, on the rule that a live promise the build has not
+ * kept yet is a fact the next reader needs. LV.13 review **R220**; discharged by
+ * LV.14, which is why this is a parenthesis and not a section.)*
  *
- * What the sentence will never mean is a **global** mark. It is bounded because
- * **the comparison set is the draft** (**D12**): LV.14 fans a drafted tick out
- * across exactly the lists in this comparison — every column on screen — and no
+ * What the sentence does **not** mean is a **global** mark. It is bounded
+ * because **the comparison set is the draft** (**D12**): the fan-out reaches
+ * exactly the lists in this comparison — every column on screen — and no
  * further. The handoff's global `toggleDrafted` (*"sets the flag on that player
  * in every list that contains him"*) is **overridden** by Chris, 2026-08-10:
  * *"marking a player as drafted is per user, per list… players will have
@@ -137,9 +138,9 @@ export function SideBySidePicker({
           Pick the lists to compare
         </h4>
         {/* The design's own sub-line, verbatim. "Every column updates" is a
-            promise about the comparison, not about your account — and it is
-            true from LV.14, not from LV.13. See the header note above (D12,
-            R220) before treating it as a description of today. */}
+            promise about the comparison, not about your account: the fan-out
+            reaches every column on screen that holds the player and no list
+            outside the comparison (LV.14, D12 — `drafted-fan-out.ts`). */}
         <p className="mt-1 max-w-[416px] text-[10.5px] font-medium leading-snug text-n-3">
           They show up as columns across the page. Mark players off as they go in your draft and
           every column updates.

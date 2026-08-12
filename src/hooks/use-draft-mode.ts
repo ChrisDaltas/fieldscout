@@ -93,6 +93,34 @@ import { useToast } from '@/hooks/use-toast'
  *     contradicted the screen. It now hangs off the QueryClient
  *     (`readLandedFlagFor`), keyed per list, and is dropped when React Query
  *     removes the cache entry it vouched for.
+ *
+ * **UPDATED AT LV.14 — a second caller, and the two things it needed.** Side by
+ * side now fans a tick out across every column in the comparison
+ * (`drafted-fan-out.ts`, plan **D12**). That is N of *these* hooks, one per
+ * list, writing at once — and it needed exactly two additions, both of which
+ * leave the single-list path (`list-detail-panel.tsx`) byte-for-byte unchanged:
+ *
+ *   * **`setDrafted(playerId, drafted, { notify })`** — the same mutation
+ *     `toggleDrafted` already drives, with the desired state supplied rather
+ *     than derived, and awaited so the caller can tell which of its N writes
+ *     landed. `notify: false` suppresses **only the toast**, never the
+ *     rollback: the fan-out reports once for the whole gesture, because
+ *     `use-toast.ts` sets `TOAST_LIMIT = 1` and N per-column toasts would be
+ *     N−1 *invisible* ones — the single surviving one naming no column. A
+ *     failed write still rolls its own column back, which is D12's
+ *     "partial failure must not lie" and is the reason the rollback sits
+ *     **above** the `notify` branch in `markMutationOptions`, not inside it.
+ *   * **`desiredDraftedFor(playerId)`** — the state a tap on *this* list is
+ *     asking for, which the fan-out reads from the column that was clicked and
+ *     then writes to every column. `toggleDrafted` now goes through it too, so
+ *     there is one decision rather than two copies of it.
+ *
+ * **What the fan-out deliberately does NOT get** is a way to forge `hasRead`.
+ * N optimistic `setQueryData` writes are still N cache writes, and the landing
+ * flag is still raised only by the `queryFn` — so a fan-out that marks into a
+ * column whose own drafted read failed leaves that column's `hasRead` false and
+ * its *Clear drafted* still refused. That is R195's rule holding under the new
+ * caller rather than being re-argued.
  */
 
 /** Draft mode's on/off toggle — a view state of one tab, never server state. */
@@ -494,6 +522,94 @@ export function draftedQueryOptions(listId: string, signals?: DraftedReadSignals
   }
 }
 
+/**
+ * What one mark asks for. `notify` is **LV.14**: the Side by side fan-out writes
+ * N of these for one click and reports the whole gesture once, so it opts out of
+ * the per-column toast — and *only* of the toast. See `markMutationOptions`.
+ */
+export interface SetMarkVariables {
+  playerId: string
+  drafted: boolean
+  /** Default (and `undefined`) = this write reports its own failure. */
+  notify?: boolean
+}
+
+/** What `onMutate` hands `onError` — the marks as they were before the tick. */
+export interface MarkMutationContext {
+  previous: string[] | undefined
+}
+
+/**
+ * Put this list's marks back the way they were.
+ *
+ * `undefined` means the cache held **nothing** before the tick, and writing an
+ * empty array there would be a claim ("no marks") the read never made — so the
+ * entry is removed instead, which also drops the landing it vouched for (R200,
+ * via `readLandedFlagFor`'s subscription).
+ */
+export function rollbackDrafted(
+  client: QueryClient,
+  listId: string,
+  previous: string[] | undefined,
+): void {
+  const key = draftedKeys.list(listId)
+  if (previous === undefined) client.removeQueries({ queryKey: key, exact: true })
+  else client.setQueryData<string[]>(key, previous)
+}
+
+/**
+ * The mark mutation, **exported as options** for the same reason
+ * `draftedQueryOptions` is: a decision left inline in the hook body is pinned by
+ * nothing this repo can run (R191 — no jsdom, so the hook body is unreachable).
+ *
+ * **LV.14 is what made that cost real.** D12 requires that when one tick writes
+ * to five lists and one write fails, *that column and no other* rolls back. The
+ * mechanism is per-list by construction — one cache entry per list
+ * (`draftedKeys`), one of these mutations per column — but "by construction" is
+ * exactly the kind of claim this build has been burned by (R190/R195/R199 were
+ * each a mechanism that was right in the middle and wrong at an edge). Now the
+ * real options can be driven through a real `QueryClient` in the suite, five
+ * caches at a time, and the isolation is measured instead of argued.
+ *
+ * **The rollback is unconditional; only the report is optional.** They are two
+ * lines in one handler and the order is load-bearing: a `notify: false` write
+ * that skipped the rollback would leave the fan-out's optimistic strike on
+ * screen over a row the server refused — the UI showing five struck when three
+ * landed, which is the precise thing D12 forbids.
+ */
+export function markMutationOptions(
+  client: QueryClient,
+  listId: string,
+  report: (error: Error) => void,
+) {
+  const key = draftedKeys.list(listId)
+  return {
+    mutationFn: ({ playerId, drafted }: SetMarkVariables) => postDrafted(listId, playerId, drafted),
+    onMutate: async ({ playerId, drafted }: SetMarkVariables): Promise<MarkMutationContext> => {
+      await client.cancelQueries({ queryKey: key })
+      const previous = client.getQueryData<string[]>(key)
+      client.setQueryData<string[]>(key, nextDraftedIds(previous, playerId, drafted))
+      return { previous }
+    },
+    onError: (
+      error: Error,
+      variables: SetMarkVariables,
+      context: MarkMutationContext | undefined,
+    ) => {
+      // Unconditional, and first. A mark that stays on screen after the server
+      // refused it is the whole of D12's "partial failure must not lie".
+      rollbackDrafted(client, listId, context?.previous)
+      // Only the *telling* is the caller's to take over (LV.14's fan-out
+      // reports once for N writes). A mark that silently un-sticks would still
+      // be "nothing happened means it worked" — so the default is to say so.
+      if (variables.notify !== false) report(error)
+    },
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: key })
+    },
+  }
+}
+
 export function useDraftMode(listId: string) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -541,14 +657,6 @@ export function useDraftMode(listId: string) {
   // referentially stable, because consumers pass it straight into children.
   const drafted = useMemo(() => toDraftedSet(marks.data), [marks.data])
 
-  const rollback = useCallback(
-    (previous: string[] | undefined) => {
-      if (previous === undefined) qc.removeQueries({ queryKey: key, exact: true })
-      else qc.setQueryData<string[]>(key, previous)
-    },
-    [qc, key],
-  )
-
   const failed = useCallback(
     (error: Error) => {
       // A mark that silently un-sticks is exactly "nothing happened means it
@@ -562,23 +670,7 @@ export function useDraftMode(listId: string) {
     [toast],
   )
 
-  const setMark = useMutation({
-    mutationFn: ({ playerId, drafted: next }: { playerId: string; drafted: boolean }) =>
-      postDrafted(listId, playerId, next),
-    onMutate: async ({ playerId, drafted: next }) => {
-      await qc.cancelQueries({ queryKey: key })
-      const previous = qc.getQueryData<string[]>(key)
-      qc.setQueryData<string[]>(key, nextDraftedIds(previous, playerId, next))
-      return { previous }
-    },
-    onError: (error, _vars, ctx) => {
-      rollback(ctx?.previous)
-      failed(error)
-    },
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: key })
-    },
-  })
+  const setMark = useMutation(markMutationOptions(qc, listId, failed))
 
   const clearMarks = useMutation({
     mutationFn: () => deleteDrafted(listId),
@@ -589,7 +681,7 @@ export function useDraftMode(listId: string) {
       return { previous }
     },
     onError: (error, _vars, ctx) => {
-      rollback(ctx?.previous)
+      rollbackDrafted(qc, listId, ctx?.previous)
       failed(error)
     },
     onSettled: () => {
@@ -598,17 +690,47 @@ export function useDraftMode(listId: string) {
   })
 
   const setMarkMutate = setMark.mutate
+  const setMarkMutateAsync = setMark.mutateAsync
   const clearMarksMutate = clearMarks.mutate
+
+  /**
+   * The state a tap on THIS list is asking for.
+   *
+   * Read from the cache, not from a render-time closure, so it is computed
+   * against the freshest marks this tab knows about — the decision itself lives
+   * in `desiredStateFor`, where the suite can falsify it (R191).
+   *
+   * **LV.14 reads it from the column that was clicked** and then writes that one
+   * answer to every column in the comparison, which is what makes an untick
+   * symmetric with a tick (D12, consequence 4): the gesture carries a state, not
+   * a flip, so columns that disagreed converge instead of inverting.
+   */
+  const desiredDraftedFor = useCallback(
+    (playerId: string) =>
+      desiredStateFor(qc.getQueryData<string[]>(draftedKeys.list(listId)), playerId),
+    [qc, listId],
+  )
 
   const toggleDrafted = useCallback(
     (playerId: string) => {
-      // Read the cache, not a render-time closure, so the desired state is
-      // computed against the freshest marks this tab knows about. The decision
-      // itself lives in `desiredStateFor`, where the suite can falsify it.
-      const current = qc.getQueryData<string[]>(draftedKeys.list(listId))
-      setMarkMutate({ playerId, drafted: desiredStateFor(current, playerId) })
+      setMarkMutate({ playerId, drafted: desiredDraftedFor(playerId) })
     },
-    [qc, listId, setMarkMutate],
+    [desiredDraftedFor, setMarkMutate],
+  )
+
+  /**
+   * Set one player's state on this list explicitly, and **await it** — LV.14.
+   *
+   * `toggleDrafted` fires and forgets because one tick on one list has nothing
+   * to aggregate. A fan-out does: it needs to know which of its N writes landed
+   * before it can tell the user anything true, so this returns the promise and
+   * lets `Promise.allSettled` sort the outcomes out. `notify: false` hands the
+   * telling to that caller; the rollback stays here either way.
+   */
+  const setDrafted = useCallback(
+    (playerId: string, drafted: boolean, options?: { notify?: boolean }) =>
+      setMarkMutateAsync({ playerId, drafted, notify: options?.notify }),
+    [setMarkMutateAsync],
   )
 
   const refuseClear = useCallback(
@@ -641,6 +763,10 @@ export function useDraftMode(listId: string) {
     setEnabled,
     drafted,
     toggleDrafted,
+    /** LV.14 — the explicit-state write the Side by side fan-out drives. */
+    setDrafted,
+    /** LV.14 — what a tap here would ask for, without taking it. */
+    desiredDraftedFor,
     clearDrafted,
   }
 }
