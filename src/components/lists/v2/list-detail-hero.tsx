@@ -35,6 +35,17 @@ import { formatCreated } from './list-stats'
  * The Share button is brand lime carrying ink text. `Button`'s `lime` variant
  * fills `brand-strong` (the deep green), so the fill is overridden here rather
  * than by minting a variant on the shared primitive.
+ *
+ * ## Two surfaces, one hero (LV.6)
+ *
+ * The public share view (`/u/[username]/lists/[slug]`) renders the same cover,
+ * the same name and the same byline — and a completely different right-hand
+ * cluster, because **expand / pop out / close are affordances of the app's
+ * panel and there is no panel on a standalone page**. So the identity half
+ * lives in {@link ListHeroShell} with the cluster as a slot, and
+ * {@link ListDetailHero} is that shell plus the panel's own buttons. Copying
+ * the hero for the public page instead would have forked the byline, the
+ * rename affordance and the cover in one move.
  */
 
 export interface HeroOwner {
@@ -42,37 +53,38 @@ export interface HeroOwner {
   avatarUrl: string | null
 }
 
-interface HeroProps {
+interface HeroShellProps {
   list: ListWithDetails
   owner: HeroOwner
-  canEdit: boolean
-  expanded: boolean
-  onToggleExpanded: () => void
-  onClose: () => void
-  onRename: (title: string) => void
-  onShare: () => void
-  onDuplicate: () => void
-  onSetPrivate: (isPrivate: boolean) => void
-  onClearDrafted: () => void
-  onDelete: () => void
+  /** Inline rename (owner only). Without `onRename` the pencil never renders. */
+  canRename: boolean
+  onRename?: (title: string) => void
+  /**
+   * Heading level for the list name. `h3` inside the app panel, where the page
+   * already owns the `h1`; `h1` on the public share page, where the list name
+   * *is* the page's subject and an SEO-critical route (plan **D7**) must say so.
+   */
+  heading?: 'h1' | 'h3'
+  /** The right-hand action cluster. Entirely surface-specific. */
+  actions: React.ReactNode
 }
 
-export function ListDetailHero({
+/**
+ * Cover + name + byline + an action slot. The half of the hero that is the
+ * same whoever is looking.
+ */
+export function ListHeroShell({
   list,
   owner,
-  canEdit,
-  expanded,
-  onToggleExpanded,
-  onClose,
+  canRename,
   onRename,
-  onShare,
-  onDuplicate,
-  onSetPrivate,
-  onClearDrafted,
-  onDelete,
-}: HeroProps) {
+  heading = 'h3',
+  actions,
+}: HeroShellProps) {
   const [renaming, setRenaming] = React.useState(false)
   const [draft, setDraft] = React.useState(list.title)
+  const renameable = canRename && Boolean(onRename)
+  const Heading = heading
 
   React.useEffect(() => {
     setDraft(list.title)
@@ -81,7 +93,7 @@ export function ListDetailHero({
 
   const save = () => {
     const next = draft.trim()
-    if (next && next !== list.title) onRename(next)
+    if (next && next !== list.title) onRename?.(next)
     setRenaming(false)
   }
 
@@ -129,10 +141,10 @@ export function ListDetailHero({
           </div>
         ) : (
           <div className="group/name inline-flex flex-wrap items-center gap-1.5">
-            <h3 className="text-[16px] font-bold leading-tight tracking-[-0.01em]">
+            <Heading className="text-[16px] font-bold leading-tight tracking-[-0.01em]">
               {list.title}
-            </h3>
-            {canEdit && (
+            </Heading>
+            {renameable && (
               <button
                 type="button"
                 title="Rename"
@@ -167,8 +179,49 @@ export function ListDetailHero({
         </div>
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <Button
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>
+    </div>
+  )
+}
+
+interface HeroProps {
+  list: ListWithDetails
+  owner: HeroOwner
+  canEdit: boolean
+  expanded: boolean
+  onToggleExpanded: () => void
+  onClose: () => void
+  onRename: (title: string) => void
+  onShare: () => void
+  onDuplicate: () => void
+  onSetPrivate: (isPrivate: boolean) => void
+  onClearDrafted: () => void
+  onDelete: () => void
+}
+
+export function ListDetailHero({
+  list,
+  owner,
+  canEdit,
+  expanded,
+  onToggleExpanded,
+  onClose,
+  onRename,
+  onShare,
+  onDuplicate,
+  onSetPrivate,
+  onClearDrafted,
+  onDelete,
+}: HeroProps) {
+  return (
+    <ListHeroShell
+      list={list}
+      owner={owner}
+      canRename={canEdit}
+      onRename={onRename}
+      actions={
+        <>
+          <Button
           variant="lime"
           size="sm"
           shadow
@@ -249,7 +302,8 @@ export function ListDetailHero({
         <Button variant="stroke" size="icon-sm" onClick={onClose} title="Close list">
           <Icon name="close" size={13} />
         </Button>
-      </div>
-    </div>
+        </>
+      }
+    />
   )
 }

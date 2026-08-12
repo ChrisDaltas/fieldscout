@@ -32,6 +32,7 @@ import {
 } from '@/stores/list-display-store'
 
 import { bucketDrop, buildBuckets, type Bucket } from './list-buckets'
+import { EmptyListState } from './list-row-parts'
 import { ListBody, type RowHandlers } from './list-body'
 import { planDrop, positionsFor, type DropTarget } from './list-reorder'
 import { ListCommentsTab } from './list-comments-tab'
@@ -217,6 +218,10 @@ export function ListDetailPanel({
 
   const handlers: RowHandlers = {
     canEdit,
+    // Signed in by construction — `/app/**` is behind auth — so a drafted mark
+    // always has a `user_id` to hang on. The public share view is the surface
+    // that passes `false` (LV.6).
+    canMark: true,
     isDrafted: (playerId) => drafted.has(playerId),
     onToggleDrafted: (playerId) => toggleDrafted(playerId),
     onEditNote: () =>
@@ -356,7 +361,7 @@ export function ListDetailPanel({
           />
 
           {list.players.length === 0 ? (
-            <EmptyList canEdit={canEdit} />
+            <EmptyListState canEdit={canEdit} />
           ) : (
             <ListBody
               buckets={buckets}
@@ -408,7 +413,11 @@ export function ListDetailPanel({
         </TabsContent>
 
         <TabsContent value="comments" className="mt-0">
-          <ListCommentsTab listId={listId} viewer={viewer} />
+          <ListCommentsTab
+            listId={listId}
+            viewer={viewer}
+            commentsEnabled={list.comments_enabled ?? true}
+          />
         </TabsContent>
       </Tabs>
     </PanelShell>
@@ -451,20 +460,6 @@ function DetailSkeleton() {
       {[0, 1, 2, 3, 4].map((row) => (
         <div key={row} className="h-12 w-full rounded-sm bg-n-4" />
       ))}
-    </div>
-  )
-}
-
-function EmptyList({ canEdit }: { canEdit: boolean }) {
-  return (
-    <div className="flex flex-col items-center gap-2 border border-dashed border-ink px-6 py-10 text-center">
-      <Icon name="list" size={20} className="text-n-3" />
-      <p className="text-[13px] font-bold">No players on this list yet.</p>
-      <p className="max-w-[300px] text-[11px] font-medium text-n-3">
-        {canEdit
-          ? 'Use Add players to search the pool and start building the board.'
-          : 'The owner has not added anyone yet.'}
-      </p>
     </div>
   )
 }

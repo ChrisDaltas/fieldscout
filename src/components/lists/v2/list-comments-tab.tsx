@@ -26,14 +26,33 @@ import { formatRelative } from './list-stats'
  *   control is inert rather than optimistically lying about a write.
  * * A failed read renders as an **error**, never as "no comments yet" — the
  *   false-empty-state shape CLAUDE.md calls out by name.
+ *
+ * ## Who gets a composer (LV.6)
+ *
+ * The thread reads for everyone; **writing needs two conditions and the tab
+ * asks for both explicitly.** `signedIn` came in with the public share view,
+ * which is the only Lists surface that renders to a stranger — a composer that
+ * 401s on submit is the same lie as a drag that snaps back. `commentsEnabled`
+ * is `lists.comments_enabled`, which this tab previously ignored: the app panel
+ * showed a working-looking composer on a list whose owner had turned comments
+ * off, and the POST would have been refused. Both callers now pass the truth.
  */
 
 interface CommentsTabProps {
   listId: string
   viewer: { username: string | null; avatarUrl: string | null }
+  /** A signed-out viewer reads the thread and gets a sign-in link, not a field. */
+  signedIn?: boolean
+  /** `lists.comments_enabled` — the owner's switch. */
+  commentsEnabled?: boolean
 }
 
-export function ListCommentsTab({ listId, viewer }: CommentsTabProps) {
+export function ListCommentsTab({
+  listId,
+  viewer,
+  signedIn = true,
+  commentsEnabled = true,
+}: CommentsTabProps) {
   const [text, setText] = React.useState('')
   const comments = useComments(listId)
   const addComment = useAddComment(listId)
@@ -51,33 +70,48 @@ export function ListCommentsTab({ listId, viewer }: CommentsTabProps) {
 
   return (
     <div className="flex max-w-[576px] flex-col gap-3">
-      <div className="flex gap-2">
-        <UserAvatar
-          src={viewer.avatarUrl}
-          name={viewer.username}
-          className="mt-0.5 h-[21px] w-[21px] shrink-0"
-          fallbackClassName="text-[9px]"
-        />
-        <Input
-          value={text}
-          maxLength={MAX_COMMENT_LEN}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') post()
-          }}
-          placeholder="Add a comment…"
-          aria-label="Add a comment"
-          className="h-btn-sm min-w-0 flex-1 text-[12px]"
-        />
-        <Button
-          variant="blue"
-          size="sm"
-          onClick={post}
-          disabled={!text.trim() || addComment.isPending}
-        >
-          <Icon name="send" size={13} /> Post
-        </Button>
-      </div>
+      {!commentsEnabled ? (
+        <p className="border border-ink bg-white px-2.5 py-2 text-[11px] font-semibold text-n-3">
+          Comments are turned off on this list.
+        </p>
+      ) : !signedIn ? (
+        <div className="flex flex-wrap items-center gap-2 border border-ink bg-white px-2.5 py-2">
+          <span className="mr-auto text-[11px] font-medium text-n-3">
+            Sign in to join the discussion.
+          </span>
+          <Button asChild variant="blue" size="sm">
+            <Link href="/login">Sign in</Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <UserAvatar
+            src={viewer.avatarUrl}
+            name={viewer.username}
+            className="mt-0.5 h-[21px] w-[21px] shrink-0"
+            fallbackClassName="text-[9px]"
+          />
+          <Input
+            value={text}
+            maxLength={MAX_COMMENT_LEN}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') post()
+            }}
+            placeholder="Add a comment…"
+            aria-label="Add a comment"
+            className="h-btn-sm min-w-0 flex-1 text-[12px]"
+          />
+          <Button
+            variant="blue"
+            size="sm"
+            onClick={post}
+            disabled={!text.trim() || addComment.isPending}
+          >
+            <Icon name="send" size={13} /> Post
+          </Button>
+        </div>
+      )}
 
       {addComment.isError && (
         <p className="text-[11px] font-semibold text-negative-strong">

@@ -57,8 +57,13 @@ interface ListToolbarProps {
   /** Budget grouping is the only place the budget itself is adjustable. */
   showBudget: boolean
   canEdit: boolean
-  /** The `Add players` control — passed in so it can own its own popover. */
-  onAddPlayers: React.ReactNode
+  /**
+   * The `Add players` control — passed in so it can own its own popover.
+   * Omitted entirely by the public share view (LV.6): grouping, view style and
+   * `Stats` are *display* state that never leaves the session (D3), so a
+   * stranger keeps them; `Add players` is the one control here that writes.
+   */
+  onAddPlayers?: React.ReactNode
 }
 
 export function ListToolbar({
@@ -134,9 +139,9 @@ export function ListToolbar({
         </label>
       )}
 
-      {canEdit && (
+      {canEdit && onAddPlayers ? (
         <span className="ml-auto">{onAddPlayers}</span>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -39,11 +39,19 @@ import { MAX_TAGS_PER_LIST } from '@/types/schemas/lists'
 interface DetailsTabProps {
   list: ListWithDetails
   canEdit: boolean
-  onSaveDescription: (description: string) => void
-  onSaveTags: (tags: string[]) => void
-  onAddLink: (input: AddLinkInput) => void
-  onRemoveLink: (linkId: string) => void
-  linksBusy: boolean
+  /**
+   * The four write gestures — **all optional**, because the public share view
+   * (LV.6) mounts this tab read-only: tags, description, links and the position
+   * mix all render, and nothing on it can be changed. Each affordance is gated
+   * on `canEdit` *and* on its handler being present, so omitting a handler is
+   * itself the subtraction rather than a no-op that would let a later edit
+   * re-expose the control.
+   */
+  onSaveDescription?: (description: string) => void
+  onSaveTags?: (tags: string[]) => void
+  onAddLink?: (input: AddLinkInput) => void
+  onRemoveLink?: (linkId: string) => void
+  linksBusy?: boolean
 }
 
 export function ListDetailsTab({
@@ -53,7 +61,7 @@ export function ListDetailsTab({
   onSaveTags,
   onAddLink,
   onRemoveLink,
-  linksBusy,
+  linksBusy = false,
 }: DetailsTabProps) {
   const positionMix = React.useMemo(() => {
     const mix = new Map<string, number>()
@@ -108,11 +116,12 @@ function TagsSection({
 }: {
   list: ListWithDetails
   canEdit: boolean
-  onSaveTags: (tags: string[]) => void
+  onSaveTags?: (tags: string[]) => void
 }) {
   const [adding, setAdding] = React.useState(false)
   const [value, setValue] = React.useState('')
 
+  const editable = canEdit && Boolean(onSaveTags)
   const names = list.tags.map((tag) => tag.name)
   const kind = list.ranking_mode === 'unranked' ? 'List' : 'Ranking'
   const visibility = list.is_private ? 'Private' : 'Public'
@@ -120,7 +129,7 @@ function TagsSection({
   const commit = () => {
     const next = value.trim().replace(/^#/, '')
     if (next && !names.includes(next) && names.length < MAX_TAGS_PER_LIST) {
-      onSaveTags([...names, next])
+      onSaveTags?.([...names, next])
     }
     setValue('')
     setAdding(false)
@@ -145,11 +154,11 @@ function TagsSection({
             className="inline-flex h-[19px] items-center gap-1 rounded-sm border border-ink bg-accent-soft pl-2 pr-1 text-[9.5px] font-medium"
           >
             {tag.name}
-            {canEdit && (
+            {editable && (
               <button
                 type="button"
                 title={`Remove ${tag.name}`}
-                onClick={() => onSaveTags(names.filter((name) => name !== tag.name))}
+                onClick={() => onSaveTags?.(names.filter((name) => name !== tag.name))}
                 className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm transition-colors hover:bg-white"
               >
                 <Icon name="close" size={9} />
@@ -157,7 +166,7 @@ function TagsSection({
             )}
           </span>
         ))}
-        {canEdit &&
+        {editable &&
           (adding ? (
             <Input
               autoFocus
@@ -203,7 +212,7 @@ function DescriptionSection({
 }: {
   list: ListWithDetails
   canEdit: boolean
-  onSave: (description: string) => void
+  onSave?: (description: string) => void
 }) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState(list.description ?? '')
@@ -217,7 +226,7 @@ function DescriptionSection({
     <section>
       <div className="mb-1.5 flex items-center gap-2">
         <span className="mr-auto text-[11px] font-bold text-ink">Description</span>
-        {canEdit && !editing && (
+        {canEdit && onSave && !editing && (
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -253,7 +262,7 @@ function DescriptionSection({
               variant="blue"
               size="sm"
               onClick={() => {
-                onSave(draft.trim())
+                onSave?.(draft.trim())
                 setEditing(false)
               }}
             >
@@ -326,8 +335,8 @@ function LinksSection({
 }: {
   list: ListWithDetails
   canEdit: boolean
-  onAdd: (input: AddLinkInput) => void
-  onRemove: (linkId: string) => void
+  onAdd?: (input: AddLinkInput) => void
+  onRemove?: (linkId: string) => void
   busy: boolean
 }) {
   const [attaching, setAttaching] = React.useState(false)
@@ -340,7 +349,7 @@ function LinksSection({
     <section>
       <div className="mb-1.5 flex items-center gap-2">
         <span className="mr-auto text-[11px] font-bold text-ink">Attached links</span>
-        {canEdit && !attaching && (
+        {canEdit && onAdd && !attaching && (
           <button
             type="button"
             onClick={() => setAttaching(true)}
@@ -379,7 +388,7 @@ function LinksSection({
                 </span>
               </span>
 
-              {canEdit && (
+              {canEdit && onRemove && (
                 <button
                   type="button"
                   disabled={busy}
@@ -409,7 +418,7 @@ function LinksSection({
           busy={busy}
           onCancel={() => setAttaching(false)}
           onSubmit={(input) => {
-            onAdd(input)
+            onAdd?.(input)
             setAttaching(false)
           }}
         />

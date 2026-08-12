@@ -17,7 +17,7 @@
 
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
-| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. Remaining: LV.6, LV.7) |
+| **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | 🔵 In progress (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. Remaining: LV.7) |
 | **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
 
 **Nothing is parked. Both questions were ruled on 2026-08-09.** **Q1** — build
@@ -130,8 +130,19 @@ are all checked.
   shallow, deliberately and on the record** (§4). Original text: *"AI list
   generation + persona surfaces restyled into the new language (CLAUDE.md: never
   leave them in the old style, never remove them)"*
-- [ ] **LV.6** — public share view `/u/[username]/lists/[slug]`, still
-  server-rendered (D7)
+- [x] **LV.6** — **the public share view, in the new language and still
+  server-rendered** (2026-08-11). **UI/UX only — no migration, no schema
+  change, no new API route**; the budget stays closed at three. The screen is
+  the signed-in open list with everything a stranger cannot do **subtracted**,
+  not a second design: `ListHeroShell`, `ListToolbar`, `ListBody`,
+  `ListDetailsTab`, `ListCommentsTab` and `ui/tabs` are the *same* components
+  the app panel mounts (§4). The design package defines no share screen, so
+  every subtraction is listed in `public-list-view.tsx`'s header and pinned by
+  `public-share-view.test.ts`. **The LV.1.5 crash was reproduced on this route
+  and shown fixed** — the pre-LV.1.5 `Map` shape reinstated for one run gives
+  a live `HTTP 500 — Cannot read properties of undefined (reading 'push')` on
+  a public list carrying `r1`/`c1` (§4). Original text: *"public share view
+  `/u/[username]/lists/[slug]`, still server-rendered (D7)"*
 - [x] **LV.8** — **attached links** (2026-08-11). Migration
   `080_list_links.sql` + RLS + indexes, the `/api/lists/[id]/links` routes
   (add / remove / reorder), and the Details tab wired to them. The **third and
@@ -1661,6 +1672,100 @@ This section records decisions made **during** the build.
   Lists — the first still hand-rolls a `rounded-pill` variant of the Scout mark
   and should adopt `ScoutAiMark` whenever Home is reskinned. `list-detail-view.tsx`
   (legacy) was not opened; it is retired at LV.7.
+
+- **LV.6 (2026-08-11) — the share view is the detail panel minus what a
+  stranger cannot do, and the subtraction is a mechanism rather than a
+  convention.** UI/UX only; no migration, no schema change, no new API route.
+  `/u/[username]/lists/[slug]` stays a **server component** (plan D7) and now
+  renders through the same v2 components the app panel uses.
+
+  1. **Two gates, and they are different questions.** `RowHandlers` grew
+     `canMark` beside `canEdit`. `canEdit` is "you own this list"; `canMark` is
+     "you have an account at all" — a drafted mark is a row in
+     `list_player_drafted` keyed by `user_id` (LV.1.2), so it is *not* an owner
+     right and collapsing the two would have offered a signed-out viewer a
+     checkbox that 401s. The public view passes `false` to both. Consequence
+     worth naming: **the drafted checkbox is subtracted for signed-in strangers
+     too.** RLS would permit it (LV.1.2's INSERT policy is "you may mark on any
+     list you can read"), but a drafted mark is a tool for *your* board, not a
+     reading control on someone else's, and offering it here would need a
+     sign-in flow the design does not show. If that is wrong it is one prop.
+
+  2. **Write gestures are absent, not no-ops.** `onDrop`, `onAddToBucket`,
+     `onRenameBand`, `onEditNote`, `onRemove`, `onAddPlayers` and the Details
+     tab's four handlers are all **optional** now, and every affordance is
+     gated on `canEdit`/`canMark` **and** on its handler being present. The
+     alternative — passing `() => {}` — is the shape CLAUDE.md forbids: a later
+     edit re-enables the control and it silently does nothing. Probe A flipped
+     both flags to `true` and **10 row menus appeared for a signed-out
+     stranger**, while `Add players` and the bucket `Add +` stayed gone,
+     because those need the handler as well. The double lock held under a
+     deliberate break.
+
+  3. **Two dead affordances were removed rather than faded.** With no drag
+     story the grip is not rendered at all (an inert 9px dot column lies about
+     an affordance), and `RowMenu` returns `null` rather than opening an empty
+     popover. The table header's leading and trailing spacers follow the same
+     two flags, so the columns still line up — checked in the browser. Both
+     changes also reach the **signed-in non-owner** viewing a saved list, where
+     the grip and the Add-note/Remove menu were already unreachable.
+
+  4. **The LV.1.5 crash was reproduced here, not taken on trust.** The
+     pre-LV.1.5 `Map`-seeded-with-S–F shape was reinstated for one run against
+     a public list holding `r1` and `c1`: `curl` returned **HTTP 500 — Cannot
+     read properties of undefined (reading 'push')**. Reverted, the same URL is
+     **200** with both players in an Ungrouped section and the round key
+     grouping as *Round 1* under the Rounds label set. Grouping goes through
+     `buildBuckets`, total over `string`; `public-share-view.test.ts` runs the
+     whole storable vocabulary plus `r99`/`zz`/`__proto__` through all five
+     grouping modes and asserts no player is lost, duplicated, or left with an
+     `undefined` band colour.
+
+  5. **Where the toolbar was cut, and why there.** Grouping, view style,
+     `Stats` and the budget field **stay** — they are session-only display
+     state (D3), never touch the network, and are the difference between a
+     share link that shows a board and one you can actually read your own way.
+     `Add players` goes. One rule: **display stays, writes go.**
+
+  6. **Three deliberate inventions, since the handoff has no share screen.**
+     (a) The list title is the page's `h1` here and stays `h3` in the panel,
+     which is a `heading` prop on the shell rather than two heroes. (b) The
+     like count rides beside the view count in the tab row — a shared list is
+     the social artifact and the page already had the number. (c) `Share`
+     copies the page's own address, which is redundant on the page you are
+     already on but is the gesture the hero is built around and needs no
+     account. Dropped from the old page: the `Pro` badge (Pro is suspended —
+     CLAUDE.md), and the Public/position/Big-board chips, which the cover fill,
+     the Details tab and the position mix already say.
+
+  7. **Two things fixed because they render on this page.** `ListCommentsTab`
+     never read `lists.comments_enabled`, so the app panel showed a working
+     composer on a list whose owner had turned comments off; both callers now
+     pass it, and the public view also swaps the composer for a sign-in link
+     when signed out. And the cards-view bucket rail sized its label by
+     *renameability*, so `Ungrouped` and `No auction value` ran out of the 50px
+     rail at 18px — it sizes by label length now. Both were reachable before
+     LV.6; neither was reachable on a screen anyone had looked at.
+
+  8. **Metadata stopped doing the whole load.** `generateMetadata` ran the full
+     players + tags query for a title; it now runs a header-only query, which
+     matters more than it did because the page's own load gained stats, links
+     and a comment count.
+
+  **Proof, signed out — and how dev auth was defeated.** Local dev
+  auto-authenticates, so `NEXT_PUBLIC_DEV_AUTH=false` in the gitignored
+  `.env.local` (restored afterwards) stopped `DevAuthProvider` re-signing in,
+  **and** the surviving Supabase session cookie was cleared in the browser —
+  disabling the provider alone leaves the old cookie, which is why the first
+  capture still showed an avatar. Verified at 1280px and 390px: guest nav,
+  lime signup banner, `Share` + `Pin → /login`, and an accessibility tree whose
+  *entire* interactive surface is sign-in/sign-up, `@dev_user`, `Share`, `Pin`,
+  the three tabs and the five display controls — no grip, no row menu, no
+  checkbox, no pencil, no dots. SSR proved by `curl` with no cookies: all ten
+  players, the `h1` and the Ungrouped section arrive in the HTML. Private lists
+  proved twice — the route is **404** with no title, description or player
+  leaking into the body, and the `anon` role reads **0 rows** from both `lists`
+  and `list_players` for it.
 
 - **LV.5 forward obligation → LV.7.** `/app/lists/[listId]` renders
   `ListDetailPageV2`, **a placeholder**, whenever the flag is ON. LV.5 routed the
