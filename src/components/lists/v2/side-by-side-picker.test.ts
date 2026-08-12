@@ -47,6 +47,7 @@ const code = (file: string) =>
 
 const PICKER = 'src/components/lists/v2/side-by-side-picker.tsx'
 const PAGE = 'src/components/lists/v2/lists-page-v2.tsx'
+const ROUTE = 'src/app/api/lists/route.ts'
 
 describe('LV.12 — the picker offers every list, not the active tab', () => {
   it('the page passes own + saved, concatenated in that order', () => {
@@ -64,6 +65,58 @@ describe('LV.12 — the picker offers every list, not the active tab', () => {
 
   it('the My lists / Saved control stays hidden in Side by side', () => {
     expect(read(PAGE)).toMatch(/const tabSwitch =\s*\n?\s*mode === 'compare' \? null/)
+  })
+})
+
+/**
+ * **R208 — the `saved` half has to be capable of being non-empty.**
+ *
+ * The group above pins `[...mine, ...saved]`, and it passed throughout LV.12
+ * over a `saved` that was **empty in every run** — the verifying account had
+ * favourited nothing, so the erratum's headline behaviour (a saved list showing
+ * up whatever the tab says) was never once exercised. `[...mine, []]` satisfies
+ * every assertion there. That is CLAUDE.md's *"never let 'nothing happened' mean
+ * 'it worked'"* in test form.
+ *
+ * These four pin the **chain that makes a saved list exist at all**, because
+ * that is where a silent regression would come from: the collection route stops
+ * fetching others' favourited lists, or stops attaching `owner`, and the picker
+ * quietly degrades to own-lists-only with every other test in this file still
+ * green.
+ *
+ * **What they cannot do, stated plainly:** this file source-pins (`.tsx` under
+ * Next's `jsx: "preserve"` — see the header), so nothing here observes an array
+ * at runtime. The demonstration that the saved half actually renders is the
+ * live local-stack evidence in `PROGRESS-lists-v2.md` §4 (LV.12 fix round):
+ * a list owned by `dev-pro@fieldscout.local`, favourited through the shipped
+ * `POST /api/lists/[id]/favorite`, appearing in the picker with the page's tab
+ * state still on **My lists**.
+ */
+describe('LV.12 — the saved half of the picker is real (R208)', () => {
+  it('the page derives `saved` from the owner the collection route attaches', () => {
+    expect(read(PAGE)).toMatch(/saved: all\.filter\(\(list\) => Boolean\(list\.owner\)\)/)
+  })
+
+  it('the collection route fetches favourited lists owned by someone else', () => {
+    const source = code(ROUTE)
+    expect(source).toContain("from('list_favorites')")
+    expect(source).toMatch(/\.in\('id', favoritedOthersIds\)/)
+    expect(source).toMatch(/\.neq\('owner_id', user\.id\)/)
+    // …and appends them to the owned page rather than replacing it.
+    expect(source).toMatch(/\[\.\.\.\(ownedRes\.data \?\? \[\]\), \.\.\.\(favRes\.data \?\? \[\]\)\]/)
+  })
+
+  it('the route attaches `owner` for exactly the lists the viewer does not own', () => {
+    expect(code(ROUTE)).toMatch(/owner: rest\.owner_id === user\.id \? null : ownerObj/)
+  })
+
+  it('the picker renders every list handed to it and filters none of them out', () => {
+    const source = code(PICKER)
+    expect(source).toContain('{lists.map((list) => {')
+    // `picked.filter` (the availability reconciliation) is the only filter in
+    // the file; a `lists.filter` would be the plan's rejected clause returning
+    // by another door.
+    expect(source).not.toMatch(/lists\.filter\(/)
   })
 })
 

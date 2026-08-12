@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.1 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v5.2 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -690,7 +690,7 @@ behaviour is the failure this build already paid for once.**
 | id | task | depends on |
 | --- | --- | --- |
 | LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). ~~Honours the My lists / Saved tab~~ — **see the erratum below**. **LANDED 2026-08-11** | LV.9 |
-| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list` | LV.12 |
+| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list`, and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes (see the erratum below) | LV.12 |
 | LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route** | LV.13, LV.1.3 |
 
 > **Erratum (v5.1, LV.12 Builder 2026-08-11) — the picker does *not* honour the
@@ -757,6 +757,15 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.2 (2026-08-11)** — **LV.13's row now carries the `ComparisonPending`
+  deletion** (LV.12 review, **R209**). The obligation already existed in four
+  places — §6's erratum block, the v5.1 entry below, `PROGRESS-lists-v2.md`
+  §2b's LV.13 bullet, and the JSDoc at `lists-page-v2.tsx:658` — but **not in
+  the §6 row itself**, which `ACTIVE-BUILD.md` names as the task text a Builder
+  reads. An obligation that lives everywhere except the line the next Builder is
+  pointed at is an obligation that gets missed. Editorial: no scope, dependency
+  or decision changed.
 
 - **v5.1 (2026-08-11)** — **LV.12, the picker, landed — and its task row
   carried a clause the design package contradicts.** §6 gains the erratum in

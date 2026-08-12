@@ -36,7 +36,7 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-lists-v2.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-lists-v2.md` |
 | **Design LAW** | `docs/design/lists/README.md` (+ prototype in `docs/design/lists/design/`) |
-| **Task text** | Delivery plan **§4**, read together with the handoff section that task cites. There is no separate `tasks-*.md` breakdown — the handoff is detailed enough to serve as one. |
+| **Task text** | **Round 2 (LV.12 – LV.17): delivery plan §6.** (Round 1's LV.1 – LV.11 were §4 — this row still said §4 after Round 2 opened, which would have misrouted LV.13's Builder to a finished queue. Corrected 2026-08-11, LV.12 review R210.) Read together with the handoff section that task cites; there is no separate `tasks-*.md` breakdown — the handoff is detailed enough to serve as one. |
 | **Task id prefix** | `LV.` |
 
 **Standing constraints for every task in this build** (full text in the plan §1):
@@ -66,6 +66,16 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   quietly reimplements one of these is the LV.7 failure repeating.
 - Keep the app's ×0.8 token scale; implement colors from tokens, not the
   handoff's literal hex.
+- **Browser verification runs against the LOCAL Supabase stack, never hosted.**
+  `.env.local` points at the **hosted production** project, so `npm run dev`
+  straight out of the box drives a real users' database — LV.12 did exactly
+  that and left seven soft-deleted `LV12 tmp` rows in production (**R207**).
+  Use the gitignored `.claude/launch.json` config **`dev-local`** (port 3123),
+  which overrides `NEXT_PUBLIC_SUPABASE_URL` to `http://127.0.0.1:54321` with
+  the keys from `npx supabase status`; confirm it took by checking a network
+  request goes to `127.0.0.1:54321`. **State the verification environment in
+  the PR body and in PROGRESS §4** — the LV.12 PR disclosed neither, which is
+  what made the finding a should-fix rather than a note.
 
 ---
 

@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v5.1) > this file. **That ordering is
+> (`docs/specs/delivery-plan-lists-v2.md` v5.2) > this file. **That ordering is
 > load-bearing, not decorative** — LV.12 used it to settle a plan clause the
 > design package contradicts (§4).
 >
@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -318,11 +318,17 @@ checked.
   (D3) — `React.useState`, no `persist`. **The plan's "honours the My lists /
   Saved tab" clause was wrong and is erratum'd** (plan §6, → v5.1): the picker
   offers every list on the page, own first then saved, which is what the
-  prototype and `screens/side-by-side-picker.png` both do — see §4
+  prototype and `screens/side-by-side-picker.png` both do — see §4.
+  **Fix round 2026-08-11 (R207–R212, §6):** the erratum was re-verified and
+  upheld by the Reviewer, but the browser evidence behind it was re-taken —
+  the original run was against **hosted production** and over a `saved` set
+  that was empty every time, so it never once showed the behaviour the erratum
+  exists to protect
 - [ ] **LV.13** — **the 300px columns**, full-bleed scroller, per-column
   grouping menu, and `Change lists` in the page header (LV.12). *LV.12 left the
   seam: `compareIds` lives in `lists-page-v2.tsx`, and `ComparisonPending` is
-  the temporary branch LV.13 replaces — delete that function.*
+  the temporary branch LV.13 replaces — **delete that function** (now also
+  stated in the plan §6 row itself, R209).*
 - [ ] **LV.14** — **drafted fan-out across the comparison set** (D12) (LV.13,
   LV.1.3)
 
@@ -744,6 +750,51 @@ entry in §4.
 **The design-package gaps (Change image, List type, Insights, Archive, likes on
 the tab row) are filed in §5 as follow-ups**, exactly as this question asked,
 and none was silently picked up.
+
+---
+
+### Q4 — the picker (and therefore LV.13's columns) has no upper bound (filed 2026-08-11, LV.12 fix-round Builder, from review finding **R212**)
+
+**Status: 🟡 OPEN — needs a ruling before LV.13 builds columns.** Nothing is
+blocked *today*: LV.12 is correct as shipped and this is not a defect in it.
+
+**The gap.** The design LAW's *Mode: Side by side* → *Picker* bullet
+(`docs/design/lists/README.md:181`) describes *"a 232px-min grid of selectable
+list cards"* and stops there. It names no search, no filter, no cap, and no
+scroll treatment, and the prototype's seed carries **9** lists
+(`docs/design/lists/design/lists.js`), so the reference screenshot never shows
+the grid under pressure. The picker consequently renders **every list the
+account holds, unbounded**, and the CTA can commit **all of them** as columns.
+
+**This is not created by the LV.12 erratum, and that matters for how it is
+answered.** Removing the tab clause widened the offered set from one tab to
+both, which is at most a 2× change on a set that already had no ceiling. The
+unbounded-ness is in the design, not in the deviation — so "reinstate the tab
+filter" is not a fix for it and must not be adopted as one.
+
+**Why it is worth a ruling before LV.13 rather than after.** LV.13 turns each
+picked list into a **300px fixed-width panel in a horizontal scroller**. The
+picker degrades gently (a taller grid); the columns degrade sharply — 20 picked
+lists is 6,000px of horizontal scroller with the drafted checkbox live in every
+one of them. The cost of deciding late is paid in LV.13's layout, not here.
+
+| | Option | Cost | Risk |
+| --- | --- | --- | --- |
+| **A** | **Rule it a non-problem for the 2026 test cohort** and revisit on real usage. Nothing is built | none | a friend with 40 lists meets a 40-card grid on draft night |
+| **B** | **Cap the *comparison*, not the picker** — the grid still shows everything, the CTA stops accepting picks past N (the design's own copy already counts: `Show N lists side by side`) | small, and it lives in LV.12's committed state | picks a number the design package does not supply |
+| **C** | **Add a search/filter field above the grid** | a new control the design package does not describe, in the surface whose whole erratum was about *not* filtering | inventing UI is the thing this build has twice been corrected for (LV.7, and the tab clause itself) |
+| **D** | Cap the picker's *rendered* set (e.g. most-recent N) | cheapest to draw | a list you own silently not being offered is the worst outcome on this list — it is "nothing happened means it worked" as a layout decision |
+
+**Recommendation: A now, B when LV.13 lands, and never C or D without Chris.**
+The 2026 cohort is friends running test leagues (CLAUDE.md → Active Builds), so
+the realistic account holds single-digit lists and A costs nothing to hold. B is
+the honest place for a limit if one is wanted, because it constrains the thing
+that actually degrades (the scroller) while never hiding a list from its owner.
+C and D are product decisions with design-package consequences and belong to
+Chris, not to a Builder.
+
+**A Builder must not build a search, a cap, or a truncation on the strength of
+this entry** — it is filed to be answered, not to be actioned.
 
 ---
 
@@ -2223,11 +2274,82 @@ This section records decisions made **during** the build.
      same comment; this is the second surface to need it, which is worth
      remembering when LV.13 builds column headers out of the same parts.
 
-  Pinned by `src/components/lists/v2/side-by-side-picker.test.ts` (13 tests) —
-  the tab set, the session-only storage, the elevation rule, the composition,
-  and the copy. **Shown falsifiable**: reinstating the tab filter and adding a
-  resting `shadow-hard-4` turned exactly the two matching tests red, then both
-  were reverted and the suite went green again.
+  Pinned by `src/components/lists/v2/side-by-side-picker.test.ts` (13 tests at
+  landing, **17 after the fix round**) — the tab set, the session-only storage,
+  the elevation rule, the composition, the copy, and (added by R208) the chain
+  that makes the saved half capable of being non-empty. **Shown falsifiable**:
+  reinstating the tab filter and adding a resting `shadow-hard-4` turned exactly
+  the two matching tests red, then both were reverted and the suite went green
+  again.
+
+  ---
+
+  **Fix round — 2026-08-11 (review verdict FIX-THEN-MERGE, R207–R212; §6 carries
+  the findings).** The erratum itself was re-verified by the Reviewer from all
+  three design sources and **upheld** — nothing about the picker's behaviour
+  changed. What changed is the evidence behind it, and both corrections are the
+  same CLAUDE.md rule twice over.
+
+  5. **The verification ran against hosted *production*, and neither the PR nor
+     this file said so (R207).** `.env.local` sets
+     `NEXT_PUBLIC_SUPABASE_URL` to the **hosted** project, so a plain
+     `npm run dev` drives real users' data; the memory note
+     `local-db-reset-recovery` says exactly this and it was not applied. Seven
+     `LV12 tmp…` lists were created and cleaned up in the hosted project
+     (2026-08-12 05:11–05:12 UTC, owner `b8e85002`). **They are left in place,
+     soft-deleted.** The cleanup was already correct per Key Business Rule 8 —
+     *never hard-delete lists* — so "tidying" them now would break a standing
+     rule to hide a process failure. No live row leaked, no seed file changed,
+     nothing hosted was schema-touched.
+
+     **Re-verified against the local stack**, and the environment is now
+     evidence rather than assertion: the gitignored `.claude/launch.json`
+     config **`dev-local`** (port 3123) overrides the URL and keys to
+     `http://127.0.0.1:54321`, and the browser's own network log shows
+     `GET http://127.0.0.1:54321/auth/v1/user → 200` and
+     `…/rest/v1/profiles?…id=eq.11111111-1111-4111-8111-111111111111` — the
+     local dev user, not a hosted one. The durable form of this lesson is in
+     `ACTIVE-BUILD.md`'s standing constraints, where the *next* Builder reads
+     it, not only here.
+
+  6. **The saved half of `[...mine, ...saved]` was empty in every run, so the
+     erratum's headline behaviour was never once exercised (R208).** The
+     verifying account had favourited nothing: the collection returned `2 own,
+     0 saved`, which means every "it works" observation in the original PR was
+     taken over `[...mine, []]`. A picker that dropped saved lists entirely
+     would have looked identical. That is the *"never let 'nothing happened'
+     mean 'it worked'"* rule, applied to a verification instead of a query.
+
+     **Now shown, against the local stack, end to end:**
+
+     | Step | Evidence |
+     | --- | --- |
+     | Second account owns a list | `LV12 local fixture — dev-pro's WR room` (6 WRs), owner `22222222-…` = `dev-pro@fieldscout.local`, `is_private=false`. **Seeded into the local DB only** — the R167 precedent |
+     | Saved through the shipped path | `POST /api/lists/bbbb2222-…-cd01/favorite` → **`200 {"is_favorited":true}`** (the real route, real cookie, RLS as the viewer) |
+     | Collection now carries it | `GET /api/lists` → `Secret sleepers (own)`, `Consensus WR top 10 (own)`, `LV12 local fixture… (owner: devpro)` — so `saved.length === 1`, not 0 |
+     | The tab really is on **My lists** | `My lists 2` `aria-pressed="true"`, `Saved 1` `aria-pressed="false"`, checked *before* entering compare mode |
+     | The picker offers the saved list anyway | 3 cards: `Secret sleepers, 3 players` · `Consensus WR top 10, 10 players` · **`LV12 local fixture — dev-pro's WR room, 6 players`**, with the tab control absent from the DOM (`ListsScreen.jsx:49`) |
+     | And the mirror direction | switched to **Saved** (`aria-pressed="true"`, rail down to that one list) → the picker still offers all **3**. Tab-independent both ways, which is the whole erratum |
+     | It commits, not just renders | picked the saved list + one own → CTA read `Show 2 lists side by side` → panel: *"2 lists ready to compare — LV12 local fixture — dev-pro's WR room · Consensus WR top 10"* |
+     | The tab never moved under it | back to List mode → `My lists` still `aria-pressed="true"` |
+     | Clean | zero console errors across the run |
+
+     **Pinned so an empty run cannot pass silently again**, within what this
+     file's idiom can honestly claim. Four new source pins (13 → **17**) cover
+     the chain that produces a saved list at all: the route reading
+     `list_favorites`, its `.neq('owner_id', user.id)` fetch of others'
+     favourited lists, the `owner: rest.owner_id === user.id ? null : ownerObj`
+     attachment, and the page's `saved: all.filter((list) => Boolean(list.owner))`
+     — plus the picker rendering `lists.map` with no filter of its own. **Three
+     probes, each 1 red, each reverted to 17/17:** route stops attaching `owner`
+     → 1 red *and*, checked live, the hosted-shaped degradation appears in the
+     browser (the favourited list arrives classified as **own**, tabs read
+     `My lists 3 / Saved 0` — the saved half structurally empty forever);
+     `.in('id', [])` → 1 red; and `saved: []` in the page → 1 red, which is
+     **literally the condition the original verification ran under** and now
+     cannot recur unnoticed. What a source pin still cannot do is observe an
+     empty array at runtime — the live evidence above is what carries that, and
+     the test file says so in its own words rather than implying more.
 
 ---
 
@@ -2265,6 +2387,13 @@ This section records decisions made **during** the build.
   | **F-LV7.5** | **`useSetPlayerSlot` (`use-lists.ts:333`) and `/api/lists/[id]/players/[playerId]/slot` lost their only consumer** with the team `PositionBoard` (§3 Q3, deliberately dropped — `featureFlags.teams` is off and the teams page is already a placeholder) | Deleting a route is server-side and outside LV.7's UI-only scope |
   | **F-LV7.6** | **Delete-list has no confirm dialog.** The retired card and detail view both put one in front of it; v2 deletes straight off the menu item. It is a soft delete with a toast and Trash restore, so a mis-click costs a round trip rather than data | Recorded at §3 Q3 as ported-minus-the-confirmation. Adding a dialog v2 never had is a design call |
   | **F-LV7.7** | **There is still no keyboard drag.** LV.4 filed it; LV.7 inherits rather than widens it. The player *name* is now keyboard-reachable (`Enter` / `Space` opens the mini card), which is new — reordering is not | An AT/keyboard path for the gap model is its own task, as LV.4 said |
+
+- **Follow-up LV.12 filed rather than absorbed** (review finding **R211**), same
+  rule as the LV.7 seven: in scope to notice, out of scope to fix here.
+
+  | id | What | Why it is not in LV.12 |
+  | --- | --- | --- |
+  | **F-LV12.1** | **`N players` is never pluralised, house-wide.** A one-player list reads *"1 players"*, and LV.12's new `aria-label` now **announces** it — a screen reader says *"Favorites, 1 players"*. Four shipped v2 surfaces carry the same literal: `list-gallery-card.tsx:173`, `list-detail-panel.tsx:196`, `lists-rail.tsx:103`, `side-by-side-picker.tsx:172`. It matches the prototype, so it is not a regression — **and the house already disagrees with itself**: `list-detail-hero.tsx:178` pluralises properly (`list.players.length === 1 ? 'player' : 'players'`), which is the shape a sweep should adopt | Fixing it in the picker alone would leave the app saying two different things about the same number, and fixing all five is a five-file string change across surfaces this task has no business opening. One sweep, its own commit — including the a11y-string case LV.12 introduced |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
   built as written. The boards rule held on the *diff* — zero files under
@@ -2809,6 +2938,58 @@ no draft-mode gate anywhere in the design.** The v1 toggle was never in it.
    its taps write the separate browser-only 3-state. So the surface most likely
    to be used on draft night is the one that never persisted — and the *new*
    side-by-side (Round 2) fixes that by carrying the real checkbox.
+
+---
+
+### LV.12 — 2026-08-11 (PR #133) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #133 — the Side by
+side picker and the plan erratum it folds — verified against plan v5.1 §1/§6,
+D3, D11, D12, the design LAW's* Picker *bullet and the ×0.8 rule.* **The erratum
+was independently re-derived and upheld**: *the Reviewer read
+`ListsScreen.jsx:431` and `:49` itself, counted the **9** cards in
+`screens/side-by-side-picker.png`, and reproduced the tab-filter break probe.
+It also confirmed the schema budget untouched (no migration, no column, no new
+route), elevation correct (no resting shadow; selected carried by fill/border),
+D3 held (session-only), and every ×0.8 conversion. None of that is re-opened
+here.* **R207–R212: two should-fix, four nits, no blockers.**
+
+***The finding that mattered (R208), and it is a rule this repo already
+owns.*** *The picker's whole reason for existing after the erratum is that a
+**saved** list appears whatever the tab says. The verifying account had
+favourited nothing, so `[...mine, ...saved]` was `[...mine, []]` in **every**
+run: the headline behaviour was never exercised once, and a build that dropped
+saved lists entirely would have produced identical evidence. The tests passed
+over an empty array and proved nothing — CLAUDE.md's* "never let 'nothing
+happened' mean 'it worked'" *applied to a verification rather than a query. The
+source pin was genuine (reinstating the filter → 1 red), which is what kept it a
+should-fix instead of a blocker.*
+
+#### Resolution — 2026-08-11 (fix Builder, same branch `feat/LV12-side-by-side-picker`)
+
+*Both should-fix resolved, both nits marked for action applied, and the two
+nits the review directed **away** from this PR filed instead of absorbed.
+Proof re-run this session:* **`type-check` clean · `lint` exit 0** *(the one
+pre-existing `auction-draft-room.tsx:107` warning)* **· `test:unit` 54 files /
+966 tests** *(962 → 966: the four R208 pins).* `settings-round-trip-db.test.ts`
+*is the known §5 leagues parallel-race flake, outside `test:unit`, and was not
+chased.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R207** — browser verification ran against **hosted production**, undisclosed in both the PR and PROGRESS; seven `LV12 tmp` lists are now permanently soft-deleted in the real project | should-fix | **Re-verified against the local stack, and the environment is now evidence rather than a claim.** The gitignored `.claude/launch.json` config **`dev-local`** (port 3123) pins `NEXT_PUBLIC_SUPABASE_URL` to `http://127.0.0.1:54321`; the browser's network log shows `GET http://127.0.0.1:54321/auth/v1/user → 200` and the profile read for `11111111-…`, the local dev user. **The seven hosted rows are deliberately left alone** — Key Business Rule 8 forbids hard-deleting lists, they are already correctly soft-deleted, and destroying them to tidy up a process failure would break a standing rule to hide a mistake. Recorded instead: owner `b8e85002`, created 2026-08-12 05:11–05:12 UTC, all `deleted_at` set; no live row leaked, no seed file touched, nothing hosted schema-changed. Disclosed in §4 item 5 **and** in the PR body. The durable form is in **`ACTIVE-BUILD.md`'s standing constraints** — where the next Builder reads it before starting, rather than only in a §4 entry it might not reach |
+| **R208** — the erratum's headline behaviour (a **saved** list appearing regardless of the active tab) was never exercised: the verifying account has zero saved lists, so the `saved` half was empty in every run | should-fix | **Shown live against the local stack, both directions, and pinned.** A list owned by a *second* account (`dev-pro@fieldscout.local`) was seeded into the local DB only, favourited through the shipped `POST /api/lists/[id]/favorite` → `200 {"is_favorited":true}`, and then: with the tab verified on **My lists** (`aria-pressed="true"`, `My lists 2` / `Saved 1`) the picker offered **3** cards including `LV12 local fixture — dev-pro's WR room, 6 players`; on **Saved** it still offered all 3; the saved list *committed* (`Show 2 lists side by side` → *"2 lists ready to compare — LV12 local fixture — dev-pro's WR room · Consensus WR top 10"*); and the tab was still `My lists` on the way back out. Zero console errors. **Four new source pins (13 → 17 tests)** cover the chain that makes a saved list exist — the route's `list_favorites` read, its `.neq('owner_id', user.id)` fetch, the `owner` attachment, the page's `saved: all.filter(…Boolean(list.owner))` — plus `lists.map` with no filter. **Three probes, 1 red each, all reverted to 17/17**: `owner: null` (also shown live degrading to `My lists 3 / Saved 0` — the saved half empty forever), `.in('id', [])`, and `saved: []` — the last being *literally* the condition the original verification ran under. Stated in the test file and in §4: a source pin cannot observe an empty array at runtime; the live evidence is what carries that half |
+| **R209** — plan §6's LV.13 row does not carry the "delete `ComparisonPending`" obligation, though four other places do — and §6's row is what `ACTIVE-BUILD.md` names as the task text | nit | ✅ **Applied.** Plan → **v5.2**: the LV.13 row now ends *"and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes"*, with a changelog entry saying why an obligation that lives everywhere except the line the Builder is pointed at is an obligation that gets missed. §2b's LV.13 bullet cross-references it |
+| **R210** — `ACTIVE-BUILD.md:39` still points task text at delivery plan **§4**; Round 2's tasks are **§6**. Pre-existing (Round 2 commit `85200b8`), not from this diff, but it can misroute LV.13's Builder | nit | ✅ **Applied.** The row now reads *"**Round 2 (LV.12 – LV.17): delivery plan §6.**"* and says outright that §4 was Round 1's, so a reader who half-remembers the old pointer sees the correction rather than a bare change |
+| **R211** — `side-by-side-picker.tsx:172`'s `aria-label` announces `"Favorites, 1 players"`; `N players` is unpluralised across four shipped v2 surfaces, matching the prototype, so not a regression | nit | **Filed, not fixed — as directed.** §5 **F-LV12.1**, in the F-format the LV.7 follow-ups use. The filing adds one fact the finding did not have: `list-detail-hero.tsx:178` **already pluralises correctly**, so the app contradicts itself and a sweep has a house form to adopt. Fixing only the picker would have made that worse |
+| **R212** — the picker has no search, filter or cap, so a large account gets an unbounded grid; the design package does not cover it and the erratum does not create it | nit | **Filed as a design question — §3 Q4, open.** Four options with costs and risks, recommending **A now** (non-problem for the 2026 friends cohort) **and B when LV.13 lands** (cap the *comparison*, never the rendered set), with C (invent a search field) and D (truncate the grid) explicitly reserved for Chris. The entry says in its own text that **a Builder must not build a search or a cap on the strength of it**. Filed before LV.13 deliberately: the picker degrades gently (a taller grid), the 300px-column scroller does not |
+
+**Not changed, and why.** The picker's behaviour, the erratum, the plan §6 row
+for LV.12, `ComparisonPending`, and every ×0.8 conversion are untouched — the
+review upheld all of them, and this round is evidence and documentation, not a
+second bite at a landed design. The one code change is
+`side-by-side-picker.test.ts` (+4 tests); the one source file touched otherwise
+is none.
 
 ---
 
