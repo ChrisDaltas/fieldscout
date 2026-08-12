@@ -26,6 +26,7 @@ import {
 } from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
+import { useListWindowsStore } from '@/stores/list-windows-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import {
   colsForView,
@@ -121,6 +122,7 @@ export function ListDetailPanel({
   const folders = useFolders()
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
   const openPlayerWindow = usePlayerWindowsStore((state) => state.open)
+  const popOut = useListWindowsStore((state) => state.open)
   const pushHistory = useHistoryStore((state) => state.push)
   // Claims a queued job for THIS list and runs the generate → add → order
   // sequence. Returns a null job for every other list, so only the panel
@@ -347,6 +349,9 @@ export function ListDetailPanel({
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}
         onClose={onClose}
+        // Pop out (LV.17). The store refocuses rather than duplicating, so a
+        // second press on an already-open list brings its window to the front.
+        onPopOut={() => popOut(list.id)}
         onRename={(title) => updateList.mutate({ title })}
         onShare={share}
         onDuplicate={() =>

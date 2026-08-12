@@ -188,24 +188,48 @@ export function cascadePlacement(stackIndex: number): { x: number; y: number } {
  * jsdom, so a decision left inside a `.tsx` is guarded by nothing). Pass `null`
  * on the server, where there is no viewport to clamp to.
  *
- * **The two placements are clamped differently, on purpose.** A remembered
- * position is the user's and is only rescued far enough to stay grabbable
- * ({@link WINDOW_EDGE_KEEP_X}); a cascade placement is *ours*, so it lands
- * somewhere the whole window fits whenever the viewport allows. Without that
- * second rule the design's `120,120` origin puts a 352px window at `96` on a
- * 375px phone and its close button lands off-screen — see the note in
- * `list-window.tsx` and PROGRESS §4. `window-shell.tsx` already places the mini
- * card against `window.innerWidth` for the same reason.
+ * **Ours is fitted; theirs is only rescued.** That is one rule applied to both
+ * halves of the geometry, and it is the whole of this build's small-screen
+ * answer (LV.17, **F-LV15.3**):
+ *
+ * | | a value the store chose | a value the user set |
+ * | --- | --- | --- |
+ * | position | fitted, so the whole window lands on screen | rescued only far enough to stay grabbable ({@link WINDOW_EDGE_KEEP_X}) |
+ * | size | fitted to the viewport, never below the LAW's minimum | never re-fitted |
+ *
+ * LV.15 shipped the position half: the design's `120,120` origin puts a 352px
+ * window at `96` on a 375px phone with its close button off-screen. **LV.17
+ * adds the size half**, because position alone is not enough on a viewport
+ * narrower than the window itself: `list-window.tsx` caps the *painted* box at
+ * `100vw - 16px`, so a 352px-wide window on a 320px phone paints at 304 while
+ * the store still says 352 — and the resize grip reads the store. The first
+ * touch of the grip then jumps the window 48px wider before it moves. Fitting
+ * the size we chose keeps the model and the paint agreeing, which is what makes
+ * "the phone gets the same window" a claim rather than a hope.
+ *
+ * Fitting is bounded by {@link clampWindowSize}, so a very narrow viewport still
+ * gets a legal 264px window and the CSS cap covers the remainder — a window
+ * smaller than the design's minimum is not a window.
  */
 export function resolveWindowGeometry(
   saved: ListWindowGeometry | undefined,
   stackIndex: number,
   viewport: WindowViewport | null,
 ): ResolvedWindowGeometry {
-  const { w, h } = clampWindowSize({
+  const wanted = clampWindowSize({
     w: saved?.w ?? WINDOW_DEFAULT_W,
     h: saved?.h ?? WINDOW_DEFAULT_H,
   })
+  // `setSize` always writes both, so either one present means the user sized
+  // this window and neither may be touched.
+  const userSized = saved?.w !== undefined || saved?.h !== undefined
+  const { w, h } =
+    viewport && !userSized
+      ? clampWindowSize({
+          w: Math.min(wanted.w, viewport.width - 2 * WINDOW_EDGE_MARGIN),
+          h: Math.min(wanted.h, viewport.height - 2 * WINDOW_EDGE_MARGIN),
+        })
+      : wanted
   const fallback = cascadePlacement(stackIndex)
   const min = saved?.min ?? false
 

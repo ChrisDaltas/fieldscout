@@ -223,6 +223,18 @@
    inside the wrapper and fails on any palette utility that is neither redirected
    here nor allowlisted there with a reason.
 
+   **`text-negative-strong` is the seventh, added at LV.17, and it is the
+   audit working as designed rather than the list growing on its own.** That
+   task renders `ListReadFailure` inside a window — the "this list could not be
+   loaded" state — and the shared component takes its warning icon from
+   LV.13's Side by side column, where the colour is `#c0392b` on white. On
+   `#161616` that measures **3.33:1**: legal for a non-text graphic (WCAG 1.4.11
+   asks 3:1) and visibly wrong beside everything else in the window. The
+   redirect points it at the palette's **own** light red, `negative` `#e99898`,
+   which measures **8.11:1** on the same surface — so this is the same colour
+   family at the weight the dark surface needs, not a new one invented for the
+   window. Blast radius is a `.fs-dark` descendant rule, i.e. zero outside it.
+
    **`text-ink` is deliberately NOT inverted.** In this app it overwhelmingly
    means "ink text on a light fill" — the injury chip on `bg-caution`, the check
    glyph on `bg-positive`, tier bands 3–4 — and turning those white would be
@@ -243,6 +255,8 @@
   --fs-dark-surface: #161616; /* --surface-card → --n-2 */
   /* The same 9% the LAW gives for row hover, so the two cannot drift. */
   --fs-dark-wash: rgba(255, 255, 255, 0.09);
+  /* Not the LAW's — the palette's own `negative` (LV.17; see the note above). */
+  --fs-dark-negative: #e99898;
 
   color: var(--fs-dark-ink);
 }
@@ -265,6 +279,10 @@
 
 .fs-dark .bg-n-4 {
   background-color: var(--fs-dark-hairline);
+}
+
+.fs-dark .text-negative-strong {
+  color: var(--fs-dark-negative);
 }
 
 .fs-dark .hover\:bg-accent-soft:hover {

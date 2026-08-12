@@ -111,6 +111,37 @@ describe('LV.15 — the z-stack is the array, back-to-front (D13)', () => {
     expect(ids().filter((id) => id === LIST_A)).toHaveLength(1)
   })
 
+  /**
+   * **LV.17 — "what happens at 6+ windows" is: nothing special, on purpose.**
+   *
+   * No cap, no eviction, no truncation — Q4's ruling (Chris, 2026-08-11: no cap
+   * on the comparison picker) applied to the surface one screen away, and what
+   * the LAW asks for in its opening line: *"Open several and set them side by
+   * side."* The only thing the sixth window changes is **placement**, and the
+   * store answers that by wrapping the cascade rather than marching off the
+   * bottom-right corner.
+   *
+   * This is executed rather than pinned as source, which is the point of having
+   * a `.ts` store: a cap added later fails here, however it is spelled.
+   */
+  it('there is no cap — the twelfth window opens like the first', () => {
+    const { open } = useListWindowsStore.getState()
+    for (let i = 0; i < 12; i += 1) open(`list-${i}`)
+    expect(ids()).toHaveLength(12)
+    expect(ids()[0]).toBe('list-0')
+    expect(ids()[11]).toBe('list-11')
+
+    // …and the seventh lands back on the first rather than off-screen. The pile
+    // is still navigable: the last entry is the only `isTop`, so Escape unwinds
+    // it one press at a time (`list-windows-host.tsx`).
+    const viewport = { width: 1280, height: 900 }
+    for (let i = 0; i < 6; i += 1) {
+      const first = resolveWindowGeometry(undefined, i, viewport)
+      const seventh = resolveWindowGeometry(undefined, i + WINDOW_CASCADE_WRAP, viewport)
+      expect({ x: seventh.x, y: seventh.y }).toEqual({ x: first.x, y: first.y })
+    }
+  })
+
   it('focus moves a buried window to the end, and is a no-op for the top one', () => {
     const { open, focus } = useListWindowsStore.getState()
     open(LIST_A)
@@ -317,8 +348,65 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
       500 - WINDOW_DEFAULT_H - 8,
     )
     // And when the window genuinely cannot fit, it hugs the edge rather than
-    // going negative.
-    expect(resolveWindowGeometry(undefined, 0, { width: 300, height: 812 }).x).toBe(8)
+    // going negative. 200 is narrower than the LAW's 264px minimum, so the
+    // size cannot shrink any further to help.
+    expect(resolveWindowGeometry(undefined, 0, { width: 200, height: 812 }).x).toBe(8)
+  })
+
+  /**
+   * **LV.17 — the size half of the same rule (F-LV15.3).**
+   *
+   * LV.15 fitted the *position* of a window the store placed. That is not
+   * enough on a viewport narrower than the window itself: `list-window.tsx`
+   * caps the painted box at `100vw - 16px`, so the store would go on saying 352
+   * while the screen shows 304, and the resize grip reads the store. Fitting
+   * the size keeps the model and the paint agreeing.
+   */
+  it('a cascaded window is SIZED to fit too, and never below the LAW’s minimum', () => {
+    // 320px phone: 352 does not fit, 320 − 16 does.
+    const narrow = resolveWindowGeometry(undefined, 0, { width: 320, height: 812 })
+    expect(narrow.w).toBe(320 - 2 * 8)
+    expect(narrow.x + narrow.w).toBeLessThanOrEqual(320)
+
+    // 375px phone: the design's default already fits, so it is untouched — the
+    // conversion is not re-derived per viewport.
+    expect(resolveWindowGeometry(undefined, 0, { width: 375, height: 812 }).w).toBe(
+      WINDOW_DEFAULT_W,
+    )
+
+    // A short viewport does the same vertically.
+    expect(resolveWindowGeometry(undefined, 0, { width: 1280, height: 300 }).h).toBe(300 - 2 * 8)
+
+    // Below the LAW's minimum the clamp wins: a 200px-wide window is not a
+    // window, and the frame's `max-w` covers the overflow instead.
+    expect(resolveWindowGeometry(undefined, 0, { width: 200, height: 120 })).toMatchObject({
+      w: WINDOW_MIN_W,
+      h: WINDOW_MIN_H,
+    })
+
+    // **Desktop is bit-identical**, which is the whole claim that this is
+    // minimum-necessary rather than a mobile variant.
+    expect(resolveWindowGeometry(undefined, 0, { width: 1280, height: 900 })).toEqual({
+      x: WINDOW_CASCADE_ORIGIN,
+      y: WINDOW_CASCADE_ORIGIN,
+      w: WINDOW_DEFAULT_W,
+      h: WINDOW_DEFAULT_H,
+      min: false,
+    })
+  })
+
+  it('a size the user chose is NOT re-fitted either', () => {
+    // Resized to 900 wide on a desktop, then opened on a 375px phone: the store
+    // still says 900. The frame's `max-w` paints it narrower and the grip reads
+    // the paint (`list-window.tsx`), so nothing lies — but the remembered size
+    // is theirs and survives the trip back to a big screen.
+    expect(
+      resolveWindowGeometry({ w: 900, h: 700 }, 0, { width: 375, height: 812 }),
+    ).toMatchObject({ w: 900, h: 700 })
+
+    // Half an entry is still the user's: `setSize` writes both, so either one
+    // present means they sized it.
+    expect(resolveWindowGeometry({ w: 900 }, 0, { width: 375, height: 812 }).w).toBe(900)
   })
 
   it('a position the user chose is NOT re-fitted, only rescued', () => {

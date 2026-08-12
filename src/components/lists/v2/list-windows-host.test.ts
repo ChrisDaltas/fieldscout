@@ -75,6 +75,12 @@ const THUMBNAIL = 'src/components/lists/list-thumbnail.tsx'
 const BADGE = 'src/components/players/position-badge.tsx'
 const AVATAR = 'src/components/ui/avatar.tsx'
 const ICON = 'src/components/ui/icon.tsx'
+/** R243 — the headshot itself, reached through `ListCoverTile` → `PlayerQuadrant`. */
+const PLAYER_IMAGE = 'src/components/players/player-image.tsx'
+/** LV.17 — the two surfaces that finally open a window, and the query behind it. */
+const HERO = 'src/components/lists/v2/list-detail-hero.tsx'
+const COLUMNS = 'src/components/lists/v2/side-by-side-columns.tsx'
+const LISTS_HOOK = 'src/hooks/use-lists.ts'
 
 /**
  * The body of `ListWindowsHost`, isolated from the file, so "returns null
@@ -299,10 +305,49 @@ const paletteUtilities = (source: string): string[] => {
   return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))].sort()
 }
 
-/** Is this utility pointed at a `.fs-dark` custom property in the token layer? */
-const isRedirected = (utility: string): boolean =>
-  read(GLOBALS).includes(`.fs-dark .${utility.replace(/:/g, '\\:')}`)
+/**
+ * Is this utility pointed at a `.fs-dark` custom property in the token layer?
+ *
+ * **Matched as a declaration, over comment-stripped CSS** (**R244**). This used
+ * to be a substring search over the whole of `globals.css` — a file whose
+ * `.fs-dark` block opens with a 90-line prose header that names redirects,
+ * argues about them and quotes the ones that were *missing*. Nothing was falsely
+ * green (all six checked out), but that header is exactly where the next
+ * redirect gets discussed before it is written, and a sentence saying
+ * *"`.fs-dark .text-caution` would be wrong"* would have satisfied the audit
+ * for `text-caution`. The quadrant pin at the bottom of this file already
+ * matched the declaration form; this is that standard, applied to the helper the
+ * whole audit runs through.
+ */
+/**
+ * `globals.css` with its comments removed.
+ *
+ * **R244.** The `.fs-dark` block opens with a ~100-line prose header that names
+ * redirects, argues about them and quotes the ones that were *missing*. Two
+ * assertions in this file used to read the raw file — {@link isRedirected} by
+ * substring, and the "every redirect points at a property" pin by slicing from
+ * the first `.fs-dark .` occurrence anywhere in it. Neither was falsely green,
+ * because nothing in the prose happened to say the wrong thing yet; but that
+ * header is exactly where the *next* redirect gets discussed before it is
+ * written, and a sentence is not a declaration.
+ */
+const globalsCss = () => read(GLOBALS).replace(/\/\*[\s\S]*?\*\//g, '')
 
+/**
+ * Is this utility pointed at a `.fs-dark` custom property in the token layer?
+ * Matched as a **declaration**, over comment-stripped CSS — the standard the
+ * quadrant pin at the bottom of this file already used, applied to the helper
+ * the whole audit runs through.
+ */
+const isRedirected = (utility: string): boolean => {
+  const css = globalsCss()
+  // `hover:bg-accent-soft` is written `\:` in CSS, and the rule may carry a
+  // pseudo-class before the brace (`.fs-dark .hover\:bg-accent-soft:hover {`).
+  const selector = utility
+    .replace(/:/g, '\\:')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`\\.fs-dark \\.${selector}(?![\\w-])[^{;}]*\\{`).test(css)
+}
 /**
  * Every `className` a given child component is handed in `file`, in source
  * order — `null` where the element carries none. Throws when the component is
@@ -324,11 +369,34 @@ const childClassNames = (file: string, component: string): (string | null)[] => 
   })
 }
 
+/**
+ * Throws on missing **and** on ambiguous (**R245**) — the standard R240 named,
+ * applied to the sixth instance of the first-match-locator shape in this file.
+ * It backs the four geometry-commit pins, which is to say the claim that the
+ * `persist`ed store is not written once per `pointermove`; a second
+ * `const onGripPointerMove` would have left them asserting about whichever came
+ * first. Its markers are unique *today*, which is exactly what was true of
+ * `cursor-grab` at LV.15 and of `indentOf` at LV.16.
+ */
 const handlerBody = (file: string, name: string) => {
-  const match = code(file).match(new RegExp(`const ${name} = [\\s\\S]*?\\n  \\}\\n`))
-  if (!match) {
+  const source = code(file)
+  const declarations = [...source.matchAll(new RegExp(`(?:^|\\n)\\s*const ${name} = `, 'g'))]
+  if (declarations.length === 0) {
     throw new Error(
       `LV.15: \`const ${name}\` could not be located in ${file} — the pin below is guarding nothing.`,
+    )
+  }
+  if (declarations.length > 1) {
+    throw new Error(
+      `LV.15: \`const ${name}\` is declared ${declarations.length} times in ${file} — it no ` +
+        'longer identifies one handler, so the pin below is asserting about whichever came first.',
+    )
+  }
+  const match = source.match(new RegExp(`const ${name} = [\\s\\S]*?\\n  \\}\\n`))
+  if (!match) {
+    throw new Error(
+      `LV.15: \`const ${name}\`'s body could not be delimited in ${file} — the pin below is ` +
+        'guarding nothing.',
     )
   }
   return match[0]
@@ -721,7 +789,11 @@ describe('LV.16 — the dark inversion is one wrapper, and no child is restyled 
   })
 
   it('every redirect points at a property — no second copy of a colour', () => {
-    const css = read(GLOBALS)
+    // Comment-stripped, so the slice starts at the first real rule rather than
+    // at the first *mention* of one in the block's prose header — which would
+    // drag the header's own quoted hex values into the two negative pins below
+    // (**R244**, second instance, found while probing the first).
+    const css = globalsCss()
     const rules = css.slice(css.indexOf('.fs-dark .'))
     for (const utility of [
       '.fs-dark .text-n-3',
@@ -800,7 +872,13 @@ describe('LV.16 — the dark inversion is one wrapper, and no child is restyled 
       throw new Error(`LV.16: ${WINDOW} no longer imports from './list-row-parts' — this pin is blind.`)
     }
     const children = [
-      ...rowParts[1].split(',').map((part) => part.trim()).filter(Boolean),
+      ...rowParts[1]
+        .split(',')
+        .map((part) => part.trim())
+        // Components only. LV.17's `listReadIsGone` comes through the same
+        // import and is a predicate, not a child — `childClassNames` would
+        // (correctly) throw that it is never rendered as an element.
+        .filter((part) => /^[A-Z]/.test(part)),
       'ListCoverTile',
       'PositionBadge',
     ]
@@ -861,6 +939,18 @@ const INSIDE_THE_WRAPPER: { file: string; declaration: string; why: string }[] =
   { file: BADGE, declaration: 'STYLES', why: 'that badge’s per-position fill' },
   { file: AVATAR, declaration: 'Avatar', why: 'PlayerQuadrant’s frame' },
   { file: AVATAR, declaration: 'AvatarFallback', why: 'initials behind a missing headshot' },
+  // **R243** — two components that do render inside the wrapper and were left
+  // out of the set at LV.16. Neither is a live defect (both carry layout and
+  // `object-fit` classes only, so they pass on the first run), and that is the
+  // point: *the enumeration that exists to replace memory was itself being
+  // maintained by memory*, and the prose below claimed two exclusions while
+  // four things were excluded — two of them silently.
+  { file: PLAYER_IMAGE, declaration: 'PlayerAvatarImage', why: 'the headshot PlayerQuadrant renders' },
+  { file: AVATAR, declaration: 'AvatarImage', why: 'what PlayerAvatarImage is' },
+  // LV.17 — the two read states shared with the Side by side column. These are
+  // the reason `text-negative-strong` is now redirected in the token layer.
+  { file: ROW_PARTS, declaration: 'ListReadFailure', why: 'a failed or deleted list inside a window' },
+  { file: ROW_PARTS, declaration: 'ListRowsSkeleton', why: 'rows that have not arrived yet' },
 ]
 
 /**
@@ -909,8 +999,8 @@ const LEGIBLE_ON_DARK: Record<string, string> = {
 describe('LV.16 — every palette class inside the wrapper is redirected or allowlisted (R238)', () => {
   it('finds the components it claims to walk', () => {
     // The audit is only as good as its set; an empty or shrinking one is the
-    // failure mode this catches.
-    expect(INSIDE_THE_WRAPPER.length).toBeGreaterThanOrEqual(16)
+    // failure mode this catches. 16 at LV.16, 20 after R243 + LV.17's two.
+    expect(INSIDE_THE_WRAPPER.length).toBeGreaterThanOrEqual(20)
     for (const { file, declaration } of INSIDE_THE_WRAPPER) {
       expect(declarationSource(file, declaration).length, `${file}#${declaration}`).toBeGreaterThan(0)
     }
@@ -931,8 +1021,14 @@ describe('LV.16 — every palette class inside the wrapper is redirected or allo
   }
 
   /**
-   * The two things rendered inside the wrapper that are **not** in the set, with
-   * the reason each is excluded *checked* rather than asserted in prose.
+   * The things rendered inside the wrapper that are **not** in the set, with the
+   * reason each is excluded *checked* rather than asserted in prose.
+   *
+   * **This block used to say "two" and exclude four** (**R243**):
+   * `PlayerAvatarImage` and `AvatarImage` were left out with no reason recorded
+   * anywhere, which is the same "maintained by memory" failure the audit exists
+   * to end. Both are now in {@link INSIDE_THE_WRAPPER}, so the count here is
+   * honest again: `ui/icon.tsx` and `ui/button.tsx`, and only those.
    */
   it('the exclusions hold: Icon carries no colour, and the one Button pins its own', () => {
     // `ui/icon.tsx` draws in `currentColor`, so it inherits and cannot be wrong.
@@ -1109,8 +1205,16 @@ describe('LV.16 — drag-reorder is the shared model, and so is the commit', () 
   it('reordering is offered only where the array IS the order, and only to the owner', () => {
     const source = code(WINDOW)
     // `canReorder` is the shared answer — cost and budget bands are computed
-    // from the auction value, so a drag there would snap back.
-    expect(source).toContain('canEdit && canReorder(org)')
+    // from the auction value, so a drag there would snap back. LV.17 added a
+    // third conjunct (`!gone`), so the pin is that all of them are still `&&`-ed
+    // into one expression rather than that the string is byte-identical.
+    const canDrag = source.match(/const canDrag = ([^\n]*)\n/)
+    if (!canDrag) {
+      throw new Error(`LV.16: no \`const canDrag\` in ${WINDOW} — this pin is guarding nothing.`)
+    }
+    expect(canDrag[1]).toContain('canEdit')
+    expect(canDrag[1]).toContain('canReorder(org)')
+    expect(canDrag[1]).not.toContain('||')
     expect(source).toContain('is_owner')
   })
 })
@@ -1266,5 +1370,287 @@ describe('LV.16 fix round — every DOM read is scoped to the drag surface (R235
       // would not be on.
       expect(source, file).not.toMatch(/<ListDragContext[^>]*>\s*\n\s*<div/)
     }
+  })
+})
+
+// =============================================================================
+// LV.17 — wiring, states, and the phone answer
+// =============================================================================
+
+/**
+ * > Right side, in order: **Share** → **options** (`dots`) → **expand** (List
+ * > mode only) → **pop out** (`arrow-up-right`) → **close**.
+ *
+ * LV.15 shipped that slot **disabled behind a tooltip** saying pop-outs were a
+ * later task — the one live-but-false affordance it allowed itself, and only
+ * because the tooltip said so. This is the task that makes it real, so the pin
+ * is both halves: the control opens a window, and nothing anywhere still claims
+ * it does not.
+ */
+describe('LV.17 — `pop out` is wired, in the design LAW’s cluster position', () => {
+  it('the hero’s pop-out button calls a handler and is not disabled', () => {
+    const source = code(HERO)
+    const button = source.match(/<Button[^>]*onClick=\{onPopOut\}[\s\S]*?<\/Button>/)
+    if (!button) {
+      throw new Error(`LV.17: no \`onClick={onPopOut}\` button in ${HERO} — nothing opens a window.`)
+    }
+    expect(button[0]).toContain('arrow-up-right')
+    expect(button[0]).not.toContain('disabled')
+    // The scaffold tooltip and its claim are gone outright, not decorated —
+    // LV.13 → `ComparisonPending`, LV.16 → `ListWindowBodyPending`.
+    expect(source).not.toContain('not built yet')
+    expect(source).not.toContain('a later task')
+  })
+
+  it('and it sits between expand and close, which is the LAW’s order', () => {
+    const source = code(HERO)
+    const at = (marker: string) => {
+      const hits = [...source.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))]
+      if (hits.length !== 1) {
+        throw new Error(
+          `LV.17: \`${marker}\` appears ${hits.length} times in ${HERO} — the order pin below ` +
+            'would be asserting about whichever came first.',
+        )
+      }
+      return hits[0].index as number
+    }
+    expect(at('onClick={onShare}')).toBeLessThan(at("<Icon name=\"dots\""))
+    expect(at("<Icon name=\"dots\"")).toBeLessThan(at('onClick={onToggleExpanded}'))
+    expect(at('onClick={onToggleExpanded}')).toBeLessThan(at('onClick={onPopOut}'))
+    expect(at('onClick={onPopOut}')).toBeLessThan(at('onClick={onClose}'))
+  })
+
+  it('the panel wires it to the store, and the store is the only way in', () => {
+    expect(code(PANEL)).toContain("import { useListWindowsStore } from '@/stores/list-windows-store'")
+    expect(code(PANEL)).toContain('const popOut = useListWindowsStore((state) => state.open)')
+    expect(code(PANEL)).toContain('onPopOut={() => popOut(list.id)}')
+
+    // Both entry points call the same `open`. A second mechanism — a local
+    // array, a context, a second store — is how two windows for one list appear.
+    for (const file of [PANEL, COLUMNS]) {
+      expect(code(file), file).toContain('useListWindowsStore((state) => state.open)')
+    }
+    // Four readers, and only four: the two entry points, the window itself, and
+    // the host that paints them.
+    expect(filesRendering('useListWindowsStore(').sort()).toEqual(
+      [COLUMNS, HOST, PANEL, WINDOW].sort(),
+    )
+  })
+})
+
+/**
+ * **The states inside a window** — the second half of LV.17's row.
+ *
+ * CLAUDE.md: *"prefer loud failure over a plausible-looking empty result, and
+ * assert the reason for emptiness rather than inferring it."* There are four
+ * reasons a pop-out has no rows, and they must not collapse into one another.
+ */
+describe('LV.17 — loading / empty / failed / deleted, inside a window', () => {
+  it('the branch order is the column’s, and it is the order the data forces', () => {
+    const rows = declarationSource(WINDOW, 'ListWindowRows')
+    const error = rows.indexOf('if (error)')
+    const loading = rows.indexOf('if (!entries)')
+    const empty = rows.indexOf('if (entries.length === 0)')
+    expect(error).toBeGreaterThan(-1)
+    // An errored read keeps its last good `data`, so rows-first paints stale
+    // rows over a failure; a read in flight has no `entries`, so empty-first
+    // paints "no players" over a request. Both are the CLAUDE.md defect.
+    expect(error).toBeLessThan(loading)
+    expect(loading).toBeLessThan(empty)
+  })
+
+  it('all three are the shared components, not a second vocabulary', () => {
+    const rows = declarationSource(WINDOW, 'ListWindowRows')
+    expect(rows).toContain('<ListReadFailure error={error} canEdit={canEdit} />')
+    expect(rows).toContain('<ListRowsSkeleton rowHeight={29} />')
+    expect(rows).toContain('<EmptyListState canEdit={canEdit} />')
+    // …and the column renders the same two, so the two surfaces cannot drift.
+    expect(code(COLUMNS)).toContain('<ListReadFailure error={detail.error} canEdit={canEdit} />')
+    expect(code(COLUMNS)).toContain('<ListRowsSkeleton rowHeight={30} />')
+    // The body no longer spells either one itself. (The *header* keeps its own
+    // one-word `Loading…` / `Could not load` fallback for the title — that is a
+    // label for the window, not a state for the rows.)
+    expect(rows).not.toContain('could not be loaded')
+    expect(rows).not.toContain('Loading…')
+    expect(rows).not.toContain('animate-pulse')
+  })
+
+  /**
+   * **A pop-out of a list you then delete.**
+   *
+   * The prototype splices the window away (`design/lists.js`:253). This does
+   * not, and the divergence is deliberate: the LAW's persistence bullet says
+   * pop-outs *"stay until closed"*, the delete may not be the viewer's own
+   * action (the host mounts app-wide, so the window outlives the page the
+   * delete happened on), and a window that vanishes with no word is CLAUDE.md's
+   * "nothing happened" with the evidence removed.
+   */
+  it('a deleted list is separated from a failed read, on the error’s own status', () => {
+    const parts = code(ROW_PARTS)
+    // 404 is the answer `GET /api/lists/[id]` gives for `deleted_at IS NOT NULL`
+    // and for an id that resolves to nothing — definitive either way, which is
+    // what makes it safe to word differently from a 500.
+    expect(declarationSource(ROW_PARTS, 'listReadIsGone')).toContain('status')
+    expect(declarationSource(ROW_PARTS, 'listReadIsGone')).toContain('404')
+    const failure = declarationSource(ROW_PARTS, 'ListReadFailure')
+    expect(failure).toContain('This list was deleted.')
+    expect(failure).toContain('This list could not be loaded.')
+    // The retryable wording is never used for a list that is gone, and vice
+    // versa: one `gone` decides both.
+    expect(failure).toMatch(/gone \? 'This list was deleted\.' : 'This list could not be loaded\.'/)
+    expect(parts).toContain('export function listReadIsGone')
+  })
+
+  /**
+   * **The deleted state is only reachable because the 404 is not retried**, and
+   * that was found by trying to reach it.
+   *
+   * The app-wide default is `retry: 1`, and while a retry is outstanding
+   * TanStack Query keeps `status: 'success'` with the **last good data** — so a
+   * surface reading `isError` goes on painting the deleted list's rows. Measured
+   * on the local stack, the retryer sat at `fetchStatus: 'paused'` with
+   * `failureReason: 'List not found'` and **never resolved**, which makes the
+   * stale rows permanent on exactly the surface that outlives the page. The rule
+   * is `use-draft-mode.ts`:518's, applied to the query that needed it most.
+   */
+  it('a 4xx is an answer, not a hiccup — `useList` does not retry one', () => {
+    const source = code(LISTS_HOOK)
+    const useList = declarationSource(LISTS_HOOK, 'useList')
+    expect(useList).toContain('retry: (failureCount: number, error: Error) =>')
+    expect(useList).toContain('if (typeof status === \'number\' && status < 500) return false')
+    // …and a server fault keeps the single retry the rest of the app gets.
+    expect(useList).toContain('return failureCount < 1')
+    // The same shape the house already had, not a second convention.
+    expect(code('src/hooks/use-draft-mode.ts')).toContain(
+      "if (typeof status === 'number' && status < 500) return false",
+    )
+    // `status` is what `jsonOrThrow` puts on the error — the pin is blind if it goes.
+    expect(source).toContain('error.status = res.status')
+  })
+
+  it('a window over a deleted list drops the footer and refuses the drag', () => {
+    const source = code(WINDOW)
+    expect(source).toContain('const gone = detail.isError && listReadIsGone(detail.error)')
+    // Share would copy `/u/{owner}/lists/{slug}` — now a 404 page — and
+    // announce "Link copied"; the view/comment counts are the dead list's last
+    // known ones. R220's live-but-false affordance, so the footer is not
+    // rendered at all.
+    expect(source).toMatch(/\{!minimized && !gone && \(/)
+    // …and a reorder PATCH against a deleted list can only 404.
+    expect(source).toMatch(/const canDrag = [^\n]*!gone/)
+    // The header keeps the name it had: it is the only thing left identifying
+    // which window just died.
+    expect(source).toMatch(/const title = list\?\.title \?\?/)
+  })
+})
+
+/**
+ * **The phone answer** — F-LV15.3, which LV.15 filed and this task owns.
+ *
+ * A small screen gets the same floating window: no breakpoint, no variant, and
+ * the `pop out` control is not hidden below any width. That is a decision made
+ * here, **not** an extension of Chris's *"leave the phone version as is"* (D14),
+ * which was ruled about Side by side. What holds it up is that the three things
+ * a phone could break are each closed, and the pins are those three — not the
+ * absence of a treatment, which is unfalsifiable on its own.
+ */
+describe('LV.17 — the phone gets the same window, and here is what makes that safe', () => {
+  it('nothing hides the pop-out control, or the window, at a breakpoint', () => {
+    // The shape of a quiet "desktop only": a responsive `hidden`/`sm:flex` on
+    // the control, or on the frame. LV.13's no-stacking pin, aimed one surface
+    // over.
+    const button = code(HERO).match(/<Button[^>]*onClick=\{onPopOut\}[\s\S]*?<\/Button>/)
+    expect(button?.[0]).not.toMatch(/(sm|md|lg|xl):(hidden|flex|inline-flex|block)/)
+    expect(button?.[0]).not.toMatch(/\bhidden\b/)
+    expect(classNameContaining(WINDOW, 'fixed')).not.toMatch(/(sm|md|lg|xl):/)
+    expect(code(WINDOW)).not.toMatch(/(sm|md|lg|xl):hidden/)
+  })
+
+  /**
+   * A phone has no Escape key, so R227's hatch does not exist on one and the
+   * **close button is the only way out**. The guarantee is therefore in two
+   * parts, and it is worth stating precisely because the first is stronger than
+   * the second:
+   *
+   * - a window the **store** placed opens whole — fitted in position *and* size
+   *   — so every control is on screen;
+   * - a window the **user** placed is only *rescued*, to
+   *   {@link WINDOW_EDGE_KEEP_X} of grabbable header. That strip is the drag
+   *   handle, not the control cluster, so a window dragged off the right edge
+   *   (or carried across from a wider viewport) needs **one drag** before its
+   *   close button is reachable again. Measured on a 375px viewport: restored at
+   *   `x 275` with the close button off-screen, one touch-drag → `[10, 142]`,
+   *   fully on screen. Re-fitting a position the user chose is the thing two
+   *   reviews explicitly upheld *not* doing (LV.15), so this is the trade, not
+   *   an oversight.
+   */
+  it('the window we place opens whole; the one you place stays grabbable', () => {
+    const source = code(WINDOW)
+    // The paint is capped at the viewport whatever the stored size says…
+    expect(classNameContaining(WINDOW, 'max-w-[calc(100vw-16px)]')).toContain(
+      'max-h-[calc(100vh-16px)]',
+    )
+    // …a dragged window keeps a grabbable strip on screen…
+    expect(source).toContain('WINDOW_EDGE_KEEP_X')
+    expect(source).toContain('WINDOW_EDGE_KEEP_Y')
+    // …and the geometry we choose is fitted, in both position and size. The
+    // arithmetic for that is executed in `list-windows-store.test.ts`.
+    expect(code('src/stores/list-windows-store.ts')).toContain('const userSized =')
+  })
+
+  it('drag and resize are touch gestures, because they are pointer gestures', () => {
+    const source = code(WINDOW)
+    // No mouse-only path anywhere: `onMouseDown`/`onMouseMove` is what the
+    // prototype uses and what would silently exclude a phone.
+    expect(source).not.toMatch(/onMouse(Down|Move|Up)/)
+    for (const handler of ['onPointerDown', 'onPointerMove', 'onPointerUp']) {
+      expect(source, handler).toContain(handler)
+    }
+    // `touch-none` on both grab surfaces, or the browser claims the gesture for
+    // a scroll before the handler ever runs.
+    expect(classNameContaining(WINDOW, 'active:cursor-grabbing')).toContain('touch-none')
+    expect(classNameContaining(WINDOW, 'cursor-nwse-resize')).toContain('touch-none')
+  })
+
+  it('the resize grip starts from the painted corner, not from the stored size', () => {
+    const body = handlerBody(WINDOW, 'onGripPointerDown')
+    // The model and the paint disagree whenever `max-w` is doing work — which,
+    // on a phone with remembered desktop geometry, is always. Starting from
+    // `box.w` snapped the window out to the model width on the first move.
+    expect(body).toContain('frameRef.current?.getBoundingClientRect()')
+    expect(body).toContain('origW: painted?.width ?? box.w')
+    expect(body).toContain('origH: painted?.height ?? box.h')
+    // …and the ref is on the frame itself, which is the box `max-w` caps.
+    expect(code(WINDOW)).toMatch(/<div\n {6}ref=\{frameRef\}/)
+  })
+})
+
+/**
+ * **R246 — the drag layer's containment gate asks "does this root contain the
+ * point", not "is this the *nearest* root".**
+ *
+ * That is sufficient only while no drag surface is nested inside another, and
+ * LV.17 is the task most likely to have changed it: it is the one that makes a
+ * pop-out — a second `useListDrag` consumer — reachable at all. It did not, and
+ * this is the pin that says so rather than the memory of it.
+ */
+describe('LV.17 — the pop-out host is a sibling of the page, never inside it (R246)', () => {
+  it('the host is not a descendant of whatever renders the page', () => {
+    const children = indentOf(SHELL, '{children}')
+    const host = indentOf(SHELL, '<ListWindowsHost />')
+    const source = code(SHELL)
+    // Shallower than `{children}`, so it cannot be inside any element that
+    // `{children}` sits in — and after it, so that element has closed. Prettier
+    // makes indentation a reliable depth proxy here, as `indentOf`'s own header
+    // records.
+    expect(host).toBeLessThan(children)
+    expect(source.indexOf('<ListWindowsHost />')).toBeGreaterThan(source.indexOf('{children}'))
+  })
+
+  it('…which is the precondition the one-containment-check hit test relies on', () => {
+    const hit = declarationSource(DRAG, 'hitTest')
+    expect(hit).toContain('!root.contains(at)')
+    // Stated where the next reader is, not only here.
+    expect(read(DRAG)).toContain('sibling')
   })
 })

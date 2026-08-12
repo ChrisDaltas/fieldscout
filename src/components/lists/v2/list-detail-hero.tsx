@@ -16,10 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ListWithDetails } from '@/hooks/use-lists'
-import { cn } from '@/lib/utils'
 import type { ListFolder } from '@/types/database'
 
 import { ListCoverTile } from './cover-tile'
@@ -192,6 +190,12 @@ interface HeroProps {
   expanded: boolean
   onToggleExpanded: () => void
   onClose: () => void
+  /**
+   * Lift this list into a floating window (LV.17). The panel wires it to
+   * `list-windows-store`'s `open`; the hero stays presentational, like every
+   * other action in this cluster.
+   */
+  onPopOut: () => void
   onRename: (title: string) => void
   onShare: () => void
   onDuplicate: () => void
@@ -224,6 +228,7 @@ export function ListDetailHero({
   expanded,
   onToggleExpanded,
   onClose,
+  onPopOut,
   onRename,
   onShare,
   onDuplicate,
@@ -338,18 +343,22 @@ export function ListDetailHero({
           <Icon name={expanded ? 'collapse' : 'expand'} size={13} />
         </Button>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className={cn('inline-flex')}>
-              <Button variant="stroke" size="icon-sm" disabled title="Pop out into a window">
-                <Icon name="arrow-up-right" size={13} />
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            Pop-out windows are a later task — not built yet.
-          </TooltipContent>
-        </Tooltip>
+        {/* Pop out (LV.17) — the design LAW's cluster order is Share → dots →
+            expand → **pop out** → close, and this is the position it has always
+            occupied; LV.15 shipped it disabled behind a tooltip saying so,
+            because nothing rendered a window yet. The panel stays open behind
+            the window deliberately: the prototype does the same
+            (`ListsScreen.jsx`:230 calls `st.popout` and touches `st.openId`
+            not at all), and the two surfaces cannot disagree — one
+            `useDraftMode(listId)` cache, one `list-display-store` entry. */}
+        <Button
+          variant="stroke"
+          size="icon-sm"
+          onClick={onPopOut}
+          title="Pop out into a window"
+        >
+          <Icon name="arrow-up-right" size={13} />
+        </Button>
 
         <Button variant="stroke" size="icon-sm" onClick={onClose} title="Close list">
           <Icon name="close" size={13} />

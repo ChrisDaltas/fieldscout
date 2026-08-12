@@ -48,14 +48,23 @@ import {
   rankMap,
   type Bucket,
 } from './list-buckets'
-import { DraftedCheckbox, DropGap, EmptyListState, PlayerName } from './list-row-parts'
+import {
+  DraftedCheckbox,
+  DropGap,
+  EmptyListState,
+  listReadIsGone,
+  ListReadFailure,
+  ListRowsSkeleton,
+  PlayerName,
+} from './list-row-parts'
 import { formatCount, formatStat, resolveStats, type StatDef } from './list-stats'
 import { StatsCatalog } from './list-toolbar'
 import { ListDragContext, useDragHandle, useListDrag, type ListDragApi } from './use-list-drag'
 import { useListDropCommit } from './use-list-drop'
 
 /**
- * Lists v2 — one pop-out window: the frame (LV.15) and **its content** (LV.16).
+ * Lists v2 — one pop-out window: the frame (LV.15), **its content** (LV.16) and
+ * **the states, the wiring and the phone answer** (LV.17).
  *
  * Design LAW: `docs/design/lists/README.md` → §"Pop-out window"; prototype
  * source `docs/design/lists/design/ListsCommon.jsx` (`PopoutWindow`, :533–678)
@@ -64,22 +73,70 @@ import { useListDropCommit } from './use-list-drop'
  * and where they disagree the README is normative, with the disagreements called
  * out at the line that resolves them.
  *
- * ## What is here, and what is still LV.17's
+ * ## Which task built what
  *
  * | | |
  * | --- | --- |
  * | **LV.15** | the frame: outer stroke, near-black surface, the 44px→36px header with cover + name, drag anywhere on it, the 16px resize grip and its clamps, collapse, close, Escape, and the z-stack the host paints |
- * | **LV.16 (here)** | the **dark inversion wrapper**, the header's `gear` + `dots`, the 29px rows with their checkbox / `#N` / name / badge / stat cells, drag-reorder through the shared gap model, and the footer |
- * | **LV.17** | what opens a window at all — `pop out` in the detail hero and the column menu — plus loading / empty / error *inside* the window, 6+ windows, and the mobile answer |
+ * | **LV.16** | the **dark inversion wrapper**, the header's `gear` + `dots`, the 29px rows with their checkbox / `#N` / name / badge / stat cells, drag-reorder through the shared gap model, and the footer |
+ * | **LV.17** | the states *inside* the window (loading / empty / failed / **deleted**), the resize grip starting from the painted box, and the two controls that finally open one of these: `pop out` in `list-detail-hero.tsx` and in a Side by side column's `dots` menu |
  *
- * **Nothing opens one of these yet, and that is LV.17's row, not an omission
- * here.**
- *
- * LV.16 discharges both hand-offs LV.15 filed (PROGRESS §5): `ListWindowBodyPending`
+ * LV.16 discharged both hand-offs LV.15 filed (PROGRESS §5): `ListWindowBodyPending`
  * is **deleted** rather than decorated (**F-LV15.1**, as LV.13 deleted LV.12's
  * `ComparisonPending`), and the `gear` + `dots` the LAW's header lists are now
- * real controls rather than a marked gap (**F-LV15.2**) — each needed exactly
- * what this task brings.
+ * real controls rather than a marked gap (**F-LV15.2**).
+ *
+ * ## Six windows, seven windows, twelve windows — LV.17's answer is "no cap"
+ *
+ * There is no limit, and nothing is truncated. That is Q4's ruling applied to
+ * the surface it was made one screen away from (Chris, 2026-08-11, on the
+ * comparison picker: no cap, no search, no truncation), and it is what the LAW
+ * asks for in its opening line — *"Open several and set them side by side."*
+ * What the **sixth** window does is therefore a placement question, and the
+ * store already answers it: the cascade steps down-right and **wraps after six**
+ * (`WINDOW_CASCADE_WRAP`, ported from `window-shell.tsx`), so a seventh opens
+ * back at the origin on top of the first rather than marching off the corner.
+ * Stacking stays **one** z layer at 45 — DOM order inside it, never `45 + i`,
+ * so a sixth window cannot climb into the dialog layer (`list-windows-host.tsx`).
+ * Every window in a pile is still individually reachable: the front one answers
+ * Escape and the stack unwinds one press at a time, and each carries its own
+ * close button.
+ *
+ * ## The phone answer (**F-LV15.3**): the same window, and here is why that holds
+ *
+ * There is **no breakpoint treatment and no phone variant** — the `pop out`
+ * control is not hidden below any width, and a small screen gets the floating
+ * window everything else gets. That is a decision this task owns rather than an
+ * inheritance: Chris's *"leave the phone version as is"* (D14) was ruled about
+ * **Side by side**, and is not extended here by assumption. What makes it a
+ * claim rather than a shrug is that the three things a phone could break are
+ * each closed:
+ *
+ * 1. **A window we place opens whole**, which matters more here than anywhere
+ *    else because a phone has no Escape key, so the R227 hatch does not exist on
+ *    one and the close button is the only way out. Position was fitted at LV.15;
+ *    **size** is fitted here (`resolveWindowGeometry`), and the frame's
+ *    `max-w`/`max-h` cap the paint at the viewport regardless. **A window the
+ *    *user* placed is only rescued**, to {@link WINDOW_EDGE_KEEP_X} of grabbable
+ *    header — that strip is the drag handle, not the control cluster, so one
+ *    carried across from a wider viewport takes **one drag** before its close
+ *    button is reachable. That is the trade LV.15 made deliberately and two
+ *    reviews upheld: a position you chose is never re-fitted. Measured at 375px:
+ *    restored at `x 275` (close off-screen) → one touch-drag → `[10, 142]`,
+ *    whole window on screen.
+ * 2. **Drag and resize are pointer events**, so they are touch events on a
+ *    phone — no mouse-only path anywhere in this file. The header and the grip
+ *    both carry `touch-none` so the browser does not claim the gesture for a
+ *    scroll.
+ * 3. **The grip starts from the painted corner**, so the one place where a
+ *    narrow viewport used to make the window jump is closed (see
+ *    `onGripPointerDown`).
+ *
+ * The honest cost, stated rather than glossed: a 352 × 416 window covers most of
+ * a 375px screen while it is open, and it floats over the bottom tab bar (z 45
+ * against 40) if you drag it down there. Both are true of the player mini card
+ * this window mirrors, both are one drag or one close from being fixed by the
+ * user, and neither is a trap.
  *
  * ## The dark inversion — one wrapper, no restyled children
  *
@@ -309,11 +366,33 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   } | null>(null)
 
   const list = detail.data
-  // The header is honest about the three states it can be in. `Loading…`
-  // forever over a failed read is CLAUDE.md's "never let 'nothing happened'
-  // mean 'it worked'" — the same call `side-by-side-columns.tsx` made for its
-  // subline. The states *inside* the window are LV.17's.
-  const title = list?.title ?? (detail.isError ? 'Could not load' : 'Loading…')
+  /**
+   * **The list under this window is gone** (LV.17).
+   *
+   * A pop-out is hosted by the app shell and survives navigation (design LAW),
+   * so the list it shows can be deleted from a screen the user is not even
+   * looking at — their own Lists page in another tab, or by the owner of a
+   * saved list. `useDeleteList` invalidates `listsKeys.all`, which matches this
+   * window's own detail key, so the next read is a **404** and React Query keeps
+   * the last good `data` alongside the error. Left alone, that is a window
+   * showing a deleted list's rows for as long as it stays open.
+   *
+   * **It does not close itself.** The prototype's `store.destroy` does splice
+   * the pop-out away (`design/lists.js`:253), and this deliberately diverges:
+   * that is an in-memory demo with one actor, no soft delete and no Trash. Here
+   * the delete may not be the viewer's action at all, and a window that vanishes
+   * without a word while you are on `/app/players` is CLAUDE.md's "nothing
+   * happened" with the evidence removed. The LAW's own persistence bullet is the
+   * other half — pop-outs *"stay until closed"* — so the window stays, says what
+   * happened, and the close button it already has is how you dismiss it.
+   */
+  const gone = detail.isError && listReadIsGone(detail.error)
+  // The header is honest about the states it can be in. `Loading…` forever over
+  // a failed read is CLAUDE.md's "never let 'nothing happened' mean 'it worked'"
+  // — the same call `side-by-side-columns.tsx` made for its subline. A deleted
+  // list keeps the **name** it had: that is the only thing on screen that still
+  // identifies which window just died, and it is not a claim about the read.
+  const title = list?.title ?? (gone ? 'Deleted list' : detail.isError ? 'Could not load' : 'Loading…')
   const cover = list ?? null
   const coverPlayers = React.useMemo(
     () => list?.players.slice(0, 3).map((entry) => entry.player) ?? null,
@@ -356,7 +435,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   // A comparison — and a pop-out — routinely holds a list you do not own. The
   // owner gate is the server's answer, not a client-side comparison.
   const canEdit = Boolean(list?.is_owner)
-  const canDrag = canEdit && canReorder(org) && !minimized
+  // …and never over a list that is gone: the rows are stale by definition, and
+  // a reorder PATCH against a deleted list is a request that can only 404.
+  const canDrag = canEdit && !gone && canReorder(org) && !minimized
 
   const handleDrop = useListDropCommit({ listId, org, buckets, canEdit })
   const drag = useListDrag({ enabled: canDrag, horizontal: false, onDrop: handleDrop })
@@ -533,16 +614,35 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
 
   // ---- resize: the 16px grip, bottom-right ---------------------------------
 
+  /**
+   * The grip starts from what is **painted**, not from what is stored (LV.17).
+   *
+   * The frame carries `max-w-[calc(100vw-16px)]`, so a window whose remembered
+   * size is wider than the current viewport renders narrower than `box.w` says.
+   * Starting the drag from the model then snapped the window out to that model
+   * width on the first pointer move — up to a 48px jump before the pointer had
+   * travelled a pixel, and on a phone that is most of the gesture. Reading the
+   * frame's own rect makes the resize begin where the corner actually is.
+   *
+   * This is the *second* place the model and the paint can disagree; the first
+   * is a freshly-cascaded window, which `resolveWindowGeometry` now sizes to fit
+   * so the disagreement never arises (see `list-windows-store.ts`). Together
+   * they are what makes "a phone gets the same window" a claim rather than a
+   * hope — F-LV15.3.
+   */
+  const frameRef = React.useRef<HTMLDivElement | null>(null)
+
   const onGripPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
+    const painted = frameRef.current?.getBoundingClientRect()
     sizeRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      origW: box.w,
-      origH: box.h,
+      origW: painted?.width ?? box.w,
+      origH: painted?.height ?? box.h,
     }
   }
 
@@ -570,6 +670,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
 
   return (
     <div
+      ref={frameRef}
       role="dialog"
       aria-label={`${title} (pop-out)`}
       data-list-window={listId}
@@ -660,7 +761,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             <ListWindowRows
               buckets={buckets}
               entries={entries}
-              error={detail.isError}
+              error={detail.isError ? detail.error : null}
               stats={stats}
               org={org}
               ranks={ranks}
@@ -675,7 +776,13 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           </ListDragContext>
         )}
 
-        {!minimized && (
+        {/* No footer over a list that no longer exists (LV.17). The view and
+            comment counts are the deleted list's last known ones, and Share
+            would copy `/u/{owner}/lists/{slug}` — a URL that now resolves to a
+            404 page, announced as "Link copied". A control that confidently
+            does the wrong thing is the live-but-false affordance **R220**
+            named; the honest version of this footer is no footer. */}
+        {!minimized && !gone && (
           <div className="flex h-8 shrink-0 items-center gap-2.5 border-t border-ink px-2">
             {/* views / comments (design LAW). Read-outs, not buttons: a pop-out
                 has no comments panel to open, and a control that does nothing is
@@ -797,12 +904,22 @@ const WindowChromeButton = React.forwardRef<
 })
 
 /**
- * The rows, grouped, under the sticky column caption row.
+ * The rows, grouped, under the sticky column caption row — and the three states
+ * that are not rows (LV.17).
  *
- * The three states of the read are the ones the header already tells the truth
- * about; **the states themselves are LV.17's**, so this stays deliberately
- * plain — but it never renders "empty" over a failed or unanswered read, which
- * is the one thing that cannot wait for a later task (CLAUDE.md).
+ * **The branch order is `error → !entries → empty → rows`, and it is
+ * `side-by-side-columns.tsx`'s, not a second answer.** It is also the order
+ * CLAUDE.md forces: an errored read still carries the last good `data`, so
+ * testing `entries` first would paint stale rows over a failure, and a read
+ * that has not answered has no `entries` at all, so testing `length === 0`
+ * first would paint "No players on this list yet" over a request in flight.
+ * Each branch asserts the reason for having no rows rather than inferring it.
+ *
+ * Two of the three are now literally shared with the column
+ * (`ListReadFailure`, `ListRowsSkeleton`, `EmptyListState` — all from
+ * `list-row-parts.tsx`), which is what stops the window and the column drifting
+ * into two vocabularies for one situation. `ListReadFailure` is also where
+ * *deleted* is separated from *failed*, on the error's own status.
  */
 function ListWindowRows({
   buckets,
@@ -821,7 +938,8 @@ function ListWindowRows({
 }: {
   buckets: Bucket[]
   entries: ListPlayerWithPlayer[] | undefined
-  error: boolean
+  /** The read's error, or `null` when it has not failed. */
+  error: Error | null
   stats: StatDef[]
   org: ListOrg
   ranks: Map<string, number>
@@ -836,14 +954,10 @@ function ListWindowRows({
   const minWidth = rowMinWidth(stats.length)
 
   if (error) {
-    return (
-      <p className="px-3 py-6 text-center text-[10.5px] font-semibold">
-        This list could not be loaded.
-      </p>
-    )
+    return <ListReadFailure error={error} canEdit={canEdit} />
   }
   if (!entries) {
-    return <p className="px-3 py-6 text-center text-[10.5px] font-medium text-n-3">Loading…</p>
+    return <ListRowsSkeleton rowHeight={29} />
   }
   if (entries.length === 0) {
     return (

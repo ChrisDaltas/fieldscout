@@ -130,6 +130,29 @@ export function useList(id: string | undefined) {
     queryKey: id ? listsKeys.detail(id) : ['lists', 'detail', 'undefined'],
     queryFn: () => fetch(`/api/lists/${id}`).then(jsonOrThrow<ListWithDetails>),
     enabled: Boolean(id),
+    /**
+     * **A 4xx is an answer, not a hiccup** — `use-draft-mode.ts`'s rule, on the
+     * query that needed it most (LV.17).
+     *
+     * The app-wide default is `retry: 1` (`query-provider.tsx`), and while a
+     * retry is outstanding TanStack Query keeps `status: 'success'` with the
+     * **last good data** and reports the failure only through `failureReason`.
+     * So a surface reading `isError` goes on rendering the deleted list's rows
+     * until the retry is exhausted — and *measured live on the local stack*, a
+     * retry can sit at `fetchStatus: 'paused'` and never be, at which point the
+     * stale rows are permanent. That is precisely the pop-out failure mode
+     * (`list-window.tsx`, LV.17): the window is hosted by the app shell, so it
+     * survives onto routes where nothing will ever invalidate this key again.
+     *
+     * A 404 from `GET /api/lists/[id]` means `deleted_at IS NOT NULL` or no such
+     * id — definitive either way. Retrying it only delays the truth. Server
+     * faults keep the single retry the rest of the app gets.
+     */
+    retry: (failureCount: number, error: Error) => {
+      const status = (error as Error & { status?: number }).status
+      if (typeof status === 'number' && status < 500) return false
+      return failureCount < 1
+    },
   })
 }
 

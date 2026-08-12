@@ -472,6 +472,111 @@ export function EmptyListState({ canEdit }: { canEdit: boolean }) {
 }
 
 // -----------------------------------------------------------------------------
+// The other two states of a list read (LV.17)
+// -----------------------------------------------------------------------------
+
+/**
+ * Is this read's failure the list being **gone**, rather than something that
+ * might work on a retry?
+ *
+ * `GET /api/lists/[id]` answers `404` in exactly two cases: the row has a
+ * `deleted_at` (business rule 8 — deletes are always soft), or the id resolves
+ * to nothing at all. Both mean *there is no list here any more*, and neither is
+ * transient — which is what lets a surface say so instead of offering the
+ * "could not be loaded" that invites a reload. Anything else (a 500, a dropped
+ * connection) keeps the retryable wording.
+ *
+ * The `status` field is put on the error by `use-lists.ts`'s `jsonOrThrow`;
+ * `use-draft-mode.ts`:518 reads it the same way to decide what is worth
+ * retrying.
+ */
+export function listReadIsGone(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 404
+}
+
+/**
+ * A list read that failed, said out loud — **one component, two surfaces**
+ * (a Side by side column and a pop-out window), because they were about to be
+ * two spellings of the same three sentences.
+ *
+ * CLAUDE.md, "Never let 'nothing happened' mean 'it worked'": *"prefer loud
+ * failure over a plausible-looking empty result, and assert the reason for
+ * emptiness rather than inferring it."* So the reason is asserted here rather
+ * than flattened — a deleted list is not a failure and must not read like one,
+ * and a real fault must not read like an empty list.
+ *
+ * **A pop-out is the surface that made this worth splitting.** It is rendered by
+ * the app shell and survives navigation (design LAW §Pop-out window), so the
+ * list underneath it can be deleted from another screen — or by its owner, while
+ * you are looking at a saved copy of it on a different route. A window showing
+ * stale rows forever is the failure mode; a window that vanishes without a word
+ * is the same failure with the evidence removed.
+ *
+ * The scale is the **column's**, which already survives a 240px panel — narrower
+ * than the window's 264px minimum — so neither surface needs a variant.
+ */
+export function ListReadFailure({
+  error,
+  canEdit,
+}: {
+  /** The query's error. `null` is not a state this renders — callers branch first. */
+  error: unknown
+  /**
+   * Whether the viewer owns the list, taken from the last good read. Only
+   * changes the *deleted* copy: Trash lists your own soft-deleted lists, so
+   * pointing a stranger at it would be a dead end.
+   */
+  canEdit: boolean
+}) {
+  const gone = listReadIsGone(error)
+  const message = error instanceof Error ? error.message : null
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 px-3 py-6 text-center">
+      <Icon
+        name={gone ? 'remove' : 'info-circle'}
+        size={16}
+        className={gone ? 'text-n-3' : 'text-negative-strong'}
+      />
+      <p className="text-[11px] font-bold">
+        {gone ? 'This list was deleted.' : 'This list could not be loaded.'}
+      </p>
+      <p className="text-[9px] font-medium text-n-3">
+        {gone
+          ? canEdit
+            ? 'Deleted lists go to Trash, where you can restore it.'
+            : 'Its owner deleted it.'
+          : message}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Rows that have not arrived yet. Deliberately **not** an empty container: an
+ * empty list and a list still loading look identical the moment the difference
+ * is left to the reader, and that is the confusion CLAUDE.md's rule is about.
+ *
+ * `rowHeight` is the only thing the two callers disagree on (a column's 30px row
+ * against a window's 29px one), so it is the only prop.
+ */
+export function ListRowsSkeleton({ rows = 6, rowHeight }: { rows?: number; rowHeight: number }) {
+  return (
+    <div className="flex animate-pulse flex-col" aria-busy="true" aria-label="Loading list">
+      {Array.from({ length: rows }, (_, row) => (
+        <span
+          key={row}
+          style={{ height: rowHeight }}
+          className="block border-b border-n-4 p-2"
+        >
+          <span className="block h-full rounded-sm bg-n-4" />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
 // Bucket header
 // -----------------------------------------------------------------------------
 
