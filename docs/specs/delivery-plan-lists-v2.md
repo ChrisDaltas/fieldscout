@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v4.1 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v4.2 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -389,6 +389,37 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
 - **D7 — The public share view stays server-rendered.**
   `/u/[username]/lists/[slug]` is SEO-critical per CLAUDE.md.
 
+  *(Extended by LV.6, 2026-08-11 — three rules the original sentence implied and
+  did not say.)*
+
+  1. **The page is a server component; interaction may hydrate, content may
+     not.** Every query runs on the server and the rows reach the browser inside
+     the initial HTML. The v2 components under it are `'use client'` so their
+     *controls* work, never so their content arrives late — `curl` with no
+     cookies must return the players, and `public-share-view.test.ts` fails if
+     the page ever gains a `'use client'` or a `useQuery`.
+  2. **The handoff defines no share screen, so it is derived by subtraction.**
+     The public view is the signed-in open list with everything a stranger
+     cannot do removed — and it mounts the *same* components, never a fork.
+     The line is **display stays, writes go**: grouping, view style, `Stats`
+     and the budget are session-only state (D3) and a reader keeps them; every
+     control that writes is gone.
+  3. **A subtraction is the absence of the handler, not a no-op handler.**
+     `ListBody`, `ListDetailsTab`, `ListToolbar` and `RowHandlers` take their
+     write gestures as optional, and every affordance is gated on its
+     permission flag **and** on its handler existing. Passing `() => {}` is the
+     shape CLAUDE.md forbids — a later edit re-enables the control and nothing
+     happens.
+  4. **`canEdit` is not the only permission.** `RowHandlers.canMark` is the
+     second: a drafted mark is per *viewer* (`list_player_drafted.user_id`,
+     D2/LV.1.2), so "owner" and "has an account" are different questions and
+     the share view answers `false` to both.
+  5. **This page 500s where others degrade.** It is server-rendered, so a throw
+     is an HTTP 500 rather than a blank component — which is why grouping goes
+     through `buildBuckets` (total over `string`) and colouring through
+     `bucketBandClass` (total over `string`), and why the bucket vocabulary is
+     tested here in its own right.
+
 - **D9 — One component for every tab and segment** (Chris, 2026-08-11).
   Verbatim: *"Could you standardize all the tab and segment UI controls to the
   same component? The one that's being used List / Cards / Side by side. There
@@ -518,7 +549,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 | --- | --- | --- |
 | LV.4.1 | Loading / empty / error / overflow states across both screens | LV.3.* |
 | LV.4.2 | AI list generation + persona surfaces restyled into the new language (CLAUDE.md: never leave them in the old style, never remove them) | LV.3.* |
-| LV.4.3 | Public share view in the new language, still server-rendered (D7) | LV.3.* |
+| LV.4.3 | Public share view in the new language, still server-rendered (D7). **UI only** — the schema budget stays closed at three | LV.3.* |
 | LV.4.4 | Flag flip + retire the old components — including **deleting `use-board-marks.ts` and the old `/app/lists/draft-mode` 3-state cycle** (D2; §1's boards amendment scopes this), and correcting that file's now-false header comment (R192) | all |
 
 **Phase 5 — attached links** *(added v3.7, ruled 2026-08-11)*
@@ -584,6 +615,40 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v4.2 (2026-08-11)** — **The public share view is rebuilt, and D7 grows from
+  one sentence into five rules (LV.6).** The original decision said only that
+  `/u/[username]/lists/[slug]` stays server-rendered. That is true and was not
+  enough: the handoff defines **no** share screen, so a Builder arriving at this
+  task has to invent one, and inventing one is exactly what the redesign rules
+  warn against.
+
+  D7 now says what to derive it *from*. The share view is the signed-in open
+  list **minus what a stranger cannot do**, mounting the same components rather
+  than a fork of them, split on one line — **display stays, writes go**. Session
+  display state (D3) is not a privilege, so grouping, view style, `Stats` and
+  the budget survive for a reader; every control that writes does not.
+
+  Three things the build found that the plan had not priced:
+
+  1. **`canEdit` was doing two jobs.** A drafted mark is per *viewer*
+     (`list_player_drafted.user_id`, D2), not per owner, so "may edit this list"
+     and "has an account at all" are different questions. `RowHandlers.canMark`
+     is the second one. Collapsing them offers a signed-out viewer a checkbox
+     that 401s.
+  2. **Optional handlers, not no-op handlers.** Every write gesture on
+     `ListBody`, `ListDetailsTab` and `ListToolbar` is optional now, and every
+     affordance needs its flag *and* its handler. A deliberate break flipping
+     both flags to `true` made 10 row menus appear for a signed-out stranger —
+     and `Add players` and the bucket `Add +` stayed gone, because they need
+     the handler as well. That is the double lock working, and it is the reason
+     `() => {}` is not allowed here.
+  3. **The LV.1.5 500 was reproduced on the live route.** v4.1 recorded that
+     widening the tier CHECK *would have* crashed this page. LV.6 put the old
+     `Map` shape back for one run against a public list holding `r1`/`c1` and
+     got `HTTP 500 — Cannot read properties of undefined (reading 'push')`,
+     then reverted to a 200. D7 now states the property that makes this page
+     different: it 500s where every other surface degrades.
 
 - **v4.1 (2026-08-11)** — **The tier CHECK is widened; the second schema
   exception is spent (LV.1.5).** Migration `081_list_players_tier_vocabulary.sql`

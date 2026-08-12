@@ -166,11 +166,26 @@ export interface RowMenuActions {
   onEditNote: () => void
   onRemove: () => void
   canEdit: boolean
+  /**
+   * Can this viewer mark players drafted? A drafted mark is a row in
+   * `list_player_drafted` keyed by `user_id`, so it needs an account — the
+   * public share view (LV.6) passes `false` and the item disappears rather than
+   * offering a write that would 401.
+   */
+  canMark: boolean
   /** Card view has its own checkbox, so its menu omits "Mark drafted". */
   omitDrafted?: boolean
 }
 
+/**
+ * Returns `null` when there is nothing to put in the menu — a trigger that
+ * opens an empty popover is worse than no trigger, and on the public share view
+ * every item is subtracted at once.
+ */
 export function RowMenu({ actions, className }: { actions: RowMenuActions; className?: string }) {
+  const showDrafted = actions.canMark && !actions.omitDrafted
+  if (!showDrafted && !actions.canEdit) return null
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -187,7 +202,7 @@ export function RowMenu({ actions, className }: { actions: RowMenuActions; class
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[168px]">
-        {!actions.omitDrafted && (
+        {showDrafted && (
           <DropdownMenuItem onSelect={actions.onToggleDrafted}>
             <Icon name="check" size={13} />
             {actions.drafted ? 'Mark undrafted' : 'Mark drafted'}
@@ -359,6 +374,31 @@ export function NewBucketZone({
 }
 
 // -----------------------------------------------------------------------------
+// Empty list
+// -----------------------------------------------------------------------------
+
+/**
+ * "This list has nothing on it." Shared by the app panel and the public share
+ * view (LV.6) — the non-owner copy was already written for the panel's saved
+ * lists, and it is exactly the sentence a stranger following a share link
+ * should read, so the two surfaces use one component rather than two spellings
+ * of the same empty state.
+ */
+export function EmptyListState({ canEdit }: { canEdit: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-2 border border-dashed border-ink px-6 py-10 text-center">
+      <Icon name="list" size={20} className="text-n-3" />
+      <p className="text-[13px] font-bold">No players on this list yet.</p>
+      <p className="max-w-[300px] text-[11px] font-medium text-n-3">
+        {canEdit
+          ? 'Use Add players to search the pool and start building the board.'
+          : 'The owner has not added anyone yet.'}
+      </p>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
 // Bucket header
 // -----------------------------------------------------------------------------
 
@@ -379,13 +419,15 @@ export function BucketHeader({
 }: {
   bucket: Bucket
   canEdit: boolean
-  onRename: (bandKey: string, label: string) => void
-  onAdd: () => void
+  /** Absent on a read-only surface — the band renders as plain text. */
+  onRename?: (bandKey: string, label: string) => void
+  /** Absent on a read-only surface — the `Add +` affordance disappears. */
+  onAdd?: () => void
   compact?: boolean
 }) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState(bucket.label ?? '')
-  const renameable = canEdit && bucket.editableKey != null
+  const renameable = canEdit && Boolean(onRename) && bucket.editableKey != null
 
   React.useEffect(() => {
     setDraft(bucket.label ?? '')
@@ -393,7 +435,7 @@ export function BucketHeader({
   }, [bucket.label])
 
   const commit = () => {
-    if (bucket.editableKey) onRename(bucket.editableKey, draft)
+    if (bucket.editableKey) onRename?.(bucket.editableKey, draft)
     setEditing(false)
   }
 
@@ -438,7 +480,7 @@ export function BucketHeader({
       {bucket.meta ? (
         <span className="fs-num text-[10px] font-medium">{bucket.meta}</span>
       ) : null}
-      {canEdit ? (
+      {canEdit && onAdd ? (
         <button
           type="button"
           onClick={onAdd}

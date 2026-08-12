@@ -49,10 +49,22 @@ import { ListDragContext, useDragHandle, useListDrag, type ListDragApi } from '.
 
 export interface RowHandlers {
   isDrafted: (playerId: string) => boolean
-  onToggleDrafted: (playerId: string) => void
-  onEditNote: (entry: ListPlayerWithPlayer) => void
-  onRemove: (entry: ListPlayerWithPlayer) => void
+  /** Omitted where `canMark` is false, and unreachable when it is. */
+  onToggleDrafted?: (playerId: string) => void
+  /** Omitted where `canEdit` is false, and unreachable when it is. */
+  onEditNote?: (entry: ListPlayerWithPlayer) => void
+  /** Omitted where `canEdit` is false, and unreachable when it is. */
+  onRemove?: (entry: ListPlayerWithPlayer) => void
+  /** Owner (and not mid-AI-build): rename, remove, reorder, add. */
   canEdit: boolean
+  /**
+   * Can this viewer mark players drafted? Separate from `canEdit` because a
+   * drafted mark is *per viewer* (`list_player_drafted.user_id`, LV.1.2) rather
+   * than per owner — but it still needs an account, so the public share view
+   * (LV.6) passes `false` and the checkbox and its menu item disappear instead
+   * of offering a signed-out write that would 401.
+   */
+  canMark: boolean
 }
 
 interface BodyProps {
@@ -65,9 +77,16 @@ interface BodyProps {
   showBudgetShare: boolean
   budget: number
   handlers: RowHandlers
-  onRenameBand: (bandKey: string, label: string) => void
-  onAddToBucket: (bucket: Bucket) => void
-  onDrop: (entryId: string, target: DropTarget) => void
+  /**
+   * The three write gestures. **Optional on purpose**: a surface that cannot
+   * perform them omits them, rather than passing a no-op that would let a
+   * future edit re-enable the affordance and silently do nothing (CLAUDE.md:
+   * never let "nothing happened" mean "it worked"). The public share view
+   * passes none of the three.
+   */
+  onRenameBand?: (bandKey: string, label: string) => void
+  onAddToBucket?: (bucket: Bucket) => void
+  onDrop?: (entryId: string, target: DropTarget) => void
 }
 
 /** What each view style receives once the drag layer is resolved. */
@@ -76,17 +95,36 @@ interface ViewProps extends BodyProps {
   canDrag: boolean
   /** Why dragging is unavailable, shown on the grip. `null` when it is. */
   dragReason: string | null
+  /**
+   * Does a grip belong on these rows at all?
+   *
+   * A grip means one of two things: "drag me", or "you could drag here but not
+   * in this grouping, and here is why". A viewer who can never reorder this
+   * list gets **neither** — a permanently inert 9px dot column is furniture
+   * that lies about an affordance (the same rule that hides the drafted
+   * checkbox on the public view). The table header's leading spacer follows
+   * this flag so the columns stay aligned when it goes.
+   */
+  showGrip: boolean
+  /**
+   * Does the row menu have anything in it? `RowMenu` answers `null` when it
+   * does not, so the table header's trailing spacer has to follow the same
+   * rule or the columns drift by one control's width.
+   */
+  showMenu: boolean
   /** The dragged player's name — it rides inside the open gap. */
   dragName: string
 }
 
+const noDrop = () => {}
+
 export function ListBody(props: BodyProps) {
   const reorderable = canReorder(props.org)
-  const canDrag = props.handlers.canEdit && reorderable
+  const canDrag = props.handlers.canEdit && Boolean(props.onDrop) && reorderable
   const drag = useListDrag({
     enabled: canDrag,
     horizontal: props.view === 'card',
-    onDrop: props.onDrop,
+    onDrop: props.onDrop ?? noDrop,
   })
 
   const dragName = React.useMemo(() => {
@@ -98,11 +136,18 @@ export function ListBody(props: BodyProps) {
     return ''
   }, [drag.dragId, props.buckets])
 
+  const dragReason =
+    props.handlers.canEdit && Boolean(props.onDrop) && !reorderable
+      ? COMPUTED_ORDER_REASON
+      : null
+
   const view: ViewProps = {
     ...props,
     drag,
     canDrag,
-    dragReason: props.handlers.canEdit && !reorderable ? COMPUTED_ORDER_REASON : null,
+    dragReason,
+    showGrip: canDrag || dragReason !== null,
+    showMenu: props.handlers.canEdit || props.handlers.canMark,
     dragName,
   }
 
@@ -181,7 +226,7 @@ function RowsBody(props: ViewProps) {
               bucket={bucket}
               canEdit={handlers.canEdit}
               onRename={onRenameBand}
-              onAdd={() => onAddToBucket(bucket)}
+              onAdd={onAddToBucket && (() => onAddToBucket(bucket))}
             />
           )}
           <div className="overflow-x-auto">
@@ -268,7 +313,9 @@ function ListRow({
         dragging && 'opacity-35',
       )}
     >
-      <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
+      {view.showGrip && (
+        <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
+      )}
       <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
       <PlayerFace entry={entry} size={24} />
       <span className="min-w-0 flex-1">
@@ -298,10 +345,11 @@ function ListRow({
       <RowMenu
         actions={{
           drafted,
-          onToggleDrafted: () => handlers.onToggleDrafted(entry.player_id),
-          onEditNote: () => handlers.onEditNote(entry),
-          onRemove: () => handlers.onRemove(entry),
+          onToggleDrafted: () => handlers.onToggleDrafted?.(entry.player_id),
+          onEditNote: () => handlers.onEditNote?.(entry),
+          onRemove: () => handlers.onRemove?.(entry),
           canEdit: handlers.canEdit,
+          canMark: handlers.canMark,
         }}
       />
     </div>
@@ -330,7 +378,7 @@ function TableBody(props: ViewProps) {
     <div className="overflow-x-auto border border-ink bg-white transition-shadow hover:shadow-hard-4">
       <div style={{ minWidth }}>
         <div className="flex h-[29px] items-center gap-2.5 border-b border-ink bg-white px-2.5">
-          <span className="w-[9px]" />
+          {props.showGrip && <span className="w-[9px]" />}
           <span className="w-6 text-[9px] font-medium text-n-3">#</span>
           <span className="w-[21px]" />
           <span className="flex-1 text-[9px] font-medium text-n-3">Player</span>
@@ -349,7 +397,7 @@ function TableBody(props: ViewProps) {
             </span>
           ))}
           <span className="w-4" />
-          <span className="w-5" />
+          {props.showMenu && <span className="w-5" />}
         </div>
 
         {buckets.map((bucket) => (
@@ -364,7 +412,7 @@ function TableBody(props: ViewProps) {
                 bucket={bucket}
                 canEdit={handlers.canEdit}
                 onRename={onRenameBand}
-                onAdd={() => onAddToBucket(bucket)}
+                onAdd={onAddToBucket && (() => onAddToBucket(bucket))}
               />
             )}
             {bucket.entries.map((entry, index) => (
@@ -449,7 +497,9 @@ function TableRow({
         dragging && 'opacity-35',
       )}
     >
-      <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
+      {view.showGrip && (
+        <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
+      )}
       <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
       <PlayerFace entry={entry} size={21} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -492,10 +542,11 @@ function TableRow({
       <RowMenu
         actions={{
           drafted,
-          onToggleDrafted: () => handlers.onToggleDrafted(entry.player_id),
-          onEditNote: () => handlers.onEditNote(entry),
-          onRemove: () => handlers.onRemove(entry),
+          onToggleDrafted: () => handlers.onToggleDrafted?.(entry.player_id),
+          onEditNote: () => handlers.onEditNote?.(entry),
+          onRemove: () => handlers.onRemove?.(entry),
           canEdit: handlers.canEdit,
+          canMark: handlers.canMark,
         }}
       />
     </div>
@@ -540,10 +591,17 @@ function CardsBody(props: ViewProps) {
                   bucket.className,
                 )}
               >
+                {/* Size by the label, not by whether it is renameable. The
+                    rail is 50px wide and the 18px face is for the *value*
+                    alone — `S`, `4`. `Ungrouped` and `No auction value` are
+                    words, and at 18px they ran straight out of the rail and
+                    over the cards; both were reachable before LV.6 and both
+                    are on the public share view the moment a list carries a
+                    round key. */}
                 <span
                   className={cn(
-                    'text-center font-bold leading-tight',
-                    bucket.editableKey ? 'text-[9px]' : 'text-[18px]',
+                    'min-w-0 break-words text-center font-bold leading-tight',
+                    (bucket.label?.length ?? 0) > 3 ? 'text-[9px]' : 'text-[18px]',
                   )}
                 >
                   {bucket.label}
@@ -551,7 +609,7 @@ function CardsBody(props: ViewProps) {
                 {bucket.meta ? (
                   <span className="fs-num text-[9px] font-medium">{bucket.meta}</span>
                 ) : null}
-                {handlers.canEdit ? (
+                {handlers.canEdit && onAddToBucket ? (
                   <button
                     type="button"
                     onClick={() => onAddToBucket(bucket)}
@@ -715,27 +773,32 @@ function PlayerTile({
           {entry.player.full_name}
         </span>
         <span className="flex items-center gap-1">
-          <span className={cn(drafted ? 'flex' : 'hidden group-hover:flex')}>
-            <DraftedCheckbox
-              drafted={drafted}
-              onToggle={() => handlers.onToggleDrafted(entry.player_id)}
-            />
-          </span>
+          {handlers.canMark && (
+            <span className={cn(drafted ? 'flex' : 'hidden group-hover:flex')}>
+              <DraftedCheckbox
+                drafted={drafted}
+                onToggle={() => handlers.onToggleDrafted?.(entry.player_id)}
+              />
+            </span>
+          )}
           <PlayerMeta entry={entry} />
           <NoteMark note={entry.notes} size={10} />
         </span>
-        <span className="absolute right-0 top-0 hidden border-1 border-ink bg-white group-hover:inline-flex">
-          <RowMenu
-            actions={{
-              drafted,
-              omitDrafted: true,
-              onToggleDrafted: () => handlers.onToggleDrafted(entry.player_id),
-              onEditNote: () => handlers.onEditNote(entry),
-              onRemove: () => handlers.onRemove(entry),
-              canEdit: handlers.canEdit,
-            }}
-          />
-        </span>
+        {view.showMenu && (
+          <span className="absolute right-0 top-0 hidden border-1 border-ink bg-white group-hover:inline-flex">
+            <RowMenu
+              actions={{
+                drafted,
+                omitDrafted: true,
+                onToggleDrafted: () => handlers.onToggleDrafted?.(entry.player_id),
+                onEditNote: () => handlers.onEditNote?.(entry),
+                onRemove: () => handlers.onRemove?.(entry),
+                canEdit: handlers.canEdit,
+                canMark: handlers.canMark,
+              }}
+            />
+          </span>
+        )}
       </div>
       {stats.length > 0 && (
         <div
