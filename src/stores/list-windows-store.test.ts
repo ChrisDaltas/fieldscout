@@ -402,10 +402,11 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
   it('a size the user chose is NOT re-fitted either', () => {
     // Resized to 900 wide on a desktop, then opened on a 375px phone: the store
     // still says 900. Below `WINDOW_MOBILE_MAX_W` the ruled bottom sheet ignores
-    // the stored box entirely and writes nothing back to it (Ruling 2); on a
-    // narrow *desktop* the frame's `max-w` paints it narrower and the grip reads
-    // the paint (`list-window.tsx`). Either way the remembered size is theirs
-    // and survives the trip back to a big screen.
+    // the stored box entirely and writes back neither position nor size
+    // (Ruling 2 — it *does* write `min`, see the R257 pin below); on a narrow
+    // *desktop* the frame's `max-w` paints it narrower and the grip reads the
+    // paint (`list-window.tsx`). Either way the remembered size is theirs and
+    // survives the trip back to a big screen.
     expect(
       resolveWindowGeometry({ w: 900, h: 700 }, 0, { width: 375, height: 812 }),
     ).toMatchObject({ w: 900, h: 700 })
@@ -538,6 +539,52 @@ describe('LV.15 — pop-outs persist their geometry, never their existence (D13)
     // and the payload knows about neither.
     expect(raw).not.toContain('windows')
     expect(raw).not.toContain(LIST_B)
+  })
+
+  /**
+   * **R257 — `min` *is* geometry, and a phone writes it.**
+   *
+   * Six places in this repo claimed *"no geometry is written from a phone"*,
+   * one of them the delivery plan's v6.0 changelog. It was false, and the two
+   * pointer-down gates the claim rested on could not see it: Ruling 2 moved
+   * **Collapse** into the Options menu, and `setMinimized` writes into the same
+   * `geometry[listId]` record `partialize` persists. Measured live at 375 × 812
+   * — tapping Options → Collapse took `{x:397, y:270, w:406, h:436, min:false}`
+   * to `{…, min:true}` in `fieldscout.list-windows`.
+   *
+   * **The write is kept**, because `min` is a per-window state the user
+   * expressed and remembering it is the same promise position and size make;
+   * removing it from the persisted slice would change *desktop* behaviour that
+   * LV.15 shipped and two reviews upheld, for no ruling. So the claim is
+   * narrowed to *"no position or size"* — and this is the executed half of that
+   * narrowing: the part that is true, plus the behavioural consequence it
+   * causes. The negative half (nothing writes position or size from a phone)
+   * is a source pin, in `list-windows-host.test.ts`.
+   */
+  it('collapse alone reaches storage — the one write a phone makes (R257)', () => {
+    const { open, setMinimized } = useListWindowsStore.getState()
+    open(LIST_A)
+    // Ruling 2's Options → Collapse, and nothing else. No drag, no resize:
+    // those are the two writes a phone cannot reach.
+    setMinimized(LIST_A, true)
+
+    const persisted = JSON.parse(stored.get(STORAGE_KEY)!) as {
+      state: { geometry: Record<string, Record<string, unknown>> }
+    }
+    // `min` alone, in the persisted record — so the phone did write to
+    // `fieldscout.list-windows`, and it wrote nothing else.
+    expect(persisted.state.geometry[LIST_A]).toEqual({ min: true })
+
+    // **The consequence, not a proxy for it**: `resolveWindowGeometry` is what a
+    // window calls on mount, so this is a desktop window opening over the record
+    // a phone left. Collapse a sheet at 375, widen past 768, and it comes back
+    // collapsed.
+    expect(
+      resolveWindowGeometry(useListWindowsStore.getState().geometry[LIST_A], 0, {
+        width: 1280,
+        height: 900,
+      }).min,
+    ).toBe(true)
   })
 
   it('a rehydrated store is a clean page with the geometry remembered', async () => {

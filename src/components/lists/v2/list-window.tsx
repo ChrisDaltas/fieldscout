@@ -83,7 +83,7 @@ import { useListDropCommit } from './use-list-drop'
  * | --- | --- |
  * | **LV.15** | the frame: outer stroke, near-black surface, the 44px→36px header with cover + name, drag anywhere on it, the 16px resize grip and its clamps, collapse, close, Escape, and the z-stack the host paints |
  * | **LV.16** | the **dark inversion wrapper**, the header's `gear` + `dots`, the 29px rows with their checkbox / `#N` / name / badge / stat cells, drag-reorder through the shared gap model, and the footer |
- * | **LV.17** | the states *inside* the window (loading / empty / failed / **deleted**), the resize grip starting from the painted box, and the two controls that finally open one of these: `pop out` in `list-detail-hero.tsx` and in a Side by side column's `dots` menu |
+ * | **LV.17** | the states *inside* the window (loading / empty / failed / **unavailable**), the resize grip starting from the painted box, and the two controls that finally open one of these: `pop out` in `list-detail-hero.tsx` and in a Side by side column's `dots` menu |
  *
  * LV.16 discharged both hand-offs LV.15 filed (PROGRESS §5): `ListWindowBodyPending`
  * is **deleted** rather than decorated (**F-LV15.1**, as LV.13 deleted LV.12's
@@ -135,35 +135,70 @@ import { useListDropCommit } from './use-list-drop'
  * the same window"*, which was a Builder decision and is now overruled by the
  * only person who could.
  *
- * **Three things follow that Chris did not state.** Each is minimal, each is
- * derived-not-ruled, and each is cheap to overrule:
+ * ## Ruling 3 — the sheet rests **on** the tab bar, and a tap outside dismisses
  *
- * 1. **Where it sits: the bottom.** A full-width, fixed-height window has
- *    nowhere meaningful to drag to, so it has to be anchored, and the bottom is
- *    both the mobile convention (sheets rise from it) and the thumb-reachable
- *    end of a phone. It therefore also sits over the bottom tab bar (45 against
- *    40) — deliberately, because it is modal-ish while open and one tap from
- *    gone.
+ * > *"add tap outside to dismiss but also the bottom should be right at the top
+ * > of the bottom bar"* — Chris, 2026-08-12 (**R258**)
+ *
+ * The first cut of Ruling 2 anchored the sheet at the viewport floor, which
+ * **completely covered the bottom tab bar** — measured at 375 × 812, nav
+ * `[0, 748, 375, 64]` under a sheet `[0, 324.8, 375, 487.2]` at z 45 against
+ * z 40 — so while any pop-out was open a phone could not navigate at all, and
+ * the header `Close` was the only way out (no scrim, no outside dismissal, and
+ * a phone has no Escape). Both halves are now Chris's:
+ *
+ * - the frame is `bottom-16`, the bottom bar's **own** `h-16` token, so its
+ *   bottom edge is the bar's top edge and the bar is fully clear;
+ * - a pointer-down outside the sheet closes it, `isTop` only, without
+ *   `preventDefault` — so the tab it lands on still navigates.
+ *
+ * **The 60% is unchanged and still of the viewport**: the sheet moved up, it
+ * did not shrink into the space left over. At 375 × 812 it is
+ * `[0, 260.8, 375, 487.2]`.
+ *
+ * ## Three things follow that Chris did not state
+ *
+ * Each is minimal, each is derived-not-ruled, and each is cheap to overrule:
+ *
+ * 1. **A tab tap dismisses as well as navigates** — so a sheet does *not*
+ *    survive navigation on a phone, while a desktop window still does. The nav
+ *    is outside the sheet and the ruling is *"tap outside to dismiss"*; carving
+ *    out the one outside surface that happens to be chrome would be an
+ *    invisible exception. **F-LV17.7**.
  * 2. **Drag and resize are switched off, not left dead.** Both are meaningless
  *    at fixed full-width / 60%-height, and a `cursor-grab` header that does
  *    nothing is the live-but-false affordance **R220** named. So the grip is not
  *    rendered at all, the header drops its grab cursor and its `touch-none`
  *    (the gesture belongs to the browser again), and both pointer-down handlers
- *    bail. **No geometry is written from a phone** — which is what keeps a
- *    window you positioned on a desktop exactly where you left it when you next
- *    open the app there.
+ *    bail. **No position or size is written from a phone** — which is what keeps
+ *    a window you positioned on a desktop exactly where you left it when you
+ *    next open the app there.
+ *
+ *    **`min` is written from a phone, deliberately** (**R257**). `Collapse` is
+ *    the one control Ruling 2 *moved into* the Options menu, and it writes into
+ *    the same persisted `geometry[listId]` record that position and size live in
+ *    (`list-windows-store.ts`:367–369, `partialize` at :399). So collapsing a
+ *    sheet and then widening past 768 returns a collapsed desktop window — which
+ *    is the same promise position and size make, and is why the write stays. The
+ *    claim above used to read *"no geometry is written from a phone"*, which was
+ *    false in six places including a governing doc; it is narrowed to what is
+ *    true **and** pinned, rather than reworded.
  * 3. **Several windows open: they pile, and nothing is capped.** Every mobile
  *    window has the same geometry, so the cascade is a no-op and the front one
  *    is the one you see; each carries its own `Close`, and closing it reveals
- *    the next. Inventing a cap is Chris's call, not a Builder's (Q4's
- *    precedent), so there is none. The honest cost — a pile of three looks like
- *    one until you close the top — is filed as **F-LV17.4** rather than solved
- *    by inventing a switcher the design package does not have.
+ *    the next — and an outside tap dismisses **the top one only**, so a pile
+ *    unwinds a tap at a time exactly as a desktop pile unwinds a press at a
+ *    time. Inventing a cap is Chris's call, not a Builder's (Q4's precedent), so
+ *    there is none. The honest cost — a pile of three looks like one until you
+ *    close the top — is filed as **F-LV17.4** rather than solved by inventing a
+ *    switcher the design package does not have.
  *
  * **Desktop is bit-identical.** Every mobile branch is `mobile ? … : <what
  * shipped>`, the {@link WINDOW_EDGE_KEEP_X} rescue and `resolveWindowGeometry`
- * are untouched, and the geometry store is still written only by a desktop
- * pointer-up. What the *desktop* answer rests on is unchanged and still true:
+ * are untouched, the geometry store is still written only by a desktop
+ * pointer-up, and **nothing on a desktop closes on an outside click** — a
+ * pop-out is not modal, and clicking around it is what it is for. What the
+ * *desktop* answer rests on is unchanged and still true:
  *
  * 1. **A window we place opens whole.** Position was fitted at LV.15; **size**
  *    is fitted here (`resolveWindowGeometry`), and the frame's `max-w`/`max-h`
@@ -452,8 +487,52 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
    *
    * **So it closes, with a toast** — Chris, 2026-08-12 (§3 Q5), reversing the
    * persist-and-explain this task first shipped. See the file header.
+   *
+   * **This flag drives every *non-destructive* state and nothing else**
+   * (**R256**): the footer suppression, the drag gate and the body's neutral
+   * copy. What closes the window is {@link goneConfirmed}, one read later.
    */
   const gone = detail.isError && listReadIsGone(detail.error)
+  /**
+   * **The same 404, twice — which is the only thing that makes it a fact**
+   * (**R256**).
+   *
+   * `listReadIsGone` is `status === 404` and nothing else, and this route
+   * answers 404 for *"you sent no valid session"* as readily as for *"the list
+   * is gone"*: `GET /api/lists/[id]` has **no auth guard** (`route.ts`:18–36 —
+   * `auth.getUser()` is read only for the favourite flag) and leans on RLS,
+   * whose SELECT policy is
+   * `((is_private = false AND deleted_at IS NULL) OR auth.uid() = owner_id)`.
+   * An unauthenticated read of a private list therefore returns zero rows and
+   * the route 404s. Measured on the local stack: `curl` of the private
+   * `Secret sleepers` fixture → **404** `{"error":"List not found"}`; the same
+   * id with a session → **200**.
+   *
+   * That made the close guard the **R190/R195/R199 shape**: its input
+   * *correlated* with the fact instead of *establishing* it. Reproduced end to
+   * end with `window.fetch` 404ing exactly **one** GET and every later read
+   * real — `{blipped: 1, windows: [], toastShown: true}`, and the very next
+   * real read returned **200** with `deleted_at: null`. A window was destroyed,
+   * and the app announced a list unavailable, over a list that was alive and
+   * readable one request later. **R252** had removed the retry that used to
+   * absorb exactly this.
+   *
+   * **So the destructive step asks a second time.** One corroborating read, no
+   * timer, no retry re-added to the shared hook: if it answers, the blip is
+   * over and `gone` clears itself; if it 404s too, the list really is not
+   * readable and Chris's ruling runs. Chris ruled what happens when a list *is*
+   * gone — he did not rule that a bare 404 establishes it.
+   *
+   * **Why not "gate it on a confirmed session" instead.** The client cannot
+   * know whether *the request that 404'd* carried one — only whether it
+   * currently believes it has one — so a signed-in viewer's blip would still
+   * destroy the window. It answers a different question. The clean fix is the
+   * route answering **401** when there is no session, which is a `src/app/api/**`
+   * change the standing budget closes: filed as **F-LV17.6**.
+   */
+  const [goneConfirmed, setGoneConfirmed] = React.useState(false)
+  const corroborating = React.useRef(false)
+  const refetchDetail = detail.refetch
   // The header is honest about the states it can be in. `Loading…` forever over
   // a failed read is CLAUDE.md's "never let 'nothing happened' mean 'it worked'"
   // — the same call `side-by-side-columns.tsx` made for its subline. There is no
@@ -503,7 +582,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   // owner gate is the server's answer, not a client-side comparison.
   const canEdit = Boolean(list?.is_owner)
   // …and never over a list that is gone: the rows are stale by definition, and
-  // a reorder PATCH against a deleted list is a request that can only 404.
+  // a reorder PATCH against a list nobody can read can only 404.
   const canDrag = canEdit && !gone && canReorder(org) && !minimized
 
   const handleDrop = useListDropCommit({ listId, org, buckets, canEdit })
@@ -592,6 +671,38 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   // ---- the list is gone: close, with a toast (Ruling 1) --------------------
 
   /**
+   * **Ask a second time before destroying anything** (**R256**).
+   *
+   * One corroborating read, fired the moment the first 404 lands. Nothing else
+   * would fire one: `useList` refuses to retry a 404 (**R252**), the query is
+   * already settled, and `refetchOnWindowFocus` is off — so a window over a
+   * genuinely unreadable list would otherwise sit there forever, which is the
+   * state Ruling 1 exists to remove. There is no delay and no back-off: the
+   * question is *"is this still true"*, not *"give the server a moment"*, and a
+   * timer here would be a second, invisible policy.
+   *
+   * `corroborating` is a ref rather than state because it must not itself cause
+   * a render, and it is **reset when `gone` clears** — so a window that survives
+   * one blip is still protected from the next one, and a real deletion arriving
+   * later still gets its own pair of reads.
+   *
+   * `refetch` is stable for the life of the observer (`queryObserver.js`:46,
+   * `this.refetch = this.refetch.bind(this)`), so it is an honest dependency.
+   */
+  React.useEffect(() => {
+    if (!gone) {
+      // The read came back. Whatever the 404 was, it was not the list.
+      corroborating.current = false
+      return
+    }
+    if (corroborating.current) return
+    corroborating.current = true
+    void refetchDetail().then((second) => {
+      if (second.isError && listReadIsGone(second.error)) setGoneConfirmed(true)
+    })
+  }, [gone, refetchDetail])
+
+  /**
    * **Chris, 2026-08-12: *"Close it, with a toast."*** (§3 Q5.)
    *
    * In an effect rather than in render, because closing is a store write and a
@@ -612,12 +723,17 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
    * The copy is {@link LIST_UNAVAILABLE}, imported rather than retyped, so the
    * toast and the state a Side by side column paints for the same 404 cannot
    * drift apart — and neither of them says *"deleted"* (**R248**).
+   *
+   * **The guard is {@link goneConfirmed}, not `gone`** (**R256**): a single 404
+   * from this route is as likely to mean *"that request carried no session"* as
+   * *"the list is gone"*, and destroying a window on it was the app inferring
+   * the fact from something that merely correlates with it.
    */
   React.useEffect(() => {
-    if (!gone) return
+    if (!goneConfirmed) return
     close(listId)
     toast({ title: LIST_UNAVAILABLE })
-  }, [gone, close, listId, toast])
+  }, [goneConfirmed, close, listId, toast])
 
   // ---- Escape closes the top window ---------------------------------------
 
@@ -663,13 +779,67 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
     return () => window.removeEventListener('keydown', onKey)
   }, [isTop, close, listId])
 
+  // ---- a tap outside the sheet dismisses it — PHONES ONLY (Ruling 3) -------
+
+  /**
+   * > *"add tap outside to dismiss but also the bottom should be right at the
+   * > top of the bottom bar"* — Chris, 2026-08-12 (**R258**)
+   *
+   * A phone has no Escape, so before this the header `Close` was the **only**
+   * way out of a sheet covering 60% of the screen. This is the phone's Escape,
+   * and it is deliberately built to *be* Escape rather than to resemble it:
+   *
+   * - **`isTop` only, so a pile unwinds one at a time.** Three sheets take three
+   *   taps, exactly as three desktop windows take three presses. Dismissing the
+   *   whole pile would be a second, blunter answer to a problem Escape already
+   *   answers — the same argument `closeAll` carries in `list-windows-store.ts`.
+   * - **A Radix layer above the sheet owns the tap.** With the `Options` menu or
+   *   the Stats picker open, the first tap outside belongs to *it*; both are
+   *   portalled out of this frame, so DOM containment alone would read a tap on
+   *   a menu item as a tap outside the window. This is the pointer spelling of
+   *   the `defaultPrevented` precedence the Escape handler above uses.
+   *
+   * **It never `preventDefault`s or `stopPropagation`s, and that is the point.**
+   * The bottom tab bar now sits clear of the sheet (see the frame's `bottom-16`
+   * below); a handler that swallowed the tap would have made it visible and
+   * still unusable. So the tap reaches whatever it landed on: a tab navigates
+   * *and* dismisses.
+   *
+   * **That a nav tap also dismisses is derived, not ruled** — stated so it can
+   * be overruled cheaply (**F-LV17.7**). The nav is outside the sheet, and the
+   * ruling says a tap outside dismisses; carving out the one outside surface
+   * that happens to be chrome would be an invisible exception for a reader to
+   * maintain. The consequence, said plainly: **on a phone a sheet does not
+   * survive navigation, and on a desktop it still does.** The design LAW's
+   * *"stay until closed"* is untouched — Chris added a way to close it.
+   *
+   * **Desktop is bit-identical**: this effect returns before it listens unless
+   * `mobile`. A desktop pop-out is not modal, and an outside click closing one
+   * would destroy the feature — you open a window precisely to click *around*
+   * it. The asymmetry is pinned in `list-windows-host.test.ts`.
+   */
+  React.useEffect(() => {
+    if (!mobile || !isTop) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Node)) return
+      // A menu or the stats picker is open: this tap is theirs.
+      if (document.querySelector('[data-radix-popper-content-wrapper]')) return
+      if (frameRef.current?.contains(target)) return
+      close(listId)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [mobile, isTop, close, listId])
+
   // ---- drag: anywhere on the header (design LAW) --------------------------
 
   const onHeaderPointerDown = (e: React.PointerEvent) => {
-    // Ruling 2, derived: a bottom-anchored full-width sheet has nowhere to drag
-    // to. Gating the *gesture start* is what makes "no geometry is written from
-    // a phone" true — `dragRef` is the only thing that unlocks the `setPosition`
-    // in `onHeaderPointerUp`, and it can only be set here.
+    // Ruling 2, derived: an anchored full-width sheet has nowhere to drag to.
+    // Gating the *gesture start* is what makes "no POSITION is written from a
+    // phone" true — `dragRef` is the only thing that unlocks the `setPosition`
+    // in `onHeaderPointerUp`, and it can only be set here. (`min` is written
+    // from a phone, by Collapse in the Options menu — **R257**.)
     if (mobile) return
     if (e.button !== 0) return
     // The controls live on the header, so a press on one is not a drag.
@@ -782,8 +952,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
       data-list-window={listId}
       onPointerDownCapture={() => focus(listId)}
       // Ruling 2: on a phone the geometry is the ruling's, so none of the
-      // dragged/resized model reaches the paint — and, just as importantly,
-      // nothing writes back to it. `box` is still resolved on mount and still
+      // dragged/resized model reaches the paint — and neither position nor size
+      // is written back to it (**R257**; `min` is, deliberately — see
+      // `WindowMenu`'s Collapse). `box` is still resolved on mount and still
       // remembered, which is what makes a window positioned on a wide viewport
       // and then opened on a phone come back to its desktop place unchanged.
       style={
@@ -803,13 +974,26 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
         // header of this file.
         'transition-colors hover:border-brand',
         mobile
-          ? // *"full width but only 60% of the screen height"*, anchored to the
-            // bottom (derived — see the file header). `dvh` rather than `vh`
-            // because "the screen height" on a phone is the *visible* viewport,
-            // and `vh` is the URL-bar-collapsed one, which would put ~10% of the
-            // sheet under the browser chrome. Collapsed, the sheet is its header
-            // and nothing else, so the height is dropped rather than animated.
-            cn('inset-x-0 bottom-0 w-full', !minimized && 'h-[60dvh]')
+          ? // *"full width but only 60% of the screen height"*, resting on the
+            // bottom tab bar — *"the bottom should be right at the top of the
+            // bottom bar"* (Chris, 2026-08-12, **R258**). `bottom-16` is the
+            // nav's **own** token: `bottom-tabs.tsx`:51 is `h-16`, the same
+            // Tailwind step, so the sheet's bottom edge and the bar's top edge
+            // are one number spelled once. A test derives the expected utility
+            // from that file's live class rather than from a remembered 64, so
+            // changing the bar's height fails at this line instead of silently
+            // re-covering it.
+            //
+            // **The 60% is still of the viewport, as ruled** — the sheet moved
+            // up, it did not shrink to 60% of what is left. At 375 × 812 that
+            // is `[0, 260.8, 375, 487.2]`, with the bar's 64px clear beneath it.
+            //
+            // `dvh` rather than `vh` because "the screen height" on a phone is
+            // the *visible* viewport, and `vh` is the URL-bar-collapsed one,
+            // which would put ~10% of the sheet under the browser chrome.
+            // Collapsed, the sheet is its header and nothing else, so the
+            // height is dropped rather than animated.
+            cn('inset-x-0 bottom-16 w-full', !minimized && 'h-[60dvh]')
           : // A window wider or taller than the viewport can still be reached;
             // the stored size is untouched by this cap.
             'max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)]',
@@ -905,12 +1089,12 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           </ListDragContext>
         )}
 
-        {/* No footer over a list that no longer exists (LV.17). The view and
-            comment counts are the deleted list's last known ones, and Share
-            would copy `/u/{owner}/lists/{slug}` — a URL that now resolves to a
-            404 page, announced as "Link copied". A control that confidently
-            does the wrong thing is the live-but-false affordance **R220**
-            named; the honest version of this footer is no footer. */}
+        {/* No footer over a list this viewer can no longer read (LV.17). The
+            view and comment counts are the unavailable list's last known ones,
+            and Share would copy `/u/{owner}/lists/{slug}` — a URL that now
+            resolves to a 404 page, announced as "Link copied". A control that
+            confidently does the wrong thing is the live-but-false affordance
+            **R220** named; the honest version of this footer is no footer. */}
         {!minimized && !gone && (
           <div className="flex h-8 shrink-0 items-center gap-2.5 border-t border-ink px-2">
             {/* views / comments (design LAW). Read-outs, not buttons: a pop-out
@@ -1129,7 +1313,11 @@ const WindowChromeButton = React.forwardRef<
  * (`ListReadFailure`, `ListRowsSkeleton`, `EmptyListState` — all from
  * `list-row-parts.tsx`), which is what stops the window and the column drifting
  * into two vocabularies for one situation. `ListReadFailure` is also where
- * *deleted* is separated from *failed*, on the error's own status.
+ * *unavailable* is separated from *failed*, on the error's own status — it may
+ * not name a cause, and this sentence said *deleted* until **R259**, which is
+ * the framing the file's own header forbids at :123. The Ruling 1 pin cannot
+ * catch that, because it reads comment-stripped source (`code()`) and a comment
+ * is exactly where it hid.
  */
 function ListWindowRows({
   buckets,

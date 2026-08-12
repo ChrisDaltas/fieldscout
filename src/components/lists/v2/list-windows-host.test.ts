@@ -7,10 +7,13 @@ import { describe, expect, it } from 'vitest'
  * The **only** import from the app in this suite, and it is deliberate: Ruling
  * 2's *"60% of the screen height"* must be one number, so the pin below builds
  * the expected Tailwind class from the store's own constant instead of
- * restating `0.6`. The store is a `.ts` with no JSX (its sibling suite imports
- * and executes it), and `persist` degrades quietly with no `window` here.
+ * restating `0.6`. `WINDOW_MOBILE_MAX_W` joins it for the same reason at
+ * **R258** — the range that gets a sheet has to be a range the bottom tab bar
+ * still renders in, and both sides of that comparison are now read rather than
+ * remembered. The store is a `.ts` with no JSX (its sibling suite imports and
+ * executes it), and `persist` degrades quietly with no `window` here.
  */
-import { WINDOW_MOBILE_HEIGHT_RATIO } from '@/stores/list-windows-store'
+import { WINDOW_MOBILE_HEIGHT_RATIO, WINDOW_MOBILE_MAX_W } from '@/stores/list-windows-store'
 
 /**
  * LV.15 — the app-shell host and the window frame, pinned at the source.
@@ -90,6 +93,8 @@ const PLAYER_IMAGE = 'src/components/players/player-image.tsx'
 const HERO = 'src/components/lists/v2/list-detail-hero.tsx'
 const COLUMNS = 'src/components/lists/v2/side-by-side-columns.tsx'
 const LISTS_HOOK = 'src/hooks/use-lists.ts'
+/** R258 — the mobile chrome the sheet must now rest on rather than cover. */
+const BOTTOM_TABS = 'src/components/layout/bottom-tabs.tsx'
 
 /**
  * **Chris's own words**, written out here rather than imported: `list-row-parts`
@@ -502,6 +507,113 @@ const handlerBody = (file: string, name: string) => {
  * the third time this build has had an `indexOf` pass for the wrong reason.
  */
 const EMPTY_GUARD = 'if (windows.length === 0) return null'
+
+/**
+ * **The bottom tab bar's own height step, read from the bar** (**R258**).
+ *
+ * Chris: *"the bottom should be right at the top of the bottom bar."* The sheet
+ * expresses that as `bottom-N`, and `N` is not a remembered `64` — it is the
+ * step `bottom-tabs.tsx` itself uses for `h-N`, extracted here, so the pin below
+ * compares the sheet against the bar rather than against a number two files
+ * agreed on once. Change the bar to `h-14` and the sheet's pin goes red at the
+ * line that has to change with it.
+ *
+ * Throws on missing **and** on ambiguous, the R240 standard: a bar with two
+ * height utilities is one this cannot speak for.
+ */
+const bottomTabsHeightStep = (): string => {
+  const nav = code(BOTTOM_TABS).match(/<nav className="([^"]*)"/)
+  if (!nav) {
+    throw new Error(
+      `R258: no \`<nav className="…">\` in ${BOTTOM_TABS} — the sheet's bottom offset is being ` +
+        'compared against nothing.',
+    )
+  }
+  const heights = [...nav[1].matchAll(/(?:^|\s)h-(\d+)(?=\s|$)/g)].map((hit) => hit[1])
+  if (heights.length !== 1) {
+    throw new Error(
+      `R258: ${BOTTOM_TABS}'s nav carries ${heights.length} height utilities (${heights.join(', ')}) ` +
+        '— the sheet cannot be offset by "the bar\'s height" while the bar has no single one.',
+    )
+  }
+  return heights[0]
+}
+
+/** Tailwind's `min-width` breakpoints, by the prefix that names them. */
+const TAILWIND_BREAKPOINTS: Record<string, number> = { sm: 640, md: 768, lg: 1024, xl: 1280 }
+
+/**
+ * The viewport width **at and above which the bottom tab bar stops rendering**,
+ * read from its own `*:hidden` utility (**R258**).
+ *
+ * The sheet rests on that bar, so the bar has to exist everywhere the sheet
+ * does. Today `lg:hidden` (1024) covers the whole `< 768` mobile range with room
+ * to spare — but `sm:hidden` would leave a 640–767 band where the sheet floats
+ * 64px above nothing, and no other pin in this repo would notice.
+ */
+const bottomTabsHiddenFrom = (): number => {
+  const nav = code(BOTTOM_TABS).match(/<nav className="([^"]*)"/)!
+  const hides = [...nav[1].matchAll(/(?:^|\s)(sm|md|lg|xl):hidden(?=\s|$)/g)].map((hit) => hit[1])
+  if (hides.length !== 1) {
+    throw new Error(
+      `R258: ${BOTTOM_TABS}'s nav has ${hides.length} responsive-hidden utilities — "the bar is ` +
+        'present wherever the sheet is" cannot be checked.',
+    )
+  }
+  return TAILWIND_BREAKPOINTS[hides[0]]
+}
+
+/**
+ * **Every `close(listId)` in the window, each with the source that leads to it**
+ * (**R256**).
+ *
+ * The file is cut at each call, so a site's segment is everything since the
+ * previous one — which is what lets the pin ask *"what guard reaches this"*
+ * rather than *"does the guard exist somewhere"*. A fixed character window was
+ * tried first and is the wrong tool: `code()` strips the comments between two
+ * effects, so a 400-char lookback runs into the neighbouring handler and a site
+ * can be credited to its neighbour's guard.
+ *
+ * Throws if there are none: a window with no way to close is not a green test.
+ */
+const closeCallSites = (): string[] => {
+  const source = code(WINDOW)
+  const hits = [...source.matchAll(/close\(listId\)/g)]
+  if (hits.length === 0) {
+    throw new Error(
+      `R256: no \`close(listId)\` in ${WINDOW} — the enumeration below is guarding nothing.`,
+    )
+  }
+  let cursor = 0
+  return hits.map((hit) => {
+    const segment = source.slice(cursor, hit.index)
+    cursor = hit.index! + hit[0].length
+    return segment
+  })
+}
+
+/**
+ * The phone's outside-tap dismissal effect, matched **only** when
+ * `if (!mobile || !isTop) return` is its first statement (**R258**).
+ *
+ * Both halves of that guard are load-bearing and neither may be relaxed by a
+ * later tidy-up: without `!mobile` a *desktop* pop-out would close on a click
+ * beside it, which destroys the feature; without `!isTop` one tap would take a
+ * whole pile instead of unwinding it a tap at a time the way Escape does.
+ */
+const outsideTapEffect = (): string => {
+  const match = code(WINDOW).match(
+    /React\.useEffect\(\(\) => \{\s*if \(!mobile \|\| !isTop\) return\n([\s\S]*?)\n {2}\}, \[/,
+  )
+  if (!match) {
+    throw new Error(
+      `R258: no \`!mobile || !isTop\`-guarded pointer effect in ${WINDOW} — either a phone has no ` +
+        'outside-tap dismissal (Chris ruled it does), or the guard no longer scopes it to phones ' +
+        'and to the top sheet.',
+    )
+  }
+  return match[1]
+}
 
 describe('LV.15 — with no window open, the host renders nothing at all (D13)', () => {
   it('returns null, and returns it before any markup', () => {
@@ -1560,7 +1672,7 @@ describe('LV.17 — `pop out` is wired, in the design LAW’s cluster position',
  * assert the reason for emptiness rather than inferring it."* There are four
  * reasons a pop-out has no rows, and they must not collapse into one another.
  */
-describe('LV.17 — loading / empty / failed / deleted, inside a window', () => {
+describe('LV.17 — loading / empty / failed / unavailable, inside a window', () => {
   it('the branch order is the column’s, and it is the order the data forces', () => {
     const rows = declarationSource(WINDOW, 'ListWindowRows')
     const error = rows.indexOf('if (error)')
@@ -1684,12 +1796,16 @@ describe('LV.17 — loading / empty / failed / deleted, inside a window', () => 
     const source = code(WINDOW)
     expect(source).toContain('const gone = detail.isError && listReadIsGone(detail.error)')
 
-    // An effect, not a render-phase call: closing is a store write.
-    const effect = source.match(/React\.useEffect\(\(\) => \{\s*if \(!gone\) return\n([\s\S]*?)\n {2}\}, \[/)
+    // An effect, not a render-phase call: closing is a store write. The guard is
+    // `goneConfirmed` rather than `gone` since **R256** — the ruling is
+    // unchanged, what changed is how much evidence has to exist before it runs.
+    const effect = source.match(
+      /React\.useEffect\(\(\) => \{\s*if \(!goneConfirmed\) return\n([\s\S]*?)\n {2}\}, \[/,
+    )
     if (!effect) {
       throw new Error(
-        `Ruling 1: no \`gone\`-guarded effect in ${WINDOW} — the window either does not close, or ` +
-          'closes on something other than the read being gone.',
+        `Ruling 1: no \`goneConfirmed\`-guarded effect in ${WINDOW} — the window either does not ` +
+          'close, or closes on something other than a confirmed unreadable list.',
       )
     }
     expect(effect[1]).toContain('close(listId)')
@@ -1700,8 +1816,96 @@ describe('LV.17 — loading / empty / failed / deleted, inside a window', () => 
     expect(source).not.toContain("'This list is no longer available.'")
     // And the reversed decision is gone from the surface, not merely unused:
     // there is no *deleted* title, and no window-scoped spelling of the state.
+    //
+    // **This reads comment-stripped source, and that is the claim's scope**
+    // (**R259**): it is about what the window *renders*, which is why the file
+    // may go on explaining the word. It also means it can never police the
+    // prose — LV.17's `ListWindowRows` header described this component as
+    // separating *deleted* from *failed* for a whole review cycle, invisibly.
     expect(source).not.toContain('Deleted list')
     expect(source).not.toContain('deleted')
+  })
+
+  /**
+   * **R256 — a transient 404 must not destroy a window.**
+   *
+   * `listReadIsGone` is `status === 404` and nothing else, and this route
+   * answers 404 for *"you sent no valid session"* as readily as for *"the list
+   * is gone"*: `GET /api/lists/[id]` has **no auth guard** and leans on RLS,
+   * whose SELECT policy is
+   * `((is_private = false AND deleted_at IS NULL) OR auth.uid() = owner_id)`.
+   * Proven on the local stack — `curl` of the private fixture → **404**, the
+   * same id with a session → **200** — and end to end, with `window.fetch`
+   * 404ing exactly one GET: `{blipped: 1, windows: [], toastShown: true}`, while
+   * the next real read returned 200 with `deleted_at: null`.
+   *
+   * That is the **R190/R195/R199** shape: the guard's input *correlated* with
+   * the fact instead of *establishing* it. Chris ruled what a window does when
+   * the list is gone; he did not rule that one 404 establishes it.
+   */
+  it('every way a window closes is enumerated — and none of them is one 404 (R256)', () => {
+    const GUARDS: Record<string, string> = {
+      'the header Close button': 'label="Close"',
+      'Escape, on the top window': "if (e.key === 'Escape')",
+      'an outside tap, on a phone': 'if (!mobile || !isTop) return',
+      'the unavailable ruling, after a SECOND 404': 'if (!goneConfirmed) return',
+    }
+    const sites = closeCallSites()
+    // A fifth way to close is a fifth thing that has to be argued for — this is
+    // the pin that makes "the destructive paths are known" a fact rather than a
+    // reading of the file.
+    expect(sites, 'close(listId) call sites').toHaveLength(Object.keys(GUARDS).length)
+
+    const reached = sites.map((segment) =>
+      Object.entries(GUARDS)
+        .filter(([, marker]) => segment.includes(marker))
+        .map(([name]) => name),
+    )
+    // Exactly one guard reaches each site, and between them they use all four.
+    for (const names of reached) expect(names, 'guards reaching one close site').toHaveLength(1)
+    expect(reached.flat().sort()).toEqual(Object.keys(GUARDS).sort())
+
+    // …and the shape the finding found, by the string that was in the file.
+    expect(code(WINDOW)).not.toContain('if (!gone) return\n    close(listId)')
+  })
+
+  it('…and the confirmation is a second READ, with one recovery clearing it (R256)', () => {
+    const source = code(WINDOW)
+    // One writer of the flag the close waits on. A second — a timer, an
+    // `onError`, a shortcut for "we already knew" — is a second policy.
+    expect([...source.matchAll(/setGoneConfirmed\(/g)], 'setGoneConfirmed sites').toHaveLength(1)
+
+    const corroboration = source.match(
+      /React\.useEffect\(\(\) => \{\s*if \(!gone\) \{\n([\s\S]*?)\n {2}\}, \[gone, refetchDetail\]\)/,
+    )
+    if (!corroboration) {
+      throw new Error(
+        `R256: no \`gone\`-guarded corroborating effect in ${WINDOW} — either nothing asks a ` +
+          'second time, or the close is back to running on the first 404.',
+      )
+    }
+    // A recovery clears the latch, so the *next* 404 gets its own pair of reads
+    // rather than inheriting this one's answer.
+    expect(corroboration[1]).toContain('corroborating.current = false')
+    // …and the latch is what stops the second read looping into a third.
+    expect(corroboration[1]).toContain('if (corroborating.current) return')
+    // The second read is a real read of the same query, and the flag is set only
+    // when *it* is gone too — not when it merely fails.
+    expect(corroboration[1]).toContain('void refetchDetail().then((second) => {')
+    expect(corroboration[1]).toContain(
+      'if (second.isError && listReadIsGone(second.error)) setGoneConfirmed(true)',
+    )
+
+    // **The non-destructive states stay on the single-404 predicate**, as the
+    // finding directed: a footer suppressed or a drag refused for one round-trip
+    // costs nothing, and un-suppressing them would paint stale rows over a real
+    // failure — the branch order two pins above.
+    expect(source).toContain('const gone = detail.isError && listReadIsGone(detail.error)')
+    expect(source).toMatch(/const canDrag = [^\n]*!gone/)
+    expect(source).toMatch(/\{!minimized && !gone && \(/)
+    // And the column's own state is untouched by all of this — it never closes
+    // anything, so one 404 is a state there and a fact nowhere.
+    expect(code(COLUMNS)).not.toContain('close(')
   })
 
   /**
@@ -1777,14 +1981,32 @@ describe('Ruling 2 — the mobile variant, and the desktop window it does not to
     expect(source).toContain("query.removeEventListener('change', onChange)")
   })
 
-  it('full width, 60% of the height, anchored to the bottom', () => {
+  it('full width, 60% of the height, resting on the bottom tab bar (Ruling 3)', () => {
     const frame = classStringsContaining(WINDOW, 'inset-x-0')
     expect(frame, 'the mobile frame classes').toHaveLength(1)
     // Full width…
     expect(frame[0]).toContain('w-full')
-    // …bottom-anchored, which is the derived half: a fixed-size sheet has
-    // nowhere to drag to, and the bottom is the thumb-reachable end of a phone.
-    expect(frame[0]).toContain('bottom-0')
+    // …and its bottom edge is the tab bar's top edge — *"the bottom should be
+    // right at the top of the bottom bar"* (Chris, 2026-08-12). The offset is
+    // the **bar's own** height step, read out of `bottom-tabs.tsx`, so this is a
+    // comparison between two files and not two files remembering `64`.
+    expect(frame[0]).toContain(`bottom-${bottomTabsHeightStep()}`)
+    // The bar it rests on is the fixed one at the viewport floor, under the
+    // sheet's layer — if it stopped being either, "resting on it" would mean
+    // something else.
+    const nav = code(BOTTOM_TABS).match(/<nav className="([^"]*)"/)![1]
+    expect(nav).toContain('fixed')
+    expect(nav).toContain('bottom-0')
+    expect(nav).toContain('z-40')
+    // …and it is present across the *whole* range that gets a sheet. `lg:hidden`
+    // (1024) clears 768 with room; `sm:hidden` would leave a 640–767 band where
+    // the sheet floats 64px above nothing.
+    expect(bottomTabsHiddenFrom()).toBeGreaterThanOrEqual(WINDOW_MOBILE_MAX_W)
+    // The floor anchor it replaces, by the string that was in the file. The
+    // sheet used to cover the bar completely — measured at 375 × 812, nav
+    // `[0, 748, 375, 64]` under a sheet `[0, 324.8, 375, 487.2]`, so a phone
+    // could not navigate at all while a pop-out was open (**R258**).
+    expect(frame[0]).not.toContain('bottom-0')
     // …and 60% of the height, built from the ruling's own ratio rather than
     // restated, so the two are one number. `dvh`, not `vh`: "the screen height"
     // on a phone is the visible viewport, and `vh` is the URL-bar-collapsed one.
@@ -1832,6 +2054,100 @@ describe('Ruling 2 — the mobile variant, and the desktop window it does not to
     expect(source).toMatch(/\{!minimized && !mobile && \(\s*<span\s*\n\s*onPointerDown=\{onGripPointerDown\}/)
     // And the header drops its grab cursor with its `touch-none`, together.
     expect(source).toMatch(/!mobile && 'cursor-grab touch-none active:cursor-grabbing'/)
+  })
+
+  /**
+   * **R257 — the claim was *"no geometry is written from a phone"*, and it was
+   * false in six places, one of them the delivery plan's v6.0 changelog.**
+   *
+   * `Collapse` — the item Ruling 2 itself moved into the Options menu — writes
+   * `min` into the persisted `geometry[listId]` record (`list-windows-store.ts`
+   * :367–369, `partialize` at :399). Measured at 375 × 812: Options → Collapse
+   * took `{x:397, y:270, w:406, h:436, min:false}` to `{…, min:true}` in
+   * `fieldscout.list-windows`. The old pins asserted only the two pointer-down
+   * gates, so nothing went red while the prose overstated the code.
+   *
+   * **The write is kept and the claim is narrowed**, and this is the half that
+   * makes the narrowed claim guarded rather than merely reworded: the two
+   * writers of position and size are *enumerated*, so a third — a snap-to-edge,
+   * a rotation handler, a new commit path — fails here instead of quietly
+   * becoming the first phone write of a desktop geometry. What `min` writes is
+   * executed in `list-windows-store.test.ts`.
+   */
+  it('no POSITION or SIZE is written from a phone — and `min` is, deliberately (R257)', () => {
+    const source = code(WINDOW)
+    // Two writers, one each. This is the enumeration the old pins lacked.
+    expect([...source.matchAll(/setPosition\(/g)], 'setPosition call sites').toHaveLength(1)
+    expect([...source.matchAll(/setSize\(/g)], 'setSize call sites').toHaveLength(1)
+    // Each is unlocked only by a ref…
+    expect(handlerBody(WINDOW, 'onHeaderPointerUp')).toContain('if (dragRef.current) {')
+    expect(handlerBody(WINDOW, 'onGripPointerUp')).toContain('if (sizeRef.current) {')
+    // …that exactly one place sets…
+    expect([...source.matchAll(/dragRef\.current = \{/g)], 'dragRef writers').toHaveLength(1)
+    expect([...source.matchAll(/sizeRef\.current = \{/g)], 'sizeRef writers').toHaveLength(1)
+    // …and that place is behind the mobile gate. Chain closed: on a phone,
+    // neither store write is reachable.
+    expect(handlerBody(WINDOW, 'onHeaderPointerDown')).toContain('if (mobile) return')
+    expect(handlerBody(WINDOW, 'onGripPointerDown')).toContain('if (mobile) return')
+
+    // The narrowed claim, stated as itself: `setMinimized` is the one geometry
+    // writer with **no** mobile gate, and it is reachable from the phone's own
+    // Options menu. That is deliberate — `min` is remembered for the same reason
+    // position and size are — and it is why the sentence changed.
+    expect(source).toContain('onToggleMinimized={() => setMinimized(listId, !minimized)}')
+    expect(declarationSource(WINDOW, 'WindowMenu')).toContain('onSelect={onToggleMinimized}')
+  })
+
+  /**
+   * **Ruling 3 — Chris, 2026-08-12: *"add tap outside to dismiss."***
+   *
+   * A phone has no Escape, and before this the header `Close` was the only way
+   * out of a sheet covering 60% of the screen. The two constraints that come
+   * with it are what these pin, because both are the kind of thing a later
+   * "unify the two branches" tidy-up breaks without noticing.
+   */
+  it('a tap outside dismisses the top sheet — and ONLY on a phone (Ruling 3)', () => {
+    const body = outsideTapEffect()
+    // A pointer, not a click: the sheet should go on the way down, like every
+    // other dismissal on a touch surface.
+    expect(body).toContain("window.addEventListener('pointerdown', onPointerDown)")
+    expect(body).toContain("window.removeEventListener('pointerdown', onPointerDown)")
+    // Top only — `close(listId)`, never `closeAll`, so three sheets take three
+    // taps exactly as three desktop windows take three presses.
+    expect(body).toContain('close(listId)')
+    expect(body).not.toContain('closeAll')
+    // Outside means outside *this* frame, measured on the frame itself…
+    expect(body).toContain('frameRef.current?.contains(target)')
+    // …except that a Radix layer above owns the tap. The Options menu and the
+    // Stats picker are portalled OUT of this frame, so containment alone reads a
+    // tap on a menu item as a tap outside the window. This is the pointer
+    // spelling of the `defaultPrevented` precedence Escape uses.
+    expect(body).toContain("document.querySelector('[data-radix-popper-content-wrapper]')")
+  })
+
+  it('…and it never swallows the tap, so the tab bar stays usable (Ruling 3)', () => {
+    const body = outsideTapEffect()
+    // Moving the sheet off the tab bar is pointless if the dismissal handler
+    // eats the tap that lands on it. Nothing here cancels anything: the tab
+    // navigates *and* the sheet goes.
+    expect(body).not.toContain('preventDefault')
+    expect(body).not.toContain('stopPropagation')
+  })
+
+  it('…and a DESKTOP pop-out still survives a click beside it (Ruling 3)', () => {
+    const source = code(WINDOW)
+    // The asymmetry, pinned. A desktop pop-out is not modal — you open one
+    // precisely to click around it, and it survives navigation. `outsideTapEffect`
+    // throws unless `!mobile` is in the guard; this is the other half: there is
+    // no *second* pointer listener anywhere in the file that could reach a
+    // desktop window.
+    const listeners = [...source.matchAll(/window\.addEventListener\('(\w+)'/g)].map((m) => m[1])
+    expect(listeners.sort()).toEqual(['keydown', 'pointerdown'])
+    const removed = [...source.matchAll(/window\.removeEventListener\('(\w+)'/g)].map((m) => m[1])
+    expect(removed.sort()).toEqual(['keydown', 'pointerdown'])
+    // Neither of the two is a `document`-level or capture-phase listener that
+    // would side-step the guards above.
+    expect(source).not.toContain('document.addEventListener')
   })
 
   /**
