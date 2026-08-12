@@ -594,11 +594,14 @@ describe('LV.14 — the fan-out reaches the comparison and nothing else', () => 
     const source = code(FAN_OUT)
     expect(source).toContain('export function planFanOut')
 
-    // The negative pins above forbid strings this file's own header *uses* while
-    // explaining what it declines to do — `no new route`, `Promise.all`,
-    // `useQuery`. Without a working stripper they would be red for the prose, and
-    // the obvious "fix" is to weaken the pin. Both halves are asserted, so this
-    // control cannot itself pass for the wrong reason.
+    // No pin needs the stripper today — none of the strings the negative pins
+    // forbid appears in this file's own prose (checked: `useLists`, `useQuery`,
+    // `fetch(` and `/api/` are absent, and `Promise.all` appears only without
+    // the `(` the pin matches). This control keeps the stripper working for the
+    // header that eventually will use one: the moment the prose explains a
+    // phrase a pin forbids, a broken stripper turns that pin red for the
+    // *comment*, and the obvious "fix" is to weaken the pin. Both halves are
+    // asserted, so this control cannot itself pass for the wrong reason.
     for (const phrase of ['The comparison set *is* the draft', 'No new table', 'useDraftMode']) {
       expect(read(FAN_OUT), phrase).toContain(phrase)
       expect(source, phrase).not.toContain(phrase)

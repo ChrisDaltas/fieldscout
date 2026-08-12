@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.5 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> **v5.6 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -751,7 +751,7 @@ behaviour is the failure this build already paid for once.**
 
 | id | task | depends on |
 | --- | --- | --- |
-| LV.15 | **The host and the store (D13)** — `list-windows-store.ts` (`{id,x,y,w,h,z,min}`, `partialize` → geometry only), and the **app-shell host**. Drag anywhere on the 44px header; resize grip 16px bottom-right, clamped 330–1200 × 220–900; collapse; close; back-to-front z-ordering; survives navigation. **Renders nothing at all when no window is open — pinned by a test**, because this is the one Round 2 file that mounts on every route | LV.7 |
+| LV.15 | **The host and the store (D13)** — `list-windows-store.ts` (`{id,x,y,w,h,z,min}`, `partialize` → geometry only), and the **app-shell host**. Drag anywhere on the 44px header; resize grip 16px bottom-right, clamped 330–1200 × 220–900; collapse; close; back-to-front z-ordering; survives navigation. **Renders nothing at all when no window is open — pinned by a test**, because this is the one Round 2 file that mounts on every route. **LANDED 2026-08-12** — the store is `player-windows-store.ts` line for line where it can be, plus `w`/`h`/`min`; **the handoff's `z` is the array index**, not a stored field, because two sources of truth for stacking mean the one that is *not* the render order silently wins (D13 asks for the array, and the store header maps every handoff field to where it lives). 44px → **36**, `440 × 520` → **352 × 416**, `330–1200 × 220–900` → **264–960 × 176–720** at this app's ×0.8 — but the **16px grip is not converted** (a hit target, not a rhythm measure) and the pointer maths has no `/ ZOOM` (this app has no zoom to undo). Pop-outs are **one** z layer at **45**: above page chrome, below Radix (50) so LV.16's `dots` opens above its own window, and below the player mini cards (60) so a card opened *from* a row lands in front. `gear` and `dots` are **absent rather than inert** (R220) and the body is a marked `ListWindowBodyPending` — both are LV.16's, filed as **F-LV15.1/2** rather than left implicit | LV.7 |
 | LV.16 | **Window content** — the dark inversion done by scoping the colour custom properties on an **inner wrapper** (children invert without restyling), with the Stats modal deliberately rendered **outside** it. 36px rows, 14px checkbox, name **13px/400**, drafted dims to 45%, hover `rgba(255,255,255,.09)`. Drag-reorder via the existing `use-list-drag.tsx` gap model. Footer: views / comments + a brand-lime Share with **literal `#000`** text (inside the wrapper `--n-1` resolves to white). **Outer stroke 1.25px, no shadow** — see the elevation note below | LV.15 |
 | LV.17 | **Wiring and states** — `pop out` in the detail hero action cluster and in the column menu; loading / empty / error **inside** a window; what happens at 6+ windows; a pop-out of a list you then delete; and the mobile answer (a floating draggable window has none — say what small screens get instead) | LV.16 |
 
@@ -785,6 +785,27 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.6 (2026-08-12)** — **LV.15 landed; Phase 8 is open.** §6's LV.15 row is
+  marked LANDED and carries the four things a reviewer would otherwise have to
+  reconstruct: (1) **where the handoff's `z` went** — it is the array index, not
+  a stored field, which is D13's *"array ordered back-to-front as the z-stack"*
+  taken literally rather than stored twice; (2) the **×0.8 conversions and the
+  two numbers deliberately exempt from them** — the 16px resize grip is a hit
+  target, not a rhythm measure, and pointer deltas are physical viewport pixels
+  with no zoom to undo; (3) **the z-layer choice between the two windowing
+  systems now in the app** — pop-outs at 45, Radix at 50, player mini cards at
+  60, one number for the whole pop-out layer so a sixth window cannot climb into
+  the dialog layer; and (4) that `gear` / `dots` and the window body are
+  **LV.16's**, absent rather than shipped inert (R220), and filed as
+  **F-LV15.1/2** in PROGRESS §5 rather than left as a note in the previous
+  Builder's file (R51). **D13 is unchanged** — it was written before the task
+  and survived the build without an erratum, as D12 did one task earlier.
+  PROGRESS §5 also carries **F-LV15.3**: LV.15 fitted the *cascade* to the
+  viewport, because the design's `120,120` origin puts a 352px window's own
+  close button off a 375px screen — and everything else about phones is
+  **LV.17's**, since D14's *"leave the phone version as is"* was a ruling about
+  Side by side, not about pop-outs.
 
 - **v5.5 (2026-08-12)** — **LV.14 landed, and the promise v5.4 recorded as an
   interval is discharged.** §6's LV.14 row is marked LANDED and its R220 clause
