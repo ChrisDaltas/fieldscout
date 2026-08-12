@@ -6,7 +6,9 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v4.0) > this file.
+> (`docs/specs/delivery-plan-lists-v2.md` v5.1) > this file. **That ordering is
+> load-bearing, not decorative** — LV.12 used it to settle a plan clause the
+> design package contradicts (§4).
 >
 > Active per `docs/specs/ACTIVE-BUILD.md`. Task ids are `LV.*`. **`L.*` tasks
 > belong to the paused leagues build — never pick one from here.**
@@ -18,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"* |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -294,6 +296,45 @@ under bucket headers "Over 20% of budget" / "10–20%". It is computed from
 *(This was six paragraphs until 2026-08-10. The length was the plan
 manufacturing work — it ended by instructing a future agent to HALT over a
 number no screen shows. Trimmed deliberately.)*
+
+---
+
+## 2b. Round 2 task checklist
+
+Task text: **delivery plan §6**, read with the handoff section each task cites.
+Pick the first unchecked task whose dependencies (in parentheses) are all
+checked.
+
+**Phase 7 — Side by side**
+
+- [x] **LV.12** — **the picker** (2026-08-11). `SideBySidePlaceholder` deleted;
+  `src/components/lists/v2/side-by-side-picker.tsx` renders the heading, the
+  design's own sub-line, the 232px-min grid (186px at this app's ×0.8) of
+  selectable cards, and the CTA that reads `Select at least one list` disabled
+  at zero. **UI/UX only — no migration, no schema change, no new API route**;
+  the budget stays closed at three. Composes Round 1 rather than re-solving it
+  (D11): the cover is `ListCoverTile`, the CTA is `ui/button`, the list data is
+  the collection `lists-page-v2.tsx` already holds. Selection is session-only
+  (D3) — `React.useState`, no `persist`. **The plan's "honours the My lists /
+  Saved tab" clause was wrong and is erratum'd** (plan §6, → v5.1): the picker
+  offers every list on the page, own first then saved, which is what the
+  prototype and `screens/side-by-side-picker.png` both do — see §4
+- [ ] **LV.13** — **the 300px columns**, full-bleed scroller, per-column
+  grouping menu, and `Change lists` in the page header (LV.12). *LV.12 left the
+  seam: `compareIds` lives in `lists-page-v2.tsx`, and `ComparisonPending` is
+  the temporary branch LV.13 replaces — delete that function.*
+- [ ] **LV.14** — **drafted fan-out across the comparison set** (D12) (LV.13,
+  LV.1.3)
+
+**Phase 8 — Pop-out windows**
+
+- [ ] **LV.15** — the store + the **app-shell host**, rendering nothing when no
+  window is open (D13) (LV.7)
+- [ ] **LV.16** — dark-inverted window content (LV.15)
+- [ ] **LV.17** — wiring, states, and the mobile answer (LV.16)
+
+The seven LV.7 follow-ups (**F-LV7.1 – F-LV7.7**, §5) remain **filed items, not
+queued tasks** — Round 2 does not absorb them.
 
 ---
 
@@ -2125,6 +2166,68 @@ This section records decisions made **during** the build.
   turning draft mode off clears the marks — there is no draft-mode toggle any
   more. Its `enabled` / `setEnabled` are now consumer-less and are **left in
   place** with an F-row rather than ripped out mid-cutover.
+
+- **LV.12 (2026-08-11) — the picker, and the plan clause the design package
+  contradicts.** **UI/UX only — no migration, no schema change, no new API
+  route**; the budget stays closed at three. Four things worth carrying
+  forward.
+
+  1. **"Honours the My lists / Saved tab" is wrong, and it is an erratum rather
+     than a halt.** Three independent sources say the picker offers *every*
+     list: `docs/design/lists/design/ListsScreen.jsx:431` reads
+     `st.myLists().concat(st.savedLists())` and never consults `st.tab`; the
+     same file hides the tab control entirely in compare mode (`:49`), which
+     `lists-page-v2.tsx` already did too; and
+     `screens/side-by-side-picker.png` renders **9** cards, which is exactly the
+     prototype's **7 own + 2 saved**, own first (the seed's two saved lists are
+     `lists.js:127` and `:141`). The clause carries no D-entry, and every
+     deliberate deviation from the handoff in this plan has one — so it is an
+     error, and the documented authority order (design LAW > plan > this file,
+     plus `screens/README.md`'s "screenshots outrank the prose") resolves it
+     without a ruling. **The LV.4 precedent governs**: D4's *"nothing is
+     computed"* was likewise falsified by the design package and folded as a
+     plan erratum by the Builder. Plan → **v5.1**.
+
+     It also matters that the clause was a **trap, not a simplification**: with
+     no tab control on screen there is no gesture that changes the filter, so a
+     viewer on *My lists* could never compare a saved board and one on *Saved*
+     could never compare their own. Comparing your board against someone
+     else's is the reason the mode exists.
+
+  2. **The primary CTA needed somewhere to go, so LV.12 owns the committed
+     state and a temporary panel.** `compareIds` is a `React.useState` in
+     `lists-page-v2.tsx` — the component that renders *both* the page header
+     and the body — because LV.13's `Change lists` button lives in that header
+     and has to read the same "is a comparison chosen yet". Behind it,
+     `ComparisonPending` is a deliberately temporary branch: without it the
+     picker would commit a comparison and change nothing on screen, which is
+     CLAUDE.md's "never let nothing happened mean it worked". **LV.13 deletes
+     that function**; its `Pick different lists` escape is *not* the header's
+     `Change lists` and must not be mistaken for it.
+
+  3. **Scale was converted, the checkbox deliberately was not.** The handoff's
+     numbers are 1× and the app is ×0.8, so `minmax(232px)` → `minmax(186px)`
+     and the 30px cover → `ListCoverTile size={24}` — the same conversions the
+     shipped gallery (268 → 214) and rail (30 → 24) already made. The **16px
+     checkbox stays 16px** because `DraftedCheckbox` already takes the
+     prototype's 14px box at 1:1; converting only this one would invert the
+     design's own size relationship between the two boxes. Measured in the
+     browser: 3 columns of 186.7px at 1280 viewport, **one column of 343px at
+     375** with `document.scrollWidth === 375` (no horizontal overflow) — that
+     is what a phone gets, and it needed no breakpoint of its own.
+
+  4. **The cards are named explicitly.** `ListThumbnail` is `aria-hidden`, so
+     the accessible name computes from the title span — and `read_page`'s
+     a11y tree showed the cards with **no name at all** before an
+     `aria-label` was added. The rail already carried that same guard and the
+     same comment; this is the second surface to need it, which is worth
+     remembering when LV.13 builds column headers out of the same parts.
+
+  Pinned by `src/components/lists/v2/side-by-side-picker.test.ts` (13 tests) —
+  the tab set, the session-only storage, the elevation rule, the composition,
+  and the copy. **Shown falsifiable**: reinstating the tab filter and adding a
+  resting `shadow-hard-4` turned exactly the two matching tests red, then both
+  were reverted and the suite went green again.
 
 ---
 
