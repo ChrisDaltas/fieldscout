@@ -3824,8 +3824,12 @@ keydown trace installed on a fresh load:
 | fresh load → one `left_click` → Escape | lands on the **first** press — the click is the enabling event, not the second keypress |
 | fresh load at 700×700, mobile emulation → Escape | `[]`, as in (1) |
 
-Six consecutive injected Escapes then landed at `vis: "hidden"` while proving
-R231 both ways, which is what rules `visibilityState` out. **The operational
+**Five** consecutive injected Escapes landed at `vis: "hidden"` while proving
+R231 — the reproduction, both halves, the chrome-button case and the stack
+unwind — plus the **two** in rows 2 and 3 above, all seven at `vis: "hidden"`.
+That is what rules `visibilityState` out. *(Counted from the run, not
+estimated: a stated count that disagrees with a countable one teaches the next
+Builder to trust the statement — **R221**.)* **The operational
 advice is unchanged and gains a clause: stay ≥768px, and click into the page
 once after every load.** R234 proposed re-attributing (2) to (1)'s mobile
 emulation; that does not survive the first row of the table above — a *desktop*
