@@ -1,10 +1,15 @@
 # Delivery Plan: Lists v2
 
-> **v4.3 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v5.0 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
 > capabilities *ported* rather than lost, per Chris's §3 Q3 ruling (**D11**).
+>
+> **Round 2 is active** — side-by-side compare and pop-out windows, §6, tasks
+> **LV.12 – LV.17**. It adds **no** schema (D12) and its one behavioural fork
+> is ruled in **D12**: the drafted checkbox fans out across the columns you
+> picked, never globally.
 >
 > Everything the handoff needs that has no home in the current schema is
 > **client-side state**, **relabelled onto an existing field**, or **dropped
@@ -509,6 +514,73 @@ feature."* Removal rides with the surface it belongs to (§4, LV.4.4).
   eight options overflow a phone, the group is a `grid` (4×2) rather than a
   wrapping flex row, which strands the last option alone on a second line.
 
+- **D12 — In Side by side, the drafted checkbox fans out across the columns
+  you picked. Never globally.** *(Round 2, added v5.0.)*
+
+  The handoff and the screenshots both show one mark striking a player through
+  in **every** column at once — the Interactions table says *"Marks drafted in
+  every list containing him"*, the store calls it `toggleDrafted` (global), and
+  `side-by-side-columns.png` shows Malik Nabers struck in all five columns. The
+  picker's own copy promises it: *"Mark players off as they go in your draft
+  and every column updates."*
+
+  **That prose is overridden, and the screenshots with it**, by Chris,
+  2026-08-10: *"marking a player as drafted is per user, per list. it's not
+  some global app wide thing. players will have multiple lists for multiple
+  leagues. it makes no sense to persist that."* Per
+  `docs/design/lists/screens/README.md`: *screenshots outrank the prose, they
+  do not outrank Chris.*
+
+  The two reconcile exactly, and this is the rule:
+
+  > **The comparison set *is* the draft.** Ticking a player writes one
+  > `list_player_drafted` row per list **currently in the comparison** — which
+  > is every column on screen, so the promised behaviour holds — and touches
+  > **no** list outside it. Next week's league is a different comparison, and
+  > is untouched.
+
+  Consequences a Builder must handle rather than discover:
+
+  1. **Storage does not change.** This is N writes to the LV.1.2 table through
+     the LV.1.2 route, keyed `(user_id, list_id, player_id)` as shipped. **No
+     new table, no new column, no new route** — the schema budget stays closed
+     at three.
+  2. **A player in only some columns marks only those.** The fan-out is
+     `columns ∩ lists containing the player`, not all columns.
+  3. **Partial failure must not lie.** If three of five writes land, the UI may
+     not show all five struck. This build has already paid for the general
+     version of this mistake three times (R190/R195/R199) — the guard takes its
+     input from the write actually returning, and a failed write rolls its own
+     column back and says so.
+  4. **Unticking is symmetric** — it clears across the same set, no wider.
+  5. **The single-list detail panel is unchanged.** Ticking there writes one
+     row, exactly as LV.1.3 shipped. Only the comparison fans out.
+
+  The live `N of M left` count in each column header is derived per column from
+  that column's own rows, so it stays correct under any fan-out outcome,
+  including a partial one.
+
+- **D13 — Pop-outs persist their geometry, never their existence**
+  *(Round 2, added v5.0.)*
+
+  `src/stores/player-windows-store.ts` already settled this shape for the
+  player mini card and Round 2 follows it rather than inventing a second
+  convention: an array ordered back-to-front as the z-stack, one window per id,
+  re-opening refocuses instead of duplicating, and `partialize` persists
+  **positions only**. A reload leaves you on a clean page; re-opening a list
+  puts its window back where you left it. Round 2's store adds size and
+  minimize to what is remembered (handoff: `popouts[{id,x,y,w,h,z,min}]`) and
+  keeps `windows` out of storage on the same reasoning.
+
+  This is consistent with D3 — display state is not saved — and with the one
+  exception to it: `drafted` is real data, and a pop-out reads the same server
+  source as everything else.
+
+  **The app-shell host is the one part of Round 2 that can break surfaces
+  outside Lists**, since it mounts on every route. It renders **nothing** —
+  no wrapper, no portal, no layout box — when no window is open, and that is a
+  test, not an intention.
+
 ---
 
 ## 4. Task breakdown (dependency order)
@@ -589,7 +661,7 @@ One task = one Builder session = one PR. `/build-next` drives.
 
 ---
 
-## 6. Round 2 (deferred)
+## 6. Round 2 — **ACTIVE from 2026-08-11** ("round 2, go" — Chris)
 
 Side-by-side compare, and pop-out windows. **The new side-by-side is where
 draft night actually happens** — its rows carry a permanent drafted checkbox
@@ -599,7 +671,47 @@ than the browser-only tap-cycle the old board used. Both stay UI-only:
 persisted across reloads and back-to-front z-ordering, which is most of the
 pop-out infrastructure. Pop-outs are hosted by the **app shell** so they
 survive navigation — the only part of this package that can destabilize
-surfaces outside Lists, which is why it is off the launch path.
+surfaces outside Lists.
+
+**Round 2 adds no schema.** The budget stays closed at three (§1). Side by
+side writes through the LV.1.2 table and route; pop-outs are client state.
+A task that believes it needs a fourth exception has left scope: stop and
+raise it, as LV.1.2 / LV.1.5 / LV.8 each did.
+
+**Round 1 is the floor, not the ceiling.** Both screens reuse what already
+exists rather than growing a third tree — `list-buckets.ts` for grouping,
+`list-row-parts.tsx` for rows, `cover-tile.tsx` for covers, `use-draft-mode.ts`
+for marks, `use-list-drag.tsx` for reordering, `Segment` for the mode control.
+D11 applies with full force: **a new surface that quietly reimplements a solved
+behaviour is the failure this build already paid for once.**
+
+**Phase 7 — Side by side**
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). Honours the My lists / Saved tab | LV.9 |
+| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list` | LV.12 |
+| LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route** | LV.13, LV.1.3 |
+
+**Phase 8 — Pop-out windows**
+
+| id | task | depends on |
+| --- | --- | --- |
+| LV.15 | **The host and the store (D13)** — `list-windows-store.ts` (`{id,x,y,w,h,z,min}`, `partialize` → geometry only), and the **app-shell host**. Drag anywhere on the 44px header; resize grip 16px bottom-right, clamped 330–1200 × 220–900; collapse; close; back-to-front z-ordering; survives navigation. **Renders nothing at all when no window is open — pinned by a test**, because this is the one Round 2 file that mounts on every route | LV.7 |
+| LV.16 | **Window content** — the dark inversion done by scoping the colour custom properties on an **inner wrapper** (children invert without restyling), with the Stats modal deliberately rendered **outside** it. 36px rows, 14px checkbox, name **13px/400**, drafted dims to 45%, hover `rgba(255,255,255,.09)`. Drag-reorder via the existing `use-list-drag.tsx` gap model. Footer: views / comments + a brand-lime Share with **literal `#000`** text (inside the wrapper `--n-1` resolves to white). **Outer stroke 1.25px, no shadow** — see the elevation note below | LV.15 |
+| LV.17 | **Wiring and states** — `pop out` in the detail hero action cluster and in the column menu; loading / empty / error **inside** a window; what happens at 6+ windows; a pop-out of a list you then delete; and the mobile answer (a floating draggable window has none — say what small screens get instead) | LV.16 |
+
+**Elevation, for the avoidance of doubt.** A pop-out is a true overlay, so
+CLAUDE.md's rule would let it carry a resting shadow — but the handoff
+overrides that on its own terms: *"a black offset shadow can't read on a black
+window, so the stroke carries the lift."* Resting elevation on a pop-out is
+therefore a **1.25px `--text-secondary` stroke shifting to `--brand` on
+hover**, and `src/components/ui/elevation-rule.test.ts` is not touched — the
+window is not a `ui/` primitive.
+
+**Where Round 2 must not go:** `src/components/big-board/**`,
+`src/stores/board-labels-store.ts` (still off limits, §1), and any leagues
+surface. Side by side is a *Lists* draft aid; it is not M2.
 
 ---
 
@@ -619,6 +731,33 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.0 (2026-08-11)** — **Round 2 opened** on Chris's *"round 2, go"*. §6
+  gains the six-task breakdown (**LV.12 – LV.17**), and §3 gains two decisions.
+
+  **D12 settles the one place the design package contradicts a Chris ruling.**
+  The handoff's Interactions table, its store's `toggleDrafted` (global), and
+  `side-by-side-columns.png` all show one tick striking a player in *every*
+  list containing him. Chris ruled the opposite on 2026-08-10 — *"per user, per
+  list… players will have multiple lists for multiple leagues"* — and that is
+  the schema that shipped at LV.1.2. The screens README already anticipated
+  this exact collision: **screenshots outrank the prose, they do not outrank
+  Chris.** The reconciliation is that **the comparison set is the draft**: a
+  tick writes one row per list *in the comparison*, which is every column on
+  screen — so the picker's promise (*"every column updates"*) holds literally —
+  and nothing outside it. No new table, column or route; the budget stays at
+  three.
+
+  **D13** points the pop-out store at the precedent
+  `player-windows-store.ts` already set (geometry persisted, open windows not)
+  rather than a second convention, and makes the app-shell host's
+  render-nothing-when-empty a **test** rather than an intention — it is the one
+  Round 2 file that mounts on every route in the app.
+
+  Round 2 also inherits D11 explicitly: both screens compose `list-buckets.ts`,
+  `list-row-parts.tsx`, `cover-tile.tsx`, `use-draft-mode.ts` and
+  `use-list-drag.tsx` rather than growing a third tree. Reimplementing a solved
+  behaviour on a new surface is the failure this build has already paid for.
 
 - **v4.3 (2026-08-11)** — **LV.7, the cutover, and the ruling that changed what
   a "rebuild" task is allowed to lose (D11).**

@@ -18,7 +18,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare; pop-out windows (app-shell hosted) | — | ⚪ Deferred (plan §6) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"* |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -34,8 +34,21 @@ exception. **Q3** (2026-08-11) — **keep all four**: folders, right-rail
 dragging, the player mini card, and pin/unpin. See Q3's ruling block for what
 that changed and why the recommendation was wrong.
 
-Round 2 (side-by-side compare, pop-out windows) remains deferred per plan §6,
-and the follow-ups LV.7 filed rather than absorbed are in §5.
+**🟡 Round 2 opened 2026-08-11** on Chris's *"round 2, go"* — plan §6, tasks
+**LV.12 – LV.17**. The follow-ups LV.7 filed rather than absorbed stay in §5 as
+filed items; **Round 2 does not absorb them**.
+
+Round 2 carries **one behavioural fork, already ruled, and a Builder must not
+re-open it**: the handoff, its store (`toggleDrafted` — global) and
+`screens/side-by-side-columns.png` all show a drafted tick striking a player in
+**every list containing him**. Chris ruled the opposite on 2026-08-10 (*"per
+user, per list… players will have multiple lists for multiple leagues"*), which
+is the schema LV.1.2 shipped. `screens/README.md` already names this class of
+collision: *screenshots outrank the prose, they do not outrank Chris.*
+**Plan D12 reconciles them — the comparison set *is* the draft**, so a tick
+writes one row per list *in the comparison* (every column on screen, which is
+what the picker copy promises) and touches nothing outside it. No new table, no
+new route: the schema budget stays closed at three.
 
 ---
 
@@ -2202,8 +2215,12 @@ This section records decisions made **during** the build.
   than every writer, and both halves were shown: the crash reproduced live,
   then fixed.
 
-Nothing else blocks Lists v2. **Phase 2 (LV.2.1, LV.2.2, LV.2.3) and LV.3.1 are
-clear of both Q1 and Q2** — that is where the loop should go next.
+Nothing blocks Lists v2. ~~**Phase 2 (LV.2.1, LV.2.2, LV.2.3) and LV.3.1 are
+clear of both Q1 and Q2** — that is where the loop should go next.~~ *(Stale —
+all of Round 1 landed 2026-08-11.)* **The loop goes to LV.12** — Round 2's
+picker — and then LV.13 → LV.17 in order. Plan §6 carries the task text; D12
+and D13 carry the two decisions that were made before the first task, rather
+than discovered inside one.
 
 **Two pre-existing repo-wide test-infrastructure faults were measured during
 LV.1.2 and are NOT caused by it.** Neither blocks this build (the Lists v2

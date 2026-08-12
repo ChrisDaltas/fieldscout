@@ -9,16 +9,27 @@
 
 ---
 
-## Active: Lists v2 — **Round 1 COMPLETE 2026-08-11**
+## Active: Lists v2 — **Round 2** (side by side + pop-outs)
 
-*(Set 2026-08-09. Lists v2 ships ahead of M2 leagues — Chris, 2026-08-09.)*
+*(Set 2026-08-09. Lists v2 ships ahead of M2 leagues — Chris, 2026-08-09.
+Round 1 completed 2026-08-11; **Round 2 opened the same day on Chris's
+"round 2, go"**.)*
 
-**Every LV.* task in the Round 1 checklist is done.** `/build-next` has nothing
-left to pick here: Round 2 (side-by-side compare, pop-out windows) is deferred
-by plan §6 and has no task breakdown, and the seven LV.7 follow-ups are in
-`PROGRESS-lists-v2.md` §5 as filed items, not as queued tasks. **Switching back
-to Redraft Leagues M2 (paused at L.B3.1) is a Chris decision** — follow
-"Switching builds" below; do not repoint this file unasked.
+**Round 1 is done and stays done** — LV.1 – LV.11 all landed. The queue is now
+the plan's **§6**, tasks **LV.12 – LV.17**, in that order:
+
+| | |
+| --- | --- |
+| **LV.12** | Side by side — the picker (replaces `SideBySidePlaceholder`) |
+| **LV.13** | Side by side — the 300px columns, full-bleed scroller, per-column grouping menu |
+| **LV.14** | Drafted **fan-out across the comparison set** (D12) |
+| **LV.15** | Pop-outs — the store + the **app-shell host** |
+| **LV.16** | Pop-outs — dark-inverted window content |
+| **LV.17** | Pop-outs — wiring, states, and the mobile answer |
+
+The seven LV.7 follow-ups (F-LV7.1 – F-LV7.7) in `PROGRESS-lists-v2.md` §5 are
+still **filed items, not queued tasks** — Round 2 does not absorb them.
+Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
 
 | | |
 | --- | --- |
@@ -45,7 +56,14 @@ to Redraft Leagues M2 (paused at L.B3.1) is a Chris decision** — follow
   `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`.
 - ~~Everything lands behind `featureFlags.listsV2`.~~ **The flag was removed at
   LV.7 (2026-08-11)** — `/app/lists` serves the rebuilt page unconditionally and
-  the legacy components are deleted. Nothing left to gate.
+  the legacy components are deleted. Nothing left to gate. **Round 2 ships
+  unflagged too**, which is why LV.15's app-shell host must render nothing when
+  no window is open.
+- **Round 2 only: compose Round 1, do not re-solve it** (plan §6, D11).
+  Grouping is `list-buckets.ts`, rows are `list-row-parts.tsx`, covers are
+  `cover-tile.tsx`, marks are `use-draft-mode.ts`, reorder is
+  `use-list-drag.tsx`, the mode control is `Segment`. A new surface that
+  quietly reimplements one of these is the LV.7 failure repeating.
 - Keep the app's ×0.8 token scale; implement colors from tokens, not the
   handoff's literal hex.
 
