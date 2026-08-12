@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -356,12 +356,30 @@ checked.
   sub-line is a promise LV.14 has to keep; restored D13's closing paragraph,
   which D14 had been inserted into; and moved the new local fixture's
   re-creation steps into `ACTIVE-BUILD.md`
-- [ ] **LV.14** — **drafted fan-out across the comparison set** (D12) (LV.13,
-  LV.1.3). **Carries a forward obligation from LV.13's review (R220):** the
-  picker's design-verbatim sub-line — *"…and every column updates"* — has been
-  live since LV.12 and is **false until this task lands**. LV.14 makes it true
-  and then clears the interval note from `side-by-side-picker.tsx`'s JSDoc and
-  from §4. **The copy itself is not to be edited** — the fix is the behaviour
+- [x] **LV.14** — **drafted fan-out across the comparison set** (2026-08-12)
+  (D12) (LV.13, LV.1.3). One tick now writes one `list_player_drafted` row per
+  list **in the comparison that contains the player**, and none outside it —
+  measured live: A.J. Brown ticked in one column struck through in all three and
+  wrote exactly **3** rows, while `Secret sleepers`, which holds him and was
+  deliberately left out of the picker, gained **0** (§4). **UI/UX only — no
+  migration, no schema change, no new API route**; N writes through LV.1.2's
+  route, so the budget stays closed at three. The mechanism is a new
+  `src/components/lists/v2/drafted-fan-out.ts` — a `.ts` with no JSX **on
+  purpose**, so D12's set intersection, its partial-failure protocol and its copy
+  are **executed** (28 of its 33 tests) rather than source-pinned. **Composes Round 1
+  rather than re-solving it (D11)**: every column keeps its own
+  `useDraftMode(listId)` and merely registers, so per-column optimism, rollback
+  and invalidation are LV.1.3's, not a second copy. `use-draft-mode.ts` gained
+  exactly two things — `setDrafted` (explicit state, awaited) and
+  `desiredDraftedFor` — plus `markMutationOptions`, extracted so the per-column
+  rollback could be **driven through five real caches** instead of argued from
+  cache-key shape (the R190/R195/R199 family). **The forward obligation from
+  R220 is discharged**: the picker's sub-line now describes shipped behaviour,
+  `side-by-side-picker.tsx`'s JSDoc is in the present tense, and §4's LV.13
+  interval note is closed. **The copy was not edited.** LV.13's
+  *"a tick is one tick on one list"* pin block was **re-aimed, not deleted** —
+  the property it guarded (a tick reaches exactly the lists it should) is the
+  same one D12 governs; only the boundary moved
 
 **Phase 8 — Pop-out windows**
 
@@ -2564,19 +2582,149 @@ This section records decisions made **during** the build.
   the review round — **R221** — which reconciled to nothing and, worse, would
   have taught the next Builder to trust a stated delta over a counted one.)*
 
-  **One state ships with the copy ahead of it, and the interval is recorded
-  rather than papered over** (**R220**). The picker's sub-line — *"Mark players
-  off as they go in your draft and every column updates"* — is the design's
-  verbatim copy, shipped since LV.12, and **LV.13 is the release that makes it
-  observably false**: ticking A.J. Brown in one column moved that column
-  `2 of 2 left → 1 of 2 left` while the other three columns containing him
-  stayed `aria-pressed="false"` with unchanged counts. That is not a defect in
-  LV.13 — one tick, one list is exactly what D12 assigns to LV.14 — but before
-  LV.13 there were no columns on screen to contradict the sentence, and now there
-  are. **The copy is not to be edited**; **LV.14 discharges it** by making the
-  fan-out real and clearing this note plus the interval paragraph in
-  `side-by-side-picker.tsx`'s JSDoc. Recorded in the plan's §6 **LV.14 row**, so
-  the next Builder reads it in the task text rather than here.
+  ~~**One state ships with the copy ahead of it, and the interval is recorded
+  rather than papered over** (**R220**).~~ **✅ DISCHARGED BY LV.14, 2026-08-12.**
+  The picker's sub-line — *"Mark players off as they go in your draft and every
+  column updates"* — is the design's verbatim copy, shipped since LV.12, and
+  **LV.13 was the release that made it observably false**: ticking A.J. Brown in
+  one column moved that column `2 of 2 left → 1 of 2 left` while the other three
+  columns containing him stayed `aria-pressed="false"` with unchanged counts.
+  That was never a defect in LV.13 — one tick, one list is exactly what D12
+  assigned to LV.14 — but before LV.13 there were no columns on screen to
+  contradict the sentence. **LV.14 made it true** (fan-out across the comparison
+  set) and cleared the interval paragraph from `side-by-side-picker.tsx`'s JSDoc;
+  the copy itself was never edited. The measurement that closes it is the inverse
+  of the one above: one tick, **three** columns struck, three rows. See the LV.14
+  entry below.
+
+- **LV.14 (2026-08-12) — the drafted fan-out: the comparison set *is* the
+  draft.** **UI/UX only — no migration, no schema change, no new API route**;
+  the budget stays closed at three. N writes through LV.1.2's route, keyed
+  `(user_id, list_id, player_id)` exactly as shipped.
+
+  1. **The ruling is the boundary, and the boundary is the only input.** D12
+     reconciles the design package (a tick marks *"every list containing him"*;
+     `side-by-side-columns.png` shows Nabers struck in all five) with Chris's
+     2026-08-10 override (*"per user, per list… players will have multiple lists
+     for multiple leagues"*) by making the **comparison** the scope. So
+     `drafted-fan-out.ts` is built only from the columns that **registered
+     themselves**, in the page's own `ids` order, and it deliberately holds no
+     way to ask "which lists contain this player" — a question whose answer is
+     wider than the comparison, which something would eventually call. Pinned
+     negatively (no `fetch(`, no `useQuery`, no `/api/`) and shown red by fanning
+     out to every column instead of the containing ones.
+
+  2. **It is a `.ts`, and that is the whole reason it is a separate file.**
+     This repo's vitest is node with no jsdom, so a decision left in a `.tsx`
+     hook body is pinned by nothing (R191). D12 is a set intersection plus a
+     partial-failure protocol — decisions, not markup — so they live where they
+     can be **executed**: 28 of the new file's 33 tests run the real functions,
+     and only the 5 that guard JSX wiring and cited constants read source.
+
+  3. **The per-column rollback is measured, not reasoned about.** "Each column
+     has its own cache key, so a failed write can only roll its own column back"
+     is precisely the shape of claim R190, R195 and R199 each defeated — right in
+     the middle, wrong at an edge. So `markMutationOptions` was **extracted from
+     the hook body** (the same move `draftedQueryOptions` already made in that
+     file, for the same reason) and the suite drives five real cache entries in
+     one real `QueryClient` through a wire that refuses exactly one: four keep
+     the mark, the fifth returns to the array it held before, byte for byte.
+
+  4. **`notify: false` buys the caller the telling, and nothing else.** The
+     rollback sits **above** the branch. The reason a fan-out needs one report
+     rather than N is not taste: `use-toast.ts` sets **`TOAST_LIMIT = 1`**, so
+     three failing columns toasting individually would be two *invisible* toasts
+     and one survivor naming a single column — "nothing happened means it
+     worked" wearing a failure message. The aggregate names every failure and
+     counts what landed.
+
+  5. **The failure model was stated before it was built, and every column state
+     has an answer** (R190's "cross the consequences with each other"):
+     `in` → written; `out` → untouched (D12 consequence 2); `loading` → skipped
+     **and reported**, because that column will shortly render a row that
+     disagrees with its neighbours and say nothing; `unreadable` → skipped
+     **silently**, because the column already reads *"This list could not be
+     loaded"* permanently and a toast per tick would fire for the rest of the
+     draft. A column whose rows have not arrived is `loading`, **never** `out` —
+     `memberIds` is `null` rather than an empty Set for exactly that reason, and
+     the ternary's order is pinned as one string so an arm cannot be reordered.
+
+  6. **The crossing with `hasRead`, stated rather than assumed.** N optimistic
+     `setQueryData` writes are still N cache writes, and the landing flag is
+     raised only inside the `queryFn` — so fanning into a column whose *drafted*
+     read failed leaves that list's `hasRead` false and its *Clear drafted* still
+     refused. R195's rule holds under the new caller. **This one is pinned and
+     reasoned, not measured live** — it has no user-visible surface on this
+     screen — and is called out here rather than folded into the table below.
+
+  **Verification environment, stated rather than implied (R207).** Local stack
+  only: `.claude/launch.json` config **`dev-local`** on port 3123; the browser's
+  network log shows `GET http://127.0.0.1:54321/auth/v1/user → 200` and the
+  `dev@fieldscout.local` profile `11111111-…`. Nothing hosted was read or
+  written. Every row below was checked against the database with
+  `docker exec supabase_db_fieldscout psql`, not inferred from the screen.
+
+  | Observation | Evidence (local, 1280×900) |
+  | --- | --- |
+  | **The fan-out** | comparison = `LV13 fixture` + `Consensus WR top 10` + `LV12 fixture (saved)`. Ticked A.J. Brown in **one** column → **all three** struck (`aria-pressed=true`, `line-through`), headers `8 of 8 → 7 of 8`, `10 of 10 → 9 of 10`, `6 of 6 → 5 of 6`, and `list_player_drafted` held exactly **3** rows |
+  | **The ruling — a list outside the comparison** | `Secret sleepers` (dev@, holds A.J. Brown, deliberately **not** picked) gained **0** rows. This is the observation the whole task exists for, and the design package would have failed it |
+  | **A player in only some columns** (D12.2) | Josh Allen is in `LV13` and `Secret sleepers` only. Ticked → **1** row (LV13), the other two columns unchanged at `9 of 10` / `5 of 6`, `Secret sleepers` still **0** |
+  | **Unticking is symmetric** (D12.4) | unticked A.J. Brown from a **different** column (Consensus) → all three rows gone, counts back to `7 of 8` / `10 of 10` / `6 of 6`, and **Josh Allen's mark untouched**. Total 4 → 1 rows |
+  | **Partial failure** | soft-deleted `Consensus WR top 10` via psql *after* its rows had cached, then ticked. Wire: **3** POSTs — `cccc3333 → 200`, `aaaa1111 → 404`, `bbbb2222 → 200`. Screen: the two that landed struck, **the refused column rolled itself back** (A.J. Brown unticked, `10 of 10 left`). DB: 2 rows, none on the refused list |
+  | **…and the user is told, once, by name** | *"Not every column was updated — A.J. Brown was marked in 2 of 3 columns. Consensus WR top 10 could not be updated, so nothing changed there."* One toast for one gesture |
+  | **A column still loading is skipped and reported** | committed the comparison with `Consensus` soft-deleted so its column parked at `Loading…`; ticking wrote **2** rows and toasted *"…Consensus WR top 10 has not loaded yet, so A.J. Brown was not checked there."* |
+  | **A column that failed to load is skipped silently** | released the parked query → the column rendered `Could not load` / *"This list could not be loaded. / List not found"*. Ticked **two** further players: both wrote **2** rows each (`6 of 8 → 5 of 8`, `4 of 6 → 3 of 6`) and **no new toast appeared** (the on-screen toast was the previous one, `data-state="closed"`, text unchanged, no mention of either player). DB: **0** rows on the unreadable list |
+  | **The detail panel is unchanged** (D12.5) | opened `LV13 fixture` on its own, ticked A.J. Brown in the panel's card view → **1** row, on that list only, although he sits on four lists |
+  | **Clean** | the only console errors are `sleepercdn.com` headshots (`ERR_CONNECTION_REFUSED` — no outbound network in this sandbox, pre-existing) and the 404s this session deliberately caused. The one aborted `/drafted` GET is `cancelQueries` during a mark, which is R199's intended behaviour |
+
+  **A correction to the technique R223 left for LV.15 – LV.17, found by using
+  it.** R223 records that React Query parks a failed query in `pending` while
+  the tab is unfocused and that *"a bubbling `visibilitychange` releases it"*.
+  **That is necessary and not sufficient**, and it failed here: React Query v5's
+  `focusManager.isFocused()` reads `document.visibilityState`, which in an
+  automation tab is genuinely `'hidden'` (`document.hasFocus()` was `true` and
+  `navigator.onLine` was `true` — neither is the gate). Dispatching the event
+  only makes it *re-read* a value that has not changed, so the retry stays
+  paused forever. The working form is to change the value first:
+
+  ```js
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+  document.dispatchEvent(new Event('visibilitychange', { bubbles: true }))
+  ```
+
+  That is what turned `Loading…` into `Could not load` above, and it is why both
+  skip branches could be shown live rather than one. The pop-out tasks face the
+  same problem, so it is corrected here where R223 put the original.
+
+  **The local fixtures are intact and were restored.** `Consensus WR top 10`'s
+  `deleted_at` is back to `null` (it was soft-deleted twice, deliberately, and
+  restored both times), and both documented fixtures — LV.12's saved
+  `dev-pro` list and LV.13's `r1`–`r4` round board — are untouched, tiers
+  included. `list_player_drafted` was left **empty**; the single stale row LV.13's
+  run had left behind was cleared at the start so the counts below could not be
+  read over pre-existing state. Local DB only; nothing hosted was touched.
+
+  Pinned by `src/components/lists/v2/drafted-fan-out.test.ts` (**33**: 28
+  executed, 5 source), plus **+2** in `side-by-side-columns.test.ts` (22 → 24)
+  and **+2** in `use-draft-mode.test.ts` (69 → 71). **The arithmetic
+  reconciles** (R221): 33 + 2 + 2 = **37** = 1032 − 995. **Five probes, each
+  shown red and reverted:** fanning out to *every* column, the design package's
+  own rule → **3 red**; `notify: false` gating the rollback as well as the toast
+  → **4 red**, including the executed five-cache test showing the refused column
+  keeping a mark the server had refused — D12's lie, reproduced; an unloaded
+  column answering `'out'` → **1 red**; `Promise.all` for `allSettled` →
+  **7 red**; and `TOAST_LIMIT` raised to 3 → **1 red**, which is what keeps a
+  *cited constant* from quietly ceasing to be true under three documents that
+  reason from it. `git diff` clean after each, gate back to **1032**.
+
+  **One pin was corrected before it was trusted, and it was the control.** The
+  comment-stripper control initially asserted `not.toContain('the comparison set
+  *is* the draft')` against a header that says *"**The** comparison set…"* —
+  case-sensitive, so it would have passed with the stripper doing nothing, which
+  is the exact "green for the wrong reason" LV.12's review found twice. It now
+  asserts **both** halves (raw contains, stripped does not) over three phrases,
+  and caught a fourth (`no new route`) that was only failing because the header
+  line-wraps.
 
 ---
 
@@ -2621,6 +2769,13 @@ This section records decisions made **during** the build.
   | id | What | Why it is not in LV.12 |
   | --- | --- | --- |
   | **F-LV12.1** | **`N players` is never pluralised, house-wide.** A one-player list reads *"1 players"*, and LV.12's new `aria-label` now **announces** it — a screen reader says *"Favorites, 1 players"*. Four shipped v2 surfaces carry the same literal: `list-gallery-card.tsx:173`, `list-detail-panel.tsx:196`, `lists-rail.tsx:103`, `side-by-side-picker.tsx:172`. It matches the prototype, so it is not a regression — **and the house already disagrees with itself**: `list-detail-hero.tsx:178` pluralises properly (`list.players.length === 1 ? 'player' : 'players'`), which is the shape a sweep should adopt | Fixing it in the picker alone would leave the app saying two different things about the same number, and fixing all five is a five-file string change across surfaces this task has no business opening. One sweep, its own commit — including the a11y-string case LV.12 introduced |
+
+- **Follow-up LV.14 filed rather than absorbed**, same rule as the LV.7 seven
+  and F-LV12.1: in scope to notice, out of scope to fix here.
+
+  | id | What | Why it is not in LV.14 |
+  | --- | --- | --- |
+  | **F-LV14.1** | **A column's `N of M left` is honest about its ROWS and silent about its MARKS.** `side-by-side-columns.tsx`'s subline branches on `detail.isError` (the *list* read) and on `entries` being absent, which is why it says `Could not load` / `Loading…` rather than `0 of 0 left` — LV.13 built that deliberately. But if the **drafted** read fails while the rows load, `toDraftedSet` turns it into an empty Set (LV.1.3, Q1 consequence 2, by design) and the header then claims `8 of 8 left` over marks the account may well hold. On the open list that fallback is the accepted behaviour; on a column header it becomes the *headline number* LV.13 refused to claim over an unanswered request — the same argument, one query along. Reproducible by 500ing `GET /api/lists/[id]/drafted` while `GET /api/lists/[id]` succeeds | The count is **LV.13's**, and LV.14's task text says in as many words that LV.13 built it correctly and not to change it. Fixing it means giving the subline a third input (the drafted query's own state) and deciding new copy for it — a design call on a surface this task was told to leave alone. It is also not a regression: the fan-out neither introduced nor widened it |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
   built as written. The boards rule held on the *diff* — zero files under

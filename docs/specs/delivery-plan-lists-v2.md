@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.4 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> **v5.5 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -719,7 +719,7 @@ behaviour is the failure this build already paid for once.**
 | --- | --- | --- |
 | LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). ~~Honours the My lists / Saved tab~~ — **see the erratum below**. **LANDED 2026-08-11** | LV.9 |
 | LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list`, and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes (see the erratum below). **LANDED 2026-08-11** — 300px → **240px** at this app's ×0.8, and the full-bleed margin is pinned to the shell's own gutter (`-mx-4 px-4 / lg:-mx-7 lg:px-7`) rather than to a converted number, because the two have to move together or the page gains a horizontal scroll | LV.12 |
-| LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route**. **This task discharges a live-but-false promise**: the picker's sub-line — *"Mark players off as they go in your draft and every column updates"* — is the design's verbatim copy and has shipped since LV.12, but it is **true only once LV.14 lands** (LV.13 review, **R220**). Until then a tick moves one column and the others do not budge. LV.14 must (a) make the sentence true, and (b) clear the interval note from `side-by-side-picker.tsx`'s JSDoc and from `PROGRESS-lists-v2.md` §4. **The copy itself is not to be edited** — the fix is the behaviour | LV.13, LV.1.3 |
+| LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route**. ~~**This task discharges a live-but-false promise**~~ — **discharged**: the picker's sub-line (*"…and every column updates"*) had shipped since LV.12 and was true only from LV.14 (LV.13 review, **R220**); LV.14 made it true, and cleared the interval note from `side-by-side-picker.tsx`'s JSDoc and from `PROGRESS-lists-v2.md` §4. **The copy was not edited** — the fix was the behaviour. **LANDED 2026-08-12** — the mechanism is `src/components/lists/v2/drafted-fan-out.ts`, a **`.ts` on purpose** so D12's set intersection and its partial-failure protocol are *executed* rather than source-pinned (no jsdom here, R191). Columns **register**; they are not lifted. `use-draft-mode.ts` gained `setDrafted` + `desiredDraftedFor`, and its mark mutation was extracted to `markMutationOptions` so the per-column rollback is driven through five real caches instead of argued from cache-key shape | LV.13, LV.1.3 |
 
 > **Erratum (v5.1, LV.12 Builder 2026-08-11) — the picker does *not* honour the
 > My lists / Saved tab, and the v5.0 row that said so was wrong against the
@@ -785,6 +785,20 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.5 (2026-08-12)** — **LV.14 landed, and the promise v5.4 recorded as an
+  interval is discharged.** §6's LV.14 row is marked LANDED and its R220 clause
+  struck through rather than deleted: the picker's sub-line described behaviour
+  the build did not have between LV.12 and LV.14, and the record of *why the
+  copy was left alone anyway* is worth more than a tidy row. The row now also
+  names the two structural choices a reviewer would otherwise have to
+  reverse-engineer — that the fan-out is a **`.ts`** so D12's decisions are
+  executed rather than source-pinned (this repo's vitest has no jsdom, R191), and
+  that columns **register** with it rather than being lifted into it, which is
+  what keeps the per-column optimism/rollback/invalidation LV.1.3's instead of a
+  second copy (**D11**). **D12 itself is unchanged** — it was written before the
+  task and survived the build without an erratum, which is the outcome a
+  decision-first plan is for.
 
 - **v5.4 (2026-08-12)** — **LV.13's review round: D13 gets its conclusion back,
   and LV.14 inherits a promise the copy is already making** (**R217**, **R220**).

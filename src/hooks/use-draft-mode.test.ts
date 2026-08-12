@@ -1161,14 +1161,62 @@ describe('the refusal says which of the three it was (R197)', () => {
  */
 describe('the hook body wires those decisions in', () => {
   it('toggleDrafted sends desiredStateFor, un-negated and not re-derived', () => {
-    const body = callbackBody(code(HOOK_FILE), 'toggleDrafted')
-    expect(body).toContain(
-      'setMarkMutate({ playerId, drafted: desiredStateFor(current, playerId) })',
-    )
+    const source = code(HOOK_FILE)
+    const body = callbackBody(source, 'toggleDrafted')
+    expect(body).toContain('setMarkMutate({ playerId, drafted: desiredDraftedFor(playerId) })')
     // The two edits that put the feature back where R191 found it: negate the
     // call, or inline the decision again where nothing can falsify it.
-    expect(body).not.toContain('!desiredStateFor')
+    expect(body).not.toContain('!desiredDraftedFor')
     expect(body).not.toContain('.has(')
+
+    // **LV.14 put one decision behind two callers.** `desiredDraftedFor` is what
+    // the fan-out reads off the clicked column before writing that one answer to
+    // every column (D12, consequence 4 — an untick clears the same set), and
+    // `toggleDrafted` now goes through it rather than holding a second copy. So
+    // the R191 chain runs through it: it must still be the exported, falsifiable
+    // `desiredStateFor` over the CACHE, not a render-time closure.
+    const wanted = callbackBody(source, 'desiredDraftedFor')
+    expect(wanted).toContain('desiredStateFor(qc.getQueryData<string[]>(draftedKeys.list(listId))')
+    expect(wanted).not.toContain('!desiredStateFor')
+    expect(wanted).not.toContain('.has(')
+  })
+
+  /**
+   * **LV.14 — `setDrafted` is the fan-out's write, and it is the SAME write.**
+   * A second mutation for the comparison would have its own optimism, its own
+   * rollback and its own drift; this is `setMark`'s `mutateAsync` with the
+   * desired state supplied instead of derived. Awaited, because a fan-out that
+   * cannot tell which of its five writes landed cannot say anything true.
+   */
+  it('setDrafted is the mark mutation, awaited, with notify threaded (LV.14)', () => {
+    const body = callbackBody(code(HOOK_FILE), 'setDrafted')
+    expect(body).toContain('setMarkMutateAsync({ playerId, drafted, notify: options?.notify })')
+    // Not a fresh POST, and not the fire-and-forget `mutate` — either would lose
+    // the outcome the fan-out reports on.
+    expect(body).not.toContain('postDrafted(')
+    expect(body).not.toMatch(/setMarkMutate\(/)
+  })
+
+  /**
+   * **The line D12's "partial failure must not lie" rests on.** `notify: false`
+   * buys the caller the *telling* and nothing else: if it ever gated the
+   * rollback too, a refused write inside a fan-out would keep its optimistic
+   * strike, and the screen would show five columns marked when three landed.
+   * The rollback is therefore unconditional and **first**; only the report sits
+   * behind the branch. Executed, over five real caches, in
+   * `src/components/lists/v2/drafted-fan-out.test.ts`.
+   */
+  it('a failed mark ALWAYS rolls its own list back; only the toast is optional', () => {
+    // The only multi-line `onError` in the file — `clearMarks`'s is the
+    // one-liner `onError: (error, _vars, ctx) => {`, which this cannot match.
+    const body = arrowBody(code(HOOK_FILE), 'onError: (\n', HOOK_FILE)
+    expect(body).toContain('variables: SetMarkVariables')
+    const compact = body.replace(/\s+/g, ' ')
+    expect(compact).toMatch(
+      /\{ rollbackDrafted\(client, listId, context\?\.previous\) if \(variables\.notify !== false\) report\(error\) \}/,
+    )
+    // The edit this pin exists to catch: the whole handler behind the branch.
+    expect(compact).not.toMatch(/\{ if \(variables\.notify/)
   })
 
   it('clearDrafted goes through the guard and cannot reach the mutation directly', () => {

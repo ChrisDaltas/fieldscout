@@ -23,6 +23,12 @@ import {
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { ListCoverTile } from './cover-tile'
+import {
+  useDraftedFanOut,
+  useRegisterFanOutColumn,
+  type ColumnMembership,
+  type DraftedFanOut,
+} from './drafted-fan-out'
 import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-buckets'
 import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-row-parts'
 
@@ -62,17 +68,28 @@ import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-
  * comparison also routinely contains lists you do **not** own, where that write
  * is not yours to make.
  *
- * ## What a tick does here, in THIS task
+ * ## What a tick does here — the fan-out (LV.14, **D12**)
  *
- * **One tick, one list.** The checkbox writes through `useDraftMode(listId)`
- * exactly as the open list does — one row in `list_player_drafted`, keyed
- * `(user_id, list_id, player_id)`. The fan-out across the whole comparison set
- * is **LV.14** and is governed by plan **D12**; nothing here marks anything in
- * a list other than its own.
+ * **One tick writes across every column in the comparison that contains the
+ * player, and no further.** The comparison set *is* the draft: a tick writes one
+ * `list_player_drafted` row per list on screen that holds him, keyed
+ * `(user_id, list_id, player_id)` through LV.1.2's route, and a list you did not
+ * pick is untouched however many of your lists he is on. That is Chris's
+ * 2026-08-10 ruling (*"per user, per list… players will have multiple lists for
+ * multiple leagues"*) and the handoff's global `toggleDrafted` reconciled, not
+ * one of them ignored.
+ *
+ * The mechanism is `drafted-fan-out.ts`, and it is deliberately not in this
+ * file: each column keeps its own `useDraftMode(listId)` — its own optimistic
+ * write, its own rollback, its own invalidation — and merely **registers**
+ * itself, so a write refused on one column rolls that column back and leaves the
+ * other four alone. The failure model (a column still loading, a column that
+ * failed to load, a partial write) is stated in that module's header.
  *
  * The header's live `N of M left` is derived **per column from that column's own
- * rows**, which is the count D12 asks for as well — it stays correct under
- * today's behaviour and under a partial fan-out alike.
+ * rows**, which is the count D12 asks for — it stays correct under a whole
+ * fan-out and a partial one alike, because it never counts anything but this
+ * column's own marks.
  *
  * ## Scale
  *
@@ -119,6 +136,11 @@ interface SideBySideColumnsProps {
 }
 
 export function SideBySideColumns({ ids, summaryById, onRemove }: SideBySideColumnsProps) {
+  // The comparison set *is* the draft (D12). It is held here, beside the column
+  // order it fans out over, and nowhere else — there is no app-level version of
+  // this, because there is no app-level version of "drafted".
+  const fanOut = useDraftedFanOut(ids)
+
   return (
     <div
       // Full-bleed: the negative margin cancels the shell's gutter and the
@@ -134,6 +156,7 @@ export function SideBySideColumns({ ids, summaryById, onRemove }: SideBySideColu
           listId={id}
           summary={summaryById.get(id)}
           onRemove={() => onRemove(id)}
+          fanOut={fanOut}
         />
       ))}
     </div>
@@ -144,15 +167,17 @@ function ComparisonColumn({
   listId,
   summary,
   onRemove,
+  fanOut,
 }: {
   listId: string
   summary: ListWithTags | undefined
   onRemove: () => void
+  fanOut: DraftedFanOut
 }) {
   const detail = useList(listId)
   const display = useListDisplay(listId)
   const setOrg = useListDisplayStore((state) => state.setOrg)
-  const { drafted, toggleDrafted } = useDraftMode(listId)
+  const { drafted, desiredDraftedFor, setDrafted } = useDraftMode(listId)
   const openPlayerWindow = usePlayerWindowsStore((state) => state.open)
 
   const list = detail.data
@@ -186,6 +211,42 @@ function ComparisonColumn({
       }),
     [openPlayerWindow, canEdit, list],
   )
+
+  /**
+   * Who this column can vouch for. `null` while the rows are unknown — the
+   * fan-out must not read "no rows yet" as "he is not on this list" (D12
+   * consequence 2 is about a player genuinely absent, not about a request that
+   * has not answered).
+   */
+  const memberIds = React.useMemo(
+    () => (entries ? new Set(entries.map((entry) => entry.player_id)) : null),
+    [entries],
+  )
+
+  /**
+   * Join the comparison's fan-out (**D12**). This column contributes what only
+   * it knows — its name, who is on it, what a tap here would ask for, and how to
+   * write it — and keeps every mechanism: the write is still this column's own
+   * `useDraftMode(listId)`, so the optimistic strike, the rollback and the
+   * invalidation are all per column by construction.
+   */
+  useRegisterFanOutColumn(fanOut, listId, {
+    title,
+    membership: (playerId): ColumnMembership =>
+      detail.isError
+        ? 'unreadable'
+        : !memberIds
+          ? 'loading'
+          : memberIds.has(playerId)
+            ? 'in'
+            : 'out',
+    desiredFor: desiredDraftedFor,
+    // `notify: false` — the gesture gets ONE report, from the fan-out, naming
+    // every column that failed. Per-column toasts would be N−1 invisible ones
+    // (`use-toast.ts` sets `TOAST_LIMIT = 1`) and the survivor would name none.
+    // The rollback is not part of the deal: it happens either way.
+    write: (playerId, next) => setDrafted(playerId, next, { notify: false }),
+  })
 
   /**
    * `18 of 24 left`, live — and **only once the marks and the rows are both
@@ -295,7 +356,9 @@ function ComparisonColumn({
                   entry={entry}
                   rank={ranks.get(entry.id) ?? 0}
                   drafted={drafted.has(entry.player_id)}
-                  onToggleDrafted={() => toggleDrafted(entry.player_id)}
+                  onToggleDrafted={() =>
+                    fanOut.tick(listId, entry.player_id, entry.player.full_name)
+                  }
                   onOpenPlayer={() => openPlayer(entry)}
                 />
               ))}
@@ -330,8 +393,9 @@ function ComparisonRow({
       )}
     >
       {/* Permanent — there is no draft-mode gate (Chris, 2026-08-10; plan D2).
-          One tick, one list: `toggleDrafted` is this column's own
-          `useDraftMode(listId)`. The comparison-wide fan-out is LV.14 (D12). */}
+          The tick fans out across the comparison set and no further (LV.14,
+          D12): every column on screen that holds this player, none that does
+          not, and no list you did not pick. See `drafted-fan-out.ts`. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} />
       <span className="fs-num w-[21px] shrink-0 text-[9px] font-medium text-ink">#{rank}</span>
       <PlayerName

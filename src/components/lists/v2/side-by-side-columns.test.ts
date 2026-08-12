@@ -131,6 +131,9 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
       "import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-row-parts'",
     )
     expect(source).toContain("import { useDraftMode } from '@/hooks/use-draft-mode'")
+    // The fan-out is composed too — LV.14 put it in its own module rather than
+    // inline, so its decisions are executable (D11: compose, do not re-solve).
+    expect(source).toMatch(/useDraftedFanOut,\s*useRegisterFanOutColumn,/)
     expect(source).toContain("import { usePlayerWindowsStore } from '@/stores/player-windows-store'")
   })
 
@@ -192,20 +195,67 @@ describe('LV.13 — each column groups independently', () => {
   })
 })
 
-describe('LV.13 — a tick is one tick on one list (LV.14 owns the fan-out)', () => {
-  it('marks go through this column’s own useDraftMode(listId)', () => {
+/**
+ * **This block was LV.13's `a tick is one tick on one list`, and LV.14 is the
+ * release that inverts it.** Its pins are not deleted — they are re-aimed at the
+ * behaviour that replaced them, because the property they were really guarding
+ * (*a tick reaches exactly the lists it should, and no others*) is the same
+ * property D12 governs; only the boundary moved, from one list to the
+ * comparison set. The fan-out's own decisions are **executed**, not pinned, in
+ * `drafted-fan-out.test.ts`; what is left here is the JSX wiring that connects
+ * them, which vitest cannot render.
+ */
+describe('LV.14 — a tick fans out across the comparison set, and no further (D12)', () => {
+  it('the tick goes to the fan-out, not to this column alone', () => {
     const source = code(COLUMNS)
-    expect(source).toContain('const { drafted, toggleDrafted } = useDraftMode(listId)')
-    expect(source).toContain('onToggleDrafted={() => toggleDrafted(entry.player_id)}')
+    expect(source).toContain('const { drafted, desiredDraftedFor, setDrafted } = useDraftMode(listId)')
+    expect(source).toMatch(
+      /onToggleDrafted=\{\(\) =>\s*fanOut\.tick\(listId, entry\.player_id, entry\.player\.full_name\)\s*\}/,
+    )
+    // The pre-LV.14 body, verbatim: the mark that stopped at its own column.
+    expect(source).not.toContain('toggleDrafted(entry.player_id)')
   })
 
-  it('nothing here loops a mark over the comparison set', () => {
+  it('every column joins the fan-out with its own name, rows, state and write', () => {
     const source = code(COLUMNS)
-    // `ids` is only ever mapped into columns; a second `ids.` reference next to
-    // a mark would be LV.14's fan-out arriving early and ungoverned (D12).
-    expect(source.match(/\bids\b/g) ?? []).toHaveLength(3)
+    expect(source).toContain('useRegisterFanOutColumn(fanOut, listId, {')
+    expect(source).toContain('desiredFor: desiredDraftedFor')
+    expect(source).toContain('write: (playerId, next) => setDrafted(playerId, next, { notify: false })')
+  })
+
+  /**
+   * The four membership answers, and the one that matters most: a column whose
+   * rows have not arrived is `loading`, **never** `out`. Reading "no rows yet"
+   * as "he is not on this list" would drop him from the fan-out silently — the
+   * "nothing happened means it worked" shape, applied to a set membership.
+   */
+  it('an unloaded column says so instead of answering "he is not on it"', () => {
+    const source = code(COLUMNS)
+    // The whole decision, in order, so an arm cannot be dropped or reordered —
+    // `!memberIds → 'loading'` has to sit ABOVE the `.has()` test, or an
+    // unloaded column answers `out` and drops out of the fan-out in silence.
+    expect(source.replace(/\s+/g, ' ')).toContain(
+      "membership: (playerId): ColumnMembership => detail.isError ? 'unreadable' " +
+        ": !memberIds ? 'loading' : memberIds.has(playerId) ? 'in' : 'out',",
+    )
+    // `null` while unknown, not an empty Set — the distinction the above rests on.
+    expect(source).toContain('entries ? new Set(entries.map((entry) => entry.player_id)) : null')
+  })
+
+  /**
+   * The comparison order is the only source of the fan-out set (D12): `ids` is
+   * mapped into columns and handed to the fan-out, and is not iterated a third
+   * time next to a write. A list outside the comparison is not reachable from
+   * this file at all.
+   */
+  it('the fan-out set comes from the comparison and nowhere else', () => {
+    const source = code(COLUMNS)
+    expect(source.match(/\bids\b/g) ?? []).toHaveLength(4)
     expect(source).toContain('{ids.map((id) => (')
+    expect(source).toContain('const fanOut = useDraftedFanOut(ids)')
     expect(source).not.toMatch(/ids\.(forEach|filter|reduce)/)
+    // No second source for "which lists hold this player".
+    expect(source).not.toContain('useLists(')
   })
 
   it('the header count is derived per column from that column’s own rows', () => {
