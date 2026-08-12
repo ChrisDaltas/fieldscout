@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.7 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
+> **v5.8 — 2026-08-12. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -752,7 +752,7 @@ behaviour is the failure this build already paid for once.**
 | id | task | depends on |
 | --- | --- | --- |
 | LV.15 | **The host and the store (D13)** — `list-windows-store.ts` (`{id,x,y,w,h,z,min}`, `partialize` → geometry only), and the **app-shell host**. Drag anywhere on the 44px header; resize grip 16px bottom-right, clamped 330–1200 × 220–900; collapse; close; back-to-front z-ordering; survives navigation. **Renders nothing at all when no window is open — pinned by a test**, because this is the one Round 2 file that mounts on every route. **LANDED 2026-08-12** — the store is `player-windows-store.ts` line for line where it can be, plus `w`/`h`/`min`; **the handoff's `z` is the array index**, not a stored field, because two sources of truth for stacking mean the one that is *not* the render order silently wins (D13 asks for the array, and the store header maps every handoff field to where it lives). 44px → **36**, `440 × 520` → **352 × 416**, `330–1200 × 220–900` → **264–960 × 176–720** at this app's ×0.8 — but the **16px grip is not converted** (a hit target, not a rhythm measure) and the pointer maths has no `/ ZOOM` (this app has no zoom to undo). Pop-outs are **one** z layer at **45**: above page chrome, below Radix (50) so LV.16's `dots` opens above its own window, and below the player mini cards (60) so a card opened *from* a row lands in front. `gear` and `dots` are **absent rather than inert** (R220) and the body is a marked `ListWindowBodyPending` — both are LV.16's, filed as **F-LV15.1/2** rather than left implicit | LV.7 |
-| LV.16 | **Window content** — the dark inversion done by scoping the colour custom properties on an **inner wrapper** (children invert without restyling), with the Stats modal deliberately rendered **outside** it. 36px rows, 14px checkbox, name **13px/400**, drafted dims to 45%, hover `rgba(255,255,255,.09)`. Drag-reorder via the existing `use-list-drag.tsx` gap model. Footer: views / comments + a brand-lime Share with **literal `#000`** text (inside the wrapper `--n-1` resolves to white). **Outer stroke 1.25px, no shadow** — see the elevation note below. **This row discharges LV.15's two hand-offs** (PROGRESS §5): **F-LV15.1** — delete `ListWindowBodyPending` from `list-window.tsx` outright and replace its branch with the inversion wrapper, as LV.13 deleted LV.12's `ComparisonPending`; and **F-LV15.2** — add the `gear` (stat picker) and `dots` (grouping menu) the design LAW's header lists, which LV.15 left *absent rather than inert* (**R220**) because each needs what this task brings. The `dots` menu is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it | LV.15 |
+| LV.16 | **Window content** — the dark inversion done by scoping the colour custom properties on an **inner wrapper** (children invert without restyling), with the Stats modal deliberately rendered **outside** it. 36px rows, 14px checkbox, name **13px/400**, drafted dims to 45%, hover `rgba(255,255,255,.09)`. Drag-reorder via the existing `use-list-drag.tsx` gap model. Footer: views / comments + a brand-lime Share with **literal `#000`** text (inside the wrapper `--n-1` resolves to white). **Outer stroke 1.25px, no shadow** — see the elevation note below. **This row discharges LV.15's two hand-offs** (PROGRESS §5): **F-LV15.1** — delete `ListWindowBodyPending` from `list-window.tsx` outright and replace its branch with the inversion wrapper, as LV.13 deleted LV.12's `ComparisonPending`; and **F-LV15.2** — add the `gear` (stat picker) and `dots` (grouping menu) the design LAW's header lists, which LV.15 left *absent rather than inert* (**R220**) because each needs what this task brings. The `dots` menu is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it. **LANDED 2026-08-12** — the wrapper is one `fs-dark` div and its five values are custom properties in `globals.css`, with a short, enumerated redirect for the palette utilities that appear inside a pop-out, **because this app's palette is literal hex in `tailwind.config.ts` rather than custom properties** (see the changelog and PROGRESS §4; `text-ink` is deliberately *not* inverted, since here it means "ink on a light fill"). 36px rows → **29** at ×0.8, the 14px checkbox unconverted, name **10.5px Regular**. `use-list-drag.tsx` runs the gesture and what a drop *writes* moved out of `list-detail-panel.tsx` into **`use-list-drop.ts`**, verbatim, so the two surfaces cannot drift. **Both hand-offs discharged**, and a tick here is **one tick on one list** — measured, with a list holding the same player gaining 0 | LV.15 |
 | LV.17 | **Wiring and states** — `pop out` in the detail hero action cluster and in the column menu; loading / empty / error **inside** a window; what happens at 6+ windows; a pop-out of a list you then delete; and the mobile answer (a floating draggable window has none — say what small screens get instead) | LV.16 |
 
 **Elevation, for the avoidance of doubt.** A pop-out is a true overlay, so
@@ -785,6 +785,20 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.8 (2026-08-12)** — **LV.16 landed**, and the §6 row records the one thing
+  the task could not do the way the LAW words it. *"Scope the colour custom
+  properties on an inner wrapper"* assumes the prototype's design system, where
+  every colour **is** a custom property; this app's Field Scout palette is
+  **literal hex in `tailwind.config.ts`**, so the wrapper declares the LAW's five
+  values as properties and the palette utilities that appear inside a pop-out are
+  pointed at them — the LAW's *mechanism* (children invert with no per-child
+  restyling), against a token layer that is not var-backed. Re-tokenizing the
+  palette is the alternative and is post-launch: it changes ~470 call sites and
+  drops the alpha on the 14 that use opacity modifiers. Recorded here rather than
+  as an erratum because nothing in the LAW is **wrong** — the sentence is an
+  implementation instruction, and PROGRESS §4 carries the three options and why
+  this one. No scope, dependency or decision changed.
 
 - **v5.7 (2026-08-12)** — **LV.15's review round: the LV.16 row now carries the
   two hand-offs it owns** (**R230**). `F-LV15.1` (delete
