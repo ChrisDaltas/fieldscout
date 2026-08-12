@@ -76,6 +76,19 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   request goes to `127.0.0.1:54321`. **State the verification environment in
   the PR body and in PROGRESS §4** — the LV.12 PR disclosed neither, which is
   what made the finding a should-fix rather than a note.
+- **The local stack carries a deliberate saved-list fixture, and
+  `supabase db reset` destroys it.** LV.12's fix round (**R208**) left a public
+  list owned by the *second* local account (`dev-pro@fieldscout.local`),
+  favourited from `dev@`, in the **local** DB on purpose — so the `saved` half
+  of the collection is non-empty by default, which is the one condition LV.12's
+  original verification never had. After a reset, **re-create it before
+  verifying anything about saved lists**: a public list on the `dev-pro`
+  account, favourited as `dev@` through the shipped
+  `POST /api/lists/[id]/favorite`. Skip that and the verification reproduces
+  R208 exactly — every observation taken over an empty array, looking green.
+  Full detail in `PROGRESS-lists-v2.md` §4 item 6. *(Added 2026-08-11, LV.12
+  review **R215** — the same "put it where the next Builder reads it" argument
+  R207 made, applied to R207's own round's artefact.)*
 
 ---
 

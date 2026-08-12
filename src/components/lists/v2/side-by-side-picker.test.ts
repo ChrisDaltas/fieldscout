@@ -110,6 +110,26 @@ describe('LV.12 — the saved half of the picker is real (R208)', () => {
     expect(code(ROUTE)).toMatch(/owner: rest\.owner_id === user\.id \? null : ownerObj/)
   })
 
+  /**
+   * **R213 — the pins above guard the chain's *shape*, not its two field
+   * selections**, and a break in either walks straight through them.
+   *
+   * Nobody accidentally rewrites the `owner:` ternary; trimming an embed out of
+   * a `select('*')` for payload size is routine. Drop `owner:profiles!owner_id`
+   * from `ownedSelect` and `ownerObj` is null for every row → the ternary yields
+   * null for every row → `saved: all.filter((list) => Boolean(list.owner))` is
+   * `[]` **for every user, forever**, with the saved list misfiled into `mine`.
+   * That is exactly the live degradation R208 recorded (`My lists 3 / Saved 0`),
+   * and before this test the whole suite stayed 17/17 green through it.
+   *
+   * `select('list_id')` is the same class one query earlier: `favIds` becomes a
+   * set of `undefined`, so no favourited list is ever fetched.
+   */
+  it('the route selects the two fields the classification is built out of', () => {
+    expect(code(ROUTE)).toContain('owner:profiles!owner_id')
+    expect(code(ROUTE)).toContain("select('list_id')")
+  })
+
   it('the picker renders every list handed to it and filters none of them out', () => {
     const source = code(PICKER)
     expect(source).toContain('{lists.map((list) => {')

@@ -785,7 +785,7 @@ one of them. The cost of deciding late is paid in LV.13's layout, not here.
 | **C** | **Add a search/filter field above the grid** | a new control the design package does not describe, in the surface whose whole erratum was about *not* filtering | inventing UI is the thing this build has twice been corrected for (LV.7, and the tab clause itself) |
 | **D** | Cap the picker's *rendered* set (e.g. most-recent N) | cheapest to draw | a list you own silently not being offered is the worst outcome on this list — it is "nothing happened means it worked" as a layout decision |
 
-**Recommendation: A now, B when LV.13 lands, and never C or D without Chris.**
+**Recommendation: A now, B when LV.13 lands, and never B, C or D without Chris.**
 The 2026 cohort is friends running test leagues (CLAUDE.md → Active Builds), so
 the realistic account holds single-digit lists and A costs nothing to hold. B is
 the honest place for a limit if one is wanted, because it constrains the thing
@@ -2275,7 +2275,8 @@ This section records decisions made **during** the build.
      remembering when LV.13 builds column headers out of the same parts.
 
   Pinned by `src/components/lists/v2/side-by-side-picker.test.ts` (13 tests at
-  landing, **17 after the fix round**) — the tab set, the session-only storage,
+  landing, **17 after the fix round, 18 after R213**) — the tab set, the
+  session-only storage,
   the elevation rule, the composition, the copy, and (added by R208) the chain
   that makes the saved half capable of being non-empty. **Shown falsifiable**:
   reinstating the tab filter and adding a resting `shadow-hard-4` turned exactly
@@ -2350,6 +2351,13 @@ This section records decisions made **during** the build.
      cannot recur unnoticed. What a source pin still cannot do is observe an
      empty array at runtime — the live evidence above is what carries that, and
      the test file says so in its own words rather than implying more.
+
+     **These four pinned the chain's *shape* and not its two field selections,
+     and the second review pass broke it straight through them (R213, §6).**
+     Trimming `owner:profiles!owner_id` out of `ownedSelect` — a routine
+     payload-size edit — left all 17 green while `saved` became `[]` for every
+     user forever. An 18th pin now covers both selections, shown red under each
+     break and reverted; §6 carries the probe evidence.
 
 ---
 
@@ -2990,6 +2998,42 @@ review upheld all of them, and this round is evidence and documentation, not a
 second bite at a landed design. The one code change is
 `side-by-side-picker.test.ts` (+4 tests); the one source file touched otherwise
 is none.
+
+#### Second review pass — 2026-08-11 (R213–R216, same branch, same PR #133)
+
+*A **second** Reviewer, fresh context, re-verified the round above and confirmed
+it independently: only test and doc files changed, the schema budget untouched,
+the verification genuinely local, no hosted URL or key leaked, the seven hosted
+rows soft-deleted (not hard-deleted, per Key Business Rule 8), the local fixture
+real and RLS-readable, and the proof chain honest.* **R207–R212 are closed and
+are not re-opened here. R213–R216: one should-fix, three nits, no blockers.**
+
+***The finding that mattered (R213) — the R208 pins guard the chain's shape and
+not its two field selections.*** *R208 was filed because a green suite proved
+nothing over an empty `saved`. Its four new pins cover the `.neq`, the
+concatenation and the `owner:` ternary — but **not** the `owner:profiles!owner_id`
+embed those depend on. The Reviewer trimmed that embed out of `ownedSelect` and
+the entire gate stayed green: picker suite 17/17, `test:unit` 966, `type-check`
+exit 0 — while `saved` became `[]` for every user forever and the saved list was
+misfiled into `mine`, the identical live degradation R208 recorded as*
+`My lists 3 / Saved 0`. *The second unpinned selection,* `.select('list_id')`,
+*reproduces it identically. The severity is about likelihood, in the Reviewer's
+words:* "nobody accidentally rewrites the `owner:` ternary, but trimming a
+`select('*')` embed for payload size is routine."
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R213** — the R208 pin set leaves both of the chain's **field selections** unpinned, so the exact defect R208 was filed for still recurs silently through a fully green gate (both breaks shown by the Reviewer at 17/17 green) | should-fix | ✅ **Pinned, and the pin shown failing — twice.** One new `it` in `side-by-side-picker.test.ts` (**17 → 18**) carries *both* assertions, the prescribed one and the optional one: `toContain('owner:profiles!owner_id')` and `toContain("select('list_id')")`. **Probe A** — drop the owner embed from `ownedSelect` (`route.ts:59-60`) → **1 red, at the exact new line**, 17 passed; reverted → 18/18, `git diff` on `route.ts` empty. **Probe B** — `.select('list_id')` → `.select('id')` (`route.ts:48`) → **1 red**, 17 passed; reverted → 18/18, diff empty. **Probe A was then re-run a third time with R214's comment in place**, because that comment quotes the literal `owner:profiles!owner_id` the assertion matches: still **1 red**, which proves the `code()` comment-stripper — not luck — is what keeps the pin honest. A pin never observed failing is the class of thing R208 was about |
+| **R214** — the comment above the `owner` attachment (`route.ts:119-121`) describes it as sidebar decoration when it is the **sole classification key** for `saved`, which is what would license R213's regression | nit | ✅ **Applied — comment only, behaviour untouched** (the `route.ts` diff is six comment lines and nothing else; shown in the PR). It now names `lists-page-v2.tsx:146`'s `Boolean(list.owner)` split as the second, load-bearing consumer, names the Saved tab *and* the picker's saved half, and says what dropping either the field or its embed costs: *"Saved is empty for every user, forever, with no error anywhere"* |
+| **R215** — the deliberately-retained local fixture and its re-creation instructions live only in §4's evidence table, not in `ACTIVE-BUILD.md`'s standing constraints — the same placement argument R207 made, applied inconsistently to R207's own round's artefact | nit | ✅ **Applied.** One bullet in `ACTIVE-BUILD.md`'s standing constraints, directly beside the R207 local-stack note: what the fixture is, that `supabase db reset` destroys it, how to re-create it (public list on `dev-pro`, favourited as `dev@` through the shipped favorite route), and the consequence of skipping it — *the verification reproduces R208 exactly while looking green*. Points back to §4 item 6 for the detail rather than duplicating it |
+| **R216** — §3 Q4's recommendation line reads as reserving only C and D for Chris, though B is "cap the comparison" and the entry closes by prohibiting a Builder from building a search, a cap **or** a truncation on its strength | nit | ✅ **Applied, exactly as prescribed and no further.** The line now reads *"A now, B when LV.13 lands, and **never B, C or D** without Chris."* **Q4's status stays 🟡 OPEN** — it still needs a Chris ruling before LV.13 builds columns, and nothing in this round pre-empts that. R212's own row above is left as written: it is the record of what was filed at the time, not a live instruction |
+
+**Not changed, and why (second pass).** No behaviour, anywhere. The schema
+budget is still the ruled three; no migration, no column, no new route; boards
+untouched; D3 selection still session-only; D11 composition unchanged. `route.ts`
+received a comment and nothing else. **No browser verification was run this
+round and none is claimed** — nothing user-visible changed, and the honest local
+evidence for the picker remains the R208 run in §4 item 6.
 
 ---
 
