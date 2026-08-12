@@ -13,6 +13,7 @@ import {
   COMPUTED_ORDER_REASON,
   bucketZoneLabel,
   nextBucket,
+  rankMap,
   type Bucket,
 } from './list-buckets'
 import {
@@ -191,19 +192,15 @@ export function ListBody(props: BodyProps) {
   )
 }
 
-/** A running `#N` across every bucket, as the prototype numbers them. */
+/**
+ * A running `#N` across every bucket, as the prototype numbers them.
+ *
+ * The rule itself moved to `list-buckets.ts` at LV.13, where a Side by side
+ * column reads it too — a column and the detail panel must not disagree about
+ * which number a player carries. This is only its memo.
+ */
 function useRanks(buckets: Bucket[]): Map<string, number> {
-  return React.useMemo(() => {
-    const ranks = new Map<string, number>()
-    let n = 0
-    for (const bucket of buckets) {
-      for (const entry of bucket.entries) {
-        n += 1
-        ranks.set(entry.id, n)
-      }
-    }
-    return ranks
-  }, [buckets])
+  return React.useMemo(() => rankMap(buckets), [buckets])
 }
 
 const EMPTY_BUCKET = 'Nothing in this section yet.'

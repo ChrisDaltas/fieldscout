@@ -429,6 +429,51 @@ export function bucketZoneLabel(org: ListOrg, key: ListBucketKey): string {
   return round === null ? `start tier ${key}` : `start round ${round}`
 }
 
+/**
+ * A bucket's heading **where nothing above it already names the grouping** —
+ * Side by side's columns (LV.13).
+ *
+ * The detail view's section headers carry the value alone (`S`, `4`) because the
+ * grouping dropdown sits directly above them and the design LAW is explicit that
+ * sections "must not repeat the word Tier/Round". A comparison column has no
+ * such dropdown — its grouping lives inside the header's `dots` menu — so
+ * `screens/side-by-side-columns.png` shows the words in full: `Tier 1`,
+ * `Tier 2`, `Round 4`.
+ *
+ * Only the two **stored** vocabularies take a prefix. `Ungrouped`, the cost
+ * bands (`$40 and up`) and the budget bands (`Over 20% of budget`) are already
+ * sentences, and plain rank's single section has no label at all — `null` means
+ * "draw no band", exactly as `Bucket.label` does.
+ */
+export function bucketHeading(org: ListOrg, bucket: Bucket): string | null {
+  if (bucket.label === null) return null
+  if (org === 'tier' && isTierKey(bucket.key)) return `Tier ${bucket.label}`
+  if (org === 'round' && roundNumberOf(bucket.key) !== null) return `Round ${bucket.label}`
+  return bucket.label
+}
+
+/**
+ * The running `#N` across every bucket, as the prototype numbers them —
+ * `entry.id` → its ordinal in the whole list, not within its section.
+ *
+ * Lives here, beside the bucketing that decides the order, because **two**
+ * surfaces render the same list's numbers now: the detail view's three view
+ * styles (`useRanks` in `list-body.tsx` wraps this) and a Side by side column
+ * (LV.13). Two copies of the rule is two chances for the same player to be #9
+ * in the panel and #10 in the column he is being compared against.
+ */
+export function rankMap(buckets: Bucket[]): Map<string, number> {
+  const ranks = new Map<string, number>()
+  let n = 0
+  for (const bucket of buckets) {
+    for (const entry of bucket.entries) {
+      n += 1
+      ranks.set(entry.id, n)
+    }
+  }
+  return ranks
+}
+
 export const ORG_OPTIONS: ReadonlyArray<{ id: ListOrg; label: string }> = [
   { id: 'rank', label: 'Ranked' },
   { id: 'tier', label: 'Tiers' },

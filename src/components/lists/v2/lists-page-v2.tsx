@@ -28,6 +28,7 @@ import { ListGalleryCard, NewListTile } from './list-gallery-card'
 import { ListDetailPanel } from './list-detail-panel'
 import { FolderScopeCrumb, ListFoldersSection } from './lists-folders'
 import { ListsRail } from './lists-rail'
+import { SideBySideColumns } from './side-by-side-columns'
 import { SideBySidePicker } from './side-by-side-picker'
 
 /**
@@ -337,6 +338,26 @@ export function ListsPageV2() {
       </Segment>
     )
 
+  /**
+   * `Change lists` — design LAW §"Lists page": *"In Side by side mode a
+   * `Change lists` button appears beside it [`New list`] once columns are
+   * showing."* So: this mode only, and only past the picker.
+   *
+   * It clears `compareIds`, which is the same session-only value the picker
+   * commits and the columns read (**D3**, LV.12) — the reason that state lives
+   * in this component rather than inside either of them.
+   *
+   * Declared once and rendered twice, like `modeSwitch` and `tabSwitch` above:
+   * the shell hides its header below `lg`, so a phone would otherwise have no
+   * way back to the picker at all.
+   */
+  const changeListsButton =
+    mode === 'compare' && compareIds.length > 0 ? (
+      <Button variant="stroke" size="sm" onClick={() => setCompareIds([])}>
+        <Icon name="setup" size={13} /> Change lists
+      </Button>
+    ) : null
+
   return (
     <>
       <PageHeader
@@ -356,6 +377,7 @@ export function ListsPageV2() {
             <Button variant="stroke" size="sm" onClick={() => setNewFolderOpen(true)}>
               <Icon name="folder" size={13} /> New folder
             </Button>
+            {changeListsButton}
             <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
               <Icon name="plus" size={13} /> New list
             </Button>
@@ -377,6 +399,7 @@ export function ListsPageV2() {
         <Button variant="stroke" size="sm" onClick={() => setNewFolderOpen(true)}>
           <Icon name="folder" size={13} /> New folder
         </Button>
+        {changeListsButton}
         <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
           <Icon name="plus" size={13} /> New list
         </Button>
@@ -434,9 +457,13 @@ export function ListsPageV2() {
         compareIds.length === 0 ? (
           <SideBySidePicker lists={comparable} loading={!loaded} onShow={setCompareIds} />
         ) : (
-          <ComparisonPending
-            lists={compareIds.map((id) => summaryById.get(id)).filter(isList)}
-            onPickAgain={() => setCompareIds([])}
+          <SideBySideColumns
+            ids={compareIds}
+            summaryById={summaryById}
+            // Removing the last column empties the comparison, which puts the
+            // picker back — the prototype's behaviour, and the only coherent
+            // answer to "a Side by side mode showing nothing".
+            onRemove={(id) => setCompareIds((ids) => ids.filter((value) => value !== id))}
           />
         )
       ) : mode === 'gallery' ? (
@@ -650,46 +677,10 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   )
 }
 
-const isList = (list: ListWithTags | undefined): list is ListWithTags => Boolean(list)
-
-/**
- * The comparison is chosen, and the columns that render it are **LV.13**.
- *
- * This replaces the whole-mode `SideBySidePlaceholder` LV.12 deleted, and it is
- * narrower on purpose: the mode now works up to the point the picker commits,
- * so what is missing is the columns, not the mode. It exists at all because the
- * alternative is worse — the picker's primary CTA would otherwise commit a
- * comparison and change nothing on screen, which is the "nothing happened must
- * never mean it worked" shape CLAUDE.md names.
- *
- * **LV.13 deletes this function outright.** Its branch becomes the 300px
- * full-bleed column scroller, and getting back to the picker becomes the
- * `Change lists` button in the page header (design LAW §"Lists page") rather
- * than the escape below — which is not that button, and is not in the header.
+/*
+ * `ComparisonPending` and its `isList` guard stood here until LV.13 and are
+ * gone, as LV.12 said they would be: it was an explicitly temporary branch for
+ * the chosen-but-not-yet-rendered state, and its `Pick different lists` escape
+ * was never the header's `Change lists`. Both now exist for real —
+ * `SideBySideColumns` above, and the header button beside `New list`.
  */
-function ComparisonPending({
-  lists,
-  onPickAgain,
-}: {
-  lists: ListWithTags[]
-  onPickAgain: () => void
-}) {
-  return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-dashed border-ink p-8 text-center">
-      <Icon name="table" size={21} className="text-n-3" />
-      <span className="text-[13px] font-bold">
-        {lists.length} {lists.length === 1 ? 'list' : 'lists'} ready to compare
-      </span>
-      <p className="max-w-[400px] text-[11px] font-medium text-n-3">
-        {lists.map((list) => list.title).join(' · ')}
-      </p>
-      <p className="max-w-[400px] text-[11px] font-medium text-n-3">
-        Showing them as columns is the next piece of this build. Pick List or Cards to keep
-        working.
-      </p>
-      <Button variant="stroke" size="sm" onClick={onPickAgain}>
-        <Icon name="reset" size={13} /> Pick different lists
-      </Button>
-    </div>
-  )
-}
