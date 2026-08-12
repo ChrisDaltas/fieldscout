@@ -149,6 +149,53 @@ export const WINDOW_EDGE_KEEP_Y = 48
  */
 export const WINDOW_EDGE_MARGIN = 8
 
+// ---------------------------------------------------------------------------
+// The mobile variant (**ruled by Chris, 2026-08-12** — PROGRESS §3 Q6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Below this width a pop-out is **not** the floating window at all:
+ *
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height. the tool bar only shows Close and Options. All options go into the
+ * > option menu."* — Chris, 2026-08-12
+ *
+ * `768` is Tailwind's `md`, the conventional phone/tablet line, and it is
+ * **the one breakpoint the pop-out has**: `list-window.tsx` reads it through
+ * {@link isSmallViewport} and branches once, rather than sprinkling `sm:` / `md:`
+ * variants across a frame whose geometry is inline style anyway. A tablet at
+ * 768 and up keeps the desktop window, which is the surface the design LAW
+ * describes.
+ *
+ * Deliberately **not** the shell's own `lg` (1024): that is where the sidebar
+ * and the desktop header switch, and a 900px browser window is a place a
+ * draggable window still makes sense.
+ */
+export const WINDOW_MOBILE_MAX_W = 768
+
+/**
+ * *"only 60% of the screen height"*, as a ratio so the class and the ruling
+ * cannot drift — `list-windows-host.test.ts` builds the expected Tailwind class
+ * from this number rather than restating it.
+ */
+export const WINDOW_MOBILE_HEIGHT_RATIO = 0.6
+
+/**
+ * Does this viewport get the ruled mobile variant?
+ *
+ * Pure, and in the store rather than in the component, for R191's reason: this
+ * repo's vitest has no jsdom, so a decision left inside a `.tsx` is guarded by
+ * nothing. The one thing the component adds is a `matchMedia` subscription so
+ * the answer survives a rotation.
+ *
+ * `null` — the server, where there is no viewport — is **not** mobile. Nothing
+ * hangs on that: `windows` is never persisted (see `partialize`), so no window
+ * exists at SSR or at hydration, on any route.
+ */
+export function isSmallViewport(viewport: WindowViewport | null): boolean {
+  return viewport !== null && viewport.width < WINDOW_MOBILE_MAX_W
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -188,24 +235,48 @@ export function cascadePlacement(stackIndex: number): { x: number; y: number } {
  * jsdom, so a decision left inside a `.tsx` is guarded by nothing). Pass `null`
  * on the server, where there is no viewport to clamp to.
  *
- * **The two placements are clamped differently, on purpose.** A remembered
- * position is the user's and is only rescued far enough to stay grabbable
- * ({@link WINDOW_EDGE_KEEP_X}); a cascade placement is *ours*, so it lands
- * somewhere the whole window fits whenever the viewport allows. Without that
- * second rule the design's `120,120` origin puts a 352px window at `96` on a
- * 375px phone and its close button lands off-screen — see the note in
- * `list-window.tsx` and PROGRESS §4. `window-shell.tsx` already places the mini
- * card against `window.innerWidth` for the same reason.
+ * **Ours is fitted; theirs is only rescued.** That is one rule applied to both
+ * halves of the geometry, and it is the whole of this build's small-screen
+ * answer (LV.17, **F-LV15.3**):
+ *
+ * | | a value the store chose | a value the user set |
+ * | --- | --- | --- |
+ * | position | fitted, so the whole window lands on screen | rescued only far enough to stay grabbable ({@link WINDOW_EDGE_KEEP_X}) |
+ * | size | fitted to the viewport, never below the LAW's minimum | never re-fitted |
+ *
+ * LV.15 shipped the position half: the design's `120,120` origin puts a 352px
+ * window at `96` on a 375px phone with its close button off-screen. **LV.17
+ * adds the size half**, because position alone is not enough on a viewport
+ * narrower than the window itself: `list-window.tsx` caps the *painted* box at
+ * `100vw - 16px`, so a 352px-wide window on a 320px phone paints at 304 while
+ * the store still says 352 — and the resize grip reads the store. The first
+ * touch of the grip then jumps the window 48px wider before it moves. Fitting
+ * the size we chose keeps the model and the paint agreeing, which is what makes
+ * "the phone gets the same window" a claim rather than a hope.
+ *
+ * Fitting is bounded by {@link clampWindowSize}, so a very narrow viewport still
+ * gets a legal 264px window and the CSS cap covers the remainder — a window
+ * smaller than the design's minimum is not a window.
  */
 export function resolveWindowGeometry(
   saved: ListWindowGeometry | undefined,
   stackIndex: number,
   viewport: WindowViewport | null,
 ): ResolvedWindowGeometry {
-  const { w, h } = clampWindowSize({
+  const wanted = clampWindowSize({
     w: saved?.w ?? WINDOW_DEFAULT_W,
     h: saved?.h ?? WINDOW_DEFAULT_H,
   })
+  // `setSize` always writes both, so either one present means the user sized
+  // this window and neither may be touched.
+  const userSized = saved?.w !== undefined || saved?.h !== undefined
+  const { w, h } =
+    viewport && !userSized
+      ? clampWindowSize({
+          w: Math.min(wanted.w, viewport.width - 2 * WINDOW_EDGE_MARGIN),
+          h: Math.min(wanted.h, viewport.height - 2 * WINDOW_EDGE_MARGIN),
+        })
+      : wanted
   const fallback = cascadePlacement(stackIndex)
   const min = saved?.min ?? false
 

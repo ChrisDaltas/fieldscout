@@ -12,12 +12,16 @@ import {
   WINDOW_DEFAULT_W,
   WINDOW_EDGE_KEEP_X,
   WINDOW_EDGE_KEEP_Y,
+  WINDOW_EDGE_MARGIN,
   WINDOW_MAX_H,
   WINDOW_MAX_W,
   WINDOW_MIN_H,
   WINDOW_MIN_W,
+  WINDOW_MOBILE_HEIGHT_RATIO,
+  WINDOW_MOBILE_MAX_W,
   cascadePlacement,
   clampWindowSize,
+  isSmallViewport,
   resolveWindowGeometry,
   useListWindowsStore,
 } from '@/stores/list-windows-store'
@@ -109,6 +113,37 @@ describe('LV.15 — the z-stack is the array, back-to-front (D13)', () => {
     open(LIST_A)
     expect(ids()).toEqual([LIST_B, LIST_A])
     expect(ids().filter((id) => id === LIST_A)).toHaveLength(1)
+  })
+
+  /**
+   * **LV.17 — "what happens at 6+ windows" is: nothing special, on purpose.**
+   *
+   * No cap, no eviction, no truncation — Q4's ruling (Chris, 2026-08-11: no cap
+   * on the comparison picker) applied to the surface one screen away, and what
+   * the LAW asks for in its opening line: *"Open several and set them side by
+   * side."* The only thing the sixth window changes is **placement**, and the
+   * store answers that by wrapping the cascade rather than marching off the
+   * bottom-right corner.
+   *
+   * This is executed rather than pinned as source, which is the point of having
+   * a `.ts` store: a cap added later fails here, however it is spelled.
+   */
+  it('there is no cap — the twelfth window opens like the first', () => {
+    const { open } = useListWindowsStore.getState()
+    for (let i = 0; i < 12; i += 1) open(`list-${i}`)
+    expect(ids()).toHaveLength(12)
+    expect(ids()[0]).toBe('list-0')
+    expect(ids()[11]).toBe('list-11')
+
+    // …and the seventh lands back on the first rather than off-screen. The pile
+    // is still navigable: the last entry is the only `isTop`, so Escape unwinds
+    // it one press at a time (`list-windows-host.tsx`).
+    const viewport = { width: 1280, height: 900 }
+    for (let i = 0; i < 6; i += 1) {
+      const first = resolveWindowGeometry(undefined, i, viewport)
+      const seventh = resolveWindowGeometry(undefined, i + WINDOW_CASCADE_WRAP, viewport)
+      expect({ x: seventh.x, y: seventh.y }).toEqual({ x: first.x, y: first.y })
+    }
   })
 
   it('focus moves a buried window to the end, and is a no-op for the top one', () => {
@@ -317,8 +352,68 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
       500 - WINDOW_DEFAULT_H - 8,
     )
     // And when the window genuinely cannot fit, it hugs the edge rather than
-    // going negative.
-    expect(resolveWindowGeometry(undefined, 0, { width: 300, height: 812 }).x).toBe(8)
+    // going negative. 200 is narrower than the LAW's 264px minimum, so the
+    // size cannot shrink any further to help.
+    expect(resolveWindowGeometry(undefined, 0, { width: 200, height: 812 }).x).toBe(8)
+  })
+
+  /**
+   * **LV.17 — the size half of the same rule (F-LV15.3).**
+   *
+   * LV.15 fitted the *position* of a window the store placed. That is not
+   * enough on a viewport narrower than the window itself: `list-window.tsx`
+   * caps the painted box at `100vw - 16px`, so the store would go on saying 352
+   * while the screen shows 304, and the resize grip reads the store. Fitting
+   * the size keeps the model and the paint agreeing.
+   */
+  it('a cascaded window is SIZED to fit too, and never below the LAW’s minimum', () => {
+    // 320px phone: 352 does not fit, 320 − 16 does.
+    const narrow = resolveWindowGeometry(undefined, 0, { width: 320, height: 812 })
+    expect(narrow.w).toBe(320 - 2 * 8)
+    expect(narrow.x + narrow.w).toBeLessThanOrEqual(320)
+
+    // 375px phone: the design's default already fits, so it is untouched — the
+    // conversion is not re-derived per viewport.
+    expect(resolveWindowGeometry(undefined, 0, { width: 375, height: 812 }).w).toBe(
+      WINDOW_DEFAULT_W,
+    )
+
+    // A short viewport does the same vertically.
+    expect(resolveWindowGeometry(undefined, 0, { width: 1280, height: 300 }).h).toBe(300 - 2 * 8)
+
+    // Below the LAW's minimum the clamp wins: a 200px-wide window is not a
+    // window, and the frame's `max-w` covers the overflow instead.
+    expect(resolveWindowGeometry(undefined, 0, { width: 200, height: 120 })).toMatchObject({
+      w: WINDOW_MIN_W,
+      h: WINDOW_MIN_H,
+    })
+
+    // **Desktop is bit-identical**, which is the whole claim that this is
+    // minimum-necessary rather than a mobile variant.
+    expect(resolveWindowGeometry(undefined, 0, { width: 1280, height: 900 })).toEqual({
+      x: WINDOW_CASCADE_ORIGIN,
+      y: WINDOW_CASCADE_ORIGIN,
+      w: WINDOW_DEFAULT_W,
+      h: WINDOW_DEFAULT_H,
+      min: false,
+    })
+  })
+
+  it('a size the user chose is NOT re-fitted either', () => {
+    // Resized to 900 wide on a desktop, then opened on a 375px phone: the store
+    // still says 900. Below `WINDOW_MOBILE_MAX_W` the ruled bottom sheet ignores
+    // the stored box entirely and writes back neither position nor size
+    // (Ruling 2 — it *does* write `min`, see the R257 pin below); on a narrow
+    // *desktop* the frame's `max-w` paints it narrower and the grip reads the
+    // paint (`list-window.tsx`). Either way the remembered size is theirs and
+    // survives the trip back to a big screen.
+    expect(
+      resolveWindowGeometry({ w: 900, h: 700 }, 0, { width: 375, height: 812 }),
+    ).toMatchObject({ w: 900, h: 700 })
+
+    // Half an entry is still the user's: `setSize` writes both, so either one
+    // present means they sized it.
+    expect(resolveWindowGeometry({ w: 900 }, 0, { width: 375, height: 812 }).w).toBe(900)
   })
 
   it('a position the user chose is NOT re-fitted, only rescued', () => {
@@ -350,6 +445,63 @@ describe('LV.15 — where a window opens, and how a remembered one is rescued', 
       y: 700,
       w: WINDOW_DEFAULT_W,
       h: WINDOW_DEFAULT_H,
+      min: false,
+    })
+  })
+})
+
+/**
+ * **Ruling 2 (Chris, 2026-08-12) — the mobile variant's one number, executed.**
+ *
+ * > *"On a mobile the pop out window is full width but only 60% of the screen
+ * > height."*
+ *
+ * The *shape* of that variant is CSS and is source-pinned in
+ * `list-windows-host.test.ts`; what lives here is the only part of it that is a
+ * decision rather than markup — **which viewports get it**. It is in the store
+ * for R191's reason: a breakpoint left inside a `.tsx` is guarded by nothing in
+ * this repo, and "below `md`" is exactly the kind of number that is quietly
+ * re-tuned to `lg` a task later.
+ */
+describe('Ruling 2 — which viewports get the mobile variant, and which do not', () => {
+  it('is a strict `< 768`, so the boundary itself is a desktop window', () => {
+    expect(WINDOW_MOBILE_MAX_W).toBe(768)
+    // A phone, portrait and landscape…
+    expect(isSmallViewport({ width: 375, height: 812 })).toBe(true)
+    expect(isSmallViewport({ width: 812, height: 375 })).toBe(false)
+    // …the boundary, exactly, from both sides.
+    expect(isSmallViewport({ width: 767, height: 1024 })).toBe(true)
+    expect(isSmallViewport({ width: 768, height: 1024 })).toBe(false)
+    // …a tablet and a laptop keep the floating window the design LAW describes.
+    expect(isSmallViewport({ width: 1024, height: 768 })).toBe(false)
+    expect(isSmallViewport({ width: 1280, height: 900 })).toBe(false)
+  })
+
+  it('the server is not a phone — and nothing depends on that being right', () => {
+    // `windows` is never persisted, so no window exists at SSR or at hydration
+    // on any route; this is the safe default rather than a load-bearing one.
+    expect(isSmallViewport(null)).toBe(false)
+  })
+
+  it('60% of the height is a ratio, so the ruling and the class cannot drift', () => {
+    expect(WINDOW_MOBILE_HEIGHT_RATIO).toBe(0.6)
+    // `list-windows-host.test.ts` builds `h-[60dvh]` from this number rather
+    // than restating it, which is what makes that the same claim as this one.
+    expect(`h-[${WINDOW_MOBILE_HEIGHT_RATIO * 100}dvh]`).toBe('h-[60dvh]')
+  })
+
+  it('the phone variant costs the desktop nothing — the maths is untouched', () => {
+    // The rescue and the fit are the *desktop* answer and Ruling 2 does not
+    // re-tune them: a 375px viewport still resolves exactly as it did before,
+    // because on a phone nothing reads the result.
+    expect(resolveWindowGeometry(undefined, 0, { width: 375, height: 812 })).toEqual({
+      // 352 already fits inside 375 − 2×8, so the size is the design's default…
+      w: WINDOW_DEFAULT_W,
+      h: WINDOW_DEFAULT_H,
+      // …and the cascade's 96 is pulled left to the last x that shows the whole
+      // window: 375 − 352 − 8. The vertical has room, so 96 stands.
+      x: 375 - WINDOW_DEFAULT_W - WINDOW_EDGE_MARGIN,
+      y: WINDOW_CASCADE_ORIGIN,
       min: false,
     })
   })
@@ -387,6 +539,52 @@ describe('LV.15 — pop-outs persist their geometry, never their existence (D13)
     // and the payload knows about neither.
     expect(raw).not.toContain('windows')
     expect(raw).not.toContain(LIST_B)
+  })
+
+  /**
+   * **R257 — `min` *is* geometry, and a phone writes it.**
+   *
+   * Six places in this repo claimed *"no geometry is written from a phone"*,
+   * one of them the delivery plan's v6.0 changelog. It was false, and the two
+   * pointer-down gates the claim rested on could not see it: Ruling 2 moved
+   * **Collapse** into the Options menu, and `setMinimized` writes into the same
+   * `geometry[listId]` record `partialize` persists. Measured live at 375 × 812
+   * — tapping Options → Collapse took `{x:397, y:270, w:406, h:436, min:false}`
+   * to `{…, min:true}` in `fieldscout.list-windows`.
+   *
+   * **The write is kept**, because `min` is a per-window state the user
+   * expressed and remembering it is the same promise position and size make;
+   * removing it from the persisted slice would change *desktop* behaviour that
+   * LV.15 shipped and two reviews upheld, for no ruling. So the claim is
+   * narrowed to *"no position or size"* — and this is the executed half of that
+   * narrowing: the part that is true, plus the behavioural consequence it
+   * causes. The negative half (nothing writes position or size from a phone)
+   * is a source pin, in `list-windows-host.test.ts`.
+   */
+  it('collapse alone reaches storage — the one write a phone makes (R257)', () => {
+    const { open, setMinimized } = useListWindowsStore.getState()
+    open(LIST_A)
+    // Ruling 2's Options → Collapse, and nothing else. No drag, no resize:
+    // those are the two writes a phone cannot reach.
+    setMinimized(LIST_A, true)
+
+    const persisted = JSON.parse(stored.get(STORAGE_KEY)!) as {
+      state: { geometry: Record<string, Record<string, unknown>> }
+    }
+    // `min` alone, in the persisted record — so the phone did write to
+    // `fieldscout.list-windows`, and it wrote nothing else.
+    expect(persisted.state.geometry[LIST_A]).toEqual({ min: true })
+
+    // **The consequence, not a proxy for it**: `resolveWindowGeometry` is what a
+    // window calls on mount, so this is a desktop window opening over the record
+    // a phone left. Collapse a sheet at 375, widen past 768, and it comes back
+    // collapsed.
+    expect(
+      resolveWindowGeometry(useListWindowsStore.getState().geometry[LIST_A], 0, {
+        width: 1280,
+        height: 900,
+      }).min,
+    ).toBe(true)
   })
 
   it('a rehydrated store is a clean page with the geometry remembered', async () => {

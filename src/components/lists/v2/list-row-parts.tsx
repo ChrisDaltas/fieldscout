@@ -472,6 +472,146 @@ export function EmptyListState({ canEdit }: { canEdit: boolean }) {
 }
 
 // -----------------------------------------------------------------------------
+// The other two states of a list read (LV.17)
+// -----------------------------------------------------------------------------
+
+/**
+ * **The one sentence the app is allowed to say about a list it can no longer
+ * read** — Chris's own words for the pop-out toast (2026-08-12, §3 Q5), reused
+ * verbatim as the on-surface state so the two cannot drift into two spellings.
+ *
+ * It is deliberately neutral about *why*, and that is not incidental: see
+ * {@link listReadIsGone} for the three situations the server collapses into one
+ * status, only one of which is a deletion (**R248**).
+ */
+export const LIST_UNAVAILABLE = 'This list is no longer available.'
+
+/**
+ * Is this read's failure the list being **no longer available to this viewer**,
+ * rather than something that might work on a retry?
+ *
+ * ## It is not a cause, and no surface may word it as one (**R248**)
+ *
+ * `GET /api/lists/[id]` reads `.eq('id', id).is('deleted_at', null)` and answers
+ * `404` whenever that returns no row (`route.ts`:30–36) — and **three different
+ * situations collapse into that one status**:
+ *
+ * 1. the row carries a `deleted_at` (business rule 8 — deletes are always soft);
+ * 2. the id resolves to nothing at all;
+ * 3. **the list is alive and merely no longer visible to this viewer.** The
+ *    `lists` SELECT policy is
+ *    `((is_private = false AND deleted_at IS NULL) OR auth.uid() = owner_id)`,
+ *    so an owner flipping a public list to private makes the identical read
+ *    return zero rows with `deleted_at` still `NULL`. Visibility is a shipped
+ *    control in the hero's options menu; that flip is one click.
+ *
+ * This shipped as *"This list was deleted. / Its owner deleted it."* and was
+ * **false** — measured in a rolled-back transaction: as `dev@`, the public
+ * `LV12` fixture returned 1 row; after the owner set `is_private = true` the
+ * same query returned **0** rows, `deleted_at` still `NULL`, while the DOM went
+ * on naming a deletion. That is CLAUDE.md's rule inverted — the reason
+ * *inferred* from a status the server collapses rather than asserted.
+ *
+ * What the three do share is that **none of them is transient**, which is the
+ * whole of what the split buys: a surface can say the list is not available
+ * instead of offering the "could not be loaded" that invites a reload. Anything
+ * else (a 500, a dropped connection) keeps the retryable wording.
+ *
+ * The `status` field is put on the error by `use-lists.ts`'s `jsonOrThrow`;
+ * `use-draft-mode.ts`:518 reads it the same way to decide what is worth
+ * retrying.
+ */
+export function listReadIsGone(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 404
+}
+
+/**
+ * A list read that failed, said out loud — **one component, two surfaces**
+ * (a Side by side column and a pop-out window), because they were about to be
+ * two spellings of the same three sentences.
+ *
+ * CLAUDE.md, "Never let 'nothing happened' mean 'it worked'": *"prefer loud
+ * failure over a plausible-looking empty result, and assert the reason for
+ * emptiness rather than inferring it."* So this asserts what it knows — the
+ * list is not available, or the read faulted — and **stops there**. The version
+ * that shipped in this PR went one step further and named a *cause* the client
+ * cannot see; the correction is {@link listReadIsGone}'s header, and the copy
+ * below is {@link LIST_UNAVAILABLE}.
+ *
+ * **A pop-out is the surface that made this worth splitting** — but it is no
+ * longer the surface that *renders* it: Chris ruled (2026-08-12, §3 Q5) that a
+ * pop-out of an unavailable list **closes, with a toast**, so the branch a
+ * window paints here lives for one frame before the window goes. The column is
+ * the real consumer of the unavailable state, and a comparison routinely holds
+ * someone else's list.
+ *
+ * The scale is the **column's**, which already survives a 240px panel — narrower
+ * than the window's 264px minimum — so neither surface needs a variant.
+ */
+export function ListReadFailure({
+  error,
+  canEdit,
+}: {
+  /** The query's error. `null` is not a state this renders — callers branch first. */
+  error: unknown
+  /**
+   * Whether the viewer owns the list, taken from the last good read. It buys
+   * exactly one thing: a **conditional** pointer at Trash, which asserts nothing
+   * about why the read failed and would be a dead end for a stranger (Trash
+   * lists only your own soft-deleted lists).
+   */
+  canEdit: boolean
+}) {
+  const gone = listReadIsGone(error)
+  const message = error instanceof Error ? error.message : null
+  // Never a cause. The owner's line is phrased as a condition (*"if you deleted
+  // it"*) precisely because the 404 does not say whether they did.
+  const detail = gone
+    ? canEdit
+      ? 'If you deleted it, you can restore it from Trash.'
+      : null
+    : message
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 px-3 py-6 text-center">
+      <Icon
+        name={gone ? 'remove' : 'info-circle'}
+        size={16}
+        className={gone ? 'text-n-3' : 'text-negative-strong'}
+      />
+      <p className="text-[11px] font-bold">
+        {gone ? LIST_UNAVAILABLE : 'This list could not be loaded.'}
+      </p>
+      {detail !== null && <p className="text-[9px] font-medium text-n-3">{detail}</p>}
+    </div>
+  )
+}
+
+/**
+ * Rows that have not arrived yet. Deliberately **not** an empty container: an
+ * empty list and a list still loading look identical the moment the difference
+ * is left to the reader, and that is the confusion CLAUDE.md's rule is about.
+ *
+ * `rowHeight` is the only thing the two callers disagree on (a column's 30px row
+ * against a window's 29px one), so it is the only prop.
+ */
+export function ListRowsSkeleton({ rows = 6, rowHeight }: { rows?: number; rowHeight: number }) {
+  return (
+    <div className="flex animate-pulse flex-col" aria-busy="true" aria-label="Loading list">
+      {Array.from({ length: rows }, (_, row) => (
+        <span
+          key={row}
+          style={{ height: rowHeight }}
+          className="block border-b border-n-4 p-2"
+        >
+          <span className="block h-full rounded-sm bg-n-4" />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
 // Bucket header
 // -----------------------------------------------------------------------------
 

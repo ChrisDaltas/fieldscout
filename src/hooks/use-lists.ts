@@ -130,6 +130,48 @@ export function useList(id: string | undefined) {
     queryKey: id ? listsKeys.detail(id) : ['lists', 'detail', 'undefined'],
     queryFn: () => fetch(`/api/lists/${id}`).then(jsonOrThrow<ListWithDetails>),
     enabled: Boolean(id),
+    /**
+     * **A 404 is an answer, not a hiccup** — `use-draft-mode.ts`:518's rule,
+     * narrowed to the one status that is definitive (LV.17; corrected by
+     * **R249** and **R252**).
+     *
+     * ## What this line is for, stated truthfully
+     *
+     * The app-wide default is `retry: 1` (`query-provider.tsx`), and while a
+     * retry is outstanding TanStack Query keeps the **last good data** and
+     * reports the failure only through `failureReason` — so a surface reading
+     * `isError` goes on rendering the vanished list's rows until the retry is
+     * exhausted. **A 404 surfaced one retry late, and a shared hook was changed
+     * to make it immediate.** That is the whole claim.
+     *
+     * **The stronger claim this shipped with was false, and R249 is right to
+     * strike it.** It said the state was *"not reachable at all"*, on an
+     * observation of `fetchStatus: 'paused'`. Re-run against this repo's own
+     * `@tanstack/react-query` — one successful read, then every read 404s —
+     * `retry: 1` reaches `status: 'error'` after **3** `queryFn` calls and
+     * no-retry after **2**, with `data` retained in both. `paused` is React
+     * Query's **offline** state (`networkMode: 'online'`), which a resolved HTTP
+     * 404 does not produce; it was recorded as the finding rather than
+     * diagnosed. The change stands on being immediate, not on being the only way
+     * through.
+     *
+     * ## Why 404 and not `< 500` (**R252**)
+     *
+     * `< 500` was materially wider than the argument for it. This same route
+     * answers 401/403/400 on `PATCH`/`DELETE` (`route.ts`:147, 176, 302, 319),
+     * and 408/429 are canonically retryable — none of those is *"there is
+     * nothing here"*. Only 404 is definitive for a read: the route's
+     * `.is('deleted_at', null)` filter returns no row for a deleted list, a
+     * missing id, **or one that is no longer visible to this viewer**
+     * (`listReadIsGone` in `list-row-parts.tsx` carries that correction). All
+     * three are settled facts; retrying only delays them. Everything else keeps
+     * the single retry the rest of the app gets.
+     */
+    retry: (failureCount: number, error: Error) => {
+      const status = (error as Error & { status?: number }).status
+      if (status === 404) return false
+      return failureCount < 1
+    },
   })
 }
 

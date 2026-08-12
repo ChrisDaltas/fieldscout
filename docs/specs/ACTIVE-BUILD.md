@@ -27,6 +27,11 @@ the plan's **§6**, tasks **LV.12 – LV.17**, in that order:
 | **LV.16** | Pop-outs — dark-inverted window content |
 | **LV.17** | Pop-outs — wiring, states, and the mobile answer |
 
+**LV.12 – LV.17 have all landed (2026-08-12).** Round 2's queue is empty. What
+happens next — a third round, the seven LV.7 follow-ups in `PROGRESS-lists-v2.md`
+§5, or switching back to Redraft Leagues M2 at L.B3.1 — is a **Chris decision**,
+and this file is where it gets recorded. Do not start `L.*` work by inferring it.
+
 The seven LV.7 follow-ups (F-LV7.1 – F-LV7.7) in `PROGRESS-lists-v2.md` §5 are
 still **filed items, not queued tasks** — Round 2 does not absorb them.
 Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
@@ -108,6 +113,19 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   **R219** — R215's argument applied to R215's own round's successor: the
   fixture was documented only in `PROGRESS-lists-v2.md` §4, which is the
   placement R215 corrected one task earlier.)*
+- **A third local-fixture note, and this one is a correction rather than a
+  creation.** `Secret sleepers` (`aaaa1111-…ab99`) carried
+  `lists.player_count = 3` against **2** `list_players` rows, so every surface
+  that reads the denormalised count — the picker card, the rail row, the gallery
+  card — said *"3 players"* for a 2-player list. Corrected 2026-08-12 (LV.17
+  review **R247**) with
+  `update lists set player_count = (select count(*) from list_players lp where lp.list_id = lists.id) where id = '…ab99'`,
+  and the whole table then checked for the same drift (**0 rows**). It is
+  recorded here because a `supabase db reset` re-seeds the fixture from whatever
+  produced the drift in the first place: **after a reset, re-check
+  `player_count` against `list_players` across the table before trusting any
+  count on screen.** Nothing in the app writes that column from the client, so a
+  wrong count is always seed drift, never a bug you are looking at.
 
 ---
 

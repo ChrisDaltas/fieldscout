@@ -20,6 +20,7 @@ import {
   useListDisplayStore,
   type ListOrg,
 } from '@/stores/list-display-store'
+import { useListWindowsStore } from '@/stores/list-windows-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { ListCoverTile } from './cover-tile'
@@ -30,7 +31,14 @@ import {
   type DraftedFanOut,
 } from './drafted-fan-out'
 import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-buckets'
-import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-row-parts'
+import {
+  DraftedCheckbox,
+  EmptyListState,
+  ListReadFailure,
+  ListRowsSkeleton,
+  PlayerMeta,
+  PlayerName,
+} from './list-row-parts'
 
 /**
  * Lists v2 — Side by side, step two: **the columns** (LV.13).
@@ -53,6 +61,8 @@ import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-
  * | drafted marks | `use-draft-mode.ts` — the account-persisted source LV.1.3 pointed it at |
  * | the player mini card | `usePlayerWindowsStore`, opened exactly as `list-detail-panel.tsx` opens it |
  * | which grouping this list is showing | `list-display-store.ts` (`useListDisplay` / `setOrg`), session-only (**D3**) |
+ * | the failed / loading states | `list-row-parts.tsx` (`ListReadFailure`, `ListRowsSkeleton`) — shared with the pop-out window at LV.17, rather than a second spelling of the same three sentences. The column's **sub-line** is unchanged from LV.13 (`Could not load`): R248 restored it after LV.17 briefly re-worded a merged surface |
+ * | `Pop out into a window` | `list-windows-store.ts` (LV.15), the same `open` the detail hero calls |
  *
  * ## Each column groups independently — and that is what the store already does
  *
@@ -179,6 +189,7 @@ function ComparisonColumn({
   const setOrg = useListDisplayStore((state) => state.setOrg)
   const { drafted, desiredDraftedFor, setDrafted } = useDraftMode(listId)
   const openPlayerWindow = usePlayerWindowsStore((state) => state.open)
+  const popOut = useListWindowsStore((state) => state.open)
 
   const list = detail.data
   const entries = list?.players
@@ -258,6 +269,11 @@ function ComparisonColumn({
    * loading and failed reads therefore say what they are.
    */
   const left = (entries ?? []).filter((entry) => !drafted.has(entry.player_id)).length
+  // **Restored to the merged surface's own wording (R248).** LV.17 briefly split
+  // this into `Deleted` / `Could not load` on the read's 404 — but a 404 is not
+  // a deletion (see `listReadIsGone`), and re-wording a shipped surface was not
+  // this task's to do even where the word had been true. `Could not load` claims
+  // nothing about cause and is what a column has always said.
   const subline = detail.isError
     ? 'Could not load'
     : entries
@@ -309,6 +325,20 @@ function ComparisonColumn({
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
+            {/* Pop out (LV.17). The window is hosted by the app shell, so it
+                floats *over* this comparison and outlives it — which is the
+                point: you can leave the compare screen with one board still on
+                top. The column is deliberately **not** removed. Popping out is
+                not "take this out of the comparison"; the comparison set is
+                what a tick fans out over (D12), so silently shrinking it here
+                would change what the next tick writes. Two surfaces showing one
+                list is already the ordinary case — the panel and a column do
+                it — and they agree because both read one `useDraftMode(listId)`
+                cache and one `list-display-store` entry. */}
+            <DropdownMenuItem onSelect={() => popOut(listId)}>
+              <Icon name="arrow-up-right" size={13} />
+              Pop out into a window
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={onRemove}>
               <Icon name="close" size={13} />
               Remove column
@@ -318,19 +348,15 @@ function ComparisonColumn({
       </div>
 
       {detail.isError ? (
-        <div className="flex flex-col items-center gap-1.5 px-3 py-6 text-center">
-          <Icon name="info-circle" size={16} className="text-negative-strong" />
-          <p className="text-[11px] font-bold">This list could not be loaded.</p>
-          <p className="text-[9px] font-medium text-n-3">{detail.error.message}</p>
-        </div>
+        // Shared with the pop-out window (LV.17) — including the split between
+        // *unavailable* (a 404: gone, or no longer visible to you) and *could
+        // not be loaded* (a fault worth retrying). A column needs that split for
+        // the same reason a window did: a comparison routinely holds someone
+        // else's list, and it can stop being readable while you are looking at
+        // it. **Neither branch names a cause** — R248.
+        <ListReadFailure error={detail.error} canEdit={canEdit} />
       ) : !entries ? (
-        <div className="flex animate-pulse flex-col" aria-busy="true" aria-label="Loading list">
-          {[0, 1, 2, 3, 4, 5].map((row) => (
-            <span key={row} className="h-[30px] border-b border-n-4 p-2">
-              <span className="block h-full rounded-sm bg-n-4" />
-            </span>
-          ))}
-        </div>
+        <ListRowsSkeleton rowHeight={30} />
       ) : entries.length === 0 ? (
         <div className="p-2">
           <EmptyListState canEdit={canEdit} />

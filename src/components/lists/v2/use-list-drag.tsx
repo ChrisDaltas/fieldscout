@@ -92,6 +92,24 @@ import { dropTargetKey, type DropTarget } from './list-reorder'
  * CLAUDE.md's rule cuts against inventing one: no target means no write, and
  * the gap closes as it does over any other non-target.
  *
+ * ### The precondition the containment check depends on: **no nested surfaces**
+ *
+ * `hitTest` asks *"does **this** root contain the point"*, not *"is this the
+ * **nearest** root"* (**R246**). For two surfaces that merely overlap — which is
+ * what a floating window over a page is — that is exactly right: each refuses
+ * the other's points and the outer one cannot claim the inner one's. It stops
+ * being right the moment one drag surface is rendered **inside** another, at
+ * which point a point over the inner rows is inside *both* roots and the outer
+ * surface answers for it, which is R235 again in the outer→inner direction.
+ *
+ * That cannot happen today, and it is not left to memory: the only two consumers
+ * are the detail panel (inside the page) and the pop-out window, and
+ * `<ListWindowsHost />` is a **sibling** of `{children}` in
+ * `src/components/layout/app-shell.tsx` — shallower than the page tree and after
+ * it — which `list-windows-host.test.ts` pins rather than assumes. A third
+ * consumer nested inside either of them must make this a nearest-root test
+ * first.
+ *
  * ## Sensors
  *
  * Mouse drags start after 6px of movement, so a click on the drafted checkbox or

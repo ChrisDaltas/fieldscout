@@ -127,9 +127,38 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
     expect(source).toContain(
       "import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-buckets'",
     )
-    expect(source).toContain(
-      "import { DraftedCheckbox, EmptyListState, PlayerMeta, PlayerName } from './list-row-parts'",
-    )
+    /**
+     * The row parts, asked as *"is each of these still coming from the shared
+     * module"* rather than pinned as one literal import line — **R241**: a
+     * verbatim multi-line import block is Prettier's to reformat, so the pin
+     * goes red for a change that changes nothing and stays green for a
+     * repointed specifier. LV.17 added three more (the failed / loading states,
+     * shared with the pop-out window) and reformatted the line, which is exactly
+     * the false red R241 removed one file over.
+     */
+    const rowParts = source.match(/import \{([^}]*)\} from '\.\/list-row-parts'/)
+    if (!rowParts) {
+      throw new Error('LV.13: the column no longer imports from `./list-row-parts` at all.')
+    }
+    const imported = rowParts[1].split(',').map((part) => part.trim())
+    for (const part of [
+      'DraftedCheckbox',
+      'EmptyListState',
+      'PlayerMeta',
+      'PlayerName',
+      // LV.17 — the two states a column and a window must not spell differently.
+      // (`listReadIsGone` came through here too until **R248**: the column's
+      // sub-line was split on it into `Deleted` / `Could not load`, which
+      // re-worded a merged surface *and* named a cause a 404 does not carry.
+      // The sub-line is back to LV.13's, and the predicate is only used inside
+      // the shared component now.)
+      'ListReadFailure',
+      'ListRowsSkeleton',
+    ]) {
+      expect(imported, `${part} must come from ./list-row-parts`).toContain(part)
+    }
+    // …and none of them is re-implemented locally under another name.
+    expect(source).not.toMatch(/animate-pulse/)
     expect(source).toContain("import { useDraftMode } from '@/hooks/use-draft-mode'")
     // The fan-out is composed too — LV.14 put it in its own module rather than
     // inline, so its decisions are executable (D11: compose, do not re-solve).
@@ -170,8 +199,41 @@ describe('LV.13 — each column groups independently', () => {
 
   it('`Remove column` sits under a separator, as the LAW words it', () => {
     const source = code(COLUMNS)
-    expect(source).toMatch(/<DropdownMenuSeparator \/>\s*<DropdownMenuItem onSelect=\{onRemove\}>/)
+    // The separator divides the five grouping modes from the actions. LV.17
+    // added `Pop out into a window` to that second group, so the pin is the
+    // *order* — grouping modes, separator, then both actions — rather than an
+    // adjacency that a third item breaks.
+    const separator = source.indexOf('<DropdownMenuSeparator />')
+    expect(separator).toBeGreaterThan(0)
+    expect(source.indexOf('ORG_OPTIONS.map((option)')).toBeLessThan(separator)
+    expect(source.indexOf('<DropdownMenuItem onSelect={() => popOut(listId)}>')).toBeGreaterThan(
+      separator,
+    )
+    expect(source.indexOf('<DropdownMenuItem onSelect={onRemove}>')).toBeGreaterThan(separator)
     expect(source).toContain('Remove column')
+    expect(source).toContain('Pop out into a window')
+  })
+
+  /**
+   * **LV.17 — `pop out` from a column.** The task text puts it in this menu, and
+   * the interaction it changes is not the window but the *comparison*: popping
+   * out must not quietly remove the column, because the comparison set is what a
+   * tick fans out over (**D12**), so shrinking it here would change what the
+   * next tick writes without the user asking.
+   */
+  it('popping out opens a window and leaves the comparison alone', () => {
+    const source = code(COLUMNS)
+    // The same store the detail hero opens — one way to open a pop-out.
+    expect(source).toContain("import { useListWindowsStore } from '@/stores/list-windows-store'")
+    expect(source).toContain('const popOut = useListWindowsStore((state) => state.open)')
+    // The handler opens, and does not also remove.
+    const item = source.match(
+      /<DropdownMenuItem onSelect=\{([^}]*popOut[^}]*)\}>[\s\S]*?<\/DropdownMenuItem>/,
+    )
+    if (!item) {
+      throw new Error('LV.17: no `popOut` menu item in the column menu — this pin is guarding nothing.')
+    }
+    expect(item[1]).not.toContain('onRemove')
   })
 
   it('the column reads its grouping from the session store, not from a local copy', () => {
@@ -271,7 +333,13 @@ describe('LV.14 — a tick fans out across the comparison set, and no further (D
    */
   it('the count is not claimed over an unloaded or failed read', () => {
     const source = code(COLUMNS)
-    expect(source).toMatch(/detail\.isError\s*\?\s*'Could not load'/)
+    // `detail.isError` is the FIRST question, and its answer is not a number.
+    // (LV.17 briefly split this arm into `Deleted` / `Could not load` on the
+    // read's 404 — **R248** put it back: a 404 is also a list that is alive and
+    // merely no longer visible to this viewer, and re-wording a merged surface
+    // was not a pop-out task's to do.)
+    expect(source).toMatch(/const subline = detail\.isError\s*\?\s*'Could not load'/)
+    expect(source).not.toContain("'Deleted'")
     expect(source).toMatch(/:\s*entries\s*\?\s*`\$\{left\} of \$\{entries\.length\} left`/)
     expect(source).toMatch(/:\s*'Loading…'/)
   })
