@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -11,8 +11,10 @@ import { describe, expect, it } from 'vitest'
  * `.tsx`, which Vite cannot parse under Next's `jsx: "preserve"`. Everything
  * that could be executed *is* executed, one file over: the store, the z-stack,
  * the clamps, the cascade, the viewport rescue and what `partialize` writes all
- * run for real in `src/stores/list-windows-store.test.ts` (22 tests). What is
- * left here is markup and mounting, which is exactly what source pins are for.
+ * run for real in `src/stores/list-windows-store.test.ts` (**24 tests** — this
+ * comment said 22 until **R229**; PROGRESS §4 and the PR body both had it
+ * right). What is left here is markup and mounting, which is exactly what
+ * source pins are for.
  *
  * **Every assertion reads the comment-stripped source** (`code`), never the raw
  * file — and here that is load-bearing rather than ceremonial, because these
@@ -29,8 +31,26 @@ import { describe, expect, it } from 'vitest'
 
 const read = (file: string) => readFileSync(path.resolve(process.cwd(), file), 'utf8')
 
+/** Every `.tsx` under `src/`, as repo-relative paths, sorted. */
+const tsxTree = (dir = 'src'): string[] =>
+  readdirSync(path.resolve(process.cwd(), dir), { withFileTypes: true })
+    .flatMap((entry) => {
+      const rel = `${dir}/${entry.name}`
+      if (entry.isDirectory()) return tsxTree(rel)
+      return entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx') ? [rel] : []
+    })
+    .sort()
+
 const code = (file: string) =>
   read(file).replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, (_match, before) => before ?? '')
+
+/**
+ * Which files actually *render* a component, over the whole tree. Used for the
+ * one claim in this suite that is about the app rather than about a file: this
+ * host is mounted exactly once, because a second mount would double every open
+ * window on every route.
+ */
+const filesRendering = (jsx: string) => tsxTree().filter((file) => code(file).includes(jsx))
 
 const HOST = 'src/components/lists/v2/list-windows-host.tsx'
 const WINDOW = 'src/components/lists/v2/list-window.tsx'
@@ -38,6 +58,8 @@ const SHELL = 'src/components/layout/app-shell.tsx'
 const ROOT_LAYOUT = 'src/app/layout.tsx'
 const PLAYER_LAYER = 'src/components/players/player-windows-layer.tsx'
 const PAGE = 'src/components/lists/v2/lists-page-v2.tsx'
+/** The player mini card's frame — the window this one is a mirror of (D11/D13). */
+const PRECEDENT_WINDOW = 'src/components/shared/window-shell.tsx'
 
 /**
  * The body of `ListWindowsHost`, isolated from the file, so "returns null
@@ -57,24 +79,93 @@ const hostBody = () => {
   return match[1]
 }
 
-/** One element's own `className` string, found by a class only it carries. */
+/**
+ * One element's own `className` string, found by a class only it carries.
+ *
+ * **The marker has to stay unique, and that is checked rather than assumed**
+ * (R226's audit). This returns the *first* match, so a second element carrying
+ * the same class would silently redirect every assertion below onto the wrong
+ * element — and `cursor-grab` is one edit away from being ambiguous, because
+ * **LV.16** brings drag-reorder rows into this same file. Ambiguity fails here
+ * instead of resolving to whichever element happens to come first.
+ */
 const classNameContaining = (file: string, marker: string) => {
-  const match = code(file).match(new RegExp(`className="([^"]*${marker}[^"]*)"`))
-  if (!match) {
+  const all = [...code(file).matchAll(new RegExp(`className="([^"]*${marker}[^"]*)"`, 'g'))]
+  if (all.length === 0) {
     throw new Error(
       `LV.15: no className containing \`${marker}\` in ${file} — the pin below is guarding nothing.`,
+    )
+  }
+  if (all.length > 1) {
+    throw new Error(
+      `LV.15: \`${marker}\` appears in ${all.length} classNames in ${file} — it no longer ` +
+        'identifies one element, so the pin below is asserting about whichever came first.',
+    )
+  }
+  return all[0][1]
+}
+
+/**
+ * One handler's body, from its `const` to the next top-level `const on…`.
+ * Throws if it cannot find it, for the reason `hostBody` does.
+ *
+ * Added by R226's audit. The release-not-per-frame pins used to anchor on the
+ * bare name `onHeaderPointerUp`, which the file carries three times (the
+ * declaration and two JSX attributes) — so they asserted that *somewhere* after
+ * one of those a `setPosition` appears, and stayed green if a second, per-frame
+ * write were added to the **move** handler. That is the write the store's
+ * `persist` middleware turns into a `JSON.stringify` per pointer event, and it
+ * is what the pin's own comment claims to forbid.
+ */
+/**
+ * The Escape effect's body, matched **only** when `if (!isTop) return` is its
+ * first statement — so a version that closes every open window on one keypress
+ * cannot be located here at all, and this throws rather than passing (R227).
+ */
+const escapeEffect = () => {
+  const match = code(WINDOW).match(
+    /React\.useEffect\(\(\) => \{\s*if \(!isTop\) return\n([\s\S]*?)\n {2}\}, \[/,
+  )
+  if (!match) {
+    throw new Error(
+      `LV.15: no \`isTop\`-guarded keydown effect in ${WINDOW} — either there is no keyboard ` +
+        'close at all, or it is not scoped to the front window. Both are R227.',
     )
   }
   return match[1]
 }
 
+const handlerBody = (file: string, name: string) => {
+  const match = code(file).match(new RegExp(`const ${name} = [\\s\\S]*?\\n  \\}\\n`))
+  if (!match) {
+    throw new Error(
+      `LV.15: \`const ${name}\` could not be located in ${file} — the pin below is guarding nothing.`,
+    )
+  }
+  return match[0]
+}
+
+/**
+ * **The empty guard itself, matched whole** — never the bare `return null` it
+ * ends with. Both pins below locate the guard by index, and an anchor of
+ * `'return null'` finds the *first* early return in the function rather than
+ * this one, so any other early return above the JSX satisfies them. The
+ * Reviewer demonstrated both halves of that at **41 passed**: (a) the guard
+ * moved below the JSX with a decoy `if (false) return null` above it, and
+ * (b) a `useEffect` writing to `document.body` on the empty path, hidden behind
+ * `if (windows === undefined) return null` — *an effect firing on every route in
+ * the app*, which is the one thing this suite exists to forbid. **R226**, and
+ * the third time this build has had an `indexOf` pass for the wrong reason.
+ */
+const EMPTY_GUARD = 'if (windows.length === 0) return null'
+
 describe('LV.15 — with no window open, the host renders nothing at all (D13)', () => {
   it('returns null, and returns it before any markup', () => {
     const body = hostBody()
 
-    expect(body).toContain('if (windows.length === 0) return null')
+    expect(body).toContain(EMPTY_GUARD)
 
-    const guard = body.indexOf('return null')
+    const guard = body.indexOf(EMPTY_GUARD)
     const markup = body.indexOf('return (')
     expect(guard).toBeGreaterThan(-1)
     expect(markup).toBeGreaterThan(-1)
@@ -85,7 +176,7 @@ describe('LV.15 — with no window open, the host renders nothing at all (D13)',
 
   it('the empty path touches one store and nothing else', () => {
     const body = hostBody()
-    const guard = body.indexOf('return null')
+    const guard = body.indexOf(EMPTY_GUARD)
     // Without this, a *deleted* guard makes `slice(0, -1)` the whole function
     // and every assertion below passes for the wrong reason — which is exactly
     // what the first probe of this pin showed (16 green, 1 red, when both
@@ -134,8 +225,16 @@ describe('LV.15 — mounted once, by the app shell (design LAW: “rendered by t
   })
 
   it('and nothing else mounts it — a second host would double every window', () => {
+    // The two specific hazards, named: the root layout already mounts the
+    // *player* window layer, and the Lists page is where a reader would assume
+    // a Lists pop-out belongs.
     expect(code(ROOT_LAYOUT)).not.toContain('ListWindowsHost')
     expect(code(PAGE)).not.toContain('ListWindowsHost')
+
+    // …and then the claim this `it` actually makes, over the whole tree rather
+    // than two files (R226's audit — the title said "nothing else" while the
+    // assertions ruled out exactly two candidates).
+    expect(filesRendering('<ListWindowsHost')).toEqual(['src/components/layout/app-shell.tsx'])
   })
 })
 
@@ -157,6 +256,43 @@ describe('LV.15 — the z-order between the two windowing systems is chosen, not
    */
   it('the player mini cards really are above, at 60', () => {
     expect(code(PLAYER_LAYER)).toContain('const BASE_Z = 60')
+  })
+})
+
+/**
+ * **R227.** A pop-out shipped with exactly one way out — the close button in
+ * its own header, which travels with the window. Drag one right, narrow the
+ * viewport, and mount-time geometry resolution (the precedent's behaviour, and
+ * not the defect) leaves it off-screen with nothing to scroll to, on **every**
+ * route, because the host mounts in the app shell. The escape hatch is the
+ * precedent's, four lines away in the file this one already mirrors.
+ */
+describe('LV.15 — Escape closes the top window, and only the top one (R227)', () => {
+  it('mirrors window-shell.tsx: an isTop-guarded keydown effect that closes', () => {
+    // Throws unless `if (!isTop) return` is the effect's first statement, which
+    // is the half that keeps one Escape from emptying the whole stack.
+    const effect = escapeEffect()
+
+    expect(effect).toContain("e.key === 'Escape'")
+    expect(effect).toContain('close(listId)')
+    expect(effect).toContain("window.addEventListener('keydown', onKey)")
+    // Added *and removed* — a leaked listener would close a window that is gone.
+    expect(effect).toContain("window.removeEventListener('keydown', onKey)")
+    // Radix listens on `document` in the capture phase and calls
+    // `preventDefault()` when it dismisses, so a bubble-phase listener still
+    // runs afterwards: without this, one Escape aimed at a dialog — or at the
+    // `dots` menu LV.16 puts in this header — would also close the window.
+    expect(effect).toContain('e.defaultPrevented')
+
+    // The precedent really does say what this claims to mirror.
+    expect(code(PRECEDENT_WINDOW)).toContain('if (!isTop) return')
+  })
+
+  it('exactly one window is top: the last of the back-to-front array', () => {
+    expect(code(HOST)).toContain('isTop={index === windows.length - 1}')
+    // The host computes it because only the host can see the siblings. A prop
+    // default here (`isTop = true`) would make every window answer Escape.
+    expect(code(WINDOW)).not.toMatch(/isTop\s*=/)
   })
 })
 
@@ -224,9 +360,15 @@ describe('LV.15 — the design LAW’s numbers, converted (and the two that are 
     // window, and this one unmounts on a close or a route change mid-drag.
     expect(source).not.toContain("window.addEventListener('pointermove'")
     expect(source).not.toContain('window.addEventListener("mousemove"')
-    // The persisted write happens in the pointer-*up* handlers only.
-    expect(source).toMatch(/onHeaderPointerUp[\s\S]{0,220}setPosition\(listId/)
-    expect(source).toMatch(/onGripPointerUp[\s\S]{0,220}setSize\(listId/)
+    // The persisted write happens in the pointer-*up* handlers, and **only**
+    // there — asserted against each handler's own body rather than against a
+    // 220-character window after a name the file carries three times (R226's
+    // audit). The store is `persist`ed, so a write per `pointermove` is a
+    // `JSON.stringify` per frame.
+    expect(handlerBody(WINDOW, 'onHeaderPointerUp')).toContain('setPosition(listId')
+    expect(handlerBody(WINDOW, 'onGripPointerUp')).toContain('setSize(listId')
+    expect(handlerBody(WINDOW, 'onHeaderPointerMove')).not.toContain('setPosition')
+    expect(handlerBody(WINDOW, 'onGripPointerMove')).not.toContain('setSize')
   })
 })
 

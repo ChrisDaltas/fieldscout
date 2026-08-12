@@ -297,6 +297,28 @@ export const useListWindowsStore = create<ListWindowsStore>()(
         set((state) => ({
           geometry: { ...state.geometry, [listId]: { ...state.geometry[listId], min } },
         })),
+      /**
+       * **No caller outside tests, deliberately** — flagged by **R227** and
+       * left in rather than removed, for two reasons that are worth stating so
+       * the next reader does not have to re-derive them.
+       *
+       * 1. It is **the precedent's API, mirrored** (D11/D13). `closeAll` in
+       *    `player-windows-store.ts`:81 has no caller outside tests either —
+       *    this is not a stub that was forgotten, it is the shape this store
+       *    was told to copy, and `list-windows-store.test.ts`'s D11 pin asserts
+       *    this exact line is present in *both* files. Deleting it would make
+       *    the two conventions diverge on nothing.
+       * 2. **It is not the escape hatch.** R227's answer to "a window you
+       *    cannot reach" is Escape on the *top* window (`list-window.tsx`),
+       *    which unwinds the stack one at a time and is the precedent's
+       *    behaviour. A `closeAll` bound to a key would be a second, blunter
+       *    answer to the same problem.
+       *
+       * **LV.17** is where a caller would appear if one is wanted — that task
+       * owns "what happens at 6+ windows" and the mobile answer, and a
+       * `Close all pop-outs` affordance belongs to whichever of those it
+       * serves. It is not wired here on spec.
+       */
       closeAll: () => set({ windows: [] }),
     }),
     {

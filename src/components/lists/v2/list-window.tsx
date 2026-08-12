@@ -84,6 +84,11 @@ import { ListCoverTile } from './cover-tile'
  * closing it is one route change away. Geometry is committed to the store on
  * **release**, not per frame: the store is `persist`ed, and a write per
  * `pointermove` is a `JSON.stringify` per frame.
+ *
+ * **Escape is the one deliberate global listener**, and it is the precedent's
+ * (`window-shell.tsx`:123–129) rather than a second answer — see the effect
+ * below. It is a `keydown` on `window`, added and removed by an effect, so it
+ * cannot outlive the window the way a pointer listener attached mid-drag can.
  */
 
 interface WindowBox {
@@ -99,6 +104,12 @@ interface ListWindowProps {
   stackIndex: number
   /** Painted by the host, which owns layering (see `list-windows-host.tsx`). */
   zIndex: number
+  /**
+   * Front-most window owns Escape-to-close — the precedent's prop, same name and
+   * same meaning (`window-shell.tsx`). Computed by the host, which is the only
+   * thing that can see the siblings.
+   */
+  isTop: boolean
 }
 
 function viewportNow(): { width: number; height: number } | null {
@@ -110,7 +121,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-export function ListWindow({ listId, stackIndex, zIndex }: ListWindowProps) {
+export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProps) {
   const detail = useList(listId)
   const saved = useListWindowsStore((state) => state.geometry[listId])
   const close = useListWindowsStore((state) => state.close)
@@ -164,6 +175,41 @@ export function ListWindow({ listId, stackIndex, zIndex }: ListWindowProps) {
     () => list?.players.slice(0, 3).map((entry) => entry.player) ?? null,
     [list],
   )
+
+  // ---- Escape closes the top window ---------------------------------------
+
+  /**
+   * `window-shell.tsx`:123–129, mirrored — **D11: compose, don't re-solve.**
+   * Only the front window listens, so one Escape closes one window and the
+   * stack unwinds front-to-back rather than vanishing.
+   *
+   * **Why a pop-out needs it at all** (R227). The close button is the only way
+   * out, and it travels with the window: drag one to the right of a wide
+   * viewport, then narrow the viewport, and mount-time geometry resolution —
+   * the precedent's behaviour too — leaves it exactly where it was, off-screen,
+   * with nothing to scroll to because it is `position: fixed`. The host mounts
+   * in the app shell, so that window is then unreachable on *every* route, not
+   * just on Lists. Measured before this existed: rect `[1050, 400, 352, 416]`
+   * at 700×700, `visibleWidth: 0`, close button not hit-testable.
+   *
+   * **The one addition to the precedent, and why it is not a divergence.**
+   * Radix's `DismissableLayer` listens on `document` in the **capture** phase
+   * and calls `preventDefault()` when it dismisses (`useEscapeKeydown`), so a
+   * bubble-phase listener still fires afterwards. Without the
+   * `defaultPrevented` check, one Escape aimed at an open dialog — or at the
+   * `dots` menu **LV.16** puts in this very header — would dismiss the overlay
+   * *and* close the window underneath it.
+   */
+  React.useEffect(() => {
+    if (!isTop) return
+    const onKey = (e: KeyboardEvent) => {
+      // A Radix overlay above this window has already handled it.
+      if (e.defaultPrevented) return
+      if (e.key === 'Escape') close(listId)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isTop, close, listId])
 
   // ---- drag: anywhere on the header (design LAW) --------------------------
 

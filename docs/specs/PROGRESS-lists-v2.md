@@ -6,7 +6,7 @@
 > killed at any point and a fresh one resumes losslessly.
 >
 > **Authority:** design LAW (`docs/design/lists/README.md`) > delivery plan
-> (`docs/specs/delivery-plan-lists-v2.md` v5.6) > this file. **That ordering is
+> (`docs/specs/delivery-plan-lists-v2.md` v5.7) > this file. **That ordering is
 > load-bearing, not decorative** — LV.12 used it to settle a plan clause the
 > design package contradicts (§4).
 >
@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60 |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all (§6) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -404,8 +404,16 @@ checked.
   *cascaded* window is pulled back so the whole of it fits when the viewport
   allows — at the design's `120,120` origin a 352px window on a 375px phone puts
   its own close button off-screen. A position the **user** dragged is never
-  re-fitted, only rescued
-- [ ] **LV.16** — dark-inverted window content (LV.15)
+  re-fitted, only rescued.
+  **Its review returned FIX-THEN-MERGE with no blockers; the fix round
+  (2026-08-12) closed R226–R230** — the headline was that both pins on the
+  render-nothing contract anchored on the *first* `return null` rather than the
+  guard's, so a `useEffect` running on every route in the app left the suite
+  green; and the one behaviour change is **Escape closing the top pop-out**,
+  because a window met by a smaller viewport had no reachable way to close (§6)
+- [ ] **LV.16** — dark-inverted window content (LV.15) — **carries F-LV15.1 and
+  F-LV15.2** (delete `ListWindowBodyPending`; add `gear` + `dots`), now also in
+  the plan's own §6 row (R230)
 - [ ] **LV.17** — wiring, states, and the mobile answer (LV.16)
 
 The seven LV.7 follow-ups (**F-LV7.1 – F-LV7.7**, §5) remain **filed items, not
@@ -2880,7 +2888,9 @@ This section records decisions made **during** the build.
   cascade and its wrap, the viewport rescue, the cascade fit, and what
   `partialize` writes, driven through the **real** middleware) and
   `src/components/lists/v2/list-windows-host.test.ts` (**17 source pins**).
-  1032 → **1073**, and 24 + 17 = **41** = 1073 − 1032.
+  1032 → **1073**, and 24 + 17 = **41** = 1073 − 1032. *(Both numbers are what
+  LV.15 landed with and are left as the record of that. The review round took
+  the source pins to **19** and the suite to **1075** — see §6.)*
 
   *Getting the persistence test to be about anything took two corrections, both
   worth recording:* `persist` reads **`window.localStorage`** at store creation
@@ -2894,8 +2904,10 @@ This section records decisions made **during** the build.
   writes through the middleware and would otherwise overwrite the seed before
   rehydration read it.
 
-  **Seven probes, each shown red and reverted** (`git diff` empty afterwards,
-  suite back to 1073):
+  **Nine probes, each shown red and reverted** (`git diff` empty afterwards,
+  suite back to 1073) — *"Seven" until **R229**'s sibling **R228**; the table
+  below has always had nine rows, and the Reviewer reproduced all nine at the
+  stated red-counts:*
 
   | Probe | Result |
   | --- | --- |
@@ -2972,12 +2984,17 @@ This section records decisions made **during** the build.
   **obligations on LV.16**, not observations — LV.15 shipped a deliberately
   partial header and a scaffold body, and an obligation stated only in the
   previous Builder's file is R209's finding repeating (**R51**: a hand-off
-  without its own row is itself a review finding). The third is LV.17's.
+  without its own row is itself a review finding). **Both now also sit in the
+  plan's own LV.16 row** (**R230**, plan v5.7) — this table is the record, that
+  row is what the next Builder is pointed at, and until R230 only this table had
+  them. The third is LV.17's. **F-LV15.4 was added by the review round** and is
+  neither: it is a defect in the *precedent*, on a surface outside this build.
 
   | id | What | Owner, and why it is not in LV.15 |
   | --- | --- | --- |
   | **F-LV15.1** | **`ListWindowBodyPending` must be deleted, not decorated.** `list-window.tsx` ships a marked scaffold body — the same device as LV.12's `ComparisonPending`, which LV.13 duly deleted — reading *"Rows, stats and the dark inversion arrive with LV.16."* Its branch becomes the inversion wrapper + the 36px rows + the footer | **LV.16.** The rows and the wrapper *are* that task. Nothing pins the scaffold's existence, deliberately: a pin the next task must delete is friction, and this row is the record instead |
   | **F-LV15.2** | **The header is two controls short of the design LAW.** *"cover, name 12.5px/600, then gear (stat picker), `dots` (grouping menu), collapse, close"* — LV.15 ships cover, name, collapse, close, and a marked gap where the other two go. They were left out rather than rendered inert because a control that does nothing is the live-but-false affordance **R220** found one task earlier | **LV.16.** The gear opens the Stats modal that task must render *outside* the inversion wrapper (design LAW), and the `dots` grouping menu regroups rows that do not exist until then. The menu itself is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it |
+  | **F-LV15.4** | **The precedent this build mirrors closes its window on an Escape that a Radix overlay already handled** — found while proving R227's own guard, and **reproduced live**. `window-shell.tsx`:123–129 has no `defaultPrevented` check, and Radix's `DismissableLayer` listens on `document` in the **capture** phase and only calls `preventDefault()`, so a bubble-phase listener still runs. Measured on `/app/lists`, local stack: player mini card open (`[role=dialog] "Josh Allen"`, `z:60`) **plus** the account dropdown open → **one** Escape → menu `data-state="closed"` *and* `[role=dialog]` count **0**. The user aimed at the menu and lost the mini card too | **Not LV.15, and not Lists.** `src/components/shared/window-shell.tsx` is the *Players* mini card, outside this task's diff and outside Round 2's surface; changing it would be the drive-by fix the charter forbids. The pop-out is **not** affected — LV.15 carries the guard, and both directions were measured this round (with it: dialog dismissed, window survives; without it: both close). Worth its own commit because the fix is one line and the same one, and because a reader comparing the two files will otherwise read the difference as an unexplained divergence from the precedent |
   | **F-LV15.3** | **The phone question is open, and LV.15 answered only the part that would have shipped broken.** A cascaded window now fits the viewport (§4), so the close button and the grip are reachable at 375px — but a 352 × 416 window still covers most of a phone screen, **touch resize is unverified** (the grip carries `touch-none` and takes pointer events, but no touch drag was exercised), and there is no answer for what a phone *should* get instead of a floating window. Chris's *"leave the phone version as is"* (D14) was about **Side by side**, not pop-outs, so nothing here is ruled | **LV.17**, which owns *"the mobile answer (a floating draggable window has none — say what small screens get instead)"* in as many words |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
@@ -3698,6 +3715,91 @@ found nothing to fix.
 | --- | --- | --- |
 | **R224** — the comment-stripper control's *rationale* is wrong. `drafted-fan-out.test.ts:596-601` says the negative pins forbid strings *"this file's own header uses"* and names `no new route`, `Promise.all`, `useQuery` — **none of which is in the file**: `useLists` 0, `useQuery` 0, `fetch(` 0, `/api/` 0, and the two `Promise.all` occurrences do not match the pin's `/Promise\.all\(/`. Replacing the stripper with `read(file)` leaves every negative pin green and reddens only the control itself | nit | ✅ **Reworded, and the control kept.** It is genuine and prophylactic — the mistake was in what it claimed, not in its existence — so the comment now says so outright: *no pin needs the stripper today* (with the four counts spelled out, including why `Promise.all` does not match), and the control *"keeps the stripper working for the header that eventually will use one"*. The `no new route` example is dropped. **LV.15's own control is the case R224 describes as hypothetical** — that file's pins forbid `shadow-`, `0.8` and `ZOOM`, all three of which its header uses — so the pattern is now load-bearing somewhere, which is the argument for keeping it here |
 | **R225** — §5's F-LV14.1 says the fan-out *"neither introduced nor widened"* the count's blind spot. True about magnitude, and it glosses one new consequence: a tick now lands in columns the user did not click, including one whose **drafted** read failed, so a wrong header can move with **no interaction with that column at all** | nit | ✅ **Half a sentence added to the F-row**, naming the change as one of *reachability* rather than magnitude: before LV.14 a wrong `N of M left` needed you to tick in that column; now one tick moves every other column holding the player. **The deferral itself stands** — the Reviewer ruled it a correct deferral, not a CLAUDE.md violation, and the count is still LV.13's surface which LV.14's task text told it to leave alone |
+
+### LV.15 — 2026-08-12 (PR #136) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #136 — the pop-out
+store and the app-shell host — verified against plan v5.6 §6, D11, D13, the
+design LAW's* Pop-out window *bullets and the ×0.8 rule.* **A great deal was
+re-verified independently and is not re-opened**: the every-route contract holds
+live on Home and Players (the host contributes zero nodes, no hydration
+warnings); the non-portal decision is sound (the full ancestor chain walked — no
+stacking context, no fixed-position containing block, no clipping); all four
+z-index numbers are real and the orderings hold at real overlaps; **all nine**
+claimed probes reproduce at exactly the stated red-counts; both clamps hit
+`960×720` and `264×176`; collapse, navigation and reload-forgets-windows-but-
+keeps-geometry all confirmed; the conversions are correct;
+`elevation-rule.test.ts` untouched; the schema/API diff empty. **Both of the
+Builder's judgment calls were upheld** — `z`-as-array-index is defensible (the
+normative LAW says nothing about `z`; D13 asks for the array), and the
+small-screen fit is *minimum necessary, not a mobile variant* (desktop
+bit-identical and pinned; a dragged position verified never re-fitted).
+**R226–R230: two should-fix, three nits, no blockers.**
+
+***The finding that mattered (R226) — the third variant of one defect, and this
+one guards every page in the app.*** *Both pins on the render-nothing contract
+anchored on* `body.indexOf('return null')` *— the* **first** *early return in
+the function, not the empty guard's. The Reviewer showed both halves at* **41
+passed**: *(a) the guard moved below the JSX with a decoy* `if (false) return null`
+*above it, and (b) a* `useEffect` *writing* `document.body.dataset.popouts`
+*on the empty path behind* `if (windows === undefined) return null` *—* **an
+effect firing on every route in the app**, *which is precisely what "the empty
+path touches one store and nothing else" exists to forbid. The Builder's own
+disclosed probe does go 1 red, so the log was honest — the pin was simply
+narrower than it read.*
+
+#### Resolution — 2026-08-12 (fix Builder, same branch `feat/LV15-popout-host-store`)
+
+*All five findings resolved on the same branch; nothing deferred, nothing
+escalated.* **One behaviour changed, deliberately and as directed** *— R227's
+Escape handler. Everything else is a pin, a comment or a document.*
+*Proof re-run this session:* **`type-check` clean · `lint` exit 0** *(the one
+pre-existing `auction-draft-room.tsx:107` warning) ·* **`test:unit` 58 files /
+1075 tests** *(1073 → 1075: R227's two new pins, `list-windows-host.test.ts`
+17 → 19; the store suite is unchanged at 24, and 24 + 19 = 43).*
+`settings-round-trip-db.test.ts` *is the known §5 leagues parallel-race flake,
+outside `test:unit` and in the paused build — not chased.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R226** — both render-nothing pins anchor on `body.indexOf('return null')`, so any earlier early return satisfies them; the Reviewer's probes (a) and (b) each left the suite **41 passed** on a broken host, (b) with an effect running on every route | should-fix | ✅ **Widened to the whole guard, and both probes shown red — after being reproduced first.** The anchor is now a named constant `EMPTY_GUARD = 'if (windows.length === 0) return null'`, used by both pins. **The gap was reproduced before it was fixed**, per R218's precedent: probe (a) → **41 passed**, probe (b) → **41 passed**, confirming the finding rather than taking it on trust. Against the widened pins: **probe (a)** → **1 red** (`expected 322 to be less than 94` — the guard now located *below* the JSX); **probe (b)** → **1 red** on the labelled hook assertion (`useEffect: expected … not to contain 'useEffect'`). Both reverted, `git diff` on `list-windows-host.tsx` **empty**. **The rest of the file was then audited for the same shape, and three more pins were widened** — each shown red, each reverted: (1) `classNameContaining` returned the **first** matching element and now **throws on ambiguity**, because `cursor-grab` is one edit from being ambiguous — **LV.16 brings drag-reorder rows into this very file** (probe: a second `cursor-grab` → *"appears in 2 classNames … asserting about whichever came first"*); (2) the release-not-per-frame pins anchored on `onHeaderPointerUp`, a name the file carries **three** times, and asserted nothing about the **move** handlers though the comment claims "only" — now asserted against each handler's own body via a `handlerBody()` helper that throws if it cannot find one (probe: a per-frame `setPosition` in `onHeaderPointerMove` → **1 red**; that is the write `persist` turns into a `JSON.stringify` per frame); (3) *"nothing else mounts it"* ruled out exactly **two** named files while claiming the whole app — now `filesRendering('<ListWindowsHost')` over every `.tsx` under `src/`, asserted to equal `['src/components/layout/app-shell.tsx']` (probe: a third mount in `guest-shell.tsx`, a file neither named assertion covers → **1 red**) |
+| **R227** — a pop-out has no keyboard close and no reachable `closeAll`, so a window met by a smaller viewport is permanently unreachable on **every** route | should-fix | ✅ **The precedent's escape hatch, mirrored — discharge (1) of the two offered, as directed.** `list-window.tsx` gains `window-shell.tsx`:123–129's effect: `if (!isTop) return`, `keydown` on `window`, `close(listId)` on Escape, listener removed on cleanup; the host computes `isTop={index === windows.length - 1}` because only it can see the siblings. **The defect was reproduced first, to the Reviewer's numbers**: dragged to `[1050, 400, 352, 416]` at 1280×900, viewport → 800×700 → `visibleWidth: 0`, `anyPixelVisible: false`, `scrollWidth === clientWidth` (800 = 800, nothing to scroll to), window absent from the screenshot — then **one Escape closed it**. **Escape closes only the top window**: three open (`00ab01`, `00ef01`, `00ab99`) → Escape → `00ab99` gone → Escape → `00ef01` gone, front-to-back, one per press. **Top follows focus, not open order**: focusing the buried window made *it* the one Escape closed. **One addition to the precedent, and it is load-bearing**: Radix listens on `document` in the **capture** phase and only `preventDefault()`s, so the bubble-phase listener still runs — the handler therefore ignores `e.defaultPrevented`, and **both directions were measured live**: *with* the guard, Escape over an open dialog dismissed the dialog and left the pop-out (`radixOpen 1→0`, `popouts` stays `1`); *without* it, one Escape took **both** (`popouts 1→0`). Pinned by two new `it`s (**17 → 19**), each shown red: no `isTop` guard → the `escapeEffect()` matcher **throws** (*"either there is no keyboard close at all, or it is not scoped to the front window"*); `isTop={true}` in the host → **1 red**; the effect deleted entirely → **1 red**. **`closeAll` is explained rather than wired**: `player-windows-store.ts`:81's `closeAll` has **no caller outside tests either**, and the D11 pin asserts that exact line is present in *both* files — so it is a mirrored API, not a forgotten stub, and the store now says so and points at LV.17 as where a caller would belong. A second finding fell out of proving the guard and is filed, not fixed: **F-LV15.4**, the precedent's own Escape closing the mini card when a Radix menu handled the key — reproduced live |
+| **R228** — *"**Seven** probes"* over a **nine**-row table, in PROGRESS §4 and PR body line 86 | nit | ✅ **"Nine probes", both places**, with a clause naming the correction so a reader who half-remembers "seven" sees the fix rather than a bare change — the form **R221** used. Rows counted: **9**; red-counts 2,1,1,3,2,1,1,1,1, all of which the Reviewer reproduced |
+| **R229** — `list-windows-host.test.ts:14` says the store suite is "(22 tests)"; it is **24** | nit | ✅ **22 → 24**, and the comment now records that PROGRESS §4 and the PR body both had it right, so only this one site was stale. Counted, not inferred: `it(` in `list-windows-store.test.ts` = **24**, and `24 + 17 = 41 = 1073 − 1032` reconciles |
+| **R230** — the plan's **LV.16 row** carries neither **F-LV15.1** nor **F-LV15.2**, though both name LV.16 as owner | nit | ✅ **One clause added to §6's LV.16 row**, naming both by id and by what discharges them — delete `ListWindowBodyPending` outright (as LV.13 deleted `ComparisonPending`), and add the `gear` + `dots` LV.15 left *absent rather than inert* (**R220**), with the note that the menu is a compose off `list-display-store`'s `setOrg` + `ORG_OPTIONS`. Plan → **v5.7**, changelog entry naming this as **R209's finding for the third time** — LV.12→LV.13, LV.13→LV.14, now LV.15→LV.16 — since an obligation living everywhere except the successor's own row is the one a Builder does not read |
+
+**Not changed, and why.** The store's shape, the `z`-as-index decision, the
+z-layer numbers, both clamps, the cascade and its fit, `partialize`, the
+no-shadow stroke and every ×0.8 conversion are **untouched** — the review upheld
+all of them, including both judgment calls. The schema budget is still the ruled
+three: **no migration, no column, no new API route**; boards untouched;
+`src/components/ui/elevation-rule.test.ts` untouched. **The one behaviour change
+is R227's Escape handler**, which the Reviewer directed and which is the
+precedent's four lines rather than a new mechanism. **LV.16's and LV.17's work
+was not started**: no inversion wrapper, no rows, no `gear`/`dots`, no mobile
+variant — the Escape handler is an affordance and behaves identically at every
+width.
+
+**Verification environment.** Local stack only — `.claude/launch.json`
+**`dev-local`** on port 3123; `http://127.0.0.1:54321/auth/v1/user → 200` and
+the `dev@fieldscout.local` profile `11111111-…` observed in the network log.
+**Nothing hosted was read or written, and this round wrote nothing to any
+database.** The same temporary two-line `__listWindows` harness LV.15 disclosed
+was used again (nothing opens a pop-out until LV.17) and **reverted before the
+commit** — the string appears nowhere in the tree outside this file's own
+disclosure.
+
+**Two harness artefacts, recorded so the next task does not read them as product
+defects.** (1) `resize_window` below **768px** switches the tab into **mobile
+device emulation** (UA becomes `Android 14; Pixel 8`) and trusted key injection
+stops arriving — a `computer{action:"key"}` Escape appeared to do nothing at
+700×700 while a JS-dispatched one closed the window immediately. The 800×700
+re-run is the one in the table above, and it stays desktop. (2) Key injection is
+also dropped while `document.visibilityState === 'hidden'`, which a resize
+leaves behind; a click into the page restores it. Neither is a product
+behaviour, and both cost a false negative before being run down — which is
+CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"* in the reverse
+direction: **a no-op that is the harness, not the code.**
 
 ---
 

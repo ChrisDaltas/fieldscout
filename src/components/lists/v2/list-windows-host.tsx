@@ -74,6 +74,10 @@ export function ListWindowsHost() {
           listId={win.listId}
           stackIndex={index}
           zIndex={LIST_WINDOW_Z}
+          // The array is back-to-front, so the last entry is the focused one —
+          // and it is the only one that answers Escape (R227). Computed here
+          // because a window cannot see its siblings.
+          isTop={index === windows.length - 1}
         />
       ))}
     </>
