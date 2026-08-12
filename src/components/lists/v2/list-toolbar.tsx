@@ -180,11 +180,16 @@ function StatsPicker({
  * The catalog itself, without the surface it is shown on.
  *
  * Exported at **LV.16** so the pop-out window's `gear` opens *this* picker
- * rather than a second one (D11). The window shows it in a `Dialog` — the
- * design LAW calls it the Stats **modal** and requires it rendered *outside* the
- * window's dark wrapper, because it belongs to the light page — while the
- * toolbar keeps the anchored popover it has always had. Two surfaces, one
- * catalog, one `toggleCol`.
+ * rather than a second one (D11). The window shows it in a **`Popover`**, like
+ * the toolbar — anchored inside the window's frame, portalled to `<body>` at
+ * `z-50`, and therefore *outside* the window's dark wrapper, which is what the
+ * design LAW requires of it (it calls the surface the Stats **modal**; what is
+ * normative there is "outside that wrapper … it belongs to the light page", not
+ * the widget). Two surfaces, one catalog, one `toggleCol`.
+ *
+ * *(This paragraph said `Dialog` until **R242** measured it: the window's picker
+ * renders as `[data-radix-popper-content-wrapper]`, parent `BODY`, `z-index: 50`
+ * — a popover, and never a `Dialog`.)*
  */
 export function StatsCatalog({
   cols,

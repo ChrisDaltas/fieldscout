@@ -50,6 +50,48 @@ import { dropTargetKey, type DropTarget } from './list-reorder'
  * fidelity to the reference's mechanism: they do not work on touch devices at
  * all, and the launch audience is testing on phones.
  *
+ * ## Every DOM read is scoped to the surface that owns the gesture (**R235/R236**)
+ *
+ * Reading the live DOM is the decision above; reading it through `document` was
+ * a hidden assumption underneath it — *that there is only one drag surface on
+ * the page*. That was true until LV.16, when the pop-out window became the
+ * second consumer of this hook. The window is `position: fixed` at `z-45`, so it
+ * routinely sits **over** the detail panel, and both surfaces write the same
+ * attributes into the same namespace: two ranked lists each render
+ * `data-drop-row="all:0"…`.
+ *
+ * Two defects followed, and both were reproduced live before this scoping
+ * existed:
+ *
+ * - **R235 — a drop released over a *foreign* surface wrote to the dragged
+ *   list at the foreign surface's index.** `hitTest` resolved through
+ *   `document.elementFromPoint`, and `planDrop`'s only cross-surface guard is
+ *   "does a bucket with this key exist here" (`list-reorder.ts`:98) — which
+ *   passes whenever the two surfaces share a bucket key, and two ranked lists
+ *   both produce `all`. Measured: `#10` dragged inside a pop-out of *Consensus
+ *   WR top 10*, released over the **panel's** first row (a different list) →
+ *   `PATCH /api/lists/…ab01/players/reorder` moving that player to position 1.
+ *   Silent, and persisted. The reverse direction was identical.
+ * - **R236 — the dragged row was measured with a global first match.** The same
+ *   list open in the panel *and* a pop-out puts the same `data-drag-id` in the
+ *   DOM twice; `<ListWindowsHost />` renders after `{children}` in the app
+ *   shell, so the panel's copy always won document order. Measured: a drag
+ *   inside a window whose rows are **29px** opened a **48px** gap, because
+ *   `document.querySelector` had returned the panel's 48px row.
+ *
+ * So the hook owns a `rootRef`, {@link ListDragContext} attaches it to the one
+ * element it wraps, and **both** DOM reads go through it: the hit test refuses
+ * a point that is not inside this surface, and the measurement queries within
+ * it. A consumer cannot forget to attach it, because the context component
+ * renders the element itself rather than asking for one — the same reason the
+ * gap model resolves the target from the DOM rather than from a cached rect:
+ * the correct answer should not depend on a caller remembering something.
+ *
+ * **A release over another surface is refused, not redirected.** There is no
+ * sensible reading of "drop this list's player into that list's slot", and
+ * CLAUDE.md's rule cuts against inventing one: no target means no write, and
+ * the gap closes as it does over any other non-target.
+ *
  * ## Sensors
  *
  * Mouse drags start after 6px of movement, so a click on the drafted checkbox or
@@ -73,6 +115,12 @@ export interface ListDragApi {
   target: DropTarget | null
   /** True while a drag is running — gaps exist only then. */
   active: boolean
+  /**
+   * The drag surface this gesture belongs to — every DOM read is scoped to it
+   * (**R235/R236**, see the header). {@link ListDragContext} attaches it to the
+   * element it renders; nothing else should, and nothing else needs to.
+   */
+  rootRef: React.MutableRefObject<HTMLDivElement | null>
   /** Spread onto the `<DndContext>` that wraps the body. */
   contextProps: {
     sensors: ReturnType<typeof useSensors>
@@ -116,6 +164,9 @@ export function useListDrag({ enabled, horizontal, onDrop }: UseListDragArgs): L
   const [target, setTarget] = React.useState<DropTarget | null>(null)
 
   const pointer = React.useRef<{ x: number; y: number } | null>(null)
+  // The surface that owns this gesture. Attached by `ListDragContext`, read by
+  // both DOM reads below (R235/R236).
+  const rootRef = React.useRef<HTMLDivElement | null>(null)
   const dragRef = React.useRef<string | null>(null)
   const targetRef = React.useRef<DropTarget | null>(null)
   const horizontalRef = React.useRef(horizontal)
@@ -148,7 +199,7 @@ export function useListDrag({ enabled, horizontal, onDrop }: UseListDragArgs): L
   const resolve = React.useCallback(() => {
     const at = pointer.current
     if (!at || !dragRef.current) return
-    aim(hitTest(at.x, at.y, horizontalRef.current))
+    aim(hitTest(rootRef.current, at.x, at.y, horizontalRef.current))
   }, [aim])
 
   // The pointer is tracked from the window rather than from dnd-kit's move
@@ -186,7 +237,11 @@ export function useListDrag({ enabled, horizontal, onDrop }: UseListDragArgs): L
   const onDragStart = React.useCallback(
     (event: DragStartEvent) => {
       const id = String(event.active.id)
-      const node = document.querySelector<HTMLElement>(
+      // Within this surface, never `document`: the same list open in the panel
+      // and in a pop-out puts the same id in the DOM twice, and a global first
+      // match measured the wrong one — a 29px window row sized its gap at the
+      // panel's 48px (**R236**).
+      const node = rootRef.current?.querySelector<HTMLElement>(
         `[${DROP_ATTR.entry}="${cssEscape(id)}"]`,
       )
       // `offsetHeight`/`offsetWidth`, never `getBoundingClientRect` (plan D5):
@@ -229,6 +284,7 @@ export function useListDrag({ enabled, horizontal, onDrop }: UseListDragArgs): L
     size,
     target,
     active: dragId !== null,
+    rootRef,
     contextProps,
     isOpen: (bucketKey, index) =>
       target?.kind === 'slot' && target.bucketKey === bucketKey && target.index === index,
@@ -238,16 +294,29 @@ export function useListDrag({ enabled, horizontal, onDrop }: UseListDragArgs): L
 }
 
 /**
- * Which slot the pointer is over, read from the live DOM.
+ * Which slot the pointer is over, read from the live DOM **of `root`**.
  *
  * Order matters: an open gap wins over the row it sits next to (so hovering the
  * hole keeps it open instead of flipping to the row now underneath the pointer),
  * a row wins over its section, and the section catches the header, the padding
  * and an empty bucket.
+ *
+ * `elementFromPoint` answers for the whole document, so the answer is gated on
+ * `root.contains(at)` **before** any of that: a point over another drag surface
+ * — a pop-out floating above the panel, or the panel behind a pop-out — is no
+ * target at all here (**R235**). `closest()` walks *upwards*, so a point outside
+ * `root` can never resolve to an element inside it, which is what makes the one
+ * containment check sufficient.
  */
-function hitTest(x: number, y: number, horizontal: boolean): DropTarget | null {
+function hitTest(
+  root: HTMLElement | null,
+  x: number,
+  y: number,
+  horizontal: boolean,
+): DropTarget | null {
+  if (!root) return null
   const at = document.elementFromPoint(x, y)
-  if (!at) return null
+  if (!at || !root.contains(at)) return null
 
   const gap = at.closest(`[${DROP_ATTR.gap}]`)
   if (gap) {
@@ -296,15 +365,33 @@ function cssEscape(value: string): string {
   return value.replace(/["\\]/g, '\\$&')
 }
 
-/** One `<DndContext>` for the whole body, in every view style. */
+/**
+ * One `<DndContext>` for the whole body, in every view style — **and the element
+ * that defines what "this surface" means** (R235/R236).
+ *
+ * It renders the surface's own root rather than accepting one, so the ref cannot
+ * be left unattached by a consumer who did not read the hook. Both consumers
+ * already wrapped their drop targets in exactly one flex container, so this
+ * takes that container over via `className` instead of adding a box: the
+ * rendered DOM is unchanged in the detail panel and in the pop-out alike.
+ */
 export function ListDragContext({
   drag,
+  className,
   children,
 }: {
   drag: ListDragApi
+  /** The class string that used to live on the consumer's own wrapper div. */
+  className?: string
   children: React.ReactNode
 }) {
-  return <DndContext {...drag.contextProps}>{children}</DndContext>
+  return (
+    <DndContext {...drag.contextProps}>
+      <div ref={drag.rootRef} className={className}>
+        {children}
+      </div>
+    </DndContext>
+  )
 }
 
 /**

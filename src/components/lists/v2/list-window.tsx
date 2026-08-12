@@ -399,13 +399,27 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
    * **And when it is not, this says so instead of copying a link that 404s.**
    * The username is load-bearing: the public page looks the list up by
    * `owner_id` *and* `slug`, so the wrong handle is not a cosmetic difference.
+   *
+   * ## Why the viewer is only a fallback for the viewer's *own* lists (**R237**)
+   *
+   * `getQueriesData` reads a cache that a pop-out is built to outlive.
+   * `query-provider.tsx` sets `staleTime` only, so the collections query keeps
+   * React Query's **5-minute default `gcTime`** and is evicted once the user
+   * leaves `/app/lists` — which is the ordinary life of a window, since the app
+   * shell carries it onto every route. With the cache gone, `cached` is
+   * `undefined`; falling straight through to `viewerName` then produced a
+   * **non-null and wrong** handle for a *saved* list, the refusal below never
+   * fired, and the copied link 404'd. The list already knows whose it is —
+   * `is_owner` is on `ListWithDetails` (`use-lists.ts`:50) and this file reads it
+   * three dozen lines up — so the fallback asks that question rather than
+   * assuming the answer.
    */
   const shareList = () => {
     const cached = queryClient
       .getQueriesData<{ lists: ListWithTags[] }>({ queryKey: listsKeys.collections() })
       .flatMap(([, data]) => data?.lists ?? [])
       .find((row) => row.id === listId)
-    const username = cached?.owner?.username ?? viewerName
+    const username = cached?.owner?.username ?? (list?.is_owner ? viewerName : null)
     if (!list || !username) {
       toast({
         title: 'Could not build the share link',
@@ -638,24 +652,26 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
         </div>
 
         {!minimized && (
-          <ListDragContext drag={drag}>
-            <div className="min-h-0 flex-1 overflow-auto">
-              <ListWindowRows
-                buckets={buckets}
-                entries={entries}
-                error={detail.isError}
-                stats={stats}
-                org={org}
-                ranks={ranks}
-                drafted={drafted}
-                onToggleDrafted={toggleDrafted}
-                onOpenPlayer={openPlayer}
-                canEdit={canEdit}
-                canDrag={canDrag}
-                drag={drag}
-                dragName={dragName}
-              />
-            </div>
+          // The scroller *is* the drag surface's root, rendered by
+          // `ListDragContext` so the hook's DOM reads are scoped to this window
+          // and not to the page it floats over (**R235/R236**). Same one div,
+          // same classes as before.
+          <ListDragContext drag={drag} className="min-h-0 flex-1 overflow-auto">
+            <ListWindowRows
+              buckets={buckets}
+              entries={entries}
+              error={detail.isError}
+              stats={stats}
+              org={org}
+              ranks={ranks}
+              drafted={drafted}
+              onToggleDrafted={toggleDrafted}
+              onOpenPlayer={openPlayer}
+              canEdit={canEdit}
+              canDrag={canDrag}
+              drag={drag}
+              dragName={dragName}
+            />
           </ListDragContext>
         )}
 
@@ -709,9 +725,16 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
         route. It is the toolbar's own catalog (`StatsCatalog`), not a second
         picker: one list of stats, one `toggleCol`.
 
-        The anchor is a zero-size span at the header's right edge so the picker
-        opens under the `gear` that summoned it; the button itself lives inside
-        the wrapper, where the header is.
+        The anchor is a zero-size span at the header's right edge, so the picker
+        hangs from the chrome cluster rather than from the window's corner; the
+        button itself lives inside the wrapper, where the header is.
+        **Not under the `gear` itself** — `right-9` (36px) with `align="end"`
+        puts the panel's right edge level with the *collapse* control, measured
+        at `x 956` against gear `885–905` and collapse `939–959` on a 352px
+        window (**R242**, which corrected the "opens under the gear that summoned
+        it" this comment used to claim). Left as it is deliberately: the header
+        is 36px of four 20px controls, the panel is 212px wide, and hanging it
+        off the cluster keeps it inside the frame at the 264px minimum width.
       */}
       <Popover open={statsOpen} onOpenChange={setStatsOpen}>
         <PopoverAnchor asChild>

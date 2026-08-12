@@ -66,6 +66,15 @@ const PANEL = 'src/components/lists/v2/list-detail-panel.tsx'
 const TOOLBAR = 'src/components/lists/v2/list-toolbar.tsx'
 const DROP_COMMIT = 'src/components/lists/v2/use-list-drop.ts'
 const ROW_PARTS = 'src/components/lists/v2/list-row-parts.tsx'
+/** LV.16 fix round — the shared drag hook, and the panel that shares it. */
+const DRAG = 'src/components/lists/v2/use-list-drag.tsx'
+const BODY = 'src/components/lists/v2/list-body.tsx'
+/** …and the rest of what paints inside the dark wrapper (R238). */
+const COVER_TILE = 'src/components/lists/v2/cover-tile.tsx'
+const THUMBNAIL = 'src/components/lists/list-thumbnail.tsx'
+const BADGE = 'src/components/players/position-badge.tsx'
+const AVATAR = 'src/components/ui/avatar.tsx'
+const ICON = 'src/components/ui/icon.tsx'
 
 /**
  * The body of `ListWindowsHost`, isolated from the file, so "returns null
@@ -147,18 +156,31 @@ const classNameContaining = (file: string, marker: string) => {
  * element were moved inside the wrapper's last child. Indentation is
  * deterministic here because the repo formats with Prettier.
  *
- * Throws when the marker is missing, for the reason `hostBody` does.
+ * Throws when the marker is missing **or ambiguous**, for the reason `hostBody`
+ * does — and the second half is **R240**. This shipped using `.find()`, which
+ * silently returns the first match, in the same suite whose
+ * `classNameContaining` had just been hardened against exactly that
+ * (**R226**): its markers are unique *today*, which is precisely what was true
+ * of `cursor-grab` one task before it became ambiguous. A locator that picks
+ * the first match asserts about whichever element came first, and says nothing
+ * when a second appears.
  */
 const indentOf = (file: string, marker: string): number => {
-  const line = code(file)
+  const lines = code(file)
     .split('\n')
-    .find((candidate) => candidate.includes(marker))
-  if (line === undefined) {
+    .filter((candidate) => candidate.includes(marker))
+  if (lines.length === 0) {
     throw new Error(
       `LV.16: \`${marker}\` is not in ${file} — the structural pin below is guarding nothing.`,
     )
   }
-  return line.length - line.trimStart().length
+  if (lines.length > 1) {
+    throw new Error(
+      `LV.16: \`${marker}\` is on ${lines.length} lines in ${file} — it no longer identifies one ` +
+        'element, so the structural pin below is asserting about whichever came first.',
+    )
+  }
+  return lines[0].length - lines[0].trimStart().length
 }
 
 /**
@@ -213,6 +235,93 @@ const escapeTargetSelector = (): string[] => {
     )
   }
   return match[1].split(',').map((part) => part.trim())
+}
+
+/**
+ * One top-level declaration's source, from its own line to the next top-level
+ * one. Throws on missing **and** on ambiguous, the standard **R240** names.
+ *
+ * A brace-matching parse would be more precise and much less trustworthy over
+ * TSX; the repo formats with Prettier, so every top-level `function` / `const`
+ * starts at column 0 and this is deterministic. Used by the palette audit below,
+ * which is about *which component* a class string belongs to — a whole-file scan
+ * would drag in `PlayerMeta`'s injury chip and `NoteMark`'s tooltip, neither of
+ * which a pop-out renders, and the allowlist would fill with hollow reasons.
+ */
+const declarationSource = (file: string, name: string): string => {
+  const lines = code(file).split('\n')
+  const opens = new RegExp(`^(?:export )?(?:function|const) ${name}\\b`)
+  const starts = lines.flatMap((line, index) => (opens.test(line) ? [index] : []))
+  if (starts.length === 0) {
+    throw new Error(
+      `LV.16: no top-level \`${name}\` in ${file} — the palette audit below is guarding nothing.`,
+    )
+  }
+  if (starts.length > 1) {
+    throw new Error(
+      `LV.16: \`${name}\` is declared ${starts.length} times in ${file} — the audit below would ` +
+        'be reading whichever came first.',
+    )
+  }
+  const TOP_LEVEL = /^(?:export )?(?:function|const|class|type|interface) /
+  const next = lines.findIndex((line, index) => index > starts[0] && TOP_LEVEL.test(line))
+  return lines.slice(starts[0], next < 0 ? lines.length : next).join('\n')
+}
+
+/**
+ * The Field Scout palette, by the names `tailwind.config.ts` gives it, longest
+ * first so `accent-soft` wins over `accent`. Only the three prefixes that carry
+ * colour onto a surface — a `ring-` or `outline-` would be the same argument and
+ * neither appears inside a window today.
+ */
+const PALETTE = [
+  'accent-foreground', 'accent-strong', 'accent-soft', 'accent',
+  'brand-foreground', 'brand-strong', 'brand-soft', 'brand',
+  'positive-strong', 'positive-soft', 'positive',
+  'negative-strong', 'negative-soft', 'negative',
+  'caution-strong', 'caution-soft', 'caution',
+  'pos-qb', 'pos-rb', 'pos-wr', 'pos-te', 'pos-flex', 'pos-k', 'pos-def', 'pos-text',
+  'tier-1', 'tier-2', 'tier-3', 'tier-4', 'tier-5', 'tier-6', 'tier-7',
+  'ink-2', 'ink', 'n-1', 'n-2', 'n-3', 'n-4', 'page',
+  'transparent', 'current', 'white', 'black',
+].sort((a, b) => b.length - a.length)
+
+/**
+ * Every palette utility in a class string, normalised to `variant:prefix-token`
+ * — the alpha modifier (`bg-white/[0.09]`) is dropped, because the redirect that
+ * would catch it is written against the base utility.
+ */
+const paletteUtilities = (source: string): string[] => {
+  const pattern = new RegExp(
+    `(?:^|[\\s"'\`])((?:[a-z-]+:)*(?:text|bg|border)-(?:${PALETTE.join('|')}))(?![a-z0-9-])`,
+    'g',
+  )
+  return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))].sort()
+}
+
+/** Is this utility pointed at a `.fs-dark` custom property in the token layer? */
+const isRedirected = (utility: string): boolean =>
+  read(GLOBALS).includes(`.fs-dark .${utility.replace(/:/g, '\\:')}`)
+
+/**
+ * Every `className` a given child component is handed in `file`, in source
+ * order — `null` where the element carries none. Throws when the component is
+ * not rendered at all, so a rename cannot quietly empty the loop.
+ *
+ * These are all self-closing leaf elements, which is why slicing to the next
+ * `/>` is sound; there is nothing nested inside one to run past.
+ */
+const childClassNames = (file: string, component: string): (string | null)[] => {
+  const hits = [...code(file).matchAll(new RegExp(`<${component}\\b[\\s\\S]*?/>`, 'g'))]
+  if (hits.length === 0) {
+    throw new Error(
+      `LV.16: <${component} … /> is not rendered in ${file} — the pin below is guarding nothing.`,
+    )
+  }
+  return hits.map((hit) => {
+    const className = hit[0].match(/className="([^"]*)"/)
+    return className ? className[1] : null
+  })
 }
 
 const handlerBody = (file: string, name: string) => {
@@ -675,12 +784,173 @@ describe('LV.16 — the dark inversion is one wrapper, and no child is restyled 
    * *"14px drafted checkbox with a `rgba(255,255,255,.75)` stroke"*. Everything
    * else about that checkbox — its size, its `bg-positive` fill, its check —
    * comes through unchanged.
+   *
+   * **"Only" is now asserted rather than asserted-about** (**R240**'s sibling,
+   * **R239**): this used to check that `border-white/75` exists and that the
+   * checkbox is still 14px, neither of which says anything about the *other*
+   * children. It now reads the `className` every shared child is handed and
+   * requires all of them to be colour-free — which is the claim in the title,
+   * and the LAW's mechanism ("children invert without restyling") stated as a
+   * test. The list of children is **derived from the import**, so a fifth row
+   * part brought in later is covered without anyone remembering to add it.
    */
   it('the checkbox’s 75% stroke is the only per-instance dark class', () => {
-    const source = code(WINDOW)
-    expect(source).toContain('className="border-white/75"')
+    const rowParts = code(WINDOW).match(/import \{([^}]*)\} from '\.\/list-row-parts'/)
+    if (!rowParts) {
+      throw new Error(`LV.16: ${WINDOW} no longer imports from './list-row-parts' — this pin is blind.`)
+    }
+    const children = [
+      ...rowParts[1].split(',').map((part) => part.trim()).filter(Boolean),
+      'ListCoverTile',
+      'PositionBadge',
+    ]
+    expect(children).toContain('DraftedCheckbox')
+
+    // The one, exactly — every place it is rendered, not just the first.
+    expect(childClassNames(WINDOW, 'DraftedCheckbox')).toEqual(['border-white/75'])
+
+    for (const child of children.filter((name) => name !== 'DraftedCheckbox')) {
+      for (const className of childClassNames(WINDOW, child)) {
+        if (className === null) continue
+        // A type/layout class is fine — `PlayerName` gets the LAW's Regular
+        // weight this way. A *colour* would be a second per-instance dark class.
+        expect(paletteUtilities(className), `<${child} className="${className}">`).toEqual([])
+        expect(className, `<${child} …>`).not.toMatch(/\b(?:text|bg|border)-\[#/)
+      }
+    }
+
     // The 14px box is the design's, at 1:1, and it is still the shared one.
     expect(code(ROW_PARTS)).toContain("'inline-flex h-[14px] w-[14px]")
+  })
+})
+
+/**
+ * **R238 — the redirect list cannot be maintained by hand, so it is audited.**
+ *
+ * `globals.css` enumerates five (now six) palette utilities that `.fs-dark`
+ * points at dark values. Nothing failed when a component rendered inside the
+ * wrapper used a *sixth*, and one such case was already live in the tree at
+ * LV.16: `list-thumbnail.tsx`:208 paints an empty list's fourth quadrant
+ * `bg-n-4 text-n-3`, reached through `ListCoverTile` in the window header, and
+ * `bg-n-4` was not redirected — `#b3b9c0` on `#e7e8e9`, measured at **1.6:1**
+ * inside the window. LV.17 owns "empty / error inside a window" and "a pop-out
+ * of a list you then delete", so the next task walks straight into it.
+ *
+ * So this walks the components that actually render inside the wrapper and
+ * requires every `text-*` / `bg-*` / `border-*` palette class to be **either**
+ * redirected in the token layer **or** allowlisted here *with a reason* — the
+ * shape `src/components/ui/elevation-rule.test.ts` already uses for elevation.
+ * Adding a row to {@link LEGIBLE_ON_DARK} is a design decision, not a way to
+ * silence the test: the question to answer is "does this colour still read on
+ * `#161616`?".
+ */
+const INSIDE_THE_WRAPPER: { file: string; declaration: string; why: string }[] = [
+  { file: WINDOW, declaration: 'ListWindow', why: 'the frame, the wrapper, the header and the footer' },
+  { file: WINDOW, declaration: 'WindowChromeButton', why: 'gear / dots / collapse / close' },
+  { file: WINDOW, declaration: 'ListWindowRows', why: 'caption row, band headings, the three read states' },
+  { file: WINDOW, declaration: 'ListWindowRow', why: 'the 29px row' },
+  { file: ROW_PARTS, declaration: 'PlayerName', why: 'the row’s name' },
+  { file: ROW_PARTS, declaration: 'DraftedCheckbox', why: 'the row’s 14px tick' },
+  { file: ROW_PARTS, declaration: 'DropGap', why: 'the open gap, drawn while dragging' },
+  { file: ROW_PARTS, declaration: 'EmptyListState', why: 'an empty list inside a window' },
+  { file: COVER_TILE, declaration: 'ListCoverTile', why: 'the header cover' },
+  { file: THUMBNAIL, declaration: 'ListThumbnail', why: 'what ListCoverTile renders' },
+  { file: THUMBNAIL, declaration: 'POS_TINTS', why: 'the label quadrant’s fill, applied by ListThumbnail' },
+  { file: THUMBNAIL, declaration: 'PlayerQuadrant', why: 'the cover’s three headshot cells' },
+  { file: BADGE, declaration: 'PositionBadge', why: 'the row’s position badge' },
+  { file: BADGE, declaration: 'STYLES', why: 'that badge’s per-position fill' },
+  { file: AVATAR, declaration: 'Avatar', why: 'PlayerQuadrant’s frame' },
+  { file: AVATAR, declaration: 'AvatarFallback', why: 'initials behind a missing headshot' },
+]
+
+/**
+ * Palette utilities that are **not** redirected and must not be — each with the
+ * reason it still reads on `#161616`.
+ */
+const LEGIBLE_ON_DARK: Record<string, string> = {
+  // The window's own surface and stroke. These are *outside* the wrapper — they
+  // are what the wrapper is dark against.
+  'bg-n-2': 'the window surface itself (#161616) — the thing everything else sits on',
+  'border-n-3': 'the frame’s resting stroke, which carries the lift instead of a shadow',
+  'hover:border-brand': 'the frame’s hover stroke',
+  // Deliberate white-on-dark, stated at each site.
+  'text-white': 'already white — the wrapper’s own inherited colour',
+  'border-white': 'the LAW’s `rgba(255,255,255,.75)` checkbox stroke, and the cover’s hairline',
+  'hover:bg-white': 'the LAW’s 9% hover wash, written as an alpha on white',
+  // The LAW's one sanctioned literal, and the fill it sits on.
+  'bg-brand': 'the Share button’s lime fill; the LAW pins its ink as a literal #000',
+  'hover:bg-brand': 'the same fill, held on hover',
+  // Identity and semantic colours, which are saturated fills with their own ink.
+  'bg-pos-qb': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-rb': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-wr': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-te': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-k': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-def': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-pos-flex': 'position identity — a saturated fill with white text, legible on any surface',
+  'bg-positive': 'the ticked checkbox’s fill, with `text-ink` on top of it — a light fill either way',
+  'bg-transparent': 'no colour at all',
+  // Near-black, and deliberately so — ruled by Chris 2026-08-11 for the cover's
+  // `AP`/`TM` label ("if it's all players, it'll be the black"), which carries
+  // `text-white`. The same class is the tile's backdrop, visible only as the 1px
+  // `gap-px` gutter between quadrants: on `#161616` that gutter reads as a seam
+  // rather than a rule, and what separates the quadrants is their own fills plus
+  // the tile's outer `border-ink`, which *is* redirected.
+  'bg-ink': 'the cover tile’s backdrop and its AP/TM label fill — black under white text, by ruling',
+  // The accent chip the open gap is: a light fill with dark ink, which is a
+  // deliberate highlight against the window rather than a thing to invert.
+  'bg-accent-soft': 'the open gap’s pale fill, read against `text-accent-strong` on top of it',
+  'border-accent': 'that gap’s dashed outline — the accent is the point of it',
+  'text-accent-strong': 'the dragged name inside that pale gap',
+  // The one the token layer deliberately does NOT invert (see globals.css).
+  'text-ink': 'deliberately not inverted — in this app it means "ink on a light fill" (globals.css)',
+}
+
+describe('LV.16 — every palette class inside the wrapper is redirected or allowlisted (R238)', () => {
+  it('finds the components it claims to walk', () => {
+    // The audit is only as good as its set; an empty or shrinking one is the
+    // failure mode this catches.
+    expect(INSIDE_THE_WRAPPER.length).toBeGreaterThanOrEqual(16)
+    for (const { file, declaration } of INSIDE_THE_WRAPPER) {
+      expect(declarationSource(file, declaration).length, `${file}#${declaration}`).toBeGreaterThan(0)
+    }
+  })
+
+  for (const { file, declaration, why } of INSIDE_THE_WRAPPER) {
+    it(`${declaration} (${why})`, () => {
+      const unhandled = paletteUtilities(declarationSource(file, declaration)).filter(
+        (utility) => !isRedirected(utility) && !(utility in LEGIBLE_ON_DARK),
+      )
+      expect(
+        unhandled,
+        `${file} → ${declaration} paints ${unhandled.join(', ')} inside the dark wrapper, and ` +
+          'nothing says what happens to it. Either add a `.fs-dark` redirect in globals.css, or ' +
+          'add it to LEGIBLE_ON_DARK with the reason it still reads on #161616.',
+      ).toEqual([])
+    })
+  }
+
+  /**
+   * The two things rendered inside the wrapper that are **not** in the set, with
+   * the reason each is excluded *checked* rather than asserted in prose.
+   */
+  it('the exclusions hold: Icon carries no colour, and the one Button pins its own', () => {
+    // `ui/icon.tsx` draws in `currentColor`, so it inherits and cannot be wrong.
+    expect(paletteUtilities(read(ICON))).toEqual([])
+    // `ui/button.tsx` renders here in exactly one configuration, and the call
+    // site overrides both halves of it — pinned by the footer's own test above.
+    expect(code(WINDOW).match(/<Button\b/g)).toHaveLength(1)
+    expect(classNameContaining(WINDOW, 'bg-brand')).toContain('text-[#000]')
+  })
+
+  it('the empty cover quadrant is legible — the case that was already broken', () => {
+    // `bg-n-4 text-n-3` on the fourth quadrant of an empty list's cover, which
+    // the window header renders through `ListCoverTile`.
+    expect(declarationSource(THUMBNAIL, 'ListThumbnail')).toContain('bg-n-4 text-n-3')
+    expect(isRedirected('bg-n-4')).toBe(true)
+    expect(isRedirected('text-n-3')).toBe(true)
+    // …and it resolves to the hairline, not to a second literal.
+    expect(read(GLOBALS)).toContain('.fs-dark .bg-n-4 {\n  background-color: var(--fs-dark-hairline);\n}')
   })
 })
 
@@ -756,7 +1026,10 @@ describe('LV.16 — the scaffold is gone and the header is complete (F-LV15.1, F
     expect(source).toContain('open={statsOpen}')
     // A compose, not a build: the same five options and the same per-list
     // `setOrg` a Side by side column's menu uses (plan §6's LV.16 row).
-    expect(source).toContain("import {\n  bucketHeading,\n  buildBuckets,\n  canReorder,\n  ORG_OPTIONS,")
+    // The two questions that carries — *which module* and *is it actually used*
+    // — asked separately, rather than by pinning the multi-line import block
+    // Prettier owns (**R241**; the same call :534 already makes one describe up).
+    expect(source).toContain("from './list-buckets'")
     expect(source).toContain('ORG_OPTIONS.map((option)')
     expect(source).toContain('setOrg(listId, option.id)')
     // Keyed by list id — a window and a column showing the same list agree,
@@ -897,5 +1170,101 @@ describe('LV.16 — the footer, and the one literal the LAW asks for', () => {
     // `0` over a request that has not answered is the false-empty CLAUDE.md
     // names outright.
     expect(source).toContain("'—'")
+  })
+
+  /**
+   * **R237 — "Link copied" for a link that 404s.**
+   *
+   * The owner is read from the React Query cache, which a pop-out is built to
+   * outlive: `query-provider.tsx` sets `staleTime` only, so the collections
+   * query keeps the **5-minute default `gcTime`** and is evicted once the user
+   * leaves `/app/lists`. Falling through to the viewer's own handle then gave a
+   * **saved** list a non-null and wrong owner, the refusal never fired, and the
+   * public page — which matches on `owner_id` *and* `slug` — 404'd.
+   */
+  it('the viewer is the fallback only for the viewer’s own lists', () => {
+    const source = code(WINDOW)
+    expect(source).toContain('cached?.owner?.username ?? (list?.is_owner ? viewerName : null)')
+    // The refusal it makes reachable, and the one it already had.
+    expect(source).toContain('if (!list || !username)')
+    expect(source).toContain('Could not build the share link')
+    // A bare `?? viewerName` is the defect; a literal `'you'` is the two shipped
+    // surfaces' version of it (F-LV16.1), and neither belongs here.
+    expect(source).not.toMatch(/\?\?\s*viewerName\b/)
+    expect(source).not.toContain("'you'")
+  })
+})
+
+/**
+ * **R235 / R236 — one gesture, one surface.**
+ *
+ * `use-list-drag.tsx` read the live DOM through `document`, which was correct
+ * while exactly one surface used it. LV.16 made the pop-out the second, and it
+ * floats *over* the first: both write `data-drop-row="all:0"…` and both write
+ * the same `data-drag-id`s when the same list is open twice. The consequences
+ * were reproduced live before the fix — a drop released over the other surface
+ * reordered the dragged list to the *foreign* surface's index and persisted it
+ * (**R235**), and a drag inside a 29px window row opened a **48px** gap because
+ * the global first match was the panel's row (**R236**).
+ *
+ * These pin the shape of the answer: the hook owns the root, the context
+ * component attaches it, and neither DOM read reaches `document` for an element.
+ */
+describe('LV.16 fix round — every DOM read is scoped to the drag surface (R235/R236)', () => {
+  it('the hook owns a root ref and hands it out', () => {
+    const source = code(DRAG)
+    expect(source).toContain('const rootRef = React.useRef<HTMLDivElement | null>(null)')
+    expect(source).toContain('rootRef: React.MutableRefObject<HTMLDivElement | null>')
+    // Returned on the api, so the context component can attach it.
+    expect(source).toMatch(/\n {4}rootRef,\n/)
+  })
+
+  it('the hit test refuses a point outside its own surface, before resolving anything', () => {
+    const body = declarationSource(DRAG, 'hitTest')
+    // The live-DOM decision is unchanged — this is about what happens next.
+    expect(body).toContain('document.elementFromPoint(x, y)')
+
+    const guard = body.indexOf('!root.contains(at)')
+    const firstResolve = body.indexOf('closest(')
+    expect(guard).toBeGreaterThan(-1)
+    expect(firstResolve).toBeGreaterThan(-1)
+    // Order, not presence: a containment check placed after the `closest()`
+    // chain would still read as a fix in a diff while the gap/row/bucket
+    // branches went on answering for the other surface.
+    expect(guard).toBeLessThan(firstResolve)
+    // …and a null root is no target, rather than a silent fall back to the page.
+    expect(body).toContain('if (!root) return null')
+  })
+
+  it('the dragged row is measured within the surface, never by a global first match', () => {
+    const source = code(DRAG)
+    expect(source).toContain('rootRef.current?.querySelector<HTMLElement>(')
+    // The R236 defect in one string. `document.querySelectorAll` is not used
+    // here either, so this covers the whole family.
+    expect(source).not.toContain('document.querySelector')
+  })
+
+  it('the context component renders the root, so a consumer cannot forget it', () => {
+    const source = code(DRAG)
+    expect(source).toContain('ref={drag.rootRef}')
+    // Exactly once, and inside `ListDragContext` — a second attachment would be
+    // two roots racing for one ref, and the last one to mount would win.
+    expect(source.match(/ref=\{drag\.rootRef\}/g)).toHaveLength(1)
+    expect(declarationSource(DRAG, 'ListDragContext')).toContain('ref={drag.rootRef}')
+  })
+
+  it('both surfaces drive it, and neither wraps its own box around the drop targets', () => {
+    // The panel — the merged, shipped surface this hook already served — and the
+    // window. Each hands its former wrapper's classes to the context component,
+    // so the rendered DOM is unchanged and the root is the element that was
+    // always there.
+    for (const file of [BODY, WINDOW]) {
+      const source = code(file)
+      expect(source, file).toContain('<ListDragContext drag={drag} className="')
+      expect(source.match(/<ListDragContext\b/g), file).toHaveLength(1)
+      // The old shape: a `<div>` immediately inside the context, which the ref
+      // would not be on.
+      expect(source, file).not.toMatch(/<ListDragContext[^>]*>\s*\n\s*<div/)
+    }
   })
 })

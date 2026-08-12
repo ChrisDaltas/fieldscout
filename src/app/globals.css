@@ -207,7 +207,21 @@
    empty state), `border-n-4` (row rules), `border-ink` (band rules, the empty
    state's dashed box), `bg-white` (the drafted checkbox's resting fill),
    `hover:bg-accent-soft` (that checkbox's hover — the LAW: "the kit's light
-   `.fs-rowh` wash is invisible here"). Nothing is mapped speculatively.
+   `.fs-rowh` wash is invisible here"), and `bg-n-4` (the cover thumbnail's
+   empty quadrant and the avatar fallback behind a missing headshot). Nothing is
+   mapped speculatively.
+
+   **`bg-n-4` was the case that proved the list cannot be maintained by hand**
+   (**R238**). It was missing at LV.16 and already broken in the tree:
+   `list-thumbnail.tsx`:208 paints an empty list's fourth quadrant `bg-n-4
+   text-n-3`, and `ListCoverTile` renders that in the pop-out's header — so
+   inside the wrapper the icon was `#b3b9c0` on an un-redirected `#e7e8e9`,
+   measured live at **1.61:1**, i.e. invisible. Redirected it is
+   `rgba(255,255,255,.22)` over the tile's own `bg-ink` backdrop — composited
+   `rgb(65,65,69)` — which measures **5.14:1**. The list is now
+   audited by `list-windows-host.test.ts`, which walks the components that render
+   inside the wrapper and fails on any palette utility that is neither redirected
+   here nor allowlisted there with a reason.
 
    **`text-ink` is deliberately NOT inverted.** In this app it overwhelmingly
    means "ink text on a light fill" — the injury chip on `bg-caution`, the check
@@ -247,6 +261,10 @@
 
 .fs-dark .bg-white {
   background-color: var(--fs-dark-surface);
+}
+
+.fs-dark .bg-n-4 {
+  background-color: var(--fs-dark-hairline);
 }
 
 .fs-dark .hover\:bg-accent-soft:hover {

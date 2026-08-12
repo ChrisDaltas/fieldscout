@@ -167,27 +167,28 @@ export function ListBody(props: BodyProps) {
   const fresh = nextBucket(props.org, props.buckets)
 
   return (
-    <ListDragContext drag={drag}>
-      <div className="flex flex-col gap-2.5">
-        {props.view === 'table' ? (
-          <TableBody {...view} />
-        ) : props.view === 'card' ? (
-          <CardsBody {...view} />
-        ) : (
-          <RowsBody {...view} />
-        )}
-        {/* "A dashed 'Drop a player here to start tier N' zone sits below the
-            last section" — list and cards only, as in the prototype, and only
-            where the assignment can actually be written (see nextBucket, which
-            answers for rounds as well as tiers since LV.1.5). */}
-        {canDrag && fresh && props.view !== 'table' && (
-          <NewBucketZone
-            bucketKey={fresh}
-            label={bucketZoneLabel(props.org, fresh)}
-            over={drag.isOverNew()}
-          />
-        )}
-      </div>
+    // `ListDragContext` renders this flex column itself, so the element is also
+    // the drag surface's root — every DOM read the hook makes is scoped to it
+    // (R235/R236). Same one div, same classes, one owner.
+    <ListDragContext drag={drag} className="flex flex-col gap-2.5">
+      {props.view === 'table' ? (
+        <TableBody {...view} />
+      ) : props.view === 'card' ? (
+        <CardsBody {...view} />
+      ) : (
+        <RowsBody {...view} />
+      )}
+      {/* "A dashed 'Drop a player here to start tier N' zone sits below the
+          last section" — list and cards only, as in the prototype, and only
+          where the assignment can actually be written (see nextBucket, which
+          answers for rounds as well as tiers since LV.1.5). */}
+      {canDrag && fresh && props.view !== 'table' && (
+        <NewBucketZone
+          bucketKey={fresh}
+          label={bucketZoneLabel(props.org, fresh)}
+          over={drag.isOverNew()}
+        />
+      )}
     </ListDragContext>
   )
 }
