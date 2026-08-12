@@ -20,7 +20,7 @@
 | Round | Contents | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **Round 1** | Lists page (rail + cards) and list detail (hero, tabs, toolbar, three view styles, drag-and-drop, stats picker, notes, drafted) in the new design language | Both screens match the handoff at desktop and mobile; `featureFlags.listsV2` flipped on; old components retired | ✅ **COMPLETE 2026-08-11** (LV.1.1–LV.1.4 landed 2026-08-09; **LV.2 + LV.3 landed 2026-08-11**; **LV.8 (attached links) landed 2026-08-11**; **LV.4 (drag-and-drop) landed 2026-08-11**; **LV.2-fix (cover treatment → player headshots over a position-group fill) landed 2026-08-11**; **LV.9 (one tab/segment component) landed 2026-08-11**; **LV.10 (DEF → team logo + a real image fallback) landed 2026-08-11**; **LV.11 (single-select filter rows onto that control) landed 2026-08-11** — the screen exists, is comparable against `screens/`, and is now editable by dragging. **LV.1.5 (the tier CHECK widening) landed 2026-08-11** — the last schema task, and the one that turned Rounds from a rendering-complete empty section into a working grouping. **LV.5 (AI generation + persona surfaces) landed 2026-08-11** — and found the v2 screens carried **no** AI surfaces at all, so the launch-scope "AI stat lists" feature had no entry point behind the flag LV.7 flips; restored, restyled and guarded. **LV.6 (the public share view) landed 2026-08-11** — the only Lists surface a stranger sees, rebuilt as the detail panel minus what a stranger cannot do, with the LV.1.5 500 reproduced on the live route and shown fixed. **LV.7 (the cutover) landed 2026-08-11 and closes Round 1** — the flag is gone, the legacy tree is deleted, and the four capabilities Chris ruled must survive were *ported* rather than rebuilt) |
-| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all. **A second independent review returned FIX-THEN-MERGE with no blockers; the second fix round (2026-08-12) closed R231–R234** — that Escape guard covered Radix and *only* Radix, because `defaultPrevented` needs the consumer to have called `preventDefault()` and four of the app's own handlers do not, so an Escape typed into the player-search box **on `/app/players`** destroyed the pop-out; and `PROGRESS-scout.md`, an unrelated build's memory document, had been swept into the previous round's commit undisclosed and is now back out of the branch and untouched on disk (§6) |
+| **Round 2** | Side-by-side compare (LV.12–LV.14); pop-out windows, app-shell hosted (LV.15–LV.17) | Picker → columns match `screens/side-by-side-*.png`; a tick marks every column in the comparison and nothing outside it (**D12**); pop-outs survive navigation and the host renders nothing when empty (**D13**) | 🟡 **ACTIVE from 2026-08-11** — Chris: *"round 2, go"*. **LV.12 (the picker) landed 2026-08-11** — Side by side now opens on a working picker instead of a "not built yet" panel, and the plan's "honours the My lists / Saved tab" clause was found wrong against the design package and erratum'd rather than improvised around (§4, plan → v5.1). **Its review returned FIX-THEN-MERGE; the fix round (2026-08-11) closed R207–R212** — the erratum itself was re-verified and upheld, but the browser evidence behind it had been taken against **hosted production** over an empty `saved` set, so it was re-run against the local stack with a real saved list (§4, §6). **LV.13 (the columns) landed 2026-08-11** — the picker's CTA now opens real 240px full-bleed columns that group independently, `ComparisonPending` is deleted and `Change lists` is in the page header. **§3 Q4 was ruled the same day**: no cap, no search, no truncation — and no phone-specific treatment either (*"id say leave the phone version as is"*). **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R217–R223** without changing a line of behaviour — the headline was that the pin two documents cite as making the phone ruling un-re-addable caught only the desktop-first spelling of stacking, and the mobile-first one passed green (§6). **LV.14 (the drafted fan-out) landed 2026-08-12** — a tick now writes one row per list **in the comparison** that holds the player and none outside it, which is **D12**'s reconciliation of the design package's global rule with Chris's per-list ruling, shown live: three columns struck from one tick, three rows, and **zero** on a list that holds the same player and was left out of the picker. Partial failure rolls the refused column back on its own and says so once, by name. The **R220** obligation LV.13 recorded is discharged — the picker's sub-line now describes shipped behaviour, and the copy was never edited. **Its review returned CLEAN (R224–R225, two nits), both carried by LV.15's PR** (§6). **LV.15 (the pop-out store + the app-shell host) landed 2026-08-12 and opens Phase 8** — `list-windows-store.ts` is `player-windows-store.ts`'s shape plus size and collapse (**D13**), the handoff's `z` is the array index rather than a second source of truth for stacking, and the host **renders nothing at all** with no window open, measured on Home and Players with the host proven mounted at the same moment. Drag, both resize clamps (960 × 720 and 264 × 176, exactly), collapse, close, z-order and survival across three routes were measured on the **local** stack; a reload leaves a clean page with the geometry remembered. Two windowing systems now coexist at chosen depths — pop-outs 45, player mini cards 60. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R226–R230** — the render-nothing pins anchored on the first `return null` rather than the guard's, so an effect firing on **every route in the app** passed them green; and Escape now closes the top pop-out, because a window met by a smaller viewport had no reachable close at all. **A second independent review returned FIX-THEN-MERGE with no blockers; the second fix round (2026-08-12) closed R231–R234** — that Escape guard covered Radix and *only* Radix, because `defaultPrevented` needs the consumer to have called `preventDefault()` and four of the app's own handlers do not, so an Escape typed into the player-search box **on `/app/players`** destroyed the pop-out; and `PROGRESS-scout.md`, an unrelated build's memory document, had been swept into the previous round's commit undisclosed and is now back out of the branch and untouched on disk (§6) **LV.16 (the window's content) landed 2026-08-12** — the pop-out is a working list now: the dark inversion is **one `fs-dark` wrapper** whose five values live as custom properties in `globals.css`, so the shared row parts invert with no dark variant of any of them (the same `text-n-3` class reads `#b3b9c0` inside the window and `rgb(95,100,109)` on the page behind it) — the LAW's mechanism implemented against a token layer that is **literal hex rather than custom properties**, which is the one thing the LAW's wording assumes and this app does not have. 29px rows, the 14px checkbox at 1:1 with its 75% white stroke, name at **Regular**, hover 9%, drafted 45% over 5%; drag-reorder through the shared gap model with the drop *commit* moved out of the detail panel into `use-list-drop.ts` so the two cannot drift; the Stats picker opens **light, outside the wrapper**, and it is the toolbar's own catalog; the footer's Share is ink-on-lime by the LAW's one sanctioned literal. **Both LV.15 hand-offs discharged** (F-LV15.1, F-LV15.2), and a tick here is one tick on one list — measured, with a list holding the same player gaining zero. **Its review returned FIX-THEN-MERGE with no blockers; the fix round (2026-08-12) closed R235–R242** — the headline is that this task made the app's **drag layer** ambiguous: `use-list-drag.tsx` read the live DOM through `document`, which was right while the detail panel was its only consumer, and a pop-out floats over the panel writing the same `data-drop-row="all:0"` into the same namespace, so a drop released over the *other* surface silently reordered the dragged list to the foreign surface's slot index and **persisted it** (shown both ways, then refused both ways). Every DOM read is now scoped to a root the drag context renders itself. The window also stopped handing out the viewer's own handle as the owner of a **saved** list once the collections cache ages out — that link was shown 404ing — and the hand-maintained `.fs-dark` redirect list is now **audited by a test**, which found `bg-n-4` already broken in the tree at 1.61:1 (§6) |
 
 **✅ Round 1 is done, and the build is closed.** LV.7 landed 2026-08-11 with
 every ruling taken. There is now exactly one Lists surface: `/app/lists` serves
@@ -420,9 +420,48 @@ checked.
   because the window is itself a `role="dialog"` and focus rests on buttons
   constantly. The round also took `docs/specs/PROGRESS-scout.md` — another
   build's memory document, swept in undisclosed — back out of the branch (§6)
-- [ ] **LV.16** — dark-inverted window content (LV.15) — **carries F-LV15.1 and
-  F-LV15.2** (delete `ListWindowBodyPending`; add `gear` + `dots`), now also in
-  the plan's own §6 row (R230)
+- [x] **LV.16** — **dark-inverted window content** (2026-08-12) (LV.15).
+  `list-window.tsx`'s body, footer and the two missing header controls, plus the
+  inversion itself: **one `fs-dark` wrapper**, its five values declared as custom
+  properties in `src/app/globals.css`, and the handful of palette utilities that
+  appear inside a pop-out pointed at them — so `PlayerName`, `PositionBadge`,
+  `DropGap`, `DraftedCheckbox` and `EmptyListState` invert with **no dark variant
+  of any of them** (measured: the same `text-n-3` class reads `#b3b9c0` inside the
+  window and `rgb(95,100,109)` on the page behind it). The redirect list exists
+  because **this app's palette is literal hex in `tailwind.config.ts`, not custom
+  properties** — the LAW's mechanism, implemented against a token layer that is
+  not var-backed; see §4. **UI/UX only — no migration, no schema change, no new
+  API route**; the budget stays closed at three. **Composes rather than re-solves
+  (D11)**: `list-buckets.ts` groups, `list-row-parts.tsx` supplies the checkbox /
+  name / gap / empty state, `use-list-drag.tsx` runs the gesture, `use-draft-mode`
+  marks, `list-display-store` says which grouping and which stats, and
+  `list-toolbar.tsx`'s stat catalog is **exported** rather than copied. What a
+  drop *writes* moved out of `list-detail-panel.tsx` into **`use-list-drop.ts`**,
+  verbatim, so the panel and the window cannot drift on the refusal toast or the
+  sequenced writes. **Both LV.15 hand-offs discharged**: `ListWindowBodyPending`
+  is deleted outright (**F-LV15.1**) and the `gear` + `dots` are real, wired
+  controls (**F-LV15.2**) — the gear opens that shared catalog *outside* the
+  wrapper, as the LAW requires, and `dots` is `ORG_OPTIONS` + per-list `setOrg`.
+  **A tick here is one tick on one list** — `use-draft-mode` directly, never
+  `drafted-fan-out.ts`; measured live (one row written, and `Secret sleepers`,
+  which also holds that player, gained **0**), and LV.14's boundary pin now
+  covers this file too.
+  **Fix round 2026-08-12 (R235–R242, §6):** the review returned FIX-THEN-MERGE
+  with no blockers, and the headline is that **LV.16 made the app's drag layer
+  ambiguous without anyone noticing**. `use-list-drag.tsx` read the live DOM
+  through `document`, which was right while the detail panel was its only
+  consumer; this task added a second surface that *floats over the first*, and
+  both write `data-drop-row="all:0"…` into one namespace. A drop released over
+  the other surface reordered the dragged list to the **foreign** surface's slot
+  index and persisted it (**R235**, reproduced both ways), and a drag inside a
+  29px window row opened a **48px** gap (**R236**). Both are closed by scoping
+  every DOM read to a root the `ListDragContext` renders itself — no extra
+  element, and a consumer cannot forget to attach it. The window also stopped
+  offering the viewer's own handle as the owner of a **saved** list once the
+  collections cache is gone (**R237** — that link 404s, shown), and the
+  hand-maintained `.fs-dark` redirect list is now **audited by a test** rather
+  than by memory, which found `bg-n-4` already broken in the tree at **1.61:1**
+  (**R238**)
 - [ ] **LV.17** — wiring, states, and the mobile answer (LV.16)
 
 The seven LV.7 follow-ups (**F-LV7.1 – F-LV7.7**, §5) remain **filed items, not
@@ -2939,6 +2978,234 @@ This section records decisions made **during** the build.
   dispatch). This task did not need the data, so it moved to a surface that had
   it rather than fighting the harness.
 
+- **LV.16 (2026-08-12) — the window's content, and the inversion the app's token
+  layer could not do the way the LAW describes.**
+
+  1. **The mechanism first, because it is the whole task.** The design LAW:
+     *"Implement by scoping the color custom properties on an inner wrapper so
+     children invert without restyling — and keep the Stats modal it opens
+     outside that wrapper."* The prototype does exactly that, and even names the
+     class: `<div className="fs-dark" style={{"--surface-card":"var(--n-2)",
+     "--n-1":"var(--white)","--n-3":"#b3b9c0", …}}>`
+     (`ListsCommon.jsx`:580). **That instruction does not survive contact with
+     this codebase as written**: the prototype's design system is built on CSS
+     custom properties, and this app's Field Scout palette is **literal hex in
+     `tailwind.config.ts`** (that file's own header says so), so `text-n-3`
+     compiles to `color: #5f646d` and there is no property to re-declare.
+
+     Three ways out were weighed, and the choice is the smallest one that keeps
+     the LAW's *property* — children inverting with no per-child restyling:
+
+     | Option | Why not / why |
+     | --- | --- |
+     | Re-tokenize the palette to `rgb(var(--x) / <alpha-value>)` app-wide | It is the "purest" answer and it is **post-launch work** (memory: *"re-tokenizing is post-launch"*). It changes how ~470 `text-n-3` sites compile, and the plain `var()` form silently **drops the alpha** on the 14 places that write `bg-n-4/60`-style modifiers — a whole-app visual change inside a UI task |
+     | Write white classes onto the window's children | Identical screenshot, and it is the LV.7 failure: a fork of the row parts by the second task. The LAW rules it out in the same sentence |
+     | **Chosen:** the values as custom properties on `.fs-dark`, plus a short, enumerated redirect for the palette utilities that actually appear inside a pop-out | ~10 lines of plain CSS at the end of `globals.css`, scoped to a class used by **exactly one component** (pinned), zero effect on any other surface, and every child inverts untouched |
+
+     **`text-ink` is deliberately *not* in that list**, and that is the
+     interesting half. In this app it overwhelmingly means "ink text **on a light
+     fill**" — the injury chip on `bg-caution`, the check glyph on `bg-positive`,
+     tier bands 3–4 — so the LAW's `--n-1 → white` applied to it would paint
+     white-on-pastel inside the window it exists to make legible. Primary text
+     goes white by **inheritance** from the wrapper's own `color`, which is what
+     the prototype's `color: var(--white)` does too.
+
+  2. **The Stats picker is outside the wrapper, in the source and in the DOM.**
+     It is a sibling of `.fs-dark` in the JSX (the prototype's `StatsModal` at
+     `ListsCommon.jsx`:675 is the same sibling) *and* Radix portals it to
+     `document.body`. Measured with both windows on screen: panel background
+     `rgb(255,255,255)`, its `text-n-3` caption `rgb(95,100,109)` — the **light**
+     value — `insideDark: false`, while the window behind it stays
+     `rgb(22,22,22)`. It is the toolbar's own catalog (`StatsCatalog`, exported
+     at this task), not a second picker: one list of stats, one `toggleCol`.
+
+  3. **The numbers, converted ×0.8 — LV.15's kept, not re-derived.** Header 36,
+     name 10, cover 19 and the geometry clamps are LV.15's and unchanged. New
+     here: row **36 → 29** (the same conversion as LV.13's 38 → 30), name
+     **13/400 → 10.5px Regular** (*"heavier reads as a heading on ink"*), `#N`
+     11/500 → 9px in LV.13's 21px column, stat cell 60 → **48px** at 11.5 → 9px,
+     column caption 9.5 → **8px** (never 600+ at that size), band header 21px,
+     footer Share 30 → **24px** at 12 → 9.5px, and the row's min-width
+     `190 + cols × 68` → **`152 + stats × 54`**. The **14px checkbox stays 14px**
+     — LV.13's ruling for the same control.
+
+  4. **"Widening reveals more stat columns" is the prototype's mechanism, not a
+     breakpoint.** The rows carry the min-width above and the body scrolls;
+     nothing recomputes *which* stats exist at *which* width, so a stat cannot
+     disappear at a size nobody tested. Measured with five stats chosen: at
+     `352px` the scroller was `scrollWidth 422 / clientWidth 351` and only
+     `Proj · 2025 · ADP` were fully visible; the grip dragged to **509px** and
+     all five — `Proj · 2025 · ADP · Bye · SOS` — were, with
+     `scrollWidth === clientWidth`.
+
+  5. **What a drop writes is now shared.** `list-detail-panel.tsx`'s `handleDrop`
+     moved verbatim to **`use-list-drop.ts`** and both surfaces call it. Two
+     rules were about to exist in two copies: *a refused drop says so* (the
+     cost/budget bands are computed, so a drag there would otherwise no-op) and
+     *the two writes are sequenced, not raced* (they patch the same cache in
+     `onMutate`). That is LV.13's move — `bucketHeading` / `rankMap` into
+     `list-buckets.ts` — applied to the one part of the drag that was still
+     living in one screen's component.
+
+  6. **The footer's Share, and the one literal the LAW sanctions.**
+     `text-[#000]` on `bg-brand`, measured `rgb(0,0,0)` on `rgb(180,255,137)`:
+     the LAW asks for the literal precisely because a token-based ink would go
+     white inside the wrapper. The link is the **same** one the hero and the
+     gallery card copy — `/u/{owner}/lists/{slug}` — with the owner resolved from
+     the React Query collection cache (`lists-page-v2.tsx`'s rule) rather than by
+     mounting a collection query on every route a pop-out survives to. Both
+     branches measured: an owned list copied
+     `…/u/dev_user/lists/consensus-wr-top-10`, and the **saved** list copied
+     `…/u/devpro/lists/lv12-local-fixture-dev-pro-wr-room` — the owner's handle,
+     not the viewer's. When neither source yields a username it **says so**
+     instead of copying a link that 404s; the username is load-bearing (the
+     public page looks the list up by `owner_id` *and* `slug`).
+
+  7. **Views and comments are read-outs, not buttons.** A pop-out has no comments
+     panel to open, and a control that does nothing is **R220**'s live-but-false
+     affordance. An unknown comment count renders `—`, never `0`.
+
+  **Verification environment, stated rather than implied (R207).** Local stack
+  only: `.claude/launch.json` config **`dev-local`** on port 3123, signed in as
+  `dev@fieldscout.local`, `GET /api/lists` answering from `127.0.0.1:54321`.
+  **Nothing hosted was read or written.** This task *did* write to the local DB
+  — one drafted mark and one reorder, both deliberate and both **restored**: the
+  mark was unticked (`/drafted` → `[]`) and the order put back through the
+  shipped reorder route (`Adonai Mitchell` back at 3). **Both documented local
+  fixtures are untouched** — LV.12's saved `dev-pro` list and LV.13's `r1`–`r4`
+  round board.
+
+  **The verification harness, disclosed in full.** Nothing opens a pop-out until
+  **LV.17**, so the run used the same temporary two-line harness LV.15 disclosed,
+  this time on the store itself:
+
+  ```ts
+  if (typeof window !== 'undefined') {
+    ;(window as unknown as Record<string, unknown>).__listWindows = useListWindowsStore
+  }
+  ```
+
+  **Reverted before the commit** — `grep -rn "__listWindows" src/` returns
+  nothing.
+
+  | Observation | Evidence (local, 1280×900) |
+  | --- | --- |
+  | **The inversion inverts, and the A/B is the proof it is scoped** | inside the window: wrapper `color rgb(255,255,255)`, `#N` (`text-n-3`) **`rgb(179,185,192)`** = `#b3b9c0`, row rule (`border-n-4`) **`rgba(255,255,255,0.22)`**, checkbox fill (`bg-white`) `rgb(22,22,22)`. The **same `text-n-3` class** on the page behind it: `rgb(95,100,109)`. Exactly **one** `.fs-dark` in the tree |
+  | **No child was restyled** | the checkbox's only per-instance class is the LAW's stroke, and it measured `rgba(255,255,255,0.75)` at 14 × 14; drafted it fills `rgb(152,233,171)` (`bg-positive`) unchanged |
+  | **Rows** | `29px` tall, name `10.5px / weight 400 / white`, hover **`rgba(255,255,255,0.09)`** measured on the hovered row, drafted row `opacity 0.45` over `rgba(255,255,255,0.05)` with the name struck through |
+  | **Stats modal light, window dark** | picker `rgb(255,255,255)` with `text-n-3` at `rgb(95,100,109)`, `insideDark:false`, `parentIsBody:BODY`; window `rgb(22,22,22)` at the same moment |
+  | **Share** | `background rgb(180,255,137)`, `color rgb(0,0,0)`, `h 24`, `9.5px`, `box-shadow: none` |
+  | **`dots` regroups this list** | menu = the five `ORG_OPTIONS`, light and above the window; selecting **Rounds** re-banded the rows to `Round 1 (1) · Ungrouped (9)` while the panel behind it kept its own grouping |
+  | **Drag-reorder, and it persists** | dragged `Adonai Mitchell` down inside Tier A; a fresh `GET /api/lists/{id}` (no cache) then returned `AJ Henning` at position **3** and `Adonai Mitchell` at **4** |
+  | **One tick, one list (D12 stops at the comparison set)** | ticked `A.J. Brown` in the pop-out → `Consensus WR top 10` drafted `["5859"]`; `Secret sleepers`, which **also holds him**, `[]`; the round board `[]`. Unticking cleared it |
+  | **The owner gate** | the saved `dev-pro` window renders 6 rows and **no draggable row at all** (`canDrag: false`), because `is_owner` is false |
+  | **Widening** | 352px → 3 of 5 stat columns visible; grip-dragged to 509px → all 5, `scrollWidth === clientWidth`, and `{w:509,h:460}` persisted |
+  | **Survives navigation with its content** | Lists → Home by sidebar link: both windows still `rgb(22,22,22)`, 10 and 6 rows, one wrapper each |
+  | **Escape still behaves (R227/R231) with the new menu in the header** | `dots` open, one Escape → a `keydown` trace at `window` showing `{key:'Escape', isTrusted:true, defaultPrevented:true}` and the menu dismissed with **`windows` still 1**; later, focus on the page, one Escape → the **top** window closed and the other stayed |
+
+  Pinned by **+23** source pins in `list-windows-host.test.ts` (21 → 43, plus one
+  widened locator and two rewritten) and **+1** in `drafted-fan-out.test.ts`
+  (33 → 34). 1077 → **1101**, and 23 + 1 = **24** = 1101 − 1077.
+
+  **R226's prediction came true in a spelling its own guard could not see, and
+  that is this round's transferable finding.** R226 widened
+  `classNameContaining` and wrote, in as many words, that `cursor-grab` was *"one
+  edit away from being ambiguous, because **LV.16** brings drag-reorder rows into
+  this very file"*. LV.16 duly added a second `cursor-grab` — and **the throw
+  never fired**, because the locator matched only `className="…"` attributes,
+  while a row's conditional class is a single-quoted string inside `cn(…)`. It
+  went on confidently returning the header. Same shape as the four findings
+  before it: *a guard that reads one spelling of the thing it forbids.* The scan
+  now covers both forms, markers are regex-escaped (`text-[10.5px]` was a
+  character class waiting to happen), and the header's marker moved to
+  `active:cursor-grabbing` — the drag *handle*, not a draggable row.
+
+  **Ten probes, each shown red and reverted** (`git diff HEAD` empty afterwards,
+  suites back to 1101):
+
+  | Probe | Result |
+  | --- | --- |
+  | delete the `.fs-dark .text-n-3` redirect | **1 red** |
+  | invert `text-ink` as well (white-on-pastel) | **1 red** — the pin that guards a deliberate *omission* |
+  | move the Stats picker inside the dark wrapper | **1 red** — `expected 8 to be 6`, the indentation-as-depth pin |
+  | Share takes its ink from `text-brand-foreground` instead of the literal | **1 red** |
+  | the row name goes `font-semibold` | **1 red**, by the locator **throwing** — *"no class string containing `font-normal`"* |
+  | the header's marker put back to `cursor-grab` | **1 red**, by the locator **throwing** — *"`cursor-grab` appears in 2 class strings"*. This is R226's own probe, finally firing |
+  | the window imports `drafted-fan-out` | **1 red** in the fan-out suite — D12's boundary |
+  | the panel keeps its own copy of the drop commit | **1 red** |
+  | `rowMinWidth` goes fixed (widening stops revealing columns) | **1 red** |
+  | a second `fs-dark` wrapper | **1 red**. *The first attempt at this probe put `fs-dark` in a `data-` attribute and the suite stayed **green** — correctly, since that is not a class. Recorded because a probe that fails to reproduce is a probe that proves nothing, and re-running it as real JSX is what made it evidence* |
+
+  **A note for LV.17 on the harness.** Two artefacts cost time here. (1) The
+  **first** `getComputedStyle` / DOM read after a state change returns the
+  *previous* value through this bridge — hover washes, drafted opacity and a
+  dismissed menu all read stale once and correct on an immediate re-read; read
+  twice before believing a measurement. (2) **Radix menu items do not respond to
+  the harness's synthetic click** (they select on `pointerup`): `computer` clicks
+  worked on every plain `<button>` — including the `gear` and the stat rows in
+  its popover — and did nothing on the five `dots` items until the pointer
+  sequence was dispatched by hand. Neither is a product behaviour; both are the
+  "no-op that is the harness, not the code" CLAUDE.md's rule reads in reverse.
+
+- **LV.16 fix round (2026-08-12) — the second consumer is what makes a shared
+  module's hidden assumption visible, and there is no test for "you are now the
+  second".**
+
+  1. **The drag surface is now an object, not an assumption (R235/R236).**
+     `use-list-drag.tsx` resolved its target with `document.elementFromPoint`
+     and measured the dragged row with `document.querySelector`. Neither was
+     wrong: with one consumer, `document` *is* the surface. LV.16 made the
+     pop-out the second consumer — one that is `position: fixed` at `z-45` and
+     therefore **overlaps the first by design** — and both surfaces write
+     `data-drop-row="all:0"…` and the same `data-drag-id`s into one namespace.
+
+     Two fixes were available and only one of them is structural:
+
+     | Option | Why not / why |
+     | --- | --- |
+     | Namespace the `data-drop-*` attributes per surface | Works, and it spreads the surface's identity across four attributes and every component that writes them — `list-body.tsx`, `list-row-parts.tsx`, `list-window.tsx`. The next surface has to remember |
+     | Pass a container ref into `useListDrag` | Correct, but the ref is a thing a caller can forget, and forgetting it silently restores the defect on that surface only |
+     | **Chosen:** the hook owns the ref and `ListDragContext` renders the element it points at | The context component already wrapped every drop target in both consumers; it takes the class string over via `className` and renders **the same one `<div>`**, so the DOM is unchanged and there is nothing left for a caller to attach. The identity of the surface lives with the hook that needs it |
+
+     **A release over another surface is refused, not redirected.** There is no
+     defensible meaning for "this list's player into that list's slot", and
+     inventing one is how the original defect reads in a diff. The gate is
+     `root.contains(at)` *before* the `closest()` chain — `closest` walks
+     **upwards**, so a point outside the root can never resolve to an element
+     inside it, which is why one check covers all four branches. The **order** is
+     what the pin asserts: a containment check placed after the chain would look
+     like a fix and change nothing.
+
+  2. **A hand-maintained list of styling exceptions goes stale between tasks
+     (R238).** The `.fs-dark` redirects were correct on the day and already had a
+     hole: `bg-n-4` — the empty cover quadrant, reached through `ListCoverTile`
+     in the window's own header — measured **1.61:1** inside the wrapper. The fix
+     is one CSS line; **the finding is that nothing would have said so**, and
+     LV.17 owns "empty / error inside a window". The audit walks **components**,
+     not files, because a file scan pulls in `PlayerMeta`'s injury chip and
+     `NoteMark`'s tooltip — things a pop-out never renders — and every hollow
+     allowlist entry teaches the next reader that the allowlist is decoration.
+     Its locator throws on **ambiguous** as well as missing (R240's standard),
+     and its two exclusions (`ui/icon.tsx`, `ui/button.tsx`) are *checked* rather
+     than argued.
+
+  3. **A cache's `gcTime` is part of a feature's contract when the feature
+     outlives the page (R237).** The window reads the list's owner from the React
+     Query collections cache — the right call, since mounting a collection query
+     on every route a pop-out survives to would be worse. What was missing is
+     that `query-provider.tsx` sets only `staleTime`, so that cache is gone
+     **five minutes** after the user leaves `/app/lists` (measured: `gcTime`
+     `300000`), and the fallback then answered a question it could not answer.
+     The list already carries `is_owner`; the fallback asks it.
+
+  **Verification environment.** Local stack only (`dev-local`, port 3123),
+  `dev@fieldscout.local`. The local DB was written during the R235 reproduction
+  and **restored exactly** — `list_players` for `…ab01` and `…ab99` diff clean
+  against the pre-run snapshot, and both documented fixtures are intact. Two
+  temporary harnesses (`__listWindows`, and a `__qc` handle on the query client
+  for R237's eviction) were disclosed and reverted; `grep -rn "__listWindows\|__qc"
+  src/` returns nothing.
+
 ---
 
 ## 5. Blockers
@@ -3002,10 +3269,30 @@ This section records decisions made **during** the build.
 
   | id | What | Owner, and why it is not in LV.15 |
   | --- | --- | --- |
+  > **✅ F-LV15.1 and F-LV15.2 are DISCHARGED by LV.16 (2026-08-12), in the same
+  > PR as the work.** The scaffold is deleted outright — the name appears in no
+  > `.tsx` in the tree outside the window header's own record of the hand-off,
+  > and its branch renders the real rows (pinned both ways, so a *rename* cannot
+  > satisfy the first assertion). The header now carries **cover, name, gear,
+  > dots, collapse, close** in the LAW's order, with the order itself pinned, and
+  > neither new control is decorative: the gear opens `list-toolbar.tsx`'s own
+  > `StatsCatalog` — exported rather than copied, and rendered **outside** the
+  > dark wrapper — and `dots` is `ORG_OPTIONS` + per-list `setOrg`, measured
+  > re-banding the rows to `Round 1 · Ungrouped`. **F-LV15.3 remains open and is
+  > still LV.17's.** The two rows below are left as written, as the record.
+
   | **F-LV15.1** | **`ListWindowBodyPending` must be deleted, not decorated.** `list-window.tsx` ships a marked scaffold body — the same device as LV.12's `ComparisonPending`, which LV.13 duly deleted — reading *"Rows, stats and the dark inversion arrive with LV.16."* Its branch becomes the inversion wrapper + the 36px rows + the footer | **LV.16.** The rows and the wrapper *are* that task. Nothing pins the scaffold's existence, deliberately: a pin the next task must delete is friction, and this row is the record instead |
   | **F-LV15.2** | **The header is two controls short of the design LAW.** *"cover, name 12.5px/600, then gear (stat picker), `dots` (grouping menu), collapse, close"* — LV.15 ships cover, name, collapse, close, and a marked gap where the other two go. They were left out rather than rendered inert because a control that does nothing is the live-but-false affordance **R220** found one task earlier | **LV.16.** The gear opens the Stats modal that task must render *outside* the inversion wrapper (design LAW), and the `dots` grouping menu regroups rows that do not exist until then. The menu itself is a compose, not a build: `list-display-store`'s `setOrg` + `ORG_OPTIONS`, exactly as `side-by-side-columns.tsx` does it |
   | **F-LV15.4** | **The precedent this build mirrors closes its window on an Escape that a Radix overlay already handled** — found while proving R227's own guard, and **reproduced live**. `window-shell.tsx`:123–129 has no `defaultPrevented` check, and Radix's `DismissableLayer` listens on `document` in the **capture** phase and only calls `preventDefault()`, so a bubble-phase listener still runs. Measured on `/app/lists`, local stack: player mini card open (`[role=dialog] "Josh Allen"`, `z:60`) **plus** the account dropdown open → **one** Escape → menu `data-state="closed"` *and* `[role=dialog]` count **0**. The user aimed at the menu and lost the mini card too | **Not LV.15, and not Lists — but it now has an owner, which it did not (R233).** `src/components/shared/window-shell.tsx` is the *Players* mini card, outside this task's diff and outside Round 2's surface; changing it would be the drive-by fix the charter forbids, and it is the only row in this table describing a **live defect on a shipped surface** rather than a build hand-off, so "LV.16" / "LV.17" were never available to it. It is filed as a **task chip — `task_c1e3da1c`, *"Fix player mini card closing on a handled Escape"*** — carrying the file, the line numbers, the cause, the reproduction and the fix to copy, so a one-line fix with a proven reproduction does not rot in §5. ~~The pop-out is **not** affected — LV.15 carries the guard~~ — ***that claim was too broad and is corrected by R231***: `defaultPrevented` covers Radix and only Radix, and the pop-out **was** affected by the app's own Escape handlers, which do not `preventDefault()`. Both windows had the same defect; only its Radix half differed. The pop-out's is fixed (R231, `escapeBelongsToTarget`), the mini card's is the chip, and **the chip points at the fixed file rather than restating the fix** |
   | **F-LV15.3** | **The phone question is open, and LV.15 answered only the part that would have shipped broken.** A cascaded window now fits the viewport (§4), so the close button and the grip are reachable at 375px — but a 352 × 416 window still covers most of a phone screen, **touch resize is unverified** (the grip carries `touch-none` and takes pointer events, but no touch drag was exercised), and there is no answer for what a phone *should* get instead of a floating window. Chris's *"leave the phone version as is"* (D14) was about **Side by side**, not pop-outs, so nothing here is ruled | **LV.17**, which owns *"the mobile answer (a floating draggable window has none — say what small screens get instead)"* in as many words |
+
+- **Follow-up LV.16 filed rather than absorbed**, same rule as the LV.7 seven,
+  F-LV12.1 and F-LV14.1: in scope to notice, out of scope to fix here. It is not
+  a hand-off to LV.17 — it is house-wide.
+
+  | id | What | Why it is not in LV.16 |
+  | --- | --- | --- |
+  | **F-LV16.1** | **The share link is now built in three places, from one rule.** `lists-page-v2.tsx`:227, `list-detail-panel.tsx`:392 and now `list-window.tsx` each spell `${origin}/u/${username}/lists/${slug}` with their own owner fallback, and ~~only the window's refuses to copy a link it cannot address~~ — the other two fall back to the literal `'you'`, which produces a **404** for a viewer whose profile has no username, because the public page matches on `owner_id` *and* `slug` (`u/[username]/lists/[listSlug]/page.tsx`:47–60). One `listShareLink(list, owner)` used by all three would collapse the rule and the fallback together. ***The struck clause was true of only one of the two ways this can go wrong, and is corrected by R235's round (R237):*** as first written, the window refused when the username was **null**, and copied a confidently wrong one when it was **not** — the viewer's own handle stood in for a **saved** list's owner as soon as the collections cache aged out, which is the ordinary life of a pop-out (`gcTime` is React Query's 5-minute default; measured at `300000`). That link was shown 404ing. It now refuses in both cases: `cached?.owner?.username ?? (list?.is_owner ? viewerName : null)` | The window needed the rule, not a refactor of two shipped surfaces: LV.16 already moves one shared thing (`use-list-drop.ts`), and a sweep across the page and the panel is a separate change with its own verification. It is also **not a regression** — the `'you'` fallback predates this task by two rounds. **Still true after R237**, which fixed the window's own fallback and deliberately left the other two alone |
 
 - **LV.1.3 — LANDED 2026-08-09.** Q1 was ruled "build it as written", and it
   built as written. The boards rule held on the *diff* — zero files under
@@ -3907,6 +4194,104 @@ the `dev@fieldscout.local` profile `11111111-…`. **Nothing hosted was read or
 written, and this round wrote nothing to any database.** The same temporary
 two-line `__listWindows` harness was used again and **reverted before the
 commit** — `grep -rn "__listWindows" src/` returns nothing.
+
+### LV.16 — 2026-08-12 (PR #137) — verdict **FIX-THEN-MERGE**
+
+*Reviewer session (fresh context, red-team brief) against PR #137 — the pop-out
+window's content — verified against plan v5.7 §6, D3, D11, D12, D13, the design
+LAW's* Pop-out window *bullets and the ×0.8 rule.* **A great deal was
+independently re-derived and is not re-opened**: the inversion's colour decision
+is sound and its **blast radius is zero** — the redirects are *descendant* rules,
+`tailwind.config.ts` untouched, and outside the wrapper `text-n-3` measures
+`rgb(95,100,109)`, `border-n-4` `rgb(231,232,233)`, `bg-white` `rgb(255,255,255)`
+and `border-ink` `rgb(11,12,16)`, byte-for-byte the config hex, with exactly one
+`.fs-dark` in the tree; `text-ink` correct in both halves; the Stats picker
+portalled to `BODY` and light while its window stays `rgb(22,22,22)`; **the
+`handleDrop` extraction verbatim** (the diff differs on exactly one line —
+`const handleDrop = React.useCallback(` → `return React.useCallback(`); the D12
+boundary live; every measured number; the proof chain at **1101** with the
+arithmetic checked; and 4 of the 10 claimed probes reproduced at their exact
+messages. **R235–R242: three should-fix, five nits, no blockers.**
+
+***The finding that mattered (R235) — LV.16 made the app's drag layer ambiguous,
+and nothing in LV.17's task text would have sent anyone looking.*** `hitTest` was
+`document.elementFromPoint(x, y).closest('[data-drop-row]')` *with no scoping to
+the surface that owns the gesture, and* `planDrop`*'s only cross-surface guard is*
+`groups.findIndex((g) => g.key === target.bucketKey)` *(*`list-reorder.ts`*:98) —
+which passes whenever the two surfaces share a bucket key, and two ranked lists
+both produce* `all`. *On* `main` *this was unreachable:* `grep -rn "useListDrag(" src/`
+*returned **one** consumer. This branch adds a second, at* `list-window.tsx`*:362,
+and the pop-out is* `position: fixed` *at* `z-45` *— it overlaps the panel by
+design.*
+
+#### Resolution — 2026-08-12 (fix Builder, same branch `feat/LV16-window-content`)
+
+*All eight resolved on the same branch; nothing deferred, nothing escalated.*
+**Two behaviours changed, both directed** *— R235/R236's DOM scoping and R237's
+share fallback. R238 adds one CSS redirect. Everything else is a pin, a comment
+or a document.*
+*Proof re-run this session:* **`type-check` clean · `lint` exit 0** *(the one
+pre-existing `auction-draft-room.tsx:107` warning) ·* **`test:unit` 58 files /
+1126 tests** *(1101 → 1126, **+25**: R238's audit 19, R235/R236's five,
+R237's one; `list-windows-host.test.ts` 44 → 69).*
+`settings-round-trip-db.test.ts` *is the known §5 leagues parallel-race flake,
+outside `test:unit` and in the paused build — not chased.*
+
+| Finding | Severity | Resolved by |
+| --- | --- | --- |
+| **R235** — a drop released over a *different* drag surface writes to the dragged list at the **foreign** surface's index. Measured with both mounted: 18 `[data-drop-row]` nodes in one `all:*` namespace. Not user-reachable in this PR (nothing opens a window until LV.17) — but LV.17's task text gives its reviewer no reason to look here | should-fix | ✅ **Scoped to the surface that owns the gesture, and reproduced both ways first.** `useListDrag` now owns a `rootRef`; `hitTest(root, …)` gates on `root.contains(at)` **before** the `closest()` chain (`closest` walks *up*, so one containment check is sufficient — and the *order* is pinned, not merely the presence). **Reproduced pre-fix, live, local stack**, panel = *Secret sleepers* (`all:0–1`), pop-out = *Consensus WR top 10* (`all:0–9`): (a) dragged the pop-out's `#10` and released over the **panel's** first row → `PATCH /api/lists/…ab01/players/reorder` moving that player to position 1, **persisted** (`psql` confirmed `1 │ 12863`), panel untouched; (b) dragged the **panel's** first row and released over the pop-out's `all:7` → `PATCH /api/lists/…ab99/players/reorder`, panel now `#1 Josh Allen`. **Post-fix, same two gestures: refused.** Over the foreign surface every gap closes (`openGaps: []`), release → **no PATCH**, both orders unchanged. A release over another surface is refused rather than redirected — there is no sensible reading of "this list's player into that list's slot". **The mechanism cannot be forgotten**: `ListDragContext` renders the root itself, taking over the one flex container each consumer already had via `className`, so the DOM is unchanged in both surfaces and there is no ref for a caller to drop. **Probes, each red then reverted**: the gate moved below the `closest()` chain → **1 red** (`expected 983 to be less than 229`); a null root falling back to the page → **1 red**; the ref never attached → **1 red**; the window keeping its own `<div>` inside the context → **1 red** |
+| **R236** — `document.querySelector('[data-drag-id="…"]')` is a global first match, and the same list open in the panel *and* a pop-out puts the same id in the DOM twice. **The fifth instance of the unscoped-locator shape R226 named — and the first in product code rather than a test** | should-fix | ✅ **One fix closed both, as the finding predicted.** The measurement is now `rootRef.current?.querySelector(…)`, and `document.querySelector` appears nowhere in the file. **Reproduced pre-fix**: same list in both surfaces → 4 `[data-drag-id]` nodes, **2 duplicated ids**; sample → `[{inWin:false,h:48,w:716},{inWin:true,h:29,w:351}]` and `document.querySelector` returned the **panel's** 48px row (`<ListWindowsHost />` sits after `{children}` in `app-shell.tsx`:93, so the panel always wins document order). A drag inside the window then opened a gap of `height: 48px` on 29px rows — measured off the element's own style. **Post-fix the same drag opens `29`**, and the panel's own drag still opens `48`, both measured with 20 rows and **10 duplicated ids** live. Probe: restore `document.querySelector` → **1 red** |
+| **R237** — *"Link copied"* for a link that 404s. `query-provider.tsx` sets only `staleTime`, so the collections query keeps React Query's **5-minute default `gcTime`** and is evicted once the user leaves `/app/lists` — which a pop-out is built to survive. For a **saved** list `viewerName` is then non-null and *wrong*, the refusal never fires, and the public page matches on `owner_id` **and** `slug` | should-fix | ✅ **The fallback asks whose list it is**, as directed: `cached?.owner?.username ?? (list?.is_owner ? viewerName : null)`. **Both halves measured live on `/app`, with the pop-out of `bbbb2222-…cd01` (owner `devpro`) open and every `lists/collection` query evicted** (`cachedRow: null`; the query's own `gcTime` read back as **300000**, confirming the premise): *pre-fix source* copied `…/u/dev_user/lists/lv12-local-fixture-dev-pro-wr-room` → **HTTP 404**; *post-fix* copies **nothing** (`clipboard.writeText` never called) and shows *"Could not build the share link — Open the list on the Lists page and share it from there."* The correct URL `…/u/devpro/…` → **HTTP 200**. With the cache warm it copies the `devpro` link either way. **The overstated claim is corrected in both places it was made** — §5's F-LV16.1 row and the PR body. Probe: restore `?? viewerName` → **1 red** |
+| **R238** — the five `.fs-dark` redirects are enumerated by hand with nothing that fails when a component rendered inside the wrapper uses a palette utility that is not on the list — **and one such case was already live**: `list-thumbnail.tsx`:208's empty quadrant, reached through `ListCoverTile` in the window header | nit | ✅ **Audited by a test, and the live case fixed.** `.fs-dark .bg-n-4 → var(--fs-dark-hairline)` closes the quadrant: measured **1.61:1 → 5.14:1** (`#b3b9c0` on `rgba(255,255,255,.22)` composited over the tile's own `bg-ink`, `rgb(65,65,69)`), and **the blast radius is still zero** — outside the wrapper `bg-n-4` remains `rgb(231,232,233)`, and the other four redirects re-measured unchanged in both halves. The audit is `elevation-rule.test.ts`'s shape: **16 declarations** that render inside the wrapper, each extracted by a `declarationSource()` locator that **throws on missing *and* on ambiguous**, and every `text-*` / `bg-*` / `border-*` palette utility must be redirected in the token layer or listed in `LEGIBLE_ON_DARK` **with the reason it still reads on `#161616`**. Per-component rather than per-file deliberately: a whole-file scan drags in `PlayerMeta`'s injury chip and `NoteMark`'s tooltip, which a pop-out never renders, and the allowlist fills with hollow reasons. The two exclusions are **checked, not asserted in prose** — `ui/icon.tsx` carries zero palette utilities (`currentColor`), and the window renders exactly **one** `<Button`, whose fill and ink the footer's own pin already fixes. It found a further genuine case on first run: `bg-ink`, allowlisted with Chris's 2026-08-11 ruling behind it. **Probes**: drop the `bg-n-4` redirect → **5 red** across four components and the quadrant pin; a `text-caution` added to `ListWindowRow` → **1 red** naming the file, the component and the utility; a second `<Button` → **1 red** |
+| **R239** — *"the checkbox's 75% stroke is the **only** per-instance dark class"* asserted that the class exists and that row-parts still has the 14px box; **nothing asserted "only"**. R226's own finding one file over | nit | ✅ **The set is asserted.** The pin reads the `className` handed to **every** shared child — the list is *derived from the `./list-row-parts` import* plus `ListCoverTile` and `PositionBadge`, so a fifth row part brought in later is covered without anyone remembering — requires `DraftedCheckbox`'s to be exactly `['border-white/75']` at **every** site, and requires each of the others' to carry no palette utility and no `text-[#…]`. Probe: `PlayerName` given `text-white` (a type-valid prop it already takes) → **1 red**, `<PlayerName className="… text-white">: expected [ 'text-white' ] to deeply equal []` |
+| **R240** — `indentOf` used `.find()` and threw only when the marker was *missing*, never when **ambiguous** — the exact gap R226 hardened `classNameContaining` against, reintroduced in the helper added beside it | nit | ✅ **Collects all matching lines and throws on more than one**, as its neighbour does — *"it no longer identifies one element, so the structural pin below is asserting about whichever came first"*. **The gap was reproduced before it was closed**, per R218/R226: with the old `.find()` restored **and** a second `onPointerDown={onHeaderPointerDown}` added, the suite stayed **69 passed**; against the hardened locator the same edit is **1 red** with the ambiguity message. Both reverted, `git diff` clean. R240's own argument is the record: its markers are unique *today*, which is exactly what was true of `cursor-grab` at LV.15 |
+| **R241** — `:759` pinned a Prettier-owned multi-line import block verbatim; brittle, no falsifiability, and the two assertions after it already carry the claim — while the same suite at `:534` explicitly refuses this | nit | ✅ **Replaced by the two questions it was standing in for**: `from './list-buckets'` and the existing `ORG_OPTIONS.map((option)`. **Shown both ways**: collapsing the import onto one line — which is what Prettier writes if it fits — leaves the new assertions **69 passed** while the deleted pin's string is absent, i.e. the old pin would have gone red for a change that changes nothing; and the replacement is falsifiable — repointing the import at a forked `./window-buckets` (the LV.7 failure shape it exists to catch) → **1 red** |
+| **R242** — the new `StatsCatalog` doc says the window shows it in a `Dialog`; it is a **`Popover`**. Related: the anchor at `right-9 top-8` sits under the *collapse* control, not the gear, so *"opens under the `gear` that summoned it"* is also approximate | nit | ✅ **Both corrected in prose, with the measurement in the comment.** `list-toolbar.tsx` now says `Popover` and separates what the LAW actually makes normative (*outside that wrapper … it belongs to the light page*) from the widget it happens to name a "modal", with the measurement recorded: `[data-radix-popper-content-wrapper]`, parent `BODY`, `z-index: 50`. `list-window.tsx`'s anchor comment now says the picker hangs from the **chrome cluster**, not from the gear, and carries the numbers — anchor `x 956` against gear `885–905` and collapse `939–959` on a 352px window. **The anchor itself is deliberately unchanged**: the header is four 20px controls in 36px, the panel is 212px, and hanging it off the cluster is what keeps it inside the frame at the 264px minimum width. No pin — this is a comment, and inventing one for it would be the ceremony R241 just removed |
+
+**Not changed, and why.** The inversion's mechanism and its five original values,
+the ×0.8 conversions, the `no-shadow` stroke, the row geometry, `use-list-drop.ts`
+(**untouched this round** — `git diff` on it is empty, so the refusal toast and
+the sequenced writes are literally the code the Reviewer verified as a verbatim
+extraction), the D12 boundary, the Stats picker's placement outside the wrapper,
+and the header's control order are **untouched** — the review upheld all of them.
+The schema budget is still the ruled three: **no migration, no column, no new API
+route**; boards untouched; `src/components/ui/elevation-rule.test.ts` untouched;
+the window still carries no shadow. **The two shipped surfaces F-LV16.1 names
+were deliberately not edited** — `lists-page-v2.tsx` and `list-detail-panel.tsx`
+keep their `'you'` fallback, because R237 asked for the window's claim to be
+corrected, not for a sweep. LV.17's work was not started. **Files changed this
+round: six** — `use-list-drag.tsx`, `list-body.tsx`, `list-window.tsx`,
+`list-toolbar.tsx`, `globals.css`, `list-windows-host.test.ts` — plus this
+document.
+
+**The panel's drag-and-drop was proven unchanged, because R235/R236 change a
+hook the merged, shipped detail panel uses.** All four aspects, live, post-fix:
+**reorder** — dragged the panel's `#1` past `#2`, one `PATCH …/ab99/players/reorder`,
+order swapped; **re-bucket** — dragged `#3 Adonai Mitchell` from tier `A` into
+tier `S`, one `PATCH …/players/11625/tier {"tier":"S"}` and **no** reorder,
+correctly, because the flattened order did not change; **write sequencing** —
+the same player then dragged into tier `B`, `PATCH …/tier {"tier":"B"}` at
+`t=…770631` followed by `PATCH …/players/reorder` at `t=…770740`, **109ms
+later** and only on the first's success, never fired together; **the refusal** —
+in an `Avg cost` grouping the panel offers **no drag at all** (0 `[data-drop-gap]`
+rendered after a full press-and-move, no request, order unchanged) and all
+**10** grips carry `COMPUTED_ORDER_REASON` as their tooltip. That last one is
+worth stating precisely: `canReorder('cost')` is `false`, so `useDragHandle` is
+disabled and `use-list-drop.ts`'s refusal *toast* is not reachable through a
+drag — the grip's reason is the shipped affordance, and the toast's code is
+unchanged because the file is.
+
+**Verification environment.** Local stack only — `.claude/launch.json`
+**`dev-local`** on port 3123, `dev@fieldscout.local`. **Nothing hosted was read
+or written.** Two temporary harnesses were used and **both reverted before the
+commit**: the `__listWindows` store handle LV.15 disclosed (nothing opens a
+pop-out until LV.17) and a two-line `__qc` handle on `query-provider.tsx`, needed
+to evict the collections query on demand for R237 — `grep -rn "__listWindows\|__qc"
+src/` returns nothing and `git diff` on both files is empty. **The local DB was
+written during the R235 reproduction and restored exactly**: `list_players`
+positions and tiers for `…ab01` and `…ab99` diff **clean** against the
+pre-verification snapshot, and no list was created or deleted, so both documented
+fixtures (`LV12 local fixture`, `LV13 local fixture`) are intact.
 
 ---
 

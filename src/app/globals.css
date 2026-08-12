@@ -163,3 +163,110 @@
     );
   }
 }
+
+/* ===========================================================================
+   `.fs-dark` — the pop-out window's dark inversion (LV.16)
+   ===========================================================================
+
+   Design LAW, docs/design/lists/README.md §"Pop-out window":
+
+     "The window inverts: --n-2 surface, white text, --n-3 → #b3b9c0,
+      --n-4 → rgba(255,255,255,.22), --border → 1px solid rgba(255,255,255,.24).
+      **Implement by scoping the color custom properties on an inner wrapper so
+      children invert without restyling** — and keep the Stats modal it opens
+      *outside* that wrapper, since it belongs to the light page."
+
+   The prototype does exactly that, and this class is its name:
+   `docs/design/lists/design/ListsCommon.jsx`:580 — `<div className="fs-dark"
+   style={{ "--surface-card": "var(--n-2)", "--n-1": "var(--white)",
+   "--n-3": "#b3b9c0", "--n-4": "rgba(255,255,255,0.22)", … }}>`.
+
+   ## Why the redirects below exist at all, and why they are not a second theme
+
+   In the prototype's design system every colour is a CSS custom property, so
+   re-declaring five of them on a wrapper inverts every descendant. **In this
+   app the Field Scout palette is literal hex in `tailwind.config.ts`** (see the
+   header of this file: "the Field Scout palette proper lives as literal hex in
+   tailwind.config.ts"), so `text-n-3` compiles to `color: #5f646d` and there is
+   no property to scope. The equivalent is therefore declared here: the values
+   live in custom properties on `.fs-dark` — one place, named after the LAW's
+   own tokens — and the handful of palette utilities that actually appear inside
+   a pop-out are pointed at them.
+
+   This is **not** a dark theme and not a `dark:` variant (CLAUDE.md forbids
+   both). There is no toggle, nothing outside a pop-out is affected, and the
+   class is used by exactly one component (`list-window.tsx`). Re-tokenizing the
+   whole palette to custom properties is the alternative, and it is post-launch
+   work: it would change how ~470 `text-n-3` sites compile app-wide, and the
+   plain-`var()` form silently drops the alpha on the 14 places that write
+   `bg-n-4/60`-style modifiers.
+
+   ## The list is deliberately short — every line renders inside a window today
+
+   `text-n-3` (the team code in `PlayerMeta`, the `#N`, the column captions, the
+   empty state), `border-n-4` (row rules), `border-ink` (band rules, the empty
+   state's dashed box), `bg-white` (the drafted checkbox's resting fill),
+   `hover:bg-accent-soft` (that checkbox's hover — the LAW: "the kit's light
+   `.fs-rowh` wash is invisible here"), and `bg-n-4` (the cover thumbnail's
+   empty quadrant and the avatar fallback behind a missing headshot). Nothing is
+   mapped speculatively.
+
+   **`bg-n-4` was the case that proved the list cannot be maintained by hand**
+   (**R238**). It was missing at LV.16 and already broken in the tree:
+   `list-thumbnail.tsx`:208 paints an empty list's fourth quadrant `bg-n-4
+   text-n-3`, and `ListCoverTile` renders that in the pop-out's header — so
+   inside the wrapper the icon was `#b3b9c0` on an un-redirected `#e7e8e9`,
+   measured live at **1.61:1**, i.e. invisible. Redirected it is
+   `rgba(255,255,255,.22)` over the tile's own `bg-ink` backdrop — composited
+   `rgb(65,65,69)` — which measures **5.14:1**. The list is now
+   audited by `list-windows-host.test.ts`, which walks the components that render
+   inside the wrapper and fails on any palette utility that is neither redirected
+   here nor allowlisted there with a reason.
+
+   **`text-ink` is deliberately NOT inverted.** In this app it overwhelmingly
+   means "ink text on a light fill" — the injury chip on `bg-caution`, the check
+   glyph on `bg-positive`, tier bands 3–4 — and turning those white would be
+   white-on-pastel. The LAW's `--n-1 → white` is *primary text*, and primary text
+   inside the window is inherited from the `color` below, exactly as the
+   prototype's wrapper does it (`color: var(--white)`).
+
+   Plain CSS, outside `@layer`, at the end of the file: it must come after the
+   generated utilities so a same-specificity tie resolves this way, and the
+   `:hover` redirect is one class heavier than the flat one so a hover still
+   beats the resting fill it overrides. */
+.fs-dark {
+  /* The LAW's tokens, by its own names. */
+  --fs-dark-ink: #ffffff; /* --n-1 / --text-primary */
+  --fs-dark-muted: #b3b9c0; /* --n-3 */
+  --fs-dark-hairline: rgba(255, 255, 255, 0.22); /* --n-4 */
+  --fs-dark-border: rgba(255, 255, 255, 0.24); /* --border */
+  --fs-dark-surface: #161616; /* --surface-card → --n-2 */
+  /* The same 9% the LAW gives for row hover, so the two cannot drift. */
+  --fs-dark-wash: rgba(255, 255, 255, 0.09);
+
+  color: var(--fs-dark-ink);
+}
+
+.fs-dark .text-n-3 {
+  color: var(--fs-dark-muted);
+}
+
+.fs-dark .border-n-4 {
+  border-color: var(--fs-dark-hairline);
+}
+
+.fs-dark .border-ink {
+  border-color: var(--fs-dark-border);
+}
+
+.fs-dark .bg-white {
+  background-color: var(--fs-dark-surface);
+}
+
+.fs-dark .bg-n-4 {
+  background-color: var(--fs-dark-hairline);
+}
+
+.fs-dark .hover\:bg-accent-soft:hover {
+  background-color: var(--fs-dark-wash);
+}

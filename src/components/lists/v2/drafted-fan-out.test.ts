@@ -53,6 +53,8 @@ const code = (file: string) =>
 
 const FAN_OUT = 'src/components/lists/v2/drafted-fan-out.ts'
 const PANEL = 'src/components/lists/v2/list-detail-panel.tsx'
+/** The other single-list surface with a drafted checkbox (LV.16). */
+const WINDOW = 'src/components/lists/v2/list-window.tsx'
 
 const PLAYER = 'p-nabers'
 
@@ -576,6 +578,27 @@ describe('LV.14 — the fan-out reaches the comparison and nothing else', () => 
     expect(panel).not.toContain('FanOut')
     // …and it still marks the one way it always did.
     expect(panel).toContain('toggleDrafted')
+  })
+
+  /**
+   * **The same boundary, one surface further out (LV.16).** A pop-out is a
+   * single list, so one tick there writes one row — the detail panel's rule, not
+   * the comparison's. D12 scopes the fan-out to *the comparison set*, and the
+   * set is what makes it defensible: the lists on screen together are the draft.
+   * A window floating over Home is not a comparison, and a tick in it must not
+   * reach the lists a Side by side happens to be holding.
+   *
+   * Extended here rather than left to `list-windows-host.test.ts` because this
+   * is where the rule lives, and a boundary asserted beside the mechanism is the
+   * one that gets re-read when the mechanism changes.
+   */
+  it('the pop-out window never joins it either (LV.16)', () => {
+    const win = code(WINDOW)
+    expect(win).not.toContain('drafted-fan-out')
+    expect(win).not.toContain('FanOut')
+    // It marks the way the panel does: `use-draft-mode` directly.
+    expect(win).toContain("from '@/hooks/use-draft-mode'")
+    expect(win).toContain('toggleDrafted')
   })
 
   /**
