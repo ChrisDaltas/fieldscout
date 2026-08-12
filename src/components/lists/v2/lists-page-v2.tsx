@@ -28,15 +28,15 @@ import { ListGalleryCard, NewListTile } from './list-gallery-card'
 import { ListDetailPanel } from './list-detail-panel'
 import { FolderScopeCrumb, ListFoldersSection } from './lists-folders'
 import { ListsRail } from './lists-rail'
+import { SideBySidePicker } from './side-by-side-picker'
 
 /**
  * Lists v2 — the Lists page (LV.2, rebuilt from
  * `docs/design/lists/screens/*.png`).
  *
  * Three page modes behind one header: **List** (rail plus the open list),
- * **Cards** (the gallery), and **Side by side**. The first two are built here;
- * the third renders its segment and says where it lives, because it is its own
- * task.
+ * **Cards** (the gallery), and **Side by side** — which opens on its picker
+ * (LV.12, `side-by-side-picker.tsx`) and whose 300px columns are LV.13.
  *
  * **The structural point, since the previous attempt got it wrong:** in List
  * mode the right-hand panel is the *whole* open list — hero, tabs, toolbar and
@@ -95,6 +95,20 @@ export function ListsPageV2() {
   const [openedId, setOpenedId] = React.useState<string | null>(deepLinkId)
   const [expanded, setExpanded] = React.useState(false)
   const [folderId, setFolderId] = React.useState<string | null>(null)
+  /**
+   * **The chosen comparison** — the ids Side by side is showing as columns, or
+   * empty while the picker is up (LV.12).
+   *
+   * Session-only, `useState`, no `persist` and no server write: it is display
+   * state like every other Lists customization (**D3**, Chris — *"just
+   * customizations that don't need to save, like search filters"*).
+   *
+   * It lives **here** rather than inside the picker on purpose. LV.13 puts a
+   * `Change lists` button in the page header, which this component also
+   * renders, so "is a comparison chosen yet" has to be readable from both the
+   * header and the body — one state, two consumers.
+   */
+  const [compareIds, setCompareIds] = React.useState<string[]>([])
   const [newFolderOpen, setNewFolderOpen] = React.useState(false)
   const [editFolder, setEditFolder] = React.useState<ListFolder | null>(null)
   const tabSeededRef = React.useRef(false)
@@ -131,6 +145,21 @@ export function ListsPageV2() {
     own.sort((a, b) => Number(Boolean(b.is_favorites)) - Number(Boolean(a.is_favorites)))
     return { mine: own, saved: all.filter((list) => Boolean(list.owner)) }
   }, [lists.data?.lists])
+
+  /**
+   * What Side by side can compare: **every list on the page, own first, then
+   * saved — the tab is deliberately not applied.**
+   *
+   * That is the design package, against the plan §6 row that says the picker
+   * "honours the My lists / Saved tab": the prototype reads
+   * `myLists().concat(savedLists())` (`ListsScreen.jsx:431`), hides the tab
+   * control in this mode (`:49`, and `tabSwitch` below does the same), and
+   * `screens/side-by-side-picker.png` renders all 9 of its 7 + 2 lists. With no
+   * tab control on screen, filtering by it would strand a viewer unable to
+   * compare their own board against a saved one. Full reasoning and the plan
+   * erratum are in `side-by-side-picker.tsx`'s header.
+   */
+  const comparable = React.useMemo(() => [...mine, ...saved], [mine, saved])
 
   const openFolder = folderId
     ? (folders.data ?? []).find((folder) => folder.id === folderId) ?? null
@@ -275,7 +304,13 @@ export function ListsPageV2() {
     </Segment>
   )
 
-  /** The **label + count** variation, bare — same reasoning as `modeSwitch`. */
+  /**
+   * The **label + count** variation, bare — same reasoning as `modeSwitch`.
+   *
+   * Absent in Side by side, exactly as `screens/side-by-side-picker.png` and
+   * the prototype (`ListsScreen.jsx:49`) draw it. That is why the picker offers
+   * every list rather than the tab's subset — see `comparable` above.
+   */
   const tabSwitch =
     mode === 'compare' ? null : (
       <Segment appearance="bare" aria-label="Which lists">
@@ -396,7 +431,14 @@ export function ListsPageV2() {
           onRetry={() => void lists.refetch()}
         />
       ) : mode === 'compare' ? (
-        <SideBySidePlaceholder />
+        compareIds.length === 0 ? (
+          <SideBySidePicker lists={comparable} loading={!loaded} onShow={setCompareIds} />
+        ) : (
+          <ComparisonPending
+            lists={compareIds.map((id) => summaryById.get(id)).filter(isList)}
+            onPickAgain={() => setCompareIds([])}
+          />
+        )
       ) : mode === 'gallery' ? (
         openedId ? (
           <div className="mx-auto max-w-content">
@@ -608,23 +650,46 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   )
 }
 
+const isList = (list: ListWithTags | undefined): list is ListWithTags => Boolean(list)
+
 /**
- * Side by side renders its segment and nothing else.
+ * The comparison is chosen, and the columns that render it are **LV.13**.
  *
- * The mode is fully realised in the prototype — a picker, then 300px columns
- * with permanent drafted checkboxes and tier bands carrying through — and it is
- * its own task. Showing the segment keeps the header honest about the three
- * modes the design has; building the mode here would be scope creep.
+ * This replaces the whole-mode `SideBySidePlaceholder` LV.12 deleted, and it is
+ * narrower on purpose: the mode now works up to the point the picker commits,
+ * so what is missing is the columns, not the mode. It exists at all because the
+ * alternative is worse — the picker's primary CTA would otherwise commit a
+ * comparison and change nothing on screen, which is the "nothing happened must
+ * never mean it worked" shape CLAUDE.md names.
+ *
+ * **LV.13 deletes this function outright.** Its branch becomes the 300px
+ * full-bleed column scroller, and getting back to the picker becomes the
+ * `Change lists` button in the page header (design LAW §"Lists page") rather
+ * than the escape below — which is not that button, and is not in the header.
  */
-function SideBySidePlaceholder() {
+function ComparisonPending({
+  lists,
+  onPickAgain,
+}: {
+  lists: ListWithTags[]
+  onPickAgain: () => void
+}) {
   return (
     <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-dashed border-ink p-8 text-center">
       <Icon name="table" size={21} className="text-n-3" />
-      <span className="text-[13px] font-bold">Side by side is not built yet</span>
+      <span className="text-[13px] font-bold">
+        {lists.length} {lists.length === 1 ? 'list' : 'lists'} ready to compare
+      </span>
       <p className="max-w-[400px] text-[11px] font-medium text-n-3">
-        Comparing several boards as columns on draft night is its own task. Pick List or Cards to
-        keep working.
+        {lists.map((list) => list.title).join(' · ')}
       </p>
+      <p className="max-w-[400px] text-[11px] font-medium text-n-3">
+        Showing them as columns is the next piece of this build. Pick List or Cards to keep
+        working.
+      </p>
+      <Button variant="stroke" size="sm" onClick={onPickAgain}>
+        <Icon name="reset" size={13} /> Pick different lists
+      </Button>
     </div>
   )
 }

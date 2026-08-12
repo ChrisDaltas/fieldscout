@@ -1,6 +1,6 @@
 # Delivery Plan: Lists v2
 
-> **v5.0 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
+> **v5.2 — 2026-08-11. UI/UX only, with exactly three data exceptions.**
 >
 > **Round 1 is complete.** LV.7 landed the cutover on 2026-08-11: one Lists
 > surface, no `featureFlags.listsV2`, the legacy tree deleted — and four
@@ -689,9 +689,35 @@ behaviour is the failure this build already paid for once.**
 
 | id | task | depends on |
 | --- | --- | --- |
-| LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). Honours the My lists / Saved tab | LV.9 |
-| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list` | LV.12 |
+| LV.12 | **Picker** — replaces `SideBySidePlaceholder`. Heading "Pick the lists to compare", 232px-min grid of selectable cards (16px checkbox, accent fill when on; 30px `CoverTile`; name; `N players`), primary button reading `Show N lists side by side` and disabled as `Select at least one list` at zero. Selection is **session-only** (D3). ~~Honours the My lists / Saved tab~~ — **see the erratum below**. **LANDED 2026-08-11** | LV.9 |
+| LV.13 | **Columns** — 300px fixed panels in a **full-bleed** horizontal scroller (`margin: 0 -36px; padding: 0 36px 8px`). Column header: 26px cover, name, live `N of M left`, `dots` menu = the five grouping modes (**each column groups independently**) + `Remove column` under a separator. 38px rows: permanent drafted checkbox, `#N`, name → mini card, position badge, team. Tier/round band headers carry their colour through. `Change lists` appears in the page header beside `New list`, and **`ComparisonPending` in `lists-page-v2.tsx` is deleted** — LV.12 shipped it as an explicitly temporary branch and this row is where it goes (see the erratum below) | LV.12 |
 | LV.14 | **Drafted fan-out (D12)** — one tick writes across every column in the comparison that contains the player, and no further. Per-column rollback on a partial failure; the header count derived per column. Reuses the LV.1.2 route; **no new route** | LV.13, LV.1.3 |
+
+> **Erratum (v5.1, LV.12 Builder 2026-08-11) — the picker does *not* honour the
+> My lists / Saved tab, and the v5.0 row that said so was wrong against the
+> design package.** The prototype reads
+> `st.myLists().concat(st.savedLists())` (`docs/design/lists/design/ListsScreen.jsx:431`)
+> and never consults `st.tab`; the same file **hides the tab control entirely in
+> compare mode** (`:49`), which the shipped page already did too; and
+> `screens/side-by-side-picker.png` renders **9** cards, which is exactly the
+> prototype's 7 own + 2 saved lists, own first. Design LAW outranks this plan
+> (`PROGRESS-lists-v2.md` header) and screenshots outrank prose
+> (`screens/README.md`), so the picker offers **every list on the page**.
+>
+> The clause was not merely unsupported, it was a trap: with no tab control on
+> screen there would be no way to change the filter, so a viewer on *My lists*
+> could never compare a saved board and one on *Saved* could never compare their
+> own — and comparing your board against someone else's is the reason the mode
+> exists. Pinned by `src/components/lists/v2/side-by-side-picker.test.ts`, which
+> goes red if the filter is reinstated (shown failing, then reverted).
+>
+> **`Change lists` remains LV.13's**, but the state it toggles is LV.12's:
+> `compareIds` lives in `lists-page-v2.tsx`, which renders both the page header
+> and the body, so the header button and the body branch read one value.
+> **LV.12 also ships a deliberately temporary `ComparisonPending` panel** for
+> the chosen-but-not-yet-rendered state — without it the picker's primary CTA
+> would commit a comparison and change nothing on screen. LV.13 deletes that
+> function and replaces its branch with the columns.
 
 **Phase 8 — Pop-out windows**
 
@@ -731,6 +757,41 @@ drafted" in the options menu. Per-list scoping means a new draft is a new
 list, so nothing accumulates across seasons on its own. See D2.)*
 
 ## Changelog
+
+- **v5.2 (2026-08-11)** — **LV.13's row now carries the `ComparisonPending`
+  deletion** (LV.12 review, **R209**). The obligation already existed in four
+  places — §6's erratum block, the v5.1 entry below, `PROGRESS-lists-v2.md`
+  §2b's LV.13 bullet, and the JSDoc at `lists-page-v2.tsx:658` — but **not in
+  the §6 row itself**, which `ACTIVE-BUILD.md` names as the task text a Builder
+  reads. An obligation that lives everywhere except the line the next Builder is
+  pointed at is an obligation that gets missed. Editorial: no scope, dependency
+  or decision changed.
+
+- **v5.1 (2026-08-11)** — **LV.12, the picker, landed — and its task row
+  carried a clause the design package contradicts.** §6 gains the erratum in
+  full; the short version is that *"honours the My lists / Saved tab"* is not
+  what the prototype does (`ListsScreen.jsx:431` concatenates own + saved,
+  `:49` hides the tab control in this mode) and not what
+  `screens/side-by-side-picker.png` shows (9 cards = 7 own + 2 saved). The
+  clause had no D-entry behind it, and every deliberate deviation from the
+  handoff in this plan has one — so it was an error, not a ruling, and the
+  **LV.4 precedent applies**: a Builder that finds a plan clause factually wrong
+  against the design package folds an erratum and ships to LAW rather than
+  burning a cycle on a halt.
+
+  Two things the task text did not predict:
+
+  1. **The clause was a trap, not a simplification.** Because the tab control
+     does not render in compare mode, filtering by it would leave a viewer with
+     no way to reach the other set — a viewer on *My lists* could never compare
+     a saved board. It is now pinned by a test that was **shown failing** when
+     the filter was reinstated, then reverted.
+  2. **The picker's CTA needed somewhere to go.** LV.13 owns the columns, so
+     LV.12 holds `compareIds` in `lists-page-v2.tsx` (where LV.13's header
+     `Change lists` can also read it) and renders a temporary
+     `ComparisonPending` panel behind it. Committing a comparison that changed
+     nothing on screen would have been the "nothing happened means it worked"
+     shape CLAUDE.md names. LV.13 deletes that function.
 
 - **v5.0 (2026-08-11)** — **Round 2 opened** on Chris's *"round 2, go"*. §6
   gains the six-task breakdown (**LV.12 – LV.17**), and §3 gains two decisions.

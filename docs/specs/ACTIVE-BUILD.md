@@ -36,7 +36,7 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-lists-v2.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-lists-v2.md` |
 | **Design LAW** | `docs/design/lists/README.md` (+ prototype in `docs/design/lists/design/`) |
-| **Task text** | Delivery plan **§4**, read together with the handoff section that task cites. There is no separate `tasks-*.md` breakdown — the handoff is detailed enough to serve as one. |
+| **Task text** | **Round 2 (LV.12 – LV.17): delivery plan §6.** (Round 1's LV.1 – LV.11 were §4 — this row still said §4 after Round 2 opened, which would have misrouted LV.13's Builder to a finished queue. Corrected 2026-08-11, LV.12 review R210.) Read together with the handoff section that task cites; there is no separate `tasks-*.md` breakdown — the handoff is detailed enough to serve as one. |
 | **Task id prefix** | `LV.` |
 
 **Standing constraints for every task in this build** (full text in the plan §1):
@@ -66,6 +66,29 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   quietly reimplements one of these is the LV.7 failure repeating.
 - Keep the app's ×0.8 token scale; implement colors from tokens, not the
   handoff's literal hex.
+- **Browser verification runs against the LOCAL Supabase stack, never hosted.**
+  `.env.local` points at the **hosted production** project, so `npm run dev`
+  straight out of the box drives a real users' database — LV.12 did exactly
+  that and left seven soft-deleted `LV12 tmp` rows in production (**R207**).
+  Use the gitignored `.claude/launch.json` config **`dev-local`** (port 3123),
+  which overrides `NEXT_PUBLIC_SUPABASE_URL` to `http://127.0.0.1:54321` with
+  the keys from `npx supabase status`; confirm it took by checking a network
+  request goes to `127.0.0.1:54321`. **State the verification environment in
+  the PR body and in PROGRESS §4** — the LV.12 PR disclosed neither, which is
+  what made the finding a should-fix rather than a note.
+- **The local stack carries a deliberate saved-list fixture, and
+  `supabase db reset` destroys it.** LV.12's fix round (**R208**) left a public
+  list owned by the *second* local account (`dev-pro@fieldscout.local`),
+  favourited from `dev@`, in the **local** DB on purpose — so the `saved` half
+  of the collection is non-empty by default, which is the one condition LV.12's
+  original verification never had. After a reset, **re-create it before
+  verifying anything about saved lists**: a public list on the `dev-pro`
+  account, favourited as `dev@` through the shipped
+  `POST /api/lists/[id]/favorite`. Skip that and the verification reproduces
+  R208 exactly — every observation taken over an empty array, looking green.
+  Full detail in `PROGRESS-lists-v2.md` §4 item 6. *(Added 2026-08-11, LV.12
+  review **R215** — the same "put it where the next Builder reads it" argument
+  R207 made, applied to R207's own round's artefact.)*
 
 ---
 

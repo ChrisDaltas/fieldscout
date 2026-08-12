@@ -117,7 +117,13 @@ export async function GET(request: Request) {
       tags,
       is_favorited: favIds.has(rest.id),
       // Only surface the owner for lists the viewer doesn't own (others' pinned
-      // lists), so the sidebar can show whose list it is.
+      // lists), so the sidebar can show whose list it is — and, load-bearing,
+      // because `lists-page-v2.tsx:146` splits the entire collection on
+      // `Boolean(list.owner)`: this field is the *sole* key that classifies a
+      // list as **Saved** rather than **Mine**, for the Saved tab and for the
+      // Side by side picker's saved half. Drop it — or trim the
+      // `owner:profiles!owner_id` embed it reads from out of `ownedSelect` —
+      // and Saved is empty for every user, forever, with no error anywhere.
       owner: rest.owner_id === user.id ? null : ownerObj,
     } as Record<string, unknown> & { id: string }
   })
