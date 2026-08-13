@@ -55,6 +55,29 @@ describe('pickClockView', () => {
     expect(view).toEqual({ mode: 'paused', remainingMs: 42_500 })
   })
 
+  it('paused with NULL remaining (an untimed draft paused — 069 stores NULL) is the untimed treatment, never 0:00 (R262)', () => {
+    // 069's pause bookkeeping: deadline_remaining_ms is NULL when the draft
+    // had no clock to freeze (§8.2 soft timer) — coalescing NULL→0 asserted
+    // a "Paused 0:00 left" the draft never had.
+    expect(
+      pickClockView(
+        { status: 'paused', current_deadline: null, deadline_remaining_ms: null },
+        DEADLINE_MS,
+        0,
+      ),
+    ).toEqual({ mode: 'untimed', remainingMs: null })
+  })
+
+  it('paused with NEGATIVE remaining (a pause during the D102 grace hold) clamps to 0:00', () => {
+    expect(
+      pickClockView(
+        { status: 'paused', current_deadline: null, deadline_remaining_ms: -3_000 },
+        DEADLINE_MS,
+        0,
+      ),
+    ).toEqual({ mode: 'paused', remainingMs: 0 })
+  })
+
   it('untimed: a live draft with a NULL deadline has no clock (§8.2 soft timer)', () => {
     expect(pickClockView(live({ current_deadline: null }), DEADLINE_MS, 0)).toEqual({
       mode: 'untimed',

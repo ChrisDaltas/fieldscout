@@ -292,6 +292,37 @@ describe('applyDraftRoomEvent · draft_picks UPDATE', () => {
     })
     expect(result.refetch).toBe(true)
   })
+
+  it('a commissioner reassign/move (team changes, undone-ness does not) patches the row — never a dropped event (R260)', () => {
+    // 069's draft_reassign_pick / draft_move_player UPDATE team_id WITHOUT
+    // touching is_undone; 070 broadcasts both as draft_picks UPDATE. The M2
+    // batch-12 probe shape: cache holds pick 3 on T(3); the UPDATE arrives
+    // with T(7). A (pick_number, player_id, is_undone) triple match is NOT
+    // row identity — dropping this event left the board wrong for the rest
+    // of the draft (§9.3 refetch-on-doubt, violated pre-fix).
+    const result = applyDraftRoomEvent(baseState(), {
+      event: 'draft_picks',
+      operation: 'UPDATE',
+      record: pickRecord({ pick_number: 3, player_id: 'pl-c', team_id: T(7), is_undone: false }),
+    })
+    expect(result.refetch).toBe(false)
+    const row = result.state.picks.find((p) => p.pick_number === 3)
+    expect(row?.team_id).toBe(T(7))
+    expect(row?.is_undone).toBe(false)
+    expect(row?.id).toBe('p3') // patched in place — the fetched id survives
+  })
+
+  it('a reassign that swapped the PLAYER has no (pick_number, player_id) row to patch ⇒ doubt ⇒ refetch (R260)', () => {
+    // draft_reassign_pick can also change player_id; the cached row then
+    // describes a player the draft no longer holds at that pick — only the
+    // authoritative fetch can reconcile it.
+    const result = applyDraftRoomEvent(baseState(), {
+      event: 'draft_picks',
+      operation: 'UPDATE',
+      record: pickRecord({ pick_number: 3, player_id: 'pl-swapped', team_id: T(3), is_undone: false }),
+    })
+    expect(result.refetch).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -49,7 +49,12 @@ export function pickClockView(
   offsetMs: number,
 ): PickClockView {
   if (draft.status === 'paused') {
-    return { mode: 'paused', remainingMs: Math.max(0, draft.deadline_remaining_ms ?? 0) }
+    // 069's pause bookkeeping stores deadline_remaining_ms = NULL when the
+    // draft had no clock to freeze (§8.2 soft timer) — that is the untimed
+    // treatment, not a "Paused 0:00 left" the draft never had (R262).
+    // NEGATIVE remaining (a pause during the D102 grace hold) clamps to 0:00.
+    if (draft.deadline_remaining_ms == null) return { mode: 'untimed', remainingMs: null }
+    return { mode: 'paused', remainingMs: Math.max(0, draft.deadline_remaining_ms) }
   }
   if (draft.status !== 'live') return { mode: 'idle', remainingMs: null }
   if (draft.current_deadline == null) return { mode: 'untimed', remainingMs: null }

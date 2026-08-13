@@ -198,22 +198,31 @@ function reducePickInsert(state: DraftState, record: PickBroadcastRecord): Reduc
 
 function reducePickUpdate(state: DraftState, record: PickBroadcastRecord): ReduceResult {
   // Already reflected (e.g. the refetch beat the broadcast) ⇒ inert replay.
+  // Identity is ALL six broadcast fields — R260 (M2 batch 12): 069's
+  // commissioner reassign/move UPDATE team_id (and possibly player_id)
+  // WITHOUT touching is_undone, so a (pick_number, player_id, is_undone)
+  // triple is not row identity; treating it as such silently dropped those
+  // events and left the board wrong for the rest of the draft.
   const reflected = state.picks.some(
     (p) =>
       p.pick_number === record.pick_number &&
       p.player_id === record.player_id &&
+      p.team_id === record.team_id &&
+      p.round === record.round &&
+      Boolean(p.is_auto) === Boolean(record.is_auto) &&
       Boolean(p.is_undone) === Boolean(record.is_undone),
   )
   if (reflected) return { state, refetch: false }
 
-  // The row this UPDATE flips: same (pick_number, player_id), differing
-  // undone-ness. At most one can exist for a TRUE-flip (uniq_draft_player_live
-  // allows one live row per player); anything else is doubt ⇒ refetch.
+  // The row this UPDATE patches: same (pick_number, player_id) — the hint
+  // key (D109(2): no id on the wire). Exactly one match ⇒ patch every other
+  // rendered field in place (undo flips, reassign team edits, move-player
+  // alike). Zero matches (a reassign that swapped the PLAYER — the cached
+  // row now names a player the draft no longer holds at that pick) or
+  // several (an undone row plus a re-pick of the same player at the same
+  // number) is doubt ⇒ refetch (§9.3).
   const matches = state.picks.filter(
-    (p) =>
-      p.pick_number === record.pick_number &&
-      p.player_id === record.player_id &&
-      Boolean(p.is_undone) !== Boolean(record.is_undone),
+    (p) => p.pick_number === record.pick_number && p.player_id === record.player_id,
   )
   if (matches.length !== 1) return { state, refetch: true }
 
