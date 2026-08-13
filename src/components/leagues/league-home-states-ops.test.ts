@@ -4,11 +4,15 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { LEAGUE_SETTINGS_DEFAULTS } from '@/lib/leagues/settings/league-settings'
 
 import {
+  AUTO_START_POLL_MS,
+  AUTO_START_WATCH_MS,
+  autoStartPollMs,
   checklistProgress,
   deriveSetupChecklist,
   describeDraftTime,
   draftCountdown,
   formatInstantAtOffset,
+  formatInstantInZone,
   homeStateForStatus,
   laterStatusLabel,
   offsetLabel,
@@ -73,14 +77,17 @@ function detail(over: {
 // ---------------------------------------------------------------------------
 
 describe('homeStateForStatus', () => {
-  it('maps M1 statuses to their heroes', () => {
+  it('maps the built statuses to their heroes', () => {
     expect(homeStateForStatus('setup')).toBe('setup')
     expect(homeStateForStatus('scheduled')).toBe('scheduled')
+    // L.B3.4 (F38): `drafting` gets the REAL hero — LIVE badge + Join draft
+    // (§16.5.1); it is no longer a "not yet" placeholder.
+    expect(homeStateForStatus('drafting')).toBe('drafting')
   })
 
-  it('routes every later lifecycle status to the "not yet" placeholder', () => {
-    // The §7.1 six-state enum past scheduled — never a mock hero (task item 1).
-    for (const s of ['drafting', 'in_season', 'playoffs', 'complete']) {
+  it('routes every M4-remainder status to the "not yet" placeholder (F46)', () => {
+    // in_season/playoffs/complete stay honest placeholders until M4 (F46).
+    for (const s of ['in_season', 'playoffs', 'complete']) {
       expect(homeStateForStatus(s)).toBe('later')
     }
   })
@@ -272,5 +279,99 @@ describe('describeDraftTime', () => {
 
   it('returns null for an unparseable instant', () => {
     expect(describeDraftTime('nope')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D98 (spec §7.3.8 v2.9.2): named-zone league time
+// ---------------------------------------------------------------------------
+
+describe('formatInstantInZone (D98)', () => {
+  // 2026-08-30T23:00:00Z — the round-trip fixture's instant. In New York
+  // (EDT, UTC−4 in August) that wall clock is 7:00 PM the same day.
+  const ms = Date.parse('2026-08-30T23:00:00.000Z')
+
+  it('renders the instant in America/New_York with the zone abbreviation (DST-aware)', () => {
+    expect(formatInstantInZone(ms, 'America/New_York')).toEqual({
+      text: 'Sun, Aug 30, 2026 · 7:00 PM',
+      zoneAbbrev: 'EDT',
+    })
+  })
+
+  it('renders the same instant in America/Los_Angeles (4:00 PM PDT)', () => {
+    expect(formatInstantInZone(ms, 'America/Los_Angeles')).toEqual({
+      text: 'Sun, Aug 30, 2026 · 4:00 PM',
+      zoneAbbrev: 'PDT',
+    })
+  })
+
+  it('a WINTER instant renders standard time (EST) — the zone, not a frozen offset', () => {
+    const winter = Date.parse('2026-12-30T23:00:00.000Z')
+    expect(formatInstantInZone(winter, 'America/New_York')).toEqual({
+      text: 'Wed, Dec 30, 2026 · 6:00 PM',
+      zoneAbbrev: 'EST',
+    })
+  })
+
+  it('returns null for an unusable zone (callers fall back to the offset render)', () => {
+    expect(formatInstantInZone(ms, 'Not/AZone')).toBeNull()
+  })
+})
+
+describe('describeDraftTime with a named zone (D98)', () => {
+  it('league time renders IN THE ZONE, labeled with its abbreviation', () => {
+    expect(describeDraftTime('2026-08-30T23:00:00.000Z', 'America/New_York')).toEqual({
+      leagueTime: 'Sun, Aug 30, 2026 · 7:00 PM',
+      leagueOffset: 'EDT',
+    })
+  })
+
+  it('the zone WINS over the stored offset when both exist', () => {
+    // Stored at −04:00 but the league says Pacific — the named zone renders.
+    expect(describeDraftTime('2026-08-30T19:00:00-04:00', 'America/Los_Angeles')).toEqual({
+      leagueTime: 'Sun, Aug 30, 2026 · 4:00 PM',
+      leagueOffset: 'PDT',
+    })
+  })
+
+  it('null zone ⇒ the M1 offset render stands unchanged', () => {
+    expect(describeDraftTime('2026-08-30T19:00:00-04:00', null)).toEqual({
+      leagueTime: 'Sun, Aug 30, 2026 · 7:00 PM',
+      leagueOffset: 'UTC−4',
+    })
+  })
+
+  it('an unusable stored zone degrades to the offset render, never crashes', () => {
+    expect(describeDraftTime('2026-08-30T19:00:00-04:00', 'Not/AZone')).toEqual({
+      leagueTime: 'Sun, Aug 30, 2026 · 7:00 PM',
+      leagueOffset: 'UTC−4',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D94 auto-start watch (L.B3.4)
+// ---------------------------------------------------------------------------
+
+describe('autoStartPollMs (D94)', () => {
+  const target = Date.parse('2026-08-30T23:00:00.000Z')
+
+  it('no instant / unparseable ⇒ no polling', () => {
+    expect(autoStartPollMs(null, target)).toBeNull()
+    expect(autoStartPollMs('nope', target)).toBeNull()
+  })
+
+  it('far out (one ms outside the watch window) ⇒ no polling', () => {
+    expect(autoStartPollMs('2026-08-30T23:00:00.000Z', target - AUTO_START_WATCH_MS - 1)).toBeNull()
+  })
+
+  it('inside the window (boundary inclusive) ⇒ the 5s poll', () => {
+    expect(autoStartPollMs('2026-08-30T23:00:00.000Z', target - AUTO_START_WATCH_MS)).toBe(
+      AUTO_START_POLL_MS,
+    )
+  })
+
+  it('past the instant ⇒ still polling (the tick may start it any pass)', () => {
+    expect(autoStartPollMs('2026-08-30T23:00:00.000Z', target + 60_000)).toBe(AUTO_START_POLL_MS)
   })
 })

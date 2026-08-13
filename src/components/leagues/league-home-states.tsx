@@ -2,20 +2,33 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { PageHeader } from '@/components/layout/app-header'
+import {
+  MOCK_LAUNCHER_READY,
+  mockLauncherHref,
+} from '@/components/draft/mock-launcher-entry'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { toast } from '@/hooks/use-toast'
+import {
+  LeaguePatchError,
+  useLeague,
+  useSetLeagueStatus,
+  type LeagueDetail,
+} from '@/hooks/use-league'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
+import { leaguesKeys } from '@/hooks/use-leagues'
 import { cn } from '@/lib/utils'
 
 import { InvitePanel } from './invite-panel'
 import { Crest } from './league-cells'
 import {
+  autoStartPollMs,
   deriveSetupChecklist,
   describeDraftTime,
   draftCountdown,
@@ -26,15 +39,21 @@ import {
 } from './league-home-states-ops'
 
 /**
- * League home — the §16.5.1 status state machine (M1 task L.A2.7). Reads the
- * REAL league row via `useLeague` and renders the hero for its status:
+ * League home — the §16.5.1 status state machine (M1 task L.A2.7; M2 task
+ * L.B3.4 discharges F38). Reads the REAL league row via `useLeague` and
+ * renders the hero for its status:
  *   - `setup`     → the setup checklist + the full invite panel (share link,
  *                   seats, roles — L.A2.5; each empty seat carries an invite
- *                   affordance, R112)
- *   - `scheduled` → the draft countdown (league TZ + viewer-local, §16.4) with
- *                   the Enter-lobby / Practice-draft CTAs stubbed → M2, plus
- *                   the invite panel (seats can still fill before the draft)
- *   - later       → a clearly-marked "not yet" placeholder, never mock data
+ *                   affordance, R112) + the §7.1 "Schedule the draft"
+ *                   transition once a draft time is saved (L.B3.4 — what
+ *                   arms the D94 auto-start)
+ *   - `scheduled` → the draft countdown (league TZ + viewer-local, §16.4;
+ *                   D98 named zone when set) with the REAL Enter-draft-lobby
+ *                   CTA (F38 discharged) and Practice-this-draft behind the
+ *                   L.B3.5 ready-flag, plus the invite panel
+ *   - `drafting`  → the LIVE hero (§16.5.1: LIVE badge + Join draft)
+ *   - later       → in_season/playoffs/complete stay the clearly-marked
+ *                   "not yet" placeholder until M4 (F46), never mock data
  *
  * The separate Manage-league page folded into this one: the invite panel
  * renders here directly, and read-only settings summaries were dropped — the
@@ -115,6 +134,7 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
       {state === 'scheduled' && (
         <ScheduledHero leagueId={leagueId} data={data} settingsHref={settingsHref} />
       )}
+      {state === 'drafting' && <DraftingHero leagueId={leagueId} data={data} />}
       {state === 'later' && <LaterPlaceholder status={league.status} />}
     </div>
   )
@@ -179,6 +199,29 @@ function SetupHero({
   settingsHref: string
 }) {
   const items = deriveSetupChecklist(data)
+  const timeSaved = items.some((i) => i.key === 'schedule' && i.done)
+  const setStatus = useSetLeagueStatus(leagueId)
+
+  // L.B3.4: the §7.1 setup → scheduled transition's first UI affordance.
+  // The instant alone doesn't schedule the league — the D94 auto-start tick
+  // scans `scheduled` leagues only, so without this flip a league would sit
+  // in setup past its own draft time forever. The L.A1.13 route validates
+  // the CURRENT stored settings before transitioning (per-field 400 → the
+  // settings panel is the fix-it surface).
+  const handleSchedule = () => {
+    setStatus.mutateAsync('scheduled').catch((error: unknown) => {
+      toast({
+        title: "Couldn't schedule the draft",
+        description:
+          error instanceof LeaguePatchError
+            ? error.fieldErrors
+              ? 'Some settings need attention first — check League settings.'
+              : error.message
+            : 'Something went wrong. Please try again.',
+        variant: 'destructive',
+      })
+    })
+  }
 
   return (
     <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1fr_1.3fr]">
@@ -195,6 +238,27 @@ function SetupHero({
               actionable={isCommish}
             />
           ))}
+
+          {isCommish && timeSaved && (
+            <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
+              <Button
+                type="button"
+                variant="blue"
+                size="sm"
+                shadow
+                className="w-fit"
+                disabled={setStatus.isPending}
+                onClick={handleSchedule}
+              >
+                <Icon name="calendar" size={13} />
+                {setStatus.isPending ? 'Scheduling…' : 'Schedule the draft'}
+              </Button>
+              <p className="text-[10px] font-semibold text-n-3">
+                Locks in draft night: the countdown appears for every manager and the
+                draft starts automatically at the scheduled time.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -279,6 +343,7 @@ function ScheduledHero({
 }) {
   const { settings } = data
   const scheduledAt = settings.draft.draft_scheduled_at
+  const timeZone = settings.draft.time_zone
   const orderMode = settings.draft.draft_order_mode
 
   const { data: templates, isPending: templatesPending } = useScoringTemplates()
@@ -296,20 +361,27 @@ function ScheduledHero({
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {scheduledAt ? (
-            <DraftCountdown scheduledAt={scheduledAt} />
+            <DraftCountdown leagueId={leagueId} scheduledAt={scheduledAt} timeZone={timeZone} />
           ) : (
             <p className="text-[12px] font-semibold text-n-3">
               A draft time hasn&apos;t been set yet. Add one in League settings.
             </p>
           )}
 
+          {/* F38 discharged (L.B3.4): the CTAs are real. Enter draft lobby →
+              the room route's pre-start lobby; Practice this draft → the
+              L.B3.5 launcher entry behind its ready-flag (visible now,
+              enabled the moment the launcher lands — lane order can't
+              dead-end). */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <StubbedCta icon="fire" label="Enter draft lobby" />
-            <StubbedCta icon="rocket" label="Practice this draft" />
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}/draft`}>
+                <Icon name="fire" size={13} />
+                Enter draft lobby
+              </Link>
+            </Button>
+            <PracticeCta leagueId={leagueId} />
           </div>
-          <p className="text-[10px] font-semibold text-n-3">
-            The live draft lobby and mock drafts arrive with the draft room.
-          </p>
         </CardContent>
       </Card>
 
@@ -361,17 +433,40 @@ function ScheduledHero({
   )
 }
 
-/** A CTA whose destination is the draft room (M2) — visibly present but inert. */
-function StubbedCta({ icon, label }: { icon: IconName; label: string }) {
+/**
+ * "Practice this draft" — wired to the L.B3.5 launcher entry behind its
+ * ready-flag (mock-launcher-entry.ts). Until the launcher lands the CTA is
+ * visibly present but honestly disabled; L.B3.5 flips the flag and this
+ * becomes a live link with zero rewiring.
+ */
+function PracticeCta({ leagueId }: { leagueId: string }) {
+  if (!MOCK_LAUNCHER_READY) {
+    return (
+      <Button variant="stroke" size="sm" disabled title="Practice drafts arrive with the next update">
+        <Icon name="rocket" size={13} />
+        Practice this draft
+      </Button>
+    )
+  }
   return (
-    <Button variant="stroke" size="sm" disabled title="Arrives with the draft room">
-      <Icon name={icon} size={13} />
-      {label}
+    <Button variant="stroke" size="sm" asChild>
+      <Link href={mockLauncherHref(leagueId)}>
+        <Icon name="rocket" size={13} />
+        Practice this draft
+      </Link>
     </Button>
   )
 }
 
-function DraftCountdown({ scheduledAt }: { scheduledAt: string }) {
+function DraftCountdown({
+  leagueId,
+  scheduledAt,
+  timeZone,
+}: {
+  leagueId: string
+  scheduledAt: string
+  timeZone?: string | null
+}) {
   // Component-layer wall clock (the D3 TimeProvider guard is scoped to
   // `src/lib/leagues/**`; this is UI display). The pure `draftCountdown` takes
   // nowMs, so the math stays deterministic and pinned.
@@ -381,8 +476,22 @@ function DraftCountdown({ scheduledAt }: { scheduledAt: string }) {
     return () => clearInterval(timer)
   }, [])
 
+  // D94 auto-start watch: near/past the instant the SERVER starts the draft
+  // (the tick creates the drafts row if absent) and nothing pushes that flip
+  // to a countdown viewer — poll the league detail while the window is hot
+  // so the hero flips to LIVE without a manual refresh.
+  const queryClient = useQueryClient()
+  const pollMs = autoStartPollMs(scheduledAt, nowMs)
+  useEffect(() => {
+    if (pollMs === null) return
+    const timer = setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+    }, pollMs)
+    return () => clearInterval(timer)
+  }, [pollMs, leagueId, queryClient])
+
   const cd = draftCountdown(scheduledAt, nowMs)
-  const display = describeDraftTime(scheduledAt)
+  const display = describeDraftTime(scheduledAt, timeZone)
 
   if (!cd || !display) {
     return (
@@ -447,6 +556,43 @@ function CountUnit({ value, label }: { value: number; label: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Drafting hero — LIVE badge + Join draft (§16.5.1 drafting row · L.B3.4/F38)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `drafting` home hero (task L.B3.4 item 2 — the row's printed scope:
+ * LIVE badge + Join draft). Who's-in-the-room presence deliberately does NOT
+ * render here: presence is channel state, and opening the draft channel from
+ * the home would spend a second subscription on a page whose one CTA leads
+ * to the room that already owns it (§9.3's ≤ 3-channel budget; recorded in
+ * D120). The room is one tap away.
+ */
+function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+  const startedAt = data.active_draft?.started_at ?? null
+
+  return (
+    <Card className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+      <Badge variant="lime" className="w-fit">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-pill bg-current" />
+        LIVE
+      </Badge>
+      <p className="text-h5 text-ink">The draft is live</p>
+      <p className="max-w-md text-[13px] font-medium text-n-3">
+        {startedAt
+          ? `Picks are coming off the board — the room opened at ${new Date(startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`
+          : 'Picks are coming off the board right now.'}
+      </p>
+      <Button variant="blue" size="sm" shadow asChild>
+        <Link href={`/app/leagues/${leagueId}/draft`}>
+          <Icon name="fire" size={13} />
+          Join draft
+        </Link>
+      </Button>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Later statuses — clearly-marked "not yet", never mock data (§16.5.1)
 // ---------------------------------------------------------------------------
 
@@ -455,9 +601,10 @@ function LaterPlaceholder({ status }: { status: string }) {
     <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       <Icon name="rocket" size={18} className="text-n-3" />
       <p className="text-h5 text-ink">{laterStatusLabel(status)}</p>
+      {/* Post-draft statuses only from here (F46): drafting has its real hero. */}
       <p className="max-w-md text-[13px] font-medium text-n-3">
-        The live draft room and in-season experience land in a later update. Your league
-        is safe — this screen fills in as those features ship.
+        The in-season experience lands in a later update. Your league is safe — this
+        screen fills in as those features ship.
       </p>
       <Button variant="stroke" size="sm" asChild>
         <Link href="/app/leagues">Back to leagues</Link>
