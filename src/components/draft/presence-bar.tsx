@@ -7,6 +7,9 @@ export interface PresenceSeat {
   online: boolean
   onClock: boolean
   isMe: boolean
+  /** §16.5.4 "autopick-on (draft seat)" badge (L.B3.3): the §8.4
+   *  `is_autodraft` flag, or a no-user seat (E48's autopilot). */
+  autopick?: boolean
 }
 
 interface PresenceBarProps {
@@ -53,6 +56,11 @@ export function PresenceBar({ seats, className }: PresenceBarProps) {
             {seat.isMe ? ' (You)' : ''}
           </span>
           <span className="sr-only">{seat.online ? 'online' : 'offline'}</span>
+          {seat.autopick && (
+            <span className="fs-overline rounded-sm bg-caution-soft px-1 text-[9px] text-ink">
+              Auto
+            </span>
+          )}
           {seat.onClock && <span className="fs-overline text-[9px] text-accent-strong">On clock</span>}
         </div>
       ))}

@@ -12,11 +12,14 @@ import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
   computeClockOffsetMs,
+  connectionAfterJoinFailure,
   heartbeatSignalsGap,
   heartbeatSilenceExceeded,
   OFFSET_SAMPLE_WINDOW,
   type TickHeartbeat,
 } from './use-draft-ops'
+import { draftChatContext, draftChatKeys } from './use-draft-chat'
+import { isChatRecord, reduceChatEvent, type DraftChatRow } from './use-draft-chat-ops'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -95,8 +98,12 @@ export type DraftRoomConnection =
   | 'connecting'
   /** Subscribed — broadcasts are flowing. */
   | 'live'
-  /** Was live, lost the channel — the §16.5.4 reconnecting banner renders;
-   *  refetch-first + resubscribe are already in flight. */
+  /** The channel is down and the room knows it — the §16.5.4 reconnecting
+   *  banner renders; refetch-first + resubscribe are already in flight.
+   *  Reached from a lost LIVE channel, or (R263) from a room mounted DURING
+   *  an outage once `FIRST_JOIN_FAILURES_FOR_BANNER` consecutive first
+   *  joins have failed — a never-subscribed room must not claim
+   *  'connecting' forever while its liveness is actually broken. */
   | 'reconnecting'
 
 /** What each room occupant tracks over Presence (§9.1; keyed by team). */
@@ -163,6 +170,10 @@ export function useDraftRoom(
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let attempt = 0
     let everSubscribed = false
+    // R263: consecutive failed joins while never-subscribed — crossing
+    // FIRST_JOIN_FAILURES_FOR_BANNER surfaces the reconnecting banner even
+    // though the room was never live (the mount-during-outage shape).
+    let failedJoins = 0
 
     const refetchDraft = () => {
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
@@ -231,9 +242,19 @@ export function useDraftRoom(
       ch.on('broadcast', { event: 'draft_picks' }, ({ payload }) =>
         applyBroadcast('draft_picks', (payload ?? {}) as BroadcastEnvelope),
       )
-      ch.on('broadcast', { event: 'league_chat' }, () => {
-        // Received on the shared topic; the chat pane (L.B3.3) consumes it.
-        // Inert here by design — chat is not room state (use-draft-ops.ts).
+      ch.on('broadcast', { event: 'league_chat' }, ({ payload }) => {
+        // The chat pane's live feed (L.B3.3) — chat is NOT room state, so it
+        // never touches the room reducer: the broadcast folds into the chat
+        // query's own cache through the pure chat reducer (id-dedupe absorbs
+        // the sender's own-INSERT echo). An unmounted/unfetched pane has no
+        // cache to patch — its mount-time fetch carries the history.
+        const record = ((payload ?? {}) as BroadcastEnvelope).record
+        if (!isChatRecord(record)) return
+        const key = draftChatKeys.room(draftId)
+        const rows = queryClient.getQueryData<readonly DraftChatRow[]>(key)
+        if (!rows) return
+        const next = reduceChatEvent(rows, record, draftChatContext(draftId))
+        if (next !== rows) queryClient.setQueryData(key, next)
       })
       ch.on('broadcast', { event: 'tick' }, ({ payload }) => {
         const beat = (payload ?? {}) as Partial<TickHeartbeat>
@@ -273,11 +294,15 @@ export function useDraftRoom(
         if (status === 'SUBSCRIBED') {
           attempt = 0
           everSubscribed = true
+          failedJoins = 0 // R263: a successful join resets the count
           lastBeatAtRef.current = Date.now() // silence counts from the join
           setConnection('live')
           // §9.3: never depend on missed broadcasts — reconcile on EVERY
-          // confirmed join (boot window + reconnect gap alike).
+          // confirmed join (boot window + reconnect gap alike). Chat rides
+          // the same rule: it has no gap detector, so the join refetch is
+          // its missed-message recovery (id-dedupe absorbs overlap).
           refetchDraft()
+          void queryClient.invalidateQueries({ queryKey: draftChatKeys.room(draftId) })
           if (presenceTeamId || presenceUserId) {
             void ch.track({
               team_id: presenceTeamId,
@@ -288,8 +313,11 @@ export function useDraftRoom(
         }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           // Reconnect doctrine: refetch authoritative state FIRST, then
-          // resubscribe (§8.7); the banner renders meanwhile.
-          setConnection(everSubscribed ? 'reconnecting' : 'connecting')
+          // resubscribe (§8.7); the banner renders meanwhile. A room mounted
+          // DURING an outage crosses into 'reconnecting' after N failed
+          // first joins (R263 — the pure threshold in use-draft-ops.ts).
+          failedJoins += 1
+          setConnection(connectionAfterJoinFailure(everSubscribed, failedJoins))
           refetchDraft()
           scheduleReopen()
         }
@@ -421,10 +449,14 @@ export function useCreateDraft(leagueId: string) {
   })
 }
 
-/** PATCH body for the pre-start order edit (exactly one of the two). */
-export type DraftOrderBody = { order: string[] } | { randomize: true }
+/** PATCH body: exactly one of `order`/`randomize`. `reason` is REQUIRED by
+ *  the route when the draft is live/paused (the L.B2.3 post-start E31
+ *  dispatch — D114(3); randomize is refused post-start), optional pre-start. */
+export type DraftOrderBody = { order: string[]; reason?: string } | { randomize: true }
 
-/** PATCH /api/leagues/[id]/draft — pre-start order edit incl. randomize. */
+/** PATCH /api/leagues/[id]/draft — order edit (pre-start incl. randomize;
+ *  post-start = the E31 dispatch, reason required — the commish panel's
+ *  order editor is the consumer). */
 export function useDraftOrder(leagueId: string) {
   const queryClient = useQueryClient()
   const invalidate = useInvalidateLeagueDetail(leagueId)
