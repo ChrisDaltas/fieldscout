@@ -1,0 +1,102 @@
+'use client'
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import { createBrowserClient } from '@/lib/supabase/client'
+
+import {
+  DRAFT_CHAT_WINDOW,
+  reduceChatEvent,
+  type DraftChatRow,
+} from './use-draft-chat-ops'
+
+/**
+ * Draft chat data (M2 task L.B3.3; spec §8.8/§16.2 draft-chat; D99).
+ *
+ * READ: an RLS-scoped direct SELECT (D92's read rule; the 065 membership
+ * SELECT policy is the auth) over `league_chat` for this draft's context —
+ * the latest `DRAFT_CHAT_WINDOW` rows, rendered ascending. LIVE updates ride
+ * the room's ONE existing channel (§9.3's ≤3 budget — no second
+ * subscription): `useDraftRoom` applies `league_chat` broadcasts into this
+ * query's cache through the pure reducer, and invalidates it on every
+ * confirmed (re)join (chat has no gap detector — id-dedupe + join-refetch is
+ * the missed-message recovery).
+ *
+ * WRITE: the ONE spec-sanctioned direct client INSERT (§9.3/D99 — no chat
+ * route exists on purpose). The 065 policy is the contract: membership +
+ * own `user_id` + `is_system = FALSE` + 1..500 chars + this draft's exact
+ * context grammar. System posts are RPC-only — this hook can never write
+ * one, and the WITH CHECK pins it.
+ */
+
+export const draftChatKeys = {
+  room: (draftId: string) => ['draft-chat', draftId] as const,
+}
+
+/** The exact §12.13 context grammar for a draft room ('draft:<draft_id>'). */
+export function draftChatContext(draftId: string): string {
+  return `draft:${draftId}`
+}
+
+export function useDraftChat(leagueId: string | undefined, draftId: string | undefined) {
+  return useQuery({
+    queryKey: draftChatKeys.room(draftId ?? 'none'),
+    enabled: Boolean(leagueId && draftId),
+    queryFn: async (): Promise<DraftChatRow[]> => {
+      const supabase = createBrowserClient()
+      // Latest-N window (desc + reverse): the pane renders the recent scroll
+      // ascending; the window never claims to be the whole history.
+      const { data, error } = await supabase
+        .from('league_chat')
+        .select('id, user_id, message, context, is_system, created_at')
+        .eq('league_id', leagueId!)
+        .eq('context', draftChatContext(draftId!))
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(DRAFT_CHAT_WINDOW)
+      if (error) throw error
+      return ((data ?? []) as DraftChatRow[]).reverse()
+    },
+  })
+}
+
+/**
+ * Send one ordinary chat message (the sanctioned direct INSERT — D99).
+ * `is_system` is sent FALSE explicitly (the policy's WITH CHECK pins it; the
+ * explicit value keeps the sanctioned write self-describing). On success the
+ * returned row is folded into the cache through the reducer — the broadcast
+ * echo of the same INSERT dedupes by id when it arrives.
+ */
+export function useSendDraftChat(
+  leagueId: string,
+  draftId: string,
+  userId: string | null,
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (message: string): Promise<DraftChatRow> => {
+      if (!userId) throw new Error('Sign in to chat.')
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('league_chat')
+        .insert({
+          league_id: leagueId,
+          user_id: userId, // must equal auth.uid() — the 065 policy
+          message: message.trim(),
+          context: draftChatContext(draftId),
+          is_system: false,
+        })
+        .select('id, user_id, message, context, is_system, created_at')
+        .single()
+      if (error) throw new Error(error.message)
+      return data as DraftChatRow
+    },
+    onSuccess: (row) => {
+      const key = draftChatKeys.room(draftId)
+      const rows = queryClient.getQueryData<readonly DraftChatRow[]>(key)
+      if (!rows) return
+      const next = reduceChatEvent(rows, row, draftChatContext(draftId))
+      if (next !== rows) queryClient.setQueryData(key, next)
+    },
+  })
+}

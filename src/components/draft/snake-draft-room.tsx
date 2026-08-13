@@ -19,6 +19,7 @@ import {
   type DraftPickSummary,
   type DraftRoomConnection,
 } from '@/hooks/use-draft'
+import { usePauseResumeDraft } from '@/hooks/use-draft-controls'
 import {
   draftQueueKeys,
   useDraftQueue,
@@ -33,7 +34,10 @@ import type { Draft } from '@/types/database'
 
 import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
+import { CommishDraftPanel } from './commish-draft-panel'
+import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftBoardGrid } from './draft-board-grid'
+import { DraftChat } from './draft-chat'
 import {
   nextPickNumberForTeam,
   parseDraftOrder,
@@ -47,7 +51,9 @@ import { abbreviateName } from './mock-draft'
 import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
+import { DraftPauseOverlay } from './pause-overlay'
 import { PickClock } from './pick-clock'
+import { pickClockView } from './pick-clock-ops'
 import { PresenceBar, type PresenceSeat } from './presence-bar'
 
 interface SnakeDraftRoomProps {
@@ -69,7 +75,13 @@ interface SnakeDraftRoomProps {
  * L.B4.2; the recap surface is L.B3.5.
  *
  * Mobile (§16.4): the room collapses to a picks ticker + the "my picks"
- * rail, with the full grid (and pool/queue) one tap away on a Segment.
+ * rail, with the full grid (and pool/queue/chat) one tap away on a Segment.
+ *
+ * L.B3.3 adds the §16.2 chat pane (`draft-chat` — the sanctioned direct
+ * INSERT + the room channel's live feed), the §8.7 commissioner panel
+ * (`commish-draft-panel` — commish/co-commish on NON-mock drafts only,
+ * D110(1)), the §16.5.2 pause overlay with the frozen remaining time, and
+ * the §16.5.4 autopick-on seat badges.
  */
 export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) {
   const { user } = useAuth()
@@ -199,7 +211,7 @@ interface DraftRoomLiveProps {
   userId: string | null
 }
 
-type MobilePane = 'players' | 'queue' | 'board'
+type MobilePane = 'players' | 'queue' | 'board' | 'chat'
 
 function DraftRoomLive({
   leagueId,
@@ -276,6 +288,24 @@ function DraftRoomLive({
     [order, draft.total_rounds, draftType, snakeReversal, livePicks, draft.current_pick_number],
   )
 
+  // §16.5.4 autopick-on seat badge (L.B3.3): sourced from the §8.4 flag
+  // (`league_members.is_autodraft` — the §8.7 any-team toggle writes it) OR
+  // a seat with NO user (placeholder/vacated — E48's autopilot picks for it
+  // at every deadline, so "Auto" is the honest label). Mock rooms render
+  // neither: CPU behavior is mock runtime, not the §8.4 flag (068's ARM 2
+  // mock branch zeroes is_autodraft), and a real-league flag badge inside a
+  // practice room would mislead.
+  const autopickTeamIds = useMemo(() => {
+    if (draft.is_mock) return new Set<string>()
+    const ids = new Set<string>()
+    for (const member of detail.members) {
+      if (member.team_id && (member.is_autodraft === true || !member.user_id)) {
+        ids.add(member.team_id)
+      }
+    }
+    return ids
+  }, [draft.is_mock, detail.members])
+
   const seatIds = order.length > 0 ? order : detail.teams.map((t) => t.id)
   const seats: PresenceSeat[] = seatIds.map((teamId) => ({
     teamId,
@@ -283,6 +313,7 @@ function DraftRoomLive({
     online: onlineTeamIds.has(teamId),
     onClock: teamId === draft.on_clock_team_id,
     isMe: teamId === myTeamId,
+    autopick: autopickTeamIds.has(teamId),
   }))
 
   const onClockTeam = draft.on_clock_team_id
@@ -290,6 +321,23 @@ function DraftRoomLive({
     : undefined
   const youAreOnClock = Boolean(myTeamId) && draft.on_clock_team_id === myTeamId
   const paused = draft.status === 'paused'
+
+  // §8.7 surface: commissioner/co-commissioner, NON-mock only (D110(1) —
+  // the controls refuse mocks in-RPC; the UI must not offer them).
+  const isCommish = canUseCommishPanel(detail.my_role) && !draft.is_mock
+  const pauseResume = usePauseResumeDraft(leagueId, draft.id)
+  // The §16.5.2 pause overlay's frozen clock — the paused branch reads only
+  // the persisted deadline_remaining_ms, so the (nowMs, offsetMs) samples
+  // are irrelevant here (pure derivation, no wall-clock read).
+  const pausedClock = pickClockView(
+    {
+      status: draft.status,
+      current_deadline: draft.current_deadline,
+      deadline_remaining_ms: draft.deadline_remaining_ms,
+    },
+    0,
+    0,
+  )
 
   const myNextPick = useMemo(
     () =>
@@ -391,7 +439,33 @@ function DraftRoomLive({
     />
   ) : null
 
+  const chatCard = (
+    <DraftChat leagueId={leagueId} draftId={draft.id} detail={detail} userId={userId} />
+  )
+
   const boardCard = (
+    // Relative host for the §16.5.2 pause overlay (it floats above the
+    // board only — chat and the rail stay usable during a pause).
+    <div className="relative min-w-0">
+      {paused && (
+        <DraftPauseOverlay
+          clock={pausedClock}
+          canResume={isCommish}
+          resuming={pauseResume.isPending}
+          onResume={() =>
+            pauseResume.mutateAsync({ action: 'resume' }).catch((error: unknown) => {
+              toast({
+                title: 'Resume failed',
+                description:
+                  error instanceof LeagueActionError
+                    ? error.message
+                    : 'Something went wrong. The room refreshes automatically.',
+                variant: 'destructive',
+              })
+            })
+          }
+        />
+      )}
     <Card>
       <CardHeader>
         <span className="text-[13px] font-extrabold">Draft board</span>
@@ -432,6 +506,7 @@ function DraftRoomLive({
         )}
       </CardContent>
     </Card>
+    </div>
   )
 
   return (
@@ -439,9 +514,20 @@ function DraftRoomLive({
       <PageHeader
         title="Draft room"
         actions={
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>Exit room</Link>
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {isCommish && (
+              <CommishDraftPanel
+                leagueId={leagueId}
+                draft={draft}
+                detail={detail}
+                picks={picks}
+                playerById={playerById}
+              />
+            )}
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}`}>Exit room</Link>
+            </Button>
+          </div>
         }
       />
 
@@ -508,6 +594,7 @@ function DraftRoomLive({
             {poolCard}
             {queueCard}
             {trackerCard}
+            {chatCard}
           </div>
         </div>
 
@@ -586,6 +673,13 @@ function DraftRoomLive({
             >
               Full board
             </SegmentItem>
+            <SegmentItem
+              active={mobilePane === 'chat'}
+              onClick={() => setMobilePane('chat')}
+              className="flex-1"
+            >
+              Chat
+            </SegmentItem>
           </Segment>
 
           {mobilePane === 'players' && poolCard}
@@ -598,6 +692,7 @@ function DraftRoomLive({
               </p>
             ))}
           {mobilePane === 'board' && boardCard}
+          {mobilePane === 'chat' && chatCard}
         </div>
       </div>
     </>

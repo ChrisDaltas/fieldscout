@@ -15,6 +15,8 @@ import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
   computeClockOffsetMs,
+  connectionAfterJoinFailure,
+  FIRST_JOIN_FAILURES_FOR_BANNER,
   HEARTBEAT_SILENCE_MS,
   heartbeatSignalsGap,
   heartbeatSilenceExceeded,
@@ -330,7 +332,7 @@ describe('applyDraftRoomEvent · draft_picks UPDATE', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyDraftRoomEvent · other events', () => {
-  it('league_chat is inert until L.B3.3 lands its consumer', () => {
+  it('league_chat is inert in the ROOM reducer — chat is not room state (its consumer is the chat cache reducer, L.B3.3)', () => {
     const state = baseState()
     const result = applyDraftRoomEvent(state, {
       event: 'league_chat',
@@ -418,6 +420,32 @@ describe('heartbeat', () => {
   it('both-null deadlines (untimed draft) agree — no gap', () => {
     const untimed = baseState({ draft: draftRow({ current_deadline: null }) })
     expect(heartbeatSignalsGap(untimed, { current_deadline: null })).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Connection honesty — the R263 mount-during-outage shape (M2 batch 12)
+// ---------------------------------------------------------------------------
+
+describe('connectionAfterJoinFailure (R263)', () => {
+  it('the mount-during-outage shape: 1st failed FIRST join stays connecting (the backoff retry may heal a boot race invisibly); the 2nd surfaces the reconnecting banner', () => {
+    expect(FIRST_JOIN_FAILURES_FOR_BANNER).toBe(2) // the recorded N
+    expect(connectionAfterJoinFailure(false, 1)).toBe('connecting')
+    expect(connectionAfterJoinFailure(false, 2)).toBe('reconnecting')
+    // The outage persists — the banner stays.
+    expect(connectionAfterJoinFailure(false, 3)).toBe('reconnecting')
+  })
+
+  it('an ever-subscribed room is reconnecting on ANY failure (the L.B3.1 behavior, unchanged)', () => {
+    expect(connectionAfterJoinFailure(true, 1)).toBe('reconnecting')
+  })
+
+  it('a successful join resets the count — the next single failure is connecting again only if never subscribed', () => {
+    // The hook zeroes failedJoins on SUBSCRIBED; everSubscribed also flips
+    // true there, so post-success failures always take the reconnecting arm.
+    // This pin documents the pure function's half of that contract: with the
+    // count reset and everSubscribed true, one failure ⇒ 'reconnecting'.
+    expect(connectionAfterJoinFailure(true, 0)).toBe('reconnecting')
   })
 })
 

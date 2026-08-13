@@ -307,6 +307,37 @@ export function bestClockOffsetMs(samples: readonly number[]): number | null {
   return Math.max(...samples)
 }
 
+// ---------------------------------------------------------------------------
+// Connection-state honesty (§16.5.4 reconnecting banner; R263, M2 batch 12)
+// ---------------------------------------------------------------------------
+
+/**
+ * How many consecutive FAILED first joins before a never-subscribed room
+ * surfaces the §16.5.4 reconnecting banner (R263: a room MOUNTED DURING an
+ * outage sat in 'connecting' forever — refetches kept the data truthful but
+ * the room never admitted its liveness gap). N = 2, recorded: the very first
+ * join can fail on a transient boot/token race the ~1s backoff retry heals
+ * invisibly (the D109(9) class — flashing the banner there would be noise);
+ * a SECOND consecutive failure means the retry didn't heal it, which is the
+ * same "was live, lost the channel" honesty problem the banner exists for.
+ */
+export const FIRST_JOIN_FAILURES_FOR_BANNER = 2
+
+/**
+ * The connection state after a failed (re)join. Once a room has ever
+ * subscribed, any failure is 'reconnecting' (the L.B3.1 behavior); a room
+ * that has NEVER subscribed crosses into 'reconnecting' after
+ * `FIRST_JOIN_FAILURES_FOR_BANNER` consecutive failures (R263 — the
+ * mount-during-outage shape). A successful join resets the count.
+ */
+export function connectionAfterJoinFailure(
+  everSubscribed: boolean,
+  failedJoinCount: number,
+): 'connecting' | 'reconnecting' {
+  if (everSubscribed) return 'reconnecting'
+  return failedJoinCount >= FIRST_JOIN_FAILURES_FOR_BANNER ? 'reconnecting' : 'connecting'
+}
+
 /**
  * Beat-silence threshold: a LIVE draft beats every tick pass (~5s — 068
  * ARM 3; §9.1 prints 15s as the correction cadence, and this tolerates ≤ 2
