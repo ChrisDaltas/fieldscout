@@ -61,22 +61,41 @@ const TEAM_COUNTS = [8, 9, 10, 11, 12, 13, 14, 15, 16] as const
 const MATRIX_ROUNDS = 4
 const DEEP_ROUNDS = 16
 const DEEP_SIZE = 8
-const CONCURRENCY = 48
+// Deliberately modest: the full vitest run executes this suite BESIDE the
+// other stack-backed suites, and a wide RPC burst here starves the local
+// PostgREST pool under them (observed as shifting 500s/timeouts in sibling
+// files at 48). ~1.6k pure-math calls at 8-wide still finish in seconds.
+const CONCURRENCY = 8
 
-/** SQL truth for one pick — the real 066 helper over PostgREST. */
+/**
+ * SQL truth for one pick — the real 066 helper over PostgREST. Transport
+ * errors retry a bounded number of times: under the FULL vitest run the
+ * local gateway occasionally answers "invalid response from the upstream
+ * server" beside the other stack suites, and reporting that hiccup as a
+ * parity failure would be the F53 mistake (a setup failure wearing a
+ * product failure's name). VALUE drift never retries — the assertion on
+ * the returned team is exact and fails on the first comparison.
+ */
 async function sqlTeamForPick(
   order: readonly string[],
   mode: ModeSpec,
   pick: number,
 ): Promise<string | null> {
-  const { data, error } = await supabase.rpc('draft_team_for_pick', {
-    p_draft_order: [...order],
-    p_draft_type: mode.draftType,
-    p_snake_reversal: mode.reversal,
-    p_pick_number: pick,
-  })
-  if (error) throw new Error(`draft_team_for_pick(${mode.label}, pick ${pick}): ${error.message}`)
-  return (data as string | null) ?? null
+  let lastMessage = ''
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 250 * attempt))
+    const { data, error } = await supabase.rpc('draft_team_for_pick', {
+      p_draft_order: [...order],
+      p_draft_type: mode.draftType,
+      p_snake_reversal: mode.reversal,
+      p_pick_number: pick,
+    })
+    if (!error) return (data as string | null) ?? null
+    lastMessage = error.message
+  }
+  throw new Error(
+    `draft_team_for_pick(${mode.label}, pick ${pick}) failed after retries: ${lastMessage}`,
+  )
 }
 
 interface ParityRow {
