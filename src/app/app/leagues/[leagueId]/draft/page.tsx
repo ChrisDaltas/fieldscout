@@ -1,54 +1,32 @@
-import { AuctionDraftRoom } from '@/components/draft/auction-draft-room'
-import {
-  MOCK_AUCTION_DRAFT,
-  MOCK_LEAGUE,
-  MOCK_SNAKE_DRAFT,
-  type DraftFormat,
-} from '@/components/draft/mock-draft'
 import { SnakeDraftRoom } from '@/components/draft/snake-draft-room'
 
 export const metadata = { title: 'Draft room · FieldScout' }
 
 interface DraftRoomPageProps {
   params: Promise<{ leagueId: string }>
-  searchParams: Promise<{ format?: string | string[] }>
+  searchParams: Promise<{ draft?: string | string[] }>
 }
 
-/** `?format=snake|auction` picks the room; anything else falls back to the
- *  league's configured format. */
-function parseFormat(param: string | string[] | undefined): DraftFormat {
-  const value = Array.isArray(param) ? param[0] : param
-  if (value === 'auction' || value === 'snake') return value
-  return MOCK_LEAGUE.draftFormat
-}
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * Draft room — snake or auction, chosen by `?format=`.
+ * Draft room (live) — REAL data only (M2 task L.B3.1; C25: the `?format=`
+ * fixture switch is gone). The room resolves the league's active non-mock
+ * draft by default; `?draft=<id>` targets a specific draft in THIS league —
+ * the mock-room path (L.B3.5's launcher routes here). No draft ⇒ the room
+ * renders its honest "no draft yet" state pointing back at the league home
+ * (the lobby/CTA surface — L.B3.4).
  *
- * TODO(live-draft): no league/draft backend exists. The league record and
- * draft state are fixtures from `components/draft/mock-draft.ts`; when the
- * draft service lands, resolve the league by `leagueId`, read its real
- * format, and hydrate the room from the live channel.
+ * Only M2's snake/linear engine can reach `live` (draft_start refuses
+ * auction naming M3), so one room component serves every reachable draft;
+ * the auction room re-skin is M3's (tasks-M2 §11).
  */
-export default async function DraftRoomPage({
-  params,
-  searchParams,
-}: DraftRoomPageProps) {
+export default async function DraftRoomPage({ params, searchParams }: DraftRoomPageProps) {
   const { leagueId } = await params
-  const { format } = await searchParams
-  const draftFormat = parseFormat(format)
+  const { draft } = await searchParams
+  const draftParam = Array.isArray(draft) ? draft[0] : draft
+  const draftIdParam = draftParam && UUID_RE.test(draftParam) ? draftParam : undefined
 
-  return draftFormat === 'auction' ? (
-    <AuctionDraftRoom
-      leagueId={leagueId}
-      league={MOCK_LEAGUE}
-      initial={MOCK_AUCTION_DRAFT}
-    />
-  ) : (
-    <SnakeDraftRoom
-      leagueId={leagueId}
-      league={MOCK_LEAGUE}
-      initial={MOCK_SNAKE_DRAFT}
-    />
-  )
+  return <SnakeDraftRoom leagueId={leagueId} draftIdParam={draftIdParam} />
 }
