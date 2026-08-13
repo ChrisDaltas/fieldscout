@@ -1,8 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -10,19 +9,38 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { MockBanner, ReconnectingBanner } from '@/components/leagues/status-banners'
 import { useAuth } from '@/hooks/use-auth'
 import {
   useDraftRoom,
+  useMakePick,
   type DraftPickSummary,
   type DraftRoomConnection,
 } from '@/hooks/use-draft'
+import { useDraftQueue, useUpdateDraftQueue } from '@/hooks/use-draft-queue'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
-import { createBrowserClient } from '@/lib/supabase/client'
+import { usePlayersByIds } from '@/hooks/use-players-by-ids'
+import { toast } from '@/hooks/use-toast'
+import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 
+import { AvailablePlayers } from './available-players'
+import { draftedIdSet } from './available-players-ops'
+import { DraftBoardGrid } from './draft-board-grid'
+import {
+  nextPickNumberForTeam,
+  parseDraftOrder,
+  pickLabel,
+  recentPicks,
+  type BoardModelInput,
+} from './draft-board-ops'
 import { DraftPick } from './draft-pick'
+import type { OrderedDraftType } from './draft-order'
 import { abbreviateName } from './mock-draft'
+import { MyQueue } from './my-queue'
+import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
+import { MyRosterTracker } from './my-roster-tracker'
 import { PickClock } from './pick-clock'
 import { PresenceBar, type PresenceSeat } from './presence-bar'
 
@@ -34,18 +52,18 @@ interface SnakeDraftRoomProps {
 }
 
 /**
- * Draft room (M2 task L.B3.1) — re-skinned IN PLACE from the mock-fixture
- * simulation to REAL data: the drafts row + picks over `useDraftRoom`
- * (fetch-then-subscribe, gap ⇒ refetch — §9.3), the on-clock header, the
- * server-deadline `pick-clock`, the Presence-keyed `presence-bar`, the MOCK
- * banner (§16.2), and the §16.5.4 reconnecting banner.
+ * Draft room — the shell landed in L.B3.1 (realtime client, clock,
+ * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
+ * §8.5.2: the rounds × teams board grid (D90 — made cells from rows, empty
+ * future cells from the parity-pinned TS order mirror), available players
+ * (C26 by-player_id subtraction, E17 live off the picks channel), my queue
+ * (optimistic drag reorder — §15.6; drafted greyed/auto-removed — E17) and
+ * the roster tracker (068's documented greedy as a display read-model).
+ * Chat + the commissioner panel are L.B3.3; the My Lists panel/overlays are
+ * L.B4.2; the recap surface is L.B3.5.
  *
- * SCOPE SEAM (tasks-M2): this task is the room SHELL. The rounds×teams
- * board grid with future cells (D90 parity-pinned order helpers), the
- * available-players pool (C26's player_id subtraction), my-queue and the
- * roster tracker land in L.B3.2; chat + the commissioner panel in L.B3.3.
- * Until then the board area renders the made picks (real rows) plus the
- * single on-clock cell the drafts row itself names — nothing fabricated.
+ * Mobile (§16.4): the room collapses to a picks ticker + the "my picks"
+ * rail, with the full grid (and pool/queue) one tap away on a Segment.
  */
 export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) {
   const { user } = useAuth()
@@ -54,9 +72,8 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
   const activeDraft = detail.data?.active_draft ?? null
   const draftId = draftIdParam ?? activeDraft?.id
 
-  // My franchise (league_members → team_id); in a mock the "my" seat is the
-  // launcher's CHOSEN seat (config.mock.human_team_id — D103(2)), resolved
-  // below once the draft row is loaded.
+  // My franchise (league_members → team_id). A mock resolves its own "You"
+  // seat from config.mock inside the live room (D103(2)).
   const myMemberTeamId = useMemo(() => {
     if (!user || !detail.data) return null
     return detail.data.members.find((m) => m.user_id === user.id)?.team_id ?? null
@@ -155,6 +172,7 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
       offsetMs={room.offsetMs}
       onlineTeamIds={room.onlineTeamIds}
       myMemberTeamId={myMemberTeamId}
+      userId={user?.id ?? null}
     />
   )
 }
@@ -172,16 +190,10 @@ interface DraftRoomLiveProps {
   offsetMs: number
   onlineTeamIds: ReadonlySet<string>
   myMemberTeamId: string | null
+  userId: string | null
 }
 
-/** Identity row for a picked player (players is world-readable — direct
- *  RLS SELECT per the D92 read pattern; names/positions for the pick cells). */
-interface PickedPlayer {
-  id: string
-  full_name: string
-  position: string
-  team: string | null
-}
+type MobilePane = 'players' | 'queue' | 'board'
 
 function DraftRoomLive({
   leagueId,
@@ -192,56 +204,72 @@ function DraftRoomLive({
   offsetMs,
   onlineTeamIds,
   myMemberTeamId,
+  userId,
 }: DraftRoomLiveProps) {
+  const [mobilePane, setMobilePane] = useState<MobilePane>('players')
+
   const teamsById = useMemo(
     () => new Map(detail.teams.map((t) => [t.id, t])),
     [detail.teams],
   )
+  const teamNameById = useMemo(
+    () => new Map(detail.teams.map((t) => [t.id, t.name])),
+    [detail.teams],
+  )
 
-  // In a mock, the human seat is the launcher's chosen one (D103(2)) — that
-  // is the seat "You" means for the on-clock treatment.
-  const mockHumanTeamId = useMemo(() => {
+  // In a mock, the human seat is `config.mock.human_team_id` and its ONLY
+  // legal human driver is the launcher (D103(2)) — for anyone else in the
+  // room, the mock has no "You" seat: no on-clock treatment, no pick
+  // affordance (the route would refuse them with the solo-practice message
+  // anyway — the UI must not offer what the engine forbids).
+  const mockConfig = useMemo(() => {
     if (!draft.is_mock) return null
-    const config = draft.config as { mock?: { human_team_id?: string } } | null
-    return config?.mock?.human_team_id ?? null
+    const config = draft.config as {
+      mock?: { human_team_id?: string; launched_by?: string }
+    } | null
+    return config?.mock ?? null
   }, [draft.is_mock, draft.config])
-  const myTeamId = draft.is_mock ? mockHumanTeamId : myMemberTeamId
+  const isMockLauncher = Boolean(
+    mockConfig && userId && mockConfig.launched_by === userId,
+  )
+  const myTeamId = draft.is_mock
+    ? isMockLauncher
+      ? (mockConfig?.human_team_id ?? null)
+      : null
+    : myMemberTeamId
 
   const livePicks = useMemo(() => picks.filter((p) => !p.is_undone), [picks])
+  const draftedIds = useMemo(() => draftedIdSet(picks), [picks])
 
-  // Names for the made picks — one world-readable players read keyed on the
-  // picked ids; broadcast hint rows render a placeholder until it refreshes.
-  const playerIds = useMemo(
-    () => Array.from(new Set(livePicks.map((p) => p.player_id))).sort(),
-    [livePicks],
-  )
-  const playersQuery = useQuery({
-    queryKey: ['draft-room-players', playerIds],
-    enabled: playerIds.length > 0,
-    queryFn: async (): Promise<PickedPlayer[]> => {
-      const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('players')
-        .select('id, full_name, position, team')
-        .in('id', playerIds)
-      if (error) throw error
-      return (data ?? []) as PickedPlayer[]
-    },
-  })
-  const playerById = useMemo(
-    () => new Map((playersQuery.data ?? []).map((p) => [p.id, p])),
-    [playersQuery.data],
+  // ONE identity read for every picked player (world-readable `players` —
+  // D92 read pattern); board cells + ticker + tracker all key into it.
+  // Broadcast hint rows render a placeholder until the keyed refetch lands.
+  const { playerById } = usePlayersByIds(
+    useMemo(() => livePicks.map((p) => p.player_id), [livePicks]),
   )
 
-  // Seat order: the stored draft_order when present (round-1 slots), else
-  // franchise creation order. The full snake board derivation is L.B3.2's.
-  const seatIds = useMemo(() => {
-    const order = Array.isArray(draft.draft_order)
-      ? (draft.draft_order as unknown[]).filter((v): v is string => typeof v === 'string')
-      : []
-    return order.length > 0 ? order : detail.teams.map((t) => t.id)
-  }, [draft.draft_order, detail.teams])
+  // Board geometry (D90): columns from the stored order; auction can never
+  // be live in M2 (draft_start refuses it naming M3), so non-linear ⇒ snake.
+  const order = useMemo(() => parseDraftOrder(draft.draft_order), [draft.draft_order])
+  const draftType: OrderedDraftType = draft.draft_type === 'linear' ? 'linear' : 'snake'
+  const snakeReversal = useMemo(() => {
+    const config = draft.config as { snake_reversal?: unknown } | null
+    return config?.snake_reversal === true
+  }, [draft.config])
 
+  const boardInput: BoardModelInput = useMemo(
+    () => ({
+      order,
+      totalRounds: draft.total_rounds,
+      draftType,
+      snakeReversal,
+      picks: livePicks,
+      currentPickNumber: draft.current_pick_number,
+    }),
+    [order, draft.total_rounds, draftType, snakeReversal, livePicks, draft.current_pick_number],
+  )
+
+  const seatIds = order.length > 0 ? order : detail.teams.map((t) => t.id)
   const seats: PresenceSeat[] = seatIds.map((teamId) => ({
     teamId,
     name: teamsById.get(teamId)?.name ?? 'Team',
@@ -256,12 +284,138 @@ function DraftRoomLive({
   const youAreOnClock = Boolean(myTeamId) && draft.on_clock_team_id === myTeamId
   const paused = draft.status === 'paused'
 
-  // Made picks ascending + the one cell the drafts row itself names as on
-  // the clock. Future cells need the D90-parity order helpers — L.B3.2.
-  const boardCells = useMemo(() => {
-    const cells = [...livePicks].sort((a, b) => a.pick_number - b.pick_number)
-    return cells
-  }, [livePicks])
+  const myNextPick = useMemo(
+    () =>
+      nextPickNumberForTeam(
+        order,
+        draftType,
+        snakeReversal,
+        draft.current_pick_number,
+        draft.total_rounds,
+        myTeamId,
+      ),
+    [order, draftType, snakeReversal, draft.current_pick_number, draft.total_rounds, myTeamId],
+  )
+
+  // ----- pick submission (L.B2.2's route/hook, wired here — D92) -----------
+  // NEVER optimistic (§15.6): the button shows "submitting…" (§16.3) and the
+  // board reflects the broadcast/refetch; the E1 race loser's friendly
+  // message surfaces verbatim.
+  const makePick = useMakePick(leagueId, draft.id)
+  const canDraft = youAreOnClock && draft.status === 'live'
+  const handleDraft = (playerId: string) => {
+    if (!canDraft || makePick.isPending) return
+    // The hook's wrapper stamps ONE action_id per submit (D68(1)) so a
+    // React Query retry replays server-side as E2 instead of double-picking.
+    makePick.makePickAsync(playerId).catch((error: unknown) => {
+      toast({
+        title: 'Pick not made',
+        description:
+          error instanceof LeagueActionError
+            ? error.message // the E1 loser's friendly line, verbatim (§16.3)
+            : 'Something went wrong. The room refreshes automatically.',
+        variant: 'destructive',
+      })
+    })
+  }
+
+  // ----- queue (own rows; a mock's launcher drives the human seat — D103(3))
+  const queueTeamId = myTeamId
+  const queue = useDraftQueue(draft.id, queueTeamId ?? undefined)
+  const updateQueue = useUpdateDraftQueue(leagueId, draft.id, queueTeamId ?? '')
+  const queueView = useMemo(
+    () => deriveQueueView(queue.data ?? [], draftedIds),
+    [queue.data, draftedIds],
+  )
+  const queuedIds = useMemo(
+    () => new Set(queueView.filter((r) => !r.drafted).map((r) => r.player_id)),
+    [queueView],
+  )
+  const handleQueue = (playerId: string) => {
+    if (!queueTeamId) return
+    updateQueue.mutate(appendId(orderedIdsForSave(queueView), playerId))
+  }
+
+  const myPicks = useMemo(
+    () => (myTeamId ? picks.filter((p) => p.team_id === myTeamId) : []),
+    [picks, myTeamId],
+  )
+
+  const ticker = useMemo(() => recentPicks(livePicks, 6), [livePicks])
+  const teamCount = seatIds.length
+
+  const poolCard = (
+    <AvailablePlayers
+      draftedIds={draftedIds}
+      queuedIds={queuedIds}
+      userId={userId ?? undefined}
+      canDraft={canDraft}
+      draftSubmitting={makePick.isPending}
+      canQueue={Boolean(queueTeamId)}
+      onDraft={handleDraft}
+      onQueue={handleQueue}
+    />
+  )
+
+  const queueCard = queueTeamId ? (
+    <MyQueue
+      leagueId={leagueId}
+      draftId={draft.id}
+      teamId={queueTeamId}
+      draftedIds={draftedIds}
+    />
+  ) : null
+
+  const trackerCard = myTeamId ? (
+    <MyRosterTracker
+      picks={myPicks}
+      playerById={playerById}
+      roster={detail.settings.roster_settings}
+    />
+  ) : null
+
+  const boardCard = (
+    <Card>
+      <CardHeader>
+        <span className="text-[13px] font-extrabold">Draft board</span>
+        <span className="fs-overline text-[9px] text-n-3">
+          <span className="fs-num">{livePicks.length}</span> of{' '}
+          <span className="fs-num">{(draft.total_rounds ?? 0) * teamCount}</span> picks made
+        </span>
+      </CardHeader>
+      <CardContent>
+        {order.length > 0 ? (
+          <DraftBoardGrid
+            model={boardInput}
+            teamNameById={teamNameById}
+            playerById={playerById}
+            myTeamId={myTeamId}
+          />
+        ) : (
+          // Degraded arm: a live draft always stores an order (066 sets it
+          // at start) — render the flat made-pick list rather than a grid
+          // geometry we'd have to invent.
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+            {[...livePicks]
+              .sort((a, b) => a.pick_number - b.pick_number)
+              .map((pick) => {
+                const player = playerById.get(pick.player_id)
+                return (
+                  <DraftPick
+                    key={pick.pick_number}
+                    pick={pick.pick_number}
+                    playerName={player ? abbreviateName(player.full_name) : pick.player_id}
+                    position={player?.position}
+                    team={player?.team ?? '—'}
+                    byManager={teamsById.get(pick.team_id)?.name ?? null}
+                  />
+                )
+              })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 
   return (
     <>
@@ -299,6 +453,11 @@ function DraftRoomLive({
                 Round <span className="fs-num">{draft.current_round ?? '—'}</span> · Pick{' '}
                 <span className="fs-num">{draft.current_pick_number ?? '—'}</span>
               </span>
+              {myNextPick !== null && !youAreOnClock && (
+                <span className="fs-overline hidden shrink-0 text-[9px] text-n-3 sm:inline">
+                  Your next: <span className="fs-num">{pickLabel(myNextPick, teamCount)}</span>
+                </span>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <span
@@ -320,42 +479,109 @@ function DraftRoomLive({
               />
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardContent>
             <PresenceBar seats={seats} />
-
-            {boardCells.length === 0 && draft.on_clock_team_id === null ? (
-              <p className="text-[12px] font-medium text-n-3">No picks yet.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-                {boardCells.map((pick) => {
-                  const player = playerById.get(pick.player_id)
-                  return (
-                    <DraftPick
-                      key={pick.pick_number}
-                      pick={pick.pick_number}
-                      playerName={
-                        player ? abbreviateName(player.full_name) : pick.player_id
-                      }
-                      position={player?.position}
-                      team={player?.team ?? '—'}
-                      byManager={teamsById.get(pick.team_id)?.name ?? null}
-                    />
-                  )
-                })}
-                {draft.current_pick_number !== null && !paused && (
-                  <DraftPick pick={draft.current_pick_number} empty onClock />
-                )}
-              </div>
-            )}
-
-            {/* L.B3.2 seam: rounds×teams grid, pool, queue, tracker. */}
-            <p className="fs-overline text-[9px] text-n-3">
-              <span className="fs-num">{boardCells.length}</span> of{' '}
-              <span className="fs-num">{(draft.total_rounds ?? 0) * seatIds.length}</span> picks
-              made
-            </p>
           </CardContent>
         </Card>
+
+        {/* ----- Desktop (lg+): board + working rail (§8.5.2) ----- */}
+        <div className="hidden min-w-0 gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0">{boardCard}</div>
+          <div className="flex min-w-0 flex-col gap-4">
+            {poolCard}
+            {queueCard}
+            {trackerCard}
+          </div>
+        </div>
+
+        {/* ----- Mobile (§16.4): ticker + my rail; grid one tap away ----- */}
+        <div className="flex min-w-0 flex-col gap-4 lg:hidden">
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5" aria-label="Recent picks">
+            {draft.current_pick_number !== null && !paused && (
+              <DraftPick
+                pick={draft.current_pick_number}
+                empty
+                onClock
+                label={pickLabel(draft.current_pick_number, teamCount)}
+                className="w-28 shrink-0"
+              />
+            )}
+            {ticker.map((pick) => {
+              const player = playerById.get(pick.player_id)
+              return (
+                <DraftPick
+                  key={pick.pick_number}
+                  pick={pick.pick_number}
+                  label={pickLabel(pick.pick_number, teamCount)}
+                  playerName={player ? abbreviateName(player.full_name) : pick.player_id}
+                  position={player?.position}
+                  team={player?.team ?? '—'}
+                  byManager={teamsById.get(pick.team_id)?.name ?? null}
+                  className="w-36 shrink-0"
+                />
+              )
+            })}
+            {ticker.length === 0 && draft.current_pick_number === null && (
+              <p className="text-[12px] font-medium text-n-3">No picks yet.</p>
+            )}
+          </div>
+
+          {myTeamId && (
+            <Card>
+              <CardHeader>
+                <span className="text-[13px] font-extrabold">My picks</span>
+                {myNextPick !== null && (
+                  <span className="fs-overline text-[9px] text-n-3">
+                    Next: <span className="fs-num">{pickLabel(myNextPick, teamCount)}</span>
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent>
+                <MyRosterTracker
+                  compact
+                  picks={myPicks}
+                  playerById={playerById}
+                  roster={detail.settings.roster_settings}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          <Segment aria-label="Room view" className="w-full">
+            <SegmentItem
+              active={mobilePane === 'players'}
+              onClick={() => setMobilePane('players')}
+              className="flex-1"
+            >
+              Players
+            </SegmentItem>
+            <SegmentItem
+              active={mobilePane === 'queue'}
+              onClick={() => setMobilePane('queue')}
+              className="flex-1"
+            >
+              Queue
+            </SegmentItem>
+            <SegmentItem
+              active={mobilePane === 'board'}
+              onClick={() => setMobilePane('board')}
+              className="flex-1"
+            >
+              Full board
+            </SegmentItem>
+          </Segment>
+
+          {mobilePane === 'players' && poolCard}
+          {mobilePane === 'queue' &&
+            (queueCard ?? (
+              <p className="text-[12px] font-medium text-n-3">
+                {draft.is_mock
+                  ? 'Only the mock’s launcher drives a practice queue.'
+                  : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
+              </p>
+            ))}
+          {mobilePane === 'board' && boardCard}
+        </div>
       </div>
     </>
   )

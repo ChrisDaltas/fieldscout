@@ -19,7 +19,10 @@ interface BuilderResponse {
 
 /**
  * Real player pool from the players builder feed (read-only), minus the
- * names already on the mock draft board. Highest projection first.
+ * players already drafted — subtracted **by `player_id`** from live
+ * `draft_picks` rows (M2 task L.B3.2, the C26 fix: the mock-era
+ * subtraction-by-full_name collided on shared names and could never
+ * survive real picks). Highest projection first.
  *
  * Deliberately bounded: this card shows a handful of names, so it does not
  * need the whole pool. 500 (not 200) because a full 12×16 draft removes 192
@@ -27,7 +30,7 @@ interface BuilderResponse {
  * server orders by projection, so the bound drops the irrelevant tail.
  * Its own React Query key, so it shares no cache with the home shelves.
  */
-function useBestAvailable(draftedNames: ReadonlySet<string>) {
+function useBestAvailable(draftedIds: ReadonlySet<string>) {
   const query = useQuery({
     queryKey: ['draft', 'best-available', 'ppr'],
     queryFn: () =>
@@ -39,19 +42,15 @@ function useBestAvailable(draftedNames: ReadonlySet<string>) {
 
   const pool = useMemo(() => {
     const players = query.data?.players ?? []
-    // TODO(live-draft): the draft service will own the available pool; this
-    // subtraction-by-name only works against the mock board.
-    return players
-      .filter((p) => !draftedNames.has(p.full_name))
-      .slice(0, POOL_SIZE)
-  }, [query.data, draftedNames])
+    return players.filter((p) => !draftedIds.has(p.id)).slice(0, POOL_SIZE)
+  }, [query.data, draftedIds])
 
   return { pool, isLoading: query.isLoading, isError: query.isError }
 }
 
 interface BestAvailableCardProps {
-  /** Full names already off the board (mock board + local sim picks). */
-  draftedNames: ReadonlySet<string>
+  /** Live (non-undone) picked ids — `draft_picks.player_id` (C26). */
+  draftedIds: ReadonlySet<string>
   /** Player ids currently in your queue. */
   queuedIds: ReadonlySet<string>
   onDraft: (player: BuilderPlayer) => void
@@ -59,14 +58,15 @@ interface BestAvailableCardProps {
 }
 
 /** Best available — flush PlayerRow list over real player data; the top row
- *  gets the Draft action, the rest queue. */
+ *  gets the Draft action, the rest queue. Currently unmounted: L.B4.2's
+ *  best-available-from-my-board helper (§8.9) is its consumer. */
 export function BestAvailableCard({
-  draftedNames,
+  draftedIds,
   queuedIds,
   onDraft,
   onQueue,
 }: BestAvailableCardProps) {
-  const { pool, isLoading, isError } = useBestAvailable(draftedNames)
+  const { pool, isLoading, isError } = useBestAvailable(draftedIds)
   const openPlayer = usePlayerWindowsStore((s) => s.open)
 
   return (

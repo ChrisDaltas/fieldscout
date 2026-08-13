@@ -12,6 +12,9 @@ interface DraftPickProps {
   onClock?: boolean
   /** Upcoming slot — dashed border, no player. */
   empty?: boolean
+  /** Optional display label overriding the raw overall number (the board
+   *  grid passes round.slot — "3.04"). */
+  label?: string
   className?: string
 }
 
@@ -31,6 +34,7 @@ export function DraftPick({
   byManager,
   onClock = false,
   empty = false,
+  label,
   className,
 }: DraftPickProps) {
   if (empty || !playerName) {
@@ -44,7 +48,7 @@ export function DraftPick({
         )}
       >
         <span className="fs-overline text-[9px] text-n-3">
-          {onClock ? 'On the clock' : `Pick ${pick}`}
+          {onClock ? 'On the clock' : (label ?? `Pick ${pick}`)}
         </span>
       </div>
     )
@@ -54,12 +58,14 @@ export function DraftPick({
     <div
       className={cn(
         'flex min-h-[51px] flex-col gap-1 rounded-sm border border-ink bg-white px-2 py-1.5',
+        // On-the-clock is a resting status — fill + border, never a shadow.
+        onClock && 'border-accent bg-accent-soft',
         className,
       )}
     >
       <div className="flex items-center justify-between gap-1">
         <span className="fs-num text-[10px] font-semibold text-n-3">
-          #{pick}
+          {label ?? `#${pick}`}
         </span>
         {position && <PositionBadge position={position} size="sm" />}
       </div>
