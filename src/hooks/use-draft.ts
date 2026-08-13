@@ -1,11 +1,22 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { createBrowserClient } from '@/lib/supabase/client'
 import type { Draft } from '@/types/database'
 
+import {
+  applyDraftRoomEvent,
+  bestClockOffsetMs,
+  computeClockOffsetMs,
+  heartbeatSignalsGap,
+  heartbeatSilenceExceeded,
+  OFFSET_SAMPLE_WINDOW,
+  type TickHeartbeat,
+} from './use-draft-ops'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -28,9 +39,11 @@ export const draftKeys = {
 }
 
 /** The board-relevant slice of a pick row (undone picks included — §12.4
- *  keeps them for audit; board consumers filter `is_undone`). */
+ *  keeps them for audit; board consumers filter `is_undone`). `id` is null
+ *  on broadcast-patched HINT rows (pick broadcasts carry no id — D109(2));
+ *  the next refetch reconciles. Consumers key on `pick_number`. */
 export interface DraftPickSummary {
-  id: string
+  id: string | null
   pick_number: number
   round: number | null
   team_id: string
@@ -71,6 +84,279 @@ export function useDraft(draftId: string | undefined) {
       }
     },
   })
+}
+
+// ---------------------------------------------------------------------------
+// The subscribe half (L.B3.1 — §9.3; tasks-M2 §4.5; D109)
+// ---------------------------------------------------------------------------
+
+export type DraftRoomConnection =
+  /** First subscribe not yet confirmed (the fetch already rendered). */
+  | 'connecting'
+  /** Subscribed — broadcasts are flowing. */
+  | 'live'
+  /** Was live, lost the channel — the §16.5.4 reconnecting banner renders;
+   *  refetch-first + resubscribe are already in flight. */
+  | 'reconnecting'
+
+/** What each room occupant tracks over Presence (§9.1; keyed by team). */
+export interface DraftRoomPresenceMeta {
+  team_id: string | null
+  user_id: string | null
+}
+
+interface BroadcastEnvelope {
+  operation?: string
+  record?: unknown
+}
+
+/**
+ * The room data spine (§15.6; D92 + D109): `useDraft`'s fetch half plus the
+ * `draft:<id>` subscribe loop. Doctrine, each line a §9.3 requirement:
+ *
+ * - **Fetch → render → subscribe:** the channel opens only after the first
+ *   successful REST fetch; on every confirmed (re)join the hook refetches —
+ *   never depend on missed broadcasts (this is also the D109(9) boot-race
+ *   recovery: `realtime.send()` drops silently while the service boots).
+ * - **Broadcasts are cache hints** applied through the pure reducer
+ *   (`use-draft-ops.ts`); a `state_version` gap ⇒ full refetch.
+ * - **Reconnect = refetch-first + resubscribe** (§8.7/§16.3), surfacing
+ *   `connection: 'reconnecting'` for the banner.
+ * - **Channel budget:** this hook opens exactly ONE channel (the topic
+ *   multiplexes drafts/draft_picks/league_chat/tick + Presence — D109(1)),
+ *   inside §9.3's ≤ 3 per socket; the effect cleanup unsubscribes on route
+ *   change (connection leaks are the #1 quota killer).
+ * - **Clock:** the tick heartbeat maintains the server−client offset the
+ *   pick clock renders from; the client never owns the clock. Until the
+ *   first beat (≤ ~5s after subscribe — 068 ARM 3 beats every pass) the
+ *   offset is 0; recorded latitude — the REST fetch carries no server-now,
+ *   so the first measurable offset IS the first heartbeat.
+ *
+ * `presence` (optional): the viewer's seat — when given, the hook tracks
+ * {team_id, user_id} on join so `presence-bar` can key online-ness by team.
+ */
+export function useDraftRoom(
+  draftId: string | undefined,
+  opts?: { presence?: DraftRoomPresenceMeta },
+) {
+  const query = useDraft(draftId)
+  const queryClient = useQueryClient()
+  const [connection, setConnection] = useState<DraftRoomConnection>('connecting')
+  const [offsetMs, setOffsetMs] = useState(0)
+  const [onlineTeamIds, setOnlineTeamIds] = useState<ReadonlySet<string>>(() => new Set())
+  // Offset samples (windowed max — a delay-biased beat cannot drag the
+  // clock) + the last-beat instant for silence detection. Refs: neither
+  // drives render directly.
+  const offsetSamplesRef = useRef<number[]>([])
+  const lastBeatAtRef = useRef<number | null>(null)
+
+  const fetched = query.isSuccess
+  const presenceTeamId = opts?.presence?.team_id ?? null
+  const presenceUserId = opts?.presence?.user_id ?? null
+
+  useEffect(() => {
+    if (!draftId || !fetched) return
+
+    const supabase = createBrowserClient()
+    let disposed = false
+    let channel: RealtimeChannel | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let attempt = 0
+    let everSubscribed = false
+
+    const refetchDraft = () => {
+      void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
+    }
+
+    const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
+      const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
+      if (!current) {
+        refetchDraft()
+        return
+      }
+      const result = applyDraftRoomEvent(current, {
+        event,
+        operation: payload.operation,
+        record: payload.record,
+      })
+      if (result.state !== current) {
+        queryClient.setQueryData(draftKeys.detail(draftId), result.state)
+      }
+      if (result.refetch) refetchDraft()
+    }
+
+    const scheduleReopen = () => {
+      if (disposed || retryTimer) return
+      const delay = Math.min(1_000 * 2 ** attempt, 15_000)
+      attempt += 1
+      retryTimer = setTimeout(() => {
+        retryTimer = null
+        channel = null // open() sweeps the stale registry instance, awaited
+        void open()
+      }, delay)
+    }
+
+    const open = async () => {
+      if (disposed) return
+      // One channel per topic per client (D109(9)): supabase-js returns the
+      // EXISTING registry instance for a topic it already holds — including
+      // one mid-teardown from an unawaited removeChannel — and subscribing
+      // that wedges the rejoin forever (observed live in the D39 pass).
+      // Sweep any stale instance for this topic, AWAITED, before creating.
+      for (const stale of supabase.getChannels()) {
+        if (stale.topic === `realtime:draft:${draftId}`) {
+          await supabase.removeChannel(stale)
+        }
+      }
+      if (disposed) return
+      // Deterministic private-channel auth (the draft-realtime-db.test.ts
+      // posture): pin the realtime token to the current session before the
+      // join rather than racing the client's auth listener.
+      const { data } = await supabase.auth.getSession()
+      if (disposed) return
+      await supabase.realtime.setAuth(data.session?.access_token ?? null)
+      if (disposed) return
+
+      const ch = supabase.channel(`draft:${draftId}`, {
+        config: {
+          private: true, // Broadcast-from-DB channels are private (§9.2)
+          presence: { key: presenceTeamId ?? presenceUserId ?? 'viewer' },
+        },
+      })
+      channel = ch
+
+      ch.on('broadcast', { event: 'drafts' }, ({ payload }) =>
+        applyBroadcast('drafts', (payload ?? {}) as BroadcastEnvelope),
+      )
+      ch.on('broadcast', { event: 'draft_picks' }, ({ payload }) =>
+        applyBroadcast('draft_picks', (payload ?? {}) as BroadcastEnvelope),
+      )
+      ch.on('broadcast', { event: 'league_chat' }, () => {
+        // Received on the shared topic; the chat pane (L.B3.3) consumes it.
+        // Inert here by design — chat is not room state (use-draft-ops.ts).
+      })
+      ch.on('broadcast', { event: 'tick' }, ({ payload }) => {
+        const beat = (payload ?? {}) as Partial<TickHeartbeat>
+        // Clock SAMPLE at receipt, injected into the pure offset math —
+        // never deadline math here (§9.3's grep-able rule).
+        const sampledMs = Date.now()
+        lastBeatAtRef.current = sampledMs
+        if (typeof beat.server_now === 'string') {
+          const sample = computeClockOffsetMs(beat.server_now, sampledMs)
+          if (sample !== null) {
+            const samples = offsetSamplesRef.current
+            samples.push(sample)
+            if (samples.length > OFFSET_SAMPLE_WINDOW) samples.shift()
+            const best = bestClockOffsetMs(samples)
+            if (best !== null) setOffsetMs(best)
+          }
+        }
+        const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
+        if (
+          current &&
+          heartbeatSignalsGap(current, { current_deadline: beat.current_deadline ?? null })
+        ) {
+          refetchDraft()
+        }
+      })
+      ch.on('presence', { event: 'sync' }, () => {
+        const state = ch.presenceState<DraftRoomPresenceMeta>()
+        const ids = new Set<string>()
+        for (const metas of Object.values(state)) {
+          for (const meta of metas) if (meta.team_id) ids.add(meta.team_id)
+        }
+        setOnlineTeamIds(ids)
+      })
+
+      ch.subscribe((status) => {
+        if (disposed || ch !== channel) return
+        if (status === 'SUBSCRIBED') {
+          attempt = 0
+          everSubscribed = true
+          lastBeatAtRef.current = Date.now() // silence counts from the join
+          setConnection('live')
+          // §9.3: never depend on missed broadcasts — reconcile on EVERY
+          // confirmed join (boot window + reconnect gap alike).
+          refetchDraft()
+          if (presenceTeamId || presenceUserId) {
+            void ch.track({
+              team_id: presenceTeamId,
+              user_id: presenceUserId,
+            } satisfies DraftRoomPresenceMeta)
+          }
+          return
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Reconnect doctrine: refetch authoritative state FIRST, then
+          // resubscribe (§8.7); the banner renders meanwhile.
+          setConnection(everSubscribed ? 'reconnecting' : 'connecting')
+          refetchDraft()
+          scheduleReopen()
+        }
+      })
+    }
+
+    void open()
+
+    // Beat-SILENCE watchdog: a LIVE draft beats every tick pass; silence
+    // past HEARTBEAT_SILENCE_MS while the cache still says 'live' is the
+    // one divergence no event can correct (a LOST pause broadcast — paused
+    // drafts emit no beats, D109(6)) ⇒ refetch, then re-arm.
+    const silenceTimer = setInterval(() => {
+      const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
+      const lastBeat = lastBeatAtRef.current
+      if (
+        current?.draft?.status === 'live' &&
+        lastBeat !== null &&
+        heartbeatSilenceExceeded(lastBeat, Date.now())
+      ) {
+        lastBeatAtRef.current = Date.now() // re-arm — one refetch per window
+        refetchDraft()
+      }
+    }, 5_000)
+
+    return () => {
+      // §9.3: unsubscribe on route change — no connection leaks.
+      disposed = true
+      clearInterval(silenceTimer)
+      if (retryTimer) clearTimeout(retryTimer)
+      if (channel) void supabase.removeChannel(channel)
+      channel = null
+    }
+  }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
+
+  // The D102 liveness heartbeat — the room IS the caller the contract names
+  // ("a tiny `draft_touch` RPC the room calls (~15s cadence + visibility
+  // change)"): without it every occupant is liveness-STALE (held through
+  // grace at their deadline) and a mock auto-pauses under E59 while its
+  // launcher sits in the room. Presence is ephemeral and tick-invisible —
+  // this table read is what the tick's grace/outage arms consume. Best-
+  // effort: a failed beat only errs into the protective hold, never breaks
+  // the room.
+  const draftStatus = query.data?.draft?.status
+  const heartbeatActive = draftStatus === 'live' || draftStatus === 'paused'
+  useEffect(() => {
+    if (!draftId || !heartbeatActive) return
+    const supabase = createBrowserClient()
+    const touch = () => {
+      void supabase.rpc('draft_touch', { p_draft_id: draftId }).then(
+        () => undefined,
+        () => undefined, // best-effort — the hold semantics are the fallback
+      )
+    }
+    touch()
+    const id = setInterval(touch, 15_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') touch()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [draftId, heartbeatActive])
+
+  return { ...query, connection, offsetMs, onlineTeamIds }
 }
 
 /**
