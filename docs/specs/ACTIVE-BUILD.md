@@ -9,42 +9,51 @@
 
 ---
 
-## Active: Lists v2 — **Round 2** (side by side + pop-outs)
+## Active: Redraft Leagues M2 — resumed at **L.B3.1**
 
-*(Set 2026-08-09. Lists v2 ships ahead of M2 leagues — Chris, 2026-08-09.
-Round 1 completed 2026-08-11; **Round 2 opened the same day on Chris's
-"round 2, go"**.)*
-
-**Round 1 is done and stays done** — LV.1 – LV.11 all landed. The queue is now
-the plan's **§6**, tasks **LV.12 – LV.17**, in that order:
-
-| | |
-| --- | --- |
-| **LV.12** | Side by side — the picker (replaces `SideBySidePlaceholder`) |
-| **LV.13** | Side by side — the 300px columns, full-bleed scroller, per-column grouping menu |
-| **LV.14** | Drafted **fan-out across the comparison set** (D12) |
-| **LV.15** | Pop-outs — the store + the **app-shell host** |
-| **LV.16** | Pop-outs — dark-inverted window content |
-| **LV.17** | Pop-outs — wiring, states, and the mobile answer |
-
-**LV.12 – LV.17 have all landed (2026-08-12).** Round 2's queue is empty. What
-happens next — a third round, the seven LV.7 follow-ups in `PROGRESS-lists-v2.md`
-§5, or switching back to Redraft Leagues M2 at L.B3.1 — is a **Chris decision**,
-and this file is where it gets recorded. Do not start `L.*` work by inferring it.
-
-The seven LV.7 follow-ups (F-LV7.1 – F-LV7.7) in `PROGRESS-lists-v2.md` §5 are
-still **filed items, not queued tasks** — Round 2 does not absorb them.
-Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
+*(Set 2026-08-13 — **ruled by Chris in-session** ("Resume M2 at L.B3.1", the
+recommended option of the Round-2-complete question), recorded here per this
+file's rule that the post-Round-2 direction is a Chris decision. M2 was paused
+2026-08-09 at L.B3.1, mid-milestone, deliberately; nothing in its PROGRESS was
+edited to pause it, so the loop picks up exactly where it left off.)*
 
 | | |
 | --- | --- |
-| **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-lists-v2.md` |
+| **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-leagues.md` |
+| **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4) |
+| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` |
+| **Task breakdown** | `docs/specs/tasks-M2-snake-draft.md` (task text §6; standing rules §4) |
+| **Task id prefix** | `L.B` |
+
+**Standing constraints:** the ones the M2 breakdown §4 and CLAUDE.md already
+carry (spec is LAW; server-authoritative always; branch + PR per task; proof
+chains shown, not claimed). The next task, **L.B3.1**, is the repo's first
+realtime *client* work and a **re-skin in place** — the CLAUDE.md redesign
+rules (single theme, tokens, no resting elevation) apply to all L.B3.x room UI.
+
+**Do not build `LV.*` or Scout tasks while M2 is active.** If a cycle finds
+itself editing the lists collection page or `src/lib/metrics/**`, it has read
+the wrong PROGRESS — stop and re-read this file.
+
+---
+
+## Paused: Lists v2 — Round 2 complete, no Round 3 queued
+
+*(Parked 2026-08-13 with **both rounds shipped**: Round 1 (LV.1 – LV.11)
+completed 2026-08-11; Round 2 (LV.12 – LV.17) landed 2026-08-12. The seven
+LV.7 follow-ups (F-LV7.1 – F-LV7.7) in `PROGRESS-lists-v2.md` §5 remain
+**filed items, not queued tasks** — queueing them as a Round 3 is a Chris
+decision this file would record.)*
+
+| | |
+| --- | --- |
+| **PROGRESS** | `docs/specs/PROGRESS-lists-v2.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-lists-v2.md` |
 | **Design LAW** | `docs/design/lists/README.md` (+ prototype in `docs/design/lists/design/`) |
-| **Task text** | **Round 2 (LV.12 – LV.17): delivery plan §6.** (Round 1's LV.1 – LV.11 were §4 — this row still said §4 after Round 2 opened, which would have misrouted LV.13's Builder to a finished queue. Corrected 2026-08-11, LV.12 review R210.) Read together with the handoff section that task cites; there is no separate `tasks-*.md` breakdown — the handoff is detailed enough to serve as one. |
+| **Task text** | Round 2 was the plan's §6 (Round 1 was §4 — corrected 2026-08-11, LV.12 review R210) |
 | **Task id prefix** | `LV.` |
 
-**Standing constraints for every task in this build** (full text in the plan §1):
+**Standing constraints for any reactivation** (full text in the plan §1):
 
 - UI/UX only, with **three** exceptions, each individually ruled by Chris:
   (a) the `drafted` table (LV.1.2, 2026-08-09); (b) widening
@@ -61,10 +70,10 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
   `src/stores/board-labels-store.ts`, or `src/components/lists/draft-mode/**`.
 - ~~Everything lands behind `featureFlags.listsV2`.~~ **The flag was removed at
   LV.7 (2026-08-11)** — `/app/lists` serves the rebuilt page unconditionally and
-  the legacy components are deleted. Nothing left to gate. **Round 2 ships
-  unflagged too**, which is why LV.15's app-shell host must render nothing when
+  the legacy components are deleted. Nothing left to gate. **Round 2 shipped
+  unflagged too**, which is why LV.15's app-shell host renders nothing when
   no window is open.
-- **Round 2 only: compose Round 1, do not re-solve it** (plan §6, D11).
+- **Round 2 composed Round 1, never re-solved it** (plan §6, D11).
   Grouping is `list-buckets.ts`, rows are `list-row-parts.tsx`, covers are
   `cover-tile.tsx`, marks are `use-draft-mode.ts`, reorder is
   `use-list-drag.tsx`, the mode control is `Segment`. A new surface that
@@ -129,25 +138,18 @@ Switching to Redraft Leagues M2 (paused at L.B3.1) remains a Chris decision.
 
 ---
 
-## Paused: Redraft Leagues M2
+## Not yet active: Scout
 
-*(Paused 2026-08-09 at task **L.B3.1**, mid-milestone, deliberately.)*
+*(Specced and prototyped; no code written into the app. `PROGRESS-scout.md`
+committed 2026-08-13 — it was sitting untracked in the working tree; Chris
+ruled it committed. Activation is a Chris decision recorded here.)*
 
 | | |
 | --- | --- |
-| **PROGRESS** | `docs/specs/PROGRESS-leagues.md` |
-| **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4) |
-| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` |
-| **Task breakdown** | `docs/specs/tasks-M2-snake-draft.md` |
-| **Task id prefix** | `L.B` |
-
-M2 is **not** abandoned and its PROGRESS is accurate — it resumes by pointing
-this file back at it. Nothing about the M2 state was edited to pause it, so
-`/build-next` picks up at L.B3.1 exactly where it left off.
-
-**Do not build `L.*` tasks while Lists v2 is active.** If a cycle finds itself
-in `src/components/leagues/**` or `src/components/draft/**`, it has read the
-wrong PROGRESS — stop and re-read this file.
+| **PROGRESS** | `docs/specs/PROGRESS-scout.md` |
+| **Delivery plan** | `docs/specs/delivery-plan-scout.md` (v2.7) |
+| **Spec (LAW)** | `docs/specs/spec-scout.md` (v2.7) |
+| **Content** | `docs/specs/scout-content/` (registry, trait model, guides, lesson copy — done) |
 
 ---
 
