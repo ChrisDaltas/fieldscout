@@ -33,6 +33,7 @@ import {
 import { cn } from '@/lib/utils'
 
 import { Crest } from './league-cells'
+import { DraftOrderEditor } from './draft-order-editor'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
@@ -446,8 +447,17 @@ function SettingsForm({
           value={working.draft.draft_scheduled_at}
           year={detail.league.season}
           onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
+          timeZone={working.draft.time_zone}
+          onTimeZone={(time_zone) => setDraftConfig({ time_zone })}
         />
-        <DraftGroup s={working} onDraft={setDraftConfig} errorsFor={errorsFor} />
+        <DraftGroup
+          s={working}
+          onDraft={setDraftConfig}
+          errorsFor={errorsFor}
+          leagueId={leagueId}
+          detail={detail}
+          canEdit={canEdit}
+        />
 
         <PageSectionHeading>League settings</PageSectionHeading>
 
@@ -1162,21 +1172,61 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   return { value: `${pad2(hour)}:${minute}`, label: `${hour12}:${minute} ${ampm}` }
 })
 
+/** The one-tap curated zone list (D98 — commissioners scheduling for a
+ *  league elsewhere pick from here; the scheduler's own zone is the quick
+ *  set). Values are IANA names — the catalog validates them via Intl. */
+const COMMON_ZONES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'America/New_York', label: 'Eastern (New York)' },
+  { value: 'America/Chicago', label: 'Central (Chicago)' },
+  { value: 'America/Denver', label: 'Mountain (Denver)' },
+  { value: 'America/Phoenix', label: 'Arizona (Phoenix)' },
+  { value: 'America/Los_Angeles', label: 'Pacific (Los Angeles)' },
+  { value: 'America/Anchorage', label: 'Alaska (Anchorage)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii (Honolulu)' },
+  { value: 'UTC', label: 'UTC' },
+]
+
 /**
  * Month → Day → Time, in that order: Day unlocks once a month is picked,
  * Time once the day is too. The three picks are local UI state (seeded from
  * the saved value); only a COMPLETE pick writes draft_scheduled_at into the
  * working settings. The year is the league's season — not a fourth pick.
+ *
+ * L.B3.4 composes the D98 zone row in (no fork): `draft.time_zone` — the
+ * league's NAMED reference zone (§16.4), display-only metadata beside the
+ * authoritative instant, with the scheduler's own zone as the one-tap
+ * default.
  */
 function ScheduleDraftGroup({
   value,
   year,
   onChange,
+  timeZone,
+  onTimeZone,
 }: {
   value: string | null
   year: number
   onChange: (next: string | null) => void
+  timeZone: string | null
+  onTimeZone: (next: string | null) => void
 }) {
+  // The scheduler's own zone (browser ICU) — the D98 one-tap default.
+  const [myZone] = useState(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+    } catch {
+      return null
+    }
+  })
+  const zoneOptions = useMemo(() => {
+    const opts = [...COMMON_ZONES]
+    for (const extra of [myZone, timeZone]) {
+      if (extra && !opts.some((o) => o.value === extra)) {
+        opts.push({ value: extra, label: extra.replace(/_/g, ' ') })
+      }
+    }
+    return opts
+  }, [myZone, timeZone])
   const seed = value ? new Date(value) : null
   const seedValid = seed !== null && !Number.isNaN(seed.getTime())
   const [month, setMonth] = useState(() => (seedValid ? String(seed.getMonth() + 1) : ''))
@@ -1264,6 +1314,39 @@ function ScheduleDraftGroup({
           )}
         </div>
       </FieldRow>
+
+      {/* D98 (§7.3.8 v2.9.2): the league's NAMED reference zone. Display-only
+          — the stored instant stays the authority; when set, league time
+          renders in this zone everywhere the offset renders today. */}
+      <FieldRow
+        label="League time zone"
+        htmlFor="set-draft-zone"
+        hint="How draft night reads in league copy — everyone still sees their own local time too."
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <ChoiceSelect
+            id="set-draft-zone"
+            ariaLabel="League time zone"
+            value={timeZone ?? ''}
+            placeholder="Not set"
+            options={zoneOptions}
+            onValueChange={(v) => onTimeZone(v)}
+            width="w-52"
+          />
+          {!timeZone && myZone && (
+            <Button type="button" variant="stroke" size="sm" onClick={() => onTimeZone(myZone)}>
+              <Icon name="marker" size={13} />
+              Use my zone
+            </Button>
+          )}
+          {timeZone && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => onTimeZone(null)}>
+              Clear
+            </Button>
+          )}
+        </div>
+      </FieldRow>
+
       <p className="text-[12px] font-semibold text-n-3">
         {value ? (
           <>
@@ -1312,10 +1395,16 @@ function DraftGroup({
   s,
   onDraft,
   errorsFor,
+  leagueId,
+  detail,
+  canEdit,
 }: {
   s: LeagueSettings
   onDraft: (patch: Partial<LeagueSettings['draft']>) => void
   errorsFor: (field: string) => FieldIssue[]
+  leagueId: string
+  detail: LeagueDetail
+  canEdit: boolean
 }) {
   const d = s.draft
   return (
@@ -1358,6 +1447,19 @@ function DraftGroup({
           onValueChange={(v) => onDraft({ draft_order_mode: v as LeagueSettings['draft']['draft_order_mode'] })}
         />
       </FieldRow>
+
+      {/* L.B3.4 item 3 — the order-method surface (§8.3; §16.2
+          draft-setup-panel): manual/custom = drag the franchise order into
+          the settings store (saved with this page's atomic PATCH);
+          random = the D101 instant randomize + the stored result. */}
+      <DraftOrderEditor
+        leagueId={leagueId}
+        detail={detail}
+        mode={d.draft_order_mode}
+        value={d.draft_order}
+        onChange={(draft_order) => onDraft({ draft_order })}
+        canEdit={canEdit}
+      />
 
       <FieldRow label="Pick clock" htmlFor="set-pick-timer">
         <ChoiceSelect

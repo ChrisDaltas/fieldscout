@@ -1,29 +1,67 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
+import { autoStartPollMs } from '@/components/leagues/league-home-states-ops'
+import { useActiveDraft } from '@/hooks/use-draft'
+import { leaguesKeys, useLeagues } from '@/hooks/use-leagues'
+import { featureFlags } from '@/lib/feature-flags'
 
-interface DraftAlert {
-  live: boolean
-  league: string
-  detail: string
-  href: string
-}
+import { deriveDraftAlert, draftBarCandidate } from './draft-bar-ops'
 
-// TODO(M2 draft engine — F38): wire to the real active-draft query. There is
-// no live or scheduled draft in M1 (the draft engine lands in M2), so this
-// returns null and the bar never renders — never a fabricated live draft.
-// When the draft room lands, return the viewer's active draft (or null when
-// none is live) so the bar surfaces only a REAL draft.
-function useDraftAlert(): DraftAlert | null {
-  return null
+/**
+ * The real active-draft wiring (M2 task L.B3.4 — the F38/D84 TODO
+ * discharged): the bar watches the viewer's REAL memberships (`useLeagues`,
+ * flag-gated like the sidebar — D84(6)) for a `drafting` league (LIVE), else
+ * a `scheduled` one, and rides `useActiveDraft` for the candidate's summary
+ * (the scheduled instant survives with no drafts row — D95/D94). Rules are
+ * pure + pinned in draft-bar-ops.ts: live always alerts; scheduled only
+ * inside the 1h soon-window (draft night, not a three-week banner);
+ * suppressed on the target's own room route. Never a fabricated draft —
+ * no candidate, no bar.
+ */
+function useDraftAlert() {
+  const pathname = usePathname()
+  const leagues = useLeagues({ enabled: featureFlags.leagues })
+  const candidate = draftBarCandidate(leagues.data ?? [])
+  // One league-detail fetch, only when a candidate exists (useLeague is
+  // enabled-gated on the id).
+  const active = useActiveDraft(candidate?.id)
+
+  // Minute-granularity countdown detail — a 30s tick is plenty.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // D94 watch: near/past the instant the tick starts the draft server-side;
+  // nothing pushes that flip to the bar, so poll the candidate's rows while
+  // the window is hot (bounded: only with a scheduled candidate in-window).
+  const queryClient = useQueryClient()
+  const scheduledAt = candidate?.status === 'scheduled' ? active.scheduledAt : null
+  const pollMs = autoStartPollMs(scheduledAt, nowMs)
+  const candidateId = candidate?.id ?? null
+  useEffect(() => {
+    if (pollMs === null || !candidateId) return
+    const timer = setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
+      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(candidateId) })
+    }, pollMs)
+    return () => clearInterval(timer)
+  }, [pollMs, candidateId, queryClient])
+
+  return deriveDraftAlert(candidate, active.scheduledAt, nowMs, pathname)
 }
 
 /** Full-width lime alert bar above the header — only when a draft is live or
- *  scheduled. The platform-wide urgency signal ("look here" lime, never a
- *  control surface — the Join button is dark). */
+ *  about to start. The platform-wide urgency signal ("look here" lime, never
+ *  a control surface — the Join button is dark). */
 export function DraftBar() {
   const draft = useDraftAlert()
   if (!draft) return null
