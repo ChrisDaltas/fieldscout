@@ -81,7 +81,10 @@ export function AvailablePlayers({
     <Card className={className}>
       <CardHeader>
         <CardTitle>Available players</CardTitle>
-        <span className="fs-num text-[10px] font-semibold text-n-3">{rows.length}</span>
+        {/* The count is the visible ADP window minus drafted, NOT the pool
+            total (use-draft-pool's bounded-window honesty note) — labeled so
+            it never reads as the table (R269, M2 batch 13). */}
+        <span className="fs-num text-[10px] font-semibold text-n-3">{rows.length} shown</span>
       </CardHeader>
 
       <div className="flex flex-col gap-2 border-b border-n-4 px-card-pad pb-2.5">

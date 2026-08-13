@@ -98,9 +98,11 @@ export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: My
           Your queue didn&rsquo;t load. It refreshes automatically.
         </p>
       ) : view.length === 0 ? (
+        // Timeouts-draft-from-the-queue is §8.4's rule — cited here, not in
+        // user-facing copy (R268, M2 batch 13).
         <p className="p-card-pad text-[12px] font-medium text-n-3">
           Queue players from the pool so a plan is ready when the clock hits
-          you. Timeouts draft from the top of this list first (§8.4).
+          you. Timeouts draft from the top of this list first.
         </p>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
