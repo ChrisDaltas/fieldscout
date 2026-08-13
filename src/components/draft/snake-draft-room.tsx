@@ -37,6 +37,7 @@ import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftBoardGrid } from './draft-board-grid'
+import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
 import {
   nextPickNumberForTeam,
@@ -119,17 +120,28 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
   }
 
   if (!draftId) {
-    // C25's honest state: no fixtures — no draft exists yet. The draft-setup
-    // surface + lobby live on the league home (L.B3.4 completes them).
+    if (detail.data.league.status === 'scheduled') {
+      // L.B3.4: the D94 settings-only path — the league is scheduled but no
+      // drafts row exists yet (the tick creates + starts it at the instant).
+      // The lobby renders WITHOUT presence (no row ⇒ no channel) and polls
+      // near the instant so the auto-start flip arrives.
+      return (
+        <DraftLobby
+          leagueId={leagueId}
+          detail={detail.data}
+          draft={null}
+          myTeamId={myMemberTeamId}
+          isCommish={canUseCommishPanel(detail.data.my_role)}
+        />
+      )
+    }
+    // C25's honest state: no fixtures — no draft exists yet and the league
+    // isn't scheduled, so there is no lobby to open either.
     return (
       <DraftRoomEmpty
         leagueId={leagueId}
         title="No draft yet"
-        body={
-          detail.data.settings.draft.draft_scheduled_at
-            ? 'This league has a draft scheduled but the room hasn’t opened. Head back to the league to see the countdown.'
-            : 'This league hasn’t scheduled its draft. The commissioner can set it up from the league home.'
-        }
+        body="This league hasn’t scheduled its draft. The commissioner can schedule it from the league home."
       />
     )
   }
@@ -160,11 +172,18 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
   }
 
   if (draft.status === 'scheduled') {
+    // L.B3.4: the pre-start room state IS the lobby (§8.5.1/§16.5.2). The
+    // room's ONE channel is already open (useDraftRoom subscribed after the
+    // fetch), so presence works here and the start flip arrives as the
+    // drafts UPDATE broadcast — the lobby becomes the live room in place.
     return (
-      <DraftRoomEmpty
+      <DraftLobby
         leagueId={leagueId}
-        title="The draft hasn't started"
-        body="The room opens when the draft starts. Watch the countdown on the league home."
+        detail={detail.data}
+        draft={draft}
+        onlineTeamIds={room.onlineTeamIds}
+        myTeamId={myMemberTeamId}
+        isCommish={canUseCommishPanel(detail.data.my_role)}
       />
     )
   }

@@ -129,6 +129,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
     autopick_default: 'queue_then_board_then_adp', // single-option field (fixed strategy)
     disconnect_grace_seconds: 0,
     draft_scheduled_at: '2026-08-30T23:00:00.000Z',
+    time_zone: 'America/New_York', // D98 (v2.9.2) — differs from the null default
   },
 }
 

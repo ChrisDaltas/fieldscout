@@ -19,16 +19,19 @@ import type { LeagueDetail } from '@/hooks/use-league'
 // ---------------------------------------------------------------------------
 
 /**
- * Which home hero renders for a `leagues.status`. M1 builds `setup` +
- * `scheduled`; every later lifecycle status (`drafting`/`in_season`/`playoffs`/
- * `complete`) renders a clearly-marked "not yet" placeholder — never mock data
- * (task item 1). Unknown/invalid statuses fall through to `later` too.
+ * Which home hero renders for a `leagues.status`. M1 built `setup` +
+ * `scheduled`; M2 (L.B3.4 — the F38 discharge) adds the REAL `drafting` hero
+ * (LIVE badge + Join draft, §16.5.1). Every LATER lifecycle status
+ * (`in_season`/`playoffs`/`complete`) still renders a clearly-marked "not
+ * yet" placeholder — never mock data — until M4's real heroes land (F46).
+ * Unknown/invalid statuses fall through to `later` too.
  */
-export type HomeState = 'setup' | 'scheduled' | 'later'
+export type HomeState = 'setup' | 'scheduled' | 'drafting' | 'later'
 
 export function homeStateForStatus(status: string): HomeState {
   if (status === 'setup') return 'setup'
   if (status === 'scheduled') return 'scheduled'
+  if (status === 'drafting') return 'drafting'
   return 'later'
 }
 
@@ -102,7 +105,7 @@ export function deriveSetupChecklist(detail: LeagueDetail): ChecklistItem[] {
   const hasSchedule = typeof scheduledAt === 'string' && scheduledAt !== ''
   const scheduleDetail =
     typeof scheduledAt === 'string' && scheduledAt !== ''
-      ? describeScheduleDetail(scheduledAt)
+      ? describeScheduleDetail(scheduledAt, detail.settings.draft.time_zone)
       : 'Not scheduled yet'
 
   return [
@@ -136,9 +139,10 @@ export function deriveSetupChecklist(detail: LeagueDetail): ChecklistItem[] {
 }
 
 /** Checklist detail once a draft time exists — the §16.4 league-reference
- *  half ("Scheduled for Sun, Aug 30, 2026 · 7:00 PM (UTC−4)"). */
-function describeScheduleDetail(scheduledAtIso: string): string {
-  const display = describeDraftTime(scheduledAtIso)
+ *  half ("Scheduled for Sun, Aug 30, 2026 · 7:00 PM (UTC−4)" — or, D98,
+ *  "… · 7:00 PM (EDT)" when the league carries a named zone). */
+function describeScheduleDetail(scheduledAtIso: string, timeZone?: string | null): string {
+  const display = describeDraftTime(scheduledAtIso, timeZone)
   if (!display) return 'Draft time is set'
   return `Scheduled for ${display.leagueTime}${
     display.leagueOffset ? ` (${display.leagueOffset})` : ''
@@ -187,6 +191,33 @@ export function draftCountdown(scheduledAtIso: string, nowMs: number): Countdown
     minutes: Math.floor((totalSeconds % 3600) / 60),
     seconds: totalSeconds % 60,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-start watch (D94 — L.B3.4)
+// ---------------------------------------------------------------------------
+
+/** How close to the scheduled instant the auto-start watch starts polling. */
+export const AUTO_START_WATCH_MS = 2 * 60_000
+/** Poll cadence inside the watch window (the tick runs every ~5s — D87). */
+export const AUTO_START_POLL_MS = 5_000
+
+/**
+ * D94: a `scheduled` league auto-starts at `draft_scheduled_at` server-side
+ * (the tick creates the drafts row if absent), and no channel exists to push
+ * that flip to a viewer sitting on the countdown — so surfaces watching the
+ * instant (scheduled hero, lobby) POLL the league detail while the instant
+ * is near or past. Pure: returns the refetch interval in ms, or null when no
+ * polling is warranted (unparseable/absent instant, or still far out — the
+ * countdown's own ticking re-evaluates every second, so the window arms
+ * itself). Bounded by construction: only mounted countdown surfaces poll,
+ * and only inside the watch window.
+ */
+export function autoStartPollMs(scheduledAtIso: string | null, nowMs: number): number | null {
+  if (!scheduledAtIso) return null
+  const targetMs = Date.parse(scheduledAtIso)
+  if (Number.isNaN(targetMs)) return null
+  return targetMs - nowMs <= AUTO_START_WATCH_MS ? AUTO_START_POLL_MS : null
 }
 
 // ---------------------------------------------------------------------------
@@ -252,19 +283,80 @@ export function formatInstantAtOffset(targetMs: number, offsetMinutes: number): 
 }
 
 export interface DraftTimeDisplay {
-  /** The league reference time: the stored instant at its scheduled offset. */
+  /** The league reference time: the stored instant at its scheduled offset
+   *  (or, D98, rendered in the league's named zone when one is set). */
   leagueTime: string
-  /** The offset label for that reference time ("UTC", "UTC−4", …), or null. */
+  /** The label for that reference time — the offset ("UTC", "UTC−4", …) or,
+   *  D98, the named zone's abbreviation ("EDT", "PST", …). Null when neither
+   *  is derivable. */
   leagueOffset: string | null
+}
+
+/**
+ * D98 (spec §7.3.8 v2.9.2): render an instant in a NAMED IANA zone,
+ * matching `formatInstantAtOffset`'s shape ("Sun, Aug 30, 2026 · 7:00 PM")
+ * plus the zone's short label ("EDT"). Built from `formatToParts` and joined
+ * by hand — never `format()` — so the output is pinned to OUR separators
+ * regardless of ICU's own joining (newer ICU inserts a narrow no-break space
+ * before AM/PM, which would make golden pins ICU-version-dependent).
+ * Returns null when the zone is unusable (callers fall back to the offset
+ * render — a bad stored zone degrades, never crashes).
+ */
+export function formatInstantInZone(
+  targetMs: number,
+  timeZone: string,
+): { text: string; zoneAbbrev: string | null } | null {
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).formatToParts(new Date(targetMs))
+  } catch {
+    return null
+  }
+  const get = (type: Intl.DateTimeFormatPart['type']) =>
+    parts.find((p) => p.type === type)?.value ?? null
+  const weekday = get('weekday')
+  const month = get('month')
+  const day = get('day')
+  const year = get('year')
+  const hour = get('hour')
+  const minute = get('minute')
+  const dayPeriod = get('dayPeriod')
+  if (!weekday || !month || !day || !year || !hour || !minute || !dayPeriod) return null
+  return {
+    text: `${weekday}, ${month} ${day}, ${year} · ${hour}:${minute} ${dayPeriod}`,
+    zoneAbbrev: get('timeZoneName'),
+  }
 }
 
 /**
  * The league-reference half of the §16.4 timezone rule for a draft instant.
  * Viewer-local is the component's job (Intl); this is the pinnable half.
+ *
+ * D98 (v2.9.2): when the league carries a named `draft.time_zone`, league
+ * time renders IN THAT ZONE with its abbreviation everywhere the offset
+ * renders today; when null (or the zone is unusable) the M1 stored-offset
+ * render stands unchanged.
  */
-export function describeDraftTime(scheduledAtIso: string): DraftTimeDisplay | null {
+export function describeDraftTime(
+  scheduledAtIso: string,
+  timeZone?: string | null,
+): DraftTimeDisplay | null {
   const targetMs = Date.parse(scheduledAtIso)
   if (Number.isNaN(targetMs)) return null
+  if (timeZone) {
+    const zoned = formatInstantInZone(targetMs, timeZone)
+    if (zoned) return { leagueTime: zoned.text, leagueOffset: zoned.zoneAbbrev }
+  }
   const offset = parseIsoOffsetMinutes(scheduledAtIso)
   if (offset === null) {
     return { leagueTime: formatInstantAtOffset(targetMs, 0), leagueOffset: null }

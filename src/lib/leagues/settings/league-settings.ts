@@ -186,6 +186,30 @@ export function deriveRosterSize(roster: RosterSettings): number {
 // §7.3.8 — draft configuration block
 // ---------------------------------------------------------------------------
 
+/**
+ * D98 (spec §7.3.8 erratum v2.9.2): is `zone` a usable IANA time zone name?
+ * Probed through Intl itself (the renderer that will consume it), so "valid"
+ * means exactly "this runtime can render league time in it" — no shipped zone
+ * list to drift from the ICU data. Deterministic: constructing a formatter
+ * with an explicit `timeZone` reads no clock (the D3 guard bans wall-clock
+ * reads, not Intl).
+ *
+ * R276 strict arm (M2 batch 15, D120(11)): Intl alone also accepts ECMA-402
+ * offset strings ('+05:00') and legacy no-slash link names ('EST'), which are
+ * not "a valid IANA time zone name" per the §7.3.8 row — so a name must
+ * contain a '/' (UTC and GMT allowlisted; every curated-select and one-tap
+ * value is Region/City). The Intl probe stays the base check underneath.
+ */
+export function isIanaTimeZone(zone: string): boolean {
+  if (zone !== 'UTC' && zone !== 'GMT' && !zone.includes('/')) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const draftConfigSchema = z.strictObject({
   draft_type: z.enum(['snake', 'auction', 'linear']).default('snake'),
   snake_reversal: z.boolean().default(false),
@@ -201,6 +225,17 @@ const draftConfigSchema = z.strictObject({
   autopick_default: z.literal('queue_then_board_then_adp').default('queue_then_board_then_adp'),
   disconnect_grace_seconds: z.number().int().min(0).max(120).default(30),
   draft_scheduled_at: z.iso.datetime({ offset: true }).nullable().default(null),
+  // D98 (additive, spec §7.3.8 erratum v2.9.2): the league's named draft
+  // reference zone (§16.4). DISPLAY-ONLY metadata — instants
+  // (`draft_scheduled_at`, `drafts.current_deadline`) stay the authority;
+  // when set, league-time renders in this zone (Intl), when null the M1
+  // offset render stands. The draft-setup surface offers the scheduler's own
+  // zone as the one-tap default (L.B3.4).
+  time_zone: z
+    .string()
+    .refine(isIanaTimeZone, 'must be a valid IANA time zone name (e.g. America/New_York)')
+    .nullable()
+    .default(null),
 })
 export type DraftConfig = z.infer<typeof draftConfigSchema>
 

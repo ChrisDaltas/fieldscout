@@ -143,6 +143,51 @@ export function useUpdateLeagueSettings(leagueId: string) {
 }
 
 /**
+ * The §7.1 setup ↔ scheduled lifecycle flip (PATCH /api/leagues/[id] with
+ * `status` as the only key — the L.A1.13 route → `set_league_status`; commish
+ * only). L.B3.4 gives the transition its first UI affordance: "Schedule the
+ * draft" on the setup hero moves the league to `scheduled` once a draft time
+ * is saved — which is what arms the D94 auto-start (the tick scans
+ * `scheduled` leagues only) and reveals the countdown hero + lobby CTAs.
+ * The route validates the CURRENT stored settings before the `scheduled`
+ * transition; its per-field 400 surfaces through `LeaguePatchError` exactly
+ * like a settings save.
+ */
+export function useSetLeagueStatus(leagueId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (status: 'setup' | 'scheduled') => {
+      const response = await fetch(`/api/leagues/${leagueId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const parsed = (await response.json().catch(() => null)) as { error?: unknown } | null
+      if (!response.ok) {
+        const error = parsed?.error
+        const fieldErrors =
+          error && typeof error === 'object' && 'fieldErrors' in error
+            ? ((error as { fieldErrors: Record<string, string[]> }).fieldErrors)
+            : undefined
+        const message =
+          typeof error === 'string'
+            ? error
+            : fieldErrors
+              ? 'Some settings need attention before scheduling.'
+              : 'Failed to update the league status.'
+        throw new LeaguePatchError(response.status, message, fieldErrors)
+      }
+      return parsed as { ok: true }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
+    },
+  })
+}
+
+/**
  * Soft-delete a league (DELETE /api/leagues/[id] — commish only; the route
  * calls the `soft_delete_league` RPC per Q8/v2.8.2). Retry-safe: the RPC is
  * an idempotent no-op on an already-deleted league.
