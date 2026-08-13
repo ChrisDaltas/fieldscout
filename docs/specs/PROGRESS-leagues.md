@@ -1359,6 +1359,18 @@ Proofs (shown): fresh `db reset` 001–070 · `test:db` 25 files/**1538**/PASS (
 
 ---
 
+## Review findings — 2026-08-13 (M2 batch 14)
+
+**Reviewer batch (adversarial review of PR #142 — L.B3.3 draft chat + commissioner panel UI, `main...feat/M2-L.B3.3-chat-commish-panel`). VERDICT: CLEAN on the first pass — three nits, all routed; no fix cycle. Reviewer independently reproduced the R263 break probe (pre-fix arm restored → exactly the mount-during-outage pin RED, 1/31), ran live RLS probes as an authenticated member in rolled-back transactions (is_system forge / shadow-context / 501-char all refused; the sanctioned shape inserts — the client send matches 065's policy field-for-field, and every refusal surfaces as a thrown error → toast, no silent no-op path), verified every §8.7 control's body descriptor-by-descriptor against `draft-service.ts`'s Zod schemas, and re-ran the proof chain green (ops 5 files/75 · `npm run test` 85/1527 zero-flake · gate 24 · type-check/lint clean).**
+
+- **R271 · nit · the §16.5.4 Auto seat badge goes stale on every client except the toggler** — `is_autodraft` renders from `detail.members`, but only the caller's `onSettled` invalidates the league-detail cache; 072 broadcasts no members change, and the QueryClient's `staleTime`/no-focus-refetch keep other clients wrong for the rest of the room session (the §16.3 system post does inform the room textually; no standing-rule-5 breach). **Routed → L.B3.5** (next task reopening the room composition): invalidate `leaguesKeys.detail(leagueId)` when an `is_system: true` chat broadcast arrives — system posts are precisely the "a commish action happened" signal — or fold league detail into the join-refetch.
+- **R272 · nit · a paused MOCK room's pause overlay has no Resume for the launcher** — `canResume={isCommish}` is always false on mocks (D110(1)), so the one legal resume caller (069/071's launcher arm) gets a dead-end overlay pointing at L.B3.5's still-unbuilt resumable card. Pre-existing dead-end made more visible. **Routed → L.B3.5** (the reviewer's named home, alongside R264): extend `canResume` to the launcher (`config.mock.launched_by === viewer`) or land the resumable card first.
+- **R273 · nit · the undo confirm dialog's preview is an at-open snapshot** — a pick landing while the dialog is open diverges from what actually reverts (sharpest on single undo, where the RPC undoes the most-recent-live-pick at execution, which may not be the pick the dialog named). §8.7's "clear confirm dialog" is true as-of-open; failure is graceful (system post + board name what actually reverted). **Routed → L.B3.5**: store the target, derive the preview from the live cache at render, re-verify at confirm.
+
+*(All three carried on the tasks-M2 §6 L.B3.5 read-list per R51 findability — added in this same commit.)*
+
+---
+
 ## Review findings — 2026-08-13 (M2 batch 13)
 
 **Reviewer batch (adversarial review of PR #141 — L.B3.2 board surfaces, `main...feat/M2-L.B3.2-board-surfaces`). VERDICT: FIX-THEN-MERGE — two docs/ledger should-fixes, three nits (two taken, one routed with a new F-row); resolution on the SAME branch per house precedent. Numbering continues from batch 12 (R260–R265).**
