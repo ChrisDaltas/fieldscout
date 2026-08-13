@@ -193,8 +193,15 @@ export function deriveRosterSize(roster: RosterSettings): number {
  * list to drift from the ICU data. Deterministic: constructing a formatter
  * with an explicit `timeZone` reads no clock (the D3 guard bans wall-clock
  * reads, not Intl).
+ *
+ * R276 strict arm (M2 batch 15, D120(11)): Intl alone also accepts ECMA-402
+ * offset strings ('+05:00') and legacy no-slash link names ('EST'), which are
+ * not "a valid IANA time zone name" per the §7.3.8 row — so a name must
+ * contain a '/' (UTC and GMT allowlisted; every curated-select and one-tap
+ * value is Region/City). The Intl probe stays the base check underneath.
  */
 export function isIanaTimeZone(zone: string): boolean {
+  if (zone !== 'UTC' && zone !== 'GMT' && !zone.includes('/')) return false
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: zone })
     return true

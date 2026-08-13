@@ -5,7 +5,9 @@ import { LEAGUE_SETTINGS_DEFAULTS } from '@/lib/leagues/settings/league-settings
 
 import {
   deriveLobbyChecklist,
+  draftTimeReachedLine,
   lobbyAutopickTeamIds,
+  lobbyFranchiseCapacity,
   lobbyOrderTeamIds,
 } from './draft-lobby-ops'
 
@@ -26,8 +28,13 @@ function member(over: Partial<LeagueDetail['members'][number]>): LeagueDetail['m
   }
 }
 
+function team(id: string, status = 'active'): LeagueDetail['teams'][number] {
+  return { id, name: `Team ${id}`, owner_id: 'u1', status, created_at: null }
+}
+
 function detailWith(over: {
   members?: LeagueDetail['members']
+  teams?: LeagueDetail['teams']
   scoringSystemId?: string | null
   maxTeams?: number
   draft?: Partial<LeagueDetail['settings']['draft']>
@@ -52,7 +59,9 @@ function detailWith(over: {
     },
     settings,
     members: over.members ?? [member({}), member({ id: 'm2', user_id: 'u2', team_id: 't2' })],
-    teams: [],
+    // Default: at capacity (both franchises exist) — the capacity-blocked
+    // shapes build their own teams list (R274).
+    teams: over.teams ?? [team('t1'), team('t2')],
     my_role: 'commissioner',
     active_draft: null,
   }
@@ -87,9 +96,10 @@ describe('lobbyOrderTeamIds', () => {
 // ---------------------------------------------------------------------------
 
 describe('deriveLobbyChecklist', () => {
-  it('all-ready: every seat claimed, scoring set, order stored', () => {
+  it('all-ready: every franchise exists, every seat claimed, scoring set, order stored', () => {
     const items = deriveLobbyChecklist(detailWith({}), ['t1', 't2'])
     expect(items.map((i) => [i.key, i.done])).toEqual([
+      ['franchises', true],
       ['seats', true],
       ['settings', true],
       ['order', true],
@@ -139,6 +149,53 @@ describe('deriveLobbyChecklist', () => {
       [],
     )
     expect(items.find((i) => i.key === 'settings')!.detail).toContain('untimed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Franchise capacity — the D96 refusal's lobby read (R274, M2 batch 15)
+// ---------------------------------------------------------------------------
+
+describe('lobbyFranchiseCapacity + draftTimeReachedLine (R274)', () => {
+  // The reviewer's scenario verbatim: a 12-team league with 5 franchises —
+  // 066's draft_start refuses (5 <> 12, §7.2/D96) and the D94 tick
+  // re-refuses every ~5s; pre-fix the lobby promised "any moment now"
+  // forever over that standing refusal.
+  const blocked12 = detailWith({
+    maxTeams: 12,
+    teams: [team('t1'), team('t2'), team('t3'), team('t4'), team('t5')],
+  })
+
+  it('capacity-blocked: NO "any moment" promise — the honest line points at Add an open seat', () => {
+    const capacity = lobbyFranchiseCapacity(blocked12)
+    expect(capacity).toEqual({ active: 5, total: 12, blocked: true })
+    const line = draftTimeReachedLine(capacity)
+    expect(line).not.toContain('any moment')
+    expect(line).toContain('5 of 12 franchise seats')
+    expect(line).toContain('Add an open seat')
+  })
+
+  it('capacity-blocked: the checklist carries the capacity line, not-done', () => {
+    const row = deriveLobbyChecklist(blocked12, []).find((i) => i.key === 'franchises')!
+    expect(row.done).toBe(false)
+    expect(row.detail).toContain('5 / 12 franchise seats exist')
+    expect(row.detail).toContain('add an open seat')
+  })
+
+  it('at capacity: the auto-start promise stands and the row is done', () => {
+    const capacity = lobbyFranchiseCapacity(detailWith({}))
+    expect(capacity.blocked).toBe(false)
+    expect(draftTimeReachedLine(capacity)).toContain('any moment now')
+    expect(deriveLobbyChecklist(detailWith({}), []).find((i) => i.key === 'franchises')!.done).toBe(
+      true,
+    )
+  })
+
+  it("retired franchises don't count toward capacity; orphaned do (066's exact filter)", () => {
+    const detail = detailWith({
+      teams: [team('t1'), team('t2', 'retired'), team('t3', 'orphaned')],
+    })
+    expect(lobbyFranchiseCapacity(detail)).toEqual({ active: 2, total: 2, blocked: false })
   })
 })
 

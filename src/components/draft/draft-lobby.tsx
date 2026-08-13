@@ -23,7 +23,9 @@ import type { LeagueDetail } from '@/hooks/use-league'
 
 import {
   deriveLobbyChecklist,
+  draftTimeReachedLine,
   lobbyAutopickTeamIds,
+  lobbyFranchiseCapacity,
   lobbyOrderTeamIds,
 } from './draft-lobby-ops'
 import { PresenceBar, type PresenceSeat } from './presence-bar'
@@ -73,6 +75,10 @@ export function DraftLobby({
 
   const orderIds = lobbyOrderTeamIds(draft?.draft_order, detail.settings.draft.draft_order)
   const checklist = deriveLobbyChecklist(detail, orderIds)
+  // R274: the D96 capacity read — the reached-instant banner only promises an
+  // auto-start `draft_start` can actually deliver (066 refuses on a franchise
+  // mismatch; the tick retries + records that refusal every ~5s, 068).
+  const capacity = lobbyFranchiseCapacity(detail)
   const teamsById = new Map(detail.teams.map((t) => [t.id, t.name]))
   const autopickIds = lobbyAutopickTeamIds(detail.members)
 
@@ -154,9 +160,7 @@ export function DraftLobby({
           {cd && display ? (
             <div className="flex flex-col gap-2">
               {cd.isPast ? (
-                <p className="text-[13px] font-bold">
-                  Draft time reached — the draft starts automatically any moment now.
-                </p>
+                <p className="text-[13px] font-bold">{draftTimeReachedLine(capacity)}</p>
               ) : (
                 <p className="text-[13px] font-bold">
                   Starts in{' '}

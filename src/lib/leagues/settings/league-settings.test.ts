@@ -219,9 +219,13 @@ const RANGE_CASES: RangeCase[] = [
   {
     // D98 (v2.9.2): IANA zone name or null — validity probed through Intl
     // itself (`isIanaTimeZone`), so junk names and non-strings refuse.
+    // R276 (M2 batch 15): Intl also accepts ECMA-402 offset strings
+    // ('+05:00') and legacy no-slash names ('EST'), which are not "a valid
+    // IANA zone name" per §7.3.8 — the strict arm requires a '/' with
+    // UTC/GMT allowlisted, so those refuse too (D120(11)).
     path: 'draft.time_zone',
-    ok: [null, 'America/New_York', 'America/Los_Angeles', 'UTC'],
-    bad: ['Not/AZone', 'Eastern', '', 240],
+    ok: [null, 'America/New_York', 'America/Los_Angeles', 'UTC', 'GMT'],
+    bad: ['Not/AZone', 'Eastern', 'EST', '+05:00', '-08:00', '', 240],
   },
 ]
 

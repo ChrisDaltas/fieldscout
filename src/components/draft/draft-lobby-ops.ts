@@ -18,10 +18,56 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { parseDraftOrder } from './draft-board-ops'
 
 // ---------------------------------------------------------------------------
-// Checklist (§16.5.2 "lobby (presence, checklist)": seats / settings / order)
+// Franchise capacity (§7.2/D96 — R274, M2 batch 15)
 // ---------------------------------------------------------------------------
 
-export type LobbyChecklistKey = 'seats' | 'settings' | 'order'
+export interface LobbyCapacity {
+  /** Non-retired franchises (active + orphaned — 066's exact count). */
+  active: number
+  /** leagues.max_teams — the team_count `draft_start` requires. */
+  total: number
+  /** True when the counts differ — `draft_start`/the D94 tick will refuse. */
+  blocked: boolean
+}
+
+/**
+ * The lobby's read of the D96 franchise-capacity refusal (R274): 066's
+ * `draft_start` counts `teams` rows with `status <> 'retired'` and refuses
+ * unless the count equals `team_count` — the SAME rows, derived here so a
+ * capacity-blocked league's lobby stops promising an auto-start the tick
+ * refuses every 5s (068: failures are recorded + retried; this banner is
+ * L.B3.4's read of the same refusal). Blocked on ANY mismatch (066 refuses
+ * `<>`, not `<` — a shrunk league over-capacity blocks too).
+ */
+export function lobbyFranchiseCapacity(detail: LeagueDetail): LobbyCapacity {
+  const total = detail.league.max_teams
+  const active = detail.teams.filter((t) => t.status !== 'retired').length
+  return { active, total, blocked: active !== total }
+}
+
+/**
+ * The countdown banner's line once the scheduled instant has passed (R274):
+ * the "any moment now" promise is only honest when `draft_start`'s capacity
+ * check can pass — a blocked league gets the truth plus the pointer at the
+ * Add-an-open-seat affordance (the same remedy 066's refusal names).
+ */
+export function draftTimeReachedLine(capacity: LobbyCapacity): string {
+  if (!capacity.blocked) {
+    return 'Draft time reached — the draft starts automatically any moment now.'
+  }
+  return (
+    `Draft time reached — but this league has ${capacity.active} of ` +
+    `${capacity.total} franchise seats, and every seat must exist before the ` +
+    'draft can start. Add an open seat for each empty slot (League home → Invite).'
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Checklist (§16.5.2 "lobby (presence, checklist)": franchises / seats /
+// settings / order)
+// ---------------------------------------------------------------------------
+
+export type LobbyChecklistKey = 'franchises' | 'seats' | 'settings' | 'order'
 
 export interface LobbyChecklistItem {
   key: LobbyChecklistKey
@@ -40,12 +86,16 @@ function clockLabel(pickTimerSeconds: number): string {
 }
 
 /**
- * The lobby's three readiness rows. `storedOrderIds` is the resolved order
+ * The lobby's four readiness rows. `storedOrderIds` is the resolved order
  * display list (see `lobbyOrderTeamIds`) so the order row and the order
  * display can never disagree about whether an order exists.
  *
- * - seats: claimed managers n/N — informational (empty seats are franchises
- *   and autodraft, D96/E48; an unclaimed seat never blocks a start).
+ * - franchises (R274): non-retired `teams` rows vs `max_teams` — the §7.2/D96
+ *   capacity check `draft_start` refuses on. The one row derived from the
+ *   SAME rows the server counts; a mismatch IS a start blocker.
+ * - seats: claimed managers n/N — informational (an EXISTING unclaimed seat
+ *   autodrafts, D96/E48; it never blocks a start — a missing franchise does,
+ *   and that's the franchises row's job, not this one's).
  * - settings: the scoring template (draft_start snapshots it — D43; missing
  *   template IS a start blocker, surfaced here before the server refusal).
  * - order: random mode is always ready (066 shuffles at start when nothing
@@ -56,6 +106,7 @@ export function deriveLobbyChecklist(
   detail: LeagueDetail,
   storedOrderIds: readonly string[],
 ): LobbyChecklistItem[] {
+  const capacity = lobbyFranchiseCapacity(detail)
   const total = detail.league.max_teams
   const claimed = detail.members.filter((m) => m.user_id != null).length
   const hasScoring = detail.league.scoring_system_id != null
@@ -72,13 +123,21 @@ export function deriveLobbyChecklist(
 
   return [
     {
+      key: 'franchises',
+      label: 'Franchise seats',
+      done: !capacity.blocked,
+      detail: capacity.blocked
+        ? `${capacity.active} / ${capacity.total} franchise seats exist — add an open seat for each empty slot before the draft can start`
+        : `All ${capacity.total} franchise seats exist`,
+    },
+    {
       key: 'seats',
       label: 'Manager seats',
       done: claimed === total,
       detail:
         claimed === total
           ? `All ${total} seats claimed`
-          : `${claimed} / ${total} seats claimed — empty seats autodraft`,
+          : `${claimed} / ${total} seats claimed — unclaimed seats autodraft`,
     },
     {
       key: 'settings',
