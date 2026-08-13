@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PlayerRow } from '@/components/players/player-row'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
@@ -143,23 +144,34 @@ export function AvailablePlayers({
               density="compact"
               player={player}
               onOpen={() => openPlayer(player.id)}
+              // Big Board rank rides the meta line rather than a second
+              // stat column: at rail width two fixed stat columns + actions
+              // squeezed names to two characters (D39 pass) — clarity over
+              // density (CLAUDE.md); both values still render per row.
+              meta={
+                player.bigBoardRank != null
+                  ? `${player.team ?? ''} · Board #${player.bigBoardRank}`
+                  : (player.team ?? undefined)
+              }
               stats={[
                 { label: 'ADP', value: player.adp != null ? player.adp.toFixed(1) : '—' },
-                {
-                  label: 'Board',
-                  value: player.bigBoardRank != null ? `#${player.bigBoardRank}` : '—',
-                },
               ]}
               trailing={
                 <span className="ml-1 flex shrink-0 items-center gap-1">
                   {canQueue && (
                     <Button
                       variant="stroke"
-                      size="sm"
+                      size="icon-sm"
+                      aria-label={
+                        queuedIds.has(player.id)
+                          ? `${player.full_name} is queued`
+                          : `Queue ${player.full_name}`
+                      }
+                      title={queuedIds.has(player.id) ? 'Queued' : 'Add to queue'}
                       disabled={queuedIds.has(player.id)}
                       onClick={() => onQueue(player.id)}
                     >
-                      {queuedIds.has(player.id) ? 'Queued' : 'Queue'}
+                      <Icon name={queuedIds.has(player.id) ? 'check' : 'plus'} size={13} />
                     </Button>
                   )}
                   {canDraft && (

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +19,12 @@ import {
   type DraftPickSummary,
   type DraftRoomConnection,
 } from '@/hooks/use-draft'
-import { useDraftQueue, useUpdateDraftQueue } from '@/hooks/use-draft-queue'
+import {
+  draftQueueKeys,
+  useDraftQueue,
+  useUpdateDraftQueue,
+  type DraftQueueRow,
+} from '@/hooks/use-draft-queue'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
@@ -207,6 +213,7 @@ function DraftRoomLive({
   userId,
 }: DraftRoomLiveProps) {
   const [mobilePane, setMobilePane] = useState<MobilePane>('players')
+  const queryClient = useQueryClient()
 
   const teamsById = useMemo(
     () => new Map(detail.teams.map((t) => [t.id, t])),
@@ -333,7 +340,17 @@ function DraftRoomLive({
   )
   const handleQueue = (playerId: string) => {
     if (!queueTeamId) return
-    updateQueue.mutate(appendId(orderedIdsForSave(queueView), playerId))
+    // Read the queue from the LIVE cache at click time, not the render
+    // closure: the optimistic onMutate writes the cache synchronously, so
+    // two quick appends compose — the D39 pass caught the closure variant
+    // losing the first append (two whole-queue replaces raced; the server
+    // interleaving left duplicate rank-1 rows).
+    const cached =
+      queryClient.getQueryData<DraftQueueRow[]>(
+        draftQueueKeys.queue(draft.id, queueTeamId),
+      ) ?? []
+    const currentIds = orderedIdsForSave(deriveQueueView(cached, draftedIds))
+    updateQueue.mutate(appendId(currentIds, playerId))
   }
 
   const myPicks = useMemo(
