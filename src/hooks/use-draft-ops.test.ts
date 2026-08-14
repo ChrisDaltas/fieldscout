@@ -14,6 +14,7 @@ import type { DraftPickSummary, DraftState } from './use-draft'
 import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
+  chatEventInvalidatesLeagueDetail,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
   FIRST_JOIN_FAILURES_FOR_BANNER,
@@ -21,6 +22,7 @@ import {
   heartbeatSignalsGap,
   heartbeatSilenceExceeded,
   maxKnownPickNumber,
+  presenceTeamForDraft,
   type DraftsBroadcastRecord,
   type PickBroadcastRecord,
 } from './use-draft-ops'
@@ -459,5 +461,54 @@ describe('maxKnownPickNumber', () => {
       maxKnownPickNumber([pick(1, 'a'), pick(2, 'b', { is_undone: true }), pick(3, 'c')]),
     ).toBe(3)
     expect(maxKnownPickNumber([])).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Presence seat resolution — the R264 mock shape (M2 batch 12 → L.B3.5)
+// ---------------------------------------------------------------------------
+
+describe('presenceTeamForDraft (R264)', () => {
+  const MOCK = draftRow({
+    is_mock: true,
+    config: { mock: { human_team_id: T(3), launched_by: 'u-launcher', cpu_speed: 'fast' } },
+  })
+
+  it('a REAL draft tracks the viewer’s own franchise (unchanged)', () => {
+    expect(presenceTeamForDraft(draftRow(), T(2), 'u-any')).toBe(T(2))
+    expect(presenceTeamForDraft(draftRow(), null, 'u-any')).toBeNull()
+  })
+
+  it('in a MOCK the launcher tracks the HUMAN seat, never their real franchise — the R264 probe: launcher seated at T(1), human seat T(3) ⇒ presence keys T(3)', () => {
+    expect(presenceTeamForDraft(MOCK, T(1), 'u-launcher')).toBe(T(3))
+  })
+
+  it('a non-launcher viewer in a mock tracks NO seat (spectator — D103(2); their real franchise chip must not light up in a practice room)', () => {
+    expect(presenceTeamForDraft(MOCK, T(2), 'u-other')).toBeNull()
+    expect(presenceTeamForDraft(MOCK, T(2), null)).toBeNull()
+  })
+
+  it('a malformed mock config tracks no seat (never a guessed one)', () => {
+    expect(presenceTeamForDraft(draftRow({ is_mock: true, config: {} }), T(1), 'u-launcher')).toBeNull()
+    expect(presenceTeamForDraft(draftRow({ is_mock: true, config: null }), T(1), 'u-launcher')).toBeNull()
+  })
+
+  it('a null draft (pre-fetch) falls back to the member team — fetch-then-subscribe means this arm is never the one that tracks', () => {
+    expect(presenceTeamForDraft(null, T(2), 'u-any')).toBe(T(2))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// League-detail staleness on system posts — R271 (M2 batch 14 → L.B3.5)
+// ---------------------------------------------------------------------------
+
+describe('chatEventInvalidatesLeagueDetail (R271)', () => {
+  it('a SYSTEM post invalidates league detail (the "a commissioner action landed" signal — the §16.5.4 Auto badge reads league_members, which 072 broadcasts nowhere)', () => {
+    expect(chatEventInvalidatesLeagueDetail({ is_system: true })).toBe(true)
+  })
+
+  it('ordinary member chatter never invalidates anything (a chat burst must not hammer the league detail)', () => {
+    expect(chatEventInvalidatesLeagueDetail({ is_system: false })).toBe(false)
+    expect(chatEventInvalidatesLeagueDetail({ is_system: null })).toBe(false)
   })
 })

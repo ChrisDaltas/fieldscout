@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -212,5 +215,27 @@ describe('lobbyAutopickTeamIds', () => {
       member({ id: 'm4', team_id: null }), // no seat — nothing to badge
     ])
     expect([...ids].sort()).toEqual(['t2', 't3'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §16.5.2 practice entry point (R279) — source pin, not a render (the
+// ai-surfaces/lists-cutover idiom: .tsx is unparseable under jsx:"preserve")
+// ---------------------------------------------------------------------------
+
+describe('the lobby mounts the §16.5.2 practice entry (R279)', () => {
+  // Comments stripped so the pin reads CODE, not the prose about it (the
+  // lists-cutover lesson); `[^:]` keeps `https://` out of the line-comment arm.
+  const code = readFileSync(
+    path.resolve(process.cwd(), 'src/components/draft/draft-lobby.tsx'),
+    'utf8',
+  ).replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, (_match, before) => before ?? '')
+
+  it('renders PracticeCta — the mock-workflow map names TWO entry points ("Practice card · draft lobby"), and this is the second', () => {
+    expect(code).toContain('<PracticeCta leagueId={leagueId} />')
+  })
+
+  it('composes the home CTA, never a fork (one treatment behind MOCK_LAUNCHER_READY)', () => {
+    expect(code).toContain("import { PracticeCta } from '@/components/leagues/league-home-states'")
   })
 })

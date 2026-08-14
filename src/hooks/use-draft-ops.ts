@@ -29,6 +29,7 @@
 import type { Draft } from '@/types/database'
 
 import type { DraftPickSummary, DraftState } from './use-draft'
+import type { DraftChatRow } from './use-draft-chat-ops'
 
 // ---------------------------------------------------------------------------
 // Broadcast envelope shapes (070's column-selected payloads — D109(2); the
@@ -369,4 +370,51 @@ export function heartbeatSignalsGap(
 ): boolean {
   if (!state.draft) return true
   return instantMs(state.draft.current_deadline) !== instantMs(heartbeat.current_deadline)
+}
+
+// ---------------------------------------------------------------------------
+// Presence seat resolution (R264, M2 batch 12 → L.B3.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The team a viewer TRACKS over Presence, resolved the same way the room
+ * resolves "You" (D103(2)/D118(7)): in a REAL draft it is the viewer's own
+ * franchise; in a MOCK the human seat is `config.mock.human_team_id` and its
+ * only human occupant is the launcher — everyone else is a spectator with no
+ * seat to occupy (R264: the launcher's REAL franchise chip lit up while the
+ * "You" seat showed offline; tracking must key the seat the room renders).
+ * Fetch-then-subscribe guarantees the draft row is loaded before the first
+ * track, so this never has to guess.
+ */
+export function presenceTeamForDraft(
+  draft: Pick<Draft, 'is_mock' | 'config'> | null,
+  memberTeamId: string | null,
+  userId: string | null,
+): string | null {
+  if (!draft?.is_mock) return memberTeamId
+  const config = draft.config as {
+    mock?: { human_team_id?: string; launched_by?: string }
+  } | null
+  const mock = config?.mock ?? null
+  if (!mock?.launched_by || !userId || mock.launched_by !== userId) return null
+  return mock.human_team_id ?? null
+}
+
+// ---------------------------------------------------------------------------
+// League-detail staleness on system posts (R271, M2 batch 14 → L.B3.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * True when a chat broadcast should invalidate the LEAGUE-DETAIL cache
+ * (R271): a system post is precisely the "a commissioner action landed"
+ * signal (D97 — every §8.7 control posts one in-txn), and some of those
+ * actions change league-detail-fed renders (the §16.5.4 Auto seat badge
+ * reads `league_members.is_autodraft`, which 072 broadcasts nowhere) — so
+ * on every client BUT the toggler the badge sat stale for the rest of the
+ * room session. Ordinary member chatter never invalidates anything.
+ */
+export function chatEventInvalidatesLeagueDetail(
+  record: Pick<DraftChatRow, 'is_system'>,
+): boolean {
+  return record.is_system === true
 }

@@ -62,6 +62,29 @@ export function undoCascadePreview(
   return { reverts, toPickNumber: firstPickToRevert - 1 }
 }
 
+/**
+ * What the undo confirm dialog is ABOUT — the commissioner's stored intent,
+ * not a snapshot of its consequences (R273, M2 batch 14): the dialog keeps
+ * the TARGET and re-derives the preview from the live pick cache at every
+ * render (and once more at confirm), so a pick landing — or another
+ * commissioner's undo — while the dialog sits open updates what it lists
+ * instead of diverging from what would actually revert. Sharpest on
+ * 'single': the RPC undoes the most-recent LIVE pick at EXECUTION time,
+ * which may not be the pick the dialog named at open.
+ */
+export type UndoTarget = { kind: 'single' } | { kind: 'cascade'; from: number }
+
+/** Preview for a stored target against the CURRENT picks — the R273 live
+ *  derivation both the dialog render and the confirm re-verification use. */
+export function deriveUndoPreview(
+  picks: readonly DraftPickSummary[],
+  target: UndoTarget,
+): UndoPreview {
+  return target.kind === 'single'
+    ? undoLastPreview(picks)
+    : undoCascadePreview(picks, target.from)
+}
+
 /** Valid cascade targets: 1 (full rewind, R160) … the highest live pick. */
 export function cascadeTargetBounds(
   picks: readonly DraftPickSummary[],

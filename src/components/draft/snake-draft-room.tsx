@@ -49,6 +49,7 @@ import {
 import { DraftPick } from './draft-pick'
 import type { OrderedDraftType } from './draft-order'
 import { abbreviateName } from './mock-draft'
+import { MockDraftLauncher } from './mock-draft-launcher'
 import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
@@ -57,11 +58,18 @@ import { PickClock } from './pick-clock'
 import { pickClockView } from './pick-clock-ops'
 import { PresenceBar, type PresenceSeat } from './presence-bar'
 
+/** League statuses that can only be reached PAST a completed draft (§7.1) —
+ *  the no-param room's recap-pointer arm (L.B3.5 2b). */
+const POST_DRAFT_LEAGUE_STATUSES = new Set(['in_season', 'playoffs', 'complete'])
+
 interface SnakeDraftRoomProps {
   leagueId: string
   /** Explicit draft id (`?draft=` — the mock room path; L.B3.5's launcher
    *  routes here). Absent ⇒ the league's active non-mock draft. */
   draftIdParam?: string
+  /** `?practice=1` — mount the §16.2 mock-draft-launcher instead of the
+   *  room (mock-launcher-entry's printed destination; L.B3.5). */
+  practice?: boolean
 }
 
 /**
@@ -84,12 +92,14 @@ interface SnakeDraftRoomProps {
  * D110(1)), the §16.5.2 pause overlay with the frozen remaining time, and
  * the §16.5.4 autopick-on seat badges.
  */
-export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) {
+export function SnakeDraftRoom({ leagueId, draftIdParam, practice }: SnakeDraftRoomProps) {
   const { user } = useAuth()
   const detail = useLeague(leagueId)
 
   const activeDraft = detail.data?.active_draft ?? null
-  const draftId = draftIdParam ?? activeDraft?.id
+  // The launcher path opens no room and needs no draft resolution — keep the
+  // room's fetch-then-subscribe machinery entirely out of it.
+  const draftId = practice ? undefined : (draftIdParam ?? activeDraft?.id)
 
   // My franchise (league_members → team_id). A mock resolves its own "You"
   // seat from config.mock inside the live room (D103(2)).
@@ -119,6 +129,14 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
     )
   }
 
+  if (practice) {
+    // L.B3.5: the `?practice=1` launcher surface (§16.2) — every Practice
+    // CTA routes here (mock-launcher-entry.ts flipped in the same PR).
+    return (
+      <MockDraftLauncher leagueId={leagueId} detail={detail.data} userId={user?.id ?? null} />
+    )
+  }
+
   if (!draftId) {
     if (detail.data.league.status === 'scheduled') {
       // L.B3.4: the D94 settings-only path — the league is scheduled but no
@@ -133,6 +151,33 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
           myTeamId={myMemberTeamId}
           isCommish={canUseCommishPanel(detail.data.my_role)}
         />
+      )
+    }
+    if (POST_DRAFT_LEAGUE_STATUSES.has(detail.data.league.status)) {
+      // L.B3.5 (2b): a completed REAL draft leaves no active row — the room's
+      // honest state for a post-draft league is the recap pointer (§16.5.2's
+      // draft-night row ends at `/draft/recap`; the recap page resolves the
+      // completed draft itself).
+      return (
+        <div className="flex flex-col gap-4">
+          <PageHeader title="Draft room" />
+          <Card>
+            <CardContent className="flex flex-col items-start gap-2 p-4">
+              <p className="text-[13px] font-bold">This league’s draft is complete</p>
+              <p className="text-[12px] font-medium text-n-3">
+                The final board and every roster live on the draft recap.
+              </p>
+              <div className="flex items-center gap-2.5">
+                <Button variant="blue" size="sm" shadow asChild>
+                  <Link href={`/app/leagues/${leagueId}/draft/recap`}>View the recap</Link>
+                </Button>
+                <Button variant="stroke" size="sm" asChild>
+                  <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )
     }
     // C25's honest state: no fixtures — no draft exists yet and the league
@@ -189,13 +234,37 @@ export function SnakeDraftRoom({ leagueId, draftIdParam }: SnakeDraftRoomProps) 
   }
 
   if (draft.status === 'complete') {
-    // The recap surface (real & mock — §16.1 /draft/recap) is L.B3.5's.
+    // The completion moment (§16.5.2's draft-night row ends at the recap):
+    // when the final pick's broadcast flips `status` to complete, this
+    // branch renders IN PLACE — the room's own "view the recap" beat. The
+    // explicit `?draft=` keeps a mock's recap pointed at the mock (§16.1
+    // serves real & mock).
     return (
-      <DraftRoomEmpty
-        leagueId={leagueId}
-        title="This draft is complete"
-        body="The final board and rosters live on the league home. The draft recap arrives with the next update."
-      />
+      <div className="flex flex-col gap-4">
+        <PageHeader title="Draft room" />
+        <Card>
+          <CardContent className="flex flex-col items-start gap-2 p-4">
+            <p className="text-[13px] font-bold">
+              {draft.is_mock ? 'Practice draft complete' : 'This draft is complete'}
+            </p>
+            <p className="text-[12px] font-medium text-n-3">
+              {draft.is_mock
+                ? 'Every seat is filled. See how your board came together against the CPUs.'
+                : 'Every seat is filled — the final board and rosters are on the recap.'}
+            </p>
+            <div className="flex items-center gap-2.5">
+              <Button variant="blue" size="sm" shadow asChild>
+                <Link href={`/app/leagues/${leagueId}/draft/recap?draft=${draft.id}`}>
+                  View the recap
+                </Link>
+              </Button>
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -345,6 +414,12 @@ function DraftRoomLive({
   // the controls refuse mocks in-RPC; the UI must not offer them).
   const isCommish = canUseCommishPanel(detail.my_role) && !draft.is_mock
   const pauseResume = usePauseResumeDraft(leagueId, draft.id)
+  // R272 (M2 batch 14): on a mock the LAUNCHER is the one legal resume (and
+  // pause) caller — 069/071's mock-launcher arm; `isCommish` is always false
+  // here (D110(1)), so without this the overlay dead-ended for the only
+  // person who could act on it. §8.8's "pause/leave anytime" is the pause
+  // button below; leaving just works (E59 auto-pauses on a stale heartbeat).
+  const canPauseResume = isCommish || isMockLauncher
   // The §16.5.2 pause overlay's frozen clock — the paused branch reads only
   // the persisted deadline_remaining_ms, so the (nowMs, offsetMs) samples
   // are irrelevant here (pure derivation, no wall-clock read).
@@ -469,7 +544,8 @@ function DraftRoomLive({
       {paused && (
         <DraftPauseOverlay
           clock={pausedClock}
-          canResume={isCommish}
+          mock={draft.is_mock}
+          canResume={canPauseResume}
           resuming={pauseResume.isPending}
           onResume={() =>
             pauseResume.mutateAsync({ action: 'resume' }).catch((error: unknown) => {
@@ -542,6 +618,31 @@ function DraftRoomLive({
                 picks={picks}
                 playerById={playerById}
               />
+            )}
+            {isMockLauncher && !paused && (
+              // §8.8 "pause/leave anytime": the launcher's explicit pause
+              // (069/071's mock-launcher arm — commissioners are refused on
+              // mocks, D110(1)). Leaving without it also pauses, via the E59
+              // stale-heartbeat arm; this button just makes it deliberate.
+              <Button
+                variant="stroke"
+                size="sm"
+                disabled={pauseResume.isPending}
+                onClick={() =>
+                  pauseResume.mutateAsync({ action: 'pause' }).catch((error: unknown) => {
+                    toast({
+                      title: 'Pause failed',
+                      description:
+                        error instanceof LeagueActionError
+                          ? error.message
+                          : 'Something went wrong. The room refreshes automatically.',
+                      variant: 'destructive',
+                    })
+                  })
+                }
+              >
+                {pauseResume.isPending ? 'Pausing…' : 'Pause practice'}
+              </Button>
             )}
             <Button variant="ghost" size="sm" asChild>
               <Link href={`/app/leagues/${leagueId}`}>Exit room</Link>

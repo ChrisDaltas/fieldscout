@@ -54,11 +54,10 @@ import type { Draft } from '@/types/database'
 
 import {
   cascadeTargetBounds,
+  deriveUndoPreview,
   moveOrderEntry,
   pickTimerLabel,
-  undoCascadePreview,
-  undoLastPreview,
-  type UndoPreview,
+  type UndoTarget,
 } from './commish-panel-ops'
 import { parseDraftOrder } from './draft-board-ops'
 
@@ -322,24 +321,40 @@ function UndoSection({
   const undo = useUndoDraft(leagueId, draftId)
   const bounds = cascadeTargetBounds(livePicks)
   const [cascadeFrom, setCascadeFrom] = useState('')
-  const [preview, setPreview] = useState<UndoPreview | null>(null)
+  // R273 (M2 batch 14): store the TARGET, not a preview snapshot — the
+  // preview derives from the LIVE pick cache at render, so a pick landing
+  // (or another commissioner's undo) while the dialog is open updates what
+  // it lists instead of diverging from what actually reverts.
+  const [target, setTarget] = useState<UndoTarget | null>(null)
   const [reason, setReason] = useState('')
+  const preview = useMemo(
+    () => (target ? deriveUndoPreview(livePicks, target) : null),
+    [livePicks, target],
+  )
 
-  const openSingle = () => setPreview(undoLastPreview(livePicks))
+  const openSingle = () => setTarget({ kind: 'single' })
   const openCascade = () => {
     const first = Number(cascadeFrom)
     if (!Number.isInteger(first) || !bounds || first < bounds.min || first > bounds.max) return
-    setPreview(undoCascadePreview(livePicks, first))
+    setTarget({ kind: 'cascade', from: first })
   }
 
   const confirm = () => {
-    if (!preview || preview.reverts.length === 0) return
+    if (!target) return
+    // Re-verify at confirm (R273): derive once more from the current picks —
+    // if everything the dialog listed has since reverted, there is nothing
+    // left to undo and the dialog simply closes instead of firing a no-op.
+    const fresh = deriveUndoPreview(livePicks, target)
+    if (fresh.reverts.length === 0) {
+      setTarget(null)
+      return
+    }
     undo
       .mutateAsync({
-        toPickNumber: preview.toPickNumber,
+        toPickNumber: fresh.toPickNumber,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
       })
-      .then(() => setPreview(null))
+      .then(() => setTarget(null))
       .catch((e: unknown) => onError(e, 'Undo failed'))
   }
 
@@ -368,7 +383,7 @@ function UndoSection({
         </div>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(next) => !next && setPreview(null)}>
+      <Dialog open={target !== null} onOpenChange={(next) => !next && setTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Undo {preview?.reverts.length === 1 ? 'this pick' : 'these picks'}?</DialogTitle>
@@ -388,7 +403,7 @@ function UndoSection({
           </ul>
           <ReasonInput value={reason} onChange={setReason} />
           <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setPreview(null)}>
+            <Button variant="ghost" size="sm" onClick={() => setTarget(null)}>
               Keep the picks
             </Button>
             <Button

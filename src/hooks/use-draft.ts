@@ -11,11 +11,13 @@ import type { Draft } from '@/types/database'
 import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
+  chatEventInvalidatesLeagueDetail,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
   heartbeatSignalsGap,
   heartbeatSilenceExceeded,
   OFFSET_SAMPLE_WINDOW,
+  presenceTeamForDraft,
   type TickHeartbeat,
 } from './use-draft-ops'
 import { draftChatContext, draftChatKeys } from './use-draft-chat'
@@ -158,8 +160,19 @@ export function useDraftRoom(
   const lastBeatAtRef = useRef<number | null>(null)
 
   const fetched = query.isSuccess
-  const presenceTeamId = opts?.presence?.team_id ?? null
   const presenceUserId = opts?.presence?.user_id ?? null
+  // R264 (M2 batch 12): the tracked seat is resolved the same way the room
+  // resolves "You" — in a mock, the launcher tracks the HUMAN seat
+  // (`config.mock.human_team_id`) and every other viewer tracks no seat,
+  // never the viewer's real franchise. Derived as a plain string so refetches
+  // (new `query.data` references, same values) don't churn the channel
+  // effect; fetch-then-subscribe means the draft row is loaded before the
+  // first track.
+  const presenceTeamId = presenceTeamForDraft(
+    query.data?.draft ?? null,
+    opts?.presence?.team_id ?? null,
+    presenceUserId,
+  )
 
   useEffect(() => {
     if (!draftId || !fetched) return
@@ -250,6 +263,21 @@ export function useDraftRoom(
         // cache to patch — its mount-time fetch carries the history.
         const record = ((payload ?? {}) as BroadcastEnvelope).record
         if (!isChatRecord(record)) return
+        // R271 (M2 batch 14): a SYSTEM post is the "a commissioner action
+        // landed" signal (D97 posts in-txn), and some of those actions
+        // change league-detail-fed renders 072 broadcasts nowhere (the
+        // §16.5.4 Auto seat badge ← `league_members.is_autodraft`) — so
+        // every client refreshes league detail on it, not just the toggler.
+        // Runs BEFORE the chat-cache guard: an unmounted chat pane must not
+        // keep the badge stale.
+        if (chatEventInvalidatesLeagueDetail(record)) {
+          const leagueId = queryClient.getQueryData<DraftState>(
+            draftKeys.detail(draftId),
+          )?.draft?.league_id
+          if (leagueId) {
+            void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+          }
+        }
         const key = draftChatKeys.room(draftId)
         const rows = queryClient.getQueryData<readonly DraftChatRow[]>(key)
         if (!rows) return
@@ -423,6 +451,36 @@ export function useActiveDraft(leagueId: string | undefined) {
     isError: detail.isError,
     error: detail.error,
   }
+}
+
+/**
+ * The league's completed REAL draft, newest first (L.B3.5 — the
+ * `/draft/recap` route's no-param resolution: §16.1 serves "real & mock",
+ * and a real recap is reached from the league with no draft id in hand).
+ * RLS member SELECT (the D92 read pattern); mocks resolve by explicit
+ * `?draft=` only — a member must never land on someone else's practice.
+ * At most one row exists in M2 (re-drafting a completed league is M6's
+ * F44), but the ordering keeps this honest if that ever changes.
+ */
+export function useCompletedRealDraft(leagueId: string | undefined) {
+  return useQuery({
+    queryKey: ['completed-real-draft', leagueId ?? 'none'] as const,
+    enabled: Boolean(leagueId),
+    queryFn: async (): Promise<{ id: string } | null> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('drafts')
+        .select('id')
+        .eq('league_id', leagueId!)
+        .eq('is_mock', false)
+        .eq('status', 'complete')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data ?? null
+    },
+  })
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   describeDraftTime,
   draftCountdown,
 } from '@/components/leagues/league-home-states-ops'
+import { PracticeCta } from '@/components/leagues/league-home-states'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -204,6 +205,17 @@ export function DraftLobby({
               </Button>
             </div>
           )}
+
+          {/* §16.5.2 mock-workflow row: the LOBBY is the map's SECOND practice
+              entry point ("Practice card · draft lobby") — mounted for every
+              member, not just the commissioner (§8.8's launch rule). Composed
+              from the home's own CTA, not forked (R279). */}
+          <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
+            <PracticeCta leagueId={leagueId} />
+            <p className="text-[10px] font-semibold text-n-3">
+              Rehearse against CPU opponents — your real draft isn&apos;t touched.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
