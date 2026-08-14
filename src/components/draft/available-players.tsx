@@ -10,12 +10,20 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useDraftPool, useMyBigBoardRanks } from '@/hooks/use-draft-pool'
+import { useLeagueListPlayers } from '@/hooks/use-league-lists'
+import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import {
   bigBoardRankById,
+  decorateOverlay,
   decoratePool,
+  onlyOnListRows,
+  overlayMaps,
+  poolLoadPending,
   subtractDrafted,
+  type OverlayPoolRow,
+  type PoolRow,
 } from './available-players-ops'
 
 const POSITION_FILTERS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
@@ -36,6 +44,10 @@ interface AvailablePlayersProps {
   canQueue: boolean
   onDraft: (playerId: string) => void
   onQueue: (playerId: string) => void
+  /** §8.9 list overlay (L.B4.2) — set from the My Lists panel; the room
+   *  owns the selection so panel and pool can never disagree. */
+  overlay?: { listId: string; title: string } | null
+  onClearOverlay?: () => void
   className?: string
 }
 
@@ -46,7 +58,12 @@ interface AvailablePlayersProps {
  * room's live picks, so every pick broadcast re-runs the pure subtraction —
  * no refetch, the row simply leaves the pool. Search/position narrow
  * SERVER-side (use-draft-pool.ts — the bounded-window honesty note).
- * The list-overlay/only-my-list variants are L.B4.2's (§8.9).
+ *
+ * L.B4.2 (§8.9): the LIST OVERLAY — a list chosen in the My Lists panel
+ * annotates every row with its rank/tier, and "Only this list" filters the
+ * pool to the list's own players (built FROM the list, window-independent —
+ * see `onlyOnListRows`). The room owns the selection; this card owns only
+ * the only-mode toggle, which resets whenever the selection changes.
  */
 export function AvailablePlayers({
   draftedIds,
@@ -57,11 +74,14 @@ export function AvailablePlayers({
   canQueue,
   onDraft,
   onQueue,
+  overlay,
+  onClearOverlay,
   className,
 }: AvailablePlayersProps) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
+  const [onlyOnList, setOnlyOnList] = useState(false)
   const openPlayer = usePlayerWindowsStore((s) => s.open)
 
   useEffect(() => {
@@ -69,13 +89,57 @@ export function AvailablePlayers({
     return () => clearTimeout(id)
   }, [searchInput])
 
+  // Clearing (or switching) the overlay drops the only-my-list filter — a
+  // filter keyed to a list that is no longer overlaid would lie.
+  const overlayListId = overlay?.listId ?? null
+  useEffect(() => {
+    setOnlyOnList(false)
+  }, [overlayListId])
+
   const pool = useDraftPool(search, position)
   const bigBoard = useMyBigBoardRanks(userId)
 
-  const rows = useMemo(() => {
+  // §8.9 overlay (L.B4.2): the overlaid list's rows in the canonical order
+  // (rank = index) + their identities. "Only players on this list" builds
+  // FROM the list rather than filtering the bounded window, so a list
+  // player outside the ADP window still shows (the honesty note in
+  // available-players-ops.ts).
+  const overlayRows = useLeagueListPlayers(overlay?.listId)
+  const overlayIdentity = usePlayersByIds(
+    useMemo(
+      () => (overlay && onlyOnList ? (overlayRows.data ?? []).map((r) => r.player_id) : []),
+      [overlay, onlyOnList, overlayRows.data],
+    ),
+  )
+  const overlayActive = Boolean(overlay)
+  const onlyMode = overlayActive && onlyOnList
+
+  const rows = useMemo<Array<PoolRow | OverlayPoolRow>>(() => {
     const ranks = bigBoardRankById(bigBoard.data ?? [])
-    return decoratePool(subtractDrafted(pool.data ?? [], draftedIds), ranks)
-  }, [pool.data, bigBoard.data, draftedIds])
+    const maps = overlay ? overlayMaps(overlayRows.data ?? []) : null
+    if (overlay && maps && onlyOnList) {
+      const base = onlyOnListRows(
+        overlayRows.data ?? [],
+        overlayIdentity.playerById,
+        draftedIds,
+        search,
+        position,
+      )
+      return decorateOverlay(decoratePool(base, ranks), maps)
+    }
+    const windowRows = decoratePool(subtractDrafted(pool.data ?? [], draftedIds), ranks)
+    return maps ? decorateOverlay(windowRows, maps) : windowRows
+  }, [
+    pool.data,
+    bigBoard.data,
+    draftedIds,
+    overlay,
+    onlyOnList,
+    overlayRows.data,
+    overlayIdentity.playerById,
+    search,
+    position,
+  ])
 
   return (
     <Card className={className}>
@@ -114,20 +178,64 @@ export function AvailablePlayers({
             </SegmentItem>
           ))}
         </Segment>
+
+        {overlay && (
+          // §8.9 overlay banner (L.B4.2): which list is on the pool, the
+          // "only players on this list" toggle, and clear.
+          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-n-4 bg-page px-2 py-1.5">
+            <Icon name="eye" size={12} className="shrink-0 text-n-3" />
+            <span className="mr-auto min-w-0 truncate text-[11px] font-semibold">
+              {overlay.title}
+            </span>
+            <Button
+              variant={onlyOnList ? 'blue' : 'stroke'}
+              size="sm"
+              aria-pressed={onlyOnList}
+              onClick={() => setOnlyOnList((v) => !v)}
+            >
+              Only this list
+            </Button>
+            {onClearOverlay && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Clear the ${overlay.title} overlay`}
+                title="Clear overlay"
+                onClick={onClearOverlay}
+              >
+                <Icon name="close" size={13} />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {pool.isPending ? (
+      {/* R283 (M2 batch 17): the gate lives in poolLoadPending — an EMPTY
+          attached list's identity query is disabled and pends forever, so
+          only-mode must treat it as settled or the empty state below is
+          unreachable behind eternal skeletons. */}
+      {poolLoadPending({
+        onlyMode,
+        poolPending: pool.isPending,
+        overlayRowsPending: overlayRows.isPending,
+        overlayListSize: (overlayRows.data ?? []).length,
+        identityPending: overlayIdentity.isPending,
+      }) ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : pool.isError ? (
+      ) : (onlyMode ? overlayRows.isError : pool.isError) ? (
         <div className="flex flex-col items-start gap-2 p-card-pad">
           <p className="text-[12px] font-medium text-n-3" role="alert">
-            The player pool didn&rsquo;t load.
+            {onlyMode ? 'The overlaid list didn’t load.' : 'The player pool didn’t load.'}
           </p>
-          <Button variant="stroke" size="sm" onClick={() => void pool.refetch()}>
+          <Button
+            variant="stroke"
+            size="sm"
+            onClick={() => void (onlyMode ? overlayRows.refetch() : pool.refetch())}
+          >
             Retry
           </Button>
         </div>
@@ -135,11 +243,29 @@ export function AvailablePlayers({
         <p className="p-card-pad text-[12px] font-medium text-n-3">
           {search || position
             ? 'No available players match. Loosen the search or filter.'
-            : 'Every player in the window is drafted.'}
+            : onlyMode
+              ? 'Everyone on this list is drafted.'
+              : 'Every player in the window is drafted.'}
         </p>
       ) : (
         <div className="max-h-[420px] divide-y divide-n-4 overflow-y-auto">
-          {rows.map((player, i) => (
+          {rows.map((player, i) => {
+            // Overlay decoration is additive (§8.9): rank/tier from the
+            // overlaid list when one is active, else nulls.
+            const listRank = 'listRank' in player ? player.listRank : null
+            const listTier = 'listTier' in player ? player.listTier : null
+            const metaParts = [
+              player.team,
+              player.bigBoardRank != null ? `Board #${player.bigBoardRank}` : null,
+              overlayActive && listTier ? `Tier ${listTier}` : null,
+              // With the overlay the single stat column shows the LIST rank
+              // (D118(5): one stat column at rail width — clarity over
+              // density); ADP stays readable on the meta line.
+              overlayActive
+                ? `ADP ${player.adp != null ? player.adp.toFixed(1) : '—'}`
+                : null,
+            ].filter(Boolean)
+            return (
             <PlayerRow
               key={player.id}
               rank={i + 1}
@@ -147,18 +273,17 @@ export function AvailablePlayers({
               density="compact"
               player={player}
               onOpen={() => openPlayer(player.id)}
-              // Big Board rank rides the meta line rather than a second
-              // stat column: at rail width two fixed stat columns + actions
-              // squeezed names to two characters (D39 pass) — clarity over
-              // density (CLAUDE.md); both values still render per row.
-              meta={
-                player.bigBoardRank != null
-                  ? `${player.team ?? ''} · Board #${player.bigBoardRank}`
-                  : (player.team ?? undefined)
+              meta={metaParts.length > 0 ? metaParts.join(' · ') : undefined}
+              stats={
+                overlayActive
+                  ? [{ label: 'List', value: listRank != null ? `#${listRank}` : '—' }]
+                  : [
+                      {
+                        label: 'ADP',
+                        value: player.adp != null ? player.adp.toFixed(1) : '—',
+                      },
+                    ]
               }
-              stats={[
-                { label: 'ADP', value: player.adp != null ? player.adp.toFixed(1) : '—' },
-              ]}
               trailing={
                 <span className="ml-1 flex shrink-0 items-center gap-1">
                   {canQueue && (
@@ -190,7 +315,8 @@ export function AvailablePlayers({
                 </span>
               }
             />
-          ))}
+            )
+          })}
         </div>
       )}
     </Card>

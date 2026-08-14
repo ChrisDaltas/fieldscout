@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -15,10 +15,12 @@ import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/hooks/use-toast'
+import { useLeagueLists } from '@/hooks/use-league-lists'
 import { useCreateLeague } from '@/hooks/use-leagues'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
+import { AttachListInline } from './attach-list-modal'
 import {
   initialWizardDraft,
   reconcileDerived,
@@ -62,9 +64,25 @@ export function LeagueCreateModal({
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // The SUCCESS step (M2 L.B4.2): §7.4's "the league-create wizard also
+  // offers to attach existing lists" — after create the modal shows the
+  // attach offer instead of closing straight into navigation.
+  const [created, setCreated] = useState<{
+    id: string
+    name: string
+    scoringSystemId: string | null
+  } | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const { createLeagueAsync } = useCreateLeague()
+
+  // The success step's live attached set: `useAttachList`'s onSettled
+  // invalidation refetches it, so a second attach sees the first flagged.
+  const createdLists = useLeagueLists(created?.id ?? '', Boolean(created))
+  const createdAttachedIds = useMemo(
+    () => new Set((createdLists.data ?? []).map((row) => row.list_id)),
+    [createdLists.data],
+  )
 
   const updateSettings = (patch: Partial<LeagueSettings>) =>
     setDraft((prev) => ({
@@ -76,6 +94,10 @@ export function LeagueCreateModal({
     if (!next && submitting) return
     onOpenChange(next)
     if (!next) {
+      // Closing after a successful create always lands on the new league —
+      // the pre-success-step behavior (create → navigate), kept for every
+      // dismissal path (X, outside click, Go to league).
+      if (created) router.push(`/app/leagues/${created.id}`)
       // Reset for the next open — a closed modal is a discarded draft.
       setDraft(initialWizardDraft())
       setStep(0)
@@ -83,6 +105,7 @@ export function LeagueCreateModal({
       setAvatarFile(null)
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
       setAvatarPreview(null)
+      setCreated(null)
     }
   }
 
@@ -132,12 +155,13 @@ export function LeagueCreateModal({
           })
         }
       }
-      toast({
-        title: `${draft.name.trim()} is live`,
-        description: 'Invite your managers from the league home.',
+      // Flip to the success step (§7.4's attach offer) instead of closing;
+      // every close path from here navigates to the league (handleOpenChange).
+      setCreated({
+        id: result.league_id,
+        name: draft.name.trim(),
+        scoringSystemId: draft.scoringSystemId,
       })
-      handleOpenChange(false)
-      router.push(`/app/leagues/${result.league_id}`)
     } catch (cause) {
       toast({
         title: "Couldn't create the league",
@@ -146,6 +170,51 @@ export function LeagueCreateModal({
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (created) {
+    // The success step (M2 L.B4.2): §7.4's create-flow offer, composed
+    // INLINE (a Dialog inside a Dialog steals focus and closes both — the
+    // D119(6) nested-dialog lesson), not a new surface.
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-4 overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              <Icon name="check-circle" size={15} className="mr-1.5 inline align-[-2px]" />
+              {created.name} is live
+            </DialogTitle>
+            <DialogDescription>
+              Invite your managers from the league home. Want your rankings
+              along? Attach a list now — it&rsquo;s one tap away in the draft
+              room and can feed your autopick.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+            <AttachListInline
+              leagueId={created.id}
+              leagueName={created.name}
+              scoringSystemId={created.scoringSystemId}
+              attachedListIds={createdAttachedIds}
+            />
+          </div>
+
+          <div className="flex items-center justify-end border-t border-n-4 pt-3">
+            <Button
+              type="button"
+              variant="blue"
+              size="sm"
+              shadow
+              onClick={() => handleOpenChange(false)}
+            >
+              Go to league
+              <Icon name="arrow-next" size={13} />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (

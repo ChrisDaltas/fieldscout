@@ -3,6 +3,7 @@
 import { useDroppable } from '@dnd-kit/core'
 import * as React from 'react'
 
+import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,6 +25,7 @@ import {
   type ListPlayerWithPlayer,
   type ListWithTags,
 } from '@/hooks/use-lists'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListWindowsStore } from '@/stores/list-windows-store'
@@ -107,6 +109,8 @@ export function ListDetailPanel({
   const { toast } = useToast()
   const [tab, setTab] = React.useState<DetailTab>('list')
   const [addOpen, setAddOpen] = React.useState(false)
+  // §7.4 (M2 L.B4.2): the list-side "Attach to league" flow.
+  const [attachOpen, setAttachOpen] = React.useState(false)
 
   const detail = useList(listId)
   const comments = useComments(listId)
@@ -409,6 +413,17 @@ export function ListDetailPanel({
             },
           })
         }
+        // §7.4 (M2 L.B4.2): only when the leagues surface is on AND the
+        // viewer owns the list (attach requires ownership — the §15.5 403).
+        onAttachToLeague={
+          featureFlags.leagues && list.is_owner ? () => setAttachOpen(true) : undefined
+        }
+      />
+
+      <AttachListToLeagueModal
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        list={{ id: list.id, title: list.title }}
       />
 
       {/*

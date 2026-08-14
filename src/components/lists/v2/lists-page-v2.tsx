@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import {
   useToggleFavorite,
   type ListWithTags,
 } from '@/hooks/use-lists'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useAiBuildStore } from '@/stores/ai-build-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -112,6 +114,8 @@ export function ListsPageV2() {
   const [compareIds, setCompareIds] = React.useState<string[]>([])
   const [newFolderOpen, setNewFolderOpen] = React.useState(false)
   const [editFolder, setEditFolder] = React.useState<ListFolder | null>(null)
+  // §7.4 (M2 L.B4.2): the gallery card's "Attach to league" target.
+  const [attachList, setAttachList] = React.useState<ListWithTags | null>(null)
   const tabSeededRef = React.useRef(false)
 
   const lists = useLists(1, 50)
@@ -504,6 +508,9 @@ export function ListsPageV2() {
               })
             }
             onNew={() => openCreateList(true)}
+            // §7.4 (M2 L.B4.2): flag-gated — the leagues surface is the 2026
+            // test cohort's; off, the card carries no league affordance.
+            onAttachToLeague={featureFlags.leagues ? setAttachList : undefined}
           />
         )
       ) : (
@@ -557,6 +564,17 @@ export function ListsPageV2() {
         </div>
       )}
 
+      {/* §7.4 (M2 L.B4.2): the card entry's league picker. */}
+      {attachList && (
+        <AttachListToLeagueModal
+          open
+          onOpenChange={(open) => {
+            if (!open) setAttachList(null)
+          }}
+          list={{ id: attachList.id, title: attachList.title }}
+        />
+      )}
+
       {/* Folder create / rename — the existing dialog, unchanged (LV.7). */}
       <FolderFormDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} mode="create" />
       {editFolder && (
@@ -586,6 +604,7 @@ function Gallery({
   onNew,
   onTogglePin,
   onMoveToFolder,
+  onAttachToLeague,
 }: {
   lists: ListWithTags[]
   loading: boolean
@@ -599,6 +618,8 @@ function Gallery({
   onNew: () => void
   onTogglePin: (list: ListWithTags) => void
   onMoveToFolder: (list: ListWithTags, folderId: string | null) => void
+  /** §7.4 card entry (M2 L.B4.2) — undefined when the leagues flag is off. */
+  onAttachToLeague?: (list: ListWithTags) => void
 }) {
   if (loading) {
     return (
@@ -641,6 +662,11 @@ function Gallery({
           folders={folders}
           onTogglePin={() => onTogglePin(list)}
           onMoveToFolder={(folderId) => onMoveToFolder(list, folderId)}
+          // Attach requires OWNING the list; `list.owner` is populated only
+          // for lists the viewer does NOT own (the saved tab).
+          onAttachToLeague={
+            onAttachToLeague && !list.owner ? () => onAttachToLeague(list) : undefined
+          }
         />
       ))}
       {tab === 'mine' && <NewListTile onClick={onNew} />}

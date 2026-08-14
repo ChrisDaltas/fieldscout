@@ -48,6 +48,7 @@ export function ListGalleryCard({
   onOpenComments,
   onTogglePin,
   onMoveToFolder,
+  onAttachToLeague,
 }: {
   list: ListWithTags
   viewer: { username: string | null; avatarUrl: string | null }
@@ -60,6 +61,9 @@ export function ListGalleryCard({
   onOpenComments: () => void
   onTogglePin: () => void
   onMoveToFolder: (folderId: string | null) => void
+  /** "Attach to league" (M2 L.B4.2 — §7.4's card entry). Handler-gated by
+   *  the page: leagues flag on + viewer owns the list; absent, no item. */
+  onAttachToLeague?: () => void
 }) {
   const positions = [
     ...new Set((list.first_players ?? []).map((player) => player.position).filter(Boolean)),
@@ -127,6 +131,14 @@ export function ListGalleryCard({
                     )}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
+              )}
+              {onAttachToLeague && (
+                // §7.4 (M2 L.B4.2): the card's "Attach to league" entry —
+                // handler-gated by the page (leagues flag + ownership).
+                <DropdownMenuItem onSelect={onAttachToLeague}>
+                  <Icon name="cup" size={13} />
+                  Attach to league
+                </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={onDuplicate}>
                 <Icon name="layers" size={13} />

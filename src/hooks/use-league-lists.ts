@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { LeagueListWithList } from '@/lib/leagues/api/league-lists-service'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 /**
  * League-list attachments for the list ↔ league tie-in (M2 task L.B4.1;
@@ -23,6 +24,9 @@ import type { LeagueListWithList } from '@/lib/leagues/api/league-lists-service'
 
 export const leagueListsKeys = {
   all: (leagueId: string) => ['league-lists', leagueId] as const,
+  myLists: (userId: string) => ['league-lists', 'my-lists', userId] as const,
+  listPlayers: (listId: string) => ['league-lists', 'list-players', listId] as const,
+  listAttachments: (listId: string) => ['league-lists', 'attachments-of', listId] as const,
 }
 
 interface LeagueListsResponse {
@@ -136,6 +140,132 @@ export function useUpdateLeagueList(leagueId: string) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: leagueListsKeys.all(leagueId) })
+    },
+  })
+}
+
+/**
+ * POST /api/leagues/[id]/lists with the league chosen AT MUTATE TIME — the
+ * list-side attach modal's shape (§7.4 "Attach to league" from a list: the
+ * caller picks the league inside the flow, so the league id is a variable,
+ * not a hook argument). Same route, same invalidation as `useAttachList`;
+ * kept separate so league-context callers keep the simpler signature.
+ */
+export function useAttachListAnyLeague() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ leagueId, ...vars }: AttachListVars & { leagueId: string }) =>
+      sendLeagueAction<LeagueListWithList>(
+        `/api/leagues/${leagueId}/lists`,
+        jsonInit('POST', vars),
+      ),
+    // onSettled (R129): a replayed attach's 409 must still refetch.
+    onSettled: (_data, _error, vars) => {
+      void queryClient.invalidateQueries({ queryKey: leagueListsKeys.all(vars.leagueId) })
+      void queryClient.invalidateQueries({
+        queryKey: leagueListsKeys.listAttachments(vars.list_id),
+      })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// L.B4.2 reads (D92: RLS-scoped direct SELECTs — no new API surface)
+// ---------------------------------------------------------------------------
+
+/** The list metadata the attach picker + My Lists panel need (§7.4/§8.9). */
+export interface MyDraftList {
+  id: string
+  title: string
+  position_filter: string | null
+  player_count: number | null
+  is_private: boolean | null
+  is_big_board: boolean | null
+  scoring_system_id: string | null
+  updated_at: string | null
+}
+
+/**
+ * My own (non-deleted) lists, Big Board included — the attach modal's
+ * league-side picker and the panel's Big Board row both read this one
+ * query. RLS scopes to the owner; ordering is client-meaningful
+ * (`attachCandidates` re-sorts), so updated_at desc is just a stable wire
+ * order.
+ */
+export function useMyDraftLists(userId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: leagueListsKeys.myLists(userId ?? 'none'),
+    enabled: enabled && Boolean(userId),
+    queryFn: async (): Promise<MyDraftList[]> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('lists')
+        .select(
+          'id, title, position_filter, player_count, is_private, is_big_board, scoring_system_id, updated_at',
+        )
+        .eq('owner_id', userId!)
+        .is('deleted_at', null)
+        .order('updated_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as MyDraftList[]
+    },
+  })
+}
+
+/** One list's `(player_id, position, tier)` rows — the cheat sheet and the
+ *  pool overlay read the SAME ordering the from-list route loads and 068's
+ *  autopick resolves in: `list_players.position, player_id` (D113(5) — one
+ *  ordering, every consumer). Readable for shared-private lists via 067's
+ *  additive policy. */
+export interface DraftListPlayerRow {
+  player_id: string
+  position: number
+  tier: string | null
+}
+
+export function useLeagueListPlayers(listId: string | undefined) {
+  return useQuery({
+    queryKey: leagueListsKeys.listPlayers(listId ?? 'none'),
+    enabled: Boolean(listId),
+    queryFn: async (): Promise<DraftListPlayerRow[]> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('list_players')
+        .select('player_id, position, tier')
+        .eq('list_id', listId!)
+        .order('position', { ascending: true })
+        .order('player_id', { ascending: true })
+      if (error) throw error
+      return (data ?? []) as DraftListPlayerRow[]
+    },
+  })
+}
+
+/**
+ * MY attachments of one list across every league (the list-side modal's
+ * "already attached" flags). The 067 SELECT policy's owner arm
+ * (`owner_id = auth.uid()`) has no league scope, so this cross-league read
+ * returns exactly the caller's own rows.
+ */
+export function useListAttachments(
+  listId: string | undefined,
+  userId: string | undefined,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: leagueListsKeys.listAttachments(listId ?? 'none'),
+    enabled: enabled && Boolean(listId) && Boolean(userId),
+    queryFn: async (): Promise<Array<{ id: string; league_id: string }>> => {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('league_lists')
+        .select('id, league_id')
+        .eq('list_id', listId!)
+        // RLS also shows OTHER members' shared rows of this list; "already
+        // attached" is about MY attachment (the natural key is per-owner).
+        .eq('owner_id', userId!)
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; league_id: string }>
     },
   })
 }

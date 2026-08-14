@@ -125,8 +125,18 @@ async function isMemberOf(
  * embedded list is readable for shared-private lists via 067's additive
  * `lists` policy. An embed can still be null (e.g. the shared attachment of
  * a list its owner has since soft-deleted — the attachment row stays
- * member-visible, the list does not); rows with a null embed are kept so
- * the owner's own panel can surface the dangling attachment for detach.
+ * member-visible, the list does not).
+ *
+ * R130 (M2 batch 3, routed to L.B4.2 — DECIDED at the GET layer): null-embed
+ * rows return OWNER-only. A non-owner can neither open nor detach a dangling
+ * shared attachment (D106(7) records only the owner's detach rationale), so
+ * for them the row is pure noise; filtering HERE — the one implementation of
+ * the mine+shared join (D106(9)) — makes every consumer (the My Lists panel,
+ * the attach modal, anything future) correct by construction, where a
+ * panel-side filter would have to be remembered per surface. The owner keeps
+ * their rows whatever the embed holds, so the dangling-attachment detach
+ * affordance survives. Pinned in `league-lists-api-db.test.ts` (shown RED
+ * pre-fix).
  */
 export async function listLeagueLists(
   supabase: Supabase,
@@ -150,7 +160,10 @@ export async function listLeagueLists(
   if (error) {
     return { status: 500, body: { error: error.message } }
   }
-  return { status: 200, body: { league_lists: data } as unknown as Json }
+  const rows = ((data ?? []) as unknown as LeagueListWithList[]).filter(
+    (row) => row.lists !== null || row.owner_id === userId,
+  )
+  return { status: 200, body: { league_lists: rows } as unknown as Json }
 }
 
 // ---------------------------------------------------------------------------

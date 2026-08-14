@@ -5,10 +5,12 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { MockBanner, ReconnectingBanner } from '@/components/leagues/status-banners'
@@ -27,6 +29,7 @@ import {
   type DraftQueueRow,
 } from '@/hooks/use-draft-queue'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useLeagueLists } from '@/hooks/use-league-lists'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -50,6 +53,7 @@ import { DraftPick } from './draft-pick'
 import type { OrderedDraftType } from './draft-order'
 import { abbreviateName } from './mock-draft'
 import { MockDraftLauncher } from './mock-draft-launcher'
+import { MyListsPanel, type PoolOverlaySelection } from './my-lists-panel'
 import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
@@ -80,8 +84,10 @@ interface SnakeDraftRoomProps {
  * (C26 by-player_id subtraction, E17 live off the picks channel), my queue
  * (optimistic drag reorder — §15.6; drafted greyed/auto-removed — E17) and
  * the roster tracker (068's documented greedy as a display read-model).
- * Chat + the commissioner panel are L.B3.3; the My Lists panel/overlays are
- * L.B4.2; the recap surface is L.B3.5.
+ * Chat + the commissioner panel are L.B3.3; the recap surface is L.B3.5.
+ * L.B4.2 lands §8.9's draft references: the My Lists panel as the rail tab
+ * beside My Queue (a bottom sheet on mobile), the pool overlay, and the
+ * room-level Add-a-draft-list modal.
  *
  * Mobile (§16.4): the room collapses to a picks ticker + the "my picks"
  * rail, with the full grid (and pool/queue/chat) one tap away on a Segment.
@@ -313,7 +319,29 @@ function DraftRoomLive({
   userId,
 }: DraftRoomLiveProps) {
   const [mobilePane, setMobilePane] = useState<MobilePane>('players')
+  // §8.9 (L.B4.2): the rail's My Queue | My Lists tab, the pool-overlay
+  // selection (room-owned so panel and pool can never disagree), the
+  // §16.4/§8.9 mobile bottom sheet hosting the panel, and the room-level
+  // Add-a-draft-list modal (mounted OUTSIDE the sheet — a Dialog opened
+  // from inside a Sheet steals focus and closes both, D119(6)).
+  const [railTab, setRailTab] = useState<'queue' | 'lists'>('queue')
+  const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
+  const [listsSheetOpen, setListsSheetOpen] = useState(false)
+  const [addListOpen, setAddListOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  // The add-list modal's Attached flags: MY attached list ids (fetched only
+  // once the modal opens; shares the panel's query cache).
+  const leagueListRows = useLeagueLists(leagueId, addListOpen)
+  const myAttachedListIds = useMemo(
+    () =>
+      new Set(
+        (leagueListRows.data ?? [])
+          .filter((row) => row.owner_id === userId)
+          .map((row) => row.list_id),
+      ),
+    [leagueListRows.data, userId],
+  )
 
   const teamsById = useMemo(
     () => new Map(detail.teams.map((t) => [t.id, t])),
@@ -513,6 +541,8 @@ function DraftRoomLive({
       canQueue={Boolean(queueTeamId)}
       onDraft={handleDraft}
       onQueue={handleQueue}
+      overlay={overlay}
+      onClearOverlay={() => setOverlay(null)}
     />
   )
 
@@ -524,6 +554,33 @@ function DraftRoomLive({
       draftedIds={draftedIds}
     />
   ) : null
+
+  // §16.2 my-lists-panel (L.B4.2) — the tab beside My Queue (§8.9). The
+  // mobile variant renders the same panel inside a bottom Sheet with the
+  // cheat sheet inlined (no nested portals — D119(6)).
+  const listsCard = (inline: boolean) => (
+    <MyListsPanel
+      leagueId={leagueId}
+      draftId={draft.id}
+      detail={detail}
+      userId={userId}
+      queueTeamId={queueTeamId}
+      draftedIds={draftedIds}
+      canDraft={canDraft}
+      draftSubmitting={makePick.isPending}
+      onDraft={handleDraft}
+      onQueue={handleQueue}
+      overlay={overlay}
+      onOverlayChange={setOverlay}
+      onAddList={() => {
+        // The modal mounts at room level; leaving the sheet first keeps the
+        // Dialog out of the Sheet's focus scope (D119(6)).
+        setListsSheetOpen(false)
+        setAddListOpen(true)
+      }}
+      inlineCheatSheet={inline}
+    />
+  )
 
   const trackerCard = myTeamId ? (
     <MyRosterTracker
@@ -712,7 +769,36 @@ function DraftRoomLive({
           <div className="min-w-0">{boardCard}</div>
           <div className="flex min-w-0 flex-col gap-4">
             {poolCard}
-            {queueCard}
+            {/* §8.9: My Lists is a TAB beside My Queue. */}
+            <div className="flex min-w-0 flex-col gap-2">
+              <Segment aria-label="Draft prep" className="w-full">
+                <SegmentItem
+                  active={railTab === 'queue'}
+                  onClick={() => setRailTab('queue')}
+                  className="flex-1"
+                >
+                  My queue
+                </SegmentItem>
+                <SegmentItem
+                  active={railTab === 'lists'}
+                  onClick={() => setRailTab('lists')}
+                  className="flex-1"
+                >
+                  My lists
+                </SegmentItem>
+              </Segment>
+              {railTab === 'queue' ? (
+                (queueCard ?? (
+                  <p className="text-[12px] font-medium text-n-3">
+                    {draft.is_mock
+                      ? 'Only the mock’s launcher drives a practice queue.'
+                      : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
+                  </p>
+                ))
+              ) : (
+                listsCard(false)
+              )}
+            </div>
             {trackerCard}
             {chatCard}
           </div>
@@ -803,18 +889,52 @@ function DraftRoomLive({
           </Segment>
 
           {mobilePane === 'players' && poolCard}
-          {mobilePane === 'queue' &&
-            (queueCard ?? (
-              <p className="text-[12px] font-medium text-n-3">
-                {draft.is_mock
-                  ? 'Only the mock’s launcher drives a practice queue.'
-                  : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
-              </p>
-            ))}
+          {mobilePane === 'queue' && (
+            <>
+              {queueCard ?? (
+                <p className="text-[12px] font-medium text-n-3">
+                  {draft.is_mock
+                    ? 'Only the mock’s launcher drives a practice queue.'
+                    : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
+                </p>
+              )}
+              {/* §8.9 mobile: the My Lists panel is a BOTTOM SHEET. */}
+              <Button
+                variant="stroke"
+                size="sm"
+                className="w-fit"
+                onClick={() => setListsSheetOpen(true)}
+              >
+                <Icon name="list" size={13} />
+                My lists
+              </Button>
+            </>
+          )}
           {mobilePane === 'board' && boardCard}
           {mobilePane === 'chat' && chatCard}
         </div>
       </div>
+
+      {/* §8.9 "Mobile: the panel is a bottom sheet" — the same MyListsPanel,
+          cheat sheet inlined (no nested portals, D119(6)). */}
+      <Sheet open={listsSheetOpen} onOpenChange={setListsSheetOpen}>
+        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+          <SheetHeader className="sr-only">
+            <SheetTitle>My lists</SheetTitle>
+          </SheetHeader>
+          {listsCard(true)}
+        </SheetContent>
+      </Sheet>
+
+      {/* The lifted Add-a-draft-list modal (D119(6): outside every Sheet). */}
+      <AddDraftListModal
+        open={addListOpen}
+        onOpenChange={setAddListOpen}
+        leagueId={leagueId}
+        leagueName={detail.league.name}
+        scoringSystemId={detail.league.scoring_system_id}
+        attachedListIds={myAttachedListIds}
+      />
     </>
   )
 }
