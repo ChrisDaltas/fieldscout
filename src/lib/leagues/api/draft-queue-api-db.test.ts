@@ -439,6 +439,46 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
       [P5, 2],
     ])
   })
+
+  it('F54 discharged (082): concurrent replaces SERIALIZE — both faces closed, never an interleave', async () => {
+    // Pre-082 the replace was delete→insert over PostgREST (no transaction,
+    // no per-seat serialization) and this exact volley interleaved on the
+    // majority of the sim's ~160 chaos double-taps (TRUE TOTAL 92 — the F54
+    // row). The 082 RPC wraps the replace in ONE transaction behind a
+    // per-seat advisory xact lock: concurrent replaces settle as last-writer-
+    // wins with dense ranks, and each response is its OWN call's outcome.
+    const volley = async (setA: string[], setB: string[]) => {
+      const [ra, rb] = await Promise.all([
+        upsertQueue(mgr2Client, leagueId, mgr2Id, { players: setA }),
+        upsertQueue(mgr2Client, leagueId, mgr2Id, { players: setB }),
+      ])
+      // OVERLAP face (D123(6)): pre-082 the loser 500'd AFTER its delete
+      // (queue GONE, 3/3 in the focused probe). Now both commit whole.
+      expect(ra.status).toBe(200)
+      expect(rb.status).toBe(200)
+      // Response truth: each caller got ITS OWN submitted order back.
+      const qa = (ra.body as unknown as QueueResponse).queue.map((r) => r.player_id)
+      const qb = (rb.body as unknown as QueueResponse).queue.map((r) => r.player_id)
+      expect(qa).toEqual(setA)
+      expect(qb).toEqual(setB)
+      // Settled truth: dense ranks 1..n and EXACTLY one submitted order —
+      // the duplicate-rank interleave ([1,1,2,2,…]) is unrepresentable.
+      const stored = await storedQueue(draftId, mgr2TeamId)
+      expect(stored.map(([, rank]) => rank)).toEqual(stored.map((_, i) => i + 1))
+      const ids = stored.map(([id]) => id)
+      expect([JSON.stringify(setA), JSON.stringify(setB)]).toContain(JSON.stringify(ids))
+    }
+    // DISJOINT sets (the duplicate-rank face) and OVERLAPPING sets (the
+    // 500-after-delete face), several rounds each — the volley itself is
+    // the race; rounds raise the exposure.
+    for (let round = 0; round < 4; round++) {
+      await volley([P3, P4, P5], [P6, P1])
+      await volley([P3, P4, P5], [P4, P3])
+    }
+    // Leave the queue as the earlier tests expect for any later reader.
+    const restore = await upsertQueue(mgr2Client, leagueId, mgr2Id, { players: [P3, P5] })
+    expect(restore.status).toBe(200)
+  })
 })
 
 describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
