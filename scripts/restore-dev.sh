@@ -19,9 +19,25 @@
 #
 # User-created data (leagues, avatars, team names) is NOT restorable —
 # recreate leagues via the create-league modal.
+#
+# RESTORE_SCOPE (L.B7.1 — the M2 gate's mid-gate restore):
+#   full  (default) — everything below, INCLUDING the paid persona seeding.
+#   draft           — only what a draft needs: dev users + players +
+#                     projections + bye weeks. No personas (paid Anthropic
+#                     calls — D117(9)), no research data, no historical
+#                     stats. `scripts/gate-m2.sh` uses this between its
+#                     fresh reset and the pool-dependent sim/E2E stages
+#                     (the F47/D124(9) recorded procedure, scoped to what
+#                     those stages actually consume).
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+RESTORE_SCOPE="${RESTORE_SCOPE:-full}"
+case "$RESTORE_SCOPE" in
+  full|draft) ;;
+  *) echo "RESTORE_SCOPE must be 'full' or 'draft' (got '$RESTORE_SCOPE')" >&2; exit 2 ;;
+esac
 
 SERVICE_ROLE_KEY=$(npx supabase status 2>/dev/null | python3 -c '
 import json, re, sys
@@ -45,22 +61,26 @@ npx tsx scripts/seed-dev-user.ts
 echo "== players"
 npx tsx scripts/sync-players.ts
 
-echo "== AI personas (makes Anthropic API calls for the expert lists)"
-npx tsx scripts/seed-ai-personas.ts
+if [ "$RESTORE_SCOPE" = "full" ]; then
+  echo "== AI personas (makes Anthropic API calls for the expert lists)"
+  npx tsx scripts/seed-ai-personas.ts
+fi
 
 echo "== projections / bye weeks"
 npx tsx scripts/sync-projections.ts
 npx tsx scripts/sync-bye-weeks.ts
 
-echo "== research data (usage / splits / auction / SOS)"
-npx tsx scripts/sync-season-usage.ts
-npx tsx scripts/sync-splits.ts
-npx tsx scripts/sync-auction.ts
-npx tsx scripts/sync-sos.ts
+if [ "$RESTORE_SCOPE" = "full" ]; then
+  echo "== research data (usage / splits / auction / SOS)"
+  npx tsx scripts/sync-season-usage.ts
+  npx tsx scripts/sync-splits.ts
+  npx tsx scripts/sync-auction.ts
+  npx tsx scripts/sync-sos.ts
 
-echo "== historical stats (2025)"
-python3 scripts/load-historical-stats.py
+  echo "== historical stats (2025)"
+  python3 scripts/load-historical-stats.py
+fi
 
 echo
-echo "Done. Dev login: dev@fieldscout.local / dev-password-1234"
+echo "Done (scope: $RESTORE_SCOPE). Dev login: dev@fieldscout.local / dev-password-1234"
 echo "Not run on purpose: sync:mock-stats (clean-preseason rule)."

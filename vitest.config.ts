@@ -1,21 +1,57 @@
-import path from 'node:path'
-import { configDefaults, defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 
-// Mirror tsconfig's "@/*" → "src/*" so tests can import modules that use
-// the app's path alias.
+import { resolveAlias, sharedExclude, stackInclude } from './vitest.shared'
+
+/**
+ * TWO PROJECTS, ONE DELIBERATE SHAPE — the F52 suite-isolation design
+ * (L.B7.1; the durable fix the F52 row's batch-17/18 extensions demanded):
+ *
+ *   - `unit` runs everything that never touches the stack, fully parallel
+ *     (unchanged behavior).
+ *   - `stack` runs the stack-backed suites (every *-db.test.ts + the
+ *     m1-gate journey) SEQUENTIALLY (fileParallelism: false). Under the
+ *     old fully-parallel scheduling every stack suite contended with every
+ *     other for one Kong/PostgREST/Realtime, and the F52 family was the
+ *     result: upstream-5xx beforeAll failures, 500-on-repeat,
+ *     realtime-delivery timeouts, and cross-suite ADP-walk captures (R286:
+ *     winner-take-all source-4 over the SHARED players pool means NO
+ *     fixture band is safe by construction while suites co-schedule).
+ *     Serializing the stack lane removes the co-scheduling itself — each
+ *     suite meets the stack alone, exactly the condition under which every
+ *     F52 member was reproducibly green. The live 5s cron remains a legal
+ *     concurrent actor WITHIN a suite (the 022/068 rule); suites' own
+ *     defenses (direct ticks, `status='live'`-conditional rewinds) still
+ *     carry that.
+ *
+ * The unit lane may run beside the stack lane (units never touch the
+ * stack, so there is nothing to contend for). The gate configs
+ * (vitest.gate-m1/m2.config.ts) are FLAT configs over vitest.shared.ts —
+ * a root config with `projects` ignores root-level `include`, so they must
+ * not merge this one.
+ */
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
-  },
+  resolve: { alias: resolveAlias },
   test: {
-    // Never collect tests from agent worktree checkouts (.claude/worktrees/*):
-    // they duplicate every suite and the stack-backed ones race the real runs
-    // against the same local Supabase fixtures (observed 2026-08-03, L.B1.1 —
-    // 78 collected files = 2×39, auth-fixture collisions).
-    // e2e/** is Playwright's (L.B5.1): its *.spec.ts files match vitest's
-    // default include and would be collected — and immediately fail — here.
-    exclude: [...configDefaults.exclude, '.claude/**', 'e2e/**'],
+    exclude: sharedExclude,
+    projects: [
+      {
+        resolve: { alias: resolveAlias },
+        test: {
+          name: 'unit',
+          exclude: [...sharedExclude, ...stackInclude],
+        },
+      },
+      {
+        resolve: { alias: resolveAlias },
+        test: {
+          name: 'stack',
+          include: stackInclude,
+          exclude: sharedExclude,
+          // One stack suite at a time — the serialization above. (Vitest 4:
+          // fileParallelism is the per-project knob; poolOptions is gone.)
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 })

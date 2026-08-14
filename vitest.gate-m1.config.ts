@@ -1,6 +1,6 @@
-import { defineConfig, mergeConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 
-import baseConfig from './vitest.config'
+import { resolveAlias, sharedExclude } from './vitest.shared'
 
 /**
  * M1 gate suite (L.A1.16) — the vitest half of `npm run test:gate:m1`. Runs
@@ -19,22 +19,29 @@ import baseConfig from './vitest.config'
  * sequences all three under `set -euo pipefail` so any partial failure fails
  * the whole command (tasks-M1 §6: "a test:db run" + the M0 continuity gate).
  *
+ * FLAT config, deliberately (L.B7.1): the base config now carries the
+ * unit/stack `projects` split, and a root `include` merged onto a projects
+ * config is silently ignored — this file therefore builds its own flat
+ * config from the base's exported shared pieces. All five files here are
+ * stack-backed, so the gate runs them SEQUENTIALLY (fileParallelism: false)
+ * — the same F52 suite-isolation discipline the full run uses.
+ *
  * Kept OUT of `src/lib/leagues/gate/` on purpose: `test:gate` filters by the
  * substring `src/lib/leagues/gate`, so the M1 journey lives under
  * `src/lib/leagues/m1-gate/` (no substring collision) and never pollutes the
  * M0 continuity gate.
  */
-export default mergeConfig(
-  baseConfig,
-  defineConfig({
-    test: {
-      include: [
-        'src/lib/leagues/m1-gate/**/*.test.ts',
-        'src/lib/leagues/lifecycle/lifecycle-db.test.ts',
-        'src/lib/leagues/scoring/template-parity.test.ts',
-        'src/lib/leagues/scoring/templates-db.test.ts',
-        'src/lib/leagues/api/settings-round-trip-db.test.ts',
-      ],
-    },
-  }),
-)
+export default defineConfig({
+  resolve: { alias: resolveAlias },
+  test: {
+    exclude: sharedExclude,
+    fileParallelism: false,
+    include: [
+      'src/lib/leagues/m1-gate/**/*.test.ts',
+      'src/lib/leagues/lifecycle/lifecycle-db.test.ts',
+      'src/lib/leagues/scoring/template-parity.test.ts',
+      'src/lib/leagues/scoring/templates-db.test.ts',
+      'src/lib/leagues/api/settings-round-trip-db.test.ts',
+    ],
+  },
+})

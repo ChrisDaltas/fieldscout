@@ -317,7 +317,14 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
         .single()
       expect(row?.current_deadline).not.toBeNull()
       const rewound = new Date(Date.parse(row!.current_deadline as string) - 90_000).toISOString()
-      await service.from('drafts').update({ current_deadline: rewound }).eq('id', draftId)
+      // `status='live'`-conditional + error-checked — the F52 rewind
+      // discipline applied everywhere a harness rewinds (L.B7.1 sweep).
+      const { error: rewindError } = await service
+        .from('drafts')
+        .update({ current_deadline: rewound })
+        .eq('id', draftId)
+        .eq('status', 'live')
+      expect(rewindError).toBeNull()
       const { error: tickError } = await service.rpc('draft_tick')
       expect(tickError).toBeNull()
 
@@ -400,15 +407,27 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
     const status = await subscribeAndWait(outsiderChannel, 15_000)
     expect(status).not.toBe('SUBSCRIBED')
 
-    // The cron beats every ~5s. This positive control is the ONE assertion
-    // in the suite with no direct tick behind it — it waits on the live cron
-    // alone, so under a full parallel `npm run test` the realtime container
-    // contends with every other stack-backed suite and two beats' worth of
-    // budget was not enough (R163: observed timing out in 2 of 4 parallel
-    // full runs, green when the file runs alone). Budget widened to ~9 beats
-    // (and the case timeout with it — two 15s subscribes precede the wait);
-    // nothing about the assertion changed, only the patience.
-    await waitFor(() => memberReceived[0], 45_000, 'the member-side heartbeat (positive control)')
+    // DRIVE the positive control with a direct tick — the F52 discharge
+    // (L.B7.1): this was the ONE assertion in the suite waiting on the live
+    // 5s cron alone, and R163's widened budget reduced but did not eliminate
+    // the full-run flake (~10–20% residual under realtime-container
+    // contention; an arms race, not a fix). The sibling heartbeat wait at
+    // the first test already does exactly this — a direct `draft_tick()`
+    // precedes it, which is why it never flaked. The live cron stays a
+    // LEGAL concurrent actor; the tick emits the same §9.1 heartbeat either
+    // way, and the outsider's silence is still measured against a DELIVERING
+    // channel. Fire-then-poll (up to 6 rounds) instead of one fire + long
+    // wait: delivery, not emission, is what contention delays.
+    for (let fire = 0; fire < 6 && memberReceived.length === 0; fire++) {
+      const { error: tickError } = await service.rpc('draft_tick')
+      expect(tickError).toBeNull()
+      await waitFor(() => memberReceived[0], 7_500, 'the member-side heartbeat (positive control)')
+        .catch(() => undefined)
+    }
+    expect(
+      memberReceived[0],
+      'the member-side heartbeat (positive control, direct-tick-driven)',
+    ).toBeTruthy()
     expect(received).toHaveLength(0)
   }, 150_000)
 })

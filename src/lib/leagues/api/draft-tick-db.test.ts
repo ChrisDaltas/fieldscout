@@ -257,7 +257,19 @@ describe('the authoritative clock over PostgREST (migration 068)', () => {
       const rewound = new Date(
         Date.parse(row!.current_deadline as string) - 90_000,
       ).toISOString()
-      await service.from('drafts').update({ current_deadline: rewound }).eq('id', draftId)
+      // `status='live'`-conditional — the F52(a) discharge (L.B7.1): under
+      // full-run contention the live 5s cron can complete the FINAL pick
+      // between the status read above and this write, and an unconditional
+      // rewind then stamps a `current_deadline` onto a COMPLETE draft (the
+      // batch-13 diagnosis — a harness race, not a product one). A 0-row
+      // conditional rewind just re-loops, and the loop's own status read
+      // exits on `complete`.
+      const { error: rewindError } = await service
+        .from('drafts')
+        .update({ current_deadline: rewound })
+        .eq('id', draftId)
+        .eq('status', 'live')
+      expect(rewindError).toBeNull()
       const { error: tickError } = await service.rpc('draft_tick')
       expect(tickError).toBeNull()
     }
