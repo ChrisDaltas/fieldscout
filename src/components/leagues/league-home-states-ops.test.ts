@@ -287,8 +287,10 @@ describe('describeDraftTime', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatInstantInZone (D98)', () => {
-  // 2026-08-30T23:00:00Z — the round-trip fixture's instant. In New York
-  // (EDT, UTC−4 in August) that wall clock is 7:00 PM the same day.
+  // 2026-08-30T23:00:00Z — historically the round-trip fixture's instant
+  // (the fixture moved to 2028 in the F49 sweep; this PURE test injects its
+  // own `now`, so it keeps the date — no committed league, no cron bait).
+  // In New York (EDT, UTC−4 in August) that wall clock is 7:00 PM same day.
   const ms = Date.parse('2026-08-30T23:00:00.000Z')
 
   it('renders the instant in America/New_York with the zone abbreviation (DST-aware)', () => {

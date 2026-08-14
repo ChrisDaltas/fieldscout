@@ -12,7 +12,7 @@ type Supabase = SupabaseClient<Database>
  * precedent): the service CLIENT is constructed ONLY in this file — the key
  * CONSTANT lives in local-env.ts, and playwright.config.ts also injects it
  * into the app server's process env (the webServer's own admin client) —
- * and the client does exactly FOUR jobs, nothing else:
+ * and the client does exactly FIVE jobs, nothing else:
  *
  *   1. the E2E-prefix fixture-cleanup sweep (start-stale + per-spec finally,
  *      loud + byte-clean-verified — the R285 class; delete order mirrors the
@@ -28,7 +28,14 @@ type Supabase = SupabaseClient<Database>
  *      025 §F diff's E2E twin (same table list, same leagues-row
  *      byte-identity);
  *   4. small authoritative post-hoc reads the specs assert on (league
- *      status, roster counts, pick sheets, pool size).
+ *      status, roster counts, pick sheets, pool size);
+ *   5. the journey spec's F49 season-year bump (L.B7.1): the settings UI's
+ *      schedule picker pins year = the league's SEASON, so a UI-set instant
+ *      on a 2026-season league is live-cron auto-start bait from its own
+ *      date — bumping the created league's season server-side BEFORE the
+ *      schedule step keeps the picker interaction identical while the
+ *      stored instant lands far-future (the F49 row's "season-year bump"
+ *      arm; non-literal by construction — year follows the season).
  *
  * Everything the USER does in a spec rides the browser or a seed-user's own
  * authed anon-key client (provision.ts) — production RPCs never accept a
@@ -254,6 +261,24 @@ export async function readLeague(
   return { status: data!.status as string, name: data!.name }
 }
 
+/** The stored §7.3 schedule instant (settings.draft.draft_scheduled_at) —
+ *  the journey spec asserts its year followed the F49 season bump (job 5). */
+export async function readLeagueScheduledInstant(
+  service: Supabase,
+  leagueId: string,
+): Promise<string | null> {
+  const { data, error } = await service
+    .from('leagues')
+    .select('settings')
+    .eq('id', leagueId)
+    .single()
+  throwIfError(error, 'read league schedule instant')
+  return (
+    (data?.settings as { draft?: { draft_scheduled_at?: string | null } } | null)?.draft
+      ?.draft_scheduled_at ?? null
+  )
+}
+
 export async function countLeagueRosters(service: Supabase, leagueId: string): Promise<number> {
   const { count, error } = await service
     .from('league_rosters')
@@ -274,6 +299,27 @@ export async function readPickSheet(
     .order('pick_number', { ascending: true })
   throwIfError(error, 'read pick sheet')
   return (data ?? []).filter((p) => !p.is_undone)
+}
+
+// ---------------------------------------------------------------------------
+// Job 5 — the journey spec's F49 season-year bump (L.B7.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Bump a just-created league's `season` so the settings UI's Month/Day/Time
+ * picker (year = season) builds a FAR-FUTURE `draft_scheduled_at` — the F49
+ * row's "season-year bump" sweep arm for the one instant this suite sets
+ * through the real UI. Returns the season written so the spec can assert the
+ * stored instant's year actually followed it (the falsifiable half).
+ */
+export async function bumpLeagueSeason(
+  service: Supabase,
+  leagueId: string,
+  season: number,
+): Promise<number> {
+  const { error } = await service.from('leagues').update({ season }).eq('id', leagueId)
+  throwIfError(error, 'bump league season (F49 arm)')
+  return season
 }
 
 /**

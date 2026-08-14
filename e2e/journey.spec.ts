@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test'
 
-import { cleanupSweep, readLeague, serviceClient } from './helpers/harness'
+import {
+  bumpLeagueSeason,
+  cleanupSweep,
+  readLeague,
+  readLeagueScheduledInstant,
+  serviceClient,
+} from './helpers/harness'
 import { E2E_LEAGUE_PREFIX, STORAGE_STATE } from './helpers/local-env'
 
 /**
@@ -12,10 +18,20 @@ import { E2E_LEAGUE_PREFIX, STORAGE_STATE } from './helpers/local-env'
  * screenshot browser pass (the D39 waiver); this spec is the promised
  * browser-automated twin.
  *
- * F49 discipline: the schedule set here is Dec 30 of the league's season —
- * months past any run date this file will see before L.B7.1's sweep, and
- * the league graph is swept in `finally` regardless (the R285 class).
+ * F49 discipline (the L.B7.1 sweep's NON-LITERAL arm — this file was the
+ * row's fifth member): the schedule is still set through the real UI's
+ * Month/Day/Time pickers, but the picker pins year = the league's SEASON,
+ * so the harness bumps the created league's season to a far-future year
+ * (job 5) BEFORE the schedule step — the stored instant lands in that year
+ * by construction and the live 5s cron can never auto-start the committed
+ * league mid-run. Asserted below (the stored year must equal the bumped
+ * season), and the league graph is swept in `finally` regardless (the R285
+ * class).
  */
+
+/** Far-future season for the F49 bump — matches the 2028 discipline the
+ *  provisioned specs and the sim already use. */
+const F49_SEASON = 2028
 
 const LEAGUE_NAME = `${E2E_LEAGUE_PREFIX} journey`
 
@@ -86,6 +102,10 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
       await manager.waitForURL(`**/app/leagues/${leagueId}`, { timeout: 60_000 })
       await expect(manager.getByText(LEAGUE_NAME).first()).toBeVisible()
 
+      // ---- F49 (job 5): bump the season BEFORE the schedule step — the
+      // settings picker builds its instant from the league's season year.
+      await bumpLeagueSeason(serviceClient(), leagueId, F49_SEASON)
+
       // ---- Configure: schedule the draft (settings → Month/Day/Time) -----
       await commish.goto(`/app/leagues/${leagueId}/settings`)
       // The group cards are native collapsed <details> — expand the
@@ -114,6 +134,13 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
       const leagueRow = await readLeague(serviceClient(), leagueId)
       expect(leagueRow.name).toBe(LEAGUE_NAME)
       expect(leagueRow.status).toBe('scheduled')
+
+      // The F49 arm held: the UI-set instant's year FOLLOWED the bumped
+      // season (non-literal by construction — never cron bait). Falsifiable:
+      // drop the bump above and this reads 2026. (Named job-4 helper — R297.)
+      const storedInstant = await readLeagueScheduledInstant(serviceClient(), leagueId)
+      expect(storedInstant, 'the schedule step stored an instant').toBeTruthy()
+      expect(new Date(storedInstant!).getUTCFullYear()).toBe(F49_SEASON)
 
       // The manager sees the scheduled state too (cross-client journey end).
       await manager.goto(`/app/leagues/${leagueId}`)

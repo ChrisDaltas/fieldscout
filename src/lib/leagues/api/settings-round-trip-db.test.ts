@@ -596,7 +596,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       // team_count 14 / faab_budget 777 with a draft instant set.
       const s = defaultsForTeamCount(14)
       s.faab_budget = 777
-      s.draft.draft_scheduled_at = '2026-09-03T00:00:00.000Z'
+      s.draft.draft_scheduled_at = '2028-09-03T00:00:00.000Z'
       const result = await createLeague(creatorClient, {
         name: `${LEAGUE_NAME_PREFIX}-partial`,
         season: 2026,
@@ -625,7 +625,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       // The three R79 casualties, pinned by name:
       expect(after.team_count).toBe(14)
       expect(after.faab_budget).toBe(777)
-      expect(after.draft.draft_scheduled_at).toBe('2026-09-03T00:00:00.000Z')
+      expect(after.draft.draft_scheduled_at).toBe('2028-09-03T00:00:00.000Z')
       expect(await readSyncPair(partialLeagueId)).toStrictEqual({ team_count: 14, max_teams: 14 })
       const { data: league } = await service
         .from('leagues')
@@ -705,7 +705,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
 
     it('a FULL object still merges to itself — the sanctioned full-object round-trip is unchanged', async () => {
       const composite = arithmeticEdge()
-      composite.draft.draft_scheduled_at = '2026-09-03T00:00:00.000Z'
+      composite.draft.draft_scheduled_at = '2028-09-03T00:00:00.000Z'
       const result = await patchLeague(creatorClient, partialLeagueId, { settings: composite })
       expect(result.status).toBe(200)
       expect(await getSettings(partialLeagueId)).toStrictEqual(composite)
@@ -788,7 +788,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
     it('valid settings + draft_scheduled_at → scheduled works; back to setup works; settings stay editable while scheduled', async () => {
       // 1. Set the draft instant through the sanctioned PATCH path.
       const settings = defaultsForTeamCount(12)
-      settings.draft.draft_scheduled_at = '2026-09-01T00:00:00.000Z'
+      settings.draft.draft_scheduled_at = '2028-09-01T00:00:00.000Z'
       const settle = await patchLeague(creatorClient, lifeLeagueId, { settings })
       expect(settle.status).toBe(200)
 
@@ -802,7 +802,7 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       // 3. Settings remain editable in scheduled (§7.3 header names BOTH
       //    states) — and the §12.2 re-seed follows a budget change here too.
       const edited = defaultsForTeamCount(12)
-      edited.draft.draft_scheduled_at = '2026-09-01T00:00:00.000Z'
+      edited.draft.draft_scheduled_at = '2028-09-01T00:00:00.000Z'
       edited.faab_budget = 300
       const edit = await patchLeague(creatorClient, lifeLeagueId, { settings: edited })
       expect(edit.status).toBe(200)
