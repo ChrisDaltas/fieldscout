@@ -4,7 +4,7 @@ export const metadata = { title: 'Draft room · FieldScout' }
 
 interface DraftRoomPageProps {
   params: Promise<{ leagueId: string }>
-  searchParams: Promise<{ draft?: string | string[] }>
+  searchParams: Promise<{ draft?: string | string[]; practice?: string | string[] }>
 }
 
 const UUID_RE =
@@ -14,9 +14,11 @@ const UUID_RE =
  * Draft room (live) — REAL data only (M2 task L.B3.1; C25: the `?format=`
  * fixture switch is gone). The room resolves the league's active non-mock
  * draft by default; `?draft=<id>` targets a specific draft in THIS league —
- * the mock-room path (L.B3.5's launcher routes here). No draft ⇒ the room
- * renders its honest "no draft yet" state pointing back at the league home
- * (the lobby/CTA surface — L.B3.4).
+ * the mock-room path (the L.B3.5 launcher routes here); `?practice=1` mounts
+ * the §16.2 mock-draft-launcher instead of the room (mock-launcher-entry's
+ * printed destination — L.B3.5). No draft ⇒ the room renders its honest "no
+ * draft yet" state pointing back at the league home (the lobby/CTA surface —
+ * L.B3.4).
  *
  * Only M2's snake/linear engine can reach `live` (draft_start refuses
  * auction naming M3), so one room component serves every reachable draft;
@@ -24,9 +26,16 @@ const UUID_RE =
  */
 export default async function DraftRoomPage({ params, searchParams }: DraftRoomPageProps) {
   const { leagueId } = await params
-  const { draft } = await searchParams
+  const { draft, practice } = await searchParams
   const draftParam = Array.isArray(draft) ? draft[0] : draft
   const draftIdParam = draftParam && UUID_RE.test(draftParam) ? draftParam : undefined
+  const practiceParam = Array.isArray(practice) ? practice[0] : practice
 
-  return <SnakeDraftRoom leagueId={leagueId} draftIdParam={draftIdParam} />
+  return (
+    <SnakeDraftRoom
+      leagueId={leagueId}
+      draftIdParam={draftIdParam}
+      practice={practiceParam === '1'}
+    />
+  )
 }

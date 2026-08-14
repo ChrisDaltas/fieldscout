@@ -11,6 +11,7 @@ import type { DraftPickSummary } from '@/hooks/use-draft'
 import {
   canUseCommishPanel,
   cascadeTargetBounds,
+  deriveUndoPreview,
   moveOrderEntry,
   pickTimerLabel,
   undoCascadePreview,
@@ -123,5 +124,41 @@ describe('pickTimerLabel (E15 catalog labels)', () => {
     expect(pickTimerLabel(120)).toBe('2 min')
     expect(pickTimerLabel(3600)).toBe('1 hour')
     expect(pickTimerLabel(86400)).toBe('24 hours')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// deriveUndoPreview — the R273 live-preview contract (M2 batch 14 → L.B3.5)
+// ---------------------------------------------------------------------------
+
+describe('deriveUndoPreview (R273 — the dialog stores the TARGET; the preview derives from the LIVE cache)', () => {
+  it('composes the two target kinds over the same picks', () => {
+    expect(deriveUndoPreview(PICKS, { kind: 'single' })).toEqual(undoLastPreview(PICKS))
+    expect(deriveUndoPreview(PICKS, { kind: 'cascade', from: 6 })).toEqual(
+      undoCascadePreview(PICKS, 6),
+    )
+  })
+
+  it('the R273 probe, single: a pick landing while the dialog is open MOVES the preview to the new last pick — what the RPC would actually undo at execution', () => {
+    const atOpen = deriveUndoPreview(PICKS, { kind: 'single' })
+    expect(atOpen.reverts.map((p) => p.pick_number)).toEqual([8])
+    // Pick 9 lands while the dialog sits open (the at-open snapshot would
+    // still list pick 8 — and the RPC would then undo 9, not 8).
+    const afterNewPick = deriveUndoPreview([...PICKS, pick(9)], { kind: 'single' })
+    expect(afterNewPick.reverts.map((p) => p.pick_number)).toEqual([9])
+  })
+
+  it('the R273 probe, cascade: a new pick ≥ T joins the revert list at render; the wire target stays the stored intent (T − 1)', () => {
+    const atOpen = deriveUndoPreview(PICKS, { kind: 'cascade', from: 7 })
+    expect(atOpen.reverts.map((p) => p.pick_number)).toEqual([7, 8])
+    const afterNewPick = deriveUndoPreview([...PICKS, pick(9)], { kind: 'cascade', from: 7 })
+    expect(afterNewPick.reverts.map((p) => p.pick_number)).toEqual([7, 8, 9])
+    expect(afterNewPick.toPickNumber).toBe(6) // the intent didn't drift
+  })
+
+  it('re-verify at confirm: everything reverted out from under the dialog ⇒ empty preview (the caller closes instead of firing a no-op)', () => {
+    const allUndone = PICKS.map((p) => ({ ...p, is_undone: true }))
+    expect(deriveUndoPreview(allUndone, { kind: 'single' }).reverts).toEqual([])
+    expect(deriveUndoPreview(allUndone, { kind: 'cascade', from: 1 }).reverts).toEqual([])
   })
 })

@@ -9,6 +9,9 @@ import {
   MOCK_LAUNCHER_READY,
   mockLauncherHref,
 } from '@/components/draft/mock-launcher-entry'
+import { MockRow } from '@/components/draft/mock-draft-launcher'
+import { MOCK_EXPIRY_NOTE } from '@/components/draft/mock-launcher-ops'
+import { useMockDrafts } from '@/hooks/use-mock-drafts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -136,7 +139,53 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
       )}
       {state === 'drafting' && <DraftingHero leagueId={leagueId} data={data} />}
       {state === 'later' && <LaterPlaceholder status={league.status} />}
+
+      {/* §16.5.2 mock-workflow row (L.B3.5): the resumable-paused card —
+          a paused/live practice draft resumes from the league page (E59),
+          and kept recaps are one tap away. Pre-draft states only: past
+          draft night the home belongs to the live draft / the season
+          (recaps stay reachable through the launcher's list). Renders
+          nothing when the viewer has no mocks — the home stays light. */}
+      {(state === 'setup' || state === 'scheduled') && (
+        <MockPracticeCard leagueId={leagueId} data={data} />
+      )}
     </div>
+  )
+}
+
+/**
+ * The launcher-scoped mock list on the league home (§16.5.2: "resumable-
+ * paused card on league home · 72h-expiry note"). Rows are the launcher's
+ * own `MockRow` — one row treatment, two mounts, no fork. Loading/error
+ * render nothing here: the home never blocks on a practice list, and the
+ * launcher page carries the full states.
+ */
+function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+  const mocks = useMockDrafts(leagueId)
+  const active = mocks.data?.active ?? []
+  const recaps = mocks.data?.recaps ?? []
+  if (active.length === 0 && recaps.length === 0) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <Icon name="rocket" size={15} className="mr-1.5 inline align-[-2px]" />
+          Your practice drafts
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2.5">
+        {active.map((row) => (
+          <MockRow key={row.id} leagueId={leagueId} detail={data} row={row} />
+        ))}
+        {recaps.map((row) => (
+          <MockRow key={row.id} leagueId={leagueId} detail={data} row={row} />
+        ))}
+        {active.length > 0 && (
+          <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -256,6 +305,19 @@ function SetupHero({
               <p className="text-[10px] font-semibold text-n-3">
                 Locks in draft night: the countdown appears for every manager and the
                 draft starts automatically at the scheduled time.
+              </p>
+            </div>
+          )}
+
+          {timeSaved && (
+            // §16.5.1 setup row: "Practice-draft card once a draft is
+            // configured" (L.B3.5 — §16.4's draft-night rehearsal:
+            // "rehearsal is the moment misconfigured settings get caught").
+            // Any member, not just the commissioner (§8.8's launch rule).
+            <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
+              <PracticeCta leagueId={leagueId} />
+              <p className="text-[10px] font-semibold text-n-3">
+                Test these settings against CPU opponents before draft night.
               </p>
             </div>
           )}
