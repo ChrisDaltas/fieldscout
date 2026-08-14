@@ -556,6 +556,15 @@ describe('§8.9 from-list — load into queue (skip drafted; replace/append)', (
       [P4, 1],
       [P6, 2],
     ])
+    // THE RESPONSE-FIELD PIN (R298): `queue` is the ROWS ARRAY itself —
+    // QueueResponse's declared shape and upsertQueue's exact convention —
+    // never the replaceQueue wrapper `{rows: [...]}`. The `as unknown as
+    // Json` cast hides a wrapper regression from tsc, so only this wire
+    // assert can catch it.
+    expect(body.queue).toEqual([
+      { player_id: P4, rank: 1 },
+      { player_id: P6, rank: 2 },
+    ])
   })
 
   it('append ("Add remaining"): adds after the queue tail, skipping queued AND drafted players', async () => {
@@ -574,6 +583,11 @@ describe('§8.9 from-list — load into queue (skip drafted; replace/append)', (
     expect(await storedQueue(draftId, mgr2TeamId)).toEqual([
       [P4, 1],
       [P6, 2],
+    ])
+    // The R298 response-field pin, append arm: same rows-array shape.
+    expect(body.queue).toEqual([
+      { player_id: P4, rank: 1 },
+      { player_id: P6, rank: 2 },
     ])
   })
 

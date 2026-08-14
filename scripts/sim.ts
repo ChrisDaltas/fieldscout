@@ -128,7 +128,10 @@ async function main(): Promise<void> {
       )
     }
   } else {
-    console.log('F54 REPRODUCTIONS: none this run (the interleave window is real but narrow)')
+    // Post-082 wording (R300): the pre-fix hedge ("the interleave window is
+    // real but narrow") described the raw delete→insert era — 082's RPC now
+    // serializes replaces per seat, so zero is the designed outcome, not luck.
+    console.log("F54 REPRODUCTIONS: 0 (082's RPC serializes replaces per seat)")
   }
   if (report.workerErrors.length > 0) {
     console.log(`WORKER ERRORS (${report.workerErrors.length}):`)

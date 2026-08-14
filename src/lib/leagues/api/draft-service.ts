@@ -623,7 +623,9 @@ export async function queueFromList(
       added: toInsert.length,
       skipped_drafted: skippedDrafted,
       skipped_queued: skippedQueued,
-      queue,
+      // The ROWS ARRAY, never the replaceQueue wrapper — the declared
+      // QueueResponse contract, same as upsertQueue (R298).
+      queue: queue.rows,
     } as unknown as Json,
   }
 }
