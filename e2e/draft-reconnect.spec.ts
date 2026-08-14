@@ -149,9 +149,16 @@ test.describe('disconnect / reconnect mid-draft', () => {
       expect(restoredMs, 'room state restored after reconnect (§8.7 < 2s)').toBeLessThan(2_000)
 
       // Then resubscribes: a fresh realtime socket comes up and the banner
-      // clears (SUBSCRIBED is the only path that clears it).
+      // clears (SUBSCRIBED is the only path that clears it). The resubscribe
+      // half carries its own timing assertion (R295): the exit criterion is
+      // asserted on the WHOLE refetch-then-resubscribe path, not just the
+      // state-restore half. Measured 528–606ms across runs.
       await expect(banner).toBeHidden({ timeout: 15_000 })
       const resubscribedMs = Date.now() - restoreAt
+      expect(
+        resubscribedMs,
+        'resubscribed (banner cleared) inside the §8.7 window — the full refetch-then-resubscribe cycle',
+      ).toBeLessThan(2_000)
 
       // Network evidence of BOTH halves of the doctrine:
       const refetchAfterRestore = refetches.find((at) => at >= restoreAt)

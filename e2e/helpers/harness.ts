@@ -8,8 +8,11 @@ type Supabase = SupabaseClient<Database>
 
 /**
  * SERVICE-ROLE HARNESS CLIENT — M2 task L.B5.1 (the D100/L.B6.1 confinement
- * doctrine, recorded): the service-role key exists ONLY inside this file,
- * and it does exactly FOUR jobs, nothing else:
+ * doctrine, recorded; enumeration made literally true per R296, the R290
+ * precedent): the service CLIENT is constructed ONLY in this file — the key
+ * CONSTANT lives in local-env.ts, and playwright.config.ts also injects it
+ * into the app server's process env (the webServer's own admin client) —
+ * and the client does exactly FOUR jobs, nothing else:
  *
  *   1. the E2E-prefix fixture-cleanup sweep (start-stale + per-spec finally,
  *      loud + byte-clean-verified — the R285 class; delete order mirrors the
@@ -235,32 +238,20 @@ export async function snapshotLeagueWrites(
 // Job 4 — small authoritative reads
 // ---------------------------------------------------------------------------
 
-export async function readDraft(
+/** The authoritative leagues-row read (status + name — the name doubles as
+ *  the identity check when a spec derives the id from a URL). Every spec's
+ *  service read rides a named job-4 helper — no inline queries (R297). */
+export async function readLeague(
   service: Supabase,
-  draftId: string,
-): Promise<{
-  status: string
-  current_pick_number: number | null
-  on_clock_team_id: string | null
-  is_mock: boolean
-}> {
-  const { data, error } = await service
-    .from('drafts')
-    .select('status, current_pick_number, on_clock_team_id, is_mock')
-    .eq('id', draftId)
-    .single()
-  throwIfError(error, 'read draft row')
-  return data!
-}
-
-export async function readLeagueStatus(service: Supabase, leagueId: string): Promise<string> {
+  leagueId: string,
+): Promise<{ status: string; name: string }> {
   const { data, error } = await service
     .from('leagues')
-    .select('status')
+    .select('status, name')
     .eq('id', leagueId)
     .single()
-  throwIfError(error, 'read league status')
-  return data!.status as string
+  throwIfError(error, 'read league row')
+  return { status: data!.status as string, name: data!.name }
 }
 
 export async function countLeagueRosters(service: Supabase, leagueId: string): Promise<number> {

@@ -4,7 +4,7 @@ import {
   assertPlayerPoolPresent,
   cleanupSweep,
   countLeagueRosters,
-  readLeagueStatus,
+  readLeague,
   readPickSheet,
   rewindDeadline,
   serviceClient,
@@ -260,7 +260,7 @@ test.describe('full snake draft to completion (two live clients)', () => {
       expect(picks.length).toBe(TOTAL_PICKS)
       expect(new Set(picks.map((p) => p.player_id)).size).toBe(TOTAL_PICKS)
       expect(new Set(picks.map((p) => p.pick_number)).size).toBe(TOTAL_PICKS)
-      expect(await readLeagueStatus(service, league.leagueId)).toBe('in_season')
+      expect((await readLeague(service, league.leagueId)).status).toBe('in_season')
       expect(await countLeagueRosters(service, league.leagueId)).toBe(TOTAL_PICKS)
 
       // The home hero agrees (F46's placeholder is the honest M2 state).

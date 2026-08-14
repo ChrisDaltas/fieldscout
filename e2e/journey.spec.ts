@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { cleanupSweep, serviceClient } from './helpers/harness'
+import { cleanupSweep, readLeague, serviceClient } from './helpers/harness'
 import { E2E_LEAGUE_PREFIX, STORAGE_STATE } from './helpers/local-env'
 
 /**
@@ -108,16 +108,12 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
         timeout: 30_000,
       })
 
-      // Authoritative confirmation (harness read — job 4): the league row
-      // itself says `scheduled`, not just the hero.
-      const { data, error } = await serviceClient()
-        .from('leagues')
-        .select('status, name')
-        .eq('id', leagueId)
-        .single()
-      expect(error).toBeNull()
-      expect(data?.name).toBe(LEAGUE_NAME)
-      expect(data?.status).toBe('scheduled')
+      // Authoritative confirmation (harness read — job 4, via the named
+      // helper per R297): the league row itself says `scheduled`, not just
+      // the hero — and the name proves the URL-derived id is OUR league.
+      const leagueRow = await readLeague(serviceClient(), leagueId)
+      expect(leagueRow.name).toBe(LEAGUE_NAME)
+      expect(leagueRow.status).toBe('scheduled')
 
       // The manager sees the scheduled state too (cross-client journey end).
       await manager.goto(`/app/leagues/${leagueId}`)
