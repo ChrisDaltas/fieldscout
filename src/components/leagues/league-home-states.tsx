@@ -500,8 +500,12 @@ function ScheduledHero({
  * ready-flag (mock-launcher-entry.ts). Until the launcher lands the CTA is
  * visibly present but honestly disabled; L.B3.5 flips the flag and this
  * becomes a live link with zero rewiring.
+ *
+ * Exported for the draft lobby (R279): §16.5.2's mock-workflow row names TWO
+ * entry points — "Practice card · draft lobby" — and both mount THIS
+ * component (one treatment, no fork).
  */
-function PracticeCta({ leagueId }: { leagueId: string }) {
+export function PracticeCta({ leagueId }: { leagueId: string }) {
   if (!MOCK_LAUNCHER_READY) {
     return (
       <Button variant="stroke" size="sm" disabled title="Practice drafts arrive with the next update">

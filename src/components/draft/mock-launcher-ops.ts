@@ -7,7 +7,9 @@
  * (071) — these derivations only decide what the launcher RENDERS: the seat
  * options, the cap messaging, and the resume/recap card labels. The one
  * client-side cap read (3 active) exists so the launch button can be honest
- * BEFORE a refused round-trip; the hourly cap is deliberately server-only
+ * BEFORE a refused round-trip — a PARTIAL read: it sees THIS league's actives
+ * only, while 071 counts per-user across all leagues (see
+ * `launchDisabledReason` — R280); the hourly cap is deliberately server-only
  * (creation instants of deleted mocks are invisible to the client — D110(6))
  * and its refusal surfaces verbatim.
  */
@@ -33,9 +35,13 @@ export const MOCK_EXPIRY_NOTE =
 
 /**
  * Why the launch button is disabled, or null when launching is offered.
- * ONLY the 3-active cap is client-derivable (the launcher's own GET carries
- * the active list); every other refusal (hourly cap, league status, seat
- * validity) is the RPC's and surfaces verbatim from the 400.
+ * ONLY the 3-active cap gets a client-side pre-flight — and a PARTIAL one
+ * (R280): the count the caller passes comes from the launcher's league-scoped
+ * GET, while 071's cap counts the user's active mocks across ALL leagues
+ * (071:338–343 — no league filter). Cross-league actives are invisible here,
+ * so this check can under-count, never over-block: when it misses, the RPC's
+ * verbatim refusal is the authority (as it is for every other refusal —
+ * hourly cap, league status, seat validity).
  */
 export function launchDisabledReason(activeCount: number): string | null {
   if (activeCount >= MOCK_ACTIVE_CAP) {

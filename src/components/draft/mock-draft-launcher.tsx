@@ -160,7 +160,9 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
 
             {capReason && (
               // The §16.5.2 3-active cap message — honest BEFORE a refused
-              // round-trip (the RPC still enforces it; D110(6)).
+              // round-trip. A partial pre-flight: this league's actives only
+              // (071 counts across ALL leagues — R280); the RPC still
+              // enforces it and its refusal is the authority (D110(6)).
               <p className="text-[11px] font-semibold text-negative-strong" role="status">
                 {capReason}
               </p>
