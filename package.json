@@ -29,6 +29,7 @@
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "sim": "npx tsx scripts/sim.ts",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:unit": "vitest run --exclude '**/node_modules/**' --exclude '**/*-db.test.ts' --exclude '**/m1-gate/**'",
     "test:stack": "vitest run 'db.test' 'm1-gate'",
     "test:gate": "vitest run src/lib/leagues/gate",
@@ -74,6 +75,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
