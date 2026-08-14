@@ -5,12 +5,15 @@
 #
 # Composition (tasks-M1 §6 L.A1.16: "vitest tag/dir + a test:db run"):
 #   [1/4] Fresh `supabase db reset`  — the gate owns a pristine, fully-migrated
-#         chain (001-063). Stack hygiene: the journey writes real rows on the
+#         chain (the FULL chain — 001-063 when this gate was cut, 001-082 as
+#         of L.B7.1; the reset always runs everything). Stack hygiene: the
+#         journey writes real rows on the
 #         SHARED local stack; a reset-clean gate cannot pass on residue or a
 #         drifted DB (orchestrator pointer; DoD "fresh db reset over the full
 #         chain"). The vitest suites are additionally cleanup-first + afterAll.
-#   [2/4] `npm run test:db`          — (d) full pgTAP suite (000-017; 005-017
-#         are the M1 files). pgTAP runs each file in a rolled-back txn.
+#   [2/4] `npm run test:db`          — (d) full pgTAP suite (005-017 are the
+#         M1 files; the suite has grown past them — the whole set runs).
+#         pgTAP runs each file in a rolled-back txn.
 #   [3/4] vitest -c vitest.gate-m1.config.ts — (1a) Phase A journey + the
 #         templates-only negative, (1b) snapshot force-transition probes,
 #         (1c) template parity + TS<->DB equivalence, (3) settings round-trip.
@@ -25,7 +28,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "======================================================================"
-echo "  M1 GATE (L.A1.16) — exit-criteria proof over migrations 001-063"
+echo "  M1 GATE (L.A1.16) — exit-criteria proof over the FULL migration chain"
 echo "======================================================================"
 
 echo ""

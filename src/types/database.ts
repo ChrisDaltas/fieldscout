@@ -3188,6 +3188,10 @@ export type Database = {
         Args: { p: Database["public"]["Tables"]["draft_picks"]["Row"] }
         Returns: Json
       }
+      draft_queue_replace: {
+        Args: { p_draft_id: string; p_players: string[]; p_team_id: string }
+        Returns: Json
+      }
       draft_reassign_pick: {
         Args: {
           p_draft_id: string

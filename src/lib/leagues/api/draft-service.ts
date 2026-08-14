@@ -366,6 +366,33 @@ async function readQueue(
   return (data ?? []) as QueueRow[]
 }
 
+/**
+ * The atomic whole-queue replace — `draft_queue_replace` (082, the F54
+ * discharge). One transaction + a per-seat advisory xact lock close BOTH
+ * D113(3) faces (partial failure AND concurrent interleave); the function's
+ * jsonb return is this call's own settled queue. SQLSTATE mapping follows
+ * the house convention (42501 → 403 · 22023 → 400 friendly · else 500).
+ */
+async function replaceQueue(
+  supabase: Supabase,
+  draftId: string,
+  teamId: string,
+  players: string[],
+): Promise<{ rows: QueueRow[] } | { failure: ServiceResult }> {
+  const { data, error } = await supabase.rpc('draft_queue_replace', {
+    p_draft_id: draftId,
+    p_team_id: teamId,
+    p_players: players,
+  })
+  if (error) {
+    const mapped = mapDraftRpcError(error, 'You do not manage this queue.')
+    // P0002/404 is unreachable here (the draft was resolved above) — the
+    // 42501/22023/500 mapping is what this surface can actually answer.
+    return { failure: mapped }
+  }
+  return { rows: (data ?? []) as unknown as QueueRow[] }
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/leagues/[id]/draft/pick — make a pick (§15.2 → draft_make_pick)
 // ---------------------------------------------------------------------------
@@ -459,40 +486,27 @@ export async function upsertQueue(
     }
   }
 
-  // Replace: clear own rows, insert the new order rank 1..n. Both statements
-  // run under the caller's JWT — the 065 "Own queue write" policy is the
-  // backstop (a row for a seat the caller does not own never lands).
-  const { error: clearError } = await supabase
-    .from('draft_queues')
-    .delete()
-    .eq('draft_id', resolved.draft.id)
-    .eq('team_id', seat.teamId)
-  if (clearError) {
-    return { status: 500, body: { error: clearError.message } }
-  }
-  if (parsed.data.players.length > 0) {
-    const { error: insertError } = await supabase.from('draft_queues').insert(
-      parsed.data.players.map((playerId, index) => ({
-        draft_id: resolved.draft.id,
-        team_id: seat.teamId,
-        player_id: playerId,
-        rank: index + 1,
-      })),
-    )
-    if (insertError) {
-      // 42501/RLS should be unreachable (the seat was resolved above) — any
-      // insert failure after the clear is surfaced loudly, never swallowed.
-      return { status: 500, body: { error: insertError.message } }
-    }
-  }
-
-  const queue = await readQueue(supabase, resolved.draft.id, seat.teamId)
+  // Replace via `draft_queue_replace` (082 — the F54 discharge): ONE
+  // transaction (a failed insert can never leave the queue emptied — the
+  // D113(3) partial-failure face) serialized per seat by an advisory xact
+  // lock (concurrent replaces can never interleave into duplicate ranks —
+  // the F54 concurrency face). SECURITY INVOKER: the statements inside run
+  // under the caller's JWT and the 065 "Own queue write" policy stays the
+  // backstop. The RPC returns THIS call's settled queue — the response
+  // truth, not a later writer's.
+  const queue = await replaceQueue(
+    supabase,
+    resolved.draft.id,
+    seat.teamId,
+    parsed.data.players,
+  )
+  if ('failure' in queue) return queue.failure
   return {
     status: 200,
     body: {
       draft_id: resolved.draft.id,
       team_id: seat.teamId,
-      queue,
+      queue: queue.rows,
     } as unknown as Json,
   }
 }
@@ -588,33 +602,18 @@ export async function queueFromList(
     toInsert.push(playerId)
   }
 
-  if (parsed.data.mode === 'replace') {
-    const { error: clearError } = await supabase
-      .from('draft_queues')
-      .delete()
-      .eq('draft_id', resolved.draft.id)
-      .eq('team_id', seat.teamId)
-    if (clearError) {
-      return { status: 500, body: { error: clearError.message } }
-    }
-  }
-  const startRank =
-    parsed.data.mode === 'append' ? Math.max(0, ...existing.map((row) => row.rank)) : 0
-  if (toInsert.length > 0) {
-    const { error: insertError } = await supabase.from('draft_queues').insert(
-      toInsert.map((playerId, index) => ({
-        draft_id: resolved.draft.id,
-        team_id: seat.teamId,
-        player_id: playerId,
-        rank: startRank + index + 1,
-      })),
-    )
-    if (insertError) {
-      return { status: 500, body: { error: insertError.message } }
-    }
-  }
+  // Both modes settle through the SAME atomic replace (082 — the F54
+  // discharge): append composes the final order from the click-time read
+  // (existing tail + the additions — the D118(6) compose-from-cache shape)
+  // and replaces the whole queue in one serialized transaction; replace
+  // sends the filtered list order as-is. Ranks are dense 1..n either way.
+  const finalOrder =
+    parsed.data.mode === 'append'
+      ? [...existing.map((row) => row.player_id), ...toInsert]
+      : toInsert
+  const queue = await replaceQueue(supabase, resolved.draft.id, seat.teamId, finalOrder)
+  if ('failure' in queue) return queue.failure
 
-  const queue = await readQueue(supabase, resolved.draft.id, seat.teamId)
   return {
     status: 200,
     body: {
@@ -624,7 +623,9 @@ export async function queueFromList(
       added: toInsert.length,
       skipped_drafted: skippedDrafted,
       skipped_queued: skippedQueued,
-      queue,
+      // The ROWS ARRAY, never the replaceQueue wrapper — the declared
+      // QueueResponse contract, same as upsertQueue (R298).
+      queue: queue.rows,
     } as unknown as Json,
   }
 }

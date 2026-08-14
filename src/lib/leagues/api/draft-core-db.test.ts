@@ -44,7 +44,10 @@ const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 const LEAGUE_NAME = 'vitest-draft-core-league'
-const DRAFT_INSTANT = '2026-09-01T17:00:00+00:00'
+// F49 (L.B7.1 sweep): far-future — 068's LIVE cron auto-starts COMMITTED
+// scheduled leagues whose stored instant has passed; 2026 dates became
+// mid-run `scheduled`->`drafting` flip bait from Sep 2026.
+const DRAFT_INSTANT = '2028-09-01T17:00:00+00:00'
 
 const COMMISH = {
   email: 'draft-core-commish@fieldscout.test',

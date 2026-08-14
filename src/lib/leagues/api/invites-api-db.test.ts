@@ -431,24 +431,40 @@ describe('join by code/slug, rotation, capacity, F5 free-join', () => {
 
   it('D47: a full league refuses joins with "league is full" and writes nothing', async () => {
     // Fill league2 to team_count = 8 with privileged filler franchises.
-    const { data: commishProfile } = await service
+    // Every setup await is ERROR-CHECKED — the F53 discharge (L.B7.1): the
+    // unchecked inserts + the `owner_id ?? ''` fallback let a degraded
+    // lookup silently UNDER-FILL the league, and the pin then reported the
+    // legitimately-succeeding join as a product failure (`expected 200 to
+    // be 409`, 1 in 10 full runs — the D114(7) swallow class).
+    const { data: commishProfile, error: profileError } = await service
       .from('profiles')
       .select('id')
       .eq('username', COMMISH.username)
       .single()
-    const { count: current } = await service
+    expect(profileError).toBeNull()
+    expect(commishProfile?.id, 'the commish profile lookup must resolve').toBeTruthy()
+    const { count: current, error: countError } = await service
       .from('teams')
       .select('id', { count: 'exact', head: true })
       .eq('league_id', league2Id)
+    expect(countError).toBeNull()
     const fillers = 8 - (current ?? 0)
     for (let i = 0; i < fillers; i++) {
-      await service.from('teams').insert({
-        owner_id: commishProfile?.id ?? '',
+      const { error: fillerError } = await service.from('teams').insert({
+        owner_id: commishProfile!.id,
         name: `vitest-invites-filler-${i}`,
         league_id: league2Id,
         list_id: null,
       })
+      expect(fillerError, `filler ${i} must insert`).toBeNull()
     }
+    // The pin's precondition, asserted (never inferred): the league IS full.
+    const { count: filled, error: filledError } = await service
+      .from('teams')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', league2Id)
+    expect(filledError).toBeNull()
+    expect(filled, 'setup must actually fill the league to 8').toBe(8)
     const result = await joinLeague(wrongClient, { code: 'vitest-invites-slug' })
     expect(result.status).toBe(409)
     expect((result.body as { reason?: string; message?: string }).reason).toBe('league_full')

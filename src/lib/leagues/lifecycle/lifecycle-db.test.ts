@@ -44,7 +44,9 @@ const LOCAL_SERVICE_ROLE_KEY =
 const LEAGUE_NAME = 'vitest-lifecycle-league'
 
 // The draft instant used everywhere below (fixed — no wall clock, D3/D17).
-const DRAFT_INSTANT = '2026-09-13T17:00:00.000Z'
+// 2028 per the F49 sweep (L.B7.1) — a FIFTH vitest site beyond the row's
+// four: this suite also holds committed leagues in `scheduled`.
+const DRAFT_INSTANT = '2028-09-13T17:00:00.000Z'
 
 // R67: the settings blob is SOURCED FROM THE L.A1.6 CONTRACT, not hand-written
 // — `splitSettings` over the contract defaults with the draft instant set is

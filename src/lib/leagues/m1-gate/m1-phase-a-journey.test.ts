@@ -65,8 +65,10 @@ const LOCAL_SERVICE_ROLE_KEY =
 
 const LEAGUE_NAME_PREFIX = 'vitest-m1gate-league'
 
-/** A fixed future draft instant — no wall clock (D3/D17). */
-const DRAFT_INSTANT = '2026-09-13T17:00:00.000Z'
+/** A fixed FAR-future draft instant — no wall clock (D3/D17); 2028 per the
+ *  F49 sweep (L.B7.1): a passed instant on a committed scheduled league is
+ *  live-cron auto-start bait. */
+const DRAFT_INSTANT = '2028-09-13T17:00:00.000Z'
 /** A non-default faab set at create so the round-trip pin is falsifiable. */
 const CREATE_FAAB = 300
 
