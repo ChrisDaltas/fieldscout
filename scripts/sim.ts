@@ -109,8 +109,14 @@ async function main(): Promise<void> {
   console.log(
     `CHAOS: ${report.replayVerified} E2 double-tap replays verified identical · ${report.expectedRefusals} expected refusals (E1/wrong-turn)`,
   )
-  if (report.f54Incidents.length > 0) {
-    console.log(`F54 REPRODUCTIONS: ${report.f54Incidents.length}`)
+  if (report.f54Total > 0) {
+    // The TRUE total; detail rows are capped in the runner (R288 — the cap
+    // must never wear the total's name).
+    const capNote =
+      report.f54Total > report.f54Incidents.length
+        ? ` (evidence detail capped at ${report.f54Incidents.length} rows below)`
+        : ''
+    console.log(`F54 REPRODUCTIONS: ${report.f54Total}${capNote}`)
     for (const inc of report.f54Incidents) {
       console.log(
         `  ${inc.leagueLabel} draft=${inc.draftId} seat=${inc.teamId} duplicate ranks [${inc.duplicateRanks.join(', ')}]`,

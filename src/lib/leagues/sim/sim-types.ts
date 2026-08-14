@@ -98,7 +98,12 @@ export interface RunReport {
   planLines: string[]
   leagues: LeagueResult[]
   invariantFailures: InvariantFailure[]
+  /** Evidence detail rows, CAPPED at the runner's MAX_F54_INCIDENTS —
+   *  `f54Total` below is the true count (R288: the cap must never wear the
+   *  total's name). */
   f54Incidents: QueueInterleaveIncident[]
+  /** TRUE total of observed F54 interleaves this run (uncapped). */
+  f54Total: number
   /** Chaos refusals the engine answered correctly (E1/E2/wrong-turn) —
    *  expected traffic, counted for the report, never errors. */
   expectedRefusals: number

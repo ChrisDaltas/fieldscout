@@ -12,7 +12,7 @@
  * D68(6)/M1-gate precedent). Reads are the D92 pattern: RLS-scoped
  * SELECTs under each bot's own JWT.
  *
- * SERVICE-ROLE HARNESS CLIENT (harness-only, recorded): exactly four jobs —
+ * SERVICE-ROLE HARNESS CLIENT (harness-only, recorded): exactly five jobs —
  *   1. bot-user provisioning/teardown (auth admin);
  *   2. deadline REWINDS for timeout scenarios (`current_deadline`
  *      subtraction from the SERVER-written value, `status='live'`-
@@ -22,7 +22,13 @@
  *      REVOKEd from authenticated — cron/service only; driving it
  *      directly instead of waiting on the live 5s cron is the F52
  *      sibling-wait lesson);
- *   4. the post-run audit reads the invariant sweep consumes.
+ *   4. the post-run audit reads the invariant sweep consumes;
+ *   5. the R285-loud fixture-cleanup sweep (start + finally: sim-league
+ *      graph DELETEs + byte-clean verification) — teardown's data half,
+ *      enumerated here since R290: an unenumerated service write is how
+ *      scope creep starts. Every OTHER read rides a member's own JWT —
+ *      including the scoring-template lookup (a bot client reads it;
+ *      templates are viewable by everyone, 058).
  * Production RPCs never accept a caller clock (D100) — the rewind IS the
  * virtual-time mechanism.
  *
@@ -216,6 +222,7 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
     leagues: [],
     invariantFailures: [],
     f54Incidents: [],
+    f54Total: 0,
     expectedRefusals: 0,
     replayVerified: 0,
     workerErrors: [],
@@ -260,10 +267,12 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
     }
     log(`BOTS: ${bots.length} pool users provisioned + signed in`)
 
-    // Scoring template (any client could read it; the harness read is one
-    // call for the whole run).
+    // Scoring template — read through a BOT's own authed client (templates
+    // are viewable by everyone, 058), one call for the whole run: the
+    // service-role client does the five recorded harness jobs and nothing
+    // else (R290).
     const { data: template, error: templateError } = await limit(() =>
-      service
+      bots[0]!.client
         .from('scoring_systems')
         .select('id')
         .eq('is_template', true)
@@ -556,6 +565,14 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
     if (seat.kind === 'placeholder' || persona === 'afk' || persona === undefined) {
       // The timeout path: rewind the SERVER-written deadline past
       // deadline + grace, then drive the tick directly (F52 lesson).
+      // COVERAGE MAP, honestly (R292): because every rewindAndTick
+      // refreshes lastProgress (the D123(8) max-arm — a rewind must not
+      // read as stuck), the stuck-clock watchdog can NEVER fire while one
+      // of these seats is on the clock. A stuck engine here still fails
+      // the run — loudly but later: the loop exhausts its iteration cap
+      // ('loop-exhausted') and the end sweep's board-complete names the
+      // draft. Bounded, not silent; the watchdog's live coverage is the
+      // manual-persona turns.
       await rewindAndTick(args, draftId, args.clockSeconds + GRACE_SECONDS + 60, workerErrors)
       lastProgress = { pickNumber: lastProgress.pickNumber, atMs: clock.nowMs() }
       await clock.sleep(60)
@@ -575,7 +592,7 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
     const queuePlan = desiredQueue(persona, ctx, decisionRng)
     if (queuePlan !== null && queuePlan.players.length > 0) {
       if (queuePlan.concurrentAlternate !== null) {
-        await chaosQueueDoubleTap(args, bot, leagueId, draftId, seat.teamId, queuePlan.players, queuePlan.concurrentAlternate, label)
+        await chaosQueueDoubleTap(args, bot, leagueId, draftId, seat.teamId, queuePlan.players, queuePlan.concurrentAlternate, label, workerErrors)
       } else {
         const saved = await limit(() =>
           upsertQueue(bot.client, leagueId, bot.userId, {
@@ -591,6 +608,7 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
 
     const decision = decidePick(persona, ctx, decisionRng)
     if (decision.kind === 'timeout') {
+      // Same R292 coverage note as the placeholder/afk branch above.
       await rewindAndTick(args, draftId, args.clockSeconds + GRACE_SECONDS + 60, workerErrors)
       lastProgress = { pickNumber: lastProgress.pickNumber, atMs: clock.nowMs() }
       await clock.sleep(60)
@@ -642,15 +660,24 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
         } else {
           report.replayVerified += 1
         }
-      } else if (okPair.length === 1) {
-        // The seat lost the turn to a concurrent actor (cron autopick or
-        // the stray) before/between the taps — expected chaos traffic.
-        report.expectedRefusals += pair.length - okPair.length
       } else {
-        report.expectedRefusals += 2
+        // The seat lost the turn to a concurrent actor (cron autopick or
+        // the stray) before/between the taps — but ONLY a friendly 400 is
+        // that expected chaos traffic. Anything else (5xx, 401/403, …) is
+        // an engine/harness failure under exactly the most concurrency-
+        // stressed traffic and must fail the sweep, never be absorbed as
+        // a refusal (R287).
+        for (const r of pair) {
+          if (r.status === 200) continue
+          if (r.status === 400) report.expectedRefusals += 1
+          else workerErrors.push(`${label}: E2 tap ${r.status}: ${JSON.stringify(r.body)}`)
+        }
       }
       const stray = settled[2]
-      if (stray !== undefined && stray.status !== 200) report.expectedRefusals += 1
+      if (stray !== undefined && stray.status !== 200) {
+        if (stray.status === 400) report.expectedRefusals += 1
+        else workerErrors.push(`${label}: stray pick ${stray.status}: ${JSON.stringify(stray.body)}`)
+      }
 
       // Refresh the drafted set after the volley (whichever taps landed).
       const picksAfter = await readPicks(args, reader, draftId)
@@ -836,6 +863,7 @@ async function chaosQueueDoubleTap(
   orderA: string[],
   orderB: string[],
   label: string,
+  workerErrors: string[],
 ): Promise<void> {
   // The two replaces DELIBERATELY bypass the pacing semaphore: a saturated
   // limiter (25 league loops > width 16) serializes "concurrent" calls and
@@ -847,23 +875,42 @@ async function chaosQueueDoubleTap(
     upsertQueue(bot.client, leagueId, bot.userId, { draft_id: draftId, players: orderA }),
     upsertQueue(bot.client, leagueId, bot.userId, { draft_id: draftId, players: orderB }),
   ])
-  // Both are "successes" as far as the route knows — the interleave is
+  // Classify every failed leg by STATUS (R287): a 400 is a friendly
+  // refusal (expected chaos traffic — e.g. the seat's turn advanced
+  // mid-volley); ANY other status is an engine failure under exactly the
+  // most concurrency-stressed traffic and must fail the sweep — this pair
+  // is the known-unprotected delete→insert window (F54's D113(3) face
+  // eats a 500 here on OVERLAPPING sets; the sim's sets are disjoint, so
+  // a 500 in this lane is news, never noise).
+  for (const [leg, r] of [['A', a], ['B', b]] as const) {
+    if (r.status === 200) continue
+    if (r.status === 400) args.report.expectedRefusals += 1
+    else workerErrors.push(`${label}: queue double-tap leg ${leg} ${r.status}: ${JSON.stringify(r.body)}`)
+  }
+  // Both 200s are "successes" as far as the route knows — the interleave is
   // exactly what F54 documents. Read the seat's settled rows and look for
   // the duplicate-rank signature.
   if (a.status !== 200 && b.status !== 200) return
   const rows = await readOwnQueue(args, bot.client, draftId, teamId)
   if (rows === null) return
   const dupes = duplicateQueueRanks(rows)
-  if (dupes.length > 0 && args.report.f54Incidents.length < MAX_F54_INCIDENTS) {
-    args.report.f54Incidents.push({
-      leagueLabel: label,
-      draftId,
-      teamId,
-      submittedA: orderA,
-      submittedB: orderB,
-      rows,
-      duplicateRanks: dupes,
-    })
+  if (dupes.length > 0) {
+    // EVERY incident is counted and logged; only the stored evidence
+    // detail rows are capped (R288: the cap must never wear the total's
+    // name — "5" on the old report line was MAX_F54_INCIDENTS, not the
+    // count).
+    args.report.f54Total += 1
+    if (args.report.f54Incidents.length < MAX_F54_INCIDENTS) {
+      args.report.f54Incidents.push({
+        leagueLabel: label,
+        draftId,
+        teamId,
+        submittedA: orderA,
+        submittedB: orderB,
+        rows,
+        duplicateRanks: dupes,
+      })
+    }
     args.log(
       `${label}: F54 REPRODUCED — seat ${teamId} queue ranks [${rows
         .map((r) => r.rank)
