@@ -118,6 +118,26 @@ export function decorateOverlay(rows: readonly PoolRow[], maps: ListOverlayMaps)
  * Identities still loading are skipped — the caller renders its pending
  * state off the identity query, never a guessed row.
  */
+/**
+ * The card's loading gate (R283, M2 batch 17). In only-mode the identity
+ * read (`usePlayersByIds`) is `enabled` only while the id set is non-empty,
+ * and a DISABLED React Query v5 query reports `isPending === true` forever —
+ * so an EMPTY attached list must treat the identity query as SETTLED, or
+ * "Only this list" on a 0-player list renders skeletons for eternity and
+ * the empty state ("Everyone on this list is drafted.") is unreachable.
+ */
+export function poolLoadPending(args: {
+  onlyMode: boolean
+  poolPending: boolean
+  overlayRowsPending: boolean
+  /** Row count of the overlaid list — 0 ⇒ the identity query is DISABLED. */
+  overlayListSize: number
+  identityPending: boolean
+}): boolean {
+  if (!args.onlyMode) return args.poolPending
+  return args.overlayRowsPending || (args.identityPending && args.overlayListSize > 0)
+}
+
 export function onlyOnListRows(
   listRows: ReadonlyArray<{ player_id: string; tier: string | null }>,
   identityById: ReadonlyMap<

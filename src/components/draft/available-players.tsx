@@ -20,6 +20,7 @@ import {
   decoratePool,
   onlyOnListRows,
   overlayMaps,
+  poolLoadPending,
   subtractDrafted,
   type OverlayPoolRow,
   type PoolRow,
@@ -209,7 +210,17 @@ export function AvailablePlayers({
         )}
       </div>
 
-      {(onlyMode ? overlayRows.isPending || overlayIdentity.isPending : pool.isPending) ? (
+      {/* R283 (M2 batch 17): the gate lives in poolLoadPending — an EMPTY
+          attached list's identity query is disabled and pends forever, so
+          only-mode must treat it as settled or the empty state below is
+          unreachable behind eternal skeletons. */}
+      {poolLoadPending({
+        onlyMode,
+        poolPending: pool.isPending,
+        overlayRowsPending: overlayRows.isPending,
+        overlayListSize: (overlayRows.data ?? []).length,
+        identityPending: overlayIdentity.isPending,
+      }) ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />

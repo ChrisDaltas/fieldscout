@@ -7,6 +7,7 @@ import {
   draftedIdSet,
   onlyOnListRows,
   overlayMaps,
+  poolLoadPending,
   subtractDrafted,
   type PoolPlayer,
 } from './available-players-ops'
@@ -157,5 +158,59 @@ describe('list overlay on the pool (§8.9; L.B4.2)', () => {
       'p2',
       'p1',
     ])
+  })
+
+  it('an EMPTY list in only-mode is SETTLED, never pending — the disabled identity query reports isPending forever, and the empty state must be reachable (R283)', () => {
+    // The R283 shape: 0-player attached list, rows loaded — the identity
+    // query is disabled (enabled: ids.length > 0) so its eternal isPending
+    // must NOT gate; the empty state renders instead of eternal skeletons.
+    expect(
+      poolLoadPending({
+        onlyMode: true,
+        poolPending: false,
+        overlayRowsPending: false,
+        overlayListSize: 0,
+        identityPending: true,
+      }),
+    ).toBe(false)
+    // A NON-empty list's identity pending is real and still gates.
+    expect(
+      poolLoadPending({
+        onlyMode: true,
+        poolPending: false,
+        overlayRowsPending: false,
+        overlayListSize: 2,
+        identityPending: true,
+      }),
+    ).toBe(true)
+    // The list read itself still gates while loading.
+    expect(
+      poolLoadPending({
+        onlyMode: true,
+        poolPending: false,
+        overlayRowsPending: true,
+        overlayListSize: 0,
+        identityPending: true,
+      }),
+    ).toBe(true)
+    // Off only-mode: the window pool's own pending, nothing else.
+    expect(
+      poolLoadPending({
+        onlyMode: false,
+        poolPending: true,
+        overlayRowsPending: false,
+        overlayListSize: 0,
+        identityPending: false,
+      }),
+    ).toBe(true)
+    expect(
+      poolLoadPending({
+        onlyMode: false,
+        poolPending: false,
+        overlayRowsPending: false,
+        overlayListSize: 2,
+        identityPending: true,
+      }),
+    ).toBe(false)
   })
 })
