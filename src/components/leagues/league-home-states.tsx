@@ -28,6 +28,7 @@ import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { cn } from '@/lib/utils'
 
+import { AddDraftListCta } from './attach-list-modal'
 import { InvitePanel } from './invite-panel'
 import { Crest } from './league-cells'
 import {
@@ -321,6 +322,20 @@ function SetupHero({
               </p>
             </div>
           )}
+
+          {/* §7.4's reverse entry (M2 L.B4.2): draft prep starts in setup —
+              any member, no time-saved gate (attaching needs no schedule). */}
+          <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
+            <AddDraftListCta
+              leagueId={leagueId}
+              leagueName={data.league.name}
+              scoringSystemId={data.league.scoring_system_id}
+            />
+            <p className="text-[10px] font-semibold text-n-3">
+              Attach one of your ranking lists — it&rsquo;s one tap away in the
+              draft room and can feed your autopick.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -443,6 +458,12 @@ function ScheduledHero({
               </Link>
             </Button>
             <PracticeCta leagueId={leagueId} />
+            {/* §7.4's reverse entry (M2 L.B4.2). */}
+            <AddDraftListCta
+              leagueId={leagueId}
+              leagueName={data.league.name}
+              scoringSystemId={data.league.scoring_system_id}
+            />
           </div>
         </CardContent>
       </Card>

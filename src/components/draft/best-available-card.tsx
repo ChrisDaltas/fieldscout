@@ -58,8 +58,12 @@ interface BestAvailableCardProps {
 }
 
 /** Best available — flush PlayerRow list over real player data; the top row
- *  gets the Draft action, the rest queue. Currently unmounted: L.B4.2's
- *  best-available-from-my-board helper (§8.9) is its consumer. */
+ *  gets the Draft action, the rest queue. STILL UNMOUNTED, deliberately:
+ *  L.B4.2 landed §8.9's best-available-from-MY-BOARD helper inside
+ *  `my-lists-panel.tsx` (board-ordered — the spec's helper reads the
+ *  user's primary board, not projections), so this projection-ranked card
+ *  never gained a consumer. It keeps the C26 id-subtraction and stays for
+ *  a future projections surface (or M3's auction room) to mount. */
 export function BestAvailableCard({
   draftedIds,
   queuedIds,

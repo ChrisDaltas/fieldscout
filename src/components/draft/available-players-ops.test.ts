@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   bigBoardRankById,
+  decorateOverlay,
   decoratePool,
   draftedIdSet,
+  onlyOnListRows,
+  overlayMaps,
   subtractDrafted,
   type PoolPlayer,
 } from './available-players-ops'
@@ -92,5 +95,67 @@ describe('my-queue ops (E17 + §15.6)', () => {
     expect(appendId(['p1'], 'p1')).toEqual(['p1'])
     expect(removeId(['p1', 'p2'], 'p1')).toEqual(['p2'])
     expect(removeId(['p1'], 'nope')).toEqual(['p1'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §8.9 list overlay (M2 task L.B4.2)
+// ---------------------------------------------------------------------------
+
+describe('list overlay on the pool (§8.9; L.B4.2)', () => {
+  const LIST_ROWS = [
+    { player_id: 'p2', tier: 'A' },
+    { player_id: 'p9', tier: 'A' },
+    { player_id: 'p1', tier: 'B' },
+    { player_id: 'p1', tier: 'C' }, // duplicate id: first occurrence wins
+  ]
+
+  it('overlayMaps ranks by the given (canonical) order, first occurrence wins', () => {
+    const maps = overlayMaps(LIST_ROWS)
+    expect(maps.rankById.get('p2')).toBe(1)
+    expect(maps.rankById.get('p1')).toBe(3)
+    expect(maps.tierById.get('p1')).toBe('B')
+  })
+
+  it('decorateOverlay annotates matching rows and leaves the rest null (the rank/tier COLUMN, not a filter)', () => {
+    const maps = overlayMaps(LIST_ROWS)
+    const rows = decorateOverlay(
+      [player('p1', 'One'), player('p5', 'Five')].map((p) => ({ ...p, bigBoardRank: null })),
+      maps,
+    )
+    expect(rows[0]).toMatchObject({ listRank: 3, listTier: 'B' })
+    expect(rows[1]).toMatchObject({ listRank: null, listTier: null })
+  })
+
+  it('onlyOnListRows builds FROM the list (window-independent), keeps list order, drops drafted (E17)', () => {
+    const identity = new Map(
+      [
+        player('p1', 'Alpha One', { adp: 44.5 }),
+        player('p2', 'Bravo Two'),
+        player('p9', 'Charlie Nine'),
+      ].map((p) => [p.id, p]),
+    )
+    const rows = onlyOnListRows(LIST_ROWS, identity, new Set(['p9']), '', '')
+    // p2 first (rank 1), p9 drafted out, p1 once (dupe collapsed).
+    expect(rows.map((r) => r.id)).toEqual(['p2', 'p1'])
+    expect(rows[1]?.adp).toBe(44.5)
+  })
+
+  it('onlyOnListRows narrows by search and position client-side, and skips identities not yet loaded', () => {
+    const identity = new Map([
+      ['p1', player('p1', 'Alpha One', { position: 'RB' })],
+      ['p2', player('p2', 'Bravo Two', { position: 'WR' })],
+    ])
+    expect(onlyOnListRows(LIST_ROWS, identity, new Set(), '', 'RB').map((r) => r.id)).toEqual([
+      'p1',
+    ])
+    expect(
+      onlyOnListRows(LIST_ROWS, identity, new Set(), 'bravo', '').map((r) => r.id),
+    ).toEqual(['p2'])
+    // p9 has no identity row yet — skipped, never guessed.
+    expect(onlyOnListRows(LIST_ROWS, identity, new Set(), '', '').map((r) => r.id)).toEqual([
+      'p2',
+      'p1',
+    ])
   })
 })

@@ -21,6 +21,9 @@ export interface PlayerIdentity {
   team: string | null
   headshot_url: string | null
   status: string | null
+  /** Optional: present since L.B4.2 (the pool's "only my list" rows render
+   *  ADP from this read); older shapes without it stay assignable. */
+  adp?: number | null
 }
 
 export function usePlayersByIds(ids: readonly string[]) {
@@ -35,7 +38,7 @@ export function usePlayersByIds(ids: readonly string[]) {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('players')
-        .select('id, full_name, position, team, headshot_url, status')
+        .select('id, full_name, position, team, headshot_url, status, adp')
         .in('id', sortedIds)
       if (error) throw error
       return (data ?? []) as PlayerIdentity[]

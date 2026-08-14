@@ -389,4 +389,37 @@ describe('league-lists API over the local stack (L.B4.1)', () => {
     const { data: survivors } = await ownerClient.from('lists').select('id').eq('id', list2Id)
     expect(survivors).toHaveLength(1)
   })
+
+  it('R130: a shared attachment of a since-soft-deleted list returns OWNER-only — gone from a fellow member’s GET, kept (dangling) for the owner to detach', async () => {
+    // State: list1 is attached (attach1Id), SHARED and primary; the member
+    // also holds their own attached list (positive control). The owner
+    // soft-deletes list1 — the attachment row survives (no CASCADE), but the
+    // 067 shared-private read carries `deleted_at IS NULL`, so the member's
+    // embed goes null: a row they can neither open nor detach (D106(7)
+    // records only the OWNER's detach rationale). The L.B4.2 decision pins
+    // the fix at the GET layer: null-embed rows are returned owner-only, so
+    // EVERY consumer (panel, modal, future) is correct by construction.
+    const { error: softDeleteError } = await ownerClient
+      .from('lists')
+      .update({ deleted_at: '2026-08-13T00:00:00+00:00' })
+      .eq('id', list1Id)
+    expect(softDeleteError).toBeNull()
+
+    const theirs = await listLeagueLists(memberClient, leagueId, memberId)
+    expect(theirs.status).toBe(200)
+    const memberRows = rowsOf(theirs)
+    // The dangling shared attachment is GONE for the non-owner…
+    expect(memberRows.filter((row) => row.list_id === list1Id)).toHaveLength(0)
+    // …while their own attachment still lists (the filter is row-scoped,
+    // not a blunt empty).
+    expect(memberRows.filter((row) => row.owner_id === memberId)).toHaveLength(1)
+
+    // The OWNER keeps the row — their panel surfaces it for detach
+    // (D106(7)); detaching it still works.
+    const mine = await listLeagueLists(ownerClient, leagueId, ownerId)
+    const dangling = rowsOf(mine).find((row) => row.list_id === list1Id)
+    expect(dangling).toBeDefined()
+    const detached = await detachLeagueList(ownerClient, leagueId, dangling?.id ?? '')
+    expect(detached.status).toBe(200)
+  })
 })

@@ -219,6 +219,13 @@ interface HeroProps {
    */
   folders: ListFolder[]
   onMoveToFolder: (folderId: string | null) => void
+  /**
+   * "Attach to league" (M2 L.B4.2 — spec §7.4's list-side entry point).
+   * Optional and handler-gated like the rename pencil: the panel passes it
+   * only when the leagues flag is on AND the viewer owns the list (attach
+   * requires ownership), so the item never renders where it can't work.
+   */
+  onAttachToLeague?: () => void
 }
 
 export function ListDetailHero({
@@ -238,6 +245,7 @@ export function ListDetailHero({
   onTogglePin,
   folders,
   onMoveToFolder,
+  onAttachToLeague,
 }: HeroProps) {
   return (
     <ListHeroShell
@@ -312,6 +320,14 @@ export function ListDetailHero({
                   )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+            )}
+            {onAttachToLeague && (
+              // §7.4 (M2 L.B4.2): the list-side "Attach to league" entry —
+              // handler-gated, see the prop's doc for when the panel passes it.
+              <DropdownMenuItem onSelect={onAttachToLeague}>
+                <Icon name="cup" size={13} />
+                Attach to league
+              </DropdownMenuItem>
             )}
             <DropdownMenuItem onSelect={onDuplicate}>
               <Icon name="layers" size={13} />

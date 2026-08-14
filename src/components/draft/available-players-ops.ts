@@ -66,3 +66,87 @@ export function decoratePool(
 ): PoolRow[] {
   return players.map((p) => ({ ...p, bigBoardRank: bigBoardRanks.get(p.id) ?? null }))
 }
+
+// ---------------------------------------------------------------------------
+// §8.9 list overlay (M2 task L.B4.2) — rank/tier column + "only my list"
+// ---------------------------------------------------------------------------
+
+export interface ListOverlayMaps {
+  rankById: Map<string, number>
+  tierById: Map<string, string | null>
+}
+
+export interface OverlayPoolRow extends PoolRow {
+  listRank: number | null
+  listTier: string | null
+}
+
+/** `list_players` rows (ALREADY in the canonical `position, player_id`
+ *  order — D113(5): one ordering, every consumer) → rank/tier maps. Rank is
+ *  the 1-based index; first occurrence wins. */
+export function overlayMaps(
+  rows: ReadonlyArray<{ player_id: string; tier: string | null }>,
+): ListOverlayMaps {
+  const rankById = new Map<string, number>()
+  const tierById = new Map<string, string | null>()
+  rows.forEach((row, index) => {
+    if (!rankById.has(row.player_id)) {
+      rankById.set(row.player_id, index + 1)
+      tierById.set(row.player_id, row.tier)
+    }
+  })
+  return { rankById, tierById }
+}
+
+/** Annotate pool rows with the overlaid list's rank/tier ("show each
+ *  player's rank/tier from that list as a column" — §8.9). */
+export function decorateOverlay(rows: readonly PoolRow[], maps: ListOverlayMaps): OverlayPoolRow[] {
+  return rows.map((row) => ({
+    ...row,
+    listRank: maps.rankById.get(row.id) ?? null,
+    listTier: maps.tierById.get(row.id) ?? null,
+  }))
+}
+
+/**
+ * The §8.9 "only players on this list" filter — built FROM the list, not by
+ * filtering the bounded pool window: a list player whose ADP falls outside
+ * the browse window must still show (the "exactly 1000 rows" honesty rule
+ * applied to the overlay: the filter claims the LIST, so it must reach all
+ * of it). Rows keep list order; drafted players leave (E17); search and
+ * position narrow client-side (a list is small — no server round trip).
+ * Identities still loading are skipped — the caller renders its pending
+ * state off the identity query, never a guessed row.
+ */
+export function onlyOnListRows(
+  listRows: ReadonlyArray<{ player_id: string; tier: string | null }>,
+  identityById: ReadonlyMap<
+    string,
+    {
+      id: string
+      full_name: string
+      position: string
+      team: string | null
+      headshot_url: string | null
+      status: string | null
+      adp?: number | null
+    }
+  >,
+  draftedIds: ReadonlySet<string>,
+  search: string,
+  position: string,
+): PoolPlayer[] {
+  const needle = search.trim().toLowerCase()
+  const out: PoolPlayer[] = []
+  const seen = new Set<string>()
+  for (const row of listRows) {
+    if (seen.has(row.player_id) || draftedIds.has(row.player_id)) continue
+    seen.add(row.player_id)
+    const identity = identityById.get(row.player_id)
+    if (!identity) continue
+    if (position && identity.position !== position) continue
+    if (needle && !identity.full_name.toLowerCase().includes(needle)) continue
+    out.push({ ...identity, adp: identity.adp ?? null })
+  }
+  return out
+}
