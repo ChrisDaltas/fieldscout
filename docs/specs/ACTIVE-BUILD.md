@@ -9,31 +9,54 @@
 
 ---
 
-## Active: Redraft Leagues M2 — resumed at **L.B3.1**
+## Active: Redraft Leagues M3 — Auction engine (breakdown first)
 
-*(Set 2026-08-13 — **ruled by Chris in-session** ("Resume M2 at L.B3.1", the
-recommended option of the Round-2-complete question), recorded here per this
-file's rule that the post-Round-2 direction is a Chris decision. M2 was paused
-2026-08-09 at L.B3.1, mid-milestone, deliberately; nothing in its PROGRESS was
-edited to pause it, so the loop picks up exactly where it left off.)*
+*(Set 2026-08-14 — **ruled by Chris in-session** ("M3 — Auction engine", the
+recommended option of the M2-gate-passed question), recorded here per this
+file's rule. **M2 passed its gate 2026-08-14** (L.B7.1, `npm run test:gate:m2`
+green end-to-end — see the PROGRESS §1 row and the gate session-log entry).
+In the same ruling Chris settled **R278**: D39-class browser-pass evidence is
+**prose + DB corroboration** (the merged-PR precedent) — recorded at the
+standing sites in PROGRESS.)*
+
+**No `tasks-M3` breakdown exists yet.** Per the M2 precedent (tasks-M2 was
+Architect-authored and Chris-approved before the build started), **the first
+cycle of this build is the Architect breakdown**: author
+`docs/specs/tasks-M3-auction.md` (task text, interface sketches, standing
+rules, conflict report, ledger dispositions, per-task Builder prompts — the
+tasks-M2 §-structure) as a PR that **stays open for Chris's approval**. The
+loop does not build `L.C*` tasks until that PR is approved and merged, and
+PROGRESS §2 gains the M3 checklist.
 
 | | |
 | --- | --- |
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-leagues.md` |
-| **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4) |
-| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` |
-| **Task breakdown** | `docs/specs/tasks-M2-snake-draft.md` (task text §6; standing rules §4) |
-| **Task id prefix** | `L.B` |
+| **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4 — §3 M3 row: Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E) |
+| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` (§8.6 auction incl. §8.6.7–8 endgame/solvency; L.C1) |
+| **Task breakdown** | `docs/specs/tasks-M3-auction.md` — **to be authored** (the first cycle) |
+| **Task id prefix** | `L.C` |
 
-**Standing constraints:** the ones the M2 breakdown §4 and CLAUDE.md already
-carry (spec is LAW; server-authoritative always; branch + PR per task; proof
-chains shown, not claimed). The next task, **L.B3.1**, is the repo's first
-realtime *client* work and a **re-skin in place** — the CLAUDE.md redesign
-rules (single theme, tokens, no resting elevation) apply to all L.B3.x room UI.
+**Standing constraints:** CLAUDE.md + the M2-era standing rules carry forward
+(spec is LAW; server-authoritative always; branch + PR per task; proof chains
+shown, not claimed; the realtime doctrine and draft-lock discipline as landed).
+Inherited M3 notes already recorded: tasks-M2 §11's M3-inherits line
+(presence-only `realtime.messages` INSERT posture — M3's auction realtime
+decides whether to open Client Broadcast for bid-pulse UX, deliberately);
+auction refusal seams in 066/071 name M3; the 2026 test-cohort note (CLAUDE.md)
+makes **auction + custom scoring the headline feedback goals** — the custom
+scoring editor un-punt still needs its spec changelog entry (Architect) before
+any build touches it.
 
-**Do not build `LV.*` or Scout tasks while M2 is active.** If a cycle finds
-itself editing the lists collection page or `src/lib/metrics/**`, it has read
-the wrong PROGRESS — stop and re-read this file.
+**Do not build `LV.*` or Scout tasks while M3 is active.**
+
+---
+
+## Completed: Redraft Leagues M2 — Snake draft engine
+
+*(🟢 **Gate passed 2026-08-14** — L.B7.1, `npm run test:gate:m2` green
+end-to-end in one run; every §2 checkbox checked; F49/F52/F53/F54 discharged.
+PROGRESS-leagues.md §1 + the 2026-08-14 session-log entry are the record.
+M3 continues in the same PROGRESS file under the `L.C` prefix.)*
 
 ---
 
