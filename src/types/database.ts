@@ -297,6 +297,117 @@ export type Database = {
         }
         Relationships: []
       }
+      draft_bids: {
+        Row: {
+          action_id: string | null
+          amount: number
+          created_at: string | null
+          draft_id: string
+          id: string
+          league_id: string
+          nomination_seq: number
+          player_id: string
+          team_id: string
+        }
+        Insert: {
+          action_id?: string | null
+          amount: number
+          created_at?: string | null
+          draft_id: string
+          id?: string
+          league_id: string
+          nomination_seq: number
+          player_id: string
+          team_id: string
+        }
+        Update: {
+          action_id?: string | null
+          amount?: number
+          created_at?: string | null
+          draft_id?: string
+          id?: string
+          league_id?: string
+          nomination_seq?: number
+          player_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_bids_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_bids_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_bids_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_bids_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      draft_dnd_marks: {
+        Row: {
+          created_at: string | null
+          draft_id: string
+          id: string
+          player_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          draft_id: string
+          id?: string
+          player_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          draft_id?: string
+          id?: string
+          player_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_dnd_marks_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_dnd_marks_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_dnd_marks_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       draft_liveness: {
         Row: {
           draft_id: string
@@ -468,6 +579,7 @@ export type Database = {
       }
       drafts: {
         Row: {
+          budget_adjustments: Json
           completed_at: string | null
           config: Json
           created_at: string | null
@@ -490,6 +602,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          budget_adjustments?: Json
           completed_at?: string | null
           config?: Json
           created_at?: string | null
@@ -512,6 +625,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          budget_adjustments?: Json
           completed_at?: string | null
           config?: Json
           created_at?: string | null
@@ -3572,7 +3686,6 @@ export const Constants = {
 
 
 
-
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -3584,8 +3697,10 @@ export const Constants = {
 export type AiCallLog = Database['public']['Tables']['ai_call_log']['Row']
 export type AiPersona = Database['public']['Tables']['ai_personas']['Row']
 export type Draft = Database['public']['Tables']['drafts']['Row']
+export type DraftBid = Database['public']['Tables']['draft_bids']['Row']
 export type DraftPick = Database['public']['Tables']['draft_picks']['Row']
 export type DraftLiveness = Database['public']['Tables']['draft_liveness']['Row']
+export type DraftDndMark = Database['public']['Tables']['draft_dnd_marks']['Row']
 export type DraftQueueEntry = Database['public']['Tables']['draft_queues']['Row']
 export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
