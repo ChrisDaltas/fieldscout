@@ -9,7 +9,7 @@
 
 ---
 
-## Active: Redraft Leagues M3 — Auction engine (breakdown first)
+## Active: Redraft Leagues M3 — Auction engine (in build)
 
 *(Set 2026-08-14 — **ruled by Chris in-session** ("M3 — Auction engine", the
 recommended option of the M2-gate-passed question), recorded here per this
@@ -19,21 +19,20 @@ In the same ruling Chris settled **R278**: D39-class browser-pass evidence is
 **prose + DB corroboration** (the merged-PR precedent) — recorded at the
 standing sites in PROGRESS.)*
 
-**No `tasks-M3` breakdown exists yet.** Per the M2 precedent (tasks-M2 was
-Architect-authored and Chris-approved before the build started), **the first
-cycle of this build is the Architect breakdown**: author
-`docs/specs/tasks-M3-auction.md` (task text, interface sketches, standing
-rules, conflict report, ledger dispositions, per-task Builder prompts — the
-tasks-M2 §-structure) as a PR that **stays open for Chris's approval**. The
-loop does not build `L.C*` tasks until that PR is approved and merged, and
-PROGRESS §2 gains the M3 checklist.
+**The breakdown is LAW — Chris approved and merged PR #150 (2026-08-16).**
+`docs/specs/tasks-M3-auction.md` sequences the milestone (15 tasks, 5 lanes;
+spec at **v2.10.1** with every C-row resolved or ruled); PROGRESS §2 carries
+the M3 checklist and §4/§6 carry D126–D143 + F57. **The loop builds `L.C*`
+tasks in lane order, starting L.C1.1** (migration 083 — schema lane opener).
+The C43 projections-splits sync runs as an authorized standalone data-task PR
+in parallel with the loop, never an `L.C` dependency.
 
 | | |
 | --- | --- |
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-leagues.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4 — §3 M3 row: Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E) |
 | **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` (§8.6 auction incl. §8.6.7–8 endgame/solvency; L.C1) |
-| **Task breakdown** | `docs/specs/tasks-M3-auction.md` — **to be authored** (the first cycle) |
+| **Task breakdown** | `docs/specs/tasks-M3-auction.md` (Architect; **approved & merged 2026-08-16**, PR #150) |
 | **Task id prefix** | `L.C` |
 
 **Standing constraints:** CLAUDE.md + the M2-era standing rules carry forward
