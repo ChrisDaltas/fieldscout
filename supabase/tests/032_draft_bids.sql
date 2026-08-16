@@ -11,10 +11,19 @@
 --     privileged double-insert of the same (draft_id, action_id) → 23505,
 --     while a SECOND NULL-action_id row inserts cleanly and the NULL count
 --     lands at exactly 2 (system rows — the tick's opening bids, D129(2)/
---     D130). Dropping the WHERE action_id IS NOT NULL clause makes the
---     second NULL insert collide → the coexistence pins go RED (this
---     task's deliberate break probe), and the indexdef golden pin trips on
---     predicate drift even without a probe.
+--     D130). **Break-probe routing (D144(2), corrected — read this before
+--     designing a probe against this file):** dropping the
+--     `WHERE action_id IS NOT NULL` clause does NOT turn the coexistence
+--     pins RED. Postgres UNIQUE is NULLS DISTINCT by default, so a
+--     NON-partial `UNIQUE(draft_id, action_id)` still admits BOTH NULL rows
+--     and those pins stay GREEN (verified live: drop + recreate non-partial
+--     → Failed 1/71, the indexdef golden ONLY). The WHERE-drop tripwire is
+--     therefore the **indexdef golden pin** — this task's deliberate break
+--     probe. The C39 regression itself (`action_id` back to §12.5's printed
+--     NOT NULL) fails the `col_is_null` pin and kills the system-row fixture
+--     with 23502, aborting the suite after 34 asserts — before section E's
+--     coexistence pins ever run. *(019's banner carries the identical latent
+--     misstatement about `uniq_draft_action`; record-only, D144(2).)*
 --   * R43-lesson CHECKs proven behaviorally on BOTH sides of each
 --     boundary: amount −1 → 23514 and amount 0 lives (C38: $0 opening
 --     bids are legal when auction_min_bid = 0); nomination_seq 0 → 23514
@@ -27,6 +36,14 @@
 --     Writes RLS silently filters (UPDATE/DELETE) use the RETURNING-count
 --     pattern preceded by a same-role SELECT-sees-N pin (or a privileged
 --     row-exists pin for rows the role cannot see); INSERT expects 42501.
+--     **The matrix is LITERAL, not diagonal (R307):** all four roles ×
+--     INSERT/UPDATE/DELETE are probed on `draft_bids`, and every role's
+--     cross-user write is probed on `draft_dnd_marks` — the seven cells the
+--     original sweep skipped (outsider UPDATE+DELETE on both tables, anon
+--     DELETE on bids, anon UPDATE on marks, and every commissioner write
+--     against another member's marks) now carry their own pins, each
+--     bracketed by a privileged count BEFORE and AFTER so a zero-count
+--     proves refusal rather than an empty target.
 --   * draft_dnd_marks own-rows BOTH directions: the author reads/writes
 --     their own marks (INSERT lives, UPDATE/DELETE RETURNING-1) while
 --     ANOTHER member's marks are invisible (count 0) AND unwritable
@@ -55,7 +72,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(71);
+select plan(86);
 
 -- ---------------------------------------------------------------------------
 -- A. draft_bids shape (§12.5 + the C39 delta + the R43 CHECKs)
@@ -231,7 +248,7 @@ select is(
   (select count(*) from draft_bids
    where draft_id = 'e3000000-0000-4000-8000-000000000001' and action_id is null),
   2::bigint,
-  'TWO NULL-action_id bids coexist (C39 — a non-partial unique fails here; THE break-probe pin)');
+  'TWO NULL-action_id bids coexist (C39 — the system-row property. NOT the WHERE-drop tripwire: a non-partial unique still admits both under NULLS DISTINCT, so this pin stays GREEN under that probe — the indexdef golden above is the tripwire. D144(2))');
 
 -- R43 CHECK boundaries, both sides.
 select throws_ok(
@@ -412,6 +429,48 @@ select is(
   1::bigint,
   'commissioner sees ONLY their own d1 mark (1 row — u2''s 2 marks invisible even to the commish; no §12.6-style read-all comment exists on §12.24)');
 
+-- The commissioner's DND writes against ANOTHER member's marks — the banner's
+-- "even for the commissioner" claim made literal (R307; §4.2 full matrix).
+-- Privileged baseline first: the rows the refusals are probed against.
+reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks
+             where user_id = '8b000000-0000-4000-8000-000000000002') $$,
+  $$ values (6::bigint, 2::bigint) $$,
+  'privileged baseline BEFORE the commissioner DND write sweep: 6 bid rows exist and u2 holds 2 marks (invisible to the commish — the rows the next three refusals are probed against)');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8b000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+
+select throws_ok(
+  $$ insert into draft_dnd_marks (draft_id, user_id, player_id)
+     values ('e3000000-0000-4000-8000-000000000001',
+             '8b000000-0000-4000-8000-000000000002', 'pgtap-ab-p4') $$,
+  '42501', null,
+  'commissioner INSERT spoofing another user_id denied — no commissioner carve-out on §12.24''s WITH CHECK');
+select results_eq(
+  $$ with w as (update draft_dnd_marks set created_at = now()
+                where user_id = '8b000000-0000-4000-8000-000000000002' returning 1)
+     select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'commissioner UPDATE on another member''s marks affects 0 rows (RETURNING-count against the privileged baseline)');
+select results_eq(
+  $$ with d as (delete from draft_dnd_marks
+                where user_id = '8b000000-0000-4000-8000-000000000002' returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'commissioner DELETE on another member''s marks affects 0 rows (RETURNING-count)');
+
+reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks
+             where user_id = '8b000000-0000-4000-8000-000000000002') $$,
+  $$ values (6::bigint, 2::bigint) $$,
+  'privileged baseline AFTER the commissioner sweep: both counts unchanged — the writes were refused, not merely aimed at nothing');
+set local role authenticated;
+
 -- ---------------------------------------------------------------------------
 -- H. u3: OUTSIDER (authenticated, no membership anywhere).
 -- ---------------------------------------------------------------------------
@@ -434,6 +493,51 @@ select is(
   (select count(*) from draft_dnd_marks),
   0::bigint,
   'outsider sees ZERO DND marks (their own would show; they have none)');
+
+-- Outsider client writes on BOTH tables — four of the seven cells the banner
+-- claimed and the original sweep skipped (R307). Run BEFORE the residual
+-- insert below, so the outsider owns no row of either table here.
+reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks) $$,
+  $$ values (6::bigint, 4::bigint) $$,
+  'privileged baseline BEFORE the outsider write sweep: 6 bid rows + 4 DND marks exist (all invisible to the outsider — the rows the next four zero-counts are probed against)');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8b000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+
+select results_eq(
+  $$ with w as (update draft_bids set amount = 99 returning 1)
+     select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'outsider UPDATE on draft_bids affects 0 rows (RETURNING-count)');
+select results_eq(
+  $$ with d as (delete from draft_bids returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'outsider DELETE on draft_bids affects 0 rows (RETURNING-count)');
+select results_eq(
+  $$ with w as (update draft_dnd_marks set created_at = now() returning 1)
+     select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'outsider UPDATE on draft_dnd_marks affects 0 rows (RETURNING-count)');
+select results_eq(
+  $$ with d as (delete from draft_dnd_marks returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'outsider DELETE on draft_dnd_marks affects 0 rows (RETURNING-count)');
+
+reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks) $$,
+  $$ values (6::bigint, 4::bigint) $$,
+  'privileged baseline AFTER the outsider sweep: both counts unchanged — nothing was updated or deleted behind the zero-counts');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8b000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+
 select lives_ok(
   $$ insert into draft_dnd_marks (draft_id, user_id, player_id)
      values ('e3000000-0000-4000-8000-000000000001',
@@ -460,17 +564,45 @@ select throws_ok(
      values ('e3000000-0000-4000-8000-000000000001',
              '8b000000-0000-4000-8000-000000000002', 'pgtap-ab-p1') $$,
   '42501', null, 'anon INSERT into draft_dnd_marks denied');
+
+-- Privileged baseline for anon's write sweep (anon sees neither table, so the
+-- zero-counts need a row-exists pin to discriminate — §4.2, R307).
+reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks) $$,
+  $$ values (6::bigint, 5::bigint) $$,
+  'privileged baseline BEFORE the anon write sweep: 6 bid rows + 5 DND marks exist (4 fixture + the outsider''s recorded residual) — the rows the next four zero-counts are probed against');
+set local role anon;
+select set_config('request.jwt.claims', '{"role": "anon"}', true);
+
 select results_eq(
   $$ with w as (update draft_bids set amount = 99 returning 1)
      select count(*) from w $$,
   $$ values (0::bigint) $$,
   'anon UPDATE on draft_bids affects 0 rows');
 select results_eq(
+  $$ with d as (delete from draft_bids returning 1)
+     select count(*) from d $$,
+  $$ values (0::bigint) $$,
+  'anon DELETE on draft_bids affects 0 rows (RETURNING-count — the seventh skipped cell)');
+select results_eq(
+  $$ with w as (update draft_dnd_marks set created_at = now() returning 1)
+     select count(*) from w $$,
+  $$ values (0::bigint) $$,
+  'anon UPDATE on draft_dnd_marks affects 0 rows (RETURNING-count)');
+select results_eq(
   $$ with d as (delete from draft_dnd_marks returning 1)
      select count(*) from d $$,
   $$ values (0::bigint) $$,
   'anon DELETE on draft_dnd_marks affects 0 rows');
+
 reset role;
+select results_eq(
+  $$ select (select count(*) from draft_bids),
+            (select count(*) from draft_dnd_marks) $$,
+  $$ values (6::bigint, 5::bigint) $$,
+  'privileged baseline AFTER the anon sweep: both counts unchanged');
 
 select * from finish();
 rollback;

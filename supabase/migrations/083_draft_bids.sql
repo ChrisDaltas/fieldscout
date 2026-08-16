@@ -23,6 +23,18 @@
 --          NOT NULL would make every system nomination unrecordable while
 --          the partial unique still dedupes every client retry (E2).
 --          Spec erratum rides this PR (changelog v2.10.2).
+--          **ARBITER CONSTRAINT for 085's E2 path (R310) — partial and
+--          non-partial ARE behaviorally distinguishable here:** a bare
+--          `ON CONFLICT (draft_id, action_id)` does NOT match a PARTIAL
+--          index and raises **42P10** at runtime ("no unique or exclusion
+--          constraint matching the ON CONFLICT specification"); proven
+--          under savepoints on this exact schema. `draft_place_bid` /
+--          `draft_nominate` must therefore either repeat the predicate —
+--          `ON CONFLICT (draft_id, action_id) WHERE action_id IS NOT NULL`
+--          (INSERT 0 1) — or follow the house E2 pattern, which is the
+--          select-then-insert replay lookup under the draft lock
+--          (066:917), not an upsert. The indexdef golden in pgTAP 032 is
+--          what keeps this predicate honest.
 --        * the R43-lesson CHECKs at creation (printed semantics become
 --          constraints): amount >= 0 (bids are non-negative dollars;
 --          $0 is legal when auction_min_bid = 0 — C38) and
@@ -124,7 +136,10 @@ CREATE POLICY "Bids viewable by league members"
 -- No UPDATE/DELETE policy for anyone: bid history is append-only (D131(2)).
 
 -- E2 idempotency for client bids; system rows carry NULL and coexist
--- freely (C39 — the 065 uniq_draft_action pattern):
+-- freely (C39 — the 065 uniq_draft_action pattern). NOTE (R310): a bare
+-- ON CONFLICT (draft_id, action_id) arbiter cannot match this PARTIAL index
+-- (42P10 at runtime) — 085 repeats the predicate or uses the select-then-
+-- insert replay lookup under the draft lock (066:917). See the banner.
 CREATE UNIQUE INDEX uniq_draft_bid_action
   ON draft_bids(draft_id, action_id) WHERE action_id IS NOT NULL;
 -- §12.5: high-bid-per-nomination scan (award path D130 + the room's feed):
