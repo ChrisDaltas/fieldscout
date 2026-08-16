@@ -1,7 +1,7 @@
 # PRD / Spec: Redraft Leagues + Custom Draft Engine
 
 **Feature:** Real, playable weekly redraft fantasy football leagues with a fully configurable draft room and an all-powerful, fully-audited commissioner.
-**Version:** 2.10.1 (Draft)
+**Version:** 2.10.2 (Draft)
 **Author:** Chris Daltas
 **Date:** July 16, 2026
 **Status:** Draft — ready for Claude Code build planning · v2.0 adds scale engineering, the schedule engine + Remix, the stats/NFL-data contract, game-day transaction locks, and operations. Companion doc: `docs/specs/delivery-plan-redraft-leagues.md` (implementation / QA / agent operating model). v2.1 adds the identity contract, seat-targeted invites, and the franchise/manager lifecycle (§7.2.1). v2.2 replaces open custom scoring with an 8-template v1 catalog and introduces **advanced-stat scoring** (air yards, YAC, yards after contact) via the FieldScout Alpha/Ultra templates (§7.3.3, §23.5, Appendix B). v2.3 promotes **Mock Draft Mode** to a core feature (§8.8) and pins the **scoring extensibility contract** — new stats become scorable without engine changes (§7.3.3, §23.5). v2.4 completes the UI inventory: every workflow, page, and control from v2.0–v2.3 is enumerated in §16 (routes/components extended; new §16.5 workflow & states audit). v2.5 adds the **`SyntheticStatsProvider`** (§23.6) so the entire pipeline — draft through live scoring through Alpha/Ultra — is buildable and demonstrably working before any stats vendor is paid. v2.6 locks v1 league sizes to **8–16** (18/20 and odd counts follow next season), makes email the primary invite channel for people without an account yet, sets the v1 playoff tiebreaker chain (Points For → Head-to-head → Points Against), and generalizes commissioner "Act as Manager" to any team, not just orphaned ones. v2.7 re-scopes advanced-stat scoring: the named tracking/charted stats are **illustrative examples**, deferred until a paid/owned real-time stats source is funded; v1 commits to the 6 parity templates plus the §7.3.3 extensibility contract, with the tier machinery proven on placeholder keys.
@@ -808,7 +808,8 @@ CREATE TABLE drafts (
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  budget_adjustments JSONB NOT NULL DEFAULT '{}'   -- v2.10.2 (D127): auction commissioner budget edits — team_id → integer delta; budgets stay DERIVED (never stored counters), this map is the one stored input
 );
 ALTER TABLE drafts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Drafts viewable by league members"
@@ -857,10 +858,14 @@ CREATE TABLE draft_bids (
   player_id TEXT REFERENCES players(id) NOT NULL,
   team_id UUID REFERENCES teams(id) NOT NULL,
   amount INTEGER NOT NULL,
-  action_id UUID NOT NULL,                          -- client-generated; dedupes retries (idempotency)
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(draft_id, action_id)
+  action_id UUID,                                   -- client-generated; dedupes retries (idempotency); NULL for system rows (v2.10.2)
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- v2.10.2 (C39 erratum): action_id is NULLABLE and the idempotency unique is
+-- PARTIAL — system rows (the tick's opening bid on a system nomination,
+-- D129(2)/D130) have no client action; the 065 uniq_draft_action pattern:
+CREATE UNIQUE INDEX uniq_draft_bid_action
+  ON draft_bids(draft_id, action_id) WHERE action_id IS NOT NULL;
 ALTER TABLE draft_bids ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Bids viewable by league members"
   ON draft_bids FOR SELECT USING (is_league_member(league_id));
@@ -2245,6 +2250,7 @@ Draft-order reveal animation, notifications wiring (league_invite, trade_proposa
 ---
 
 ## Changelog
+- **v2.10.2 (2026-08-16):** **Schema errata from L.C1.1/migration 083 (the fold-back rule; Builder-carriable per tasks-M3 C39/D127).** **(1) §12.5 `draft_bids.action_id` → NULLABLE with a PARTIAL idempotency unique** (`uniq_draft_bid_action … WHERE action_id IS NOT NULL` replaces the printed inline `UNIQUE(draft_id, action_id)`): system rows — the tick's opening bid on a system nomination (D129(2)/D130) — have no client action; the printed `NOT NULL` would make every system nomination unrecordable while the partial unique still dedupes every client retry (E2). The 065 `uniq_draft_action` precedent exactly (tasks-M3 C39). **(2) §12.3 `drafts` gains `budget_adjustments JSONB NOT NULL DEFAULT '{}'`** (team_id → integer delta): D127 keeps budgets DERIVED — never stored counters — but the §8.7 "Adjust auction budget" control needs its one stored input; validated per E28 at edit time, room-visible via the D134 payload extension, cleared by `draft_reset` (R302). Spec-absent schema recorded per the D102 precedent. Both shipped in migration 083 with pgTAP 032 pins (partial-unique proven directly; NULL-coexistence; CHECK boundaries `amount >= 0` / `nomination_seq >= 1` — the R43 lesson at creation).
 - **v2.10.1 (2026-08-16):** **The three v2.10 open items RULED (Chris, in-session).** **(1) End the draft (OQ 19 → ruled):** option (a) — end-as-is: drafted players keep prices, unfilled slots stay empty, league → `in_season`, free agency fills later; the §8.7 row now prints the behavior and the control is a BUILT M3 deliverable (tasks-M3 C41; RPC in L.C1.5, UI in L.C3.2; the completion writer accepts partial rosters; solvency trivially preserved). **(2) DND × autopick (OQ 20 → ruled): DISPLAY-ONLY — the skip recommendation was offered and explicitly declined** (recorded in OQ 20 and §12.24 so it is never re-proposed as an oversight); the engine never reads `draft_dnd_marks`. **(3) Projections-splits sync (C43 → ruled):** a standalone small data task authorized to run IN PARALLEL with the M3 build, never a dependency; L.C3.3's split columns stay code-gated and light up when both land (§16.4 note updated).
 - **v2.10 (2026-08-15):** **Auction-UI product rulings (Chris, in-session 2026-08-15; folded by the M3 Architect per the fold-back rule — PR #150).** **(1) Auction room layout** (§16.4 callout): per-team columns ordered by nomination order (drafted players w/ prices, positions remaining, spots left, remaining budget, max bid); at-a-glance identification of my team / the nominating team / the latest bidder; nomination centerpiece unchanged. **(2) Auction player table** (§16.2 `auction-player-table.tsx` + §16.4): expandable, Show-Drafted toggle, projection/cost columns incl. `players.auction_value`, derived $-per-point and weekly average, bye + SOS, stat-split columns *(gated on a projections-sync extension — the blob is points-only today; tasks-M3 C43)*, position/search/Favorites filters, column customization + reset, row actions Add-to-Targets / Nominate / Do-Not-Draft. **(3) Do-Not-Draft marks** (§12.24 `draft_dnd_marks`, NEW): per-user per-draft, own-rows client-writable (the `draft_queues` precedent), never broadcast; autopick interaction = OQ 20. **(4) "Targets" naming rule** (§8.4): the queue is surfaced as **Targets** in all UI; schema/API names unchanged. **(5) Auction commissioner UX** (§8.7): **pause-first REQUIRED** for undo, Manual Edit Mode, current-nomination edits, and timer edits (supersedes controls-available-live FOR AUCTION; snake divergence recorded, alignment a follow-up row); **Manual Edit Mode** replaces the drag articulation (reset-pick-with-refund / move-with-re-entered-cost modal over the reverse-won-bid + priced-reassign paths); **edit current nomination** = cancel-and-renominate while paused; **End draft** control added with semantics OPEN (OQ 19 — do not build until ruled). Companion: tasks-M3-auction.md amendments (L.C1.1/L.C1.5/L.C3.1/L.C3.2 + new L.C3.3), C41–C43.
 - **v2.9.2 (2026-08-13):** §7.3.8 catalog completion — **`draft.time_zone`** (M2 task L.B3.4; the fold-back rule; PROGRESS D98/C27). §16.4 requires a league reference timezone ("viewer-local with league TZ on hover") and the F38 ledger row routes "the named per-league IANA draft zone" to the draft-setup surface, but no catalog field existed anywhere — §7.3.8 stored only the offset-ISO `draft_scheduled_at` instant. Added **additively**: `time_zone` (valid IANA zone name, nullable, default null) in the §7.3.8 table. **Display-only metadata** — instants stay the authority for every deadline; when set, league-time renders in the named zone via Intl, when null the M1 stored-offset render stands, so no stored league changes behavior until its commissioner picks a zone. The draft-setup surface offers the scheduler's own zone as the one-tap default. Not a product change — §16.4 always required the zone; only the storage was unprinted.
