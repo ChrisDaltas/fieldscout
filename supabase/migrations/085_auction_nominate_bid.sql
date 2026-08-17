@@ -15,7 +15,11 @@
 --   * draft_make_pick is replaced from **066_draft_core_rpcs.sql**
 --     (066:856–1023 — the newest migration that defines it; 084 replaced
 --     draft_start_internal and did NOT touch this function). EVERY LINE is
---     066's except the single RAISE message at 066:941–943. The refusal
+--     066's except TWO hunks (R335 — the first wording said one and was
+--     off by one): the single RAISE message at 066:941–943, and a
+--     five-line comment block inserted above it naming this migration as
+--     the rewording's source. Every gate, guard and write is
+--     byte-identical. The refusal
 --     STAYS — an auction draft never picks through this RPC — it only
 --     stops promising a milestone that has arrived: "the auction engine
 --     lands in M3" becomes "auction drafts pick via nominate and bid",
@@ -47,10 +51,13 @@
 --      open_slots ≥ 1 is the whole roster test — humans may buy a third
 --      QB; need-fit is the SYSTEM path's rule (§8.4), not a human's.
 --
---   2. draft_place_bid(draft, amount, action_id) — §8.6.3.
+--   2. draft_place_bid(draft, amount, action_id,
+--                      nomination_seq DEFAULT NULL,
+--                      player_id DEFAULT NULL) — §8.6.3.
 --      Same five steps, same order. VALIDATE: membership → league →
 --      E2 replay → mock seam → type → status → PHASE (bidding requires a
---      live nomination) → the caller's franchise → not already the high
+--      live nomination) → NOMINATION IDENTITY (the two optional args,
+--      R330 — see below) → the caller's franchise → not already the high
 --      bidder (a self-raise is a mis-click, never a legal bid — it would
 --      let a manager bid against himself to burn the clock) → open_slots
 --      ≥ 1 (E27: a complete roster cannot bid) → amount > high_bid
@@ -83,10 +90,29 @@
 --      standing deadline (the countdown continues uninterrupted — Chris's
 --      explicit clarification), at the threshold the two are equal, and
 --      below it the floor wins. `auction_anti_snipe_seconds = 0` disables
---      extension entirely (a pure fixed window) and is written as its own
---      branch rather than relying on GREATEST: with a deadline that has
---      already passed (a bid that beats the tick to the row), GREATEST
---      would silently hand the draft a fresh now()-based clock.
+--      extension entirely (a pure fixed window) and is written as its OWN
+--      BRANCH rather than relying on GREATEST.
+--      WHAT THE ZERO BRANCH ACTUALLY BUYS (R329 — the first wording was
+--      arithmetically FALSE and is corrected here): at anti_snipe 0 the
+--      two forms agree on every LIVE deadline, because
+--      `now() + make_interval(secs => 0)` IS now() and GREATEST of a
+--      future deadline and now() is that deadline. They differ ONLY when
+--      the standing deadline is not in the future — an ALREADY-EXPIRED
+--      one (a bid that beat the tick to the row), which an unconditional
+--      GREATEST would REWRITE forward to exactly now(), and a NULL one,
+--      which GREATEST (which ignores NULLs) would INVENT out of nothing.
+--      Neither is "a fresh now()-based clock"; both are a disabled
+--      extension touching a clock it has no business touching. 034 §I
+--      pins the expired case on both sides of the branch.
+--      THE COUNTERPART, DELIBERATE AND NOW RECORDED (R329 — previously
+--      silent): with anti_snipe > 0 a bid landing AFTER the clock already
+--      read zero receives a FULL FRESH WINDOW (`now() + anti_snipe`),
+--      because GREATEST(expired, now() + anti) is the latter. That is
+--      D128's letter — the floor is "reset the remaining time TO
+--      anti_snipe" — and it is consistent with snake's posture that the
+--      TICK is the enforcer of expiry, not the deadline column: a bid
+--      that reaches the locked row before the tick closes the nomination
+--      is a legal bid. Pinned in 034 §I.
 --      All arithmetic is SERVER-side (`now()` = the transaction instant —
 --      rule 8: "anti-snipe arithmetic uses server timestamps only").
 --
@@ -137,6 +163,25 @@
 --        bid inside another member's solo practice on the day 089 lands.
 --        The two 034 pins flip in that PR — ledger row F61.
 --
+--   4a. NOMINATION IDENTITY ON THE BID PATH (R330 — added in the M3
+--      batch-3 fix cycle, before this migration ever merged). A bid names
+--      an AMOUNT and nothing else, so a bid in flight across a nomination
+--      boundary was silently applied to whatever player was live when it
+--      EXECUTED: proven on 034's own fixture — t3 nominated p09 at $1
+--      (nomination 2) and a $40 bid intended for p01 (nomination 1) was
+--      ACCEPTED against p09. `draft_place_bid` therefore takes two
+--      OPTIONAL identity arguments — `p_nomination_seq` and `p_player_id`
+--      — and refuses on mismatch with §16.3's "just went off the board"
+--      copy. Both are checked and neither subsumes the other (D143's
+--      cancel-and-renominate reuses a sequence number with a different
+--      player; an undone award returns a player to the pool at a LATER
+--      sequence). Omitted ⇒ shipped behavior, so no caller breaks; the
+--      ROUTE must always send them — F64, and the read-list line on
+--      tasks-M3 §6 L.C2.1. The guard lives in the RPC and not the route
+--      because this is the server-authoritative boundary (spec §4/§8.1):
+--      the sim, the pgTAP suite and every future caller must be safe, and
+--      L.C1.4's completion path awards on exactly this data.
+--
 --   5. RECORDED RESIDUAL (no bespoke message): a RETIRED seat's manager
 --      who reached a bid path would get 084's loud P0002 from
 --      `draft_team_budget` ("not an ACTIVE franchise … retired seats are
@@ -145,6 +190,41 @@
 --      is outside the nomination rotation and the invariant's team set,
 --      and a loud, honest raise beats inventing UX copy for a state this
 --      milestone cannot produce.
+--
+--   6. RECORDED RESIDUAL — THE E2 REPLAY LOOKUP IS VERB-BLIND, BY
+--      CONSTRUCTION (R331; ledger row F65). Both verbs replay on
+--      `(draft_id, action_id)` with no verb discrimination, so an
+--      action_id consumed by one verb returns a false success through the
+--      other: proven live — a member called `draft_nominate` with another
+--      manager's RAISE action_id during the BIDDING phase and got a
+--      SUCCESS payload carrying that raise row (no write, no refusal).
+--      THE CONTRACT, therefore, is per-verb: **an action_id is minted per
+--      user gesture and is NEVER shared across verbs.** It is enforced at
+--      the MINT SITE (L.C2.1's routes — F65 carries the obligation and
+--      the pin), not here, and the three in-body shapes were each
+--      considered and rejected for a stated reason:
+--        (a) NARROWING the lookup (e.g. `AND team_id = v_my_team`) is
+--            forbidden — the lookup being unqualified is precisely what
+--            makes a duplicate action_id impossible to insert under the
+--            same FOR UPDATE, which is why no `EXCEPTION WHEN
+--            unique_violation` wrapper is owed around the inserts.
+--            Narrowing re-opens a raw 23505 on `uniq_draft_bid_action`.
+--        (b) ARGUMENT-CONSISTENCY discrimination (refuse when the
+--            replayed row disagrees with the arguments) contradicts R125,
+--            which is settled law: an action_id is consumed forever and a
+--            stale retry returns its original row — 034's two E2 pins
+--            deliberately replay with DIFFERENT arguments and assert the
+--            original row comes back.
+--        (c) POSITION-based verb inference ("an opening row is the
+--            earliest row of its nomination_seq") is not durable: D143's
+--            `draft_cancel_nomination` (087/L.C1.5) does NOT consume the
+--            sequence number, so a re-nomination writes a second opening
+--            under an existing seq and the rule would FALSE-REFUSE a
+--            legitimate reconnect retry — a worse bug than the one it
+--            closes.
+--      A verb column on `draft_bids` would settle it exactly; that is a
+--      schema change to L.C1.1's table and is recorded as the option
+--      rather than taken here (no DDL in this migration).
 --
 -- SQLSTATE conventions (063, carried verbatim): 42501 auth/no-leak ·
 -- P0002 → 404 · P0001 friendly (every refusal a manager can hit in the
@@ -176,23 +256,39 @@
 --
 -- Falsifiability notes (§4.3) — every claim below was RUN, not predicted
 -- (the R306/R314 lesson):
---   * **BREAK PROBE (the DoD's own), AS RUN:** dropping the max-bid
+--   * **BREAK PROBE 1 (the DoD's own), AS RUN:** dropping the max-bid
 --     clause from `draft_place_bid` (the `IF p_amount > v_max_bid` arm)
---     turned **6 of 034's 84** pins RED — the three bid-side E5 /
---     §8.6.7(d) refusals (pin 43: $187 against a $186 max; pin 74: E25's
---     $2 against a $1-max seat; pin 80: the same at min_bid 0), the two
---     population COUNTS that catch the bids which then landed (pins 59
---     and 81 — 11 rows where 10 belong, 17 where 14 belong), and pin 82,
---     the PROPERTY the clause exists for: "no bid above its bidder's max
---     bid exists in history", which is what 086's award is built on.
+--     turned **6 of 034's 91** pins RED — the three bid-side E5 /
+--     §8.6.7(d) refusals (pin 48: $187 against a $186 max; pin 81: E25's
+--     $2 against a $1-max seat; pin 87: the same at min_bid 0), the two
+--     population COUNTS that catch the bids which then landed (pins 66
+--     and 88), and pin 89, the PROPERTY the clause exists for: "no bid
+--     above its bidder's max bid exists in history", which is what 086's
+--     award is built on.
 --     Named so nobody counts them as coverage they are not: the
---     NOMINATION-side max-bid pins stayed GREEN (28 and 72 — they are
+--     NOMINATION-side max-bid pins stayed GREEN (29 and 79 — they are
 --     `draft_nominate`'s own §8.6.7(a) clause, a separate arm the probe
---     never touches), as did every phase/turn/raise/anti-snipe/E2 pin and
---     §G's solvency-consequence pair (privileged award simulations that
---     never route through the probed function). The wire suite
---     `auction-core-db.test.ts` failed **2 of 3** under the same probe.
---     Reverted; 84/84 and 3/3 re-verified.
+--     never touches), as did every phase/turn/identity/raise/anti-snipe/
+--     E2 pin and §G's solvency-consequence pair (privileged award
+--     simulations that never route through the probed function). The wire
+--     suite `auction-core-db.test.ts` failed **2 of 3** under the same
+--     probe. Reverted; 91/91 and 3/3 re-verified.
+--   * **BREAK PROBE 2 (R330's guard), AS RUN:** removing the two
+--     nomination-identity checks turned **5 of 91** RED — pins 44 and 45
+--     (both refusal arms: the stale bids are ACCEPTED against the live
+--     nomination instead), pin 46 (nomination 2 holds 5 rows where 3
+--     belong) and the two population counts 66 and 88. Pin 43 (the
+--     matching-identity ACCEPTANCE) stayed GREEN by construction — a
+--     guard that does nothing still lets a correct bid through, which is
+--     why the refusal arms are the discriminators. Reverted; 91/91.
+--   * **BREAK PROBE 3 (R329's zero branch), AS RUN:** replacing the
+--     branch with an unconditional
+--     `GREATEST(current_deadline, now() + make_interval(secs => anti))`
+--     turned **exactly 1 of 91** RED — pin 61, the already-expired
+--     deadline at anti_snipe 0. Pin 60 (the shipped anti_snipe-0 pin with
+--     1s left) stayed GREEN, which was the review finding: it advertised
+--     a mutation it could not detect, because at anti_snipe 0 the two
+--     forms agree on every live deadline. Reverted; 91/91.
 --   * **ONE-UNIT-SHORT COVERAGE (D146, the R320 doctrine) — every ≥/≤
 --     comparison this migration makes carries a pin that is false by
 --     exactly one unit of the thing compared:**
@@ -208,7 +304,12 @@
 --       remaining < anti_snipe  → threshold − 1s FLOORS the clock,
 --                                 threshold + 1s does NOT, threshold
 --                                 exactly is a no-op (the boundary
---                                 instant, pinned to the second)
+--                                 instant, pinned to the second) — plus
+--                                 the EXPIRED-deadline pair that
+--                                 discriminates the zero branch (R329)
+--       nomination identity     → mismatched player refused / mismatched
+--                                 seq refused / matching accepted /
+--                                 omitted unchanged (R330)
 --     A clause loosened or tightened by one dollar/slot/second therefore
 --     cannot pass 034.
 -- ============================================================================
@@ -438,7 +539,9 @@ REVOKE EXECUTE ON FUNCTION draft_nominate(UUID, TEXT, INTEGER, UUID)
 CREATE OR REPLACE FUNCTION draft_place_bid(
   p_draft_id UUID,
   p_amount INTEGER,
-  p_action_id UUID
+  p_action_id UUID,
+  p_nomination_seq INTEGER DEFAULT NULL,
+  p_player_id TEXT DEFAULT NULL
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -453,6 +556,8 @@ DECLARE
   v_high_bid      INTEGER;
   v_high_team     UUID;
   v_player_id     TEXT;
+  v_live_name     TEXT;
+  v_stale_name    TEXT;
   v_min_bid       INTEGER;
   v_anti_snipe    INTEGER;
   v_deadline      TIMESTAMPTZ;
@@ -540,6 +645,56 @@ BEGIN
   v_high_team := (v_draft.current_nomination->>'high_bidder_team_id')::uuid;
   v_min_bid   := COALESCE((v_draft.config->>'auction_min_bid')::int, 1);  -- §7.3.8 default; used by the E5 message
 
+  -- NOMINATION IDENTITY (R330) — OPTIONAL arguments, and the reason they
+  -- exist: a bid names an AMOUNT and nothing else, so without them a bid in
+  -- flight across a nomination boundary is applied to whatever player is
+  -- live when it EXECUTES, and a manager can become high bidder on a player
+  -- they never saw. The insert below takes `player_id` from
+  -- `current_nomination` and `nomination_seq` from `current_pick_number`,
+  -- both read fresh under the lock — the RPC cannot otherwise know what the
+  -- caller was looking at, and E2 does not help (a first-time submit carries
+  -- a fresh action_id). This is the server-authoritative boundary, so the
+  -- guard lives HERE rather than in a route: the sim, the tests and every
+  -- future caller are covered, not only HTTP ones.
+  --   * BOTH arguments are checked, and neither subsumes the other:
+  --     `p_player_id` catches the ordinary case (the nomination moved on to
+  --     a different player), and `p_nomination_seq` catches the two cases
+  --     where the SAME player is live under a DIFFERENT nomination — D143's
+  --     cancel-and-renominate (the sequence number is NOT consumed, so a
+  --     re-nomination reuses it with a possibly different player) and an
+  --     undone award returning a player to the pool at a later sequence.
+  --   * When OMITTED (both NULL) behavior is exactly as shipped — no
+  --     existing caller breaks. L.C2.1's route MUST always send them; that
+  --     is where the guard becomes mandatory in practice (ledger row F64,
+  --     and the read-list line in tasks-M3 §6 L.C2.1).
+  --   * Checked the moment the live nomination is known and BEFORE the
+  --     franchise/self-raise/raise/max-bid clauses, so a stale bid gets the
+  --     TRUE reason (§16.3's "just went off the board" family) instead of
+  --     "you are already the high bidder" or "outbid at $N" about a player
+  --     the caller never named.
+  IF p_player_id IS NOT NULL AND p_player_id IS DISTINCT FROM v_player_id THEN
+    SELECT pl.full_name INTO v_stale_name
+    FROM public.players pl WHERE pl.id = p_player_id;
+    SELECT pl.full_name INTO v_live_name
+    FROM public.players pl WHERE pl.id = v_player_id;
+    RAISE EXCEPTION
+      'draft_place_bid: % just went off the board — % is up for bid now at $% (§16.3)',
+      COALESCE(v_stale_name, 'that player'),
+      COALESCE(v_live_name, 'another player'),
+      v_high_bid
+      USING ERRCODE = 'P0001';
+  END IF;
+  IF p_nomination_seq IS NOT NULL
+     AND p_nomination_seq IS DISTINCT FROM v_draft.current_pick_number THEN
+    SELECT pl.full_name INTO v_live_name
+    FROM public.players pl WHERE pl.id = v_player_id;
+    RAISE EXCEPTION
+      'draft_place_bid: that nomination just went off the board — % is up for bid now at $% (§16.3)',
+      COALESCE(v_live_name, 'another player'),
+      v_high_bid
+      USING ERRCODE = 'P0001';
+  END IF;
+
   -- The caller's franchise. Bidding has no turn (§8.6.3: ANY manager with
   -- sufficient max bid raises) — but it does require a franchise to bid
   -- FOR: a member without a seat has no budget and no roster.
@@ -604,9 +759,22 @@ BEGIN
      v_player_id, v_my_team, p_amount, p_action_id)
   RETURNING * INTO v_bid;
 
-  -- (4) ADVANCE: new high bid + the D128 anti-snipe floor. The clock can
-  -- only be EXTENDED here, never shortened — see the banner for why the
-  -- zero case is its own branch rather than a GREATEST over now().
+  -- (4) ADVANCE: new high bid + the D128 anti-snipe floor. Above the
+  -- threshold GREATEST keeps the standing deadline; below it the floor
+  -- wins — the clock can only be EXTENDED, never shortened.
+  -- The ZERO branch (R329, rationale corrected): at anti_snipe 0 the two
+  -- forms agree on every LIVE deadline (`now() + make_interval(secs => 0)`
+  -- IS now(), and GREATEST of a future deadline and now() is that
+  -- deadline). They differ only when the standing deadline is NOT in the
+  -- future: an ALREADY-EXPIRED one, which an unconditional GREATEST would
+  -- REWRITE forward to exactly now(), and a NULL one, which GREATEST
+  -- (which ignores NULLs) would INVENT out of nothing. Extension is
+  -- disabled, so this branch touches no clock at all. Pinned in 034 §I on
+  -- both sides. NOTE the counterpart, deliberate and now recorded: with
+  -- anti_snipe > 0 a bid landing AFTER the clock already read zero DOES
+  -- receive a full fresh window — D128's letter ("reset the remaining time
+  -- TO anti_snipe"), and consistent with snake's posture that the TICK is
+  -- the enforcer, not the deadline column.
   v_anti_snipe := COALESCE((v_draft.config->>'auction_anti_snipe_seconds')::int, 10);
   IF v_anti_snipe > 0 THEN
     v_deadline := GREATEST(v_draft.current_deadline,
@@ -630,7 +798,7 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION draft_place_bid(UUID, INTEGER, UUID)
+REVOKE EXECUTE ON FUNCTION draft_place_bid(UUID, INTEGER, UUID, INTEGER, TEXT)
   FROM PUBLIC, anon;
 
 -- ---------------------------------------------------------------------------

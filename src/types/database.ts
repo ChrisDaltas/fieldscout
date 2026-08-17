@@ -3325,7 +3325,13 @@ export type Database = {
         Returns: Json
       }
       draft_place_bid: {
-        Args: { p_action_id: string; p_amount: number; p_draft_id: string }
+        Args: {
+          p_action_id: string
+          p_amount: number
+          p_draft_id: string
+          p_nomination_seq?: number
+          p_player_id?: string
+        }
         Returns: Json
       }
       draft_queue_replace: {

@@ -3,7 +3,8 @@
  * 085's auction core (`draft_nominate` / `draft_place_bid`) against the
  * LOCAL Supabase stack through PostgREST, driven by three REAL signed-in
  * managers — nomination, three raises, the instant-loser refusal, the E5
- * max-bid ceiling and the E2 replay, all as the room will call them.
+ * max-bid ceiling, the R330 nomination-identity pair (both arms) and the
+ * E2 replay, all as the room will call them.
  *
  * pgTAP 034 owns the exhaustive matrix (every refusal, every boundary,
  * the anti-snipe arithmetic to the second). This suite exists for the two
@@ -101,6 +102,8 @@ const ACTION = {
   loser: 'af000000-0000-4000-8000-000000000021',
   overMax: 'af000000-0000-4000-8000-000000000022',
   wrongTurn: 'af000000-0000-4000-8000-000000000023',
+  staleTarget: 'af000000-0000-4000-8000-000000000024',
+  identityOk: 'af000000-0000-4000-8000-000000000025',
 } as const
 
 type DraftRow = Database['public']['Tables']['drafts']['Row']
@@ -408,15 +411,43 @@ describe('the auction core over PostgREST (migration 085)', () => {
     // (pgTAP 034 owns the inside/outside/at-the-instant matrix.)
     expect(bid3.response.draft.current_deadline).toBe(nominationDeadline)
 
-    // Exactly four rows: the opening + three raises. The refused attempts
-    // wrote nothing.
+    // NOMINATION IDENTITY OVER THE WIRE (R330). pgTAP 034 owns the full
+    // matrix; what only this layer can show is that PostgREST TRANSPORTS
+    // the two optional trailing arguments by name — a mismatch can only be
+    // detected if the value actually arrived. L.C2.1's route must always
+    // send them (F64).
+    const { error: staleTarget } = await mgr2Client.rpc('draft_place_bid', {
+      p_draft_id: draftId,
+      p_amount: 5,
+      p_action_id: ACTION.staleTarget,
+      p_nomination_seq: 1,
+      p_player_id: PLAYERS[1].id,
+    })
+    expect(staleTarget?.code).toBe('P0001')
+    expect(staleTarget?.message).toContain('just went off the board')
+
+    const { data: identityOk, error: identityErr } = await mgr2Client.rpc('draft_place_bid', {
+      p_draft_id: draftId,
+      p_amount: 5,
+      p_action_id: ACTION.identityOk,
+      p_nomination_seq: 1,
+      p_player_id: PLAYERS[0].id,
+    })
+    expect(identityErr).toBeNull()
+    expect(
+      ((identityOk as unknown as BidResponse).draft.current_nomination as unknown as LiveNomination)
+        .high_bid,
+    ).toBe(5)
+
+    // Exactly five rows: the opening + three raises + the identity-checked
+    // raise. The refused attempts wrote nothing.
     const { data: bids, error: bidsError } = await service
       .from('draft_bids')
       .select('amount, team_id, nomination_seq')
       .eq('draft_id', draftId)
       .order('amount', { ascending: true })
     if (bidsError) throw new Error(`draft_bids read failed: ${bidsError.message}`)
-    expect(bids?.map((b) => b.amount)).toEqual([1, 2, 3, 4])
+    expect(bids?.map((b) => b.amount)).toEqual([1, 2, 3, 4, 5])
     expect(new Set(bids?.map((b) => b.nomination_seq))).toEqual(new Set([1]))
 
     // §4.6 held-lock bound for the BID family — see the file header for why
@@ -440,14 +471,14 @@ describe('the auction core over PostgREST (migration 085)', () => {
     expect(replay.bid.amount).toBe(2)
     expect(replay.bid.action_id).toBe(ACTION.bid1)
     // …and the authoritative state is untouched.
-    expect((replay.draft.current_nomination as unknown as LiveNomination).high_bid).toBe(4)
+    expect((replay.draft.current_nomination as unknown as LiveNomination).high_bid).toBe(5)
 
     const { count, error: countError } = await service
       .from('draft_bids')
       .select('id', { count: 'exact', head: true })
       .eq('draft_id', draftId)
     if (countError) throw new Error(`draft_bids count failed: ${countError.message}`)
-    expect(count).toBe(4)
+    expect(count).toBe(5)
 
     // D131(2): bids hold no budget — only a won pick spends. Every seat,
     // including the standing high bidder, still reads its fresh-start

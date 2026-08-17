@@ -6,7 +6,10 @@
 -- WHAT THIS FILE OWNS vs its neighbours: 033 owns the budget DERIVATION
 -- matrix and the start arm; 020 owns draft_start's wrapper path and
 -- draft_make_pick (including the auction refusal this PR REWORDS —
--- 020:1040, edited in place per D137's tests-are-not-migrations rule);
+-- 020:1042–1046, the message on 020:1045 — cite it by its message text if
+-- these lines move again (R336: this PR's own +5-line edit to 020's header
+-- shifted the first citation); edited in place per D137's
+-- tests-are-not-migrations rule);
 -- this file owns the two new action RPCs end to end, driven AS SIGNED-IN
 -- MANAGERS through the real `request.jwt.claims` dance (they are
 -- SECURITY DEFINER with in-body auth, so a privileged caller would prove
@@ -21,28 +24,44 @@
 -- exist yet, and would silently start passing/failing for 086's reasons.
 --
 -- Falsifiability notes (§4.3):
---   * **THE DoD BREAK PROBE, AS RUN (not as predicted — the R306
---     lesson):** dropping the max-bid clause from `draft_place_bid`
---     (`IF p_amount > v_max_bid`) turns **6 of these 84** pins RED, and
+--   * **THREE BREAK PROBES, ALL AS RUN (not as predicted — the R306
+--     lesson). Every number below was re-captured against THIS plan of
+--     91 in the M3 batch-3 fix cycle.**
+--     **(1) THE DoD PROBE — the max-bid clause dropped from
+--     `draft_place_bid` (`IF p_amount > v_max_bid`): 6 of 91 RED**, and
 --     the suite RUNS TO THE END rather than aborting (see the ordering
---     note below) — pins **43** (E5: LA's $187 against a $186 max),
---     **74** (E25's bid half: $2 against a $1-max seat), **80**
---     (§8.6.7(d) at min_bid 0: $2 against a $1-max seat), **59** and
---     **81** (the two population COUNTS — 11 rows where 10 belong, 17
---     where 14 belong: the refused bids landed), and **82**, the
---     property pin — "no bid above its bidder's max bid exists in
---     history", which is the clause's whole purpose and the thing 086's
---     award will be built on.
+--     note below) — pins **48** (E5: LA's $187 against a $186 max),
+--     **81** (E25's bid half: $2 against a $1-max seat), **87**
+--     (§8.6.7(d) at min_bid 0: $2 against a $1-max seat), **66** and
+--     **88** (the two population COUNTS: the refused bids landed), and
+--     **89**, the property pin — "no bid above its bidder's max bid
+--     exists in history", which is the clause's whole purpose and the
+--     thing 086's award will be built on.
 --     NAMED SO NOBODY COUNTS THEM AS COVERAGE THEY ARE NOT: the
---     NOMINATION-side max-bid pins stay GREEN under this probe (**28**
---     and **72**) — they are `draft_nominate`'s own §8.6.7(a) clause, a
+--     NOMINATION-side max-bid pins stay GREEN under this probe (**29**
+--     and **79**) — they are `draft_nominate`'s own §8.6.7(a) clause, a
 --     different arm in a different function — and so does every phase,
---     turn, raise, anti-snipe, E2 and solvency-consequence pin (§G's
---     award simulations are privileged inserts and never route through
---     the probed function at all). The wire suite
+--     turn, identity, raise, anti-snipe, E2 and solvency-consequence pin
+--     (§G's award simulations are privileged inserts and never route
+--     through the probed function at all). The wire suite
 --     `auction-core-db.test.ts` fails **2 of its 3** cases under the same
---     probe (the over-max refusal, and the E2 case's high-bid assertion,
---     which reads 187 instead of 4). Reverted; 84/84 and 3/3 restored.
+--     probe (the over-max refusal, and the E2 case's high-bid
+--     assertion).
+--     **(2) THE R330 PROBE — the nomination-identity guard removed:
+--     5 of 91 RED** — pins **44** and **45** (both refusal arms: the
+--     stale bids are ACCEPTED instead), **46** (nomination 2 holds 5
+--     rows where 3 belong), and the two population counts **66** and
+--     **88**. Pin **43** (the matching-identity acceptance) stays GREEN
+--     by construction — a guard that does nothing still lets a correct
+--     bid through, which is exactly why the refusal arms are the
+--     discriminators.
+--     **(3) THE R329 PROBE — the anti-snipe ZERO BRANCH replaced by an
+--     unconditional `GREATEST(deadline, now() + anti_snipe)`: exactly
+--     1 of 91 RED — pin 61**, the expired-deadline case, which is the
+--     entire reason that pin exists. Pin **60** (the shipped
+--     anti-snipe-disabled pin, 1s left) stays GREEN under this probe,
+--     which is the finding: it advertises a mutation it cannot detect.
+--     All three reverted; 91/91 and 3/3 restored.
 --   * **PROBE-ORDERING DISCIPLINE (why the ladders end with a refusal).**
 --     In LA, LG and LD the over-max REFUSAL is the last act of its
 --     nomination and is made by a seat that is NOT the standing high
@@ -51,26 +70,39 @@
 --     successful bid it would hit "you are already the high bidder"
 --     — an ERROR outside `throws_ok`, which aborts the whole file at that
 --     point (the first draft of this file did exactly that: 1 RED and 42
---     of 84 asserts never executed). A probe that kills the suite proves
+--     of its asserts never executed). A probe that kills the suite proves
 --     less than one that leaves its wreckage on the floor to be counted.
+--     §F's R330 identity block obeys the same rule for the same reason —
+--     its ACCEPTED arm runs first and both refusals are made by seats
+--     that are not the standing high bidder, which is why probe (2)
+--     above leaves 5 pins RED instead of aborting the file.
 --   * **ONE UNIT SHORT, EVERYWHERE (D146 — the R320 doctrine).** Every
 --     ≥/≤/> comparison 085 makes is bracketed by a pin that is false by
 --     exactly one unit of the thing compared, so a clause loosened or
 --     tightened by one dollar, one slot or one second cannot pass:
+--     (SECTION LETTERS BELOW WERE RE-POINTED IN THE BATCH-3 FIX CYCLE —
+--     R333: seven of them named the wrong section of this same file, all
+--     off by the amount the probe-ordering rework moved things. They are
+--     verified against this file's own `^-- [A-O]\. ` anchors; re-verify
+--     the same way if you move a section.)
 --       · opening ≥ min_bid — $0 refused / $1 accepted at min_bid 1 (§E),
---         and −$1 refused / $0 accepted at min_bid 0 (§I, C38)
+--         and −$1 refused / $0 accepted at min_bid 0 (§N, C38)
 --       · opening ≤ max_bid — $187 refused / $186 accepted (§E), and
---         E25's $2 refused / $1 accepted on a $1-max team (§H)
+--         E25's $2 refused / $1 accepted on a $1-max team (§M)
 --       · amount > high_bid — $1 refused ("outbid at $1") / $2 accepted
---         (§F), and at min_bid 0 the $0 raise refused / $1 accepted (§I)
+--         (§F), and at min_bid 0 the $0 raise refused / $1 accepted (§N)
 --       · amount ≤ max_bid — $187 refused / $186 accepted (§F); §8.6.7(d)
---         exactly-$1 accepted / $2 refused (§I)
---       · open_slots ≥ 1 — a 14-of-15 team bids and nominates, a 15-of-15
---         team is refused on both (§G, E27)
+--         exactly-$1 accepted / $2 refused (§N)
+--       · open_slots ≥ 1 — a 14-of-15 team bids and a 15-of-15 team is
+--         refused on the BID path (§H); the same pair on the NOMINATE
+--         path is §K (§G is the solvency-CONSEQUENCE section, not this
+--         boundary) (E27)
 --       · remaining < anti_snipe — a bid at threshold − 1s FLOORS the
 --         clock, at threshold + 1s does NOT move it, and exactly AT the
 --         threshold is a no-op; with anti_snipe 0 even a 1s-left bid
---         moves nothing (§J, D128/E6 pinned to the second)
+--         moves nothing, and against an ALREADY-EXPIRED deadline the
+--         zero branch leaves it untouched while anti_snipe 10 hands it a
+--         full fresh window (§I, D128/E6 pinned to the second)
 --   * **THE MAX-BID CLAUSE IS PINNED BY ITS CONSEQUENCE, not only by its
 --     refusal (§G).** A bid accepted AT max_bid, awarded, leaves the team
 --     EXACTLY at the §8.6.8 floor (remaining 14 ≥ 14 × $1) — and one
@@ -81,18 +113,30 @@
 --     raises, every bidder's `draft_team_budget` still reads its untouched
 --     numbers and the draft is still solvent — the pin that keeps anyone
 --     from "fixing" a future bug by decrementing a budget on bid.
---   * **THE E2 REPLAY ARM SITS ABOVE THE PHASE CHECK, and §K proves it:**
+--   * **THE E2 REPLAY ARM SITS ABOVE THE PHASE CHECK, and §J proves it:**
 --     a replayed NOMINATION action_id during the BIDDING phase returns its
 --     original row instead of the phase refusal. A replay arm placed after
 --     the validations would fail there — which is exactly the reconnect
---     case E2 exists for.
+--     case E2 exists for. (The lookup is deliberately UNQUALIFIED on
+--     `(draft_id, action_id)` and therefore VERB-BLIND — a recorded
+--     residual with a per-verb contract enforced at the mint site: 085
+--     banner item 6, ledger row F65/R331. Do not narrow it: the unqualified
+--     lookup under the draft lock is what makes a duplicate action_id
+--     un-insertable.)
+--   * **NOMINATION IDENTITY ON THE BID PATH (R330), §F:** `draft_place_bid`
+--     takes an optional `p_nomination_seq` / `p_player_id` pair, and both
+--     arms are pinned — a MISMATCHED identity is refused with §16.3's "just
+--     went off the board" copy, a MATCHING one is accepted, and the
+--     omitted-both form (every other call in this file) still works
+--     unchanged. Without the guard a bid in flight across a nomination
+--     boundary lands on whatever player is live when it executes.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(84);
+select plan(91);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3)
@@ -101,8 +145,8 @@ select has_function('public', 'draft_nominate',
   array['uuid', 'text', 'integer', 'uuid'],
   'draft_nominate(uuid,text,integer,uuid) exists — §8.6.2''s action verb');
 select has_function('public', 'draft_place_bid',
-  array['uuid', 'integer', 'uuid'],
-  'draft_place_bid(uuid,integer,uuid) exists — §8.6.3''s action verb');
+  array['uuid', 'integer', 'uuid', 'integer', 'text'],
+  'draft_place_bid(uuid,integer,uuid,integer,text) exists — §8.6.3''s action verb, with the R330 nomination-identity pair (p_nomination_seq, p_player_id) as the two OPTIONAL trailing arguments');
 select ok(
   (select count(*) = 2 and bool_and(p.prosecdef)
       and bool_and(array_to_string(p.proconfig, ',') = 'search_path=""')
@@ -112,11 +156,11 @@ select ok(
   'both are SECURITY DEFINER with the exact spec-form SET search_path = '''' (R70) — they write append-only draft_bids rows that carry NO client write policy (083)');
 select ok(
   not has_function_privilege('anon', 'public.draft_nominate(uuid,text,integer,uuid)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_place_bid(uuid,integer,uuid)', 'EXECUTE'),
+  and not has_function_privilege('anon', 'public.draft_place_bid(uuid,integer,uuid,integer,text)', 'EXECUTE'),
   'anon holds EXECUTE on neither (the REVOKE … FROM PUBLIC, anon half of the doctrine)');
 select ok(
   has_function_privilege('authenticated', 'public.draft_nominate(uuid,text,integer,uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid,integer,uuid)', 'EXECUTE'),
+  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid,integer,uuid,integer,text)', 'EXECUTE'),
   '…and authenticated KEEPS it — these are the room''s own verbs (the draft_make_pick posture), reached through L.C2.1''s routes');
 select ok(
   (select p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
@@ -403,6 +447,29 @@ select throws_ok(
   'P0001', 'draft_nominate: it is not your turn to nominate — pgtap-ab-LA-t1 is on the clock',
   'TURN: a member who is not the nominator is refused, and the message NAMES who is on the clock (error strings are UX)');
 
+-- NO COMMISSIONER BYPASS (R301, restated at 085:44–45) — and the pin the
+-- suite lacked (R334): the refusal above is made by a plain MANAGER, while
+-- u1 (the COMMISSIONER) is LA's on-clock nominator throughout this file, so
+-- an off-clock commissioner never called the verb and an
+-- `IF is_league_commish(...) THEN <bypass>` would have left the suite fully
+-- green. t2 is put on the clock privileged for exactly one assertion, then
+-- put back — force-nominate is 087/L.C1.5's OWN verb, which is the task
+-- that introduces the bypass this pin exists to forbid here.
+reset role;
+update drafts set on_clock_team_id = 'c6000000-0000-4000-8000-00aa00000002'
+where id = 'e6000000-0000-4000-8000-0000000000aa';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
+       'pgtap-ab-p01', 1, 'a6000000-0000-4000-8000-00000000002f') $$,
+  'P0001', 'draft_nominate: it is not your turn to nominate — pgtap-ab-LA-t2 is on the clock',
+  '…and THE COMMISSIONER gets the identical refusal off the clock — there is NO commissioner bypass in draft_nominate (R301/R334); the commissioner''s path is 087''s force-nominate verb');
+reset role;
+update drafts set on_clock_team_id = 'c6000000-0000-4000-8000-00aa00000001'
+where id = 'e6000000-0000-4000-8000-0000000000aa';
+
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -533,6 +600,56 @@ select is(
    from drafts where id = 'e6000000-0000-4000-8000-0000000000aa'),
   'c6000000-0000-4000-8000-00aa00000002',
   '…with the high bidder moving to the raiser (the room''s centerpiece value)');
+
+-- NOMINATION IDENTITY (R330), all three arms, on the live nomination 2
+-- (player p02, seq 2, standing high bid $2). A bid carries an AMOUNT and
+-- nothing else, so without these arguments a bid submitted against
+-- nomination 1 and executed after nomination 2 opened would be applied to
+-- p02 — proven on this very fixture before the guard landed. Every OTHER
+-- call in this file omits them, which is the third arm: omitted ⇒ shipped
+-- behavior, so no existing caller breaks.
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
+-- The ACCEPTED arm goes FIRST and the two refusals last, by the same
+-- probe-ordering discipline the header states: with the guard removed the
+-- two refused bids LAND, and if an accepted bid followed them it would hit
+-- "you are already the high bidder"/"outbid at $N" — an ERROR outside
+-- throws_ok, which would abort the file instead of leaving the probe's
+-- wreckage on the floor to be counted. Each refusal is also made by a seat
+-- that is NOT the standing high bidder, for the same reason.
+select is(
+  (public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
+     3, 'a6000000-0000-4000-8000-000000000032', 2, 'pgtap-ab-p02')
+   #>> '{draft,current_nomination,high_bid}'),
+  '3',
+  'IDENTITY, MATCHING: a bid that names the live nomination (seq 2, p02) is accepted and raises normally — the guard refuses stale targets, it does not make bidding harder (and every OTHER call in this file omits both arguments, which is the unchanged-by-default arm)');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
+       4, 'a6000000-0000-4000-8000-000000000030', 2, 'pgtap-ab-p01') $$,
+  'P0001',
+  'draft_place_bid: PgTap Auction Bid 1 just went off the board — PgTap Auction Bid 2 is up for bid now at $3 (§16.3)',
+  'IDENTITY, player MISMATCH: a bid naming the PREVIOUS nomination''s player is refused with §16.3''s "just went off the board" copy, and the message names what IS up and at what price — the refusal that stops a manager becoming high bidder on a player they never saw');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
+       5, 'a6000000-0000-4000-8000-000000000031', 1, 'pgtap-ab-p02') $$,
+  'P0001',
+  'draft_place_bid: that nomination just went off the board — PgTap Auction Bid 2 is up for bid now at $3 (§16.3)',
+  '…and the SEQUENCE arm refuses independently, with the RIGHT player named: the two checks do not subsume each other — D143''s cancel-and-renominate reuses a sequence number with a different player, and an undone award returns a player to the pool at a LATER sequence');
+select is(
+  (select count(*)::int from draft_bids
+   where draft_id = 'e6000000-0000-4000-8000-0000000000aa' and nomination_seq = 2),
+  3,
+  '…and BOTH refusals wrote NOTHING — nomination 2 holds exactly its opening, the $2 raise and the ONE accepted identity bid (three rows; the accepted bid above is what keeps this count from being a vacuous zero)');
 
 reset role;
 set local role authenticated;
@@ -715,19 +832,55 @@ select is(
      6, 'a6000000-0000-4000-8000-00000000001d')
    #>> '{draft,current_deadline}')::timestamptz,
   now() + interval '1 second',
-  'ANTI-SNIPE DISABLED (auction_anti_snipe_seconds = 0 — §7.3.8''s floor): even a bid with ONE SECOND left moves nothing. A pure fixed window, and the proof the zero case is its own branch rather than a GREATEST over now()');
+  'ANTI-SNIPE DISABLED (auction_anti_snipe_seconds = 0 — §7.3.8''s floor): even a bid with ONE SECOND left moves nothing. A PURE FIXED WINDOW — note what this pin does and does NOT discriminate (R329): on a LIVE deadline an unconditional GREATEST(deadline, now() + 0s) gives the identical answer, because make_interval(secs => 0) is zero; the branch is only observable against a deadline that is NOT in the future, which the next two pins supply');
+
+-- THE CASES THAT ACTUALLY DISCRIMINATE THE ZERO BRANCH (R329, added in the
+-- batch-3 fix cycle). The branch and an unconditional GREATEST differ only
+-- when the standing deadline has already passed — a bid that beat the tick
+-- to the locked row. Both readings are pinned to the second, so the branch
+-- cannot be replaced by a GREATEST, and the anti_snipe > 0 behavior against
+-- an expired clock is recorded rather than left silent.
 reset role;
-update drafts set config = jsonb_set(config, '{auction_anti_snipe_seconds}', '10')
+update drafts
+set config = jsonb_set(config, '{auction_anti_snipe_seconds}', '0'),
+    current_deadline = now() - interval '5 seconds'
+where id = 'e6000000-0000-4000-8000-0000000000aa';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select is(
+  (public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
+     7, 'a6000000-0000-4000-8000-000000000033')
+   #>> '{draft,current_deadline}')::timestamptz,
+  now() - interval '5 seconds',
+  'ANTI-SNIPE DISABLED against an ALREADY-EXPIRED deadline: the deadline is left EXACTLY where it was (−5s, still due). An unconditional GREATEST would REWRITE it forward to now() — this is the ONLY arithmetic difference the zero branch makes, and it is the pin that forbids the replacement');
+
+reset role;
+update drafts
+set config = jsonb_set(config, '{auction_anti_snipe_seconds}', '10'),
+    current_deadline = now() - interval '5 seconds'
+where id = 'e6000000-0000-4000-8000-0000000000aa';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+select is(
+  (public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
+     8, 'a6000000-0000-4000-8000-000000000034')
+   #>> '{draft,current_deadline}')::timestamptz,
+  now() + interval '10 seconds',
+  'ANTI-SNIPE ENABLED against an ALREADY-EXPIRED deadline: the bid receives a FULL FRESH WINDOW (now + 10s) — D128''s letter ("reset the remaining time TO anti_snipe") and snake''s posture that the TICK is the enforcer of expiry, not the deadline column. Recorded deliberately (R329) rather than left as unpinned emergent behavior');
+reset role;
+update drafts set current_deadline = now() + interval '30 seconds'
 where id = 'e6000000-0000-4000-8000-0000000000aa';
 
 select is(
   (select count(*)::int from draft_bids
    where draft_id = 'e6000000-0000-4000-8000-0000000000aa' and nomination_seq = 3),
-  6,
-  'nomination 3''s history is the full ladder — 6 rows (opening + 5 accepted raises); every refused attempt above wrote NOTHING');
+  8,
+  'nomination 3''s history is the full ladder — 8 rows (opening + 7 accepted raises); every refused attempt above wrote NOTHING');
 select ok(
   public.draft_auction_solvent('e6000000-0000-4000-8000-0000000000aa'),
-  '…and the draft is STILL SOLVENT after the whole ladder (§8.6.8 across three nominations and ten bids — bids move no money, so solvency cannot be bid away)');
+  '…and the draft is STILL SOLVENT after the whole ladder (§8.6.8 across three nominations and thirteen bids — bids move no money, so solvency cannot be bid away)');
 
 -- ---------------------------------------------------------------------------
 -- J. E2 replays — both verbs, and the replay arm proven to sit ABOVE the
@@ -745,13 +898,13 @@ select is(
 select is(
   (select count(*)::int from draft_bids
    where draft_id = 'e6000000-0000-4000-8000-0000000000aa'),
-  10,
-  '…and writes NOTHING: still 10 bid rows across the three nominations (1 + 3 + 6)');
+  13,
+  '…and writes NOTHING: still 13 bid rows across the three nominations (1 + 4 + 8)');
 select is(
   (select current_nomination->>'high_bid'
    from drafts where id = 'e6000000-0000-4000-8000-0000000000aa'),
-  '6',
-  '…and the standing high bid is unchanged — the replay is a no-op, not a $999 raise');
+  '8',
+  '…and the standing high bid is unchanged at $8 — the replay is a no-op, not a $999 raise (the replayed ROW still reads its own $6; the two numbers differing is the point)');
 select is(
   (public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
      'pgtap-ab-p40', 1, 'a6000000-0000-4000-8000-000000000012')
@@ -951,8 +1104,8 @@ select is(
    where draft_id in ('e6000000-0000-4000-8000-0000000000aa',
                       'e6000000-0000-4000-8000-0000000000bb',
                       'e6000000-0000-4000-8000-0000000000cc')),
-  14,
-  'the three auctions wrote 14 bid rows across 6 nominations (LA 1+3+6+1, LG 1, LD 2) — the population the property below is asserted over, counted so it cannot pass on an empty set');
+  17,
+  'the three auctions wrote 17 bid rows across 6 nominations (LA 1+4+8+1, LG 1, LD 2) — the population the property below is asserted over, counted so it cannot pass on an empty set');
 select ok(
   not exists (
     select 1 from draft_bids b
@@ -961,14 +1114,14 @@ select ok(
                          'e6000000-0000-4000-8000-0000000000bb',
                          'e6000000-0000-4000-8000-0000000000cc')
       and b.amount > t.max_bid),
-  'NO BID ABOVE ITS BIDDER''S MAX BID EXISTS ANYWHERE IN HISTORY — the property the max-bid clause is FOR, asserted over all 14 rows; this is what 086''s award can safely be built on (D130)');
+  'NO BID ABOVE ITS BIDDER''S MAX BID EXISTS ANYWHERE IN HISTORY — the property the max-bid clause is FOR, asserted over all 17 rows; this is what 086''s award can safely be built on (D130)');
 select ok(
   (select bool_and(public.draft_auction_solvent(d.id))
    from drafts d
    where d.id in ('e6000000-0000-4000-8000-0000000000aa',
                   'e6000000-0000-4000-8000-0000000000bb',
                   'e6000000-0000-4000-8000-0000000000cc')),
-  '…and all three auctions are SOLVENT at the end of the file (§8.6.8 — the never-weaken invariant, unbroken by six nominations and fourteen bids)');
+  '…and all three auctions are SOLVENT at the end of the file (§8.6.8 — the never-weaken invariant, unbroken by six nominations and seventeen bids)');
 
 set local role authenticated;
 select set_config('request.jwt.claims',
