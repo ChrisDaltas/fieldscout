@@ -67,8 +67,9 @@ select columns_are('public', 'drafts',
         'draft_order', 'nomination_order', 'total_rounds', 'current_round',
         'current_pick_number', 'on_clock_team_id', 'current_nomination',
         'current_deadline', 'paused_at', 'deadline_remaining_ms',
-        'started_at', 'completed_at', 'created_at', 'updated_at'],
-  'exact §12.3 column set');
+        'started_at', 'completed_at', 'created_at', 'updated_at',
+        'budget_adjustments'],
+  'exact §12.3 column set (+ budget_adjustments, migration 083 — D127; its shape/default pins live in 032)');
 select col_is_pk('public', 'drafts', 'id', 'PK id');
 select col_type_is('public', 'drafts', 'league_id', 'uuid', 'league_id is UUID');
 select col_not_null('public', 'drafts', 'league_id', 'league_id NOT NULL');
