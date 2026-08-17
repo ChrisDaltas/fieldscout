@@ -59,7 +59,7 @@ const OUTSIDER = {
   username: 'rt_wire_outsider',
 }
 
-/** FRACTIONAL ADP IS LOAD-BEARING (F59, diagnosed 2026-08-17 during
+/** FRACTIONAL ADP IS LOAD-BEARING (F60, diagnosed 2026-08-17 during
  *  L.C1.2's proof chain — this suite went RED with no diff touching it).
  *  The autopick this suite forces resolves down 068's ADP arm
  *  (`ORDER BY pl.adp NULLS LAST, pl.id`) over the WHOLE `players` table,

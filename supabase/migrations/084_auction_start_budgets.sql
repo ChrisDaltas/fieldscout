@@ -13,12 +13,33 @@
 --     (the newest migration that defines it — its text at the head of the
 --     chain, NOT pg_get_functiondef of whatever is deployed; the CLAUDE.md
 --     migration-discipline lesson that migration 073 learned the hard
---     way). Everything outside the auction arm is byte-for-byte 066's
---     body: the R122 lock order, the D63 idempotent re-start, the
---     'scheduled' gate, D94's create-if-absent, the D95 re-hydration, the
---     D96/F45 capacity gate, D101/D105 order resolution, D91 rounds, and
---     the D43/D64(2) snapshot-BEFORE-transition. 020's existing pins on
---     all of them are the regression proof.
+--     way). EVERY ENUMERATED GATE IS BYTE-IDENTICAL to 066's: the R122
+--     lock order, the D63 idempotent re-start, the 'scheduled' gate,
+--     D94's create-if-absent, the D95 re-hydration, the D96/F45 capacity
+--     gate, D101/D105 order resolution, D91 rounds, and the D43/D64(2)
+--     snapshot-BEFORE-transition. 020's existing pins on all of them are
+--     the regression proof. TWO shared spots are NOT byte-identical, and
+--     the head rule exists so the next builder reads that here instead of
+--     re-diffing (M3 batch-2 review, R313):
+--       (i) the CLOCK + FIRST-SEAT computation is RESTRUCTURED into a
+--           per-type IF block (084:588–602). 066 computed v_timer at
+--           066:685 and v_first := draft_team_for_pick(...) at 066:696–698
+--           — i.e. AFTER `PERFORM snapshot_league_scoring_internal`
+--           (066:694); here both sit BEFORE the snapshot (084:611), and
+--           066's inline COALESCE(v_config->>'draft_type','snake') is now
+--           the v_type local in three places. NO BEHAVIOR CHANGE:
+--           draft_team_for_pick is IMMUTABLE STRICT and returns NULL
+--           rather than raising, and every order it receives here has
+--           already passed draft_resolve_order_internal's permutation
+--           check, so nothing it could do makes the snapshot's position
+--           observable.
+--      (ii) the shared `UPDATE public.drafts` (084:613–631) additionally
+--           writes `nomination_order` and `current_nomination` — two
+--           columns 066 never touched — on the SNAKE/LINEAR path as well,
+--           where both resolve NULL. That is deliberate (a snake start
+--           clears any stored nomination_order rather than leaving a
+--           stale one behind) and pinned on 020's snake start (R324),
+--           but it is a shared-path write, not an auction-arm-only one.
 --   * draft_start (the auth wrapper), draft_create/_internal,
 --     draft_resolve_order_internal, draft_rounds_from_roster,
 --     draft_team_for_pick, draft_apply_pick_internal and draft_make_pick
@@ -105,9 +126,14 @@
 --      the scheduled gate (R122), D95 re-hydration, the D96/F45 capacity
 --      gate (== team_count — the audited draft-short override stays M6's
 --      F45), D91 rounds, and the D43/D64(2) snapshot BEFORE the
---      transition. The arm then differs in exactly four places:
+--      transition. Four VALUES then differ — but note WHERE they are
+--      written (R313(b)): (a) and (d) are columns the SHARED drafts UPDATE
+--      writes on BOTH paths (they resolve NULL on snake/linear), not
+--      auction-only statements:
 --        (a) nomination_order per nomination_order_mode (item 2), stored
---            on the drafts row — snake/linear keep NULL;
+--            on the drafts row — snake/linear write NULL, which also
+--            clears any nomination_order a pre-start edit had left on a
+--            snake draft (pinned in 020, R324);
 --        (b) on_clock_team_id = nomination_order[0] (the first NOMINATOR;
 --            draft_team_for_pick is snake/linear's pick-1 math and is not
 --            consulted for auctions — D126);
@@ -143,11 +169,19 @@
 --      §8.6.8 invariant is false at t = 0 and every later path — bid,
 --      award, undo, budget edit — would inherit an impossible state that
 --      the never-weaken invariant is supposed to make unreachable.
---      ZERO false-refusal risk: any league that came through the
---      validated settings path passes the stricter floor already, so this
---      can only fire on a state the app cannot produce (pinned from BOTH
---      sides in 033 — a legal at-the-floor league starts, a below-floor
---      one is refused with the remedy named).
+--      ZERO false-refusal risk FROM THE SETTINGS KNOBS: any league that
+--      came through the validated settings path passes the stricter floor
+--      already, so the settings-cause arm can only fire on a state the app
+--      cannot produce (pinned from BOTH sides in 033 — a legal
+--      at-the-floor league starts, a below-floor one is refused with the
+--      remedy named). It CAN fire on a settings-legal league whose
+--      per-team budget_adjustments make one seat insolvent — deliberately,
+--      and with its own message (R318). That path is legitimately
+--      reachable once 087/L.C1.5 ships the §8.7 adjust control, and stays
+--      benign only because R302 already obliges 087's draft_reset to CLEAR
+--      budget_adjustments; without that, a negative adjustment surviving a
+--      reset→re-start would make a settings-legal league unstartable
+--      (R319 — the dependency is named here and in PROGRESS D145(5)).
 --
 -- Grants doctrine (tasks-M1 §4.1, D18→D23; M3 §4 rule 1): no per-object
 -- GRANTs. draft_start_internal keeps 066's plain-function + triple-REVOKE
@@ -175,31 +209,55 @@
 --     open_slots 15, max_bid 186 per team; a $300/min-2 league reads
 --     max_bid 272; a $0-min-bid league reads max_bid = remaining (C38);
 --     E25's $3-with-3-slots reads max_bid 1 (§8.6.7(d)).
---     **THE DoD BREAK PROBE, AS RUN (not as predicted):** dropping the
---     `− 1` turned **11 of 033's 66** pins RED — every pin whose tuple
---     carries max_bid (the 12-team golden and its all-twelve-franchises
---     sweep, the $50-buy / undone-row / −$20 / +$25 / per-team-adjustment
---     quadruples, the $300/min-2 golden, the negative-max_bid insolvency
---     pin, E25's $3/3-slots, and the $50/min-3 golden) — plus the stack
---     vitest's wire golden (186 → 185). Everything that does not read
---     max_bid stayed GREEN, including two cases worth naming because they
---     look like coverage and are not: E27's complete-roster tuple (its
---     max_bid comes from the open_slots ≤ 0 branch the probe never
---     reaches) and the C38 min_bid-0 golden (× 0 makes both formulas
---     agree at 200). pgTAP 020's flipped start pin also stayed green — it
---     pins the start SHAPE, not budgets. Reverted; chain re-verified.
---   * SOLVENCY BOTH WAYS (033 §D): true on a fresh start, FALSE the
+--     **BREAK PROBE 1 (the max-bid formula), AS RUN (not as predicted):**
+--     dropping the `− 1` turned **12 of 033's 71** pins RED — every pin
+--     whose max_bid is PRODUCED BY THE FORMULA BRANCH, which is 12 of the
+--     14 assertions that carry a max_bid at all (the 12-team golden and
+--     its all-twelve-franchises sweep, the $50-buy / undone-row / −$20 /
+--     +$25 / per-team-adjustment quadruples, the $300/min-2 golden, the
+--     negative-max_bid insolvency pin, E25's $3/3-slots, the ONE-SLOT-
+--     SHORT tuple, and the $50/min-3 golden) — plus the stack vitest's
+--     wire golden (186 → 185). The other TWO max_bid-carrying pins stay
+--     GREEN by construction, not by luck, and are named so nobody counts
+--     them as coverage (R322 — "every pin whose tuple carries max_bid"
+--     was literally false): E27's complete-roster tuple takes its 0 from
+--     the open_slots ≤ 0 branch the probe never reaches, and the C38
+--     min_bid-0 golden is blind to it by arithmetic (× 0 makes both
+--     formulas read 200). The solvency pins stayed green too — this
+--     probe cannot reach them; probe 2 is theirs. pgTAP 020's flipped
+--     start pin stayed green — it pins the start SHAPE, not budgets.
+--     Reverted; chain re-verified.
+--   * SOLVENCY BOTH WAYS (033 §F): true on a fresh start, FALSE the
 --     moment a privileged over-spend pick lands (the invariant fn is
 --     falsifiable, not decorative), loud on an empty/unknown set.
+--     **BREAK PROBE 2 (the §8.6.8 floor itself) — added by the M3 batch-2
+--     review, R320.** Loosening the floor to
+--     `remaining >= (open_slots - 1) * min_bid` was INVISIBLE to the
+--     original 66 pins (reproduced: the shipped 033 at commit f53dab6,
+--     run under the mutation, has the same failure set it has without
+--     it). None of the three fixtures that look like solvency coverage
+--     discriminates — LE is $25 BELOW the floor so both formulas refuse,
+--     the FALSE pin has remaining 0 against 14 open so both say false,
+--     and LG's E25 case sits ON equality (3 ≥ 3×1) where both say true.
+--     The only state where the two formulas disagree is ONE SLOT SHORT,
+--     so 033 now carries it at both layers: the FUNCTION (a −$1
+--     adjustment on an LG seat → remaining 2, open 3, pinned INSOLVENT)
+--     and the ENGINE (LN — a settings-legal $200/min-1 league whose
+--     pre-start −$186 adjustment leaves $14 against 15 slots, pinned
+--     REFUSED). Under the loosened floor exactly those two pins go RED
+--     (2 of 71); reverted, 71/71 green.
 --   * NOMINATION ORDER, all three modes (033 §C), the random arm pinned
 --     as a STORED LITERAL against a fixed draft id (the 020 LK
 --     precedent) AND pinned NOT EQUAL to the same draft's random draft
 --     order — the derived-seed decision made falsifiable.
 --   * 020's auction start-refusal assertion becomes a start-SUCCEEDS pin
 --     (live · nominating phase · first nominator · auction deadline
---     despite pick_timer_seconds = 0), and the same file now pins that an
---     unseated auction league gets the CAPACITY refusal — the shared
---     gates provably still gate the auction arm (F45 mirrored).
+--     despite pick_timer_seconds = 0), plus the R324 pin that a SNAKE
+--     start writes nomination_order NULL. The proof that the shared gates
+--     still gate the auction arm lives in **pgTAP 033 §H** — an unseated
+--     auction league gets the D96 CAPACITY refusal there (F45 mirrored).
+--     020's own capacity pin (020:796) is on a SNAKE league and is
+--     untouched by this migration (corrected — M3 batch-2 review, R314).
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -239,12 +297,21 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
+  -- The membership guard uses the SAME team set the invariant checks —
+  -- active franchises only. A RETIRED seat is deliberately outside
+  -- draft_auction_solvent's sweep (§7.2/D96's capacity/order set), so
+  -- answering a plausible full budget for one would be exactly the
+  -- "nothing happened means it worked" trap this family raises on
+  -- everywhere else: the answer is unknown, so it is LOUD (R321).
   IF NOT EXISTS (
     SELECT 1 FROM public.teams t
-    WHERE t.id = p_team_id AND t.league_id = v_draft.league_id
+    WHERE t.id = p_team_id
+      AND t.league_id = v_draft.league_id
+      AND t.status <> 'retired'
   ) THEN
     RAISE EXCEPTION
-      'draft_team_budget: team % is not a franchise in draft %''s league', p_team_id, p_draft_id
+      'draft_team_budget: team % is not an ACTIVE franchise in draft %''s league (retired seats are outside the §8.6.8 team set)',
+      p_team_id, p_draft_id
       USING ERRCODE = 'P0002';
   END IF;
 
@@ -439,6 +506,9 @@ DECLARE
   v_deadline     TIMESTAMPTZ;
   v_budget       INTEGER;
   v_min_bid      INTEGER;
+  v_bad_team     TEXT;
+  v_bad_remaining INTEGER;
+  v_bad_open     INTEGER;
 BEGIN
   SELECT l.* INTO v_league
   FROM public.leagues l
@@ -632,13 +702,42 @@ BEGIN
 
   -- 084: the §8.6.8 start-time backstop (banner item 4) — read through the
   -- ONE derivation family, on the LIVE row, before the league transitions.
+  -- TWO messages, because there are two causes and one of them is not the
+  -- settings knobs (R318). The derivation reads budget_adjustments (line
+  -- 263), so a per-team §8.7 delta can make a settings-LEGAL league
+  -- insolvent — and printing "a $200 budget cannot fill 15 roster spots at
+  -- a $1 minimum bid" about a league whose budget clears that floor by
+  -- $185 is arithmetically false and sends the commissioner to the wrong
+  -- knob. The unit is named too: these are D91 DRAFTABLE slots (starters +
+  -- bench), which is not the settings validator's roster size (it counts
+  -- IR as well — league-settings.ts:539), so the two layers print two
+  -- numbers for one league unless each says which it means.
   IF v_type = 'auction' AND NOT public.draft_auction_solvent(v_draft.id) THEN
     v_budget  := COALESCE((v_config->>'auction_budget')::int, 200);
     v_min_bid := COALESCE((v_config->>'auction_min_bid')::int, 1);
-    RAISE EXCEPTION
-      'draft_start: league % cannot start an auction — a $% budget cannot fill % roster spots at a $% minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
-      p_league_id, v_budget, v_total_rounds, v_min_bid
-      USING ERRCODE = 'P0001';
+    IF v_budget < v_total_rounds * v_min_bid THEN
+      RAISE EXCEPTION
+        'draft_start: league % cannot start an auction — a $% budget cannot fill % draftable roster spots at a $% minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
+        p_league_id, v_budget, v_total_rounds, v_min_bid
+        USING ERRCODE = 'P0001';
+    ELSE
+      -- The settings floor HOLDS, so the shortfall is one franchise's own
+      -- (a §8.7 budget adjustment; priced picks cannot exist on a
+      -- 'scheduled' draft). Name the seat and its real numbers.
+      SELECT t.name, b.remaining, b.open_slots
+        INTO v_bad_team, v_bad_remaining, v_bad_open
+      FROM public.teams t
+      CROSS JOIN LATERAL public.draft_team_budget(v_draft.id, t.id) b
+      WHERE t.league_id = p_league_id
+        AND t.status <> 'retired'
+        AND b.remaining < b.open_slots * v_min_bid
+      ORDER BY t.name, t.id
+      LIMIT 1;
+      RAISE EXCEPTION
+        'draft_start: league % cannot start an auction — % has $% for % draftable roster spots at a $% minimum bid (§8.6.8 solvency). The league''s $% auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7) or lower the minimum bid in League settings → Draft setup',
+        p_league_id, v_bad_team, v_bad_remaining, v_bad_open, v_min_bid, v_budget
+        USING ERRCODE = 'P0001';
+    END IF;
   END IF;
 
   -- draft_start's OWN transition under the D43 guard (059's banner: M2

@@ -64,6 +64,12 @@
 --     to the permanent truth); auction START no longer does — 084/L.C1.2
 --     landed the engine and that assertion is now a start-SUCCEEDS pin
 --     (LM, the seated auction league).
+--   * The SNAKE side of 084's shared write (R324): 084's drafts UPDATE
+--     writes `nomination_order` on BOTH paths, so LB's row carries a stale
+--     stored order before its start and §G pins that the start CLEARS it.
+--     An auction-arm value leaking onto a snake start fails there. The
+--     auction MATRIX (derivation goldens, nomination modes, solvency, the
+--     D96 capacity refusal on an auction) is pgTAP 033's, not this file's.
 --   * All privileged fixture work runs BEFORE any JWT claims (D49(7));
 --     mid-test privileged pins use `reset role` (013/014/018/019 pattern).
 --     The pick-drive helper (pg_temp.dc_drive) runs privileged and sets
@@ -75,7 +81,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(93);
+select plan(94);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form (§4.1 grants doctrine; plan §8.3)
@@ -363,7 +369,10 @@ select results_eq(
 --      LE b2…a5  the D43 order probe (scoring_system_id NULL, snapshot
 --                NULL, NO drafts row)
 --      LG b2…a6  'setup' league (draft_create pins; start refusal)
---      LH b2…a7  auction league (M3 seam refusals)
+--      LH b2…a7  auction league, ZERO franchises (M3 seam refusal — the
+--                draft_make_pick one ONLY; its start refusal flipped at
+--                084 and moved to LM, which is seated. LH is deliberately
+--                unchanged so 085 can reword the pick refusal in place)
 --      LI b2…a8  manual mode with an INVALID stored order (dup + missing)
 --      LJ b2…a9  random mode, NO drafts row (D94 no-dead-end + D101/D105
 --                permutation pin)
@@ -371,6 +380,10 @@ select results_eq(
 --                leftover (a prior manual/custom episode's); drafts row
 --                pre-created with a FIXED id so the seeded md5 shuffle is
 --                a stored literal (R123)
+--      LM b2…ab  084/L.C1.2: a SEATED 8-team AUCTION league (manual order,
+--                45s nomination clock, pick_timer_seconds 0) — the league
+--                the flipped M3 seam assertion now STARTS (R325: this map
+--                was not extended when LM landed)
 --    All 'scheduled' (privileged insert) except LG; scoring = the ESPN
 --    Standard template except LE (NULL). scoring_rules_snapshot NULL
 --    everywhere — the post-start NOT-NULL pin proves draft_start took it.
@@ -611,6 +624,15 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
    'snake', 'scheduled', false, '{}'),
   ('e2000000-0000-4000-8000-0000000000aa', 'b2000000-0000-4000-8000-0000000000aa',
    'snake', 'scheduled', false, '{}');
+-- LB carries a STALE stored nomination_order (084/L.C1.2, R324): 084's
+-- shared drafts UPDATE writes `nomination_order` on BOTH paths — NULL on
+-- snake/linear — so a snake start must CLEAR this, and an auction-arm
+-- value leaking onto a snake start would fail the pin in §G. Nothing else
+-- in this file reads the column.
+update drafts
+set nomination_order = '["c3000000-0000-4000-8000-00a200000008",
+                         "c3000000-0000-4000-8000-00a200000001"]'::jsonb
+where id = 'e2000000-0000-4000-8000-0000000000a2';
 
 -- The pick-drive helper: authenticates as the on-clock seat's manager for
 -- every pick (per-pick claims), calls the REAL RPC, and fails LOUDLY on any
@@ -841,6 +863,9 @@ select is(
   (select total_rounds from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
   15,
   'LB total_rounds = 15 at start (default roster, D91)');
+select ok(
+  (select nomination_order is null from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
+  'LB (SNAKE) start writes nomination_order NULL and CLEARS the stale stored one — 084''s shared drafts UPDATE writes the column on both paths, so an auction-arm value leaking onto a snake start fails here (R324)');
 
 -- ---------------------------------------------------------------------------
 -- H. draft_make_pick: turn/E1/E2/shape/no-leak on the live LB draft

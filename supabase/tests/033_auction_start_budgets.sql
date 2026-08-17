@@ -20,19 +20,38 @@
 --     8-team $300/min-2 (max_bid 272), $200/min-0 (max_bid 200 — C38's
 --     degenerate floor), $50/min-3 (max_bid 8), and E25's $3-with-3-slots
 --     (max_bid 1 — §8.6.7(d)'s "$1 max bid admits only $1").
---     **THE DoD BREAK PROBE, AS RUN:** dropping the `− 1` from 084's
---     max-bid formula turned **11 of these 66 pins RED** — every pin whose
---     tuple carries max_bid (the 12-team golden + its all-twelve sweep,
---     the four spend/undo/adjustment quadruples, the per-team-adjustment
---     pin, the $300/min-2 golden, the negative-max_bid insolvency pin,
---     E25, and $50/min-3). Two pins that LOOK like max-bid coverage
---     deliberately stayed GREEN and are recorded so nobody reads them as
---     such: E27's complete-roster tuple takes max_bid from the
---     open_slots ≤ 0 branch the probe never reaches, and the C38
+--     **BREAK PROBE 1 (the max-bid formula), AS RUN:** dropping the `− 1`
+--     from 084's max-bid formula turned **12 of these 71 pins RED** —
+--     every pin whose max_bid is PRODUCED BY THE FORMULA BRANCH, which is
+--     12 of the 14 assertions carrying a max_bid at all (the 12-team
+--     golden + its all-twelve sweep, the four spend/undo/adjustment
+--     quadruples, the per-team-adjustment pin, the $300/min-2 golden, the
+--     negative-max_bid insolvency pin, E25, the ONE-SLOT-SHORT tuple, and
+--     $50/min-3). The claim used to read "every pin whose tuple carries
+--     max_bid", which was literally false and contradicted its own next
+--     sentence (M3 batch-2 review, R322). The two that LOOK like max-bid
+--     coverage and are not: E27's complete-roster tuple takes max_bid
+--     from the open_slots ≤ 0 branch the probe never reaches, and the C38
 --     min_bid-0 golden is blind to the probe by arithmetic (× 0 makes
 --     both formulas read 200). Everything else here — the start shape,
 --     the three nomination-order modes, the solvency booleans, the
 --     loudness arms — is independent of the formula and stayed green.
+--   * **BREAK PROBE 2 (the §8.6.8 floor itself) — the pin this file was
+--     MISSING (M3 batch-2 review, R320).** Loosening the invariant to
+--     `remaining >= (open_slots - 1) * min_bid` was invisible to the
+--     original 66 pins: three fixtures LOOK like solvency coverage and
+--     none discriminates — LE sits $25 BELOW the floor (both formulas
+--     refuse), the FALSE pin has remaining 0 against 14 open slots (both
+--     say false), and LG's E25 case sits exactly ON equality, 3 ≥ 3×1
+--     (both say true). The two formulas disagree in exactly one place —
+--     ONE SLOT SHORT — so this file now pins that state at BOTH layers:
+--     the FUNCTION (a −$1 adjustment on an untouched LG seat: remaining 2
+--     against 3 open slots → INSOLVENT) and the ENGINE (LN: a
+--     settings-LEGAL $200/min-1 league whose pre-start −$186 adjustment
+--     leaves $14 against 15 slots → the start REFUSES). Under the
+--     loosened floor exactly those two go RED; reverted, 71/71 green.
+--     Reproduced against the pre-fix file for the record: the shipped 66
+--     pins have the SAME failure set with and without the mutation.
 --   * SPEND, UNDO AND ADJUSTMENTS move the goldens in the printed
 --     direction (D127): a $50 buy, an IS_UNDONE row that must NOT count,
 --     and negative/positive budget_adjustments — each pinned as a literal
@@ -40,14 +59,27 @@
 --     inputs fails here rather than in a live auction.
 --   * SOLVENCY IS PINNED BOTH WAYS (§8.6.8): TRUE on every fresh start
 --     incl. the exact-equality boundary (E25's $3/3 slots is
---     remaining = open × min_bid to the dollar), and FALSE the moment a
---     privileged over-spend row lands. An invariant function that could
---     only ever say TRUE would prove nothing.
+--     remaining = open × min_bid to the dollar), FALSE the moment a
+--     privileged over-spend row lands, and — the probe-2 pair above —
+--     FALSE one dollar below that same equality with the AT-floor TRUE
+--     restored immediately after, so the floor is bracketed from both
+--     sides one slot apart. An invariant function that could only ever
+--     say TRUE would prove nothing; one whose only negatives sit far from
+--     the boundary proves almost as little.
 --   * EVERY LOUD ARM IS PINNED (CLAUDE.md "never let nothing happened
---     mean it worked"): missing draft, foreign team, snake draft, unset
---     capacity, and — the one that matters most — an auction with NO
---     active franchises raises instead of reporting a vacuous TRUE from
---     `bool_and` over zero rows.
+--     mean it worked"): missing draft, foreign team, RETIRED seat (R321 —
+--     it sits outside the invariant's team set, so a full-budget answer
+--     for one would be the same trap as a foreign team's), snake draft,
+--     unset capacity, and — the one that matters most — an auction with
+--     NO active franchises raises instead of reporting a vacuous TRUE
+--     from `bool_and` over zero rows.
+--   * THE START BACKSTOP HAS TWO MESSAGES AND BOTH ARE PINNED (R318):
+--     the settings-cause sentence (LE) names the budget, the D91
+--     DRAFTABLE-slot count and the min bid; the per-team-cause sentence
+--     (LN) names the franchise and its real numbers, because a
+--     settings-legal league made insolvent by a §8.7 adjustment would
+--     otherwise be refused by an arithmetically FALSE sentence pointing
+--     at the wrong knob.
 --   * THE RANDOM NOMINATION ORDER IS A STORED LITERAL against a FIXED
 --     draft id (the 020 LK precedent), pinned equal to the seeded shuffle
 --     AND **not equal to that same draft's own random draft order** —
@@ -65,7 +97,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(66);
+select plan(71);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form (§4.1 grants doctrine; plan §8.3)
@@ -131,9 +163,13 @@ select ok(
 --        so this shape is constructible here): the start backstop refuses
 --    LF  8-team $50/min-3 — legal at the settings floor (16 × 3 = 48 ≤ 50)
 --    LG  8-team roster of THREE draftable slots, $3/min-1 — E25/§8.6.7(d)
---    LH  ZERO franchises + a hand-built auction draft — the empty-set trap
+--    LH  ZERO ACTIVE franchises (one RETIRED seat) + a hand-built auction
+--        draft — the empty-set trap AND the R321 retired-seat arm
 --    LI  one franchise + a hand-built draft with NULL total_rounds
 --    LJ  one franchise, no draft row — the D96 capacity gate on an auction
+--    LN  8-team $200/min-1 (settings-LEGAL) whose pre-created drafts row
+--        carries a −$186 budget_adjustment on t1 — the ONE-SLOT-SHORT
+--        start refusal and the R318 second message (M3 batch-2 review)
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -200,7 +236,12 @@ values
   ('a5000000-0000-4000-8000-0000000000e5', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LJ-short', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
-   '{"draft": {"draft_type": "auction", "pick_timer_seconds": 90}}');
+   '{"draft": {"draft_type": "auction", "pick_timer_seconds": 90}}'),
+  ('a5000000-0000-4000-8000-0000000000e7', '8c000000-0000-4000-8000-000000000001',
+   'pgtap-as-LN-adjshort', 2026, 'scheduled', 8,
+   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+   '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
+     "auction_budget": 200, "auction_min_bid": 1, "pick_timer_seconds": 90}}');
 
 -- LG's roster: THREE draftable slots (2 RB starters + 1 bench, IR excluded
 -- per D91) — E25's "$3 budget, 3 open slots" fixture.
@@ -249,6 +290,21 @@ insert into teams (id, owner_id, name, league_id) values
    'pgtap-as-LI-t1', 'a5000000-0000-4000-8000-0000000000e4'),
   ('c5000000-0000-4000-8000-00e500000001', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LJ-t1', 'a5000000-0000-4000-8000-0000000000e5');
+insert into teams (id, owner_id, name, league_id) values
+  ('c5000000-0000-4000-8000-00e700000001', '8c000000-0000-4000-8000-000000000001',
+   'pgtap-as-LN-t1', 'a5000000-0000-4000-8000-0000000000e7');
+insert into teams (id, owner_id, name, league_id)
+select ('c5000000-0000-4000-8000-00e7000000' || lpad(i::text, 2, '0'))::uuid,
+       '8c000000-0000-4000-8000-000000000001', 'pgtap-as-LN-t' || i,
+       'a5000000-0000-4000-8000-0000000000e7'
+from generate_series(2, 8) i;
+-- LH's ONE seat is RETIRED (R321): it keeps the league's ACTIVE franchise
+-- set empty (so the empty-set trap below still fires — and now proves the
+-- retired filter is what empties it), and it is the subject of the
+-- retired-seat loudness pin in §G.
+insert into teams (id, owner_id, name, league_id, status) values
+  ('c5000000-0000-4000-8000-00e300000001', '8c000000-0000-4000-8000-000000000001',
+   'pgtap-as-LH-retired', 'a5000000-0000-4000-8000-0000000000e3', 'retired');
 
 insert into league_members (league_id, user_id, team_id, role) values
   ('a5000000-0000-4000-8000-0000000000aa', '8c000000-0000-4000-8000-000000000001',
@@ -259,6 +315,18 @@ insert into league_members (league_id, user_id, team_id, role) values
 insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e5000000-0000-4000-8000-0000000000bb', 'a5000000-0000-4000-8000-0000000000bb',
    'auction', 'scheduled', false, '{}');
+-- LN's drafts row exists to carry a PRE-START budget_adjustment (D127's
+-- storage half). The league itself is settings-LEGAL ($200 ≥ 15 × $1); the
+-- −$186 delta leaves t1 with $14 against 15 open slots — EXACTLY ONE SLOT
+-- SHORT of §8.6.8's floor, which is the only place the shipped invariant
+-- and a floor loosened by one slot disagree (M3 batch-2 review, R320).
+-- It also proves the derivation HONORS a pre-start adjustment, which is
+-- what makes 087/R302's "draft_reset clears budget_adjustments" a real
+-- obligation rather than housekeeping (R319).
+insert into drafts (id, league_id, draft_type, status, is_mock, config, budget_adjustments) values
+  ('e5000000-0000-4000-8000-0000000000e7', 'a5000000-0000-4000-8000-0000000000e7',
+   'auction', 'scheduled', false, '{}',
+   '{"c5000000-0000-4000-8000-00e700000001": -186}'::jsonb);
 -- LH/LI: hand-built rows for the two loudness probes (never started).
 insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds) values
   ('e5000000-0000-4000-8000-0000000000e3', 'a5000000-0000-4000-8000-0000000000e3',
@@ -502,10 +570,15 @@ select is(
 -- ---------------------------------------------------------------------------
 -- F. §8.6.8 solvency — both ways, plus the start-time backstop
 -- ---------------------------------------------------------------------------
+-- NB the state at this line: LA started fresh, then §D's spend sweep left
+-- team 1 holding one $50 buy (its budget reads 150/14 here) and every
+-- other seat untouched at 200/15. The invariant holds for both shapes —
+-- 150 ≥ 14 × 1 and 200 ≥ 15 × 1 (description corrected, M3 batch-2
+-- review R323: it used to describe the pre-spend state).
 select ok(
   public.draft_auction_solvent(
     (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000aa')),
-  'LA is solvent at start: every team''s remaining (200) ≥ open_slots (15) × min_bid (1)');
+  'LA is solvent AFTER the §D spend sweep: the spender reads 150 ≥ 14 × 1 and every other seat 200 ≥ 15 × 1');
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 select d.id, d.league_id, 'c5000000-0000-4000-8000-00aa00000002', 'pgtap-as-p3', 3, null, 200, 'manager'
 from drafts d where d.league_id = 'a5000000-0000-4000-8000-0000000000aa';
@@ -540,6 +613,37 @@ select results_eq(
      where d.league_id = 'a5000000-0000-4000-8000-0000000000e2' $$,
   $$ values (3, 3, 1, 0) $$,
   'E25 GOLDEN (§8.6.7(d)): $3 across 3 open slots ⇒ max_bid $1 — a $1-max team can bid exactly $1 and no more');
+
+-- THE BOUNDARY-ADJACENT NEGATIVE (M3 batch-2 review, R320). Every other
+-- solvency fixture in this file sits either far below the floor (LE is $25
+-- short), far above it, or exactly ON it (LG's $3/3 slots) — and a floor
+-- loosened by one slot (`remaining >= (open_slots - 1) * min_bid`) agrees
+-- with §8.6.8 at all three, so none of them can detect that weakening. The
+-- ONLY discriminating state is ONE SLOT SHORT: a −$1 adjustment on an
+-- untouched LG seat leaves remaining 2 against 3 open slots, where §8.6.8
+-- says FALSE (2 < 3 × 1) and the loosened floor says TRUE (2 ≥ 2 × 1).
+-- THE SECOND NAMED BREAK PROBE targets these two pins.
+update drafts set budget_adjustments = '{"c5000000-0000-4000-8000-00e200000002": -1}'::jsonb
+where league_id = 'a5000000-0000-4000-8000-0000000000e2';
+select results_eq(
+  $$ select b.remaining, b.open_slots, b.max_bid, b.committed
+     from drafts d
+     cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00e200000002') b
+     where d.league_id = 'a5000000-0000-4000-8000-0000000000e2' $$,
+  $$ values (2, 3, 0, 0) $$,
+  'ONE SLOT SHORT: a −$1 adjustment leaves $2 against 3 open slots (max_bid 0 — the reserve eats it all)');
+select is(
+  public.draft_auction_solvent(
+    (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000e2')),
+  false,
+  '…and §8.6.8 calls that INSOLVENT (2 < 3 × 1) — the boundary-adjacent negative a floor loosened by ONE SLOT would call solvent');
+update drafts set budget_adjustments = '{}'::jsonb
+where league_id = 'a5000000-0000-4000-8000-0000000000e2';
+select ok(
+  public.draft_auction_solvent(
+    (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000e2')),
+  '…and the matching AT-floor state one dollar up (3 ≥ 3 × 1) is solvent again — the pair brackets the floor from both sides');
+
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 select d.id, d.league_id, 'c5000000-0000-4000-8000-00e200000001', p.pid, p.n, null, 1, 'manager'
 from drafts d
@@ -586,8 +690,8 @@ select results_eq(
 select throws_ok(
   $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000ee', false) $$,
   'P0001',
-  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $20 budget cannot fill 15 roster spots at a $3 minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
-  'LE: a BELOW-floor auction is refused by the §8.6.8 start backstop, with the numbers and the remedy in the message');
+  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $20 budget cannot fill 15 draftable roster spots at a $3 minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
+  'LE: a BELOW-floor auction is refused by the §8.6.8 start backstop, with the numbers, the UNIT (D91 draftable slots — not the settings validator''s IR-inclusive roster size) and the remedy in the message');
 select is(
   (select status || '|' || (select count(*) from drafts
      where league_id = 'a5000000-0000-4000-8000-0000000000ee')::text
@@ -598,6 +702,17 @@ select ok(
   (select scoring_rules_snapshot is null
    from leagues where id = 'a5000000-0000-4000-8000-0000000000ee'),
   '…including the snapshot the arm had already taken (the whole txn unwinds — nothing half-started)');
+-- LN: the SECOND backstop message (R318). The settings floor HOLDS here
+-- ($200 ≥ 15 × $1), so the LE sentence would have been arithmetically
+-- FALSE about this league and would have sent the commissioner to the
+-- budget knob instead of the §8.7 adjustment that actually caused it.
+-- The state is also EXACTLY ONE SLOT SHORT ($14 against 15 slots at $1),
+-- so a floor loosened by one slot would let this start (R320).
+select throws_ok(
+  $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000e7', false) $$,
+  'P0001',
+  'draft_start: league a5000000-0000-4000-8000-0000000000e7 cannot start an auction — pgtap-as-LN-t1 has $14 for 15 draftable roster spots at a $1 minimum bid (§8.6.8 solvency). The league''s $200 auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7) or lower the minimum bid in League settings → Draft setup',
+  'LN: a settings-LEGAL league made insolvent by a PRE-START budget adjustment is refused by the named franchise and its real numbers — never by the settings sentence, which is false for this league (R318); the state is one slot short, so a floor loosened by one slot would start it (R320)');
 
 -- ---------------------------------------------------------------------------
 -- G. Loudness: every "nothing happened" path RAISES (CLAUDE.md)
@@ -615,6 +730,11 @@ select throws_ok(
   '…a team from ANOTHER league RAISES (a foreign team would otherwise read a full untouched budget)');
 select throws_ok(
   $$ select * from public.draft_team_budget(
+       'e5000000-0000-4000-8000-0000000000e3', 'c5000000-0000-4000-8000-00e300000001') $$,
+  'P0002', null,
+  '…and a RETIRED seat RAISES exactly like a foreign one (R321): it sits OUTSIDE draft_auction_solvent''s team set, so a plausible full budget for it would be an answer the invariant never checks');
+select throws_ok(
+  $$ select * from public.draft_team_budget(
        'e5000000-0000-4000-8000-0000000000e6', 'c5000000-0000-4000-8000-00e400000001') $$,
   'P0001', null,
   '…and a SNAKE draft RAISES: price is NULL there, so any budget it produced would be fiction');
@@ -630,7 +750,7 @@ select throws_ok(
   $$ select public.draft_auction_solvent('e5000000-0000-4000-8000-0000000000e3') $$,
   'P0001',
   'draft_auction_solvent: draft e5000000-0000-4000-8000-0000000000e3 has no active franchises to check — refusing to report solvency over an empty set',
-  'THE EMPTY-SET TRAP: an auction with zero franchises RAISES — bool_and over no rows is NULL, and `IF NOT solvent` would sail straight past it');
+  'THE EMPTY-SET TRAP: an auction whose only seat is RETIRED RAISES — the retired filter is what empties the set, bool_and over no rows is NULL, and `IF NOT solvent` would sail straight past it');
 select throws_ok(
   $$ select * from public.draft_team_budget(
        'e5000000-0000-4000-8000-0000000000e4', 'c5000000-0000-4000-8000-00e400000001') $$,
