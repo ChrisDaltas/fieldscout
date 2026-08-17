@@ -46,6 +46,30 @@ makes **auction + custom scoring the headline feedback goals** — the custom
 scoring editor un-punt still needs its spec changelog entry (Architect) before
 any build touches it.
 
+**Lane precedence — TWO lanes under one active build (added 2026-08-17; takes effect when
+the draft-room redesign PR merges, and is part of what Chris approves with it).**
+Chris used the shipped M2 draft room live and ordered a **layout redesign**, ruling it runs
+**AHEAD of the auction UI** so the auction room is built into the new shell rather than the
+old one — **with the M3 engine lane continuing behind it**. That is not a build swap, so this
+file's pointer does not move: **M3 stays the active build and gains a second lane.**
+
+| | |
+| --- | --- |
+| **Redesign breakdown** | `docs/specs/tasks-DR-draft-room-redesign.md` (Architect, 2026-08-17) |
+| **Redesign task id prefix** | `DR.` |
+| **Spec fold** | `spec-redraft-leagues.md` **v2.12** (§16.1/§16.2/§16.3/§16.4/§16.5, §8.7, §9.3) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries both checklists |
+
+**The loop's order, precisely:**
+
+1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
+2. When no `DR.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
+3. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
+   new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
+   waits on DR.3; `L.C3.3` on DR.5.
+4. The M3 **engine** lane — `L.C1.3` → `L.C1.7`, `L.C2.1`, `L.C2.2` — has **no `DR.`
+   dependency** and is never blocked by the redesign.
+
 **Do not build `LV.*` or Scout tasks while M3 is active.**
 
 ---
