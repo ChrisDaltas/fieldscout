@@ -59,11 +59,24 @@ const OUTSIDER = {
   username: 'rt_wire_outsider',
 }
 
+/** FRACTIONAL ADP IS LOAD-BEARING (F60, diagnosed 2026-08-17 during
+ *  L.C1.2's proof chain — this suite went RED with no diff touching it).
+ *  The autopick this suite forces resolves down 068's ADP arm
+ *  (`ORDER BY pl.adp NULLS LAST, pl.id`) over the WHOLE `players` table,
+ *  which after `RESTORE_SCOPE=draft` is the real 1,072-player pool. These
+ *  fixtures used to carry `adp: i + 1`, so `rt-wire-rb01` sat at adp 1 —
+ *  fine until the projections sync gave Jahmyr Gibbs (id `9221`) an adp of
+ *  exactly 1 too, at which point the `pl.id` tiebreak ('9221' sorts before
+ *  'rt-wire-rb01') handed the pick to a real player and the
+ *  fixture-membership assertion below failed deterministically. Values
+ *  below every real ADP make the fixture win by VALUE, so no live-data
+ *  refresh can take the pick back (the R286 "fixture must be
+ *  discriminating against the real pool" lesson, applied here). */
 const PLAYERS = Array.from({ length: 10 }, (_, i) => ({
   id: `rt-wire-rb${String(i + 1).padStart(2, '0')}`,
   full_name: `RT Wire RB ${String(i + 1).padStart(2, '0')}`,
   position: 'RB',
-  adp: i + 1,
+  adp: (i + 1) / 100,
 }))
 
 const ACTION = { create: 'ad500000-0000-4000-8000-000000000001' } as const

@@ -3239,6 +3239,7 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_auction_solvent: { Args: { p_draft_id: string }; Returns: boolean }
       draft_autopick_resolve: {
         Args: { p_draft_id: string; p_team_id: string }
         Returns: string
@@ -3287,6 +3288,18 @@ export type Database = {
           p_player_id: string
           p_reason?: string
           p_to_team: string
+        }
+        Returns: Json
+      }
+      draft_nomination_order_internal: {
+        Args: {
+          p_candidate: Json
+          p_draft_order: Json
+          p_label: string
+          p_league_id: string
+          p_mode: string
+          p_seed: string
+          p_team_count: number
         }
         Returns: Json
       }
@@ -3354,6 +3367,15 @@ export type Database = {
       draft_start_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
         Returns: Json
+      }
+      draft_team_budget: {
+        Args: { p_draft_id: string; p_team_id: string }
+        Returns: {
+          committed: number
+          max_bid: number
+          open_slots: number
+          remaining: number
+        }[]
       }
       draft_team_for_pick: {
         Args: {
