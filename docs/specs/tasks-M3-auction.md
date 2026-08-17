@@ -236,6 +236,7 @@ GATE    everything → L.C6.1
 > DoD: §4 standing rules; break probe: let the CPU bid `value` ignoring max_bid → the E62 pin fails (shown, reverted).
 
 ### L.C2.1 — Nominate/bid API + hooks
+> Read ALSO PROGRESS §"Review findings — 2026-08-18 (M3 batch 3, ADDENDUM)" — **R337/R338 land here**, alongside F64/F65. R337: the L.C1.3 wire suite's header claims it proves PostgREST transports BOTH optional identity args by name, but both calls send a matching `p_nomination_seq` and mismatch only the player — with the seq arm removed the wire suite stays 3/3 green. Add a call with a mismatched seq + matching player (or narrow the sentence). R338: "E2 replay outranks the identity guard" is correct behavior and UNPINNED — hoisting the guard above the replay lookup leaves 034 at 91/91, because both E2 pins omit the identity args. **F64 makes those args mandatory on this route, which is exactly what makes the ordering load-bearing** — so pin it here: replay a consumed action_id carrying mismatched identity args and assert the ORIGINAL row returns (verified live: seq 99 + p07 on a consumed action_id returns its original row, not a refusal).
 > Read spec §15.2 (nominate/bid rows), §15.6 (never optimistic for bids), §16.3 (latency-resilient intent), this doc D92-precedent/D134 + §5, CLAUDE.md route patterns. Depends L.C1.3.
 >
 > **Read ALSO PROGRESS §6 rows F64 and F65 (filed by L.C1.3's batch-3 fix cycle, D158) — this task discharges BOTH, and both are about `action_id`/identity at the MINT SITE, which is this task.**
