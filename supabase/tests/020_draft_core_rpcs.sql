@@ -60,10 +60,15 @@
 --     an is_mock draft gets the friendly solo-practice refusal (the
 --     fixture mock is config-less, so launched_by NULL keeps it
 --     tick-only); the launcher-positive + CPU-seat sides live in pgTAP
---     025. Auction PICK still refuses naming M3 (085/L.C1.3 rewords it
---     to the permanent truth); auction START no longer does — 084/L.C1.2
---     landed the engine and that assertion is now a start-SUCCEEDS pin
---     (LM, the seated auction league).
+--     025. Auction PICK still refuses — permanently: an auction never
+--     picks through this RPC — but 085/L.C1.3 REWORDED the message from
+--     the milestone promise ("the auction engine lands in M3") to the
+--     standing truth ("auction drafts pick via nominate and bid"), and
+--     this file's assertion moved with it in that PR. Auction START no
+--     longer refuses at all — 084/L.C1.2 landed the engine and that
+--     assertion is now a start-SUCCEEDS pin (LM, the seated auction
+--     league). The auction ACTION verbs (draft_nominate/draft_place_bid)
+--     are pgTAP 034's, not this file's.
 --   * The SNAKE side of 084's shared write (R324): 084's drafts UPDATE
 --     writes `nomination_order` on BOTH paths, so LB's row carries a stale
 --     stored order before its start and §G pins that the start CLEARS it.
@@ -1037,8 +1042,8 @@ select set_config('request.jwt.claims',
 select throws_ok(
   $$ select public.draft_make_pick('e2000000-0000-4000-8000-0000000000a7',
        'pgtap-dc-p003', 'a4000000-0000-4000-8000-000000000089') $$,
-  'P0001', 'draft_make_pick: this is an auction draft — the auction engine lands in M3',
-  'pick on an auction draft → friendly refusal naming M3');
+  'P0001', 'draft_make_pick: this is an auction draft — auction drafts pick via nominate and bid',
+  'pick on an auction draft → friendly refusal naming the auction verbs (085/L.C1.3 reworded it: the refusal is permanent, the milestone promise is gone)');
 reset role;
 
 -- Drive LB picks 3..32 through the REAL RPC, then pin the whole table.
