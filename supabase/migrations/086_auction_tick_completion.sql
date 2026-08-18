@@ -328,7 +328,7 @@
 --   * **BREAK PROBE 2 (the E27 rotation skip) — AS RUN: 9 of 105 RED**
 --     (60, 63, 65–67, 71, 79, 87–88) plus **1 of the wire suite's 3**;
 --     re-run against 116 pins: **9 of 116**, the same set. Caveat filed
---     as ledger F66: pins 79/87 read `auction_failures->0`, an index this
+--     as ledger F67: pins 79/87 read `auction_failures->0`, an index this
 --     probe makes ambiguous by breaking a second world in the same tick,
 --     and `now()` is transaction-stable in pgTAP so the forced deadlines
 --     TIE — one run in ~7 reported 8 with 79/87 green. The unprobed file

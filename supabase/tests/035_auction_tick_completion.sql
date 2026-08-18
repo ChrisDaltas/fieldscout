@@ -53,7 +53,7 @@
 --   * **BREAK PROBE 2 — the E27 rotation skip. AS RUN: 9 of 105 RED**
 --     (60, 63, 65–67, 71, 79, 87–88) plus 1 of the wire suite's 3;
 --     **re-run against 116 pins: 9 of 116, the same set.** CAVEAT, filed
---     as ledger F66 and named here so the number is not trusted further
+--     as ledger F67 and named here so the number is not trusted further
 --     than it earned: pins 79 and 87 read `auction_failures->0`, and this
 --     probe makes a SECOND world fail in the same tick. `now()` is
 --     transaction-stable inside a pgTAP file, so every forced
@@ -62,7 +62,7 @@
 --     run in roughly seven reported 8 of 116 with 79/87 green. The
 --     unprobed file is deterministic (116/116, empty pool and restored
 --     pool alike); §K's own pin 112 was rewritten to filter the failures
---     array by draft_id rather than index it, which is F66's fix.
+--     array by draft_id rather than index it, which is F67's fix.
 --     Dropping `open_slots >= 1` from ARM 2.6's rotation scan lands the
 --     rotation on a complete roster (§F) and completion is never reached.
 --     Pins 89–91 stay GREEN by construction and are named: the greedy
