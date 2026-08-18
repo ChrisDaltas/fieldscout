@@ -3291,6 +3291,15 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_nominate: {
+        Args: {
+          p_action_id: string
+          p_draft_id: string
+          p_opening_bid: number
+          p_player_id: string
+        }
+        Returns: Json
+      }
       draft_nomination_order_internal: {
         Args: {
           p_candidate: Json
@@ -3313,6 +3322,16 @@ export type Database = {
       }
       draft_pick_broadcast_payload: {
         Args: { p: Database["public"]["Tables"]["draft_picks"]["Row"] }
+        Returns: Json
+      }
+      draft_place_bid: {
+        Args: {
+          p_action_id: string
+          p_amount: number
+          p_draft_id: string
+          p_nomination_seq?: number
+          p_player_id?: string
+        }
         Returns: Json
       }
       draft_queue_replace: {
