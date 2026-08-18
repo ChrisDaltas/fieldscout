@@ -4,6 +4,23 @@
 -- E4/E15/E31; tasks-M2 §3 D97/D101/D102 + §4.6; task L.B1.4). pgTAP file is
 -- **023** (022 = draft tick/autopick; next free confirmed at task time).
 --
+-- L.C1.8 / MIGRATION 090 (2026-08-18) — F57 RULED BY CHRIS: ALIGN,
+-- pause-first everywhere. This file was RE-STAGED for the aligned world:
+-- draft_undo (both arms), draft_reassign_pick, draft_move_player and
+-- draft_set_clock now REFUSE on the running snake draft (the same D141
+-- gate, snake's own sentence — pinned live in §E and §F) and every
+-- commissioner edit below happens behind an explicit pause, with resumes
+-- where the pick flow needs the live board. draft_force_pick, draft_reset
+-- and draft_set_order keep their shipped postures (not in the ruled set).
+-- THE EXTEND-CURRENT ARM IS RETIRED: R138/D108(3)'s impose-on-untimed
+-- behaviour and the timer-0-untimed-now arm were live-only, the gate makes
+-- them unreachable, and 090 deleted the machinery rather than leaving a
+-- booby trap — §E now pins the refusal (both former shapes) where it used
+-- to pin the extension. The ms-exact discipline SURVIVES the re-staging:
+-- the §D 17234ms deadline round-trips through the whole §E edit session
+-- and the cascade's fresh 30s clock is pinned in paused bookkeeping
+-- (30000ms) AND as a running now()+30s after resume. Plan 163 -> 168.
+--
 -- Falsifiability notes (§4.3):
 --   * MS-EXACT PAUSE/RESUME (the DoD pin): pgTAP's txn-frozen now() makes
 --     boundary instants exact — a deadline planted at now() + 17234 ms must
@@ -13,10 +30,12 @@
 --     lose time"). THE DoD BREAK PROBE (shown + reverted in the session
 --     log): make draft_resume restore now() + the FULL configured timer
 --     instead of the persisted remaining → the resume ms-exact pin fails.
---   * CASCADE GOLDEN (task item 4): 8 live picks, draft_undo(to_pick 3) →
---     EXACTLY picks 4–8 undone (5 rows), 1–3 live, on_clock rewound to the
---     pick-4 team, fresh full clock; pool restoration proven BEHAVIORALLY
---     (the on-clock manager re-picks an undone player).
+--   * CASCADE GOLDEN (task item 4): 8 live picks, pause (F57/090),
+--     draft_undo(to_pick 3) → EXACTLY picks 4–8 undone (5 rows), 1–3 live,
+--     on_clock rewound to the pick-4 team, fresh full clock stored as
+--     30000ms paused and restored to now()+30s at resume; pool restoration
+--     proven BEHAVIORALLY (the on-clock manager re-picks an undone player
+--     after the resume).
 --   * THE R125 DECISION PIN: pick 4's action_id is replayed AFTER its pick
 --     was undone, while its caller IS on the clock and the player IS
 --     available — the strongest discriminator: without the deliberate
@@ -98,9 +117,12 @@
 --       deletion (user_id NULL; §12.13 non-deletable / D97 / D99), and an
 --       ordinary message survives authorless too (all-rows decision,
 --       D108(15)); form pin on confdeltype.
---     - R138 (§E): extend_current on an UNTIMED current pick IMPOSES the
---       full new timer (GREATEST(NULL, now()+45s)) — deadline pinned
---       exact, the distinct "now on the clock" post pinned.
+--     - R138 (§E) — SUPERSEDED BY F57/090: extend_current used to IMPOSE
+--       the full new timer on an untimed current pick (D108(3), M2 batch
+--       5). Pause-first retired the whole extend arm; §E now pins the
+--       aligned refusal in the one reachable state (paused) and the gate
+--       message in the other (live). Recorded here so the decision trail
+--       is visible where its pin used to live.
 -- ============================================================================
 begin;
 
@@ -111,7 +133,7 @@ create extension if not exists pgtap with schema extensions;
 create extension if not exists pgrowlocks with schema extensions;
 set local search_path = public, extensions;
 
-select plan(163);
+select plan(168);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; the 069 surface)
@@ -622,75 +644,87 @@ select is(
   '…and posts nothing (2 system posts total)');
 
 -- ---------------------------------------------------------------------------
--- E. draft_set_clock — E15 exact semantics
+-- E. draft_set_clock — E15 exact semantics UNDER PAUSE-FIRST (F57 ALIGNED,
+--    migration 090). The verb refuses on the RUNNING draft (the same D141
+--    gate the auction arms use, with snake's own sentence); every edit is
+--    exercised PAUSED; argument validation is pinned as still preceding the
+--    gate. The extend-current arm is RETIRED (both former shapes now refuse
+--    — see the header note on R138/D108(3)).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+-- The gate, live (the 090 flip): the edit that used to land mid-clock now
+-- refuses with the pause-first sentence.
+select throws_ok(
+  $$ select public.draft_set_clock((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 60, false) $$,
+  'P0001',
+  'draft_set_clock: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: set_clock refuses on the RUNNING snake draft (pause-first everywhere, migration 090)');
+-- Argument validation still precedes the gate: same live draft, malformed
+-- call, 22023 — not the pause-first sentence.
+select throws_ok(
+  $$ select public.draft_set_clock((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), -1) $$,
+  '22023', 'draft_set_clock: pick_timer_seconds must be a non-negative integer',
+  'negative timer → 22023, ahead of any data access and therefore ahead of the gate');
+-- Pause — the F57 door. The 17234ms deadline (§D restored it exactly)
+-- persists as 17234 again: pgTAP's txn-frozen now() means zero elapsed.
+select lives_ok(
+  $$ select public.draft_pause((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'pause for the §E edits (the pause-first door)');
 select lives_ok(
   $$ select public.draft_set_clock((select id from drafts
        where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 60, false) $$,
-  'set_clock 60s without extension lives');
+  'set_clock 60s lands once PAUSED');
 reset role;
 select is(
-  (select (config->>'pick_timer_seconds') || '|' || current_deadline::text
+  (select (config->>'pick_timer_seconds') || '|' || deadline_remaining_ms::text || '|'
+          || coalesce(current_deadline::text, 'NULL')
    from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  '60|' || (now() + interval '17234 milliseconds')::text,
-  'E15: the new timer lands in drafts.config for SUBSEQUENT picks; the current deadline is untouched');
+  '60|17234|NULL',
+  'E15 under pause-first: the new timer lands in drafts.config for SUBSEQUENT picks; the paused bookkeeping — 17234ms remaining — is untouched');
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
      and message = 'Pick clock set to 60 seconds by cc_user_01 (applies to upcoming picks).'),
   1::bigint,
-  'the set_clock system post (no-extension variant)');
+  'the set_clock system post (unchanged wording — the D97 post survives the re-staging)');
 
+-- THE RETIRED EXTEND ARM (090): extend_current now refuses in its one
+-- reachable state (paused — the gate owns live). R138/D108(3)'s
+-- impose-on-untimed behaviour is superseded by the F57 ruling; this pin
+-- stands where the extension pins stood.
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select lives_ok(
+select throws_ok(
   $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 60, true) $$,
-  'set_clock 60s WITH extension lives');
-reset role;
-select is(
-  (select current_deadline from drafts
-   where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  now() + interval '60 seconds',
-  'E15 extension: current_deadline = GREATEST(17.234s left, now()+60s) = now()+60s');
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 45, true) $$,
+  'P0001',
+  'draft_set_clock: the pick clock cannot be extended in place — the current pick keeps its stored remaining time across the pause, and the new timer applies to upcoming picks (§8.7 v2.12.5 / F57)',
+  'THE RETIRED ARM: extend_current on the PAUSED draft → the aligned refusal (the pre-090 "resume first, then extend" sentence is gone — resuming no longer offers an extension either)');
 
-set local role authenticated;
-select set_config('request.jwt.claims',
-  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+-- Untimed for SUBSEQUENT picks still works (timer 0 without extension —
+-- §8.2's soft timer as a config choice; only the in-place application died).
 select lives_ok(
   $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 5, true) $$,
-  'set_clock 5s with extension lives');
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 0, false) $$,
+  'set_clock 0 (untimed, no extension) lives paused');
 reset role;
 select is(
-  (select (config->>'pick_timer_seconds') || '|' || current_deadline::text
+  (select (config->>'pick_timer_seconds') || '|' || deadline_remaining_ms::text
    from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  '5|' || (now() + interval '60 seconds')::text,
-  'E15 NEVER-SHORTEN: a 5s timer with extension leaves the 60s deadline alone (GREATEST)');
-
-set local role authenticated;
-select set_config('request.jwt.claims',
-  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select lives_ok(
-  $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 0, true) $$,
-  'set_clock 0 (untimed) with extension lives');
-reset role;
-select is(
-  (select (config->>'pick_timer_seconds') || '|' || coalesce(current_deadline::text, 'NULL')
-   from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  '0|NULL',
-  'timer 0 + extend ⇒ the current pick goes UNTIMED (deadline NULL — §8.2 soft timer applied now)');
+  '0|17234',
+  'timer 0 lands for upcoming picks; the current pick''s stored remaining is NOT nulled (untimed-in-place was the retired arm)');
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick clock set to untimed by cc_user_01 (applies to upcoming picks). The current pick is now untimed.'),
+     and message = 'Pick clock set to untimed by cc_user_01 (applies to upcoming picks).'),
   1::bigint,
-  'the set_clock system post (untimed variant)');
+  'the untimed system post — WITHOUT the retired " The current pick is now untimed." suffix (the v_note machinery died with the arm)');
 
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -699,58 +733,16 @@ select lives_ok(
   $$ select public.draft_set_clock((select id from drafts
        where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 30, false) $$,
   'set_clock back to 30s for the pick sequence');
-select throws_ok(
-  $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), -1) $$,
-  '22023', 'draft_set_clock: pick_timer_seconds must be a non-negative integer',
-  'negative timer → 22023');
--- Paused + extend → friendly refusal (the frozen clock keeps its remaining).
 select lives_ok(
-  $$ select public.draft_pause((select id from drafts
+  $$ select public.draft_resume((select id from drafts
        where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
-  'pause for the paused-extend refusal');
-select throws_ok(
-  $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 45, true) $$,
-  'P0001',
-  'draft_set_clock: the draft is paused — resume first, then extend the current pick (the paused clock keeps its stored remaining time)',
-  'extend-current on a PAUSED draft → friendly refusal (the pause bookkeeping is never rewritten)');
-select set_config('cc.resume3',
-  public.draft_resume((select id from drafts
-    where league_id = 'b4000000-0000-4000-8000-0000000000a1'))::text, true);
+  'resume after the §E edits');
 reset role;
 select is(
-  (select status || '|' || coalesce(current_deadline::text, 'NULL')
+  (select status || '|' || current_deadline::text
    from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  'live|NULL',
-  'the untimed pause round-trips: NULL remaining resumes to a NULL deadline (no invented time)');
-
--- R138 (M2 batch 5): an UNTIMED current pick + extend ⇒ the new timer is
--- IMPOSED on the current pick. Decided KEEP + pin (D108(3)): extend_current
--- with a positive timer on an untimed pick has exactly one meaning — put
--- this pick on the clock (the §8.2-symmetric inverse of the timer-0 arm
--- above; a stalled untimed room's only non-force recourse) — and the pick
--- gets a FULL fresh timer, so no running countdown is ever cut (the harm
--- E15's extend-only rule guards).
-set local role authenticated;
-select set_config('request.jwt.claims',
-  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select lives_ok(
-  $$ select public.draft_set_clock((select id from drafts
-       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 45, true) $$,
-  'set_clock 45s + extend on an UNTIMED current pick lives (R138)');
-reset role;
-select is(
-  (select (config->>'pick_timer_seconds') || '|' || current_deadline::text
-   from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  '45|' || (now() + interval '45 seconds')::text,
-  'R138: extend on a NULL deadline IMPOSES the full new timer exactly (GREATEST(NULL, now()+45s) = now()+45s — the current pick is clocked, not silently left untimed)');
-select is(
-  (select count(*) from league_chat
-   where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
-     and message = 'Pick clock set to 45 seconds by cc_user_01 (applies to upcoming picks). The current pick is now on the clock.'),
-  1::bigint,
-  'the impose-variant system post says "now on the clock" (distinct from the "was extended." running-clock variant)');
+  'live|' || (now() + interval '17234 milliseconds')::text,
+  'THE ROUND-TRIP, ms-exact: the whole §E edit session happened inside one pause and the clock came back 17234ms out — clocks never gain or lose time across pause-first edits (§8.7 v2.0)');
 -- Privileged fixture surgery: restore the state §F has always entered with
 -- (timer 30, untimed current pick) — no extra post.
 update drafts
@@ -787,10 +779,22 @@ select is(
   '9|2|c5000000-0000-4000-8000-00a100000008',
   'board at pick 9: round 2, snake-reversed onto t8');
 
--- CASCADE GOLDEN (E4; the task fixture): undo to pick 3 of 8.
+-- CASCADE GOLDEN (E4; the task fixture): undo to pick 3 of 8 — PAUSED
+-- (F57 ALIGNED, migration 090: undo refuses live; the golden itself is
+-- unchanged, it just happens behind the Pause door now).
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.draft_undo((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 3) $$,
+  'P0001',
+  'draft_undo: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: the cascade undo refuses on the RUNNING snake draft (the 090 flip)');
+select lives_ok(
+  $$ select public.draft_pause((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'pause for the cascade (the pause-first door)');
 select set_config('cc.undo1',
   public.draft_undo((select id from drafts
     where league_id = 'b4000000-0000-4000-8000-0000000000a1'), 3)::text, true);
@@ -816,16 +820,32 @@ select is(
   '4|1|c5000000-0000-4000-8000-00a100000004',
   'the clock rewound to pick 4 — t4 back on the clock (E4)');
 select is(
-  (select current_deadline from drafts
-   where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
-  now() + interval '30 seconds',
-  'the rewound team gets a FRESH full clock (now() + the 30s timer)');
+  (select coalesce(current_deadline::text, 'NULL') || '|' || deadline_remaining_ms::text
+   from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
+  'NULL|30000',
+  'the rewound team gets a FRESH full clock in the PAUSED bookkeeping (30000ms stored, no running deadline — the undo happened paused)');
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system
      and message = 'Picks 4-8 undone by cc_user_01 (5 picks reverted) — pgtap-cc-a1-t04 is back on the clock at pick 4.'),
   1::bigint,
   'the cascade-undo system post (count + rewound team — §8.7''s clear confirm made visible)');
+
+-- Resume: the stored 30000ms becomes a running clock, ms-exact — the old
+-- "now() + 30s" pin, now proven THROUGH the pause boundary.
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_resume((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'resume after the cascade');
+reset role;
+select is(
+  (select current_deadline from drafts
+   where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
+  now() + interval '30 seconds',
+  'the rewound team''s fresh full clock RUNS on resume: now() + the 30s timer exactly');
 
 -- POOL RESTORED, behaviorally: the rewound manager picks a player the
 -- cascade freed (cc-rb05 was pick 5).
@@ -839,10 +859,15 @@ select lives_ok(
   'POOL RESTORED: the on-clock manager re-picks a cascade-freed player (action A2)');
 reset role;
 
--- SINGLE undo: the newest live pick (pick 4) reverts.
+-- SINGLE undo: the newest live pick (pick 4) reverts — paused, like every
+-- commissioner edit now (F57).
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_pause((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'pause for the single undo');
 select set_config('cc.undo2',
   public.draft_undo((select id from drafts
     where league_id = 'b4000000-0000-4000-8000-0000000000a1'))::text, true);
@@ -858,6 +883,16 @@ select is(
      and message = 'Pick 4 undone by cc_user_01 — pgtap-cc-a1-t04 is back on the clock.'),
   1::bigint,
   'the single-undo system post');
+
+-- Resume for the R125 replay (draft_make_pick needs the live board).
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_resume((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'resume after the single undo');
+reset role;
 
 -- THE R125 DECISION PIN: replay action A2 — its pick is now UNDONE, its
 -- caller (u04) IS on the clock, and cc-rb05 IS available. Without the
@@ -901,10 +936,16 @@ select lives_ok(
   'a FRESH action_id re-picks the same player (pick 4 live again)');
 reset role;
 
--- REASSIGN: player change with before/after post.
+-- REASSIGN: player change with before/after post — the whole Manual-Edit
+-- block below runs PAUSED (F57; the type-specific refusals inside keep
+-- their identity under the gate: exclusivity, already-on-team, wrong-from).
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_pause((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'pause for the reassign/move edits');
 select lives_ok(
   $$ select public.draft_reassign_pick(
        (select id from drafts where league_id = 'b4000000-0000-4000-8000-0000000000a1'),
@@ -1001,6 +1042,13 @@ select throws_ok(
   'P0001', 'draft_move_player: CC RB 09 is on pgtap-cc-a1-t05 — not the team you are moving from',
   'a replayed move surfaces as the wrong-from friendly refusal (safe by state)');
 
+-- Resume for the pick flow (force-pick is NOT gated — it keeps its own
+-- paused refusal, pinned below — so the board must run for it).
+select lives_ok(
+  $$ select public.draft_resume((select id from drafts
+       where league_id = 'b4000000-0000-4000-8000-0000000000a1')) $$,
+  'resume after the reassign/move edits');
+
 -- FORCE PICK (on-clock team is t5, pick 5).
 select set_config('cc.force1',
   public.draft_force_pick((select id from drafts
@@ -1029,8 +1077,8 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system),
-  16::bigint,
-  'system-post checkpoint before the force replay: 16 posts (15 + the R138 impose post)');
+  19::bigint,
+  'system-post checkpoint before the force replay: 19 posts, re-derived for the F57/090 staging (2 in §D + 5 in §E: pause, three clock posts, resume + 12 in §F: three pause/resume pairs, cascade + single undo, two reassign edits, the move, the force — the R138 impose post is GONE with its arm)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1050,8 +1098,8 @@ select is(
 select is(
   (select count(*) from league_chat
    where league_id = 'b4000000-0000-4000-8000-0000000000a1' and is_system),
-  16::bigint,
-  '…and no second system post was written (still 16)');
+  19::bigint,
+  '…and no second system post was written (still 19)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1319,6 +1367,11 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "93000000-0000-4000-8000-000000000007", "role": "authenticated"}', true);
+-- Paused for the edits (F57); resumed after — §H's R135 positive control
+-- needs LR LIVE and deadline-NULL, which pause/resume round-trips exactly.
+select lives_ok(
+  $$ select public.draft_pause('e4000000-0000-4000-8000-0000000000b1') $$,
+  'pause LR for the capacity edits');
 select throws_ok(
   $$ select public.draft_move_player('e4000000-0000-4000-8000-0000000000b1',
        'cc-rb15', 'c5000000-0000-4000-8000-00b100000001', 'c5000000-0000-4000-8000-00b100000002') $$,
@@ -1335,6 +1388,9 @@ select lives_ok(
   $$ select public.draft_move_player('e4000000-0000-4000-8000-0000000000b1',
        'cc-rb15', 'c5000000-0000-4000-8000-00b100000001', 'c5000000-0000-4000-8000-00b100000003') $$,
   'POSITIVE CONTROL: moving onto a team with room succeeds');
+select lives_ok(
+  $$ select public.draft_resume('e4000000-0000-4000-8000-0000000000b1') $$,
+  'resume LR (restores the fabricated live/NULL-deadline state the R135 control reads)');
 reset role;
 select is(
   (select p.team_id::text from draft_picks p

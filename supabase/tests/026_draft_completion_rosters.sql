@@ -53,7 +53,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(68);
+select plan(70);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; §12.7 DDL; the 3b trigger; D89)
@@ -411,14 +411,23 @@ select is(
   1::bigint,
   'exactly ONE Autopick system post exists — the commish toggle; neither self call posted');
 
--- Drive to completion with the mid-draft undo + repick.
+-- Drive to completion with the mid-draft undo + repick. The undo happens
+-- behind a pause (F57 ALIGNED, migration 090 — snake commissioner edits are
+-- pause-first everywhere now); resume before the repick, because
+-- draft_make_pick needs the live board.
 select pg_temp.lr_drive((select id from lr_draft), 1, 9);
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "95000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_pause((select id from lr_draft)) $$,
+  'pause for the mid-draft undo (F57/090 pause-first)');
 select ok(
   public.draft_undo((select id from lr_draft)) is not null,
   'commish undoes pick 9 (single undo — lr-p009 returns to the pool, t08 back on the clock)');
+select lives_ok(
+  $$ select public.draft_resume((select id from lr_draft)) $$,
+  'resume for the repick');
 select set_config('request.jwt.claims',
   '{"sub": "95000000-0000-4000-8000-000000000008", "role": "authenticated"}', true);
 select ok(
