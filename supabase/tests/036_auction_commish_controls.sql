@@ -22,6 +22,19 @@
 -- no-drift source pin. 150 -> 181 asserts; every previously-recorded probe count
 -- was re-run against the enlarged file (D161(5)).
 --
+-- M3 BATCH-6 FIX CYCLE (R375-R383) added §I(c) — the gate's CAPACITY arm on a
+-- **min_bid $0** world (LM), which is the fixture this file did not have and
+-- the only one where the arithmetic stops masking a missing E27 refusal
+-- (R378) — §I(d), the player UNDER NOMINATION being unassignable (R380), and
+-- §K's cross-run pins: the reset ends its run's bid history and the rewind
+-- reads only the current run (R379). It also HARDENED three §A no-drift pins
+-- that a COMMENT satisfied (R381 — measured, not argued: see probe 1's re-run),
+-- widened §M's zero-side-effect composite from a picks+bids counter to the
+-- state the eleven verbs actually write (R383), and corrected two descriptions
+-- that asserted more than they measured (R382's inverted causality, R375's §M
+-- provenance note). 181 -> 199 asserts; all six earlier probes RE-RUN against
+-- the enlarged file (D161(5)) and every original RED SET reproduced exactly.
+--
 -- FIXTURE ADP IS FRACTIONAL (the R286 lesson / ledger F60), same as 035:
 -- every player here carries an adp in (0, 1) so the §8.4 ADP arm resolves to
 -- a fixture BY VALUE and no projections refresh can take an assertion's
@@ -39,20 +52,29 @@
 -- from a patched copy of 087, reverted by re-applying the file unmutated;
 -- 181/181 before and after each.
 --
--- **THE COUNTS BELOW ARE THE M3 BATCH-5 RE-RUN (D161(5)).** This file grew
--- 150 -> 181 in the R367-R374 fix cycle, so every previously-recorded "N of
--- 150" was unreproducible and all five original probes were RE-RUN against
--- the enlarged file. **Every original RED SET reproduced exactly** — same
--- assertions, shifted numbers — which is the evidence that the first record
--- was honest rather than fitted.
+-- **THE COUNTS BELOW ARE THE M3 BATCH-6 RE-RUN (D161(5)).** This file grew
+-- 150 -> 181 in the R367-R374 cycle and 181 -> 199 in the R375-R383 cycle, so
+-- every previously-recorded count was unreproducible and ALL SIX earlier
+-- probes were RE-RUN against the enlarged file. **Every original RED SET
+-- reproduced exactly** — same assertions, shifted numbers — which is the
+-- evidence that the earlier records were honest rather than fitted. Two red
+-- sets GREW, and both growths are load-bearing rather than noise: probe 1 by
+-- exactly pin 13 (R381 — the pin that a comment used to satisfy) and probe 6
+-- by exactly §I(c)'s six (the same helper, now carrying a second arm).
+-- Probes 7-11 are new, one per code fix in this cycle.
 --   * **BREAK PROBE 1 — the DoD's: E28's live-high-bid arm (D131(4))
 --     disabled for draft_adjust_budget** (the `PERFORM` of the section-3b
---     helper removed from that verb only). **AS RUN: 3 of 181 RED** (85 the
---     refusal, 86 the state pin behind it — the adjustment must not have
---     landed — and 88, the boundary's MEASUREMENT pin, which goes red
---     because the arm-3 refusal is what kept the -$50 edit from composing
---     into the -$49 one; pin 87, the boundary's own `lives_ok`, stays GREEN
---     and is named). **wire 0 of 3**, GREEN BY CONSTRUCTION and named: the wire suite
+--     helper removed from that verb only; the R367 COMMENT at 087:705 left in
+--     place, which is what makes this probe R381's as well). **AS RUN: 4 of
+--     199 RED** (85 the refusal, 86 the state pin behind it — the adjustment
+--     must not have landed — 88, the boundary's MEASUREMENT pin, which goes
+--     red because the arm-3 refusal is what kept the -$50 edit from composing
+--     into the -$49 one, with pin 87's own `lives_ok` staying GREEN and named
+--     — **and 13**, §A's no-drift source pin, which is NEW to this set. It was
+--     3 of 181 before, and pin 13 was the one that stayed green: the old
+--     `prosrc like '%helper%'` form was satisfied by the comment this mutation
+--     leaves behind. MEASURED, not argued — under the identical mutation the
+--     pre-R381 predicate still evaluates **TRUE** (R381).). **wire 0 of 3**, GREEN BY CONSTRUCTION and named: the wire suite
 --     drives no budget edit against a live high bidder. Arms 1 and 2 are
 --     separate branches above arm 3 and stay green, which is what proves the
 --     three arms are three arms rather than one message with three
@@ -60,7 +82,7 @@
 --     through the two priced verbs, which is exactly the point of probe 6.
 --   * **BREAK PROBE 2 — D162's `voided_at IS NULL` removed from ARM 2.6's
 --     award attribution lookup** (the D161(2) defect this task exists to
---     close). **AS RUN: 2 of 181 RED** (94/95 — `made_via` flips 'autopick'
+--     close). **AS RUN: 2 of 199 RED** (94/95 — `made_via` flips 'autopick'
 --     -> 'manager' and `is_auto` true -> false: the VOIDED HUMAN row is
 --     attributed instead of the live SYSTEM one, so a manager is publicly
 --     credited with a nomination they cancelled). **wire 0 of 3**, GREEN BY
@@ -73,23 +95,28 @@
 --     deterministically (see its own note) precisely so this probe yields a
 --     stable number, not a coin flip.
 --   * **BREAK PROBE 3 — the D141 gate helper made a no-op** (its RAISE
---     bypassed). **AS RUN: 10 of 181 RED** (31-36 the six gated verbs' live
+--     bypassed). **AS RUN: 10 of 199 RED** (31-36 the six gated verbs' live
 --     refusals; 49 the cancel-while-running refusal; 51 and 57, because a
 --     cancel that is no longer forced to happen while paused leaves the
---     board in a different state than D143 describes; 135, the force-pick
---     phase refusal downstream of it) **plus 1 of 3 wire cases** — the gate
+--     board in a different state than D143 describes; 149 — the force-pick
+--     phase refusal downstream of it, which was 135 before §I(c)/§I(d) added
+--     fourteen pins above it) **plus 1 of 3 wire cases** — the gate
 --     case, which is the one the routes and L.C3.2's disabled-button copy
 --     will read. Pins 37 and 38 — the SNAKE counterparts (set_clock and undo)
 --     succeeding LIVE — stay GREEN BY CONSTRUCTION and are named: the helper
 --     never fires on snake, so disabling it cannot move them. That is F57's
 --     divergence, pinned from both sides.
 --   * **BREAK PROBE 4 — R302's two clears dropped from draft_reset.**
---     **AS RUN: 2 of 181 RED** (146, 147); **wire 0 of 3**, green by
---     construction — the wire suite never resets. R373's new set_order
---     divergence pin (149) sits two lines after them and stays GREEN: it
---     reads `status`, which the mutation does not touch.
+--     **AS RUN: 2 of 199 RED** (160, 161 — was 146/147); **wire 0 of 3**,
+--     green by construction and CHECKED: the suite drives tick/start/pause/
+--     resume/undo/set_clock/cancel_nomination/end/solvent and never resets
+--     (`auction-commish-db.test.ts`, every `rpc('draft_…')` call site listed).
+--     R373's set_order divergence pin (163) sits two lines after them and
+--     stays GREEN: it reads `status`, which the mutation does not touch — and
+--     so does R379's new void pin (164), because the two clears and the bid
+--     sweep are three separate statements.
 --   * **BREAK PROBE 5 — the PRE-WRITE priced-move max-bid refusal dropped
---     from draft_move_player. AS RUN: 1 of 181 RED** (111); **wire 0 of 3**.
+--     from draft_move_player. AS RUN: 1 of 199 RED** (111); **wire 0 of 3**.
 --     **THIS PROBE FOUND A DEFECT IN THIS FILE AND IS RECORDED BECAUSE IT
 --     DID.** On its first run it turned **0 of 150** red. The pin passed a
 --     mutation that deleted the very clause it names, because it was written
@@ -108,8 +135,12 @@
 --   * **BREAK PROBE 6 — E28 ARM 3 REMOVED FROM THE TWO PRICED MANUAL EDIT
 --     PATHS** (the `PERFORM` of the section-3b helper deleted from
 --     draft_move_player AND draft_reassign_pick; draft_adjust_budget keeps
---     its call). This is R367's probe — the blocker this fix cycle exists
---     for. **AS RUN: 10 of 181 RED** — **13**, §A's no-drift source pin (the
+--     its call). This is R367's probe — the blocker the previous fix cycle
+--     existed for. **AS RUN: 16 of 199 RED** — the original ten reproduce
+--     EXACTLY (13, 123, 124, 127-133) and the set GREW by §I(c)'s six
+--     (139-144), which is not noise: those pins go through the SAME helper
+--     from the SAME two verbs, so a probe that deletes the call must take
+--     them too. The original ten: **13**, §A's no-drift source pin (the
 --     one that keeps this fix from un-fixing itself: it asserts all THREE
 --     money-moving verbs reference the helper), then 123/124 the same-team
 --     price-only arm and its state pin, 127/128 the cross-team move, 129/130
@@ -125,6 +156,49 @@
 --     needs an arm the §4-rule-7 backstop cannot supply. Pins 125/126 (the
 --     $49 boundary that LANDS) also stay green by construction: a deleted
 --     refusal cannot break a success.
+--   * **BREAK PROBE 7 — THE GATE'S CAPACITY ARM REMOVED (R378's own probe).**
+--     `v_open >= 1` dropped from the pass condition and the E27 RAISE deleted,
+--     leaving the money-only shape §3b shipped with. **AS RUN: 5 of 199 RED**
+--     (139/140 the LM move and its state pin, 141/142 the reassign twin and
+--     its state pin, and **143** — the min_bid-$1 pin on LH, which goes red on
+--     the MESSAGE rather than the refusal, because there the money arm still
+--     fires and says "a max bid of $0"). **wire 0 of 3**, green by
+--     construction and CHECKED: the wire fixture is `AUCTION_MIN_BID = 1`
+--     (`auction-commish-db.test.ts:77`) and drives no priced edit at all.
+--     Pins 134-138 stay GREEN and are NAMED, because they are what make the
+--     five above meaningful rather than lucky: 134 the baseline, 135-137 the
+--     move ONE SLOT EARLIER that must keep landing (a deleted refusal cannot
+--     break a success), and 138 the forged measurement — `draft_auction_
+--     solvent` TRUE and max_bid 0 against a $0 standing bid — which is not
+--     asking the verb anything and therefore cannot move.
+--   * **BREAK PROBE 8 — draft_reset's end-of-run bid sweep dropped (R379a).**
+--     **AS RUN: 1 of 199 RED** (164); **wire 0 of 3** (the suite never
+--     resets — same call-site check as probe 4). Pin 165's UNSCOPED
+--     measurement stays GREEN by construction and is named: it reads run 1's
+--     row directly and is indifferent to whether that row is stamped.
+--   * **BREAK PROBE 9 — the run scoping (`created_at >= started_at`) dropped
+--     from draft_undo's auction on-clock recovery (R379b).** **AS RUN: 1 of
+--     199 RED** (167 — the seat becomes run 1's t7). **wire 0 of 3, MEASURED
+--     rather than reasoned**: the suite DOES call `draft_undo`, so this one
+--     was actually re-run under the mutation (3/3 pass) — its case stops at
+--     the D141 pause-gate refusal and never reaches the recovery. Pin 166's
+--     `lives_ok` stays GREEN and is named: the undo still succeeds, it just
+--     succeeds with the wrong franchise on the clock, which is exactly why the
+--     state pin beside it is the one that carries the contract.
+--   * **BREAK PROBE 10 — the under-nomination guard dropped from
+--     draft_reassign_pick (R380).** **AS RUN: 3 of 199 RED** (145 the refusal,
+--     146 the state pin, and 147 downstream — once the reassign LANDS the
+--     nominated player holds a live pick on the wrong team, so the companion
+--     draft_move_player pin gets a different refusal). **wire 0 of 3**, green
+--     by construction and CHECKED: the suite calls no reassign at all.
+--   * **BREAK PROBE 11 — draft_reset's D138 mock guard made a no-op (R383's
+--     probe: does the zero-side-effect pin actually measure anything?).**
+--     **AS RUN: 2 of 199 RED** (194 the refusal, **195 the composite**).
+--     **The pre-R383 composite was re-run under the identical mutation and
+--     turned 1 red — 194 only.** The old picks+bids counter watched a mock
+--     whose league row and drafts row had just been rewritten and reported
+--     zero side effects, which is the whole finding. **wire 0 of 3** (no mock
+--     anywhere in the suite).
 --   * **ONE UNIT SHORT, EVERYWHERE (D146 / the R320 doctrine).** Every
 --     >=/<=/< comparison 087 makes is bracketed by a pin false by exactly one
 --     unit of the thing compared:
@@ -136,6 +210,12 @@
 --                                 refused (pin 85)
 --       priced move ≤ max_bid   → price = max_bid lands (pin 114); max_bid+1
 --                                 is refused (pin 111)
+--       E27 capacity in the gate → the move that leaves the high bidder ONE
+--         (R378)                   open slot lands (pin 135); the identical
+--                                  move one slot later — filling their last —
+--                                  is refused (139/141). One unit of
+--                                  open_slots, on the min_bid-$0 board where
+--                                  the money arm cannot stand in for it
 --       E28 arm 3 on the priced → §I(b): $49 lands at max_bid = high_bid
 --         paths (R367)            EXACTLY (125) and $50 is refused (123);
 --                                 from the move side $1 lands (131) and $2 is
@@ -151,7 +231,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(181);
+select plan(199);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
@@ -227,26 +307,39 @@ select ok(
 -- The ONE-void-implementation and ONE-gate structure, pinned at the source
 -- (the 035 §A / 065 inventory-pin pattern): a future session that inlines a
 -- second copy fails here rather than at a divergence six months on.
+-- R381 — THESE THREE PINS MATCH THE **CALL FORM**, AND THEY COUNT THE SET.
+-- `pg_proc.prosrc` is raw body text INCLUDING COMMENTS, and `like '%name%'`
+-- cannot tell a call from a mention: draft_adjust_budget names the arm-3
+-- helper TWICE (the R367 comment at 087:705 and the PERFORM at 087:710), so
+-- deleting the PERFORM and leaving the comment — which reads as design prose a
+-- refactor would keep as a matter of course — passed the old pin GREEN. The
+-- regex requires the qualified call as each helper is actually called (the
+-- comment carries no `PERFORM public.`), and `count(*) = N` is the other half:
+-- `bool_and` over a SHRUNKEN set still returns TRUE, so a renamed or dropped
+-- verb used to pass on the survivors.
 select ok(
-  (select bool_and(p.prosrc like '%draft_auction_pause_gate_internal%')
+  (select count(*) = 6
+      and bool_and(p.prosrc ~ 'PERFORM\s+public\.draft_auction_pause_gate_internal\s*\(')
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('draft_undo', 'draft_reverse_won_bid', 'draft_set_clock',
                        'draft_cancel_nomination', 'draft_reassign_pick',
                        'draft_move_player')),
-  'all SIX D141-gated verbs call the ONE gate helper — the ruling cannot drift apart verb by verb');
+  'all SIX D141-gated verbs CALL the ONE gate helper (call form, and there are six of them) — the ruling cannot drift apart verb by verb');
 select ok(
-  (select bool_and(p.prosrc like '%draft_void_nomination_internal%')
+  (select count(*) = 3
+      and bool_and(p.prosrc ~ ':=\s*public\.draft_void_nomination_internal\s*\(')
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('draft_cancel_nomination', 'draft_undo', 'draft_end')),
-  'all THREE voiding verbs call the ONE void helper (D162)');
+  'all THREE voiding verbs CALL the ONE void helper (D162) — matched on the ASSIGNMENT form, because all three capture its returned count rather than PERFORMing it');
 select ok(
-  (select bool_and(p.prosrc like '%draft_auction_high_bid_gate_internal%')
+  (select count(*) = 3
+      and bool_and(p.prosrc ~ 'PERFORM\s+public\.draft_auction_high_bid_gate_internal\s*\(')
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('draft_adjust_budget', 'draft_move_player', 'draft_reassign_pick')),
-  'all THREE money-moving verbs call the ONE E28 arm-3 helper — R367 is precisely what happens when two of them do not, so this is the pin that keeps the fix from un-fixing itself');
+  'all THREE money-moving verbs CALL the ONE E28 arm-3 helper — R367 is precisely what happens when two of them do not, so this is the pin that keeps the fix from un-fixing itself (and R381 is what keeps a COMMENT from satisfying it)');
 select ok(
   (select p.prosrc like '%draft_complete_internal%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -294,8 +387,9 @@ from generate_series(1, 60) i;
 --   LG a1  the priced Manual Edit Mode paths                         §I
 --   LH a5  the priced paths against a LIVE HIGH BID (E28 arm 3)       §I
 --   LI a2  draft_end's partial board (C41)                           §L
---   LK a3  draft_reset mid-bidding (R302)                            §K
+--   LK a3  draft_reset mid-bidding (R302) + the cross-run rewind (R379) §K
 --   LJ a4  the auction MOCK — D138's refusal sweep                   §M
+--   LM a6  a **min_bid $0** auction — the gate's CAPACITY arm (R378)  §I(c)
 insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 select ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
@@ -310,6 +404,23 @@ from (values ('aa','LA-gate'), ('bb','LB-snake'), ('cc','LC-cancel'),
              ('dd','LD-stuck'), ('ee','LE-e28'), ('ff','LF-reverse'),
              ('a1','LG-priced'), ('a2','LI-end'), ('a3','LK-reset'),
              ('a4','LJ-mock'), ('a5','LH-highbid')) as w(sfx, nm);
+
+-- LM is its OWN insert because its config differs where it matters:
+-- `auction_min_bid` **0**, which `league-settings.ts:220` admits (`min(0)`)
+-- and 084:210 names as a supported league. It is the only world in this file
+-- where `max_bid = remaining` (C38) and where the §8.6.8 floor is
+-- `remaining >= open_slots x 0`, i.e. a floor nothing can fail — which is
+-- exactly why R378's defect is invisible everywhere else in this file.
+insert into leagues (id, owner_id, name, season, status, team_count,
+                     scoring_system_id, settings, scoring_rules_snapshot)
+values ('b8000000-0000-4000-8000-0000000000a6',
+        '9f000000-0000-4000-8000-000000000001',
+        'pgtap-cm5-LM-minbid0', 2026, 'drafting', 8, null,
+        '{"draft": {"auction_budget": 200, "auction_min_bid": 0,
+           "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
+           "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
+           "pick_timer_seconds": 90}}'::jsonb,
+        '{}'::jsonb);
 
 -- 3 draftable slots everywhere except LC (2 — it needs a short board so §G's
 -- renomination cannot run the roster out) — D91: rounds = Σ starting slots +
@@ -329,7 +440,7 @@ select ('d8000000-0000-4000-8000-00' || w.sfx || '0000000' || i)::uuid,
        'pgtap-cm5-' || w.sfx || '-t' || i,
        ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid
 from (values ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), ('ff'),
-             ('a1'), ('a2'), ('a3'), ('a4'), ('a5')) as w(sfx),
+             ('a1'), ('a2'), ('a3'), ('a4'), ('a5'), ('a6')) as w(sfx),
      generate_series(1, 8) i;
 
 -- u1 commissions every world on t1; u2/u3 manage t2/t3. t4 is deliberately a
@@ -341,7 +452,7 @@ select ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        ('d8000000-0000-4000-8000-00' || w.sfx || '0000000' || m.t)::uuid,
        m.r
 from (values ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), ('ff'),
-             ('a1'), ('a2'), ('a3'), ('a4'), ('a5')) as w(sfx),
+             ('a1'), ('a2'), ('a3'), ('a4'), ('a5'), ('a6')) as w(sfx),
      (values (1, 1, 'commissioner'), (2, 2, 'manager'), (3, 3, 'manager')) as m(u, t, r);
 
 -- The auction drafts. FUTURE deadlines (see the header) except where a
@@ -367,6 +478,49 @@ select ('e8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        now() + interval '1 hour', now()
 from (values ('aa'), ('cc'), ('dd'), ('ee'), ('ff'),
              ('a1'), ('a2'), ('a3'), ('a4'), ('a5')) as w(sfx);
+
+-- LM: the min_bid-$0 auction, PAUSED (the Manual Edit paths are pause-gated,
+-- D141) with a live nomination that NOBODY RAISED. Both nomination writers
+-- open at `min_bid` (085:521 human, 087:3245 system), so at min_bid 0 the
+-- standing high bid is **$0** — which is the state in which
+-- `high_bid <= max_bid` stops being able to tell a solvent team from a
+-- COMPLETE one, because 084:349's `CASE WHEN v_open <= 0 THEN 0` makes a
+-- complete roster's max_bid a semantic zero rather than a computed one.
+-- total_rounds 2, so ONE move fills a seat that already holds one pick.
+insert into drafts (id, league_id, draft_type, status, is_mock, config,
+                    draft_order, nomination_order, total_rounds, current_round,
+                    current_pick_number, on_clock_team_id, current_nomination,
+                    current_deadline, deadline_remaining_ms, started_at)
+values ('e8000000-0000-4000-8000-0000000000a6',
+        'b8000000-0000-4000-8000-0000000000a6', 'auction', 'paused', false,
+        '{"auction_budget": 200, "auction_min_bid": 0,
+          "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
+          "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
+          "pick_timer_seconds": 90}'::jsonb,
+        (select jsonb_agg(t.id order by t.name) from teams t
+         where t.league_id = 'b8000000-0000-4000-8000-0000000000a6'),
+        (select jsonb_agg(t.id order by t.name) from teams t
+         where t.league_id = 'b8000000-0000-4000-8000-0000000000a6'),
+        2, 1, 5,
+        'd8000000-0000-4000-8000-00a600000002',
+        '{"player_id": "cm5-rb51", "high_bid": 0,
+          "high_bidder_team_id": "d8000000-0000-4000-8000-00a600000002"}'::jsonb,
+        null, 30000, now());
+-- t2 nominated cm5-rb51 at the $0 minimum and nobody raised, so t2 IS the
+-- standing high bidder at $0 (E26 is structural — 085 seats the nominator as
+-- high bidder at nomination time). F62's opening row is written like any other.
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id,
+                        amount, action_id)
+values ('e8000000-0000-4000-8000-0000000000a6', 'b8000000-0000-4000-8000-0000000000a6',
+        5, 'cm5-rb51', 'd8000000-0000-4000-8000-00a600000002', 0,
+        '55555555-0000-4000-8000-00000000a601');
+-- Two DONOR picks on other seats; t2 itself starts with an empty roster (2 open).
+insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
+                         player_id, price, is_auto, made_via) values
+  ('e8000000-0000-4000-8000-0000000000a6', 'b8000000-0000-4000-8000-0000000000a6',
+   1, null, 'd8000000-0000-4000-8000-00a600000003', 'cm5-rb52', 10, false, 'manager'),
+  ('e8000000-0000-4000-8000-0000000000a6', 'b8000000-0000-4000-8000-0000000000a6',
+   2, null, 'd8000000-0000-4000-8000-00a600000004', 'cm5-rb53', 10, false, 'manager');
 
 -- LB: the SNAKE twin. Same league shape, same seats, live, future deadline.
 insert into drafts (id, league_id, draft_type, status, is_mock, config,
@@ -1262,7 +1416,7 @@ select throws_ok(
        null, 2) $$,
   'P0001',
   'draft_move_player: pgtap-cm5-a5-t2 is the high bidder on CM5 RB 40 at $150, and that leaves a max bid of $149 — the close would be unaffordable. Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first (E28/D131(4))',
-  'R367 ARM 2 — a CROSS-TEAM move onto the live high bidder is REFUSED even at $2, because the SLOT it consumes is what shrinks the max bid');
+  'R367 ARM 2 — a CROSS-TEAM move onto the live high bidder is REFUSED even at $2, because t2 sits at EXACT equality after the $49 correction (max bid $150 = the standing $150 bid), so any NET reduction refuses. The $2 price costs $2 and the slot it consumes REBATES one min_bid (084:349-350), for a net -$1');
 select is(
   (select team_id from draft_picks
    where draft_id = 'e8000000-0000-4000-8000-0000000000a5' and pick_number = 2),
@@ -1305,6 +1459,166 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+
+
+-- --- I(c). THE GATE'S **CAPACITY** ARM — R378, on a min_bid-$0 board -------
+-- WHY THIS WORLD EXISTS, AND WHY EVERY PIN ABOVE PASSES WITHOUT IT. §3b's
+-- gate reproduced ONE of the award's TWO refusals. `draft_tick`'s award arm
+-- asks `open_slots < 1` (E27 — a complete roster cannot bid, 087:3348) BEFORE
+-- it asks `price > max_bid` (087:3353), and every other consumer pairs them
+-- the same way (draft_force_pick 087:2053-2062, draft_nominate 085:477). The
+-- reason is 084:349's `CASE WHEN v_open <= 0 THEN 0`: a complete roster's
+-- max_bid is a **SEMANTIC** zero, not a computed one, so `high_bid <= max_bid`
+-- is no longer the affordability question.
+--
+-- At min_bid >= $1 the missing arm is MASKED BY ARITHMETIC — `high_bid >=
+-- min_bid >= 1 > 0`, so the money arm raises anyway (with a message about
+-- dollars). That is precisely why §I(b)'s $1 fixture cannot see it, and it is
+-- the reason this file needed a world it did not have. **min_bid $0 is legal**
+-- (`league-settings.ts:220` = `min(0)`; 084:210 names the $0 league as
+-- supported), both nomination writers open AT min_bid (085:521, 087:3245), so
+-- an unraised nomination stands at $0 and the money arm computes `0 <= 0` and
+-- RETURNS. `draft_auction_solvent` cannot catch it either: its floor is
+-- `remaining >= open_slots x 0`.
+--
+-- LM is that world. t2 is the standing high bidder at $0 with an EMPTY roster
+-- and total_rounds 2, so the pair below is one unit of `open_slots` apart: the
+-- move that leaves t2 one slot LANDS, and the identical move that fills t2's
+-- LAST slot is refused (D146).
+reset role;
+select is(
+  (select b.remaining || '/' || b.open_slots || '/' || b.max_bid
+   from draft_team_budget('e8000000-0000-4000-8000-0000000000a6', 'd8000000-0000-4000-8000-00a600000002') b),
+  '200/2/200',
+  'LM baseline through the ONE family: at min_bid $0 max_bid EQUALS remaining (C38''s golden shape) and t2 holds the $0 standing bid with 2 open slots');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+
+-- ONE SLOT EARLIER — THE MOVE THAT LANDS.
+select lives_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000a6', 'cm5-rb52',
+       'd8000000-0000-4000-8000-00a600000003', 'd8000000-0000-4000-8000-00a600000002',
+       null, 50) $$,
+  'R378 BOUNDARY (D146) — the SAME move one slot earlier LANDS: it leaves the high bidder 1 open slot, so E27 is not in play and the $0 bid is still winnable');
+select is(
+  (select team_id::text || '/' || price from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000a6' and pick_number = 1),
+  'd8000000-0000-4000-8000-00a600000002/50',
+  '…the pick changed hands and carries the re-entered cost');
+-- (privileged bracket — the derivation family is triple-REVOKED; see §F.)
+reset role;
+select is(
+  (select b.remaining || '/' || b.open_slots || '/' || b.max_bid
+   from draft_team_budget('e8000000-0000-4000-8000-0000000000a6', 'd8000000-0000-4000-8000-00a600000002') b),
+  '150/1/150',
+  '…and one slot remains: the board is still legal, which is what makes the NEXT move the boundary rather than a second violation');
+
+-- THE LOAD-BEARING MEASUREMENT (the §I(b) 121/122 pattern): the post-edit
+-- world is FORGED privileged, measured, and restored — so the refusals below
+-- are refusing a state that BOTH surviving checks demonstrably call fine.
+update draft_picks set team_id = 'd8000000-0000-4000-8000-00a600000002', price = 50
+where draft_id = 'e8000000-0000-4000-8000-0000000000a6' and pick_number = 2;
+select is(
+  (select b.remaining || '/' || b.open_slots || '/' || b.max_bid
+   from draft_team_budget('e8000000-0000-4000-8000-0000000000a6', 'd8000000-0000-4000-8000-00a600000002') b)
+  || '/' || (select draft_auction_solvent('e8000000-0000-4000-8000-0000000000a6'))::text,
+  '100/0/0/true',
+  'R378 (the reason the capacity arm exists): in the POST-EDIT world the §4-rule-7 backstop is TRUE (the floor is remaining >= 0) AND max_bid is 0 — so the money arm computes `high_bid $0 <= max_bid $0` and RETURNS. Neither surviving check can see a complete roster holding a live bid');
+update draft_picks set team_id = 'd8000000-0000-4000-8000-00a600000004', price = 10
+where draft_id = 'e8000000-0000-4000-8000-0000000000a6' and pick_number = 2;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+
+select throws_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000a6', 'cm5-rb53',
+       'd8000000-0000-4000-8000-00a600000004', 'd8000000-0000-4000-8000-00a600000002',
+       null, 50) $$,
+  'P0001',
+  'draft_move_player: pgtap-cm5-a6-t2 is the high bidder on CM5 RB 51 at $0, and that edit fills their last roster spot — a complete roster cannot win the standing bid. Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first (E27/§8.6.7(c))',
+  'R378 — the move that fills the LIVE HIGH BIDDER''s LAST slot is REFUSED, and by its OWN sentence: a $0 max bid printed at a commissioner would send them to the budget editor for a problem money cannot solve');
+select is(
+  (select team_id from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000a6' and pick_number = 2),
+  'd8000000-0000-4000-8000-00a600000004'::uuid,
+  '…and the player did NOT move (the state pin behind the refusal — the RAISE rolled the UPDATE back)');
+select throws_ok(
+  $$ select public.draft_reassign_pick('e8000000-0000-4000-8000-0000000000a6',
+       (select id from draft_picks where draft_id = 'e8000000-0000-4000-8000-0000000000a6'
+        and pick_number = 2),
+       p_team_id => 'd8000000-0000-4000-8000-00a600000002', p_price => 50) $$,
+  'P0001',
+  'draft_reassign_pick: pgtap-cm5-a6-t2 is the high bidder on CM5 RB 51 at $0, and that edit fills their last roster spot — a complete roster cannot win the standing bid. Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first (E27/§8.6.7(c))',
+  'R378 — the reassign twin refuses identically: ONE helper, so the capacity arm cannot drift apart verb by verb any more than the money arm can');
+select is(
+  (select team_id from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000a6' and pick_number = 2),
+  'd8000000-0000-4000-8000-00a600000004'::uuid,
+  '…and that pick did not change hands either');
+
+-- THE MASK, PINNED FROM THE OTHER SIDE — back on LH (min_bid $1). The capacity
+-- breach is reachable there too, and the arm fires there too: it is the
+-- award's FIRST question, not a $0 special case. What min_bid $1 hid was never
+-- the refusal — it was the REASON. Pre-fix this edit was still refused, by the
+-- money arm, printing "that leaves a max bid of $0" (arithmetic: high_bid $150
+-- > max_bid $0), which sends a commissioner to the budget editor for a problem
+-- money cannot solve. That is what break probe 7 shows: delete the capacity arm
+-- and THIS pin goes red on the message while the LM pins go red on the whole
+-- refusal. t2 holds 2 of LH's 3 slots, so one more move fills it.
+reset role;
+insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
+                         player_id, price, is_auto, made_via)
+values ('e8000000-0000-4000-8000-0000000000a5', 'b8000000-0000-4000-8000-0000000000a5',
+        3, null, 'd8000000-0000-4000-8000-00a500000003', 'cm5-rb43', 10, false, 'manager');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+
+select throws_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000a5', 'cm5-rb43',
+       'd8000000-0000-4000-8000-00a500000003', 'd8000000-0000-4000-8000-00a500000002',
+       null, 1) $$,
+  'P0001',
+  'draft_move_player: pgtap-cm5-a5-t2 is the high bidder on CM5 RB 40 at $150, and that edit fills their last roster spot — a complete roster cannot win the standing bid. Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first (E27/§8.6.7(c))',
+  'R378 ON A $1 BOARD: the capacity arm is the award''s FIRST question, not a min_bid-$0 special case — the SAME edit on LH is refused for the SAME reason, in the same words. Pre-fix it was refused by the money arm as "a max bid of $0", which is a true number and the wrong diagnosis');
+select is(
+  (select team_id from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000a5' and pick_number = 3),
+  'd8000000-0000-4000-8000-00a500000003'::uuid,
+  '…and that move did not land either');
+
+-- --- I(d). THE PLAYER UNDER NOMINATION IS NOT ASSIGNABLE — R380 -----------
+-- On an auction the nominated player has NO draft_picks row yet (the tick
+-- writes it at the award, 087:3366), so draft_reassign_pick's exclusivity
+-- sweep — which queries draft_picks and nothing else — passes for exactly the
+-- one player who must not be assigned. Nothing else on the path looks at
+-- `current_nomination`: the E28 arms are about money, and the section-3b gate
+-- returns silently when the receiving team is not the high bidder. The award's
+-- INSERT would then hit `uniq_draft_player_live` (065:178), ARM 2.6's
+-- containment would swallow the unique_violation into `auction_failures`, and
+-- the nomination would never clear — the D160(8) stuck clock, reached through
+-- the board instead of through the money.
+select throws_ok(
+  $$ select public.draft_reassign_pick('e8000000-0000-4000-8000-0000000000a5',
+       (select id from draft_picks where draft_id = 'e8000000-0000-4000-8000-0000000000a5'
+        and pick_number = 2),
+       p_player_id => 'cm5-rb40') $$,
+  'P0001',
+  'draft_reassign_pick: CM5 RB 40 is on the block right now — cancel the nomination first (Edit current nomination), then assign him (§8.7/D143)',
+  'R380 — assigning the player who is UNDER NOMINATION is refused, and the remedy names the verb this task shipped (D143). Exclusivity cannot catch it: he holds no live pick until the award');
+select is(
+  (select player_id from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000a5' and pick_number = 2),
+  'cm5-rb42',
+  '…and the pick still holds the player it held (the state pin behind the refusal)');
+select throws_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000a5', 'cm5-rb40',
+       'd8000000-0000-4000-8000-00a500000003', 'd8000000-0000-4000-8000-00a500000002',
+       null, 1) $$,
+  'P0001',
+  'draft_move_player: CM5 RB 40 has not been drafted in this draft',
+  '…and draft_move_player CANNOT reach the same door — it requires the player to already hold a live pick, so a nominated player fails its own lookup first. That is why the guard lives on reassign and only there (R380)');
 
 -- ---------------------------------------------------------------------------
 -- J. draft_force_pick's auction arm (R301): force-NOMINATE in the nominating
@@ -1395,6 +1709,20 @@ insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
 values ('e8000000-0000-4000-8000-0000000000a3',
         'b8000000-0000-4000-8000-0000000000a3', 1, null,
         'd8000000-0000-4000-8000-00a300000001', 'cm5-rb56', 8, false, 'manager');
+-- RUN 1's bid history (F62 — every nomination opens with a row). Seq 2 was
+-- **t7's** nomination: the seq -> nominator map is NOT positional (§8.6.7(c)
+-- skips complete rosters), which is why a stale row at a re-issued sequence
+-- number names a DIFFERENT franchise rather than a stale copy of the same one.
+-- created_at is written explicitly and in the past — these rows must be older
+-- than the restart below for the run scoping to have anything to discriminate.
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id,
+                        amount, action_id, created_at) values
+  ('e8000000-0000-4000-8000-0000000000a3', 'b8000000-0000-4000-8000-0000000000a3',
+   2, 'cm5-rb58', 'd8000000-0000-4000-8000-00a300000007', 3,
+   '66666666-0000-4000-8000-00000000a301', now() - interval '30 minutes'),
+  ('e8000000-0000-4000-8000-0000000000a3', 'b8000000-0000-4000-8000-0000000000a3',
+   3, 'cm5-rb55', 'd8000000-0000-4000-8000-00a300000002', 12,
+   '66666666-0000-4000-8000-00000000a302', now() - interval '20 minutes');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1435,6 +1763,62 @@ select throws_ok(
   'P0001',
   'draft_set_order: this auction has not started — set nomination_order_mode and its order in League settings before the draft (§7.3.8)',
   'R373: a SCHEDULED auction refuses a pre-start order edit — where a scheduled SNAKE draft accepts one (023:1248). Divergence pinned, F57-adjacent');
+reset role;
+
+-- R379 — THE RESET ENDS THE RUN'S BID HISTORY, AND THE REWIND READS ONLY THE
+-- CURRENT RUN. draft_reset rewinds current_pick_number to 1 and draft_start
+-- re-issues every number from there, so without a stamp the previous run's
+-- rows sit LIVE at sequence numbers the next run uses again — D162's
+-- situation (c), which the first cut of that enumeration did not have.
+select is(
+  (select count(*) filter (where voided_at is null) || '/' || count(*)
+   from draft_bids where draft_id = 'e8000000-0000-4000-8000-0000000000a3'),
+  '0/2',
+  'R379 (a): the reset VOIDED every bid row of the run it cleared — and KEPT them (2 rows, 0 live): §12.5 stays append-only, exactly like the draft_picks soft-undo one table over');
+
+-- The RESTART is FORGED — said plainly, because it is (the R371 lesson).
+-- draft_start_internal needs a scoring snapshot this fixture league does not
+-- carry, so run 2's state is written privileged: a fresh `started_at`, run 2's
+-- own bid rows at the SAME sequence numbers, and one live pick so the undo has
+-- something to revert. Everything the pin actually measures — the reset above
+-- and the undo below — is a REAL verb.
+update drafts set status = 'paused', started_at = now(),
+                  current_pick_number = 3, on_clock_team_id = 'd8000000-0000-4000-8000-00a300000004',
+                  current_deadline = null, deadline_remaining_ms = 30000
+where id = 'e8000000-0000-4000-8000-0000000000a3';
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id,
+                        amount, action_id) values
+  ('e8000000-0000-4000-8000-0000000000a3', 'b8000000-0000-4000-8000-0000000000a3',
+   2, 'cm5-rb59', 'd8000000-0000-4000-8000-00a300000003', 4,
+   '66666666-0000-4000-8000-00000000a303'),
+  ('e8000000-0000-4000-8000-0000000000a3', 'b8000000-0000-4000-8000-0000000000a3',
+   3, 'cm5-rb60', 'd8000000-0000-4000-8000-00a300000004', 6,
+   '66666666-0000-4000-8000-00000000a304');
+insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
+                         player_id, price, is_auto, made_via)
+values ('e8000000-0000-4000-8000-0000000000a3',
+        'b8000000-0000-4000-8000-0000000000a3', 2, null,
+        'd8000000-0000-4000-8000-00a300000003', 'cm5-rb59', 4, false, 'manager');
+-- THE AMBIGUITY, MEASURED before the verb is asked: the shipped lookup MINUS
+-- its run predicate — which is what the body did before R379 — still answers
+-- run 1's t7 at seq 2. The pin below is refusing to accept that answer.
+select is(
+  (select b.team_id from draft_bids b
+   where b.draft_id = 'e8000000-0000-4000-8000-0000000000a3' and b.nomination_seq = 2
+   order by b.created_at, b.id limit 1),
+  'd8000000-0000-4000-8000-00a300000007'::uuid,
+  'R379 (b), the load-bearing measurement: UNSCOPED, the earliest row at seq 2 is RUN 1''s t7 — two runs'' nominations really do collide on one sequence number, and `voided_at` cannot separate them because this lookup must read voided rows');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_undo('e8000000-0000-4000-8000-0000000000a3', 1) $$,
+  'R379 (b): the cascade undo rewinds run 2 to nomination 2');
+select is(
+  (select on_clock_team_id from drafts
+   where id = 'e8000000-0000-4000-8000-0000000000a3'),
+  'd8000000-0000-4000-8000-00a300000003'::uuid,
+  '…and the seat it recovers is RUN 2''s nominator (t3), not run 1''s t7 whose bid row still sits at the same sequence number — the rewind is scoped to `started_at`, the one discriminator a lookup that must read voided rows can still use');
 reset role;
 
 -- ---------------------------------------------------------------------------
@@ -1551,6 +1935,33 @@ select throws_ok(
 -- D138: every auction commissioner verb refuses a MOCK. LJ is a live auction
 -- mock; the commissioner is refused even though they are the commissioner,
 -- because a mock has no commissioner — only a launcher (D110(1)/D103(2)).
+--
+-- R383 — THE ZERO-SIDE-EFFECT CAPTURE, taken IMMEDIATELY before the sweep (the
+-- 025 §F pattern). The counter that used to close this section summed
+-- draft_picks + draft_bids only, and on this fixture ONLY draft_force_pick
+-- could have added a row to either: every other verb writes where that counter
+-- did not look — leagues.status and drafts.status (reset, end), drafts.config
+-- (set_clock), drafts.nomination_order (set_order), drafts.budget_adjustments
+-- (adjust_budget), league_chat (all of them). Pointedly, the draft_reset pin
+-- below calls out `leagues.status` as the outright §8.8 breach, and that is
+-- exactly the column the old composite did not read. WHOLE ROWS are captured,
+-- so `updated_at` alone falsifies a smuggled UPDATE.
+reset role;
+create temp table cm5_mock_before as
+select
+  (select to_jsonb(d) from drafts d
+    where d.id = 'e8000000-0000-4000-8000-0000000000a4')            as draft_row,
+  (select to_jsonb(l) from leagues l
+    where l.id = 'b8000000-0000-4000-8000-0000000000a4')            as league_row,
+  (select count(*) from draft_picks
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4')        as picks,
+  (select count(*) from draft_bids
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4')        as bids,
+  (select count(*) from league_chat
+    where context = 'draft:e8000000-0000-4000-8000-0000000000a4')   as chat,
+  (select count(*) from draft_liveness
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4')        as liveness;
+set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
@@ -1577,11 +1988,15 @@ select throws_ok(
   'D138: draft_end refuses a mock');
 -- R369(b): the 087 banner claimed "036 §H sweeps all eleven" and §H is the
 -- reverse-won-bid/E29 section — the sweep is HERE and it covered the FOUR new
--- verbs only. The other seven are the 069 controls, and 025 does pin their
--- mock refusals; but THREE of them (set_clock, reassign, move) were DROPped
--- and re-CREATEd by this migration with new signatures and new bodies, so
--- "025 already pins it" is a claim about a function that no longer exists.
--- The eleven are therefore swept here, in the post-087 world.
+-- verbs only. **R375 corrected the reason given for extending it.** 025:765-782
+-- DOES pin the mock refusal of set_clock / reassign / move, and `supabase test
+-- db` runs 025 against the fully migrated 001-087 chain, so those pins exercise
+-- the POST-087 bodies (025 calls them positionally with fewer arguments, which
+-- resolves through the new defaults) — "025 pins a function that no longer
+-- exists" was false. The eleven are swept here for CO-LOCATION: three of the
+-- seven were DROP+CREATEd by this migration, so the whole contract reads as one
+-- contract in the file that changed them, BESIDE 025's pins rather than
+-- instead of them.
 select throws_ok(
   $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000a4', 60) $$,
   'P0001',
@@ -1622,11 +2037,24 @@ select throws_ok(
   'P0001',
   'draft_reset: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
   'D138: draft_reset refuses a mock — the one whose bypass would be an outright §8.8 zero-side-effect breach (it writes leagues.status)');
+reset role;
 select is(
-  (select count(*) from draft_picks where draft_id = 'e8000000-0000-4000-8000-0000000000a4')
-  + (select count(*) from draft_bids where draft_id = 'e8000000-0000-4000-8000-0000000000a4'),
-  0::bigint,
-  '…and the mock is UNTOUCHED by all ELEVEN — the §8.8 zero-side-effect contract, measured rather than inferred from the refusals');
+  (select to_jsonb(d)::text from drafts d
+    where d.id = 'e8000000-0000-4000-8000-0000000000a4')
+  || '|' || (select to_jsonb(l)::text from leagues l
+    where l.id = 'b8000000-0000-4000-8000-0000000000a4')
+  || '|' || (select count(*) from draft_picks
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4')
+  || '/' || (select count(*) from draft_bids
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4')
+  || '/' || (select count(*) from league_chat
+    where context = 'draft:e8000000-0000-4000-8000-0000000000a4')
+  || '/' || (select count(*) from draft_liveness
+    where draft_id = 'e8000000-0000-4000-8000-0000000000a4'),
+  (select draft_row::text || '|' || league_row::text || '|' || picks
+          || '/' || bids || '/' || chat || '/' || liveness
+   from cm5_mock_before),
+  '…and the mock is UNTOUCHED by all ELEVEN — the §8.8 zero-side-effect contract measured across the state these verbs actually write: the WHOLE drafts row (status, config, nomination_order, budget_adjustments, current_nomination, updated_at), the WHOLE leagues row (status — draft_reset''s breach), plus pick / bid / chat / liveness counts (R383)');
 
 -- D97: the system posts. Every state change above posted in the SAME
 -- transaction as the change (never a follow-up write) — so they are all

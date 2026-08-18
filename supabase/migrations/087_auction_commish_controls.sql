@@ -165,10 +165,19 @@
 -- message shape, and 036 §M sweeps all eleven — §H is the reverse-won-bid/
 -- E29 section, and this banner named the wrong one while §M covered only the
 -- four NEW verbs (R369b). §M was EXTENDED to the eleven rather than the claim
--- narrowed, and the extension is not ceremony: three of the seven 069
--- controls (set_clock, reassign, move) were DROPped and re-CREATEd by THIS
--- migration, so "025 already pins their mock refusal" is a claim about
--- function bodies that no longer exist. This is a seam, not dead
+-- narrowed. THE REASON, STATED TRUE (R375 corrected the first attempt, which
+-- said that "025 already pins their mock refusal" is a claim about function
+-- bodies that no longer exist — it is not):
+-- `supabase/tests/025_mock_draft_mode.sql:765-782` DOES pin the mock refusal
+-- of draft_set_clock / draft_reassign_pick / draft_move_player, and
+-- `supabase test db` runs 025 against the fully migrated 001–087 chain, so
+-- those pins exercise the **post-087 bodies** (025 calls them positionally
+-- with fewer arguments, which resolves to the new arities through the
+-- defaults; the suite is green at 2484). The honest reason for the sweep is
+-- CO-LOCATION: three of the seven were DROP+CREATEd here, so 036 pins all
+-- eleven in the post-087 world BESIDE 025's — the eleven read as one contract
+-- in the file that changed them, and 025's pins keep standing rather than
+-- being superseded. This is a seam, not dead
 -- code: 071 refuses auction mocks today, so the refusal is unreachable until
 -- L.C1.7 lifts that — which is exactly why it must exist before then (the
 -- F61 argument, applied to the commissioner surface).
@@ -228,14 +237,24 @@ ALTER TABLE draft_bids
 --       the number, so the very next nomination re-uses it;
 --   (b) the sequence is REWOUND ONTO — draft_undo moves
 --       current_pick_number back over nominations that had already settled,
---       so those numbers will be issued again.
+--       so those numbers will be issued again;
+--   (c) the RUN ENDS AND THE NUMBERING RESTARTS — draft_reset rewinds
+--       current_pick_number to 1 and draft_start re-issues every number from
+--       there, so the WHOLE of the previous run's history sits at sequence
+--       numbers the next run will use again. This is the situation R379
+--       found missing: it is the only one that makes a seq ambiguous ACROSS
+--       runs rather than within one, and it is the reason a reader keyed on
+--       (draft_id, nomination_seq) alone also needs a run discriminator —
+--       see draft_undo's on-clock recovery, which reads voided rows on
+--       purpose and therefore scopes by `drafts.started_at` instead.
 -- A REVERSED pick (draft_reverse_won_bid) is deliberately NOT in that list:
 -- it consumes no sequence number and rewinds nothing, so its bids stay
 -- live-flagged and the reversal is recorded where reversals have always been
 -- recorded — `draft_picks.is_undone`. Two different facts, two columns, no
--- duplication. Written ONLY by draft_void_nomination_internal and by
--- draft_undo's rewind stamp; never cleared — a void is one-way, exactly like
--- the soft-undo it sits beside.
+-- duplication. Written by EXACTLY THREE sites, one per situation above:
+-- draft_void_nomination_internal (a), draft_undo's rewind stamp (b), and
+-- draft_reset's end-of-run sweep (c, R379). Never cleared — a void is one-way,
+-- exactly like the soft-undo it sits beside.
 -- NO policy changes: draft_bids still has SELECT-for-members and no
 -- UPDATE/DELETE policy for any role (083:132–136), which is what keeps
 -- D131(2)'s append-only ruling true at the client boundary. 036 §B re-runs
@@ -357,6 +376,33 @@ REVOKE EXECUTE ON FUNCTION draft_void_nomination_internal(UUID)
 --     draft_adjust_budget / 084-start-backstop pattern, and the reason no
 --     compensating math exists at any of the three sites.
 --
+--     THE AWARD ASKS **TWO** QUESTIONS, SO THIS GATE ASKS TWO (R379-cycle,
+--     filed R378 — and it is R367's own species recurring inside R367's fix).
+--     `draft_tick`'s award arm refuses on `open_slots < 1` (`E27` — a complete
+--     roster cannot bid) BEFORE it refuses on `price > max_bid`, and every
+--     other consumer of the family pairs them the same way and says why
+--     (draft_force_pick's nominate arm, draft_nominate). The reason is
+--     084:349's `CASE WHEN v_open <= 0 THEN 0`: with a complete roster
+--     `max_bid` is a **SEMANTIC** zero, not a computed one, so
+--     `high_bid <= max_bid` stops being the affordability question at all.
+--     Reproducing only the money half is masked at `min_bid >= 1` by
+--     arithmetic (`high_bid >= min_bid >= 1 > 0`, so the money arm raises
+--     anyway — with a message that sends the commissioner after dollars) and
+--     is NOT masked at **`auction_min_bid = 0`, which is legal**
+--     (`league-settings.ts:220` is `min(0)`; 084:210 names the $0 league as
+--     supported). There both nomination writers open at `min_bid`, so an
+--     unraised nomination stands at **$0** and the money arm computes
+--     `0 <= 0` and RETURNS — while `draft_auction_solvent`'s floor is
+--     `remaining >= open_slots × 0`, i.e. `remaining >= 0`, which nothing can
+--     fail. A commissioner move that fills the standing high bidder's LAST
+--     slot therefore committed, and every 5s tick then raised E27 into
+--     `auction_failures` forever: the D160(8) stuck clock again, through the
+--     board instead of through the money. The two refusals carry DIFFERENT
+--     messages on purpose — folding the capacity case into the max-bid
+--     sentence prints "$0 max bid" and sends the commissioner after money
+--     when the problem is a roster slot. Pinned in 036 §I(c) on a min_bid-$0
+--     world, one unit of `open_slots` either side.
+--
 --     The verb name and the remedy sentence are PARAMETERS because the
 --     remedy genuinely differs: draft_adjust_budget is not pause-gated (D141
 --     does not name it) so it must tell the commissioner to pause first,
@@ -380,6 +426,7 @@ AS $$
 DECLARE
   v_high_team UUID;
   v_high_bid  INTEGER;
+  v_open      INTEGER;
   v_max_bid   INTEGER;
   v_team_name TEXT;
   v_live_name TEXT;
@@ -399,10 +446,16 @@ BEGIN
   v_high_bid := (p_draft.current_nomination->>'high_bid')::int;
 
   -- RE-DERIVED through the ONE family (D127/§4.7) in the post-write world.
-  SELECT b.max_bid INTO v_max_bid
+  -- BOTH of the award's numbers, because the award asks both (R378).
+  SELECT b.open_slots, b.max_bid INTO v_open, v_max_bid
   FROM public.draft_team_budget(p_draft.id, p_team_id) b;
 
-  IF v_high_bid <= v_max_bid THEN
+  -- The pass condition is the award's pass condition: capacity AND money.
+  -- `v_open >= 1` is FIRST for the same reason draft_nominate puts it first
+  -- (085:471-478) — a complete roster reads max_bid 0 from the E27 branch, so
+  -- a money-first test would answer the wrong question, and at min_bid $0 it
+  -- would answer it wrongly.
+  IF v_open >= 1 AND v_high_bid <= v_max_bid THEN
     RETURN;
   END IF;
 
@@ -410,6 +463,20 @@ BEGIN
   SELECT pl.full_name INTO v_live_name
   FROM public.players pl WHERE pl.id = p_draft.current_nomination->>'player_id';
 
+  -- ARM (a) — CAPACITY. Its own sentence and its own remedy: the commissioner
+  -- has to free a roster spot or drop the nomination, and telling them the max
+  -- bid is $0 would send them to the budget editor for a problem money cannot
+  -- solve.
+  IF v_open < 1 THEN
+    RAISE EXCEPTION
+      '%: % is the high bidder on % at $%, and that edit fills their last roster spot — a complete roster cannot win the standing bid. % (E27/§8.6.7(c))',
+      p_verb, v_team_name, COALESCE(v_live_name, 'the nominated player'),
+      v_high_bid, p_remedy
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- ARM (b) — MONEY. Byte-identical to what draft_adjust_budget raised before
+  -- the helper existed, which is what keeps 036 §F's exact-message pins honest.
   RAISE EXCEPTION
     '%: % is the high bidder on % at $%, and that leaves a max bid of $% — the close would be unaffordable. % (E28/D131(4))',
     p_verb, v_team_name, COALESCE(v_live_name, 'the nominated player'),
@@ -1328,9 +1395,31 @@ BEGIN
     -- that NOMINATED at v_first — recovered from the opening bid row that
     -- every nomination writes (F62). The rows were just stamped voided; they
     -- still stand, which is exactly why a void marks rather than deletes.
+    --
+    -- 087/R379 — SCOPED TO THIS RUN, and that scoping is load-bearing.
+    -- `nomination_seq` IS `current_pick_number`, and draft_reset rewinds it to
+    -- 1 (D162 situation (c)) while draft_start re-issues every number from
+    -- there, so (draft_id, nomination_seq) is ambiguous ACROSS runs. This
+    -- lookup deliberately reads VOIDED rows — the stamps a few lines up are
+    -- its own — so `voided_at` cannot be the discriminator. `started_at` is:
+    -- every bid of this run was written after the start that set it, and
+    -- draft_reset NULLs it. Without this the earliest row wins and a rewind
+    -- past a restarted draft's boundary puts the PREVIOUS run's nominator on
+    -- the clock (the seq→nominator map is not positional — §8.6.7(c) skips
+    -- complete rosters — so it is a different franchise, not a stale copy of
+    -- the same one). A NULL started_at on a live/paused draft is corruption
+    -- and is refused LOUDLY rather than silently widening the window back
+    -- over every run this draft has ever had.
+    IF v_draft.started_at IS NULL THEN
+      RAISE EXCEPTION
+        'draft_undo: auction % is % but has no started_at — this run''s bid history cannot be told from a previous run''s; refusing to guess whose nomination to rewind to (R379)',
+        p_draft_id, v_draft.status
+        USING ERRCODE = 'P0001';
+    END IF;
     SELECT b.team_id INTO v_onclock
     FROM public.draft_bids b
     WHERE b.draft_id = p_draft_id AND b.nomination_seq = v_first
+      AND b.created_at >= v_draft.started_at
     ORDER BY b.created_at, b.id
     LIMIT 1;
     IF v_onclock IS NULL THEN
@@ -1524,6 +1613,25 @@ BEGIN
     ) THEN
       RAISE EXCEPTION
         'draft_reassign_pick: % is already on a roster in this draft — undo or reassign that pick first',
+        v_new_pl_name
+        USING ERRCODE = 'P0001';
+    END IF;
+    -- 087/R379-cycle (filed R380) — THE ONE PLAYER THE SWEEP ABOVE CANNOT
+    -- SEE. On an auction the NOMINATED player has no draft_picks row yet: the
+    -- tick writes it at the award (ARM 2.6). So the exclusivity check passes
+    -- for exactly the player who must not be assigned, and nothing else on
+    -- this path looks at `current_nomination` — the E28 arms are about money,
+    -- and the section-3b gate returns silently when the receiving team is not
+    -- the high bidder. The award's INSERT then hits `uniq_draft_player_live`
+    -- (065:178), ARM 2.6's containment swallows the unique_violation into
+    -- `auction_failures`, the nomination is never cleared, and every 5s tick
+    -- reproduces it: the D160(8) stuck clock reached through the board.
+    -- draft_move_player cannot reach this — it requires the player to already
+    -- hold a live pick — which is why the guard lives here and only here.
+    IF v_draft.draft_type = 'auction'
+       AND v_draft.current_nomination->>'player_id' = p_player_id THEN
+      RAISE EXCEPTION
+        'draft_reassign_pick: % is on the block right now — cancel the nomination first (Edit current nomination), then assign him (§8.7/D143)',
         v_new_pl_name
         USING ERRCODE = 'P0001';
     END IF;
@@ -2359,7 +2467,9 @@ REVOKE EXECUTE ON FUNCTION draft_set_order(UUID, UUID[], TEXT)
 
 -- ---------------------------------------------------------------------------
 -- 14. draft_reset — HEAD 069:1350-1462. R302's auction hygiene: the reset
---     UPDATE also clears current_nomination and budget_adjustments.
+--     UPDATE also clears current_nomination and budget_adjustments, and
+--     (R379) the run's draft_bids rows are stamped `voided_at` — D162
+--     situation (c), the one the first cut of that enumeration missed.
 --     Signature unchanged ⇒ CREATE OR REPLACE.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_reset(
@@ -2424,6 +2534,21 @@ BEGIN
   SET is_undone = TRUE
   WHERE draft_id = p_draft_id AND is_undone = FALSE;
   GET DIAGNOSTICS v_undone = ROW_COUNT;
+
+  -- 087/R379 — D162 situation (c): THIS RUN'S BID HISTORY ENDS HERE. The
+  -- reset rewinds current_pick_number to 1 and draft_start re-issues the same
+  -- sequence numbers over rows that are still `voided_at IS NULL`, so leaving
+  -- them live merges two runs' nominations under one seq for every reader
+  -- keyed on it — the same merge D143 creates within a run, at run scale.
+  -- Rows are KEPT and STAMPED, never deleted: §12.5 is append-only and the
+  -- previous run's history is audit (the draft_picks soft-undo above is the
+  -- same posture, one table over). A direct sweep rather than
+  -- draft_void_nomination_internal, because that helper voids the LIVE
+  -- nomination only (by seq + player) and what ends here is the whole run.
+  -- NOT restricted to auctions: a snake draft simply has no draft_bids rows,
+  -- so the statement is a measured no-op there rather than a branch.
+  UPDATE public.draft_bids SET voided_at = now()
+  WHERE draft_id = p_draft_id AND voided_at IS NULL;
 
   -- The system post BEFORE the drafts-row context anchor changes nothing —
   -- same txn; written first so the room's transcript reads
