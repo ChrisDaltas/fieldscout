@@ -42,9 +42,11 @@ Inherited M3 notes already recorded: tasks-M2 §11's M3-inherits line
 (presence-only `realtime.messages` INSERT posture — M3's auction realtime
 decides whether to open Client Broadcast for bid-pulse UX, deliberately);
 auction refusal seams in 066/071 name M3; the 2026 test-cohort note (CLAUDE.md)
-makes **auction + custom scoring the headline feedback goals** — the custom
+makes **auction + custom scoring the headline feedback goals** — ~~the custom
 scoring editor un-punt still needs its spec changelog entry (Architect) before
-any build touches it.
+any build touches it~~ *(satisfied 2026-08-18: spec v2.11/§7.3.3.1 merged as
+PR #152, and the SE lane block below carries the build — no editor build until
+Chris also merges the SE breakdown PR)*.
 
 **Lane precedence — TWO lanes under one active build (added 2026-08-17; takes effect when
 the draft-room redesign PR merges, and is part of what Chris approves with it).**
@@ -60,14 +62,35 @@ file's pointer does not move: **M3 stays the active build and gains a second lan
 | **Spec fold** | `spec-redraft-leagues.md` **v2.12** (§16.1/§16.2/§16.3/§16.4/§16.5, §8.7, §9.3) |
 | **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries both checklists |
 
+**Third concurrent lane — SE, the custom scoring editor (added 2026-08-18; takes effect
+when the SE breakdown PR merges, and is part of what Chris approves with it).**
+Spec **v2.11** (§7.3.3.1, approved & merged 2026-08-18 as PR #152) made the test-cohort
+custom scoring editor LAW and required a follow-up Architect breakdown before build; that
+breakdown exists and this row activates it. SE is the **C37 separate parallel track — never
+an M3 lane**: it never blocks and is never blocked by `DR.*` or `L.C*` (its schema work is
+additive; SE migration numbers stay **above tasks-M3 §7's 088/089 reservations**). The only
+shared surface is `PROGRESS-leagues.md` (append-collisions resolved at merge, the
+established two-lane pattern).
+
+| | |
+| --- | --- |
+| **SE breakdown** | `docs/specs/tasks-SE-scoring-editor.md` (Architect, 2026-08-18) |
+| **SE task id prefix** | `SE.` |
+| **Spec fold** | `spec-redraft-leagues.md` **v2.11** (§7.3.3.1, §7.3.8, §12.25, §16.2, §23.5, App B.4) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all three checklists |
+
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
 2. When no `DR.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
-3. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
+3. When **both** are blocked — or when Chris directs by name ("build SE.x") — take the
+   next unblocked **`SE.*`** task (dependency order in tasks-SE §5). The pure-TS opener
+   chain (SE.1 → SE.2 → SE.3) touches no migration, so it is always safe to take while
+   the schema lanes are contended.
+4. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
    new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
    waits on DR.3; `L.C3.3` on DR.5.
-4. The M3 **engine** lane — `L.C1.3` → `L.C1.7`, `L.C2.1`, `L.C2.2` — has **no `DR.`
+5. The M3 **engine** lane — `L.C1.3` → `L.C1.7`, `L.C2.1`, `L.C2.2` — has **no `DR.`
    dependency** and is never blocked by the redesign.
 
 **Do not build `LV.*` or Scout tasks while M3 is active.**
