@@ -17,8 +17,9 @@
 -- paths measured against a LIVE HIGH BID (E28 arm 3, the blocker) — extended
 -- §B to the outsider and anon roles the 087 banner claimed but never ran
 -- (R369a), extended §M's mock sweep from four verbs to the eleven the banner
--- claimed (R369b), and pinned draft_set_order's scheduled-auction refusal
--- beside §K (R373). 150 -> 179 asserts; every previously-recorded probe count
+-- claimed (R369b), pinned draft_set_order's scheduled-auction refusal beside
+-- §K (R373), and gave the new E28 arm-3 helper its own §A form pin and
+-- no-drift source pin. 150 -> 181 asserts; every previously-recorded probe count
 -- was re-run against the enlarged file (D161(5)).
 --
 -- FIXTURE ADP IS FRACTIONAL (the R286 lesson / ledger F60), same as 035:
@@ -36,21 +37,21 @@
 -- Falsifiability notes (§4.3) — every count below was RUN, never predicted
 -- (the R306/R314 lesson). Each probe was a LOCAL-ONLY `CREATE OR REPLACE`
 -- from a patched copy of 087, reverted by re-applying the file unmutated;
--- 179/179 before and after each.
+-- 181/181 before and after each.
 --
 -- **THE COUNTS BELOW ARE THE M3 BATCH-5 RE-RUN (D161(5)).** This file grew
--- 150 -> 179 in the R367-R374 fix cycle, so every previously-recorded "N of
+-- 150 -> 181 in the R367-R374 fix cycle, so every previously-recorded "N of
 -- 150" was unreproducible and all five original probes were RE-RUN against
 -- the enlarged file. **Every original RED SET reproduced exactly** — same
 -- assertions, shifted numbers — which is the evidence that the first record
 -- was honest rather than fitted.
 --   * **BREAK PROBE 1 — the DoD's: E28's live-high-bid arm (D131(4))
 --     disabled for draft_adjust_budget** (the `PERFORM` of the section-3b
---     helper removed from that verb only). **AS RUN: 3 of 179 RED** (83 the
---     refusal, 84 the state pin behind it — the adjustment must not have
---     landed — and 86, the boundary's MEASUREMENT pin, which goes red
+--     helper removed from that verb only). **AS RUN: 3 of 181 RED** (85 the
+--     refusal, 86 the state pin behind it — the adjustment must not have
+--     landed — and 88, the boundary's MEASUREMENT pin, which goes red
 --     because the arm-3 refusal is what kept the -$50 edit from composing
---     into the -$49 one; pin 85, the boundary's own `lives_ok`, stays GREEN
+--     into the -$49 one; pin 87, the boundary's own `lives_ok`, stays GREEN
 --     and is named). **wire 0 of 3**, GREEN BY CONSTRUCTION and named: the wire suite
 --     drives no budget edit against a live high bidder. Arms 1 and 2 are
 --     separate branches above arm 3 and stay green, which is what proves the
@@ -59,36 +60,36 @@
 --     through the two priced verbs, which is exactly the point of probe 6.
 --   * **BREAK PROBE 2 — D162's `voided_at IS NULL` removed from ARM 2.6's
 --     award attribution lookup** (the D161(2) defect this task exists to
---     close). **AS RUN: 2 of 179 RED** (92/93 — `made_via` flips 'autopick'
+--     close). **AS RUN: 2 of 181 RED** (94/95 — `made_via` flips 'autopick'
 --     -> 'manager' and `is_auto` true -> false: the VOIDED HUMAN row is
 --     attributed instead of the live SYSTEM one, so a manager is publicly
 --     credited with a nomination they cancelled). **wire 0 of 3**, GREEN BY
 --     CONSTRUCTION: the wire fixture's cancelled nomination is never
 --     renominated on the same player at the same amount, so it contains no
---     decoy — only 036 §G builds one. Pin 94 stays green and is named — the
+--     decoy — only 036 §G builds one. Pin 96 stays green and is named — the
 --     award still lands on the right player at the right price, so ONLY the
---     attribution moves — and so do the decoy-construction pins 90/91, which
+--     attribution moves — and so do the decoy-construction pins 92/93, which
 --     describe the fixture rather than the lookup. §G forces the UUID tiebreak
 --     deterministically (see its own note) precisely so this probe yields a
 --     stable number, not a coin flip.
 --   * **BREAK PROBE 3 — the D141 gate helper made a no-op** (its RAISE
---     bypassed). **AS RUN: 10 of 179 RED** (29-34 the six gated verbs' live
---     refusals; 47 the cancel-while-running refusal; 49 and 55, because a
+--     bypassed). **AS RUN: 10 of 181 RED** (31-36 the six gated verbs' live
+--     refusals; 49 the cancel-while-running refusal; 51 and 57, because a
 --     cancel that is no longer forced to happen while paused leaves the
---     board in a different state than D143 describes; 133, the force-pick
+--     board in a different state than D143 describes; 135, the force-pick
 --     phase refusal downstream of it) **plus 1 of 3 wire cases** — the gate
 --     case, which is the one the routes and L.C3.2's disabled-button copy
---     will read. Pins 35 and 36 — the SNAKE counterparts (set_clock and undo)
+--     will read. Pins 37 and 38 — the SNAKE counterparts (set_clock and undo)
 --     succeeding LIVE — stay GREEN BY CONSTRUCTION and are named: the helper
 --     never fires on snake, so disabling it cannot move them. That is F57's
 --     divergence, pinned from both sides.
 --   * **BREAK PROBE 4 — R302's two clears dropped from draft_reset.**
---     **AS RUN: 2 of 179 RED** (144, 145); **wire 0 of 3**, green by
+--     **AS RUN: 2 of 181 RED** (146, 147); **wire 0 of 3**, green by
 --     construction — the wire suite never resets. R373's new set_order
---     divergence pin (147) sits two lines after them and stays GREEN: it
+--     divergence pin (149) sits two lines after them and stays GREEN: it
 --     reads `status`, which the mutation does not touch.
 --   * **BREAK PROBE 5 — the PRE-WRITE priced-move max-bid refusal dropped
---     from draft_move_player. AS RUN: 1 of 179 RED** (109); **wire 0 of 3**.
+--     from draft_move_player. AS RUN: 1 of 181 RED** (111); **wire 0 of 3**.
 --     **THIS PROBE FOUND A DEFECT IN THIS FILE AND IS RECORDED BECAUSE IT
 --     DID.** On its first run it turned **0 of 150** red. The pin passed a
 --     mutation that deleted the very clause it names, because it was written
@@ -108,39 +109,41 @@
 --     PATHS** (the `PERFORM` of the section-3b helper deleted from
 --     draft_move_player AND draft_reassign_pick; draft_adjust_budget keeps
 --     its call). This is R367's probe — the blocker this fix cycle exists
---     for. **AS RUN: 9 of 179 RED** (121/122 the same-team price-only arm and
---     its state pin, 125/126 the cross-team move, 127/128 the cross-team
---     reassign, and 129-131 downstream — once the refused edits land, the
---     board the boundary pins measure is a different board). **wire 0 of 3**,
+--     for. **AS RUN: 10 of 181 RED** — **13**, §A's no-drift source pin (the
+--     one that keeps this fix from un-fixing itself: it asserts all THREE
+--     money-moving verbs reference the helper), then 123/124 the same-team
+--     price-only arm and its state pin, 127/128 the cross-team move, 129/130
+--     the cross-team reassign, and 131-133 downstream — once the refused edits
+--     land, the board the boundary pins measure is a different board. **wire 0 of 3**,
 --     GREEN BY CONSTRUCTION and named: no wire case drives a priced edit
 --     against a live high bidder, and the refusal is a single-transaction
---     property that PostgREST adds nothing to. **Pins 119/120 stay GREEN and
+--     property that PostgREST adds nothing to. **Pins 121/122 stay GREEN and
 --     they are the load-bearing pair**: they measure the FORGED post-edit
 --     world and say `draft_auction_solvent` is TRUE there while max_bid is
 --     $149 against a standing $150 bid. A probe cannot move them because
 --     they are not asking the verb anything — they are the reason the verb
---     needs an arm the §4-rule-7 backstop cannot supply. Pins 123/124 (the
+--     needs an arm the §4-rule-7 backstop cannot supply. Pins 125/126 (the
 --     $49 boundary that LANDS) also stay green by construction: a deleted
 --     refusal cannot break a success.
 --   * **ONE UNIT SHORT, EVERYWHERE (D146 / the R320 doctrine).** Every
 --     >=/<=/< comparison 087 makes is bracketed by a pin false by exactly one
 --     unit of the thing compared:
 --       E28 solvency floor      → an adjustment leaving remaining = open ×
---                                 min_bid EXACTLY lands (§F pin 77); one
---                                 dollar less is refused (pin 75)
+--                                 min_bid EXACTLY lands (§F pin 79); one
+--                                 dollar less is refused (pin 77)
 --       E28 live high bid       → an adjustment leaving max_bid = high_bid
---                                 EXACTLY lands (pin 85); one dollar less is
---                                 refused (pin 83)
---       priced move ≤ max_bid   → price = max_bid lands (pin 112); max_bid+1
---                                 is refused (pin 109)
+--                                 EXACTLY lands (pin 87); one dollar less is
+--                                 refused (pin 85)
+--       priced move ≤ max_bid   → price = max_bid lands (pin 114); max_bid+1
+--                                 is refused (pin 111)
 --       E28 arm 3 on the priced → §I(b): $49 lands at max_bid = high_bid
---         paths (R367)            EXACTLY (123) and $50 is refused (121);
---                                 from the move side $1 lands (129) and $2 is
---                                 refused (125)
---       force-nominate §8.6.7(a)→ min_bid = max_bid lands (pin 142); a seat
---                                 one dollar short is refused (pin 141)
+--         paths (R367)            EXACTLY (125) and $50 is refused (123);
+--                                 from the move side $1 lands (131) and $2 is
+--                                 refused (127)
+--       force-nominate §8.6.7(a)→ min_bid = max_bid lands (pin 144); a seat
+--                                 one dollar short is refused (pin 143)
 --       draft_end unfilled count→ counted from the ONE family, pinned as a
---                                 stored literal (pin 149) so an off-by-one
+--                                 stored literal (pin 151) so an off-by-one
 --                                 in the sum is visible
 -- ============================================================================
 begin;
@@ -148,7 +151,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(179);
+select plan(181);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
@@ -187,6 +190,15 @@ select ok(
    where n.nspname = 'public' and p.proname = 'draft_auction_pause_gate_internal')
   and not has_function_privilege('authenticated', 'public.draft_auction_pause_gate_internal(public.drafts,text)', 'EXECUTE'),
   'draft_auction_pause_gate_internal is search_path='''' + revoked (the ONE D141 implementation)');
+select ok(
+  (select array_to_string(p.proconfig, ',') = 'search_path=""'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'draft_auction_high_bid_gate_internal')
+  and not has_function_privilege('authenticated',
+        'public.draft_auction_high_bid_gate_internal(public.drafts,uuid,text,text)', 'EXECUTE')
+  and not has_function_privilege('anon',
+        'public.draft_auction_high_bid_gate_internal(public.drafts,uuid,text,text)', 'EXECUTE'),
+  'draft_auction_high_bid_gate_internal is search_path='''' + revoked (the ONE E28 arm-3 implementation — R367)');
 
 -- THE THREE WIDENED SIGNATURES (banner item 3): the new arity exists and the
 -- OLD arity is GONE. A leftover 4-arg draft_set_clock would make every
@@ -229,6 +241,12 @@ select ok(
    where n.nspname = 'public'
      and p.proname in ('draft_cancel_nomination', 'draft_undo', 'draft_end')),
   'all THREE voiding verbs call the ONE void helper (D162)');
+select ok(
+  (select bool_and(p.prosrc like '%draft_auction_high_bid_gate_internal%')
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('draft_adjust_budget', 'draft_move_player', 'draft_reassign_pick')),
+  'all THREE money-moving verbs call the ONE E28 arm-3 helper — R367 is precisely what happens when two of them do not, so this is the pin that keeps the fix from un-fixing itself');
 select ok(
   (select p.prosrc like '%draft_complete_internal%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
