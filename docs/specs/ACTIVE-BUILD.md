@@ -91,7 +91,10 @@ established two-lane pattern).
    new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
    waits on DR.3; `L.C3.3` on DR.5.
 5. The M3 **engine** lane — `L.C1.3` → `L.C1.7`, `L.C2.1`, `L.C2.2` — has **no `DR.`
-   dependency** and is never blocked by the redesign.
+   dependency** and is never blocked by the redesign. Exception: **`L.C1.8`** (added
+   2026-08-18, F57 ruled — snake pause-first alignment) is engine work that runs
+   **AFTER DR.2 lands**, per its own banner's sequencing note (it resets the local DB
+   and DR.2's browser fixtures live on the stack).
 
 **Do not build `LV.*` or Scout tasks while M3 is active.**
 
