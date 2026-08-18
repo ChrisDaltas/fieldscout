@@ -308,6 +308,7 @@ export type Database = {
           nomination_seq: number
           player_id: string
           team_id: string
+          voided_at: string | null
         }
         Insert: {
           action_id?: string | null
@@ -319,6 +320,7 @@ export type Database = {
           nomination_seq: number
           player_id: string
           team_id: string
+          voided_at?: string | null
         }
         Update: {
           action_id?: string | null
@@ -330,6 +332,7 @@ export type Database = {
           nomination_seq?: number
           player_id?: string
           team_id?: string
+          voided_at?: string | null
         }
         Relationships: [
           {
@@ -3228,6 +3231,15 @@ export type Database = {
       }
       delete_mock_draft: { Args: { p_draft_id: string }; Returns: undefined }
       draft_actor_name: { Args: never; Returns: string }
+      draft_adjust_budget: {
+        Args: {
+          p_delta: number
+          p_draft_id: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
       draft_apply_pick_internal: {
         Args: {
           p_action_id: string
@@ -3239,6 +3251,13 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_auction_pause_gate_internal: {
+        Args: {
+          p_draft: Database["public"]["Tables"]["drafts"]["Row"]
+          p_verb: string
+        }
+        Returns: undefined
+      }
       draft_auction_solvent: { Args: { p_draft_id: string }; Returns: boolean }
       draft_autopick_resolve: {
         Args: { p_draft_id: string; p_team_id: string }
@@ -3246,6 +3265,10 @@ export type Database = {
       }
       draft_broadcast_payload: {
         Args: { d: Database["public"]["Tables"]["drafts"]["Row"] }
+        Returns: Json
+      }
+      draft_cancel_nomination: {
+        Args: { p_draft_id: string; p_reason?: string }
         Returns: Json
       }
       draft_complete_internal: {
@@ -3285,6 +3308,10 @@ export type Database = {
         Args: { p_league_id: string; p_require_commish: boolean }
         Returns: Json
       }
+      draft_end: {
+        Args: { p_draft_id: string; p_reason?: string }
+        Returns: Json
+      }
       draft_force_pick: {
         Args: {
           p_action_id?: string
@@ -3318,6 +3345,7 @@ export type Database = {
           p_draft_id: string
           p_from_team: string
           p_player_id: string
+          p_price?: number
           p_reason?: string
           p_to_team: string
         }
@@ -3375,6 +3403,7 @@ export type Database = {
           p_draft_id: string
           p_pick_id: string
           p_player_id?: string
+          p_price?: number
           p_reason?: string
           p_team_id?: string
         }
@@ -3400,12 +3429,19 @@ export type Database = {
         Args: { p_draft_id: string; p_reason?: string }
         Returns: Json
       }
+      draft_reverse_won_bid: {
+        Args: { p_draft_id: string; p_pick_id: string; p_reason?: string }
+        Returns: Json
+      }
       draft_rounds_from_roster: { Args: { p_roster: Json }; Returns: number }
       draft_set_clock: {
         Args: {
+          p_anti_snipe_seconds?: number
+          p_bid_seconds?: number
           p_draft_id: string
           p_extend_current?: boolean
-          p_pick_timer_seconds: number
+          p_nomination_seconds?: number
+          p_pick_timer_seconds?: number
           p_reason?: string
         }
         Returns: Json
@@ -3446,6 +3482,10 @@ export type Database = {
           p_to_pick_number?: number
         }
         Returns: Json
+      }
+      draft_void_nomination_internal: {
+        Args: { p_draft_id: string }
+        Returns: number
       }
       duplicate_list: {
         Args: {
@@ -3756,8 +3796,6 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-
 
 // ============================================================================
 // Hand-written convenience aliases.
