@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 
 /**
  * Global 404 for public routes — signed-in routes have their own boundary at
- * src/app/app/not-found.tsx that keeps the nav shell.
+ * src/app/app/(shell)/not-found.tsx that keeps the nav shell.
  *
  * Also the landing spot for launch-scope-gated public surfaces (/consensus,
  * /personas, /u/[username]/big-board), which call notFound() rather than

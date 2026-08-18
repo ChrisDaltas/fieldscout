@@ -66,7 +66,7 @@ import { PresenceBar, type PresenceSeat } from './presence-bar'
  *  the no-param room's recap-pointer arm (L.B3.5 2b). */
 const POST_DRAFT_LEAGUE_STATUSES = new Set(['in_season', 'playoffs', 'complete'])
 
-interface SnakeDraftRoomProps {
+interface DraftRoomProps {
   leagueId: string
   /** Explicit draft id (`?draft=` — the mock room path; L.B3.5's launcher
    *  routes here). Absent ⇒ the league's active non-mock draft. */
@@ -77,7 +77,29 @@ interface SnakeDraftRoomProps {
 }
 
 /**
- * Draft room — the shell landed in L.B3.1 (realtime client, clock,
+ * Draft room — §16.2's canonical file name since DR.1 (`git mv` from
+ * `snake-draft-room.tsx`; C46/D135's consolidation executed one lane early
+ * because DR.1 was already relocating the route). Line numbers are unchanged
+ * by the rename, so the `snake-draft-room.tsx:NNN` citations in
+ * `tasks-DR-draft-room-redesign.md` §1 still land — read the file name as
+ * this one.
+ *
+ * DR.1 also moved the ROUTE into the `(room)` group, so this component now
+ * renders inside a full-viewport, chrome-free frame with no app nav, header
+ * or right rail (`src/app/app/(room)/layout.tsx`; spec §16.1 v2.12). Two
+ * consequences a reader of this file needs:
+ *   - The `PageHeader` calls below write into `useHeaderStore`, which only
+ *     `AppHeader` reads — and `AppHeader` is shell chrome. They are therefore
+ *     NO-OPS in the room today, which means the live room's **Exit room**
+ *     button, the commissioner-panel trigger and **Pause practice** are not
+ *     rendered anywhere. **DR.2 deletes these calls and rehomes all three
+ *     onto the 54px command bar**, which is the same task that closes the
+ *     shipped defect that none of them rendered below `lg`.
+ *   - The resolver's empty / problem / not-found / post-draft states each
+ *     carry their own "Back to league" button inside the card body, so those
+ *     arms are not stranded by the missing chrome. DR.7 owns the sweep.
+ *
+ * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
  * §8.5.2: the rounds × teams board grid (D90 — made cells from rows, empty
  * future cells from the parity-pinned TS order mirror), available players
@@ -98,7 +120,7 @@ interface SnakeDraftRoomProps {
  * D110(1)), the §16.5.2 pause overlay with the frozen remaining time, and
  * the §16.5.4 autopick-on seat badges.
  */
-export function SnakeDraftRoom({ leagueId, draftIdParam, practice }: SnakeDraftRoomProps) {
+export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) {
   const { user } = useAuth()
   const detail = useLeague(leagueId)
 

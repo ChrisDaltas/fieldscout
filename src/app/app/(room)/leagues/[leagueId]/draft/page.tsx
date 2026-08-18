@@ -1,4 +1,4 @@
-import { SnakeDraftRoom } from '@/components/draft/snake-draft-room'
+import { DraftRoom } from '@/components/draft/draft-room'
 
 export const metadata = { title: 'Draft room · FieldScout' }
 
@@ -32,7 +32,7 @@ export default async function DraftRoomPage({ params, searchParams }: DraftRoomP
   const practiceParam = Array.isArray(practice) ? practice[0] : practice
 
   return (
-    <SnakeDraftRoom
+    <DraftRoom
       leagueId={leagueId}
       draftIdParam={draftIdParam}
       practice={practiceParam === '1'}

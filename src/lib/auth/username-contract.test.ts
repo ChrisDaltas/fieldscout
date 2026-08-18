@@ -81,14 +81,21 @@ describe('the app forces selection before anything else', () => {
     expect(layout).toMatch(/redirect\('\/username'\)/)
   })
 
-  it('the gate is in the shell, not only in the auth callback', () => {
+  it('the gate runs before anything under /app renders, not only in the auth callback', () => {
     // The callback bounces to /login whenever there is no code to exchange,
     // so it can never be the only place this is enforced.
+    //
+    // DR.1 moved <AppShell> out of this file into (shell)/layout.tsx, so the
+    // old form of this pin — "the gate sits above <AppShell>" — no longer has
+    // an <AppShell> to sit above. The property it was really defending is
+    // that the gate runs before `children`: this layout renders NOTHING but
+    // its children, and both redirects precede that return. Which groups
+    // hang below it is pinned separately in route-groups.test.ts.
     const layout = read('src/app/app/layout.tsx')
     const gateIdx = layout.indexOf("redirect('/username')")
-    const shellIdx = layout.indexOf('<AppShell>')
+    const childrenIdx = layout.indexOf('{children}')
     expect(gateIdx).toBeGreaterThan(-1)
-    expect(shellIdx).toBeGreaterThan(gateIdx) // gate runs before render
+    expect(childrenIdx).toBeGreaterThan(gateIdx) // gate runs before render
   })
 
   it('the selection page never treats a zero-row write as success', () => {
