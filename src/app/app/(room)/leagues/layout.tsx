@@ -9,7 +9,7 @@ import { featureFlags } from '@/lib/feature-flags'
  *  exists because DR.1 moved the live draft OUT of `(shell)` — without it the
  *  one route the original gate names first ("live draft") would have been the
  *  only /app/leagues URL that survived the flag being off. The two files must
- *  stay identical in effect; `src/app/app/route-groups.test.ts` pins both. */
+ *  stay identical in effect; `src/lib/route-groups.test.ts` pins both. */
 export default function LeaguesGate({
   children,
 }: {

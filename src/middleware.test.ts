@@ -69,10 +69,21 @@ vi.mock('@supabase/ssr', () => ({
   }),
 }))
 
+/**
+ * R343: the cookie MUST go in through the constructor. `new NextRequest(url)`
+ * followed by `req.headers.set('cookie', …)` sets the header but leaves
+ * `req.cookies.getAll()` EMPTY — measured against Next 15.5.19, both forms in
+ * one run: post-construction `[]`, constructor-supplied
+ * `[{name:'sb-127-auth-token',value:'base64-STALE'}]`. The pins below still
+ * discriminated with the broken helper (the fake client never reads
+ * `getAll`), but the comment at the auth-page pin narrated a request state the
+ * test never built. Building it is cheaper than qualifying the sentence.
+ */
 function request(url: string, cookie?: string) {
-  const req = new NextRequest(new URL(url, 'http://localhost:3124'))
-  if (cookie) req.headers.set('cookie', cookie)
-  return req
+  return new NextRequest(
+    new URL(url, 'http://localhost:3124'),
+    cookie ? { headers: { cookie } } : undefined,
+  )
 }
 
 const ROOM = '/app/leagues/46c4e571-4218-4b3b-96d3-93e50aa99e85/draft'
@@ -86,6 +97,15 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon'
   cookiesWritten = []
   currentUser = null
+})
+
+describe('the harness builds the request it claims to build (R343)', () => {
+  it('a cookie passed to request() reaches request.cookies, not just the header', () => {
+    const req = request(`/login?redirect=${ROOM}`, 'sb-127-auth-token=base64-STALE')
+    expect(req.cookies.getAll()).toEqual([
+      { name: 'sb-127-auth-token', value: 'base64-STALE' },
+    ])
+  })
 })
 
 describe('a cold load of the draft room is gated, and keeps its destination', () => {

@@ -16,7 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
  * NOT duplicated into the two group layouts: ONE copy above both groups is
  * what keeps a cold load into the chrome-free room gated by the same code
  * path as every ordinary app route. A second copy is a second thing to
- * forget. `src/app/app/route-groups.test.ts` pins that shape.
+ * forget. `src/lib/route-groups.test.ts` pins that shape.
  */
 export default async function AppLayout({
   children,

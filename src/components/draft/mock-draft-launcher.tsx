@@ -105,6 +105,21 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
         }
       />
 
+      {/* R340: the launcher's OWN way out. The `PageHeader` above is a no-op
+          since DR.1 moved the room out of the app shell, and this surface had
+          ZERO links and ZERO buttons without this one (measured by DOM
+          inventory 2026-08-18) — it is reached from the lobby's *Practice
+          this draft*, so a member could walk in and be stuck. It sits at the
+          container level rather than in a card because the two arms below are
+          mutually exclusive (pre-draft form / past-draft notice) and one exit
+          must cover both, plus every `MockList` state. DR.2 rehomes it onto
+          the command bar's Exit Draft. Pinned in `room-exits.test.ts`. */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Button variant="stroke" size="sm" asChild>
+          <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+        </Button>
+      </div>
+
       {preDraft ? (
         <Card>
           <CardHeader>
