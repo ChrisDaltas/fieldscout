@@ -181,6 +181,10 @@ const config: Config = {
         chip: '19px',
         tab: '26px',
         header: '58px',
+        // Draft-room command bar (spec §16.4 zone 1; DR.2). 54px is LITERAL,
+        // not a 1× handoff value to ×0.8 — Chris gave it against the running
+        // app (tasks-DR C47), and it sits beside the 58px `header` token.
+        'draft-topbar': '54px',
         sidebar: '243px',
         'sidebar-collapsed': '67px',
         // Rail strip matches the collapsed sidebar width so both edges read

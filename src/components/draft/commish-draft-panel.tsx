@@ -28,7 +28,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { InvitePanel } from '@/components/leagues/invite-panel'
@@ -67,6 +66,12 @@ interface CommishDraftPanelProps {
   detail: LeagueDetail
   picks: DraftPickSummary[]
   playerById: ReadonlyMap<string, PlayerIdentity>
+  /** DR.2 (D153): the panel is CONTROLLED — its own blue `Commish panel`
+   *  SheetTrigger is retired; the command bar's `Draft Options` control is
+   *  the one door (DR.3 swaps that door's target for `draft-options-menu`,
+   *  which opens this same panel at a section). */
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 /**
@@ -79,7 +84,11 @@ interface CommishDraftPanelProps {
  * Renders ONLY for commissioner/co-commissioner (§17) on a NON-mock draft
  * (D110(1): the §8.7 controls refuse mocks in-RPC; the UI must not offer
  * what the engine forbids). The panel is UNMISTAKABLE (§16.3): accent
- * treatment on the trigger, the sheet's leading edge, and the header badge.
+ * treatment on the sheet's leading edge and the header badge — and, since
+ * DR.2 (D153), on its ONE door: the command bar's accent-filled
+ * `Draft Options` control. The panel's own blue trigger is retired; the
+ * Sheet is controlled (`open`/`onOpenChange`) and the eight section bodies,
+ * gates, confirm dialogs and system-post semantics are unchanged.
  *
  * "Reassign a draft seat" is COMPOSED from M1's membership surface (the
  * invite panel's assign/remove/invite affordances — no new RPC; E48 covers
@@ -91,6 +100,8 @@ export function CommishDraftPanel({
   detail,
   picks,
   playerById,
+  open,
+  onOpenChange,
 }: CommishDraftPanelProps) {
   const paused = draft.status === 'paused'
   const livePicks = useMemo(
@@ -114,13 +125,7 @@ export function CommishDraftPanel({
   }
 
   return (
-    <Sheet>
-      <SheetTrigger asChild>
-        {/* §16.3 "unmistakable": the accent fill is the panel's signature. */}
-        <Button variant="blue" size="sm">
-          Commish panel
-        </Button>
-      </SheetTrigger>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
         // Distinct accent on the overlay itself (§16.3) — the sheet's
