@@ -64,7 +64,7 @@
 -- Probes 7-11 are new, one per code fix in this cycle.
 --   * **BREAK PROBE 1 — the DoD's: E28's live-high-bid arm (D131(4))
 --     disabled for draft_adjust_budget** (the `PERFORM` of the section-3b
---     helper removed from that verb only; the R367 COMMENT at 087:705 left in
+--     helper removed from that verb only; the R367 COMMENT at 087:776 left in
 --     place, which is what makes this probe R381's as well). **AS RUN: 4 of
 --     199 RED** (85 the refusal, 86 the state pin behind it — the adjustment
 --     must not have landed — 88, the boundary's MEASUREMENT pin, which goes
@@ -310,7 +310,7 @@ select ok(
 -- R381 — THESE THREE PINS MATCH THE **CALL FORM**, AND THEY COUNT THE SET.
 -- `pg_proc.prosrc` is raw body text INCLUDING COMMENTS, and `like '%name%'`
 -- cannot tell a call from a mention: draft_adjust_budget names the arm-3
--- helper TWICE (the R367 comment at 087:705 and the PERFORM at 087:710), so
+-- helper TWICE (the R367 comment at 087:776 and the PERFORM at 087:781), so
 -- deleting the PERFORM and leaving the comment — which reads as design prose a
 -- refactor would keep as a matter of course — passed the old pin GREEN. The
 -- regex requires the qualified call as each helper is actually called (the
@@ -481,7 +481,8 @@ from (values ('aa'), ('cc'), ('dd'), ('ee'), ('ff'),
 
 -- LM: the min_bid-$0 auction, PAUSED (the Manual Edit paths are pause-gated,
 -- D141) with a live nomination that NOBODY RAISED. Both nomination writers
--- open at `min_bid` (085:521 human, 087:3245 system), so at min_bid 0 the
+-- opens at or above `min_bid` (the system writer opens exactly AT it, 087:3369;
+-- the human writer's floor IS it, 085:489), so at min_bid $0 the
 -- standing high bid is **$0** — which is the state in which
 -- `high_bid <= max_bid` stops being able to tell a solvent team from a
 -- COMPLETE one, because 084:349's `CASE WHEN v_open <= 0 THEN 0` makes a
@@ -1464,9 +1465,9 @@ select set_config('request.jwt.claims',
 -- --- I(c). THE GATE'S **CAPACITY** ARM — R378, on a min_bid-$0 board -------
 -- WHY THIS WORLD EXISTS, AND WHY EVERY PIN ABOVE PASSES WITHOUT IT. §3b's
 -- gate reproduced ONE of the award's TWO refusals. `draft_tick`'s award arm
--- asks `open_slots < 1` (E27 — a complete roster cannot bid, 087:3348) BEFORE
--- it asks `price > max_bid` (087:3353), and every other consumer pairs them
--- the same way (draft_force_pick 087:2053-2062, draft_nominate 085:477). The
+-- asks `open_slots < 1` (E27 — a complete roster cannot bid, 087:3479) BEFORE
+-- it asks `price > max_bid` (087:3484), and every other consumer pairs them
+-- the same way (draft_force_pick 087:2168-2173, draft_nominate 085:478). The
 -- reason is 084:349's `CASE WHEN v_open <= 0 THEN 0`: a complete roster's
 -- max_bid is a **SEMANTIC** zero, not a computed one, so `high_bid <= max_bid`
 -- is no longer the affordability question.
@@ -1476,8 +1477,9 @@ select set_config('request.jwt.claims',
 -- dollars). That is precisely why §I(b)'s $1 fixture cannot see it, and it is
 -- the reason this file needed a world it did not have. **min_bid $0 is legal**
 -- (`league-settings.ts:220` = `min(0)`; 084:210 names the $0 league as
--- supported), both nomination writers open AT min_bid (085:521, 087:3245), so
--- an unraised nomination stands at $0 and the money arm computes `0 <= 0` and
+-- supported), the system nomination writer opens exactly AT min_bid (087:3369)
+-- and the human writer's floor IS min_bid (085:489), so an unraised nomination
+-- legitimately stands at $0 and the money arm computes `0 <= 0` and
 -- RETURNS. `draft_auction_solvent` cannot catch it either: its floor is
 -- `remaining >= open_slots x 0`.
 --
@@ -1590,7 +1592,7 @@ select is(
 
 -- --- I(d). THE PLAYER UNDER NOMINATION IS NOT ASSIGNABLE — R380 -----------
 -- On an auction the nominated player has NO draft_picks row yet (the tick
--- writes it at the award, 087:3366), so draft_reassign_pick's exclusivity
+-- writes it at the award, 087:3497), so draft_reassign_pick's exclusivity
 -- sweep — which queries draft_picks and nothing else — passes for exactly the
 -- one player who must not be assigned. Nothing else on the path looks at
 -- `current_nomination`: the E28 arms are about money, and the section-3b gate

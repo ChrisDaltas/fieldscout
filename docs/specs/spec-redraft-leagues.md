@@ -868,8 +868,9 @@ CREATE TABLE draft_bids (
 -- v2.12.2 erratum (§8.7's "open bids voided" had no schema representation —
 -- tasks-M3 R363/D162; migration 087, task L.C1.5). `voided_at IS NOT NULL`
 -- means: this row no longer belongs to the live-or-future nomination at its
--- `nomination_seq`. That is exactly the cases in which a sequence number
--- becomes ambiguous — (a) the sequence is CLEARED WITHOUT AN AWARD
+-- `nomination_seq`. That is exactly the THREE cases in which a sequence number
+-- becomes ambiguous (v2.12.2 printed two; (c) was added by v2.12.4 and is the
+-- widest of them) — (a) the sequence is CLEARED WITHOUT AN AWARD
 -- (`draft_cancel_nomination`, which per §8.7 does NOT consume the number, and
 -- `draft_end`'s un-awarded close), (b) the sequence is REWOUND ONTO
 -- (`draft_undo`), and — **v2.12.4 (R379)** — (c) THE RUN ENDS AND THE

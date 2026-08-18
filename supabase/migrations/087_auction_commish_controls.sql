@@ -230,8 +230,9 @@ ALTER TABLE draft_bids
 -- EXACT MEANING, stated mechanically so no reader has to infer it:
 -- `voided_at IS NOT NULL` ⇔ **this bid row no longer belongs to the
 -- live-or-future nomination at its `nomination_seq`.** That happens in
--- exactly two situations, which are the two situations that make a sequence
--- number ambiguous:
+-- exactly THREE situations, which are the three situations that make a
+-- sequence number ambiguous (it said "two" until R379 found the third — see
+-- (c), and note that the missing one was the WIDEST of them):
 --   (a) the sequence is CLEARED WITHOUT AN AWARD — draft_cancel_nomination
 --       (D143) and draft_end's un-awarded close — and D143 does not consume
 --       the number, so the very next nomination re-uses it;
@@ -379,9 +380,10 @@ REVOKE EXECUTE ON FUNCTION draft_void_nomination_internal(UUID)
 --     THE AWARD ASKS **TWO** QUESTIONS, SO THIS GATE ASKS TWO (R379-cycle,
 --     filed R378 — and it is R367's own species recurring inside R367's fix).
 --     `draft_tick`'s award arm refuses on `open_slots < 1` (`E27` — a complete
---     roster cannot bid) BEFORE it refuses on `price > max_bid`, and every
---     other consumer of the family pairs them the same way and says why
---     (draft_force_pick's nominate arm, draft_nominate). The reason is
+--     roster cannot bid, 087:3479) BEFORE it refuses on `price > max_bid`
+--     (087:3484), and every other consumer of the family pairs them the same
+--     way and says why (draft_force_pick's nominate arm 087:2168-2173,
+--     draft_nominate 085:478). The reason is
 --     084:349's `CASE WHEN v_open <= 0 THEN 0`: with a complete roster
 --     `max_bid` is a **SEMANTIC** zero, not a computed one, so
 --     `high_bid <= max_bid` stops being the affordability question at all.
@@ -390,8 +392,10 @@ REVOKE EXECUTE ON FUNCTION draft_void_nomination_internal(UUID)
 --     anyway — with a message that sends the commissioner after dollars) and
 --     is NOT masked at **`auction_min_bid = 0`, which is legal**
 --     (`league-settings.ts:220` is `min(0)`; 084:210 names the $0 league as
---     supported). There both nomination writers open at `min_bid`, so an
---     unraised nomination stands at **$0** and the money arm computes
+--     supported). There the SYSTEM nomination writer opens exactly AT
+--     `min_bid` (087:3369) and the human writer's FLOOR is `min_bid`
+--     (085:489 refuses anything below it), so an unraised nomination
+--     legitimately stands at **$0** and the money arm computes
 --     `0 <= 0` and RETURNS — while `draft_auction_solvent`'s floor is
 --     `remaining >= open_slots × 0`, i.e. `remaining >= 0`, which nothing can
 --     fail. A commissioner move that fills the standing high bidder's LAST
@@ -1618,12 +1622,14 @@ BEGIN
     END IF;
     -- 087/R379-cycle (filed R380) — THE ONE PLAYER THE SWEEP ABOVE CANNOT
     -- SEE. On an auction the NOMINATED player has no draft_picks row yet: the
-    -- tick writes it at the award (ARM 2.6). So the exclusivity check passes
+    -- tick writes it at the award (ARM 2.6's INSERT, 087:3497). So the
+    -- exclusivity check passes
     -- for exactly the player who must not be assigned, and nothing else on
     -- this path looks at `current_nomination` — the E28 arms are about money,
     -- and the section-3b gate returns silently when the receiving team is not
     -- the high bidder. The award's INSERT then hits `uniq_draft_player_live`
-    -- (065:178), ARM 2.6's containment swallows the unique_violation into
+    -- (`uniq_draft_player_live`, 065:178), ARM 2.6's containment — the
+    -- `EXCEPTION WHEN OTHERS` at 087:3581 — swallows the unique_violation into
     -- `auction_failures`, the nomination is never cleared, and every 5s tick
     -- reproduces it: the D160(8) stuck clock reached through the board.
     -- draft_move_player cannot reach this — it requires the player to already
