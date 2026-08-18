@@ -45,7 +45,15 @@
 -- stamp is written only by SECURITY DEFINER verbs, and pgTAP 036 §B re-runs
 -- the literal per-role write matrix (member/commissioner/outsider/anon ×
 -- INSERT/UPDATE/DELETE) AFTER this migration to prove the client-facing
--- posture is byte-for-byte what 032 pinned. D131(2)'s substance is that bid
+-- posture is byte-for-byte what 032 pinned. (R369a: at first landing this
+-- sentence was FALSE — §B ran member × 4 verbs and commissioner ×
+-- UPDATE/DELETE only; no outsider, no anon, no commissioner INSERT. The
+-- missing seven cells were ADDED rather than the claim narrowed, because the
+-- claim is the coverage you would want: an outsider is the role RLS exists
+-- for and `anon` is the one a leaked publishable key reaches. The substance
+-- always held — a reviewer probed both roles directly and found them locked
+-- out — but a coverage sentence that outruns its pins is this lane's
+-- signature defect and it does not get to survive by being right.) D131(2)'s substance is that bid
 -- rows STAND — they are never deleted and "bids returned" costs nothing
 -- because bids never hold budget. A void stamp keeps every row standing and
 -- rewrites none of its bid facts (who, what, how much, when); it ADDS the
@@ -62,10 +70,25 @@
 -- added stays (it is the right shape and it covers the different-player
 -- case); `voided_at` closes the same-player case the ORDER BY was silently
 -- carrying. After this migration the lookup's WHERE is sufficient on its own
--- and the ordering decides nothing — 036 §G pins that with a decoy built
--- through the REAL verbs (nominate → pause → cancel → resume → renominate
--- the same player at the same amount), which is the state 035 §K could only
--- forge because the cancel verb did not exist.
+-- and the ordering decides nothing — 036 §G pins that.
+--
+-- R371 — WHAT §G'S DECOY ACTUALLY IS, because this banner overstated it. The
+-- sentence here used to read "a decoy built through the REAL verbs (nominate
+-- → pause → cancel → resume → renominate the same player at the same
+-- amount)", and §G's own comments never claimed that. What §G drives through
+-- the real verbs is nominate → pause → cancel → resume → **the TICK's system
+-- nomination**; the collision is then FORCED privileged — `draft_bids`'
+-- `player_id`/`amount`/`team_id`, `drafts.current_nomination`, and the voided
+-- row's `id` are all rewritten (036:911-927) so the two rows tie on every
+-- column the lookup discriminates on AND the ordering deterministically
+-- prefers the wrong one (F67's mechanism, used on purpose so break probe 2
+-- yields a stable count rather than a coin flip). The COLLISION IS STILL
+-- GENUINELY REACHABLE through real verbs alone — a reviewer built it and got
+-- three rows at `nomination_seq = 1`, two tying on seq/player/team/amount,
+-- with the pre-D162 lookup returning 2 and the shipped `voided_at IS NULL`
+-- lookup returning 1 — so D162 stands unchanged. Only the provenance claim
+-- was wrong, and a forged decoy is a perfectly good probe target as long as
+-- the banner says it is forged.
 --
 -- ---------------------------------------------------------------------------
 -- BANNER ITEM 2 — THE STUCK CLOCK D160(8) RECORDED NOW HAS A REMEDY.
@@ -139,7 +162,13 @@
 -- A mock has no commissioner (D110(1)/D103(2)): the launcher's whole control
 -- surface is pause / resume / delete. The four NEW verbs therefore carry the
 -- same mock guard the seven 069 controls already carry, with the same
--- message shape, and 036 §H sweeps all eleven. This is a seam, not dead
+-- message shape, and 036 §M sweeps all eleven — §H is the reverse-won-bid/
+-- E29 section, and this banner named the wrong one while §M covered only the
+-- four NEW verbs (R369b). §M was EXTENDED to the eleven rather than the claim
+-- narrowed, and the extension is not ceremony: three of the seven 069
+-- controls (set_clock, reassign, move) were DROPped and re-CREATEd by THIS
+-- migration, so "025 already pins their mock refusal" is a claim about
+-- function bodies that no longer exist. This is a seam, not dead
 -- code: 071 refuses auction mocks today, so the refusal is unreachable until
 -- L.C1.7 lifts that — which is exactly why it must exist before then (the
 -- F61 argument, applied to the commissioner surface).
@@ -155,8 +184,12 @@
 --   draft_reverse_won_bid    is solvency-INCREASING by construction
 --                            (remaining' = remaining + price, open' = open+1,
 --                            price >= min_bid ⇒ D131(3)); asserted anyway
---   priced reassign / move   validates the RECEIVING team at `price <=
---                            max_bid` — the identical algebra the award uses
+--   priced reassign / move   validates the RECEIVING team TWICE: `price <=
+--                            max_bid` BEFORE the write (the identical algebra
+--                            the award uses) and E28 ARM 3 AFTER it, through
+--                            the shared section-3b helper. Both are needed
+--                            and neither substitutes for the other — see 3b
+--                            for the drive that proved it (R367)
 --   draft_force_pick         (nominate arm) validates exactly as that team's
 --                            own nomination would (§8.6.7(a)/D129(1))
 --   draft_end                spends nothing, so solvency is preserved
@@ -168,8 +201,10 @@
 -- widenings with defaults, so no call site breaks · no new index needed —
 -- `idx_draft_bids_nom` still serves every live-history read and `voided_at
 -- IS NULL` is a filter over an already-narrow (draft_id, nomination_seq)
--- slice · broadcast of `voided_at` is L.C1.6's payload work (088), noted
--- there, not smuggled here · staging rehearsal: R6 waiver — no staging clone
+-- slice · broadcast of `voided_at` is L.C1.6's payload work (088) and is NOT
+-- smuggled here — it is a cross-task obligation, so per R51 it now carries a
+-- LEDGER ROW (**F69**) and a line in tasks-M3 §6's L.C1.6 read-list, instead
+-- of living only in this sentence and a session-log cell (R372) · staging rehearsal: R6 waiver — no staging clone
 -- exists (environments are local + prod only); the recorded rehearsal is the
 -- fresh local `npx supabase db reset` replay of the full 001–087 chain in
 -- this PR, plus pgTAP 036 · typegen re-run with the hand-written alias block
@@ -289,6 +324,102 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION draft_void_nomination_internal(UUID)
+  FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3b. draft_auction_high_bid_gate_internal — the ONE E28 arm-3 (D131(4))
+--     implementation. Consumers: draft_adjust_budget, and the priced
+--     draft_move_player / draft_reassign_pick paths.
+--
+--     WHY THIS IS A HELPER AND NOT THREE COPIES (R367, M3 batch-5). The arm
+--     shipped as an inline block inside draft_adjust_budget only, and the two
+--     priced Manual Edit paths — which move the SAME numbers in the SAME
+--     direction — did not carry it. A reviewer drove the gap: 8 seats,
+--     $200 / 3 slots / min_bid $1, t2 the live high bidder at $150 (legal —
+--     its max bid is $198). `draft_adjust_budget` REFUSES the equivalent
+--     edit; `draft_move_player(..., price => 100)` ACCEPTED it, leaving t2
+--     with max_bid $99 against a standing $150 bid, and the next tick then
+--     refused the award forever — the exact D160(8) stuck clock this task
+--     exists to close, manufactured through the verb whose own comment said
+--     the door was shut. `draft_auction_solvent` does NOT catch it: the team
+--     still clears `remaining >= open_slots * min_bid`; what it cannot afford
+--     is its OWN LIVE BID, and a bid holds no money (D131(2)) so no
+--     derivation sees it. The same-team price-only arm was worse — it skipped
+--     the pre-write max-bid check entirely (that check is guarded by
+--     `recv IS DISTINCT FROM old_owner`), so a $10 → $120 price correction
+--     under a $150 high bid landed unchecked.
+--
+--     THE COMPARISON IS THE AWARD'S, RE-ASKED AFTER THE WRITE. A pre-write
+--     `price <= max_bid` cannot see this: it measures the world BEFORE the
+--     pick lands, and the high bid becomes unaffordable only because the pick
+--     landed. So every consumer calls this AFTER its write, and the RAISE
+--     rolls that write back inside the caller's transaction — the
+--     draft_adjust_budget / 084-start-backstop pattern, and the reason no
+--     compensating math exists at any of the three sites.
+--
+--     The verb name and the remedy sentence are PARAMETERS because the
+--     remedy genuinely differs: draft_adjust_budget is not pause-gated (D141
+--     does not name it) so it must tell the commissioner to pause first,
+--     while the two Manual Edit paths are already behind the pause gate and
+--     saying "pause" there would be a lie. Everything that carries
+--     correctness — the derivation, the comparison, the numbers in the
+--     message — has ONE implementation. draft_adjust_budget's rendered text
+--     is BYTE-IDENTICAL to what it raised before this helper existed, which
+--     is why 036 §F's exact-message pins are untouched.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION draft_auction_high_bid_gate_internal(
+  p_draft   public.drafts,
+  p_team_id UUID,
+  p_verb    TEXT,
+  p_remedy  TEXT
+) RETURNS VOID
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_high_team UUID;
+  v_high_bid  INTEGER;
+  v_max_bid   INTEGER;
+  v_team_name TEXT;
+  v_live_name TEXT;
+BEGIN
+  -- Auction-only, live-nomination-only, and only for the team that is
+  -- actually the high bidder. Every other case returns silently — this is a
+  -- gate, not a general solvency check (that is draft_auction_solvent, which
+  -- every consumer still runs afterwards as the §4-rule-7 backstop).
+  IF p_draft.draft_type <> 'auction' OR p_draft.current_nomination IS NULL THEN
+    RETURN;
+  END IF;
+  v_high_team := (p_draft.current_nomination->>'high_bidder_team_id')::uuid;
+  IF v_high_team IS DISTINCT FROM p_team_id THEN
+    RETURN;
+  END IF;
+
+  v_high_bid := (p_draft.current_nomination->>'high_bid')::int;
+
+  -- RE-DERIVED through the ONE family (D127/§4.7) in the post-write world.
+  SELECT b.max_bid INTO v_max_bid
+  FROM public.draft_team_budget(p_draft.id, p_team_id) b;
+
+  IF v_high_bid <= v_max_bid THEN
+    RETURN;
+  END IF;
+
+  SELECT t.name INTO v_team_name FROM public.teams t WHERE t.id = p_team_id;
+  SELECT pl.full_name INTO v_live_name
+  FROM public.players pl WHERE pl.id = p_draft.current_nomination->>'player_id';
+
+  RAISE EXCEPTION
+    '%: % is the high bidder on % at $%, and that leaves a max bid of $% — the close would be unaffordable. % (E28/D131(4))',
+    p_verb, v_team_name, COALESCE(v_live_name, 'the nominated player'),
+    v_high_bid, v_max_bid, p_remedy
+    USING ERRCODE = 'P0001';
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION
+  draft_auction_high_bid_gate_internal(public.drafts, UUID, TEXT, TEXT)
   FROM PUBLIC, anon, authenticated;
 
 
@@ -465,9 +596,6 @@ DECLARE
   v_open       INTEGER;
   v_max_bid    INTEGER;
   v_committed  INTEGER;
-  v_high_bid   INTEGER;
-  v_high_team  UUID;
-  v_live_name  TEXT;
 BEGIN
   IF p_team_id IS NULL THEN
     RAISE EXCEPTION 'draft_adjust_budget: team_id is required'
@@ -573,19 +701,15 @@ BEGIN
   -- money (D131(2)); the AWARD spends it. So an edit that is fine right now
   -- can still make the close unaffordable, and the close is a tick away.
   -- Same algebra as the award: price <= max_bid.
-  IF v_draft.current_nomination IS NOT NULL THEN
-    v_high_team := (v_draft.current_nomination->>'high_bidder_team_id')::uuid;
-    v_high_bid  := (v_draft.current_nomination->>'high_bid')::int;
-    IF v_high_team = p_team_id AND v_high_bid > v_max_bid THEN
-      SELECT pl.full_name INTO v_live_name
-      FROM public.players pl WHERE pl.id = v_draft.current_nomination->>'player_id';
-      RAISE EXCEPTION
-        'draft_adjust_budget: % is the high bidder on % at $%, and that leaves a max bid of $% — the close would be unaffordable. Void the nomination (pause, then Edit current nomination) or reverse a won bid first (E28/D131(4))',
-        v_team_name, COALESCE(v_live_name, 'the nominated player'),
-        v_high_bid, v_max_bid
-        USING ERRCODE = 'P0001';
-    END IF;
-  END IF;
+  --
+  -- 087/R367: the comparison MOVED into draft_auction_high_bid_gate_internal
+  -- (section 3b) because the two priced Manual Edit paths need the identical
+  -- arm and had shipped without it. The rendered message is BYTE-IDENTICAL to
+  -- the inline version this replaced — 036 §F's exact-message pins are
+  -- unchanged, which is the check that the move was lossless.
+  PERFORM public.draft_auction_high_bid_gate_internal(
+    v_draft, p_team_id, 'draft_adjust_budget',
+    'Void the nomination (pause, then Edit current nomination) or reverse a won bid first');
 
   -- Cross-team backstop (§4 rule 7): the arms above check the EDITED team;
   -- this proves the edit did not disturb anyone else's floor. It cannot fire
@@ -1486,8 +1610,21 @@ BEGIN
   WHERE id = p_draft_id
   RETURNING * INTO v_draft;
 
-  -- 087 — §4 rule 7 backstop, through the ONE family: the targeted refusal
-  -- above covers the receiving team, this proves nobody else's floor moved.
+  -- 087/R367 — E28 ARM 3 (D131(4)), RE-ASKED AFTER THE WRITE. The pre-write
+  -- `price <= max_bid` above measures the world BEFORE this pick lands, and
+  -- it is guarded by `recv IS DISTINCT FROM old_owner` so a same-team
+  -- price-only correction never reaches it at all. Both gaps are the same
+  -- gap: the receiving team's max bid falls when the pick lands, and if that
+  -- team is the LIVE HIGH BIDDER the close becomes unaffordable and the tick
+  -- refuses the award forever (the D160(8) stuck clock). Unconditional here
+  -- — no distinct-owner guard — so the price-only arm is covered too. The
+  -- RAISE rolls the UPDATE back inside the caller's transaction.
+  PERFORM public.draft_auction_high_bid_gate_internal(
+    v_draft, v_recv_team, 'draft_reassign_pick',
+    'Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first');
+
+  -- 087 — §4 rule 7 backstop, through the ONE family: the targeted refusals
+  -- above cover the receiving team, this proves nobody else's floor moved.
   IF v_draft.draft_type = 'auction'
      AND NOT public.draft_auction_solvent(p_draft_id) THEN
     RAISE EXCEPTION
@@ -1531,8 +1668,13 @@ REVOKE EXECUTE ON FUNCTION
 
 -- ---------------------------------------------------------------------------
 -- 11. draft_move_player — HEAD 069:946-1080. DROP + CREATE (p_price) + the
---     D141 gate + the E28-class validation. This is the arm D160(8) named as
---     the reachability path into the stuck-clock state.
+--     D141 gate + the E28-class validation, PRE-write and POST-write. This
+--     is the arm D160(8) named as the reachability path into the stuck-clock
+--     state, and it took TWO passes to actually close: at first landing this
+--     verb carried the gate, the pre-write `price <= max_bid` and the rule-7
+--     backstop, and a reviewer still drove a $100 move that manufactured the
+--     stuck clock (R367). The check that closes it is E28 arm 3, asked AFTER
+--     the write — see section 3b.
 -- ---------------------------------------------------------------------------
 
 DROP FUNCTION draft_move_player(UUID, TEXT, UUID, UUID, TEXT);
@@ -1606,8 +1748,17 @@ BEGIN
   -- draft_type awareness at all, so a commissioner mis-click could move a
   -- priced player onto a team and shrink a live high bidder's max_bid below
   -- their standing bid — manufacturing exactly the insolvent award the tick
-  -- then refuses forever. The gate, the priced validation and the solvency
-  -- backstop below are what close that door.
+  -- then refuses forever.
+  --
+  -- R367 CORRECTION, and it is worth reading rather than trusting: this
+  -- comment used to end "the gate, the priced validation and the solvency
+  -- backstop below are what close that door", and that sentence was FALSE.
+  -- The gate only decides WHEN the commissioner may act; the pre-write
+  -- `price <= max_bid` measures the world before the pick lands; and
+  -- `draft_auction_solvent` cannot see a bid at all, because bids hold no
+  -- money (D131(2)). The door is closed by E28 arm 3, asked AFTER the write
+  -- (section 3b) — which is the ONLY one of the four that compares the
+  -- post-edit max bid against the STANDING bid.
   PERFORM public.draft_auction_pause_gate_internal(v_draft, 'draft_move_player');
 
   -- 087/L.C1.5 — a price on a SNAKE pick is a category error, refused HERE
@@ -1729,8 +1880,21 @@ BEGIN
   WHERE id = p_draft_id
   RETURNING * INTO v_draft;
 
-  -- 087 — §4 rule 7 backstop, through the ONE family: the targeted refusal
-  -- above covers the receiving team, this proves nobody else's floor moved.
+  -- 087/R367 — E28 ARM 3 (D131(4)), RE-ASKED AFTER THE WRITE. This is the
+  -- arm that made the comment above false until R367: the gate + the
+  -- pre-write `price <= max_bid` do NOT stop a commissioner shrinking the
+  -- live high bidder's max bid below its own standing bid, because that
+  -- shrink only happens once the pick lands. Driven, not reasoned — a move
+  -- at $100 against a $150 high bid was ACCEPTED and left max_bid $99, and
+  -- `draft_auction_solvent` stayed TRUE throughout (a bid holds no money, so
+  -- no derivation sees it). The RAISE rolls the UPDATE back inside the
+  -- caller's transaction.
+  PERFORM public.draft_auction_high_bid_gate_internal(
+    v_draft, v_recv_team, 'draft_move_player',
+    'Void the nomination (Edit current nomination — the board is already paused) or reverse a won bid first');
+
+  -- 087 — §4 rule 7 backstop, through the ONE family: the targeted refusals
+  -- above cover the receiving team, this proves nobody else's floor moved.
   IF v_draft.draft_type = 'auction'
      AND NOT public.draft_auction_solvent(p_draft_id) THEN
     RAISE EXCEPTION

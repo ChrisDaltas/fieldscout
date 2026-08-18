@@ -3251,6 +3251,15 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_auction_high_bid_gate_internal: {
+        Args: {
+          p_draft: Database["public"]["Tables"]["drafts"]["Row"]
+          p_remedy: string
+          p_team_id: string
+          p_verb: string
+        }
+        Returns: undefined
+      }
       draft_auction_pause_gate_internal: {
         Args: {
           p_draft: Database["public"]["Tables"]["drafts"]["Row"]
