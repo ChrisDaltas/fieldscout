@@ -112,10 +112,15 @@
 --      unfilled admits). Snake/linear are unaffected: `draft_type <>
 --      'auction'` is TRUE for them, so the expression is the same
 --      expression, and 022's E30 boundary pins stay green.
---   4. `draft_tick` — REPLACED FROM 068. Two hunks:
+--   4. `draft_tick` — REPLACED FROM 068. Three hunks:
 --      (a) ARM 2's claim WHERE and its under-lock re-verify exclude
 --          auctions (the defect block above);
---      (b) **ARM 2.6**, new, between ARM 2.5 and ARM 3 exactly as the
+--      (b) ARM 2.5's claim WHERE and its under-lock re-verify exclude
+--          auctions too (R362) — the SAME two lines, because that arm
+--          reaches the SAME snake writer by a second door. Measured, not
+--          inferred: see the ARM 2.5 comment for the fixture and the
+--          `"mock_cpu_picked": 1` it returned before these lines existed;
+--      (c) **ARM 2.6**, new, between ARM 2.5 and ARM 3 exactly as the
 --          breakdown sequences it (D129/D130).
 --
 -- ----------------------------------------------------------------------------
@@ -134,9 +139,21 @@
 -- creation, so no auction mock can exist; 085's two verbs refuse mocks for
 -- the same reason (F61). L.C1.7 adds the mock CPU sub-arm (D132/D138) and
 -- opens the claim. Recorded consequence in the meantime: a hand-built live
--- auction mock (privileged fixture only) is claimed by NO tick arm —
--- ARM 2 now excludes auctions and ARM 2.6 excludes mocks. That is the
--- honest seam, not an oversight.
+-- auction mock (privileged fixture only) is claimed by NO tick arm — and
+-- THAT SENTENCE IS NOW TRUE OF ALL THREE, which it was not when it was
+-- first written (R362). ARM 2 excludes auctions, **ARM 2.5 excludes them
+-- too** and ARM 2.6 excludes mocks. The observation that establishes it
+-- is not the reading of three WHERE clauses but a run: the fixture in the
+-- ARM 2.5 comment — live auction mock, CPU seat on the clock, think-time
+-- due, deadline still in the future — returns
+-- `mock_cpu_picked: 0, mock_cpu_failures: [], auction_claimed_due: 0`
+-- with zero `draft_picks`, `current_pick_number` still 1 and the draft
+-- still `live`; the same fixture returned `mock_cpu_picked: 1` and a
+-- snake-shaped pick before ARM 2.5's two lines were added. 035 §J is
+-- that run, pinned — including the "no arm FAILED either" half, so the
+-- zero is an arm-scope fact and not a contained exception (CLAUDE.md:
+-- never let "nothing happened" mean "it worked"). That is the honest
+-- seam, not an oversight.
 --
 -- (a) NOMINATION EXPIRY (`current_nomination IS NULL` — D126's phase rule).
 --     **The D102 grace contract, carried verbatim to the nomination clock
@@ -183,7 +200,12 @@
 --     guard that voids the winner when the nomination has only its opening
 --     row; see the falsifiability notes.
 --     ATTRIBUTION (§12.4's shape, D130's "per actor"): the winning
---     `draft_bids` row is looked up by (nomination_seq, team, amount) and
+--     `draft_bids` row is looked up by (nomination_seq, **player**, team,
+--     amount) — `player_id` is in that list because D143 lets one
+--     `nomination_seq` carry two nominations' rows (a cancel does not
+--     consume the number), so the triple without it is NOT unique and the
+--     `b.id DESC` tiebreak behind the `created_at` ordering is a random
+--     UUID (083). R363; 035 §K pins it — and
 --     **`is_auto := (that row's action_id IS NULL)`** — a system-opened,
 --     unraised nomination is `is_auto = TRUE, made_via = 'autopick'`;
 --     anything a human nominated or raised is `is_auto = FALSE,
@@ -204,11 +226,27 @@
 --     CONSTRUCTION rather than by trust in an earlier validator. A
 --     violation is engine corruption (D131(4) makes commissioner budget
 --     edits refuse it) and is LOUD: the award is refused, recorded in
---     `auction_failures`, and retried each tick. **Recorded residual:** a
---     draft in that state has a stuck clock until a commissioner pauses
---     and cancels the nomination (L.C1.5's `draft_cancel_nomination`) —
---     the deliberate trade, because writing an insolvent award would break
---     a never-weaken invariant and a loud stall is recoverable.
+--     `auction_failures`, and retried each tick. **Recorded residual, as
+--     DRIVEN rather than assumed (R364) — THERE IS NO REMEDY TODAY:** the
+--     state was forged (an over-max `high_bid` with a backing bid row, so
+--     F62's check passes and the solvency clause is what refuses) and run.
+--     The refusal is correct and loud — `auction_failures[0]` names §8.6.8,
+--     no pick is written, the nomination stands. But `draft_pause` →
+--     `draft_resume` leaves the draft `live` with the SAME nomination and
+--     a `time_left` of −00:00:01, and the next `draft_tick()` reproduces
+--     the identical failure: **pause contains the retry loop, it does not
+--     clear the nomination.** `draft_cancel_nomination` DOES NOT EXIST YET
+--     — it is L.C1.5's deliverable — so the only recovery available in
+--     this migration's world is `draft_reset` + `draft_start_internal`,
+--     which WIPES THE BOARD. Reachability, for the record: 069's
+--     `draft_move_player` has no `draft_type` guard and can shrink a live
+--     high bidder's `max_bid`, so a commissioner mis-click can produce the
+--     state before L.C1.5's priced validation lands — that arm is already
+--     an explicit L.C1.5 deliverable, so no new ledger row is owed. The
+--     trade is still the right one (an insolvent award breaks a
+--     never-weaken invariant permanently; a loud stall is recoverable at
+--     the cost of the board), but the cost is stated here at its real
+--     size instead of as a verb that has not shipped.
 --     ROTATION (§8.6.7(c)/E27, D130): the next nominator is the first team
 --     AFTER the NOMINATOR in `nomination_order` with `open_slots >= 1`.
 --     After the nominator, not after the winner — `on_clock_team_id` stays
@@ -260,10 +298,16 @@
 -- (the R306/R314 lesson). Each probe was applied to the LOCAL database
 -- ONLY, as a `CREATE OR REPLACE` from a patched copy of this file, and
 -- reverted by re-applying this file unmutated — never `db push`, never a
--- hosted project. pgTAP 035 was 105/105 and the wire suite 3/3 before each
--- probe and again after each revert.
---   * **BREAK PROBE 1 (the DoD's own, adapted and disclosed) — AS RUN:
---     35 of 035's 105 pins RED, and the file runs to the END** (pins 23,
+-- hosted project. pgTAP 035 was 105/105 and the wire suite 3/3 before and
+-- after each of probes 1–3 at first landing; the file now carries **116**
+-- pins (R362/R363 added 11), and the batch-4 fix cycle re-ran ALL of them
+-- at 116/116 and 3/3 before and after — a recorded count against a file
+-- that has since grown is a number nobody can reproduce.
+--   * **BREAK PROBE 1 (the DoD's own, adapted and disclosed) — AS RUN AT
+--     FIRST LANDING: 35 of 035's 105 pins RED, and the file runs to the
+--     END** — **re-run in the batch-4 fix cycle: 39 of 116**, that same
+--     set reproduced exactly plus §K's 112–115 (LV's award is itself a
+--     no-raise nomination, so §K is real E26 coverage as well as R363's) (pins 23,
 --     25–27, 29, 31–32, 35–36, 38, 40, 43–44, 46–47, 49, 51–52, 55, 60–61,
 --     63, 65–67, 71, 79, 82–83, 86–91), plus **2 of the wire suite's 3**
 --     cases. The task prints "award to high bidder even when no raises
@@ -282,14 +326,21 @@
 --     §G's resolve pins and §I's completion-writer pins, which never route
 --     through the award at all.
 --   * **BREAK PROBE 2 (the E27 rotation skip) — AS RUN: 9 of 105 RED**
---     (60, 63, 65–67, 71, 79, 87–88) plus **1 of the wire suite's 3**.
+--     (60, 63, 65–67, 71, 79, 87–88) plus **1 of the wire suite's 3**;
+--     re-run against 116 pins: **9 of 116**, the same set. Caveat filed
+--     as ledger F66: pins 79/87 read `auction_failures->0`, an index this
+--     probe makes ambiguous by breaking a second world in the same tick,
+--     and `now()` is transaction-stable in pgTAP so the forced deadlines
+--     TIE — one run in ~7 reported 8 with 79/87 green. The unprobed file
+--     is deterministic (116/116, empty and restored pools alike).
 --     Dropping `open_slots >= 1` from the rotation scan lands the rotation
 --     on a complete roster, so the completion condition is never reached.
 --     Pins 89–91 stay GREEN by construction and are named: the greedy board
 --     still FILLS all 24 spots, it just never COMPLETES — which is pin 88.
 --   * **BREAK PROBE 3 (D146, the one-unit doctrine applied to this file's
 --     own never-weaken guard) — AS RUN: 13 of 105 RED** (78–80, 82–84,
---     86–92) and **0 of 3** in the wire suite. Loosening the award's
+--     86–92) and **0 of 3** in the wire suite; re-run against 116 pins:
+--     **13 of 116**, the same set. Loosening the award's
 --     solvency clause from `price > max_bid` to `price > max_bid + 1` lets
 --     a $199 award land against a $198 max bid (pin 78) and — the point of
 --     the doctrine — turns `draft_auction_solvent` FALSE on the finished
@@ -297,6 +348,21 @@
 --     its fixture never produces an over-max high bid, because 085's bid
 --     clause refuses one; the state is reachable only through 035's
 --     privileged simulation, which is why the pin lives there.
+--   * **BREAK PROBE 4 (batch-4/R362 — the ARM 2.5 exclusion this cycle
+--     added). Both lines removed. AS RUN: 3 of 116 RED** (107, 109, 110)
+--     and **0 of 3** in the wire suite, which has no mock auction — run,
+--     not assumed. §J's pins 106 and 108 stay GREEN by construction and
+--     are named: 106 asserts the fixture is CLAIMABLE before the tick and
+--     108 asserts the arm did not claim-then-fail, so neither moves when
+--     the arm simply picks. They are the reason the section's zeroes mean
+--     something.
+--   * **BREAK PROBE 5 (batch-4/R363 — the award lookup's `player_id`
+--     discriminator). Removed. AS RUN: 2 of 116 RED** (114, 115): the
+--     decoy row wins the ordering, `is_auto` flips to FALSE and
+--     `made_via` to `manager` — the WRONG ACTOR recorded on the pick,
+--     which is the defect the predicate exists to prevent. **0 of 3** in
+--     the wire suite (its fixture writes one row per (sequence, player),
+--     so no decoy exists there) — run, not assumed.
 --   * **ONE UNIT SHORT, EVERYWHERE (D146/R320).** Every ≥/≤/< comparison
 --     this migration makes carries a pin that is false by exactly one unit
 --     of the thing compared:
@@ -684,9 +750,10 @@ REVOKE EXECUTE ON FUNCTION draft_autopick_resolve(UUID, UUID)
 
 -- ---------------------------------------------------------------------------
 -- 4. draft_tick — REPLACED FROM 068 (D137 head rule, 068:657–1247). Two
---    hunks: ARM 2 excludes auctions (claim + under-lock re-verify), and the
---    new ARM 2.6 lands between ARM 2.5 and ARM 3. ARMs 1, 1.5, 1.6, 2.5 and
---    3 are 068's, byte-identical.
+--    hunks: ARM 2 and ARM 2.5 each exclude auctions (claim + under-lock
+--    re-verify — the second pair is R362's), and the new ARM 2.6 lands
+--    between ARM 2.5 and ARM 3. ARMs 1, 1.5, 1.6 and 3 are 068's,
+--    byte-identical.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_tick()
 RETURNS JSONB
@@ -1181,6 +1248,25 @@ BEGIN
   -- deadline-expired mock CPU seat is ARM 2's immediate autopick; the
   -- fresh deadline it writes puts the next due in the future) and BEFORE
   -- ARM 3 (a just-made CPU pick's fresh deadline beats in the same pass).
+  -- 086/R362 — AUCTIONS ARE EXCLUDED HERE TOO, in the claim AND the
+  -- under-lock re-verify, for the same reason ARM 2 is: this arm's pick
+  -- path is draft_autopick_resolve → draft_apply_pick_internal, the SNAKE
+  -- writer. The exclusion is not inferred from that intent — it was
+  -- MEASURED on this branch before the two lines were added. A privileged
+  -- fixture (a live is_mock=true, draft_type='auction' draft, a CPU seat
+  -- on the clock, cpu_speed 'fast' so the think-time is due while the
+  -- deadline is still 30s away, started_at fresh so ARM 1.6 cannot claim
+  -- it) put through one draft_tick() returned "mock_cpu_picked": 1 and
+  -- wrote draft_picks(pick_number=1, round=1, price=NULL, is_auto=t,
+  -- made_via='autopick'), advanced current_pick_number to 2, recorded
+  -- ZERO draft_bids and left current_nomination NULL — the EXACT shape
+  -- this migration closes for ARM 2, reached through a second door.
+  -- It is unreachable today (071's create_mock_draft refuses auction
+  -- configs and a mock's draft_type is snapshotted at creation; 085's
+  -- verbs refuse mocks — F61), so it was never a live defect; it is fixed
+  -- rather than disclosed because an unfixed arm is a hand-off L.C1.7
+  -- would have to remember (R51), and because the banner's seam statement
+  -- is only true once BOTH snake arms decline auctions. 035 §J pins it.
   -- -------------------------------------------------------------------------
   LOOP
     v_mock_loops := v_mock_loops + 1;
@@ -1191,6 +1277,7 @@ BEGIN
       FROM public.drafts d
       WHERE d.status = 'live'
         AND d.is_mock
+        AND d.draft_type <> 'auction'          -- 086/R362: this arm is the SNAKE CPU clock
         AND d.on_clock_team_id IS NOT NULL
         AND d.config->'mock'->>'human_team_id'
             IS DISTINCT FROM d.on_clock_team_id::text
@@ -1214,6 +1301,7 @@ BEGIN
         -- Re-verify under the held lock (claim = snapshot pre-filter).
         IF v_draft.status <> 'live'
            OR NOT v_draft.is_mock
+           OR v_draft.draft_type = 'auction'    -- 086/R362: snake CPU clock only
            OR v_draft.on_clock_team_id IS NULL
            OR v_draft.config->'mock'->>'human_team_id'
               = v_draft.on_clock_team_id::text
@@ -1268,9 +1356,10 @@ BEGIN
   -- to F50 (M7) and says ARM 2.6 shares it with no new row.
   -- MOCKS ARE EXCLUDED and unreachable (071 refuses auction mocks; 085's
   -- verbs refuse them — F61). L.C1.7 adds the CPU sub-arm (D132/D138) and
-  -- opens the claim; until then a hand-built live auction mock would be
-  -- claimed by no arm at all, which is recorded in the banner rather than
-  -- guessed at here.
+  -- opens the claim; until then a hand-built live auction mock is claimed
+  -- by no arm at all — true of ARM 2.5 as well only since R362 added the
+  -- same two lines there, and RUN rather than reasoned (the fixture and
+  -- its two tick summaries are in the ARM 2.5 comment; 035 §J pins them).
   -- -------------------------------------------------------------------------
   LOOP
     v_auc_loops := v_auc_loops + 1;
@@ -1449,15 +1538,40 @@ BEGIN
           -- ATTRIBUTION (D130's "per actor"), read off the WINNING bid row:
           -- a system-opened nomination carries action_id NULL, so an
           -- unraised one is is_auto/'autopick' and anything a human
-          -- nominated or raised is 'manager'. The lookup is unique by
-          -- construction — a team cannot hold two bids at one amount on one
-          -- nomination (a raise must exceed the high bid and a self-raise is
-          -- refused, 085). Its absence is engine corruption and refuses the
-          -- award, which is what makes F62's invariant load-bearing.
+          -- nominated or raised is 'manager'. Its absence is engine
+          -- corruption and refuses the award, which is what makes F62's
+          -- invariant load-bearing.
+          -- WHAT MAKES THE ROW UNAMBIGUOUS — NOT "unique by construction"
+          -- (R363). An earlier draft of this comment claimed the triple
+          -- (nomination_seq, team, amount) could only ever match one row
+          -- because a raise must exceed the high bid and 085 refuses a
+          -- self-raise. **D143 refutes that**: L.C1.5's
+          -- `draft_cancel_nomination` voids a nomination and DOES NOT
+          -- CONSUME the sequence number, so one `nomination_seq` can carry
+          -- the bid rows of two successive nominations — on two different
+          -- players, at the same amount, from the same team. `player_id`
+          -- is therefore in the WHERE: it is the actual discriminator, and
+          -- it is a column the row already carries (083). The remaining
+          -- ordering is a chronological tiebreak only — `created_at DESC`
+          -- prefers the live nomination's row because the voided one was
+          -- written in an earlier transaction — and `b.id DESC` behind it
+          -- decides NOTHING meaningful: `draft_bids.id` is
+          -- `gen_random_uuid()` (083), so on a `created_at` tie it picks at
+          -- random. That is exactly why the discriminator may not be the
+          -- ordering. 035 §K pins the disambiguation with a same-second,
+          -- same-(seq, team, amount) decoy on a DIFFERENT player whose id
+          -- is chosen to WIN the UUID tiebreak.
+          -- Recorded for L.C1.5 (its read-list in tasks-M3 §6 names it):
+          -- D143's "open bids are voided" has NO representation in the
+          -- schema yet — `draft_bids` has no UPDATE or DELETE policy for
+          -- anyone and is append-only by ruling (083, D131(2)) — so the
+          -- voided rows simply stay. This lookup is that ruling's first
+          -- consumer and it is written to survive it.
           SELECT b.action_id IS NULL INTO v_is_auto
           FROM public.draft_bids b
           WHERE b.draft_id = v_draft.id
             AND b.nomination_seq = v_draft.current_pick_number
+            AND b.player_id = v_win_player          -- R363/D143: THE discriminator
             AND b.team_id = v_win_team
             AND b.amount = v_price
           ORDER BY b.created_at DESC, b.id DESC
@@ -1476,9 +1590,13 @@ BEGIN
           -- HERE is what makes the award solvency-preserving by
           -- construction rather than by trust in an earlier validator. A
           -- violation is engine corruption (D131(4) makes commissioner
-          -- budget edits refuse it) and is LOUD: no pick is written, the
-          -- failure is recorded, and a commissioner can clear it by pausing
-          -- and cancelling the nomination (L.C1.5).
+          -- budget edits refuse it) and is LOUD: no pick is written and the
+          -- failure is recorded. NO COMMISSIONER REMEDY EXISTS YET (R364,
+          -- driven on a forged state): pause/resume leaves the same
+          -- nomination standing and the next tick reproduces the identical
+          -- refusal — `draft_cancel_nomination` is L.C1.5's and has not
+          -- shipped, so today the only way out is `draft_reset` +
+          -- `draft_start_internal`, which wipes the board. See the banner.
           SELECT b.remaining, b.open_slots, b.max_bid
             INTO v_remaining, v_open, v_max_bid
           FROM public.draft_team_budget(v_draft.id, v_win_team) b;

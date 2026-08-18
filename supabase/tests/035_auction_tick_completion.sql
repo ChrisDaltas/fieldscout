@@ -11,8 +11,9 @@
 -- `draft_nominate`/`draft_place_bid` end to end. THIS file owns everything
 -- the CLOCK does to an auction: the nomination timeout (all seat classes,
 -- both grace branches), the bid close and its award, the rotation, the
--- completion, and the two hunks 086 makes outside ARM 2.6 (ARM 2's auction
--- exclusion; the auction-only K/DST deferral).
+-- completion, and the hunks 086 makes outside ARM 2.6 (ARM 2's auction
+-- exclusion and, from R362, ARM 2.5's — §J; the auction-only K/DST
+-- deferral).
 --
 -- FIXTURE ADP IS FRACTIONAL, DELIBERATELY (the R286 lesson / ledger F60).
 -- Every player fixture here carries an adp in (0, 1), strictly below every
@@ -24,11 +25,18 @@
 -- Falsifiability notes (§4.3) — every count below was RUN, never predicted
 -- (the R306/R314 lesson). Each probe was a LOCAL-ONLY `CREATE OR REPLACE`
 -- from a patched copy of 086, reverted by re-applying the file unmutated;
--- 105/105 before each and again after each.
---   * **BREAK PROBE 1 — the DoD's, adapted and disclosed. AS RUN: 35 of
---     105 RED, and the file runs to the END** (23, 25–27, 29, 31–32,
---     35–36, 38, 40, 43–44, 46–47, 49, 51–52, 55, 60–61, 63, 65–67, 71,
---     79, 82–83, 86–91), plus 2 of the wire suite's 3 cases. The task
+-- 105/105 before and after each of probes 1–3 at first landing, and
+-- 116/116 before and after every probe in the batch-4 fix cycle — which
+-- re-ran 1–3 as well, because a recorded count against a file that has
+-- since grown is a number nobody can reproduce.
+--   * **BREAK PROBE 1 — the DoD's, adapted and disclosed. AS RUN AT FIRST
+--     LANDING: 35 of 105 RED, and the file runs to the END** (23, 25–27,
+--     29, 31–32, 35–36, 38, 40, 43–44, 46–47, 49, 51–52, 55, 60–61, 63,
+--     65–67, 71, 79, 82–83, 86–91), plus 2 of the wire suite's 3 cases.
+--     **RE-RUN in the batch-4 fix cycle against this 116-pin file: 39 of
+--     116** — that same set, reproduced exactly, plus §K's 112–115,
+--     because LV's award is itself a no-raise nomination and so §K turns
+--     out to be genuine E26 coverage rather than only R363 coverage. The task
 --     prints "award to high bidder even when no raises exist (drop the E26
 --     branch)". There is no E26 branch in 086 to drop: 085 makes the
 --     NOMINATOR the high bidder at nomination time, so awarding the
@@ -43,20 +51,47 @@
 --     completion-writer pins never route through the award, and the wire
 --     suite's nomination case does not either.
 --   * **BREAK PROBE 2 — the E27 rotation skip. AS RUN: 9 of 105 RED**
---     (60, 63, 65–67, 71, 79, 87–88) plus 1 of the wire suite's 3.
+--     (60, 63, 65–67, 71, 79, 87–88) plus 1 of the wire suite's 3;
+--     **re-run against 116 pins: 9 of 116, the same set.** CAVEAT, filed
+--     as ledger F66 and named here so the number is not trusted further
+--     than it earned: pins 79 and 87 read `auction_failures->0`, and this
+--     probe makes a SECOND world fail in the same tick. `now()` is
+--     transaction-stable inside a pgTAP file, so every forced
+--     `now() - interval '1 second'` deadline in this file TIES and ARM
+--     2.6's `ORDER BY current_deadline` breaks the tie arbitrarily — one
+--     run in roughly seven reported 8 of 116 with 79/87 green. The
+--     unprobed file is deterministic (116/116, empty pool and restored
+--     pool alike); §K's own pin 112 was rewritten to filter the failures
+--     array by draft_id rather than index it, which is F66's fix.
 --     Dropping `open_slots >= 1` from ARM 2.6's rotation scan lands the
 --     rotation on a complete roster (§F) and completion is never reached.
 --     Pins 89–91 stay GREEN by construction and are named: the greedy
 --     board still FILLS all 24 spots, it just never COMPLETES — pin 88.
 --   * **BREAK PROBE 3 — the award's §8.6.8 guard, loosened by ONE DOLLAR**
 --     (`price > max_bid` → `price > max_bid + 1`). **AS RUN: 13 of 105
---     RED** (78–80, 82–84, 86–92) and **0 of 3** in the wire suite. Pin 78
+--     RED** (78–80, 82–84, 86–92) and **0 of 3** in the wire suite;
+--     **re-run against 116 pins: 13 of 116, the same set.** Pin 78
 --     is the discriminator ($199 lands against a $198 max) and pin 92 is
 --     the doctrine's payoff — `draft_auction_solvent` goes FALSE on the
 --     finished board. The wire suite is GREEN by construction because its
 --     fixture cannot produce an over-max high bid (085's clause refuses
 --     one); the state exists only under §H's privileged simulation, which
 --     is why the pin lives here and not there.
+--   * **BREAK PROBE 4 (batch-4/R362) — ARM 2.5's auction exclusion
+--     removed, both lines. AS RUN: 3 of 116 RED** (107, 109, 110) and
+--     **0 of 3** in the wire suite, which has no mock auction — run, not
+--     assumed. §J's other two pins are GREEN by construction and named
+--     so nobody counts them as coverage they are not: pin 106 asserts
+--     the fixture is CLAIMABLE before the tick, pin 108 asserts the arm
+--     did not claim-then-fail; neither can move when the arm just picks.
+--   * **BREAK PROBE 5 (batch-4/R363) — the award lookup's `player_id`
+--     discriminator removed. AS RUN: 2 of 116 RED** (114, 115 — `is_auto`
+--     flips to false and `made_via` to `manager`: the WRONG ACTOR is
+--     attributed) and **0 of 3** in the wire suite, whose fixture writes
+--     one row per (sequence, player) and so contains no decoy. Pins 111,
+--     112, 113 and 116 are GREEN by construction and named: 111 is a
+--     direct query, not a call into the RPC; 112/113 depend on the award
+--     landing on the nominated player, which the ordering never changes.
 --   * **ONE UNIT SHORT, EVERYWHERE (D146 / the R320 doctrine).** Every
 --     ≥/≤/< comparison 086 makes is bracketed by a pin false by exactly
 --     one unit of the thing compared:
@@ -85,7 +120,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(105);
+select plan(116);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
@@ -149,6 +184,14 @@ select ok(
 --    LP  a7…ff  partial-completion world (the C41/draft_end entry). §I.
 --    LQ  a7…a1  mock world (the §8.8 zero-side-effect bypass). §I.
 --    LT  a7…a2  snake world for the D111(3) NULL half. §I.
+--    LM  a7…a5  R362: a live AUCTION MOCK with a CPU seat on the clock —
+--               the state ARM 2.5 used to snake-autopick. §J.
+--    LV  a7…a6  R363: a D143-shaped nomination_seq carrying TWO players'
+--               bid rows at one amount from one team. §K.
+--    LM and LV are born with clocks in the FUTURE on purpose: every §C–§I
+--    tick would otherwise claim them, and §J/§K would then be asserting
+--    against a board some earlier section already moved. Each is made due
+--    inside its own section, immediately before its own tick.
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -217,7 +260,11 @@ values
   ('a7000000-0000-4000-8000-0000000000ee', '8e000000-0000-4000-8000-000000000001',
    'pgtap-tk26-LS-snake-resolve', 2026, 'scheduled', 8, null, '{}'),
   ('a7000000-0000-4000-8000-0000000000a1', '8e000000-0000-4000-8000-000000000001',
-   'pgtap-tk26-LQ-mock', 2026, 'scheduled', 8, null, '{}');
+   'pgtap-tk26-LQ-mock', 2026, 'scheduled', 8, null, '{}'),
+  ('a7000000-0000-4000-8000-0000000000a5', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LM-auction-mock', 2026, 'scheduled', 8, null, '{}'),
+  ('a7000000-0000-4000-8000-0000000000a6', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LV-attribution', 2026, 'scheduled', 8, null, '{}');
 
 -- LP/LT are born in 'drafting', so the D43 guard (059) demands a snapshot ON
 -- THE INSERT ITSELF — the trigger fires BEFORE INSERT OR UPDATE, so a
@@ -250,6 +297,14 @@ set roster_settings = '{"starting_slots": [{"key": "rb", "label": "RB", "eligibl
                         "bench": 1, "ir_slots": [], "swap_spots": 0}'::jsonb   -- 3 draftable slots
 where id in ('a7000000-0000-4000-8000-0000000000dd',
              'a7000000-0000-4000-8000-0000000000ee');
+update leagues
+set roster_settings = '{"starting_slots": [{"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1}],
+                        "bench": 1, "ir_slots": [], "swap_spots": 0}'::jsonb   -- 2 draftable slots
+where id = 'a7000000-0000-4000-8000-0000000000a5';
+update leagues
+set roster_settings = '{"starting_slots": [{"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1}],
+                        "bench": 0, "ir_slots": [], "swap_spots": 0}'::jsonb   -- 1 draftable slot
+where id = 'a7000000-0000-4000-8000-0000000000a6';
 
 insert into teams (id, owner_id, name, league_id)
 select ('c7000000-0000-4000-8000-00aa000000' || lpad(i::text, 2, '0'))::uuid,
@@ -280,7 +335,15 @@ insert into teams (id, owner_id, name, league_id) values
   ('c7000000-0000-4000-8000-00a100000001', '8e000000-0000-4000-8000-000000000001',
    'pgtap-tk26-LQ-t1', 'a7000000-0000-4000-8000-0000000000a1'),
   ('c7000000-0000-4000-8000-00a200000001', '8e000000-0000-4000-8000-000000000001',
-   'pgtap-tk26-LT-t1', 'a7000000-0000-4000-8000-0000000000a2');
+   'pgtap-tk26-LT-t1', 'a7000000-0000-4000-8000-0000000000a2'),
+  ('c7000000-0000-4000-8000-00a500000001', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LM-t1', 'a7000000-0000-4000-8000-0000000000a5'),
+  ('c7000000-0000-4000-8000-00a500000002', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LM-t2', 'a7000000-0000-4000-8000-0000000000a5'),
+  ('c7000000-0000-4000-8000-00a600000001', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LV-t1', 'a7000000-0000-4000-8000-0000000000a6'),
+  ('c7000000-0000-4000-8000-00a600000002', '8e000000-0000-4000-8000-000000000001',
+   'pgtap-tk26-LV-t2', 'a7000000-0000-4000-8000-0000000000a6');
 
 -- LN memberships. u1 commissions (t1); u2/u3/u4/u6 manage t2/t3/t4/t6.
 -- t5/t7/t8 deliberately have NO member row — E48's no-user seats.
@@ -364,6 +427,66 @@ insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
    1, 1, 'c7000000-0000-4000-8000-00a200000001', 'tk26-rb56', null, false, 'manager'),
   ('e7000000-0000-4000-8000-0000000000a2', 'a7000000-0000-4000-8000-0000000000a2',
    2, 1, 'c7000000-0000-4000-8000-00a200000001', 'tk26-rb57', null, true,  'autopick');
+
+-- LM (R362): a LIVE AUCTION MOCK with a CPU seat on the clock. The state is
+-- unreachable through the verbs (071's create_mock_draft refuses auction
+-- configs; a mock's draft_type is snapshotted at creation) — this is a
+-- privileged fixture, exactly like §H's over-max high bid. `cpu_speed` is
+-- 'realistic' and the deadline is an hour out, so draft_mock_cpu_due lands
+-- in the FUTURE and no §C–§I tick can claim it; §J flips both and makes it
+-- due at the instant it asserts. started_at is refreshed there too, so ARM
+-- 1.6's stale-pause cannot claim it first and turn §J green for the wrong
+-- reason.
+insert into drafts (id, league_id, draft_type, status, is_mock, config,
+                    draft_order, nomination_order, total_rounds, current_round,
+                    current_pick_number, on_clock_team_id, current_deadline,
+                    started_at) values
+  ('e7000000-0000-4000-8000-0000000000a5', 'a7000000-0000-4000-8000-0000000000a5',
+   'auction', 'live', true,
+   '{"pick_timer_seconds": 90, "auction_budget": 200, "auction_min_bid": 1,
+     "disconnect_grace_seconds": 30,
+     "mock": {"human_team_id": "c7000000-0000-4000-8000-00a500000001",
+              "launched_by": "8e000000-0000-4000-8000-000000000001",
+              "cpu_speed": "realistic"}}',
+   '["c7000000-0000-4000-8000-00a500000001", "c7000000-0000-4000-8000-00a500000002"]',
+   '["c7000000-0000-4000-8000-00a500000001", "c7000000-0000-4000-8000-00a500000002"]',
+   2, 1, 1, 'c7000000-0000-4000-8000-00a500000002',
+   now() + interval '1 hour', now());
+
+-- LV (R363): the D143 shape. `draft_cancel_nomination` (L.C1.5) voids a
+-- nomination WITHOUT consuming the sequence number, so one nomination_seq
+-- can carry the rows of two successive nominations — and `draft_bids` has
+-- no UPDATE/DELETE policy for anyone (083, D131(2)), so the voided rows
+-- STAY. Sequence 5 below therefore holds two rows at $3 from t1: the live
+-- nomination's system opening bid on rb40 (action_id NULL) and a decoy on
+-- rb41 carrying an action_id. Both share created_at TO THE MICROSECOND
+-- (one INSERT, one transaction timestamp), and the decoy's id is chosen to
+-- WIN `ORDER BY created_at DESC, b.id DESC` — which is the whole point:
+-- draft_bids.id is gen_random_uuid() (083:115), so on a created_at tie the
+-- ordering picks at random and cannot be the discriminator. player_id is.
+insert into drafts (id, league_id, draft_type, status, is_mock, config,
+                    draft_order, nomination_order, total_rounds, current_round,
+                    current_pick_number, on_clock_team_id, current_nomination,
+                    current_deadline, started_at) values
+  ('e7000000-0000-4000-8000-0000000000a6', 'a7000000-0000-4000-8000-0000000000a6',
+   'auction', 'live', false,
+   '{"auction_budget": 200, "auction_min_bid": 1,
+     "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
+     "disconnect_grace_seconds": 30}',
+   '["c7000000-0000-4000-8000-00a600000001", "c7000000-0000-4000-8000-00a600000002"]',
+   '["c7000000-0000-4000-8000-00a600000001", "c7000000-0000-4000-8000-00a600000002"]',
+   1, 1, 5, 'c7000000-0000-4000-8000-00a600000001',
+   '{"player_id": "tk26-rb40", "high_bid": 3, "high_bidder_team_id": "c7000000-0000-4000-8000-00a600000001"}',
+   now() + interval '1 hour', now());
+insert into draft_bids (id, draft_id, league_id, nomination_seq, player_id,
+                        team_id, amount, action_id, created_at) values
+  ('0f000000-0000-4000-8000-00000000a601', 'e7000000-0000-4000-8000-0000000000a6',
+   'a7000000-0000-4000-8000-0000000000a6', 5, 'tk26-rb40',
+   'c7000000-0000-4000-8000-00a600000001', 3, null, now()),
+  ('ff000000-0000-4000-8000-00000000a602', 'e7000000-0000-4000-8000-0000000000a6',
+   'a7000000-0000-4000-8000-0000000000a6', 5, 'tk26-rb41',
+   'c7000000-0000-4000-8000-00a600000001', 3,
+   '1a000000-0000-4000-8000-00000000a602', now());
 
 -- ---------------------------------------------------------------------------
 -- C. ARM 2 NO LONGER SNAKE-AUTOPICKS AN AUCTION (the measured defect —
@@ -1026,6 +1149,115 @@ select is(
   (select status from leagues where id = 'a7000000-0000-4000-8000-0000000000a2'),
   'in_season',
   '…and the snake league transitions exactly as 072 shipped it');
+
+-- ---------------------------------------------------------------------------
+-- J. ARM 2.5 DOES NOT SNAKE-AUTOPICK AN AUCTION EITHER (R362). ARM 2 was the
+--    door the migration banner measured and closed; ARM 2.5 is the second
+--    door to the SAME writer (draft_autopick_resolve →
+--    draft_apply_pick_internal), and before R362's two lines this fixture
+--    returned "mock_cpu_picked": 1 with
+--    draft_picks(pick_number=1, round=1, price=NULL, is_auto=t,
+--    made_via='autopick'), current_pick_number advanced to 2, ZERO
+--    draft_bids and current_nomination still NULL.
+-- ---------------------------------------------------------------------------
+update drafts
+set current_deadline = now() + interval '30 seconds',
+    started_at = now(),                       -- ARM 1.6 must not pause it first
+    config = jsonb_set(config, '{mock,cpu_speed}', '"fast"')
+where id = 'e7000000-0000-4000-8000-0000000000a5';
+
+-- THE FIXTURE IS DUE — asserted BEFORE the tick, because every pin below is
+-- a zero and a zero from a draft nothing could have claimed proves nothing
+-- (CLAUDE.md: never let "nothing happened" mean "it worked"). fast ⇒ due =
+-- deadline − 90s timer + 2s, i.e. ~58s in the past, while the deadline
+-- itself is still 30s out so no deadline-driven arm (2 or 2.6) is even
+-- looking at it.
+select ok(
+  (select d.status = 'live' and d.is_mock and d.draft_type = 'auction'
+          and d.on_clock_team_id::text
+              is distinct from d.config->'mock'->>'human_team_id'
+          and public.draft_mock_cpu_due(d.id, d.config, d.current_deadline,
+                                        d.updated_at, d.current_pick_number) <= now()
+          and d.current_deadline > now()
+   from drafts d where d.id = 'e7000000-0000-4000-8000-0000000000a5'),
+  'LM is exactly what ARM 2.5 claims — live, mock, CPU seat on the clock, think-time DUE — and differs from a snake mock in one column: draft_type = auction');
+
+select set_config('pgtap.tk26_j0', public.draft_tick()::text, true);
+select is(
+  (current_setting('pgtap.tk26_j0')::jsonb->>'mock_cpu_picked')::int,
+  0,
+  'ARM 2.5 does NOT claim a live AUCTION mock (R362) — no CPU pick, where the same fixture returned 1 before the exclusion was added');
+select is(
+  current_setting('pgtap.tk26_j0')::jsonb->>'mock_cpu_failures',
+  '[]',
+  '…and the zero is an ARM-SCOPE fact, not a contained exception: the arm did not claim-then-fail, it never claimed');
+select ok(
+  (select count(*) from draft_picks
+   where draft_id = 'e7000000-0000-4000-8000-0000000000a5') = 0
+  and (select count(*) from draft_bids
+       where draft_id = 'e7000000-0000-4000-8000-0000000000a5') = 0,
+  '…nothing was written by ANY arm — no snake-shaped pick from 2.5, and no nomination from 2.6 (which excludes mocks)');
+select ok(
+  (select status = 'live' and current_pick_number = 1
+          and current_nomination is null
+   from drafts where id = 'e7000000-0000-4000-8000-0000000000a5'),
+  '…and LM is still LIVE at sequence 1 — not advanced by the snake writer, and not paused out of the claim by ARM 1.6 (the other way this section could go green for the wrong reason)');
+
+-- ---------------------------------------------------------------------------
+-- K. THE AWARD'S ATTRIBUTION LOOKUP IS DISAMBIGUATED BY player_id (R363),
+--    not by "unique by construction" and not by the UUID tiebreak. D143
+--    rules that a cancelled nomination does NOT consume its sequence
+--    number, so one nomination_seq can carry two players' rows at one
+--    amount from one team — and 083 gives draft_bids no UPDATE/DELETE
+--    policy for anyone, so the voided rows stay to be read.
+-- ---------------------------------------------------------------------------
+-- The falsifier, stated as an assertion rather than as a claim about what
+-- would happen: the OLD lookup's own ORDER BY, run against this fixture,
+-- selects the WRONG row.
+select is(
+  (select b.player_id
+   from draft_bids b
+   where b.draft_id = 'e7000000-0000-4000-8000-0000000000a6'
+     and b.nomination_seq = 5
+     and b.team_id = 'c7000000-0000-4000-8000-00a600000001'
+     and b.amount = 3
+   order by b.created_at desc, b.id desc
+   limit 1),
+  'tk26-rb41',
+  'THE FALSIFIER IS REAL: (nomination_seq, team, amount) + `ORDER BY created_at DESC, id DESC` — the lookup as first written — resolves to the DECOY row, on a player the live nomination is not for');
+
+update drafts set current_deadline = now() - interval '1 second'
+where id = 'e7000000-0000-4000-8000-0000000000a6';
+select set_config('pgtap.tk26_k0', public.draft_tick()::text, true);
+
+select is(
+  (select count(*)
+   from jsonb_array_elements(
+          current_setting('pgtap.tk26_k0')::jsonb->'auction_failures') f
+   where f->>'draft_id' = 'e7000000-0000-4000-8000-0000000000a6'),
+  0::bigint,
+  'LV: the award goes through — no failure recorded FOR THIS DRAFT (scoped by draft_id deliberately: auction_failures is a WHOLE-TICK array, so an unscoped read reports a neighbour world''s failure as this section''s)');
+select is(
+  (select player_id from draft_picks
+   where draft_id = 'e7000000-0000-4000-8000-0000000000a6' and pick_number = 5),
+  'tk26-rb40',
+  '…the awarded PLAYER comes from current_nomination, which the decoy never touched');
+select is(
+  (select is_auto::text from draft_picks
+   where draft_id = 'e7000000-0000-4000-8000-0000000000a6' and pick_number = 5),
+  'true',
+  '…and the ATTRIBUTION comes from the bid row for THAT player — the system opening bid, action_id NULL ⇒ is_auto TRUE — not from the decoy the ordering prefers (R363/D143)');
+select is(
+  (select made_via from draft_picks
+   where draft_id = 'e7000000-0000-4000-8000-0000000000a6' and pick_number = 5),
+  'autopick',
+  '…so made_via follows the same row: `autopick`, where the decoy''s non-NULL action_id would have written `manager`');
+select is(
+  (select count(*) from draft_bids
+   where draft_id = 'e7000000-0000-4000-8000-0000000000a6'
+     and player_id = 'tk26-rb41'),
+  1::bigint,
+  '…and the decoy row is STILL THERE — this section is not green because the ambiguity was cleaned up (D143''s "open bids voided" has no representation in the schema yet; L.C1.5 owns it)');
 
 select * from finish();
 rollback;
