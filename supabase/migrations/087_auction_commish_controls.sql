@@ -53,6 +53,10 @@
 -- event — §8.7's "open bids voided" — and until this migration the sentence
 -- had no referent at all.
 --
+-- SPEC ERRATUM, folded in this PR (the fold-back rule): §12.5's printed table
+-- gains `voided_at` with the meaning above, and the changelog carries it as
+-- **v2.12.2**. v2.11 stays reserved for PR #152 (first-filed keeps — R312).
+--
 -- CONSEQUENCE, and it is why `draft_tick` is replaced below: 086's award
 -- lookup gains `AND b.voided_at IS NULL`. The `player_id` discriminator R363
 -- added stays (it is the right shape and it covers the different-player
