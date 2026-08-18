@@ -1,10 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -59,6 +58,7 @@ import {
   type UndoTarget,
 } from './commish-panel-ops'
 import { parseDraftOrder } from './draft-board-ops'
+import { sectionDomId, type DraftOptionsSectionId } from './draft-options-ops'
 
 interface CommishDraftPanelProps {
   leagueId: string
@@ -67,11 +67,14 @@ interface CommishDraftPanelProps {
   picks: DraftPickSummary[]
   playerById: ReadonlyMap<string, PlayerIdentity>
   /** DR.2 (D153): the panel is CONTROLLED — its own blue `Commish panel`
-   *  SheetTrigger is retired; the command bar's `Draft Options` control is
-   *  the one door (DR.3 swaps that door's target for `draft-options-menu`,
-   *  which opens this same panel at a section). */
+   *  SheetTrigger is retired; the command bar's `Draft Options` menu is the
+   *  one door (DR.3). */
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** DR.3: the `Draft Options` menu group the viewer chose — the sheet
+   *  opens scrolled to that section's anchor (`sectionDomId`). Null when
+   *  the panel is closed (the room clears it on close). */
+  openAtSection: DraftOptionsSectionId | null
 }
 
 /**
@@ -102,6 +105,7 @@ export function CommishDraftPanel({
   playerById,
   open,
   onOpenChange,
+  openAtSection,
 }: CommishDraftPanelProps) {
   const paused = draft.status === 'paused'
   const livePicks = useMemo(
@@ -142,41 +146,82 @@ export function CommishDraftPanel({
           </SheetDescription>
         </SheetHeader>
 
-        <ClockSection
-          leagueId={leagueId}
-          draft={draft}
-          paused={paused}
-          onError={surfaceError}
-        />
-        <UndoSection
-          leagueId={leagueId}
-          draftId={draft.id}
-          livePicks={livePicks}
-          pickSummary={pickSummary}
-          onError={surfaceError}
-        />
-        <FixPickSection
-          leagueId={leagueId}
-          draftId={draft.id}
-          livePicks={livePicks}
-          detail={detail}
-          pickSummary={pickSummary}
-          playerLabel={playerLabel}
-          onError={surfaceError}
-        />
-        <ForcePickSection
-          leagueId={leagueId}
-          draft={draft}
-          teamsById={teamsById}
-          onError={surfaceError}
-        />
-        <OrderSection leagueId={leagueId} draft={draft} detail={detail} onError={surfaceError} />
-        <AutopickSection leagueId={leagueId} detail={detail} onError={surfaceError} />
-        <SeatControlsSection leagueId={leagueId} detail={detail} />
-        <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
+        {/* DR.3 open-at-section: each section mount gets a scroll anchor
+            (`sectionDomId`) so the Draft Options menu can land the sheet on
+            the chosen group. The anchors belong to this mount site — the
+            section BODIES below are D153-untouched. `ScrollToSection` lives
+            inside SheetContent deliberately: Radix mounts the content on
+            open, so its effect runs exactly once per opening. */}
+        <ScrollToSection section={openAtSection} />
+        <div id={sectionDomId('clock')}>
+          <ClockSection
+            leagueId={leagueId}
+            draft={draft}
+            paused={paused}
+            onError={surfaceError}
+          />
+        </div>
+        <div id={sectionDomId('undo')}>
+          <UndoSection
+            leagueId={leagueId}
+            draftId={draft.id}
+            livePicks={livePicks}
+            pickSummary={pickSummary}
+            onError={surfaceError}
+          />
+        </div>
+        <div id={sectionDomId('fix-pick')}>
+          <FixPickSection
+            leagueId={leagueId}
+            draftId={draft.id}
+            livePicks={livePicks}
+            detail={detail}
+            pickSummary={pickSummary}
+            playerLabel={playerLabel}
+            onError={surfaceError}
+          />
+        </div>
+        <div id={sectionDomId('force-pick')}>
+          <ForcePickSection
+            leagueId={leagueId}
+            draft={draft}
+            teamsById={teamsById}
+            onError={surfaceError}
+          />
+        </div>
+        <div id={sectionDomId('order')}>
+          <OrderSection leagueId={leagueId} draft={draft} detail={detail} onError={surfaceError} />
+        </div>
+        <div id={sectionDomId('autopick')}>
+          <AutopickSection leagueId={leagueId} detail={detail} onError={surfaceError} />
+        </div>
+        <div id={sectionDomId('seats')}>
+          <SeatControlsSection leagueId={leagueId} detail={detail} />
+        </div>
+        <div id={sectionDomId('reset')}>
+          <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
+        </div>
       </SheetContent>
     </Sheet>
   )
+}
+
+/**
+ * Scrolls the just-opened sheet to the chosen section's anchor (DR.3).
+ * Rendered inside `SheetContent`, so mounting IS the open event; the rAF
+ * lets Radix finish positioning the sheet before the scroll. The slide-in
+ * is a transform animation, which never moves the content's own scroll
+ * coordinates — so scrolling immediately is safe even mid-animation.
+ */
+function ScrollToSection({ section }: { section: DraftOptionsSectionId | null }) {
+  useEffect(() => {
+    if (!section) return
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(sectionDomId(section))?.scrollIntoView({ block: 'start' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [section])
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +291,6 @@ function ClockSection({
   const pauseResume = usePauseResumeDraft(leagueId, draft.id)
   const setClock = useSetDraftClock(leagueId, draft.id)
   const [timer, setTimer] = useState<string>('')
-  const [extendCurrent, setExtendCurrent] = useState(false)
 
   return (
     <PanelSection
@@ -280,21 +324,19 @@ function ClockSection({
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 text-[11px] font-medium text-ink">
-          <Checkbox
-            checked={extendCurrent}
-            onCheckedChange={(next) => setExtendCurrent(next === true)}
-            disabled={paused}
-          />
-          Also extend the current pick{paused ? ' (resume first)' : ''}
-        </label>
         <Button
           variant="stroke"
           size="sm"
           disabled={timer === '' || setClock.isPending}
           onClick={() =>
             setClock
-              .mutateAsync({ pickTimerSeconds: Number(timer), extendCurrent })
+              // extendCurrent is pinned FALSE: migration 090 deleted the
+              // extend-in-place arm (spec v2.12.5 §8.7 Edit-pick-clock — the
+              // pause itself is the time relief), so `true` refuses in EVERY
+              // state. The checkbox that used to drive it, with its
+              // "(resume first)" hint that pause-first made a lie, is
+              // removed (F72's dead-control half, taken minimally in DR.3).
+              .mutateAsync({ pickTimerSeconds: Number(timer), extendCurrent: false })
               .then(() => toast({ title: 'Pick clock updated' }))
               .catch((e: unknown) => onError(e, 'Clock edit failed'))
           }
