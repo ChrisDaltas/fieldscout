@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ import {
 } from '@/hooks/use-draft-queue'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeagueLists } from '@/hooks/use-league-lists'
+import { useDeleteMockDraft } from '@/hooks/use-mock-drafts'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -39,6 +40,7 @@ import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
+import { DraftCommandBar } from './draft-command-bar'
 import { DraftBoardGrid } from './draft-board-grid'
 import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
@@ -97,24 +99,31 @@ interface DraftRoomProps {
  * renders inside a full-viewport, chrome-free frame with no app nav, header
  * or right rail (`src/app/app/(room)/layout.tsx`; spec §16.1 v2.12). Two
  * consequences a reader of this file needs:
- *   - The `PageHeader` calls below write into `useHeaderStore`, which only
- *     `AppHeader` reads — and `AppHeader` is shell chrome. They are therefore
- *     NO-OPS in the room today, which means the live room's **Exit room**
- *     button, the commissioner-panel trigger and **Pause practice** are not
- *     rendered anywhere. **DR.2 deletes these calls and rehomes all three
- *     onto the 54px command bar**, which is the same task that closes the
- *     shipped defect that none of them rendered below `lg`.
- *   - **Which states have a way out, enumerated rather than generalised**
- *     (review finding R340 — the earlier version of this bullet named four
- *     arms and then a claim was built on it that covered eight). The
- *     resolver's **empty / problem / not-found / post-draft** arms each carry
- *     an in-card *Back to league*; the **lobby** and the **practice launcher**
- *     did NOT until R340 added one to each (their only *Back to league* lived
- *     in a `PageHeader` that renders nothing here — measured by DOM
- *     inventory, not inferred). All six are pinned in `room-exits.test.ts`.
- *     The **live room** is the one state with no in-room exit, and that is the
- *     disclosed gap DR.2 closes with the command bar's **Exit Draft**; the
- *     skeleton is transient. DR.7 owns the states sweep.
+ *   - **DR.2 (2026-08-18) deleted every `PageHeader` call this file carried**
+ *     (they wrote into `useHeaderStore`, which only the shell's `AppHeader`
+ *     reads — they rendered nothing here) and rehomed the live room's three
+ *     occupants onto the 54px `DraftCommandBar` (spec §16.4 zone 1, D154):
+ *     the commissioner door is the bar's **Draft Options**, opening the now
+ *     trigger-less, controlled `CommishDraftPanel` (D153 — DR.3 swaps the
+ *     door's target for the options menu); the launcher's **Pause practice**
+ *     is the bar's mock pause/resume; **Exit room** is the bar's
+ *     **Exit Draft**, for commissioner and member alike (Q13 — a plain
+ *     in-place navigation; the heartbeat cleanup in `use-draft.ts` is the
+ *     §8.5.5 away path, and `is_autodraft` is never touched). Measured, not
+ *     asserted: with comments stripped, this file contains no PageHeader
+ *     element and no app-header import — `draft-command-bar.test.ts` pins
+ *     exactly that (this docblock deliberately never spells the JSX form,
+ *     so the pin cannot be satisfied by prose).
+ *   - **Every resolver state now offers an exit** (R340's enumeration,
+ *     closed out by DR.2): **empty / problem / not-found / post-draft**
+ *     carry an in-card *Back to league* from M2; the **lobby** and the
+ *     **practice launcher** got theirs in DR.1's review fix (R340); the
+ *     **skeleton** got one in DR.2 (the DR.7(5)/R348 deliberate call,
+ *     recorded at PROGRESS D176 — in a chrome-free frame a hung fetch was a
+ *     zero-affordance dead end); and the **live room**'s is the command
+ *     bar's Exit Draft. Pinned in `room-exits.test.ts` and
+ *     `draft-command-bar.test.ts`; per-variant DOM inventories are in the
+ *     DR.2 PR. DR.7 owns the states sweep.
  *
  * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
@@ -160,7 +169,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
   // ----- resolution states (§16.5.4: skeleton / error / honest empties) ----
 
   if (detail.isPending || (draftId && room.isPending)) {
-    return <DraftRoomSkeleton />
+    return <DraftRoomSkeleton leagueId={leagueId} />
   }
 
   if (detail.isError || !detail.data) {
@@ -205,7 +214,6 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       // completed draft itself).
       return (
         <div className="flex flex-col gap-4">
-          <PageHeader title="Draft room" />
           <Card>
             <CardContent className="flex flex-col items-start gap-2 p-4">
               <p className="text-[13px] font-bold">This league’s draft is complete</p>
@@ -286,7 +294,6 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     // serves real & mock).
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Draft room" />
         <Card>
           <CardContent className="flex flex-col items-start gap-2 p-4">
             <p className="text-[13px] font-bold">
@@ -367,6 +374,11 @@ function DraftRoomLive({
   const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
   const [listsSheetOpen, setListsSheetOpen] = useState(false)
   const [addListOpen, setAddListOpen] = useState(false)
+  // DR.2 (D153): the §8.7 panel is trigger-less and controlled — the command
+  // bar's Draft Options is its one door (DR.3 swaps the door's target for
+  // the options menu).
+  const [draftOptionsOpen, setDraftOptionsOpen] = useState(false)
+  const router = useRouter()
   const queryClient = useQueryClient()
 
   // The add-list modal's Attached flags: MY attached list ids (fetched only
@@ -487,6 +499,41 @@ function DraftRoomLive({
   // person who could act on it. §8.8's "pause/leave anytime" is the pause
   // button below; leaving just works (E59 auto-pauses on a stale heartbeat).
   const canPauseResume = isCommish || isMockLauncher
+  // DR.2: one pause/resume handler for the bar (and the overlay's Resume,
+  // which DR.7/D155 retires) — the SHIPPED usePauseResumeDraft mutation, no
+  // new route (DR.2 item 5).
+  const handlePauseResume = (action: 'pause' | 'resume') => {
+    pauseResume.mutateAsync({ action }).catch((error: unknown) => {
+      toast({
+        title: action === 'pause' ? 'Pause failed' : 'Resume failed',
+        description:
+          error instanceof LeagueActionError
+            ? error.message
+            : 'Something went wrong. The room refreshes automatically.',
+        variant: 'destructive',
+      })
+    })
+  }
+  // The bar's reduced Practice-options menu (D154): delete-and-exit through
+  // the SHIPPED delete verb (071's `delete_mock_draft` refuses everyone but
+  // the launcher in-RPC — same door the launcher's MockRow uses).
+  const deleteMock = useDeleteMockDraft(leagueId)
+  const handleDeletePractice = () => {
+    deleteMock
+      .mutateAsync(draft.id)
+      .then(() => {
+        toast({ title: 'Practice draft deleted' })
+        router.push(`/app/leagues/${leagueId}`)
+      })
+      .catch((error: unknown) => {
+        toast({
+          title: "Couldn't delete the practice draft",
+          description:
+            error instanceof LeagueActionError ? error.message : 'Something went wrong.',
+          variant: 'destructive',
+        })
+      })
+  }
   // The §16.5.2 pause overlay's frozen clock — the paused branch reads only
   // the persisted deadline_remaining_ms, so the (nowMs, offsetMs) samples
   // are irrelevant here (pure derivation, no wall-clock read).
@@ -643,18 +690,7 @@ function DraftRoomLive({
           mock={draft.is_mock}
           canResume={canPauseResume}
           resuming={pauseResume.isPending}
-          onResume={() =>
-            pauseResume.mutateAsync({ action: 'resume' }).catch((error: unknown) => {
-              toast({
-                title: 'Resume failed',
-                description:
-                  error instanceof LeagueActionError
-                    ? error.message
-                    : 'Something went wrong. The room refreshes automatically.',
-                variant: 'destructive',
-              })
-            })
-          }
+          onResume={() => handlePauseResume('resume')}
         />
       )}
     <Card>
@@ -702,49 +738,25 @@ function DraftRoomLive({
 
   return (
     <>
-      <PageHeader
-        title="Draft room"
-        actions={
-          <div className="flex items-center gap-1.5">
-            {isCommish && (
-              <CommishDraftPanel
-                leagueId={leagueId}
-                draft={draft}
-                detail={detail}
-                picks={picks}
-                playerById={playerById}
-              />
-            )}
-            {isMockLauncher && !paused && (
-              // §8.8 "pause/leave anytime": the launcher's explicit pause
-              // (069/071's mock-launcher arm — commissioners are refused on
-              // mocks, D110(1)). Leaving without it also pauses, via the E59
-              // stale-heartbeat arm; this button just makes it deliberate.
-              <Button
-                variant="stroke"
-                size="sm"
-                disabled={pauseResume.isPending}
-                onClick={() =>
-                  pauseResume.mutateAsync({ action: 'pause' }).catch((error: unknown) => {
-                    toast({
-                      title: 'Pause failed',
-                      description:
-                        error instanceof LeagueActionError
-                          ? error.message
-                          : 'Something went wrong. The room refreshes automatically.',
-                      variant: 'destructive',
-                    })
-                  })
-                }
-              >
-                {pauseResume.isPending ? 'Pausing…' : 'Pause practice'}
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}`}>Exit room</Link>
-            </Button>
-          </div>
-        }
+      {/* DR.2: the room's own top chrome, every width (spec §16.4 zone 1;
+          D149's first band). The variant/control derivation lives in
+          `command-bar-ops.ts` (D154), where the D110(1) mock mask is
+          re-applied. The launcher's old header "Pause practice" button and
+          the old "Exit room" ghost link both live here now. */}
+      <DraftCommandBar
+        leagueId={leagueId}
+        bar={{
+          commishRole: canUseCommishPanel(detail.my_role),
+          isMock: draft.is_mock,
+          isMockLauncher,
+          paused,
+        }}
+        hasSeat={Boolean(myTeamId)}
+        pausePending={pauseResume.isPending}
+        onPauseResume={handlePauseResume}
+        onOpenDraftOptions={() => setDraftOptionsOpen(true)}
+        onDeletePractice={handleDeletePractice}
+        deletePending={deleteMock.isPending}
       />
 
       <div className="flex min-w-0 flex-col gap-4">
@@ -954,6 +966,22 @@ function DraftRoomLive({
         </div>
       </div>
 
+      {/* §8.7 panel — trigger-less and CONTROLLED since DR.2 (D153); the
+          bar's Draft Options is its one door. Gated exactly as before:
+          commissioner/co-commissioner on a NON-mock draft (D110(1) — the
+          gate is `isCommish`, which carries `&& !draft.is_mock`). */}
+      {isCommish && (
+        <CommishDraftPanel
+          leagueId={leagueId}
+          draft={draft}
+          detail={detail}
+          picks={picks}
+          playerById={playerById}
+          open={draftOptionsOpen}
+          onOpenChange={setDraftOptionsOpen}
+        />
+      )}
+
       {/* §8.9 "Mobile: the panel is a bottom sheet" — the same MyListsPanel,
           cheat sheet inlined (no nested portals, D119(6)). */}
       <Sheet open={listsSheetOpen} onOpenChange={setListsSheetOpen}>
@@ -982,10 +1010,19 @@ function DraftRoomLive({
 // Skeleton / problem / honest-empty states (§16.5.4)
 // ---------------------------------------------------------------------------
 
-function DraftRoomSkeleton() {
+function DraftRoomSkeleton({ leagueId }: { leagueId: string }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Draft room" />
+      {/* DR.2's deliberate call on DR.7(5)'s open question (R348; PROGRESS
+          D176): the transient skeleton DOES get an exit. In the chrome-free
+          frame a slow or hung fetch renders this state full-viewport with
+          zero affordances — one link closes the last exit-less resolver
+          state. Pinned in room-exits.test.ts. */}
+      <div className="flex items-center justify-end">
+        <Button variant="stroke" size="sm" asChild>
+          <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+        </Button>
+      </div>
       <Skeleton className="h-9 rounded-sm" />
       <Skeleton className="h-64 rounded-sm" />
     </div>
@@ -1005,7 +1042,6 @@ function DraftRoomProblem({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Draft room" />
       <Card className="border-negative bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
           <p className="text-[13px] font-bold" role="alert">
@@ -1037,7 +1073,6 @@ function DraftRoomEmpty({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Draft room" />
       <Card>
         <CardContent className="flex flex-col items-start gap-2 p-4">
           <p className="text-[13px] font-bold">{title}</p>
