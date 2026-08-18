@@ -3248,6 +3248,38 @@ export type Database = {
         Args: { d: Database["public"]["Tables"]["drafts"]["Row"] }
         Returns: Json
       }
+      draft_complete_internal: {
+        Args: { p_draft_id: string }
+        Returns: {
+          budget_adjustments: Json
+          completed_at: string | null
+          config: Json
+          created_at: string | null
+          current_deadline: string | null
+          current_nomination: Json | null
+          current_pick_number: number | null
+          current_round: number | null
+          deadline_remaining_ms: number | null
+          draft_order: Json | null
+          draft_type: string
+          id: string
+          is_mock: boolean
+          league_id: string
+          nomination_order: Json | null
+          on_clock_team_id: string | null
+          paused_at: string | null
+          started_at: string | null
+          status: string
+          total_rounds: number | null
+          updated_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "drafts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       draft_create: { Args: { p_league_id: string }; Returns: Json }
       draft_create_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
