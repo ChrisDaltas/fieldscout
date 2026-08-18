@@ -573,12 +573,26 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(Math.abs(gapMs - remaining!)).toBeLessThanOrEqual(2)
   })
 
-  it('undo (single) rewinds pick 1; force-pick re-picks it as made_via=commissioner (E4 + the force wire path)', async () => {
+  it('undo (single) rewinds pick 1; force-pick re-picks it as made_via=commissioner (E4 + the force wire path; F57/090 pause-first over the wire)', async () => {
+    // F57 ALIGNED (migration 090): the live undo is a 400 with the aligned
+    // sentence — the route-layer surfacing of pause-first on snake.
+    const liveUndo = await undoDraft(commishClient, leagueId, {
+      reason: 'live undo (must refuse — F57/090)',
+    })
+    expect(liveUndo.status).toBe(400)
+    expect(JSON.stringify(liveUndo.body)).toContain(
+      'draft_undo: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+    )
+
+    const paused = await pauseOrResumeDraft(commishClient, leagueId, { action: 'pause' })
+    expect(paused.status).toBe(200)
     const undone = await undoDraft(commishClient, leagueId, { reason: 'wire undo check' })
     expect(undone.status).toBe(200)
     const afterUndo = (undone.body as unknown as DraftBody).draft
     expect(afterUndo.current_pick_number).toBe(1)
     expect(afterUndo.on_clock_team_id).toBe(commishTeamId)
+    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    expect(resumed.status).toBe(200)
 
     const forced = await forcePick(commishClient, leagueId, {
       player_id: P1,
@@ -634,7 +648,12 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(pick1).toMatchObject({ team_id: commishTeamId, is_undone: true })
   })
 
-  it('clock edit, reassign, and move-player round-trip over the wire (E15 + the §8.7 correction pair)', async () => {
+  it('clock edit, reassign, and move-player round-trip over the wire (E15 + the §8.7 correction pair) — behind a pause (F57/090)', async () => {
+    const paused = await pauseOrResumeDraft(commishClient, leagueId, {
+      action: 'pause',
+      reason: 'pause-first edits (F57/090)',
+    })
+    expect(paused.status).toBe(200)
     const clock = await setClock(commishClient, leagueId, {
       pick_timer_seconds: 600,
       reason: 'wire clock edit',
@@ -680,6 +699,9 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       .eq('id', livePick1!.id)
       .single()
     expect(afterMove!.team_id).toBe(mgr2TeamId)
+
+    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    expect(resumed.status).toBe(200)
   })
 
   it('undo CASCADE over the wire: `to_pick_number: 0` is the FULL rewind — every pick reverted, pick 1 back on the clock (E4; R160/R162)', async () => {
@@ -694,6 +716,10 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     const forced2Body = forced2.body as unknown as DraftBody
     expect(forced2Body.pick!.pick_number).toBe(2)
     expect(forced2Body.draft.current_pick_number).toBe(3)
+
+    // Pause-first (F57/090): the cascade runs behind a pause.
+    const paused = await pauseOrResumeDraft(commishClient, leagueId, { action: 'pause' })
+    expect(paused.status).toBe(200)
 
     // THE R160 PIN: 0 passes the wire schema (`min(0)`, not `min(1)`) and
     // reaches 069's `>= 0` arm, which undoes every pick > 0 — the full
@@ -711,9 +737,10 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(cascadeBody.draft.current_round).toBe(1)
     // Slot 1 of the E31 order is the commissioner's team.
     expect(cascadeBody.draft.on_clock_team_id).toBe(commishTeamId)
-    // The draft is still LIVE (reset is the other operation — it would have
-    // flipped the league to `scheduled` and cleared the stored instant).
-    expect(cascadeBody.draft.status).toBe('live')
+    // The draft is still PAUSED (the cascade ran behind the F57/090 pause;
+    // reset is the other operation — it would have flipped the league to
+    // `scheduled` and cleared the stored instant).
+    expect(cascadeBody.draft.status).toBe('paused')
 
     const { count: liveCount } = await service
       .from('draft_picks')
@@ -722,9 +749,12 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       .eq('is_undone', false)
     expect(liveCount).toBe(0)
 
-    // Restore ONE live pick so the reset test that follows still proves
-    // "every pick soft-undone" against a non-empty board (this cascade must
-    // run BEFORE reset — undo needs a live/paused draft).
+    // Resume, then restore ONE live pick so the reset test that follows
+    // still proves "every pick soft-undone" against a non-empty board (this
+    // cascade must run BEFORE reset — undo needs a live/paused draft, and
+    // force-pick needs the live board).
+    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    expect(resumed.status).toBe(200)
     const restored = await forcePick(commishClient, leagueId, {
       player_id: P1,
       action_id: ACTION.force3,

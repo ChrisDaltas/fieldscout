@@ -353,6 +353,21 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
     expect(forcedPick.made_via).toBe('commissioner')
     expect(forcedPick.team_id).toBe(orderedTeamIds[2])
 
+    // F57 ALIGNED (migration 090): undo is pause-first on snake too. The
+    // live call is refused with the aligned sentence — the wire surfacing
+    // of the change — then the cascade runs behind a pause.
+    const { error: liveUndoError } = await commishClient.rpc('draft_undo', {
+      p_draft_id: draftId,
+      p_to_pick_number: 1,
+      p_reason: 'live undo (must refuse — F57/090)',
+    })
+    expect(liveUndoError).not.toBeNull()
+    expect(liveUndoError!.message).toBe(
+      'draft_undo: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+    )
+    const pauseForUndo = await timedRpc('draft_pause', { p_draft_id: draftId })
+    expect(pauseForUndo.response.draft.status).toBe('paused')
+
     // Cascade undo back to pick 1: picks 2–3 revert, mgr2 back on the clock.
     const undo = await timedRpc('draft_undo', {
       p_draft_id: draftId,
@@ -378,6 +393,10 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
       `held-lock bound (§4.6, min over pause/resume/undo): pause/resume min ${clockControlMinMs.toFixed(1)}ms, undo ${undo.ms.toFixed(1)}ms`,
     ).toBeLessThan(50)
 
+    // Resume for the repick (make_pick needs the live board).
+    const resumeAfterUndo = await timedRpc('draft_resume', { p_draft_id: draftId })
+    expect(resumeAfterUndo.response.draft.status).toBe('live')
+
     // Pool restored on the wire: mgr2 re-picks the player pick 3 had taken.
     const { data: repick, error: repickError } = await mgr2Client.rpc('draft_make_pick', {
       p_draft_id: draftId,
@@ -399,7 +418,7 @@ describe('commissioner controls over PostgREST (migration 069)', () => {
       .eq('is_system', true)
     expect(postsError).toBeNull()
     const messages = (posts ?? []).map((row) => row.message)
-    expect(messages).toHaveLength(4) // pause, resume, force, undo
+    expect(messages).toHaveLength(6) // pause, resume, force, pause, undo, resume (F57/090: the undo runs behind its own pause)
     expect(messages.some((m) => m.startsWith('Draft paused by'))).toBe(true)
     expect(messages.some((m) => m.startsWith('Draft resumed by'))).toBe(true)
     expect(messages.some((m) => m.startsWith('Pick 3 made by commissioner'))).toBe(true)
