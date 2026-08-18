@@ -70,7 +70,7 @@ const FILES = sourceFiles(SRC).filter((f) => {
   return rel !== SELF && rel !== GENERATED_TYPES
 })
 
-const SETTINGS_PAGE = 'src/app/app/settings/page.tsx'
+const SETTINGS_PAGE = 'src/app/app/(shell)/settings/page.tsx'
 
 describe('identity contract — a person has no name, only a handle', () => {
   it('collects a non-trivial source tree (the sweeps below are not vacuous)', () => {

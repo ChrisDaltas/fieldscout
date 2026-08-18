@@ -21,11 +21,11 @@ import { featureFlags } from '@/lib/feature-flags'
 
 /** Gated surface → [route layout, the flag it must read]. */
 const GATES = [
-  ['src/app/app/big-board/layout.tsx', 'bigBoard'],
-  ['src/app/app/weekly-ranks/layout.tsx', 'weeklyRanks'],
-  ['src/app/app/explore/layout.tsx', 'community'],
-  ['src/app/app/start-or-sit/layout.tsx', 'startOrSit'],
-  ['src/app/app/teams/layout.tsx', 'teams'],
+  ['src/app/app/(shell)/big-board/layout.tsx', 'bigBoard'],
+  ['src/app/app/(shell)/weekly-ranks/layout.tsx', 'weeklyRanks'],
+  ['src/app/app/(shell)/explore/layout.tsx', 'community'],
+  ['src/app/app/(shell)/start-or-sit/layout.tsx', 'startOrSit'],
+  ['src/app/app/(shell)/teams/layout.tsx', 'teams'],
   ['src/app/consensus/layout.tsx', 'consensus'],
   ['src/app/personas/layout.tsx', 'personas'],
   ['src/app/u/[username]/big-board/layout.tsx', 'bigBoard'],
@@ -86,7 +86,7 @@ describe('404 boundaries exist for genuinely missing routes', () => {
   // Independent of the gates: before these, any bad URL rendered Next's
   // unbranded default. Verified in a production build — /nonexistent-page
   // returns 404 with the FieldScout wordmark and a link home.
-  for (const file of ['src/app/not-found.tsx', 'src/app/app/not-found.tsx']) {
+  for (const file of ['src/app/not-found.tsx', 'src/app/app/(shell)/not-found.tsx']) {
     it(`${file} is branded and offers a way back`, () => {
       const source = readFileSync(path.resolve(process.cwd(), file), 'utf8')
       expect(source).toContain('export default function')

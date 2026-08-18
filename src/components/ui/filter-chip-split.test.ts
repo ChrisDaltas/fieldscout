@@ -56,7 +56,7 @@ const FILTER_CHIP_CALLERS: Record<string, Reason> = {
   // Tapping the pressed position clears it back to null = all positions.
   'components/layout/rail/players-panel.tsx': 'zero-selected-is-valid',
   // Documents the surviving component beside the segment it was split from.
-  'app/app/styleguide/page.tsx': 'styleguide-demo',
+  'app/app/(shell)/styleguide/page.tsx': 'styleguide-demo',
 }
 
 /**
@@ -65,7 +65,7 @@ const FILTER_CHIP_CALLERS: Record<string, Reason> = {
  * one row of each kind and are checked only for the `Segment` import.
  */
 const CONVERTED: string[] = [
-  'app/app/admin/posts/page.tsx',
+  'app/app/(shell)/admin/posts/page.tsx',
   'components/explore/explore-feed.tsx',
   'components/layout/rail/players-panel.tsx',
   'components/lists/generate-ai-modal.tsx',

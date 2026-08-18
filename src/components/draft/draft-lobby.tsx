@@ -184,27 +184,42 @@ export function DraftLobby({
             </p>
           )}
 
-          {isCommish && (
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button
-                type="button"
-                variant="blue"
-                size="sm"
-                shadow
-                disabled={startDraft.isPending}
-                onClick={handleStart}
-              >
-                <Icon name="fire" size={13} />
-                {startDraft.isPending ? 'Starting…' : 'Start draft now'}
-              </Button>
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={`/app/leagues/${leagueId}/settings`}>
-                  <Icon name="setup" size={13} />
-                  Draft setup
-                </Link>
-              </Button>
-            </div>
-          )}
+          {/* R340: the lobby's OWN way out, for every member and at every
+              width. The `PageHeader` above is a no-op since DR.1 moved the
+              room out of the app shell (`AppHeader` reads the store it
+              writes, and `AppHeader` is shell chrome), so this card is the
+              only thing on screen — there is no nav, no header, no back
+              button anywhere else. Deliberately OUTSIDE the `isCommish`
+              gate: *Draft setup* is commissioner-only, so a plain member
+              would otherwise see one link and it points DEEPER (Practice).
+              DR.2 rehomes this onto the command bar's Exit Draft; until
+              then it is the exit. Pinned in `room-exits.test.ts`. */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {isCommish && (
+              <>
+                <Button
+                  type="button"
+                  variant="blue"
+                  size="sm"
+                  shadow
+                  disabled={startDraft.isPending}
+                  onClick={handleStart}
+                >
+                  <Icon name="fire" size={13} />
+                  {startDraft.isPending ? 'Starting…' : 'Start draft now'}
+                </Button>
+                <Button variant="stroke" size="sm" asChild>
+                  <Link href={`/app/leagues/${leagueId}/settings`}>
+                    <Icon name="setup" size={13} />
+                    Draft setup
+                  </Link>
+                </Button>
+              </>
+            )}
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+            </Button>
+          </div>
 
           {/* §16.5.2 mock-workflow row: the LOBBY is the map's SECOND practice
               entry point ("Practice card · draft lobby") — mounted for every

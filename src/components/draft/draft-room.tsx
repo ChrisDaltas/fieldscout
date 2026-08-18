@@ -66,7 +66,7 @@ import { PresenceBar, type PresenceSeat } from './presence-bar'
  *  the no-param room's recap-pointer arm (L.B3.5 2b). */
 const POST_DRAFT_LEAGUE_STATUSES = new Set(['in_season', 'playoffs', 'complete'])
 
-interface SnakeDraftRoomProps {
+interface DraftRoomProps {
   leagueId: string
   /** Explicit draft id (`?draft=` — the mock room path; L.B3.5's launcher
    *  routes here). Absent ⇒ the league's active non-mock draft. */
@@ -77,7 +77,46 @@ interface SnakeDraftRoomProps {
 }
 
 /**
- * Draft room — the shell landed in L.B3.1 (realtime client, clock,
+ * Draft room — §16.2's canonical file name since DR.1 (`git mv` from
+ * `snake-draft-room.tsx`; C46/D135's consolidation executed one lane early
+ * because DR.1 was already relocating the route).
+ *
+ * **Line numbers moved, and the first version of this paragraph claimed they
+ * did not** (review finding R339). The `git mv` alone changed two identifier
+ * lines — but this docblock was inserted above every landmark in the same
+ * commit, so the file went 1013 → 1052 lines and **every
+ * `snake-draft-room.tsx:NNN` citation surveyed against `main` @ 9c81f7c is
+ * exactly 39 low**: `:389`→`:428` fork point, `:443`→`:482` `isCommish`,
+ * `:450`→`:489` `canPauseResume`, `:666`→`:705` the `PageHeader` call,
+ * `:719`→`:758` the status strip, `:768`→`:807` the 340px grid. §1 of
+ * `tasks-DR-draft-room-redesign.md` and its DR.2–DR.7 banners are renumbered
+ * against this file; §3's D-entries and §6's dispositions keep their
+ * as-authored numbers (PROGRESS §4 quotes them verbatim) — add 39 there.
+ *
+ * DR.1 also moved the ROUTE into the `(room)` group, so this component now
+ * renders inside a full-viewport, chrome-free frame with no app nav, header
+ * or right rail (`src/app/app/(room)/layout.tsx`; spec §16.1 v2.12). Two
+ * consequences a reader of this file needs:
+ *   - The `PageHeader` calls below write into `useHeaderStore`, which only
+ *     `AppHeader` reads — and `AppHeader` is shell chrome. They are therefore
+ *     NO-OPS in the room today, which means the live room's **Exit room**
+ *     button, the commissioner-panel trigger and **Pause practice** are not
+ *     rendered anywhere. **DR.2 deletes these calls and rehomes all three
+ *     onto the 54px command bar**, which is the same task that closes the
+ *     shipped defect that none of them rendered below `lg`.
+ *   - **Which states have a way out, enumerated rather than generalised**
+ *     (review finding R340 — the earlier version of this bullet named four
+ *     arms and then a claim was built on it that covered eight). The
+ *     resolver's **empty / problem / not-found / post-draft** arms each carry
+ *     an in-card *Back to league*; the **lobby** and the **practice launcher**
+ *     did NOT until R340 added one to each (their only *Back to league* lived
+ *     in a `PageHeader` that renders nothing here — measured by DOM
+ *     inventory, not inferred). All six are pinned in `room-exits.test.ts`.
+ *     The **live room** is the one state with no in-room exit, and that is the
+ *     disclosed gap DR.2 closes with the command bar's **Exit Draft**; the
+ *     skeleton is transient. DR.7 owns the states sweep.
+ *
+ * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
  * §8.5.2: the rounds × teams board grid (D90 — made cells from rows, empty
  * future cells from the parity-pinned TS order mirror), available players
@@ -98,7 +137,7 @@ interface SnakeDraftRoomProps {
  * D110(1)), the §16.5.2 pause overlay with the frozen remaining time, and
  * the §16.5.4 autopick-on seat badges.
  */
-export function SnakeDraftRoom({ leagueId, draftIdParam, practice }: SnakeDraftRoomProps) {
+export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) {
   const { user } = useAuth()
   const detail = useLeague(leagueId)
 
