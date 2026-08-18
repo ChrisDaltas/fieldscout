@@ -409,7 +409,7 @@ Numbers 083–089 are **reservations under the standing confirm-at-task-time pol
 | **F48** — §12.6 commissioner all-queues SELECT (M6 console) | Stays M6. The parallel question for `draft_bids` **does not arise**: §12.5 prints member SELECT (bids are public in an open auction) — recorded so nobody files a phantom row |
 | **F50** — tick outage-batch rotation > 25 (M7) | Stays M7; ARM 2.6 uses the same batch pattern and inherits the same known ceiling — noted in L.C1.4's banner, no new row |
 | **F55** — draft-room accessibility pledge members (M7 sweep) | Stays M7; **L.C3.1 appends the auction surfaces** (auction-block, budgets rail, bid input, anti-snipe indicator) to the member list as it lands them |
-| **F57 — NEW row, filed at merge (with D126–D143)** | Snake ↔ auction commissioner-UX divergence (D141): auction controls are pause-first per Chris's 2026-08-15 ruling; snake keeps its shipped live-controls posture. Whether snake aligns is a standing product decision — owner **Chris**; no M3 lane blocked; the pgTAP 036 sweep pins the divergence from both sides until ruled |
+| **F57 — RULED 2026-08-18: ALIGN (see the PROGRESS row for the ruling text) — built by L.C1.8 below** | Snake ↔ auction commissioner-UX divergence (D141): auction controls are pause-first per Chris's 2026-08-15 ruling; snake keeps its shipped live-controls posture. Whether snake aligns is a standing product decision — owner **Chris**; no M3 lane blocked; the pgTAP 036 sweep pins the divergence from both sides until ruled |
 | **Not M3's (verified no false pulls)** | F1/F4/F9/F11/F13/F22/F23/F31/F35 (M4/M6 in-season + stints) · F7/F17/F36 (M7/product/security) · F10/F24 (September ops) · F12 (prod migration push — but see D137: its open/closed state is why M3 uses CREATE OR REPLACE, not in-place amends) · F14/F19 (template/scoring keys) · **F21 (the v1.1 custom-editor footgun — cited by C37's recommendation, NOT pulled)** · F15 (vendor) · F16 (funded stats) · F32 (M6 audit class) |
 
 ---
@@ -422,3 +422,18 @@ Numbers 083–089 are **reservations under the standing confirm-at-task-time pol
 - **v1.1:** auto-bid for absent managers (OQ 10) · standalone/multi-human mock auction lobbies (§8.8) · Client Broadcast for ephemeral bid-pulse UX beyond the authoritative feed (D133's revisit clause).
 - **September ops (unchanged):** F10/F24; the M0 gate re-run.
 - **Chris:** ~~**C34**~~ ~~**C37**~~ (RULED 2026-08-15) · ~~**C41**~~ ~~**C42**~~ ~~**C43**~~ (RULED 2026-08-16 — end-as-is built / DND display-only, skip declined / projections-splits parallel data task) — **nothing stands but the approval itself**, plus C33's erratum read acknowledgment at merge · **F57** (snake pause-first alignment — post-merge, no deadline) · F47 (CI) · the C19/C2/C13 leftovers from earlier milestones remain his.
+
+---
+
+### L.C1.8 — Snake pause-first alignment (F57 RULED 2026-08-18: ALIGN)
+
+> **Added by the orchestrator at ruling time (2026-08-18); the F57 ledger row carries Chris's framing.** Snake's commissioner controls adopt the auction's D141 pause-first posture — one mental model, the bar's Pause button as the universal door to edits.
+>
+> 1. **Gate the snake set in-body, migration 088+ (next free number at build time):** `draft_undo` (both arms), `draft_reassign_pick`, `draft_move_player`, `draft_set_clock` refuse on a RUNNING snake/linear draft with the same "pause the draft first" refusal 087's auction arms use — via the SAME D141 gate helper, not a copy (the R367/§A no-drift lesson: the pin asserts the call form).
+> 2. **D137 head rule:** all four verbs' newest definitions are now in **087** (they were DROP+CREATEd there) — author against 087's file text, never 069's and never `pg_get_functiondef`. State provenance + hunk counts per the L.C1.5 recipe, and re-derive them if any body changes during the task.
+> 3. **Flip the 036 snake-side divergence pins:** the "same verb succeeds live on snake" half inverts to a refusal pin; the auction half stands unchanged. Show the flipped pins RED against the pre-fix bodies (exact counts), then green. D146: the gate boundary needs its paused-side twin (verb succeeds PAUSED on snake) so the flip cannot pass by over-gating.
+> 4. **`draft_set_order` stays OUT:** its type-divergent pre-start arm is pinned as a divergence (R373) and which way IT aligns was not part of this ruling — do not opportunistically change it; if the build surfaces a reason to, file to PROGRESS §3.
+> 5. **Scope guard:** no auction-arm behavior changes; `draft_force_pick` and `draft_reset` were not in Chris's gated set and keep their shipped postures; mock refusals (D138/D103) untouched.
+> 6. DoD: plan §2.3 · §4 rules incl. rule-9-style claims · pgTAP + break probes shown RED at exact counts · PROGRESS §2 row + F57 flip to Done · one task, one PR.
+>
+> **Sequencing: AFTER DR.2 lands** — this task resets the local DB and DR.2's browser fixtures live on the stack. Read-list: PROGRESS F57 row (the ruling) · D141 · 087's gate helper + the four verb bodies · 036's divergence pins · the L.C1.5 batch-5/6 findings (R367–R383 — the defect class this task must not repeat).
