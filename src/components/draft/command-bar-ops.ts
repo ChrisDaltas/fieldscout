@@ -24,7 +24,7 @@
  * no `paused_by` (verified against `src/types/database.ts`; WHO paused is
  * the D97 system post in chat), and DR §4.5 forbids the data-layer change
  * honest attribution would need. Same posture as the pause overlay's "who
- * paused it is posted in the draft chat". Recorded in PROGRESS D166.
+ * paused it is posted in the draft chat". Recorded in PROGRESS D176.
  */
 
 export type CommandBarVariant = 'commissioner' | 'member' | 'mock'

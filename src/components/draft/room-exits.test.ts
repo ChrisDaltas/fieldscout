@@ -156,7 +156,7 @@ describe("the resolver's own states keep the exits their docblock claims", () =>
 describe('the transient skeleton carries an exit too (DR.2’s deliberate call)', () => {
   it('DraftRoomSkeleton renders its own Back to league', () => {
     // DR.7(5)/R348 left the skeleton as the last exit-less resolver state,
-    // "transient — decide deliberately". DR.2 decided YES (PROGRESS D166):
+    // "transient — decide deliberately". DR.2 decided YES (PROGRESS D176):
     // in the chrome-free frame a slow or hung fetch renders the skeleton
     // full-viewport with zero affordances, and a link costs one line. This
     // pin scopes the match to the component so a neighbour's exit can never

@@ -119,7 +119,7 @@ interface DraftRoomProps {
  *     carry an in-card *Back to league* from M2; the **lobby** and the
  *     **practice launcher** got theirs in DR.1's review fix (R340); the
  *     **skeleton** got one in DR.2 (the DR.7(5)/R348 deliberate call,
- *     recorded at PROGRESS D166 — in a chrome-free frame a hung fetch was a
+ *     recorded at PROGRESS D176 — in a chrome-free frame a hung fetch was a
  *     zero-affordance dead end); and the **live room**'s is the command
  *     bar's Exit Draft. Pinned in `room-exits.test.ts` and
  *     `draft-command-bar.test.ts`; per-variant DOM inventories are in the
@@ -1014,7 +1014,7 @@ function DraftRoomSkeleton({ leagueId }: { leagueId: string }) {
   return (
     <div className="flex flex-col gap-4">
       {/* DR.2's deliberate call on DR.7(5)'s open question (R348; PROGRESS
-          D166): the transient skeleton DOES get an exit. In the chrome-free
+          D176): the transient skeleton DOES get an exit. In the chrome-free
           frame a slow or hung fetch renders this state full-viewport with
           zero affordances — one link closes the last exit-less resolver
           state. Pinned in room-exits.test.ts. */}
