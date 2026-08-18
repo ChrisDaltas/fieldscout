@@ -60,7 +60,21 @@
 --     an is_mock draft gets the friendly solo-practice refusal (the
 --     fixture mock is config-less, so launched_by NULL keeps it
 --     tick-only); the launcher-positive + CPU-seat sides live in pgTAP
---     025. Auction start/pick refuse naming M3.
+--     025. Auction PICK still refuses — permanently: an auction never
+--     picks through this RPC — but 085/L.C1.3 REWORDED the message from
+--     the milestone promise ("the auction engine lands in M3") to the
+--     standing truth ("auction drafts pick via nominate and bid"), and
+--     this file's assertion moved with it in that PR. Auction START no
+--     longer refuses at all — 084/L.C1.2 landed the engine and that
+--     assertion is now a start-SUCCEEDS pin (LM, the seated auction
+--     league). The auction ACTION verbs (draft_nominate/draft_place_bid)
+--     are pgTAP 034's, not this file's.
+--   * The SNAKE side of 084's shared write (R324): 084's drafts UPDATE
+--     writes `nomination_order` on BOTH paths, so LB's row carries a stale
+--     stored order before its start and §G pins that the start CLEARS it.
+--     An auction-arm value leaking onto a snake start fails there. The
+--     auction MATRIX (derivation goldens, nomination modes, solvency, the
+--     D96 capacity refusal on an auction) is pgTAP 033's, not this file's.
 --   * All privileged fixture work runs BEFORE any JWT claims (D49(7));
 --     mid-test privileged pins use `reset role` (013/014/018/019 pattern).
 --     The pick-drive helper (pg_temp.dc_drive) runs privileged and sets
@@ -72,7 +86,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(89);
+select plan(94);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form (§4.1 grants doctrine; plan §8.3)
@@ -360,7 +374,10 @@ select results_eq(
 --      LE b2…a5  the D43 order probe (scoring_system_id NULL, snapshot
 --                NULL, NO drafts row)
 --      LG b2…a6  'setup' league (draft_create pins; start refusal)
---      LH b2…a7  auction league (M3 seam refusals)
+--      LH b2…a7  auction league, ZERO franchises (M3 seam refusal — the
+--                draft_make_pick one ONLY; its start refusal flipped at
+--                084 and moved to LM, which is seated. LH is deliberately
+--                unchanged so 085 can reword the pick refusal in place)
 --      LI b2…a8  manual mode with an INVALID stored order (dup + missing)
 --      LJ b2…a9  random mode, NO drafts row (D94 no-dead-end + D101/D105
 --                permutation pin)
@@ -368,6 +385,10 @@ select results_eq(
 --                leftover (a prior manual/custom episode's); drafts row
 --                pre-created with a FIXED id so the seeded md5 shuffle is
 --                a stored literal (R123)
+--      LM b2…ab  084/L.C1.2: a SEATED 8-team AUCTION league (manual order,
+--                45s nomination clock, pick_timer_seconds 0) — the league
+--                the flipped M3 seam assertion now STARTS (R325: this map
+--                was not extended when LM landed)
 --    All 'scheduled' (privileged insert) except LG; scoring = the ESPN
 --    Standard template except LE (NULL). scoring_rules_snapshot NULL
 --    everywhere — the post-start NOT-NULL pin proves draft_start took it.
@@ -471,6 +492,23 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
                      "c3000000-0000-4000-8000-00aa00000004","c3000000-0000-4000-8000-00aa00000003",
                      "c3000000-0000-4000-8000-00aa00000002","c3000000-0000-4000-8000-00aa00000001"]}}');
 
+-- LM (084/L.C1.2): a SEATED auction league — the league the flipped
+-- start-refusal assertion now STARTS. Manual draft order + the default
+-- nomination_order_mode (same_as_draft_order) make the first nominator a
+-- stored literal; pick_timer_seconds 0 with a 45s nomination clock pins
+-- §7.3.8's "an untimed pick timer does not null an auction clock".
+insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings) values
+  ('b2000000-0000-4000-8000-0000000000ab', '90000000-0000-4000-8000-000000000001',
+   'pgtap-dc-LM-auction-seated', 2026, 'scheduled', 8,
+   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+   '{"draft": {"draft_type": "auction", "draft_order_mode": "manual",
+     "draft_order": ["c3000000-0000-4000-8000-00ab00000001","c3000000-0000-4000-8000-00ab00000002",
+                     "c3000000-0000-4000-8000-00ab00000003","c3000000-0000-4000-8000-00ab00000004",
+                     "c3000000-0000-4000-8000-00ab00000005","c3000000-0000-4000-8000-00ab00000006",
+                     "c3000000-0000-4000-8000-00ab00000007","c3000000-0000-4000-8000-00ab00000008"],
+     "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 45,
+     "pick_timer_seconds": 0}}');
+
 -- LD: roster override → exactly 2 draftable rounds (D91).
 update leagues
 set roster_settings = '{"starting_slots": [{"key": "rb", "label": "RB", "eligible": ["RB"], "count": 2}],
@@ -526,6 +564,13 @@ select ('c3000000-0000-4000-8000-00aa000000' || lpad(i::text, 2, '0'))::uuid,
        'pgtap-dc-aa-t' || lpad(i::text, 2, '0'),
        'b2000000-0000-4000-8000-0000000000aa'
 from generate_series(1, 8) i;
+-- LM (084/L.C1.2): the seated auction league's eight franchises.
+insert into teams (id, owner_id, name, league_id)
+select ('c3000000-0000-4000-8000-00ab000000' || lpad(i::text, 2, '0'))::uuid,
+       '90000000-0000-4000-8000-000000000001',
+       'pgtap-dc-ab-t' || lpad(i::text, 2, '0'),
+       'b2000000-0000-4000-8000-0000000000ab'
+from generate_series(1, 8) i;
 
 -- Members (u01 commissioner everywhere; managers hold their seat's team).
 insert into league_members (league_id, user_id, team_id, role)
@@ -564,7 +609,9 @@ insert into league_members (league_id, user_id, team_id, role) values
   ('b2000000-0000-4000-8000-0000000000a9', '90000000-0000-4000-8000-000000000001',
    'c3000000-0000-4000-8000-00a900000001', 'commissioner'),
   ('b2000000-0000-4000-8000-0000000000aa', '90000000-0000-4000-8000-000000000001',
-   'c3000000-0000-4000-8000-00aa00000001', 'commissioner');
+   'c3000000-0000-4000-8000-00aa00000001', 'commissioner'),
+  ('b2000000-0000-4000-8000-0000000000ab', '90000000-0000-4000-8000-000000000001',
+   'c3000000-0000-4000-8000-00ab00000001', 'commissioner');
 
 -- Pre-created drafts rows. LC's carries a STALE config (timer 90 vs the
 -- live settings' 120) — the D95 re-hydration pin. LE/LJ deliberately have
@@ -582,6 +629,15 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
    'snake', 'scheduled', false, '{}'),
   ('e2000000-0000-4000-8000-0000000000aa', 'b2000000-0000-4000-8000-0000000000aa',
    'snake', 'scheduled', false, '{}');
+-- LB carries a STALE stored nomination_order (084/L.C1.2, R324): 084's
+-- shared drafts UPDATE writes `nomination_order` on BOTH paths — NULL on
+-- snake/linear — so a snake start must CLEAR this, and an auction-arm
+-- value leaking onto a snake start would fail the pin in §G. Nothing else
+-- in this file reads the column.
+update drafts
+set nomination_order = '["c3000000-0000-4000-8000-00a200000008",
+                         "c3000000-0000-4000-8000-00a200000001"]'::jsonb
+where id = 'e2000000-0000-4000-8000-0000000000a2';
 
 -- The pick-drive helper: authenticates as the on-clock seat's manager for
 -- every pick (per-pick claims), calls the REAL RPC, and fails LOUDLY on any
@@ -679,11 +735,36 @@ select throws_ok(
   'P0001',
   'draft_start: league b2000000-0000-4000-8000-0000000000a6 is in setup — schedule the draft first (League settings → Draft setup), then start it',
   'start on a setup league → friendly refusal (schedule first)');
-select throws_ok(
-  $$ select public.draft_start('b2000000-0000-4000-8000-0000000000a7') $$,
-  'P0001',
-  'draft_start: league b2000000-0000-4000-8000-0000000000a7 is configured for an auction draft — the auction engine lands in M3; switch draft_type to snake or linear to draft now',
-  'auction start → friendly refusal naming M3 (the tasks-M2 §1 seam)');
+-- THE M3 SEAM, FLIPPED (084/L.C1.2): what stood here was the auction
+-- start-refusal ("the auction engine lands in M3" — 066:640–644). §8.6's
+-- engine has landed, so the assertion is now the positive: an auction
+-- league STARTS through the same commissioner wrapper a snake league does.
+-- The exhaustive auction matrix (derivation goldens, all three
+-- nomination_order modes, solvency both ways) is pgTAP 033's; this is the
+-- WRAPPER-path pin the flip owes.
+select is(
+  (public.draft_start('b2000000-0000-4000-8000-0000000000ab')->>'started')::boolean,
+  true,
+  'auction start SUCCEEDS through the commissioner wrapper (the M3 seam refusal is gone — migration 084)');
+select is(
+  (select status || '|' || draft_type from drafts
+   where league_id = 'b2000000-0000-4000-8000-0000000000ab'),
+  'live|auction',
+  '…the draft is live and typed auction');
+select ok(
+  (select current_nomination is null from drafts
+   where league_id = 'b2000000-0000-4000-8000-0000000000ab'),
+  '…and opens in the NOMINATING phase (D126: current_nomination NULL is the phase)');
+select is(
+  (select on_clock_team_id from drafts
+   where league_id = 'b2000000-0000-4000-8000-0000000000ab'),
+  'c3000000-0000-4000-8000-00ab00000001'::uuid,
+  '…on the clock is nomination_order[0] — the first NOMINATOR (nomination_order_mode defaults to same_as_draft_order)');
+select is(
+  (select current_deadline from drafts
+   where league_id = 'b2000000-0000-4000-8000-0000000000ab'),
+  now() + interval '45 seconds',
+  '…with a nomination deadline of auction_nomination_seconds, set even though pick_timer_seconds = 0 (§7.3.8: an auction is never untimed)');
 select throws_ok(
   $$ select public.draft_start('b2000000-0000-4000-8000-0000000000a8') $$,
   'P0001',
@@ -787,6 +868,9 @@ select is(
   (select total_rounds from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
   15,
   'LB total_rounds = 15 at start (default roster, D91)');
+select ok(
+  (select nomination_order is null from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
+  'LB (SNAKE) start writes nomination_order NULL and CLEARS the stale stored one — 084''s shared drafts UPDATE writes the column on both paths, so an auction-arm value leaking onto a snake start fails here (R324)');
 
 -- ---------------------------------------------------------------------------
 -- H. draft_make_pick: turn/E1/E2/shape/no-leak on the live LB draft
@@ -958,8 +1042,8 @@ select set_config('request.jwt.claims',
 select throws_ok(
   $$ select public.draft_make_pick('e2000000-0000-4000-8000-0000000000a7',
        'pgtap-dc-p003', 'a4000000-0000-4000-8000-000000000089') $$,
-  'P0001', 'draft_make_pick: this is an auction draft — the auction engine lands in M3',
-  'pick on an auction draft → friendly refusal naming M3');
+  'P0001', 'draft_make_pick: this is an auction draft — auction drafts pick via nominate and bid',
+  'pick on an auction draft → friendly refusal naming the auction verbs (085/L.C1.3 reworded it: the refusal is permanent, the milestone promise is gone)');
 reset role;
 
 -- Drive LB picks 3..32 through the REAL RPC, then pin the whole table.

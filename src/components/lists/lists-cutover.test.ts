@@ -46,9 +46,9 @@ const code = (file: string) =>
   // panel; `[^:]` still keeps `https://` out of it.)
   read(file).replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, (_match, before) => before ?? '')
 
-const LISTS_ROUTE = 'src/app/app/lists/page.tsx'
-const DETAIL_ROUTE = 'src/app/app/lists/[listId]/page.tsx'
-const DRAFT_MODE_ROUTE = 'src/app/app/lists/draft-mode/page.tsx'
+const LISTS_ROUTE = 'src/app/app/(shell)/lists/page.tsx'
+const DETAIL_ROUTE = 'src/app/app/(shell)/lists/[listId]/page.tsx'
+const DRAFT_MODE_ROUTE = 'src/app/app/(shell)/lists/draft-mode/page.tsx'
 const PANEL = 'src/components/lists/v2/list-detail-panel.tsx'
 const GALLERY_CARD = 'src/components/lists/v2/list-gallery-card.tsx'
 const HERO = 'src/components/lists/v2/list-detail-hero.tsx'

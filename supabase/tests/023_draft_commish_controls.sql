@@ -128,10 +128,15 @@ select ok(
 select ok(
   not has_function_privilege('anon', 'public.draft_pause(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_resume(uuid,text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_set_clock(uuid,integer,boolean,text)', 'EXECUTE')
+  -- SIGNATURES WIDENED by 087/L.C1.5 (tests edited in place — D137): the
+  -- three DROP+CREATEs there add defaulted trailing parameters
+  -- (draft_set_clock's auction timers; D142's re-entered p_price on the two
+  -- Manual Edit Mode paths). The REVOKEs are re-issued in 087 because a DROP
+  -- takes the ACL with it, and this pin is what proves they were.
+  and not has_function_privilege('anon', 'public.draft_set_clock(uuid,integer,boolean,text,integer,integer,integer)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_undo(uuid,integer,text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_reassign_pick(uuid,uuid,uuid,text,text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_move_player(uuid,text,uuid,uuid,text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.draft_reassign_pick(uuid,uuid,uuid,text,text,integer)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.draft_move_player(uuid,text,uuid,uuid,text,integer)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_force_pick(uuid,text,uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_set_order(uuid,uuid[],text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_reset(uuid,text)', 'EXECUTE'),
