@@ -72,16 +72,24 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(86);
+select plan(87);   -- 86 + 087/L.C1.5's voided_at nullability pin (D162)
 
 -- ---------------------------------------------------------------------------
 -- A. draft_bids shape (§12.5 + the C39 delta + the R43 CHECKs)
 -- ---------------------------------------------------------------------------
 select has_table('public', 'draft_bids', 'draft_bids exists');
+-- AMENDED IN PLACE by 087/L.C1.5 (the D137 tests-edited-in-place note; the
+-- same treatment 083 gave 019's columns_are). `voided_at` is D162's answer to
+-- "what does §8.7's 'open bids voided' MEAN in the schema" — nullable, never
+-- part of §12.5's printed shape, stamped only by draft_void_nomination_internal.
+-- The exact-set assertion is kept exact rather than loosened: a future column
+-- added without a decision still fails here.
 select columns_are('public', 'draft_bids',
   array['id', 'draft_id', 'league_id', 'nomination_seq', 'player_id',
-        'team_id', 'amount', 'action_id', 'created_at'],
-  'exact §12.5 column set');
+        'team_id', 'amount', 'action_id', 'created_at', 'voided_at'],
+  'exact §12.5 column set + 087''s voided_at (D162)');
+select col_is_null('public', 'draft_bids', 'voided_at',
+  'voided_at is NULLABLE — NULL is the normal state of a live bid (D162)');
 select col_is_pk('public', 'draft_bids', 'id', 'PK id');
 select fk_ok('public', 'draft_bids', 'draft_id', 'public', 'drafts', 'id', 'draft_id → drafts');
 select fk_ok('public', 'draft_bids', 'league_id', 'public', 'leagues', 'id', 'league_id → leagues (stored for the simple RLS policy, §12.5)');
