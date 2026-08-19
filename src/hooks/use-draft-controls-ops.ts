@@ -10,9 +10,11 @@
  * Doctrine carried:
  *  - every body targets the panel's draft EXPLICITLY (`draft_id`) — the room
  *    knows its draft, so the active-draft default never has to guess;
- *  - `reason` is optional on every verb (D114(1): accept + validate + store
- *    nowhere — F32/F40) and REQUIRED on exactly one: the post-start order
- *    dispatch (D114(3) — `orderRequest` takes it non-optionally);
+ *  - `reason` is optional on the M2 verbs (D114(1): accept + validate + store
+ *    nowhere — F32/F40) and REQUIRED where the task text mandates it: the
+ *    post-start order dispatch (D114(3) — `orderRequest` takes it
+ *    non-optionally) and, since L.C2.2, the four AUCTION commissioner verbs
+ *    (reverse-bid / budget / cancel-nomination / end — same structural shape);
  *  - `force-pick` carries a caller-minted `action_id` (D68(1)/D114(4): one
  *    UUID per panel submit; a retry replays server-side as E2). The MINTING
  *    is the hook's (entropy is injected, never read here).
@@ -40,20 +42,38 @@ export function pauseResumeRequest(
   }
 }
 
-/** POST …/draft/clock — the E15 dedicated verb (D114(2)). */
+/** The auction's three timers (§7.3.8 / §8.7's timer row — 087's set_clock
+ *  arm; L.C2.2). Each omitted key means "unchanged" at the RPC. */
+export interface AuctionClockTimers {
+  nominationSeconds?: number
+  bidSeconds?: number
+  antiSnipeSeconds?: number
+}
+
+/** POST …/draft/clock — the E15 dedicated verb (D114(2)). `pickTimerSeconds`
+ *  is `null` for an auction-only edit (an auction has no pick clock — the
+ *  RPC refuses one), and `auction` carries the auction timers (L.C2.2). */
 export function setClockRequest(
   leagueId: string,
   draftId: string,
-  pickTimerSeconds: number,
+  pickTimerSeconds: number | null,
   extendCurrent: boolean,
   reason?: string,
+  auction?: AuctionClockTimers,
 ): ControlRequest {
   return {
     path: `/api/leagues/${leagueId}/draft/clock`,
     body: {
       draft_id: draftId,
-      pick_timer_seconds: pickTimerSeconds,
+      ...(pickTimerSeconds !== null ? { pick_timer_seconds: pickTimerSeconds } : {}),
       ...(extendCurrent ? { extend_current: true } : {}),
+      ...(auction?.nominationSeconds !== undefined
+        ? { nomination_seconds: auction.nominationSeconds }
+        : {}),
+      ...(auction?.bidSeconds !== undefined ? { bid_seconds: auction.bidSeconds } : {}),
+      ...(auction?.antiSnipeSeconds !== undefined
+        ? { anti_snipe_seconds: auction.antiSnipeSeconds }
+        : {}),
       ...reasonField(reason),
     },
   }
@@ -80,12 +100,14 @@ export function undoRequest(
   }
 }
 
-/** POST …/draft/reassign — new team and/or corrected player for one pick. */
+/** POST …/draft/reassign — new team and/or corrected player for one pick.
+ *  `price` is the auction's RE-ENTERED cost (D142 — L.C2.2; 087's priced
+ *  arm); omitted on snake and on an auction same-team edit. */
 export function reassignRequest(
   leagueId: string,
   draftId: string,
   pickId: string,
-  next: { teamId?: string; playerId?: string },
+  next: { teamId?: string; playerId?: string; price?: number },
   reason?: string,
 ): ControlRequest {
   return {
@@ -95,6 +117,7 @@ export function reassignRequest(
       pick_id: pickId,
       ...(next.teamId !== undefined ? { team_id: next.teamId } : {}),
       ...(next.playerId !== undefined ? { player_id: next.playerId } : {}),
+      ...(next.price !== undefined ? { price: next.price } : {}),
       ...reasonField(reason),
     },
   }
@@ -120,7 +143,8 @@ export function forcePickRequest(
   }
 }
 
-/** POST …/draft/move-player — move a drafted player between teams. */
+/** POST …/draft/move-player — move a drafted player between teams. `price`
+ *  is the auction's RE-ENTERED cost (D142 — L.C2.2; 087's priced arm). */
 export function movePlayerRequest(
   leagueId: string,
   draftId: string,
@@ -128,6 +152,7 @@ export function movePlayerRequest(
   fromTeam: string,
   toTeam: string,
   reason?: string,
+  price?: number,
 ): ControlRequest {
   return {
     path: `/api/leagues/${leagueId}/draft/move-player`,
@@ -136,6 +161,7 @@ export function movePlayerRequest(
       player_id: playerId,
       from_team: fromTeam,
       to_team: toTeam,
+      ...(price !== undefined ? { price } : {}),
       ...reasonField(reason),
     },
   }
@@ -150,6 +176,65 @@ export function resetRequest(
   return {
     path: `/api/leagues/${leagueId}/draft/reset`,
     body: { draft_id: draftId, ...reasonField(reason) },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// L.C2.2 — the AUCTION commissioner verbs (§8.7's auction rows over the
+// L.C2.2 routes; spec §15.2 via the C40 erratum). `reason` is REQUIRED on
+// all four (the D114(1) carve-out — the order dispatch's treatment), so the
+// builders take it non-optionally and send it trimmed: an empty reason
+// reaches the route and 400s there, exactly like `orderRequest`.
+// ---------------------------------------------------------------------------
+
+/** POST …/draft/reverse-bid — Manual Edit Mode's "Reset pick" (D142(a)). */
+export function reverseWonBidRequest(
+  leagueId: string,
+  draftId: string,
+  pickId: string,
+  reason: string,
+): ControlRequest {
+  return {
+    path: `/api/leagues/${leagueId}/draft/reverse-bid`,
+    body: { draft_id: draftId, pick_id: pickId, reason: reason.trim() },
+  }
+}
+
+/** POST …/draft/budget — §8.7's budget editor (E28 in the RPC; not pause-gated). */
+export function adjustBudgetRequest(
+  leagueId: string,
+  draftId: string,
+  teamId: string,
+  delta: number,
+  reason: string,
+): ControlRequest {
+  return {
+    path: `/api/leagues/${leagueId}/draft/budget`,
+    body: { draft_id: draftId, team_id: teamId, delta, reason: reason.trim() },
+  }
+}
+
+/** POST …/draft/cancel-nomination — cancel-and-renominate (D143; paused only). */
+export function cancelNominationRequest(
+  leagueId: string,
+  draftId: string,
+  reason: string,
+): ControlRequest {
+  return {
+    path: `/api/leagues/${leagueId}/draft/cancel-nomination`,
+    body: { draft_id: draftId, reason: reason.trim() },
+  }
+}
+
+/** POST …/draft/end — C41's end-as-is (terminal; the hard confirm is the UI's). */
+export function endDraftRequest(
+  leagueId: string,
+  draftId: string,
+  reason: string,
+): ControlRequest {
+  return {
+    path: `/api/leagues/${leagueId}/draft/end`,
+    body: { draft_id: draftId, reason: reason.trim() },
   }
 }
 
