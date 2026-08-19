@@ -38,6 +38,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: false,
       statusText: 'Draft live',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -51,6 +52,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: false,
       statusText: 'Draft paused',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -64,6 +66,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: false,
       statusText: 'Draft live',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -77,6 +80,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: false,
       statusText: 'Draft paused',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -90,6 +94,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: true,
       mockBadge: true,
       statusText: 'Practice live',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -103,6 +108,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: true,
       mockBadge: true,
       statusText: 'Practice paused',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -116,6 +122,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: true,
       statusText: 'Practice live',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -129,6 +136,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: true,
       statusText: 'Practice paused',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -145,6 +153,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: true,
       statusText: 'Practice live',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -158,6 +167,7 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: false,
       mockBadge: true,
       statusText: 'Practice paused',
+      reconnecting: false,
       exit: true,
     },
   },
@@ -173,6 +183,98 @@ const GOLDEN: GoldenRow[] = [
       practiceOptions: true,
       mockBadge: true,
       statusText: 'Practice live',
+      reconnecting: false,
+      exit: true,
+    },
+  },
+  {
+    // DR.7(4): the pre-start lobby. Nothing runs yet, so even the
+    // commissioner gets NO controls — no Pause (no clock to freeze), no
+    // Draft Options (§8.7's controls act on a draft in flight; Start draft
+    // now / Draft setup are the lobby CARD's affordances). Status is the
+    // one telling of the phase; the countdown stays the card's hero.
+    name: 'commissioner · LOBBY (pre-start — DR.7(4))',
+    input: {
+      commishRole: true,
+      isMock: false,
+      isMockLauncher: false,
+      paused: false,
+      lobby: true,
+    },
+    expected: {
+      variant: 'commissioner',
+      pauseResume: null,
+      draftOptions: false,
+      practiceOptions: false,
+      mockBadge: false,
+      statusText: 'Draft scheduled',
+      reconnecting: false,
+      exit: true,
+    },
+  },
+  {
+    name: 'member · LOBBY (pre-start — DR.7(4))',
+    input: {
+      commishRole: false,
+      isMock: false,
+      isMockLauncher: false,
+      paused: false,
+      lobby: true,
+    },
+    expected: {
+      variant: 'member',
+      pauseResume: null,
+      draftOptions: false,
+      practiceOptions: false,
+      mockBadge: false,
+      statusText: 'Draft scheduled',
+      reconnecting: false,
+      exit: true,
+    },
+  },
+  {
+    // DR.7(3): reconnecting is ORTHOGONAL to the status words — a member's
+    // live room that drops its channel keeps "Draft live" AND shows the
+    // reconnecting strip; neither replaces the other.
+    name: 'member · live · RECONNECTING (DR.7(3))',
+    input: {
+      commishRole: false,
+      isMock: false,
+      isMockLauncher: false,
+      paused: false,
+      reconnecting: true,
+    },
+    expected: {
+      variant: 'member',
+      pauseResume: null,
+      draftOptions: false,
+      practiceOptions: false,
+      mockBadge: false,
+      statusText: 'Draft live',
+      reconnecting: true,
+      exit: true,
+    },
+  },
+  {
+    // Paused + reconnecting: both states, each told once — the paused words
+    // stay authoritative while the connection strip rides beside them, and
+    // the commissioner's Resume control is unaffected.
+    name: 'commissioner · paused · RECONNECTING (DR.7(3))',
+    input: {
+      commishRole: true,
+      isMock: false,
+      isMockLauncher: false,
+      paused: true,
+      reconnecting: true,
+    },
+    expected: {
+      variant: 'commissioner',
+      pauseResume: 'resume',
+      draftOptions: true,
+      practiceOptions: false,
+      mockBadge: false,
+      statusText: 'Draft paused',
+      reconnecting: true,
       exit: true,
     },
   },
@@ -223,5 +325,15 @@ describe('exitDraftCopy — Q13 honest-copy goldens (§16.4 zone 1)', () => {
     expect(exitDraftCopy({ isMock: true, hasSeat: false })).toBe(
       'Leave the room and head back to the league.',
     )
+  })
+
+  it('the LOBBY is not told the away-path sentence — nothing runs yet (DR.7(4))', () => {
+    // Pre-start there is no clock and no grace hold, so the Targets
+    // sentence would be false; the honest warning is the D94 auto-start.
+    // Seat-independent: leaving a lobby costs the same for everyone.
+    const lobbyLine =
+      "Leave the lobby — the draft hasn't started. It still starts on schedule whether or not you're here."
+    expect(exitDraftCopy({ isMock: false, hasSeat: true, lobby: true })).toBe(lobbyLine)
+    expect(exitDraftCopy({ isMock: false, hasSeat: false, lobby: true })).toBe(lobbyLine)
   })
 })

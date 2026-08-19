@@ -4,14 +4,12 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { PageHeader } from '@/components/layout/app-header'
 import {
   autoStartPollMs,
   describeDraftTime,
   draftCountdown,
 } from '@/components/leagues/league-home-states-ops'
 import { PracticeCta } from '@/components/leagues/league-home-states'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -22,6 +20,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 import type { LeagueDetail } from '@/hooks/use-league'
 
+import { DraftCommandBar } from './draft-command-bar'
 import {
   deriveLobbyChecklist,
   draftTimeReachedLine,
@@ -62,6 +61,14 @@ interface DraftLobbyProps {
  *   `draft_scheduled_at` whether or not anyone is here; countdown math is
  *   pure + nowMs-injected, and near/past the instant the lobby polls so the
  *   D94 flip arrives even with no channel (the no-row path has none).
+ *
+ * DR.7(4): the lobby mounts the room's own `DraftCommandBar` (the lobby
+ * shares the chrome-free live surface — Q12), with the model's `lobby` arm:
+ * status "Draft scheduled" + the unconditional Exit Draft, no controls.
+ * Both lobby arms (this scheduled-draft one and the D94 no-row one) render
+ * through this component, so one mount covers both — and when the start
+ * flip arrives (D120) the live room re-renders the SAME bar component in
+ * one React commit, so the chrome carries across the lobby→live flip.
  */
 export function DraftLobby({
   leagueId,
@@ -140,13 +147,28 @@ export function DraftLobby({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Draft lobby"
-        actions={
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
-          </Button>
-        }
+      {/* DR.7(4): the pre-start state gets the room's own bar — the lobby
+          shares the live surface (Q12) and the bar is its one status voice
+          (§16.3 say-a-thing-once) and its one exit (the bar's Exit Draft is
+          unconditional — Q13; pinned in draft-command-bar.test.ts). The
+          model's `lobby` arm renders status ("Draft scheduled") + Exit and
+          gates every control: nothing runs pre-start, so there is no
+          Pause/Resume, and §8.7's Draft Options act on a draft in flight —
+          the lobby's own commissioner affordances (Start draft now, Draft
+          setup) stay in the card below. This replaced BOTH the no-op
+          `PageHeader` (it wrote to a store only the shell's AppHeader
+          reads — R340's mechanism) and the card's in-card Back-to-league +
+          "Draft scheduled" badge, each a second voice under the bar. */}
+      <DraftCommandBar
+        leagueId={leagueId}
+        bar={{
+          commishRole: isCommish,
+          isMock: false,
+          isMockLauncher: false,
+          paused: false,
+          lobby: true,
+        }}
+        hasSeat={Boolean(myTeamId)}
       />
 
       <Card>
@@ -155,7 +177,6 @@ export function DraftLobby({
             <Icon name="clock" size={15} className="mr-1.5 inline align-[-2px]" />
             Draft night
           </CardTitle>
-          <Badge variant="lime">Draft scheduled</Badge>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {cd && display ? (
@@ -184,42 +205,35 @@ export function DraftLobby({
             </p>
           )}
 
-          {/* R340: the lobby's OWN way out, for every member and at every
-              width. The `PageHeader` above is a no-op since DR.1 moved the
-              room out of the app shell (`AppHeader` reads the store it
-              writes, and `AppHeader` is shell chrome), so this card is the
-              only thing on screen — there is no nav, no header, no back
-              button anywhere else. Deliberately OUTSIDE the `isCommish`
-              gate: *Draft setup* is commissioner-only, so a plain member
-              would otherwise see one link and it points DEEPER (Practice).
-              DR.2 rehomes this onto the command bar's Exit Draft; until
-              then it is the exit. Pinned in `room-exits.test.ts`. */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isCommish && (
-              <>
-                <Button
-                  type="button"
-                  variant="blue"
-                  size="sm"
-                  shadow
-                  disabled={startDraft.isPending}
-                  onClick={handleStart}
-                >
-                  <Icon name="fire" size={13} />
-                  {startDraft.isPending ? 'Starting…' : 'Start draft now'}
-                </Button>
-                <Button variant="stroke" size="sm" asChild>
-                  <Link href={`/app/leagues/${leagueId}/settings`}>
-                    <Icon name="setup" size={13} />
-                    Draft setup
-                  </Link>
-                </Button>
-              </>
-            )}
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
-            </Button>
-          </div>
+          {/* R340's exit obligation now rides the command bar above: its
+              Exit Draft is unconditional and un-gated (Q13), so a plain
+              member always has a way out at every width — the in-card
+              Back-to-league this block used to carry was a second exit
+              voice under the bar and retired with DR.7(4). Pinned in
+              `room-exits.test.ts` (the lobby pins now assert the un-gated
+              bar mount). The commissioner's own affordances stay HERE —
+              they are the lobby's content, not room chrome. */}
+          {isCommish && (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                type="button"
+                variant="blue"
+                size="sm"
+                shadow
+                disabled={startDraft.isPending}
+                onClick={handleStart}
+              >
+                <Icon name="fire" size={13} />
+                {startDraft.isPending ? 'Starting…' : 'Start draft now'}
+              </Button>
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={`/app/leagues/${leagueId}/settings`}>
+                  <Icon name="setup" size={13} />
+                  Draft setup
+                </Link>
+              </Button>
+            </div>
+          )}
 
           {/* §16.5.2 mock-workflow row: the LOBBY is the map's SECOND practice
               entry point ("Practice card · draft lobby") — mounted for every

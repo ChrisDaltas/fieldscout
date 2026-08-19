@@ -23,8 +23,24 @@
  * illustrative "by @commish" attribution — `drafts` carries `paused_at` but
  * no `paused_by` (verified against `src/types/database.ts`; WHO paused is
  * the D97 system post in chat), and DR §4.5 forbids the data-layer change
- * honest attribution would need. Same posture as the pause overlay's "who
- * paused it is posted in the draft chat". Recorded in PROGRESS D176.
+ * honest attribution would need. Recorded in PROGRESS D176. (The M2 pause
+ * overlay used to make the same disclaimer in its own copy — DR.7/D155
+ * retired that copy, so the system post is now the ONE attribution site.)
+ *
+ * DR.7 (spec §16.3 say-a-thing-once; §16.5.4's v2.12 note — the bar is the
+ * room's banner surface) added two arms:
+ *   - `lobby` — the pre-start room state (DR.7(4)). The bar renders for the
+ *     lobby too (Q12: the lobby shares the live surface), but nothing RUNS
+ *     yet: no Pause/Resume (there is no clock to freeze), no Draft Options
+ *     (§8.7's controls act on a draft in flight — the lobby's own
+ *     commissioner affordances, Start draft now + Draft setup, stay in the
+ *     lobby card). Status: "Draft scheduled" — the one telling of the
+ *     phase; the countdown itself stays the lobby card's §16.5.1 hero.
+ *   - `reconnecting` — the §16.5.4 realtime-fallback state, moved INTO the
+ *     bar (DR.7(3)): same `connection === 'reconnecting'` trigger the M2
+ *     board-zone banner used, one strip instead of a stack. Orthogonal to
+ *     the status words (a paused room can drop its channel too), so it is
+ *     its own field, not a statusText arm.
  */
 
 export type CommandBarVariant = 'commissioner' | 'member' | 'mock'
@@ -38,14 +54,25 @@ export interface CommandBarInput {
   /** `config.mock.launched_by === userId` — always false on a real draft. */
   isMockLauncher: boolean
   paused: boolean
+  /** Pre-start lobby (DR.7(4)). Real drafts only — a mock is born live
+   *  (§8.8), so no caller can be both `lobby` and `isMock`. */
+  lobby?: boolean
+  /** `connection === 'reconnecting'` from `useDraftRoom` (DR.7(3)) — the
+   *  live room's wire; the lobby keeps its shipped no-banner posture. */
+  reconnecting?: boolean
 }
 
 export interface CommandBarModel {
   variant: CommandBarVariant
   /** The pause/resume control's action, or null when the viewer may not
-   *  pause (member; mock non-launcher). */
+   *  pause (member; mock non-launcher; anyone in the lobby — nothing runs
+   *  pre-start). The predicate — commissioner on a real draft, the LAUNCHER
+   *  on a mock (R272; 069/071's mock-launcher arm) — lives HERE since
+   *  DR.7/D155 retired the overlay's Resume button: the bar is the one
+   *  place the legal caller acts. */
   pauseResume: 'pause' | 'resume' | null
-  /** Draft Options (the §8.7 door) — commissioner on a REAL draft only. */
+  /** Draft Options (the §8.7 door) — commissioner on a REAL, RUNNING draft
+   *  only (§8.7's controls act on a draft in flight — no door pre-start). */
   draftOptions: boolean
   /** The reduced launcher-only practice menu (delete-and-exit). */
   practiceOptions: boolean
@@ -53,12 +80,15 @@ export interface CommandBarModel {
   mockBadge: boolean
   /** The status in words — one authoritative line (§16.3 say-it-once). */
   statusText: string
+  /** The §16.5.4 realtime-fallback state, rendered IN the bar (DR.7(3)). */
+  reconnecting: boolean
   /** Exit Draft is unconditional (Q13 ruling: everyone can leave). */
   exit: true
 }
 
 export function commandBarModel(input: CommandBarInput): CommandBarModel {
   const { isMock, isMockLauncher, paused } = input
+  const lobby = input.lobby ?? false
   // D110(1): a commissioner in a mock is NOT a commissioner.
   const commissioner = input.commishRole && !isMock
 
@@ -68,21 +98,24 @@ export function commandBarModel(input: CommandBarInput): CommandBarModel {
       ? 'commissioner'
       : 'member'
 
-  const canPauseResume = commissioner || (isMock && isMockLauncher)
+  const canPauseResume = !lobby && (commissioner || (isMock && isMockLauncher))
 
   return {
     variant,
     pauseResume: canPauseResume ? (paused ? 'resume' : 'pause') : null,
-    draftOptions: commissioner,
-    practiceOptions: isMock && isMockLauncher,
+    draftOptions: commissioner && !lobby,
+    practiceOptions: isMock && isMockLauncher && !lobby,
     mockBadge: isMock,
-    statusText: isMock
-      ? paused
-        ? 'Practice paused'
-        : 'Practice live'
-      : paused
-        ? 'Draft paused'
-        : 'Draft live',
+    statusText: lobby
+      ? 'Draft scheduled'
+      : isMock
+        ? paused
+          ? 'Practice paused'
+          : 'Practice live'
+        : paused
+          ? 'Draft paused'
+          : 'Draft live',
+    reconnecting: input.reconnecting ?? false,
     exit: true,
   }
 }
@@ -99,7 +132,15 @@ export function exitDraftCopy(input: {
   /** Viewer holds a seat in this draft (`myTeamId` non-null — on a mock,
    *  only the LAUNCHER holds the human seat, D103(2)). */
   hasSeat: boolean
+  /** Pre-start lobby (DR.7(4)): no clock runs yet, so the away-path
+   *  sentence would be false — but the D94 auto-start is worth stating. */
+  lobby?: boolean
 }): string {
+  if (input.lobby) {
+    // Pre-start: leaving costs nothing NOW; the honest warning is that the
+    // draft still starts on schedule with or without you (D94).
+    return "Leave the lobby — the draft hasn't started. It still starts on schedule whether or not you're here."
+  }
   if (input.isMock && input.hasSeat) {
     return 'Leave the room — your practice pauses automatically and keeps for 72 hours.'
   }

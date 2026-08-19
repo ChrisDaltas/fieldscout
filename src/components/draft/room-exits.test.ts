@@ -28,6 +28,17 @@ import { describe, expect, it } from 'vitest'
  * it rehomes Exit Draft onto the 54px command bar (§16.4). These pins must
  * stay green through that change: what they require is an exit, not a header.
  *
+ * DR.7(4) (2026-08-18) moved the LOBBY's exit onto the command bar: the
+ * lobby now mounts `DraftCommandBar` itself (un-gated), whose Exit Draft is
+ * unconditional across every variant (`command-bar-ops.test.ts`'s
+ * whole-table Q13 pin) and survives the deletion of every gate in the bar
+ * file (`draft-command-bar.test.ts`). The lobby's in-card Back-to-league —
+ * a second exit voice under a bar that already carries one — retired with
+ * that change, so the lobby pins below assert the UN-GATED BAR MOUNT
+ * instead of the in-card link; the exit itself is the bar's, pinned where
+ * the bar lives. Bar coverage at every width is the DR.7 PR's browser
+ * evidence (Exit Draft never abbreviates and never hides — D176(5)).
+ *
  * Source-level for the same reason `route-groups.test.ts` and
  * `elevation-rule.test.ts` are: `jsx: "preserve"` means Vite cannot import a
  * `.tsx` here. The point is that the exit is in the returned tree and is not
@@ -113,16 +124,22 @@ function withoutGate(source: string, cond: string): string {
 /** The literal exit link both surfaces now carry. */
 const EXIT = /<Link href=\{`\/app\/leagues\/\$\{leagueId\}`\}>\s*Back to league\s*<\/Link>/
 
-describe('the chrome-free lobby carries its own exit (R340)', () => {
-  it('has a Back-to-league link that does not come from PageHeader', () => {
-    expect(withoutPageHeader(LOBBY)).toMatch(EXIT)
+describe('the chrome-free lobby carries its own exit (R340 → DR.7(4): the bar)', () => {
+  it('mounts DraftCommandBar — whose Exit Draft is unconditional (Q13)', () => {
+    // The exit is the bar's: `draft-command-bar.test.ts` pins that Exit
+    // Draft survives the deletion of every gate in the bar file, and the
+    // ops golden pins `exit: true` on every row including the lobby ones.
+    // `withoutPageHeader` is kept as a no-op guard: if a PageHeader ever
+    // returns to the lobby it still cannot satisfy this pin.
+    expect(withoutPageHeader(LOBBY)).toMatch(/<DraftCommandBar/)
   })
 
-  it('the exit is not commissioner-gated — a plain member sees it', () => {
-    // The specific defect: with `{isCommish && …}` removed, a member's lobby
-    // must still contain a way out. Before R340 the only survivor was the
-    // Practice CTA, which points DEEPER into the room.
-    expect(withoutGate(withoutPageHeader(LOBBY), 'isCommish')).toMatch(EXIT)
+  it('the bar is not commissioner-gated — a plain member gets the same exit', () => {
+    // The R340 defect shape, applied to the bar: with `{isCommish && …}`
+    // removed, a member's lobby must still contain the way out. Before R340
+    // the only survivor was the Practice CTA, which points DEEPER into the
+    // room; today the survivor must be the bar mount.
+    expect(withoutGate(withoutPageHeader(LOBBY), 'isCommish')).toMatch(/<DraftCommandBar/)
   })
 })
 
