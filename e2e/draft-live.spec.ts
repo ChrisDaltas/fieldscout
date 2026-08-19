@@ -179,7 +179,16 @@ test.describe('full snake draft to completion (two live clients)', () => {
       await expect(commish.getByText("You're on the clock").first()).toBeVisible({
         timeout: 30_000,
       })
-      await expect(manager.getByText('Live').first()).toBeVisible({ timeout: 30_000 })
+      // R399: `getByText('Live')` was VACUOUS — case-insensitive substring
+      // matched the fixture's own name ("E2E L.B5.1 live draft") rendered in
+      // the PRE-START lobby, so it passed before any flip and the 15s dock
+      // summon below became the flip's de-facto budget. Assert the bar's
+      // status exactly instead (the mock-draft.spec bar-identity idiom).
+      await expect(
+        manager
+          .locator('header[aria-label="Draft command bar"]')
+          .getByText(/^Draft live$/),
+      ).toBeVisible({ timeout: 30_000 })
 
       // DR.5: the pool is a dock panel, closed by default — summon it on
       // both clients before any pool interaction (helpers/dock.ts).
