@@ -6,7 +6,6 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -42,6 +41,7 @@ import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftCommandBar } from './draft-command-bar'
 import { type DraftOptionsSectionId } from './draft-options-ops'
+import { DraftStatusStrip } from './draft-status-strip'
 import { DraftBoardGrid } from './draft-board-grid'
 import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
@@ -61,9 +61,8 @@ import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
 import { DraftPauseOverlay } from './pause-overlay'
-import { PickClock } from './pick-clock'
 import { pickClockView } from './pick-clock-ops'
-import { PresenceBar, type PresenceSeat } from './presence-bar'
+import { type PresenceSeat } from './presence-bar'
 
 /** League statuses that can only be reached PAST a completed draft (§7.1) —
  *  the no-param room's recap-pointer arm (L.B3.5 2b). */
@@ -125,6 +124,16 @@ interface DraftRoomProps {
  *     bar's Exit Draft. Pinned in `room-exits.test.ts` and
  *     `draft-command-bar.test.ts`; per-variant DOM inventories are in the
  *     DR.2 PR. DR.7 owns the states sweep.
+ *   - **DR.4 (2026-08-18) rebuilt the live room's body into §16.4's three
+ *     zones**: the status Card became `draft-status-strip.tsx` (one
+ *     `h-header` band under the bar — on-clock LEFT, clock RIGHT, D149) and
+ *     the desktop `minmax(0,1fr)_340px` grid became a single full-width
+ *     board zone that owns the room's only vertical scroll. The rail's five
+ *     occupants — pool, queue (Targets), lists, tracker, chat — are PARKED:
+ *     they keep their components, props and suites, and the mobile pane
+ *     switch still renders all five, but they no longer render on desktop
+ *     until DR.5's bottom dock re-hosts them (a disclosed interim gap, the
+ *     DR.2-duplications precedent). Pinned in `draft-status-strip.test.ts`.
  *
  * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
@@ -366,12 +375,12 @@ function DraftRoomLive({
   userId,
 }: DraftRoomLiveProps) {
   const [mobilePane, setMobilePane] = useState<MobilePane>('players')
-  // §8.9 (L.B4.2): the rail's My Queue | My Lists tab, the pool-overlay
-  // selection (room-owned so panel and pool can never disagree), the
-  // §16.4/§8.9 mobile bottom sheet hosting the panel, and the room-level
-  // Add-a-draft-list modal (mounted OUTSIDE the sheet — a Dialog opened
-  // from inside a Sheet steals focus and closes both, D119(6)).
-  const [railTab, setRailTab] = useState<'queue' | 'lists'>('queue')
+  // §8.9 (L.B4.2): the pool-overlay selection (room-owned so panel and pool
+  // can never disagree), the §16.4/§8.9 mobile bottom sheet hosting the
+  // panel, and the room-level Add-a-draft-list modal (mounted OUTSIDE the
+  // sheet — a Dialog opened from inside a Sheet steals focus and closes
+  // both, D119(6)). The desktop rail's My Queue | My Lists tab state died
+  // with the rail (DR.4); the dock re-hosts both panels at DR.5.
   const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
   const [listsSheetOpen, setListsSheetOpen] = useState(false)
   const [addListOpen, setAddListOpen] = useState(false)
@@ -678,14 +687,6 @@ function DraftRoomLive({
     />
   )
 
-  const trackerCard = myTeamId ? (
-    <MyRosterTracker
-      picks={myPicks}
-      playerById={playerById}
-      roster={detail.settings.roster_settings}
-    />
-  ) : null
-
   const chatCard = (
     <DraftChat leagueId={leagueId} draftId={draft.id} detail={detail} userId={userId} />
   )
@@ -747,7 +748,12 @@ function DraftRoomLive({
   )
 
   return (
-    <>
+    // DR.4: the live room is a fixed column of three zones (spec §16.4;
+    // D149) — command bar, status strip, board. `h-full` + `overflow-hidden`
+    // size this root to exactly the (room) frame's height, so the frame's
+    // own wrapper can never overflow while the live room is mounted and the
+    // ONE scrollable region in the live room is the board zone below.
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* DR.2: the room's own top chrome, every width (spec §16.4 zone 1;
           D149's first band). The variant/control derivation lives in
           `command-bar-ops.ts` (D154), where the D110(1) mock mask is
@@ -769,6 +775,35 @@ function DraftRoomLive({
         deletePending={deleteMock.isPending}
       />
 
+      {/* DR.4 (D149's second band): the status strip, DIRECTLY under the
+          bar — on-clock line at the LEFT edge, clock at the RIGHT
+          (requirement 3); presence/draft order in the flexible middle. This
+          replaces the status Card, which put on-clock beside the clock and
+          presence on a second row. */}
+      <DraftStatusStrip
+        strip={{
+          paused,
+          round: draft.current_round,
+          pickNumber: draft.current_pick_number,
+          youAreOnClock,
+          onClockTeamName: onClockTeam?.name ?? null,
+          myNextPickLabel: myNextPick !== null ? pickLabel(myNextPick, teamCount) : null,
+        }}
+        seats={seats}
+        clock={{
+          status: draft.status,
+          current_deadline: draft.current_deadline,
+          deadline_remaining_ms: draft.deadline_remaining_ms,
+        }}
+        offsetMs={offsetMs}
+      />
+
+      {/* The board zone (§16.4 zone 3) — the room's ONLY vertical scroll
+          (DR.4). The two banners are interim tenants: §16.5.4 v2.12 makes
+          the BAR the room's banner surface and DR.7 absorbs them there
+          (D154/D155); until then they ride at the top of this zone so the
+          strip keeps its directly-under-the-bar seat. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="flex min-w-0 flex-col gap-4">
         {draft.is_mock && <MockBanner />}
         {connection === 'reconnecting' && (
@@ -777,95 +812,16 @@ function DraftRoomLive({
           </ReconnectingBanner>
         )}
 
-        <Card>
-          <CardHeader>
-            <div className="flex min-w-0 items-center gap-2.5">
-              {paused ? (
-                <Badge variant="yellow" className="shrink-0">
-                  Paused
-                </Badge>
-              ) : (
-                <Badge variant="green" className="shrink-0">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-pill bg-current" />
-                  Live
-                </Badge>
-              )}
-              <span className="truncate text-[13px] font-extrabold">
-                Round <span className="fs-num">{draft.current_round ?? '—'}</span> · Pick{' '}
-                <span className="fs-num">{draft.current_pick_number ?? '—'}</span>
-              </span>
-              {myNextPick !== null && !youAreOnClock && (
-                <span className="fs-overline hidden shrink-0 text-[9px] text-n-3 sm:inline">
-                  Your next: <span className="fs-num">{pickLabel(myNextPick, teamCount)}</span>
-                </span>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span
-                className={youAreOnClock ? 'fs-overline text-accent-strong' : 'fs-overline text-n-3'}
-              >
-                {youAreOnClock
-                  ? "You're on the clock"
-                  : onClockTeam
-                    ? `On the clock · ${onClockTeam.name}`
-                    : 'On the clock'}
-              </span>
-              <PickClock
-                draft={{
-                  status: draft.status,
-                  current_deadline: draft.current_deadline,
-                  deadline_remaining_ms: draft.deadline_remaining_ms,
-                }}
-                offsetMs={offsetMs}
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <PresenceBar seats={seats} />
-          </CardContent>
-        </Card>
+        {/* ----- Desktop (lg+): the FULL-WIDTH board (requirement 1 — the
+              340px rail is deleted). Its five occupants — pool, queue,
+              lists, tracker, chat — are parked for DR.5's bottom dock and
+              temporarily do not render on desktop; the mobile branch below
+              still hosts all five. ----- */}
+        <div className="hidden min-w-0 lg:block">{boardCard}</div>
 
-        {/* ----- Desktop (lg+): board + working rail (§8.5.2) ----- */}
-        <div className="hidden min-w-0 gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0">{boardCard}</div>
-          <div className="flex min-w-0 flex-col gap-4">
-            {poolCard}
-            {/* §8.9: My Lists is a TAB beside My Queue. */}
-            <div className="flex min-w-0 flex-col gap-2">
-              <Segment aria-label="Draft prep" className="w-full">
-                <SegmentItem
-                  active={railTab === 'queue'}
-                  onClick={() => setRailTab('queue')}
-                  className="flex-1"
-                >
-                  My queue
-                </SegmentItem>
-                <SegmentItem
-                  active={railTab === 'lists'}
-                  onClick={() => setRailTab('lists')}
-                  className="flex-1"
-                >
-                  My lists
-                </SegmentItem>
-              </Segment>
-              {railTab === 'queue' ? (
-                (queueCard ?? (
-                  <p className="text-[12px] font-medium text-n-3">
-                    {draft.is_mock
-                      ? 'Only the mock’s launcher drives a practice queue.'
-                      : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
-                  </p>
-                ))
-              ) : (
-                listsCard(false)
-              )}
-            </div>
-            {trackerCard}
-            {chatCard}
-          </div>
-        </div>
-
-        {/* ----- Mobile (§16.4): ticker + my rail; grid one tap away ----- */}
+        {/* ----- Mobile (§16.4): ticker + my rail; grid one tap away.
+              The four-way Segment is DR.5's to replace with the dock —
+              deliberately untouched here (v2.12 reconciliation). ----- */}
         <div className="flex min-w-0 flex-col gap-4 lg:hidden">
           <div className="flex gap-1.5 overflow-x-auto pb-0.5" aria-label="Recent picks">
             {draft.current_pick_number !== null && !paused && (
@@ -975,6 +931,7 @@ function DraftRoomLive({
           {mobilePane === 'chat' && chatCard}
         </div>
       </div>
+      </div>
 
       {/* §8.7 panel — trigger-less and CONTROLLED since DR.2 (D153); the
           bar's Draft Options MENU is its one door since DR.3, opening it at
@@ -1017,7 +974,7 @@ function DraftRoomLive({
         scoringSystemId={detail.league.scoring_system_id}
         attachedListIds={myAttachedListIds}
       />
-    </>
+    </div>
   )
 }
 
