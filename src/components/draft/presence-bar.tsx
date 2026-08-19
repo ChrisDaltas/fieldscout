@@ -28,8 +28,15 @@ interface PresenceBarProps {
  */
 export function PresenceBar({ seats, className }: PresenceBarProps) {
   return (
+    // `relative` is load-bearing (DR.4, measured at 1280): the chips'
+    // `sr-only` online/offline spans are `position: absolute`, and with no
+    // positioned ancestor they anchor to the VIEWPORT — escaping this
+    // container's overflow clip and extending document.scrollWidth (+63px
+    // once the strip squeezes the chips into overflow), which grew the page
+    // its own 15px scrollbars. Positioning the scroll container makes it
+    // their containing block, so they clip and scroll with their chips.
     <div
-      className={cn('flex gap-1.5 overflow-x-auto pb-0.5', className)}
+      className={cn('relative flex gap-1.5 overflow-x-auto pb-0.5', className)}
       role="list"
       aria-label="Draft room presence"
     >

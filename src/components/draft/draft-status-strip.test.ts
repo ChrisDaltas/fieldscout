@@ -151,6 +151,16 @@ describe('the scroll contract: the board zone owns the room’s only vertical sc
   it('the strip adds no scroll region of its own', () => {
     expect(code(STRIP)).not.toMatch(/overflow-y/)
   })
+
+  it('PresenceBar’s scroll container is positioned, so its sr-only absolutes cannot leak page scrollbars', () => {
+    // Measured at 1280 (DR.4 browser pass): without `relative`, the chips'
+    // absolute sr-only spans anchor to the viewport, escape the overflow
+    // clip, and grow document.scrollWidth — giving the PAGE the scrollbars
+    // the board zone is supposed to own.
+    expect(code('src/components/draft/presence-bar.tsx')).toMatch(
+      /relative flex gap-1\.5 overflow-x-auto/,
+    )
+  })
 })
 
 describe('the five panels are PARKED for DR.5, not deleted', () => {

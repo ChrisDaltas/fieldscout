@@ -64,8 +64,16 @@ export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusS
         </Badge>
       )}
 
+      {/* Below `sm` the words compress to "R1 · P6" (the D176(5) responsive-
+          labels precedent, re-measured here at 375: the band's rigid run is
+          357px of 375, starving presence to a 3px sliver — compressing this
+          span hands presence ~70px, one full chip plus its scroll). */}
       <span className="shrink-0 text-[13px] font-extrabold">
-        Round <span className="fs-num">{model.left.round}</span> · Pick{' '}
+        <span className="hidden sm:inline">Round </span>
+        <span className="sm:hidden">R</span>
+        <span className="fs-num">{model.left.round}</span>
+        <span className="hidden sm:inline"> · Pick </span>
+        <span className="sm:hidden">·P</span>
         <span className="fs-num">{model.left.pick}</span>
       </span>
 
