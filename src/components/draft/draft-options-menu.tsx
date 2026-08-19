@@ -50,9 +50,16 @@ export function DraftOptionsMenu({ onOpenSection }: DraftOptionsMenuProps) {
       <DropdownMenuTrigger asChild>
         {/* §16.3 (v2.12): commissioner power behind ONE labeled control in
             the room's own chrome — the accent fill is the commissioner
-            signature ("unmistakable"). */}
+            signature ("unmistakable"). Below `sm` the label compresses to
+            "Options" (the D176(5) responsive-label treatment, extended to
+            the commissioner arm by DR.7 when the bar gained its
+            reconnecting chip — the densest 375 bar is commissioner ·
+            paused · reconnecting, and the full label left the chip ~3
+            characters); the accent fill keeps the control unmistakable at
+            every width. */}
         <Button variant="blue" size="sm" className="shrink-0">
-          Draft Options
+          <span className="sm:hidden">Options</span>
+          <span className="hidden sm:inline">Draft Options</span>
         </Button>
       </DropdownMenuTrigger>
       {/* D152: the menu is a true overlay, and its RESTING shadow is carried

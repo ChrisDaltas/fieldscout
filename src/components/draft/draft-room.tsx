@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MockBanner, ReconnectingBanner } from '@/components/leagues/status-banners'
 import { useAuth } from '@/hooks/use-auth'
 import {
   useDraftRoom,
@@ -60,7 +59,6 @@ import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
 import { DraftPauseOverlay } from './pause-overlay'
-import { pickClockView } from './pick-clock-ops'
 import { type PresenceSeat } from './presence-bar'
 import { useSingleRoomTab } from './use-single-room-tab'
 
@@ -148,6 +146,16 @@ interface DraftRoomProps {
  *     through that hook's own cleanups) and renders `DraftRoomTakenOver`,
  *     whose "Use this tab instead" re-claims. Per browser profile, never
  *     per user — a second device is left alone (D156).
+ *   - **DR.7 (2026-08-18) is the one-voice sweep** (§16.3 say-a-thing-once;
+ *     §16.5.4's v2.12 note; D154/D155): the pause overlay is VISUAL ONLY
+ *     (dim + pointer-block — its copy and Resume button retired; the bar
+ *     announces and acts), the `MockBanner` left the room (the bar's Mock
+ *     badge is the one identity; the shell-side recap keeps its own), the
+ *     reconnecting banner moved INTO the bar (same `connection` trigger),
+ *     and the pre-start LOBBY mounts the same command bar ("Draft
+ *     scheduled" + Exit Draft — its in-card exit and status badge retired
+ *     into it). The one-state→one-site mapping is pinned in
+ *     `one-voice.test.ts`.
  *
  * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
@@ -545,15 +553,12 @@ function DraftRoomLive({
   // the controls refuse mocks in-RPC; the UI must not offer them).
   const isCommish = canUseCommishPanel(detail.my_role) && !draft.is_mock
   const pauseResume = usePauseResumeDraft(leagueId, draft.id)
-  // R272 (M2 batch 14): on a mock the LAUNCHER is the one legal resume (and
-  // pause) caller — 069/071's mock-launcher arm; `isCommish` is always false
-  // here (D110(1)), so without this the overlay dead-ended for the only
-  // person who could act on it. §8.8's "pause/leave anytime" is the pause
-  // button below; leaving just works (E59 auto-pauses on a stale heartbeat).
-  const canPauseResume = isCommish || isMockLauncher
-  // DR.2: one pause/resume handler for the bar (and the overlay's Resume,
-  // which DR.7/D155 retires) — the SHIPPED usePauseResumeDraft mutation, no
-  // new route (DR.2 item 5).
+  // DR.2: one pause/resume handler for the bar — the SHIPPED
+  // usePauseResumeDraft mutation, no new route (DR.2 item 5). The bar is
+  // the ONE pause/resume site since DR.7/D155 retired the overlay's Resume
+  // button; who may call it (commissioner on a real draft, the LAUNCHER on
+  // a mock — R272, 069/071's mock-launcher arm) is derived inside
+  // `command-bar-ops.ts` from the raw inputs the bar mount passes below.
   const handlePauseResume = (action: 'pause' | 'resume') => {
     pauseResume.mutateAsync({ action }).catch((error: unknown) => {
       toast({
@@ -586,19 +591,6 @@ function DraftRoomLive({
         })
       })
   }
-  // The §16.5.2 pause overlay's frozen clock — the paused branch reads only
-  // the persisted deadline_remaining_ms, so the (nowMs, offsetMs) samples
-  // are irrelevant here (pure derivation, no wall-clock read).
-  const pausedClock = pickClockView(
-    {
-      status: draft.status,
-      current_deadline: draft.current_deadline,
-      deadline_remaining_ms: draft.deadline_remaining_ms,
-    },
-    0,
-    0,
-  )
-
   const myNextPick = useMemo(
     () =>
       nextPickNumberForTeam(
@@ -752,18 +744,13 @@ function DraftRoomLive({
   )
 
   const boardCard = (
-    // Relative host for the §16.5.2 pause overlay (it floats above the
-    // board only — the chrome and the dock stay usable during a pause).
+    // Relative host for the paused board treatment — VISUAL ONLY since
+    // DR.7 (D155): it dims the board and blocks its pointer events while
+    // the chrome and the dock stay usable. Everything it used to SAY —
+    // status words, frozen clock, Resume — is said once, elsewhere (see
+    // pause-overlay.tsx's docblock and one-voice.test.ts).
     <div className="relative min-w-0">
-      {paused && (
-        <DraftPauseOverlay
-          clock={pausedClock}
-          mock={draft.is_mock}
-          canResume={canPauseResume}
-          resuming={pauseResume.isPending}
-          onResume={() => handlePauseResume('resume')}
-        />
-      )}
+      {paused && <DraftPauseOverlay />}
     <Card>
       <CardHeader>
         <span className="text-[13px] font-extrabold">Draft board</span>
@@ -826,6 +813,11 @@ function DraftRoomLive({
           isMock: draft.is_mock,
           isMockLauncher,
           paused,
+          // DR.7(3): the §16.5.4 reconnecting state renders IN the bar —
+          // same trigger the M2 board-zone banner used, one strip not a
+          // stack. The hook's refetch-then-resubscribe behavior (§9.3) is
+          // untouched; this only moves where the state is TOLD.
+          reconnecting: connection === 'reconnecting',
         }}
         hasSeat={Boolean(myTeamId)}
         pausePending={pauseResume.isPending}
@@ -859,19 +851,12 @@ function DraftRoomLive({
       />
 
       {/* The board zone (§16.4 zone 3) — the room's ONLY vertical scroll
-          (DR.4). The two banners are interim tenants: §16.5.4 v2.12 makes
-          the BAR the room's banner surface and DR.7 absorbs them there
-          (D154/D155); until then they ride at the top of this zone so the
-          strip keeps its directly-under-the-bar seat. */}
+          (DR.4). DR.7 evicted its two interim banner tenants: the MOCK
+          identity is the bar's badge (D154) and the reconnecting state is
+          the bar's strip (§16.5.4 v2.12) — the zone now hosts draft
+          surfaces and nothing else. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="flex min-w-0 flex-col gap-4">
-        {draft.is_mock && <MockBanner />}
-        {connection === 'reconnecting' && (
-          <ReconnectingBanner>
-            Reconnecting — syncing the room. Picks refresh automatically.
-          </ReconnectingBanner>
-        )}
-
         {/* ----- Desktop (lg+): the FULL-WIDTH board (requirement 1 — the
               340px rail is deleted). The rail's five former occupants —
               pool, queue, lists, tracker, chat — live in the bottom dock
