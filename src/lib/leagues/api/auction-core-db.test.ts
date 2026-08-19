@@ -104,6 +104,7 @@ const ACTION = {
   wrongTurn: 'af000000-0000-4000-8000-000000000023',
   staleTarget: 'af000000-0000-4000-8000-000000000024',
   identityOk: 'af000000-0000-4000-8000-000000000025',
+  staleSeq: 'af000000-0000-4000-8000-000000000026',
 } as const
 
 type DraftRow = Database['public']['Tables']['drafts']['Row']
@@ -414,8 +415,12 @@ describe('the auction core over PostgREST (migration 085)', () => {
     // NOMINATION IDENTITY OVER THE WIRE (R330). pgTAP 034 owns the full
     // matrix; what only this layer can show is that PostgREST TRANSPORTS
     // the two optional trailing arguments by name — a mismatch can only be
-    // detected if the value actually arrived. L.C2.1's route must always
-    // send them (F64).
+    // detected if the value actually arrived. Each arm needs its OWN call
+    // (R337, L.C2.1): a mismatched player with a matching seq proves only
+    // `p_player_id` arrived; a mismatched seq with a MATCHING player is the
+    // only call that proves `p_nomination_seq` did. L.C2.1's route always
+    // sends both (F64; auction-api-db.test.ts pins the same pair through
+    // the route).
     const { error: staleTarget } = await mgr2Client.rpc('draft_place_bid', {
       p_draft_id: draftId,
       p_amount: 5,
@@ -425,6 +430,16 @@ describe('the auction core over PostgREST (migration 085)', () => {
     })
     expect(staleTarget?.code).toBe('P0001')
     expect(staleTarget?.message).toContain('just went off the board')
+
+    const { error: staleSeq } = await mgr2Client.rpc('draft_place_bid', {
+      p_draft_id: draftId,
+      p_amount: 5,
+      p_action_id: ACTION.staleSeq,
+      p_nomination_seq: 2,
+      p_player_id: PLAYERS[0].id,
+    })
+    expect(staleSeq?.code).toBe('P0001')
+    expect(staleSeq?.message).toContain('that nomination just went off the board')
 
     const { data: identityOk, error: identityErr } = await mgr2Client.rpc('draft_place_bid', {
       p_draft_id: draftId,
