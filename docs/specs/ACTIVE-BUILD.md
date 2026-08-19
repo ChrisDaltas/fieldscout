@@ -63,6 +63,8 @@ file's pointer does not move: **M3 stays the active build and gains a second lan
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
+   *(**The DR lane is COMPLETE — DR.1–DR.8 all landed 2026-08-18**, so this step
+   never fires again; the DR prerequisites in step 3 are all satisfied.)*
 2. When no `DR.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
 3. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
    new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
