@@ -24,6 +24,7 @@ import {
   useSetLeagueStatus,
   type LeagueDetail,
 } from '@/hooks/use-league'
+import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { cn } from '@/lib/utils'
@@ -422,6 +423,8 @@ function ScheduledHero({
   const scheduledAt = settings.draft.draft_scheduled_at
   const timeZone = settings.draft.time_zone
   const orderMode = settings.draft.draft_order_mode
+  // DR.6 entry split (§16.1 v2.12): desktop opens the room in a new tab.
+  const roomEntry = useRoomEntryTarget()
 
   const { data: templates, isPending: templatesPending } = useScoringTemplates()
   const templateName =
@@ -452,7 +455,7 @@ function ScheduledHero({
               dead-end). */}
           <div className="flex flex-wrap items-center gap-2.5">
             <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}/draft`}>
+              <Link href={`/app/leagues/${leagueId}/draft`} {...roomEntry}>
                 <Icon name="fire" size={13} />
                 Enter draft lobby
               </Link>
@@ -656,6 +659,8 @@ function CountUnit({ value, label }: { value: number; label: string }) {
  */
 function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const startedAt = data.active_draft?.started_at ?? null
+  // DR.6 entry split (§16.1 v2.12): desktop opens the room in a new tab.
+  const roomEntry = useRoomEntryTarget()
 
   return (
     <Card className="flex flex-col items-center gap-3 px-6 py-14 text-center">
@@ -670,7 +675,7 @@ function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail
           : 'Picks are coming off the board right now.'}
       </p>
       <Button variant="blue" size="sm" shadow asChild>
-        <Link href={`/app/leagues/${leagueId}/draft`}>
+        <Link href={`/app/leagues/${leagueId}/draft`} {...roomEntry}>
           <Icon name="fire" size={13} />
           Join draft
         </Link>

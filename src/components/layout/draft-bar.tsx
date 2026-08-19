@@ -10,6 +10,7 @@ import { Icon } from '@/components/ui/icon'
 import { autoStartPollMs } from '@/components/leagues/league-home-states-ops'
 import { useActiveDraft } from '@/hooks/use-draft'
 import { leaguesKeys, useLeagues } from '@/hooks/use-leagues'
+import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { featureFlags } from '@/lib/feature-flags'
 
 import { deriveDraftAlert, draftBarCandidate } from './draft-bar-ops'
@@ -64,12 +65,15 @@ function useDraftAlert() {
  *  a control surface — the Join button is dark). */
 export function DraftBar() {
   const draft = useDraftAlert()
+  // DR.6 entry split (§16.1 v2.12): the bar's Join opens the room in a new
+  // tab on desktop, in place on mobile. Hook order: before the early return.
+  const roomEntry = useRoomEntryTarget()
   if (!draft) return null
 
   return (
     <div className="flex h-[37px] shrink-0 items-center gap-3 border-b border-ink bg-brand px-7 text-ink">
       <Button variant="dark" size="sm" shadow asChild>
-        <Link href={draft.href}>
+        <Link href={draft.href} {...roomEntry}>
           Join
           <Icon name="arrow-next" />
         </Link>
