@@ -62,6 +62,7 @@ import { MyRosterTracker } from './my-roster-tracker'
 import { DraftPauseOverlay } from './pause-overlay'
 import { pickClockView } from './pick-clock-ops'
 import { type PresenceSeat } from './presence-bar'
+import { useSingleRoomTab } from './use-single-room-tab'
 
 /** League statuses that can only be reached PAST a completed draft (§7.1) —
  *  the no-param room's recap-pointer arm (L.B3.5 2b). */
@@ -141,6 +142,12 @@ interface DraftRoomProps {
  *     full grid one tap away via an in-zone disclosure (§16.4's density
  *     rule, unchanged). Pinned in `draft-dock.test.ts` and the rewritten
  *     dock-era pins of `draft-status-strip.test.ts`.
+ *   - **DR.6 (2026-08-18) added the two-tabs guard** (`use-single-room-tab`,
+ *     spec §9.3 v2.12 — RULED: newest tab wins): a released tab withholds
+ *     the draft id from `useDraftRoom` (the channel + heartbeat tear down
+ *     through that hook's own cleanups) and renders `DraftRoomTakenOver`,
+ *     whose "Use this tab instead" re-claims. Per browser profile, never
+ *     per user — a second device is left alone (D156).
  *
  * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
@@ -180,11 +187,29 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     return detail.data.members.find((m) => m.user_id === user.id)?.team_id ?? null
   }, [user, detail.data])
 
-  const room = useDraftRoom(draftId, {
+  // The two-tabs guard (DR.6; D156; spec §9.3 v2.12 — RULED: newest tab
+  // wins). A released tab passes NO draft id into the room spine below, so
+  // `useDraftRoom`'s own effect cleanups do the release — the §9.3 channel
+  // teardown unsubscribes `draft:<id>` and the heartbeat effect's cleanup
+  // stops `draft_touch`. No second mechanism; the guard only withholds the
+  // id. Pinned in single-room-tab.test.ts.
+  const guard = useSingleRoomTab(draftId)
+  const heldDraftId = guard.role === 'released' ? undefined : draftId
+
+  const room = useDraftRoom(heldDraftId, {
     presence: { team_id: myMemberTeamId, user_id: user?.id ?? null },
   })
 
   // ----- resolution states (§16.5.4: skeleton / error / honest empties) ----
+
+  // Released FIRST: a taken-over tab renders the §9.3 takeover state and
+  // nothing else (its room query is idle, so every later arm would misread
+  // it as loading). The takeover state carries its own exit (room-exits
+  // pin) plus "Use this tab instead", which re-claims — and the then-older
+  // tab releases in turn.
+  if (draftId && guard.role === 'released') {
+    return <DraftRoomTakenOver leagueId={leagueId} onReclaim={guard.reclaim} />
+  }
 
   if (detail.isPending || (draftId && room.isPending)) {
     return <DraftRoomSkeleton leagueId={leagueId} />
@@ -1056,6 +1081,48 @@ function DraftRoomEmpty({
           <Button variant="stroke" size="sm" asChild>
             <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
           </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * The §9.3 takeover state (DR.6; D156 — RULED: newest tab wins). Renders in
+ * the chrome-free frame when a NEWER tab of this browser profile claimed
+ * the draft, so this tab released its channel and heartbeat. Honest about
+ * the boundary: nothing about the draft itself is at risk — the server is
+ * authoritative (§8.1) — this tab merely stopped spending a connection.
+ * Carries its own exit (a chrome-free state with no way out is the R340
+ * defect class; pinned in room-exits.test.ts) plus the ruled "Use this tab
+ * instead" action, which re-claims the room; the then-newer tab releases
+ * in turn.
+ */
+function DraftRoomTakenOver({
+  leagueId,
+  onReclaim,
+}: {
+  leagueId: string
+  onReclaim: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardContent className="flex flex-col items-start gap-2 p-4">
+          <p className="text-[13px] font-bold">This draft is open in another tab</p>
+          <p className="text-[12px] font-medium text-n-3">
+            You opened the room somewhere newer, so this tab let go of the live
+            connection — one tab per browser keeps draft night fast. Your seat,
+            picks and clock all run on the server and are untouched.
+          </p>
+          <div className="flex items-center gap-2.5">
+            <Button variant="blue" size="sm" shadow onClick={onReclaim}>
+              Use this tab instead
+            </Button>
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -153,6 +153,24 @@ describe("the resolver's own states keep the exits their docblock claims", () =>
   })
 })
 
+describe('the takeover state carries its exit AND the ruled takeover action (DR.6)', () => {
+  it('DraftRoomTakenOver renders Back to league and "Use this tab instead"', () => {
+    // The §9.3 v2.12 takeover state (D156 — newest tab wins): a released
+    // tab renders THIS and nothing else, in the chrome-free frame — so an
+    // exit-less takeover is the R340 dead-end class, and a takeover state
+    // without its "Use this tab instead" button strands the user with no
+    // way to take the room back (the ruling's own affordance). Scoped to
+    // the component so a neighbour's exit can never satisfy it.
+    const source = withoutPageHeader(ROOM)
+    const start = source.indexOf('function DraftRoomTakenOver')
+    expect(start, 'DraftRoomTakenOver found').toBeGreaterThan(-1)
+    const nextFn = source.indexOf('function ', start + 'function DraftRoomTakenOver'.length)
+    const slice = source.slice(start, nextFn === -1 ? source.length : nextFn)
+    expect(slice).toMatch(EXIT)
+    expect(slice).toContain('Use this tab instead')
+  })
+})
+
 describe('the transient skeleton carries an exit too (DR.2’s deliberate call)', () => {
   it('DraftRoomSkeleton renders its own Back to league', () => {
     // DR.7(5)/R348 left the skeleton as the last exit-less resolver state,
