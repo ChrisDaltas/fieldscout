@@ -867,7 +867,23 @@ function DraftRoomLive({
               board-zone density treatment; the four-way Segment is GONE —
               the dock is the one pattern on both platforms (DR.5, v2.12
               reconciliation) — and the full grid stays one tap away via
-              the disclosure below. ----- */}
+              the disclosure below.
+
+              The paused DIM does not extend over this resident mobile zone,
+              DELIBERATELY (R397, decided in DR.8 — PROGRESS D183): the
+              dim's job is to make an INTERACTIVE board visibly inert, and
+              the resident mobile surfaces are read-only content — the
+              ticker and the compact tracker take no draft action, and the
+              overlay's pointer-event blocking would break the ticker's
+              horizontal scroll (reviewing recent picks is what a pause is
+              FOR). Paused still reads at this width without it: the bar's
+              status line, the strip's PAUSED badge and the clock's paused
+              mode all render below `lg`, and the ticker's on-clock cell is
+              `!paused`-gated below — the zone visibly stops advancing. The
+              one interactive board surface mobile can summon — the full
+              grid via the disclosure — mounts `boardCard`, which CARRIES
+              the dim (measured in the DR.8 states sweep at 375: summoned
+              grid dimmed, ticker scrollable). ----- */}
         <div className="flex min-w-0 flex-col gap-4 lg:hidden">
           <div className="flex gap-1.5 overflow-x-auto pb-0.5" aria-label="Recent picks">
             {draft.current_pick_number !== null && !paused && (

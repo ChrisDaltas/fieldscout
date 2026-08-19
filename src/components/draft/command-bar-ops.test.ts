@@ -333,7 +333,28 @@ describe('exitDraftCopy — Q13 honest-copy goldens (§16.4 zone 1)', () => {
     // Seat-independent: leaving a lobby costs the same for everyone.
     const lobbyLine =
       "Leave the lobby — the draft hasn't started. It still starts on schedule whether or not you're here."
-    expect(exitDraftCopy({ isMock: false, hasSeat: true, lobby: true })).toBe(lobbyLine)
-    expect(exitDraftCopy({ isMock: false, hasSeat: false, lobby: true })).toBe(lobbyLine)
+    expect(exitDraftCopy({ isMock: false, hasSeat: true, lobby: true, hasSchedule: true })).toBe(
+      lobbyLine,
+    )
+    expect(exitDraftCopy({ isMock: false, hasSeat: false, lobby: true, hasSchedule: true })).toBe(
+      lobbyLine,
+    )
+  })
+
+  it('the NO-SCHEDULE lobby is not promised an auto-start that cannot happen (R396)', () => {
+    // The lobby renders with `draft_scheduled_at` null (the league is
+    // `scheduled`, no instant stored — draft-lobby.tsx's no-countdown
+    // sub-state), and "it still starts on schedule" is false there. The
+    // honest sentence is the commissioner's Start-now. Seat-independent,
+    // and `hasSchedule` omitted defaults to the non-promise.
+    const noScheduleLine =
+      "Leave the lobby — the draft hasn't started. The commissioner can start it whether or not you're here."
+    expect(exitDraftCopy({ isMock: false, hasSeat: true, lobby: true, hasSchedule: false })).toBe(
+      noScheduleLine,
+    )
+    expect(exitDraftCopy({ isMock: false, hasSeat: false, lobby: true, hasSchedule: false })).toBe(
+      noScheduleLine,
+    )
+    expect(exitDraftCopy({ isMock: false, hasSeat: true, lobby: true })).toBe(noScheduleLine)
   })
 })

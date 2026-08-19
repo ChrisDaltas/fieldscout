@@ -8,6 +8,7 @@ import {
   serviceClient,
   snapshotLeagueWrites,
 } from './helpers/harness'
+import { openDockPlayers } from './helpers/dock'
 import { provisionLeague, signInDev } from './helpers/provision'
 import { DEV_USER, STORAGE_STATE } from './helpers/local-env'
 
@@ -81,10 +82,17 @@ test.describe('solo mock draft (launch → CPUs → recap → zero league writes
       await page.waitForURL(/\?draft=[0-9a-f-]{36}/, { timeout: 60_000 })
       const mockDraftId = new URL(page.url()).searchParams.get('draft')!
 
-      // The room is unmistakably a practice room (§16.5.2's MOCK banner).
-      await expect(
-        page.getByText('Practice draft — nothing here touches your league.'),
-      ).toBeVisible()
+      // The room is unmistakably a practice room — the MOCK identity is the
+      // command bar's, since DR.7 absorbed the stacked `MockBanner` into it
+      // (§16.5.2's v2.12 mock row; D154; one-voice.test.ts pins the banner
+      // out of the room — the recap keeps it).
+      const bar = page.locator('header[aria-label="Draft command bar"]')
+      await expect(bar.getByText('Mock', { exact: true })).toBeVisible()
+      await expect(bar.getByText(/^Practice (live|paused)$/)).toBeVisible()
+
+      // DR.5: the pool is a dock panel, closed by default — summon it
+      // before the drafting loop (helpers/dock.ts).
+      await openDockPlayers(page)
 
       // ---- Draft to completion: human picks on the clock, CPUs tick in --
       const completeText = page.getByText('Practice draft complete')

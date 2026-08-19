@@ -10,6 +10,7 @@ import {
   serviceClient,
   tickOnce,
 } from './helpers/harness'
+import { openDockPlayers } from './helpers/dock'
 import { provisionLeague, signInDev, signInDevPro } from './helpers/provision'
 import { LOCAL_URL, STORAGE_STATE } from './helpers/local-env'
 
@@ -159,7 +160,11 @@ test.describe('full snake draft to completion (two live clients)', () => {
       // ---- Lobby → Start (L.B3.4's surface) ------------------------------
       await commish.goto(roomPath)
       await manager.goto(roomPath)
-      await expect(commish.getByText('Draft lobby').first()).toBeVisible()
+      // The lobby card's own title — NOT the retired 'Draft lobby' page
+      // heading (F68: that was `PageHeader` copy that stopped rendering
+      // when DR.1 took the room out of the app shell; the chrome-free
+      // lobby's surfaces are the card and the command bar).
+      await expect(commish.getByText('Draft night').first()).toBeVisible()
 
       const draftsReq = await managerDraftsFetch
       expect(
@@ -175,6 +180,11 @@ test.describe('full snake draft to completion (two live clients)', () => {
         timeout: 30_000,
       })
       await expect(manager.getByText('Live').first()).toBeVisible({ timeout: 30_000 })
+
+      // DR.5: the pool is a dock panel, closed by default — summon it on
+      // both clients before any pool interaction (helpers/dock.ts).
+      await openDockPlayers(commish)
+      await openDockPlayers(manager)
 
       // ---- Pick 1: commissioner, via the pool UI -------------------------
       const pick1Name = await draftFirstAvailable(commish)

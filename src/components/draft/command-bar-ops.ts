@@ -135,11 +135,20 @@ export function exitDraftCopy(input: {
   /** Pre-start lobby (DR.7(4)): no clock runs yet, so the away-path
    *  sentence would be false — but the D94 auto-start is worth stating. */
   lobby?: boolean
+  /** Lobby arm only (R396): `draft_scheduled_at` is set. The lobby is
+   *  REACHABLE with no schedule (the league is `scheduled` but no instant
+   *  is stored — `draft-lobby.tsx`'s no-countdown sub-state), and the D94
+   *  auto-start promise ("it still starts on schedule") is false there;
+   *  that arm gets the honest commissioner-starts-it sentence. */
+  hasSchedule?: boolean
 }): string {
   if (input.lobby) {
-    // Pre-start: leaving costs nothing NOW; the honest warning is that the
-    // draft still starts on schedule with or without you (D94).
-    return "Leave the lobby — the draft hasn't started. It still starts on schedule whether or not you're here."
+    // Pre-start: leaving costs nothing NOW; the honest warning is what
+    // happens without you — the D94 auto-start when an instant is stored,
+    // the commissioner's Start-now when none is (R396).
+    return input.hasSchedule
+      ? "Leave the lobby — the draft hasn't started. It still starts on schedule whether or not you're here."
+      : "Leave the lobby — the draft hasn't started. The commissioner can start it whether or not you're here."
   }
   if (input.isMock && input.hasSeat) {
     return 'Leave the room — your practice pauses automatically and keeps for 72 hours.'

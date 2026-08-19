@@ -5,6 +5,7 @@ import {
   cleanupSweep,
   serviceClient,
 } from './helpers/harness'
+import { openDockPlayers } from './helpers/dock'
 import { provisionLeague, signInDev, signInDevPro } from './helpers/provision'
 import { STORAGE_STATE } from './helpers/local-env'
 
@@ -98,6 +99,11 @@ test.describe('disconnect / reconnect mid-draft', () => {
 
       await commish.goto(roomPath)
       await manager.goto(roomPath)
+
+      // DR.5: the pool is a dock panel, closed by default — summon it on
+      // both clients before any pool interaction (helpers/dock.ts).
+      await openDockPlayers(commish)
+      await openDockPlayers(manager)
 
       // Pick 1 — the manager's, live in both rooms.
       await expect(manager.getByText("You're on the clock").first()).toBeVisible({
