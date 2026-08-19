@@ -8,8 +8,10 @@
  *       `draft:<id>` channel and a pick INSERT (the tick's autopick — the
  *       production writer) arrives as a 'draft_picks' broadcast carrying
  *       EXACTLY the §5 column-selected record (pick_number, round,
- *       team_id, player_id, is_auto, is_undone — nothing blind);
- *       the drafts-row advance arrives as a 'drafts' broadcast; the §9.1
+ *       team_id, player_id, is_auto, is_undone — nothing blind; + price
+ *       since 088/L.C1.6, D134 — NULL on a snake row);
+ *       the drafts-row advance arrives as a 'drafts' broadcast (+ the D134
+ *       pair since 088); the §9.1
  *       heartbeat arrives as a 'tick' event (server_now + deadline).
  *   (b) a NON-MEMBER client gets nothing: the private-channel subscribe
  *       is REFUSED by the realtime.messages policies (never reaches
@@ -346,14 +348,18 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
       expect(pick.operation).toBe('INSERT')
       expect(pick.table).toBe('draft_picks')
       expect(pick.schema).toBe('public')
+      // 088/L.C1.6 (D134): + price — amended in place (tests are tests);
+      // shown RED against 088 before the edit (1 of 2 in this suite).
       expect(Object.keys(pick.record ?? {}).sort()).toEqual([
         'is_auto',
         'is_undone',
         'pick_number',
         'player_id',
+        'price',
         'round',
         'team_id',
       ])
+      expect(pick.record?.price).toBeNull() // a snake row: NULL on the wire
       expect(pick.record?.pick_number).toBe(1)
       expect(pick.record?.is_auto).toBe(true)
       expect(
@@ -369,8 +375,11 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
       )
       expect(draftEvent.table).toBe('drafts')
       const draftKeys = Object.keys(draftEvent.record ?? {}).sort()
+      // 088/L.C1.6 (D134): + current_nomination + budget_adjustments.
       expect(draftKeys).toEqual([
+        'budget_adjustments',
         'current_deadline',
+        'current_nomination',
         'current_pick_number',
         'current_round',
         'deadline_remaining_ms',

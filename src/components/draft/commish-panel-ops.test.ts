@@ -27,6 +27,7 @@ function pick(n: number, over: Partial<DraftPickSummary> = {}): DraftPickSummary
     player_id: `pl-${n}`,
     is_auto: false,
     is_undone: false,
+    price: null, // 088/D134 — snake fixtures carry NULL (066's literal NULL)
     made_via: 'manual',
     created_at: null,
     ...over,

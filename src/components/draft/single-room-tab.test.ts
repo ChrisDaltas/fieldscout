@@ -100,6 +100,18 @@ describe("§9.3's channel budget — exactly ONE realtime channel in src/", () =
     // its own review, whoever adds it.
     expect(hits).toEqual([[SPINE, 1]])
   })
+
+  it("088/L.C1.6: the auction's draft_bids event rides the SAME channel — subscribed via `ch.on(...)` on the one channel the spine opens, never a second `.channel(`", () => {
+    // The budget pin above would catch a second `.channel(`; this one pins
+    // the positive half: the auction event is multiplexed onto the existing
+    // topic (D109(1); 088 banner item 6), and the feed's query is invalidated
+    // on every confirmed join like chat (its missed-event recovery).
+    const source = code(SPINE)
+    expect(source).toContain("ch.on('broadcast', { event: 'draft_bids' }")
+    expect(source).toContain('queryClient.invalidateQueries({ queryKey: draftBidKeys.feed(draftId) })')
+    // And the feed hook itself opens no channel of its own.
+    expect(code('src/hooks/use-draft-bids.ts')).not.toContain('.channel(')
+  })
 })
 
 describe('release rides the existing cleanups, through the gate (DR.6 contract 1)', () => {

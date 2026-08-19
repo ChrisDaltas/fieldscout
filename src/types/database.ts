@@ -3272,6 +3272,14 @@ export type Database = {
         Args: { p_draft_id: string; p_team_id: string }
         Returns: string
       }
+      draft_bid_broadcast_payload: {
+        Args: { b: Database["public"]["Tables"]["draft_bids"]["Row"] }
+        Returns: Json
+      }
+      draft_bid_void_broadcast_payload: {
+        Args: { p_rows: Database["public"]["Tables"]["draft_bids"]["Row"][] }
+        Returns: Json
+      }
       draft_broadcast_payload: {
         Args: { d: Database["public"]["Tables"]["drafts"]["Row"] }
         Returns: Json

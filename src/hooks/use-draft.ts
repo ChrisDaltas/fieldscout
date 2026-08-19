@@ -20,8 +20,11 @@ import {
   presenceTeamForDraft,
   type TickHeartbeat,
 } from './use-draft-ops'
+import { draftBidKeys } from './use-draft-bids'
+import { reduceBidEvent, type DraftBidBroadcast, type DraftBidRow } from './use-draft-bids-ops'
 import { draftChatContext, draftChatKeys } from './use-draft-chat'
 import { isChatRecord, reduceChatEvent, type DraftChatRow } from './use-draft-chat-ops'
+import { createFeedSink } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -55,6 +58,10 @@ export interface DraftPickSummary {
   player_id: string
   is_auto: boolean | null
   is_undone: boolean | null
+  /** 088/D134: the auction's winning bid (NULL on every snake row — 066's
+   *  literal NULL). On the wire since 088; hint rows carry the broadcast
+   *  value, fetched rows the column. */
+  price: number | null
   made_via: string | null
   created_at: string | null
 }
@@ -76,7 +83,7 @@ export function useDraft(draftId: string | undefined) {
         supabase
           .from('draft_picks')
           .select(
-            'id, pick_number, round, team_id, player_id, is_auto, is_undone, made_via, created_at',
+            'id, pick_number, round, team_id, player_id, is_auto, is_undone, price, made_via, created_at',
           )
           .eq('draft_id', draftId!)
           .order('pick_number', { ascending: true }),
@@ -132,9 +139,24 @@ interface BroadcastEnvelope {
  * - **Reconnect = refetch-first + resubscribe** (§8.7/§16.3), surfacing
  *   `connection: 'reconnecting'` for the banner.
  * - **Channel budget:** this hook opens exactly ONE channel (the topic
- *   multiplexes drafts/draft_picks/league_chat/tick + Presence — D109(1)),
+ *   multiplexes drafts/draft_picks/draft_bids/league_chat/tick + Presence —
+ *   D109(1); 088/L.C1.6 added the `draft_bids` event to the SAME channel,
+ *   never a second one — the DR.6 sweep pin `.channel(` = 1 in src/ stands),
  *   inside §9.3's ≤ 3 per socket; the effect cleanup unsubscribes on route
  *   change (connection leaks are the #1 quota killer).
+ * - **The bid feed (088):** `draft_bids` INSERTs (one per bid row) and
+ *   per-statement VOID summaries (operation UPDATE — the F69 decision) fold
+ *   into the bid-feed query's cache through its pure reducer, never the room
+ *   reducer (bids are history, not room state — the chat precedent); the
+ *   feed is re-read on every confirmed (re)join like chat. Every event goes
+ *   through the feed SINK (`use-draft-feed-sink.ts` — R401): React Query
+ *   discards a cache write made while a fetch is in flight when that fetch
+ *   resolves, so an event applied straight onto the cache during the join
+ *   refetch (or any refetch) was lost — a bid vanished, a void came back as
+ *   zombie rows; the sink holds events across an in-flight fetch and replays
+ *   them, in order, onto the rows the fetch produced. The room's centerpiece
+ *   (high bid / phase) rides the `drafts` event's `current_nomination`
+ *   (D134) and is patched by the room reducer.
  * - **Clock:** the tick heartbeat maintains the server−client offset the
  *   pick clock renders from; the client never owns the clock. Until the
  *   first beat (≤ ~5s after subscribe — 068 ARM 3 beats every pass) the
@@ -191,6 +213,15 @@ export function useDraftRoom(
     const refetchDraft = () => {
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
     }
+
+    // The bid feed's sink (R401) — one per channel lifetime, disposed with
+    // it: anything still held at dispose is reconciled by the next confirmed
+    // join's refetch, which every (re)open ends in.
+    const bidSink = createFeedSink<DraftBidRow, DraftBidBroadcast>(
+      queryClient,
+      draftBidKeys.feed(draftId),
+      reduceBidEvent,
+    )
 
     const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
       const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
@@ -284,6 +315,21 @@ export function useDraftRoom(
         const next = reduceChatEvent(rows, record, draftChatContext(draftId))
         if (next !== rows) queryClient.setQueryData(key, next)
       })
+      ch.on('broadcast', { event: 'draft_bids' }, ({ payload }) => {
+        // 088/L.C1.6 — the bid feed (D134/F69). Same shape of handling as
+        // chat: NOT room state, so it never touches the room reducer; the
+        // broadcast folds into the bid-feed query's cache through the pure
+        // reducer (INSERT = one bid row appended, tuple-deduped; UPDATE =
+        // the per-statement void summary striking whole nominations). An
+        // unmounted/unfetched feed has no cache to patch — its mount-time
+        // fetch carries the live history. Doubt (malformed record, unknown
+        // operation) ⇒ refetch the feed (§9.3). The write goes THROUGH THE
+        // SINK, never straight onto the cache (R401): an event landing while
+        // the feed is mid-fetch is held and replayed onto the fetched rows —
+        // the join refetch fired on SUBSCRIBED opens exactly that window.
+        const envelope = (payload ?? {}) as BroadcastEnvelope
+        bidSink.push({ operation: envelope.operation, record: envelope.record })
+      })
       ch.on('broadcast', { event: 'tick' }, ({ payload }) => {
         const beat = (payload ?? {}) as Partial<TickHeartbeat>
         // Clock SAMPLE at receipt, injected into the pure offset math —
@@ -331,6 +377,12 @@ export function useDraftRoom(
           // its missed-message recovery (id-dedupe absorbs overlap).
           refetchDraft()
           void queryClient.invalidateQueries({ queryKey: draftChatKeys.room(draftId) })
+          // 088: the bid feed rides the same rule — it has no gap detector
+          // of its own, so the join refetch is its missed-event recovery
+          // (and the read that is run-pure after a reset — 088 banner item
+          // 3). Events that land while THIS refetch is in flight are held by
+          // the sink and replayed onto its result (R401).
+          void queryClient.invalidateQueries({ queryKey: draftBidKeys.feed(draftId) })
           if (presenceTeamId || presenceUserId) {
             void ch.track({
               team_id: presenceTeamId,
@@ -378,6 +430,7 @@ export function useDraftRoom(
       if (retryTimer) clearTimeout(retryTimer)
       if (channel) void supabase.removeChannel(channel)
       channel = null
+      bidSink.dispose()
     }
   }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
 

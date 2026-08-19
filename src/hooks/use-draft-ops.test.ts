@@ -53,6 +53,7 @@ function draftRow(over: Partial<Draft> = {}): Draft {
     completed_at: null,
     current_nomination: null,
     nomination_order: null,
+    budget_adjustments: {},
     created_at: '2026-08-12T00:00:00.000Z',
     updated_at: '2026-08-13T00:00:30.000Z',
     ...over,
@@ -68,6 +69,7 @@ function pick(n: number, playerId: string, over: Partial<DraftPickSummary> = {})
     player_id: playerId,
     is_auto: false,
     is_undone: false,
+    price: null, // 088/D134 — snake fixtures carry NULL (066's literal NULL)
     made_via: 'manual',
     created_at: '2026-08-13T00:00:10.000Z',
     ...over,
@@ -345,15 +347,39 @@ describe('applyDraftRoomEvent · other events', () => {
     expect(result.state).toBe(state)
   })
 
-  it('unknown events (additive surfaces) never refetch-loop an older client', () => {
+  it('draft_bids is inert in the ROOM reducer — the bid FEED has its own cache reducer (use-draft-bids-ops.ts, the chat precedent; 088 banner item 6) — both operations, real 088 shapes', () => {
+    const state = baseState()
+    const insert = applyDraftRoomEvent(state, {
+      event: 'draft_bids',
+      operation: 'INSERT',
+      record: {
+        nomination_seq: 1, player_id: 'pl-x', team_id: T(1), amount: 12,
+        created_at: '2026-08-13T00:00:50.000Z', voided_at: null,
+      },
+    })
+    expect(insert.refetch).toBe(false)
+    expect(insert.state).toBe(state)
+    const voided = applyDraftRoomEvent(state, {
+      event: 'draft_bids',
+      operation: 'UPDATE',
+      record: { voided_at: '2026-08-13T00:01:00.000Z', voided_count: 2, nominations: [{ nomination_seq: 1, player_id: 'pl-x' }] },
+    })
+    expect(voided.refetch).toBe(false)
+    expect(voided.state).toBe(state)
+  })
+
+  it('unknown events (additive surfaces) never refetch-loop an older client — the M2 pin, kept: a pre-088 client fed the literal event name stays inert', () => {
     const state = baseState()
     const result = applyDraftRoomEvent(state, {
-      event: 'draft_bids', // M3's — must be inert to this client
+      event: 'draft_bids', // M3's — inert to the M2-era reducer; still inert post-088 (the feed reducer owns it)
       operation: 'INSERT',
       record: { amount: 12 },
     })
     expect(result.refetch).toBe(false)
     expect(result.state).toBe(state)
+    const future = applyDraftRoomEvent(state, { event: 'some_future_table', operation: 'INSERT', record: {} })
+    expect(future.refetch).toBe(false)
+    expect(future.state).toBe(state)
   })
 
   it('a malformed record on a rendered table is doubt ⇒ refetch', () => {
@@ -363,6 +389,124 @@ describe('applyDraftRoomEvent · other events', () => {
       record: { nonsense: true },
     })
     expect(result.refetch).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 088/D134 — the auction keys on the drafts/draft_picks events, and the
+// forward/backward compat claim made falsifiable in BOTH directions.
+// tasks-M3 §2 called these "non-strict Zod parses" — they are plain
+// interfaces + structural guards (corrected in use-draft-ops.ts' header);
+// the property that matters is pinned here: additive keys never leak into
+// the cache (named-field copy), missing keys never clobber it (presence-gated).
+// ---------------------------------------------------------------------------
+
+describe('088/D134 · drafts event carries current_nomination + budget_adjustments', () => {
+  const nomination = { player_id: 'pl-x', high_bid: 7, high_bidder_team_id: T(2) }
+
+  it('patches current_nomination (the room centerpiece) and budget_adjustments into the cached draft', () => {
+    const state = baseState({ picks: [...baseState().picks, pick(4, 'pl-d')] })
+    const result = applyDraftRoomEvent(state, {
+      event: 'drafts',
+      operation: 'UPDATE',
+      record: draftsRecord({ current_nomination: nomination, budget_adjustments: { [T(2)]: 5 } }),
+    })
+    expect(result.refetch).toBe(false)
+    expect(result.state.draft?.current_nomination).toEqual(nomination)
+    expect(result.state.draft?.budget_adjustments).toEqual({ [T(2)]: 5 })
+  })
+
+  it('a NULL current_nomination on the wire clears the cached one (the phase flip to nominating — D126; the cancel/award accompaniment)', () => {
+    const state = baseState({
+      draft: draftRow({ current_nomination: nomination }),
+      picks: [...baseState().picks, pick(4, 'pl-d')],
+    })
+    const result = applyDraftRoomEvent(state, {
+      event: 'drafts',
+      operation: 'UPDATE',
+      record: draftsRecord({ current_nomination: null, budget_adjustments: {} }),
+    })
+    expect(result.state.draft?.current_nomination).toBeNull()
+  })
+
+  it('BACKWARD compat: a pre-088 record (no D134 keys) patches the eight and leaves the cached auction pair UNTOUCHED — never clobbered with undefined/null', () => {
+    const state = baseState({
+      draft: draftRow({ current_nomination: nomination, budget_adjustments: { [T(3)]: -2 } }),
+      picks: [...baseState().picks, pick(4, 'pl-d')],
+    })
+    const record = draftsRecord() // the 070 eight only
+    expect('current_nomination' in record).toBe(false)
+    const result = applyDraftRoomEvent(state, { event: 'drafts', operation: 'UPDATE', record })
+    expect(result.state.draft?.current_pick_number).toBe(5)
+    expect(result.state.draft?.current_nomination).toEqual(nomination)
+    expect(result.state.draft?.budget_adjustments).toEqual({ [T(3)]: -2 })
+  })
+
+  it('FORWARD compat: additive unknown keys on the wire never leak into the cache (named-field copy — the corrected tasks-M3 §2 claim)', () => {
+    const state = baseState({ picks: [...baseState().picks, pick(4, 'pl-d')] })
+    const before = Object.keys(state.draft!).sort()
+    const result = applyDraftRoomEvent(state, {
+      event: 'drafts',
+      operation: 'UPDATE',
+      record: { ...draftsRecord(), some_future_key: 'x', another: 1 } as DraftsBroadcastRecord,
+    })
+    expect(Object.keys(result.state.draft!).sort()).toEqual(before)
+    expect(result.state.draft).not.toHaveProperty('some_future_key')
+  })
+})
+
+describe('088/D134 · draft_picks event carries price', () => {
+  it('an INSERT hint carries the wire price (an auction award)', () => {
+    const result = applyDraftRoomEvent(baseState(), {
+      event: 'draft_picks',
+      operation: 'INSERT',
+      record: pickRecord({ round: null, price: 17 }),
+    })
+    expect(result.refetch).toBe(false)
+    expect(result.state.picks.find((p) => p.pick_number === 4)?.price).toBe(17)
+  })
+
+  it('a pre-088 INSERT record (no price key) hints price NULL — and an unknown extra key never leaks into the hint row', () => {
+    const result = applyDraftRoomEvent(baseState(), {
+      event: 'draft_picks',
+      operation: 'INSERT',
+      record: { ...pickRecord(), extra_key: true } as PickBroadcastRecord,
+    })
+    const hint = result.state.picks.find((p) => p.pick_number === 4)!
+    expect(hint.price).toBeNull()
+    expect(hint).not.toHaveProperty('extra_key')
+  })
+
+  it('an UPDATE that changes ONLY the price (D142 priced move / reassign — 087) is APPLIED, never dropped as "already reflected"', () => {
+    const state = baseState({ picks: [pick(1, 'pl-a', { round: null, price: 10 }), pick(2, 'pl-b'), pick(3, 'pl-c')] })
+    const result = applyDraftRoomEvent(state, {
+      event: 'draft_picks',
+      operation: 'UPDATE',
+      record: pickRecord({ pick_number: 1, round: null, team_id: T(1), player_id: 'pl-a', price: 14 }),
+    })
+    expect(result.refetch).toBe(false)
+    expect(result.state).not.toBe(state)
+    expect(result.state.picks.find((p) => p.pick_number === 1)?.price).toBe(14)
+  })
+
+  it('an UPDATE already reflected INCLUDING price is an inert replay', () => {
+    const state = baseState({ picks: [pick(1, 'pl-a', { round: null, price: 14 }), pick(2, 'pl-b'), pick(3, 'pl-c')] })
+    const result = applyDraftRoomEvent(state, {
+      event: 'draft_picks',
+      operation: 'UPDATE',
+      record: pickRecord({ pick_number: 1, round: null, team_id: T(1), player_id: 'pl-a', price: 14 }),
+    })
+    expect(result.state).toBe(state)
+  })
+
+  it('BACKWARD compat: a pre-088 UPDATE record (no price key) patches the six and leaves the cached price UNTOUCHED', () => {
+    const state = baseState({ picks: [pick(1, 'pl-a', { round: null, price: 14 }), pick(2, 'pl-b'), pick(3, 'pl-c')] })
+    const record = pickRecord({ pick_number: 1, round: null, team_id: T(1), player_id: 'pl-a', is_undone: true })
+    expect('price' in record).toBe(false)
+    const result = applyDraftRoomEvent(state, { event: 'draft_picks', operation: 'UPDATE', record })
+    const row = result.state.picks.find((p) => p.pick_number === 1)!
+    expect(row.is_undone).toBe(true)
+    expect(row.price).toBe(14)
   })
 })
 

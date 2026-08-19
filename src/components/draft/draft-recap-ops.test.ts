@@ -21,6 +21,7 @@ function pick(n: number, teamId: string, playerId: string, over: Partial<DraftPi
     player_id: playerId,
     is_auto: false,
     is_undone: false,
+    price: null, // 088/D134 — snake fixtures carry NULL (066's literal NULL)
     made_via: 'manual',
     created_at: null,
     ...over,
