@@ -18,15 +18,32 @@
  * - `drafts.updated_at` is the monotonic `state_version` (D92/D109(2)): a
  *   stale or replayed drafts event is ignored; a version that implies picks
  *   we never saw is a GAP ⇒ refetch.
- * - `draft_picks` events carry exactly the §5 six columns (no `id` — D109(2):
- *   another row's key is not broadcast), so hint rows are keyed by
- *   (pick_number, player_id) and carry `id: null` until a refetch reconciles.
+ * - `draft_picks` events carry exactly the §5 six columns + `price` (088/D134;
+ *   no `id` — D109(2): another row's key is not broadcast), so hint rows are
+ *   keyed by (pick_number, player_id) and carry `id: null` until a refetch
+ *   reconciles.
+ * - `drafts` events carry the 070 eight + `current_nomination` +
+ *   `budget_adjustments` (088/D134 — the auction room's centerpiece and the
+ *   §8.7 budget-edit transparency ride the drafts event). The reducer patches
+ *   a D134 key ONLY when the record carries it: a post-088 client against a
+ *   pre-088 database (the F12 push order is not this module's to assume)
+ *   must not clobber a cached value with `undefined`.
+ * - `draft_bids` events (088) are NOT room state — the bid FEED has its own
+ *   cache + pure reducer (`use-draft-bids-ops.ts`, the L.B3.3 chat precedent);
+ *   the room reducer keeps them inert (the M2 inert-default pin still holds).
  * - The tick heartbeat ({server_now, current_deadline} every ~5s — 068 ARM 3)
  *   corrects the clock offset and doubles as a gap detector: a deadline we
  *   don't recognize means we missed a drafts UPDATE ⇒ refetch.
+ *
+ * FORWARD/BACKWARD COMPAT, stated (tasks-M3 §2 claimed "non-strict Zod
+ * parses" — CORRECTED here: these are plain interfaces with STRUCTURAL
+ * guards, not Zod). Additive payload keys are harmless to an OLDER client
+ * because the reducer copies NAMED fields only (never spreads the record);
+ * MISSING keys are harmless to a NEWER client because the D134 patches are
+ * key-presence-gated. Both directions are pinned in use-draft-ops.test.ts.
  */
 
-import type { Draft } from '@/types/database'
+import type { Draft, Json } from '@/types/database'
 
 import type { DraftPickSummary, DraftState } from './use-draft'
 import type { DraftChatRow } from './use-draft-chat-ops'
@@ -36,7 +53,9 @@ import type { DraftChatRow } from './use-draft-chat-ops'
 // wire-pinned key sets live in draft-realtime-db.test.ts / pgTAP 024)
 // ---------------------------------------------------------------------------
 
-/** The `drafts` UPDATE payload record — the §5 inventory + deadline_remaining_ms. */
+/** The `drafts` UPDATE payload record — the §5 inventory + deadline_remaining_ms
+ *  (070) + the D134 auction pair (088). The two D134 keys are OPTIONAL on the
+ *  type because a pre-088 database omits them (see the compat note above). */
 export interface DraftsBroadcastRecord {
   status: string
   current_pick_number: number | null
@@ -46,9 +65,14 @@ export interface DraftsBroadcastRecord {
   paused_at: string | null
   deadline_remaining_ms: number | null
   updated_at: string | null
+  /** 088/D134: {player_id, high_bid, high_bidder_team_id} — NULL ⇔ nominating (D126). */
+  current_nomination?: Json | null
+  /** 088/D134: team_id → integer delta (D127 — budgets stay derived). */
+  budget_adjustments?: Json
 }
 
-/** The `draft_picks` INSERT/UPDATE payload record — exactly the §5 six. */
+/** The `draft_picks` INSERT/UPDATE payload record — the §5 six + `price`
+ *  (088/D134; optional on the type for the pre-088 database case). */
 export interface PickBroadcastRecord {
   pick_number: number
   round: number | null
@@ -56,6 +80,7 @@ export interface PickBroadcastRecord {
   player_id: string
   is_auto: boolean | null
   is_undone: boolean | null
+  price?: number | null
 }
 
 /** The tick heartbeat payload (068 ARM 3; §9.1's clock-drift beat). */
@@ -152,6 +177,13 @@ function reduceDraftsEvent(state: DraftState, record: DraftsBroadcastRecord): Re
     paused_at: record.paused_at,
     deadline_remaining_ms: record.deadline_remaining_ms,
     updated_at: record.updated_at,
+    // 088/D134 — key-presence-gated: a record without the auction pair (a
+    // pre-088 database) leaves the cached values alone rather than nulling
+    // them; a record WITH them patches the room's centerpiece live.
+    ...('current_nomination' in record ? { current_nomination: record.current_nomination ?? null } : {}),
+    ...('budget_adjustments' in record && record.budget_adjustments !== undefined
+      ? { budget_adjustments: record.budget_adjustments }
+      : {}),
   }
 
   // GAP: the server is past picks we never received (a drafts advance whose
@@ -190,6 +222,9 @@ function reducePickInsert(state: DraftState, record: PickBroadcastRecord): Reduc
     player_id: record.player_id,
     is_auto: record.is_auto,
     is_undone: record.is_undone,
+    // 088/D134: the auction board renders spend; NULL on snake rows and on
+    // a pre-088 record alike.
+    price: record.price ?? null,
     made_via: null,
     created_at: null,
   }
@@ -199,11 +234,16 @@ function reducePickInsert(state: DraftState, record: PickBroadcastRecord): Reduc
 
 function reducePickUpdate(state: DraftState, record: PickBroadcastRecord): ReduceResult {
   // Already reflected (e.g. the refetch beat the broadcast) ⇒ inert replay.
-  // Identity is ALL six broadcast fields — R260 (M2 batch 12): 069's
+  // Identity is ALL broadcast fields — R260 (M2 batch 12): 069's
   // commissioner reassign/move UPDATE team_id (and possibly player_id)
   // WITHOUT touching is_undone, so a (pick_number, player_id, is_undone)
   // triple is not row identity; treating it as such silently dropped those
-  // events and left the board wrong for the rest of the draft.
+  // events and left the board wrong for the rest of the draft. 088 adds
+  // `price` to the identity for the same reason: D142's priced move may
+  // change ONLY the price (087 — the commissioner re-enters the cost), and
+  // a reducer blind to price would drop exactly that event. A record
+  // WITHOUT a price key (pre-088 database) compares as null.
+  const recordPrice = record.price ?? null
   const reflected = state.picks.some(
     (p) =>
       p.pick_number === record.pick_number &&
@@ -211,7 +251,8 @@ function reducePickUpdate(state: DraftState, record: PickBroadcastRecord): Reduc
       p.team_id === record.team_id &&
       p.round === record.round &&
       Boolean(p.is_auto) === Boolean(record.is_auto) &&
-      Boolean(p.is_undone) === Boolean(record.is_undone),
+      Boolean(p.is_undone) === Boolean(record.is_undone) &&
+      (p.price ?? null) === recordPrice,
   )
   if (reflected) return { state, refetch: false }
 
@@ -236,6 +277,9 @@ function reducePickUpdate(state: DraftState, record: PickBroadcastRecord): Reduc
           team_id: record.team_id,
           is_auto: record.is_auto,
           is_undone: record.is_undone,
+          // 088/D134 — key-presence-gated like the drafts patch: a pre-088
+          // record leaves the cached price alone.
+          ...('price' in record ? { price: record.price ?? null } : {}),
         }
       : p,
   )
@@ -267,9 +311,14 @@ export function applyDraftRoomEvent(
       // receives these on the shared topic; until the pane lands they are
       // deliberately inert (never a refetch: chat is not room state).
       return { state, refetch: false }
+    case 'draft_bids':
+      // 088: the bid FEED is not room state — its consumer is the bid-feed
+      // cache reducer (`use-draft-bids-ops.ts`, the chat precedent); the
+      // room reducer stays inert on it by construction (never a refetch).
+      return { state, refetch: false }
     default:
-      // Unknown events (M3's auction surfaces, future additions) are inert —
-      // an older client must not refetch-loop on additive traffic.
+      // Unknown events (future additions) are inert — an older client must
+      // not refetch-loop on additive traffic.
       return { state, refetch: false }
   }
 }

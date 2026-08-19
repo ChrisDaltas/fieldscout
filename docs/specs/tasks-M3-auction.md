@@ -354,7 +354,7 @@ GATE    everything → L.C6.1
 | 085 | `085_auction_nominate_bid.sql` | `draft_nominate` + `draft_place_bid` + `draft_make_pick` message reword (tests/020's auction-refusal assertion flips — the one whose message reads "this is an auction draft"; cite it by message text, R336) | L.C1.3 |
 | 086 | `086_auction_tick_completion.sql` | `draft_tick` ARM 2.6 + the priced completion writer (both CREATE OR REPLACE per D137) | L.C1.4 |
 | 087 | `087_auction_commish_controls.sql` | `draft_reverse_won_bid` + `draft_adjust_budget` + `draft_cancel_nomination` (D143) + `draft_end` (C41 ruled) + the D141 pause-first gate + E28/E29 arms in undo/reassign/move/clock/order + force/reset auction arms (R301/R302) | L.C1.5 |
-| 088 | `088_auction_realtime.sql` | `draft_bids` trigger + payload fn; drafts/pick payload extensions (D134); D133 recorded | L.C1.6 |
+| 088 | `088_auction_realtime.sql` *(LANDED 2026-08-19 — the reserved number held; 090 had landed above it under the confirm-at-task-time policy)* | `draft_bids` INSERT trigger + payload fn **+ the per-STATEMENT void-summary trigger (F69 decided — D184; spec v2.12.6)**; drafts/pick payload extensions (D134); D133 recorded | L.C1.6 |
 | 089 | `089_mock_auctions.sql` | `create_mock_draft` auction arm (tests/025:400 flips) + tick mock CPU sub-arm (D132/D138) | L.C1.7 |
 | 090 | `090_snake_pause_first.sql` *(LANDED 2026-08-18 — took the first number above this table's reservations, before 088/089 landed; the standing confirm-at-task-time policy working as designed)* | D141 gate goes type-neutral (F57 ALIGN); `draft_set_clock`/`draft_undo`/`draft_reassign_pick`/`draft_move_player` CREATE-OR-REPLACEd at HEAD (D137, from 087's file text); snake extend-current arm retired | L.C1.8 |
 
