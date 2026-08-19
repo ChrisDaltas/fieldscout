@@ -81,7 +81,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(120);
+select plan(123);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; D93 constants; the cron entry)
@@ -182,7 +182,9 @@ select is(
 --      LC b7…e1  caps world (u09 active-cap; u10 hourly; u11 seatless)
 --      LD b7…f1  'drafting' league (status refusal; snapshot set so the
 --                D43 guard admits the fixture)
---      LE b7…f2  auction-configured league (M3 refusal)
+--      LE b7…f2  auction-configured league — was the M3 refusal; since
+--                089/L.C1.7 a FULLY SEATED auction league whose mock
+--                LAUNCHES (the §D flip; the auction arm's goldens are 038's)
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -313,12 +315,25 @@ from teams t where t.league_id = 'b7000000-0000-4000-8000-0000000000e1';
 insert into league_members (league_id, user_id, team_id, role) values
   ('b7000000-0000-4000-8000-0000000000e1', '94000000-0000-4000-8000-000000000011',
    null, 'manager');
--- LD + LE: one member each (status/auction refusals fire before capacity).
+-- LD: one member (the status refusal fires before capacity).
 insert into league_members (league_id, user_id, team_id, role) values
   ('b7000000-0000-4000-8000-0000000000f1', '94000000-0000-4000-8000-000000000001',
-   null, 'commissioner'),
-  ('b7000000-0000-4000-8000-0000000000f2', '94000000-0000-4000-8000-000000000001',
    null, 'commissioner');
+-- LE: FULLY SEATED since 089/L.C1.7 lifted the auction refusal — the §D
+-- pin is now a launch-SUCCEEDS pin, and a launch needs the full seat map
+-- (D103(1)). t01..t08 owned by u01..u08; u01 is the commissioner.
+insert into teams (id, owner_id, name, league_id)
+select ('c7000000-0000-4000-8000-00f2000000' || lpad(i::text, 2, '0'))::uuid,
+       ('94000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       'pgtap-mk-f2-t' || lpad(i::text, 2, '0'),
+       'b7000000-0000-4000-8000-0000000000f2'
+from generate_series(1, 8) i;
+insert into league_members (league_id, user_id, team_id, role)
+select 'b7000000-0000-4000-8000-0000000000f2',
+       ('94000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       ('c7000000-0000-4000-8000-00f2000000' || lpad(i::text, 2, '0'))::uuid,
+       case when i = 1 then 'commissioner' else 'manager' end
+from generate_series(1, 8) i;
 
 -- Real scheduled drafts with stored orders (the lobby order the mock must
 -- snapshot — D101/§8.8 "order incl. their actual slot"). LB: T2 FIRST
@@ -394,11 +409,27 @@ select throws_ok(
   'P0001',
   'create_mock_draft: league b7000000-0000-4000-8000-0000000000f1 is in drafting — practice drafts run before draft day (setup/scheduled)',
   '§8.8: mocks launch from a PRE-DRAFT league only (drafting refused)');
-select throws_ok(
+-- THE M3 SEAM, FLIPPED (089/L.C1.7 — the pin 071 built to flip): the exact
+-- call that refused "mock auctions land with the auction engine in M3" now
+-- LAUNCHES. The auction arm's goldens (config snapshot incl. anti-snipe,
+-- nomination order, first nominator, the nomination clock, the §8.6.8
+-- backstop, E60) are pgTAP 038 §B's; this file pins the flip itself plus
+-- the two facts that make it an AUCTION mock rather than a snake one.
+select lives_ok(
   $$ select public.create_mock_draft('b7000000-0000-4000-8000-0000000000f2') $$,
-  'P0001',
-  'create_mock_draft: league b7000000-0000-4000-8000-0000000000f2 is configured for an auction draft — mock auctions land with the auction engine in M3',
-  'the M3 seam: a mock of an auction league refuses naming M3 (mock auctions are Phase C''s gate)');
+  'THE M3 SEAM IS LIFTED: a mock of an auction-configured league LAUNCHES (this call was the "mock auctions land with the auction engine in M3" refusal until 089)');
+select is(
+  (select d.draft_type || '/' || d.status || '/' || (d.current_nomination is null)::text
+          || '/' || (d.nomination_order is not null and jsonb_array_length(d.nomination_order) = 8)::text
+   from drafts d
+   where d.league_id = 'b7000000-0000-4000-8000-0000000000f2' and d.is_mock),
+  'auction/live/true/true',
+  '…as a LIVE AUCTION mock in the NOMINATING phase (current_nomination NULL — D126) with an 8-seat nomination order');
+select is(
+  (select d.current_deadline - now() from drafts d
+   where d.league_id = 'b7000000-0000-4000-8000-0000000000f2' and d.is_mock),
+  interval '30 seconds',
+  '…on the NOMINATION clock (the §7.3.8 default 30s), not the snake pick timer');
 select throws_ok(
   $$ select public.create_mock_draft('b7000000-0000-4000-8000-0000000000b1', null, 'warp') $$,
   '22023',
@@ -963,6 +994,10 @@ select is(
       and context <> 'draft:' || (select id from mk_lz)::text),
   (select chat_rows from mk_before),
   'zero side effects: chat outside the mock''s OWN room is untouched — league context AND every other context incl. the real draft''s room (R150: the before capture predates the mock, so total-then = non-mock-room-now)');
+select is(
+  (select count(*) from draft_bids b join mk_lz on mk_lz.id = b.draft_id),
+  0::bigint,
+  'zero side effects (089 note): a SNAKE mock writes ZERO draft_bids — the table joins the mock-own allowed set for AUCTION mocks only, whose composite is 038 §F''s (D138)');
 select is(
   (select status from drafts where id = 'e7000000-0000-4000-8000-0000000000d2'),
   'scheduled',

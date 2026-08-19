@@ -349,4 +349,14 @@ describe("use-draft-bids.ts reads through pageAll with an exact count and a uniq
     const orders = [...source.matchAll(/\.order\('([a-z_]+)'/g)].map((m) => m[1])
     expect(orders).toEqual(['nomination_seq', 'amount', 'created_at', 'id'])
   })
+
+  // R408 — a mock auction's draft_bids rows carry the REAL league's
+  // league_id (083 RLS keys on it), so a league-scoped reader that does not
+  // also filter draft_id sees another member's practice bids. The feed is
+  // draft-scoped: `.eq('draft_id', …)` is the ONLY scope on the read, and no
+  // league_id filter stands in for it.
+  it('scopes the read by draft_id and never by league alone (R408 — practice bids carry the real league_id)', () => {
+    expect(source).toContain(".eq('draft_id', draftId!)")
+    expect(source).not.toMatch(/\.eq\('league_id'/)
+  })
 })
