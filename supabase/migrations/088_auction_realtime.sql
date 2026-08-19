@@ -49,9 +49,13 @@
 --      Client Broadcast stays presence-only; pgTAP 037 re-runs 070's
 --      negative (a member's extension='broadcast' INSERT refused) ON AN
 --      AUCTION TOPIC.
---   6. NO DDL. No table, column, index, or policy is created or changed.
---      Two new payload functions, two new trigger functions, two new
---      triggers, two CREATE OR REPLACEs of shipped payload functions.
+--   6. NO table / column / index / policy change. (R404: CREATE FUNCTION /
+--      CREATE TRIGGER are DDL — `CREATE TRIGGER` takes a
+--      ShareRowExclusiveLock on `draft_bids` while it runs — so "no DDL" was
+--      imprecise; what is true is that no relation, column, index, grant or
+--      policy is created or altered.) Two new payload functions, two new
+--      trigger functions, two new triggers, two CREATE OR REPLACEs of
+--      shipped payload functions.
 --
 -- ---------------------------------------------------------------------------
 -- BANNER ITEM 1 — WHAT THE WIRE CARRIES, AND WHAT IT NEVER CARRIES (D134 +
@@ -177,14 +181,17 @@
 -- in the client reducer's types; an M2-era client ignores both (the inert
 -- default), a post-088 client dispatches on operation.
 --
--- Consequence for the three writers (no change to any of them): cancel /
--- draft_end emit ONE void event (the helper's single UPDATE); draft_undo on
--- an auction emits up to TWO (the helper's live-nomination void, then the
--- rewind sweep — two statements, each its own event; zero when a statement
--- matches no rows); draft_reset emits ONE for the whole run (one sweep
--- statement) and ZERO on a snake draft. The 'draft_picks' UPDATE events a
--- reset/undo already emit per undone pick row are M2's shipped per-row
--- posture and are untouched.
+-- Consequence for the three writers (no change to any of them): cancel
+-- emits ONE void event (the helper's single UPDATE — cancel is bidding-phase
+-- only, so a live nomination always exists); draft_end emits UP TO ONE —
+-- the same helper, but an end in the NOMINATING phase finds no live
+-- nomination, voids 0 rows (087's helper returns 0) and emits nothing
+-- (R404); draft_undo on an auction emits up to TWO (the helper's
+-- live-nomination void, then the rewind sweep — two statements, each its
+-- own event; zero when a statement matches no rows); draft_reset emits ONE
+-- for the whole run (one sweep statement) and ZERO on a snake draft. The
+-- 'draft_picks' UPDATE events a reset/undo already emit per undone pick row
+-- are M2's shipped per-row posture and are untouched.
 --
 -- ---------------------------------------------------------------------------
 -- BANNER ITEM 3 — THE CROSS-RUN QUESTION (R379 (b)): NO RUN KEY RIDES THE
@@ -205,7 +212,16 @@
 --        nomination it struck (item 2), so the client's cache is emptied by
 --        the same event stream that filled it; and §9.3's fetch-first on
 --        every confirmed (re)join re-reads `voided_at IS NULL` history,
---        which after a reset is the new run's alone.
+--        which after a reset is the new run's alone. PRECISELY (R401, M3
+--        batch 7): (ii) holds only if the event is applied AFTER the data it
+--        post-dates. React Query discards a cache write made while a fetch
+--        of that query is in flight, so a void (or a bid) landing during the
+--        join refetch itself was lost as first shipped — the pre-void
+--        snapshot came back as zombie rows, and after a reset run-1 zombies
+--        merged with run-2 rows at the same seq until the next join. The
+--        client closes that window with a feed SINK (use-draft-feed-sink.ts)
+--        that holds events across an in-flight fetch and replays them, in
+--        order, onto its result; the wire contract here is unchanged.
 -- Putting started_at on the wire would carry a column no client renders
 -- (§9.2) to solve a problem the event stream already closes. If a future
 -- consumer wants struck-through HISTORY in the room (voided rows rendered,
@@ -288,10 +304,11 @@
 -- per void statement. realtime.send() traps its own errors (D109(1)), so a
 -- realtime outage can never fail a bid, a cancel, an undo, or a reset.
 --
--- Migration checklist (plan §8.1 / tasks-M3 §4.4): NO DDL (functions +
--- triggers only; no table/column/index/policy created or changed) · no
--- data change · additive on the wire (old clients strip the new keys and
--- ignore the new event — pinned) · staging rehearsal: R6 waiver — no
+-- Migration checklist (plan §8.1 / tasks-M3 §4.4): no table / column /
+-- index / policy change (functions + triggers only — DDL, but no relation,
+-- grant or policy created or altered; R404) · no data change · additive on
+-- the wire (old clients strip the new keys and ignore the new event —
+-- pinned) · staging rehearsal: R6 waiver — no
 -- staging clone exists (local + prod only); the recorded rehearsal is the
 -- fresh local `npx supabase db reset` replay of the full 001–090 chain in
 -- this PR, plus pgTAP 037 (and 024's pins amended in place to the new key

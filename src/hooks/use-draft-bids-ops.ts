@@ -23,9 +23,14 @@
  * WHAT THE FEED HOLDS: LIVE rows only (`voided_at IS NULL`). A void STRIKES
  * the named nominations out of the cache rather than marking them — the
  * D97 system post carries the human-readable record of the cancel/undo/
- * reset, and a live-only feed is run-pure by construction (088 banner item
- * 3: no run key rides the wire; after a reset the sweep's event empties the
- * cache and the next join refetch reads the new run alone).
+ * reset. The SELECT is run-pure at its snapshot and no run key rides the
+ * wire (088 banner item 3); the CACHE stays run-pure only because every
+ * event is applied after the data it post-dates — the reset's sweep event
+ * empties a held cache, and the next join refetch reads the new run alone,
+ * PROVIDED an event that lands while that refetch is in flight is not
+ * written under it (React Query discards such writes on resolve — R401).
+ * That ordering is the feed sink's job (use-draft-feed-sink.ts), not this
+ * reducer's: this file stays pure and order-agnostic.
  *
  * IDENTITY: a bid row is identified on the wire by its full tuple (no `id`
  * is broadcast — D109(2)); (nomination_seq, player_id, team_id, amount,

@@ -21,9 +21,10 @@ import {
   type TickHeartbeat,
 } from './use-draft-ops'
 import { draftBidKeys } from './use-draft-bids'
-import { reduceBidEvent, type DraftBidRow } from './use-draft-bids-ops'
+import { reduceBidEvent, type DraftBidBroadcast, type DraftBidRow } from './use-draft-bids-ops'
 import { draftChatContext, draftChatKeys } from './use-draft-chat'
 import { isChatRecord, reduceChatEvent, type DraftChatRow } from './use-draft-chat-ops'
+import { createFeedSink } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -147,9 +148,15 @@ interface BroadcastEnvelope {
  *   per-statement VOID summaries (operation UPDATE — the F69 decision) fold
  *   into the bid-feed query's cache through its pure reducer, never the room
  *   reducer (bids are history, not room state — the chat precedent); the
- *   feed is re-read on every confirmed (re)join like chat. The room's
- *   centerpiece (high bid / phase) rides the `drafts` event's
- *   `current_nomination` (D134) and is patched by the room reducer.
+ *   feed is re-read on every confirmed (re)join like chat. Every event goes
+ *   through the feed SINK (`use-draft-feed-sink.ts` — R401): React Query
+ *   discards a cache write made while a fetch is in flight when that fetch
+ *   resolves, so an event applied straight onto the cache during the join
+ *   refetch (or any refetch) was lost — a bid vanished, a void came back as
+ *   zombie rows; the sink holds events across an in-flight fetch and replays
+ *   them, in order, onto the rows the fetch produced. The room's centerpiece
+ *   (high bid / phase) rides the `drafts` event's `current_nomination`
+ *   (D134) and is patched by the room reducer.
  * - **Clock:** the tick heartbeat maintains the server−client offset the
  *   pick clock renders from; the client never owns the clock. Until the
  *   first beat (≤ ~5s after subscribe — 068 ARM 3 beats every pass) the
@@ -206,6 +213,15 @@ export function useDraftRoom(
     const refetchDraft = () => {
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
     }
+
+    // The bid feed's sink (R401) — one per channel lifetime, disposed with
+    // it: anything still held at dispose is reconciled by the next confirmed
+    // join's refetch, which every (re)open ends in.
+    const bidSink = createFeedSink<DraftBidRow, DraftBidBroadcast>(
+      queryClient,
+      draftBidKeys.feed(draftId),
+      reduceBidEvent,
+    )
 
     const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
       const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
@@ -307,17 +323,12 @@ export function useDraftRoom(
         // the per-statement void summary striking whole nominations). An
         // unmounted/unfetched feed has no cache to patch — its mount-time
         // fetch carries the live history. Doubt (malformed record, unknown
-        // operation) ⇒ refetch the feed (§9.3).
+        // operation) ⇒ refetch the feed (§9.3). The write goes THROUGH THE
+        // SINK, never straight onto the cache (R401): an event landing while
+        // the feed is mid-fetch is held and replayed onto the fetched rows —
+        // the join refetch fired on SUBSCRIBED opens exactly that window.
         const envelope = (payload ?? {}) as BroadcastEnvelope
-        const key = draftBidKeys.feed(draftId)
-        const rows = queryClient.getQueryData<readonly DraftBidRow[]>(key)
-        if (!rows) return
-        const result = reduceBidEvent(rows, {
-          operation: envelope.operation,
-          record: envelope.record,
-        })
-        if (result.rows !== rows) queryClient.setQueryData(key, result.rows)
-        if (result.refetch) void queryClient.invalidateQueries({ queryKey: key })
+        bidSink.push({ operation: envelope.operation, record: envelope.record })
       })
       ch.on('broadcast', { event: 'tick' }, ({ payload }) => {
         const beat = (payload ?? {}) as Partial<TickHeartbeat>
@@ -368,8 +379,9 @@ export function useDraftRoom(
           void queryClient.invalidateQueries({ queryKey: draftChatKeys.room(draftId) })
           // 088: the bid feed rides the same rule — it has no gap detector
           // of its own, so the join refetch is its missed-event recovery
-          // (and the one read that is run-pure after a reset — 088 banner
-          // item 3).
+          // (and the read that is run-pure after a reset — 088 banner item
+          // 3). Events that land while THIS refetch is in flight are held by
+          // the sink and replayed onto its result (R401).
           void queryClient.invalidateQueries({ queryKey: draftBidKeys.feed(draftId) })
           if (presenceTeamId || presenceUserId) {
             void ch.track({
@@ -418,6 +430,7 @@ export function useDraftRoom(
       if (retryTimer) clearTimeout(retryTimer)
       if (channel) void supabase.removeChannel(channel)
       channel = null
+      bidSink.dispose()
     }
   }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
 
