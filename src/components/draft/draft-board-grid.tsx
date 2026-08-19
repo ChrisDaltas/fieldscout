@@ -51,18 +51,32 @@ export function DraftBoardGrid({
   const teamCount = model.order.length
 
   return (
-    <div className={cn('overflow-x-auto', className)}>
+    // R270 discharged (DR.4; F55's first named member): M2 shipped this as
+    // `role="table"` with `role="columnheader"` children and NO row/cell
+    // structure — invalid ARIA (headers with no rows misdescribe the tree
+    // to AT). Per the reviewer's sanctioned shape it is now an aria-label'd
+    // REGION: a focusable scroll container (keyboard users can scroll the
+    // wide grid; the focus style is the house Button ring), with the
+    // header/cell divs role-less visual content. Full `grid`/`row`/`cell`
+    // semantics (display:contents rows) remain M7's option if the F55 sweep
+    // wants table navigation — that is an enhancement, not a defect.
+    <div
+      className={cn(
+        'overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        className,
+      )}
+      role="region"
+      aria-label="Draft board"
+      tabIndex={0}
+    >
       <div
         className="grid min-w-max gap-1"
         style={{ gridTemplateColumns: `repeat(${teamCount}, minmax(96px, 1fr))` }}
-        role="table"
-        aria-label="Draft board"
       >
         {/* Column headers — the stored round-1 order. */}
         {model.order.map((teamId) => (
           <div
             key={teamId}
-            role="columnheader"
             className={cn(
               'truncate rounded-sm border border-ink px-1.5 py-1 text-center text-[10px] font-extrabold leading-tight',
               teamId === myTeamId ? 'bg-accent-soft' : 'bg-white',

@@ -26,10 +26,16 @@ export default function DraftRoomLayout({
 }) {
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-page">
-      {/* ONE scroll region, and the frame owns it at DR.1 because the chrome
-          bands do not exist yet. DR.4 makes the command bar + status strip
-          fixed siblings above this and hands the scroll to the board zone —
-          at which point this wrapper becomes the board's, not the page's. */}
+      {/* ONE scroll region for the page-shaped resolver states (skeleton,
+          lobby, launcher, problem/empty cards…). The LIVE room does not use
+          it (DR.4): `DraftRoomLive`'s root is `h-full` + `overflow-hidden`,
+          so it fills this wrapper exactly — the wrapper can never overflow
+          while the live room is mounted — and the room's only vertical
+          scroll is the live room's own board zone, beneath its two fixed
+          chrome bands (command bar + status strip; §16.4/D149). (DR.1's
+          version of this comment forecast the bands as siblings ABOVE this
+          wrapper; what landed is the equivalent inside-out form — the bands
+          are flex bands inside the room's non-scrolling root.) */}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   )
