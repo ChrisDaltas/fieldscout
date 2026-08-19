@@ -71,8 +71,19 @@
 --     nominating/bidding, the NULL-deadline guard, the config defaults),
 --     `draft_mock_cpu_bid_value` (rank 1/8/16/17; need 1/0.5/0; pass 0 vs
 --     1; the ±15% band over 200 (seq, pass) pairs; the 12×15 $200 top value
---     $50), `draft_mock_cpu_need` (1.0 / 0.5 / 0 / K always 0) — a future
---     tweak to the heuristic is a deliberate change to these literals.
+--     $50), `draft_mock_cpu_need` (OPEN 1.0 / 0.5 / 0 / K always 0 in §E;
+--     FORCED 1.0-for-a-hole / 0-for-depth / K still 0 in §F0 — R406, the
+--     D146 one-unit pair across §E and §F0) — a future tweak to the
+--     heuristic is a deliberate change to these literals.
+--   * THE FORCED RULE, WHOLE RUN (§F, R406 / D163): LB is {RB:1, K:1} /
+--     bench 0, so every seat is forced from its first pick; the scripted
+--     completion must end with EIGHT Ks (one per team), never raised on —
+--     the assertion is over the whole finished board and the whole bid
+--     history, not a spot check. The break probe (the forced arm removed
+--     from draft_mock_cpu_need) turns the §F0 unit pins RED at the exact
+--     values (0.5 where 0 is pinned) and the whole-run pins RED in most
+--     runs (7 Ks — run-dependent, the PRNG seeds on the mock id); the fixed
+--     function is deterministic: no noise can make a need-0 CPU raise.
 --   * Source pins (the R381 call-form lesson): `draft_place_bid` delegates
 --     to the internal and no longer INSERTs bids itself; `draft_tick` calls
 --     the bid internal once and the nomination internal twice (timeout +
@@ -89,7 +100,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(140);
+select plan(153);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; D137; the helpers' stored literals)
@@ -271,16 +282,22 @@ select is(
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).
 --    Users u01..u08 (98…01..08) + outsider u99. Players: 40 RBs at
---    fractional ADP 0.001…0.040, one K (0.050), one QB (0.045). Worlds:
+--    fractional ADP 0.001…0.040, TEN Ks (0.050…0.059 — LB's run buys eight
+--    of them), one QB (0.045). Worlds:
 --      LA b9…a1  the main world: 8 seats (u01 commish), {RB:1, bench:1} ⇒
 --                2 slots; $200 / min 1 / nom 30 / bid 20 / anti-snipe 10;
 --                MANUAL draft order [T3, T1, T2, T4..T8]; a REAL scheduled
 --                auction draft d1 with that order stored (E60). u02
 --                launches with human seat T3 (u03's franchise — D103's
 --                "any seat selectable", the launcher-gate discriminator).
---      LB b9…b1  the scripted zero-side-effect world: same shape, $20
---                budget (so the scripted run is short), order T1..T8, a
---                real scheduled draft d2; u01 launches on their own seat.
+--      LB b9…b1  the scripted zero-side-effect world: 8 seats, $20 budget
+--                (so the scripted run is short), order T1..T8, a real
+--                scheduled draft d2; u01 launches on their own seat.
+--                ROSTER {RB:1, K:1} / BENCH 0 ⇒ 2 slots (R406): every seat
+--                is FORCED from its first pick (open_slots 2 = unfilled 2),
+--                so the run is the D163 autodraft clause end to end — a CPU
+--                that holds its RB must bring home a K, and the whole-run
+--                assertion is EIGHT Ks, none raised on (§F).
 --      LC b9…c1  the E62 edge world: same shape as LA, order [T2, T1,
 --                T3..T8]; u02 launches on their own seat; privileged
 --                fixture picks then fill every CPU roster except T3, which
@@ -313,8 +330,10 @@ values
 insert into players (id, full_name, position, adp)
 select 'ma-rb' || lpad(i::text, 2, '0'), 'MA RB ' || lpad(i::text, 2, '0'), 'RB', i / 1000.0
 from generate_series(1, 40) i;
+insert into players (id, full_name, position, adp)
+select 'ma-k' || lpad(i::text, 2, '0'), 'MA K ' || lpad(i::text, 2, '0'), 'K', 0.049 + i / 1000.0
+from generate_series(1, 10) i;
 insert into players (id, full_name, position, adp) values
-  ('ma-k01', 'MA K 01', 'K', 0.050),
   ('ma-qb01', 'MA QB 01', 'QB', 0.045);
 
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings) values
@@ -360,8 +379,16 @@ update leagues
 set roster_settings = '{"starting_slots": [
       {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1}],
     "bench": 1, "ir_slots": [], "swap_spots": 0}'
-where id in ('b9000000-0000-4000-8000-0000000000a1', 'b9000000-0000-4000-8000-0000000000b1',
+where id in ('b9000000-0000-4000-8000-0000000000a1',
              'b9000000-0000-4000-8000-0000000000c1', 'b9000000-0000-4000-8000-0000000000d1');
+-- LB: {RB:1, K:1} / bench 0 (R406 — the board on which the RAISE brain's
+-- bench-useful 0.5 used to let a CPU fill its K seat with a second RB).
+update leagues
+set roster_settings = '{"starting_slots": [
+      {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1},
+      {"key": "k", "label": "K", "eligible": ["K"], "count": 1}],
+    "bench": 0, "ir_slots": [], "swap_spots": 0}'
+where id = 'b9000000-0000-4000-8000-0000000000b1';
 
 insert into teams (id, owner_id, name, league_id)
 select ('c9000000-0000-4000-8000-00' || w.code || '000000' || lpad(i::text, 2, '0'))::uuid,
@@ -876,7 +903,7 @@ select is(
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000003', 'ma-rb01'),
   0.5::numeric,
-  'need(T3, RB) = 0.5 — its RB starter is filled, the bench-useful extra remains (stored literal)');
+  'need(T3, RB) = 0.5 — its RB starter is filled, the bench-useful extra remains: OPEN arm, open_slots 1 = unfilled 0 + 1 (the D146 one-unit pair with §F0, where open_slots 1 = unfilled 1 reads 0) (stored literal)');
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000002', 'ma-rb01'),
   1.0::numeric,
@@ -884,7 +911,7 @@ select is(
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000001', 'ma-rb01'),
   0::numeric,
-  'need(T1, complete with 2 RBs) = 0 — beyond starters + 1');
+  'need(T1, complete with 2 RBs) = 0 — a full roster is FORCED (open 0 = unfilled 0) with no unfilled seat to fill (the OPEN arm would say 0 too: beyond starters + 1)');
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000002', 'ma-k01'),
   0::numeric,
@@ -892,7 +919,7 @@ select is(
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000002', 'ma-qb01'),
   0.5::numeric,
-  'need(T2, QB — a position with NO starting slot) = 0.5 — bench-useful only');
+  'need(T2, QB — a position with NO starting slot) = 0.5 — bench-useful only: OPEN arm, open_slots 2 = unfilled 1 + 1 (the D146 pair with §F0''s need(T3, QB) = 0 at open_slots 2 = unfilled 2)');
 
 -- The human nominates the rank-1 player at $1 (T3 values it far above $50).
 set local role authenticated;
@@ -1045,6 +1072,51 @@ reset role;
 create temp table ma_lb as
 select id from drafts where league_id = 'b9000000-0000-4000-8000-0000000000b1' and is_mock;
 
+-- F0. THE FORCED RULE IN THE RAISE BRAIN (R406; D163's autodraft clause; the
+--     086:648 rule `forced := remaining <= unfilled` mirrored into
+--     draft_mock_cpu_need). Staged on a privileged fixture pick that is
+--     REMOVED before the drive, so the scripted run below still starts from
+--     an empty board. T2 holds ONE RB at $5 ⇒ open_slots 1 = unfilled 1 (the
+--     K seat): the NOMINATION brain is forced to a K, so the RAISE brain must
+--     value a second RB at 0 — the bench-useful 0.5 cannot fire on a board
+--     with no bench. D146 one-unit pair: LC §E's T3 holds one RB on
+--     {RB:1, bench:1} ⇒ open_slots 1 = unfilled 0 + 1 ⇒ 0.5 (the 0.5 still
+--     PERMITTED one unit short of forced); LB's T2 here ⇒ open_slots 1 =
+--     unfilled 1 ⇒ 0. Same holdings, one unit apart in `open − unfilled`.
+insert into draft_picks (draft_id, league_id, pick_number, round, team_id, player_id, price, is_auto, made_via)
+select ma_lb.id, 'b9000000-0000-4000-8000-0000000000b1', 1, null,
+       'c9000000-0000-4000-8000-00b100000002', 'ma-rb40', 5, true, 'autopick'
+from ma_lb;
+select is(
+  (select to_jsonb(b) from ma_lb, public.draft_team_budget(ma_lb.id, 'c9000000-0000-4000-8000-00b100000002') b),
+  '{"remaining": 15, "open_slots": 1, "max_bid": 15, "committed": 5}'::jsonb,
+  'R406 fixture: T2 holds one RB at $5 on {RB:1, K:1}/bench 0 — remaining 15, ONE open slot, max_bid 15 (the ONE family)');
+select is(
+  public.draft_autopick_resolve((select id from ma_lb), 'c9000000-0000-4000-8000-00b100000002'),
+  'ma-k01',
+  'the NOMINATION brain is FORCED (086:648 — remaining 1 <= unfilled 1): T2''s resolve chain answers the top K, not the top RB');
+select is(
+  public.draft_mock_cpu_need((select id from ma_lb), 'c9000000-0000-4000-8000-00b100000002', 'ma-rb01'),
+  0::numeric,
+  'R406 — THE RAISE BRAIN OBEYS THE SAME FORCED RULE: need(T2, a 2nd RB) = 0 when open_slots 1 = unfilled 1 — a second RB fills no unfilled seat, so the bench-useful 0.5 does NOT fire on a bench-0 board (D146: LC §E''s T3, open 1 = unfilled 0 + 1, keeps its 0.5)');
+select is(
+  public.draft_mock_cpu_need((select id from ma_lb), 'c9000000-0000-4000-8000-00b100000002', 'ma-k01'),
+  0::numeric,
+  'need(T2, K) = 0 STILL — even when the K seat IS the unfilled seat a CPU never RAISES on a kicker; it buys its own through the forced-arm nomination at min_bid');
+select is(
+  public.draft_mock_cpu_need((select id from ma_lb), 'c9000000-0000-4000-8000-00b100000003', 'ma-rb01'),
+  1.0::numeric,
+  'need(T3, 0 picks, RB) = 1.0 — forced too (open 2 <= unfilled 2) but an RB FILLS an unfilled seat: the forced arm values exactly what 086''s forced arm would nominate');
+select is(
+  public.draft_mock_cpu_need((select id from ma_lb), 'c9000000-0000-4000-8000-00b100000003', 'ma-qb01'),
+  0::numeric,
+  'need(T3, 0 picks, QB — no starting slot) = 0 in the forced state: the bench-0 0.5 is RETIRED (D146 pair: LC §E''s need(T2, QB) = 0.5 at open 2 = unfilled 1 + 1)');
+delete from draft_picks p using ma_lb where p.draft_id = ma_lb.id;
+select is(
+  (select count(*) from draft_picks p join ma_lb on ma_lb.id = p.draft_id),
+  0::bigint,
+  '…the staging pick is REMOVED: the scripted run below starts from an EMPTY board (the fixture proved the rule, it does not shape the run)');
+
 -- Script to completion through the REAL tick. CPU nominations land on
 -- their think-time (the deadline is set 1s out, which puts every think
 -- fraction in the past while the clock still runs); the human seat's
@@ -1137,6 +1209,58 @@ select ok(
   (select bool_and(p.is_auto and p.made_via = 'autopick')
    from draft_picks p join ma_lb on ma_lb.id = p.draft_id),
   '…so every award is is_auto/autopick (D130 read off the winning rows)');
+-- THE WHOLE-RUN FORCED ASSERTION (R406 / D163): on {RB:1, K:1}/bench 0 every
+-- seat is forced from its first pick, so a finished board is EIGHT RBs and
+-- EIGHT Ks — one each per team — and no K was ever raised on (the Ks arrive
+-- through the forced-arm nominations at min_bid, nothing else). Before the
+-- fix a CPU holding its RB valued a second RB at 0.5 × base, raised on the
+-- human seat's RB nomination, won, and completed with NO K (7 of 8 Ks in
+-- the reviewer's run — run-dependent: the PRNG seeds on the mock id).
+select is(
+  (select count(*) from draft_picks p join ma_lb on ma_lb.id = p.draft_id
+   join players pl on pl.id = p.player_id
+   where p.is_undone = false and pl.position = 'K'),
+  8::bigint,
+  'R406 WHOLE RUN: EIGHT Ks bought — every team brought its kicker home (the forced rule in the RAISE brain: a CPU holding its RB never raised on a second RB, so no K seat was ever filled by an RB)');
+select is(
+  (select count(*) from (
+     select p.team_id
+     from draft_picks p join ma_lb on ma_lb.id = p.draft_id
+     join players pl on pl.id = p.player_id
+     where p.is_undone = false
+     group by p.team_id
+     having count(*) filter (where pl.position = 'RB') = 1
+        and count(*) filter (where pl.position = 'K') = 1) s),
+  8::bigint,
+  '…EIGHT teams hold exactly ONE RB + ONE K — the autodraft clause of D163 end to end ("fill the holes with the final picks"), measured on every roster');
+select is(
+  (select count(*) from draft_bids b join ma_lb on ma_lb.id = b.draft_id
+   join players pl on pl.id = b.player_id
+   where pl.position = 'K'),
+  8::bigint,
+  '…the Ks were NEVER RAISED ON: exactly eight bid rows on kickers across the whole history — the eight $1 opening bids of their forced-arm nominations, nothing after');
+select ok(
+  (select bool_and(p.price = 1)
+   from draft_picks p join ma_lb on ma_lb.id = p.draft_id
+   join players pl on pl.id = p.player_id
+   where p.is_undone = false and pl.position = 'K'),
+  '…and every K was bought at the $1 minimum bid');
+-- R408 — the known property, NAMED: a mock''s draft_bids rows carry the REAL
+-- league''s league_id (083 RLS keys on it), so a league-scoped reader that
+-- does not also filter draft_id (or is_mock through the drafts join) sees
+-- practice bids. Readers MUST be draft-scoped — the award lookup is (source
+-- pin below); the client feed is (use-draft-feed-sink.test.ts).
+select ok(
+  (select count(*) from draft_bids b join ma_lb on ma_lb.id = b.draft_id
+   where b.league_id = 'b9000000-0000-4000-8000-0000000000b1') > 0
+  and (select bool_and(b.league_id = 'b9000000-0000-4000-8000-0000000000b1')
+       from draft_bids b join ma_lb on ma_lb.id = b.draft_id),
+  'R408 PROPERTY (named, not fixed): every one of the mock''s draft_bids rows carries the REAL league''s league_id — a reader scoped by league alone WOULD see practice bids; the reader-discipline rule is draft_id (or is_mock via drafts) on every league-scoped read');
+select ok(
+  substring(pg_get_functiondef('public.draft_tick()'::regprocedure)
+            from 'SELECT b\.action_id IS NULL INTO v_is_auto.*?LIMIT 1')
+    ~ 'b\.draft_id = v_draft\.id',
+  'R408 source pin: the tick''s AWARD LOOKUP over draft_bids filters `b.draft_id = v_draft.id` — draft-scoped, never league-scoped');
 -- THE COMPOSITE (R383): whole rows + counts, byte-identical after.
 select is(
   (select to_jsonb(l)::text from leagues l where l.id = 'b9000000-0000-4000-8000-0000000000b1')

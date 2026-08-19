@@ -137,12 +137,20 @@
 --                          player with no ADP. (Σ over ranks 1..N ≈ N × V1
 --                          / 4 = budget × teams: the model spends exactly
 --                          the room's money, convex toward the top.)
---            need        = 1.0 while the team's starters at the player's
---                          position are unfilled · 0.5 for the one
+--            need        = TWO ARMS under the NOMINATION brain's own forced
+--                          rule (086:648 `remaining <= unfilled`; D163's
+--                          autodraft clause — R406): FORCED (open_slots ≤
+--                          unfilled starting seats, counted the way
+--                          draft_autopick_resolve counts them) ⇒ 1.0 only
+--                          for a position an unfilled seat accepts, else 0;
+--                          OPEN ⇒ 1.0 while the team's starters at the
+--                          player's position are unfilled · 0.5 for the one
 --                          bench-useful extra (the §8.4 S+1 cap's shape) ·
---                          0 beyond that · 0 for K/DST always (CPUs never
---                          RAISE on a kicker or defense; their own forced-
---                          arm nomination buys theirs at `min_bid`).
+--                          0 beyond that. 0 for K/DST always, both arms
+--                          (CPUs never RAISE on a kicker or defense; their
+--                          own forced-arm nomination buys theirs at
+--                          `min_bid`). One unit: open_slots = unfilled + 1
+--                          still permits the 0.5; = unfilled does not.
 --            noise       = ±15% from md5(draft:seq:team:pass) — the D93
 --                          24-bit construction, 'pass' = the live bid count
 --                          on the nomination at decision time (history-
@@ -353,15 +361,35 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. draft_mock_cpu_need — the roster-need weight for a CPU's valuation of
---    ONE player (banner item 5(b)): 1.0 while a starting seat eligible for
---    the player's position is unfilled on the team (counted the way
---    draft_autopick_resolve counts its S+1 cap — Σ count over starting
---    slots whose `eligible` carries the position, so FLEX seats weigh in),
---    0.5 for the one bench-useful extra, 0 beyond that, and 0 for K/DST
---    always (a CPU never RAISES on a kicker or defense — its own forced-arm
---    nomination buys one at min_bid when its roster requires it). STABLE
---    (reads the league's roster_settings, the player's position and the
---    team's live picks); broad EXECUTE (every input is member-readable).
+--    ONE player (banner item 5(b)). TWO ARMS, chosen by the SAME forced rule
+--    the NOMINATION brain obeys (086:648 — `forced := remaining <= unfilled`,
+--    D163's autodraft clause: "whenever autodraft is doing the picking or
+--    nominating, fill the holes with the final picks" — a CPU bidder IS
+--    autodraft doing the bidding; R406):
+--      FORCED  (open_slots <= unfilled starting seats — counted exactly as
+--              draft_autopick_resolve counts them: the team's picks placed
+--              greedily in pick order into the first starting slot whose
+--              `eligible` carries the position, the rest to the bench;
+--              open_slots = total_rounds − picks, 084's D91 count)
+--              ⇒ 1.0 for a position some UNFILLED seat accepts, else 0 —
+--              every remaining dollar goes to a hole, never to depth. This
+--              is what retires the "bench-useful extra" on a bench-0 board
+--              (open_slots = unfilled from the first pick) and on every
+--              board once picks-remaining equals holes.
+--      OPEN    (open_slots > unfilled) ⇒ 1.0 while a starting seat eligible
+--              for the position is unfilled (the S+1 count — Σ count over
+--              starting slots whose `eligible` carries the position, so
+--              FLEX seats weigh in), 0.5 for the one bench-useful extra, 0
+--              beyond that.
+--    0 for K/DST ALWAYS, in both arms (a CPU never RAISES on a kicker or
+--    defense — its own forced-arm nomination buys one at min_bid when its
+--    roster requires it; the only K/DST a CPU ever owns comes through
+--    draft_autopick_resolve, the same chain a timed-out seat gets). The
+--    boundary is one unit: open_slots = unfilled + 1 still permits the 0.5;
+--    open_slots = unfilled does not (038 §E / §F0 — D146). STABLE (reads the
+--    league's roster_settings, the draft's capacity, the player's position
+--    and the team's live picks); broad EXECUTE (every input is
+--    member-readable).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_mock_cpu_need(
   p_draft_id UUID,
@@ -372,10 +400,20 @@ LANGUAGE plpgsql STABLE
 SET search_path = ''
 AS $$
 DECLARE
-  v_pos      TEXT;
-  v_slots    JSONB;
-  v_starters INTEGER;
-  v_have     INTEGER;
+  v_pos       TEXT;
+  v_slots     JSONB;
+  v_n_slots   INTEGER;
+  v_counts    INTEGER[] := '{}';
+  v_filled    INTEGER[] := '{}';
+  v_total     INTEGER;
+  v_picks     INTEGER := 0;
+  v_unfilled  INTEGER := 0;
+  v_need      TEXT[] := '{}';      -- positions accepted by unfilled seats
+  v_starters  INTEGER;
+  v_have      INTEGER := 0;
+  v_i         INTEGER;
+  v_placed    BOOLEAN;
+  v_row       RECORD;
 BEGIN
   SELECT CASE WHEN pl.position = 'DEF' THEN 'DST' ELSE pl.position END
     INTO v_pos
@@ -387,23 +425,66 @@ BEGIN
     RETURN 0;
   END IF;
 
-  SELECT COALESCE(l.roster_settings->'starting_slots', '[]'::jsonb)
-    INTO v_slots
+  SELECT COALESCE(l.roster_settings->'starting_slots', '[]'::jsonb),
+         COALESCE(d.total_rounds, 0)
+    INTO v_slots, v_total
   FROM public.drafts d
   JOIN public.leagues l ON l.id = d.league_id
   WHERE d.id = p_draft_id;
+  v_slots   := COALESCE(v_slots, '[]'::jsonb);
+  v_n_slots := COALESCE(jsonb_array_length(v_slots), 0);
 
+  -- 086's greedy steps a–c, verbatim in shape: capacities, then the team's
+  -- picks placed in pick order into the first starting seat that accepts
+  -- them; an unplaced pick sits on the bench.
+  FOR v_i IN 1..v_n_slots LOOP
+    v_counts[v_i] := COALESCE((v_slots->(v_i - 1)->>'count')::int, 0);
+    v_filled[v_i] := 0;
+  END LOOP;
+  FOR v_row IN
+    SELECT CASE WHEN pl.position = 'DEF' THEN 'DST' ELSE pl.position END AS pos
+    FROM public.draft_picks p
+    JOIN public.players pl ON pl.id = p.player_id
+    WHERE p.draft_id = p_draft_id
+      AND p.team_id = p_team_id
+      AND p.is_undone = FALSE
+    ORDER BY p.pick_number
+  LOOP
+    v_picks := v_picks + 1;
+    IF v_row.pos = v_pos THEN
+      v_have := v_have + 1;
+    END IF;
+    v_placed := FALSE;
+    FOR v_i IN 1..v_n_slots LOOP
+      IF NOT v_placed
+         AND v_filled[v_i] < v_counts[v_i]
+         AND (v_slots->(v_i - 1)->'eligible') ? v_row.pos THEN
+        v_filled[v_i] := v_filled[v_i] + 1;
+        v_placed := TRUE;
+      END IF;
+    END LOOP;
+  END LOOP;
+  FOR v_i IN 1..v_n_slots LOOP
+    IF v_filled[v_i] < v_counts[v_i] THEN
+      v_unfilled := v_unfilled + (v_counts[v_i] - v_filled[v_i]);
+      v_need := v_need || ARRAY(
+        SELECT jsonb_array_elements_text(v_slots->(v_i - 1)->'eligible'));
+    END IF;
+  END LOOP;
+
+  -- 086's greedy step d — THE forced rule (R406 / D163): once the picks
+  -- left equal the holes, only a hole-filler is worth anything.
+  IF (v_total - v_picks) <= v_unfilled THEN
+    IF v_pos = ANY(v_need) THEN
+      RETURN 1.0;
+    END IF;
+    RETURN 0;
+  END IF;
+
+  -- OPEN mode: the S+1 weights.
   SELECT COALESCE(SUM((s->>'count')::int), 0) INTO v_starters
-  FROM jsonb_array_elements(COALESCE(v_slots, '[]'::jsonb)) s
+  FROM jsonb_array_elements(v_slots) s
   WHERE s->'eligible' ? v_pos;
-
-  SELECT count(*) INTO v_have
-  FROM public.draft_picks p
-  JOIN public.players pl ON pl.id = p.player_id
-  WHERE p.draft_id = p_draft_id
-    AND p.team_id = p_team_id
-    AND p.is_undone = FALSE
-    AND (CASE WHEN pl.position = 'DEF' THEN 'DST' ELSE pl.position END) = v_pos;
 
   IF v_have < v_starters THEN
     RETURN 1.0;
