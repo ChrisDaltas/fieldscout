@@ -13,6 +13,8 @@ import {
 import { toast } from '@/hooks/use-toast'
 
 import { commandBarModel, exitDraftCopy, type CommandBarInput } from './command-bar-ops'
+import { DraftOptionsMenu } from './draft-options-menu'
+import { type DraftOptionsSectionId } from './draft-options-ops'
 
 interface DraftCommandBarProps {
   leagueId: string
@@ -23,10 +25,10 @@ interface DraftCommandBarProps {
   hasSeat: boolean
   pausePending: boolean
   onPauseResume: (action: 'pause' | 'resume') => void
-  /** Opens the §8.7 controls. DR.2 opens the shipped `CommishDraftPanel`
-   *  directly (D153: the panel keeps its body, loses its trigger); DR.3
-   *  replaces this handler's target with the `draft-options-menu`. */
-  onOpenDraftOptions: () => void
+  /** Opens the §8.7 controls at the chosen group. DR.3 (D153): the bar's
+   *  `Draft Options` control is the `draft-options-menu` — choosing a group
+   *  opens the shipped `CommishDraftPanel` at that section. */
+  onOpenDraftOptions: (section: DraftOptionsSectionId) => void
   /** The reduced practice menu's delete-and-exit (launcher-only; the
    *  shipped `delete_mock_draft` verb — refuses everyone else in-RPC). */
   onDeletePractice: () => void
@@ -119,12 +121,10 @@ export function DraftCommandBar({
       )}
 
       {showDraftOptions && (
-        // §16.3 (v2.12): commissioner power behind ONE labeled control in
-        // the room's own chrome — the accent fill is the commissioner
-        // signature.
-        <Button variant="blue" size="sm" className="shrink-0" onClick={onOpenDraftOptions}>
-          Draft Options
-        </Button>
+        // The §8.7 door (DR.3): the menu of control groups, mapping 1:1 onto
+        // the shipped commissioner-panel sections. Its trigger carries the
+        // §16.3 accent treatment inside `draft-options-menu.tsx`.
+        <DraftOptionsMenu onOpenSection={onOpenDraftOptions} />
       )}
 
       {showPracticeOptions && (

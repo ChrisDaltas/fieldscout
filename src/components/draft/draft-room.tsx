@@ -41,6 +41,7 @@ import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftCommandBar } from './draft-command-bar'
+import { type DraftOptionsSectionId } from './draft-options-ops'
 import { DraftBoardGrid } from './draft-board-grid'
 import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
@@ -374,10 +375,19 @@ function DraftRoomLive({
   const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
   const [listsSheetOpen, setListsSheetOpen] = useState(false)
   const [addListOpen, setAddListOpen] = useState(false)
-  // DR.2 (D153): the §8.7 panel is trigger-less and controlled — the command
-  // bar's Draft Options is its one door (DR.3 swaps the door's target for
-  // the options menu).
+  // DR.2/DR.3 (D153): the §8.7 panel is trigger-less and controlled — the
+  // command bar's Draft Options MENU is its one door. Choosing a group
+  // stores the target section and opens the panel there; closing clears the
+  // section so every opening is an explicit "open AT" (a reopen without a
+  // choice starts at the top, like any sheet).
   const [draftOptionsOpen, setDraftOptionsOpen] = useState(false)
+  const [draftOptionsSection, setDraftOptionsSection] = useState<DraftOptionsSectionId | null>(
+    null,
+  )
+  const openDraftOptionsAt = (section: DraftOptionsSectionId) => {
+    setDraftOptionsSection(section)
+    setDraftOptionsOpen(true)
+  }
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -754,7 +764,7 @@ function DraftRoomLive({
         hasSeat={Boolean(myTeamId)}
         pausePending={pauseResume.isPending}
         onPauseResume={handlePauseResume}
-        onOpenDraftOptions={() => setDraftOptionsOpen(true)}
+        onOpenDraftOptions={openDraftOptionsAt}
         onDeletePractice={handleDeletePractice}
         deletePending={deleteMock.isPending}
       />
@@ -967,7 +977,8 @@ function DraftRoomLive({
       </div>
 
       {/* §8.7 panel — trigger-less and CONTROLLED since DR.2 (D153); the
-          bar's Draft Options is its one door. Gated exactly as before:
+          bar's Draft Options MENU is its one door since DR.3, opening it at
+          the chosen section. Gated exactly as before:
           commissioner/co-commissioner on a NON-mock draft (D110(1) — the
           gate is `isCommish`, which carries `&& !draft.is_mock`). */}
       {isCommish && (
@@ -978,7 +989,11 @@ function DraftRoomLive({
           picks={picks}
           playerById={playerById}
           open={draftOptionsOpen}
-          onOpenChange={setDraftOptionsOpen}
+          onOpenChange={(open) => {
+            setDraftOptionsOpen(open)
+            if (!open) setDraftOptionsSection(null)
+          }}
+          openAtSection={draftOptionsSection}
         />
       )}
 
