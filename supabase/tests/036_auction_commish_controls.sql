@@ -35,6 +35,25 @@
 -- provenance note). 181 -> 199 asserts; all six earlier probes RE-RUN against
 -- the enlarged file (D161(5)) and every original RED SET reproduced exactly.
 --
+-- L.C1.8 / MIGRATION 090 (2026-08-18) — F57 RULED BY CHRIS: ALIGN,
+-- pause-first everywhere. The §C snake-side divergence pins FLIPPED: the two
+-- "still succeeds on a LIVE snake draft" lives_ok pins became FOUR refusal
+-- pins (set_clock/undo/reassign/move — Chris's exact gated set, pins 38-41)
+-- with D146 paused-side twins (43-52) so the flip cannot pass by
+-- over-gating; §A gained the gate-body source pin (16: the operative
+-- predicate is type-neutral, both refusal sentences present, the auction
+-- one byte-identical to 087's); and the two LB pins that used to run live
+-- were re-staged — the §8.6 auction-timer type refusal PAUSED (46, identity
+-- under the gate), the 22023 negative-timer arg pin still LIVE (42:
+-- validation precedes the gate, measured). 199 -> 211 asserts.
+-- THE PRE-090 BASELINE RED RUN (the flip shown RED before shown green):
+-- this amended file was run against the 001-087 chain with 090 held out —
+-- **11 of 211 RED (16, 38-41, 45, 47-51)**: the four flips, the §A body
+-- pin, and the twins' downstream state pins on the world the un-gated live
+-- calls had already mutated. Break probe 12 below reproduces this set
+-- byte-identically by reverting the helper alone, which is what proves the
+-- whole alignment lives in the ONE gate.
+--
 -- FIXTURE ADP IS FRACTIONAL (the R286 lesson / ledger F60), same as 035:
 -- every player here carries an adp in (0, 1) so the §8.4 ADP arm resolves to
 -- a fixture BY VALUE and no projections refresh can take an assertion's
@@ -49,27 +68,32 @@
 --
 -- Falsifiability notes (§4.3) — every count below was RUN, never predicted
 -- (the R306/R314 lesson). Each probe was a LOCAL-ONLY `CREATE OR REPLACE`
--- from a patched copy of 087, reverted by re-applying the file unmutated;
--- 181/181 before and after each.
+-- from a patched copy of the function's HEAD text (087, or 090 for the five
+-- bodies 090 replaced — D137), reverted by re-applying the head text
+-- unmutated; 211/211 confirmed after each revert.
 --
--- **THE COUNTS BELOW ARE THE M3 BATCH-6 RE-RUN (D161(5)).** This file grew
--- 150 -> 181 in the R367-R374 cycle and 181 -> 199 in the R375-R383 cycle, so
--- every previously-recorded count was unreproducible and ALL SIX earlier
--- probes were RE-RUN against the enlarged file. **Every original RED SET
--- reproduced exactly** — same assertions, shifted numbers — which is the
--- evidence that the earlier records were honest rather than fitted. Two red
--- sets GREW, and both growths are load-bearing rather than noise: probe 1 by
--- exactly pin 13 (R381 — the pin that a comment used to satisfy) and probe 6
--- by exactly §I(c)'s six (the same helper, now carrying a second arm).
--- Probes 7-11 are new, one per code fix in this cycle.
+-- **THE COUNTS BELOW ARE THE L.C1.8 RE-RUN (D161(5), third application).**
+-- This file grew 150 -> 181 (R367-R374), 181 -> 199 (R375-R383), and now
+-- 199 -> 211 (L.C1.8: +1 in §A, net +11 in §C), so every batch-6 count was
+-- unreproducible and ALL ELEVEN probes were RE-RUN against the enlarged
+-- file over the 001-090 chain. **Every batch-6 red set reproduced exactly at
+-- +12** (+0 for pin 13, which sits before both insertions) — the evidence
+-- that the records track assertions, not luck. ONE set grew, and the growth
+-- is the task working: probe 3 (the gate made a no-op) now ALSO takes the
+-- four flipped snake pins, their downstream twins, and §A's new body pin —
+-- pre-090 the snake pins were green-by-construction under a dead gate;
+-- post-flip the gate's snake arm is load-bearing. Probes 12-13 are new
+-- (L.C1.8's own); the extend-arm probe lives in 023's ledger (its target is
+-- snake-only — as run there: 3 of 168 RED (40, 86, 89) with this file
+-- staying 211/211).
 --   * **BREAK PROBE 1 — the DoD's: E28's live-high-bid arm (D131(4))
 --     disabled for draft_adjust_budget** (the `PERFORM` of the section-3b
 --     helper removed from that verb only; the R367 COMMENT at 087:776 left in
 --     place, which is what makes this probe R381's as well). **AS RUN: 4 of
---     199 RED** (85 the refusal, 86 the state pin behind it — the adjustment
---     must not have landed — 88, the boundary's MEASUREMENT pin, which goes
+--     211 RED** (97 the refusal, 98 the state pin behind it — the adjustment
+--     must not have landed — 100, the boundary's MEASUREMENT pin, which goes
 --     red because the arm-3 refusal is what kept the -$50 edit from composing
---     into the -$49 one, with pin 87's own `lives_ok` staying GREEN and named
+--     into the -$49 one, with pin 99's own `lives_ok` staying GREEN and named
 --     — **and 13**, §A's no-drift source pin, which is NEW to this set. It was
 --     3 of 181 before, and pin 13 was the one that stayed green: the old
 --     `prosrc like '%helper%'` form was satisfied by the comment this mutation
@@ -82,41 +106,43 @@
 --     through the two priced verbs, which is exactly the point of probe 6.
 --   * **BREAK PROBE 2 — D162's `voided_at IS NULL` removed from ARM 2.6's
 --     award attribution lookup** (the D161(2) defect this task exists to
---     close). **AS RUN: 2 of 199 RED** (94/95 — `made_via` flips 'autopick'
+--     close). **AS RUN: 2 of 211 RED** (106/107 — `made_via` flips 'autopick'
 --     -> 'manager' and `is_auto` true -> false: the VOIDED HUMAN row is
 --     attributed instead of the live SYSTEM one, so a manager is publicly
 --     credited with a nomination they cancelled). **wire 0 of 3**, GREEN BY
 --     CONSTRUCTION: the wire fixture's cancelled nomination is never
 --     renominated on the same player at the same amount, so it contains no
---     decoy — only 036 §G builds one. Pin 96 stays green and is named — the
+--     decoy — only 036 §G builds one. Pin 108 stays green and is named — the
 --     award still lands on the right player at the right price, so ONLY the
---     attribution moves — and so do the decoy-construction pins 92/93, which
+--     attribution moves — and so do the decoy-construction pins 104/105, which
 --     describe the fixture rather than the lookup. §G forces the UUID tiebreak
 --     deterministically (see its own note) precisely so this probe yields a
 --     stable number, not a coin flip.
---   * **BREAK PROBE 3 — the D141 gate helper made a no-op** (its RAISE
---     bypassed). **AS RUN: 10 of 199 RED** (31-36 the six gated verbs' live
---     refusals; 49 the cancel-while-running refusal; 51 and 57, because a
---     cancel that is no longer forced to happen while paused leaves the
---     board in a different state than D143 describes; 149 — the force-pick
---     phase refusal downstream of it, which was 135 before §I(c)/§I(d) added
---     fourteen pins above it) **plus 1 of 3 wire cases** — the gate
---     case, which is the one the routes and L.C3.2's disabled-button copy
---     will read. Pins 37 and 38 — the SNAKE counterparts (set_clock and undo)
---     succeeding LIVE — stay GREEN BY CONSTRUCTION and are named: the helper
---     never fires on snake, so disabling it cannot move them. That is F57's
---     divergence, pinned from both sides.
+--   * **BREAK PROBE 3 — the D141 gate helper made a no-op** (its predicate
+--     short-circuited). **AS RUN: 21 of 211 RED** (32-37 the six gated
+--     verbs' auction live refusals; 61 the cancel-while-running refusal; 63
+--     and 69, because a cancel that is no longer forced to happen while
+--     paused leaves the board in a different state than D143 describes; 161
+--     the force-pick phase refusal downstream; **PLUS the L.C1.8 growth,
+--     which is the flip working: 38-41 the four F57-ALIGNED snake refusals,
+--     45 and 47-51 their downstream twins on the world the un-refused live
+--     calls mutate, and 16, §A's gate-body pin** — pre-090 the snake pins
+--     were green-by-construction under a dead gate ("the helper never fires
+--     on snake"); post-flip the snake arm is load-bearing, so a dead gate
+--     takes both draft types' refusals with it) **plus 1 of 3 wire cases** —
+--     the gate case, which is the one the routes and L.C3.2's
+--     disabled-button copy will read.
 --   * **BREAK PROBE 4 — R302's two clears dropped from draft_reset.**
---     **AS RUN: 2 of 199 RED** (160, 161 — was 146/147); **wire 0 of 3**,
+--     **AS RUN: 2 of 211 RED** (172, 173 — was 160/161); **wire 0 of 3**,
 --     green by construction and CHECKED: the suite drives tick/start/pause/
 --     resume/undo/set_clock/cancel_nomination/end/solvent and never resets
 --     (`auction-commish-db.test.ts`, every `rpc('draft_…')` call site listed).
---     R373's set_order divergence pin (163) sits two lines after them and
+--     R373's set_order divergence pin (175) sits two lines after them and
 --     stays GREEN: it reads `status`, which the mutation does not touch — and
---     so does R379's new void pin (164), because the two clears and the bid
+--     so does R379's void pin (176), because the two clears and the bid
 --     sweep are three separate statements.
 --   * **BREAK PROBE 5 — the PRE-WRITE priced-move max-bid refusal dropped
---     from draft_move_player. AS RUN: 1 of 199 RED** (111); **wire 0 of 3**.
+--     from draft_move_player. AS RUN: 1 of 211 RED** (123); **wire 0 of 3**.
 --     **THIS PROBE FOUND A DEFECT IN THIS FILE AND IS RECORDED BECAUSE IT
 --     DID.** On its first run it turned **0 of 150** red. The pin passed a
 --     mutation that deleted the very clause it names, because it was written
@@ -136,94 +162,117 @@
 --     PATHS** (the `PERFORM` of the section-3b helper deleted from
 --     draft_move_player AND draft_reassign_pick; draft_adjust_budget keeps
 --     its call). This is R367's probe — the blocker the previous fix cycle
---     existed for. **AS RUN: 16 of 199 RED** — the original ten reproduce
---     EXACTLY (13, 123, 124, 127-133) and the set GREW by §I(c)'s six
---     (139-144), which is not noise: those pins go through the SAME helper
---     from the SAME two verbs, so a probe that deletes the call must take
---     them too. The original ten: **13**, §A's no-drift source pin (the
---     one that keeps this fix from un-fixing itself: it asserts all THREE
---     money-moving verbs reference the helper), then 123/124 the same-team
---     price-only arm and its state pin, 127/128 the cross-team move, 129/130
---     the cross-team reassign, and 131-133 downstream — once the refused edits
---     land, the board the boundary pins measure is a different board. **wire 0 of 3**,
+--     existed for. **AS RUN: 16 of 211 RED** — the batch-6 sixteen reproduce
+--     EXACTLY at +12: **13**, §A's no-drift source pin (the one that keeps
+--     this fix from un-fixing itself: it asserts all THREE money-moving
+--     verbs reference the helper), then 135/136 the same-team price-only arm
+--     and its state pin, 139/140 the cross-team move, 141/142 the cross-team
+--     reassign, 143-145 downstream — once the refused edits land, the board
+--     the boundary pins measure is a different board — and §I(c)'s six
+--     (151-156), which go through the SAME helper from the SAME two verbs,
+--     so a probe that deletes the call must take them too. **wire 0 of 3**,
 --     GREEN BY CONSTRUCTION and named: no wire case drives a priced edit
 --     against a live high bidder, and the refusal is a single-transaction
---     property that PostgREST adds nothing to. **Pins 121/122 stay GREEN and
+--     property that PostgREST adds nothing to. **Pins 133/134 stay GREEN and
 --     they are the load-bearing pair**: they measure the FORGED post-edit
 --     world and say `draft_auction_solvent` is TRUE there while max_bid is
 --     $149 against a standing $150 bid. A probe cannot move them because
 --     they are not asking the verb anything — they are the reason the verb
---     needs an arm the §4-rule-7 backstop cannot supply. Pins 125/126 (the
+--     needs an arm the §4-rule-7 backstop cannot supply. Pins 137/138 (the
 --     $49 boundary that LANDS) also stay green by construction: a deleted
 --     refusal cannot break a success.
 --   * **BREAK PROBE 7 — THE GATE'S CAPACITY ARM REMOVED (R378's own probe).**
 --     `v_open >= 1` dropped from the pass condition and the E27 RAISE deleted,
---     leaving the money-only shape §3b shipped with. **AS RUN: 5 of 199 RED**
---     (139/140 the LM move and its state pin, 141/142 the reassign twin and
---     its state pin, and **143** — the min_bid-$1 pin on LH, which goes red on
+--     leaving the money-only shape §3b shipped with. **AS RUN: 5 of 211 RED**
+--     (151/152 the LM move and its state pin, 153/154 the reassign twin and
+--     its state pin, and **155** — the min_bid-$1 pin on LH, which goes red on
 --     the MESSAGE rather than the refusal, because there the money arm still
 --     fires and says "a max bid of $0"). **wire 0 of 3**, green by
 --     construction and CHECKED: the wire fixture is `AUCTION_MIN_BID = 1`
 --     (`auction-commish-db.test.ts:77`) and drives no priced edit at all.
---     Pins 134-138 stay GREEN and are NAMED, because they are what make the
---     five above meaningful rather than lucky: 134 the baseline, 135-137 the
+--     Pins 146-150 stay GREEN and are NAMED, because they are what make the
+--     five above meaningful rather than lucky: 146 the baseline, 147-149 the
 --     move ONE SLOT EARLIER that must keep landing (a deleted refusal cannot
---     break a success), and 138 the forged measurement — `draft_auction_
+--     break a success), and 150 the forged measurement — `draft_auction_
 --     solvent` TRUE and max_bid 0 against a $0 standing bid — which is not
 --     asking the verb anything and therefore cannot move.
 --   * **BREAK PROBE 8 — draft_reset's end-of-run bid sweep dropped (R379a).**
---     **AS RUN: 1 of 199 RED** (164); **wire 0 of 3** (the suite never
---     resets — same call-site check as probe 4). Pin 165's UNSCOPED
+--     **AS RUN: 1 of 211 RED** (176); **wire 0 of 3** (the suite never
+--     resets — same call-site check as probe 4). Pin 177's UNSCOPED
 --     measurement stays GREEN by construction and is named: it reads run 1's
 --     row directly and is indifferent to whether that row is stamped.
 --   * **BREAK PROBE 9 — the run scoping (`created_at >= started_at`) dropped
 --     from draft_undo's auction on-clock recovery (R379b).** **AS RUN: 1 of
---     199 RED** (167 — the seat becomes run 1's t7). **wire 0 of 3, MEASURED
+--     211 RED** (179 — the seat becomes run 1's t7). **wire 0 of 3, MEASURED
 --     rather than reasoned**: the suite DOES call `draft_undo`, so this one
 --     was actually re-run under the mutation (3/3 pass) — its case stops at
---     the D141 pause-gate refusal and never reaches the recovery. Pin 166's
+--     the D141 pause-gate refusal and never reaches the recovery. Pin 178's
 --     `lives_ok` stays GREEN and is named: the undo still succeeds, it just
 --     succeeds with the wrong franchise on the clock, which is exactly why the
 --     state pin beside it is the one that carries the contract.
 --   * **BREAK PROBE 10 — the under-nomination guard dropped from
---     draft_reassign_pick (R380).** **AS RUN: 3 of 199 RED** (145 the refusal,
---     146 the state pin, and 147 downstream — once the reassign LANDS the
+--     draft_reassign_pick (R380).** **AS RUN: 3 of 211 RED** (157 the refusal,
+--     158 the state pin, and 159 downstream — once the reassign LANDS the
 --     nominated player holds a live pick on the wrong team, so the companion
 --     draft_move_player pin gets a different refusal). **wire 0 of 3**, green
 --     by construction and CHECKED: the suite calls no reassign at all.
 --   * **BREAK PROBE 11 — draft_reset's D138 mock guard made a no-op (R383's
 --     probe: does the zero-side-effect pin actually measure anything?).**
---     **AS RUN: 2 of 199 RED** (194 the refusal, **195 the composite**).
+--     **AS RUN: 2 of 211 RED** (206 the refusal, **207 the composite**).
 --     **The pre-R383 composite was re-run under the identical mutation and
---     turned 1 red — 194 only.** The old picks+bids counter watched a mock
+--     turned 1 red — the refusal only (206 in today's numbering).** The old picks+bids counter watched a mock
 --     whose league row and drafts row had just been rewritten and reported
 --     zero side effects, which is the whole finding. **wire 0 of 3** (no mock
 --     anywhere in the suite).
+--   * **BREAK PROBE 12 — L.C1.8's OWN: the gate helper REVERTED to 087's
+--     auction-only body** (the literal 087:270-289 text applied over 090's).
+--     **AS RUN: 11 of 211 RED (16, 38-41, 45, 47-51)** — byte-identical to
+--     the pre-090 baseline run above, which is the point: the flip detects
+--     exactly the un-alignment it was built against, and the entire
+--     alignment lives in the ONE helper (no call site changed in 090).
+--     023: 3 explicit RED (34, 39, 50) and then the harness ABORTS — the
+--     formerly-live cascade fires at the un-gated call and leaves nothing
+--     to undo (planned 168, ran 51). **Wire: snake db-suite 1 of 3, snake
+--     api-suite 4 of 13 RED; the AUCTION suite stays 3 of 3 GREEN** — the
+--     revert moves nothing on the auction side, which is the scope claim
+--     (no auction-arm behavior change) measured rather than asserted.
+--   * **BREAK PROBE 13 — OVER-GATE (D146's reason): the helper's predicate
+--     widened to refuse `paused` too.** **AS RUN: 68 of 211 RED** — led by
+--     44-52, the D146 paused twins and their state pins, plus 16 (the
+--     operative-text pin) and the auction paused-success pins (54-56,
+--     63-64, 67, 69-70, 80-81, …). This is what the twins are FOR: a
+--     "flip" that passed by refusing everything cannot pass this file.
+--     023 aborts the same way (37-44 RED, then Bad plan at 51 — its paused
+--     staging is wall-to-wall). Reverted; 211/211 and 168/168 after.
 --   * **ONE UNIT SHORT, EVERYWHERE (D146 / the R320 doctrine).** Every
 --     >=/<=/< comparison 087 makes is bracketed by a pin false by exactly one
 --     unit of the thing compared:
 --       E28 solvency floor      → an adjustment leaving remaining = open ×
---                                 min_bid EXACTLY lands (§F pin 79); one
---                                 dollar less is refused (pin 77)
+--                                 min_bid EXACTLY lands (§F pin 91); one
+--                                 dollar less is refused (pin 89)
 --       E28 live high bid       → an adjustment leaving max_bid = high_bid
---                                 EXACTLY lands (pin 87); one dollar less is
---                                 refused (pin 85)
---       priced move ≤ max_bid   → price = max_bid lands (pin 114); max_bid+1
---                                 is refused (pin 111)
+--                                 EXACTLY lands (pin 99); one dollar less is
+--                                 refused (pin 97)
+--       priced move ≤ max_bid   → price = max_bid lands (pin 126); max_bid+1
+--                                 is refused (pin 123)
 --       E27 capacity in the gate → the move that leaves the high bidder ONE
---         (R378)                   open slot lands (pin 135); the identical
+--         (R378)                   open slot lands (pin 147); the identical
 --                                  move one slot later — filling their last —
---                                  is refused (139/141). One unit of
+--                                  is refused (151/153). One unit of
 --                                  open_slots, on the min_bid-$0 board where
 --                                  the money arm cannot stand in for it
 --       E28 arm 3 on the priced → §I(b): $49 lands at max_bid = high_bid
---         paths (R367)            EXACTLY (125) and $50 is refused (123);
---                                 from the move side $1 lands (131) and $2 is
---                                 refused (127)
---       force-nominate §8.6.7(a)→ min_bid = max_bid lands (pin 144); a seat
---                                 one dollar short is refused (pin 143)
+--         paths (R367)            EXACTLY (137) and $50 is refused (135);
+--                                 from the move side $1 lands (143) and $2 is
+--                                 refused (139)
+--       force-nominate §8.6.7(a)→ min_bid = max_bid lands (pin 156); a seat
+--                                 one dollar short is refused (pin 155)
+--       pause gate status (090) → the SAME four snake calls, one status
+--                                 step apart: refused LIVE (38-41), landing
+--                                 PAUSED (44/47/49/51) — status is binary,
+--                                 so the twin IS the one-unit-false case
 --       draft_end unfilled count→ counted from the ONE family, pinned as a
---                                 stored literal (pin 151) so an off-by-one
+--                                 stored literal (pin 163) so an off-by-one
 --                                 in the sum is visible
 -- ============================================================================
 begin;
@@ -231,7 +280,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(199);
+select plan(211);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
@@ -350,6 +399,25 @@ select ok(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_tick'),
   'ARM 2.6''s award attribution lookup filters voided rows (D162) — the source pin behind §G''s behavioural one');
+
+-- 090/L.C1.8 — THE GATE'S OWN BODY, pinned at the source (F57 ALIGN). The
+-- call-form pin above counts the six callers; this one pins WHAT they call:
+-- the operative predicate is type-neutral (`IF p_draft.status = 'live'`),
+-- the auction-only conjunction is GONE from the operative form, and BOTH
+-- refusal sentences are present as literals — the auction one
+-- byte-identical to 087's (which is what lets every auction pin in this
+-- file stand untouched) and the snake one citing the erratum that ruled it.
+-- (The banner's "extend the §A verb list" turned out to be a no-op: the six
+-- PERFORM sites were always unconditional — 087 scoped the ruling inside
+-- the helper — so the alignment is one predicate and the list stays six.)
+select ok(
+  (select p.prosrc like '%IF p_draft.status = ''live'' THEN%'
+      and p.prosrc not like '%draft_type = ''auction'' AND p_draft.status%'
+      and p.prosrc like '%pause the draft first — auction commissioner controls run on a paused board (§8.7 v2.10)%'
+      and p.prosrc like '%pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'draft_auction_pause_gate_internal'),
+  'the ONE D141 gate is type-neutral (F57 ALIGN, 090): the live-status predicate carries no draft_type conjunction and both refusal sentences are present — auction byte-identical to 087, snake citing §8.7 v2.12.5');
 
 -- ---------------------------------------------------------------------------
 -- B. draft_bids' CLIENT-FACING posture is UNCHANGED by voided_at (D162's
@@ -674,10 +742,13 @@ select is((select count(*) from draft_bids
           2::bigint, 'the bracket''s AFTER half: both rows survive un-voided — every zero above refused rather than matched nothing');
 
 -- ---------------------------------------------------------------------------
--- C. THE D141 PAUSE-FIRST GATE (spec §8.7 v2.10, ruled 2026-08-15) — all six
---    gated verbs on a RUNNING auction, then the same verbs paused, then the
---    SNAKE counterparts still live-available. The divergence F57 records,
---    pinned from BOTH sides.
+-- C. THE D141 PAUSE-FIRST GATE (spec §8.7 v2.10 + the v2.12.5 F57 ALIGN
+--    erratum) — all six gated verbs on a RUNNING auction, then the SNAKE
+--    side of the SAME gate: the four verbs Chris's 2026-08-18 ruling names
+--    refuse on a LIVE snake draft (the 090 flip of this file's former
+--    "still live-available" divergence pins) and SUCCEED once PAUSED — the
+--    D146 one-unit-false twins that keep the flip honest against
+--    over-gating (status is binary, so paused IS the boundary neighbour).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -719,14 +790,95 @@ select throws_ok(
   'draft_move_player: pause the draft first — auction commissioner controls run on a paused board (§8.7 v2.10)',
   'D141: Manual Edit Mode''s move path refuses on a RUNNING auction');
 
--- The SNAKE side of the divergence, on a LIVE snake draft — F57's whole
--- point. If a future session "aligns" snake without a ruling, this fails.
+-- THE SNAKE SIDE, ALIGNED (F57 RULED 2026-08-18: pause-first everywhere;
+-- migration 090). These four pins are the FLIP of this file's former
+-- "still succeeds on a LIVE snake draft" divergence pins — shown RED
+-- against the pre-090 bodies (see the header's L.C1.8 record) before 090
+-- turned them green. Same gate, own sentence (a snake commissioner is not
+-- told about auction controls — honest copy, the Q13 precedent).
+select throws_ok(
+  $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb', 60) $$,
+  'P0001',
+  'draft_set_clock: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: draft_set_clock refuses on a LIVE snake draft (the flipped divergence pin)');
+select throws_ok(
+  $$ select public.draft_undo('e8000000-0000-4000-8000-0000000000bb') $$,
+  'P0001',
+  'draft_undo: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: draft_undo refuses on a LIVE snake draft');
+select throws_ok(
+  $$ select public.draft_reassign_pick('e8000000-0000-4000-8000-0000000000bb',
+       (select id from draft_picks where draft_id = 'e8000000-0000-4000-8000-0000000000bb'),
+       p_player_id => 'cm5-rb05') $$,
+  'P0001',
+  'draft_reassign_pick: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: draft_reassign_pick refuses on a LIVE snake draft');
+select throws_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000bb', 'cm5-rb01',
+       'd8000000-0000-4000-8000-00bb00000001', 'd8000000-0000-4000-8000-00bb00000002') $$,
+  'P0001',
+  'draft_move_player: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
+  'F57 ALIGNED: draft_move_player refuses on a LIVE snake draft');
+-- Argument validation still precedes the gate: a malformed call on the SAME
+-- live snake draft gets its 22023, not the pause-first sentence (023's
+-- NEGATIVE-timer message, unchanged through 087's widening AND 090's gate).
+select throws_ok(
+  $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb', -1) $$,
+  '22023',
+  'draft_set_clock: pick_timer_seconds must be a non-negative integer',
+  'the negative-timer 22023 fires ahead of any data access — and therefore ahead of the gate — on a LIVE snake draft');
+
+-- THE D146 PAUSED TWINS: pause LB once, then every gated verb SUCCEEDS —
+-- the flip cannot pass by over-gating. LB stays paused for the rest of the
+-- file (its later pins are type refusals that fire regardless of status).
+select lives_ok(
+  $$ select public.draft_pause('e8000000-0000-4000-8000-0000000000bb') $$,
+  'pause LB (draft_pause is NOT gated on snake either — the ruling names four verbs; pause is how you satisfy them)');
 select lives_ok(
   $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb', 60) $$,
-  'F57 DIVERGENCE, snake side: draft_set_clock still succeeds on a LIVE snake draft (M2''s shipped posture, untouched)');
+  'D146 TWIN: the same draft_set_clock call lands once PAUSED');
+select is(
+  (select (config->>'pick_timer_seconds') || '|' || deadline_remaining_ms::text
+          || '|' || coalesce(current_deadline::text, 'NULL')
+   from drafts where id = 'e8000000-0000-4000-8000-0000000000bb'),
+  '60|3600000|NULL',
+  '…the upcoming-picks timer lands in config and the paused bookkeeping is untouched (the 1h deadline persisted as exactly 3600000ms at the pause)');
+select throws_ok(
+  $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb',
+       60, false, null, 30) $$,
+  'P0001',
+  'draft_set_clock: this is a snake draft — the auction timers apply to auction drafts only (§8.6)',
+  '…and the converse keeps its IDENTITY under the gate: auction timers on a (now paused) snake draft still get the §8.6 type refusal, not a pause-first sentence');
+select lives_ok(
+  $$ select public.draft_reassign_pick('e8000000-0000-4000-8000-0000000000bb',
+       (select id from draft_picks where draft_id = 'e8000000-0000-4000-8000-0000000000bb'),
+       p_player_id => 'cm5-rb05') $$,
+  'D146 TWIN: the same draft_reassign_pick call lands once PAUSED');
+select is(
+  (select player_id from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000bb' and not is_undone),
+  'cm5-rb05',
+  '…pick 1 now selects the reassigned player');
+select lives_ok(
+  $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000bb', 'cm5-rb05',
+       'd8000000-0000-4000-8000-00bb00000001', 'd8000000-0000-4000-8000-00bb00000002') $$,
+  'D146 TWIN: the same draft_move_player call lands once PAUSED');
+select is(
+  (select team_id::text from draft_picks
+   where draft_id = 'e8000000-0000-4000-8000-0000000000bb' and not is_undone),
+  'd8000000-0000-4000-8000-00bb00000002',
+  '…the pick row moved to t2');
 select lives_ok(
   $$ select public.draft_undo('e8000000-0000-4000-8000-0000000000bb') $$,
-  'F57 DIVERGENCE, snake side: draft_undo still succeeds on a LIVE snake draft');
+  'D146 TWIN: draft_undo lands once PAUSED (the fourth gated verb)');
+select is(
+  (select status || '|' || current_pick_number || '|'
+          || coalesce(deadline_remaining_ms::text, 'NULL') || '|'
+          || coalesce(current_deadline::text, 'NULL') || '|'
+          || (on_clock_team_id::text = (draft_order->>0))::text
+   from drafts where id = 'e8000000-0000-4000-8000-0000000000bb'),
+  'paused|1|60000|NULL|true',
+  '…and the PAUSED undo writes the paused bookkeeping, not a running clock: rewound to pick 1, the fresh 60s timer stored as 60000ms remaining, deadline NULL, order slot 1 back on the clock');
 
 -- Paused, the same auction verbs work. (Pause is NOT gated — D141's ruling
 -- does not name it.)
@@ -748,17 +900,6 @@ select throws_ok(
   'P0001',
   'draft_set_clock: this is an auction — it has no pick clock; set the nomination, bid, or anti-snipe timers instead (§7.3.8)',
   'a pick-clock edit on an auction is refused by name rather than silently stored');
-select throws_ok(
-  $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb',
-       60, false, null, 30) $$,
-  'P0001',
-  'draft_set_clock: this is a snake draft — the auction timers apply to auction drafts only (§8.6)',
-  '…and the converse: auction timers on a snake draft are refused');
-select throws_ok(
-  $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000bb', -1) $$,
-  '22023',
-  'draft_set_clock: pick_timer_seconds must be a non-negative integer',
-  '023''s NEGATIVE-timer message survives the widening unchanged, and still fires ahead of any data access');
 select throws_ok(
   $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000aa') $$,
   '22023',

@@ -27,10 +27,20 @@ interface StatusBannerProps {
   badge?: ReactNode
   children: ReactNode
   className?: string
+  /** Single-line mode: the content ellipsizes instead of wrapping. For
+   *  space-constrained hosts (the draft room's 54px command bar — DR.7);
+   *  page-flow banners keep the default wrapping. */
+  truncate?: boolean
 }
 
 /** Base banner strip — the catalog's shared shape. */
-export function StatusBanner({ tone = 'neutral', badge, children, className }: StatusBannerProps) {
+export function StatusBanner({
+  tone = 'neutral',
+  badge,
+  children,
+  className,
+  truncate = false,
+}: StatusBannerProps) {
   return (
     <div
       role="status"
@@ -41,33 +51,49 @@ export function StatusBanner({ tone = 'neutral', badge, children, className }: S
       )}
     >
       {badge}
-      <span className="min-w-0">{children}</span>
+      <span className={cn('min-w-0', truncate && 'truncate')}>{children}</span>
     </div>
   )
 }
 
+/** The reconnecting copy — BOTH forms live here so the state's words are
+ *  single-sourced (one-voice.test.ts pins that no consumer re-spells them).
+ *  The compact form is the D176(5) responsive-label treatment for hosts too
+ *  narrow for the full sentence (the command bar below `sm`). */
+export const RECONNECTING_COPY = 'Reconnecting — syncing the room…'
+export const RECONNECTING_COPY_COMPACT = 'Reconnecting…'
+
 /**
  * The §16.5.4 realtime-fallback banner: the room lost its channel; the
  * client is refetching-first and resubscribing (§8.7/§9.3 doctrine — the
- * banner narrates it, the hook does it).
+ * banner narrates it, the hook does it). Since DR.7 the draft room mounts
+ * this INSIDE the 54px command bar (§16.5.4's v2.12 note: the bar is the
+ * room's banner surface — one strip, not a stack), with the copy constants
+ * above as its single source.
  */
 export function ReconnectingBanner({
-  children = 'Reconnecting — syncing the room…',
+  children = RECONNECTING_COPY,
   className,
+  truncate,
 }: {
   children?: ReactNode
   className?: string
+  truncate?: boolean
 }) {
   return (
-    <StatusBanner tone="caution" className={className}>
+    <StatusBanner tone="caution" className={className} truncate={truncate}>
       {children}
     </StatusBanner>
   )
 }
 
 /**
- * Persistent MOCK banner (§16.2 draft-room: "MOCK banner when
- * drafts.is_mock"; §8.8's zero-side-effect promise is the copy).
+ * Persistent MOCK banner (§8.8's zero-side-effect promise is the copy).
+ * The RECAP's banner only, since DR.7: inside the draft room the MOCK
+ * identity is the command bar's badge (D154 — "absorbed into the bar, not
+ * stacked beneath it"), and the recap is a SHELL page with no bar (Q12:
+ * not a draft surface), so this banner is its one telling there. Pinned in
+ * `one-voice.test.ts` (the room may not mount it).
  */
 export function MockBanner({ className }: { className?: string }) {
   return (

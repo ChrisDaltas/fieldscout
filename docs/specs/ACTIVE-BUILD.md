@@ -82,6 +82,8 @@ established two-lane pattern).
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
+   *(**The DR lane is COMPLETE — DR.1–DR.8 all landed 2026-08-18**, so this step
+   never fires again; the DR prerequisites in step 3 are all satisfied.)*
 2. When no `DR.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
 3. When **both** are blocked — or when Chris directs by name ("build SE.x") — take the
    next unblocked **`SE.*`** task (dependency order in tasks-SE §5). The pure-TS opener

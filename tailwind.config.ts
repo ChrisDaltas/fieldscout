@@ -181,6 +181,17 @@ const config: Config = {
         chip: '19px',
         tab: '26px',
         header: '58px',
+        // Draft-room command bar (spec §16.4 zone 1; DR.2). 54px is LITERAL,
+        // not a 1× handoff value to ×0.8 — Chris gave it against the running
+        // app (tasks-DR C47), and it sits beside the 58px `header` token.
+        'draft-topbar': '54px',
+        // Draft-room dock open-panel heights (spec §16.4 dock; DR.5, D151:
+        // the open panel occupies a FIXED viewport fraction and overlays the
+        // board — the board never resizes). Mobile opens taller because the
+        // board behind it is a ticker, not a grid (§16.4 mobile specifics);
+        // the desktop cap keeps 60vh from becoming a wall on tall monitors.
+        'dock-panel': 'min(60vh, 640px)',
+        'dock-panel-mobile': '75vh',
         sidebar: '243px',
         'sidebar-collapsed': '67px',
         // Rail strip matches the collapsed sidebar width so both edges read
