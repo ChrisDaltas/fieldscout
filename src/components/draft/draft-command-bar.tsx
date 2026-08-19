@@ -28,6 +28,10 @@ interface DraftCommandBarProps {
   bar: CommandBarInput
   /** Viewer holds a seat (drives the Exit copy — Q13's honesty rule). */
   hasSeat: boolean
+  /** Lobby mounts only (R396): a `draft_scheduled_at` instant exists, so
+   *  the Exit copy may honestly promise the D94 auto-start. The no-schedule
+   *  lobby gets the commissioner-starts-it sentence instead. */
+  hasSchedule?: boolean
   /** The control handlers are absent on the LOBBY mount (DR.7(4)) — the
    *  model's lobby arm gates every control that would call them, so the
    *  live room is the only caller that ever needs them. */
@@ -73,6 +77,7 @@ export function DraftCommandBar({
   leagueId,
   bar,
   hasSeat,
+  hasSchedule = false,
   pausePending = false,
   onPauseResume,
   onOpenDraftOptions,
@@ -85,7 +90,7 @@ export function DraftCommandBar({
   const showPracticeOptions = model.practiceOptions
   const showMockBadge = model.mockBadge
   const showReconnecting = model.reconnecting
-  const exitTitle = exitDraftCopy({ isMock: bar.isMock, hasSeat, lobby: bar.lobby })
+  const exitTitle = exitDraftCopy({ isMock: bar.isMock, hasSeat, lobby: bar.lobby, hasSchedule })
 
   // Below `sm` the launcher's two controls compress ("Pause practice" →
   // "Pause", "Practice options" → "Options"): the densest variant (mock

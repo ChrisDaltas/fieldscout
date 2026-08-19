@@ -169,6 +169,7 @@ export function DraftLobby({
           lobby: true,
         }}
         hasSeat={Boolean(myTeamId)}
+        hasSchedule={Boolean(scheduledAt)}
       />
 
       <Card>

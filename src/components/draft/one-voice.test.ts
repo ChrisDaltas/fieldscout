@@ -134,6 +134,16 @@ const STATUS_SOURCE: {
       "state, §16.3 one-glance) and the strip's someone-else arm ('On the clock · Team')",
   },
   {
+    state: 'on the clock (object-local label — unquoted companion)',
+    needle: 'On the clock',
+    announcedBy: ['draft-pick.tsx', 'status-strip-ops.ts'],
+    why:
+      'R398: the quoted needle above matches STRING LITERALS only, so a future teller ' +
+      'written as bare JSX text (>On the clock<) would slip past it — this companion ' +
+      'sweeps the raw substring and pins the same two-file set (case-sensitive, so ' +
+      `"You're on the clock" stays the strip row's needle, not this one's)`,
+  },
+  {
     state: 'on the clock (seat marker)',
     needle: 'On clock<',
     announcedBy: ['presence-bar.tsx'],
