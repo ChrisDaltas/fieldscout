@@ -194,19 +194,24 @@ describe('open-at-section wiring (menu choice → room state → panel anchor)',
     expect(room).toMatch(/openAtSection=\{draftOptionsSection\}/)
   })
 
-  it('every catalog entry owns a sectionDomId anchor wrapping its section', () => {
+  it('every catalog entry owns a focusable sectionDomId anchor wrapping its section', () => {
     for (const entry of DRAFT_OPTIONS_ENTRIES) {
       const component = SECTION_COMPONENTS[entry.id]
       expect(component, `no section component mapped for '${entry.id}'`).toBeTruthy()
       expect(panel, entry.id).toMatch(
-        new RegExp(`sectionDomId\\('${entry.id}'\\)\\}>\\s*<${component}`),
+        new RegExp(`sectionDomId\\('${entry.id}'\\)\\} tabIndex=\\{-1\\}>\\s*<${component}`),
       )
     }
   })
 
-  it('the panel scrolls to the chosen anchor when opened', () => {
-    expect(panel).toMatch(/<ScrollToSection section=\{openAtSection\} \/>/)
-    expect(panel).toMatch(/scrollIntoView/)
+  it('opening at a section focuses and scrolls its anchor via onOpenAutoFocus', () => {
+    // onOpenAutoFocus, not a mount effect: Radix's own open auto-focus runs
+    // AFTER mount effects and resets the sheet's scroll (measured in the
+    // DR.3 browser pass — a rAF-scheduled scrollIntoView ended at
+    // scrollTop 0).
+    expect(panel).toMatch(/onOpenAutoFocus=\{\(event\) => \{\s*if \(!openAtSection\) return/)
+    expect(panel).toMatch(/anchor\.focus\(\{ preventScroll: true \}\)/)
+    expect(panel).toMatch(/anchor\.scrollIntoView\(\{ block: 'start' \}\)/)
   })
 })
 

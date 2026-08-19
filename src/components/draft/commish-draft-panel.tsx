@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -135,6 +135,22 @@ export function CommishDraftPanel({
         // Distinct accent on the overlay itself (§16.3) — the sheet's
         // leading edge carries it. Scrolls: the §8.7 control list is long.
         className="flex w-full flex-col gap-4 overflow-y-auto border-l-2 border-accent sm:max-w-md"
+        // DR.3 open-at-section: when the Draft Options menu chose a group,
+        // the open-time focus goes to that group's anchor instead of
+        // Radix's default (the sheet root) — focusing lands the screen
+        // reader on the section AND the explicit scrollIntoView lands the
+        // eye. Done in onOpenAutoFocus because Radix's own auto-focus runs
+        // AFTER mount effects and would scroll the sheet back to the top
+        // (measured in the DR.3 browser pass: a rAF-scheduled scroll was
+        // reset to scrollTop 0 by the time the sheet settled).
+        onOpenAutoFocus={(event) => {
+          if (!openAtSection) return
+          const anchor = document.getElementById(sectionDomId(openAtSection))
+          if (!anchor) return
+          event.preventDefault()
+          anchor.focus({ preventScroll: true })
+          anchor.scrollIntoView({ block: 'start' })
+        }}
       >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
@@ -146,14 +162,11 @@ export function CommishDraftPanel({
           </SheetDescription>
         </SheetHeader>
 
-        {/* DR.3 open-at-section: each section mount gets a scroll anchor
-            (`sectionDomId`) so the Draft Options menu can land the sheet on
-            the chosen group. The anchors belong to this mount site — the
-            section BODIES below are D153-untouched. `ScrollToSection` lives
-            inside SheetContent deliberately: Radix mounts the content on
-            open, so its effect runs exactly once per opening. */}
-        <ScrollToSection section={openAtSection} />
-        <div id={sectionDomId('clock')}>
+        {/* DR.3 open-at-section: each section mount gets a focusable scroll
+            anchor (`sectionDomId`, tabIndex -1) so onOpenAutoFocus above can
+            land the sheet on the chosen group. The anchors belong to this
+            mount site — the section BODIES below are D153-untouched. */}
+        <div id={sectionDomId('clock')} tabIndex={-1}>
           <ClockSection
             leagueId={leagueId}
             draft={draft}
@@ -161,7 +174,7 @@ export function CommishDraftPanel({
             onError={surfaceError}
           />
         </div>
-        <div id={sectionDomId('undo')}>
+        <div id={sectionDomId('undo')} tabIndex={-1}>
           <UndoSection
             leagueId={leagueId}
             draftId={draft.id}
@@ -170,7 +183,7 @@ export function CommishDraftPanel({
             onError={surfaceError}
           />
         </div>
-        <div id={sectionDomId('fix-pick')}>
+        <div id={sectionDomId('fix-pick')} tabIndex={-1}>
           <FixPickSection
             leagueId={leagueId}
             draftId={draft.id}
@@ -181,7 +194,7 @@ export function CommishDraftPanel({
             onError={surfaceError}
           />
         </div>
-        <div id={sectionDomId('force-pick')}>
+        <div id={sectionDomId('force-pick')} tabIndex={-1}>
           <ForcePickSection
             leagueId={leagueId}
             draft={draft}
@@ -189,39 +202,21 @@ export function CommishDraftPanel({
             onError={surfaceError}
           />
         </div>
-        <div id={sectionDomId('order')}>
+        <div id={sectionDomId('order')} tabIndex={-1}>
           <OrderSection leagueId={leagueId} draft={draft} detail={detail} onError={surfaceError} />
         </div>
-        <div id={sectionDomId('autopick')}>
+        <div id={sectionDomId('autopick')} tabIndex={-1}>
           <AutopickSection leagueId={leagueId} detail={detail} onError={surfaceError} />
         </div>
-        <div id={sectionDomId('seats')}>
+        <div id={sectionDomId('seats')} tabIndex={-1}>
           <SeatControlsSection leagueId={leagueId} detail={detail} />
         </div>
-        <div id={sectionDomId('reset')}>
+        <div id={sectionDomId('reset')} tabIndex={-1}>
           <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
         </div>
       </SheetContent>
     </Sheet>
   )
-}
-
-/**
- * Scrolls the just-opened sheet to the chosen section's anchor (DR.3).
- * Rendered inside `SheetContent`, so mounting IS the open event; the rAF
- * lets Radix finish positioning the sheet before the scroll. The slide-in
- * is a transform animation, which never moves the content's own scroll
- * coordinates — so scrolling immediately is safe even mid-animation.
- */
-function ScrollToSection({ section }: { section: DraftOptionsSectionId | null }) {
-  useEffect(() => {
-    if (!section) return
-    const frame = requestAnimationFrame(() => {
-      document.getElementById(sectionDomId(section))?.scrollIntoView({ block: 'start' })
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [section])
-  return null
 }
 
 // ---------------------------------------------------------------------------
