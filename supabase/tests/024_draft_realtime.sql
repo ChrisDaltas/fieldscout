@@ -5,6 +5,14 @@
 -- pgTAP file is **024** (023 = commissioner controls; next free confirmed
 -- at task time).
 --
+-- AMENDED IN PLACE 2026-08-19 (L.C1.6 / migration 088 — tests are tests,
+-- the D137 note): the drafts payload pins read 10 keys (+ current_nomination
+-- + budget_adjustments, D134) and the draft_picks payload pins read 7 (+
+-- price); `current_nomination` and `price` LEFT the named-negative lists
+-- they sat in. Shown RED against 088 before the edit: exactly 6 of 63 (27,
+-- 28, 29, 30, 35, 36). pgTAP 037 owns the auction-era inventory pins; this
+-- file keeps the M2 surface + the amended key sets.
+--
 -- Falsifiability notes (§4.3):
 --   * PAYLOAD-SHAPE UNIT PINS (task item 4): each column-select function's
 --     EXACT jsonb key set is pinned against a stored-literal array, plus
@@ -295,14 +303,16 @@ select is(
    from drafts d,
         jsonb_object_keys(public.draft_broadcast_payload(d)) k
    where d.id = 'd9000000-0000-4000-8000-0000000000a1'),
-  array['current_deadline', 'current_pick_number', 'current_round', 'deadline_remaining_ms',
-        'on_clock_team_id', 'paused_at', 'status', 'updated_at'],
-  'drafts payload = EXACTLY the §5 inventory + deadline_remaining_ms (recorded extension, D109) — 8 keys');
+  array['budget_adjustments', 'current_deadline', 'current_nomination', 'current_pick_number',
+        'current_round', 'deadline_remaining_ms', 'on_clock_team_id', 'paused_at', 'status',
+        'updated_at'],
+  'drafts payload = EXACTLY the §5 inventory + deadline_remaining_ms (recorded extension, D109) + the D134 auction pair current_nomination/budget_adjustments (088/L.C1.6) — 10 keys (amended in place from the 070-era 8: tests are tests, D137)');
 select ok(
   (select not public.draft_broadcast_payload(d) ?| array['config', 'is_mock', 'id', 'league_id',
-                                                         'nomination_order', 'current_nomination']
+                                                         'nomination_order', 'draft_order',
+                                                         'started_at']
    from drafts d where d.id = 'd9000000-0000-4000-8000-0000000000a1'),
-  'drafts payload NEVER carries config (the §7.3.8 blob — blind), ids, or the auction fields (named negatives)');
+  'drafts payload NEVER carries config (the §7.3.8 blob — blind), ids, the orders, or started_at (named negatives — current_nomination LEFT this list at 088/D134; 037 owns the auction-era inventory)');
 select is(
   (select array_agg(k order by k)
    from (select row(gen_random_uuid(), 'd9000000-0000-4000-8000-0000000000a1'::uuid,
@@ -310,16 +320,16 @@ select is(
                     'c9000000-0000-4000-8000-0000000000a1'::uuid, 'rt-rb01', null::integer,
                     false, false, null::uuid, 'manager', null::uuid, now())::draft_picks as p) x,
         jsonb_object_keys(public.draft_pick_broadcast_payload(x.p)) k),
-  array['is_auto', 'is_undone', 'pick_number', 'player_id', 'round', 'team_id'],
-  'draft_picks payload = EXACTLY the §5 six (pick_number, round, team_id, player_id, is_auto, is_undone)');
+  array['is_auto', 'is_undone', 'pick_number', 'player_id', 'price', 'round', 'team_id'],
+  'draft_picks payload = EXACTLY the §5 six (pick_number, round, team_id, player_id, is_auto, is_undone) + price (D134, 088/L.C1.6 — amended in place from six)');
 select ok(
   (select not public.draft_pick_broadcast_payload(p) ?| array['action_id', 'picked_by', 'made_via',
-                                                              'price', 'id', 'league_id', 'draft_id']
+                                                              'id', 'league_id', 'draft_id']
    from (select row(gen_random_uuid(), 'd9000000-0000-4000-8000-0000000000a1'::uuid,
                     'b9000000-0000-4000-8000-0000000000a1'::uuid, 1, 1,
                     'c9000000-0000-4000-8000-0000000000a1'::uuid, 'rt-rb01', null::integer,
                     false, false, null::uuid, 'manager', null::uuid, now())::draft_picks as p) x),
-  'draft_picks payload NEVER carries action_id (another client''s idempotency key), picked_by, made_via, or price (named negatives)');
+  'draft_picks payload NEVER carries action_id (another client''s idempotency key), picked_by, made_via, or ids (named negatives — price LEFT this list at 088/D134: the auction board renders spend)');
 select is(
   (select array_agg(k order by k)
    from (select row(gen_random_uuid(), 'b9000000-0000-4000-8000-0000000000a1'::uuid,
@@ -356,10 +366,10 @@ select ok(
        and m.payload->>'schema' = 'public'
        and m.payload->'record'->>'current_pick_number' = '2'
        and not (m.payload->'record' ? 'config')
-       and (select count(*) from jsonb_object_keys(m.payload->'record')) = 8
+       and (select count(*) from jsonb_object_keys(m.payload->'record')) = 10
    from realtime.messages m
    where m.topic = 'draft:d9000000-0000-4000-8000-0000000000a1' and m.event = 'drafts'),
-  'the drafts message carries the broadcast_changes-shaped envelope with the COLUMN-SELECTED record (8 keys, no config)');
+  'the drafts message carries the broadcast_changes-shaped envelope with the COLUMN-SELECTED record (10 keys after 088/D134, no config)');
 
 insert into draft_picks (id, draft_id, league_id, pick_number, round, team_id, player_id)
 values ('e9000000-0000-4000-8000-0000000000a1', 'd9000000-0000-4000-8000-0000000000a1',
@@ -368,8 +378,8 @@ values ('e9000000-0000-4000-8000-0000000000a1', 'd9000000-0000-4000-8000-0000000
 select is(
   (select m.payload->'record' from realtime.messages m
    where m.topic = 'draft:d9000000-0000-4000-8000-0000000000a1' and m.event = 'draft_picks'),
-  '{"round": 1, "is_auto": false, "team_id": "c9000000-0000-4000-8000-0000000000a1", "is_undone": false, "player_id": "rt-rb01", "pick_number": 1}'::jsonb,
-  'a pick INSERT broadcasts the exact §5 six-column record on the draft topic (exact-jsonb equality)');
+  '{"price": null, "round": 1, "is_auto": false, "team_id": "c9000000-0000-4000-8000-0000000000a1", "is_undone": false, "player_id": "rt-rb01", "pick_number": 1}'::jsonb,
+  'a pick INSERT broadcasts the exact §5 six-column record + price (NULL on a snake row — D134/088) on the draft topic (exact-jsonb equality)');
 update draft_picks set is_undone = true
 where id = 'e9000000-0000-4000-8000-0000000000a1';
 select is(
