@@ -3343,6 +3343,32 @@ export type Database = {
         Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
         Returns: Json
       }
+      draft_mock_auction_cpu_due: {
+        Args: {
+          p_bid_count: number
+          p_bidding: boolean
+          p_config: Json
+          p_current_deadline: string
+          p_draft_id: string
+          p_nomination_seq: number
+          p_updated_at: string
+        }
+        Returns: string
+      }
+      draft_mock_cpu_bid_value: {
+        Args: {
+          p_adp_rank: number
+          p_budget: number
+          p_draft_id: string
+          p_need: number
+          p_nomination_seq: number
+          p_pass: number
+          p_slots: number
+          p_team_id: string
+          p_teams: number
+        }
+        Returns: number
+      }
       draft_mock_cpu_due: {
         Args: {
           p_config: Json
@@ -3352,6 +3378,10 @@ export type Database = {
           p_updated_at: string
         }
         Returns: string
+      }
+      draft_mock_cpu_need: {
+        Args: { p_draft_id: string; p_player_id: string; p_team_id: string }
+        Returns: number
       }
       draft_mock_think_fraction: {
         Args: { p_draft_id: string; p_pick_number: number }
@@ -3408,6 +3438,16 @@ export type Database = {
           p_draft_id: string
           p_nomination_seq?: number
           p_player_id?: string
+        }
+        Returns: Json
+      }
+      draft_place_bid_internal: {
+        Args: {
+          p_action_id: string
+          p_amount: number
+          p_draft_id: string
+          p_label: string
+          p_team_id: string
         }
         Returns: Json
       }
@@ -3471,6 +3511,10 @@ export type Database = {
       draft_start_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
         Returns: Json
+      }
+      draft_system_nominate_internal: {
+        Args: { p_draft_id: string }
+        Returns: string
       }
       draft_team_budget: {
         Args: { p_draft_id: string; p_team_id: string }

@@ -181,7 +181,8 @@ select ok(
 --    LD  8-team $1/min-0 auction with THREE draftable slots — C38/C40's
 --        degenerate floor: a $0 opening is legal, a raise is still +1.
 --    LS  snake league (the wrong-type refusals).
---    LA also carries a MOCK auction row (the F61 seam) and, later, a
+--    LA also carries a MOCK auction row (the F61 seam — FLIPPED to the
+--        D103(2) launcher gate by 089/L.C1.7) and, later, a
 --        privileged paused/complete flip.
 -- ---------------------------------------------------------------------------
 insert into auth.users
@@ -302,9 +303,10 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e6000000-0000-4000-8000-0000000000cc', 'a6000000-0000-4000-8000-0000000000cc',
    'auction', 'scheduled', false, '{}');
 -- LS: a LIVE SNAKE draft (wrong-type refusals) and, in LA's league, a
--- MOCK auction (the F61 seam refusal — unreachable in production today
--- because 071's create_mock_draft refuses auction configs, which is
--- exactly why it is built by hand here).
+-- MOCK auction (built by hand WITHOUT config.mock — it was the F61 seam
+-- fixture while 071 refused auction configs; since 089 it is the
+-- launched_by-NULL "tick-only" shape of D110(9), and §D pins that the
+-- launcher gate refuses every human on it).
 insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds) values
   ('e6000000-0000-4000-8000-0000000000dd', 'a6000000-0000-4000-8000-0000000000dd',
    'snake', 'live', false, '{"pick_timer_seconds": 90}', 15),
@@ -393,7 +395,7 @@ select throws_ok(
   '…and the outsider cannot bid either');
 
 -- ---------------------------------------------------------------------------
--- D. Wrong draft type / status / mock seam — refused for BOTH verbs
+-- D. Wrong draft type / status / mock launcher gate — refused for BOTH verbs
 -- ---------------------------------------------------------------------------
 reset role;
 set local role authenticated;
@@ -410,18 +412,26 @@ select throws_ok(
        5, 'a6000000-0000-4000-8000-000000000006') $$,
   'P0001', 'draft_place_bid: this is a snake draft — only auction drafts take bids (§8.6)',
   '…and refuses a bid');
+-- F61 DISCHARGED (089/L.C1.7 — the seam pins FLIPPED in place, the 020/025
+-- precedent): the mock seam refusal ("mock auctions are not open yet") is
+-- gone and the D103(2) LAUNCHER GATE stands in its place. This fixture mock
+-- is CONFIG-LESS (no config.mock ⇒ launched_by NULL), so it is tick-only
+-- and EVERY human caller is refused — D110(9)'s safe default. The admit
+-- side (the launcher nominates/bids FOR the human seat, the seat's real
+-- manager is refused) is pinned in 038 §C on a mock launched through the
+-- real verb.
 select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000ee',
        'pgtap-ab-p01', 1, 'a6000000-0000-4000-8000-000000000007') $$,
   'P0001',
-  'draft_nominate: mock auctions are not open yet — solo practice against CPU bidders lands with the mock auction arm (§8.8/D138)',
-  'THE F61 SEAM: a MOCK auction refuses nominations — unreachable today (071 refuses auction mocks), and lifted by L.C1.7 together with the D103(2) launcher gate');
+  'draft_nominate: this mock draft is another member''s solo practice (§8.8/D103)',
+  'THE F61 SEAM, FLIPPED: a MOCK auction answers with the D103(2) launcher gate — a caller who is not config.mock.launched_by cannot nominate (this config-less fixture admits nobody)');
 select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000ee',
        5, 'a6000000-0000-4000-8000-000000000008') $$,
   'P0001',
-  'draft_place_bid: mock auctions are not open yet — solo practice against CPU bidders lands with the mock auction arm (§8.8/D138)',
-  '…and refuses bids — so the day 089 lifts 071''s refusal, no league member can bid inside another member''s solo practice');
+  'draft_place_bid: this mock draft is another member''s solo practice (§8.8/D103)',
+  '…and cannot bid — so with 071''s refusal lifted, no league member can bid inside another member''s solo practice (D138 extends D103(2) to bids)');
 select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000bb',
        'pgtap-ab-p01', 1, 'a6000000-0000-4000-8000-000000000009') $$,

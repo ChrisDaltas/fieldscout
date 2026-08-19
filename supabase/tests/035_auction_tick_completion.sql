@@ -1159,6 +1159,15 @@ select is(
 --    draft_picks(pick_number=1, round=1, price=NULL, is_auto=t,
 --    made_via='autopick'), current_pick_number advanced to 2, ZERO
 --    draft_bids and current_nomination still NULL.
+--    089/L.C1.7 NOTE (texts updated in place — tests are tests, D137): ARM
+--    2.6 now CLAIMS mocks and owns a CPU sub-arm (ARM 2.6(c)), so "2.6
+--    excludes mocks" is no longer why nothing is written here. What keeps
+--    this section's zeroes true: LM's nomination clock is 30s out (no
+--    expiry arm is looking), and the CPU NOMINATION think-time under `fast`
+--    is 2s AFTER the nomination window opened — the window opened at
+--    deadline − 30s = now(), so the think lands at now() + 2s and is NOT
+--    due. 038 §D pins the positive (a due CPU think-time DOES nominate,
+--    through draft_system_nominate_internal) and its one-unit boundary.
 -- ---------------------------------------------------------------------------
 update drafts
 set current_deadline = now() + interval '30 seconds',
@@ -1196,7 +1205,7 @@ select ok(
    where draft_id = 'e7000000-0000-4000-8000-0000000000a5') = 0
   and (select count(*) from draft_bids
        where draft_id = 'e7000000-0000-4000-8000-0000000000a5') = 0,
-  '…nothing was written by ANY arm — no snake-shaped pick from 2.5, and no nomination from 2.6 (which excludes mocks)');
+  '…nothing was written by ANY arm — no snake-shaped pick from 2.5, no nomination from 2.6''s expiry loop (the clock is 30s out) and none from 2.6(c) (the CPU think-time is 2s after the window opened, not yet due — 038 §D pins the due case)');
 select ok(
   (select status = 'live' and current_pick_number = 1
           and current_nomination is null
