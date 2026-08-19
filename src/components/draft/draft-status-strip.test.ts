@@ -21,13 +21,19 @@ import { describe, expect, it } from 'vitest'
  *   - requirement (1): no `_340px` rail track anywhere in the room — the
  *     desktop board region is a plain full-width block;
  *   - the scroll contract: the live room's root is non-scrolling
- *     (`overflow-hidden`) and the board zone is the room's only page
- *     scroller (the one other `overflow-y-auto` is the mobile lists
- *     Sheet — an overlay, enumerated below so a third can't sneak in);
- *   - the five parked panels (DR.5's dock tenants) staying exported AND
- *     still mounted by the room's mobile branch — parked, not deleted;
- *   - the mobile treatment surviving untouched (the four-way Segment is
- *     DR.5's to replace, NOT DR.4's to delete — v2.12 reconciliation);
+ *     (`overflow-hidden`) and the board zone is the room's ONLY page
+ *     scroller — since DR.5 deleted the mobile lists Sheet, the room file
+ *     carries exactly one `overflow-y-auto` (the dock panel's own scroller
+ *     lives in `draft-dock.tsx` and is pinned in `draft-dock.test.ts`);
+ *   - the five panels (DR.4 parked them; DR.5's dock re-hosted them)
+ *     staying exported AND mounted by the room, which composes all five as
+ *     the dock's panel bodies;
+ *   - the DR.5 mobile treatment (rewritten here from DR.4's deliberate
+ *     survival pins, as DR.4's banner assigned): the four-way Segment and
+ *     its `mobilePane` state are GONE — the dock is the one pattern on
+ *     both platforms — while the ticker + compact "my picks" rail SURVIVE
+ *     as the board-zone density treatment with the full grid one tap away
+ *     (§16.4's v2.12 reconciliation, both halves);
  *   - R270's fix in the board grid: no invalid `role="table"` /
  *     `columnheader` skeleton; an aria-label'd focusable region instead.
  */
@@ -140,12 +146,13 @@ describe('the scroll contract: the board zone owns the room’s only vertical sc
     expect(room).toMatch(/className="flex h-full min-h-0 flex-col overflow-hidden"/)
   })
 
-  it('the board zone is the one page scroller; the only other overflow-y-auto is the mobile lists Sheet overlay', () => {
+  it('the board zone is the room’s ONE page scroller — the mobile lists Sheet died with DR.5', () => {
     expect(room).toMatch(/className="min-h-0 flex-1 overflow-y-auto"/)
     const occurrences = room.match(/overflow-y-auto/g) ?? []
-    expect(occurrences).toHaveLength(2)
-    // The second, enumerated: the bottom-sheet host for MyListsPanel.
-    expect(room).toMatch(/side="bottom" className="max-h-\[80vh\] overflow-y-auto"/)
+    // Exactly one: DR.5 deleted the bottom-sheet host for MyListsPanel
+    // (the dock's Lists tab supersedes it); the dock panel's own scroller
+    // is `draft-dock.tsx`'s and is enumerated in `draft-dock.test.ts`.
+    expect(occurrences).toHaveLength(1)
   })
 
   it('the strip adds no scroll region of its own', () => {
@@ -163,7 +170,7 @@ describe('the scroll contract: the board zone owns the room’s only vertical sc
   })
 })
 
-describe('the five panels are PARKED for DR.5, not deleted', () => {
+describe('the five panels are HOSTED by the dock (DR.5 closed DR.4’s parked gap)', () => {
   const room = code(ROOM)
 
   it('each remains exported from its own module', () => {
@@ -180,30 +187,42 @@ describe('the five panels are PARKED for DR.5, not deleted', () => {
     expect(code('src/components/draft/draft-chat.tsx')).toMatch(/export function DraftChat/)
   })
 
-  it('each is still mounted by the room (the mobile branch hosts all five)', () => {
+  it('each is mounted by the room, which composes all five as the dock’s panel bodies', () => {
     expect(room).toMatch(/<AvailablePlayers/)
     expect(room).toMatch(/<MyQueue/)
     expect(room).toMatch(/<MyListsPanel/)
     expect(room).toMatch(/<MyRosterTracker/)
     expect(room).toMatch(/<DraftChat/)
+    expect(room).toMatch(/<DraftDock/)
   })
 })
 
-describe('mobile is untouched: DR.5 replaces the pane switcher, DR.4 does not (v2.12)', () => {
+describe('the DR.5 mobile treatment (v2.12 reconciliation, both halves)', () => {
   const room = code(ROOM)
 
-  it('keeps the four-way Segment: Players / Queue / Full board / Chat', () => {
-    expect(room).toMatch(/aria-label="Room view"/)
-    for (const label of ['Players', 'Queue', 'Full board', 'Chat']) {
-      expect(room).toContain(`>\n              ${label}\n            </SegmentItem>`)
-    }
-    expect(room).toMatch(/const \[mobilePane, setMobilePane\] = useState<MobilePane>/)
+  it('the four-way Segment and its state are GONE — the dock is the one pattern', () => {
+    expect(room).not.toMatch(/aria-label="Room view"/)
+    expect(room).not.toMatch(/SegmentItem/)
+    expect(room).not.toMatch(/mobilePane/)
+    expect(room).not.toMatch(/MobilePane/)
+  })
+
+  it('the mobile lists bottom Sheet is GONE — the dock’s Lists tab supersedes it', () => {
+    expect(room).not.toMatch(/SheetContent/)
+    expect(room).not.toMatch(/listsSheetOpen/)
   })
 
   it('keeps the picks ticker and the compact "My picks" rail (§16.4’s board-zone density rule)', () => {
     expect(room).toMatch(/aria-label="Recent picks"/)
     expect(room).toMatch(/>My picks<\/span>/)
     expect(room).toMatch(/<MyRosterTracker\s+compact/)
+  })
+
+  it('the full grid stays ONE TAP away — the in-zone disclosure (§16.4’s density rule)', () => {
+    expect(room).toMatch(/const \[mobileBoardOpen, setMobileBoardOpen\] = useState\(false\)/)
+    expect(room).toMatch(/aria-expanded=\{mobileBoardOpen\}/)
+    expect(room).toMatch(/\{mobileBoardOpen \? 'Hide full board' : 'Show full board'\}/)
+    expect(room).toMatch(/\{mobileBoardOpen && boardCard\}/)
   })
 })
 

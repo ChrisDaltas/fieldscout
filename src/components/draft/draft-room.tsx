@@ -9,9 +9,7 @@ import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { MockBanner, ReconnectingBanner } from '@/components/leagues/status-banners'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -40,6 +38,7 @@ import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftCommandBar } from './draft-command-bar'
+import { DraftDock } from './draft-dock'
 import { type DraftOptionsSectionId } from './draft-options-ops'
 import { DraftStatusStrip } from './draft-status-strip'
 import { DraftBoardGrid } from './draft-board-grid'
@@ -129,11 +128,19 @@ interface DraftRoomProps {
  *     `h-header` band under the bar — on-clock LEFT, clock RIGHT, D149) and
  *     the desktop `minmax(0,1fr)_340px` grid became a single full-width
  *     board zone that owns the room's only vertical scroll. The rail's five
- *     occupants — pool, queue (Targets), lists, tracker, chat — are PARKED:
- *     they keep their components, props and suites, and the mobile pane
- *     switch still renders all five, but they no longer render on desktop
- *     until DR.5's bottom dock re-hosts them (a disclosed interim gap, the
- *     DR.2-duplications precedent). Pinned in `draft-status-strip.test.ts`.
+ *     occupants — pool, queue (Targets), lists, tracker, chat — were PARKED
+ *     for one task (DR.4's disclosed desktop gap).
+ *   - **DR.5 (2026-08-18) closed that gap with the bottom dock**
+ *     (`draft-dock.tsx`, spec §16.4's dock paragraph; D150/D151): a
+ *     persistent tab strip at the room's bottom edge at EVERY width hosts
+ *     all five panels — one open at a time, sliding up OVER the board at a
+ *     fixed height, the board's geometry unchanged. The M2 mobile four-way
+ *     Segment (and its `mobilePane` state) and the mobile lists bottom
+ *     Sheet are DELETED — the dock supersedes both; the ticker + compact
+ *     "my picks" rail survive as the mobile board-zone treatment, with the
+ *     full grid one tap away via an in-zone disclosure (§16.4's density
+ *     rule, unchanged). Pinned in `draft-dock.test.ts` and the rewritten
+ *     dock-era pins of `draft-status-strip.test.ts`.
  *
  * The shell landed in L.B3.1 (realtime client, clock,
  * presence, §16.5.4 states); M2 task L.B3.2 lands the working surfaces of
@@ -147,8 +154,9 @@ interface DraftRoomProps {
  * beside My Queue (a bottom sheet on mobile), the pool overlay, and the
  * room-level Add-a-draft-list modal.
  *
- * Mobile (§16.4): the room collapses to a picks ticker + the "my picks"
- * rail, with the full grid (and pool/queue/chat) one tap away on a Segment.
+ * Mobile (§16.4): the board zone collapses to a picks ticker + the "my
+ * picks" rail with the full grid one tap away; the working panels are the
+ * same bottom dock desktop uses (DR.5 — the Segment era ended there).
  *
  * L.B3.3 adds the §16.2 chat pane (`draft-chat` — the sanctioned direct
  * INSERT + the room channel's live feed), the §8.7 commissioner panel
@@ -361,8 +369,6 @@ interface DraftRoomLiveProps {
   userId: string | null
 }
 
-type MobilePane = 'players' | 'queue' | 'board' | 'chat'
-
 function DraftRoomLive({
   leagueId,
   detail,
@@ -374,16 +380,18 @@ function DraftRoomLive({
   myMemberTeamId,
   userId,
 }: DraftRoomLiveProps) {
-  const [mobilePane, setMobilePane] = useState<MobilePane>('players')
   // §8.9 (L.B4.2): the pool-overlay selection (room-owned so panel and pool
-  // can never disagree), the §16.4/§8.9 mobile bottom sheet hosting the
-  // panel, and the room-level Add-a-draft-list modal (mounted OUTSIDE the
-  // sheet — a Dialog opened from inside a Sheet steals focus and closes
-  // both, D119(6)). The desktop rail's My Queue | My Lists tab state died
-  // with the rail (DR.4); the dock re-hosts both panels at DR.5.
+  // can never disagree) and the room-level Add-a-draft-list modal, mounted
+  // OUTSIDE every overlay (D119(6)). The M2 mobile pane switcher and its
+  // lists bottom Sheet died here (DR.5): the dock hosts all five panels at
+  // every width, and its own open/closed state lives inside `DraftDock`.
   const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
-  const [listsSheetOpen, setListsSheetOpen] = useState(false)
   const [addListOpen, setAddListOpen] = useState(false)
+  // §16.4's mobile board-zone rule, unchanged by the reconciliation: the
+  // full grid stays ONE TAP away (it was the Segment's "Full board" pane;
+  // the dock's five tabs are the five panels, so the tap lives in the
+  // board zone itself as a disclosure).
+  const [mobileBoardOpen, setMobileBoardOpen] = useState(false)
   // DR.2/DR.3 (D153): the §8.7 panel is trigger-less and controlled — the
   // command bar's Draft Options MENU is its one door. Choosing a group
   // stores the target section and opens the panel there; closing clears the
@@ -651,6 +659,9 @@ function DraftRoomLive({
     />
   )
 
+  // The dock renders every tab for every seat (DR.5: it is not
+  // commissioner chrome), so the seat-gated panels carry the §16.5.4
+  // honest no-seat copy instead of vanishing.
   const queueCard = queueTeamId ? (
     <MyQueue
       leagueId={leagueId}
@@ -658,12 +669,41 @@ function DraftRoomLive({
       teamId={queueTeamId}
       draftedIds={draftedIds}
     />
-  ) : null
+  ) : (
+    <p className="text-[12px] font-medium text-n-3">
+      {draft.is_mock
+        ? 'Only the mock’s launcher drives a practice queue.'
+        : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
+    </p>
+  )
 
-  // §16.2 my-lists-panel (L.B4.2) — the tab beside My Queue (§8.9). The
-  // mobile variant renders the same panel inside a bottom Sheet with the
-  // cheat sheet inlined (no nested portals — D119(6)).
-  const listsCard = (inline: boolean) => (
+  const trackerCard = myTeamId ? (
+    <MyRosterTracker
+      picks={myPicks}
+      playerById={playerById}
+      roster={detail.settings.roster_settings}
+    />
+  ) : (
+    <p className="text-[12px] font-medium text-n-3">
+      {draft.is_mock
+        ? 'Only the mock’s launcher holds a practice roster.'
+        : 'You don’t hold a seat in this draft, so there’s no roster to track.'}
+    </p>
+  )
+
+  // §16.2 my-lists-panel (§8.9), hosted by the dock's Lists tab at every
+  // width. The cheat sheet stays the INLINE drill-in (the shipped mobile
+  // variant): the dock is non-modal (D150), and opening the side-Sheet
+  // variant's Radix focus trap from inside it would make the board inert —
+  // the exact property D150 exists to protect. `onAddList` opens the
+  // room-level modal DIRECTLY and the dock stays open behind it: D119(6)'s
+  // close-first step was instrumental (a Dialog opened from inside a Radix
+  // Sheet registers as an outside interaction, closing the Sheet and
+  // taking the child dialog with it); the dock has no outside-interaction
+  // dismissal and no focus scope, so there is nothing for the Dialog to
+  // collapse — what D119(6) still requires, and keeps, is the modal
+  // mounted at room level OUTSIDE every overlay.
+  const listsCard = (
     <MyListsPanel
       leagueId={leagueId}
       draftId={draft.id}
@@ -677,13 +717,8 @@ function DraftRoomLive({
       onQueue={handleQueue}
       overlay={overlay}
       onOverlayChange={setOverlay}
-      onAddList={() => {
-        // The modal mounts at room level; leaving the sheet first keeps the
-        // Dialog out of the Sheet's focus scope (D119(6)).
-        setListsSheetOpen(false)
-        setAddListOpen(true)
-      }}
-      inlineCheatSheet={inline}
+      onAddList={() => setAddListOpen(true)}
+      inlineCheatSheet
     />
   )
 
@@ -693,7 +728,7 @@ function DraftRoomLive({
 
   const boardCard = (
     // Relative host for the §16.5.2 pause overlay (it floats above the
-    // board only — chat and the rail stay usable during a pause).
+    // board only — the chrome and the dock stay usable during a pause).
     <div className="relative min-w-0">
       {paused && (
         <DraftPauseOverlay
@@ -813,15 +848,16 @@ function DraftRoomLive({
         )}
 
         {/* ----- Desktop (lg+): the FULL-WIDTH board (requirement 1 — the
-              340px rail is deleted). Its five occupants — pool, queue,
-              lists, tracker, chat — are parked for DR.5's bottom dock and
-              temporarily do not render on desktop; the mobile branch below
-              still hosts all five. ----- */}
+              340px rail is deleted). The rail's five former occupants —
+              pool, queue, lists, tracker, chat — live in the bottom dock
+              below the board zone (DR.5 closed DR.4's disclosed gap). ----- */}
         <div className="hidden min-w-0 lg:block">{boardCard}</div>
 
-        {/* ----- Mobile (§16.4): ticker + my rail; grid one tap away.
-              The four-way Segment is DR.5's to replace with the dock —
-              deliberately untouched here (v2.12 reconciliation). ----- */}
+        {/* ----- Mobile (§16.4): ticker + my-picks rail SURVIVE as the
+              board-zone density treatment; the four-way Segment is GONE —
+              the dock is the one pattern on both platforms (DR.5, v2.12
+              reconciliation) — and the full grid stays one tap away via
+              the disclosure below. ----- */}
         <div className="flex min-w-0 flex-col gap-4 lg:hidden">
           <div className="flex gap-1.5 overflow-x-auto pb-0.5" aria-label="Recent picks">
             {draft.current_pick_number !== null && !paused && (
@@ -874,64 +910,41 @@ function DraftRoomLive({
             </Card>
           )}
 
-          <Segment aria-label="Room view" className="w-full">
-            <SegmentItem
-              active={mobilePane === 'players'}
-              onClick={() => setMobilePane('players')}
-              className="flex-1"
-            >
-              Players
-            </SegmentItem>
-            <SegmentItem
-              active={mobilePane === 'queue'}
-              onClick={() => setMobilePane('queue')}
-              className="flex-1"
-            >
-              Queue
-            </SegmentItem>
-            <SegmentItem
-              active={mobilePane === 'board'}
-              onClick={() => setMobilePane('board')}
-              className="flex-1"
-            >
-              Full board
-            </SegmentItem>
-            <SegmentItem
-              active={mobilePane === 'chat'}
-              onClick={() => setMobilePane('chat')}
-              className="flex-1"
-            >
-              Chat
-            </SegmentItem>
-          </Segment>
-
-          {mobilePane === 'players' && poolCard}
-          {mobilePane === 'queue' && (
-            <>
-              {queueCard ?? (
-                <p className="text-[12px] font-medium text-n-3">
-                  {draft.is_mock
-                    ? 'Only the mock’s launcher drives a practice queue.'
-                    : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
-                </p>
-              )}
-              {/* §8.9 mobile: the My Lists panel is a BOTTOM SHEET. */}
-              <Button
-                variant="stroke"
-                size="sm"
-                className="w-fit"
-                onClick={() => setListsSheetOpen(true)}
-              >
-                <Icon name="list" size={13} />
-                My lists
-              </Button>
-            </>
-          )}
-          {mobilePane === 'board' && boardCard}
-          {mobilePane === 'chat' && chatCard}
+          {/* §16.4's "full grid one tap away", with the Segment gone: a
+              board-zone disclosure. The grid is summoned, not resident —
+              20 columns at 20 teams is the density rule's whole reason. */}
+          <Button
+            variant="stroke"
+            size="sm"
+            className="w-fit"
+            aria-expanded={mobileBoardOpen}
+            onClick={() => setMobileBoardOpen((current) => !current)}
+          >
+            {mobileBoardOpen ? 'Hide full board' : 'Show full board'}
+          </Button>
+          {mobileBoardOpen && boardCard}
         </div>
       </div>
       </div>
+
+      {/* DR.5: the bottom dock (spec §16.4's dock paragraph; §16.2
+          `draft-dock`) — the ONE pattern hosting the five working panels on
+          both platforms, replacing the M2 desktop rail (deleted in DR.4)
+          and the M2 mobile four-way pane switcher (deleted here). The dock
+          is a flex band BELOW the board zone; its open panel is absolutely
+          positioned above the strip, over the board — the board zone's
+          geometry never changes (D151). Every tab renders for every seat:
+          the dock is not commissioner chrome, and no commissioner control
+          lives in it (§8.7's one door is the bar's Draft Options). */}
+      <DraftDock
+        panels={{
+          players: poolCard,
+          queue: queueCard,
+          roster: trackerCard,
+          lists: listsCard,
+          chat: chatCard,
+        }}
+      />
 
       {/* §8.7 panel — trigger-less and CONTROLLED since DR.2 (D153); the
           bar's Draft Options MENU is its one door since DR.3, opening it at
@@ -954,18 +967,9 @@ function DraftRoomLive({
         />
       )}
 
-      {/* §8.9 "Mobile: the panel is a bottom sheet" — the same MyListsPanel,
-          cheat sheet inlined (no nested portals, D119(6)). */}
-      <Sheet open={listsSheetOpen} onOpenChange={setListsSheetOpen}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-          <SheetHeader className="sr-only">
-            <SheetTitle>My lists</SheetTitle>
-          </SheetHeader>
-          {listsCard(true)}
-        </SheetContent>
-      </Sheet>
-
-      {/* The lifted Add-a-draft-list modal (D119(6): outside every Sheet). */}
+      {/* The lifted Add-a-draft-list modal (D119(6): mounted at room
+          level, OUTSIDE every overlay — a sibling of the dock, never a
+          panel body inside it). */}
       <AddDraftListModal
         open={addListOpen}
         onOpenChange={setAddListOpen}
