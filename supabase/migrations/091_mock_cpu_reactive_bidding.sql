@@ -109,14 +109,33 @@
 -- BANNER ITEM 3 — BOUNDED, AND BOUNDED LOUDLY (D200(3)).
 -- ---------------------------------------------------------------------------
 -- The responder writes the whole ladder inside one transaction, so it needs a
--- ceiling: **2 × team_count raises per provoking transaction**, and a
--- `RAISE EXCEPTION` — never a silent `EXIT` — if it is ever reached. A ladder
--- that long means the value model or the candidate query is wrong, and a
--- silent stop would hide it (CLAUDE.md: never let "nothing happened" mean "it
--- worked"). In practice the gap-proportional jump makes a real ladder a
--- handful of steps, and the cap is unreachable by legitimate laddering: the
--- nibble probability at a wide gap is small BY CONSTRUCTION, so a
--- cap-length all-nibble ladder needs a run of independently unlikely draws.
+-- ceiling, and a `RAISE EXCEPTION` — never a silent `EXIT` — if it is ever
+-- reached (CLAUDE.md: never let "nothing happened" mean "it worked").
+--
+-- **THE BOUND IS `GREATEST(2 × team_count, auction_budget)`, NOT D200(3)'s
+-- `2 × team_count`, AND THE CHANGE WAS FORCED BY A MEASUREMENT.** D200(3)
+-- fixed the number on the premise that "in practice jump-bids make the real
+-- ladder a handful of steps", and on the shipped default shape that is true:
+-- a full 12-team × 15-slot × $200 mock measured a LONGEST ladder of **13
+-- raises against a cap of 24**. But a *legal* league can be degenerate —
+-- `startingSum ≥ 1` and `bench ≥ 0` (league-settings.ts:444) allow a
+-- one-slot roster, and `auction_budget` runs to $1000 — and on an 8-team ×
+-- 2-slot × $200 board every franchise can afford ~$199 for one player, so the
+-- price grinds up a dollar at a time through seven willing seats and the
+-- ladder runs past 16. **That is not a defect: it is exactly the texture
+-- Chris asked for** ("everyone spams bid until a player gets closer to their
+-- average cost value"), and `2 × team_count` fires on it with a diagnosis
+-- ("the value model is wrong") that would be FALSE. A tripwire that trips on
+-- correct behaviour and then lies about why is worse than no tripwire.
+--
+-- The bound used instead is STRUCTURAL: every rung raises by at least $1, no
+-- rung exceeds its bidder's max bid, and no max bid exceeds the league's
+-- budget, so a legitimate ladder can never have more rungs than a franchise
+-- has dollars. `2 × team_count` is kept as the FLOOR (it is the larger of the
+-- two in a tiny-budget league). D200(3)'s intent — bound it, and fail loudly
+-- when the bound means something is genuinely wrong — is preserved exactly;
+-- what changes is that the exception now only ever fires on something that
+-- cannot legally happen, which is what makes it worth raising.
 --
 -- **Deviation from D200(3)'s described mechanism, stated rather than buried:**
 -- D200(3) anticipated the responder RECURSING through
@@ -414,10 +433,16 @@ BEGIN
     RETURN 0;
   END IF;
 
-  -- D200(3)'s ceiling. GREATEST(…, 1) so a fixture mock with an empty
-  -- nomination_order still has a positive cap rather than a zero one that
-  -- would fire on the first legitimate raise.
-  v_cap := 2 * GREATEST(COALESCE(jsonb_array_length(v_draft.nomination_order), 0), 1);
+  -- D200(3)'s ceiling, WIDENED to a bound a legitimate ladder cannot reach —
+  -- see banner item 3 for the measurement that forced the change. The
+  -- structural bound is MONEY: every rung raises by at least $1, no rung
+  -- exceeds its bidder's max bid, and no max bid exceeds the league's budget,
+  -- so a ladder can never have more rungs than there are dollars in a
+  -- franchise's purse. `2 × team_count` stays as the FLOOR (D200(3)'s number,
+  -- which is the larger of the two in a tiny-budget league).
+  v_cap := GREATEST(
+             2 * GREATEST(COALESCE(jsonb_array_length(v_draft.nomination_order), 0), 1),
+             COALESCE((v_draft.config->>'auction_budget')::int, 200));
 
   PERFORM set_config('fieldscout.mock_cpu_responding', 'on', TRUE);
 
@@ -509,14 +534,26 @@ BEGIN
     -- / E27 / raise-floor / E5 max-bid clauses and the same D128 anti-snipe
     -- floor a human's bid passes through. action_id NULL — a system row
     -- (D130's actor matrix: a CPU's win awards as is_auto/'autopick').
+    -- THE LABEL CHANGES, and it is the only shipped string this task moves:
+    -- 089 passed 'draft_tick' because the tick was the only thing that could
+    -- raise. It no longer is — a response belongs to whichever transaction
+    -- provoked it — so the label names the ACTOR ('draft_mock_cpu') instead
+    -- of a caller it may not have. p_label only ever prefixes a REFUSAL, and
+    -- a CPU refusal is a bug report, never user-facing copy; the two pgTAP
+    -- assertions that pin one (038 §E, 039 §C4) move with it.
     PERFORM public.draft_place_bid_internal(
       v_draft.id, v_cand_team, v_amount, NULL, 'draft_mock_cpu');
     v_raises := v_raises + 1;
 
-    -- LOUD, never a silent EXIT (D200(3)).
+    -- LOUD, never a silent EXIT (D200(3)). Reaching this line is IMPOSSIBLE
+    -- for a well-formed ladder — every rung is strictly higher than the last
+    -- and no rung exceeds the budget — so the message names what a breach
+    -- actually implies rather than guessing: a raise that did not raise, a
+    -- scan that admitted the standing high bidder, or a max bid above the
+    -- league's budget (a commissioner adjustment can do that, §8.7).
     IF v_raises >= v_cap THEN
       RAISE EXCEPTION
-        'draft_mock_cpu_respond_internal: the CPU ladder on draft % hit its cap of % raises in one transaction (player %, high bid $%) — the value model or the candidate scan is wrong',
+        'draft_mock_cpu_respond_internal: the CPU ladder on draft % passed its bound of % raises in one transaction (player %, last amount $%) — a ladder cannot legally be this long, so the raise curve, the candidate scan or a franchise''s budget is wrong',
         v_draft.id, v_cap, v_win_player, v_amount;
     END IF;
   END LOOP;

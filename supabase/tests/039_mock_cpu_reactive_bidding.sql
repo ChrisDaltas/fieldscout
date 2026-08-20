@@ -66,7 +66,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(55);
+select plan(61);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins, the ONE generator, the call form, and the untouched sweep.
@@ -303,7 +303,7 @@ select
   'authenticated', 'authenticated',
   'pgtap-ap3-' || lpad(i::text, 2, '0') || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}',
-  jsonb_build_object('username', 'ap3_user_' || lpad(i::text, 2, '0')),
+  jsonb_build_object('username', 'pgtap_ap3_user_' || lpad(i::text, 2, '0')),
   now(), now()
 from generate_series(1, 8) i;
 
@@ -396,9 +396,9 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "97100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select lives_ok(
-  format($$ select public.draft_nominate('%s', 'ap3-rb01', 1, gen_random_uuid()) $$,
+  format($$ select public.draft_nominate('%s', 'ap3-rb12', 1, gen_random_uuid()) $$,
          (select id from ap3_mock)),
-  'the human nominates ap3-rb01 at $1');
+  'the human nominates ap3-rb12 at $1');
 reset role;
 
 select ok(
@@ -449,12 +449,28 @@ select is(
                (select id from ap3_mock), 1, l.team_id, l.pass::int,
                (select count(*)::int + 1 from players pl
                 where pl.adp is not null
-                  and (pl.adp < 0.101 or (pl.adp = 0.101 and pl.id < 'ap3-rb01'))),
+                  and (pl.adp < 0.112 or (pl.adp = 0.112 and pl.id < 'ap3-rb12'))),
                200, 2, 8,
-               public.draft_mock_cpu_need((select id from ap3_mock), l.team_id, 'ap3-rb01')),
+               public.draft_mock_cpu_need((select id from ap3_mock), l.team_id, 'ap3-rb12')),
              (select b2.max_bid from public.draft_team_budget((select id from ap3_mock), l.team_id) b2)))),
   0,
   'EVERY RUNG IS THE CURVE: no raise in the ladder differs from draft_mock_cpu_raise_amount''s answer for its own (team, pass, previous high, ceiling) — the ladder is the function, so replaying the seed replays the ladder');
+select is(
+  (select l.team_id from ap3_ladder l where l.pass = 1),
+  (select c.team
+   from ap3_mock m,
+        lateral (
+          select (o.team)::uuid as team, o.idx,
+                 public.draft_mock_cpu_bid_value(m.id, 1, (o.team)::uuid, 1,
+                   (select count(*)::int + 1 from players pl where pl.adp is not null
+                      and (pl.adp < 0.112 or (pl.adp = 0.112 and pl.id < 'ap3-rb12'))),
+                   200, 2, 8, public.draft_mock_cpu_need(m.id, (o.team)::uuid, 'ap3-rb12')) as value
+          from drafts d join ap3_mock m2 on m2.id = d.id,
+               jsonb_array_elements_text(d.nomination_order) with ordinality as o(team, idx)
+          where o.team <> 'c7000000-0000-4000-8000-00a100000001'
+        ) c
+   order by c.value desc, c.idx limit 1),
+  'THE SELECTION RULE (re-pointed here from 038 §D, where it used to sit beside the `+$1` raise AP.3 replaced): the first rung''s bidder is the highest-value eligible CPU, ties broken on nomination-order position — the rule, pinned against the model itself. 091 changed HOW MUCH a CPU bids; WHO bids is 089''s argmax, unchanged.');
 select is(
   (select public.draft_mock_cpu_respond_internal((select id from ap3_mock))),
   0,
@@ -472,12 +488,12 @@ select is(
 update drafts d set
   current_pick_number = 3,
   current_nomination = jsonb_build_object(
-    'player_id', 'ap3-rb03', 'high_bid', 1,
+    'player_id', 'ap3-rb13', 'high_bid', 1,
     'high_bidder_team_id', 'c7000000-0000-4000-8000-00a100000004'),
   current_deadline = now() + interval '20 seconds'
 from ap3_mock m where d.id = m.id;
 insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id, amount, action_id)
-select m.id, 'b7000000-0000-4000-8000-0000000000a1', 3, 'ap3-rb03',
+select m.id, 'b7000000-0000-4000-8000-0000000000a1', 3, 'ap3-rb13',
        'c7000000-0000-4000-8000-00a100000004', 1, null
 from ap3_mock m;
 create temp table ap3_before_human as
@@ -488,7 +504,7 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "97100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select set_config('pgtap.ap3_bid',
-  (select public.draft_place_bid((select id from ap3_mock), 2, gen_random_uuid(), 3, 'ap3-rb03')::text), true);
+  (select public.draft_place_bid((select id from ap3_mock), 2, gen_random_uuid(), 3, 'ap3-rb13')::text), true);
 reset role;
 select ok(
   (select count(*) from draft_bids b join ap3_mock m on m.id = b.draft_id
@@ -506,6 +522,33 @@ select is(
 select ok(
   (current_setting('pgtap.ap3_bid')::jsonb->'draft'->'current_nomination'->>'high_bid')::int > 2,
   '…and that state is genuinely past the human''s own bid: the CPUs answered inside the call');
+
+-- ===========================================================================
+-- C3b. D128 UNDER A CPU RAISE, EXACTLY (re-pointed here from 038 §D4). A
+--      responder raise inside the final anti_snipe seconds floors the clock to
+--      EXACTLY now() + anti_snipe — the same INSERT + UPDATE a human's bid
+--      runs. 038 §D4 keeps the FOLD side (a claim that writes nothing must not
+--      move the clock either way); this is the raise side, and pgTAP's frozen
+--      now() makes it exact where the wire test can only bound it.
+-- ===========================================================================
+update drafts d set
+  current_pick_number = 4,
+  current_nomination = jsonb_build_object(
+    'player_id', 'ap3-rb11', 'high_bid', 1,
+    'high_bidder_team_id', 'c7000000-0000-4000-8000-00a100000004'),
+  current_deadline = now() + interval '3 seconds'
+from ap3_mock m where d.id = m.id;
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id, amount, action_id)
+select m.id, 'b7000000-0000-4000-8000-0000000000a1', 4, 'ap3-rb11',
+       'c7000000-0000-4000-8000-00a100000004', 1, null
+from ap3_mock m;
+select ok(
+  (select public.draft_mock_cpu_respond_internal((select id from ap3_mock))) > 0,
+  'fixture: with 3s left on the bid clock the responder still answers — the ladder does not care where in the window it lands');
+select is(
+  (select d.current_deadline from drafts d join ap3_mock m on m.id = d.id),
+  now() + interval '10 seconds',
+  'ANTI-SNIPE OBEYED (D128/E6), AND UNCHANGED BY AP.3: a CPU raise inside the final 10s floored the clock to EXACTLY now() + 10s — every rung of a ladder runs the identical INSERT + UPDATE a human''s bid runs, which is what "091 changes who bids when, never what a bid does to the clock" means in one assertion');
 
 -- ===========================================================================
 -- C4. E62 IS UNCHANGED — jump-bids do not let a CPU pass its ceiling, and the
@@ -562,11 +605,33 @@ select is(
    from ap3_cap_draft c),
   199,
   'fixture: both remaining CPUs value ap3-rb01 above their $199 max bid, so the ceiling IS $199 and a price of $190 leaves a 4.5% gap — the taper''s nibble region');
-select throws_like(
-  format($$ select public.draft_mock_cpu_respond_internal('%s') $$,
-         (select id from ap3_cap_draft)),
-  '%hit its cap of 4 raises in one transaction%',
-  'THE CAP IS LOUD (D200(3)): a ladder longer than 2 × team_count raises a named EXCEPTION rather than exiting quietly — a ladder that long means the value model or the candidate scan is wrong, and a silent stop would hide it');
+select ok(
+  (select public.draft_mock_cpu_respond_internal((select id from ap3_cap_draft))) > 0,
+  'THE LEGITIMATE GRIND COMPLETES: seven-per-cent gap, two willing seats, a $1-at-a-time climb to the $199 ceiling — and the responder runs it to the end and returns. This is the assertion that changed the BOUND: D200(3)''s `2 × team_count` (= 4 here) fires on exactly this market, with a diagnosis — "the value model is wrong" — that would be FALSE, because a nibble grind through willing seats is the texture Chris asked for. The bound is `GREATEST(2 × team_count, auction_budget)` instead: structural, because a ladder can never have more rungs than a franchise has dollars.');
+select is(
+  (select max(b.amount) from draft_bids b join ap3_cap_draft c on c.id = b.draft_id
+   where b.nomination_seq = 2),
+  199,
+  '…and it ends exactly at the ceiling: $199, the last dollar either seat can reach (E62 from the other side — the grind stops because the money does, not because a counter did)');
+-- WHY that grind is long, stated deterministically rather than as one run's
+-- luck: at $190 on a $199 ceiling the gap is 4.5%, so the curve nibbles on
+-- the overwhelming majority of seeds — which is what makes a two-seat climb
+-- to the ceiling cost ~9 rungs, well past D200(3)'s `2 × team_count` = 4 in
+-- this shape. Over the same 2 000-seed grid §B uses, with a fixed draft id so
+-- the number is a stored literal and not a coin flip.
+select ok(
+  (select count(*) filter (where a = 191)::numeric / count(*) > 0.90
+   from (
+     select public.draft_mock_cpu_raise_amount(
+              '00000000-0000-4000-8000-0000000000f1'::uuid, s,
+              '00000000-0000-4000-8000-0000000000a1'::uuid, p, 190, 199) as a
+     from generate_series(1, 50) s, generate_series(0, 39) p) x),
+  'THE MEASUREMENT BEHIND THE WIDENED BOUND: at a 4.5% gap over 90% of 2 000 seeded draws nibble a single dollar, so a climb from $190 to a $199 ceiling through two willing seats costs about nine rungs — more than twice D200(3)''s cap for this shape, on a market where nothing whatever is wrong');
+select ok(
+  (select p.prosrc like '%GREATEST(%auction_budget%' or p.prosrc like '%auction_budget%GREATEST%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'draft_mock_cpu_respond_internal'),
+  'THE BOUND IS STILL THERE and still reads the budget: a ladder is bounded, loudly, by `GREATEST(2 × team_count, auction_budget)` — its loudness is shown by the PR''s second break probe (set the bound to 1 ⇒ the named EXCEPTION), because no legal market can reach it, which is the property that makes it worth raising.');
 
 -- ---------------------------------------------------------------------------
 -- F. ISOLATION (§8.8 "zero side effects") — the reactive path wrote nothing
