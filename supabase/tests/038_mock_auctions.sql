@@ -100,7 +100,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(153);
+select plan(156);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins (§4.1 grants doctrine; D137; the helpers' stored literals)
@@ -166,11 +166,11 @@ select is(
   2,
   'draft_tick CALLS draft_system_nominate_internal exactly twice — the nomination TIMEOUT and the CPU THINK-TIME nomination are one function');
 select is(
-  (select (length(p.prosrc) - length(replace(p.prosrc, 'public.draft_place_bid_internal(', ''))) / length('public.draft_place_bid_internal(')
+  (select (length(p.prosrc) - length(replace(p.prosrc, 'public.draft_mock_cpu_respond_internal(', ''))) / length('public.draft_mock_cpu_respond_internal(')
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_tick'),
   1,
-  'draft_tick CALLS draft_place_bid_internal exactly once — the CPU raise passes the human validator');
+  'draft_tick CALLS the CPU responder exactly once — 091/AP.3 moved the raise out of ARM 2.6(c2) into draft_mock_cpu_respond_internal, which still reaches draft_place_bid_internal, so a CPU raise still passes the human validator (the call form is pinned end to end in 039 §A)');
 select ok(
   (select p.prosrc not like ('%AND d.draft_type = ''auction''' || E'\n' || '%AND d.is_mock = FALSE%')
           and p.prosrc not like ('%OR v_draft.draft_type <> ''auction''' || E'\n' || '%OR v_draft.is_mock' || E'\n%')
@@ -536,7 +536,7 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 select throws_ok(
-  format($$ select public.draft_nominate('%s', 'ma-rb05', 3, 'a9000000-0000-4000-8000-000000000010') $$,
+  format($$ select public.draft_nominate('%s', 'ma-k01', 3, 'a9000000-0000-4000-8000-000000000010') $$,
          (select id from ma_la)),
   'P0001',
   'draft_nominate: this mock draft is another member''s solo practice (§8.8/D103)',
@@ -545,7 +545,7 @@ select throws_ok(
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
-  format($$ select public.draft_nominate('%s', 'ma-rb05', 3, 'a9000000-0000-4000-8000-000000000011') $$,
+  format($$ select public.draft_nominate('%s', 'ma-k01', 3, 'a9000000-0000-4000-8000-000000000011') $$,
          (select id from ma_la)),
   'P0001',
   'draft_nominate: this mock draft is another member''s solo practice (§8.8/D103)',
@@ -554,7 +554,7 @@ select throws_ok(
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000099", "role": "authenticated"}', true);
 select throws_ok(
-  format($$ select public.draft_nominate('%s', 'ma-rb05', 3, 'a9000000-0000-4000-8000-000000000012') $$,
+  format($$ select public.draft_nominate('%s', 'ma-k01', 3, 'a9000000-0000-4000-8000-000000000012') $$,
          (select id from ma_la)),
   '42501',
   'draft_nominate: not a member of this draft''s league',
@@ -567,7 +567,7 @@ select is(
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select lives_ok(
-  format($$ select public.draft_nominate('%s', 'ma-rb05', 3, 'a9000000-0000-4000-8000-000000000013') $$,
+  format($$ select public.draft_nominate('%s', 'ma-k01', 3, 'a9000000-0000-4000-8000-000000000013') $$,
          (select id from ma_la)),
   'F61 (the admit side): the LAUNCHER nominates — for a franchise they do not manage (D103: authorization is launcher-keyed, never seat-keyed)');
 reset role;
@@ -575,12 +575,25 @@ select is(
   (select jsonb_build_object('seq', b.nomination_seq, 'player', b.player_id, 'team', b.team_id,
                              'amount', b.amount, 'has_action', b.action_id is not null)
    from draft_bids b join ma_la on ma_la.id = b.draft_id),
-  '{"seq": 1, "player": "ma-rb05", "team": "c9000000-0000-4000-8000-00a100000003", "amount": 3, "has_action": true}'::jsonb,
+  '{"seq": 1, "player": "ma-k01", "team": "c9000000-0000-4000-8000-00a100000003", "amount": 3, "has_action": true}'::jsonb,
   'the opening bid row is T3''s (the HUMAN seat, not the launcher''s own franchise T2) at $3 with the launcher''s action_id');
+-- 091/AP.3 — WHY THIS MARKET STAYS AT THE OPENING BID, and why §C nominates a
+-- KICKER. Since 091 a nomination provokes the CPUs in its own transaction
+-- (§8.8/D200(1)), so on an ordinary player this row would already be buried
+-- under a ladder and the launcher would not be the standing high bidder —
+-- which is the ONLY state in which F61''s self-raise discriminator below is
+-- reachable. draft_mock_cpu_need returns 0 for K/DST ALWAYS (D163/R406,
+-- pinned in §E and §F0), so a kicker is a market no CPU will ever answer:
+-- the gate pins keep their exact shape, and the contrast documents the new
+-- behaviour instead of hiding from it. The RAISE side lives in 039.
 select is(
   (select d.current_nomination from drafts d join ma_la on ma_la.id = d.id),
-  '{"player_id": "ma-rb05", "high_bid": 3, "high_bidder_team_id": "c9000000-0000-4000-8000-00a100000003"}'::jsonb,
-  'BIDDING phase open: current_nomination = {ma-rb05, $3, T3} (065:121''s printed shape)');
+  '{"player_id": "ma-k01", "high_bid": 3, "high_bidder_team_id": "c9000000-0000-4000-8000-00a100000003"}'::jsonb,
+  'BIDDING phase open: current_nomination = {ma-k01, $3, T3} (065:121''s printed shape) — and STILL the opening bid after 091''s reactive responder ran inside the nomination: every CPU prices a kicker at $0');
+select is(
+  (select count(*) from draft_bids b join ma_la on ma_la.id = b.draft_id),
+  1::bigint,
+  '…with exactly ONE bid row: the responder was invoked by draft_nominate and wrote nothing, because no candidate can beat $3 on a player worth $0 to every seat (E62''s ceiling doing its job at the bottom of the range)');
 select is(
   (select d.current_deadline from drafts d join ma_la on ma_la.id = d.id),
   now() + interval '20 seconds',
@@ -633,9 +646,20 @@ select is(
   '…the bid history still holds exactly the opening row — none of the refused bids wrote');
 
 -- ---------------------------------------------------------------------------
--- D. THE CPU SUB-ARM (ARM 2.6(c)): think-time at one unit, ONE raise per
---    pass, clock obedience (D128), never after the buzzer, the CPU
---    nomination on its think-time, and E59 for an auction mock.
+-- D. THE CPU SUB-ARM (ARM 2.6(c)): think-time at one unit, the FOLD, clock
+--    obedience (D128), never after the buzzer, the CPU nomination on its
+--    think-time, and E59 for an auction mock.
+--    **091/AP.3 re-pointed this section, it was not weakened.** The arm's
+--    THINK-TIME GATE, its claim scope, its buzzer discipline and its
+--    nomination half are unchanged and still pinned here at their one-unit
+--    boundaries. What moved is the RAISE: since 091 the arm calls
+--    draft_mock_cpu_respond_internal instead of writing `+ $1` itself, and a
+--    ladder normally resolves in the transaction that provoked it — so what
+--    this arm meets in practice is the FOLD, which is what §D now pins, on a
+--    kicker market where the fold is guaranteed rather than incidental. The
+--    raise side — the selection rule, the jump curve, a raise's anti-snipe
+--    floor, the ladder's termination and its cap — is pinned in **039**,
+--    against the behaviour that actually ships.
 -- ---------------------------------------------------------------------------
 -- (D1) A HEALTHY mock (raise think-time not reached) is claimed by NO arm.
 select ok(
@@ -685,91 +709,84 @@ select is(
     'raised',  (current_setting('pgtap.ma_t2')::jsonb->>'auction_cpu_raised')::int,
     'folded',  (current_setting('pgtap.ma_t2')::jsonb->>'auction_cpu_folded')::int,
     'failures', current_setting('pgtap.ma_t2')::jsonb->'auction_cpu_failures'),
-  '{"claimed": 1, "raised": 1, "folded": 0, "failures": []}'::jsonb,
-  'due = now(): claimed 1, ONE raise, no fold, no failure — the boundary from the other side');
+  '{"claimed": 1, "raised": 0, "folded": 1, "failures": []}'::jsonb,
+  'due = now(): CLAIMED 1 — the think-time boundary from the other side (D146) — and the arm calls the responder, which FOLDS: no raise, no failure');
 select is(
   (select count(*) from draft_bids b join ma_la on ma_la.id = b.draft_id),
-  2::bigint,
-  'ONE raise per pass (D132): the history grew by exactly one row though every CPU seat qualifies');
+  1::bigint,
+  '…and a fold writes NOTHING: the history is still the single opening row, the clock runs on, and the human (or the buzzer) decides');
+-- WHY it folded, pinned against the model itself rather than asserted: every
+-- eligible CPU prices this kicker at $0 (draft_mock_cpu_need''s K/DST rule —
+-- R406/D163), so no candidate can reach high + 1 and the candidate scan is
+-- empty. This is the same argmax rule the raise path uses, read from the
+-- bottom of its range.
 select is(
-  (select jsonb_build_object('seq', b.nomination_seq, 'player', b.player_id, 'amount', b.amount,
-                             'action_null', b.action_id is null,
-                             'is_cpu', b.team_id <> 'c9000000-0000-4000-8000-00a100000003'
-                                       and b.team_id::text <> (select d.config->'mock'->>'human_team_id' from drafts d join ma_la on ma_la.id = d.id))
-   from draft_bids b join ma_la on ma_la.id = b.draft_id
-   order by b.created_at desc, b.amount desc limit 1),
-  '{"seq": 1, "player": "ma-rb05", "amount": 4, "action_null": true, "is_cpu": true}'::jsonb,
-  'the CPU raise: +$1 over the high bid (integer raises), on the live nomination, by a CPU seat, with action_id NULL (D130 — a system row; a CPU''s win awards as autopick)');
--- The selection rule: the raiser is the argmax of the ONE value model over
--- the eligible CPU seats at pass = 1 (the live bid count when it decided),
--- ties by nomination-order position.
-select is(
-  (select b.team_id from draft_bids b join ma_la on ma_la.id = b.draft_id
-   where b.amount = 4),
-  (select c.team
+  (select count(*)::int
    from drafts d join ma_la on ma_la.id = d.id,
         lateral (
-          select (o.team)::uuid as team, o.idx,
+          select (o.team)::uuid as team,
                  public.draft_mock_cpu_bid_value(d.id, 1, (o.team)::uuid, 1,
                    (select count(*)::int + 1 from players pl where pl.adp is not null
-                      and (pl.adp < 0.005 or (pl.adp = 0.005 and pl.id < 'ma-rb05'))),
-                   200, 2, 8, public.draft_mock_cpu_need(d.id, (o.team)::uuid, 'ma-rb05')) as value
+                      and (pl.adp < 0.050 or (pl.adp = 0.050 and pl.id < 'ma-k01'))),
+                   200, 2, 8, public.draft_mock_cpu_need(d.id, (o.team)::uuid, 'ma-k01')) as value
           from jsonb_array_elements_text(d.nomination_order) with ordinality as o(team, idx)
           where o.team <> 'c9000000-0000-4000-8000-00a100000003'
         ) c
-   order by c.value desc, c.idx limit 1),
-  'THE SELECTION RULE: the raiser is the highest-value eligible CPU (ties → nomination-order position) at pass 1 — the rule, pinned against the model itself');
+   where c.value > 0),
+  0,
+  'THE SELECTION RULE, at the bottom of its range: ZERO eligible CPUs value ma-k01 above $0, which is exactly why the responder found no candidate — a CPU never raises on a kicker (D163''s autodraft clause; the raise-side argmax is pinned in 039)');
 select is(
   (select d.current_nomination from drafts d join ma_la on ma_la.id = d.id),
-  jsonb_build_object('player_id', 'ma-rb05', 'high_bid', 4,
-                     'high_bidder_team_id',
-                     (select b.team_id from draft_bids b join ma_la on ma_la.id = b.draft_id where b.amount = 4)),
-  'current_nomination now carries the CPU as high bidder at $4');
+  '{"player_id": "ma-k01", "high_bid": 3, "high_bidder_team_id": "c9000000-0000-4000-8000-00a100000003"}'::jsonb,
+  'current_nomination is unmoved by the fold — the human seat still holds the high bid at $3');
 select is(
   (select d.current_deadline from drafts d join ma_la on ma_la.id = d.id),
   now() + interval '20 seconds',
-  'the raise landed ABOVE the anti-snipe threshold (20s left ≥ 10): the clock is untouched (D128 — bids above the threshold neither reset nor pause it)');
+  'A FOLD NEVER TOUCHES THE CLOCK (D128): 20s left before the pass, 20s left after — the arm claimed the row, decided nothing was worth bidding, and released it');
 
--- (D4) CLOCK OBEDIENCE — inside the anti-snipe window the CPU's raise
--- floors the clock to EXACTLY now() + anti_snipe (3s left → 10s).
+-- (D4) CLOCK OBEDIENCE, the fold side (D128). A CPU that decides not to bid
+-- must not touch the clock EITHER WAY — not floor it, not extend it — even
+-- when it deliberates inside the anti-snipe window. (The RAISE side of D128 —
+-- a CPU bid inside the window flooring the deadline to exactly now() +
+-- anti_snipe — is pinned in 039 against a market a CPU will actually answer.)
 update drafts d
 set current_deadline = now() + interval '3 seconds',
-    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 2))
+    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 1))
 from ma_la where d.id = ma_la.id;
 select set_config('pgtap.ma_t3', public.draft_tick()::text, true);
 select is(
-  (current_setting('pgtap.ma_t3')::jsonb->>'auction_cpu_raised')::int, 1,
-  'a CPU raise lands with 3s left (think-time due, clock running)');
+  (current_setting('pgtap.ma_t3')::jsonb->>'auction_cpu_folded')::int, 1,
+  'the arm claims and folds with 3s left (think-time due, clock still running)');
 select is(
   (select d.current_deadline from drafts d join ma_la on ma_la.id = d.id),
-  now() + interval '10 seconds',
-  'ANTI-SNIPE OBEYED (D128/E6): the CPU''s raise inside the final 10s floored the clock to EXACTLY now() + 10s — the same INSERT + UPDATE a human''s bid runs');
+  now() + interval '3 seconds',
+  'ANTI-SNIPE IS A BID''S DOING, NOT A CLAIM''S (D128/E6): a fold inside the final 10s leaves 3s as 3s — the arm never extends a clock it merely looked at');
 select is(
-  (select max(b.amount) from draft_bids b join ma_la on ma_la.id = b.draft_id), 5,
-  '…at $5 (another +$1 raise by the next decision)');
--- Outside the window: 15s left, a due raise leaves the deadline alone.
+  (select max(b.amount) from draft_bids b join ma_la on ma_la.id = b.draft_id), 3,
+  '…and the high bid is still the $3 opening');
+-- Outside the window: 15s left, a due pass still leaves the deadline alone.
 update drafts d
 set current_deadline = now() + interval '15 seconds',
-    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 3))
+    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 1))
 from ma_la where d.id = ma_la.id;
 select set_config('pgtap.ma_t4', public.draft_tick()::text, true);
 select is(
-  (current_setting('pgtap.ma_t4')::jsonb->>'auction_cpu_raised')::int, 1,
-  'a CPU raise lands with 15s left');
+  (current_setting('pgtap.ma_t4')::jsonb->>'auction_cpu_folded')::int, 1,
+  'the arm claims and folds with 15s left');
 select is(
   (select d.current_deadline from drafts d join ma_la on ma_la.id = d.id),
   now() + interval '15 seconds',
-  '…and ABOVE the threshold the clock is untouched (15s stays 15s) — the floor is a floor, never a reset-to-full');
+  '…and above the threshold the clock is equally untouched (15s stays 15s)');
 
 -- (D5) NEVER AFTER THE BUZZER: think-time due but the clock has run out —
 -- the CPU sub-arm claims NOTHING; the expiry loop awards in the same pass.
 update drafts d
 set current_deadline = now() - interval '1 second',
-    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 4))
+    updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 1 * 1000 + 1))
 from ma_la where d.id = ma_la.id;
 select ok(
   (select public.draft_mock_auction_cpu_due(d.id, d.config, d.current_deadline, d.updated_at,
-                                             d.current_pick_number, true, 4) <= now()
+                                             d.current_pick_number, true, 1) <= now()
    from drafts d join ma_la on ma_la.id = d.id),
   'fixture: the raise think-time IS due while the bid clock has already expired');
 create temp table ma_pre_award as
@@ -788,9 +805,9 @@ select is(
                              'is_auto', p.is_auto, 'made_via', p.made_via, 'seq', p.pick_number)
    from draft_picks p join ma_la on ma_la.id = p.draft_id),
   (select jsonb_build_object('team', team_id, 'price', amount, 'round', null,
-                             'is_auto', true, 'made_via', 'autopick', 'seq', 1)
+                             'is_auto', false, 'made_via', 'manager', 'seq', 1)
    from ma_pre_award),
-  'the award: the CPU high bidder wins ma-rb05 at its standing bid, round NULL, is_auto TRUE / autopick — the winning row carries action_id NULL (D130''s actor matrix, read off the row)');
+  'the award: the uncontested nominator (the HUMAN seat T3) wins ma-k01 at its $3 opening, round NULL — is_auto FALSE / manager, because the winning row carries the launcher''s action_id (D130''s actor matrix, read off the row; §8.6.7(b)/E26)');
 select ok(
   (select d.current_nomination is null and d.current_pick_number = 2
           and d.on_clock_team_id = 'c9000000-0000-4000-8000-00a100000001'
@@ -830,16 +847,22 @@ select is(
 select is(
   (select jsonb_build_object('seq', b.nomination_seq, 'player', b.player_id, 'team', b.team_id,
                              'amount', b.amount, 'action_null', b.action_id is null)
-   from draft_bids b join ma_la on ma_la.id = b.draft_id where b.nomination_seq = 2),
+   from draft_bids b join ma_la on ma_la.id = b.draft_id
+   where b.nomination_seq = 2 order by b.amount limit 1),
   '{"seq": 2, "player": "ma-rb01", "team": "c9000000-0000-4000-8000-00a100000001", "amount": 1, "action_null": true}'::jsonb,
-  'the CPU nomination = the seat''s OWN resolve chain at min_bid (D129(2)): lowest-ADP available RB (ma-rb01 — rb05 is gone), T1, $1, action_id NULL — the identical row a timeout writes (F62)');
+  'the CPU nomination = the seat''s OWN resolve chain at min_bid (D129(2)): lowest-ADP available RB (ma-rb01), T1, $1, action_id NULL — the identical OPENING row a timeout writes (F62)');
 select ok(
-  (select d.current_nomination = '{"player_id": "ma-rb01", "high_bid": 1, "high_bidder_team_id": "c9000000-0000-4000-8000-00a100000001"}'::jsonb
+  (select count(*) > 1 from draft_bids b join ma_la on ma_la.id = b.draft_id
+   where b.nomination_seq = 2),
+  '…and 091/AP.3''s reactive responder ran INSIDE draft_system_nominate_internal: this RB market is already contested when the nomination returns, in the same tick pass that opened it (§8.8/D200(1) — "the nomination that opened the market" is a provocation)');
+select ok(
+  (select d.current_nomination->>'player_id' = 'ma-rb01'
+          and (d.current_nomination->>'high_bid')::int > 1
           and d.current_deadline = now() + interval '20 seconds'
           and d.on_clock_team_id = 'c9000000-0000-4000-8000-00a100000001'
           and d.current_pick_number = 2
    from drafts d join ma_la on ma_la.id = d.id),
-  '…BIDDING phase open on T1''s nomination with the 20s bid clock; on_clock stays the nominator; the sequence is still 2 (D157(2))');
+  '…BIDDING phase open on T1''s nomination above its $1 opening, with the 20s bid clock UNTOUCHED (the whole ladder landed above the anti-snipe threshold — D128 unchanged); on_clock stays the nominator; the sequence is still 2 (D157(2))');
 
 -- (D7) E59 carries to an auction mock: a stale LAUNCHER pauses it (ARM
 -- 1.6, launcher-keyed) with the BID clock''s remaining persisted; the
@@ -934,53 +957,83 @@ select ok(
   (select public.draft_mock_cpu_bid_value(d.id, 14, 'c9000000-0000-4000-8000-00c100000003', 1, 1, 200, 2, 8, 0.5) > 50
    from drafts d join ma_lc on ma_lc.id = d.id),
   'fixture: T3''s VALUE for the player (rank 1, need 0.5, pass 1) exceeds its $50 max bid — the cap, not the value, is the binding constraint');
--- Raise 1: think due ⇒ T3 (the ONLY CPU with an open slot) raises to $2.
+-- 091/AP.3 — THE ANSWER IS ALREADY THERE. The nomination above provoked the
+-- responder in its own transaction, so T3 (the ONLY CPU with an open slot —
+-- E27 excludes the six complete rosters from candidacy) has already answered,
+-- and **draft_tick() has not been called since the nomination**. That is the
+-- discriminator: before 091 this row could only exist after a sweep.
+-- The amount is pinned AGAINST THE CURVE rather than as a literal, because
+-- create_mock_draft mints a fresh UUID per run and the UUID is in the seed —
+-- so the honest pin here is "the ladder IS the function", and the curve's own
+-- stored literals live in 039 §B where the draft id is fixed.
+select is(
+  (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id
+   where b.nomination_seq = 14),
+  2::bigint,
+  'PROVOKED, NOT SWEPT: the $1 nomination is already contested — two rows, written in one transaction, with no tick between them');
+select is(
+  (select b.amount from draft_bids b join ma_lc on ma_lc.id = b.draft_id
+   where b.nomination_seq = 14 and b.team_id = 'c9000000-0000-4000-8000-00c100000003'),
+  (select public.draft_mock_cpu_raise_amount(d.id, 14, 'c9000000-0000-4000-8000-00c100000003'::uuid, 1, 1, 50)
+   from drafts d join ma_lc on ma_lc.id = d.id),
+  '…and T3''s answer is EXACTLY what draft_mock_cpu_raise_amount says for (this draft, nomination 14, T3, pass 1, high $1, ceiling $50) — the ladder is the curve');
+select ok(
+  (select b.amount <= 50 from draft_bids b join ma_lc on ma_lc.id = b.draft_id
+   where b.nomination_seq = 14 and b.team_id = 'c9000000-0000-4000-8000-00c100000003'),
+  'E62 AT THE TOP OF THE JUMP: whatever it drew, it is at or under T3''s $50 max bid — the jump is clamped at LEAST(value, max_bid), and the cap is the binding constraint here (its VALUE is far above $50, pinned two assertions up)');
+-- The sweep now finds nothing to do — the arm it used to drive has become the
+-- safety net (AP.3 item 4 / D200(1)): T3 is the only eligible seat and a CPU
+-- never raises itself, so the market is settled.
 update drafts d
-set updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 14 * 1000 + 1))
+set updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 14 * 1000 + 2))
 from ma_lc where d.id = ma_lc.id;
 select set_config('pgtap.ma_e1', public.draft_tick()::text, true);
 select is(
-  (select jsonb_build_object('team', b.team_id, 'amount', b.amount)
-   from draft_bids b join ma_lc on ma_lc.id = b.draft_id
-   where b.nomination_seq = 14 order by b.amount desc limit 1),
-  '{"team": "c9000000-0000-4000-8000-00c100000003", "amount": 2}'::jsonb,
-  'T3 raises to $2 — the only CPU seat with an open slot (E27 excludes the six complete rosters from candidacy)');
--- The human bids $48 ⇒ T3's next raise is $49, ONE UNDER its max bid.
-set local role authenticated;
-select set_config('request.jwt.claims',
-  '{"sub": "98000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
-select lives_ok(
-  format($$ select public.draft_place_bid('%s', 48, 'a9000000-0000-4000-8000-000000000021', 14, 'ma-rb01') $$,
-         (select id from ma_lc)),
-  'the human bids $48 (with the R330 identity pair)');
-reset role;
-update drafts d
-set updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 14 * 1000 + 3))
-from ma_lc where d.id = ma_lc.id;
-select set_config('pgtap.ma_e2', public.draft_tick()::text, true);
-select is(
   jsonb_build_object(
-    'raised', (current_setting('pgtap.ma_e2')::jsonb->>'auction_cpu_raised')::int,
-    'folded', (current_setting('pgtap.ma_e2')::jsonb->>'auction_cpu_folded')::int,
-    'failures', current_setting('pgtap.ma_e2')::jsonb->'auction_cpu_failures'),
-  '{"raised": 1, "folded": 0, "failures": []}'::jsonb,
-  'E62 "PASSES": high + 1 = $49 ≤ max_bid $50 ⇒ the CPU raises (ONE UNDER the edge)');
+    'raised', (current_setting('pgtap.ma_e1')::jsonb->>'auction_cpu_raised')::int,
+    'folded', (current_setting('pgtap.ma_e1')::jsonb->>'auction_cpu_folded')::int),
+  '{"raised": 0, "folded": 1}'::jsonb,
+  'THE SWEEP IS NO LONGER THE HEARTBEAT: a tick over a market whose ladder already resolved claims it, folds, and writes nothing');
+
+-- THE ONE-UNIT EDGE (D146), made deterministic. The market is moved to $49 by
+-- fixture so the gap to T3's $50 ceiling is EXACTLY ONE DOLLAR — the curve's
+-- short-circuit arm, which takes no draw at all, so the two E62 answers below
+-- are exact rather than seeded.
+reset role;
+update drafts d set
+  current_nomination = jsonb_build_object(
+    'player_id', 'ma-rb01', 'high_bid', 49,
+    'high_bidder_team_id', 'c9000000-0000-4000-8000-00c100000002'),
+  current_deadline = now() + interval '20 seconds'
+from ma_lc where d.id = ma_lc.id;
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id, amount, action_id)
+select ma_lc.id, 'b9000000-0000-4000-8000-0000000000c1', 14, 'ma-rb01',
+       'c9000000-0000-4000-8000-00c100000002', 49, 'a9000000-0000-4000-8000-000000000021'
+from ma_lc;
+select is(
+  public.draft_mock_cpu_respond_internal((select id from ma_lc)),
+  1,
+  'E62 "PASSES" AT THE EDGE: with one dollar of headroom the responder writes exactly ONE raise — high + 1 = $50 = max_bid, the last legal dollar');
 select is(
   (select b.amount from draft_bids b join ma_lc on ma_lc.id = b.draft_id
    where b.nomination_seq = 14 and b.team_id = 'c9000000-0000-4000-8000-00c100000003'
    order by b.amount desc limit 1),
-  49,
-  '…to $49');
--- The human bids $50 — EXACTLY the CPU's max bid ⇒ high + 1 = 51 = max_bid
--- + 1 ⇒ T3 FOLDS (the D146 one-unit-over case).
+  50,
+  '…at $50 exactly — no draw was taken (headroom 1 short-circuits), so this is the curve''s one-unit boundary and not a lucky seed');
+-- ONE OVER: the human bids $51, so T3's next raise would be $52 = max_bid + 2.
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select lives_ok(
-  format($$ select public.draft_place_bid('%s', 50, 'a9000000-0000-4000-8000-000000000022', 14, 'ma-rb01') $$,
+  format($$ select public.draft_place_bid('%s', 51, 'a9000000-0000-4000-8000-000000000022', 14, 'ma-rb01') $$,
          (select id from ma_lc)),
-  'the human bids $50 — exactly the CPU''s max bid, so the CPU''s next raise would be ONE DOLLAR over its edge');
+  'the human bids $51 — one dollar past the CPU''s ceiling (with the R330 identity pair)');
 reset role;
+select is(
+  (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id
+   where b.nomination_seq = 14 and b.amount > 50),
+  1::bigint,
+  'E62 "FOLDS", ONE OVER THE EDGE, INSIDE THE HUMAN''S OWN TRANSACTION: the $51 grew the history by exactly one row — the responder ran and wrote nothing, because T3''s cap IS the validator''s own max bid');
 update drafts d
 set updated_at = now() - make_interval(secs => 20 * public.draft_mock_think_fraction(d.id, 14 * 1000 + 5))
 from ma_lc where d.id = ma_lc.id;
@@ -992,22 +1045,20 @@ select is(
     'folded', (current_setting('pgtap.ma_e3')::jsonb->>'auction_cpu_folded')::int,
     'failures', current_setting('pgtap.ma_e3')::jsonb->'auction_cpu_failures'),
   '{"claimed": 1, "raised": 0, "folded": 1, "failures": []}'::jsonb,
-  'E62 "FOLDS": claimed (the think-time was due), NO raise, ONE fold, NO failure — the CPU never proposes $51 = max_bid + 1 because its cap IS the validator''s own max bid (ONE OVER the edge)');
-select is(
-  (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id where b.nomination_seq = 14),
-  5::bigint,
-  '…history = opening $1, CPU $2, human $48, CPU $49, human $50 — five rows, nothing after the fold');
+  '…and the safety-net arm agrees on the next sweep: claimed (the think-time was due), NO raise, ONE fold, NO failure');
 -- The validator the CPU reaches, asked directly for the dollar it folded on.
+-- ($52 rather than $51 because the human's $51 now stands as the high bid, so
+-- $51 would meet the raise-floor clause first and prove nothing about E62.)
 select throws_ok(
-  format($$ select public.draft_place_bid_internal('%s', 'c9000000-0000-4000-8000-00c100000003', 51, null, 'draft_tick') $$,
+  format($$ select public.draft_place_bid_internal('%s', 'c9000000-0000-4000-8000-00c100000003', 52, null, 'draft_mock_cpu') $$,
          (select id from ma_lc)),
   'P0001',
-  'draft_tick: $51 is over your max bid of $50 — you have $50 for 1 open roster spots at a $1 minimum bid (§8.6.1/E5)',
-  'E62 — THE VALIDATOR THE CPU PASSES THROUGH refuses $51 (max_bid + 1) by name with the tick''s label: the same E5 clause, the same number, the same function a human''s bid meets');
+  'draft_mock_cpu: $52 is over your max bid of $50 — you have $50 for 1 open roster spots at a $1 minimum bid (§8.6.1/E5)',
+  'E62 — THE VALIDATOR THE CPU PASSES THROUGH refuses $52 (the dollar the responder folded on) by name, under the RESPONDER''s own label: the same E5 clause, the same number, the same function a human''s bid meets. 091 renamed the label from ''draft_tick'' because a reactive response is no longer the tick''s doing — it is the responder''s, whichever transaction provoked it.');
 select is(
   (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id where b.nomination_seq = 14),
   5::bigint,
-  '…and the refusal wrote nothing');
+  '…and the refusal wrote nothing: five rows — the $1 opening, T3''s jump, the $49 fixture bid, T3''s $50 edge raise and the human''s $51');
 -- The property, bracketed (R307): across LA + LC, no CPU bid ever exceeded
 -- its bidder's max bid AT THE TIME — every CPU row ≤ remaining − (open − 1) ×
 -- min_bid given the picks on the board when it bid; here no award landed
@@ -1016,7 +1067,7 @@ select is(
   (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id
    where b.team_id = 'c9000000-0000-4000-8000-00c100000003'),
   2::bigint,
-  'population: T3 placed two bids on this nomination');
+  'population: T3 placed two bids on this nomination — the jump and the edge raise');
 select is(
   (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id
    where b.team_id = 'c9000000-0000-4000-8000-00c100000003'
@@ -1029,8 +1080,8 @@ select set_config('pgtap.ma_e4', public.draft_tick()::text, true);
 select is(
   (select jsonb_build_object('team', p.team_id, 'price', p.price, 'is_auto', p.is_auto, 'made_via', p.made_via)
    from draft_picks p join ma_lc on ma_lc.id = p.draft_id where p.pick_number = 14),
-  '{"team": "c9000000-0000-4000-8000-00c100000002", "price": 50, "is_auto": false, "made_via": "manager"}'::jsonb,
-  'the award goes to the human at $50 as a MANAGER pick (the winning row carries an action_id — D130 read off the row), and the board stays solvent');
+  '{"team": "c9000000-0000-4000-8000-00c100000002", "price": 51, "is_auto": false, "made_via": "manager"}'::jsonb,
+  'the award goes to the human at $51 as a MANAGER pick (the winning row carries an action_id — D130 read off the row), and the board stays solvent');
 select ok(
   public.draft_auction_solvent((select id from ma_lc)),
   '…§8.6.8 holds across the whole LC board after the edge play');
@@ -1314,11 +1365,18 @@ select
   (select count(*) from draft_bids b join ma_la on ma_la.id = b.draft_id)      as bids,
   (select count(*) from league_chat c join ma_la on c.context = 'draft:' || ma_la.id::text) as chat,
   (select count(*) from draft_liveness dl join ma_la on ma_la.id = dl.draft_id) as liveness;
-select ok(
-  (select bids from ma_g_before) >= 5
-  and (select picks from ma_g_before) = 1
-  and (select draft_row->>'current_nomination' is not null from ma_g_before),
-  'fixture: LA''s mock holds CPU raises in its history, a CPU award on the board and a live nomination — the sweep runs against a mock the CPUs have already acted in');
+-- The bid COUNT is structural rather than a literal: 091's ladder length is a
+-- function of the draft's UUID (create_mock_draft mints a fresh one per run),
+-- so what is pinned is that CPU raises exist, an award landed and a market is
+-- live — the conditions §G's refusals must hold against.
+select is(
+  (select jsonb_build_object('bids_at_least_3', bids >= 3, 'picks', picks,
+                             'live_nomination', draft_row->>'current_nomination' is not null,
+                             'has_cpu_raises', (select count(*) from draft_bids b join ma_la on ma_la.id = b.draft_id
+                                                where b.action_id is null and b.amount > 1) > 0)
+   from ma_g_before),
+  '{"bids_at_least_3": true, "picks": 1, "live_nomination": true, "has_cpu_raises": true}'::jsonb,
+  'fixture: LA''s mock holds CPU raises in its history, an award on the board and a live nomination — the sweep runs against a mock the CPUs have already acted in');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
