@@ -4,10 +4,13 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  activeFranchises,
+  auctionTimerPayload,
   budgetEditPreview,
   endDraftConsequences,
   priceEntry,
   unfilledSlotsAtEnd,
+  AUCTION_TIMER_RANGES,
   END_CONFIRM_WORD,
 } from './commish-auction-ops'
 import { PAUSE_FIRST_CLAUSE, pauseFirstGate } from './commish-panel-ops'
@@ -99,6 +102,42 @@ function sectionSource(component: string): string {
   const next = source.indexOf('\nfunction ', start + 1)
   return next === -1 ? source.slice(start) : source.slice(start, next)
 }
+
+/**
+ * R437: every `<Button …>…</Button>` in a section, individually — the
+ * per-SECTION pin below it was satisfied by whichever button happened to
+ * carry the gate, which is how three dialog confirms (Undo, Manual Edit's
+ * two, Cancel nomination) shipped ungated inside gated sections.
+ */
+function buttonsIn(component: string): string[] {
+  return sectionSource(component)
+    .split('<Button')
+    .slice(1)
+    .map((chunk) => {
+      const end = chunk.indexOf('</Button>')
+      return end === -1 ? chunk : chunk.slice(0, end)
+    })
+}
+
+/**
+ * Buttons in a pause-first section that legitimately do NOT carry the gate,
+ * with the reason each is exempt. Anything else in one of those sections can
+ * reach a pause-first RPC and must be disabled with it.
+ */
+const GATE_EXEMPT_ONCLICK: ReadonlyArray<{ needle: string; why: string }> = [
+  // Pause/Resume is the gate's OWN verb — gating it would make a running
+  // draft unpausable, i.e. would make every other control unreachable.
+  { needle: 'pauseResume', why: 'the verb that lifts the gate' },
+  // Pure client state: arm the mode, pick a branch, open/close a dialog.
+  { needle: 'onClick={() => setArmed(', why: 'toggles Manual Edit Mode' },
+  { needle: "onClick={() => setChoice('", why: "the modal's two choices" },
+  { needle: 'onClick={() => setOpen(true)}', why: 'opens a confirm dialog' },
+  { needle: 'onClick={() => setOpen(false)}', why: 'closes a confirm dialog' },
+  { needle: 'onClick={() => setTarget(null)}', why: 'closes a confirm dialog' },
+  { needle: 'onClick={close}', why: 'closes the modal' },
+  { needle: 'onClick={openSingle}', why: 'opens the undo dialog' },
+  { needle: 'onClick={openCascade}', why: 'opens the undo dialog' },
+]
 
 // ---------------------------------------------------------------------------
 // 1. F72 — the pause-first gate, checked against the engine that enforces it
@@ -259,6 +298,32 @@ describe('the panel disables every pause-first control while a draft RUNS', () =
     const body = sectionSource('AuctionTimerFields')
     expect(body).toMatch(/disabled=\{gate\.blocked/)
   })
+
+  // R437 — the pin above is per SECTION, so ONE gated button satisfies it.
+  // These are per BUTTON: a confirm sitting inside a dialog that outlives a
+  // co-commissioner's resume is exactly F72's defect in a race, and
+  // `ManualEditDialog` is rendered OUTSIDE the `armed && !gate.blocked`
+  // guard that hides the cell grid.
+  for (const section of [
+    'ClockSection',
+    'AuctionTimerFields',
+    'UndoSection',
+    'FixPickSection',
+    'ManualEditDialog',
+    'CancelNominationSection',
+  ]) {
+    it(`${section}: EVERY button that can reach the server carries the gate`, () => {
+      const mustGate = buttonsIn(section).filter(
+        (button) => !GATE_EXEMPT_ONCLICK.some((exempt) => button.includes(exempt.needle)),
+      )
+      // Non-vacuous: a section with nothing to gate would pass silently.
+      expect(mustGate.length, `${section} has no server-reaching button`).toBeGreaterThan(0)
+      for (const button of mustGate) {
+        const label = button.slice(button.lastIndexOf('>') + 1).trim() || button.slice(0, 60)
+        expect(button, `${section} → ${label}`).toContain('gate.blocked')
+      }
+    })
+  }
 
   for (const section of ['BudgetSection', 'EndDraftSection']) {
     it(`${section} is NOT gated — D141 does not name it`, () => {
@@ -571,5 +636,158 @@ describe('the three UI-less §7.3.8 auction fields now have inputs', () => {
     expect(block).toMatch(
       /d\.nomination_order_mode === 'manual'[\s\S]{0,160}Commissioner sets \(no editor yet/,
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 8. R435 — the room's auction Clock form ENFORCES the ranges it prints
+// ---------------------------------------------------------------------------
+
+describe('auctionTimerPayload clamps to §7.3.8 instead of just printing it', () => {
+  // The catalog's own numbers (spec §7.3.8, lines 418–420), as stored
+  // literals — the same three the settings editor clamps with.
+  it('carries the catalog ranges', () => {
+    expect(AUCTION_TIMER_RANGES).toEqual({
+      nominationSeconds: { min: 10, max: 120 },
+      bidSeconds: { min: 10, max: 60 },
+      antiSnipeSeconds: { min: 0, max: 15 },
+    })
+  })
+
+  const stored = { nomination: 30, bid: 20, antiSnipe: 10 }
+  const typed = (patch: Partial<Record<'nomination' | 'bid' | 'antiSnipe', string>>) => ({
+    nomination: String(stored.nomination),
+    bid: String(stored.bid),
+    antiSnipe: String(stored.antiSnipe),
+    ...patch,
+  })
+
+  it('sends only what CHANGED (087 reads an omitted key as unchanged)', () => {
+    expect(auctionTimerPayload(typed({}), stored)).toEqual({})
+    expect(auctionTimerPayload(typed({ bid: '45' }), stored)).toEqual({ bidSeconds: 45 })
+  })
+
+  // The one-unit boundaries, both ends of both clocks: the value the label
+  // promises lands untouched, and one step outside lands on the bound.
+  // R435's live repro was `bid_seconds: 5` reaching `drafts.config` with a
+  // 200 from the route — `3` is what the box actually accepted.
+  it('bid clock: 10 lands, 9 clamps to 10', () => {
+    expect(auctionTimerPayload(typed({ bid: '10' }), stored)).toEqual({ bidSeconds: 10 })
+    expect(auctionTimerPayload(typed({ bid: '9' }), stored)).toEqual({ bidSeconds: 10 })
+    expect(auctionTimerPayload(typed({ bid: '3' }), stored)).toEqual({ bidSeconds: 10 })
+  })
+
+  it('bid clock: 60 lands, 61 clamps to 60', () => {
+    expect(auctionTimerPayload(typed({ bid: '60' }), stored)).toEqual({ bidSeconds: 60 })
+    expect(auctionTimerPayload(typed({ bid: '61' }), stored)).toEqual({ bidSeconds: 60 })
+  })
+
+  it('nomination clock: 10 and 120 land, 9 and 121 clamp', () => {
+    expect(auctionTimerPayload(typed({ nomination: '10' }), stored)).toEqual({
+      nominationSeconds: 10,
+    })
+    expect(auctionTimerPayload(typed({ nomination: '9' }), stored)).toEqual({
+      nominationSeconds: 10,
+    })
+    expect(auctionTimerPayload(typed({ nomination: '120' }), stored)).toEqual({
+      nominationSeconds: 120,
+    })
+    expect(auctionTimerPayload(typed({ nomination: '121' }), stored)).toEqual({
+      nominationSeconds: 120,
+    })
+  })
+
+  it('anti-snipe: 0 and 15 land, 16 clamps — and 0 is a real value, not "unset"', () => {
+    expect(auctionTimerPayload(typed({ antiSnipe: '0' }), stored)).toEqual({ antiSnipeSeconds: 0 })
+    expect(auctionTimerPayload(typed({ antiSnipe: '15' }), stored)).toEqual({
+      antiSnipeSeconds: 15,
+    })
+    expect(auctionTimerPayload(typed({ antiSnipe: '16' }), stored)).toEqual({
+      antiSnipeSeconds: 15,
+    })
+  })
+
+  it('a clamped value EQUAL to what is stored is not sent at all', () => {
+    // Stored bid 10; typing 3 clamps to 10 ⇒ nothing changed ⇒ no key, so
+    // the form is not "dirty" and the RPC is never called for a no-op.
+    expect(auctionTimerPayload({ ...typed({}), bid: '3' }, { ...stored, bid: 10 })).toEqual({})
+  })
+
+  it('an empty or unreadable box means UNCHANGED, never a guess', () => {
+    expect(auctionTimerPayload(typed({ bid: '' }), stored)).toEqual({})
+    expect(auctionTimerPayload(typed({ bid: '  ' }), stored)).toEqual({})
+    expect(auctionTimerPayload(typed({ bid: '12x' }), stored)).toEqual({})
+    // A negative is readable — and clamps to the floor rather than reaching
+    // 090's only auction-timer check (`must be a non-negative integer`).
+    expect(auctionTimerPayload(typed({ bid: '-5' }), stored)).toEqual({ bidSeconds: 10 })
+  })
+
+  it('the panel builds the payload through THIS function, and labels from the same literals', () => {
+    const body = sectionSource('AuctionTimerFields')
+    expect(body).toMatch(/const payload = auctionTimerPayload\(/)
+    // No second, unclamped builder: the shipped one compared `asInt(…)` to
+    // the stored value and sent whatever was typed.
+    expect(body).not.toContain('asInt(')
+    // The printed range and the enforced range are the SAME literals.
+    expect(body).toContain('range={AUCTION_TIMER_RANGES.nominationSeconds}')
+    expect(body).toContain('range={AUCTION_TIMER_RANGES.bidSeconds}')
+    expect(body).toContain('range={AUCTION_TIMER_RANGES.antiSnipeSeconds}')
+    expect(sectionSource('TimerInput')).toContain('`${min}–${max}s`')
+  })
+
+  it('the route and the RPC are UNCHANGED — the clamp is a UI guard, not the rule', () => {
+    // Recorded so the next reader does not mistake this for enforcement:
+    // the wire still admits anything non-negative, exactly as L.C2.2 built
+    // it. Server-authoritative is unaffected; the UI simply stops proposing
+    // a number its own label calls illegal.
+    const service = code('src/lib/leagues/api/draft-service.ts')
+    expect(service).toContain('const timerSecondsSchema = z.number().int().min(0).max(86_400)')
+    const head = headBodies()
+    expect(head.get('draft_set_clock')?.body ?? '').toContain(
+      'draft_set_clock: auction_bid_seconds must be a non-negative integer',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 9. R436 — the panel counts the franchises `draft_end` counts
+// ---------------------------------------------------------------------------
+
+describe('activeFranchises agrees with draft_end’s WHERE clause', () => {
+  const teams = [
+    { id: 'A', name: 'Active', status: 'active' },
+    { id: 'B', name: 'Orphaned', status: 'orphaned' },
+    { id: 'C', name: 'Retired', status: 'retired' },
+  ]
+
+  it('drops retired seats and KEEPS orphaned ones (087 excludes only retired)', () => {
+    expect(activeFranchises(teams).map((t) => t.id)).toEqual(['A', 'B'])
+  })
+
+  it('the engine really excludes exactly `retired` — read out of the chain', () => {
+    const body = headBodies().get('draft_end')?.body ?? ''
+    expect(body).toContain("WHERE t.league_id = v_draft.league_id AND t.status <> 'retired'")
+  })
+
+  it('the End confirm’s count and draft_end agree once a seat is retired', () => {
+    const inputs = { auctionBudget: 200, minBid: 1, totalRounds: 3, budgetAdjustments: null }
+    const picks = [{ team_id: 'A', price: 50, is_undone: false }]
+    // Unfiltered, the dialog would promise 3 more empty spots than the
+    // engine posts (C's whole roster) — a wrong number in a terminal confirm.
+    expect(unfilledSlotsAtEnd(inputs, picks, ['A', 'B', 'C'])).toBe(8)
+    expect(
+      unfilledSlotsAtEnd(inputs, picks, activeFranchises(teams).map((t) => t.id)),
+    ).toBe(5)
+  })
+
+  it('the panel derives it ONCE and feeds all three consumers from it', () => {
+    const panel = code(PANEL)
+    expect(panel).toMatch(/const activeTeams = useMemo\(\(\) => activeFranchises\(detail\.teams\)/)
+    expect(panel).toMatch(/const teamIds = useMemo\(\(\) => activeTeams\.map/)
+    expect(panel).toContain('teams: activeTeams,') // Manual Edit's columns
+    expect(panel).toContain('teams={activeTeams}') // the budget picker
+    // `teamsById` stays UNFILTERED on purpose — a retired franchise's
+    // existing picks still need a name to render.
+    expect(panel).toMatch(/const teamsById = useMemo\(\(\) => new Map\(detail\.teams\.map/)
   })
 })

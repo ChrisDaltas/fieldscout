@@ -137,9 +137,9 @@ export const numOptions = (values: readonly number[], suffix = '') =>
   values.map((v) => ({ value: String(v), label: `${v}${suffix}` }))
 
 /** Parse a number input, clamp to [min,max], falling back to `fallback` for
- *  empty/NaN so the control never emits an out-of-range or NaN value. */
-export function clampInt(raw: string, min: number, max: number, fallback: number): number {
-  const n = Number.parseInt(raw, 10)
-  if (Number.isNaN(n)) return fallback
-  return Math.min(max, Math.max(min, n))
-}
+ *  empty/NaN so the control never emits an out-of-range or NaN value.
+ *
+ *  The body moved to `@/utils/clamp-int` (R435) so pure `.ts` ops modules can
+ *  share it instead of forking a second copy; re-exported here unchanged, so
+ *  every existing import of it reads exactly as before. */
+export { clampInt } from '@/utils/clamp-int'

@@ -62,10 +62,13 @@ import {
 } from './auction-budget'
 import { buildAuctionColumns, type AuctionTeamColumn } from './auction-block-ops'
 import {
+  activeFranchises,
+  auctionTimerPayload,
   budgetEditPreview,
   endDraftConsequences,
   priceEntry,
   unfilledSlotsAtEnd,
+  AUCTION_TIMER_RANGES,
   END_CONFIRM_WORD,
 } from './commish-auction-ops'
 import {
@@ -170,7 +173,17 @@ export function CommishDraftPanel({
     }),
     [auctionKnobs, draft.total_rounds, draft.budget_adjustments],
   )
-  const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
+  // R436 (M3 batch 14): the franchises the ENGINE counts. `draft_end` sums
+  // open slots over `teams … WHERE t.status <> 'retired'` (087) while the
+  // detail endpoint returns every team row unfiltered, so a raw `detail.teams`
+  // would make the End confirm's "N roster spots stay empty" disagree with the
+  // number `draft_end` posts the moment a franchise is retired. ONE derivation
+  // feeds all three consumers — the budget mirror + End's count, Manual Edit's
+  // cells/move targets, and the budget picker. (Latent today: nothing writes
+  // `'retired'` until `retire_franchise`, F1/M4.) `teamsById` deliberately
+  // keeps EVERY team — a retired franchise's existing picks still need a name.
+  const activeTeams = useMemo(() => activeFranchises(detail.teams), [detail.teams])
+  const teamIds = useMemo(() => activeTeams.map((t) => t.id), [activeTeams])
   const budgets = useMemo(
     () => (isAuction ? teamBudgets(budgetInputs, picks, teamIds) : new Map<string, TeamBudget | null>()),
     [isAuction, budgetInputs, picks, teamIds],
@@ -191,7 +204,7 @@ export function CommishDraftPanel({
       isAuction
         ? buildAuctionColumns({
             nominationOrder,
-            teams: detail.teams,
+            teams: activeTeams,
             picks,
             budgets,
             positionById: new Map(
@@ -207,7 +220,7 @@ export function CommishDraftPanel({
     [
       isAuction,
       nominationOrder,
-      detail.teams,
+      activeTeams,
       detail.settings.roster_settings,
       picks,
       budgets,
@@ -313,7 +326,7 @@ export function CommishDraftPanel({
               <BudgetSection
                 leagueId={leagueId}
                 draftId={draft.id}
-                teams={detail.teams}
+                teams={activeTeams}
                 budgets={budgets}
                 minBid={auctionKnobs.minBid}
                 nomination={nomination}
@@ -566,49 +579,41 @@ function AuctionTimerFields({
   const [bid, setBid] = useState(String(stored.bid))
   const [antiSnipe, setAntiSnipe] = useState(String(stored.antiSnipe))
 
-  const asInt = (raw: string): number | null => {
-    const trimmed = raw.trim()
-    if (!/^\d+$/.test(trimmed)) return null
-    return Number.parseInt(trimmed, 10)
-  }
-  const changed = {
-    nominationSeconds: asInt(nomination) !== stored.nomination ? asInt(nomination) : null,
-    bidSeconds: asInt(bid) !== stored.bid ? asInt(bid) : null,
-    antiSnipeSeconds: asInt(antiSnipe) !== stored.antiSnipe ? asInt(antiSnipe) : null,
-  }
-  const payload = Object.fromEntries(
-    Object.entries(changed).filter(([, value]) => value !== null),
-  ) as { nominationSeconds?: number; bidSeconds?: number; antiSnipeSeconds?: number }
+  // R435 (M3 batch 14): the payload is CLAMPED into §7.3.8's ranges — the
+  // same `clampInt` the settings editor applies to these two clocks. This
+  // form printed the ranges as labels and enforced none of them, and neither
+  // the route (`timerSecondsSchema` = 0…86400) nor 090's auction arm (which
+  // only refuses negatives) would stop a 3-second bid clock reaching
+  // `drafts.config`. Server-authoritative still holds: the RPC decides, this
+  // just stops the UI proposing a number its own label calls illegal.
+  const payload = auctionTimerPayload({ nomination, bid, antiSnipe }, stored)
   const dirty = Object.keys(payload).length > 0
 
   return (
     <div className="flex flex-col gap-1.5">
       <Label className="text-[11px]">Auction timers (apply to the next nomination)</Label>
       <div className="flex flex-wrap gap-1.5">
+        {/* Label and clamp read the SAME literals (R435) — a range printed
+            in one place and enforced in another is how this form came to
+            promise 10–60s while accepting 3. */}
         <TimerInput
           label="Nominate"
-          suffix="10–120s"
+          range={AUCTION_TIMER_RANGES.nominationSeconds}
           value={nomination}
-          min={10}
-          max={120}
           disabled={gate.blocked}
           onChange={setNomination}
         />
         <TimerInput
           label="Bid"
-          suffix="10–60s"
+          range={AUCTION_TIMER_RANGES.bidSeconds}
           value={bid}
-          min={10}
-          max={60}
           disabled={gate.blocked}
           onChange={setBid}
         />
         <TimerInput
           label="Anti-snipe"
-          suffix="0–15s"
+          range={AUCTION_TIMER_RANGES.antiSnipeSeconds}
           value={antiSnipe}
-          min={0}
-          max={15}
           disabled={gate.blocked}
           onChange={setAntiSnipe}
         />
@@ -628,25 +633,22 @@ function AuctionTimerFields({
 
 function TimerInput({
   label,
-  suffix,
+  range,
   value,
-  min,
-  max,
   disabled,
   onChange,
 }: {
   label: string
-  suffix: string
+  range: { min: number; max: number }
   value: string
-  min: number
-  max: number
   disabled: boolean
   onChange: (next: string) => void
 }) {
+  const { min, max } = range
   return (
     <div className="flex flex-col gap-0.5">
       <Label className="text-[10px] text-n-3">
-        {label} <span className="fs-num">{suffix}</span>
+        {label} <span className="fs-num">{`${min}–${max}s`}</span>
       </Label>
       <Input
         type="number"
@@ -794,7 +796,14 @@ function UndoSection({
             <Button
               variant="destructive"
               size="sm"
-              disabled={undo.isPending || !preview || preview.reverts.length === 0}
+              // R437: the CONFIRM reads the gate too. A dialog opened while
+              // paused stays mounted if a co-commissioner resumes, and this
+              // click would then meet the server's pause-first refusal —
+              // F72's exact shape, in a race.
+              disabled={
+                gate.blocked || undo.isPending || !preview || preview.reverts.length === 0
+              }
+              title={gate.reason ?? undefined}
               onClick={confirm}
             >
               {undo.isPending ? 'Undoing…' : 'Undo'}
@@ -1445,6 +1454,9 @@ function ManualEditSection({
         </div>
       )}
 
+      {/* R437: the dialog lives OUTSIDE the `armed && !gate.blocked` guard
+          above (it must survive the mode toggle), so it carries the gate
+          itself — a resume by a co-commissioner disarms its confirms. */}
       <ManualEditDialog
         leagueId={leagueId}
         draftId={draftId}
@@ -1452,6 +1464,7 @@ function ManualEditSection({
         budgets={budgets}
         minBid={minBid}
         columns={columns}
+        gate={gate}
         onClose={() => setTarget(null)}
         onError={onError}
       />
@@ -1467,6 +1480,7 @@ function ManualEditDialog({
   budgets,
   minBid,
   columns,
+  gate,
   onClose,
   onError,
 }: {
@@ -1476,6 +1490,7 @@ function ManualEditDialog({
   budgets: ReadonlyMap<string, TeamBudget | null>
   minBid: number
   columns: readonly AuctionTeamColumn[]
+  gate: ControlGate
   onClose: () => void
   onError: (error: unknown, title: string) => void
 }) {
@@ -1592,7 +1607,10 @@ function ManualEditDialog({
             <Button
               variant="destructive"
               size="sm"
-              disabled={!reasonReady || !target?.pickId || reverse.isPending}
+              // R437: gate.blocked here too — `draft_reverse_won_bid` is
+              // pause-first (090), and this dialog outlives the resume.
+              disabled={gate.blocked || !reasonReady || !target?.pickId || reverse.isPending}
+              title={gate.reason ?? undefined}
               onClick={() =>
                 target?.pickId &&
                 reverse
@@ -1608,13 +1626,16 @@ function ManualEditDialog({
             <Button
               variant="stroke"
               size="sm"
+              // R437: `draft_move_player` is pause-first too (090).
               disabled={
+                gate.blocked ||
                 !target ||
                 !toTeam ||
                 cost.blocker !== null ||
                 !reasonReady ||
                 movePlayer.isPending
               }
+              title={gate.reason ?? undefined}
               onClick={() =>
                 target &&
                 cost.parsed !== null &&
@@ -1717,7 +1738,12 @@ function CancelNominationSection({
             <Button
               variant="destructive"
               size="sm"
-              disabled={reason.trim().length === 0 || !nomination || cancel.isPending}
+              // R437: the confirm reads the gate — `draft_cancel_nomination`
+              // is pause-first (090) and this dialog outlives a resume.
+              disabled={
+                gate.blocked || reason.trim().length === 0 || !nomination || cancel.isPending
+              }
+              title={gate.reason ?? undefined}
               onClick={() =>
                 cancel
                   .mutateAsync({ reason: reason.trim() })
@@ -1847,6 +1873,15 @@ function BudgetSection({
         // DOUBLE-SUBMIT GUARD (load-bearing, not manners): 087's delta is
         // CUMULATIVE and the verb takes no action_id, so two clicks move
         // twice the money and the engine has nothing to dedupe them with.
+        //
+        // R438 — WHAT THIS GUARD DOES NOT COVER, stated rather than implied:
+        // it is MOUNT-SCOPED. `SheetContent` has no `forceMount`, so closing
+        // the panel mid-flight destroys this observer and a reopened panel
+        // submits again. The reach is narrow (the reopened form is empty —
+        // team, delta and reason must all be re-entered), but the residual
+        // is wider than any client can close: `draft_adjust_budget` takes no
+        // `action_id`, so a retry after a lost response double-charges no
+        // matter what the UI does. That engine gap is ledger row **F82**.
         disabled={
           !teamId ||
           parsedDelta === null ||

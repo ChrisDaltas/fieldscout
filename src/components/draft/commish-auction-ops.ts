@@ -17,7 +17,112 @@
  * disabled-state rule cannot drift away from the engine that enforces it.
  */
 
+import { clampInt } from '@/utils/clamp-int'
+
 import { teamBudget, type AuctionBudgetInputs, type TeamBudget } from './auction-budget'
+
+// ---------------------------------------------------------------------------
+// The auction clocks the room can edit mid-draft (§7.3.8 / 087's set_clock arm)
+// ---------------------------------------------------------------------------
+
+/**
+ * §7.3.8's catalog ranges for the three auction clocks, as stored literals —
+ * the SAME numbers League settings clamps its inputs to
+ * (`settings-panel.tsx`, `clampInt(…, 10, 60, …)` and friends).
+ *
+ * R435 (M3 batch 14): the room's Clock form PRINTED these as labels and
+ * enforced none of them — a `bid_seconds: 5` reached `drafts.config` through
+ * the route, because `timerSecondsSchema` admits 0–86400 and 090's auction
+ * arm only refuses negatives. A three-second bid clock makes an auction
+ * unplayable, so the same clamp the settings editor has always applied is
+ * applied here, in the payload builder. The route and the RPC stay exactly
+ * as they are — they are the backstop, not the enforcement.
+ */
+export const AUCTION_TIMER_RANGES = {
+  nominationSeconds: { min: 10, max: 120 },
+  bidSeconds: { min: 10, max: 60 },
+  antiSnipeSeconds: { min: 0, max: 15 },
+} as const
+
+/** The three clocks as `drafts.config` stores them (087's key names). */
+export interface AuctionTimersStored {
+  nomination: number
+  bid: number
+  antiSnipe: number
+}
+
+/** What the three boxes currently hold, as typed. */
+export interface AuctionTimersTyped {
+  nomination: string
+  bid: string
+  antiSnipe: string
+}
+
+export interface AuctionTimerPayload {
+  nominationSeconds?: number
+  bidSeconds?: number
+  antiSnipeSeconds?: number
+}
+
+/**
+ * The `draft_set_clock` auction payload: each box CLAMPED into its §7.3.8
+ * range, and included only when the clamped value differs from what is
+ * stored (087 reads an omitted key as "unchanged").
+ *
+ * Un-parseable or empty falls back to the STORED value — i.e. the field is
+ * omitted — so a half-typed box never sends garbage, and a value outside the
+ * range lands on the nearest bound rather than on the server.
+ */
+export function auctionTimerPayload(
+  typed: AuctionTimersTyped,
+  stored: AuctionTimersStored,
+): AuctionTimerPayload {
+  const one = (raw: string, range: { min: number; max: number }, current: number): number => {
+    const trimmed = raw.trim()
+    // Strict: only a plain integer counts. `clampInt`'s own parse would read
+    // "12x" as 12; a box that cannot be read is "unchanged", never a guess.
+    if (!/^-?\d+$/.test(trimmed)) return current
+    return clampInt(trimmed, range.min, range.max, current)
+  }
+
+  const next = {
+    nominationSeconds: one(typed.nomination, AUCTION_TIMER_RANGES.nominationSeconds, stored.nomination),
+    bidSeconds: one(typed.bid, AUCTION_TIMER_RANGES.bidSeconds, stored.bid),
+    antiSnipeSeconds: one(typed.antiSnipe, AUCTION_TIMER_RANGES.antiSnipeSeconds, stored.antiSnipe),
+  }
+  const current = {
+    nominationSeconds: stored.nomination,
+    bidSeconds: stored.bid,
+    antiSnipeSeconds: stored.antiSnipe,
+  }
+
+  const payload: AuctionTimerPayload = {}
+  for (const key of ['nominationSeconds', 'bidSeconds', 'antiSnipeSeconds'] as const) {
+    if (next[key] !== current[key]) payload[key] = next[key]
+  }
+  return payload
+}
+
+// ---------------------------------------------------------------------------
+// Who counts as a franchise (R436)
+// ---------------------------------------------------------------------------
+
+/**
+ * The franchises the ENGINE counts. `draft_end` sums open slots over
+ * `teams … WHERE t.league_id = … AND t.status <> 'retired'` (087), while
+ * `GET /api/leagues/[id]` returns every team row with no status filter — so
+ * anything the panel derives from the raw list (the End confirm's unfilled
+ * count, the budget picker, Manual Edit's move targets) would disagree with
+ * the engine the moment a franchise is retired.
+ *
+ * Latent today — nothing writes `'retired'` yet (`retire_franchise` is F1,
+ * M4) — and pinned here so it stays impossible rather than merely unlikely.
+ */
+export const RETIRED_TEAM_STATUS = 'retired'
+
+export function activeFranchises<T extends { status: string }>(teams: readonly T[]): T[] {
+  return teams.filter((team) => team.status !== RETIRED_TEAM_STATUS)
+}
 
 // ---------------------------------------------------------------------------
 // Budget editor (§8.7 "adjust a team's remaining budget"; E28's three arms)

@@ -373,6 +373,14 @@ export function DraftLobby({
  *  (`draft_nomination_order_internal`) said the way a manager reads them. */
 function nominationOrderLine(mode: string): string {
   if (mode === 'random') return 'Nomination order: randomized when the draft starts.'
-  if (mode === 'manual') return 'Nomination order: set by the commissioner before the draft.'
+  // R440: `manual` has NO editor — 084's manual arm validates a STORED
+  // `drafts.nomination_order` and 087's `draft_set_order` refuses to write one
+  // before an auction starts, so nobody can set it (ledger row F80). Telling
+  // the whole room the commissioner sets it before the draft describes the
+  // precise thing that is impossible; the lobby says what League settings'
+  // own picker says instead.
+  if (mode === 'manual') {
+    return 'Nomination order: commissioner-set — but there is no editor for it yet, so pick another mode in League settings.'
+  }
   return 'Nomination order: the same as the draft order above.'
 }
