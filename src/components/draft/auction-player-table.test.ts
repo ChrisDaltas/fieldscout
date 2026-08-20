@@ -374,6 +374,27 @@ describe('the table is the dock’s Players panel in an auction, and only there'
       // Exactly two consumers: the dock (provides) and the table (uses).
       const users = sourceFiles().filter((rel) => code(rel).includes('DockPanelCloseContext'))
       expect(users.sort()).toEqual(['src/components/draft/draft-dock-panel.ts', DOCK].sort())
+      // R453: the CAPABILITY is granted by the accessor, not the context
+      // object — a component calling `useDockPanelClose()` never mentions
+      // `DockPanelCloseContext`, so the sweep above cannot see it. Pin the
+      // caller set explicitly: a third consumer acquiring the power to
+      // collapse the dock is exactly D119(6)'s hazard shape (a portalled
+      // Dialog opened from inside a panel sits UNDER the provider).
+      const callers = sourceFiles().filter(
+        (rel) =>
+          rel !== 'src/components/draft/draft-dock-panel.ts' &&
+          code(rel).includes('useDockPanelClose('),
+      )
+      expect(callers.sort()).toEqual(
+        [
+          'src/components/draft/auction-player-table.tsx',
+          // R454: the Lists panel's primary action has R446's identical
+          // geometry on an auction (it selects into the composer); the close
+          // is guarded by `primaryActionLabel === 'Nominate'` so no snake
+          // behaviour changes.
+          'src/components/draft/my-lists-panel.tsx',
+        ].sort(),
+      )
     })
   })
 })
@@ -424,7 +445,7 @@ describe('§16.5.4 states, D140 vocabulary, and the design rules', () => {
     it('the component consumes exactly the six enumerated reads', () => {
       // Sweep the source for `useSomething(` calls that look like data
       // reads, so a seventh read cannot be added without a disposition.
-      const called = Array.from(table.matchAll(/\buse[A-Z][A-Za-z]*\(/g)).map((m) => m[0])
+      const called = Array.from(table.matchAll(/\buse[A-Z][A-Za-z0-9]*\(/g)).map((m) => m[0])
       const unknown = Array.from(new Set(called)).filter(
         (name) =>
           !READS.some(([, hook]) => hook === name) &&
