@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-import { DRAFT_OPTIONS_ENTRIES, type DraftOptionsSectionId } from './draft-options-ops'
+import { draftOptionsEntries, type DraftOptionsSectionId } from './draft-options-ops'
 
 /**
  * The `Draft Options` menu — spec §16.2 `draft-options-menu` (v2.12), §8.7's
@@ -22,8 +22,11 @@ import { DRAFT_OPTIONS_ENTRIES, type DraftOptionsSectionId } from './draft-optio
  * panel AT that section (D153: this is a menu over the SHIPPED panel body,
  * never a reimplementation — the section bodies, gates, confirm dialogs and
  * system-post semantics live in the panel and are untouched here). The group
- * catalog itself is `draft-options-ops.ts`'s `DRAFT_OPTIONS_ENTRIES` — an
- * enumerated list, extensible at L.C3.2 (see its docblock).
+ * catalog itself is `draft-options-ops.ts`'s `draftOptionsEntries(isAuction)`
+ * — an enumerated list, per DRAFT TYPE since L.C3.2: an auction room lists
+ * Manual Edit Mode, Edit current nomination, Team budgets and End draft, and
+ * a snake room never does (their RPCs refuse a snake draft outright — the UI
+ * must not offer what the engine forbids).
  *
  * Pause/Resume are deliberately NOT menu items — they stay first-class
  * buttons on the bar (§8.7's v2.12 note: they are what a commissioner
@@ -42,9 +45,15 @@ interface DraftOptionsMenuProps {
   /** Opens the commissioner panel at the chosen section (the room owns the
    *  panel's `open`/`openAtSection` state — one door, one owner). */
   onOpenSection: (section: DraftOptionsSectionId) => void
+  /** `draft.draft_type === 'auction'` — picks the group catalog (L.C3.2). */
+  isAuction?: boolean
 }
 
-export function DraftOptionsMenu({ onOpenSection }: DraftOptionsMenuProps) {
+export function DraftOptionsMenu({ onOpenSection, isAuction = false }: DraftOptionsMenuProps) {
+  const entries = draftOptionsEntries(isAuction)
+  // The destructive group sits below ONE separator, however many entries it
+  // holds (an auction has two — Reset and End; a snake has one).
+  const firstDestructiveId = entries.find((entry) => entry.destructive)?.id ?? null
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -67,14 +76,14 @@ export function DraftOptionsMenu({ onOpenSection }: DraftOptionsMenuProps) {
           elevation-rule.test.ts allowlists as "overlay menu". This file adds
           no shadow of its own. */}
       <DropdownMenuContent align="start">
-        {DRAFT_OPTIONS_ENTRIES.map((entry) =>
+        {entries.map((entry) =>
           entry.destructive ? (
             // Destructive treatment: separated from the working groups and
             // rendered in the negative color — the same treatment as the
             // bar's "Delete practice & exit". The hard type-RESET confirm
             // itself lives in the panel's section (D153).
             <div key={entry.id}>
-              <DropdownMenuSeparator />
+              {entry.id === firstDestructiveId && <DropdownMenuSeparator />}
               <DropdownMenuItem
                 className="text-negative-strong focus:text-negative-strong"
                 onSelect={() => onOpenSection(entry.id)}

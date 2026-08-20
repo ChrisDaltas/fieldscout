@@ -4,7 +4,9 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  AUCTION_DRAFT_OPTIONS_ENTRIES,
   DRAFT_OPTIONS_ENTRIES,
+  draftOptionsEntries,
   sectionDomId,
   type DraftOptionsEntry,
   type DraftOptionsSectionId,
@@ -20,8 +22,11 @@ import {
  *
  * What is pinned, and why:
  *   - the EIGHT v1 groups, 1:1 with the shipped panel sections, stored as
- *     literals (§8.7's control groups; Manual Edit Mode and End Draft are
- *     deliberately absent until L.C3.2);
+ *     literals (§8.7's control groups) — and, since **L.C3.2**, the ELEVEN
+ *     AUCTION groups as their own golden: Manual Edit Mode, Edit current
+ *     nomination, Team budgets and End draft arrive, "Fix a pick" is
+ *     REPLACED by Manual Edit Mode (§8.7's v2.10 ruling), and none of the
+ *     four is reachable in a snake room (their RPCs refuse a snake draft);
  *   - the enumerated-list construction (no hard-coded ladder — L.C3.2
  *     appends entries, never restructures);
  *   - the mock gate: the ONLY `<DraftOptionsMenu` mount sits behind the
@@ -112,12 +117,30 @@ const SECTION_COMPONENTS: Record<DraftOptionsSectionId, string> = {
   clock: 'ClockSection',
   undo: 'UndoSection',
   'fix-pick': 'FixPickSection',
+  'manual-edit': 'ManualEditSection',
+  'cancel-nomination': 'CancelNominationSection',
+  budget: 'BudgetSection',
   'force-pick': 'ForcePickSection',
   order: 'OrderSection',
   autopick: 'AutopickSection',
   seats: 'SeatControlsSection',
   reset: 'ResetSection',
+  end: 'EndDraftSection',
 }
+
+const GOLDEN_AUCTION_ENTRIES: readonly DraftOptionsEntry[] = [
+  { id: 'clock', label: 'Clock & timers' },
+  { id: 'undo', label: 'Undo nominations' },
+  { id: 'manual-edit', label: 'Manual Edit Mode' },
+  { id: 'cancel-nomination', label: 'Edit current nomination' },
+  { id: 'budget', label: 'Team budgets' },
+  { id: 'force-pick', label: 'Nominate for a manager' },
+  { id: 'order', label: 'Nomination order' },
+  { id: 'autopick', label: 'Autopick' },
+  { id: 'seats', label: 'Reassign a seat' },
+  { id: 'reset', label: 'Reset draft', destructive: true },
+  { id: 'end', label: 'End draft', destructive: true },
+]
 
 describe('the group catalog — eight groups, 1:1 with the shipped sections', () => {
   it('matches the golden table exactly (ids, labels, order, destructive flags)', () => {
@@ -129,32 +152,69 @@ describe('the group catalog — eight groups, 1:1 with the shipped sections', ()
     expect(destructive.map((e) => e.id)).toEqual(['reset'])
   })
 
-  it('the M3 entries are deliberately absent until L.C3.2 builds them', () => {
-    // No disabled placeholders for unbuilt features (DR.3 item 3); the ops
-    // catalog names L.C3.2 as the extension point in its docblock.
-    const labels = DRAFT_OPTIONS_ENTRIES.map((e) => e.label)
-    expect(labels).not.toContain('Manual Edit Mode')
-    expect(labels).not.toContain('End Draft')
+  it('a SNAKE room lists no auction group (the engine refuses them by type)', () => {
+    // The ops catalog states the replacement rule in prose too, so a future
+    // reader meets the reason and not just the two arrays.
     expect(read(OPS)).toMatch(/L\.C3\.2/)
+    const ids = draftOptionsEntries(false).map((e) => e.id)
+    for (const auctionOnly of ['manual-edit', 'cancel-nomination', 'budget', 'end']) {
+      expect(ids, auctionOnly).not.toContain(auctionOnly)
+    }
+    expect(draftOptionsEntries(false)).toEqual(GOLDEN_ENTRIES)
   })
 
   it('sectionDomId derives the anchor id', () => {
     expect(sectionDomId('clock')).toBe('draft-options-clock')
     expect(sectionDomId('reset')).toBe('draft-options-reset')
+    expect(sectionDomId('manual-edit')).toBe('draft-options-manual-edit')
+  })
+})
+
+describe('the AUCTION catalog (L.C3.2) — eleven groups, in the panel order', () => {
+  it('matches the golden table exactly', () => {
+    expect(AUCTION_DRAFT_OPTIONS_ENTRIES).toEqual(GOLDEN_AUCTION_ENTRIES)
+    expect(draftOptionsEntries(true)).toEqual(GOLDEN_AUCTION_ENTRIES)
+  })
+
+  it('Manual Edit Mode REPLACES Fix a pick (§8.7 v2.10), never joins it', () => {
+    const ids = AUCTION_DRAFT_OPTIONS_ENTRIES.map((e) => e.id)
+    expect(ids).toContain('manual-edit')
+    expect(ids).not.toContain('fix-pick')
+  })
+
+  it('Reset and End are the TWO destructive entries, End last', () => {
+    const destructive = AUCTION_DRAFT_OPTIONS_ENTRIES.filter((e) => e.destructive)
+    expect(destructive.map((e) => e.id)).toEqual(['reset', 'end'])
+    expect(AUCTION_DRAFT_OPTIONS_ENTRIES.at(-1)?.id).toBe('end')
+  })
+
+  it('every id is unique and every entry carries a label', () => {
+    const ids = AUCTION_DRAFT_OPTIONS_ENTRIES.map((e) => e.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const entry of AUCTION_DRAFT_OPTIONS_ENTRIES) {
+      expect(entry.label.length, entry.id).toBeGreaterThan(0)
+    }
   })
 })
 
 describe('the menu renders the enumerated catalog, not a hard-coded ladder', () => {
   const menu = code(MENU)
 
-  it('maps DRAFT_OPTIONS_ENTRIES', () => {
-    expect(menu).toMatch(/DRAFT_OPTIONS_ENTRIES\.map/)
+  it('maps the enumerated catalog for its draft type', () => {
+    expect(menu).toMatch(/draftOptionsEntries\(isAuction\)/)
+    expect(menu).toMatch(/entries\.map/)
   })
 
   it('inlines no group label of its own', () => {
-    for (const entry of GOLDEN_ENTRIES) {
+    for (const entry of [...GOLDEN_ENTRIES, ...GOLDEN_AUCTION_ENTRIES]) {
       expect(menu, entry.label).not.toContain(entry.label)
     }
+  })
+
+  it('the destructive group sits under ONE separator, however many entries', () => {
+    // An auction has two destructive entries (Reset, End); one separator
+    // opens the group, not one per entry.
+    expect(menu).toMatch(/entry\.id === firstDestructiveId && <DropdownMenuSeparator/)
   })
 
   it('gives the destructive entry the negative treatment behind its flag', () => {
@@ -195,7 +255,10 @@ describe('open-at-section wiring (menu choice → room state → panel anchor)',
   })
 
   it('every catalog entry owns a focusable sectionDomId anchor wrapping its section', () => {
-    for (const entry of DRAFT_OPTIONS_ENTRIES) {
+    // Both catalogs: an auction entry appended without an anchor (or without
+    // a SECTION_COMPONENTS row) fails here by construction — DR.3's design,
+    // exercised for real by L.C3.2's four new groups.
+    for (const entry of [...DRAFT_OPTIONS_ENTRIES, ...AUCTION_DRAFT_OPTIONS_ENTRIES]) {
       const component = SECTION_COMPONENTS[entry.id]
       expect(component, `no section component mapped for '${entry.id}'`).toBeTruthy()
       expect(panel, entry.id).toMatch(

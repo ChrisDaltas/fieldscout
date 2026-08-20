@@ -325,7 +325,62 @@ export function DraftLobby({
             )}
           </CardContent>
         </Card>
+
+        {/* M3 task L.C3.2 item 2: an auction lobby says what the auction IS
+            before it starts — the money and the rotation. Both are league
+            SETTINGS until `draft_start` hydrates them (084 resolves
+            `nomination_order` there), so this reads the settings and says so
+            rather than implying a stored order that does not exist yet. */}
+        {detail.settings.draft.draft_type === 'auction' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Auction</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1.5">
+              <p className="text-[12px] font-bold">
+                <span className="fs-num">${detail.settings.draft.auction_budget}</span> budget per
+                team · <span className="fs-num">${detail.settings.draft.auction_min_bid}</span>{' '}
+                minimum bid
+              </p>
+              <p className="text-[11px] font-semibold text-n-3">
+                <span className="fs-num">{detail.settings.draft.auction_nomination_seconds}s</span>{' '}
+                to nominate ·{' '}
+                <span className="fs-num">{detail.settings.draft.auction_bid_seconds}s</span> bid
+                clock ·{' '}
+                {detail.settings.draft.auction_anti_snipe_seconds === 0 ? (
+                  'no anti-snipe'
+                ) : (
+                  <>
+                    <span className="fs-num">
+                      {detail.settings.draft.auction_anti_snipe_seconds}s
+                    </span>{' '}
+                    anti-snipe
+                  </>
+                )}
+              </p>
+              <p className="text-[11px] font-semibold text-n-3">
+                {nominationOrderLine(detail.settings.draft.nomination_order_mode)}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
+}
+
+/** §7.3.8's `nomination_order_mode`, in words — 084's three arms
+ *  (`draft_nomination_order_internal`) said the way a manager reads them. */
+function nominationOrderLine(mode: string): string {
+  if (mode === 'random') return 'Nomination order: randomized when the draft starts.'
+  // R440: `manual` has NO editor — 084's manual arm validates a STORED
+  // `drafts.nomination_order` and 087's `draft_set_order` refuses to write one
+  // before an auction starts, so nobody can set it (ledger row F80). Telling
+  // the whole room the commissioner sets it before the draft describes the
+  // precise thing that is impossible; the lobby says what League settings'
+  // own picker says instead.
+  if (mode === 'manual') {
+    return 'Nomination order: commissioner-set — but there is no editor for it yet, so pick another mode in League settings.'
+  }
+  return 'Nomination order: the same as the draft order above.'
 }

@@ -489,6 +489,23 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
   // lock + 065's uniq_draft_player_live index, message pinned in pgTAP
   // 020:872. Do NOT cite this test as concurrency proof.
   it('pick 1 lands for the on-clock commissioner; the race LOSER gets the friendly E1 400, message pinned', async () => {
+    // **F77 (discharged at L.C3.2)** — the pick route's P0002 arm, driven
+    // FIRST because it needs the caller to be on the clock (066 checks the
+    // turn before it looks the player up): an unknown player id is a 404
+    // carrying `draft_make_pick`'s OWN sentence (066:988), never "League
+    // not found" — the league was resolved over RLS one statement earlier.
+    // Unreachable from the shipped UI (ids come from the pool); pinned
+    // because the fix is CENTRAL, and this is the consumer F77 named first.
+    const unknownPlayer = await makePick(commishClient, leagueId, {
+      player_id: 'vitest-dq-no-such-player',
+      action_id: 'ad700000-0000-4000-8000-0000000000f7',
+    })
+    expect(unknownPlayer.status).toBe(404)
+    expect(JSON.stringify(unknownPlayer.body)).toContain(
+      'player vitest-dq-no-such-player not found',
+    )
+    expect(JSON.stringify(unknownPlayer.body)).not.toContain('League not found')
+
     const pick1 = await makePick(commishClient, leagueId, {
       player_id: P1,
       action_id: ACTION.pick1,
@@ -536,6 +553,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
     // without one is a 400 before any RPC call.
     const missing = await makePick(mgr2Client, leagueId, { player_id: P3 })
     expect(missing.status).toBe(400)
+
   })
 })
 

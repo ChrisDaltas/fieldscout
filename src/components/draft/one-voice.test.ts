@@ -91,6 +91,10 @@ const STATUS_SOURCE: {
   state: string
   needle: string
   announcedBy: string[]
+  /** Files that carry the state's WORDS without telling the state — a
+   *  settings label for the value a control edits. Enumerated like a teller
+   *  so nothing appears here silently (L.C3.2). */
+  alsoNamedBy?: string[]
   why: string
 }[] = [
   {
@@ -178,17 +182,31 @@ const STATUS_SOURCE: {
     state: 'anti-snipe floor (E6/D128)',
     needle: 'Anti-snipe',
     announcedBy: ['auction-block.tsx'],
+    // L.C3.2: the commissioner panel's Clock & timers section EDITS
+    // `auction_anti_snipe_seconds` (087's set_clock auction arm), so the
+    // field carries the setting's §7.3.8 name. A form label for a value you
+    // are about to change is not a second telling of the live state — the
+    // panel never says what the floor IS or that it re-armed, and it renders
+    // only inside a commissioner sheet. Dispositioned here rather than
+    // widened into `announcedBy`, so a real second teller still fails.
+    alsoNamedBy: ['commish-draft-panel.tsx'],
     why:
       'the floor and its re-arm are stated ONCE, beside the nomination. It is not a ' +
       "second clock — the strip's PickClock is the room's only countdown, and this " +
-      'block is pinned free of it in auction-room.test.ts',
+      'block is pinned free of it in auction-room.test.ts. The commissioner panel ' +
+      'names the SETTING it edits (a form label), never the state',
   },
 ]
 
 describe('the status-source table — each state announced by exactly one dispositioned set', () => {
   for (const row of STATUS_SOURCE) {
     it(`${row.state} → ${row.announcedBy.join(' + ')}`, () => {
-      expect(draftFilesContaining(row.needle), row.why).toEqual(row.announcedBy)
+      // `alsoNamedBy` is the disposition slot for a file that carries the
+      // WORDS without telling the STATE (a settings label for the thing the
+      // control edits). It has to be enumerated to pass, exactly like a
+      // teller — the point of the table is that nothing appears silently.
+      const expected = [...row.announcedBy, ...(row.alsoNamedBy ?? [])].sort()
+      expect(draftFilesContaining(row.needle), row.why).toEqual(expected)
     })
   }
 
