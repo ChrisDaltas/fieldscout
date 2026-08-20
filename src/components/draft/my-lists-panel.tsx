@@ -6,6 +6,7 @@ import { TierBadge } from '@/components/lists/tier-badge'
 import { PlayerRow } from '@/components/players/player-row'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useDockPanelClose } from './draft-dock-panel'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   DropdownMenu,
@@ -114,6 +115,19 @@ export function MyListsPanel({
   inlineCheatSheet = false,
   className,
 }: MyListsPanelProps) {
+  /**
+   * R454 (L.C3.3 batch-16 verification): this panel's primary action has
+   * R446's geometry — on an AUCTION it SELECTS into the nomination composer
+   * (`onDraft={setNomineeId}`, draft-room.tsx:999) which the open dock panel
+   * covers at 1280×800. The auction arm is already distinguishable at the
+   * call site by `primaryActionLabel === 'Nominate'`, so the close is
+   * conditional on that and no snake behaviour changes: the snake arm's
+   * `onDraft` is `handleDraft`, a real pick write with nothing to reach.
+   * `null` outside a dock panel (the launcher/recap mounts) — degrade, never
+   * crash.
+   */
+  const closeDockPanel = useDockPanelClose()
+
   const lists = useLeagueLists(leagueId)
   const myLists = useMyDraftLists(userId ?? undefined)
   const updateList = useUpdateLeagueList(leagueId)
@@ -307,7 +321,10 @@ export function MyListsPanel({
                   variant="green"
                   size="sm"
                   disabled={draftSubmitting}
-                  onClick={() => onDraft(bestPlayer.id)}
+                  onClick={() => {
+                    onDraft(bestPlayer.id)
+                    if (primaryActionLabel === 'Nominate') closeDockPanel?.()
+                  }}
                 >
                   {draftSubmitting ? 'Submitting…' : primaryActionLabel}
                 </Button>
