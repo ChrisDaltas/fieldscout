@@ -77,8 +77,20 @@ export interface AuctionBudgetInputs {
 }
 
 /** 084's defaults: `COALESCE((config->>'auction_budget')::int, 200)` and
- *  `COALESCE((config->>'auction_min_bid')::int, 1)`. Reads the knobs the
- *  same way (a non-integer or missing value falls to the default). */
+ *  `COALESCE((config->>'auction_min_bid')::int, 1)`.
+ *
+ *  Parity holds where the SQL is DEFINED — a missing or JSON-null knob falls
+ *  to the default on both sides (`->>` yields NULL, COALESCE substitutes;
+ *  measured: `coalesce(('{"a":null}'::jsonb->>'a')::int, 200)` → 200, and the
+ *  same for `'{}'`). It does NOT hold for a MALFORMED knob (R424):
+ *  `coalesce(('{"a":"abc"}'::jsonb->>'a')::int, 200)` RAISES **22P02**
+ *  (`invalid input syntax for type integer: "abc"` — COALESCE never sees a
+ *  value), while `intOrDefault` below (the shared reader, also behind
+ *  `adjustmentFor`) falls to the default. The mirror is deliberately the more
+ *  forgiving of the two: it paints a room, and a panel that throws is worse
+ *  than one drawn off a default — but it is a DIVERGENCE, stated here rather
+ *  than claimed away. Unreachable through the validated settings writes that
+ *  produce `drafts.config` (§7.3.8's typed knobs), which is why it stays. */
 export function auctionKnobsOf(config: Json | null | undefined): {
   auctionBudget: number
   minBid: number

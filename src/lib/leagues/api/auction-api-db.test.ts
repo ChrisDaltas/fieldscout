@@ -14,11 +14,18 @@
  *     EVERY call — pinned END-TO-END: a stale identity (the player arm AND
  *     the seq-with-matching-player arm — R337) is refused through the route
  *     with §16.3's "just went off the board" product copy as a friendly 400;
- *   - F65 DISCHARGED: action ids are per verb — a nomination's id sent
- *     through the bid route (and a bid's id through the nominate route) is
- *     a 409 with NOTHING written and the high bid untouched, never a 200
- *     carrying a "bid" the caller never placed; the hooks' per-verb mint is
- *     source-pinned in use-draft-auction-ops.test.ts;
+ *   - F65 DISCHARGED, in TWO ARMS. The ARGUMENT arm: a nomination's id sent
+ *     through the bid route (and a bid's id through the nominate route) with
+ *     arguments that disagree with the replayed row is a 409. The IDENTITY
+ *     arm (R420) is the one that closes the hole: `draft_bids` is readable by
+ *     every league member (083:132–133), so the arguments are guessable —
+ *     the discriminator is the caller's ACTING SEAT, and the pin is the
+ *     reviewer's live forgery (a non-nominator during BIDDING replaying
+ *     another manager's raise, arguments read straight off the table).
+ *     Both arms: 409, NOTHING written, the high bid AND its holder untouched,
+ *     never a 200 carrying a row the caller never placed. The hooks' per-verb
+ *     mint is source-pinned in use-draft-auction-ops.test.ts, and the 409's
+ *     product copy is pinned here (R421);
  *   - D68 idempotency over the wire: the same body twice (nominate AND bid)
  *     answers the same 200 with the same row, one row total;
  *   - R338 at the route: a consumed bid action_id replayed AFTER the
@@ -209,6 +216,13 @@ let orderedTeamIds: string[]
 let commishTeamId: string
 let mgr2TeamId: string
 let mgr3TeamId: string
+/** R420: the service now compares the returned row's seat to the CALLER's,
+ *  so every route call carries the caller's user id — exactly as the Route
+ *  Handler passes `user.id` from `supabase.auth.getUser()`. */
+let commishId: string
+let mgr2Id: string
+let mgr3Id: string
+let outsiderId: string
 
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
@@ -242,14 +256,17 @@ async function createUser(user: {
   email: string
   password: string
   username: string
-}): Promise<void> {
-  const { error } = await service.auth.admin.createUser({
+}): Promise<string> {
+  const { data, error } = await service.auth.admin.createUser({
     email: user.email,
     password: user.password,
     email_confirm: true,
     user_metadata: { username: user.username },
   })
-  if (error) throw new Error(`createUser failed for ${user.email}: ${error.message}`)
+  if (error || !data.user) {
+    throw new Error(`createUser failed for ${user.email}: ${error?.message}`)
+  }
+  return data.user.id
 }
 
 async function signIn(user: {
@@ -294,10 +311,10 @@ const errorText = (body: unknown): string => JSON.stringify(body)
 
 beforeAll(async () => {
   await cleanup()
-  await createUser(COMMISH)
-  await createUser(MGR2)
-  await createUser(MGR3)
-  await createUser(OUTSIDER)
+  commishId = await createUser(COMMISH)
+  mgr2Id = await createUser(MGR2)
+  mgr3Id = await createUser(MGR3)
+  outsiderId = await createUser(OUTSIDER)
   commishClient = await signIn(COMMISH)
   mgr2Client = await signIn(MGR2)
   mgr3Client = await signIn(MGR3)
@@ -427,7 +444,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect(mock.draft_type).toBe('auction')
     expect(mock.on_clock_team_id).toBe(commishTeamId)
 
-    const intruder = await nominatePlayer(commishClient, leagueId, {
+    const intruder = await nominatePlayer(commishClient, leagueId, commishId, {
       draft_id: mockId,
       player_id: P4,
       opening_bid: 1,
@@ -436,7 +453,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect(intruder.status).toBe(400)
     expect(errorText(intruder.body)).toContain("another member's solo practice")
 
-    const opened = await nominatePlayer(mgr2Client, leagueId, {
+    const opened = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
       draft_id: mockId,
       player_id: P4,
       opening_bid: 1,
@@ -453,7 +470,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
 
   it('launcher bids FOR the human seat through the bid route (after a real CPU raise); the seat’s real manager’s bid is refused', async () => {
     // The intruder's bid — the D138 extension of D103(2) to bids.
-    const intruder = await placeBid(commishClient, leagueId, {
+    const intruder = await placeBid(commishClient, leagueId, commishId, {
       draft_id: mockId,
       nomination_seq: 1,
       player_id: P4,
@@ -484,7 +501,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     // observed high bid: a CPU raises by exactly $1 per pass and at most one
     // cron pass can land between the read and this call.
     const amount = nomination.high_bid + 3
-    const bid = await placeBid(mgr2Client, leagueId, {
+    const bid = await placeBid(mgr2Client, leagueId, mgr2Id, {
       draft_id: mockId,
       nomination_seq: 1,
       player_id: P4,
@@ -528,11 +545,11 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   }, 60_000)
 
   it('wire-side contract: a body without action_id is a 400 on that field BEFORE any RPC (probe B’s target); a non-integer opening bid likewise', async () => {
-    const missing = await nominatePlayer(commishClient, leagueId, { player_id: P1, opening_bid: 1 })
+    const missing = await nominatePlayer(commishClient, leagueId, commishId, { player_id: P1, opening_bid: 1 })
     expect(missing.status).toBe(400)
     expect((missing.body as unknown as FieldErrorBody).error.fieldErrors.action_id).toBeDefined()
 
-    const fractional = await nominatePlayer(commishClient, leagueId, {
+    const fractional = await nominatePlayer(commishClient, leagueId, commishId, {
       player_id: P1,
       opening_bid: 1.5,
       action_id: ACTION.nominate1,
@@ -545,7 +562,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   })
 
   it('063 mapping: an unknown player is a 404 carrying the RPC’s OWN message (never "League not found"); wrong turn is the friendly 400; the outsider gets the no-leak 404', async () => {
-    const unknown = await nominatePlayer(commishClient, leagueId, {
+    const unknown = await nominatePlayer(commishClient, leagueId, commishId, {
       player_id: 'vitest-aa-no-such-player',
       opening_bid: 1,
       action_id: ACTION.nominateUnknown,
@@ -554,7 +571,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
     expect(errorText(unknown.body)).toContain('player vitest-aa-no-such-player not found')
     expect(errorText(unknown.body)).not.toContain('League not found')
 
-    const wrongTurn = await nominatePlayer(mgr2Client, leagueId, {
+    const wrongTurn = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominateWrongTurn,
@@ -564,7 +581,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
 
     // The R155 class: an explicit draft_id changes nothing — the RLS probe
     // sees no row, the answer is the draftless 404.
-    const outsider = await nominatePlayer(outsiderClient, leagueId, {
+    const outsider = await nominatePlayer(outsiderClient, leagueId, outsiderId, {
       draft_id: draftId,
       player_id: P1,
       opening_bid: 1,
@@ -575,7 +592,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   })
 
   it('the on-clock commissioner nominates: 200 with the authoritative state; the SAME body again is the D68 no-op (same row, one row)', async () => {
-    const opened = await nominatePlayer(commishClient, leagueId, {
+    const opened = await nominatePlayer(commishClient, leagueId, commishId, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominate1,
@@ -596,7 +613,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
       action_id: ACTION.nominate1,
     })
 
-    const replay = await nominatePlayer(commishClient, leagueId, {
+    const replay = await nominatePlayer(commishClient, leagueId, commishId, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominate1,
@@ -613,13 +630,13 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
 
 describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (F64) and action ids are per verb (F65)', () => {
   it('F64 wire-side: a body without nomination_seq + player_id is a 400 on BOTH fields before any RPC; a missing action_id likewise (probe B); nothing written', async () => {
-    const noIdentity = await placeBid(mgr2Client, leagueId, { amount: 2, action_id: ACTION.bid1 })
+    const noIdentity = await placeBid(mgr2Client, leagueId, mgr2Id, { amount: 2, action_id: ACTION.bid1 })
     expect(noIdentity.status).toBe(400)
     const fields = (noIdentity.body as unknown as FieldErrorBody).error.fieldErrors
     expect(fields.nomination_seq).toBeDefined()
     expect(fields.player_id).toBeDefined()
 
-    const noAction = await placeBid(mgr2Client, leagueId, {
+    const noAction = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -627,7 +644,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(noAction.status).toBe(400)
     expect((noAction.body as unknown as FieldErrorBody).error.fieldErrors.action_id).toBeDefined()
 
-    const outsider = await placeBid(outsiderClient, leagueId, {
+    const outsider = await placeBid(outsiderClient, leagueId, outsiderId, {
       draft_id: draftId,
       nomination_seq: 1,
       player_id: P1,
@@ -640,7 +657,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
 
   it('F64 END-TO-END (probe A’s target): a stale identity is refused through the route with the §16.3 copy as a 400 — the player arm AND the seq arm with a MATCHING player (R337)', async () => {
     // The room was looking at p2 (it was not — p1 is live): the player arm.
-    const stalePlayer = await placeBid(mgr2Client, leagueId, {
+    const stalePlayer = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 1,
       player_id: P2,
       amount: 2,
@@ -654,7 +671,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // number (D143's renominate / an undone award both produce this): the
     // seq arm — only reachable when the route actually transports the seq
     // (R337: neither arm subsumes the other).
-    const staleSeq = await placeBid(mgr2Client, leagueId, {
+    const staleSeq = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 2,
       player_id: P1,
       amount: 2,
@@ -672,7 +689,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
   })
 
   it('a raise lands (200, the room’s identity echoed); the instant loser is the friendly "outbid" 400 (D136: never a 429); the D68 replay is the same row', async () => {
-    const raise = await placeBid(mgr2Client, leagueId, {
+    const raise = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -693,7 +710,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       high_bidder_team_id: mgr2TeamId,
     })
 
-    const loser = await placeBid(mgr3Client, leagueId, {
+    const loser = await placeBid(mgr3Client, leagueId, mgr3Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -705,7 +722,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
 
     // D68: the SAME body (the variables a React Query retry re-sends) is the
     // same 200 with the same row — one row total for this submit.
-    const replay = await placeBid(mgr2Client, leagueId, {
+    const replay = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -716,12 +733,12 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(await bidCount(draftId)).toBe(2)
   })
 
-  it('F65: a NOMINATION’s action_id sent through the bid route is a 409 — not a 200 carrying a "bid" the caller never placed; nothing written, the high bid untouched; the converse likewise', async () => {
+  it('F65 — the ARGUMENT arm: a NOMINATION’s action_id sent through the bid route is a 409 — not a 200 carrying a "bid" the caller never placed; nothing written, the high bid untouched; the converse likewise', async () => {
     // The commissioner's nomination id (consumed by draft_nominate) re-sent
     // as a bid: the RPC's verb-blind replay returns the OPENING row (R331 —
     // the false-success shape); the service sees a row that is not this
     // bid and refuses.
-    const crossVerb = await placeBid(commishClient, leagueId, {
+    const crossVerb = await placeBid(commishClient, leagueId, commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: 3,
@@ -734,7 +751,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // member who is not the nominator while bidding is open: without the
     // check this is F65's live-proven false success (a 200 carrying
     // ANOTHER manager's raise row); with it, a 409.
-    const converse = await nominatePlayer(mgr3Client, leagueId, {
+    const converse = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.bid1,
@@ -748,11 +765,88 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     ).toBe(2)
   })
 
+  it('F65 — the IDENTITY arm (R420): every member can READ `draft_bids`, so the arguments are guessable and the SEAT is the discriminator — mgr3, a non-nominator during BIDDING, reads mgr2’s raise row and replays it through the nominate route with its own (player, amount): 409, never a 200 carrying mgr2’s row; the converse under the same policy likewise', async () => {
+    // (1) THE PREMISE, MEASURED. `draft_bids` RLS is
+    // `FOR SELECT USING (is_league_member(league_id))` with no column
+    // restriction (083:132–133), so mgr3 — who placed no such bid — reads
+    // every field of mgr2's raise, `action_id` included.
+    const { data: raise, error: readError } = await mgr3Client
+      .from('draft_bids')
+      .select('action_id, player_id, amount, nomination_seq, team_id')
+      .eq('draft_id', draftId)
+      .eq('action_id', ACTION.bid1)
+      .single()
+    expect(readError).toBeNull()
+    expect(raise).toMatchObject({
+      action_id: ACTION.bid1,
+      player_id: P1,
+      amount: 2,
+      nomination_seq: 1,
+      team_id: mgr2TeamId,
+    })
+    if (!raise?.action_id) throw new Error('mgr3 could not read the raise row')
+
+    // (2) THE FORGERY, built ONLY from what that read returned — the exact
+    // shape an ARGUMENT-ONLY check answers 200 to, because every argument
+    // agrees with the row the verb-blind replay hands back (R331). The one
+    // fact mgr3 cannot supply is the acting seat.
+    const forgedNomination = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
+      player_id: raise.player_id,
+      opening_bid: raise.amount,
+      action_id: raise.action_id,
+    })
+    expect(forgedNomination.status).toBe(409)
+    expect(errorText(forgedNomination.body)).toContain(ACTION_ID_REUSED_MESSAGE)
+    // No 200 shape at all: mgr2's seat never appears in mgr3's response.
+    expect(errorText(forgedNomination.body)).not.toContain(mgr2TeamId)
+
+    // (3) THE CONVERSE, symmetric because `nomination_seq` sits under the
+    // same policy: the commissioner's OPENING row replayed through the BID
+    // route with all four arguments matching.
+    const { data: opening } = await mgr3Client
+      .from('draft_bids')
+      .select('action_id, player_id, amount, nomination_seq, team_id')
+      .eq('draft_id', draftId)
+      .eq('action_id', ACTION.nominate1)
+      .single()
+    expect(opening).toMatchObject({ team_id: commishTeamId, nomination_seq: 1, amount: 1 })
+    if (!opening?.action_id) throw new Error('mgr3 could not read the opening row')
+    const forgedBid = await placeBid(mgr3Client, leagueId, mgr3Id, {
+      nomination_seq: opening.nomination_seq,
+      player_id: opening.player_id,
+      amount: opening.amount,
+      action_id: opening.action_id,
+    })
+    expect(forgedBid.status).toBe(409)
+    expect(errorText(forgedBid.body)).toContain(ACTION_ID_REUSED_MESSAGE)
+    expect(errorText(forgedBid.body)).not.toContain(commishTeamId)
+
+    // Nothing written by either forgery; the high bid AND its holder stand.
+    expect(await bidCount(draftId)).toBe(2)
+    expect((await readDraft(draftId)).current_nomination).toEqual({
+      player_id: P1,
+      high_bid: 2,
+      high_bidder_team_id: mgr2TeamId,
+    })
+  })
+
+  it('R421: the 409 carries PRODUCT copy — it names no internal identifier and asks for a fresh submit, never a retry of the consumed one', () => {
+    // This string reaches a manager verbatim (`client-fetch.ts` surfaces a
+    // string `error` body as `LeagueActionError.message`; `use-draft-auction
+    // .ts` tells callers to show it as-is), so §16.3 / tasks-M3 §4 rule 8
+    // govern it. "Please try again" was false: an action_id is consumed
+    // forever (R125), so re-submitting THIS one repeats the 409.
+    expect(ACTION_ID_REUSED_MESSAGE).not.toMatch(/action[ _]?id/i)
+    expect(ACTION_ID_REUSED_MESSAGE).not.toMatch(/nomination_seq|player_id|409|uuid|replay/i)
+    expect(ACTION_ID_REUSED_MESSAGE).not.toMatch(/try again/i)
+    expect(ACTION_ID_REUSED_MESSAGE).toMatch(/place it again/)
+  })
+
   it('ONE UNIT at the ceiling: a bid AT max_bid ($186) lands; max_bid + 1 ($187) is refused with the E5 copy naming the formula’s numbers', async () => {
     // The commissioner (the nominator — bidding has no turn, §8.6.3) raises
     // to one under its own ceiling; mgr2 holds the standing high bid, so
     // the raise comes from a seat that is NOT the high bidder.
-    const under = await placeBid(commishClient, leagueId, {
+    const under = await placeBid(commishClient, leagueId, commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID - 1,
@@ -760,7 +854,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     })
     expect(under.status).toBe(200)
 
-    const atMax = await placeBid(mgr3Client, leagueId, {
+    const atMax = await placeBid(mgr3Client, leagueId, mgr3Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID,
@@ -775,7 +869,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       high_bidder_team_id: mgr3TeamId,
     })
 
-    const overMax = await placeBid(commishClient, leagueId, {
+    const overMax = await placeBid(commishClient, leagueId, commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID + 1,
@@ -827,7 +921,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     // sent (seq 1, p1, $2 — F64 means every real retry carries identity),
     // and the live phase is now NOMINATING on seq 2. The replay arm sits
     // above the identity guard in 085/089, so the original row comes back.
-    const replay = await placeBid(mgr2Client, leagueId, {
+    const replay = await placeBid(mgr2Client, leagueId, mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -844,7 +938,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
   })
 
   it('mgr2 nominates p2; mgr3 (a $186 buy ⇒ $14 over 14 slots ⇒ max bid $1) is refused at $2 with the derivation’s numbers; the commissioner raises', async () => {
-    const opened = await nominatePlayer(mgr2Client, leagueId, {
+    const opened = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
       player_id: P2,
       opening_bid: 1,
       action_id: ACTION.nominate2,
@@ -852,7 +946,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     expect(opened.status).toBe(200)
     expect((opened.body as unknown as AuctionBody).bid.nomination_seq).toBe(2)
 
-    const overOne = await placeBid(mgr3Client, leagueId, {
+    const overOne = await placeBid(mgr3Client, leagueId, mgr3Id, {
       nomination_seq: 2,
       player_id: P2,
       amount: 2,
@@ -862,7 +956,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     expect(errorText(overOne.body)).toContain('$2 is over your max bid of $1')
     expect(errorText(overOne.body)).toContain('you have $14 for 14 open roster spots')
 
-    const raise = await placeBid(commishClient, leagueId, {
+    const raise = await placeBid(commishClient, leagueId, commishId, {
       nomination_seq: 2,
       player_id: P2,
       amount: 2,

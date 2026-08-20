@@ -20,6 +20,11 @@ const idSchema = z.uuid()
  * launcher gate (D103(2)/D138) are the RPC's under the §4.6 lock; every
  * refusal is product copy passed through as a 400. Optional `draft_id`
  * (a mock room sends its own — D113(2)).
+ *
+ * The signed-in user's id rides into the service (R420): the F65 response-
+ * integrity check compares the row the RPC hands back to the CALLER'S ACTING
+ * SEAT, which is the one fact a member replaying another manager's readable
+ * `draft_bids` row cannot supply.
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -36,6 +41,6 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const body = await request.json().catch(() => null)
-  const result = await nominatePlayer(supabase, id, body)
+  const result = await nominatePlayer(supabase, id, user.id, body)
   return NextResponse.json(result.body, { status: result.status })
 }

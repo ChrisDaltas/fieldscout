@@ -330,13 +330,27 @@ async function resolveDraftForAction(
 }
 
 /**
- * Whose queue does the caller write? Real draft → the caller's own seat
- * (§12.6 "a manager sees/edits only their own queue" — the 065 policy is the
- * RLS backstop). Mock draft → the LAUNCHER writes the HUMAN seat's queue and
- * nobody else touches it (D103(3), the 065 carve-out mirrored; the seat's
- * chosen franchise may not be the caller's own).
+ * THE CALLER'S ACTING SEAT — which franchise this request acts FOR.
+ *
+ * Real draft → the caller's own seat (`league_members.team_id`). Mock draft
+ * → the LAUNCHER acts for the HUMAN seat and nobody else touches it (D103(3);
+ * the seat's chosen franchise may not be the caller's own).
+ *
+ * That rule is not this layer's invention — it is the RPCs' own team
+ * resolution, mirrored: `draft_nominate` (089:1201/1203) and
+ * `draft_place_bid` (089:1476/1478) each read `config.mock.human_team_id`
+ * on a mock and `league_members.team_id` otherwise, and `draft_queue_replace`
+ * writes under the 065 "Own queue write" policy. Two consumers:
+ *   - the queue writers (§12.6 "a manager sees/edits only their own queue" —
+ *     the 065 policy is the RLS backstop), and
+ *   - the auction verbs' F65 response-integrity check (R420), where it is
+ *     the DISCRIMINATOR: the acting seat is the one fact about a submit that
+ *     a forger cannot read off the wire, because `draft_bids` is readable by
+ *     every league member (083:132–133 — `FOR SELECT USING
+ *     (is_league_member(league_id))`, no column restriction) while seat
+ *     ownership is the caller's identity.
  */
-async function resolveQueueTeam(
+async function resolveActingSeat(
   supabase: Supabase,
   leagueId: string,
   userId: string,
@@ -493,15 +507,35 @@ export async function makePick(
 //    schemas REQUIRE it wire-side (NULL is never sent). (b) THE RESPONSE-
 //    INTEGRITY CHECK: a replay returns the ORIGINAL row (R125 — the RPC is
 //    untouched), and for a legitimate retry that row IS the submit being
-//    retried (React Query re-sends the same variables), so its
-//    (nomination_seq, player_id, amount) — (player_id, opening_bid) for a
-//    nomination — MUST equal the request's. When they do not, the id was
-//    consumed by a DIFFERENT action (a nomination's id sent through the
-//    bid route, or vice versa): the service refuses with a 409 instead of
-//    answering 200 with a "bid" the caller never placed — the CLAUDE.md
-//    "never let nothing happened mean it worked" rule at this boundary.
-//    A same-submit retry (identical variables) always passes; a
-//    double-tap mints a fresh id per tap and is a NEW bid, not a replay.
+//    retried (React Query re-sends the same variables), so the returned row
+//    must be THIS caller's THIS submit. Two conditions, and the FIRST is the
+//    load-bearing one (R420):
+//      * IDENTITY — `bid.team_id` must equal the caller's ACTING SEAT
+//        (`resolveActingSeat`: own `league_members.team_id`, or on a mock
+//        `config.mock.human_team_id`, which is exactly how the RPCs pick the
+//        team they write — 089:1201/1476). This is the discriminator that
+//        cannot be forged: `draft_bids` is readable by EVERY league member
+//        (083:132–133, no column restriction), so a member can read any
+//        row's `action_id`, `player_id`, `amount` and `nomination_seq` and
+//        replay them back. Seat ownership is the one thing they cannot
+//        supply. Comparing arguments ALONE left F65's live-proven false
+//        success reachable — a non-nominator POSTing another manager's
+//        action_id with that row's own (player, amount) got a 200 carrying
+//        that manager's bid row.
+//      * ARGUMENTS — the returned (nomination_seq, player_id, amount), or
+//        (player_id, opening_bid) for a nomination, must equal the request's.
+//        This catches the caller reusing their OWN id across verbs, where
+//        the seat matches by construction.
+//    Either mismatch means the id was consumed by a DIFFERENT action, so the
+//    service refuses with a 409 instead of answering 200 with a "bid" the
+//    caller never placed — the CLAUDE.md "never let nothing happened mean it
+//    worked" rule at this boundary. A same-submit retry (same caller,
+//    identical variables) always passes; a double-tap mints a fresh id per
+//    tap and is a NEW bid, not a replay.
+//    COST, stated plainly: the seat lookup is ONE extra indexed SELECT on
+//    the success path of every nominate/bid. Paid deliberately — a bid is a
+//    human gesture, not a hot loop, and the claim this check makes is only
+//    worth making if it holds against a caller who reads the wire.
 //
 // Never optimistic (§15.6): the response is returned for the hook to
 // settle on; the feed and the drafts broadcast are the room's truth (D184).
@@ -513,8 +547,17 @@ export async function makePick(
  *  max-bid ceiling, integer raises) is the RPC's, with its own copy. */
 const INT4_MAX = 2_147_483_647
 
+/** The 409's product copy (R421). Names no internal identifier — this
+ *  string reaches a manager mid-auction verbatim (`client-fetch.ts:52`
+ *  surfaces a string `error` body as `LeagueActionError.message`, and
+ *  `use-draft-auction.ts` tells callers to show it as-is), so §16.3's
+ *  friendly-race-resolution rule and tasks-M3 §4 rule 8 both apply. The
+ *  remedy has to WORK: an action_id is consumed forever (R125), so
+ *  re-submitting THIS one returns the same 409 every time — the copy
+ *  therefore asks for a fresh gesture (which mints a fresh id), never for a
+ *  retry of the submit that failed. */
 export const ACTION_ID_REUSED_MESSAGE =
-  'That action id was already used for a different action — a nomination and a bid never share one. Please try again.'
+  "That didn't go through — we couldn't confirm it as yours. Check the player and the price, then place it again."
 
 /** `action_id` REQUIRED wire-side (E2/D68(1)): the hook mints one UUID per
  *  submit, so a retry replays instead of double-nominating. */
@@ -558,6 +601,7 @@ function mapAuctionRpcError(error: { code?: string; message: string }): ServiceR
 export async function nominatePlayer(
   supabase: Supabase,
   leagueId: string,
+  userId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
   const parsed = nominateInputSchema.safeParse(rawBody)
@@ -577,9 +621,19 @@ export async function nominatePlayer(
   if (error) return mapAuctionRpcError(error)
   const body = data as unknown as AuctionActionBody
 
-  // F65(b): the row that came back must be THIS nomination (fresh, or the
-  // same submit replayed) — otherwise the action_id was a bid's.
-  if (body.bid.player_id !== parsed.data.player_id || body.bid.amount !== parsed.data.opening_bid) {
+  // F65(b): the row that came back must be THIS caller's THIS nomination
+  // (fresh, or the same submit replayed) — otherwise the action_id was
+  // consumed by another action, and answering 200 would attribute someone
+  // else's row to this caller. Identity FIRST (R420): the acting seat is the
+  // fact a member reading `draft_bids` cannot forge; the arguments catch a
+  // caller reusing their OWN id across verbs.
+  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  if ('failure' in seat) return seat.failure
+  if (
+    body.bid.team_id !== seat.teamId ||
+    body.bid.player_id !== parsed.data.player_id ||
+    body.bid.amount !== parsed.data.opening_bid
+  ) {
     return { status: 409, body: { error: ACTION_ID_REUSED_MESSAGE } }
   }
   // Fresh nomination and the E2 replay are BOTH 200 (the replayed-submit
@@ -590,6 +644,7 @@ export async function nominatePlayer(
 export async function placeBid(
   supabase: Supabase,
   leagueId: string,
+  userId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
   const parsed = placeBidInputSchema.safeParse(rawBody)
@@ -612,11 +667,15 @@ export async function placeBid(
   if (error) return mapAuctionRpcError(error)
   const body = data as unknown as AuctionActionBody
 
-  // F65(b): the row that came back must be THIS bid (fresh, or the same
-  // submit replayed — R338: a retry after the nomination moved on returns
-  // its original row, which still matches) — otherwise the action_id was
-  // a nomination's (or another submit's) and the caller never placed it.
+  // F65(b): the row that came back must be THIS caller's THIS bid (fresh, or
+  // the same submit replayed — R338: a retry after the nomination moved on
+  // returns its original row, which still matches on both counts) —
+  // otherwise the action_id was a nomination's, or another manager's, and
+  // the caller never placed it. Identity FIRST (R420).
+  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  if ('failure' in seat) return seat.failure
   if (
+    body.bid.team_id !== seat.teamId ||
     body.bid.nomination_seq !== parsed.data.nomination_seq ||
     body.bid.player_id !== parsed.data.player_id ||
     body.bid.amount !== parsed.data.amount
@@ -656,7 +715,7 @@ export async function upsertQueue(
 
   const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveQueueTeam(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
 
   // Validate every player id BEFORE the destructive replace: PostgREST gives
@@ -734,7 +793,7 @@ export async function queueFromList(
 
   const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveQueueTeam(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
 
   // The list must be ATTACHED to this league and visible to the caller (own

@@ -22,6 +22,11 @@ const idSchema = z.uuid()
  * anti-snipe floor and the mock launcher gate are the RPC's under the §4.6
  * lock; the instant "outbid" loser and "just went off the board" are
  * friendly 400s (D136 — never a 429). Optional `draft_id` (D113(2)).
+ *
+ * The signed-in user's id rides into the service (R420): the F65 response-
+ * integrity check compares the row the RPC hands back to the CALLER'S ACTING
+ * SEAT, which is the one fact a member replaying another manager's readable
+ * `draft_bids` row cannot supply.
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -38,6 +43,6 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const body = await request.json().catch(() => null)
-  const result = await placeBid(supabase, id, body)
+  const result = await placeBid(supabase, id, user.id, body)
   return NextResponse.json(result.body, { status: result.status })
 }
