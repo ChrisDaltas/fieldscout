@@ -35,6 +35,7 @@ import type { Draft } from '@/types/database'
 
 import { AuctionBlock } from './auction-block'
 import { readLiveNomination } from './auction-budget'
+import { AuctionPlayerTable } from './auction-player-table'
 import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
@@ -887,6 +888,36 @@ function DraftRoomLive({
     />
   )
 
+  // L.C3.3: in an AUCTION the dock's Players panel is §16.2's
+  // `auction-player-table` instead — Chris's v2.10 requirement (§16.4's
+  // player-table callout: projections, $-per-point, splits, filters,
+  // column customization, the three row actions) is a strict SUPERSET of
+  // what the pool card offers an auction, so hosting both in one panel
+  // would be two lists of the same players. The table keeps every filter
+  // and both actions the pool had, including the §8.9 overlay, and the
+  // Nominate verb still SELECTS into the block's composer (the write is
+  // `useNominate`, never optimistic — §15.6). `poolCard` stays the panel
+  // for every other draft type, unchanged.
+  const playersCard = isAuction ? (
+    <AuctionPlayerTable
+      leagueId={leagueId}
+      draftId={draft.id}
+      userId={userId ?? undefined}
+      picks={picks}
+      teamNameById={teamNameById}
+      queuedIds={queuedIds}
+      onQueue={handleQueue}
+      canNominate={canNominate}
+      onNominate={setNomineeId}
+      submitting={auctionSubmitting}
+      regularSeasonWeeks={detail.settings.regular_season_weeks}
+      overlay={overlay}
+      onClearOverlay={() => setOverlay(null)}
+    />
+  ) : (
+    poolCard
+  )
+
   // The dock renders every tab for every seat (DR.5: it is not
   // commissioner chrome), so the seat-gated panels carry the §16.5.4
   // honest no-seat copy instead of vanishing.
@@ -1228,7 +1259,7 @@ function DraftRoomLive({
           lives in it (§8.7's one door is the bar's Draft Options). */}
       <DraftDock
         panels={{
-          players: poolCard,
+          players: playersCard,
           queue: queueCard,
           roster: trackerCard,
           lists: listsCard,
