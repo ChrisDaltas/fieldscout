@@ -1526,7 +1526,7 @@ POST   /api/leagues/[id]/draft/autodraft    toggle autodraft for my team
 -- Commissioner live controls (each → rpc + commissioner_actions insert):
 POST   /api/leagues/[id]/draft/pause        rpc draft_pause / draft_resume
 POST   /api/leagues/[id]/draft/undo         rpc draft_undo(to_pick_number?)   (single or cascade)
-POST   /api/leagues/[id]/draft/reassign     rpc draft_reassign_pick(pick_id, team_id|player_id, price?)   -- price: auction, erratum v2.12.8
+POST   /api/leagues/[id]/draft/reassign     rpc draft_reassign_pick(pick_id, team_id?|player_id?|price?)  -- at least ONE; price-only = a same-team price correction (auction). Erratum v2.12.8/R413
 POST   /api/leagues/[id]/draft/force-pick   rpc draft_force_pick(team_id, player_id)
 POST   /api/leagues/[id]/draft/move-player  rpc draft_move_player(player_id, from_team, to_team, price?) -- price: auction, erratum v2.12.8
 POST   /api/leagues/[id]/draft/reset        rpc draft_reset
