@@ -48,7 +48,7 @@
 --     raises is pinned against the model itself (re-pointed here from 038 §D);
 --     and a legitimate $1 grind through willing seats RUNS TO THE CEILING
 --     rather than tripping a counter, which is the measurement that widened
---     the bound to GREATEST(2 × team_count, auction_budget) — D204(2b), F88.
+--     the bound to GREATEST(2 × team_count, auction_budget) — D213(2b), F93.
 --     The bound is still hard and still loud; its loudness is shown by the
 --     PR break probe, because no legal market can reach it.
 --   * §E E62 IS UNCHANGED, and jump-bids do not weaken it: over a driven
@@ -582,9 +582,9 @@ select throws_ok(
 --     $1-at-a-time climb through willing seats, which is exactly the texture
 --     Chris asked for and which D200(3)'s `2 × team_count` (= 4 here) fired on
 --     with a FALSE diagnosis. The bound is `GREATEST(2 × team_count,
---     auction_budget)` instead (D204(2b)); its loudness is proved by the PR's
+--     auction_budget)` instead (D213(2b)); its loudness is proved by the PR's
 --     second break probe, because no legal market can reach it — which is the
---     property that makes it worth raising. See ledger row F88 for what the
+--     property that makes it worth raising. See ledger row F93 for what the
 --     degenerate shape costs in held-lock time.
 -- ===========================================================================
 create temp table ap3_cap_draft as
