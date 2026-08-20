@@ -340,7 +340,6 @@ export function CommishDraftPanel({
               leagueId={leagueId}
               draftId={draft.id}
               livePicks={livePicks}
-              detail={detail}
               activeTeams={activeTeams}
               pickSummary={pickSummary}
               playerLabel={playerLabel}
@@ -824,7 +823,6 @@ function FixPickSection({
   leagueId,
   draftId,
   livePicks,
-  detail,
   activeTeams,
   pickSummary,
   playerLabel,
@@ -834,11 +832,11 @@ function FixPickSection({
   leagueId: string
   draftId: string
   livePicks: DraftPickSummary[]
-  detail: LeagueDetail
   /** R443: retired franchises are refusal targets (090:716 / 090:956), so the
    *  reassign/move pickers take the same `activeFranchises()` derivation R436
-   *  introduced for the auction sections. `detail` stays for name resolution —
-   *  resolution is total, counting is filtered. */
+   *  introduced for the auction sections. This section resolves no names of
+   *  its own (`pickSummary`/`playerLabel` are passed in), so it takes the
+   *  filtered list ONLY — `detail` is no longer threaded here. */
   activeTeams: LeagueDetail['teams']
   pickSummary: (p: DraftPickSummary) => string
   playerLabel: (playerId: string) => string
