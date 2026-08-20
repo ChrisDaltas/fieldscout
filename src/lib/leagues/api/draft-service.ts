@@ -50,6 +50,16 @@
  *     passed through verbatim (the instant "outbid" loser, "just went off
  *     the board", the E5 ceiling) — D136: a friendly 400, never a 429.
  *
+ * L.C2.2 (M3) extends the commissioner block with the AUCTION verbs
+ * (§8.7's auction rows; spec §15.2 via the C40 erratum) — same
+ * `dispatchControl` pipeline, `reason` REQUIRED, stored nowhere (F32/F40):
+ *   - POST …/draft/reverse-bid        → `draft_reverse_won_bid` (pick_id)
+ *   - POST …/draft/budget             → `draft_adjust_budget` (team_id, delta)
+ *   - POST …/draft/cancel-nomination  → `draft_cancel_nomination` (D143)
+ *   - POST …/draft/end                → `draft_end` (C41 end-as-is)
+ *   and `reassign` / `move-player` gain the optional `price` (087's priced
+ *   arms — D142), `clock` gains the three auction timers (087's timer arm).
+ *
  * Randomize entropy (D101 instant shuffle): the ESLint determinism guard
  * bans every random source under `src/lib/leagues/**` (L.A0.3/R22), so the
  * shuffle here is PURE over injected uniform values — the ROUTE (outside the
@@ -925,16 +935,27 @@ export const undoDraftInputSchema = z.strictObject({
   to_pick_number: z.number().int().min(0).optional(),
 })
 
+/** L.C2.2 (§8.7 Manual Edit Mode / D142): the auction's RE-ENTERED cost.
+ *  Optional wire-side — a snake pick carries no price and the RPC refuses
+ *  one (087); on an auction the RPC REQUIRES it when the pick changes hands
+ *  and accepts a price-only correction (so `price` alone is a legal body).
+ *  `min(0)` is the shape floor: `auction_min_bid = 0` is a legal league, and
+ *  "below this league's minimum bid" is the RPC's own refusal (§7.3.8). */
+const priceSchema = z.number().int().min(0).optional()
+
 export const reassignPickInputSchema = z
   .strictObject({
     ...controlBaseShape,
     pick_id: z.uuid(),
     team_id: z.uuid().optional(),
     player_id: z.string().trim().min(1).optional(),
+    price: priceSchema,
   })
-  .refine((body) => body.team_id !== undefined || body.player_id !== undefined, {
-    message: 'Send a new team_id, a new player_id, or both.',
-  })
+  .refine(
+    (body) =>
+      body.team_id !== undefined || body.player_id !== undefined || body.price !== undefined,
+    { message: 'Send a new team_id, a new player_id, a price, or a combination.' },
+  )
 
 /** `action_id` REQUIRED wire-side (rule 6/E2 — the same stamping contract as
  *  the pick route: the panel mints one UUID per submit, retries replay). */
@@ -949,15 +970,38 @@ export const movePlayerInputSchema = z.strictObject({
   player_id: z.string().trim().min(1),
   from_team: z.uuid(),
   to_team: z.uuid(),
+  price: priceSchema,
 })
 
 export const resetDraftInputSchema = z.strictObject(controlBaseShape)
 
-export const setClockInputSchema = z.strictObject({
-  ...controlBaseShape,
-  pick_timer_seconds: z.number().int().min(0).max(86_400),
-  extend_current: z.boolean().optional(),
-})
+const timerSecondsSchema = z.number().int().min(0).max(86_400)
+
+/**
+ * L.C2.2 (tasks-M3 L.C2.2 item 2; §8.7's timer row / §7.3.8): the route
+ * passes 087's auction timers through. `pick_timer_seconds` became OPTIONAL
+ * because an auction-only edit legitimately names none of it — which clock a
+ * body may name for which draft type is the RPC's ruling (an auction refuses
+ * the pick clock, a snake refuses the auction timers); the route only
+ * insists that SOME timer is named, the same shape check 087 makes first.
+ */
+export const setClockInputSchema = z
+  .strictObject({
+    ...controlBaseShape,
+    pick_timer_seconds: timerSecondsSchema.optional(),
+    extend_current: z.boolean().optional(),
+    nomination_seconds: timerSecondsSchema.optional(),
+    bid_seconds: timerSecondsSchema.optional(),
+    anti_snipe_seconds: timerSecondsSchema.optional(),
+  })
+  .refine(
+    (body) =>
+      body.pick_timer_seconds !== undefined ||
+      body.nomination_seconds !== undefined ||
+      body.bid_seconds !== undefined ||
+      body.anti_snipe_seconds !== undefined,
+    { message: 'Name at least one timer to change.' },
+  )
 
 type ControlArgs = Record<string, unknown>
 
@@ -1001,6 +1045,12 @@ type ControlRpcName =
   | 'draft_move_player'
   | 'draft_reset'
   | 'draft_set_clock'
+  // L.C2.2 — the four auction commissioner verbs (migration 087; §8.7's
+  // auction rows). Same CLOSED union, same pipeline; see the block below.
+  | 'draft_reverse_won_bid'
+  | 'draft_adjust_budget'
+  | 'draft_cancel_nomination'
+  | 'draft_end'
 
 const withReason = (reason: string | undefined): ControlArgs =>
   reason !== undefined ? { p_reason: reason } : {}
@@ -1051,6 +1101,8 @@ export async function reassignPick(
         p_pick_id: body.pick_id,
         ...(body.team_id !== undefined ? { p_team_id: body.team_id } : {}),
         ...(body.player_id !== undefined ? { p_player_id: body.player_id } : {}),
+        // L.C2.2: 087's priced arm (D142) — omitted, the RPC's NULL default.
+        ...(body.price !== undefined ? { p_price: body.price } : {}),
         ...withReason(body.reason),
       },
     }),
@@ -1087,6 +1139,8 @@ export async function movePlayer(
       p_player_id: body.player_id,
       p_from_team: body.from_team,
       p_to_team: body.to_team,
+      // L.C2.2: 087's priced arm (D142) — omitted, the RPC's NULL default.
+      ...(body.price !== undefined ? { p_price: body.price } : {}),
       ...withReason(body.reason),
     },
   }))
@@ -1114,10 +1168,140 @@ export async function setClock(
     fn: 'draft_set_clock',
     args: {
       p_draft_id: draftId,
-      p_pick_timer_seconds: body.pick_timer_seconds,
+      ...(body.pick_timer_seconds !== undefined
+        ? { p_pick_timer_seconds: body.pick_timer_seconds }
+        : {}),
       ...(body.extend_current !== undefined ? { p_extend_current: body.extend_current } : {}),
+      // L.C2.2: 087's auction timers (§8.7 timer row — E15 analog: subsequent
+      // clocks); each omitted key is the RPC's NULL "unchanged".
+      ...(body.nomination_seconds !== undefined
+        ? { p_nomination_seconds: body.nomination_seconds }
+        : {}),
+      ...(body.bid_seconds !== undefined ? { p_bid_seconds: body.bid_seconds } : {}),
+      ...(body.anti_snipe_seconds !== undefined
+        ? { p_anti_snipe_seconds: body.anti_snipe_seconds }
+        : {}),
       ...withReason(body.reason),
     },
+  }))
+}
+
+// ===========================================================================
+// L.C2.2 — the AUCTION commissioner verbs (§8.7's auction rows over 087;
+// spec §15.2 as extended by the C40 erratum — tasks-M3 §9 C40, the v2.8.17
+// clock-route precedent: auction controls get their own routes).
+//
+// Same pipeline as the seven above — `dispatchControl` over the CLOSED
+// union, strict Zod, the 062/063 SQLSTATE mapping. ZERO business logic
+// here: D141's pause-first gate, D138's mock refusal, E28's three arms, the
+// D97 in-txn system post and C41's end-as-is all live in the RPCs; the
+// route maps the refusal and passes its copy through verbatim.
+//
+// `reason` is REQUIRED on these four (the D114(1) carve-out: optional on
+// the verbs, required exactly where the task text mandates it — the
+// post-start order dispatch was the first; these are the money-moving /
+// bid-voiding / terminal auction controls, and §8.7 prints "fully audited;
+// cannot be silent" for End). It is Zod-validated and STORED NOWHERE —
+// F32/F40 unchanged: the RPCs accept `p_reason` and the audit table is
+// M6's. None of the four RPCs takes an `action_id` (087 signatures) — so
+// none is minted or accepted here (no invented params).
+// ===========================================================================
+
+const reasonRequiredSchema = z.string().trim().min(1).max(500)
+
+/** POST …/draft/reverse-bid — `draft_reverse_won_bid(draft, pick_id, reason)`. */
+export const reverseWonBidInputSchema = z.strictObject({
+  draft_id: z.uuid().optional(),
+  reason: reasonRequiredSchema,
+  pick_id: z.uuid(),
+})
+
+/** POST …/draft/budget — `draft_adjust_budget(draft, team_id, delta, reason)`.
+ *  `delta` is an integer dollar delta (cumulative at the RPC; 0 is the RPC's
+ *  own 22023 refusal — not re-implemented here). The ±1,000,000 bound is an
+ *  int4 shape fence, not a rule. */
+export const adjustBudgetInputSchema = z.strictObject({
+  draft_id: z.uuid().optional(),
+  reason: reasonRequiredSchema,
+  team_id: z.uuid(),
+  delta: z.number().int().min(-1_000_000).max(1_000_000),
+})
+
+/** POST …/draft/cancel-nomination — `draft_cancel_nomination(draft, reason)` (D143). */
+export const cancelNominationInputSchema = z.strictObject({
+  draft_id: z.uuid().optional(),
+  reason: reasonRequiredSchema,
+})
+
+/** POST …/draft/end — `draft_end(draft, reason)` (C41 end-as-is). The
+ *  hard-confirm phrase is the UI's (L.C3.2); the route takes no phrase. */
+export const endDraftInputSchema = z.strictObject({
+  draft_id: z.uuid().optional(),
+  reason: reasonRequiredSchema,
+})
+
+/** POST …/draft/reverse-bid — Manual Edit Mode's "Reset pick" (D142(a)/D131(1)). */
+export async function reverseWonBid(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(
+    supabase,
+    leagueId,
+    rawBody,
+    reverseWonBidInputSchema,
+    (body, draftId) => ({
+      fn: 'draft_reverse_won_bid',
+      args: { p_draft_id: draftId, p_pick_id: body.pick_id, p_reason: body.reason },
+    }),
+  )
+}
+
+/** POST …/draft/budget — §8.7 "adjust a team's remaining budget" (E28; not pause-gated — D141). */
+export async function adjustBudget(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, adjustBudgetInputSchema, (body, draftId) => ({
+    fn: 'draft_adjust_budget',
+    args: {
+      p_draft_id: draftId,
+      p_team_id: body.team_id,
+      p_delta: body.delta,
+      p_reason: body.reason,
+    },
+  }))
+}
+
+/** POST …/draft/cancel-nomination — §8.7 "Edit current nomination" = cancel-and-renominate (D143; paused only). */
+export async function cancelNomination(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(
+    supabase,
+    leagueId,
+    rawBody,
+    cancelNominationInputSchema,
+    (body, draftId) => ({
+      fn: 'draft_cancel_nomination',
+      args: { p_draft_id: draftId, p_reason: body.reason },
+    }),
+  )
+}
+
+/** POST …/draft/end — §8.7 "End draft", C41's end-as-is (terminal; not pause-gated). */
+export async function endDraft(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  return dispatchControl(supabase, leagueId, rawBody, endDraftInputSchema, (body, draftId) => ({
+    fn: 'draft_end',
+    args: { p_draft_id: draftId, p_reason: body.reason },
   }))
 }
 
