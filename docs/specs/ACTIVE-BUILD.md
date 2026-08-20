@@ -31,7 +31,7 @@ in parallel with the loop, never an `L.C` dependency.
 | --- | --- |
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-leagues.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4 — §3 M3 row: Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E) |
-| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` — **v2.13** (§8.6 auction incl. §8.6.7–8 endgame/solvency and **§8.6.9 the uncontestable instant award**; §8.8's pacing bar; L.C1) |
+| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` — **v2.14** (§8.6 auction incl. §8.6.7–8 endgame/solvency and **§8.6.9 the uncontestable instant award**; §8.8's pacing bar; **§16.4's v2.14 layout contract**; L.C1) |
 | **Task breakdown** | `docs/specs/tasks-M3-auction.md` (Architect; **approved & merged 2026-08-16**, PR #150) |
 | **Task id prefix** | `L.C` |
 
@@ -103,6 +103,35 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
 | **Spec fold** | `spec-redraft-leagues.md` **v2.13** (§7.3.8 · §8.3 · §8.6.1–8.6.3 · §8.6.8 · NEW §8.6.9 · §8.8 · §16.2 · §16.4 · §16.5.4 · E67–E70 · App A.4) |
 | **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all four checklists |
 
+**Fifth lane — DR2, Draft Room v2 (added 2026-08-20; takes effect when the DR2 breakdown PR
+merges, and is part of what Chris approves with it).**
+On the same day he ruled the AP lane, Chris also drove the **finished draft room** and ruled its
+layout over — for the second time, and this time the spec was the thing at fault. **§16.4 v2.12's
+dock paragraph said "one panel open at a time" and DR.5 built exactly that**, which is right for a
+drawer and wrong for surfaces a manager uses together: choosing Roster hid the entire player pool.
+The corrections: the dock is **ONE unit holding three simultaneous regions** (Players · Targets ·
+Roster), **Lists becomes a filter** and **Chat a pop-out**; overflow is **horizontal within each
+region** rather than a rearrangement, behind **one named breakpoint token**; the **room goes dark,
+room-only**, as a named carve-out from CLAUDE.md's single-theme rule; the auction's board zone
+becomes **team columns**; list notes render **in the player row**; the **draft schedule becomes
+informational** (auto-start retired); and **league creation seats all *N* franchises**. Spec
+**v2.14** is the fold. **Again not a build swap — M3 stays the active build and gains a fifth
+lane.**
+
+**DR2 runs AHEAD of M3's remaining three tasks, alongside AP, for an ADDITIONAL reason.** AP's is
+that `L.C4.1`/`L.C5.1`/`L.C6.1` encode today's bot cadence; DR2's is that **`L.C5.1` is an E2E over
+the room's DOM**, and a suite written against five dock tabs, a Lists tab, a Chat tab and a
+scrolling row of team cards is one DR2.3–DR2.7 rewrite selector by selector. Reasoning at PROGRESS
+**D204(4)**. **DR2 and AP are peers and may interleave** — one shared file (`auction-block.tsx`,
+opposite ends) and one shared document (`PROGRESS-leagues.md`).
+
+| | |
+| --- | --- |
+| **DR2 breakdown** | `docs/specs/tasks-DR2-draft-room-v2.md` (Architect, 2026-08-20) |
+| **DR2 task id prefix** | `DR2.` (distinct from the CLOSED `DR.` lane — never a continuation of it) |
+| **Spec fold** | `spec-redraft-leagues.md` **v2.14** (§7.2 · §7.3.8 · §8.2 · NEW §8.3.1 · §8.5.1 · §8.9 · §16.1 · §16.2 · §16.3 · §16.4 · §16.5.1 · §16.5.4 · E71–E74) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all five checklists |
+
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
@@ -111,16 +140,23 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
 1a. **Take the next unblocked `AP.*` task (dependency order in tasks-AP §7) BEFORE any
    remaining `L.C*` task.** `AP.4` is **blocked on Q17** (Chris's sign-off on the bid-clock
    default) — skip it and take the next AP task; do not guess the number. When every `AP.*`
-   task is done or blocked, fall through to step 2.
-2. When no `DR.*` or `AP.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
-   **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started while any
-   `AP.*` task is unblocked** (the ordering above). `L.C6.1` additionally owes **F84**: the gate
-   composes the AP suites by name.
+   task is done or blocked, fall through to step 1b.
+1b. **Take the next unblocked `DR2.*` task (dependency order in tasks-DR2 §7) BEFORE any
+   remaining `L.C*` task.** DR2 and AP are **peers** — take whichever lane has an unblocked
+   task; when both do, prefer the one that unblocks more (usually DR2's chain, since DR2.5
+   gates DR2.7). **Q19/Q20/Q21 block NOTHING** — DR2.5 ships the recommended values and each is
+   a one-line change afterwards, which is the whole point of D207's named token. When every
+   `DR2.*` task is done or blocked, fall through to step 2.
+2. When no `DR.*`, `AP.*` or `DR2.*` task is unblocked, take the next **`L.C*`** engine task
+   (tasks-M3 §6). **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started
+   while any `AP.*` or `DR2.*` task is unblocked** (the ordering above). `L.C6.1` owes **BOTH
+   F84 and F90**: the gate composes the AP suites *and* the DR2 suites by name, and discharging
+   one without the other half-closes the gate.
 3. When **all three** are blocked — or when Chris directs by name ("build SE.x") — take the
    next unblocked **`SE.*`** task (dependency order in tasks-SE §5). *(Its breakdown PR #161
    **merged 2026-08-19**, so this clause is live.)* The pure-TS opener
    chain (SE.1 → SE.2 → SE.3) touches no migration, so it is always safe to take while
-   the schema lanes are contended. **AP and SE contend for migration numbers 091+ and pgTAP
+   the schema lanes are contended. **AP, DR2 and SE all contend for migration numbers 091+ and pgTAP
    039+** — both lanes confirm the real next-free with `ls supabase/migrations/` at task time
    (D161/D166); neither trusts a number written in a planning document.
 4. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
