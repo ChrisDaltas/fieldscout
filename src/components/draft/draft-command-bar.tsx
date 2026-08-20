@@ -14,6 +14,9 @@ import {
   RECONNECTING_COPY,
   RECONNECTING_COPY_COMPACT,
   ReconnectingBanner,
+  STALE_ROOM_COPY,
+  STALE_ROOM_COPY_COMPACT,
+  StaleDataBanner,
 } from '@/components/leagues/status-banners'
 import { toast } from '@/hooks/use-toast'
 
@@ -90,6 +93,7 @@ export function DraftCommandBar({
   const showPracticeOptions = model.practiceOptions
   const showMockBadge = model.mockBadge
   const showReconnecting = model.reconnecting
+  const showStale = model.stale
   const exitTitle = exitDraftCopy({ isMock: bar.isMock, hasSeat, lobby: bar.lobby, hasSchedule })
 
   // Below `sm` the launcher's two controls compress ("Pause practice" →
@@ -198,6 +202,19 @@ export function DraftCommandBar({
           <span className="sm:hidden">{RECONNECTING_COPY_COMPACT}</span>
           <span className="hidden sm:inline">{RECONNECTING_COPY}</span>
         </ReconnectingBanner>
+      )}
+
+      {showStale && (
+        // L.C3.1 / PROGRESS F56's room half: the FETCH path's banner, in the
+        // bar for the same §16.5.4 v2.12 reason the reconnecting one is —
+        // the room has ONE banner surface. It says a different thing from
+        // `reconnecting` (the socket is fine; the REST read is not), so the
+        // two can legitimately render together; the compact form is the
+        // D176(5) treatment for the 54px band.
+        <StaleDataBanner truncate className="min-w-0 shrink py-1">
+          <span className="sm:hidden">{STALE_ROOM_COPY_COMPACT}</span>
+          <span className="hidden sm:inline">{STALE_ROOM_COPY}</span>
+        </StaleDataBanner>
       )}
 
       {/* Exit Draft — UNCONDITIONAL, top-right (Q13: a commissioner must be

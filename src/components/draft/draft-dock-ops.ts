@@ -15,7 +15,9 @@
  * purpose — "a focused view on just the draft board").
  *
  * Tab labels: TODAY'S room labels, deliberately (tasks-DR DR.5 item 6) —
- * the "Targets" rename is D140's product-wide sweep and belongs to L.C3.1,
+ * the "Targets" rename was D140's product-wide sweep and landed in L.C3.1 —
+ * the tab id stays `queue` (D140: schema/API/internal names untouched), only
+ * the LABEL is the product's word,
  * whose banner (tasks-M3 §6) already enumerates the dock's tab label as a
  * sweep site (added 2026-08-17). Half-renaming here would fork the copy.
  */
@@ -29,10 +31,10 @@ export interface DockTab {
 
 /** The five tabs, in strip order — the five SHIPPED panels the dock
  *  re-hosts (§4.2 rehost-don't-rebuild): Available players, My queue
- *  (Targets at L.C3.1), My roster, My lists, Draft chat. */
+ *  (labelled Targets since L.C3.1), My roster, My lists, Draft chat. */
 export const DOCK_TABS: readonly DockTab[] = [
   { id: 'players', label: 'Players' },
-  { id: 'queue', label: 'Queue' },
+  { id: 'queue', label: 'Targets' },
   { id: 'roster', label: 'Roster' },
   { id: 'lists', label: 'Lists' },
   { id: 'chat', label: 'Chat' },

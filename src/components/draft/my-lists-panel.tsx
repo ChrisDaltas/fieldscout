@@ -61,6 +61,9 @@ interface MyListsPanelProps {
   draftedIds: ReadonlySet<string>
   /** I'm on the clock of a live draft (the best-from-board Draft action). */
   canDraft: boolean
+  /** The primary action's verb — "Nominate" in an auction room (L.C3.1);
+   *  defaults to "Draft". Passed straight through to the pool overlay. */
+  primaryActionLabel?: string
   draftSubmitting: boolean
   onDraft: (playerId: string) => void
   onQueue: (playerId: string) => void
@@ -101,6 +104,7 @@ export function MyListsPanel({
   queueTeamId,
   draftedIds,
   canDraft,
+  primaryActionLabel = 'Draft',
   draftSubmitting,
   onDraft,
   onQueue,
@@ -165,7 +169,7 @@ export function MyListsPanel({
         onSuccess: (result) => toast({ title: fromListToastLine(mode, result) }),
         onError: (error) => {
           toast({
-            title: 'Queue not updated',
+            title: 'Targets not updated',
             description:
               error instanceof LeagueActionError ? error.message : 'Please try again.',
             variant: 'destructive',
@@ -291,8 +295,8 @@ export function MyListsPanel({
                 <Button
                   variant="stroke"
                   size="icon-sm"
-                  aria-label={`Queue ${bestPlayer.full_name}`}
-                  title="Add to queue"
+                  aria-label={`Add ${bestPlayer.full_name} to Targets`}
+                  title="Add to Targets"
                   onClick={() => onQueue(bestPlayer.id)}
                 >
                   <Icon name="plus" size={13} />
@@ -305,7 +309,7 @@ export function MyListsPanel({
                   disabled={draftSubmitting}
                   onClick={() => onDraft(bestPlayer.id)}
                 >
-                  {draftSubmitting ? 'Submitting…' : 'Draft'}
+                  {draftSubmitting ? 'Submitting…' : primaryActionLabel}
                 </Button>
               )}
             </div>
@@ -382,8 +386,8 @@ export function MyListsPanel({
                       <Button
                         variant="stroke"
                         size="icon-sm"
-                        aria-label={`Load ${row.title} into my queue`}
-                        title="Load into queue"
+                        aria-label={`Load ${row.title} into my Targets`}
+                        title="Load into Targets"
                         disabled={fromList.isPending}
                         onClick={() => loadIntoQueue(row, 'replace')}
                       >
@@ -410,7 +414,7 @@ export function MyListsPanel({
                       {row.attached && !row.dangling && queueTeamId && (
                         <DropdownMenuItem onSelect={() => loadIntoQueue(row, 'append')}>
                           <Icon name="plus" size={13} />
-                          Add remaining to queue
+                          Add remaining to Targets
                         </DropdownMenuItem>
                       )}
                       {row.attached && !row.dangling && row.isMine && !row.isPrimary && (
@@ -551,6 +555,7 @@ function CheatSheetBody({
             </li>
           )
         }
+        const notes = row.notes?.trim()
         return (
           // E17: drafted rows grey with a chip — the cheat sheet stays
           // honest as the room's picks land.
@@ -574,8 +579,8 @@ function CheatSheetBody({
                     <Button
                       variant="stroke"
                       size="icon-sm"
-                      aria-label={`Queue ${player.full_name}`}
-                      title="Add to queue"
+                      aria-label={`Add ${player.full_name} to Targets`}
+                      title="Add to Targets"
                       onClick={() => onQueue(player.id)}
                     >
                       <Icon name="plus" size={13} />
@@ -584,6 +589,18 @@ function CheatSheetBody({
                 </span>
               }
             />
+            {/* §16.2's v2.10 cheat-sheet note (L.C3.1 item 7). The ruled use
+                case is cost prep — "$8 max" — which is the note an auction
+                manager writes and then needs at the exact moment the player
+                is nominated. A row with NO note renders nothing at all: an
+                empty note affordance on every row would be chrome that
+                costs vertical space and says nothing (§16.5.4's designed-
+                empty rule is about designed copy, not blank containers). */}
+            {notes && (
+              <p className="mt-0.5 border-l-2 border-accent pl-2 text-[11px] font-semibold text-n-3">
+                {notes}
+              </p>
+            )}
           </li>
         )
       })}

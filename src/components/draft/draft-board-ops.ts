@@ -65,6 +65,27 @@ export interface BoardModelInput {
 }
 
 /** `drafts.draft_order` JSONB → team-id array (strings only, else []). */
+/**
+ * "Christian McCaffrey" → "C. McCaffrey" — the narrow-cell display helper.
+ *
+ * REHOMED HERE by M3 task L.C3.1 from `mock-draft.ts`, which was deleted
+ * with the M0-era auction fixture room (D135: "the fixture room dies"; that
+ * file's own banner ruled "M3 replaces the auction types with live shapes
+ * and this file goes away entirely"). It was that file's one live export,
+ * imported by four board-shaped surfaces — the room's degraded board arm and
+ * mobile ticker, `draft-board-grid`, `draft-recap` and `my-roster-tracker` —
+ * all of which already import this module's siblings, so the board's own
+ * display-ops layer is where it belongs. Pure, no wall-clock, no React.
+ *
+ * Fewer than two space-separated parts ⇒ returned unchanged (a mononym, or a
+ * name we would only mangle).
+ */
+export function abbreviateName(fullName: string): string {
+  const parts = fullName.split(' ')
+  if (parts.length < 2) return fullName
+  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`
+}
+
 export function parseDraftOrder(order: unknown): string[] {
   if (!Array.isArray(order)) return []
   return order.filter((v): v is string => typeof v === 'string')

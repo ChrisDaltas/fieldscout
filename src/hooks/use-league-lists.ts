@@ -221,6 +221,14 @@ export interface DraftListPlayerRow {
   player_id: string
   position: number
   tier: string | null
+  /** `list_players.notes` (001:239) — the draft-prep note a user wrote
+   *  against this player on this list. Read since M3 task L.C3.1 so the
+   *  room's cheat sheet can RENDER it (spec §16.2 `my-lists-panel`:
+   *  "cheat sheet (incl. per-player notes — v2.10)"); the ruled use case is
+   *  cost prep ("$8 max"), which is exactly what an auction manager brings
+   *  to draft night. Nullable and usually null — rows without a note render
+   *  no notes affordance at all (L.C3.1 item 7: no empty chrome). */
+  notes: string | null
 }
 
 export function useLeagueListPlayers(listId: string | undefined) {
@@ -231,7 +239,7 @@ export function useLeagueListPlayers(listId: string | undefined) {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('list_players')
-        .select('player_id, position, tier')
+        .select('player_id, position, tier, notes')
         .eq('list_id', listId!)
         .order('position', { ascending: true })
         .order('player_id', { ascending: true })

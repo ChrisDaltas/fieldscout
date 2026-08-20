@@ -8,7 +8,7 @@ import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import type { PlayerIdentity } from '@/hooks/use-players-by-ids'
 import { cn } from '@/lib/utils'
 
-import { abbreviateName } from './mock-draft'
+import { abbreviateName } from './draft-board-ops'
 import { buildRosterTracker } from './roster-tracker-ops'
 
 interface MyRosterTrackerProps {

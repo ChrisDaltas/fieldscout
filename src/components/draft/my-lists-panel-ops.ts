@@ -109,11 +109,11 @@ export function fromListToastLine(
 ): string {
   const skips = [
     result.skipped_drafted > 0 ? `${result.skipped_drafted} already drafted` : null,
-    (result.skipped_queued ?? 0) > 0 ? `${result.skipped_queued} already queued` : null,
+    (result.skipped_queued ?? 0) > 0 ? `${result.skipped_queued} already targeted` : null,
   ].filter((part): part is string => part !== null)
   const base =
     mode === 'replace'
-      ? `Queue loaded — ${result.added} ${result.added === 1 ? 'player' : 'players'}`
-      : `${result.added} ${result.added === 1 ? 'player' : 'players'} added to your queue`
+      ? `Targets loaded — ${result.added} ${result.added === 1 ? 'player' : 'players'}`
+      : `${result.added} ${result.added === 1 ? 'player' : 'players'} added to your Targets`
   return skips.length > 0 ? `${base} (${skips.join(', ')} skipped).` : `${base}.`
 }

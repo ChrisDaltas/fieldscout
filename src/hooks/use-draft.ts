@@ -23,7 +23,12 @@ import {
 import { draftBidKeys } from './use-draft-bids'
 import { reduceBidEvent, type DraftBidBroadcast, type DraftBidRow } from './use-draft-bids-ops'
 import { draftChatContext, draftChatKeys } from './use-draft-chat'
-import { isChatRecord, reduceChatEvent, type DraftChatRow } from './use-draft-chat-ops'
+import {
+  isChatRecord,
+  reduceChatEvent,
+  type DraftChatBroadcast,
+  type DraftChatRow,
+} from './use-draft-chat-ops'
 import { createFeedSink } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
@@ -223,6 +228,27 @@ export function useDraftRoom(
       reduceBidEvent,
     )
 
+    // F75 (discharged in L.C3.1 — the auction room consumes chat beside the
+    // bid feed on this same channel effect): the chat feed had the IDENTICAL
+    // fetch window R401 closed for bids. React Query REPLACES a query's
+    // cache with the fetch result when a fetch resolves, discarding every
+    // `setQueryData` made while it was in flight — and the `SUBSCRIBED` join
+    // refetch opens exactly that window, so a message broadcast during it
+    // was lost until the next confirmed rejoin. Chat is append-only with
+    // id-dedupe (no strike, no cross-run mode), which is why bids were fixed
+    // first and this was NOT taken as a drive-by then. Same sink, same
+    // lifetime, same dispose; the reducer is wrapped to the sink's
+    // `{rows, refetch}` shape — chat never asks for a refetch (a message we
+    // cannot parse is not a gap in room state).
+    const chatSink = createFeedSink<DraftChatRow, DraftChatBroadcast>(
+      queryClient,
+      draftChatKeys.room(draftId),
+      (rows, event) => ({
+        rows: reduceChatEvent(rows, event.record, draftChatContext(draftId)),
+        refetch: false,
+      }),
+    )
+
     const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
       const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
       if (!current) {
@@ -309,11 +335,11 @@ export function useDraftRoom(
             void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
           }
         }
-        const key = draftChatKeys.room(draftId)
-        const rows = queryClient.getQueryData<readonly DraftChatRow[]>(key)
-        if (!rows) return
-        const next = reduceChatEvent(rows, record, draftChatContext(draftId))
-        if (next !== rows) queryClient.setQueryData(key, next)
+        // THROUGH THE SINK, never straight onto the cache (F75/R401): a
+        // message landing mid-fetch is held and replayed onto the fetched
+        // rows. The R271 league-detail invalidation above deliberately runs
+        // BEFORE this — it must fire whether or not a chat cache exists.
+        chatSink.push({ record })
       })
       ch.on('broadcast', { event: 'draft_bids' }, ({ payload }) => {
         // 088/L.C1.6 — the bid feed (D134/F69). Same shape of handling as
@@ -431,6 +457,7 @@ export function useDraftRoom(
       if (channel) void supabase.removeChannel(channel)
       channel = null
       bidSink.dispose()
+      chatSink.dispose()
     }
   }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
 

@@ -17,6 +17,7 @@ import {
   type DraftPickSummary,
   type DraftRoomConnection,
 } from '@/hooks/use-draft'
+import { useNominate, usePlaceBid } from '@/hooks/use-draft-auction'
 import { usePauseResumeDraft } from '@/hooks/use-draft-controls'
 import {
   draftQueueKeys,
@@ -32,6 +33,8 @@ import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 
+import { AuctionBlock } from './auction-block'
+import { readLiveNomination } from './auction-budget'
 import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
@@ -44,6 +47,7 @@ import { DraftBoardGrid } from './draft-board-grid'
 import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
 import {
+  abbreviateName,
   nextPickNumberForTeam,
   parseDraftOrder,
   pickLabel,
@@ -52,13 +56,19 @@ import {
 } from './draft-board-ops'
 import { DraftPick } from './draft-pick'
 import type { OrderedDraftType } from './draft-order'
-import { abbreviateName } from './mock-draft'
 import { MockDraftLauncher } from './mock-draft-launcher'
 import { MyListsPanel, type PoolOverlaySelection } from './my-lists-panel'
 import { MyQueue } from './my-queue'
 import { appendId, deriveQueueView, orderedIdsForSave } from './my-queue-ops'
 import { MyRosterTracker } from './my-roster-tracker'
 import { DraftPauseOverlay } from './pause-overlay'
+import {
+  FETCH_FAILED_BODY,
+  FETCH_FAILED_TITLE,
+  absentDraftIsHonest,
+  queryHealth,
+  worstHealth,
+} from './room-health-ops'
 import { type PresenceSeat } from './presence-bar'
 import { useSingleRoomTab } from './use-single-room-tab'
 
@@ -208,6 +218,36 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     presence: { team_id: myMemberTeamId, user_id: user?.id ?? null },
   })
 
+  // ----- fetch-path honesty (L.C3.1, PROGRESS F56's room half) ------------
+  // F56 watched a LIVE manager room fall back to the scheduled-lobby
+  // surface — "the settings-countdown branch renders when the room's draft
+  // data is absent". That branch is honest for ONE reason (a scheduled
+  // league whose drafts row the tick hasn't created — D94) and a lie for
+  // every other reason the data can be absent, and the room could not tell
+  // them apart. `room-health-ops.ts` carries the decision and the N-failure
+  // threshold (the SAME constant the subscribe path's R263 banner uses);
+  // here it does two things: it gates every no-draft branch below on a
+  // HEALTHY fetch, and it feeds the bar's §16.5.4 degraded banner so a room
+  // drawn from last-good data says so instead of looking current.
+  const health = worstHealth(
+    queryHealth({
+      failureCount: detail.failureCount,
+      isError: detail.isError,
+      hasData: detail.data !== undefined,
+    }),
+    draftId
+      ? queryHealth({
+          failureCount: room.failureCount,
+          isError: room.isError,
+          hasData: room.data !== undefined,
+        })
+      : 'ok',
+  )
+  const retryRoom = () => {
+    void detail.refetch()
+    if (draftId) void room.refetch()
+  }
+
   // ----- resolution states (§16.5.4: skeleton / error / honest empties) ----
 
   // Released FIRST: a taken-over tab renders the §9.3 takeover state and
@@ -223,7 +263,11 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     return <DraftRoomSkeleton leagueId={leagueId} />
   }
 
-  if (detail.isError || !detail.data) {
+  if (!detail.data) {
+    // F56 rule 2: the error card is for holding NOTHING. With last-good
+    // data cached, a failing refetch renders the room behind the §16.5.4
+    // degraded banner instead of evicting a live draft room — "banner +
+    // last-good data, never wrong numbers".
     return (
       <DraftRoomProblem
         leagueId={leagueId}
@@ -243,6 +287,21 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
   }
 
   if (!draftId) {
+    // F56 rule 1: an absent draft is only HONEST when the fetch that failed
+    // to produce one is healthy. Degraded/failed ⇒ the room says it could
+    // not read, and offers the retry — it never guesses that there is
+    // nothing here (the CLAUDE.md "nothing happened means it worked" shape
+    // this row is a member of).
+    if (!absentDraftIsHonest(health)) {
+      return (
+        <DraftRoomProblem
+          leagueId={leagueId}
+          title={FETCH_FAILED_TITLE}
+          body={FETCH_FAILED_BODY}
+          onRetry={retryRoom}
+        />
+      )
+    }
     if (detail.data.league.status === 'scheduled') {
       // L.B3.4: the D94 settings-only path — the league is scheduled but no
       // drafts row exists yet (the tick creates + starts it at the instant).
@@ -255,6 +314,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
           draft={null}
           myTeamId={myMemberTeamId}
           isCommish={canUseCommishPanel(detail.data.my_role)}
+          stale={health === 'degraded'}
         />
       )
     }
@@ -295,7 +355,9 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     )
   }
 
-  if (room.isError) {
+  if (room.isError && room.data === undefined) {
+    // As above (F56 rule 2): errors with NOTHING cached get the card; errors
+    // over last-good data get the banner and keep the room.
     return (
       <DraftRoomProblem
         leagueId={leagueId}
@@ -309,6 +371,18 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
   const draft = room.data?.draft ?? null
 
   if (!draft || draft.league_id !== leagueId) {
+    if (!absentDraftIsHonest(health)) {
+      // Same rule as the `!draftId` arm: "Draft not found" is a claim about
+      // the world, and a failing fetch has not earned it.
+      return (
+        <DraftRoomProblem
+          leagueId={leagueId}
+          title={FETCH_FAILED_TITLE}
+          body={FETCH_FAILED_BODY}
+          onRetry={retryRoom}
+        />
+      )
+    }
     // RLS returned no row (not a member / unknown id) or the id belongs to
     // another league — one indistinguishable honest state, no leak.
     return (
@@ -333,6 +407,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
         onlineTeamIds={room.onlineTeamIds}
         myTeamId={myMemberTeamId}
         isCommish={canUseCommishPanel(detail.data.my_role)}
+        stale={health === 'degraded'}
       />
     )
   }
@@ -382,6 +457,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       onlineTeamIds={room.onlineTeamIds}
       myMemberTeamId={myMemberTeamId}
       userId={user?.id ?? null}
+      stale={health === 'degraded'}
     />
   )
 }
@@ -400,6 +476,9 @@ interface DraftRoomLiveProps {
   onlineTeamIds: ReadonlySet<string>
   myMemberTeamId: string | null
   userId: string | null
+  /** The room's fetch health is DEGRADED (F56's room half) — the bar
+   *  carries §16.5.4's banner over last-good data. */
+  stale: boolean
 }
 
 function DraftRoomLive({
@@ -412,6 +491,7 @@ function DraftRoomLive({
   onlineTeamIds,
   myMemberTeamId,
   userId,
+  stale,
 }: DraftRoomLiveProps) {
   // §8.9 (L.B4.2): the pool-overlay selection (room-owned so panel and pool
   // can never disagree) and the room-level Add-a-draft-list modal, mounted
@@ -487,15 +567,49 @@ function DraftRoomLive({
   const livePicks = useMemo(() => picks.filter((p) => !p.is_undone), [picks])
   const draftedIds = useMemo(() => draftedIdSet(picks), [picks])
 
+  // The live nomination (D126 — phase is `current_nomination`'s NULLity),
+  // read here because the identity fetch below needs the nominated player.
+  const liveNomination = useMemo(
+    () => readLiveNomination(draft.current_nomination),
+    [draft.current_nomination],
+  )
+  // The player the nominator chose out of the pool, awaiting an opening bid.
+  // Room-owned (the L.B4.2 overlay precedent) so the dock's Players panel
+  // and the board-zone block can never disagree about what is being
+  // nominated. Cleared the moment a nomination actually opens — the server's
+  // `current_nomination` is then the truth (§8.1/§15.6: intent optimistic,
+  // RESULT authoritative; nothing here is written optimistically).
+  const [nomineeId, setNomineeId] = useState<string | null>(null)
+
   // ONE identity read for every picked player (world-readable `players` —
   // D92 read pattern); board cells + ticker + tracker all key into it.
   // Broadcast hint rows render a placeholder until the keyed refetch lands.
+  // The auction adds two ids to the SAME read rather than minting a second
+  // fetch: the live nominee and the player this seat is about to nominate.
   const { playerById } = usePlayersByIds(
-    useMemo(() => livePicks.map((p) => p.player_id), [livePicks]),
+    useMemo(() => {
+      const ids = livePicks.map((p) => p.player_id)
+      if (liveNomination) ids.push(liveNomination.player_id)
+      if (nomineeId) ids.push(nomineeId)
+      return ids
+    }, [livePicks, liveNomination, nomineeId]),
   )
 
-  // Board geometry (D90): columns from the stored order; auction can never
-  // be live in M2 (draft_start refuses it naming M3), so non-linear ⇒ snake.
+  // ===== THE D135 FORK POINT ==============================================
+  // One shell, two centre stages (D135: "one shell + an auction center
+  // stage; the fixture room dies"). `auction` renders `auction-block.tsx`
+  // in the board zone instead of the pick grid; the command bar, status
+  // strip, bottom dock, commissioner door and lobby/complete/error states
+  // are shared verbatim — an auction draft is not a different room, it is a
+  // different board. The M0-era `auction-draft-room.tsx` fixture and its
+  // `mock-draft.ts` types were DELETED in this task, per D135 and that
+  // file's own banner.
+  const isAuction = draft.draft_type === 'auction'
+  // Board geometry (D90): columns from the stored order. `OrderedDraftType`
+  // has no auction member on purpose (`draft-order.ts`: "auction has no
+  // board order — callers never ask"), so an auction draft coerces to
+  // 'snake' here and the value is simply unused — the auction branch below
+  // never builds a grid.
   const order = useMemo(() => parseDraftOrder(draft.draft_order), [draft.draft_order])
   const draftType: OrderedDraftType = draft.draft_type === 'linear' ? 'linear' : 'snake'
   const snakeReversal = useMemo(() => {
@@ -609,7 +723,7 @@ function DraftRoomLive({
   // board reflects the broadcast/refetch; the E1 race loser's friendly
   // message surfaces verbatim.
   const makePick = useMakePick(leagueId, draft.id)
-  const canDraft = youAreOnClock && draft.status === 'live'
+  const canDraft = !isAuction && youAreOnClock && draft.status === 'live'
   const handleDraft = (playerId: string) => {
     if (!canDraft || makePick.isPending) return
     // The hook's wrapper stamps ONE action_id per submit (D68(1)) so a
@@ -624,6 +738,48 @@ function DraftRoomLive({
         variant: 'destructive',
       })
     })
+  }
+
+  // ----- auction verbs (L.C2.1's routes/hooks, wired here — D92/D189) -----
+  // Same posture as `makePick`: NEVER optimistic (§15.6) — the hooks touch
+  // no cache on mutate and open no channel; the button says "submitting…"
+  // (§16.3) and the room repaints off the `drafts`/`draft_bids` broadcast.
+  // The RPC's product copy — "outbid at $2 — … bid $3 or more", "just went
+  // off the board", the E5 ceiling with the server's own numbers — is
+  // surfaced VERBATIM (D189(3): callers never paraphrase it).
+  const nominate = useNominate(leagueId, draft.id)
+  const placeBid = usePlaceBid(leagueId, draft.id)
+  const auctionSubmitting = nominate.isPending || placeBid.isPending
+  const auctionFailureToast = (title: string) => (error: unknown) => {
+    toast({
+      title,
+      description:
+        error instanceof LeagueActionError
+          ? error.message
+          : 'Something went wrong. The room refreshes automatically.',
+      variant: 'destructive',
+    })
+  }
+  const handleNominate = (playerId: string, openingBid: number) => {
+    if (auctionSubmitting) return
+    nominate
+      .nominateAsync(playerId, openingBid)
+      .then(() => setNomineeId(null))
+      .catch(auctionFailureToast('Nomination not made'))
+  }
+  const handleBid = (amount: number) => {
+    if (auctionSubmitting) return
+    if (!liveNomination || draft.current_pick_number === null) return
+    placeBid
+      .placeBidAsync({
+        // F64: a bid ALWAYS names the nomination it was placed on — the
+        // sequence number and player THIS ROOM is looking at. A stale pair
+        // is refused server-side with §16.3's went-off-the-board copy.
+        nominationSeq: draft.current_pick_number,
+        playerId: liveNomination.player_id,
+        amount,
+      })
+      .catch(auctionFailureToast('Bid not placed'))
   }
 
   // ----- queue (own rows; a mock's launcher drives the human seat — D103(3))
@@ -661,15 +817,25 @@ function DraftRoomLive({
   const ticker = useMemo(() => recentPicks(livePicks, 6), [livePicks])
   const teamCount = seatIds.length
 
+  // In an auction the pool's primary row action is NOMINATE, not Draft —
+  // the same component with a different verb (CLAUDE.md: add a prop, never
+  // fork a near-duplicate). It SELECTS the player into the board zone's
+  // nomination composer rather than writing: the opening bid is part of the
+  // action (§8.6.2), and it is capped by max bid, so the amount has to be
+  // chosen before anything is sent. Offered only to the seat on the clock
+  // in the nominating phase — exactly when `draft_nominate` would accept it.
+  const canNominate =
+    isAuction && youAreOnClock && draft.status === 'live' && liveNomination === null
   const poolCard = (
     <AvailablePlayers
       draftedIds={draftedIds}
       queuedIds={queuedIds}
       userId={userId ?? undefined}
-      canDraft={canDraft}
-      draftSubmitting={makePick.isPending}
+      canDraft={canDraft || canNominate}
+      primaryActionLabel={isAuction ? 'Nominate' : undefined}
+      draftSubmitting={isAuction ? auctionSubmitting : makePick.isPending}
       canQueue={Boolean(queueTeamId)}
-      onDraft={handleDraft}
+      onDraft={isAuction ? setNomineeId : handleDraft}
       onQueue={handleQueue}
       overlay={overlay}
       onClearOverlay={() => setOverlay(null)}
@@ -689,8 +855,8 @@ function DraftRoomLive({
   ) : (
     <p className="text-[12px] font-medium text-n-3">
       {draft.is_mock
-        ? 'Only the mock’s launcher drives a practice queue.'
-        : 'You don’t hold a seat in this draft, so there’s no queue to build.'}
+        ? 'Only the mock’s launcher drives practice Targets.'
+        : 'You don’t hold a seat in this draft, so there are no Targets to build.'}
     </p>
   )
 
@@ -728,9 +894,10 @@ function DraftRoomLive({
       userId={userId}
       queueTeamId={queueTeamId}
       draftedIds={draftedIds}
-      canDraft={canDraft}
-      draftSubmitting={makePick.isPending}
-      onDraft={handleDraft}
+      canDraft={canDraft || canNominate}
+      primaryActionLabel={isAuction ? 'Nominate' : undefined}
+      draftSubmitting={isAuction ? auctionSubmitting : makePick.isPending}
+      onDraft={isAuction ? setNomineeId : handleDraft}
       onQueue={handleQueue}
       overlay={overlay}
       onOverlayChange={setOverlay}
@@ -742,6 +909,38 @@ function DraftRoomLive({
   const chatCard = (
     <DraftChat leagueId={leagueId} draftId={draft.id} detail={detail} userId={userId} />
   )
+
+  // The auction's board (D135's "auction center stage"): §16.2's
+  // `auction-block` — nomination centrepiece + the §16.4 per-team columns —
+  // composed INSIDE the full-width board zone, because DR.4 deleted the
+  // side rail this banner's original text called a "budgets rail".
+  const auctionCard = isAuction ? (
+    <AuctionBlock
+      draft={{
+        id: draft.id,
+        status: draft.status,
+        config: draft.config,
+        total_rounds: draft.total_rounds,
+        current_pick_number: draft.current_pick_number,
+        current_deadline: draft.current_deadline,
+        on_clock_team_id: draft.on_clock_team_id,
+        current_nomination: draft.current_nomination,
+        budget_adjustments: draft.budget_adjustments,
+        nomination_order: draft.nomination_order,
+      }}
+      teams={detail.teams}
+      picks={picks}
+      playerById={playerById}
+      roster={detail.settings.roster_settings}
+      myTeamId={myTeamId}
+      offsetMs={offsetMs}
+      nomineeId={nomineeId}
+      onClearNominee={() => setNomineeId(null)}
+      onNominate={handleNominate}
+      onBid={handleBid}
+      submitting={auctionSubmitting}
+    />
+  ) : null
 
   const boardCard = (
     // Relative host for the paused board treatment — VISUAL ONLY since
@@ -818,6 +1017,11 @@ function DraftRoomLive({
           // stack. The hook's refetch-then-resubscribe behavior (§9.3) is
           // untouched; this only moves where the state is TOLD.
           reconnecting: connection === 'reconnecting',
+          // F56's room half: the FETCH path's banner shares the bar with
+          // the SUBSCRIBE path's, because the bar is the room's one banner
+          // surface (§16.5.4 v2.12). They are different states and can
+          // legitimately show together.
+          stale,
         }}
         hasSeat={Boolean(myTeamId)}
         pausePending={pauseResume.isPending}
@@ -857,6 +1061,19 @@ function DraftRoomLive({
           surfaces and nothing else. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="flex min-w-0 flex-col gap-4">
+        {isAuction ? (
+          // The auction stage is ONE composition at every width — it carries
+          // its own §16.4 mobile density treatment inside (my column
+          // resident, the rest one tap away), so there is no desktop/mobile
+          // split here the way the pick grid needs one. The paused dim wraps
+          // it exactly as it wraps the grid (D155: visual only — the bar
+          // says "Draft paused", this makes the board look inert).
+          <div className="relative min-w-0">
+            {paused && <DraftPauseOverlay />}
+            {auctionCard}
+          </div>
+        ) : (
+          <>
         {/* ----- Desktop (lg+): the FULL-WIDTH board (requirement 1 — the
               340px rail is deleted). The rail's five former occupants —
               pool, queue, lists, tracker, chat — live in the bottom dock
@@ -950,6 +1167,8 @@ function DraftRoomLive({
           </Button>
           {mobileBoardOpen && boardCard}
         </div>
+          </>
+        )}
       </div>
       </div>
 

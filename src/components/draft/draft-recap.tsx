@@ -30,10 +30,14 @@ import { cn } from '@/lib/utils'
 import type { Draft } from '@/types/database'
 
 import { DraftBoardGrid } from './draft-board-grid'
-import { parseDraftOrder, pickLabel, type BoardModelInput } from './draft-board-ops'
+import {
+  abbreviateName,
+  parseDraftOrder,
+  pickLabel,
+  type BoardModelInput,
+} from './draft-board-ops'
 import type { OrderedDraftType } from './draft-order'
 import { recapRostersFromPicks, recapTeamOrder, recapVariant } from './draft-recap-ops'
-import { abbreviateName } from './mock-draft'
 import { MockBanner } from '@/components/leagues/status-banners'
 
 interface DraftRecapProps {

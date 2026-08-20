@@ -32,12 +32,17 @@ const SEARCH_DEBOUNCE_MS = 250
 interface AvailablePlayersProps {
   /** Live (non-undone) picked ids — the C26 by-player_id subtraction. */
   draftedIds: ReadonlySet<string>
-  /** Ids already in my queue (Queue button flips to "Queued"). */
+  /** Ids already in my Targets (the add button flips to "In Targets"). */
   queuedIds: ReadonlySet<string>
   /** My Big Board ranks come from this account (§8.9 default reference). */
   userId: string | undefined
-  /** I'm on the clock of a live draft — rows grow the Draft action. */
+  /** I'm on the clock of a live draft — rows grow the primary action. */
   canDraft: boolean
+  /** The primary action's verb. Defaults to "Draft"; an AUCTION room passes
+   *  "Nominate" (L.C3.1 — one pool component, two verbs; CLAUDE.md forbids
+   *  the near-duplicate a second pool would be). The handler is `onDraft`
+   *  either way: what the verb DOES is the caller's business. */
+  primaryActionLabel?: string
   /** A pick submit is in flight — §16.3 "submitting…" treatment. */
   draftSubmitting: boolean
   /** I hold a seat with a queue in this draft. */
@@ -70,6 +75,7 @@ export function AvailablePlayers({
   queuedIds,
   userId,
   canDraft,
+  primaryActionLabel = 'Draft',
   draftSubmitting,
   canQueue,
   onDraft,
@@ -292,10 +298,10 @@ export function AvailablePlayers({
                       size="icon-sm"
                       aria-label={
                         queuedIds.has(player.id)
-                          ? `${player.full_name} is queued`
-                          : `Queue ${player.full_name}`
+                          ? `${player.full_name} is in your Targets`
+                          : `Add ${player.full_name} to Targets`
                       }
-                      title={queuedIds.has(player.id) ? 'Queued' : 'Add to queue'}
+                      title={queuedIds.has(player.id) ? 'In Targets' : 'Add to Targets'}
                       disabled={queuedIds.has(player.id)}
                       onClick={() => onQueue(player.id)}
                     >
@@ -309,7 +315,7 @@ export function AvailablePlayers({
                       disabled={draftSubmitting}
                       onClick={() => onDraft(player.id)}
                     >
-                      {draftSubmitting ? 'Submitting…' : 'Draft'}
+                      {draftSubmitting ? 'Submitting…' : primaryActionLabel}
                     </Button>
                   )}
                 </span>

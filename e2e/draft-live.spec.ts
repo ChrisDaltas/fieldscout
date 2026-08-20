@@ -36,15 +36,16 @@ import { LOCAL_URL, STORAGE_STATE } from './helpers/local-env'
 
 const TOTAL_PICKS = 16
 
-/** The first pool row's player name (via the queue button's aria-label —
+/** The first pool row's player name (via the Add-to-Targets button's
+ *  aria-label — relabelled from "Queue …" by L.C3.1's D140 sweep;
  *  the one place the row prints its full name machine-readably). */
 async function firstAvailableName(page: Page): Promise<string> {
   const label = await page
-    .getByRole('button', { name: /^Queue / })
+    .getByRole('button', { name: /^Add .+ to Targets$/ })
     .first()
     .getAttribute('aria-label')
-  if (!label) throw new Error('no queue button found in the pool')
-  return label.replace(/^Queue /, '')
+  if (!label) throw new Error('no Add-to-Targets button found in the pool')
+  return label.replace(/^Add /, '').replace(/ to Targets$/, '')
 }
 
 /** Click the first enabled Draft button (rendered only on your turn). */

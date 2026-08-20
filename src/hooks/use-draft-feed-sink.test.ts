@@ -29,6 +29,12 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { draftBidKeys } from './use-draft-bids'
+import { draftChatContext, draftChatKeys } from './use-draft-chat'
+import {
+  reduceChatEvent,
+  type DraftChatBroadcast,
+  type DraftChatRow,
+} from './use-draft-chat-ops'
 import {
   reduceBidEvent,
   type DraftBidBroadcast,
@@ -328,6 +334,108 @@ describe('use-draft.ts wires the bid feed through the sink, never straight onto 
     expect(source).toContain('createFeedSink<DraftBidRow, DraftBidBroadcast>(')
     expect(source).toMatch(/createFeedSink<DraftBidRow, DraftBidBroadcast>\(\s*queryClient,\s*draftBidKeys\.feed\(draftId\),\s*reduceBidEvent,\s*\)/)
     expect(source).toContain('bidSink.dispose()')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3a. F75 behaviour: a chat message landing mid-fetch survives the resolve
+// ---------------------------------------------------------------------------
+
+describe('the CHAT feed’s window, closed by the same sink (F75 — L.C3.1)', () => {
+  const CHAT_KEY = draftChatKeys.room(DRAFT)
+  const CONTEXT = draftChatContext(DRAFT)
+  const msg = (id: string, message: string, at: string): DraftChatRow => ({
+    id,
+    user_id: T(1),
+    message,
+    context: CONTEXT,
+    is_system: false,
+    created_at: at,
+  })
+
+  it('a message broadcast during the join refetch is HELD and replayed onto the fetched rows', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(CHAT_KEY, [msg('m1', 'first', '2026-08-19T12:00:00.000Z')])
+    const sink = createFeedSink<DraftChatRow, DraftChatBroadcast>(
+      client,
+      CHAT_KEY,
+      (rows, event) => ({
+        rows: reduceChatEvent(rows, event.record, CONTEXT),
+        refetch: false,
+      }),
+    )
+    const d = deferred<DraftChatRow[]>()
+    const done = client.fetchQuery({ queryKey: CHAT_KEY, queryFn: () => d.promise, staleTime: 0 })
+    // Mid-flight: the snapshot the server is answering with predates m2.
+    sink.push({ record: msg('m2', 'landed mid-fetch', '2026-08-19T12:00:02.000Z') })
+    expect(sink.held()).toBe(1)
+    d.resolve([msg('m1', 'first', '2026-08-19T12:00:00.000Z')])
+    return done.then(settle).then(() => {
+      const rows = client.getQueryData<readonly DraftChatRow[]>(CHAT_KEY) ?? []
+      // Pre-fix (a raw setQueryData) this read is ['m1'] — the message is
+      // gone until the next confirmed rejoin. That is F75, exactly.
+      expect(rows.map((r) => r.id)).toEqual(['m1', 'm2'])
+      sink.dispose()
+    })
+  })
+
+  it('a message the fetch ALREADY carries dedupes by id rather than doubling', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(CHAT_KEY, [])
+    const sink = createFeedSink<DraftChatRow, DraftChatBroadcast>(
+      client,
+      CHAT_KEY,
+      (rows, event) => ({
+        rows: reduceChatEvent(rows, event.record, CONTEXT),
+        refetch: false,
+      }),
+    )
+    const d = deferred<DraftChatRow[]>()
+    const done = client.fetchQuery({ queryKey: CHAT_KEY, queryFn: () => d.promise, staleTime: 0 })
+    const late = msg('m3', 'in both', '2026-08-19T12:00:05.000Z')
+    sink.push({ record: late })
+    d.resolve([late])
+    return done.then(settle).then(() => {
+      expect((client.getQueryData<readonly DraftChatRow[]>(CHAT_KEY) ?? []).map((r) => r.id))
+        .toEqual(['m3'])
+      sink.dispose()
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3b. F75: the CHAT feed rides the same sink (discharged in L.C3.1)
+// ---------------------------------------------------------------------------
+
+describe('use-draft.ts wires the chat feed through the sink too (F75 — the same fetch window)', () => {
+  const source = readFileSync(path.resolve(__dirname, 'use-draft.ts'), 'utf8')
+  const start = source.indexOf("ch.on('broadcast', { event: 'league_chat' }")
+  const handler = source.slice(start, source.indexOf("ch.on('broadcast', { event: 'draft_bids' }"))
+
+  it('the handler pushes into a chat sink instead of patching the cache directly', () => {
+    expect(start).toBeGreaterThan(-1)
+    expect(handler).toContain('chatSink.push({ record })')
+    // The pre-fix shape, gone: a message landing during the join refetch was
+    // discarded when that fetch resolved (the mechanism control above).
+    expect(handler).not.toContain('getQueryData<readonly DraftChatRow[]>')
+    expect(handler).not.toContain('setQueryData(key, next)')
+    expect(handler).not.toContain('reduceChatEvent(')
+  })
+
+  it('the R271 league-detail invalidation still runs BEFORE the cache write', () => {
+    // It must fire whether or not a chat cache exists — the Auto seat badge
+    // depends on it, and the sink's no-cache arm drops the event.
+    const invalidate = handler.indexOf('chatEventInvalidatesLeagueDetail(record)')
+    const push = handler.indexOf('chatSink.push(')
+    expect(invalidate).toBeGreaterThan(-1)
+    expect(invalidate).toBeLessThan(push)
+  })
+
+  it('the sink is created over the chat key with the real reducer, and disposed with the channel', () => {
+    expect(source).toContain('createFeedSink<DraftChatRow, DraftChatBroadcast>(')
+    expect(source).toContain('draftChatKeys.room(draftId),')
+    expect(source).toContain('reduceChatEvent(rows, event.record, draftChatContext(draftId))')
+    expect(source).toContain('chatSink.dispose()')
   })
 })
 

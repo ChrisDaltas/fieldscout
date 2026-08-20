@@ -24,12 +24,14 @@ const ALL_TABS: readonly DockTabId[] = ['players', 'queue', 'roster', 'lists', '
 const ALL_STATES: readonly DockState[] = [null, ...ALL_TABS]
 
 describe('the tab catalog (spec §16.4: five panels, one dock; DR.5 item 6 labels)', () => {
-  it('is exactly the five shipped panels, in strip order, with TODAY’s labels', () => {
-    // Labels are deliberately today's room labels — the "Targets" rename is
-    // L.C3.1's D140 sweep, whose site list already names this tab.
+  it('is exactly the five shipped panels, in strip order, with the SHIPPED labels', () => {
+    // D140's rename landed in L.C3.1: the tab ID stays `queue` (schema/API/
+    // internal names untouched — D140's ruled scope) and the LABEL is the
+    // product's word. Both halves are pinned here, so a future half-rename
+    // (label without id, or id without label) fails this golden.
     expect(DOCK_TABS).toEqual([
       { id: 'players', label: 'Players' },
-      { id: 'queue', label: 'Queue' },
+      { id: 'queue', label: 'Targets' },
       { id: 'roster', label: 'Roster' },
       { id: 'lists', label: 'Lists' },
       { id: 'chat', label: 'Chat' },

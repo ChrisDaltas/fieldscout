@@ -87,6 +87,38 @@ export function ReconnectingBanner({
   )
 }
 
+/** The DEGRADED copy (§16.5.4's "degraded — banner + last-good data, never
+ *  wrong numbers"), single-sourced beside the reconnecting pair for the same
+ *  reason: one state, one spelling, pinned in `one-voice.test.ts`. Both
+ *  forms exist because its host is the 54px command bar (D176(5)). */
+export const STALE_ROOM_COPY = "Draft data isn't refreshing — showing the last state we read."
+export const STALE_ROOM_COPY_COMPACT = 'Not refreshing'
+
+/**
+ * The §16.5.4 DEGRADED banner — the FETCH-path twin of `ReconnectingBanner`
+ * (which narrates the SUBSCRIBE path). The room holds last-good data and
+ * cannot refresh it: it keeps rendering that data behind this banner rather
+ * than being replaced by an error card or, worse, silently falling back to a
+ * surface that implies the draft isn't running (PROGRESS **F56**'s room half
+ * — `room-health-ops.ts` carries the decision and the N-failure threshold).
+ * Mounted in the command bar, like every other room state (§16.5.4 v2.12).
+ */
+export function StaleDataBanner({
+  children = STALE_ROOM_COPY,
+  className,
+  truncate,
+}: {
+  children?: ReactNode
+  className?: string
+  truncate?: boolean
+}) {
+  return (
+    <StatusBanner tone="caution" className={className} truncate={truncate}>
+      {children}
+    </StatusBanner>
+  )
+}
+
 /**
  * Persistent MOCK banner (§8.8's zero-side-effect promise is the copy).
  * The RECAP's banner only, since DR.7: inside the draft room the MOCK

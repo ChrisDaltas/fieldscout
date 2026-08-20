@@ -155,6 +155,34 @@ const STATUS_SOURCE: {
     announcedBy: ['command-bar-ops.ts'],
     why: "the lobby bar's status (DR.7(4)) — the lobby card's badge retired into it",
   },
+  {
+    state: 'degraded / stale fetch (mount)',
+    needle: '<StaleDataBanner',
+    announcedBy: ['draft-command-bar.tsx'],
+    why:
+      "L.C3.1 / F56's room half: the FETCH path's banner joins the SUBSCRIBE path's in " +
+      'the bar, because §16.5.4 v2.12 gives the room ONE banner surface. Two banners, ' +
+      'two different states (the socket is fine; the REST read is not) — not two ' +
+      'tellings of one state, which is what this table forbids',
+  },
+  {
+    state: 'nomination phase (auction centre stage)',
+    needle: 'Up for bid',
+    announcedBy: ['auction-block.tsx'],
+    why:
+      'L.C3.1: the auction phase is told by the centre stage alone. The strip and bar ' +
+      'say LIVE/PAUSED and Round·Pick, which are true of both phases — nothing else in ' +
+      'the room names the bidding phase',
+  },
+  {
+    state: 'anti-snipe floor (E6/D128)',
+    needle: 'Anti-snipe',
+    announcedBy: ['auction-block.tsx'],
+    why:
+      'the floor and its re-arm are stated ONCE, beside the nomination. It is not a ' +
+      "second clock — the strip's PickClock is the room's only countdown, and this " +
+      'block is pinned free of it in auction-room.test.ts',
+  },
 ]
 
 describe('the status-source table — each state announced by exactly one dispositioned set', () => {
@@ -163,6 +191,19 @@ describe('the status-source table — each state announced by exactly one dispos
       expect(draftFilesContaining(row.needle), row.why).toEqual(row.announcedBy)
     })
   }
+
+  it('the degraded COPY is single-sourced in the catalog too (F56 — the reconnecting pattern)', () => {
+    const banners = code(BANNERS)
+    expect(banners).toContain(
+      'STALE_ROOM_COPY = "Draft data isn\'t refreshing — showing the last state we read."',
+    )
+    expect(banners).toContain("STALE_ROOM_COPY_COMPACT = 'Not refreshing'")
+    const bar = code(BAR)
+    expect(bar).toContain('{STALE_ROOM_COPY_COMPACT}')
+    expect(bar).toContain('{STALE_ROOM_COPY}')
+    // No re-spelled literal anywhere in the room.
+    expect(draftFilesContaining("isn\u2019t refreshing")).toEqual([])
+  })
 
   it('the reconnecting COPY is single-sourced in the catalog (the exported constants)', () => {
     // The words live in status-banners.tsx — BOTH forms (the full sentence
