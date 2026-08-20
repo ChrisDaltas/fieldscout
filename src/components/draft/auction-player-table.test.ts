@@ -340,6 +340,22 @@ describe('§16.5.4 states, D140 vocabulary, and the design rules', () => {
     expect(table).toContain('EMPTY_COPY[') // designed empty copy, per reason
   })
 
+  it('a FAILED filter read is an error, not a designed empty state', () => {
+    const table = code(TABLE)
+    // A favourites read that threw leaves `favoriteIds` empty, and the
+    // empty branch would then assert "None of your Favorites match…" — a
+    // reason that is not true. The filter's own read joins the error
+    // branch whenever the filter is the thing being used, and the retry
+    // refetches it.
+    expect(table).toContain('(favoritesOnly && favorites.isError)')
+    expect(table).toContain('if (favoritesOnly) void favorites.refetch()')
+    expect(table).toContain('this filter can’t be trusted')
+    // The marks are a label, so a failed read DEGRADES (keeps rendering)
+    // and says what is missing rather than showing bare rows.
+    expect(table).toContain('{dnd.isError && (')
+    expect(table).toContain('Do-not-draft labels didn’t load')
+  })
+
   it('a disabled by-id read is not "pending forever" (the R283 gate, restated)', () => {
     const table = code(TABLE)
     expect(table).toContain('extras.isPending && extraIds.length > 0')

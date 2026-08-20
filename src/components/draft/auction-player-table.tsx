@@ -250,7 +250,16 @@ export function AuctionPlayerTable({
   // only when it was actually asked for something (the R283 gate, restated
   // for this table's second read).
   const loading = pool.isPending || (extras.isPending && extraIds.length > 0)
-  const failed = pool.isError || (extras.isError && extraIds.length > 0)
+  // A FAILED FAVOURITES READ IS NOT AN EMPTY FAVOURITES LIST. Without this,
+  // `favoriteIds` falls back to the empty set and the Favorites filter
+  // renders "None of your Favorites match…" — a designed empty state
+  // asserting a reason that is not true (CLAUDE.md's "never let *nothing
+  // happened* mean *it worked*"). The filter's own read is therefore part
+  // of the error branch whenever the filter is the thing being used.
+  const failed =
+    pool.isError ||
+    (extras.isError && extraIds.length > 0) ||
+    (favoritesOnly && favorites.isError)
 
   const groups = useMemo(() => {
     const byGroup = new Map<AuctionColumn['group'], AuctionColumn[]>()
@@ -413,7 +422,9 @@ export function AuctionPlayerTable({
       ) : failed ? (
         <div className="flex flex-col items-start gap-2">
           <p className="text-[12px] font-medium text-n-3" role="alert">
-            The player pool didn’t load.
+            {favoritesOnly && favorites.isError && !pool.isError
+              ? 'Your Favorites didn’t load, so this filter can’t be trusted.'
+              : 'The player pool didn’t load.'}
           </p>
           <Button
             variant="stroke"
@@ -421,6 +432,7 @@ export function AuctionPlayerTable({
             onClick={() => {
               void pool.refetch()
               if (extraIds.length > 0) void extras.refetch()
+              if (favoritesOnly) void favorites.refetch()
             }}
           >
             Retry
@@ -446,6 +458,15 @@ export function AuctionPlayerTable({
             <span className="fs-num text-[10px] font-semibold text-n-3">
               {shown.length} shown
             </span>
+            {dnd.isError && (
+              // The marks are a LABEL, so a failed read degrades rather
+              // than blocks — but silently missing labels would let a
+              // manager bid on a player they had ruled out. §16.5.4's
+              // degraded posture: keep rendering, say what is missing.
+              <span className="text-[10px] font-medium text-n-3">
+                Do-not-draft labels didn’t load
+              </span>
+            )}
             {scoring.family === null && (
               // §16.5.4 degraded: last-good data, never wrong numbers. The
               // league's scoring rules did not resolve, so the projection
