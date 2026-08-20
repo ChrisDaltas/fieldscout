@@ -37,7 +37,13 @@ import {
   type BoardModelInput,
 } from './draft-board-ops'
 import type { OrderedDraftType } from './draft-order'
-import { recapRostersFromPicks, recapTeamOrder, recapVariant } from './draft-recap-ops'
+import {
+  recapBuysInOrder,
+  recapRostersFromPicks,
+  recapTeamOrder,
+  recapTeamSpend,
+  recapVariant,
+} from './draft-recap-ops'
 import { MockBanner } from '@/components/leagues/status-banners'
 
 interface DraftRecapProps {
@@ -194,7 +200,10 @@ function DraftRecapBody({
   )
 
   // Final board: the same D90 grid the room renders, with no on-clock cell —
-  // the draft is over, nothing is pending.
+  // the draft is over, nothing is pending. An AUCTION has no such grid (see
+  // `recapBuysInOrder`): its final board is the spend, in nomination order.
+  const isAuction = draft.draft_type === 'auction'
+  const buys = useMemo(() => recapBuysInOrder(picks), [picks])
   const draftType: OrderedDraftType = draft.draft_type === 'linear' ? 'linear' : 'snake'
   const snakeReversal = useMemo(() => {
     const config = draft.config as { snake_reversal?: unknown } | null
@@ -235,12 +244,31 @@ function DraftRecapBody({
         <CardHeader>
           <CardTitle>Final board</CardTitle>
           <span className="fs-overline text-[9px] text-n-3">
-            <span className="fs-num">{livePicks.length}</span> picks ·{' '}
-            <span className="fs-num">{draft.total_rounds ?? 0}</span> rounds
+            {isAuction ? (
+              <>
+                <span className="fs-num">{buys.length}</span> {buys.length === 1 ? 'buy' : 'buys'} ·{' '}
+                <span className="fs-num">
+                  ${buys.reduce((sum, pick) => sum + (pick.price ?? 0), 0)}
+                </span>{' '}
+                spent
+              </>
+            ) : (
+              <>
+                <span className="fs-num">{livePicks.length}</span> picks ·{' '}
+                <span className="fs-num">{draft.total_rounds ?? 0}</span> rounds
+              </>
+            )}
           </span>
         </CardHeader>
         <CardContent>
-          {order.length > 0 ? (
+          {isAuction ? (
+            <AuctionFinalBoard
+              buys={buys}
+              teamNameById={teamNameById}
+              playerById={playerById}
+              anchorTeamId={anchorTeamId}
+            />
+          ) : order.length > 0 ? (
             <DraftBoardGrid
               model={boardInput}
               teamNameById={teamNameById}
@@ -270,6 +298,7 @@ function DraftRecapBody({
                 picks={rosters.get(teamId) ?? []}
                 playerById={playerById}
                 teamCount={teamCount}
+                isAuction={isAuction}
                 anchor={teamId === anchorTeamId}
                 anchorLabel={
                   variant.kind === 'mock' ? 'Your seat' : 'You'
@@ -288,6 +317,7 @@ function RecapRosterCard({
   picks,
   playerById,
   teamCount,
+  isAuction,
   anchor,
   anchorLabel,
 }: {
@@ -295,9 +325,14 @@ function RecapRosterCard({
   picks: DraftPickSummary[]
   playerById: ReadonlyMap<string, PlayerIdentity>
   teamCount: number
+  isAuction: boolean
   anchor: boolean
   anchorLabel: string
 }) {
+  // L.C3.2 item 3: an auction roster card carries the money — what the team
+  // spent in total, and the buy it spent the most on.
+  const spend = isAuction ? recapTeamSpend(picks) : null
+  const biggestPlayer = spend?.biggest ? playerById.get(spend.biggest.player_id) : undefined
   return (
     // Selected-state is a resting condition — carried by border/fill, never
     // a shadow (CLAUDE.md elevation rule).
@@ -311,6 +346,20 @@ function RecapRosterCard({
         <span className="truncate text-[12px] font-extrabold">{teamName}</span>
         {anchor && <Badge variant="accent">{anchorLabel}</Badge>}
       </div>
+      {spend && (
+        <p className="text-[10px] font-bold text-n-3">
+          <span className="fs-num text-ink">${spend.total}</span> spent
+          {spend.biggest && (
+            <>
+              {' · biggest buy '}
+              <span className="font-extrabold text-ink">
+                {biggestPlayer ? abbreviateName(biggestPlayer.full_name) : spend.biggest.player_id}
+              </span>{' '}
+              <span className="fs-num text-ink">${spend.biggest.price ?? 0}</span>
+            </>
+          )}
+        </p>
+      )}
       {picks.length === 0 ? (
         <p className="text-[10px] font-medium text-n-3">No picks on the final board.</p>
       ) : (
@@ -320,12 +369,22 @@ function RecapRosterCard({
             return (
               <li key={pick.pick_number} className="flex items-center gap-1.5 text-[11px]">
                 <span className="fs-num w-9 shrink-0 text-[10px] font-bold text-n-3">
-                  {teamCount > 0 ? pickLabel(pick.pick_number, teamCount) : `#${pick.pick_number}`}
+                  {/* An auction's pick_number is the NOMINATION sequence, not
+                      a board coordinate — "1.03" would be a snake label on a
+                      board that has no rounds (the R427 class). */}
+                  {isAuction || teamCount < 1
+                    ? `#${pick.pick_number}`
+                    : pickLabel(pick.pick_number, teamCount)}
                 </span>
                 {player && <PositionBadge position={player.position} size="sm" />}
                 <span className="min-w-0 truncate font-bold">
                   {player ? abbreviateName(player.full_name) : pick.player_id}
                 </span>
+                {isAuction && (
+                  <span className="fs-num shrink-0 text-[10px] font-bold text-n-3">
+                    ${pick.price ?? 0}
+                  </span>
+                )}
                 {pick.is_auto && (
                   <span className="fs-overline shrink-0 text-[8px] text-n-3">Auto</span>
                 )}
@@ -334,6 +393,76 @@ function RecapRosterCard({
           })}
         </ul>
       )}
+    </div>
+  )
+}
+
+/**
+ * The AUCTION final board (M3 task L.C3.2 item 3) — every buy in nomination
+ * order, with its price and its winner.
+ *
+ * Why not the pick grid: `DraftBoardGrid` lays cells out by the snake/linear
+ * mapping of `pick_number` → (round, seat) and then labels the cell with the
+ * ROW's team, so an auction would render each buy in an unrelated team's
+ * column (the same coercion R427 caught feeding the room's status strip).
+ * `draft-order.ts` says it plainly: "auction has no board order — callers
+ * never ask". So this is the board an auction actually has.
+ */
+function AuctionFinalBoard({
+  buys,
+  teamNameById,
+  playerById,
+  anchorTeamId,
+}: {
+  buys: DraftPickSummary[]
+  teamNameById: ReadonlyMap<string, string>
+  playerById: ReadonlyMap<string, PlayerIdentity>
+  anchorTeamId: string | null
+}) {
+  if (buys.length === 0) {
+    return (
+      <p className="text-[12px] font-medium text-n-3">
+        No player was bought before this draft ended.
+      </p>
+    )
+  }
+  return (
+    // Wide content scrolls INSIDE its own container (CLAUDE.md responsive
+    // rule); the region is focusable so a keyboard user can scroll it, the
+    // DR.4 board treatment.
+    <div
+      className="max-h-[420px] overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      role="region"
+      aria-label="Every buy in nomination order"
+      tabIndex={0}
+    >
+      <ul className="flex flex-col gap-1">
+        {buys.map((pick) => {
+          const player = playerById.get(pick.player_id)
+          const mine = anchorTeamId !== null && pick.team_id === anchorTeamId
+          return (
+            <li
+              key={pick.pick_number}
+              className={cn(
+                'flex items-center gap-2 rounded-sm border px-2 py-1 text-[12px]',
+                mine ? 'border-accent bg-accent-soft' : 'border-ink bg-white',
+              )}
+            >
+              <span className="fs-num w-8 shrink-0 text-[10px] font-bold text-n-3">
+                #{pick.pick_number}
+              </span>
+              {player && <PositionBadge position={player.position} size="sm" />}
+              <span className="min-w-0 flex-1 truncate font-bold">
+                {player ? player.full_name : pick.player_id}
+              </span>
+              <span className="min-w-0 max-w-[38%] truncate text-[11px] font-semibold text-n-3">
+                {teamNameById.get(pick.team_id) ?? 'Team'}
+              </span>
+              <span className="fs-num shrink-0 font-extrabold">${pick.price ?? 0}</span>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

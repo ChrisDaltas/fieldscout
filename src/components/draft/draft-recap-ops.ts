@@ -109,3 +109,51 @@ export function recapTeamOrder(
   for (const teamId of rosters.keys()) push(teamId)
   return result
 }
+
+// ---------------------------------------------------------------------------
+// Auction spend (M3 task L.C3.2 item 3 — "prices on the final board, per-team
+// total spent + biggest buy")
+// ---------------------------------------------------------------------------
+
+/** What a team spent, and the buy that cost the most. */
+export interface RecapSpend {
+  /** Σ price over this team's LIVE picks. Rows with a null price contribute
+   *  0 — an auction award always writes one (086), so a null here is a snake
+   *  row or a hint row that has not reconciled, never a free player. */
+  total: number
+  /** The most expensive live buy; ties go to the EARLIER nomination (the
+   *  first team to pay that much). Null when the team bought nothing. */
+  biggest: DraftPickSummary | null
+}
+
+/** Per-team spend from the picks sheet — the same source the rosters use. */
+export function recapTeamSpend(picks: readonly DraftPickSummary[]): RecapSpend {
+  let total = 0
+  let biggest: DraftPickSummary | null = null
+  for (const pick of picks) {
+    if (pick.is_undone) continue
+    total += pick.price ?? 0
+    if (
+      biggest === null ||
+      (pick.price ?? 0) > (biggest.price ?? 0) ||
+      ((pick.price ?? 0) === (biggest.price ?? 0) && pick.pick_number < biggest.pick_number)
+    ) {
+      biggest = pick
+    }
+  }
+  return { total, biggest }
+}
+
+/**
+ * The AUCTION's final board: every live buy in nomination order.
+ *
+ * An auction has no rounds × teams grid to lay out — `pick_number` is the
+ * nomination SEQUENCE, and which team won each one is a bid result, not a
+ * board coordinate. Feeding those rows to `buildBoardModel` would put a pick
+ * into whatever cell the snake mapping named and label it with the winner's
+ * name, i.e. print a team's buy inside another team's column. The honest
+ * final board is the order the money was spent in.
+ */
+export function recapBuysInOrder(picks: readonly DraftPickSummary[]): DraftPickSummary[] {
+  return picks.filter((p) => !p.is_undone).sort((a, b) => a.pick_number - b.pick_number)
+}

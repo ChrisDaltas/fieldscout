@@ -1511,6 +1511,78 @@ function DraftGroup({
               className="h-btn-md w-24 text-[12px]"
             />
           </FieldRow>
+          {/* M3 task L.C3.2 item 2 — the three §7.3.8 auction knobs that were
+              persisted and validated (`draftConfigSchema`) but had no input:
+              a setting nobody can reach is a setting the league does not
+              have. Ranges are the catalog's, enforced again by the schema on
+              save; the room's own Clock & timers section edits the two clocks
+              mid-draft (087's `draft_set_clock` auction arm). */}
+          <FieldRow label="Bid clock" htmlFor="set-auction-bid" hint="Seconds each bid resets the clock to.">
+            <Input
+              id="set-auction-bid"
+              type="number"
+              min={10}
+              max={60}
+              value={d.auction_bid_seconds}
+              onChange={(e) =>
+                onDraft({ auction_bid_seconds: clampInt(e.target.value, 10, 60, d.auction_bid_seconds) })
+              }
+              className="h-btn-md w-24 text-[12px]"
+            />
+          </FieldRow>
+          <FieldRow
+            label="Anti-snipe"
+            htmlFor="set-auction-anti-snipe"
+            hint="A bid inside this many seconds resets the clock to it. 0 turns anti-snipe off."
+          >
+            <Input
+              id="set-auction-anti-snipe"
+              type="number"
+              min={0}
+              max={15}
+              value={d.auction_anti_snipe_seconds}
+              onChange={(e) =>
+                onDraft({
+                  auction_anti_snipe_seconds: clampInt(e.target.value, 0, 15, d.auction_anti_snipe_seconds),
+                })
+              }
+              className="h-btn-md w-24 text-[12px]"
+            />
+          </FieldRow>
+          <FieldRow
+            label="Nomination order"
+            htmlFor="set-nomination-order-mode"
+            hint="Who nominates next, circularly (§8.3)."
+          >
+            <ChoiceSelect
+              id="set-nomination-order-mode"
+              ariaLabel="Nomination order"
+              value={d.nomination_order_mode}
+              width="w-56"
+              // `manual` is DELIBERATELY not offered: 084's start arm
+              // validates a stored `drafts.nomination_order`, and nothing can
+              // write one before the draft exists (087's `draft_set_order`
+              // refuses a pre-start auction by name), so choosing it today
+              // makes the draft unstartable — the UI must not offer what the
+              // engine forbids (D110(1)'s rule). The editor that would make
+              // it reachable is ledger row **F80**. A league that already
+              // STORES `manual` (set through the API) still sees its own
+              // value, labelled for what it is, so the select never renders
+              // blank and the way out is one click.
+              options={[
+                { value: 'same_as_draft_order', label: 'Same as draft order' },
+                { value: 'random', label: 'Random' },
+                ...(d.nomination_order_mode === 'manual'
+                  ? [{ value: 'manual', label: 'Commissioner sets (no editor yet — pick another)' }]
+                  : []),
+              ]}
+              onValueChange={(v) =>
+                onDraft({
+                  nomination_order_mode: v as LeagueSettings['draft']['nomination_order_mode'],
+                })
+              }
+            />
+          </FieldRow>
         </>
       )}
 

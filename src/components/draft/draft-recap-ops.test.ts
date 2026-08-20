@@ -10,7 +10,13 @@ import { describe, expect, it } from 'vitest'
 import type { DraftPickSummary } from '@/hooks/use-draft'
 import type { Draft } from '@/types/database'
 
-import { recapRostersFromPicks, recapTeamOrder, recapVariant } from './draft-recap-ops'
+import {
+  recapBuysInOrder,
+  recapRostersFromPicks,
+  recapTeamOrder,
+  recapTeamSpend,
+  recapVariant,
+} from './draft-recap-ops'
 
 function pick(n: number, teamId: string, playerId: string, over: Partial<DraftPickSummary> = {}): DraftPickSummary {
   return {
@@ -121,5 +127,53 @@ describe('recapTeamOrder ("your roster vs the CPUs’" — anchor first; §8.8)'
 
   it('a team present only in picks still renders (defensive — no roster silently drops)', () => {
     expect(recapTeamOrder(['t1', 't2'], rosters, null)).toEqual(['t1', 't2', 't3'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Auction spend (M3 task L.C3.2 item 3 — "prices on the final board, per-team
+// total spent + biggest buy")
+// ---------------------------------------------------------------------------
+
+describe('recapTeamSpend — what a team paid, and for whom', () => {
+  const buys = [
+    pick(3, 't1', 'chase', { price: 50 }),
+    pick(7, 't1', 'gibbs', { price: 12 }),
+    pick(9, 't1', 'kelce', { price: 50 }),
+    // Undone rows are audit history — reversed money is not spent (D131).
+    pick(11, 't1', 'refunded', { price: 99, is_undone: true }),
+  ]
+
+  it('totals the live buys only', () => {
+    expect(recapTeamSpend(buys).total).toBe(112)
+  })
+
+  it('the biggest buy breaks ties on the EARLIER nomination', () => {
+    expect(recapTeamSpend(buys).biggest?.player_id).toBe('chase')
+    expect(recapTeamSpend(buys).biggest?.price).toBe(50)
+  })
+
+  it('a team that bought nothing has no biggest buy', () => {
+    expect(recapTeamSpend([])).toEqual({ total: 0, biggest: null })
+  })
+
+  it('a null price contributes 0 rather than NaN (a hint row mid-reconcile)', () => {
+    expect(recapTeamSpend([pick(1, 't1', 'x', { price: null })]).total).toBe(0)
+  })
+})
+
+describe('recapBuysInOrder — the auction final board is the spend, in order', () => {
+  const picks = [
+    pick(4, 't2', 'b', { price: 3 }),
+    pick(1, 't1', 'a', { price: 40 }),
+    pick(2, 't3', 'gone', { price: 9, is_undone: true }),
+  ]
+
+  it('live buys ascending by nomination sequence', () => {
+    expect(recapBuysInOrder(picks).map((p) => p.player_id)).toEqual(['a', 'b'])
+  })
+
+  it('an ended-early auction with no buys returns nothing to render', () => {
+    expect(recapBuysInOrder([])).toEqual([])
   })
 })

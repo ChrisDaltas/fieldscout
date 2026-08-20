@@ -31,6 +31,9 @@ interface DraftCommandBarProps {
   bar: CommandBarInput
   /** Viewer holds a seat (drives the Exit copy — Q13's honesty rule). */
   hasSeat: boolean
+  /** `draft.draft_type === 'auction'` — the `Draft Options` catalog is per
+   *  draft type since L.C3.2; the lobby mount never renders the menu. */
+  isAuction?: boolean
   /** Lobby mounts only (R396): a `draft_scheduled_at` instant exists, so
    *  the Exit copy may honestly promise the D94 auto-start. The no-schedule
    *  lobby gets the commissioner-starts-it sentence instead. */
@@ -80,6 +83,7 @@ export function DraftCommandBar({
   leagueId,
   bar,
   hasSeat,
+  isAuction = false,
   hasSchedule = false,
   pausePending = false,
   onPauseResume,
@@ -150,7 +154,10 @@ export function DraftCommandBar({
         // The §8.7 door (DR.3): the menu of control groups, mapping 1:1 onto
         // the shipped commissioner-panel sections. Its trigger carries the
         // §16.3 accent treatment inside `draft-options-menu.tsx`.
-        <DraftOptionsMenu onOpenSection={(section) => onOpenDraftOptions?.(section)} />
+        <DraftOptionsMenu
+          isAuction={isAuction}
+          onOpenSection={(section) => onOpenDraftOptions?.(section)}
+        />
       )}
 
       {showPracticeOptions && (

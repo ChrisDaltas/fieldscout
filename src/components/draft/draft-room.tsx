@@ -34,7 +34,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 
 import { AuctionBlock } from './auction-block'
-import { readLiveNomination } from './auction-budget'
+import { auctionKnobsOf, readLiveNomination, teamBudget } from './auction-budget'
 import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
@@ -859,6 +859,25 @@ function DraftRoomLive({
     [picks, myTeamId],
   )
 
+  // L.C3.2 item 3: MY auction budget for the roster tracker's needs line —
+  // the §4.7 display-only mirror of 084 (`auction-budget.ts`), the same
+  // derivation the board's team columns render. Null on a snake draft and
+  // for a seatless viewer.
+  const myBudget = useMemo(() => {
+    if (!isAuction || !myTeamId) return null
+    const knobs = auctionKnobsOf(draft.config)
+    return teamBudget(
+      {
+        auctionBudget: knobs.auctionBudget,
+        minBid: knobs.minBid,
+        totalRounds: draft.total_rounds,
+        budgetAdjustments: draft.budget_adjustments,
+      },
+      picks,
+      myTeamId,
+    )
+  }, [isAuction, myTeamId, draft.config, draft.total_rounds, draft.budget_adjustments, picks])
+
   const ticker = useMemo(() => recentPicks(livePicks, 6), [livePicks])
   const teamCount = seatIds.length
 
@@ -910,6 +929,10 @@ function DraftRoomLive({
       picks={myPicks}
       playerById={playerById}
       roster={detail.settings.roster_settings}
+      // L.C3.2 item 3: on an auction the needs line carries what the needs
+      // COST — remaining budget and max bid, off the same parity-pinned
+      // mirror the board's team columns use (§8.6.1).
+      budget={isAuction ? (myBudget ?? null) : null}
     />
   ) : (
     <p className="text-[12px] font-medium text-n-3">
@@ -1069,6 +1092,10 @@ function DraftRoomLive({
           stale,
         }}
         hasSeat={Boolean(myTeamId)}
+        // L.C3.2: the `Draft Options` catalog is per draft type — an auction
+        // room lists Manual Edit Mode, Edit current nomination, Team budgets
+        // and End draft; a snake room lists none of them.
+        isAuction={isAuction}
         pausePending={pauseResume.isPending}
         onPauseResume={handlePauseResume}
         onOpenDraftOptions={openDraftOptionsAt}
@@ -1193,6 +1220,7 @@ function DraftRoomLive({
                   picks={myPicks}
                   playerById={playerById}
                   roster={detail.settings.roster_settings}
+                  budget={isAuction ? (myBudget ?? null) : null}
                 />
               </CardContent>
             </Card>
