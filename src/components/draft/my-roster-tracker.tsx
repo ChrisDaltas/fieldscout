@@ -8,6 +8,7 @@ import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import type { PlayerIdentity } from '@/hooks/use-players-by-ids'
 import { cn } from '@/lib/utils'
 
+import type { TeamBudget } from './auction-budget'
 import { abbreviateName } from './draft-board-ops'
 import { buildRosterTracker } from './roster-tracker-ops'
 
@@ -18,6 +19,11 @@ interface MyRosterTrackerProps {
   roster: RosterSettings
   /** §16.4's "my picks" rail — slot chips only, no card chrome. */
   compact?: boolean
+  /** AUCTION only (M3 task L.C3.2 item 3): what the remaining needs can
+   *  COST — the §4.7 display-only mirror of `draft_team_budget` (084), passed
+   *  in by the room so this component derives no money of its own. Null on a
+   *  snake draft, and on an auction whose capacity is not derivable. */
+  budget?: TeamBudget | null
   className?: string
 }
 
@@ -34,6 +40,7 @@ export function MyRosterTracker({
   playerById,
   roster,
   compact = false,
+  budget = null,
   className,
 }: MyRosterTrackerProps) {
   const model = useMemo(
@@ -61,6 +68,19 @@ export function MyRosterTracker({
           </>
         )}
       </p>
+
+      {/* L.C3.2 item 3 — the needs surface's AUCTION context: what is left to
+          spend on them (§8.6.1's remaining budget + max bid, and the spots
+          those dollars must still cover). Absent on a snake draft, where
+          there is no money to report. */}
+      {budget && (
+        <p className="text-[11px] font-bold">
+          <span className="fs-num">${budget.remaining}</span> left · max bid{' '}
+          <span className="fs-num">${budget.maxBid}</span> ·{' '}
+          <span className="fs-num">{budget.openSlots}</span>{' '}
+          {budget.openSlots === 1 ? 'spot' : 'spots'} to fill
+        </p>
+      )}
 
       {model.slots.map((slot) => (
         <div key={slot.key} className="flex items-start gap-2">

@@ -107,7 +107,15 @@ function mapDraftRpcError(
     return { status: 403, body: { error: forbiddenMessage } }
   }
   if (error.code === 'P0002') {
-    return { status: 404, body: { error: 'League not found' } }
+    // F77 (L.C3.2): the RPC's OWN message, not "League not found". The league
+    // was resolved over RLS one statement ago, so it is exactly the thing
+    // that WAS found; what P0002 actually reports is a missing pick, player
+    // or franchise ("pick % is not a live pick of this draft",
+    // "team % is not an active franchise of this league", "player % not
+    // found"). The status stays 404. Safe to pass through: every P0002 in
+    // 066/069/072/087/090 is raised AFTER the 42501 no-leak gate, so nothing
+    // reaches this arm that the 403 arm does not already cover.
+    return { status: 404, body: { error: error.message } }
   }
   if (error.code === 'P0001' || error.code === '22023') {
     // Friendly in-body refusals are UX (§8.3 checklist) — surfaced verbatim.
@@ -587,17 +595,6 @@ export interface AuctionActionBody {
   bid: Database['public']['Tables']['draft_bids']['Row']
 }
 
-/** The 063 mapping for the auction verbs. Differs from `mapDraftRpcError`
- *  in ONE arm: P0002 keeps the RPC's own message — after the RLS draft
- *  probe above it the only P0002 a caller can reach is `draft_nominate`'s
- *  "player % not found", for which "League not found" would be false copy. */
-function mapAuctionRpcError(error: { code?: string; message: string }): ServiceResult {
-  if (error.code === 'P0002') {
-    return { status: 404, body: { error: error.message } }
-  }
-  return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
-}
-
 export async function nominatePlayer(
   supabase: Supabase,
   leagueId: string,
@@ -618,7 +615,7 @@ export async function nominatePlayer(
     p_opening_bid: parsed.data.opening_bid,
     p_action_id: parsed.data.action_id,
   })
-  if (error) return mapAuctionRpcError(error)
+  if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
   const body = data as unknown as AuctionActionBody
 
   // F65(b): the row that came back must be THIS caller's THIS nomination
@@ -664,7 +661,7 @@ export async function placeBid(
     p_nomination_seq: parsed.data.nomination_seq,
     p_player_id: parsed.data.player_id,
   })
-  if (error) return mapAuctionRpcError(error)
+  if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
   const body = data as unknown as AuctionActionBody
 
   // F65(b): the row that came back must be THIS caller's THIS bid (fresh, or

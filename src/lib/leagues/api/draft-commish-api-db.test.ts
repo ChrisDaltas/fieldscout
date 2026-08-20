@@ -700,6 +700,32 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       .single()
     expect(afterMove!.team_id).toBe(mgr2TeamId)
 
+    // **F77 (discharged at L.C3.2)** — the SNAKE consumers of the shared
+    // P0002 arm: an unknown player on reassign (090:671) and on move
+    // (090:947) answer 404 with the RPC's OWN sentence. The status was
+    // always right; "League not found" named the one thing that HAD been
+    // found. Still paused — these verbs are pause-first (090/F57).
+    const badReassign = await reassignPick(commishClient, leagueId, {
+      pick_id: livePick1!.id,
+      player_id: 'vitest-dc-no-such-player',
+      reason: 'F77 arm',
+    })
+    expect(badReassign.status).toBe(404)
+    expect(JSON.stringify(badReassign.body)).toContain(
+      'player vitest-dc-no-such-player not found',
+    )
+    expect(JSON.stringify(badReassign.body)).not.toContain('League not found')
+
+    const badMove = await movePlayer(commishClient, leagueId, {
+      player_id: 'vitest-dc-no-such-player',
+      from_team: mgr2TeamId,
+      to_team: commishTeamId,
+      reason: 'F77 arm',
+    })
+    expect(badMove.status).toBe(404)
+    expect(JSON.stringify(badMove.body)).toContain('player vitest-dc-no-such-player not found')
+    expect(JSON.stringify(badMove.body)).not.toContain('League not found')
+
     const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
     expect(resumed.status).toBe(200)
   })
@@ -707,6 +733,21 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
   it('undo CASCADE over the wire: `to_pick_number: 0` is the FULL rewind — every pick reverted, pick 1 back on the clock (E4; R160/R162)', async () => {
     // Give the cascade something to cascade over: force pick 2 for the team
     // the E31 re-derive put on the clock (placeholder 1 of the new order).
+    // **F77's third consumer (R425's enumeration)** — `draft_force_pick`'s
+    // own P0002 (`player % not found`, 087:2144/2252) through the same
+    // shared arm. Driven here because force-pick is LIVE-only, and this is
+    // the suite's live moment.
+    const forcedUnknown = await forcePick(commishClient, leagueId, {
+      player_id: 'vitest-dc-no-such-player',
+      action_id: 'dc700000-0000-4000-8000-0000000000f7',
+      reason: 'F77 arm',
+    })
+    expect(forcedUnknown.status).toBe(404)
+    expect(JSON.stringify(forcedUnknown.body)).toContain(
+      'player vitest-dc-no-such-player not found',
+    )
+    expect(JSON.stringify(forcedUnknown.body)).not.toContain('League not found')
+
     const forced2 = await forcePick(commishClient, leagueId, {
       player_id: P3,
       action_id: ACTION.force2,

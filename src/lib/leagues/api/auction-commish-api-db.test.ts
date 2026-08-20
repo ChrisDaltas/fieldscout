@@ -20,6 +20,10 @@
  *     exist — each landed control grows `league_chat` by EXACTLY one row,
  *     the D97 post);
  *   - the D138 MOCK refusal passing through with the RPC's exact copy;
+ *   - **F77 (discharged at L.C3.2)**: every P0002 answers 404 with the RPC's
+ *     OWN sentence, never "League not found" — driven on reverse-bid (a
+ *     bogus pick AND a second Reset on an already-reversed one, R412's
+ *     flow) and on budget (a team that is no franchise here);
  *   - the D141 LIVE refusal passing through with the RPC's exact copy
  *     (byte-compared) for the two gated new verbs, and the NOT-gated posture
  *     of budget (lands LIVE) and end (terminal);
@@ -155,6 +159,8 @@ const ACTION = {
 
 /** A syntactically valid uuid that is no pick of any draft. */
 const NO_SUCH_PICK = 'ac2fffff-0000-4000-8000-00000000dead'
+/** A well-formed team id belonging to no league — F77's budget-route arm. */
+const NO_SUCH_TEAM = 'ac2fffff-0000-4000-8000-0000000000fa'
 
 type DraftRow = Database['public']['Tables']['drafts']['Row']
 type PickRow = Database['public']['Tables']['draft_picks']['Row']
@@ -856,12 +862,17 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
       .single()
     expect(livePick).not.toBeNull()
 
-    // P0002 → 404 (the 063 mapping) for a pick that is no live pick here.
+    // P0002 → 404 (the 063 mapping) for a pick that is no live pick here —
+    // and, since L.C3.2 discharged **F77**, the 404 carries the RPC's OWN
+    // sentence. The status was always right; "League not found" was false
+    // copy about a league that had just been resolved over RLS.
     const bogus = await reverseWonBid(commishClient, leagueId, {
       pick_id: NO_SUCH_PICK,
       reason: 'bogus pick (must 404)',
     })
     expect(bogus.status).toBe(404)
+    expect(JSON.stringify(bogus.body)).toContain('is not a live pick of this draft')
+    expect(JSON.stringify(bogus.body)).not.toContain('League not found')
 
     const reversed = await reverseWonBid(commishClient, leagueId, {
       pick_id: livePick!.id,
@@ -891,6 +902,36 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     expect(posts[posts.length - 1]).toContain(
       `${PLAYERS[1].full_name} returns to the pool and ${COMMISH_TEAM_NAME} is refunded $30`,
     )
+
+    // **F77's own flow (R412), driven**: a SECOND "Reset pick" on the pick
+    // just reversed — a double submit, a stale panel, a co-commissioner
+    // race. It answers the honest 404, and NO second refund is derived
+    // (`draft_reverse_won_bid` takes no action_id, so this refusal IS the
+    // replay guard — L.C3.2's idempotency audit).
+    const replay = await reverseWonBid(commishClient, leagueId, {
+      pick_id: livePick!.id,
+      reason: 'second click on the same pick',
+    })
+    expect(replay.status).toBe(404)
+    expect(JSON.stringify(replay.body)).toContain('is not a live pick of this draft')
+    expect(JSON.stringify(replay.body)).not.toContain('League not found')
+    expect(await budgetOf(commishTeamId)).toMatchObject({
+      remaining: AUCTION_BUDGET + EXACT_CUT,
+      committed: 0,
+    })
+    expect(await systemPosts()).toHaveLength(postsBefore + 1)
+
+    // The same arm on the BUDGET route: a team that is no active franchise
+    // of this league (087:726). Same class, second consumer — the fix is
+    // central, so one arm covers both.
+    const bogusTeam = await adjustBudget(commishClient, leagueId, {
+      team_id: NO_SUCH_TEAM,
+      delta: 5,
+      reason: 'bogus team (must 404)',
+    })
+    expect(bogusTeam.status).toBe(404)
+    expect(JSON.stringify(bogusTeam.body)).toContain('is not an active franchise of this league')
+    expect(JSON.stringify(bogusTeam.body)).not.toContain('League not found')
   })
 
   it('the clock route carries the AUCTION timers (087’s arm, E15 analog); an auction refuses the pick clock; the PATCH edits nomination_order', async () => {

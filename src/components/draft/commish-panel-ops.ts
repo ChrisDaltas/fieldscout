@@ -23,6 +23,64 @@ export function canUseCommishPanel(myRole: string | null | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Pause-first gating (D141; F72's disabled-states half) — ONE predicate for
+// BOTH draft types, mirroring migration 090's type-neutral gate
+// ---------------------------------------------------------------------------
+
+/**
+ * The clause each refusal carries, per draft type — the SAME sentence the
+ * engine raises, minus the `verb: ` prefix and the § tag (087 §2 for the
+ * auction arm, 090 for the type-neutral one). `commish-auction-ops.test.ts`
+ * reads the migration chain and asserts both clauses appear verbatim in the
+ * head body of `draft_auction_pause_gate_internal`, so the disabled control
+ * and the server refusal can never say different things.
+ */
+export const PAUSE_FIRST_CLAUSE = {
+  auction: 'auction commissioner controls run on a paused board',
+  other: 'commissioner controls run on a paused board',
+} as const
+
+/** Whether a control group is offered right now, and why not when it isn't.
+ *  `reason` is rendered as the section's hint AND as the disabled control's
+ *  title — the D141 "disables with the same copy" requirement. */
+export interface ControlGate {
+  /** True ⇒ the control renders DISABLED (the RPC would refuse it). */
+  blocked: boolean
+  reason: string | null
+}
+
+const OPEN_GATE: ControlGate = { blocked: false, reason: null }
+
+/**
+ * D141's pause-first gate, as the UI sees it (F72's remaining half).
+ *
+ * Migration 090 made the ONE in-body gate draft-type-neutral when Chris
+ * ruled F57 ALIGN (spec §8.7 v2.12.5): `draft_undo` (both arms), the pick
+ * edits (`draft_reassign_pick` / `draft_move_player`), `draft_set_clock`,
+ * plus the auction's `draft_reverse_won_bid` and `draft_cancel_nomination`
+ * all refuse while `status = 'live'` and succeed while paused. Before this,
+ * the shipped panel offered every one of them on a live SNAKE draft and let
+ * the server say no — a dead end per click.
+ *
+ * The predicate is exactly the SQL's: `status = 'live'`. A `scheduled` or
+ * `complete` draft is NOT blocked here — those refusals are the RPCs' own,
+ * with their own sentences, and re-implementing them in the UI would be the
+ * second spelling that drifts (D188(3)).
+ */
+export function pauseFirstGate(draft: {
+  status: string
+  draft_type: string
+}): ControlGate {
+  if (draft.status !== 'live') return OPEN_GATE
+  const clause =
+    draft.draft_type === 'auction' ? PAUSE_FIRST_CLAUSE.auction : PAUSE_FIRST_CLAUSE.other
+  return {
+    blocked: true,
+    reason: `Pause the draft first — ${clause}.`,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Undo preview — "exactly what reverts" (§8.7's confirm-dialog requirement)
 // ---------------------------------------------------------------------------
 
