@@ -468,6 +468,28 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect((body.draft.current_nomination as unknown as LiveNomination).player_id).toBe(P4)
   }, 60_000)
 
+  // R426: the fix closed a SECOND hole nobody had recorded — pin it so a
+  // later refactor cannot silently reopen it. 089 runs the E2 replay
+  // (1122-1134 nominate / 1363-1372 bid) BEFORE the D103(2) launcher gate
+  // (1135 / 1373), so the RPC hands a consumed mock action_id's row back to
+  // ANY caller with matching arguments. Pre-R420 the auction verbs had no
+  // seat check at all, so a non-launcher league member replaying the
+  // launcher's consumed id received a 200 carrying the launcher's row.
+  // `resolveActingSeat`'s mock arm (config.mock.human_team_id, D103(2)) is
+  // what refuses it now — measured 403, not the RPC's 400.
+  it('R426: a non-launcher replaying a CONSUMED mock action_id is refused by the seat check, not handed the launcher’s row', async () => {
+    const replay = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
+      draft_id: mockId,
+      player_id: P4,
+      opening_bid: 1,
+      action_id: ACTION.mockNominate, // the launcher's, already consumed
+    })
+    expect(replay.status).toBe(403)
+    expect(errorText(replay.body)).toContain("another member's solo practice")
+    // The launcher's row is NOT in the response.
+    expect(JSON.stringify(replay.body)).not.toContain(commishTeamId)
+  }, 60_000)
+
   it('launcher bids FOR the human seat through the bid route (after a real CPU raise); the seat’s real manager’s bid is refused', async () => {
     // The intruder's bid — the D138 extension of D103(2) to bids.
     const intruder = await placeBid(commishClient, leagueId, commishId, {
