@@ -31,7 +31,7 @@ in parallel with the loop, never an `L.C` dependency.
 | --- | --- |
 | **PROGRESS (the loop's only memory)** | `docs/specs/PROGRESS-leagues.md` |
 | **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4 — §3 M3 row: Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E) |
-| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` (§8.6 auction incl. §8.6.7–8 endgame/solvency; L.C1) |
+| **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` — **v2.13** (§8.6 auction incl. §8.6.7–8 endgame/solvency and **§8.6.9 the uncontestable instant award**; §8.8's pacing bar; L.C1) |
 | **Task breakdown** | `docs/specs/tasks-M3-auction.md` (Architect; **approved & merged 2026-08-16**, PR #150) |
 | **Task id prefix** | `L.C` |
 
@@ -79,16 +79,50 @@ established two-lane pattern).
 | **Spec fold** | `spec-redraft-leagues.md` **v2.11** (§7.3.3.1, §7.3.8, §12.25, §16.2, §23.5, App B.4) |
 | **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all three checklists |
 
+**Fourth lane — AP, auction pacing (added 2026-08-20; takes effect when the AP breakdown PR
+merges, and is part of what Chris approves with it).**
+Chris drove the **finished** M3 auction room on 2026-08-20 and ruled six changes to it — bot
+pacing with a number on it (a mock under 45 minutes, a live draft under 90), instant awards for
+uncontestable nominations, `$0` nominations as a per-league toggle with `auction_min_bid`
+retired, the auction's manual nomination order, the six projection split columns that have
+data, and idempotent budget adjustments. Spec **v2.13** is the fold. **This is not a build swap
+and the pointer does not move: M3 stays the active build and gains a fourth lane** — the DR
+precedent, applied again.
+
+**AP runs AHEAD of M3's remaining three tasks — Chris ruled that order in-session.** `L.C4.1`
+(sim + the solvency property test), `L.C5.1` (auction E2E incl. the bid storm) and `L.C6.1` (the
+gate) all encode current behaviour as assertions, and **the bid-storm spec in particular assumes
+today's bot cadence**; writing them against behaviour about to change buys a suite that must be
+rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorded at PROGRESS
+**D197(4)**.
+
+| | |
+| --- | --- |
+| **AP breakdown** | `docs/specs/tasks-AP-auction-pacing.md` (Architect, 2026-08-20) |
+| **AP task id prefix** | `AP.` |
+| **Spec fold** | `spec-redraft-leagues.md` **v2.13** (§7.3.8 · §8.3 · §8.6.1–8.6.3 · §8.6.8 · NEW §8.6.9 · §8.8 · §16.2 · §16.4 · §16.5.4 · E67–E70 · App A.4) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all four checklists |
+
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
    *(**The DR lane is COMPLETE — DR.1–DR.8 all landed 2026-08-18**, so this step
    never fires again; the DR prerequisites in step 3 are all satisfied.)*
-2. When no `DR.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
-3. When **both** are blocked — or when Chris directs by name ("build SE.x") — take the
-   next unblocked **`SE.*`** task (dependency order in tasks-SE §5). The pure-TS opener
+1a. **Take the next unblocked `AP.*` task (dependency order in tasks-AP §7) BEFORE any
+   remaining `L.C*` task.** `AP.4` is **blocked on Q17** (Chris's sign-off on the bid-clock
+   default) — skip it and take the next AP task; do not guess the number. When every `AP.*`
+   task is done or blocked, fall through to step 2.
+2. When no `DR.*` or `AP.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
+   **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started while any
+   `AP.*` task is unblocked** (the ordering above). `L.C6.1` additionally owes **F84**: the gate
+   composes the AP suites by name.
+3. When **all three** are blocked — or when Chris directs by name ("build SE.x") — take the
+   next unblocked **`SE.*`** task (dependency order in tasks-SE §5). *(Its breakdown PR #161
+   **merged 2026-08-19**, so this clause is live.)* The pure-TS opener
    chain (SE.1 → SE.2 → SE.3) touches no migration, so it is always safe to take while
-   the schema lanes are contended.
+   the schema lanes are contended. **AP and SE contend for migration numbers 091+ and pgTAP
+   039+** — both lanes confirm the real next-free with `ls supabase/migrations/` at task time
+   (D161/D166); neither trusts a number written in a planning document.
 4. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
    new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
    waits on DR.3; `L.C3.3` on DR.5.
