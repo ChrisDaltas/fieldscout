@@ -40,7 +40,7 @@ import {
   type DraftBidBroadcast,
   type DraftBidRow,
 } from './use-draft-bids-ops'
-import { createFeedSink } from './use-draft-feed-sink'
+import { applyChatBroadcast, createFeedSink } from './use-draft-feed-sink'
 
 // ---------------------------------------------------------------------------
 // Rig
@@ -412,9 +412,10 @@ describe('use-draft.ts wires the chat feed through the sink too (F75 — the sam
   const start = source.indexOf("ch.on('broadcast', { event: 'league_chat' }")
   const handler = source.slice(start, source.indexOf("ch.on('broadcast', { event: 'draft_bids' }"))
 
-  it('the handler pushes into a chat sink instead of patching the cache directly', () => {
+  it('the handler routes the broadcast through applyChatBroadcast, not the cache', () => {
     expect(start).toBeGreaterThan(-1)
-    expect(handler).toContain('chatSink.push({ record })')
+    expect(handler).toContain('applyChatBroadcast({')
+    expect(handler).toContain('sink: chatSink,')
     // The pre-fix shape, gone: a message landing during the join refetch was
     // discarded when that fetch resolved (the mechanism control above).
     expect(handler).not.toContain('getQueryData<readonly DraftChatRow[]>')
@@ -422,20 +423,116 @@ describe('use-draft.ts wires the chat feed through the sink too (F75 — the sam
     expect(handler).not.toContain('reduceChatEvent(')
   })
 
-  it('the R271 league-detail invalidation still runs BEFORE the cache write', () => {
-    // It must fire whether or not a chat cache exists — the Auto seat badge
-    // depends on it, and the sink's no-cache arm drops the event.
-    const invalidate = handler.indexOf('chatEventInvalidatesLeagueDetail(record)')
-    const push = handler.indexOf('chatSink.push(')
-    expect(invalidate).toBeGreaterThan(-1)
-    expect(invalidate).toBeLessThan(push)
-  })
-
   it('the sink is created over the chat key with the real reducer, and disposed with the channel', () => {
     expect(source).toContain('createFeedSink<DraftChatRow, DraftChatBroadcast>(')
     expect(source).toContain('draftChatKeys.room(draftId),')
     expect(source).toContain('reduceChatEvent(rows, event.record, draftChatContext(draftId))')
     expect(source).toContain('chatSink.dispose()')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3c. F75's discharge, BEHAVIOURALLY (R434)
+// ---------------------------------------------------------------------------
+//
+// The pins above are SOURCE pins, and while the handler body sat inline in
+// `use-draft.ts` they were all a probe could redden: probe C restored the
+// pre-fix body and reddened exactly 2 of 24, both source, while the two
+// behavioural chat pins stayed green because they drove sinks they built
+// themselves and never the wiring. R434 asked for a pin that fails on the
+// pre-fix BEHAVIOUR; `applyChatBroadcast` is the seam that makes one
+// possible without a DOM.
+
+describe('applyChatBroadcast — the wiring itself, driven (F75 / R434)', () => {
+  const CHAT_KEY = draftChatKeys.room(DRAFT)
+  const CONTEXT = draftChatContext(DRAFT)
+  const row = (id: string, at: string, isSystem = false): DraftChatRow => ({
+    id,
+    user_id: isSystem ? null : T(1),
+    message: id,
+    context: CONTEXT,
+    is_system: isSystem,
+    created_at: at,
+  })
+  const wire = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const sink = createFeedSink<DraftChatRow, DraftChatBroadcast>(
+      client,
+      CHAT_KEY,
+      (rows, event) => ({
+        rows: reduceChatEvent(rows, event.record, CONTEXT),
+        refetch: false,
+      }),
+    )
+    return { client, sink }
+  }
+
+  it('a broadcast delivered mid-fetch survives the resolve (the R401 shape, for chat)', () => {
+    const { client, sink } = wire()
+    client.setQueryData(CHAT_KEY, [row('m1', '2026-08-19T12:00:00.000Z')])
+    const d = deferred<DraftChatRow[]>()
+    const done = client.fetchQuery({ queryKey: CHAT_KEY, queryFn: () => d.promise, staleTime: 0 })
+    // Delivered exactly as the channel delivers it — a raw §9.2 envelope.
+    applyChatBroadcast({
+      payload: { record: row('m2', '2026-08-19T12:00:02.000Z') },
+      sink,
+      invalidateLeagueDetail: () => {},
+    })
+    expect(sink.held()).toBe(1)
+    // The server's snapshot predates m2.
+    d.resolve([row('m1', '2026-08-19T12:00:00.000Z')])
+    return done.then(settle).then(() => {
+      // Pre-fix (the handler writing straight onto the cache) this is ['m1']
+      // — the message is gone until the next confirmed rejoin. That is F75.
+      expect((client.getQueryData<readonly DraftChatRow[]>(CHAT_KEY) ?? []).map((r) => r.id))
+        .toEqual(['m1', 'm2'])
+      sink.dispose()
+    })
+  })
+
+  it('R271 fires for a SYSTEM post BEFORE the push, and never for a member message', () => {
+    const { client, sink } = wire()
+    // No cache at all: the sink drops the event, and the invalidation must
+    // still run — that is the whole reason it cannot live behind the guard.
+    const order: string[] = []
+    const pushSpy = {
+      push: (event: DraftChatBroadcast) => {
+        order.push('push')
+        sink.push(event)
+      },
+    }
+    applyChatBroadcast({
+      payload: { record: row('s1', '2026-08-19T12:00:03.000Z', true) },
+      sink: pushSpy,
+      invalidateLeagueDetail: () => order.push('invalidate'),
+    })
+    expect(order).toEqual(['invalidate', 'push'])
+    expect(client.getQueryData(CHAT_KEY)).toBeUndefined()
+
+    order.length = 0
+    applyChatBroadcast({
+      payload: { record: row('m4', '2026-08-19T12:00:04.000Z') },
+      sink: pushSpy,
+      invalidateLeagueDetail: () => order.push('invalidate'),
+    })
+    expect(order).toEqual(['push'])
+    sink.dispose()
+  })
+
+  it('a malformed record is dropped before either side runs', () => {
+    const { sink } = wire()
+    let invalidated = 0
+    const pushed: unknown[] = []
+    for (const payload of [undefined, {}, { record: null }, { record: { id: 7 } }]) {
+      applyChatBroadcast({
+        payload,
+        sink: { push: (e) => pushed.push(e) },
+        invalidateLeagueDetail: () => (invalidated += 1),
+      })
+    }
+    expect(pushed).toEqual([])
+    expect(invalidated).toBe(0)
+    sink.dispose()
   })
 })
 

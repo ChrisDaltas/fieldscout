@@ -19,6 +19,13 @@ import {
  * SUBSCRIBE path but not the fetch path)"*. The answer these pins encode:
  * **no** — an absent draft is only honest when the fetch that failed to
  * produce one is healthy.
+ *
+ * **R429 → D192 refines the REMEDY, not the rule.** "Not honest" does not
+ * have to mean "error card": a surface that can carry the room's banner
+ * renders §16.5.4's degraded state instead (last-good data + banner), which
+ * is what the spec requires of a data surface holding last-good data. In this
+ * room that is exactly one no-draft branch — the D94 scheduled lobby, which
+ * mounts the command bar. See `room-health-ops.ts`.
  */
 
 describe('the N-failure threshold mirrors the subscribe path, from the same constant', () => {
@@ -63,14 +70,14 @@ describe('worstHealth — the room is as honest as its least honest query', () =
   })
 })
 
-describe('absentDraftIsHonest — the single line F56’s room half turns on', () => {
+describe('absentDraftIsHonest — rule 1 at the branches that cannot disclose', () => {
   it('only a HEALTHY fetch has earned the right to say “there is no draft”', () => {
     expect(absentDraftIsHonest('ok')).toBe(true)
     expect(absentDraftIsHonest('degraded')).toBe(false)
     expect(absentDraftIsHonest('failed')).toBe(false)
   })
 
-  it('the observed F56 shape, replayed as a model: a failing fetch may NOT render the lobby', () => {
+  it('the observed F56 shape, replayed — and where its remedy lands (R429 → D192)', () => {
     // F56, gate attempt 1: a LIVE manager room fell back to the
     // scheduled-lobby surface — "the settings-countdown branch renders when
     // the room's draft data is absent". Reconstruct that state: last-good
@@ -80,6 +87,18 @@ describe('absentDraftIsHonest — the single line F56’s room half turns on', (
       queryHealth({ failureCount: 3, isError: true, hasData: true }),
     )
     expect(health).toBe('degraded')
+    // The claim "there is no draft" is not EARNED here…
     expect(absentDraftIsHonest(health)).toBe(false)
+    // …but the remedy is not one-size-fits-all, and the first cut of this
+    // rule made it so. `degraded` means, by construction, that the room
+    // HOLDS last-good data — the exact state §16.5.4 requires to render
+    // behind a banner rather than be evicted. So the remedy splits by what
+    // the surface can disclose with: the D94 lobby mounts the command bar
+    // (§16.5.4 v2.12's one banner surface) and renders this state through
+    // `stale`; the bare recap pointer / "no draft yet" / "Draft not found"
+    // cards have no banner and take the error-with-retry card, which is what
+    // this predicate gates. The split lives in `draft-room.tsx` and is
+    // pinned there (`auction-room.test.ts`, the F56 section).
+    expect(health).not.toBe('failed')
   })
 })

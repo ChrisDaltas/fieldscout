@@ -11,7 +11,6 @@ import type { Draft } from '@/types/database'
 import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
-  chatEventInvalidatesLeagueDetail,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
   heartbeatSignalsGap,
@@ -24,12 +23,11 @@ import { draftBidKeys } from './use-draft-bids'
 import { reduceBidEvent, type DraftBidBroadcast, type DraftBidRow } from './use-draft-bids-ops'
 import { draftChatContext, draftChatKeys } from './use-draft-chat'
 import {
-  isChatRecord,
   reduceChatEvent,
   type DraftChatBroadcast,
   type DraftChatRow,
 } from './use-draft-chat-ops'
-import { createFeedSink } from './use-draft-feed-sink'
+import { applyChatBroadcast, createFeedSink } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -318,28 +316,26 @@ export function useDraftRoom(
         // query's own cache through the pure chat reducer (id-dedupe absorbs
         // the sender's own-INSERT echo). An unmounted/unfetched pane has no
         // cache to patch — its mount-time fetch carries the history.
-        const record = ((payload ?? {}) as BroadcastEnvelope).record
-        if (!isChatRecord(record)) return
-        // R271 (M2 batch 14): a SYSTEM post is the "a commissioner action
-        // landed" signal (D97 posts in-txn), and some of those actions
-        // change league-detail-fed renders 072 broadcasts nowhere (the
-        // §16.5.4 Auto seat badge ← `league_members.is_autodraft`) — so
-        // every client refreshes league detail on it, not just the toggler.
-        // Runs BEFORE the chat-cache guard: an unmounted chat pane must not
-        // keep the badge stale.
-        if (chatEventInvalidatesLeagueDetail(record)) {
-          const leagueId = queryClient.getQueryData<DraftState>(
-            draftKeys.detail(draftId),
-          )?.draft?.league_id
-          if (leagueId) {
-            void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
-          }
-        }
-        // THROUGH THE SINK, never straight onto the cache (F75/R401): a
-        // message landing mid-fetch is held and replayed onto the fetched
-        // rows. The R271 league-detail invalidation above deliberately runs
-        // BEFORE this — it must fire whether or not a chat cache exists.
-        chatSink.push({ record })
+        //
+        // The body lives in `use-draft-feed-sink.ts` as `applyChatBroadcast`
+        // (R434): F75's discharge was caught only by SOURCE pins while it sat
+        // inline here, because nothing in a node test could reach it. It
+        // keeps both rules it always had — the R271 refresh runs BEFORE the
+        // cache guard (an unmounted chat pane must not keep the §16.5.4 Auto
+        // seat badge stale), and the message goes THROUGH THE SINK, never
+        // straight onto the cache.
+        applyChatBroadcast({
+          payload,
+          sink: chatSink,
+          invalidateLeagueDetail: () => {
+            const leagueId = queryClient.getQueryData<DraftState>(
+              draftKeys.detail(draftId),
+            )?.draft?.league_id
+            if (leagueId) {
+              void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+            }
+          },
+        })
       })
       ch.on('broadcast', { event: 'draft_bids' }, ({ payload }) => {
         // 088/L.C1.6 — the bid feed (D134/F69). Same shape of handling as

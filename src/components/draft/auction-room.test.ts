@@ -81,6 +81,26 @@ describe('D135: one shell, one fork, an auction centre stage', () => {
     // DR.3's no-second-door pin, re-asserted from the auction side.
     expect(occurrences(room, '<CommishDraftPanel')).toBe(1)
   })
+
+  it('the SHARED status strip prints no board coordinate in an auction room (R427)', () => {
+    // §16.4 zone 2 lists the strip's contents — LIVE/PAUSED, Round & Pick,
+    // draft order, presence, clock. "Your next pick" is not among them, and
+    // in an auction it is not merely off-contract: `nextPickNumberForTeam`
+    // walks pure board geometry while the auction rotation skips filled
+    // rosters (§8.6.7(c)/E27), so the two coincide in lap 1 and diverge for
+    // good after. The hint has exactly ONE producer, and it is auction-gated.
+    expect(occurrences(room, 'nextPickNumberForTeam(')).toBe(1)
+    const memoStart = room.indexOf('const myNextPick = useMemo(')
+    expect(memoStart).toBeGreaterThan(-1)
+    const memo = room.slice(memoStart, room.indexOf('const makePick', memoStart))
+    expect(memo).toMatch(/isAuction\s*\n?\s*\?\s*null/)
+    // …and the strip is fed from that one value, so suppressing it there
+    // suppresses the hint (`status-strip-ops.ts`: a null label ⇒ no hint,
+    // pinned by that module's golden table).
+    expect(room).toContain(
+      'myNextPickLabel: myNextPick !== null ? pickLabel(myNextPick, teamCount) : null,',
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -178,9 +198,26 @@ describe('the block renders; it never decides, subscribes, or governs', () => {
   })
 
   it('the three marks each carry a WORD as well as a colour (§16.3 colour-independent status)', () => {
-    expect(block).toContain('>\n            You\n          </Badge>')
-    expect(block).toContain('>Nominating</Badge>')
-    expect(block).toContain('>High bid</Badge>')
+    // R433: matched loosely on purpose — the JSX indentation of a badge is
+    // Prettier's business, and pinning it by exact whitespace breaks this
+    // suite for a reflow that changed nothing about the room.
+    expect(block).toMatch(/>\s*You\s*<\/Badge>/)
+    expect(block).toMatch(/>\s*Nominating\s*<\/Badge>/)
+    expect(block).toMatch(/>\s*High bid\s*<\/Badge>/)
+  })
+
+  it('the two MOVING marks resolve to one fill, in the code (R432)', () => {
+    // 085/087 set `high_bidder_team_id = on_clock_team_id` at nomination
+    // open, so nominating + latest-bid land on the same column every time a
+    // nomination opens. The precedence must be written, not left to
+    // tailwind-merge's last-pair-wins: money over nomination.
+    expect(block).toMatch(
+      /column\.isLatestBid\s*\n?\s*\?\s*'border-positive bg-positive-soft'\s*\n?\s*:\s*column\.isNominating && 'border-accent bg-accent-soft'/,
+    )
+    // …and the colour-independent status survives the merge because the
+    // BADGES are independent of it — neither is gated on the other.
+    expect(block).toContain('{column.isNominating && <Badge variant="stroke-purple">')
+    expect(block).toContain('{column.isLatestBid && <Badge variant="stroke-green">')
   })
 })
 
@@ -191,22 +228,43 @@ describe('the block renders; it never decides, subscribes, or governs', () => {
 describe('F56 room half: an absent draft is only honest when the fetch is healthy', () => {
   const room = code(ROOM)
 
-  it('every no-draft branch is gated on `absentDraftIsHonest`', () => {
-    // Two gates: the `!draftId` cascade (lobby / recap pointer / no-draft
-    // empty) and the resolved-but-missing-row arm.
+  it('the no-banner no-draft branches are gated on `absentDraftIsHonest`, plainly', () => {
+    // Two gates: the `!draftId` cascade's recap-pointer / no-draft-empty tail
+    // and the resolved-but-missing-row arm.
     expect(occurrences(room, 'absentDraftIsHonest(health)')).toBe(2)
-    // The gate must come BEFORE the lobby it protects.
-    const gate = room.indexOf('absentDraftIsHonest(health)')
-    const lobby = room.indexOf('<DraftLobby')
-    expect(gate).toBeGreaterThan(-1)
-    expect(gate).toBeLessThan(lobby)
+    // R430: a COUNT alone is satisfied by an inert gate. Pin the SHAPE — the
+    // gate is the whole condition, never `… && somethingElse`.
+    expect(occurrences(room, 'if (!absentDraftIsHonest(health)) {')).toBe(2)
+    // Each gate precedes the branch it protects.
+    const firstGate = room.indexOf('if (!absentDraftIsHonest(health)) {')
+    expect(firstGate).toBeGreaterThan(-1)
+    expect(firstGate).toBeLessThan(room.indexOf('POST_DRAFT_LEAGUE_STATUSES.has'))
+    expect(room.lastIndexOf('if (!absentDraftIsHonest(health)) {')).toBeLessThan(
+      room.indexOf('title="Draft not found"'),
+    )
+  })
+
+  it('the D94 scheduled lobby is deliberately NOT behind the gate (R429 → D192)', () => {
+    // The lobby mounts the command bar — §16.5.4 v2.12's one banner surface —
+    // so `degraded` renders there as the SPEC's degraded state (last-good
+    // data + banner) instead of evicting a scheduled lobby to an error card.
+    // Putting it back behind the gate re-opens the rule-1/rule-2 collision
+    // AND makes its `stale` prop a constant `false` again.
+    const noDraftArm = room.indexOf('if (!draftId) {')
+    const scheduledBranch = room.indexOf("detail.data.league.status === 'scheduled'", noDraftArm)
+    const gateAfter = room.indexOf('if (!absentDraftIsHonest(health)) {', noDraftArm)
+    expect(noDraftArm).toBeGreaterThan(-1)
+    expect(scheduledBranch).toBeGreaterThan(noDraftArm)
+    expect(scheduledBranch).toBeLessThan(gateAfter)
   })
 
   it('a failing refetch over last-good data keeps the room and raises the banner', () => {
     // The error CARD is now conditioned on holding nothing…
     expect(room).toContain('room.isError && room.data === undefined')
     expect(room).toContain('if (!detail.data) {')
-    // …and the degraded state reaches the bar, the room's one banner surface.
+    // …and the degraded state reaches the bar, the room's one banner surface,
+    // from all THREE surfaces that mount it: the D94 lobby, the scheduled-row
+    // lobby, and the live room.
     expect(occurrences(room, "health === 'degraded'")).toBe(3)
   })
 

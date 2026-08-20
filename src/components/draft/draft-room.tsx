@@ -226,9 +226,12 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
   // every other reason the data can be absent, and the room could not tell
   // them apart. `room-health-ops.ts` carries the decision and the N-failure
   // threshold (the SAME constant the subscribe path's R263 banner uses);
-  // here it does two things: it gates every no-draft branch below on a
-  // HEALTHY fetch, and it feeds the bar's §16.5.4 degraded banner so a room
-  // drawn from last-good data says so instead of looking current.
+  // here it does two things: it feeds the bar's §16.5.4 degraded banner so a
+  // room drawn from last-good data says so instead of looking current, and
+  // it gates the no-draft branches that have NO banner to say it with (the
+  // recap pointer, the "no draft yet" empty, "Draft not found"). The D94
+  // scheduled lobby mounts the bar, so it takes the BANNER rather than the
+  // gate — R429 → D192; the reasoning lives in `room-health-ops.ts`.
   const health = worstHealth(
     queryHealth({
       failureCount: detail.failureCount,
@@ -287,26 +290,23 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
   }
 
   if (!draftId) {
-    // F56 rule 1: an absent draft is only HONEST when the fetch that failed
-    // to produce one is healthy. Degraded/failed ⇒ the room says it could
-    // not read, and offers the retry — it never guesses that there is
-    // nothing here (the CLAUDE.md "nothing happened means it worked" shape
-    // this row is a member of).
-    if (!absentDraftIsHonest(health)) {
-      return (
-        <DraftRoomProblem
-          leagueId={leagueId}
-          title={FETCH_FAILED_TITLE}
-          body={FETCH_FAILED_BODY}
-          onRetry={retryRoom}
-        />
-      )
-    }
     if (detail.data.league.status === 'scheduled') {
       // L.B3.4: the D94 settings-only path — the league is scheduled but no
       // drafts row exists yet (the tick creates + starts it at the instant).
       // The lobby renders WITHOUT presence (no row ⇒ no channel) and polls
       // near the instant so the auto-start flip arrives.
+      //
+      // **This branch is ahead of rule 1's gate on purpose** (R429 → D192;
+      // `room-health-ops.ts` carries the reasoning). The lobby is the ONE
+      // no-draft branch that mounts the command bar — §16.5.4 v2.12's single
+      // banner surface — so a `degraded` fetch renders here as §16.5.4's
+      // DEGRADED state (last-good data + banner), which is what the spec
+      // requires of a data surface holding last-good data, rather than
+      // evicting a scheduled lobby to an error card the way rule 1's first,
+      // over-broad remedy did. `stale` IS that state and is live: past the
+      // dataless `!detail.data` arm above, `health` here is exactly
+      // `'ok' | 'degraded'`. Nothing is claimed silently — the banner reads
+      // "Draft data isn't refreshing — showing the last state we read."
       return (
         <DraftLobby
           leagueId={leagueId}
@@ -315,6 +315,22 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
           myTeamId={myMemberTeamId}
           isCommish={canUseCommishPanel(detail.data.my_role)}
           stale={health === 'degraded'}
+        />
+      )
+    }
+    // F56 rule 1, at the branches that have NO banner to disclose with: an
+    // absent draft is only HONEST when the fetch that failed to produce one
+    // is healthy. Degraded/failed ⇒ the room says it could not read, and
+    // offers the retry — it never guesses that there is nothing here (the
+    // CLAUDE.md "nothing happened means it worked" shape this row is a
+    // member of).
+    if (!absentDraftIsHonest(health)) {
+      return (
+        <DraftRoomProblem
+          leagueId={leagueId}
+          title={FETCH_FAILED_TITLE}
+          body={FETCH_FAILED_BODY}
+          onRetry={retryRoom}
         />
       )
     }
@@ -608,8 +624,20 @@ function DraftRoomLive({
   // Board geometry (D90): columns from the stored order. `OrderedDraftType`
   // has no auction member on purpose (`draft-order.ts`: "auction has no
   // board order — callers never ask"), so an auction draft coerces to
-  // 'snake' here and the value is simply unused — the auction branch below
-  // never builds a grid.
+  // 'snake' here.
+  //
+  // **Every consumer of that coercion is auction-gated, and the first cut of
+  // this comment was wrong to say the value is "simply unused"** (review
+  // finding R427). It has two consumers: `boardInput`, which only
+  // `<DraftBoardGrid>` reads and the auction branch never renders — and
+  // `myNextPick`, which fed the SHARED status strip and so DID reach the
+  // auction room, printing a snake board coordinate ("Your next: 1.06") in a
+  // room that has no board. §16.4 zone 2 lists the strip's contents —
+  // LIVE/PAUSED, Round & Pick, draft order, presence, clock — and "your next
+  // pick" is not among them; §16.4's auction-room callout puts per-team
+  // standing in the team columns instead. `myNextPick` is therefore null on
+  // the auction path (below), which is what makes this coercion genuinely
+  // unreachable there.
   const order = useMemo(() => parseDraftOrder(draft.draft_order), [draft.draft_order])
   const draftType: OrderedDraftType = draft.draft_type === 'linear' ? 'linear' : 'snake'
   const snakeReversal = useMemo(() => {
@@ -705,17 +733,34 @@ function DraftRoomLive({
         })
       })
   }
+  // R427: the auction has NO board coordinate to offer. `nextPickNumberForTeam`
+  // walks pure snake/linear board geometry, while the auction rotation skips
+  // teams whose rosters are already full (§8.6.7(c)/E27) — the walk coincides
+  // with the nomination order in lap 1 and diverges permanently after, so the
+  // hint is not merely off-contract, it goes WRONG. Suppressed at the source
+  // rather than at the strip so the coercion above reaches nothing on the
+  // auction path.
   const myNextPick = useMemo(
     () =>
-      nextPickNumberForTeam(
-        order,
-        draftType,
-        snakeReversal,
-        draft.current_pick_number,
-        draft.total_rounds,
-        myTeamId,
-      ),
-    [order, draftType, snakeReversal, draft.current_pick_number, draft.total_rounds, myTeamId],
+      isAuction
+        ? null
+        : nextPickNumberForTeam(
+            order,
+            draftType,
+            snakeReversal,
+            draft.current_pick_number,
+            draft.total_rounds,
+            myTeamId,
+          ),
+    [
+      isAuction,
+      order,
+      draftType,
+      snakeReversal,
+      draft.current_pick_number,
+      draft.total_rounds,
+      myTeamId,
+    ],
   )
 
   // ----- pick submission (L.B2.2's route/hook, wired here — D92) -----------

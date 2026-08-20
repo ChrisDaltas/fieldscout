@@ -316,6 +316,67 @@ describe('anti-snipe — the floor, and its visible re-arm (E6 / D128)', () => {
     ).toBe(false)
   })
 
+  it('a RESUME-shaped movement is NOT a re-arm — same key, later deadline, wrong SIZE (R428)', () => {
+    // `draft_pause` writes `current_deadline = NULL` + `deadline_remaining_ms`
+    // (069:353-357) and `draft_resume` writes `now() + remaining`
+    // (069:485-492) — strictly later than the pre-pause deadline, by the
+    // pause duration, with the pick number and the nomination's player id
+    // untouched. So "same nomination key + later deadline" describes a RESUME
+    // exactly as well as it describes an 085 re-arm, and the only thing
+    // separating them was `useAntiSnipe`'s ref having SEEN the null frame.
+    // A client that misses that frame announced a 12-SECOND movement as
+    // "clock reset to 10s". The reviewer's probe, at its numbers:
+    expect(
+      antiSnipeView({
+        ...base,
+        previousDeadline: at(18_000),
+        currentDeadline: at(30_000),
+      }).reArmed,
+    ).toBe(false)
+    // The general case: a resume restores whatever remained when the pause
+    // landed, so any remaining above the floor + slack is not the floor.
+    expect(
+      antiSnipeView({
+        ...base,
+        previousDeadline: at(2_000),
+        currentDeadline: at(11_501),
+      }).reArmed,
+    ).toBe(false)
+  })
+
+  it('a GENUINE 085 re-arm always passes the size test — it lands AT the floor (R428)', () => {
+    // 085:780-791 is `GREATEST(current_deadline, now() + anti)`: when it moves
+    // the deadline at all, the new remaining is exactly `anti`, never more.
+    expect(
+      antiSnipeView({ ...base, previousDeadline: at(3_000), currentDeadline: at(10_000) })
+        .reArmed,
+    ).toBe(true)
+    // D128's after-zero case (085:773-777) — a full fresh window, same size.
+    expect(
+      antiSnipeView({ ...base, previousDeadline: at(-2_000), currentDeadline: at(10_000) })
+        .reArmed,
+    ).toBe(true)
+    // Wire + render latency only ever REDUCES the remaining a client reads,
+    // so lateness cannot false-negative the test.
+    expect(
+      antiSnipeView({
+        ...base,
+        previousDeadline: at(3_000),
+        currentDeadline: at(10_000),
+        nowMs: NOW + 400,
+      }).reArmed,
+    ).toBe(true)
+    // The boundary is exact at floor + ANTI_SNIPE_REARM_SLACK_MS (10s + 1.5s).
+    expect(
+      antiSnipeView({ ...base, previousDeadline: at(3_000), currentDeadline: at(11_500) })
+        .reArmed,
+    ).toBe(true)
+    expect(
+      antiSnipeView({ ...base, previousDeadline: at(3_000), currentDeadline: at(11_501) })
+        .reArmed,
+    ).toBe(false)
+  })
+
   it('nominationKeyOf is null while NOMINATING — a re-arm cannot be claimed off the phase change', () => {
     expect(nominationKeyOf(4, null)).toBeNull()
     expect(nominationKeyOf(null, { player_id: 'p', high_bid: 1, high_bidder_team_id: T1 })).toBeNull()

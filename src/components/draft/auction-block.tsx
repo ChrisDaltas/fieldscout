@@ -638,8 +638,20 @@ function TeamColumnCard({
         // currently is; MY column keeps a permanent ink rule so it stays
         // identifiable while the other two marks move around it. Each mark
         // also carries a WORD below (§16.3 colour-independent status).
-        column.isNominating && 'border-accent bg-accent-soft',
-        column.isLatestBid && 'border-positive bg-positive-soft',
+        //
+        // **The two moving marks do not COMPOSE — one fill wins, and this
+        // says which** (review finding R432; the first version of this
+        // comment let the stacked conditionals imply otherwise). They land on
+        // the same team at every freshly-opened nomination, because 085/087
+        // set `high_bidder_team_id = on_clock_team_id` when the nomination
+        // opens (087:2205-2212) — so the nominator carries both marks until
+        // someone raises. The money mark wins: written as a ternary here so
+        // the precedence is in the code rather than emerging from
+        // tailwind-merge's last-pair-wins. §16.3's colour-independent status
+        // is unaffected either way — BOTH badges still render below.
+        column.isLatestBid
+          ? 'border-positive bg-positive-soft'
+          : column.isNominating && 'border-accent bg-accent-soft',
         column.isMe && 'border-l-4 border-l-ink',
         column.rosterComplete && !column.isNominating && !column.isLatestBid && 'bg-n-1/40',
         className,

@@ -19,16 +19,43 @@
  * draft is only honest when the fetch that failed to produce one is HEALTHY.
  * Two rules, both encoded below and neither of them a heuristic:
  *
- *  1. `absentDraftIsHonest(health)` gates every no-draft branch (the D94
- *     lobby, the post-draft recap pointer, the "no draft yet" empty). A
- *     degraded or failed fetch renders the §16.5.4 error-with-retry surface
- *     instead — the room says "I could not read this", never "there is
- *     nothing here".
+ *  1. An absence claim must be backed by a READ, never by a failure. A
+ *     no-draft branch drawn from an unhealthy fetch has not earned the
+ *     claim, so the room must say so.
  *  2. A room that HOLDS last-good data and cannot refresh it keeps
  *     rendering that data behind a banner (§16.5.4's *degraded — banner +
  *     last-good data, never wrong numbers*) rather than being replaced by
  *     an error card. One transient refetch failure should not evict a live
  *     draft room; a persistent one must not be silent.
+ *
+ * **How the two meet (review finding R429, 2026-08-19 — PROGRESS D192).**
+ * The first cut of rule 1 gave EVERY no-draft branch the same remedy: a
+ * degraded or failed fetch rendered the error-with-retry card. That collides
+ * with rule 2 head-on, because `degraded` is by definition "we hold
+ * last-good data" — the one state rule 2 says must keep rendering. The rules
+ * do not actually conflict; the REMEDY was over-broad. *"Not honest"* does
+ * not have to mean *"error card"*: §16.5.4's degraded state is itself a way
+ * of saying "I could not re-read this", and it is the way the spec REQUIRES
+ * of a data surface that holds last-good data.
+ *
+ * So the remedy scales with what the surface can DISCLOSE:
+ *
+ *  - A no-draft branch that can carry the room's ONE banner surface —
+ *    §16.5.4 v2.12's 54px command bar — renders `degraded` as the spec
+ *    requires: last-good data, behind the banner. In this room exactly one
+ *    no-draft branch mounts the bar: the **D94 scheduled lobby**
+ *    (`draft-lobby.tsx`, DR.7(4)). Its `stale` prop IS this state, and both
+ *    rules are satisfied at once — nothing is evicted, and nothing is
+ *    claimed silently, because the banner is the disclosure.
+ *  - A no-draft branch that CANNOT carry the banner — the bare recap
+ *    pointer, the "no draft yet" empty, the "Draft not found" empty — has
+ *    nowhere honest to put it, and §16.5.4 forbids inventing a one-off
+ *    treatment. Those keep the error-with-retry surface, and
+ *    `absentDraftIsHonest` is the gate in front of them.
+ *
+ * `failed` (holding NOTHING) is the error card everywhere; in `draft-room.tsx`
+ * it is caught earlier still, by the dataless `!detail.data` and
+ * `room.isError && room.data === undefined` arms, each with its own copy.
  *
  * **N mirrors the subscribe path deliberately.** `FIRST_JOIN_FAILURES_FOR_BANNER`
  * (R263, `use-draft-ops.ts`) is 2 for a stated reason — the first failure is
@@ -95,10 +122,18 @@ export function worstHealth(...states: readonly FetchHealth[]): FetchHealth {
 }
 
 /**
- * **Rule 1.** May the room render one of its no-draft branches (the D94
- * scheduled lobby, the post-draft recap pointer, the "no draft yet" empty)?
- * Only when the fetch that produced the absence is healthy. This is the
- * single line F56's room half turns on.
+ * **Rule 1, at the surfaces that cannot disclose.** May the room render a
+ * no-draft branch that has no banner to hide behind — the post-draft recap
+ * pointer, the "no draft yet" empty, the resolved-but-missing-row "Draft not
+ * found"? Only when the fetch that produced the absence is healthy;
+ * otherwise the room says it could not read, and offers the retry.
+ *
+ * **The D94 scheduled lobby is deliberately NOT gated on this** (R429/D192,
+ * and the paragraph above): it mounts the command bar, so `degraded` renders
+ * there as §16.5.4's degraded state instead — last-good data behind the
+ * banner. Wiring the lobby back through this gate re-opens the rule-1/rule-2
+ * collision; `auction-room.test.ts` pins the gate's two sites and the
+ * lobby's absence from them.
  */
 export function absentDraftIsHonest(health: FetchHealth): boolean {
   return health === 'ok'

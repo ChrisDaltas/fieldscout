@@ -317,9 +317,10 @@ export interface AntiSnipeInput {
   /** `drafts.current_deadline` (ISO) — the bid clock while bidding. */
   currentDeadline: string | null
   /** The deadline the room held BEFORE this render's drafts row. Null on
-   *  first paint. A LATER deadline **for the same nomination** is a re-arm —
-   *  the only client-observable signature of 085's floor, and it needs no new
-   *  wire field to see. */
+   *  first paint. A later deadline for the same nomination is the shape of
+   *  085's floor — but it is not UNIQUELY that shape (see `antiSnipeView`'s
+   *  size test, R428): it needs no new wire field to see, and it needs the
+   *  size test to be true. */
   previousDeadline: string | null
   /** The nomination this deadline belongs to (`seq:player`), and the one the
    *  previous deadline belonged to. **The scope is load-bearing, and it was
@@ -349,12 +350,41 @@ export function nominationKeyOf(
   return `${nominationSeq}:${nomination.player_id}`
 }
 
+/**
+ * Slack on the re-arm's size test. A genuine 085 re-arm lands the remaining
+ * time at exactly `anti_snipe` seconds measured from the SERVER's `now()` at
+ * commit; by the time the broadcast has crossed the wire and this module has
+ * sampled, the client reads slightly LESS. It can read slightly more only to
+ * the extent the §9.3 heartbeat offset is itself off, which is the error this
+ * number covers — deliberately small, because every millisecond of slack is
+ * a millisecond of resume-shaped movement that can still slip through.
+ */
+export const ANTI_SNIPE_REARM_SLACK_MS = 1_500
+
 export function antiSnipeView(input: AntiSnipeInput): AntiSnipeView {
   const seconds = Number.isInteger(input.antiSnipeSeconds) ? input.antiSnipeSeconds : 0
   const active = seconds > 0 && input.phase === 'bidding' && input.status === 'live'
   const deadlineMs = instantMs(input.currentDeadline)
   const previousMs = instantMs(input.previousDeadline)
   const remainingMs = deadlineMs === null ? null : deadlineMs - (input.nowMs + input.offsetMs)
+  // **The size test (R428).** "Same nomination + later deadline" is NOT
+  // unique to a floor re-arm: `draft_resume` (069:485-492) writes
+  // `current_deadline = now() + deadline_remaining_ms` — strictly later than
+  // the pre-pause deadline, by the pause duration, with `current_pick_number`
+  // and `current_nomination.player_id` untouched, so the nomination key is
+  // unchanged too. The only thing separating them was that `useAntiSnipe`'s
+  // ref had seen the NULL deadline `draft_pause` writes (069:353-357) — and a
+  // client that misses that frame announces a resume as "clock reset to 10s"
+  // (a reviewer probe moved a deadline 12 SECONDS under that banner).
+  //
+  // They ARE separable by SIZE, because the two writes land different
+  // remainders. 085's re-arm is `GREATEST(current_deadline, now() + anti)`
+  // (085:780-791): when it moves the deadline at all, the new remaining is
+  // exactly `anti` — never more — while a resume restores whatever remained
+  // when the pause landed. So a genuine re-arm always passes this test and a
+  // resume that restores more than the floor always fails it.
+  const reArmSizeOk =
+    remainingMs !== null && remainingMs <= seconds * 1000 + ANTI_SNIPE_REARM_SLACK_MS
   return {
     seconds,
     active,
@@ -366,7 +396,8 @@ export function antiSnipeView(input: AntiSnipeInput): AntiSnipeView {
       previousMs !== null &&
       deadlineMs > previousMs &&
       input.nominationKey !== null &&
-      input.nominationKey === input.previousNominationKey,
+      input.nominationKey === input.previousNominationKey &&
+      reArmSizeOk,
   }
 }
 
