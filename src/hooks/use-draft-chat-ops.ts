@@ -72,6 +72,12 @@ function rowSortKey(row: DraftChatRow): string {
  *  - an id already held → unchanged (the own-INSERT echo / replay dedupe);
  *  - otherwise append, kept sorted by (created_at, id).
  */
+/** One `league_chat` broadcast as the channel hands it to the feed sink —
+ *  the `DraftBidBroadcast` shape, so both feeds ride one sink type (F75). */
+export interface DraftChatBroadcast {
+  record?: unknown
+}
+
 export function reduceChatEvent(
   rows: readonly DraftChatRow[],
   record: unknown,

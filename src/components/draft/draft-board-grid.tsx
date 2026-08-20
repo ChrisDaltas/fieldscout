@@ -4,9 +4,8 @@ import { useMemo } from 'react'
 
 import { cn } from '@/lib/utils'
 
-import { buildBoardModel, pickLabel, type BoardModelInput } from './draft-board-ops'
+import { abbreviateName, buildBoardModel, pickLabel, type BoardModelInput } from './draft-board-ops'
 import { DraftPick } from './draft-pick'
-import { abbreviateName } from './mock-draft'
 
 /** Player identity the grid renders in made cells (world-readable players). */
 export interface BoardPlayer {

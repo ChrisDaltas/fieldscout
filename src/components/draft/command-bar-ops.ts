@@ -60,6 +60,12 @@ export interface CommandBarInput {
   /** `connection === 'reconnecting'` from `useDraftRoom` (DR.7(3)) — the
    *  live room's wire; the lobby keeps its shipped no-banner posture. */
   reconnecting?: boolean
+  /** The FETCH path's twin of `reconnecting` (L.C3.1, PROGRESS F56's room
+   *  half): the room holds last-good data and cannot refresh it
+   *  (`room-health-ops.ts` → `'degraded'`). Orthogonal to both the status
+   *  words and the channel state — a room can be paused, connected AND
+   *  unable to refetch — so it is its own field, like `reconnecting`. */
+  stale?: boolean
 }
 
 export interface CommandBarModel {
@@ -82,6 +88,8 @@ export interface CommandBarModel {
   statusText: string
   /** The §16.5.4 realtime-fallback state, rendered IN the bar (DR.7(3)). */
   reconnecting: boolean
+  /** The §16.5.4 DEGRADED state (fetch path), rendered IN the bar (F56). */
+  stale: boolean
   /** Exit Draft is unconditional (Q13 ruling: everyone can leave). */
   exit: true
 }
@@ -116,6 +124,7 @@ export function commandBarModel(input: CommandBarInput): CommandBarModel {
           ? 'Draft paused'
           : 'Draft live',
     reconnecting: input.reconnecting ?? false,
+    stale: input.stale ?? false,
     exit: true,
   }
 }

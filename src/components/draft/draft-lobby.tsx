@@ -41,6 +41,11 @@ interface DraftLobbyProps {
   onlineTeamIds?: ReadonlySet<string>
   myTeamId: string | null
   isCommish: boolean
+  /** The room's fetch health is DEGRADED (L.C3.1 / PROGRESS F56's room
+   *  half): the lobby is being drawn from last-good data that will not
+   *  refresh, so the bar carries the §16.5.4 degraded banner. A lobby that
+   *  cannot refetch is exactly the surface F56 caught lying. */
+  stale?: boolean
 }
 
 /**
@@ -77,6 +82,7 @@ export function DraftLobby({
   onlineTeamIds,
   myTeamId,
   isCommish,
+  stale = false,
 }: DraftLobbyProps) {
   const scheduledAt = detail.settings.draft.draft_scheduled_at
   const timeZone = detail.settings.draft.time_zone
@@ -167,6 +173,7 @@ export function DraftLobby({
           isMockLauncher: false,
           paused: false,
           lobby: true,
+          stale,
         }}
         hasSeat={Boolean(myTeamId)}
         hasSchedule={Boolean(scheduledAt)}

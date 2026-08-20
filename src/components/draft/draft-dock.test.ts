@@ -63,9 +63,10 @@ describe('the tab strip renders the ops catalog (five tabs, one source of labels
   })
 
   it('carries NONE of the five labels as component literals — the catalog owns them', () => {
-    // The L.C3.1 Targets sweep (D140) renames the catalog entry and the
-    // whole strip follows; a literal here would half-rename.
-    for (const label of ['Players', 'Queue', 'Roster', 'Lists', 'Chat']) {
+    // The L.C3.1 Targets sweep (D140) renamed the catalog entry and the
+    // whole strip followed; a literal here would have half-renamed it. Both
+    // spellings stay in the sweep so a re-introduced literal fails either way.
+    for (const label of ['Players', 'Queue', 'Targets', 'Roster', 'Lists', 'Chat']) {
       expect(source).not.toContain(`>${label}<`)
       expect(source).not.toContain(`'${label}'`)
     }

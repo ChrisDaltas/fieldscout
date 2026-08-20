@@ -83,7 +83,7 @@ export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: My
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>My queue</CardTitle>
+        <CardTitle>My Targets</CardTitle>
         <span className="fs-num text-[10px] font-semibold text-n-3">{saveIds.length}</span>
       </CardHeader>
 
@@ -95,14 +95,14 @@ export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: My
         </div>
       ) : queue.isError ? (
         <p className="p-card-pad text-[12px] font-medium text-n-3" role="alert">
-          Your queue didn&rsquo;t load. It refreshes automatically.
+          Your Targets didn&rsquo;t load. They refresh automatically.
         </p>
       ) : view.length === 0 ? (
         // Timeouts-draft-from-the-queue is §8.4's rule — cited here, not in
         // user-facing copy (R268, M2 batch 13).
         <p className="p-card-pad text-[12px] font-medium text-n-3">
-          Queue players from the pool so a plan is ready when the clock hits
-          you. Timeouts draft from the top of this list first.
+          Add players from the pool so a plan is ready when the clock hits
+          you. Timeouts draft from the top of your Targets first.
         </p>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>

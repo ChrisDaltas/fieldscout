@@ -118,13 +118,13 @@ describe('bestAvailableFromBoard (§8.9 helper)', () => {
 describe('fromListToastLine (the D113(5) response made human)', () => {
   it('replace names the load; append names the addition; skips itemize', () => {
     expect(fromListToastLine('replace', { added: 8, skipped_drafted: 2 })).toBe(
-      'Queue loaded — 8 players (2 already drafted skipped).',
+      'Targets loaded — 8 players (2 already drafted skipped).',
     )
     expect(
       fromListToastLine('append', { added: 1, skipped_drafted: 0, skipped_queued: 3 }),
-    ).toBe('1 player added to your queue (3 already queued skipped).')
+    ).toBe('1 player added to your Targets (3 already targeted skipped).')
     expect(fromListToastLine('replace', { added: 5, skipped_drafted: 0 })).toBe(
-      'Queue loaded — 5 players.',
+      'Targets loaded — 5 players.',
     )
   })
 })

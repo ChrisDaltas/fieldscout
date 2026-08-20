@@ -80,7 +80,7 @@ function AttachToggles({
         <span>
           Set as my primary board
           <span className="block text-[10px] font-medium text-n-3">
-            Feeds your draft queue and autopick for this league (one per league).
+            Feeds your draft Targets and autopick for this league (one per league).
           </span>
         </span>
       </label>

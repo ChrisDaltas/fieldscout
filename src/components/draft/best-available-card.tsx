@@ -51,7 +51,7 @@ function useBestAvailable(draftedIds: ReadonlySet<string>) {
 interface BestAvailableCardProps {
   /** Live (non-undone) picked ids — `draft_picks.player_id` (C26). */
   draftedIds: ReadonlySet<string>
-  /** Player ids currently in your queue. */
+  /** Player ids currently in your Targets. */
   queuedIds: ReadonlySet<string>
   onDraft: (player: BuilderPlayer) => void
   onQueue: (player: BuilderPlayer) => void
@@ -135,7 +135,7 @@ export function BestAvailableCard({
                       disabled={queued}
                       onClick={() => onQueue(player)}
                     >
-                      {queued ? 'Queued' : 'Queue'}
+                      {queued ? 'In Targets' : 'Add to Targets'}
                     </Button>
                   )
                 }

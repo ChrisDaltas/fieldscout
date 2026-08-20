@@ -368,6 +368,28 @@ describe('applyDraftRoomEvent · other events', () => {
     expect(voided.state).toBe(state)
   })
 
+  it('L.C3.1: the AUCTION ROOM landing did not make the room reducer a bid consumer — the centrepiece rides the `drafts` event, not `draft_bids`', () => {
+    // The room now RENDERS the auction (auction-block.tsx). Its high bid and
+    // phase come from `current_nomination` on the `drafts` payload (D134),
+    // and its ladder comes from the separate feed cache — so a bid event
+    // must still leave room state byte-identical and ask for nothing. A
+    // reducer that started patching `current_nomination` off a bid row
+    // would be inventing state the server never sent.
+    const state = baseState()
+    const before = state.draft?.current_nomination
+    const result = applyDraftRoomEvent(state, {
+      event: 'draft_bids',
+      operation: 'INSERT',
+      record: {
+        nomination_seq: 3, player_id: 'pl-live', team_id: T(2), amount: 41,
+        created_at: '2026-08-13T00:02:00.000Z', voided_at: null,
+      },
+    })
+    expect(result.state).toBe(state)
+    expect(result.state.draft?.current_nomination).toBe(before)
+    expect(result.refetch).toBe(false)
+  })
+
   it('unknown events (additive surfaces) never refetch-loop an older client — the M2 pin, kept: a pre-088 client fed the literal event name stays inert', () => {
     const state = baseState()
     const result = applyDraftRoomEvent(state, {

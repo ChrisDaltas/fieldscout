@@ -32,12 +32,12 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Your queue</CardTitle>
+        <CardTitle>Your Targets</CardTitle>
       </CardHeader>
       <CardContent>
         {queue.length === 0 ? (
           <p className="text-[11px] font-medium text-n-3">
-            Queue players from best available so a plan is ready when the
+            Add players from best available so a plan is ready when the
             clock hits you.
           </p>
         ) : (
@@ -74,7 +74,7 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
                 <button
                   type="button"
                   onClick={() => onRemove(player.id)}
-                  aria-label={`Remove ${player.full_name} from queue`}
+                  aria-label={`Remove ${player.full_name} from Targets`}
                   className="shrink-0 rounded-sm p-0.5 text-n-3 opacity-0 transition-all hover:bg-negative-soft hover:text-negative-strong focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <Icon name="close" size={12} />

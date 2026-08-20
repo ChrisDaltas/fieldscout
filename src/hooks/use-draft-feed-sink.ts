@@ -1,5 +1,8 @@
 import { hashKey, type QueryClient, type QueryKey } from '@tanstack/react-query'
 
+import { chatEventInvalidatesLeagueDetail } from './use-draft-ops'
+import { isChatRecord, type DraftChatBroadcast } from './use-draft-chat-ops'
+
 /**
  * The feed SINK — the hook-side seam between a room-channel broadcast and a
  * feed query's React Query cache (M3 task L.C1.6; review finding **R401**,
@@ -126,4 +129,46 @@ export function createFeedSink<Row, Event>(
       queue.length = 0
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// The chat broadcast's route INTO the sink (F75; review finding R434)
+// ---------------------------------------------------------------------------
+
+/**
+ * `use-draft.ts`'s `league_chat` handler, as a callable — extracted so F75's
+ * discharge has a BEHAVIOURAL pin and not only source pins (**R434**,
+ * PROGRESS D192). The pre-fix shape wrote the broadcast straight onto
+ * `getQueryData`/`setQueryData`; with the body inline in `use-draft.ts`,
+ * restoring it reddened 2 of 24 in `use-draft-feed-sink.test.ts` — both of
+ * them SOURCE pins — while every behavioural pin stayed green, because those
+ * drove sinks they built themselves and never the wiring. Now they drive
+ * this, and breaking the push below reddens them.
+ *
+ * There is no React and no Supabase client here, and deliberately no
+ * QueryClient either: the R271 league-detail refresh arrives as a callback so
+ * this module keeps the import graph it documents above. Two rules the shape
+ * encodes:
+ *
+ *  - **R271 runs FIRST.** A SYSTEM post is the "a commissioner action landed"
+ *    signal (D97 posts in-txn) and some of those change league-detail-fed
+ *    renders that 072 broadcasts nowhere (the §16.5.4 Auto seat badge). It
+ *    must fire whether or not a chat cache exists — so it cannot live behind
+ *    the sink, which drops events with no cache.
+ *  - **The message goes through the SINK, never onto the cache.** That is the
+ *    whole of F75: a message landing while the chat query's join refetch is
+ *    in flight is held and replayed onto the fetched rows.
+ */
+export function applyChatBroadcast(input: {
+  /** The raw broadcast payload (`{ record }` — §9.2's envelope). */
+  payload: unknown
+  sink: Pick<FeedSink<DraftChatBroadcast>, 'push'>
+  /** R271: refresh league detail. Called ONLY for a system post, and always
+   *  before the sink push. */
+  invalidateLeagueDetail: () => void
+}): void {
+  const record = ((input.payload ?? {}) as { record?: unknown }).record
+  if (!isChatRecord(record)) return
+  if (chatEventInvalidatesLeagueDetail(record)) input.invalidateLeagueDetail()
+  input.sink.push({ record })
 }
