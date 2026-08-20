@@ -341,6 +341,7 @@ export function CommishDraftPanel({
               draftId={draft.id}
               livePicks={livePicks}
               detail={detail}
+              activeTeams={activeTeams}
               pickSummary={pickSummary}
               playerLabel={playerLabel}
               gate={gate}
@@ -824,6 +825,7 @@ function FixPickSection({
   draftId,
   livePicks,
   detail,
+  activeTeams,
   pickSummary,
   playerLabel,
   gate,
@@ -833,6 +835,11 @@ function FixPickSection({
   draftId: string
   livePicks: DraftPickSummary[]
   detail: LeagueDetail
+  /** R443: retired franchises are refusal targets (090:716 / 090:956), so the
+   *  reassign/move pickers take the same `activeFranchises()` derivation R436
+   *  introduced for the auction sections. `detail` stays for name resolution —
+   *  resolution is total, counting is filtered. */
+  activeTeams: LeagueDetail['teams']
   pickSummary: (p: DraftPickSummary) => string
   playerLabel: (playerId: string) => string
   gate: ControlGate
@@ -882,7 +889,7 @@ function FixPickSection({
             <SelectValue placeholder="New team (optional)" />
           </SelectTrigger>
           <SelectContent>
-            {detail.teams.map((t) => (
+            {activeTeams.map((t) => (
               <SelectItem key={t.id} value={t.id}>
                 {t.name}
               </SelectItem>
@@ -940,7 +947,7 @@ function FixPickSection({
             <SelectValue placeholder="Move to team…" />
           </SelectTrigger>
           <SelectContent>
-            {detail.teams
+            {activeTeams
               .filter((t) => t.id !== movePick?.team_id)
               .map((t) => (
                 <SelectItem key={t.id} value={t.id}>
