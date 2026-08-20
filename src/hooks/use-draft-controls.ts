@@ -6,14 +6,19 @@ import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
 import { draftKeys } from './use-draft'
 import {
+  adjustBudgetRequest,
+  cancelNominationRequest,
+  endDraftRequest,
   forcePickRequest,
   memberAutodraftRequest,
   movePlayerRequest,
   pauseResumeRequest,
   reassignRequest,
   resetRequest,
+  reverseWonBidRequest,
   setClockRequest,
   undoRequest,
+  type AuctionClockTimers,
   type ControlRequest,
 } from './use-draft-controls-ops'
 import { leaguesKeys } from './use-leagues'
@@ -62,13 +67,26 @@ export function usePauseResumeDraft(leagueId: string, draftId: string) {
   )
 }
 
-/** POST …/draft/clock — E15 (subsequent picks; optional current extension). */
+/** POST …/draft/clock — E15 (subsequent picks; optional current extension).
+ *  `pickTimerSeconds: null` + `auction` = the auction timers (L.C2.2). */
 export function useSetDraftClock(leagueId: string, draftId: string) {
   return useControlMutation(
     leagueId,
     draftId,
-    (vars: { pickTimerSeconds: number; extendCurrent: boolean; reason?: string }) =>
-      setClockRequest(leagueId, draftId, vars.pickTimerSeconds, vars.extendCurrent, vars.reason),
+    (vars: {
+      pickTimerSeconds: number | null
+      extendCurrent: boolean
+      reason?: string
+      auction?: AuctionClockTimers
+    }) =>
+      setClockRequest(
+        leagueId,
+        draftId,
+        vars.pickTimerSeconds,
+        vars.extendCurrent,
+        vars.reason,
+        vars.auction,
+      ),
   )
 }
 
@@ -83,17 +101,24 @@ export function useUndoDraft(leagueId: string, draftId: string) {
   )
 }
 
-/** POST …/draft/reassign — corrected team and/or player for one pick. */
+/** POST …/draft/reassign — corrected team and/or player for one pick;
+ *  `price` = the auction's re-entered cost (D142 — L.C2.2). */
 export function useReassignPick(leagueId: string, draftId: string) {
   return useControlMutation(
     leagueId,
     draftId,
-    (vars: { pickId: string; teamId?: string; playerId?: string; reason?: string }) =>
+    (vars: {
+      pickId: string
+      teamId?: string
+      playerId?: string
+      price?: number
+      reason?: string
+    }) =>
       reassignRequest(
         leagueId,
         draftId,
         vars.pickId,
-        { teamId: vars.teamId, playerId: vars.playerId },
+        { teamId: vars.teamId, playerId: vars.playerId, price: vars.price },
         vars.reason,
       ),
   )
@@ -120,13 +145,28 @@ export function useForcePick(leagueId: string, draftId: string) {
   }
 }
 
-/** POST …/draft/move-player — move a drafted player between teams. */
+/** POST …/draft/move-player — move a drafted player between teams; `price`
+ *  = the auction's re-entered cost (D142 — L.C2.2). */
 export function useMovePlayer(leagueId: string, draftId: string) {
   return useControlMutation(
     leagueId,
     draftId,
-    (vars: { playerId: string; fromTeam: string; toTeam: string; reason?: string }) =>
-      movePlayerRequest(leagueId, draftId, vars.playerId, vars.fromTeam, vars.toTeam, vars.reason),
+    (vars: {
+      playerId: string
+      fromTeam: string
+      toTeam: string
+      price?: number
+      reason?: string
+    }) =>
+      movePlayerRequest(
+        leagueId,
+        draftId,
+        vars.playerId,
+        vars.fromTeam,
+        vars.toTeam,
+        vars.reason,
+        vars.price,
+      ),
   )
 }
 
@@ -134,6 +174,48 @@ export function useMovePlayer(leagueId: string, draftId: string) {
 export function useResetDraft(leagueId: string, draftId: string) {
   return useControlMutation(leagueId, draftId, (vars: { reason?: string }) =>
     resetRequest(leagueId, draftId, vars.reason),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// L.C2.2 — the AUCTION commissioner verbs (§8.7's auction rows; spec §15.2
+// via the C40 erratum). Same mutation shape as the seven above — the
+// drafts/picks/bids broadcasts carry the state change and the D97 system
+// post arrives through the room's `league_chat` broadcast; settle-time
+// invalidation is the §9.3 reconcile. `reason` is REQUIRED (the routes 400
+// without it — F32/F40: validated, stored nowhere). NOT here: the D141
+// disabled-with-copy UI (L.C3.2's, F72's remaining half) and End's hard
+// confirm (L.C3.2) — the RPC refusals are the backstop these hooks surface.
+// ---------------------------------------------------------------------------
+
+/** POST …/draft/reverse-bid — Manual Edit Mode's "Reset pick" (D142(a); paused only — D141). */
+export function useReverseWonBid(leagueId: string, draftId: string) {
+  return useControlMutation(leagueId, draftId, (vars: { pickId: string; reason: string }) =>
+    reverseWonBidRequest(leagueId, draftId, vars.pickId, vars.reason),
+  )
+}
+
+/** POST …/draft/budget — the budget editor (E28's refusals surface with their remedy copy). */
+export function useAdjustBudget(leagueId: string, draftId: string) {
+  return useControlMutation(
+    leagueId,
+    draftId,
+    (vars: { teamId: string; delta: number; reason: string }) =>
+      adjustBudgetRequest(leagueId, draftId, vars.teamId, vars.delta, vars.reason),
+  )
+}
+
+/** POST …/draft/cancel-nomination — cancel-and-renominate (D143; paused only — D141). */
+export function useCancelNomination(leagueId: string, draftId: string) {
+  return useControlMutation(leagueId, draftId, (vars: { reason: string }) =>
+    cancelNominationRequest(leagueId, draftId, vars.reason),
+  )
+}
+
+/** POST …/draft/end — C41's end-as-is (terminal; the hard confirm is the caller's). */
+export function useEndDraft(leagueId: string, draftId: string) {
+  return useControlMutation(leagueId, draftId, (vars: { reason: string }) =>
+    endDraftRequest(leagueId, draftId, vars.reason),
   )
 }
 
