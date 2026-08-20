@@ -516,6 +516,13 @@ describe('mock auctions over PostgREST (migration 089)', () => {
       .eq('id', mockId)
       .eq('status', 'live')
     const settled = await tick()
+    // `raised === 0` ALONE cannot fail for the reason this assertion exists:
+    // if the arm never claimed the draft at all the whole payload is zero and
+    // the check passes on a no-op — the house's signature "nothing happened
+    // read as it worked" shape. So the fold is asserted POSITIVELY: the arm
+    // claimed the row, looked at the settled price and declined to bid.
+    expect(settled.auction_cpu_claimed).toBeGreaterThan(0)
+    expect(settled.auction_cpu_folded).toBeGreaterThan(0)
     expect(settled.auction_cpu_raised).toBe(0)
     expect(settled.auction_cpu_failures).toEqual([])
 

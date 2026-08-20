@@ -70,7 +70,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(61);
+select plan(66);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins, the ONE generator, the call form, and the untouched sweep.
@@ -576,12 +576,87 @@ select throws_ok(
   'THE VALIDATOR THE CPU PASSES THROUGH still refuses an over-ceiling amount — the same E5 clause, now under the responder''s own honest label');
 
 -- ===========================================================================
--- C5. THE LEGITIMATE GRIND, AND THE BOUND THAT NO LONGER FIRES ON IT.
---     A hand-built world: TWO teams in the nomination order and a price parked
+-- C5. THE NARROW BOUND WOULD FIRE ON A **LEGAL** BOARD — the pin that carries
+--     D213(2b)'s premise, so it is measured here rather than told in prose.
+--     §C6 below is a MINIMISED reproduction: it rewrites nomination_order to
+--     TWO entries to make the arithmetic obvious, and a 2-seat board is NOT a
+--     legal league (§7.2 / changelog v2.6 lock team_count to 8/10/12/14/16),
+--     so on its own it proves nothing about a shippable configuration.
+--     This section uses a LEGAL team_count of 8, seven of whose seats are
+--     willing CPU bidders (the eighth is the human, excluded from candidacy),
+--     on a $200 budget with a 2-slot roster — every clause of which passes
+--     `validateSettings`. The draft row is inserted DIRECTLY with a FIXED id
+--     so the D93 seed is fixed and the rung count below is a stored literal
+--     rather than one run's luck (create_mock_draft mints a random id).
+-- ===========================================================================
+insert into drafts (id, league_id, draft_type, status, is_mock, total_rounds,
+                    current_pick_number, on_clock_team_id, current_deadline,
+                    nomination_order, current_nomination, config)
+values (
+  'd7000000-0000-4000-8000-0000000000a1',
+  'b7000000-0000-4000-8000-0000000000a1',
+  'auction', 'live', true, 2, 1,
+  'c7000000-0000-4000-8000-00a100000001',
+  now() + interval '20 seconds',
+  '["c7000000-0000-4000-8000-00a100000001", "c7000000-0000-4000-8000-00a100000002",
+    "c7000000-0000-4000-8000-00a100000003", "c7000000-0000-4000-8000-00a100000004",
+    "c7000000-0000-4000-8000-00a100000005", "c7000000-0000-4000-8000-00a100000006",
+    "c7000000-0000-4000-8000-00a100000007", "c7000000-0000-4000-8000-00a100000008"]'::jsonb,
+  jsonb_build_object('player_id', 'ap3-rb01', 'high_bid', 175,
+                     'high_bidder_team_id', 'c7000000-0000-4000-8000-00a100000001'),
+  '{"auction_budget": 200, "auction_min_bid": 1, "auction_bid_seconds": 20,
+    "auction_anti_snipe_seconds": 10, "auction_nomination_seconds": 30,
+    "mock": {"human_team_id": "c7000000-0000-4000-8000-00a100000001",
+             "launched_by": "97100000-0000-4000-8000-000000000001",
+             "cpu_speed": "fast"}}'::jsonb);
+insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id, amount, action_id)
+values ('d7000000-0000-4000-8000-0000000000a1', 'b7000000-0000-4000-8000-0000000000a1',
+        1, 'ap3-rb01', 'c7000000-0000-4000-8000-00a100000001', 175, null);
+select is(
+  (select jsonb_array_length(d.nomination_order)
+   from drafts d where d.id = 'd7000000-0000-4000-8000-0000000000a1'),
+  8,
+  'fixture: a LEGAL team_count of 8 (§7.2 / changelog v2.6 — 8/10/12/14/16), seven of them CPU seats');
+select is(
+  (select LEAST(
+     public.draft_mock_cpu_bid_value('d7000000-0000-4000-8000-0000000000a1'::uuid, 1,
+       'c7000000-0000-4000-8000-00a100000002'::uuid, 1,
+       (select count(*)::int + 1 from players pl where pl.adp is not null
+          and (pl.adp < 0.101 or (pl.adp = 0.101 and pl.id < 'ap3-rb01'))),
+       200, 2, 8,
+       public.draft_mock_cpu_need('d7000000-0000-4000-8000-0000000000a1'::uuid,
+         'c7000000-0000-4000-8000-00a100000002'::uuid, 'ap3-rb01')),
+     (select b.max_bid from public.draft_team_budget(
+        'd7000000-0000-4000-8000-0000000000a1'::uuid,
+        'c7000000-0000-4000-8000-00a100000002'::uuid) b))),
+  199,
+  'fixture: each CPU seat''s ceiling is its $199 max bid (its VALUE for a rank-1 player is far above it), and the market opens at $175 — a 12% gap, the taper''s nibble region');
+select set_config('pgtap.ap3_legal',
+  public.draft_mock_cpu_respond_internal('d7000000-0000-4000-8000-0000000000a1'::uuid)::text, true);
+select is(
+  current_setting('pgtap.ap3_legal')::int,
+  24,
+  'THE MEASUREMENT D213(2b) RESTS ON, as a stored literal: seven willing seats grind $175 → the $199 ceiling in 24 raises, on a board whose every setting is legal');
+select ok(
+  current_setting('pgtap.ap3_legal')::int > 2 * 8,
+  '…which is MORE than D200(3)''s `2 × team_count` = 16, so the narrow bound would have fired HERE — on a legal 8-team league, with the message "the value model or the candidate scan is wrong", while nothing whatever was wrong. That is the finding that widened the bound to GREATEST(2 × team_count, auction_budget) (D213(2b)); F93 carries what such a ladder costs under the lock.');
+select is(
+  (select max(b.amount) from draft_bids b
+   where b.draft_id = 'd7000000-0000-4000-8000-0000000000a1'),
+  199,
+  '…and the grind still ends where the money does, at $199 — E62 from the other side, on the legal board too');
+
+-- ===========================================================================
+-- C6. THE LEGITIMATE GRIND, MINIMISED, AND THE BOUND THAT NO LONGER FIRES ON IT.
+--     The same finding as §C5, cut down to the smallest arithmetic that shows
+--     it: TWO teams in the nomination order and a price parked
 --     $9 under a $199 ceiling, so the gap is 4.5% and the curve nibbles — a
 --     $1-at-a-time climb through willing seats, which is exactly the texture
---     Chris asked for and which D200(3)'s `2 × team_count` (= 4 here) fired on
---     with a FALSE diagnosis. The bound is `GREATEST(2 × team_count,
+--     Chris asked for and which D200(3)'s `2 × team_count` (= 4 at THIS board's
+--     two seats) fired on with a FALSE diagnosis. **A 2-seat board is not a
+--     legal league** (§7.2 locks team_count to 8/10/12/14/16) — it is here only
+--     because it makes the arithmetic checkable by eye; §C5 above is the
+--     legal-shape evidence the decision actually rests on. The bound is `GREATEST(2 × team_count,
 --     auction_budget)` instead (D213(2b)); its loudness is proved by the PR's
 --     second break probe, because no legal market can reach it — which is the
 --     property that makes it worth raising. See ledger row F93 for what the
@@ -677,10 +752,11 @@ select is(
   '…and every §8.8 side-effect count is unmoved: no league_rosters, no notifications, no picks or bids on the real draft');
 select is(
   (select count(*)::int from draft_bids b
+   join drafts d on d.id = b.draft_id
    where b.league_id = 'b7000000-0000-4000-8000-0000000000a1'
-     and b.draft_id not in (select id from ap3_mock)),
+     and NOT d.is_mock),
   0,
-  'every bid this test produced carries the MOCK''s draft_id — the ladder exists only inside the practice room');
+  'every bid this test produced sits under a MOCK draft_id — not one row reached the league''s REAL auction (§8.8; the §C6 board is a second practice room in the same league, which is exactly the case this has to survive)');
 
 select * from finish();
 rollback;

@@ -115,14 +115,18 @@
 -- **THE BOUND IS `GREATEST(2 × team_count, auction_budget)`, NOT D200(3)'s
 -- `2 × team_count`, AND THE CHANGE WAS FORCED BY A MEASUREMENT.** D200(3)
 -- fixed the number on the premise that "in practice jump-bids make the real
--- ladder a handful of steps", and on the shipped default shape that is true:
+-- ladder a handful of steps", and on the shipped DEFAULT shape that is true:
 -- a full 12-team × 15-slot × $200 mock measured a LONGEST ladder of **13
--- raises against a cap of 24**. But a *legal* league can be degenerate —
--- `startingSum ≥ 1` and `bench ≥ 0` (league-settings.ts:444) allow a
--- one-slot roster, and `auction_budget` runs to $1000 — and on an 8-team ×
--- 2-slot × $200 board every franchise can afford ~$199 for one player, so the
--- price grinds up a dollar at a time through seven willing seats and the
--- ladder runs past 16. **That is not a defect: it is exactly the texture
+-- raises against a bound of 200**. It is NOT true one shape over. On an
+-- 8-team × 2-slot × $200 board — a **legal** league in every clause
+-- (`team_count` 8 is in §7.2's 8/10/12/14/16; `startingSum ≥ 1` and
+-- `bench ≥ 0` at league-settings.ts:444) — every franchise can afford ~$199
+-- for one player, so the price grinds up a dollar at a time through the seven
+-- CPU seats. **Measured, 120 ladders swept over openings and seeds on that
+-- board: mean 8.8 rungs, MAX 34, and 16 of 120 (13%) past `2 × team_count`
+-- = 16.** pgTAP 039 §C5 pins one such grind as a stored literal (24 raises
+-- from a $175 open) and reddens with "passed its bound of 16 raises" the
+-- moment D200(3)'s number is reinstalled. **That is not a defect: it is exactly the texture
 -- Chris asked for** ("everyone spams bid until a player gets closer to their
 -- average cost value"), and `2 × team_count` fires on it with a diagnosis
 -- ("the value model is wrong") that would be FALSE. A tripwire that trips on
@@ -387,8 +391,9 @@ $$;
 --    high bid), scans for the highest-value CPU that can still beat the price,
 --    and writes ONE raise through draft_place_bid_internal — the same
 --    validator and the same D128 anti-snipe floor a human's bid runs. It stops
---    when nobody can answer. Bounded at 2 × team_count with a LOUD failure
---    (banner item 3).
+--    when nobody can answer. Bounded at GREATEST(2 × team_count,
+--    auction_budget) with a LOUD failure (banner item 3 — the bound is
+--    STRUCTURAL, and D200(3)'s narrower number is only its floor).
 --
 --    Returns the number of raises written; 0 = every CPU folded at this price.
 --    Plain function (NOT definer) + search_path = '' + REVOKE from every
