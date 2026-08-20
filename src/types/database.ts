@@ -3383,10 +3383,26 @@ export type Database = {
         Args: { p_draft_id: string; p_player_id: string; p_team_id: string }
         Returns: number
       }
+      draft_mock_cpu_raise_amount: {
+        Args: {
+          p_ceiling: number
+          p_draft_id: string
+          p_high_bid: number
+          p_nomination_seq: number
+          p_pass: number
+          p_team_id: string
+        }
+        Returns: number
+      }
+      draft_mock_cpu_respond_internal: {
+        Args: { p_draft_id: string }
+        Returns: number
+      }
       draft_mock_think_fraction: {
         Args: { p_draft_id: string; p_pick_number: number }
         Returns: number
       }
+      draft_mock_unit_random: { Args: { p_seed: string }; Returns: number }
       draft_move_player: {
         Args: {
           p_draft_id: string

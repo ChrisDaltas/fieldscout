@@ -90,13 +90,27 @@ const MGR2 = {
   username: 'ma_wire_mgr2',
 }
 
-/** 30 RBs at adp 0.001…0.030 — below every real ADP (see the header). */
-const PLAYERS = Array.from({ length: 30 }, (_, i) => ({
-  id: `ma-wire-rb${String(i + 1).padStart(2, '0')}`,
-  full_name: `MA Wire RB ${String(i + 1).padStart(2, '0')}`,
-  position: 'RB',
-  adp: (i + 1) / 1000,
-}))
+/**
+ * 30 RBs at adp 0.001…0.030 — below every real ADP (see the header) — plus
+ * ONE KICKER at 0.031. The kicker exists because of 091/AP.3: a nomination
+ * now provokes the CPUs in its own transaction, so on an ordinary player the
+ * launcher would not be the standing high bidder a moment later, and the F61
+ * self-raise discriminator below would be unreachable. `draft_mock_cpu_need`
+ * prices K/DST at 0 for every seat (D163/R406), so a kicker is a market no
+ * CPU will ever answer — the gate assertions keep their exact shape, and the
+ * contrast documents the new behaviour instead of hiding from it.
+ */
+const PLAYERS = [
+  ...Array.from({ length: 30 }, (_, i) => ({
+    id: `ma-wire-rb${String(i + 1).padStart(2, '0')}`,
+    full_name: `MA Wire RB ${String(i + 1).padStart(2, '0')}`,
+    position: 'RB',
+    adp: (i + 1) / 1000,
+  })),
+  { id: 'ma-wire-k01', full_name: 'MA Wire K 01', position: 'K', adp: 0.031 },
+]
+/** The uncontestable market of the F61 gate assertions (see above). */
+const KICKER = PLAYERS[PLAYERS.length - 1]
 
 const ACTION = {
   create: 'ae700000-0000-4000-8000-000000000001',
@@ -195,6 +209,23 @@ async function tick(): Promise<TickSummary> {
   const { data, error } = await service.rpc('draft_tick')
   if (error) throw new Error(`draft_tick failed: ${error.message}`)
   return data as unknown as TickSummary
+}
+
+/**
+ * Keep the LAUNCHER's heartbeat fresh, through the real `draft_touch` RPC
+ * (SECURITY DEFINER, server clock — no wall clock is read here either).
+ *
+ * A live mock auto-pauses when its launcher goes stale past
+ * `disconnect_grace_seconds` + one tick (E59 / ARM 1.6), and this suite drives
+ * a whole 16-nomination board across many separate transactions. Before
+ * 091/AP.3 the suite happened to fit inside the grace window; a driver that
+ * only *happens* to be fast enough is a wall-clock race against its own
+ * fixture, so the beat is now explicit — which is also what a real driver is:
+ * a human sitting in the room.
+ */
+async function beat(): Promise<void> {
+  const { error } = await commishClient.rpc('draft_touch', { p_draft_id: mockId })
+  expect(error).toBeNull()
 }
 
 async function bidCount(): Promise<number> {
@@ -367,7 +398,7 @@ describe('mock auctions over PostgREST (migration 089)', () => {
     // admit this; only the D103(2) launcher gate refuses it.
     const { error: intruder } = await mgr2Client.rpc('draft_nominate', {
       p_draft_id: mockId,
-      p_player_id: PLAYERS[4].id,
+      p_player_id: KICKER.id,
       p_opening_bid: 1,
       p_action_id: ACTION.intruderNominate,
     })
@@ -376,7 +407,7 @@ describe('mock auctions over PostgREST (migration 089)', () => {
 
     const { data, error } = await commishClient.rpc('draft_nominate', {
       p_draft_id: mockId,
-      p_player_id: PLAYERS[4].id,
+      p_player_id: KICKER.id,
       p_opening_bid: 1,
       p_action_id: ACTION.launcherNominate,
     })
@@ -387,8 +418,13 @@ describe('mock auctions over PostgREST (migration 089)', () => {
     expect(opened.bid.team_id).toBe(mgr2TeamId)
     expect(opened.bid.amount).toBe(1)
     const nomination = opened.draft.current_nomination as unknown as LiveNomination
+    // 091/AP.3: the RPC returns the POST-responder state. On this kicker the
+    // responder found no candidate (every CPU values a K at $0), so the
+    // human seat is still the standing high bidder — which is the only state
+    // in which the self-raise discriminator below is reachable.
     expect(nomination.high_bidder_team_id).toBe(mgr2TeamId)
-    expect(nomination.player_id).toBe(PLAYERS[4].id)
+    expect(nomination.player_id).toBe(KICKER.id)
+    expect(nomination.high_bid).toBe(1)
 
     // Bids: MGR2 refused; the launcher's own bid resolves to the human seat
     // (the standing high bidder ⇒ the self-raise refusal, reachable only
@@ -410,56 +446,103 @@ describe('mock auctions over PostgREST (migration 089)', () => {
     expect(selfRaise?.message).toContain('you are already the high bidder at $1')
   }, 60_000)
 
-  it('the CPU sub-arm raises through the real tick; a raise inside the anti-snipe window floors the clock (D128)', async () => {
-    const before = await readMock()
-    const bidsBefore = await bidCount()
-    // `fast` ⇒ the raise think-time is 2s after the last bid / the open:
-    // rewind updated_at 3s so it is due (the live cron may have done the
-    // same meanwhile — every assertion is a bound over converged state).
-    const { error: rewindError } = await service
+  it('the CPU ladder is provoked by the nomination, not the sweep; a raise inside the anti-snipe window still floors the clock (D128)', async () => {
+    // Close out the uncontestable kicker market from the previous test so the
+    // rotation reaches a CPU seat, which will nominate on its `fast`
+    // think-time — and, since 091/AP.3, will be answered inside that same
+    // transaction.
+    await beat()
+    const kickerMarket = await readMock()
+    await service
       .from('drafts')
-      .update({ updated_at: shifted(before.updated_at as string, -3_000) })
+      .update({ current_deadline: shifted(kickerMarket.current_deadline as string, -40_000) })
       .eq('id', mockId)
       .eq('status', 'live')
-    expect(rewindError).toBeNull()
-    const summary = await tick()
-    expect(summary.auction_cpu_failures).toEqual([])
-    expect(summary.auction_failures).toEqual([])
+    await tick()
 
-    const after = await readMock()
-    const bidsAfter = await bidCount()
-    expect(bidsAfter).toBeGreaterThan(bidsBefore)
-    const nomination = after.current_nomination as unknown as LiveNomination
-    expect(nomination.player_id).toBe(PLAYERS[4].id)
-    expect(nomination.high_bid).toBeGreaterThanOrEqual(2)
-    // The raiser is a CPU seat (never the human seat, never a non-seat).
-    expect(nomination.high_bidder_team_id).not.toBe(mgr2TeamId)
-    // CPU raises are SYSTEM rows (D130: action_id NULL ⇒ a CPU's win is an
-    // autopick) at +$1 steps.
+    let opened = await readMock()
+    let guard = 0
+    while (opened.status === 'live' && opened.current_nomination === null && guard < 10) {
+      guard += 1
+      await service
+        .from('drafts')
+        .update({ current_deadline: shifted(opened.current_deadline as string, -28_500) })
+        .eq('id', mockId)
+        .eq('status', 'live')
+      const s = await tick()
+      expect(s.auction_cpu_failures).toEqual([])
+      expect(s.auction_failures).toEqual([])
+      opened = await readMock()
+    }
+    expect(opened.status).toBe('live')
+    expect(opened.current_nomination).not.toBeNull()
+
+    // PROVOKED, NOT SWEPT (§8.8/D200(1)): the market a CPU seat opened is
+    // ALREADY contested — the ladder ran inside draft_system_nominate_internal
+    // in the same tick pass that opened it, not one 5-second sweep later.
+    const live = opened.current_nomination as unknown as LiveNomination
+    const seq = opened.current_pick_number as number
     const { data: bids } = await service
       .from('draft_bids')
       .select('team_id, amount, action_id')
       .eq('draft_id', mockId)
-      .eq('nomination_seq', 1)
+      .eq('nomination_seq', seq)
       .order('amount')
-    const raises = (bids ?? []).filter((b) => b.amount > 1)
+    const rows = bids ?? []
+    expect(rows.length).toBeGreaterThan(1)
+    expect(live.high_bid).toBeGreaterThan(1)
+    // Every raise above the opening is a SYSTEM row (D130: action_id NULL ⇒ a
+    // CPU's win is an autopick) and none of them is the human seat's.
+    const raises = rows.filter((b) => b.amount > 1)
     expect(raises.length).toBeGreaterThan(0)
     expect(raises.every((b) => b.action_id === null)).toBe(true)
     expect(raises.every((b) => b.team_id !== mgr2TeamId)).toBe(true)
-    expect((bids ?? []).map((b) => b.amount)).toEqual(
-      Array.from({ length: (bids ?? []).length }, (_, i) => i + 1),
-    )
+    // The ladder is strictly increasing and NEVER above a bidder's ceiling —
+    // the amounts are no longer a $1 staircase (091 jump-bids), so what is
+    // asserted is the shape the engine guarantees, not the old arithmetic.
+    for (let i = 1; i < rows.length; i++) expect(rows[i].amount).toBeGreaterThan(rows[i - 1].amount)
+    for (const raise of raises) {
+      const { data: budget } = await service.rpc('draft_team_budget', {
+        p_draft_id: mockId,
+        p_team_id: raise.team_id,
+      })
+      const maxBid = (budget as unknown as { max_bid: number }[])[0].max_bid
+      expect(raise.amount).toBeLessThanOrEqual(maxBid)
+    }
+    // …and the ladder TERMINATED: a sweep over the settled market folds.
+    await service
+      .from('drafts')
+      .update({ updated_at: shifted(opened.updated_at as string, -3_000) })
+      .eq('id', mockId)
+      .eq('status', 'live')
+    const settled = await tick()
+    // `raised === 0` ALONE cannot fail for the reason this assertion exists:
+    // if the arm never claimed the draft at all the whole payload is zero and
+    // the check passes on a no-op — the house's signature "nothing happened
+    // read as it worked" shape. So the fold is asserted POSITIVELY: the arm
+    // claimed the row, looked at the settled price and declined to bid.
+    expect(settled.auction_cpu_claimed).toBeGreaterThan(0)
+    expect(settled.auction_cpu_folded).toBeGreaterThan(0)
+    expect(settled.auction_cpu_raised).toBe(0)
+    expect(settled.auction_cpu_failures).toEqual([])
 
-    // ANTI-SNIPE OBEDIENCE: put the clock 3s out and make the next raise
-    // due; the CPU's raise must floor the deadline to ≈ server-now + 10s —
-    // it can only move LATER than the 3s-out value, and by no more than the
-    // threshold (a reset-to-full would be +20s).
-    const threeOut = shifted(after.updated_at as string, 3_000)
+    // ANTI-SNIPE OBEDIENCE IS UNCHANGED BY AP.3 (D128). Re-open the settled
+    // market at its OPENING price with ~5s left on the SERVER-written clock
+    // (inside the 10s window, with margin — the live 5s cron is a legal
+    // concurrent actor and a 3s target can slip past the buzzer between two
+    // round trips). The next responder raise must floor the deadline to
+    // ≈ server-now + 10s: later than the windowed value, and by no more than
+    // the threshold — a reset-to-full would be +20s.
+    const priced = await readMock()
+    expect(priced.current_nomination).not.toBeNull()
+    const pricedNom = priced.current_nomination as unknown as LiveNomination
+    const windowed = shifted(priced.current_deadline as string, -(BID_SECONDS - 5) * 1_000)
     const { error: windowError } = await service
       .from('drafts')
       .update({
-        current_deadline: threeOut,
-        updated_at: shifted(after.updated_at as string, -3_000),
+        current_nomination: { ...pricedNom, high_bid: 1, high_bidder_team_id: rows[0].team_id },
+        current_deadline: windowed,
+        updated_at: shifted(priced.updated_at as string, -3_000),
       })
       .eq('id', mockId)
       .eq('status', 'live')
@@ -468,8 +551,9 @@ describe('mock auctions over PostgREST (migration 089)', () => {
     expect(snipeSummary.auction_cpu_failures).toEqual([])
     const floored = await readMock()
     expect(floored.status).toBe('live')
+    expect(floored.current_nomination).not.toBeNull()
     const flooredMs = Date.parse(floored.current_deadline as string)
-    expect(flooredMs).toBeGreaterThan(Date.parse(threeOut))
+    expect(flooredMs).toBeGreaterThan(Date.parse(windowed))
     // The floor is now() + 10s at the raise; `updated_at` IS that instant
     // (the bid write stamps both) — the window is exactly the threshold.
     expect(flooredMs - Date.parse(floored.updated_at as string)).toBeLessThanOrEqual(
@@ -482,11 +566,27 @@ describe('mock auctions over PostgREST (migration 089)', () => {
 
   it('drives the whole practice to completion: CPU nominations + raises, awards, zero league side effects', async () => {
     let guard = 0
+    let resumes = 0
     for (;;) {
       guard += 1
       if (guard > 1500) throw new Error('the mock auction did not complete within the step budget')
+      await beat()
       const row = await readMock()
       if (row.status === 'complete') break
+      if (row.status === 'paused') {
+        // E59, and it is CORRECT: a live mock auto-pauses when its launcher's
+        // heartbeat goes stale past disconnect_grace + one tick. Under a
+        // parallel suite run this file can be starved for longer than that
+        // between iterations, and a human whose tab was throttled comes back
+        // and hits Resume — the launcher's own action, never the tick's. It is
+        // BOUNDED so a genuine pause defect still surfaces as a failure rather
+        // than as an infinite resume loop.
+        resumes += 1
+        if (resumes > 5) throw new Error('the mock auction kept auto-pausing (E59) — more than five resumes')
+        const { error } = await commishClient.rpc('draft_resume', { p_draft_id: mockId })
+        expect(error).toBeNull()
+        continue
+      }
       if (row.status !== 'live') throw new Error(`unexpected status ${row.status}`)
       if (row.current_nomination === null) {
         // NOMINATING. The human seat's clock: expire it past the grace hold
