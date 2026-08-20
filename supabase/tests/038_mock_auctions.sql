@@ -658,7 +658,7 @@ select is(
 --    this arm meets in practice is the FOLD, which is what §D now pins, on a
 --    kicker market where the fold is guaranteed rather than incidental. The
 --    raise side — the selection rule, the jump curve, a raise's anti-snipe
---    floor, the ladder's termination and its cap — is pinned in **039**,
+--    floor, the ladder's termination and its bound — is pinned in **039**,
 --    against the behaviour that actually ships.
 -- ---------------------------------------------------------------------------
 -- (D1) A HEALTHY mock (raise think-time not reached) is claimed by NO arm.
