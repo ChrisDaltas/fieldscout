@@ -11,6 +11,8 @@ import {
   dollarsPerPoint,
   EMPTY_COPY,
   emptyReason,
+  FAILURE_COPY,
+  failureReason,
   filterRows,
   formatColumnValue,
   HALF_PPR_FLOOR,
@@ -22,6 +24,7 @@ import {
   SPLIT_GROUP_STAT_KEYS,
   splitGroupAvailability,
   statSplits,
+  tablePending,
   visibleColumns,
   type AuctionColumnKey,
   type AuctionPlayerSource,
@@ -47,9 +50,12 @@ import {
  */
 
 // ---------------------------------------------------------------------------
-// The shipped projections blob, verbatim — the 17 keys `sync:projections`
-// actually writes (`sleeperProjectionToStatRow`, sleeper.ts:157), measured
-// on the local pool at build time: 590 blobs, these keys, nothing else.
+// The projections blob, verbatim — the 18 keys `sync:projections` CAN emit
+// (`sleeperProjectionToStatRow`, sleeper.ts:157). 17 of them are PRESENT in
+// the pool measured at build time (590 blobs, these keys, nothing else);
+// `def_safeties` is the writer's 18th and no measured row carried it, which
+// is why the list here is one longer than the measurement. Either way there
+// is no volume field — no attempts, no targets — which is the C43 fact.
 // ---------------------------------------------------------------------------
 const SHIPPED_BLOB_KEYS = [
   'pass_yards',
@@ -564,12 +570,17 @@ describe('filterRows — position · search · Favorites · Show Drafted', () =>
 })
 
 describe('emptyReason — say WHY it is empty, never just that it is', () => {
+  // Non-zero SETTLED counts: the user has favourites and the overlaid list
+  // has players, so "none of them match" is the true reason. The zero
+  // cases are their own block below (R450).
   const base = {
     totalRows: 12,
     search: '',
     position: '',
     favoritesOnly: false,
+    favoritesCount: 3,
     onlyList: false,
+    onlyListCount: 5,
   }
 
   it('names the active filter', () => {
@@ -608,6 +619,149 @@ describe('emptyReason — say WHY it is empty, never just that it is', () => {
       expect(EMPTY_COPY[key].length).toBeGreaterThan(20)
     }
     expect(EMPTY_COPY['all-drafted']).toContain('Show drafted')
+  })
+
+  // -------------------------------------------------------------------
+  // R450 / M3 batch 16 — an EMPTY SOURCE is not a failed match
+  // -------------------------------------------------------------------
+
+  it('zero favourites is "you have none", not "none of them match"', () => {
+    // A user who has never favourited anybody read the SAME sentence as a
+    // user whose 40 favourites were all drafted — "Turn Favorites off to
+    // see the whole pool" is actionable, "None of your Favorites match"
+    // is a claim about a filtering outcome that never happened.
+    expect(emptyReason({ ...base, favoritesOnly: true, favoritesCount: 0 })).toBe('no-favorites')
+    // …and the other direction: with favourites, it IS a failed match.
+    expect(emptyReason({ ...base, favoritesOnly: true, favoritesCount: 1 })).toBe('favorites')
+    expect(EMPTY_COPY['no-favorites']).toContain('haven’t favorited')
+    expect(EMPTY_COPY.favorites).toContain('None of your Favorites match')
+  })
+
+  it('an EMPTY overlaid list is "no players on it yet", not "none still available"', () => {
+    expect(emptyReason({ ...base, onlyList: true, onlyListCount: 0 })).toBe('empty-list')
+    expect(emptyReason({ ...base, onlyList: true, onlyListCount: 1 })).toBe('list')
+    expect(EMPTY_COPY['empty-list']).toContain('no players on it yet')
+  })
+
+  it('an EMPTY SOURCE outranks the search branch — loosening a filter cannot fix it', () => {
+    // Composition, and the reason the two new branches are ordered FIRST:
+    // "Loosen the search or position filter" is true but UNACTIONABLE when
+    // the set being filtered by is itself empty.
+    expect(
+      emptyReason({ ...base, search: 'zzz', favoritesOnly: true, favoritesCount: 0 }),
+    ).toBe('no-favorites')
+    expect(emptyReason({ ...base, position: 'K', onlyList: true, onlyListCount: 0 })).toBe(
+      'empty-list',
+    )
+    // A zero count with the filter OFF changes nothing.
+    expect(emptyReason({ ...base, favoritesCount: 0, onlyListCount: 0 })).toBe('all-drafted')
+    expect(emptyReason({ ...base, totalRows: 0, favoritesCount: 0, onlyListCount: 0 })).toBe(
+      'no-pool',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6b. R444 — EVERY read reaches a load gate, never the empty state
+// ---------------------------------------------------------------------------
+
+describe('tablePending — an unsettled read never reaches emptyReason', () => {
+  const settled = {
+    poolPending: false,
+    extrasPending: false,
+    extraIdCount: 0,
+    favoritesOnly: false,
+    favoritesPending: false,
+    onlyMode: false,
+    overlayPending: false,
+  }
+
+  it('nothing pending ⇒ not loading', () => {
+    expect(tablePending(settled)).toBe(false)
+  })
+
+  it('the pool is unconditional', () => {
+    expect(tablePending({ ...settled, poolPending: true })).toBe(true)
+  })
+
+  it('the by-id read counts only when it was ASKED for something (R283)', () => {
+    // Disabled queries report isPending forever — the whole table would
+    // sit behind skeletons in the default view.
+    expect(tablePending({ ...settled, extrasPending: true, extraIdCount: 0 })).toBe(false)
+    expect(tablePending({ ...settled, extrasPending: true, extraIdCount: 4 })).toBe(true)
+  })
+
+  it('a PENDING favourites read is loading, not "you have no favourites"', () => {
+    // The gap D194(13) left: it fixed the ERROR half only, so an in-flight
+    // read still fell through to a designed empty sentence.
+    expect(tablePending({ ...settled, favoritesOnly: true, favoritesPending: true })).toBe(true)
+    expect(tablePending({ ...settled, favoritesOnly: false, favoritesPending: true })).toBe(false)
+  })
+
+  it('a PENDING overlay read is loading, not "no players on this list" (R444)', () => {
+    expect(tablePending({ ...settled, onlyMode: true, overlayPending: true })).toBe(true)
+    // `useLeagueListPlayers` is disabled without an overlay, so it pends
+    // forever — off-mode must treat it as settled.
+    expect(tablePending({ ...settled, onlyMode: false, overlayPending: true })).toBe(false)
+  })
+})
+
+describe('failureReason — a failed read is an ERROR, never a designed empty state', () => {
+  const clean = {
+    poolError: false,
+    extrasError: false,
+    extraIdCount: 0,
+    favoritesOnly: false,
+    favoritesError: false,
+    onlyMode: false,
+    overlayError: false,
+  }
+
+  it('nothing failed ⇒ null (the empty state is reachable)', () => {
+    expect(failureReason(clean)).toBe(null)
+  })
+
+  it('each source names ITSELF', () => {
+    expect(failureReason({ ...clean, poolError: true })).toBe('pool')
+    expect(failureReason({ ...clean, onlyMode: true, overlayError: true })).toBe('overlay')
+    expect(failureReason({ ...clean, favoritesOnly: true, favoritesError: true })).toBe(
+      'favorites',
+    )
+    expect(failureReason({ ...clean, extrasError: true, extraIdCount: 9 })).toBe('extras')
+  })
+
+  it('a filter read that failed while the filter is OFF is not this table’s problem', () => {
+    // Both directions, for both filter-scoped sources: an unused filter's
+    // failed read must not blank a table the user can still browse.
+    expect(failureReason({ ...clean, favoritesError: true })).toBe(null)
+    expect(failureReason({ ...clean, overlayError: true })).toBe(null)
+    expect(failureReason({ ...clean, extrasError: true, extraIdCount: 0 })).toBe(null)
+  })
+
+  it('the pool outranks every filter — nothing else can be said honestly', () => {
+    expect(
+      failureReason({
+        ...clean,
+        poolError: true,
+        onlyMode: true,
+        overlayError: true,
+        favoritesOnly: true,
+        favoritesError: true,
+      }),
+    ).toBe('pool')
+  })
+
+  it('every failure has copy that names the SOURCE, not a generic apology', () => {
+    expect(FAILURE_COPY.pool).toContain('player pool')
+    expect(FAILURE_COPY.overlay).toContain('overlaid list')
+    expect(FAILURE_COPY.favorites).toContain('Favorites')
+    expect(FAILURE_COPY.extras).toContain('outside the browse window')
+    for (const key of Object.keys(FAILURE_COPY) as Array<keyof typeof FAILURE_COPY>) {
+      expect(FAILURE_COPY[key].length).toBeGreaterThan(20)
+      // Never the empty-state vocabulary: an error must not read as a
+      // designed "nothing matched".
+      expect(FAILURE_COPY[key]).not.toContain('match')
+    }
   })
 })
 

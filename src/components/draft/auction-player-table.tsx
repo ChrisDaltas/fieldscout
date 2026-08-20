@@ -37,14 +37,18 @@ import {
   decorateRows,
   EMPTY_COPY,
   emptyReason,
+  FAILURE_COPY,
+  failureReason,
   filterRows,
   formatColumnValue,
   mergeSources,
   splitGroupAvailability,
+  tablePending,
   visibleColumns,
   type AuctionColumn,
   type AuctionPlayerRow,
 } from './auction-player-table-ops'
+import { useDockPanelClose } from './draft-dock-panel'
 
 const POSITION_FILTERS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 const SEARCH_DEBOUNCE_MS = 250
@@ -152,6 +156,28 @@ export function AuctionPlayerTable({
   const [customizerOpen, setCustomizerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const openPlayer = usePlayerWindowsStore((s) => s.open)
+  const closeDockPanel = useDockPanelClose()
+
+  /**
+   * SELECT → SUBMIT IS ONE GESTURE (R446, D196).
+   *
+   * Nominate does not write — it selects the player into the auction
+   * block's composer, where the opening bid is chosen (§8.6.2). But this
+   * table IS the dock's Players panel, and the open panel is a fixed-height
+   * overlay ABOVE the board (D151: `min(60vh, 640px)`), which covers the
+   * composer's "Nominate at $N" submit at 1280×800, 1366×768 and 1440×810 —
+   * measured, with no page scroll to recover it and a 30s nomination clock
+   * running. So selecting a player dismisses the panel that was hiding the
+   * control the selection just armed.
+   *
+   * The dismissal reaches the dock through the in-panel close context, not
+   * through a prop on `DraftDock` — see `draft-dock-panel.ts` for why that
+   * distinction is D119(6)'s and not cosmetic.
+   */
+  const handleNominateFromRow = (playerId: string) => {
+    onNominate(playerId)
+    closeDockPanel?.()
+  }
 
   useEffect(() => {
     const id = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS)
@@ -183,6 +209,14 @@ export function AuctionPlayerTable({
     [overlayRows.data],
   )
 
+  // "Only this list" is a filter BUILT FROM the overlaid list, so it is
+  // meaningful only while a list is actually overlaid — the
+  // `available-players` `onlyMode` idiom, kept. It also keeps the button's
+  // state from outliving its list by one frame while the effect above
+  // clears it (`useLeagueListPlayers` is DISABLED without a list, so a
+  // stale-true `onlyOnList` would read as "pending forever").
+  const onlyMode = overlayListId !== null && onlyOnList
+
   // Live (non-undone) picks — the drafted set and the price/winner facts.
   const draftedIds = useMemo(() => {
     const ids = new Set<string>()
@@ -197,9 +231,9 @@ export function AuctionPlayerTable({
     const ids: string[] = []
     if (showDrafted) ids.push(...draftedIds)
     if (favoritesOnly) ids.push(...favoriteIds)
-    if (onlyOnList) ids.push(...overlayIds)
+    if (onlyMode) ids.push(...overlayIds)
     return ids
-  }, [showDrafted, draftedIds, favoritesOnly, favoriteIds, onlyOnList, overlayIds])
+  }, [showDrafted, draftedIds, favoritesOnly, favoriteIds, onlyMode, overlayIds])
   const extras = useAuctionPlayersByIds(extraIds)
 
   const rows = useMemo<AuctionPlayerRow[]>(
@@ -240,26 +274,33 @@ export function AuctionPlayerTable({
         position,
         favoritesOnly,
         showDrafted,
-        onlyListIds: onlyOnList ? overlayIds : null,
+        onlyListIds: onlyMode ? overlayIds : null,
       }),
-    [rows, search, position, favoritesOnly, showDrafted, onlyOnList, overlayIds],
+    [rows, search, position, favoritesOnly, showDrafted, onlyMode, overlayIds],
   )
 
-  // The by-id read is `enabled` only while ids exist, and a DISABLED React
-  // Query v5 query reports `isPending` forever — so it counts as pending
-  // only when it was actually asked for something (the R283 gate, restated
-  // for this table's second read).
-  const loading = pool.isPending || (extras.isPending && extraIds.length > 0)
-  // A FAILED FAVOURITES READ IS NOT AN EMPTY FAVOURITES LIST. Without this,
-  // `favoriteIds` falls back to the empty set and the Favorites filter
-  // renders "None of your Favorites match…" — a designed empty state
-  // asserting a reason that is not true (CLAUDE.md's "never let *nothing
-  // happened* mean *it worked*"). The filter's own read is therefore part
-  // of the error branch whenever the filter is the thing being used.
-  const failed =
-    pool.isError ||
-    (extras.isError && extraIds.length > 0) ||
-    (favoritesOnly && favorites.isError)
+  // EVERY read this table consumes reaches one of these two gates, so no
+  // unsettled or failed source can reach the empty state and have its
+  // silence rendered as a designed sentence (R444's enumeration; the pure
+  // bodies carry the reasoning and the R283 disabled-query gate).
+  const loading = tablePending({
+    poolPending: pool.isPending,
+    extrasPending: extras.isPending,
+    extraIdCount: extraIds.length,
+    favoritesOnly,
+    favoritesPending: favorites.isPending,
+    onlyMode,
+    overlayPending: overlayRows.isPending,
+  })
+  const failure = failureReason({
+    poolError: pool.isError,
+    extrasError: extras.isError,
+    extraIdCount: extraIds.length,
+    favoritesOnly,
+    favoritesError: favorites.isError,
+    onlyMode,
+    overlayError: overlayRows.isError,
+  })
 
   const groups = useMemo(() => {
     const byGroup = new Map<AuctionColumn['group'], AuctionColumn[]>()
@@ -419,12 +460,10 @@ export function AuctionPlayerTable({
             <Skeleton key={i} className="h-9 w-full" />
           ))}
         </div>
-      ) : failed ? (
+      ) : failure !== null ? (
         <div className="flex flex-col items-start gap-2">
           <p className="text-[12px] font-medium text-n-3" role="alert">
-            {favoritesOnly && favorites.isError && !pool.isError
-              ? 'Your Favorites didn’t load, so this filter can’t be trusted.'
-              : 'The player pool didn’t load.'}
+            {FAILURE_COPY[failure]}
           </p>
           <Button
             variant="stroke"
@@ -433,6 +472,7 @@ export function AuctionPlayerTable({
               void pool.refetch()
               if (extraIds.length > 0) void extras.refetch()
               if (favoritesOnly) void favorites.refetch()
+              if (onlyMode) void overlayRows.refetch()
             }}
           >
             Retry
@@ -447,7 +487,9 @@ export function AuctionPlayerTable({
                 search,
                 position,
                 favoritesOnly,
-                onlyList: onlyOnList,
+                favoritesCount: favoriteIds.size,
+                onlyList: onlyMode,
+                onlyListCount: overlayIds.size,
               })
             ]
           }
@@ -467,11 +509,19 @@ export function AuctionPlayerTable({
                 Do-not-draft labels didn’t load
               </span>
             )}
-            {scoring.family === null && (
+            {scoring.family === null && !scoring.isPending && (
               // §16.5.4 degraded: last-good data, never wrong numbers. The
               // league's scoring rules did not resolve, so the projection
               // columns stay empty and say why rather than guessing a
               // family (see `useLeagueScoringFamily`).
+              //
+              // SETTLED only (R444's sweep): while the read is in flight
+              // the family is also null, and "not readable" would be the
+              // same untrue-reason defect the empty states carry — a
+              // sentence about a read that has not finished. This one
+              // DEGRADES rather than blocks, so it waits rather than
+              // joining `loading`: the pool's 300 rows must not be held
+              // hostage to the scoring read.
               <span className="text-[10px] font-medium text-n-3">
                 Scoring not readable — projections hidden
               </span>
@@ -512,7 +562,7 @@ export function AuctionPlayerTable({
                     onOpenPlayer={() => openPlayer(row.id)}
                     teamNameById={teamNameById}
                     canNominate={canNominate}
-                    onNominate={onNominate}
+                    onNominate={handleNominateFromRow}
                     onQueue={onQueue}
                     onToggleDnd={() =>
                       toggleDnd.mutate({ playerId: row.id, marked: row.dnd })

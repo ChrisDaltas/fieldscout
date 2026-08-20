@@ -37,6 +37,7 @@ const DIR = 'src/components/draft'
 const TABLE = `${DIR}/auction-player-table.tsx`
 const OPS = `${DIR}/auction-player-table-ops.ts`
 const ROOM = `${DIR}/draft-room.tsx`
+const DOCK = `${DIR}/draft-dock.tsx`
 const HOOK = 'src/hooks/use-draft-dnd.ts'
 const STORE = 'src/stores/auction-columns-store.ts'
 const MIGRATIONS = 'supabase/migrations'
@@ -106,14 +107,20 @@ describe('C42: the engine never reads draft_dnd_marks (the ruled skip stays decl
   })
 
   it('no FUNCTION BODY anywhere in the chain mentions it', () => {
-    // The skip would live inside a `$$ … $$` body — `draft_tick`'s resolve
-    // chain, `draft_system_nominate_internal`, an autopick helper. Reading
-    // the bodies separately means a future migration that adds the join
-    // fails here even if it also (correctly) re-states the DDL.
+    // The skip would live inside a dollar-quoted body — `draft_tick`'s
+    // resolve chain, `draft_system_nominate_internal`, an autopick helper.
+    // Reading the bodies separately means a future migration that adds the
+    // join fails here even if it also (correctly) re-states the DDL.
+    //
+    // R448: split on ANY dollar-quote TAG, not just `$$`. Postgres accepts
+    // `$function$`, `$do$`, `$body$` … — the chain already carries five
+    // such bodies, and `pg_get_functiondef` EMITS `$function$`, which is
+    // exactly what a CLAUDE.md-style hotfix pastes back into a migration.
+    // A `$$`-only split made every one of them invisible to this sweep.
     const offenders: string[] = []
     for (const file of readdirSync(path.resolve(process.cwd(), MIGRATIONS)).sort()) {
       if (!file.endsWith('.sql')) continue
-      const bodies = sql(`${MIGRATIONS}/${file}`).split('$$')
+      const bodies = sql(`${MIGRATIONS}/${file}`).split(/\$[A-Za-z_]*\$/)
       // Odd indices are inside a dollar-quoted body.
       for (let i = 1; i < bodies.length; i += 2) {
         if (bodies[i].includes('draft_dnd_marks')) offenders.push(file)
@@ -325,6 +332,50 @@ describe('the table is the dock’s Players panel in an auction, and only there'
     expect(table).toContain('Only this list')
     expect(code(ROOM)).toContain('onClearOverlay={() => setOverlay(null)}')
   })
+
+  /**
+   * R446 (M3 batch 16). Hosting the table IN the dock panel put it on top
+   * of the thing its own Nominate action arms: the panel is a fixed-height
+   * overlay over the board (D151 `min(60vh, 640px)`), and at 1280×800 —
+   * measured — it covers the auction block's "Nominate at $N" submit, with
+   * no page scroll to recover it and a 30s nomination clock running. So
+   * selecting a player must dismiss the panel: select → submit is ONE
+   * gesture.
+   */
+  describe('R446: selecting a nominee uncovers the composer it just armed', () => {
+    const table = code(TABLE)
+    const dock = code(DOCK)
+
+    it('the row action goes through a handler that ALSO closes the panel', () => {
+      expect(table).toContain('const closeDockPanel = useDockPanelClose()')
+      expect(table).toContain('const handleNominateFromRow = (playerId: string) => {')
+      expect(table).toContain('onNominate(playerId)')
+      expect(table).toContain('closeDockPanel?.()')
+      // …and the row is wired to the handler, not to the bare prop.
+      expect(table).toContain('onNominate={handleNominateFromRow}')
+      expect(table).not.toContain('onNominate={onNominate}')
+    })
+
+    it('the close is IN-PANEL only — D119(6)’s external-API pin still holds', () => {
+      // The provider wraps the open panel's BODY and nothing else, so the
+      // room-level modal (mounted outside the dock) cannot reach it and
+      // `DraftDockProps` still carries no open/close prop. Both halves.
+      expect(dock).toContain('<DockPanelCloseContext.Provider value={closePanel}>')
+      expect(dock).toContain('{panels[openTab.id]}')
+      expect(dock).toMatch(/interface DraftDockProps \{/)
+      expect(dock).not.toMatch(/onOpenChange|open\?:|open:/)
+      // The dismissal still goes through the ONE pure reducer.
+      expect(dock).toContain("dockReducer(current, { type: 'close' })")
+    })
+
+    it('nothing outside a dock panel can call it — the context defaults to null', () => {
+      const context = code('src/components/draft/draft-dock-panel.ts')
+      expect(context).toContain('createContext<(() => void) | null>(null)')
+      // Exactly two consumers: the dock (provides) and the table (uses).
+      const users = sourceFiles().filter((rel) => code(rel).includes('DockPanelCloseContext'))
+      expect(users.sort()).toEqual(['src/components/draft/draft-dock-panel.ts', DOCK].sort())
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -338,28 +389,103 @@ describe('§16.5.4 states, D140 vocabulary, and the design rules', () => {
     expect(table).toContain('role="alert"') // error…
     expect(table).toContain('>\n            Retry\n          </Button>') // …with retry
     expect(table).toContain('EMPTY_COPY[') // designed empty copy, per reason
+    expect(table).toContain('FAILURE_COPY[failure]') // …and per FAILED source
   })
 
-  it('a FAILED filter read is an error, not a designed empty state', () => {
+  /**
+   * R444 (M3 batch 16). A read whose failure or pending state does not
+   * reach one of the two gates falls through to `filterRows`, empties the
+   * table and renders a DESIGNED EMPTY SENTENCE asserting a reason that is
+   * not true — with no error copy and no retry. That defect shipped THREE
+   * times on this surface (D194(9) search ordering, D194(13) Favorites,
+   * R444 the §8.9 overlay), so the fix is an ENUMERATION, not a fourth
+   * special case: every read the component consumes is listed here and
+   * checked into `tablePending` / `failureReason`.
+   */
+  describe('R444: every read reaches a load gate, never an empty sentence', () => {
     const table = code(TABLE)
-    // A favourites read that threw leaves `favoriteIds` empty, and the
-    // empty branch would then assert "None of your Favorites match…" — a
-    // reason that is not true. The filter's own read joins the error
-    // branch whenever the filter is the thing being used, and the retry
-    // refetches it.
-    expect(table).toContain('(favoritesOnly && favorites.isError)')
-    expect(table).toContain('if (favoritesOnly) void favorites.refetch()')
-    expect(table).toContain('this filter can’t be trusted')
-    // The marks are a label, so a failed read DEGRADES (keeps rendering)
-    // and says what is missing rather than showing bare rows.
-    expect(table).toContain('{dnd.isError && (')
-    expect(table).toContain('Do-not-draft labels didn’t load')
-  })
 
-  it('a disabled by-id read is not "pending forever" (the R283 gate, restated)', () => {
-    const table = code(TABLE)
-    expect(table).toContain('extras.isPending && extraIds.length > 0')
-    expect(table).toContain('extras.isError && extraIds.length > 0')
+    /** The six reads this component consumes, and the gate arm each one
+     *  is wired into. A NEW `use*` read that lands in neither is the
+     *  fourth instance, and the sweep below fails on it. */
+    const READS: Array<[read: string, hook: string, gate: string]> = [
+      ['pool', 'useAuctionPool(', 'poolPending: pool.isPending'],
+      ['extras', 'useAuctionPlayersByIds(', 'extrasPending: extras.isPending'],
+      ['favorites', 'useFavoritePlayerIds(', 'favoritesPending: favorites.isPending'],
+      ['overlayRows', 'useLeagueListPlayers(', 'overlayPending: overlayRows.isPending'],
+      // The marks are a LABEL: a failure DEGRADES (rows keep rendering) and
+      // is disclosed, so it is deliberately not a gate arm — the row below
+      // pins the disclosure instead.
+      ['dnd', 'useDraftDndMarks(', 'dnd.isError && ('],
+      // Scoring drives two COLUMNS, not the row set — same posture.
+      ['scoring', 'useLeagueScoringFamily(', 'scoring.family === null && !scoring.isPending'],
+    ]
+
+    it('the component consumes exactly the six enumerated reads', () => {
+      // Sweep the source for `useSomething(` calls that look like data
+      // reads, so a seventh read cannot be added without a disposition.
+      const called = Array.from(table.matchAll(/\buse[A-Z][A-Za-z]*\(/g)).map((m) => m[0])
+      const unknown = Array.from(new Set(called)).filter(
+        (name) =>
+          !READS.some(([, hook]) => hook === name) &&
+          // React's own hooks + the two non-read stores/contexts.
+          ![
+            'useState(',
+            'useEffect(',
+            'useMemo(',
+            'useToggleDndMark(',
+            'useAuctionColumnsStore(',
+            'usePlayerWindowsStore(',
+            'useDockPanelClose(',
+          ].includes(name),
+      )
+      expect(unknown).toEqual([])
+    })
+
+    it('each read is wired into the gate its disposition names', () => {
+      for (const [name, hook, gate] of READS) {
+        expect(`${name} read: ${table.includes(hook)}`).toBe(`${name} read: true`)
+        expect(`${name} gate: ${table.includes(gate)}`).toBe(`${name} gate: true`)
+      }
+    })
+
+    it('both gates are the PURE ops functions — not a re-spelled boolean', () => {
+      expect(table).toContain('const loading = tablePending({')
+      expect(table).toContain('const failure = failureReason({')
+      expect(table).toContain('failure !== null ? (')
+      // The R283 disabled-query gate and the two filter gates live in the
+      // pure bodies, where the golden enumerates both directions.
+      const ops = code(OPS)
+      expect(ops).toContain('if (input.extrasPending && input.extraIdCount > 0) return true')
+      expect(ops).toContain('if (input.favoritesOnly && input.favoritesPending) return true')
+      expect(ops).toContain('if (input.onlyMode && input.overlayPending) return true')
+      expect(ops).toContain("if (input.onlyMode && input.overlayError) return 'overlay'")
+    })
+
+    it('the retry refetches EVERY source that can be the reason', () => {
+      expect(table).toContain('void pool.refetch()')
+      expect(table).toContain('if (extraIds.length > 0) void extras.refetch()')
+      expect(table).toContain('if (favoritesOnly) void favorites.refetch()')
+      expect(table).toContain('if (onlyMode) void overlayRows.refetch()')
+    })
+
+    it('"Only this list" is gated on a list ACTUALLY being overlaid', () => {
+      // `useLeagueListPlayers` is disabled without a list, so a stale-true
+      // toggle would read as "pending forever" — the `available-players`
+      // `onlyMode` idiom, kept.
+      expect(table).toContain('const onlyMode = overlayListId !== null && onlyOnList')
+      expect(table).toContain('onlyListIds: onlyMode ? overlayIds : null')
+    })
+
+    it('the empty state is handed SETTLED counts, so R450’s branches are safe', () => {
+      expect(table).toContain('favoritesCount: favoriteIds.size')
+      expect(table).toContain('onlyListCount: overlayIds.size')
+    })
+
+    it('the degrading reads still SAY what is missing', () => {
+      expect(table).toContain('Do-not-draft labels didn’t load')
+      expect(table).toContain('Scoring not readable — projections hidden')
+    })
   })
 
   it('says Targets, never queue (D140’s ruled sweep)', () => {

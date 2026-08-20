@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import type {
   AuctionPlayerSource,
@@ -155,6 +155,16 @@ const BY_ID_CHUNK = 300
  * the studs), my Favorites, and the §8.9 overlay's list under "Only this
  * list". ONE read serves all three; ids already inside the window cost
  * nothing extra because `mergeSources` dedupes by id.
+ *
+ * The id list IS the cache key, so every landed pick mints a NEW query
+ * while Show Drafted is on. Without `keepPreviousData` that query's
+ * `isPending` would flip the table's loading gate and replace 300 rows
+ * with skeletons on every bid that resolves — invisible on localhost
+ * (sub-frame round trip) and a flicker on a real network, which is why it
+ * is fixed by code-reading rather than by waiting to see it (R451).
+ * `keepPreviousData` serves the previous id set's rows until the new ones
+ * arrive; `mergeSources` dedupes, so the worst case is one pick's row
+ * appearing a beat late — never a wrong number.
  */
 export function useAuctionPlayersByIds(ids: readonly string[]) {
   // Sorted + deduped so the key is stable across re-renders and arrival
@@ -163,6 +173,7 @@ export function useAuctionPlayersByIds(ids: readonly string[]) {
   return useQuery({
     queryKey: auctionPoolKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<AuctionPlayerSource[]> => {
       const supabase = createBrowserClient()
       const out: AuctionPlayerSource[] = []

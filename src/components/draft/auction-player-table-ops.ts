@@ -533,18 +533,38 @@ export function filterRows(input: FilterInput): AuctionPlayerRow[] {
  * who typed "zzzz" that *"the player pool is empty"* — measured live at
  * 1280 before this ordering landed.
  *
+ * **The two "you have nothing" branches come FIRST** (R450, M3 batch 16):
+ * "None of your Favorites match" is what a user with ZERO favourites was
+ * told, and "No players on this list are still available" is what an
+ * EMPTY attached list said — both assert a filtering outcome where the
+ * truth is that the set being filtered by is empty. They outrank the
+ * search/position branch because no amount of loosening a search fixes
+ * them, so under composition the ordinary "loosen the filter" copy would
+ * be an unactionable instruction.
+ *
  * Every branch's copy is true under COMPOSITION as well as alone, which
  * is what fixes the ordering rather than just moving the bug: with a
  * search and Favorites both on, "loosen the search or position filter" is
  * still both true and actionable.
+ *
+ * The caller owes this function SETTLED counts. A pending or failed read
+ * also reports `size === 0`, and calling either of the new branches on one
+ * would be the same lie one layer up — `tablePending` and `failureReason`
+ * below are what keep this function from ever seeing an unsettled count.
  */
 export function emptyReason(input: {
   totalRows: number
   search: string
   position: string
   favoritesOnly: boolean
+  /** How many ids the (SETTLED) Favorites read returned. */
+  favoritesCount: number
   onlyList: boolean
-}): 'filters' | 'favorites' | 'list' | 'all-drafted' | 'no-pool' {
+  /** How many players the (SETTLED) overlaid list holds. */
+  onlyListCount: number
+}): 'filters' | 'favorites' | 'no-favorites' | 'list' | 'empty-list' | 'all-drafted' | 'no-pool' {
+  if (input.favoritesOnly && input.favoritesCount === 0) return 'no-favorites'
+  if (input.onlyList && input.onlyListCount === 0) return 'empty-list'
   if (input.search !== '' || input.position !== '') return 'filters'
   if (input.favoritesOnly) return 'favorites'
   if (input.onlyList) return 'list'
@@ -555,9 +575,93 @@ export function emptyReason(input: {
 export const EMPTY_COPY: Record<ReturnType<typeof emptyReason>, string> = {
   filters: 'No available players match. Loosen the search or position filter.',
   favorites: 'None of your Favorites match. Turn Favorites off to see the whole pool.',
+  'no-favorites':
+    'You haven’t favorited any players yet. Turn Favorites off to see the whole pool.',
   list: 'No players on this list are still available.',
+  'empty-list': 'This list has no players on it yet. Turn “Only this list” off to see the pool.',
   'all-drafted': 'Every player in the window is drafted. Turn on Show drafted to see prices.',
   'no-pool': 'The player pool is empty.',
+}
+
+// ---------------------------------------------------------------------------
+// 5b. The load gates — every read this table consumes reaches one of them
+// ---------------------------------------------------------------------------
+
+/**
+ * The table's loading gate. **A read that is still in flight must never
+ * reach `emptyReason`**: an unsettled filter source reports an empty set
+ * exactly like a settled-and-empty one, and the empty-state sentence then
+ * asserts a reason that is not true yet (CLAUDE.md's "never let *nothing
+ * happened* mean *it worked*", applied to a read that has not happened).
+ *
+ * Two of the four arms are gated on the filter being IN USE, because a
+ * disabled React Query v5 query reports `isPending` forever:
+ *   - `extras` (`useAuctionPlayersByIds`) is `enabled` only while ids
+ *     exist — the R283 gate, restated for this table's second read;
+ *   - `overlayRows` (`useLeagueListPlayers`) is `enabled` only while a
+ *     list is overlaid, which is exactly `onlyMode`.
+ * The Favorites read is always enabled, so its arm needs only the filter.
+ */
+export function tablePending(input: {
+  poolPending: boolean
+  extrasPending: boolean
+  /** 0 ⇒ the by-id read is DISABLED and pends forever. */
+  extraIdCount: number
+  favoritesOnly: boolean
+  favoritesPending: boolean
+  /** "Only this list" is on AND a list is actually overlaid. */
+  onlyMode: boolean
+  overlayPending: boolean
+}): boolean {
+  if (input.poolPending) return true
+  if (input.extrasPending && input.extraIdCount > 0) return true
+  if (input.favoritesOnly && input.favoritesPending) return true
+  if (input.onlyMode && input.overlayPending) return true
+  return false
+}
+
+export type LoadFailure = 'pool' | 'overlay' | 'favorites' | 'extras'
+
+/**
+ * Which read failed, or `null` when none did — the error branch's reason,
+ * chosen the same way `emptyReason` chooses its own.
+ *
+ * **A FAILED FILTER READ IS NOT AN EMPTY RESULT.** Every source below,
+ * when it throws, leaves its id set empty, and the row set then filters to
+ * nothing: without this function the table renders a DESIGNED EMPTY STATE
+ * whose stated reason is untrue, with no error copy and no retry. That
+ * defect shipped three times on this surface — search ordering (D194(9)),
+ * Favorites (D194(13)) and the §8.9 overlay (R444) — so the sources are
+ * enumerated here rather than spelled out at the call site a fourth time.
+ *
+ * Order is most-fundamental-first, and every arm's copy is true under
+ * composition: the pool IS the row set, so when it failed nothing else can
+ * be said honestly; the overlay and Favorites arms name the filter the
+ * user is actually holding; `extras` is the window-independent top-up that
+ * all three window-escaping filters share.
+ */
+export function failureReason(input: {
+  poolError: boolean
+  /** Gated by the caller on there being ids to fetch. */
+  extrasError: boolean
+  extraIdCount: number
+  favoritesOnly: boolean
+  favoritesError: boolean
+  onlyMode: boolean
+  overlayError: boolean
+}): LoadFailure | null {
+  if (input.poolError) return 'pool'
+  if (input.onlyMode && input.overlayError) return 'overlay'
+  if (input.favoritesOnly && input.favoritesError) return 'favorites'
+  if (input.extrasError && input.extraIdCount > 0) return 'extras'
+  return null
+}
+
+export const FAILURE_COPY: Record<LoadFailure, string> = {
+  pool: 'The player pool didn’t load.',
+  overlay: 'The overlaid list didn’t load, so “Only this list” can’t be trusted.',
+  favorites: 'Your Favorites didn’t load, so this filter can’t be trusted.',
+  extras: 'Players outside the browse window didn’t load, so this filter is incomplete.',
 }
 
 // ---------------------------------------------------------------------------

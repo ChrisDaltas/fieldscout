@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 
+import { DockPanelCloseContext } from './draft-dock-panel'
 import {
   DOCK_TABS,
   dockPanelId,
@@ -69,6 +70,13 @@ export function DraftDock({ panels }: DraftDockProps) {
     setOpen((current) => dockReducer(current, action))
   }
 
+  // The ONE in-panel dismissal (R446 — see `draft-dock-panel.ts` for why it
+  // is a context and not a prop). Stable identity, and it goes through the
+  // same pure reducer every other transition does.
+  const closePanel = useCallback(() => {
+    setOpen((current) => dockReducer(current, { type: 'close' }))
+  }, [])
+
   // D150's focus contract, effect-side: into the panel on open/switch,
   // back to the owning tab button on close.
   useEffect(() => {
@@ -112,7 +120,14 @@ export function DraftDock({ panels }: DraftDockProps) {
           tabIndex={-1}
           className="absolute inset-x-0 bottom-full h-dock-panel-mobile overflow-y-auto border-t border-ink bg-page p-3 shadow-hard-up-6 outline-none lg:h-dock-panel"
         >
-          {panels[openTab.id]}
+          {/* Scoped to the OPEN PANEL'S BODY deliberately: only something
+              rendered inside the panel can dismiss it, so D119(6)'s
+              room-level modal — mounted outside the dock — still cannot
+              trip it, and `DraftDockProps` still exposes no open/close
+              API. R446 / D196. */}
+          <DockPanelCloseContext.Provider value={closePanel}>
+            {panels[openTab.id]}
+          </DockPanelCloseContext.Provider>
         </div>
       )}
 
