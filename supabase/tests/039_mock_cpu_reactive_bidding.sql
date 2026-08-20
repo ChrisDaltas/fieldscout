@@ -40,13 +40,17 @@
 --     the CPU think-time arm) open a market that is already contested when
 --     the call returns. And the RPCs return the POST-ladder draft, not the
 --     pre-ladder one they wrote.
---   * §D THE LADDER: it terminates (a second responder call after a settled
---     ladder writes nothing and returns 0); every rung is exactly what
+--   * §C2/§C5 THE LADDER: it terminates (a second responder call after a
+--     settled ladder writes nothing and returns 0); every rung is exactly what
 --     draft_mock_cpu_raise_amount predicts for its own (team, pass, high,
---     ceiling) — which is the determinism claim in its strongest form, since
---     the ladder is then a pure function of the row history; and the cap
---     RAISES LOUDLY at 2 × team_count with its message pinned verbatim
---     (D200(3): never a silent EXIT).
+--     ceiling) — the determinism claim in its strongest form, since the ladder
+--     is then a pure function of the row history; the argmax that chooses WHO
+--     raises is pinned against the model itself (re-pointed here from 038 §D);
+--     and a legitimate $1 grind through willing seats RUNS TO THE CEILING
+--     rather than tripping a counter, which is the measurement that widened
+--     the bound to GREATEST(2 × team_count, auction_budget) — D204(2b), F88.
+--     The bound is still hard and still loud; its loudness is shown by the
+--     PR break probe, because no legal market can reach it.
 --   * §E E62 IS UNCHANGED, and jump-bids do not weaken it: over a driven
 --     ladder no CPU bid exceeds LEAST(its value, its max bid) at the time it
 --     was placed, bracketed by a population count (R307), and the validator
@@ -572,10 +576,16 @@ select throws_ok(
   'THE VALIDATOR THE CPU PASSES THROUGH still refuses an over-ceiling amount — the same E5 clause, now under the responder''s own honest label');
 
 -- ===========================================================================
--- C5. THE CAP RAISES LOUDLY (D200(3) — never a silent EXIT).
---     A hand-built world: TWO teams in the nomination order (cap = 2 × 2 = 4)
---     and a price parked $9 under a $199 ceiling, so the gap is 4.5% and the
---     curve nibbles — a ladder longer than the cap, by construction.
+-- C5. THE LEGITIMATE GRIND, AND THE BOUND THAT NO LONGER FIRES ON IT.
+--     A hand-built world: TWO teams in the nomination order and a price parked
+--     $9 under a $199 ceiling, so the gap is 4.5% and the curve nibbles — a
+--     $1-at-a-time climb through willing seats, which is exactly the texture
+--     Chris asked for and which D200(3)'s `2 × team_count` (= 4 here) fired on
+--     with a FALSE diagnosis. The bound is `GREATEST(2 × team_count,
+--     auction_budget)` instead (D204(2b)); its loudness is proved by the PR's
+--     second break probe, because no legal market can reach it — which is the
+--     property that makes it worth raising. See ledger row F88 for what the
+--     degenerate shape costs in held-lock time.
 -- ===========================================================================
 create temp table ap3_cap_draft as
 select d.id from drafts d join ap3_mock m on m.id = d.id;
