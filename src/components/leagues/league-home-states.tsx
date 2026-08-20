@@ -311,18 +311,23 @@ function SetupHero({
             </div>
           )}
 
-          {timeSaved && (
-            // §16.5.1 setup row: "Practice-draft card once a draft is
-            // configured" (L.B3.5 — §16.4's draft-night rehearsal:
-            // "rehearsal is the moment misconfigured settings get caught").
-            // Any member, not just the commissioner (§8.8's launch rule).
-            <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
+          {/* Practice is available from league CREATION — Chris, 2026-08-20:
+              "we need to remove that". §16.5.1's "once a draft is configured"
+              gated this on `timeSaved` (a draft datetime saved in settings),
+              which is the wrong dependency: a practice draft rehearses the
+              league's SETTINGS — draft type, roster, budget, clocks — and
+              those exist from creation with defaults. The scheduled instant
+              has no bearing on how a draft runs. The gate made a brand-new
+              league show no way to try a draft at all, which is the first
+              thing a commissioner wants to do. Any member (§8.8's launch
+              rule); the Schedule button above keeps its own `timeSaved`
+              gate, which IS the right dependency for locking in draft night. */}
+          <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
               <PracticeCta leagueId={leagueId} />
               <p className="text-[10px] font-semibold text-n-3">
                 Test these settings against CPU opponents before draft night.
               </p>
-            </div>
-          )}
+          </div>
 
           {/* §7.4's reverse entry (M2 L.B4.2): draft prep starts in setup —
               any member, no time-saved gate (attaching needs no schedule). */}
@@ -449,7 +454,7 @@ function ScheduledHero({
           )}
 
           {/* F38 discharged (L.B3.4): the CTAs are real. Enter draft lobby →
-              the room route's pre-start lobby; Practice this draft → the
+              the room route's pre-start lobby; Run mock draft → the
               L.B3.5 launcher entry behind its ready-flag (visible now,
               enabled the moment the launcher lands — lane order can't
               dead-end). */}
@@ -520,7 +525,7 @@ function ScheduledHero({
 }
 
 /**
- * "Practice this draft" — wired to the L.B3.5 launcher entry behind its
+ * "Run mock draft" — wired to the L.B3.5 launcher entry behind its
  * ready-flag (mock-launcher-entry.ts). Until the launcher lands the CTA is
  * visibly present but honestly disabled; L.B3.5 flips the flag and this
  * becomes a live link with zero rewiring.
@@ -532,9 +537,9 @@ function ScheduledHero({
 export function PracticeCta({ leagueId }: { leagueId: string }) {
   if (!MOCK_LAUNCHER_READY) {
     return (
-      <Button variant="stroke" size="sm" disabled title="Practice drafts arrive with the next update">
+      <Button variant="stroke" size="sm" disabled title="Mock drafts arrive with the next update">
         <Icon name="rocket" size={13} />
-        Practice this draft
+        Run mock draft
       </Button>
     )
   }
@@ -542,7 +547,7 @@ export function PracticeCta({ leagueId }: { leagueId: string }) {
     <Button variant="stroke" size="sm" asChild>
       <Link href={mockLauncherHref(leagueId)}>
         <Icon name="rocket" size={13} />
-        Practice this draft
+        Run mock draft
       </Link>
     </Button>
   )

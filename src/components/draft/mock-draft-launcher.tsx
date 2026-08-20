@@ -125,7 +125,7 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
           <CardHeader>
             <CardTitle>
               <Icon name="rocket" size={15} className="mr-1.5 inline align-[-2px]" />
-              Practice this draft
+              Run mock draft
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
