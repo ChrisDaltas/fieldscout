@@ -112,9 +112,13 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
    *(**The DR lane is COMPLETE — DR.1–DR.8 all landed 2026-08-18**, so this step
    never fires again; the DR prerequisites in step 3 are all satisfied.)*
 1a. **Take the next unblocked `AP.*` task (dependency order in tasks-AP §7) BEFORE any
-   remaining `L.C*` task.** `AP.4` is **blocked on Q17** (Chris's sign-off on the bid-clock
-   default) — skip it and take the next AP task; do not guess the number. When every `AP.*`
-   task is done or blocked, fall through to step 2.
+   remaining `L.C*` task.** `AP.4` is **blocked on Q23** (2026-08-21 — **Q17 was ruled and
+   AP.4 halted on what Q17 did not ask**: whether a mock's 10-second bid clock OVERRIDES a
+   league that chose its own. Measured, Q17's three ruled numbers are already the shipped
+   values, so the override is the whole task; see PROGRESS §3 Q23, **B5** and **D224**).
+   **Skip it — the measurement it owed §8.8 is already done and is on the Q23/F85 rows, so a
+   session that takes AP.4 before Chris rules will re-run a 52-minute mock for nothing.**
+   When every `AP.*` task is done or blocked, fall through to step 2.
 1b. **When no `AP.*` task is unblocked, take the next unblocked `MS.*` task** (dependency order
    in `tasks-MS-mock-sandbox.md` §5) **before any remaining `L.C*` task.** The lane makes the
    mock launcher the commissioner of their own mock (**D216–D223**, spec **v2.15**).
