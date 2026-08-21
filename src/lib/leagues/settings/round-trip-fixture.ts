@@ -121,7 +121,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
     draft_order: DRAFT_ORDER,
     pick_timer_seconds: 0,
     auction_budget: 1000,
-    auction_min_bid: 2, // solvency: 1000 ≥ 18 × 2 ✓
+    auction_zero_dollar_nominations: true, // 092/AP.1: the NON-default value, so the round trip carries it
     auction_nomination_seconds: 15,
     auction_bid_seconds: 45,
     auction_anti_snipe_seconds: 0,

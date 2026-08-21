@@ -152,10 +152,10 @@ function boundaryMin(): LeagueSettings {
     stat_correction_window: 0,
     draft: {
       ...s.draft,
-      draft_type: 'auction', // solvency active: 50 ≥ 1-player roster × 0
+      draft_type: 'auction', // solvency: at $0 nominations the floor is vacuous (092/AP.1)
       pick_timer_seconds: 0,
       auction_budget: 50,
-      auction_min_bid: 0,
+      auction_zero_dollar_nominations: true, // the MIN end of the toggle's two states
       auction_nomination_seconds: 10,
       auction_bid_seconds: 10,
       auction_anti_snipe_seconds: 0,
@@ -205,10 +205,10 @@ function boundaryMax(): LeagueSettings {
     stat_correction_window: 168,
     draft: {
       ...s.draft,
-      draft_type: 'auction', // solvency: 1000 ≥ 46-player roster × 5 = 230
+      draft_type: 'auction', // solvency: 1000 ≥ 46-player roster × $1 reserve
       pick_timer_seconds: 86400,
       auction_budget: 1000,
-      auction_min_bid: 5,
+      auction_zero_dollar_nominations: false, // the MAX end of the toggle's two states
       auction_nomination_seconds: 120,
       auction_bid_seconds: 60,
       auction_anti_snipe_seconds: 15,
@@ -516,13 +516,63 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       })
     })
 
-    it('§7.3.8 draft — auction budget below the solvency floor rejects per-field', async () => {
+    // 092/AP.1 — this case USED to reach the per-field §8.6.8 solvency refusal
+    // by setting `auction_min_bid: 5` against a 16-spot roster (16 × 5 = 80 >
+    // 50). With the field retired the reserve is at most $1, so the shape has
+    // to change: the roster gets big instead of the reserve.
+    //
+    // **R456 — the reason this is an OVERSIZED LINEUP and not a small budget.**
+    // An earlier revision of this PR downgraded this case to a Zod-layer
+    // `auction_budget: 49` check on the premise that `budget < roster × 1` was
+    // unreachable through a schema-valid object. THAT PREMISE WAS FALSE, and
+    // it was inferred from a printed spec bullet rather than observed at this
+    // layer. The 20-slot starting cap is NOT a schema bound — it is a SIBLING
+    // ARM of the same validator (`league-settings.ts:481`); Zod bounds each
+    // slot's `count` at 10 and does not bound the array length at all
+    // (`rosterSettingsSchema.starting_slots` is a bare `z.array(...)`).
+    // Measured: 30 slots × count 10 parses clean and derives a 307-player
+    // roster, so the solvency arm fires here, per-field, on a Zod-valid body.
+    // It never fires ALONE — the roster-size arm fires with it, which is the
+    // real redundancy — but "redundant with a sibling arm" is not "dead", and
+    // this is the ONLY assertion that the solvency message and its field are
+    // wired at the API surface.
+    it('§7.3.8 draft — an oversized starting lineup against a $50 budget rejects the SOLVENCY arm per-field (R456)', async () => {
       const body = (await expectRejected((s) => {
         s.draft.draft_type = 'auction'
         s.draft.auction_budget = 50
-        s.draft.auction_min_bid = 5 // 16-player default roster × 5 = 80 > 50
+        // Schema-legal: `count` ≤ 10 per slot, array length unbounded.
+        s.roster_settings.starting_slots = Array.from({ length: 30 }, (_, i) => ({
+          key: `r456rb${i}`,
+          label: `R456 RB ${i}`,
+          eligible: ['RB' as const],
+          count: 10,
+        }))
       })) as { error: { fieldErrors: Record<string, string[]> } }
+      // The solvency arm, by field and by message — the half that was lost.
+      // The presence assertion comes FIRST so the RED reads as "the arm did
+      // not fire" rather than as a chai type complaint: measured under a
+      // probe that made the arm dead code (`if (false && …)`), this test goes
+      // RED while the Zod-layer `auction_budget: 49` case stays GREEN — which
+      // is precisely the coverage the downgrade had lost.
+      expect(body.error.fieldErrors['draft.auction_budget']).toBeDefined()
       expect(body.error.fieldErrors['draft.auction_budget']?.[0]).toContain("can't fill")
+      expect(body.error.fieldErrors['draft.auction_budget']?.[0]).toContain('307-player roster')
+      expect(body.error.fieldErrors['draft.auction_budget']?.[0]).toContain('per-slot reserve')
+      // …and its sibling fires alongside it, which is WHY the arm is
+      // redundant rather than reachable on its own. Pinned so a future reader
+      // sees the redundancy is between two validator arms, not schema-vs-arm.
+      expect(body.error.fieldErrors['roster_settings.starting_slots']?.[0]).toContain(
+        'between 1 and 20 slots',
+      )
+    })
+
+    // The Zod-layer boundary for the same field group, KEPT — it is a
+    // different layer and a different claim (the catalog's own `min(50)`).
+    it('§7.3.8 draft — auction_budget 49 (one past the min) rejects at the Zod layer', async () => {
+      await expectRejected((s) => {
+        s.draft.draft_type = 'auction'
+        s.draft.auction_budget = 49
+      })
     })
   })
 

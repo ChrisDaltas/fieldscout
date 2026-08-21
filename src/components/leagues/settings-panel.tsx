@@ -1487,17 +1487,22 @@ function DraftGroup({
               className="h-btn-md w-24 text-[12px]"
             />
           </FieldRow>
-          <FieldRow label="Minimum bid" htmlFor="set-auction-min">
-            <Input
-              id="set-auction-min"
-              type="number"
-              min={0}
-              max={5}
-              value={d.auction_min_bid}
-              onChange={(e) => onDraft({ auction_min_bid: clampInt(e.target.value, 0, 5, d.auction_min_bid) })}
-              className="h-btn-md w-24 text-[12px]"
-            />
-          </FieldRow>
+          {/* 092/AP.1 — the "Minimum bid" number input is GONE (§7.3.8
+              v2.13). It was a 0–5 field that set the nomination floor and
+              the per-slot reserve and did NOT set the bid increment, which
+              has always been a fixed $1; a commissioner who typed 5 got $1
+              raises. What replaces it is the toggle that names one real
+              behaviour, and the copy says both halves of what it does so a
+              commissioner is never surprised by the reserve going away. */}
+          <ToggleRow
+            id="set-auction-zero-dollar"
+            label="Allow $0 nominations"
+            hint="A nomination can open at any amount the team can afford, and no budget is held back per empty roster spot. Raises are always $1 more, either way."
+            checked={d.auction_zero_dollar_nominations}
+            onCheckedChange={(auction_zero_dollar_nominations) =>
+              onDraft({ auction_zero_dollar_nominations })
+            }
+          />
           <FieldRow label="Nomination clock" htmlFor="set-auction-nom" hint="Seconds to nominate.">
             <Input
               id="set-auction-nom"

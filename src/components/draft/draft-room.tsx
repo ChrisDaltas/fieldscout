@@ -870,7 +870,7 @@ function DraftRoomLive({
     return teamBudget(
       {
         auctionBudget: knobs.auctionBudget,
-        minBid: knobs.minBid,
+        reserve: knobs.reserve,
         totalRounds: draft.total_rounds,
         budgetAdjustments: draft.budget_adjustments,
       },

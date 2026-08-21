@@ -995,8 +995,9 @@ export const undoDraftInputSchema = z.strictObject({
  *  Optional wire-side — a snake pick carries no price and the RPC refuses
  *  one (087); on an auction the RPC REQUIRES it when the pick changes hands
  *  and accepts a price-only correction (so `price` alone is a legal body).
- *  `min(0)` is the shape floor: `auction_min_bid = 0` is a legal league, and
- *  "below this league's minimum bid" is the RPC's own refusal (§7.3.8). */
+ *  `min(0)` is the shape floor: $0 is a legal price in a league that allows
+ *  $0 nominations (`auction_zero_dollar_nominations` — 092/AP.1, §7.3.8), and
+ *  "below this league's $N price floor" is the RPC's own refusal. */
 const priceSchema = z.number().int().min(0).optional()
 
 export const reassignPickInputSchema = z

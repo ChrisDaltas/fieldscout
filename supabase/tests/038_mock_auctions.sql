@@ -16,7 +16,7 @@
 --     pinned, the derivation family reading the mock (200/2/199/0), E60
 --     (the real scheduled auction draft's WHOLE row byte-identical beside
 --     the live mock), and the §8.6.8 start backstop mirrored from 084 at
---     its ONE-UNIT boundary (budget = slots × min_bid launches; minus one
+--     its ONE-UNIT boundary (budget = slots × reserve launches; minus one
 --     dollar refuses by name — D146).
 --   * F61 BOTH SIDES at the strongest discriminator (§C, the 025 §E
 --     pattern): the human seat is T3 — owned and managed by u03 — while u02
@@ -341,7 +341,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
    'pgtap-ma-LA-main', 2026, 'setup', 8, null,
    '{"draft": {"draft_type": "auction", "draft_order_mode": "manual",
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 30,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
      "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10,
      "disconnect_grace_seconds": 30, "pick_timer_seconds": 90,
      "draft_order": ["c9000000-0000-4000-8000-00a100000003", "c9000000-0000-4000-8000-00a100000001",
@@ -352,7 +352,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
    'pgtap-ma-LB-script', 2026, 'setup', 8, null,
    '{"draft": {"draft_type": "auction", "draft_order_mode": "manual",
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 20, "auction_min_bid": 1, "auction_nomination_seconds": 30,
+     "auction_budget": 20, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
      "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10,
      "disconnect_grace_seconds": 30, "pick_timer_seconds": 90,
      "draft_order": ["c9000000-0000-4000-8000-00b100000001", "c9000000-0000-4000-8000-00b100000002",
@@ -363,7 +363,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
    'pgtap-ma-LC-edge', 2026, 'setup', 8, null,
    '{"draft": {"draft_type": "auction", "draft_order_mode": "manual",
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 30,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
      "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10,
      "disconnect_grace_seconds": 30, "pick_timer_seconds": 90,
      "draft_order": ["c9000000-0000-4000-8000-00c100000002", "c9000000-0000-4000-8000-00c100000001",
@@ -373,7 +373,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   ('b9000000-0000-4000-8000-0000000000d1', '98000000-0000-4000-8000-000000000005',
    'pgtap-ma-LD-backstop', 2026, 'setup', 8, null,
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 1, "auction_min_bid": 1, "auction_nomination_seconds": 30,
+     "auction_budget": 1, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
      "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10}}');
 update leagues
 set roster_settings = '{"starting_slots": [
@@ -436,7 +436,7 @@ select set_config('request.jwt.claims',
 select throws_ok(
   $$ select public.create_mock_draft('b9000000-0000-4000-8000-0000000000d1') $$,
   'P0001',
-  'create_mock_draft: league b9000000-0000-4000-8000-0000000000d1 cannot practice an auction — a $1 budget cannot fill 2 draftable roster spots at a $1 minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
+  'create_mock_draft: league b9000000-0000-4000-8000-0000000000d1 cannot practice an auction — a $1 budget cannot fill 2 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
   'the §8.6.8 start backstop is mirrored into the launch arm: a league one dollar short of the floor cannot PRACTICE an auction (084 banner item 4, "Same engine, literally")');
 select is(
   (select count(*) from drafts where league_id = 'b9000000-0000-4000-8000-0000000000d1' and is_mock),
@@ -451,7 +451,7 @@ select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
 select lives_ok(
   $$ select public.create_mock_draft('b9000000-0000-4000-8000-0000000000d1') $$,
-  'budget = slots × min_bid EXACTLY ($2 for 2 × $1) launches — the boundary from the other side (D146)');
+  'budget = slots × reserve EXACTLY ($2 for 2 × $1) launches — the boundary from the other side (D146)');
 reset role;
 select ok(
   public.draft_auction_solvent((select id from drafts where league_id = 'b9000000-0000-4000-8000-0000000000d1' and is_mock)),
@@ -502,7 +502,7 @@ select is(
 select is(
   (select d.config - 'mock' - 'draft_order' from drafts d join ma_la on ma_la.id = d.id),
   '{"draft_type": "auction", "draft_order_mode": "manual", "nomination_order_mode": "same_as_draft_order",
-    "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 30,
+    "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
     "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10,
     "disconnect_grace_seconds": 30, "pick_timer_seconds": 90}'::jsonb,
   'the config snapshot carries the WHOLE §7.3.8 auction block incl. anti-snipe (D95 — a mock never re-hydrates)');
@@ -850,7 +850,7 @@ select is(
    from draft_bids b join ma_la on ma_la.id = b.draft_id
    where b.nomination_seq = 2 order by b.amount limit 1),
   '{"seq": 2, "player": "ma-rb01", "team": "c9000000-0000-4000-8000-00a100000001", "amount": 1, "action_null": true}'::jsonb,
-  'the CPU nomination = the seat''s OWN resolve chain at min_bid (D129(2)): lowest-ADP available RB (ma-rb01), T1, $1, action_id NULL — the identical OPENING row a timeout writes (F62)');
+  'the CPU nomination = the seat''s OWN resolve chain at the nomination floor (D129(2)): lowest-ADP available RB (ma-rb01), T1, $1, action_id NULL — the identical OPENING row a timeout writes (F62)');
 select ok(
   (select count(*) > 1 from draft_bids b join ma_la on ma_la.id = b.draft_id
    where b.nomination_seq = 2),
@@ -938,7 +938,7 @@ select is(
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000002', 'ma-k01'),
   0::numeric,
-  'need(any team, K) = 0 ALWAYS — a CPU never raises on a kicker (its forced-arm nomination buys one at min_bid)');
+  'need(any team, K) = 0 ALWAYS — a CPU never raises on a kicker (its forced-arm nomination buys one at the nomination floor)');
 select is(
   public.draft_mock_cpu_need((select id from ma_lc), 'c9000000-0000-4000-8000-00c100000002', 'ma-qb01'),
   0.5::numeric,
@@ -1053,7 +1053,7 @@ select throws_ok(
   format($$ select public.draft_place_bid_internal('%s', 'c9000000-0000-4000-8000-00c100000003', 52, null, 'draft_mock_cpu') $$,
          (select id from ma_lc)),
   'P0001',
-  'draft_mock_cpu: $52 is over your max bid of $50 — you have $50 for 1 open roster spots at a $1 minimum bid (§8.6.1/E5)',
+  'draft_mock_cpu: $52 is over your max bid of $50 — you have $50 for 1 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
   'E62 — THE VALIDATOR THE CPU PASSES THROUGH refuses $52 (the dollar the responder folded on) by name, under the RESPONDER''s own label: the same E5 clause, the same number, the same function a human''s bid meets. 091 renamed the label from ''draft_tick'' because a reactive response is no longer the tick''s doing — it is the responder''s, whichever transaction provoked it.');
 select is(
   (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id where b.nomination_seq = 14),
@@ -1061,7 +1061,7 @@ select is(
   '…and the refusal wrote nothing: five rows — the $1 opening, T3''s jump, the $49 fixture bid, T3''s $50 edge raise and the human''s $51');
 -- The property, bracketed (R307): across LA + LC, no CPU bid ever exceeded
 -- its bidder's max bid AT THE TIME — every CPU row ≤ remaining − (open − 1) ×
--- min_bid given the picks on the board when it bid; here no award landed
+-- the nomination floor given the picks on the board when it bid; here no award landed
 -- between rows, so the live derivation is the derivation at the time.
 select is(
   (select count(*) from draft_bids b join ma_lc on ma_lc.id = b.draft_id
@@ -1237,7 +1237,7 @@ select is(
   'every team''s roster is FULL — the E27 rotation skip and the completion detector agree on an auction mock');
 select ok(
   (select bool_and(p.price >= 1 and p.round is null) from draft_picks p join ma_lb on ma_lb.id = p.draft_id),
-  'every pick is priced (≥ min_bid) with round NULL — §12.4''s auction shape');
+  'every pick is priced (≥ the nomination floor) with round NULL — §12.4''s auction shape');
 select ok(
   (select bool_and(s.spent <= 20) from (
      select sum(p.price) as spent from draft_picks p join ma_lb on ma_lb.id = p.draft_id
@@ -1263,7 +1263,7 @@ select ok(
 -- THE WHOLE-RUN FORCED ASSERTION (R406 / D163): on {RB:1, K:1}/bench 0 every
 -- seat is forced from its first pick, so a finished board is EIGHT RBs and
 -- EIGHT Ks — one each per team — and no K was ever raised on (the Ks arrive
--- through the forced-arm nominations at min_bid, nothing else). Before the
+-- through the forced-arm nominations at the nomination floor, nothing else). Before the
 -- fix a CPU holding its RB valued a second RB at 0.5 × base, raised on the
 -- human seat's RB nomination, won, and completed with NO K (7 of 8 Ks in
 -- the reviewer's run — run-dependent: the PRNG seeds on the mock id).
@@ -1295,7 +1295,7 @@ select ok(
    from draft_picks p join ma_lb on ma_lb.id = p.draft_id
    join players pl on pl.id = p.player_id
    where p.is_undone = false and pl.position = 'K'),
-  '…and every K was bought at the $1 minimum bid');
+  '…and every K was bought at the $1 nomination floor');
 -- R408 — the known property, NAMED: a mock''s draft_bids rows carry the REAL
 -- league''s league_id (083 RLS keys on it), so a league-scoped reader that
 -- does not also filter draft_id (or is_mock through the drafts join) sees
@@ -1472,7 +1472,7 @@ select is(
 insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds,
                     current_round, current_pick_number, on_clock_team_id, current_deadline, started_at)
 values ('e9000000-0000-4000-8000-0000000000ee', 'b9000000-0000-4000-8000-0000000000c1',
-        'auction', 'live', true, '{"auction_budget": 200, "auction_min_bid": 1}', 2, 1, 1,
+        'auction', 'live', true, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', 2, 1, 1,
         'c9000000-0000-4000-8000-00c100000001', now() + interval '1 hour', now());
 set local role authenticated;
 select set_config('request.jwt.claims',

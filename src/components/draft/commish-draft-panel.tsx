@@ -167,7 +167,7 @@ export function CommishDraftPanel({
   const budgetInputs = useMemo(
     () => ({
       auctionBudget: auctionKnobs.auctionBudget,
-      minBid: auctionKnobs.minBid,
+      reserve: auctionKnobs.reserve,
       totalRounds: draft.total_rounds,
       budgetAdjustments: draft.budget_adjustments,
     }),
@@ -300,7 +300,7 @@ export function CommishDraftPanel({
                 draftId={draft.id}
                 columns={auctionColumns}
                 budgets={budgets}
-                minBid={auctionKnobs.minBid}
+                reserve={auctionKnobs.reserve}
                 playerById={playerById}
                 livePicks={livePicks}
                 gate={gate}
@@ -328,7 +328,7 @@ export function CommishDraftPanel({
                 draftId={draft.id}
                 teams={activeTeams}
                 budgets={budgets}
-                minBid={auctionKnobs.minBid}
+                reserve={auctionKnobs.reserve}
                 nomination={nomination}
                 onError={surfaceError}
               />
@@ -1006,7 +1006,8 @@ function ForcePickSection({
   const live = draft.status === 'live'
 
   // L.C3.2: on an auction, 087's arm (R301) makes this a force-NOMINATION at
-  // the league minimum bid, legal only in the NOMINATING phase — there is
+  // the §8.6.2 nomination floor (092/AP.1 — $1, or $0 in a league that allows
+  // $0 nominations), legal only in the NOMINATING phase — there is
   // deliberately no commissioner force-BID (§8.6.5/OQ 10). The copy says
   // what the verb does rather than borrowing the snake sentence.
   return (
@@ -1015,7 +1016,7 @@ function ForcePickSection({
       hint={
         live
           ? isAuction
-            ? `Opens a nomination for ${onClockName} at the league minimum bid (disconnect/AFK relief) — bidding then runs as normal.`
+            ? `Opens a nomination for ${onClockName} at this league's nomination floor (disconnect/AFK relief) — bidding then runs as normal.`
             : `Drafts the player for ${onClockName} (disconnect/AFK relief).`
           : 'Resume the draft first — a paused clock can’t take a pick (069).'
       }
@@ -1360,7 +1361,7 @@ function ManualEditSection({
   draftId,
   columns,
   budgets,
-  minBid,
+  reserve,
   playerById,
   livePicks,
   gate,
@@ -1370,7 +1371,7 @@ function ManualEditSection({
   draftId: string
   columns: readonly AuctionTeamColumn[]
   budgets: ReadonlyMap<string, TeamBudget | null>
-  minBid: number
+  reserve: 0 | 1
   playerById: ReadonlyMap<string, PlayerIdentity>
   livePicks: DraftPickSummary[]
   gate: ControlGate
@@ -1448,7 +1449,7 @@ function ManualEditSection({
                         <span className="max-w-[120px] truncate">
                           {player ? abbreviateName(player.full_name) : pick.playerId}
                         </span>
-                        <span className="fs-num text-n-3">${pick.price ?? minBid}</span>
+                        <span className="fs-num text-n-3">${pick.price ?? reserve}</span>
                       </button>
                     )
                   })}
@@ -1467,7 +1468,7 @@ function ManualEditSection({
         draftId={draftId}
         target={target}
         budgets={budgets}
-        minBid={minBid}
+        reserve={reserve}
         columns={columns}
         gate={gate}
         onClose={() => setTarget(null)}
@@ -1483,7 +1484,7 @@ function ManualEditDialog({
   draftId,
   target,
   budgets,
-  minBid,
+  reserve,
   columns,
   gate,
   onClose,
@@ -1493,7 +1494,7 @@ function ManualEditDialog({
   draftId: string
   target: ManualEditTarget | null
   budgets: ReadonlyMap<string, TeamBudget | null>
-  minBid: number
+  reserve: 0 | 1
   columns: readonly AuctionTeamColumn[]
   gate: ControlGate
   onClose: () => void
@@ -1514,7 +1515,7 @@ function ManualEditDialog({
     onClose()
   }
 
-  const cost = priceEntry({ raw: price, minBid, receivingBudget: budgets.get(toTeam) ?? null })
+  const cost = priceEntry({ raw: price, reserve, receivingBudget: budgets.get(toTeam) ?? null })
   const reasonReady = reason.trim().length > 0
 
   return (
@@ -1522,7 +1523,7 @@ function ManualEditDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {target ? `${target.playerName} — $${target.price ?? minBid}` : 'Edit a pick'}
+            {target ? `${target.playerName} — $${target.price ?? reserve}` : 'Edit a pick'}
           </DialogTitle>
           <DialogDescription>
             {target
@@ -1556,7 +1557,7 @@ function ManualEditDialog({
           <div className="flex flex-col gap-1.5">
             <p className="text-[12px] font-semibold">
               {target.playerName} returns to the pool and {target.teamName} is refunded{' '}
-              <span className="fs-num font-extrabold">${target.price ?? minBid}</span>.
+              <span className="fs-num font-extrabold">${target.price ?? reserve}</span>.
             </p>
             <ReasonInput value={reason} onChange={setReason} required />
           </div>
@@ -1778,7 +1779,7 @@ function BudgetSection({
   draftId,
   teams,
   budgets,
-  minBid,
+  reserve,
   nomination,
   onError,
 }: {
@@ -1786,7 +1787,7 @@ function BudgetSection({
   draftId: string
   teams: ReadonlyArray<{ id: string; name: string }>
   budgets: ReadonlyMap<string, TeamBudget | null>
-  minBid: number
+  reserve: 0 | 1
   nomination: { high_bid: number; high_bidder_team_id: string } | null
   onError: (error: unknown, title: string) => void
 }) {
@@ -1799,7 +1800,7 @@ function BudgetSection({
   const preview = budgetEditPreview({
     budget: budgets.get(teamId) ?? null,
     delta: parsedDelta ?? 0,
-    minBid,
+    reserve,
     highBidHeld:
       nomination && nomination.high_bidder_team_id === teamId ? nomination.high_bid : null,
   })

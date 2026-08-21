@@ -102,7 +102,11 @@ const DRAFT_INSTANT = '2028-09-01T17:00:00+00:00'
 const TEAM_COUNT = 8
 
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 /** Catalog maxima — the live cron must not reach an expiry between steps. */
 const NOMINATION_SECONDS = 120
 const BID_SECONDS = 60
@@ -111,8 +115,8 @@ const GRACE_SECONDS = 120
 /** D91 draftable slots for the default roster (9 starters + 6 bench, IR
  *  excluded) — the auction's per-team capacity (D126). */
 const OPEN_SLOTS = 15
-/** §8.6.1: max_bid = remaining − (open_slots − 1) × min_bid. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_MIN_BID // 186
+/** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
 
 const COMMISH = {
   email: 'auction-api-commish@fieldscout.test',
@@ -394,7 +398,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: ANTI_SNIPE_SECONDS,
@@ -900,7 +904,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(overMax.status).toBe(400)
     expect(errorText(overMax.body)).toContain(`$${MAX_BID + 1} is over your max bid of $${MAX_BID}`)
     expect(errorText(overMax.body)).toContain(
-      `you have $${AUCTION_BUDGET} for ${OPEN_SLOTS} open roster spots at a $${AUCTION_MIN_BID} minimum bid`,
+      `you have $${AUCTION_BUDGET} for ${OPEN_SLOTS} open roster spots at a $${AUCTION_RESERVE} per-slot reserve`,
     )
     expect(await bidCount(draftId)).toBe(4)
   })
@@ -1055,7 +1059,7 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
     }
     expect(inputs).toMatchObject({
       auctionBudget: AUCTION_BUDGET,
-      minBid: AUCTION_MIN_BID,
+      reserve: AUCTION_RESERVE,
       totalRounds: OPEN_SLOTS,
     })
 
@@ -1114,5 +1118,115 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
       maxBid: 186,
       committed: 0,
     })
+
+    // ======================================================================
+    // R457 — THE SAME BOARD, THE OTHER COLUMN. Everything above is the
+    // toggle-OFF half; D198(5) and AP.1 item 4 both require the D90 parity
+    // fixture to cover BOTH states, and until this pass the ON column rested
+    // on two hand-written literals (pgTAP 040 §B and auction-budget.test.ts)
+    // — parallel goldens, not a differential. Flipping the flag on the SAME
+    // planted board and re-running BOTH twins is what makes it one.
+    // ======================================================================
+    const { error: toggleError } = await service
+      .from('drafts')
+      .update({
+        config: { ...(draftRow!.config as Record<string, unknown>), auction_zero_dollar_nominations: true },
+      })
+      .eq('id', draftId)
+    expect(toggleError).toBeNull()
+
+    const { data: onRow, error: onRowError } = await commishClient
+      .from('drafts')
+      .select('config, total_rounds, budget_adjustments')
+      .eq('id', draftId)
+      .single()
+    expect(onRowError).toBeNull()
+
+    const onInputs = {
+      ...auctionKnobsOf(onRow!.config),
+      totalRounds: onRow!.total_rounds,
+      budgetAdjustments: onRow!.budget_adjustments,
+    }
+    // The mirror read the flag off the wire — not a value the test handed it.
+    expect(onInputs).toMatchObject({ auctionBudget: AUCTION_BUDGET, reserve: 0 })
+
+    const sqlOn = new Map<string, TeamBudget>()
+    for (const teamId of orderedTeamIds) {
+      const { data, error } = await service.rpc('draft_team_budget', {
+        p_draft_id: draftId,
+        p_team_id: teamId,
+      })
+      if (error) throw new Error(`draft_team_budget(${teamId}) ON failed: ${error.message}`)
+      const row = (
+        data as unknown as {
+          remaining: number
+          open_slots: number
+          max_bid: number
+          committed: number
+        }[]
+      )[0]
+      sqlOn.set(teamId, {
+        remaining: row.remaining,
+        openSlots: row.open_slots,
+        maxBid: row.max_bid,
+        committed: row.committed,
+      })
+    }
+
+    // (a) TS ≡ SQL again, franchise by franchise, at reserve 0.
+    for (const teamId of orderedTeamIds) {
+      expect(teamBudget(onInputs, picks, teamId), `team ${teamId} (ON)`).toEqual(sqlOn.get(teamId))
+    }
+    // (b) …and the two columns actually DIFFER, by exactly the reserve term
+    //     `(open_slots − 1) × $1`, on every franchise with an open roster.
+    //     This is the assertion that makes the pass a differential: a mirror
+    //     (or an engine) that ignored the toggle would agree with itself here
+    //     and be caught, which two parallel goldens cannot do.
+    for (const teamId of orderedTeamIds) {
+      const off = sql.get(teamId)!
+      const on = sqlOn.get(teamId)!
+      expect(on.remaining, `remaining moved on ${teamId}`).toBe(off.remaining)
+      expect(on.openSlots, `open_slots moved on ${teamId}`).toBe(off.openSlots)
+      expect(on.maxBid - off.maxBid, `reserve term on ${teamId}`).toBe(
+        off.openSlots <= 0 ? 0 : (off.openSlots - 1) * AUCTION_RESERVE,
+      )
+      // E27's complete roster is the NEGATIVE control: max_bid is 0 in BOTH
+      // columns, so it is the one seat the toggle cannot move.
+      if (off.openSlots <= 0) expect(on.maxBid).toBe(0)
+    }
+    // (c) The named states, as stored literals at reserve 0 — `max_bid` IS
+    //     `remaining`, flat (§8.6.1/E68).
+    expect(sqlOn.get(mgr3TeamId)).toEqual({
+      remaining: 14,
+      openSlots: 14,
+      maxBid: 14,
+      committed: MAX_BID,
+    })
+    expect(sqlOn.get(commishTeamId)).toEqual({
+      remaining: 180,
+      openSlots: 15,
+      maxBid: 180,
+      committed: 0,
+    })
+    expect(sqlOn.get(mgr2TeamId)).toEqual({
+      remaining: 225,
+      openSlots: 15,
+      maxBid: 225,
+      committed: 0,
+    })
+    expect(sqlOn.get(fullTeam)).toEqual({ remaining: 80, openSlots: 0, maxBid: 0, committed: 120 })
+    expect(sqlOn.get(orderedTeamIds[3])).toEqual({
+      remaining: 200,
+      openSlots: 15,
+      maxBid: 200,
+      committed: 0,
+    })
+
+    // Leave the board as it was found.
+    const { error: restoreError } = await service
+      .from('drafts')
+      .update({ config: draftRow!.config })
+      .eq('id', draftId)
+    expect(restoreError).toBeNull()
   }, 60_000)
 })

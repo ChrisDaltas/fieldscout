@@ -193,7 +193,8 @@ describe('auction control request wiring (§8.7 auction rows → the L.C2.2 rout
       price: 30,
       reason: 'swap',
     })
-    // $0 is a legal price (auction_min_bid may be 0) — sent, not dropped.
+    // $0 is a legal price (a league that allows $0 nominations — 092/AP.1)
+    // — sent, not dropped.
     expect(movePlayerRequest(LG, D, 'pl-1', 't1', 't2', undefined, 0).body).toEqual({
       draft_id: D,
       player_id: 'pl-1',

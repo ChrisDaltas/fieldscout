@@ -337,10 +337,17 @@ export function DraftLobby({
               <CardTitle>Auction</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-1.5">
+              {/* 092/AP.1 (§7.3.8 v2.13): `auction_min_bid` is retired, so the
+                  lobby stops printing a "minimum bid" the engine never had.
+                  What a manager needs to know before the room opens is the
+                  budget and whether $0 openings are legal — the increment is
+                  a fixed $1 in every league (§8.6.3) and is not a setting. */}
               <p className="text-[12px] font-bold">
                 <span className="fs-num">${detail.settings.draft.auction_budget}</span> budget per
-                team · <span className="fs-num">${detail.settings.draft.auction_min_bid}</span>{' '}
-                minimum bid
+                team ·{' '}
+                {detail.settings.draft.auction_zero_dollar_nominations
+                  ? '$0 nominations allowed'
+                  : 'nominations open at $1+'}
               </p>
               <p className="text-[11px] font-semibold text-n-3">
                 <span className="fs-num">{detail.settings.draft.auction_nomination_seconds}s</span>{' '}

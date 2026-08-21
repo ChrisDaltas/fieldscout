@@ -26,7 +26,7 @@
 --     misstatement about `uniq_draft_action`; record-only, D144(2).)*
 --   * R43-lesson CHECKs proven behaviorally on BOTH sides of each
 --     boundary: amount −1 → 23514 and amount 0 lives (C38: $0 opening
---     bids are legal when auction_min_bid = 0); nomination_seq 0 → 23514
+--     bids are legal with auction_zero_dollar_nominations ON); nomination_seq 0 → 23514
 --     and nomination_seq 1 lives (D126: the sequence is 1-based).
 --   * draft_bids per-role deny-by-default (§4.2): member SELECT positive
 --     (SELECT-sees-N), cross-league + outsider + anon see ZERO, and
@@ -272,7 +272,7 @@ select lives_ok(
              'a3000000-0000-4000-8000-00000000000a',
              3, 'pgtap-ab-p3', 'c3000000-0000-4000-8000-000000000001', 0,
              'f3000000-0000-4000-8000-0000000000a5') $$,
-  'draft_bids.amount CHECK: 0 lives — the C38 boundary ($0 opening legal when auction_min_bid = 0)');
+  'draft_bids.amount CHECK: 0 lives — the $0-opening boundary (legal with auction_zero_dollar_nominations ON; §7.3.8 v2.13)');
 select throws_ok(
   $$ insert into draft_bids (draft_id, league_id, nomination_seq, player_id, team_id, amount)
      values ('e3000000-0000-4000-8000-000000000001',

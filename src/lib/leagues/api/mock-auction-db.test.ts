@@ -74,7 +74,11 @@ const SLOTS_PER_TEAM = 2
 const TOTAL_NOMINATIONS = TEAM_COUNT * SLOTS_PER_TEAM
 
 const AUCTION_BUDGET = 50
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 const NOMINATION_SECONDS = 30
 const BID_SECONDS = 20
 const ANTI_SNIPE_SECONDS = 10
@@ -321,7 +325,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: ANTI_SNIPE_SECONDS,
@@ -645,7 +649,7 @@ describe('mock auctions over PostgREST (migration 089)', () => {
     for (const p of picks ?? []) {
       perTeam.set(p.team_id, (perTeam.get(p.team_id) ?? 0) + (p.price ?? 0))
       expect(p.round).toBeNull()
-      expect(p.price).toBeGreaterThanOrEqual(AUCTION_MIN_BID)
+      expect(p.price).toBeGreaterThanOrEqual(AUCTION_RESERVE)
     }
     expect(perTeam.size).toBe(TEAM_COUNT)
     for (const spent of perTeam.values()) expect(spent).toBeLessThanOrEqual(AUCTION_BUDGET)
@@ -661,7 +665,7 @@ describe('mock auctions over PostgREST (migration 089)', () => {
       .select('id', { count: 'exact', head: true })
       .eq('draft_id', mockId)
       .is('action_id', null)
-      .gt('amount', AUCTION_MIN_BID)
+      .gt('amount', AUCTION_RESERVE)
     expect(cpuRaises ?? 0).toBeGreaterThan(0)
 
     // ZERO SIDE EFFECTS (§8.8): the leagues row byte-identical to the

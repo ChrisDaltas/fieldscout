@@ -78,7 +78,11 @@ const SLOTS_PER_TEAM = 2
 const TOTAL_NOMINATIONS = TEAM_COUNT * SLOTS_PER_TEAM
 
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 const NOMINATION_SECONDS = 45
 const BID_SECONDS = 30
 const GRACE_SECONDS = 30
@@ -257,7 +261,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: 10,
@@ -318,7 +322,7 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
     // D126: the phase flipped to BIDDING with the NOMINATOR holding the
     // opening bid at the league minimum, and on_clock still the nominator.
     const nomination = after.current_nomination as unknown as LiveNomination
-    expect(nomination.high_bid).toBe(AUCTION_MIN_BID)
+    expect(nomination.high_bid).toBe(AUCTION_RESERVE)
     expect(nomination.high_bidder_team_id).toBe(nominationOrder[0])
     expect(after.on_clock_team_id).toBe(nominationOrder[0])
     // The resolve chain's own answer: the lowest-ADP available player.
@@ -336,7 +340,7 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
       nomination_seq: 1,
       player_id: PLAYERS[0].id,
       team_id: nominationOrder[0],
-      amount: AUCTION_MIN_BID,
+      amount: AUCTION_RESERVE,
       action_id: null,
     })
 
@@ -364,7 +368,7 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
       round: null, // D126: an auction has no rounds
       team_id: nominationOrder[0], // E26: back to the nominator
       player_id: PLAYERS[0].id,
-      price: AUCTION_MIN_BID,
+      price: AUCTION_RESERVE,
       is_auto: true, // the opening row carried action_id NULL (D130)
       made_via: 'autopick',
       picked_by: null, // the clock wrote it, not a user
@@ -387,9 +391,9 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
     })
     if (budgetErr) throw new Error(`draft_team_budget failed: ${budgetErr.message}`)
     expect((budget as unknown as Record<string, number>[])[0]).toMatchObject({
-      remaining: AUCTION_BUDGET - AUCTION_MIN_BID,
+      remaining: AUCTION_BUDGET - AUCTION_RESERVE,
       open_slots: SLOTS_PER_TEAM - 1,
-      committed: AUCTION_MIN_BID,
+      committed: AUCTION_RESERVE,
     })
   }, 120_000)
 
@@ -421,7 +425,7 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
     )
     for (const [i, p] of (picks ?? []).entries()) {
       expect(p.round).toBeNull()
-      expect(p.price).toBe(AUCTION_MIN_BID)
+      expect(p.price).toBe(AUCTION_RESERVE)
       expect(p.is_auto).toBe(true)
       expect(p.made_via).toBe('autopick') // ZERO manual actions
       expect(p.picked_by).toBeNull()
@@ -447,7 +451,7 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
     )
     for (const [i, b] of (bids ?? []).entries()) {
       expect(b.action_id).toBeNull()
-      expect(b.amount).toBe(AUCTION_MIN_BID)
+      expect(b.amount).toBe(AUCTION_RESERVE)
       expect(b.team_id).toBe(picks?.[i].team_id)
       expect(b.player_id).toBe(picks?.[i].player_id)
     }
@@ -489,10 +493,10 @@ describe('the auction clock over PostgREST (migration 086, ARM 2.6)', () => {
       })
       if (error) throw new Error(`draft_team_budget(${teamId}) failed: ${error.message}`)
       expect((data as unknown as Record<string, number>[])[0]).toMatchObject({
-        remaining: AUCTION_BUDGET - SLOTS_PER_TEAM * AUCTION_MIN_BID,
+        remaining: AUCTION_BUDGET - SLOTS_PER_TEAM * AUCTION_RESERVE,
         open_slots: 0,
         max_bid: 0, // E27: a complete roster bids nothing
-        committed: SLOTS_PER_TEAM * AUCTION_MIN_BID,
+        committed: SLOTS_PER_TEAM * AUCTION_RESERVE,
       })
     }
   }, 300_000)

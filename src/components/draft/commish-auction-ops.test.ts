@@ -427,7 +427,7 @@ describe('End draft cannot fire on a single click', () => {
 })
 
 describe('unfilledSlotsAtEnd counts what draft_end counts', () => {
-  const inputs = { auctionBudget: 200, minBid: 1, totalRounds: 3, budgetAdjustments: null }
+  const inputs = { auctionBudget: 200, reserve: 1 as const, totalRounds: 3, budgetAdjustments: null }
   const picks = [
     { team_id: 'A', price: 50, is_undone: false },
     { team_id: 'A', price: 10, is_undone: false },
@@ -459,7 +459,7 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
   const before = { remaining: 150, openSlots: 14, maxBid: 137, committed: 50 }
 
   it('applies the delta and re-derives max bid', () => {
-    const preview = budgetEditPreview({ budget: before, delta: 10, minBid: 1, highBidHeld: null })
+    const preview = budgetEditPreview({ budget: before, delta: 10, reserve: 1 as const, highBidHeld: null })
     expect(preview.after).toEqual({
       remaining: 160,
       openSlots: 14,
@@ -473,17 +473,17 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
   it('arm 2 boundary: exactly the solvency floor passes, one dollar under refuses', () => {
     // floor = 14 open × $1 = $14 ⇒ delta −136 leaves exactly $14.
     expect(
-      budgetEditPreview({ budget: before, delta: -136, minBid: 1, highBidHeld: null }).refusal,
+      budgetEditPreview({ budget: before, delta: -136, reserve: 1 as const, highBidHeld: null }).refusal,
     ).toBeNull()
     const under = budgetEditPreview({
       budget: before,
       delta: -137,
-      minBid: 1,
+      reserve: 1 as const,
       highBidHeld: null,
     })
     expect(under.refusal).toBe('below-floor')
     expect(under.note).toBe(
-      'That leaves $13 for 14 open roster spots at a $1 minimum bid — §8.6.8 needs at least $14.',
+      'That leaves $13 for 14 open roster spots at a $1 per-slot reserve — §8.6.8 needs at least $14.',
     )
   })
 
@@ -491,7 +491,7 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
     const preview = budgetEditPreview({
       budget: before,
       delta: -151,
-      minBid: 1,
+      reserve: 1 as const,
       highBidHeld: null,
     })
     expect(preview.refusal).toBe('below-committed')
@@ -505,26 +505,26 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
     const preview = budgetEditPreview({
       budget: before,
       delta: -20,
-      minBid: 1,
+      reserve: 1 as const,
       highBidHeld: 130,
     })
     expect(preview.refusal).toBe('below-high-bid')
     expect(preview.note).toContain('$130 high bid')
     // …and the same edit is fine when this team holds no bid.
     expect(
-      budgetEditPreview({ budget: before, delta: -20, minBid: 1, highBidHeld: null }).refusal,
+      budgetEditPreview({ budget: before, delta: -20, reserve: 1 as const, highBidHeld: null }).refusal,
     ).toBeNull()
   })
 
   it('a complete roster reads max bid 0 (084s one special case, E27)', () => {
     const full = { remaining: 20, openSlots: 0, maxBid: 0, committed: 180 }
-    const preview = budgetEditPreview({ budget: full, delta: 5, minBid: 1, highBidHeld: null })
+    const preview = budgetEditPreview({ budget: full, delta: 5, reserve: 1 as const, highBidHeld: null })
     expect(preview.after).toEqual({ remaining: 25, openSlots: 0, maxBid: 0, committed: 180 })
     expect(preview.refusal).toBeNull()
   })
 
   it('renders nothing when the mirror cannot derive a budget', () => {
-    expect(budgetEditPreview({ budget: null, delta: 10, minBid: 1, highBidHeld: null })).toEqual({
+    expect(budgetEditPreview({ budget: null, delta: 10, reserve: 1 as const, highBidHeld: null })).toEqual({
       before: null,
       after: null,
       refusal: null,
@@ -541,33 +541,56 @@ describe('priceEntry — the re-entered cost, capped like the bid box', () => {
   const receiving = { remaining: 60, openSlots: 5, maxBid: 56, committed: 140 }
 
   it('states the range it will accept', () => {
-    expect(priceEntry({ raw: '', minBid: 1, receivingBudget: receiving }).hint).toBe(
+    expect(priceEntry({ raw: '', reserve: 1 as const, receivingBudget: receiving }).hint).toBe(
       '$1–$56 — the receiving team keeps $1 per remaining roster spot.',
     )
-    expect(priceEntry({ raw: '', minBid: 1, receivingBudget: null }).hint).toBe('At least $1.')
+    expect(priceEntry({ raw: '', reserve: 1 as const, receivingBudget: null }).hint).toBe('At least $1.')
   })
 
   it('blocks empty, non-numeric, below-min and over-max', () => {
-    expect(priceEntry({ raw: '', minBid: 1, receivingBudget: receiving }).blocker).toBe('empty')
-    expect(priceEntry({ raw: '12x', minBid: 1, receivingBudget: receiving }).blocker).toBe(
+    expect(priceEntry({ raw: '', reserve: 1 as const, receivingBudget: receiving }).blocker).toBe('empty')
+    expect(priceEntry({ raw: '12x', reserve: 1 as const, receivingBudget: receiving }).blocker).toBe(
       'not-a-number',
     )
-    expect(priceEntry({ raw: '0', minBid: 1, receivingBudget: receiving }).blocker).toBe(
+    expect(priceEntry({ raw: '0', reserve: 1 as const, receivingBudget: receiving }).blocker).toBe(
       'below-min',
     )
-    expect(priceEntry({ raw: '57', minBid: 1, receivingBudget: receiving }).blocker).toBe(
+    expect(priceEntry({ raw: '57', reserve: 1 as const, receivingBudget: receiving }).blocker).toBe(
       'over-max',
     )
   })
 
   it('accepts both boundaries', () => {
-    expect(priceEntry({ raw: '1', minBid: 1, receivingBudget: receiving }).blocker).toBeNull()
-    expect(priceEntry({ raw: '56', minBid: 1, receivingBudget: receiving }).blocker).toBeNull()
-    expect(priceEntry({ raw: ' 20 ', minBid: 1, receivingBudget: receiving }).parsed).toBe(20)
+    expect(priceEntry({ raw: '1', reserve: 1 as const, receivingBudget: receiving }).blocker).toBeNull()
+    expect(priceEntry({ raw: '56', reserve: 1 as const, receivingBudget: receiving }).blocker).toBeNull()
+    expect(priceEntry({ raw: ' 20 ', reserve: 1 as const, receivingBudget: receiving }).parsed).toBe(20)
   })
 
-  it('a $0 minimum bid league accepts $0 (C38)', () => {
-    expect(priceEntry({ raw: '0', minBid: 0, receivingBudget: receiving }).blocker).toBeNull()
+  // 092/AP.1 — C38 re-pointed at the toggle (D198(3)).
+  it('a $0-nominations league accepts $0, and says so in the hint instead of naming a reserve it does not hold', () => {
+    expect(priceEntry({ raw: '0', reserve: 0, receivingBudget: receiving }).blocker).toBeNull()
+    expect(priceEntry({ raw: '', reserve: 0, receivingBudget: receiving }).hint).toBe(
+      '$0–$56 — this league allows $0 nominations, so nothing is held back per roster spot.',
+    )
+  })
+
+  it('D146 BOUNDARY, one dollar either side of the floor: $0 blocks at reserve 1 and passes at reserve 0', () => {
+    expect(priceEntry({ raw: '0', reserve: 1, receivingBudget: receiving }).blocker).toBe('below-min')
+    expect(priceEntry({ raw: '0', reserve: 0, receivingBudget: receiving }).blocker).toBeNull()
+    // …and the cap is the same number either way — the toggle moves the
+    // FLOOR here, never the ceiling (the ceiling is the mirror's max_bid).
+    expect(priceEntry({ raw: '57', reserve: 0, receivingBudget: receiving }).blocker).toBe('over-max')
+  })
+
+  it('E28 arm 2 at reserve 0: the floor is $0, so a cut to exactly nothing is solvent and one dollar under is not', () => {
+    const before = { remaining: 150, openSlots: 14, maxBid: 137, committed: 50 }
+    expect(
+      budgetEditPreview({ budget: before, delta: -150, reserve: 0, highBidHeld: null }).refusal,
+    ).toBeNull()
+    const under = budgetEditPreview({ budget: before, delta: -151, reserve: 0, highBidHeld: null })
+    // Below committed spend, so arm 1 — the arm that still binds at reserve 0
+    // (§8.6.8 stops binding; the "you cannot un-spend money" arm never does).
+    expect(under.refusal).toBe('below-committed')
   })
 })
 
@@ -770,7 +793,7 @@ describe('activeFranchises agrees with draft_end’s WHERE clause', () => {
   })
 
   it('the End confirm’s count and draft_end agree once a seat is retired', () => {
-    const inputs = { auctionBudget: 200, minBid: 1, totalRounds: 3, budgetAdjustments: null }
+    const inputs = { auctionBudget: 200, reserve: 1 as const, totalRounds: 3, budgetAdjustments: null }
     const picks = [{ team_id: 'A', price: 50, is_undone: false }]
     // Unfiltered, the dialog would promise 3 more empty spots than the
     // engine posts (C's whole roster) — a wrong number in a terminal confirm.

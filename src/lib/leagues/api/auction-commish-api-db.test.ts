@@ -99,7 +99,11 @@ const TEAM_COUNT = 8
  *  — the auction's per-team roster CAPACITY (D126). */
 const SLOTS_PER_TEAM = 2
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 /** Both auction clocks at the settings validator's CEILING (120s / 60s —
  *  league-settings.ts) — every live bidding window below is sub-10s of
  *  route calls or is frozen by a pause, so no cron award lands mid-test
@@ -115,11 +119,11 @@ const REWIND_MS = 240_000
  *  fresh max bid of 199) and far enough from the floor that the arm-3 cut
  *  below is unambiguous. */
 const HIGH_BID = 150
-/** §8.6.1: max_bid = remaining − (open_slots − 1) × min_bid. Fresh:
+/** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. Fresh:
  *  200 − 1 = 199. A delta d gives max_bid' = 199 + d, so the cut that leaves
  *  max_bid EXACTLY equal to the $150 high bid is d = 150 − 199 = −49 — the
  *  D146 boundary: −49 lands, one more dollar (−50 total) is refused. */
-const EXACT_CUT = HIGH_BID - (AUCTION_BUDGET - (SLOTS_PER_TEAM - 1) * AUCTION_MIN_BID)
+const EXACT_CUT = HIGH_BID - (AUCTION_BUDGET - (SLOTS_PER_TEAM - 1) * AUCTION_RESERVE)
 const ONE_MORE_DOLLAR = -1
 
 const COMMISH = {
@@ -443,7 +447,7 @@ beforeAll(async () => {
         draft_order: [commishTeamId, mgr2TeamId, ...placeholderIds],
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: ANTI_SNIPE_SECONDS,
@@ -823,7 +827,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     })
     expect(overMax.status).toBe(400)
     expect((overMax.body as { error: string }).error).toBe(
-      `draft_move_player: $250 is over that team's max bid of $199 — they have $200 for 2 open roster spots at a $1 minimum bid; reverse a won bid or adjust their budget first (E28/§8.6.8)`,
+      `draft_move_player: $250 is over that team's max bid of $199 — they have $200 for 2 open roster spots at a $1 per-slot reserve; reverse a won bid or adjust their budget first (E28/§8.6.8)`,
     )
 
     // Priced move back to the commissioner at $30 — lands.

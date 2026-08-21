@@ -142,7 +142,7 @@ export function AuctionBlock({
       teamBudgets(
         {
           auctionBudget: knobs.auctionBudget,
-          minBid: knobs.minBid,
+          reserve: knobs.reserve,
           totalRounds: draft.total_rounds,
           budgetAdjustments: draft.budget_adjustments as never,
         },
@@ -196,7 +196,10 @@ export function AuctionBlock({
     myBudget,
     nomination,
     nominatingTeamId: draft.on_clock_team_id,
-    minBid: knobs.minBid,
+    // The NOMINATION FLOOR (§8.6.2). The bid box derives the raise minimum
+    // itself as `high_bid + 1` — a fixed $1 increment no setting reaches
+    // (§8.6.3) — so this is read on the nominating branch only.
+    nominationFloor: knobs.reserve,
   })
 
   // The bid feed rides the room's ONE channel (D184/D185 — `use-draft.ts`
@@ -235,7 +238,7 @@ export function AuctionBlock({
         submitting={submitting}
         isMock={false}
       />
-      <TeamColumns columns={columns} playerById={playerById} minBid={knobs.minBid} />
+      <TeamColumns columns={columns} playerById={playerById} reserve={knobs.reserve} />
     </div>
   )
 }
@@ -548,11 +551,11 @@ const ANTI_SNIPE_FLASH_MS = 4_000
 function TeamColumns({
   columns,
   playerById,
-  minBid,
+  reserve,
 }: {
   columns: readonly AuctionTeamColumn[]
   playerById: ReadonlyMap<string, PlayerIdentity>
-  minBid: number
+  reserve: 0 | 1
 }) {
   // §16.4's mobile density rule, applied to the auction board the way DR.5
   // applied it to the grid: MY column stays resident (it is the one a
@@ -580,7 +583,7 @@ function TeamColumns({
               key={column.teamId}
               column={column}
               playerById={playerById}
-              minBid={minBid}
+              reserve={reserve}
               className="w-[168px] shrink-0"
             />
           ))}
@@ -588,7 +591,7 @@ function TeamColumns({
 
         {/* Mobile: my row resident, the rest summoned. */}
         <div className="flex flex-col gap-1.5 lg:hidden">
-          {mine && <TeamColumnCard column={mine} playerById={playerById} minBid={minBid} />}
+          {mine && <TeamColumnCard column={mine} playerById={playerById} reserve={reserve} />}
           <Button
             variant="stroke"
             size="sm"
@@ -606,7 +609,7 @@ function TeamColumns({
                   key={column.teamId}
                   column={column}
                   playerById={playerById}
-                  minBid={minBid}
+                  reserve={reserve}
                 />
               ))}
         </div>
@@ -618,12 +621,12 @@ function TeamColumns({
 function TeamColumnCard({
   column,
   playerById,
-  minBid,
+  reserve,
   className,
 }: {
   column: AuctionTeamColumn
   playerById: ReadonlyMap<string, PlayerIdentity>
-  minBid: number
+  reserve: 0 | 1
   className?: string
 }) {
   const budget = column.budget
@@ -722,7 +725,7 @@ function TeamColumnCard({
                   {player ? abbreviateName(player.full_name) : '…'}
                 </span>
                 <span className="fs-num shrink-0 font-semibold text-n-3">
-                  ${pick.price ?? minBid}
+                  ${pick.price ?? reserve}
                 </span>
               </li>
             )
