@@ -558,3 +558,49 @@ export function uncontestedBeatRemainingMs(
   if (beat === null) return 0
   return Math.max(0, beat.atMs + UNCONTESTED_BEAT_MS - nowMs)
 }
+
+/**
+ * How often the room re-samples while a beat is on screen (R464).
+ *
+ * The exact-boundary `setTimeout` is what makes "exactly 3 seconds" exact; this
+ * interval exists for the case the timeout cannot cover — a **clamped**
+ * background-tab timer. Nothing decides anything on this cadence; it only
+ * causes a render, and the render re-reads the clock.
+ */
+export const UNCONTESTED_BEAT_SAMPLE_MS = 500
+
+/**
+ * THE WHOLE §8.6.9 RENDER DECISION, as one pure function of the latched beat
+ * and a SAMPLED instant (R464).
+ *
+ * This exists because the first revision of AP.2 put the decision in the
+ * component, against a `nowMs` held in state whose only writers were the
+ * initialiser and a `setTimeout` callback — which made the timeout the sole
+ * thing that could retire the message, so a render at t+4000 with a clamped
+ * timer still showed it (measured at review: visible at t+4000 and t+9000).
+ * §16.5.4 is LAW that the beat is *"exactly 3 seconds … on every client"*, so
+ * the behaviour had to move, not the claim.
+ *
+ * With the decision here, the component's only jobs are to **sample** and to
+ * **cause renders**: every render re-decides against a fresh instant, and no
+ * timer can gate the answer. It is also the reason the t+9000-with-no-timer
+ * case is testable at all — `jsx: "preserve"` keeps the `.tsx` out of a vitest
+ * import, so a decision left in the component could only ever be pinned
+ * structurally.
+ */
+export function uncontestedBeatSentence(
+  beat: UncontestedBeat | null,
+  nowMs: number,
+  playerNameById: ReadonlyMap<string, { full_name: string }>,
+  teamNameById: ReadonlyMap<string, string>,
+): string | null {
+  if (!uncontestedBeatVisible(beat, nowMs) || beat === null) return null
+  // The player's REAL name, which Chris confirmed. A room that has not yet
+  // resolved the identity says nothing at all rather than announcing an award
+  // as "Loading player…" — the board shows the pick either way. An unresolved
+  // TEAM is different: the award still happened and naming it matters more
+  // than naming its buyer, so that half falls back.
+  const player = playerNameById.get(beat.playerId)
+  if (!player) return null
+  return uncontestedBeatMessage(player.full_name, teamNameById.get(beat.teamId) ?? 'the nominator')
+}

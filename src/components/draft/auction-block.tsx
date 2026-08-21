@@ -21,9 +21,9 @@ import {
   buildAuctionColumns,
   buildBidBox,
   nominationBidHistory,
-  uncontestedBeatMessage,
   uncontestedBeatRemainingMs,
-  uncontestedBeatVisible,
+  uncontestedBeatSentence,
+  UNCONTESTED_BEAT_SAMPLE_MS,
   type AuctionTeamColumn,
   type BidBlocker,
   type UncontestedBeat,
@@ -515,48 +515,59 @@ function overCapCopy(min: number, max: number | null, parsed: number): string {
 }
 
 /**
- * The §8.6.9 beat, resolved to a sentence and expired on its own schedule
- * (task AP.2; spec §16.5.4).
+ * The §8.6.9 beat (task AP.2; spec §16.5.4). **Sample, then decide — R464.**
  *
- * TWO mechanisms, and the split is deliberate: the PURE predicate
- * (`uncontestedBeatVisible`) is what DECIDES, and the timer only wakes the
- * component to re-render at the boundary. A late, early or coalesced timer
- * therefore cannot leave the message up past its 3 seconds, and a remount
- * cannot bring an expired beat back — both would be possible if the timer
- * were the authority.
+ * The decision itself is `uncontestedBeatSentence`, a pure function of the
+ * latched beat and an instant. This hook's ONLY jobs are to sample that
+ * instant **at render** and to make sure a render happens at the boundary.
+ * That ordering is the fix for the defect this shipped with and review caught:
+ * when the decision read a `nowMs` held in STATE, the `setTimeout` callback
+ * was the only writer that could retire the message, so a render at t+4000
+ * with a clamped background-tab timer still showed it — measured visible at
+ * t+4000 and t+9000. §16.5.4 is LAW that the beat is "exactly 3 seconds … on
+ * every client", so the code moved rather than the claim.
  *
- * The clock is read through `systemTime`, D3's ONE sanctioned wall-clock seam,
- * rather than a raw `Date.now()`. (`useAntiSnipe` below still samples
- * `Date.now()` directly — that is shipped L.C3.1 code and converting it is not
- * this task's; recorded as PROGRESS F97 rather than taken as a drive-by.)
+ * Two timers, neither of which DECIDES anything:
+ *   - the exact-boundary `setTimeout` keeps "exactly 3 seconds" exact when
+ *     nothing else would re-render;
+ *   - the `UNCONTESTED_BEAT_SAMPLE_MS` interval covers the one case a timeout
+ *     cannot — a clamped tab — and is cleared at the boundary, so it never
+ *     outlives the ≤3s window it serves.
+ *
+ * **Every clock read here goes through `systemTime`** — D3's one sanctioned
+ * wall-clock seam — so this fix does NOT depend on F97's unfixed raw
+ * `Date.now()` in `useAntiSnipe` below, and does not deepen it. (F97 stands
+ * unchanged: that hook is shipped L.C3.1 code and converting it is not this
+ * task's.) The two hooks are not merged for the same reason — `useAntiSnipe`
+ * runs inside `Nomination` while this runs in `AuctionBlock`, so sharing one
+ * sampler would mean rehoming shipped code and dragging F97 in with it.
  */
 function useUncontestedBeat(
   latched: UncontestedBeat | null,
   playerById: ReadonlyMap<string, PlayerIdentity>,
   teamNameById: ReadonlyMap<string, string>,
 ): string | null {
-  const [nowMs, setNowMs] = useState(() => systemTime.now().getTime())
+  // A render counter, not a clock. Nothing reads its value; bumping it is how
+  // a timer says "look at the clock again".
+  const [, setRenderTick] = useState(0)
 
   useEffect(() => {
     if (latched === null) return
-    const now = systemTime.now().getTime()
-    setNowMs(now)
-    const remaining = uncontestedBeatRemainingMs(latched, now)
+    const remaining = uncontestedBeatRemainingMs(latched, systemTime.now().getTime())
     if (remaining <= 0) return
-    const id = setTimeout(() => setNowMs(systemTime.now().getTime()), remaining)
-    return () => clearTimeout(id)
+    const bump = () => setRenderTick((n) => n + 1)
+    const sampler = setInterval(bump, UNCONTESTED_BEAT_SAMPLE_MS)
+    const boundary = setTimeout(() => {
+      clearInterval(sampler)
+      bump()
+    }, remaining)
+    return () => {
+      clearInterval(sampler)
+      clearTimeout(boundary)
+    }
   }, [latched])
 
-  if (latched === null || !uncontestedBeatVisible(latched, nowMs)) return null
-  // The player's REAL name, which Chris confirmed. A room that has not yet
-  // resolved the identity says nothing at all rather than announcing an award
-  // as "Loading player…" — the board shows the pick either way.
-  const player = playerById.get(latched.playerId)
-  if (!player) return null
-  return uncontestedBeatMessage(
-    player.full_name,
-    teamNameById.get(latched.teamId) ?? 'the nominator',
-  )
+  return uncontestedBeatSentence(latched, systemTime.now().getTime(), playerById, teamNameById)
 }
 
 /**

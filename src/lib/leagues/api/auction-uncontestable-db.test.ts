@@ -107,23 +107,30 @@ const COMMISH = {
 }
 
 /**
- * 30 RBs at adp 0.501…0.530 — below every REAL ADP (see the header's F60
- * note), and DELIBERATELY ABOVE every other stack fixture's band. The
- * auction suites all sit at `(i + 1) / 1000` (0.001…0.030) and
- * `draft-realtime-db` at `(i + 1) / 100` (0.01…0.30), and with `seed.sql`
- * seeding ZERO players (measured: `select count(*) from players where adp is
- * not null` → 0) those fixtures ARE the whole pool while the suite runs — so
- * a new file in the same band is a new way for one suite's autopick to take
- * another's player. That is the mechanism behind ledger row **F94**, and
- * this suite declines to add to it: nothing here asserts a player's IDENTITY
- * (only counts, prices and tick-pass arithmetic), so sitting last in ADP
- * order costs this file nothing and cannot cost another file anything.
+ * 20 RBs with **NULL adp**, and the null is the point (R464 review round).
+ *
+ * MEASURED, not assumed: with `seed.sql` seeding ZERO players
+ * (`grep -c players supabase/seed.sql` -> 0), every stack suite's fixtures ARE
+ * the shared pool while the lane runs, and `draft_mock_cpu_bid_value` derives
+ * a player's RANK with `count(*) + 1 ... WHERE pl.adp IS NOT NULL AND pl.adp <
+ * v_adp` — a count over the WHOLE table. An earlier draft of this file
+ * inserted 30 players with fractional ADPs; a full `npm run test` then failed
+ * `auction-api-db.test.ts` (a CPU, not the launcher, ended up holding the high
+ * bid) while two full runs with this file REMOVED failed only the F94 suite.
+ * Adding ADP'd rows shifts other suites' CPU seeds — i.e. this file was
+ * WIDENING F94's blast radius.
+ *
+ * A NULL adp is invisible to every `adp IS NOT NULL` rank computation, so it
+ * perturbs nothing, and `draft_autopick_resolve`'s ADP arm orders
+ * `adp NULLS LAST, id` — these sit dead last, behind every real player and
+ * every other fixture, which costs this suite nothing: it asserts COUNTS,
+ * PRICES and TICK-PASS ARITHMETIC, never a player's identity.
  */
-const PLAYERS = Array.from({ length: 30 }, (_, i) => ({
+const PLAYERS = Array.from({ length: 20 }, (_, i) => ({
   id: `au-wire-rb${String(i + 1).padStart(2, '0')}`,
   full_name: `AU Wire RB ${String(i + 1).padStart(2, '0')}`,
   position: 'RB',
-  adp: (i + 501) / 1000,
+  adp: null,
 }))
 
 const ACTION = { create: 'af100000-0000-4000-8000-000000000001' } as const

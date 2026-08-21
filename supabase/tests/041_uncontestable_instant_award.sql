@@ -69,7 +69,7 @@
 -- goldens are stored literals (§4.3); the whole file rolls back.
 -- ============================================================================
 begin;
-select plan(56);
+select plan(61);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins + the named increment + the absence of an endgame condition
@@ -521,7 +521,7 @@ select throws_ok(
 reset role;
 select throws_ok(
   $$ select public.draft_award_nomination_internal('e9000000-0000-4000-8000-0000000000c1') $$,
-  'draft_tick: draft_award_nomination_internal called outside the bidding phase on draft e9000000-0000-4000-8000-0000000000c1',
+  'draft_award_nomination_internal: called outside the bidding phase on draft e9000000-0000-4000-8000-0000000000c1',
   'the extracted award REFUSES outside the bidding phase — LOUD, never a silent no-op (CLAUDE.md), which is also why a second award of the same nomination is impossible');
 
 -- ---------------------------------------------------------------------------
@@ -619,6 +619,126 @@ select is(
   (select current_deadline from drafts where id = 'e9000000-0000-4000-8000-0000000000c3'),
   now() + interval '30 seconds',
   '…and the 30s BID clock opens, exactly as it did before this migration (D128)');
+
+-- ---------------------------------------------------------------------------
+-- J. §8.8 ISOLATION ON THE NEW ROUTE (R467) — `draft_complete_internal` is now
+--    reachable from inside a HUMAN `draft_nominate`, where before this
+--    migration only the tick and `draft_end` could reach it. 038 §F already
+--    runs the R383 composite over a completed mock auction, but it reaches
+--    completion through the TICK. A guard that is newly load-bearing on an
+--    uncovered path is how the next change breaks isolation silently, so the
+--    composite is re-run HERE, over the path AP.2 created.
+--
+--    MK: a 3-seat MOCK auction, two slots each, one nomination from done —
+--    t2 and t3 full (so the nomination is uncontestable for free, E27) and the
+--    launcher's t1 holding the last open slot. Its award completes the board
+--    inside `draft_nominate`.
+-- ---------------------------------------------------------------------------
+insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings)
+values
+  ('a9000000-0000-4000-8000-0000000000ac', '8f000000-0000-4000-8000-000000000001',
+   'pgtap-uc-AC-mockiso', 2026, 'scheduled', 8,
+   (select id from scoring_systems where is_template and name = 'ESPN Standard'), '{}');
+insert into teams (id, owner_id, name, league_id)
+select ('c9000000-0000-4000-8000-00ac' || lpad(i::text, 8, '0'))::uuid,
+       '8f000000-0000-4000-8000-000000000001', 'pgtap-uc-ac-t' || i,
+       'a9000000-0000-4000-8000-0000000000ac'
+from generate_series(1, 3) i;
+insert into league_members (league_id, user_id, team_id, role) values
+  ('a9000000-0000-4000-8000-0000000000ac', '8f000000-0000-4000-8000-000000000001',
+   'c9000000-0000-4000-8000-00ac00000001', 'commissioner');
+insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds,
+                    nomination_order, on_clock_team_id, current_pick_number,
+                    current_round, current_deadline, started_at)
+values
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   'auction', 'live', true,
+   jsonb_build_object(
+     'auction_budget', 100, 'auction_zero_dollar_nominations', false,
+     'auction_nomination_seconds', 45, 'auction_bid_seconds', 30,
+     'mock', jsonb_build_object(
+       'launched_by', '8f000000-0000-4000-8000-000000000001',
+       'human_team_id', 'c9000000-0000-4000-8000-00ac00000001')), 2,
+   (select jsonb_agg(('c9000000-0000-4000-8000-00ac' || lpad(i::text, 8, '0'))::text order by i)
+    from generate_series(1, 3) i),
+   'c9000000-0000-4000-8000-00ac00000001', 6, 1, now() + interval '45 seconds', now());
+insert into draft_picks (draft_id, league_id, pick_number, round, team_id, player_id,
+                         price, is_auto, made_via)
+values
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   1, null, 'c9000000-0000-4000-8000-00ac00000001', 'pgtap-uc-p25', 1, false, 'manager'),
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   2, null, 'c9000000-0000-4000-8000-00ac00000002', 'pgtap-uc-p26', 1, false, 'manager'),
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   3, null, 'c9000000-0000-4000-8000-00ac00000002', 'pgtap-uc-p27', 1, false, 'manager'),
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   4, null, 'c9000000-0000-4000-8000-00ac00000003', 'pgtap-uc-p28', 1, false, 'manager'),
+  ('e9000000-0000-4000-8000-0000000000ac', 'a9000000-0000-4000-8000-0000000000ac',
+   5, null, 'c9000000-0000-4000-8000-00ac00000003', 'pgtap-uc-p29', 1, false, 'manager');
+
+-- THE BEFORE SNAPSHOT (038 §F's `ma_before` idiom).
+create temporary table uc_ac_before on commit drop as
+select (select to_jsonb(l) from leagues l
+        where l.id = 'a9000000-0000-4000-8000-0000000000ac')          as league_row,
+       (select count(*) from league_members
+        where league_id = 'a9000000-0000-4000-8000-0000000000ac')      as members,
+       (select count(*) from teams
+        where league_id = 'a9000000-0000-4000-8000-0000000000ac')      as teams,
+       (select count(*) from league_rosters
+        where league_id = 'a9000000-0000-4000-8000-0000000000ac')      as rosters,
+       (select count(*) from league_weeks
+        where league_id = 'a9000000-0000-4000-8000-0000000000ac')      as weeks,
+       (select count(*) from notifications where user_id in
+        (select user_id from league_members
+         where league_id = 'a9000000-0000-4000-8000-0000000000ac'))    as notifs;
+
+select ok(
+  public.draft_nomination_uncontestable(
+    'e9000000-0000-4000-8000-0000000000ac',
+    'c9000000-0000-4000-8000-00ac00000001', 5),
+  'MK: the last nomination is uncontestable — both rivals are FULL, so E27 gives them max_bid 0 for free');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select is(
+  (public.draft_nominate('e9000000-0000-4000-8000-0000000000ac',
+     'pgtap-uc-p30', 5, 'a9000000-0000-4000-8000-0000000000fa')
+   #>> '{draft,status}'),
+  'complete',
+  'THE NEW ROUTE: a HUMAN nomination reaches draft_complete_internal — the award lands, the rotation finds nobody, and the board completes INSIDE draft_nominate (before 093 only the tick and draft_end could get here)');
+reset role;
+select is(
+  (select count(*)::int from draft_picks
+   where draft_id = 'e9000000-0000-4000-8000-0000000000ac' and is_undone = false),
+  6,
+  '…with the sixth and final pick on the board at its opening price');
+
+-- THE COMPOSITE (R383/§8.8): a MOCK completing through the new route writes
+-- NOTHING outside its own room. The completion writer's mock bypass (086) is
+-- what holds this, and it had never been exercised from a human RPC.
+select is(
+  (select to_jsonb(l)::text from leagues l
+   where l.id = 'a9000000-0000-4000-8000-0000000000ac')
+  || '|' || (select count(*) from league_members
+             where league_id = 'a9000000-0000-4000-8000-0000000000ac')
+  || '/' || (select count(*) from teams
+             where league_id = 'a9000000-0000-4000-8000-0000000000ac')
+  || '/' || (select count(*) from league_rosters
+             where league_id = 'a9000000-0000-4000-8000-0000000000ac')
+  || '/' || (select count(*) from league_weeks
+             where league_id = 'a9000000-0000-4000-8000-0000000000ac')
+  || '/' || (select count(*) from notifications where user_id in
+             (select user_id from league_members
+              where league_id = 'a9000000-0000-4000-8000-0000000000ac')),
+  (select league_row::text || '|' || members || '/' || teams || '/' || rosters
+          || '/' || weeks || '/' || notifs
+   from uc_ac_before),
+  'ZERO SIDE EFFECTS (§8.8, the R383 composite) ON THE NEW ROUTE: the WHOLE leagues row (status — NO in_season transition; settings; updated_at) and every league-scoped count are byte-identical after a mock auction completed from inside a HUMAN draft_nominate');
+select is(
+  (select count(*)::int from league_rosters
+   where league_id = 'a9000000-0000-4000-8000-0000000000ac'),
+  0,
+  '…and ZERO league_rosters — 086''s mock bypass in the completion writer held on a path that reached it for the first time (R467)');
 
 select * from finish();
 rollback;

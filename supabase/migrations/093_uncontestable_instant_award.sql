@@ -69,17 +69,21 @@
 --     becomes `v_completed := TRUE`, because the completion COUNTER belongs
 --     to the sweep and the ANSWER belongs to the award. The arm counts what
 --     the function returns;
---   * every RAISE text keeps its `draft_tick:` prefix, byte-for-byte, so
---     035 §E/§K and 036 §E/§G keep pinning the strings they always pinned.
---     That prefix is now slightly misattributed on the three NOMINATION
---     callers — recorded as ledger row **F96**, not silently "fixed", because
---     re-wording six engine-corruption raises to buy a prefix would trade a
---     proven-lossless extraction for a prettier message. All six are
---     unreachable from a nomination: the malformed-nomination and missing-bid
---     guards fire on rows this transaction just wrote, the complete-roster and
---     over-max-bid guards are pre-checked by every caller (`v_open < 1`,
---     `p_opening_bid > v_max_bid`), and the two rotation guards need a
---     corrupt `nomination_order`;
+--   * **the six MOVED RAISE texts keep their `draft_tick:` prefix,
+--     byte-for-byte**, so 035 §E/§K and 036 §E/§G keep pinning the strings
+--     they always pinned. That prefix is now slightly misattributed on the
+--     three NOMINATION callers — recorded as ledger row **F96**, not silently
+--     "fixed", because re-wording six engine-corruption raises to buy a
+--     prefix would trade a proven-lossless extraction for a prettier message.
+--     All six are unreachable from a nomination: the malformed-nomination and
+--     missing-bid guards fire on rows this transaction just wrote, the
+--     complete-roster and over-max-bid guards are pre-checked by every caller
+--     (`v_open < 1`, `p_opening_bid > v_max_bid`), and the two rotation guards
+--     need a corrupt `nomination_order`. **The phase guard below is the ONE
+--     raise this migration AUTHORS rather than moves (R465), so the
+--     byte-for-byte constraint never applied to it and it is named correctly
+--     from the start: `draft_award_nomination_internal:`. F96 therefore covers
+--     SIX messages and FOUR pins, not seven and five;**
 --   * the arm's twelve now-unused locals moved WITH it. `v_win_player` stayed
 --     — ARM 2.6(c) reads it too (measured: `grep -c` over the arm-less body
 --     returns 4 for `v_win_player` and 1, the declare, for the other twelve).
@@ -347,7 +351,7 @@ BEGIN
   -- the exact "nothing happened means it worked" failure CLAUDE.md names.
   IF NOT FOUND OR v_draft.current_nomination IS NULL THEN
     RAISE EXCEPTION
-      'draft_tick: draft_award_nomination_internal called outside the bidding phase on draft %',
+      'draft_award_nomination_internal: called outside the bidding phase on draft %',
       p_draft_id;
   END IF;
 

@@ -16,6 +16,7 @@ import {
   uncontestedBeatMessage,
   uncontestedBeatRemainingMs,
   uncontestedBeatVisible,
+  uncontestedBeatSentence,
 } from './auction-block-ops'
 
 /**
@@ -508,5 +509,43 @@ describe('the uncontestable award’s room beat — a sentence over a committed 
     expect(uncontestedBeatRemainingMs(beat, 1_002_999)).toBe(1)
     expect(uncontestedBeatRemainingMs(beat, 1_003_000)).toBe(0)
     expect(uncontestedBeatRemainingMs(beat, 1_009_999)).toBe(0)
+  })
+})
+
+describe('R464 — the beat retires on a CLOCK SAMPLE, never on a timer firing', () => {
+  const BEAT = { playerId: 'p-bijan', teamId: T1, atMs: 1_000_000 }
+  const PLAYERS = new Map([['p-bijan', { full_name: 'Bijan Robinson' }]])
+  const TEAMS = new Map([[T1, 'Team Chris']])
+
+  it('THE REVIEW\u2019S OWN TRACE: no timer fires, the clock is simply later, and the message is GONE', () => {
+    // latched at 1000000 with a 3000ms window. This call is the render-path
+    // decision, and nothing here schedules, fires or clears a timer — which is
+    // exactly the situation a clamped background tab produces.
+    expect(uncontestedBeatSentence(BEAT, 1_004_000, PLAYERS, TEAMS)).toBeNull()
+    expect(uncontestedBeatSentence(BEAT, 1_009_000, PLAYERS, TEAMS)).toBeNull()
+  })
+
+  it('and it is still on screen for exactly its 3 seconds \u2014 the boundary, one ms either side', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, PLAYERS, TEAMS)).toBe(
+      'No one can bid. Awarding Bijan Robinson to Team Chris.',
+    )
+    expect(uncontestedBeatSentence(BEAT, 1_002_999, PLAYERS, TEAMS)).toBe(
+      'No one can bid. Awarding Bijan Robinson to Team Chris.',
+    )
+    expect(uncontestedBeatSentence(BEAT, 1_003_000, PLAYERS, TEAMS)).toBeNull()
+  })
+
+  it('an unresolved player says nothing rather than announcing an award as \u201cLoading\u2026\u201d', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, new Map(), TEAMS)).toBeNull()
+  })
+
+  it('an unresolved TEAM still announces \u2014 the player is the load-bearing half', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, PLAYERS, new Map())).toBe(
+      'No one can bid. Awarding Bijan Robinson to the nominator.',
+    )
+  })
+
+  it('no latch \u21d2 no sentence', () => {
+    expect(uncontestedBeatSentence(null, 1_000_000, PLAYERS, TEAMS)).toBeNull()
   })
 })

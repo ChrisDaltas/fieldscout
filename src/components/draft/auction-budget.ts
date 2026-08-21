@@ -142,13 +142,19 @@ export function adjustmentFor(budgetAdjustments: Json | null | undefined, teamId
  * beside two is exactly what F95 was filed to prevent.
  *
  * F95's suggested fix was to route `budgetEditPreview` THROUGH `teamBudget`
- * with a synthetic post-delta input. That was measured and rejected: it would
- * have to pass `totalRounds = openSlots + 1`, and a complete-or-overfull
- * roster (`openSlots <= 0`) drives that to `<= 0`, where `teamBudget` returns
- * **null** by design — silently turning a projectable edit into "render
- * nothing". Sharing the expression achieves F95's stated goal ("so one
- * expression serves both") with no behavioural change at all, which is what a
- * discharge inside another task's scope should cost.
+ * with a synthetic post-delta input (`totalRounds = openSlots + 1` and one
+ * synthetic pick row). **R463 — the arithmetic, now actually run, rather than
+ * described:** that route is CORRECT for an open roster (`openSlots 3` ⇒
+ * `{10, 3, 8, 5}`) and, contrary to what this docblock first claimed, correct
+ * for a COMPLETE one too — `openSlots 0` gives `totalRounds 1`, not `<= 0`, so
+ * `teamBudget` returns a real `{98, 0, 0, 2}` with E27's `maxBid 0`. The ONLY
+ * shape that returns null is an **overfull** roster (`openSlots -1` ⇒
+ * `totalRounds 0`), which is engine corruption and unreachable. So the route
+ * was rejected for a much weaker reason than first written, and the honest one
+ * is this: sharing the expression meets F95's stated goal ("so one expression
+ * serves both") with a smaller diff, no synthetic-input construction to keep
+ * correct, and no behavioural change at all — while the synthetic route would
+ * have carried a latent null on a shape nothing can currently produce.
  *
  * 084's ONE special case is here and nowhere else: a complete roster bids
  * nothing (E27). The formula is otherwise UNCLAMPED — a negative max bid on an
