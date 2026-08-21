@@ -3273,6 +3273,10 @@ export type Database = {
         Args: { p_draft_id: string; p_team_id: string }
         Returns: string
       }
+      draft_award_nomination_internal: {
+        Args: { p_draft_id: string }
+        Returns: boolean
+      }
       draft_bid_broadcast_payload: {
         Args: { b: Database["public"]["Tables"]["draft_bids"]["Row"] }
         Returns: Json
@@ -3435,6 +3439,10 @@ export type Database = {
           p_team_count: number
         }
         Returns: Json
+      }
+      draft_nomination_uncontestable: {
+        Args: { p_draft_id: string; p_high_bid: number; p_nominator: string }
+        Returns: boolean
       }
       draft_pause: {
         Args: { p_draft_id: string; p_reason?: string }

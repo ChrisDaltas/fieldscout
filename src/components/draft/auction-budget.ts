@@ -129,6 +129,37 @@ export function adjustmentFor(budgetAdjustments: Json | null | undefined, teamId
 }
 
 /**
+ * §8.6.1's max-bid formula, as ONE expression (ledger row **F95**, discharged
+ * by AP.2).
+ *
+ * It was written out twice — here, inside `teamBudget`, and again in
+ * `commish-auction-ops.ts`'s `budgetEditPreview`, which projects a
+ * commissioner budget edit. Both are display-only mirrors of 084's
+ * `draft_team_budget` and both already read the reserve through the ONE
+ * derivation (`auctionReserve`, D198(1)), so this was never a second RESERVE
+ * authority — it was the one place two copies of the FORMULA could drift.
+ * AP.2's §8.6.9 predicate consumes this family, so a third copy appearing
+ * beside two is exactly what F95 was filed to prevent.
+ *
+ * F95's suggested fix was to route `budgetEditPreview` THROUGH `teamBudget`
+ * with a synthetic post-delta input. That was measured and rejected: it would
+ * have to pass `totalRounds = openSlots + 1`, and a complete-or-overfull
+ * roster (`openSlots <= 0`) drives that to `<= 0`, where `teamBudget` returns
+ * **null** by design — silently turning a projectable edit into "render
+ * nothing". Sharing the expression achieves F95's stated goal ("so one
+ * expression serves both") with no behavioural change at all, which is what a
+ * discharge inside another task's scope should cost.
+ *
+ * 084's ONE special case is here and nowhere else: a complete roster bids
+ * nothing (E27). The formula is otherwise UNCLAMPED — a negative max bid on an
+ * open roster stays visible, exactly as the SQL leaves it for
+ * `draft_auction_solvent` to see.
+ */
+export function maxBidFor(remaining: number, openSlots: number, reserve: 0 | 1): number {
+  return openSlots <= 0 ? 0 : remaining - (openSlots - 1) * reserve
+}
+
+/**
  * The mirror of `draft_team_budget(draft, team)`. `picks` is the draft's
  * whole pick list (undone rows included — they are filtered here exactly
  * as the SQL filters `is_undone = FALSE`); `teamId` selects the franchise.
@@ -153,7 +184,7 @@ export function teamBudget(
   const remaining =
     inputs.auctionBudget + adjustmentFor(inputs.budgetAdjustments, teamId) - committed
   const openSlots = totalRounds - filled
-  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * inputs.reserve
+  const maxBid = maxBidFor(remaining, openSlots, inputs.reserve)
   return { remaining, openSlots, maxBid, committed }
 }
 

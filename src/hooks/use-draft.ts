@@ -27,6 +27,12 @@ import {
   type DraftChatBroadcast,
   type DraftChatRow,
 } from './use-draft-chat-ops'
+import {
+  readUncontestedNomination,
+  type UncontestedBeat,
+} from '@/components/draft/auction-block-ops'
+import { systemTime } from '@/lib/leagues/time/time-provider'
+
 import { applyChatBroadcast, createFeedSink } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
@@ -178,6 +184,16 @@ export function useDraftRoom(
   const [connection, setConnection] = useState<DraftRoomConnection>('connecting')
   const [offsetMs, setOffsetMs] = useState(0)
   const [onlineTeamIds, setOnlineTeamIds] = useState<ReadonlySet<string>>(() => new Set())
+  // §8.6.9's room beat (AP.2/D199(4)). LATCHED AT THE PAYLOAD, not at the
+  // render, and the distinction is the whole reason it lives here rather than
+  // in the block: 093 commits the announcement and the award in ONE
+  // transaction, so the two `drafts` events can arrive in the same task and
+  // React can coalesce them into a single render — a `useEffect` watching
+  // `current_nomination` would then never see the marker. Every payload passes
+  // through `applyBroadcast` exactly once, whatever React does with the
+  // renders. The room decides nothing from this: the award is already durable
+  // (tasks-AP §4 rule 11) and this only says so.
+  const [uncontestedBeat, setUncontestedBeat] = useState<UncontestedBeat | null>(null)
   // Offset samples (windowed max — a delay-biased beat cannot drag the
   // clock) + the last-beat instant for silence detection. Refs: neither
   // drives render directly.
@@ -248,6 +264,17 @@ export function useDraftRoom(
     )
 
     const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
+      if (event === 'drafts') {
+        const record = payload.record as Record<string, unknown> | undefined
+        const announced = readUncontestedNomination(record?.current_nomination)
+        // Time through the provider (D3/§23.1), never a raw clock read: the
+        // 3 seconds is measured from the instant the room OBSERVED the
+        // announcement, and the visibility predicate in `auction-block-ops`
+        // is what actually decides — this only stamps it.
+        if (announced) {
+          setUncontestedBeat({ ...announced, atMs: systemTime.now().getTime() })
+        }
+      }
       const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
       if (!current) {
         refetchDraft()
@@ -488,7 +515,7 @@ export function useDraftRoom(
     }
   }, [draftId, heartbeatActive])
 
-  return { ...query, connection, offsetMs, onlineTeamIds }
+  return { ...query, connection, offsetMs, onlineTeamIds, uncontestedBeat }
 }
 
 /**

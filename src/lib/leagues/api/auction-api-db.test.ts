@@ -72,6 +72,7 @@ import {
   type BudgetPickRow,
   type TeamBudget,
 } from '@/components/draft/auction-budget'
+import { budgetEditPreview } from '@/components/draft/commish-auction-ops'
 import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
@@ -1221,6 +1222,30 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
       maxBid: 200,
       committed: 0,
     })
+
+    // (d) F95, DISCHARGED BY AP.2 — `budgetEditPreview`'s PROJECTION now runs
+    //     through the SAME `maxBidFor` expression `teamBudget` uses, so this
+    //     sweep extends to it: for every franchise, in BOTH columns, project a
+    //     ±$0 edit and require the projection to equal the SQL's own answer.
+    //     Before the collapse there were two copies of §8.6.1's formula and
+    //     only `teamBudget`'s had an SQL differential; AP.2's §8.6.9 predicate
+    //     consumes this family, which is why the drift was closed rather than
+    //     re-recorded. A zero delta is the right probe here: it isolates the
+    //     FORMULA from the delta arithmetic, and §8.7's own RPC refuses a $0
+    //     adjustment so nothing is being claimed about a legal edit.
+    for (const teamId of orderedTeamIds) {
+      const offBudget = sql.get(teamId)!
+      expect(
+        budgetEditPreview({ budget: offBudget, delta: 0, reserve: AUCTION_RESERVE, highBidHeld: null })
+          .after,
+        `budgetEditPreview ≡ draft_team_budget (OFF) on ${teamId}`,
+      ).toEqual(offBudget)
+      const onBudget = sqlOn.get(teamId)!
+      expect(
+        budgetEditPreview({ budget: onBudget, delta: 0, reserve: 0, highBidHeld: null }).after,
+        `budgetEditPreview ≡ draft_team_budget (ON) on ${teamId}`,
+      ).toEqual(onBudget)
+    }
 
     // Leave the board as it was found.
     const { error: restoreError } = await service
