@@ -144,9 +144,13 @@ values
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'),
   -- LB: ONE DOLLAR SHORT of the derived floor — $14 against 15 slots. The
-  -- budget is under the catalog's own min(50) deliberately: with the reserve
-  -- capped at $1 that is the only shape left below the floor, and pgTAP
-  -- writes the blob directly (the same reachability note 033's LE carries).
+  -- budget is under the catalog's own min(50) deliberately: pgTAP writes the
+  -- blob directly, so this is the cheapest shape that reaches the ENGINE's
+  -- start gate, which counts D91 draftable slots (starters + bench, no IR).
+  -- **Not a claim that the gate is unreachable otherwise (R456)** — that
+  -- claim was made about the SETTINGS layer, was false, and is withdrawn by
+  -- spec v2.13.3; the settings validator's own solvency arm fires on a
+  -- schema-valid object with a big enough roster. Two layers, two counts.
   ('a7000000-0000-4000-8000-0000000000bb', '8e000000-0000-4000-8000-000000000001',
    'pgtap-rt-LB-short', 2026, 'scheduled', 12,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),

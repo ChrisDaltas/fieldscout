@@ -218,9 +218,15 @@ values
    -- below the floor is a budget under the slot count: $14 against 15
    -- draftable slots, i.e. EXACTLY ONE DOLLAR SHORT (D146 — LF below is the
    -- same league one dollar up, and starts). The budget is under the
-   -- catalog's own `min(50)` on purpose: pgTAP writes the blob directly, and
-   -- this is the only remaining way to reach the arm at all (the same
-   -- reachability note `validate-league-settings.test.ts` carries).
+   -- catalog's own `min(50)` on purpose: pgTAP writes the blob directly, so
+   -- this is the cheapest shape that reaches the ENGINE's start gate.
+   -- **Not a claim that the gate is otherwise unreachable (R456):** the gate
+   -- counts D91 draftable slots and the settings layer caps a starting
+   -- lineup at 20 — an ARM of the settings validator, never a schema bound —
+   -- so a settings-legal league simply cannot get here, while a big enough
+   -- roster can reach the settings layer's own solvency arm. The two layers
+   -- count different things; see the corrected note in
+   -- `validate-league-settings.test.ts` and spec v2.13.3.
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
      "auction_budget": 14, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000ff', '8c000000-0000-4000-8000-000000000001',

@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LeagueSettings, RosterSettings } from './league-settings'
-import { LEAGUE_SETTINGS_DEFAULTS, defaultsForTeamCount, derivePlayoffRounds, deriveRosterSize, validateLeagueSettings } from './league-settings'
+import { LEAGUE_SETTINGS_DEFAULTS, defaultsForTeamCount, derivePlayoffRounds, deriveRosterSize, leagueSettingsSchema, validateLeagueSettings } from './league-settings'
 
 function settings(patch: Partial<LeagueSettings> = {}): LeagueSettings {
   return { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), ...patch }
@@ -298,15 +298,24 @@ describe('§7.3.5 R columns: veto votes and trade deadline (cross-field)', () =>
 // `× auction_min_bid`; the field is retired and the reserve is derived from
 // `auction_zero_dollar_nominations` — 1 OFF, 0 ON.
 //
-// **Reachability, stated rather than left to be discovered.** With the reserve
-// capped at $1, `auction_budget < roster_size × 1` cannot be produced by a
-// SCHEMA-VALID settings object: `auction_budget` is `min(50)` and
-// `deriveRosterSize` tops out at 20 starters + 20 bench + 6 IR = 46. The rule
-// is therefore defence in depth at the API surface — and it is NOT deleted
-// (tasks-M3 §4 rule 7, never-weaken). These tests call the validator directly,
-// which is the layer the rule lives at, and use budgets the schema would
-// reject in order to exercise it at all. The API-surface half of this group
-// moved to a Zod-layer boundary in `settings-round-trip-db.test.ts`.
+// **Reachability — CORRECTED (R456).** An earlier revision of this PR claimed
+// the arm was unreachable through a schema-valid object because
+// `deriveRosterSize` "tops out at 20 starters + 20 bench + 6 IR = 46". THAT
+// WAS FALSE, and it was inferred from a printed spec bullet instead of being
+// observed at the layer it named. **The 20-slot starting cap is not a schema
+// bound** — it is a SIBLING ARM of this very validator (`league-settings.ts`,
+// the `startingSum < 1 || startingSum > 20` push); `rosterSettingsSchema`
+// declares `starting_slots: z.array(startingSlotSchema)` with **no `.max()`**,
+// and bounds only each slot's `count` at 10. So `roster_size` is unbounded
+// through Zod and the solvency arm fires on a Zod-valid object — pinned
+// below, and at the API surface in `settings-round-trip-db.test.ts`.
+//
+// What IS true is a weaker and more useful statement: at reserve 1 the arm
+// never fires ALONE, because anything that violates it also violates the
+// roster-size arm beside it. That is redundancy between two arms of one
+// validator, not dead code — and a guard recorded as vacuous is a guard the
+// next session deletes, which is why the distinction is written down here and
+// folded to the spec (v2.13.3) rather than left in a comment.
 describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size × reserve', () => {
   const auction = (budget: number, zeroDollar = false): LeagueSettings => {
     const s = settings()
@@ -346,6 +355,52 @@ describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size ×
     const snake = settings()
     snake.draft = { ...snake.draft, draft_type: 'snake', auction_budget: 10 }
     expect(errorFields(snake)).toStrictEqual([])
+  })
+
+  // R456 — THE PIN THAT WOULD HAVE CAUGHT THE FALSE PREMISE. It asserts the
+  // reachability claim at the layer the claim is about: parse through Zod
+  // FIRST (so "schema-valid" is observed, not assumed), then validate.
+  it('the arm fires on a SCHEMA-VALID object — `starting_slots` has no array bound, so roster_size is unbounded through Zod', () => {
+    const raw = structuredClone(LEAGUE_SETTINGS_DEFAULTS) as LeagueSettings
+    raw.roster_settings = {
+      ...raw.roster_settings,
+      // Every slot is schema-legal (`count` ≤ 10); the ARRAY is unbounded.
+      starting_slots: Array.from({ length: 30 }, (_, i) => ({
+        key: `r456rb${i}`,
+        label: `R456 RB ${i}`,
+        eligible: ['RB' as const],
+        count: 10,
+      })),
+    }
+    raw.draft = { ...raw.draft, draft_type: 'auction', auction_budget: 50 }
+
+    // 1. Zod admits it — the half the false premise got wrong.
+    const parsed = leagueSettingsSchema.parse(raw)
+    expect(deriveRosterSize(parsed.roster_settings)).toBe(307)
+
+    // 2. …and the solvency arm fires on it, by field and by number.
+    const result = validateLeagueSettings(parsed)
+    const solvency = result.errors.find((e) => e.field === 'draft.auction_budget')
+    expect(solvency?.message).toContain('307-player roster')
+    expect(solvency?.message).toContain('needs at least 307')
+
+    // 3. The TRUE statement about redundancy: it never fires alone — the
+    //    roster-size arm of the SAME validator fires with it.
+    expect(result.errors.map((e) => e.field)).toStrictEqual([
+      'roster_settings.starting_slots',
+      'draft.auction_budget',
+    ])
+
+    // 4. …and with $0 nominations ON the reserve is 0, so the solvency arm
+    //    drops out while its sibling stays — the two are independent rules
+    //    that merely happen to co-fire at reserve 1.
+    const zeroDollar = leagueSettingsSchema.parse({
+      ...raw,
+      draft: { ...raw.draft, auction_zero_dollar_nominations: true },
+    })
+    expect(validateLeagueSettings(zeroDollar).errors.map((e) => e.field)).toStrictEqual([
+      'roster_settings.starting_slots',
+    ])
   })
 })
 
