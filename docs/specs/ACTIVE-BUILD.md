@@ -101,7 +101,10 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
 | **AP breakdown** | `docs/specs/tasks-AP-auction-pacing.md` (Architect, 2026-08-20) |
 | **AP task id prefix** | `AP.` |
 | **Spec fold** | `spec-redraft-leagues.md` **v2.13** (§7.3.8 · §8.3 · §8.6.1–8.6.3 · §8.6.8 · NEW §8.6.9 · §8.8 · §16.2 · §16.4 · §16.5.4 · E67–E70 · App A.4) |
-| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all four checklists |
+| **MS breakdown** | `docs/specs/tasks-MS-mock-sandbox.md` (Architect, 2026-08-20; PR #184) |
+| **MS task id prefix** | `MS.` |
+| **MS spec fold** | `spec-redraft-leagues.md` **v2.15** (§8.7 · §8.8 · §19.2 · E75–E77) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all five checklists |
 
 **The loop's order, precisely:**
 
@@ -112,7 +115,15 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
    remaining `L.C*` task.** `AP.4` is **blocked on Q17** (Chris's sign-off on the bid-clock
    default) — skip it and take the next AP task; do not guess the number. When every `AP.*`
    task is done or blocked, fall through to step 2.
-2. When no `DR.*` or `AP.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
+1b. **When no `AP.*` task is unblocked, take the next unblocked `MS.*` task** (dependency order
+   in `tasks-MS-mock-sandbox.md` §5) **before any remaining `L.C*` task.** The lane makes the
+   mock launcher the commissioner of their own mock (**D216–D223**, spec **v2.15**).
+   **One hard ordering constraint, and it is the only correctness-affecting one in the lane:
+   `MS.7` must land BEFORE `MS.5` renders the order control.** `draft_set_order`'s route
+   resolves `.eq('is_mock', false)`, so today the control is aimed at the REAL draft; it is
+   live but latent, and rendering it in a mock room first makes the bug one click away
+   (R468/D222). `MS.1` is an audit and changes no behaviour — it gates `MS.2`.
+2. When no `DR.*`, `AP.*` or `MS.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
    **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started while any
    `AP.*` task is unblocked** (the ordering above). `L.C6.1` additionally owes **F84**: the gate
    composes the AP suites by name.
