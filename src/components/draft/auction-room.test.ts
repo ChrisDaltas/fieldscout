@@ -359,3 +359,65 @@ describe('cheat-sheet notes: rendered when present, no chrome when absent', () =
     expect(panel).toMatch(/\{notes && \(/)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 7. §8.6.9's beat retires on a CLOCK SAMPLE, never on a timer (AP.2 / R464)
+// ---------------------------------------------------------------------------
+
+describe('the uncontestable beat cannot outstay its 3 seconds (§16.5.4; R464)', () => {
+  /**
+   * THE DEFECT THIS PIN EXISTS TO CATCH, which shipped in AP.2's first
+   * revision and was caught at review: the visibility decision read a `nowMs`
+   * held in component STATE whose only writers were the initialiser and a
+   * `setTimeout` callback. That makes the timeout **the sole writer that can
+   * retire the message**, so any render at t+4000 with the timer not yet
+   * fired still shows it — and background tabs clamp `setTimeout`, which
+   * makes that ordinary rather than exotic. Measured trace from the review:
+   * latched at 1000000, timer at +3000, visible at t+4000 AND t+9000.
+   *
+   * §16.5.4 is LAW that the beat is "exactly 3 seconds … on every client", so
+   * the claim could not be withdrawn to match the behaviour — the code had to
+   * move. The fix: the decision is computed from an instant sampled AT RENDER
+   * through `systemTime`, so every render re-decides, and the timers only
+   * cause renders. This pin is structural because `jsx: "preserve"` keeps a
+   * `.tsx` out of a vitest import (the `draft-dock.test.ts` idiom); the
+   * BEHAVIOUR of the decision is pinned in `auction-block-ops.test.ts`,
+   * including the t+9000-with-no-timer case.
+   */
+  it('the decision is sampled at render, and no timer-written state can gate it', () => {
+    const block = code(BLOCK)
+    // The defective shape, named so it cannot come back by accident.
+    expect(block).not.toContain('uncontestedBeatVisible(latched, nowMs)')
+    // The decision reads the clock through D3's seam, in the render path.
+    expect(block).toContain('uncontestedBeatSentence(')
+    expect(block).toMatch(/uncontestedBeatSentence\(\s*latched,\s*systemTime\.now\(\)\.getTime\(\)/)
+    // …and it does NOT depend on F97's unfixed raw clock: every clock read the
+    // beat makes goes through `systemTime`. `useAntiSnipe` below still reads
+    // `Date.now()` (F97), so this asserts the beat's own reads by slicing the
+    // beat hook's body out and requiring none in it. NOTE the end marker is
+    // `function useAntiSnipe`, a CODE token: `code()` strips comments on
+    // purpose ("a pin a comment can satisfy is not pinning the code"), so a
+    // comment marker would return -1 and slice to EOF — which is exactly how
+    // the first draft of this pin swept up useAntiSnipe's clock reads and
+    // failed for the wrong reason.
+    const hook = block.slice(
+      block.indexOf('function useUncontestedBeat'),
+      block.indexOf('function useAntiSnipe'),
+    )
+    expect(hook.length).toBeGreaterThan(200)
+    expect(hook).not.toContain('Date.now()')
+    expect(occurrences(hook, 'systemTime.now()')).toBeGreaterThanOrEqual(2)
+  })
+
+  it('the timers only CAUSE renders — a boundary wake-up and a sampler while live', () => {
+    const block = code(BLOCK)
+    // The exact boundary keeps "exactly 3 seconds" exact; the interval keeps a
+    // clamped or never-firing timeout from stranding the message on screen.
+    expect(block).toContain('UNCONTESTED_BEAT_SAMPLE_MS')
+    expect(block).toMatch(/setTimeout\(/)
+    expect(block).toMatch(/setInterval\(/)
+    // Both are torn down — a beat is at most 3s, so neither may outlive it.
+    expect(block).toContain('clearTimeout(')
+    expect(block).toContain('clearInterval(')
+  })
+})

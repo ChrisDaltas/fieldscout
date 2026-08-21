@@ -136,7 +136,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(91);
+select plan(96);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3)
@@ -501,6 +501,43 @@ select throws_ok(
   'P0001',
   'draft_nominate: an opening bid of $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 per-slot reserve (§8.6.7(a))',
   'MAX-BID BOUNDARY, one dollar over: $187 is refused against a $186 max bid, and the message names the formula''s number AND the money behind it (§8.6.7(a))');
+
+-- 093/AP.2 — WHY THIS BLOCK NOW NEEDS A CONTESTANT, STATED IN PLACE.
+-- §8.6.9 awards a nomination NOBODY can outbid inside the nominating
+-- transaction, and on the shipped LA board ($200, 15 slots, no adjustments)
+-- EVERY seat reads max_bid 186 — so an opening at exactly 186 is
+-- uncontestable and there is no bidding phase left to pin. That is correct
+-- behaviour and it is pinned as its own boundary pair in 041 §B/§D. THIS
+-- block is about §8.6.7(a)'s max-bid boundary and D126's phase flip, both of
+-- which presuppose a live bid clock, so the fixture gains exactly ONE
+-- dollar on ONE otherwise-unreferenced seat (t8) to keep a legal contestant
+-- in the room. The two assertions below are the whole justification, and
+-- they are a one-unit pair: 186 cannot contest 186, 187 can.
+reset role;
+select is(
+  (select b.max_bid from public.draft_team_budget(
+     'e6000000-0000-4000-8000-0000000000aa',
+     'c6000000-0000-4000-8000-00aa00000008') b),
+  186,
+  '093/AP.2 PRECONDITION: with no adjustment t8 reads max_bid 186 — one dollar short of contesting a $186 opening (§8.6.9)');
+update drafts
+set budget_adjustments = jsonb_build_object(
+      'c6000000-0000-4000-8000-00aa00000008', 1)
+where id = 'e6000000-0000-4000-8000-0000000000aa';
+select is(
+  (select b.max_bid from public.draft_team_budget(
+     'e6000000-0000-4000-8000-0000000000aa',
+     'c6000000-0000-4000-8000-00aa00000008') b),
+  187,
+  '…and with the +$1 commissioner adjustment it reads 187 — it CAN bid $187, so the $186 opening below is CONTESTED and D126''s phase flip is a real state (D131(4)/§8.7)');
+select ok(
+  not public.draft_nomination_uncontestable(
+    'e6000000-0000-4000-8000-0000000000aa',
+    'c6000000-0000-4000-8000-00aa00000001', 186),
+  '…and the §8.6.9 predicate says so directly: with one seat at 187 the $186 opening is NOT uncontestable');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "8d000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
 -- The accepted side of the same boundary: EXACTLY max_bid opens bidding.
 select is(
@@ -1034,10 +1071,26 @@ select throws_ok(
 select is(
   (public.draft_nominate('e6000000-0000-4000-8000-0000000000bb',
      'pgtap-ab-p01', 1, 'a6000000-0000-4000-8000-000000000026')
-   #>> '{draft,current_nomination,high_bid}'),
+   #>> '{bid,amount}'),
   '1',
   '…and it CAN open at exactly $1 (§8.6.7(d)) — the formula admits its own boundary rather than fencing it off one dollar early');
 reset role;
+-- 093/AP.2 RE-POINT, and the reason is the same fact this section is about:
+-- on LG EVERY seat is at its $1 ceiling, so nobody can reach $2 and §8.6.9
+-- closes the market inside the nominating transaction. E25's bid half is no
+-- longer "the rival's raise is refused" — there is no market to raise into,
+-- which is the STRONGER form of the same claim. E5's own max-bid bid clause is
+-- untouched and stays pinned twice: at LA ($187 against $186, §F) and in the
+-- $0 column at LD (§N below). Nothing about E25 is relaxed here.
+select is(
+  (select current_nomination from drafts where id = 'e6000000-0000-4000-8000-0000000000bb'),
+  null::jsonb,
+  '…and on THIS board that opening IS the award (§8.6.9/E67): "when every seat is at its ceiling an opening simply stands" is settled in the nominating call, not by a clock');
+select results_eq(
+  $$ select team_id, player_id, price, is_auto from draft_picks
+     where draft_id = 'e6000000-0000-4000-8000-0000000000bb' $$,
+  $$ values ('c6000000-0000-4000-8000-00bb00000001'::uuid, 'pgtap-ab-p01', 1, false) $$,
+  '…on the board, at the opening price, to the nominator — E26''s OUTCOME reached without E26''s wait (§8.6.7(b))');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "8d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
@@ -1045,8 +1098,8 @@ select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000bb',
        2, 'a6000000-0000-4000-8000-000000000027') $$,
   'P0001',
-  'draft_place_bid: $2 is over your max bid of $1 — you have $3 for 3 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
-  'E25''s bid half: a $1-max RIVAL cannot raise a $1 opening at all — when every seat is at its ceiling an opening simply stands (E26''s no-raise award is 086''s)');
+  'draft_place_bid: no player is up for bid right now — pgtap-ab-LG-t2 is on the clock to nominate (§8.6.2)',
+  'E25''s bid half, in its §8.6.9 form: a $1-max RIVAL cannot raise a $1 opening at all — so the market never opened, and what the rival meets is the PHASE refusal rather than E5''s');
 
 -- ---------------------------------------------------------------------------
 -- N. C38/C40, re-pointed at the toggle (092/AP.1/D198(3)) —

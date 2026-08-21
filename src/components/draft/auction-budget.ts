@@ -129,6 +129,43 @@ export function adjustmentFor(budgetAdjustments: Json | null | undefined, teamId
 }
 
 /**
+ * §8.6.1's max-bid formula, as ONE expression (ledger row **F95**, discharged
+ * by AP.2).
+ *
+ * It was written out twice — here, inside `teamBudget`, and again in
+ * `commish-auction-ops.ts`'s `budgetEditPreview`, which projects a
+ * commissioner budget edit. Both are display-only mirrors of 084's
+ * `draft_team_budget` and both already read the reserve through the ONE
+ * derivation (`auctionReserve`, D198(1)), so this was never a second RESERVE
+ * authority — it was the one place two copies of the FORMULA could drift.
+ * AP.2's §8.6.9 predicate consumes this family, so a third copy appearing
+ * beside two is exactly what F95 was filed to prevent.
+ *
+ * F95's suggested fix was to route `budgetEditPreview` THROUGH `teamBudget`
+ * with a synthetic post-delta input (`totalRounds = openSlots + 1` and one
+ * synthetic pick row). **R463 — the arithmetic, now actually run, rather than
+ * described:** that route is CORRECT for an open roster (`openSlots 3` ⇒
+ * `{10, 3, 8, 5}`) and, contrary to what this docblock first claimed, correct
+ * for a COMPLETE one too — `openSlots 0` gives `totalRounds 1`, not `<= 0`, so
+ * `teamBudget` returns a real `{98, 0, 0, 2}` with E27's `maxBid 0`. The ONLY
+ * shape that returns null is an **overfull** roster (`openSlots -1` ⇒
+ * `totalRounds 0`), which is engine corruption and unreachable. So the route
+ * was rejected for a much weaker reason than first written, and the honest one
+ * is this: sharing the expression meets F95's stated goal ("so one expression
+ * serves both") with a smaller diff, no synthetic-input construction to keep
+ * correct, and no behavioural change at all — while the synthetic route would
+ * have carried a latent null on a shape nothing can currently produce.
+ *
+ * 084's ONE special case is here and nowhere else: a complete roster bids
+ * nothing (E27). The formula is otherwise UNCLAMPED — a negative max bid on an
+ * open roster stays visible, exactly as the SQL leaves it for
+ * `draft_auction_solvent` to see.
+ */
+export function maxBidFor(remaining: number, openSlots: number, reserve: 0 | 1): number {
+  return openSlots <= 0 ? 0 : remaining - (openSlots - 1) * reserve
+}
+
+/**
  * The mirror of `draft_team_budget(draft, team)`. `picks` is the draft's
  * whole pick list (undone rows included — they are filtered here exactly
  * as the SQL filters `is_undone = FALSE`); `teamId` selects the franchise.
@@ -153,7 +190,7 @@ export function teamBudget(
   const remaining =
     inputs.auctionBudget + adjustmentFor(inputs.budgetAdjustments, teamId) - committed
   const openSlots = totalRounds - filled
-  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * inputs.reserve
+  const maxBid = maxBidFor(remaining, openSlots, inputs.reserve)
   return { remaining, openSlots, maxBid, committed }
 }
 

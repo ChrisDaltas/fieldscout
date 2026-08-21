@@ -1307,11 +1307,14 @@ select ok(
   and (select bool_and(b.league_id = 'b9000000-0000-4000-8000-0000000000b1')
        from draft_bids b join ma_lb on ma_lb.id = b.draft_id),
   'R408 PROPERTY (named, not fixed): every one of the mock''s draft_bids rows carries the REAL league''s league_id — a reader scoped by league alone WOULD see practice bids; the reader-discipline rule is draft_id (or is_mock via drafts) on every league-scoped read');
+-- 093/AP.2 RE-POINT: the award lookup is byte-identical, it just lives in
+-- draft_award_nomination_internal now (ARM 2.6(b) extracted — D199(3)). The
+-- claim is unchanged and so is the regex.
 select ok(
-  substring(pg_get_functiondef('public.draft_tick()'::regprocedure)
+  substring(pg_get_functiondef('public.draft_award_nomination_internal(uuid)'::regprocedure)
             from 'SELECT b\.action_id IS NULL INTO v_is_auto.*?LIMIT 1')
     ~ 'b\.draft_id = v_draft\.id',
-  'R408 source pin: the tick''s AWARD LOOKUP over draft_bids filters `b.draft_id = v_draft.id` — draft-scoped, never league-scoped');
+  'R408 source pin: the AWARD LOOKUP over draft_bids filters `b.draft_id = v_draft.id` — draft-scoped, never league-scoped (093/AP.2: extracted out of draft_tick, same bytes)');
 -- THE COMPOSITE (R383): whole rows + counts, byte-identical after.
 select is(
   (select to_jsonb(l)::text from leagues l where l.id = 'b9000000-0000-4000-8000-0000000000b1')

@@ -120,7 +120,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(116);
+select plan(117);
 
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
@@ -161,11 +161,20 @@ select ok(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_apply_pick_internal'),
   'draft_apply_pick_internal DELEGATES its completion to draft_complete_internal (no fork — the snake board and the auction award share one writer)');
+-- 093/AP.2 RE-POINT (not a relaxation): ARM 2.6(b)'s ~190 lines — completion
+-- call included — were EXTRACTED into draft_award_nomination_internal, so the
+-- delegation is now two links long and BOTH are pinned. A future session that
+-- re-forks either link fails here, which is what this pin has always been for.
 select ok(
   (select p.prosrc like '%draft_complete_internal%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'draft_award_nomination_internal'),
+  '…and so does the auction award (the same writer L.C1.5''s draft_end will call for its partial board) — now in draft_award_nomination_internal, ARM 2.6(b) extracted (093/AP.2/D199(3))');
+select ok(
+  (select p.prosrc like '%draft_award_nomination_internal%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_tick'),
-  '…and so does draft_tick''s ARM 2.6 (the same writer L.C1.5''s draft_end will call for its partial board)');
+  '…and draft_tick''s ARM 2.6(b) DELEGATES to it rather than carrying a second copy — the 089 extraction rule, applied to the award');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).

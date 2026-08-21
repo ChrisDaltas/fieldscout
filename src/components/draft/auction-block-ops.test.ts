@@ -11,6 +11,12 @@ import {
   buildBidBox,
   nominationBidHistory,
   nominationKeyOf,
+  UNCONTESTED_BEAT_MS,
+  readUncontestedNomination,
+  uncontestedBeatMessage,
+  uncontestedBeatRemainingMs,
+  uncontestedBeatVisible,
+  uncontestedBeatSentence,
 } from './auction-block-ops'
 
 /**
@@ -430,5 +436,116 @@ describe('the raise ladder — scoped to the LIVE nomination', () => {
       ...rows,
     ]
     expect(nominationBidHistory(withNull, 4).map((r) => r.teamId)).toEqual([T2, T3, T1])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §8.6.9's 3-second beat (task AP.2; spec §16.5.4/E67; D199(4))
+// ---------------------------------------------------------------------------
+
+describe('the uncontestable award’s room beat — a sentence over a committed award', () => {
+  const NOM = {
+    player_id: 'p-bijan',
+    high_bid: 7,
+    high_bidder_team_id: T1,
+  }
+
+  it('THE CONSTANT IS EXACTLY 3000 ms — spec §8.6.9/§16.5.4 say "exactly 3 seconds", and it lives in ONE place', () => {
+    expect(UNCONTESTED_BEAT_MS).toBe(3_000)
+  })
+
+  it('Q18: the sentence names the PLAYER and the TEAM, composed in one function so the ruling is a one-line change', () => {
+    // Chris's own words were "…to the Nominator"; §8.6.9/§16.5.4/E67 print the
+    // TEAM form and tasks-AP §AP.2 item 4 says to ship it behind one constant.
+    expect(uncontestedBeatMessage('Bijan Robinson', 'Team Chris')).toBe(
+      'No one can bid. Awarding Bijan Robinson to Team Chris.',
+    )
+  })
+
+  it('the marker is read off the WIRE payload — an ordinary nomination carries none', () => {
+    expect(readUncontestedNomination(NOM)).toBeNull()
+    expect(readUncontestedNomination({ ...NOM, uncontested: true })).toEqual({
+      playerId: 'p-bijan',
+      teamId: T1,
+    })
+  })
+
+  it('only a LITERAL true starts a beat — a truthy string or 1 does not', () => {
+    expect(readUncontestedNomination({ ...NOM, uncontested: 'true' })).toBeNull()
+    expect(readUncontestedNomination({ ...NOM, uncontested: 1 })).toBeNull()
+    expect(readUncontestedNomination({ ...NOM, uncontested: false })).toBeNull()
+  })
+
+  it('a malformed or absent payload reads as no beat, never as a half-composed sentence', () => {
+    expect(readUncontestedNomination(null)).toBeNull()
+    expect(readUncontestedNomination(undefined)).toBeNull()
+    expect(readUncontestedNomination([{ uncontested: true }])).toBeNull()
+    expect(readUncontestedNomination({ uncontested: true })).toBeNull()
+    expect(readUncontestedNomination({ uncontested: true, player_id: '', high_bidder_team_id: T1 })).toBeNull()
+    expect(readUncontestedNomination({ uncontested: true, player_id: 'p', high_bidder_team_id: '' })).toBeNull()
+  })
+
+  it('THE BOUNDARY, one millisecond either side (D146): visible at 2999 ms, gone AT 3000', () => {
+    const beat = { playerId: 'p-bijan', teamId: T1, atMs: 1_000_000 }
+    expect(uncontestedBeatVisible(beat, 1_000_000)).toBe(true)
+    expect(uncontestedBeatVisible(beat, 1_002_999)).toBe(true)
+    expect(uncontestedBeatVisible(beat, 1_003_000)).toBe(false)
+    expect(uncontestedBeatVisible(beat, 1_003_001)).toBe(false)
+  })
+
+  it('a clock that jumped BACKWARDS shows nothing rather than pinning the message up forever', () => {
+    const beat = { playerId: 'p-bijan', teamId: T1, atMs: 1_000_000 }
+    expect(uncontestedBeatVisible(beat, 999_999)).toBe(false)
+  })
+
+  it('no latch ⇒ no beat (the ordinary case, which is every other nomination)', () => {
+    expect(uncontestedBeatVisible(null, 1_000_000)).toBe(false)
+    expect(uncontestedBeatRemainingMs(null, 1_000_000)).toBe(0)
+  })
+
+  it('the remaining-ms schedule is the timer’s only job, and it never goes negative', () => {
+    const beat = { playerId: 'p-bijan', teamId: T1, atMs: 1_000_000 }
+    expect(uncontestedBeatRemainingMs(beat, 1_000_000)).toBe(3_000)
+    expect(uncontestedBeatRemainingMs(beat, 1_002_999)).toBe(1)
+    expect(uncontestedBeatRemainingMs(beat, 1_003_000)).toBe(0)
+    expect(uncontestedBeatRemainingMs(beat, 1_009_999)).toBe(0)
+  })
+})
+
+describe('R464 — the beat retires on a CLOCK SAMPLE, never on a timer firing', () => {
+  const BEAT = { playerId: 'p-bijan', teamId: T1, atMs: 1_000_000 }
+  const PLAYERS = new Map([['p-bijan', { full_name: 'Bijan Robinson' }]])
+  const TEAMS = new Map([[T1, 'Team Chris']])
+
+  it('THE REVIEW\u2019S OWN TRACE: no timer fires, the clock is simply later, and the message is GONE', () => {
+    // latched at 1000000 with a 3000ms window. This call is the render-path
+    // decision, and nothing here schedules, fires or clears a timer — which is
+    // exactly the situation a clamped background tab produces.
+    expect(uncontestedBeatSentence(BEAT, 1_004_000, PLAYERS, TEAMS)).toBeNull()
+    expect(uncontestedBeatSentence(BEAT, 1_009_000, PLAYERS, TEAMS)).toBeNull()
+  })
+
+  it('and it is still on screen for exactly its 3 seconds \u2014 the boundary, one ms either side', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, PLAYERS, TEAMS)).toBe(
+      'No one can bid. Awarding Bijan Robinson to Team Chris.',
+    )
+    expect(uncontestedBeatSentence(BEAT, 1_002_999, PLAYERS, TEAMS)).toBe(
+      'No one can bid. Awarding Bijan Robinson to Team Chris.',
+    )
+    expect(uncontestedBeatSentence(BEAT, 1_003_000, PLAYERS, TEAMS)).toBeNull()
+  })
+
+  it('an unresolved player says nothing rather than announcing an award as \u201cLoading\u2026\u201d', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, new Map(), TEAMS)).toBeNull()
+  })
+
+  it('an unresolved TEAM still announces \u2014 the player is the load-bearing half', () => {
+    expect(uncontestedBeatSentence(BEAT, 1_000_000, PLAYERS, new Map())).toBe(
+      'No one can bid. Awarding Bijan Robinson to the nominator.',
+    )
+  })
+
+  it('no latch \u21d2 no sentence', () => {
+    expect(uncontestedBeatSentence(null, 1_000_000, PLAYERS, TEAMS)).toBeNull()
   })
 })

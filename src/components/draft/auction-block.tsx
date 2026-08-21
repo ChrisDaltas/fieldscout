@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { useDraftBids } from '@/hooks/use-draft-bids'
 import type { PlayerIdentity } from '@/hooks/use-players-by-ids'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
+import { systemTime } from '@/lib/leagues/time/time-provider'
 import { cn } from '@/lib/utils'
 
 import {
@@ -20,8 +21,12 @@ import {
   buildAuctionColumns,
   buildBidBox,
   nominationBidHistory,
+  uncontestedBeatRemainingMs,
+  uncontestedBeatSentence,
+  UNCONTESTED_BEAT_SAMPLE_MS,
   type AuctionTeamColumn,
   type BidBlocker,
+  type UncontestedBeat,
 } from './auction-block-ops'
 import {
   auctionKnobsOf,
@@ -63,6 +68,12 @@ interface AuctionBlockProps {
   /** Heartbeat-corrected server−client offset (§9.3) — the anti-snipe view's
    *  only clock input besides the sample the tick below takes. */
   offsetMs: number
+  /** §8.6.9's room beat (AP.2), latched at the payload by `useDraftRoom`, and
+   *  NULL for every ordinary nomination. The award it names is ALREADY on the
+   *  board when this arrives — Chris, 2026-08-20: *"It awards the player
+   *  immediately and then displays that message for 3 seconds until the next
+   *  nomination."* Nothing in the room is gated on it (§16.5.4). */
+  uncontestedBeat: UncontestedBeat | null
   /** The player the nominator picked out of the pool, awaiting an opening
    *  bid. Room-owned so pool and block can never disagree (the L.B4.2
    *  overlay precedent). */
@@ -121,6 +132,7 @@ export function AuctionBlock({
   roster,
   myTeamId,
   offsetMs,
+  uncontestedBeat,
   nomineeId,
   onClearNominee,
   onNominate,
@@ -213,6 +225,7 @@ export function AuctionBlock({
   )
 
   const teamNameById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams])
+  const beat = useUncontestedBeat(uncontestedBeat, playerById, teamNameById)
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-4', className)}>
@@ -224,6 +237,7 @@ export function AuctionBlock({
         playerById={playerById}
         teamNameById={teamNameById}
         box={box}
+        beat={beat}
         antiSnipe={{
           seconds: antiSnipeSeconds,
           phase,
@@ -256,6 +270,7 @@ function Nomination({
   playerById,
   teamNameById,
   box,
+  beat,
   antiSnipe,
   history,
   onNominate,
@@ -269,6 +284,8 @@ function Nomination({
   playerById: ReadonlyMap<string, PlayerIdentity>
   teamNameById: ReadonlyMap<string, string>
   box: ReturnType<typeof buildBidBox>
+  /** The §8.6.9 sentence, or null when no beat is on screen. */
+  beat: string | null
   antiSnipe: {
     seconds: number
     phase: 'nominating' | 'bidding'
@@ -348,7 +365,23 @@ function Nomination({
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {subject === null ? (
+        {/* §8.6.9's beat (AP.2). It sits where the subject headline goes,
+            because for these 3 seconds that IS what the centrepiece has to
+            say — and it sits there INSTEAD of the next nomination's prompt,
+            never on top of the controls: the bid/opening-bid row below stays
+            mounted and interactive throughout, so the room never gates an
+            action on a presentation beat (§16.5.4). The award is already on
+            the board and in the team columns; this is the sentence, not the
+            transaction. `role="status"` so it is announced once (§16.3's
+            say-a-thing-once rule). */}
+        {beat !== null ? (
+          <p
+            role="status"
+            className="text-[15px] font-extrabold leading-snug text-accent-strong"
+          >
+            {beat}
+          </p>
+        ) : subject === null ? (
           <p className="text-[12px] font-medium text-n-3">
             {box.blocker === 'not-nominator'
               ? 'Waiting on the nominating team to put a player up.'
@@ -479,6 +512,62 @@ function overCapCopy(min: number, max: number | null, parsed: number): string {
   if (parsed < min) return `Minimum $${min}.`
   if (max !== null && parsed > max) return `Max $${max} — you keep $1 per open roster spot.`
   return `Minimum $${min}.`
+}
+
+/**
+ * The §8.6.9 beat (task AP.2; spec §16.5.4). **Sample, then decide — R464.**
+ *
+ * The decision itself is `uncontestedBeatSentence`, a pure function of the
+ * latched beat and an instant. This hook's ONLY jobs are to sample that
+ * instant **at render** and to make sure a render happens at the boundary.
+ * That ordering is the fix for the defect this shipped with and review caught:
+ * when the decision read a `nowMs` held in STATE, the `setTimeout` callback
+ * was the only writer that could retire the message, so a render at t+4000
+ * with a clamped background-tab timer still showed it — measured visible at
+ * t+4000 and t+9000. §16.5.4 is LAW that the beat is "exactly 3 seconds … on
+ * every client", so the code moved rather than the claim.
+ *
+ * Two timers, neither of which DECIDES anything:
+ *   - the exact-boundary `setTimeout` keeps "exactly 3 seconds" exact when
+ *     nothing else would re-render;
+ *   - the `UNCONTESTED_BEAT_SAMPLE_MS` interval covers the one case a timeout
+ *     cannot — a clamped tab — and is cleared at the boundary, so it never
+ *     outlives the ≤3s window it serves.
+ *
+ * **Every clock read here goes through `systemTime`** — D3's one sanctioned
+ * wall-clock seam — so this fix does NOT depend on F97's unfixed raw
+ * `Date.now()` in `useAntiSnipe` below, and does not deepen it. (F97 stands
+ * unchanged: that hook is shipped L.C3.1 code and converting it is not this
+ * task's.) The two hooks are not merged for the same reason — `useAntiSnipe`
+ * runs inside `Nomination` while this runs in `AuctionBlock`, so sharing one
+ * sampler would mean rehoming shipped code and dragging F97 in with it.
+ */
+function useUncontestedBeat(
+  latched: UncontestedBeat | null,
+  playerById: ReadonlyMap<string, PlayerIdentity>,
+  teamNameById: ReadonlyMap<string, string>,
+): string | null {
+  // A render counter, not a clock. Nothing reads its value; bumping it is how
+  // a timer says "look at the clock again".
+  const [, setRenderTick] = useState(0)
+
+  useEffect(() => {
+    if (latched === null) return
+    const remaining = uncontestedBeatRemainingMs(latched, systemTime.now().getTime())
+    if (remaining <= 0) return
+    const bump = () => setRenderTick((n) => n + 1)
+    const sampler = setInterval(bump, UNCONTESTED_BEAT_SAMPLE_MS)
+    const boundary = setTimeout(() => {
+      clearInterval(sampler)
+      bump()
+    }, remaining)
+    return () => {
+      clearInterval(sampler)
+      clearTimeout(boundary)
+    }
+  }, [latched])
+
+  return uncontestedBeatSentence(latched, systemTime.now().getTime(), playerById, teamNameById)
 }
 
 /**

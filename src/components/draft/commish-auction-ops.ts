@@ -19,7 +19,7 @@
 
 import { clampInt } from '@/utils/clamp-int'
 
-import { teamBudget, type AuctionBudgetInputs, type TeamBudget } from './auction-budget'
+import { maxBidFor, teamBudget, type AuctionBudgetInputs, type TeamBudget } from './auction-budget'
 
 // ---------------------------------------------------------------------------
 // The auction clocks the room can edit mid-draft (§7.3.8 / 087's set_clock arm)
@@ -171,7 +171,13 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
 
   const remaining = before.remaining + input.delta
   const openSlots = before.openSlots
-  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * input.reserve
+  // F95, discharged by AP.2: §8.6.1's formula through the ONE shared
+  // expression rather than a second copy of it (`auction-budget.ts`'s
+  // `maxBidFor`, which `teamBudget` also calls). Same numbers, same E27
+  // special case, one place to change — and the D90 SQL differential in
+  // `auction-api-db.test.ts` now sweeps this projection too, in both toggle
+  // columns.
+  const maxBid = maxBidFor(remaining, openSlots, input.reserve)
   const after: TeamBudget = { remaining, openSlots, maxBid, committed: before.committed }
 
   // Arm 1 — below committed spend. Kept ahead of arm 2 because the remedy

@@ -34,6 +34,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 
 import { AuctionBlock } from './auction-block'
+import type { UncontestedBeat } from './auction-block-ops'
 import { auctionKnobsOf, readLiveNomination, teamBudget } from './auction-budget'
 import { AuctionPlayerTable } from './auction-player-table'
 import { AvailablePlayers } from './available-players'
@@ -471,6 +472,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       picks={room.data?.picks ?? []}
       connection={room.connection}
       offsetMs={room.offsetMs}
+      uncontestedBeat={room.uncontestedBeat}
       onlineTeamIds={room.onlineTeamIds}
       myMemberTeamId={myMemberTeamId}
       userId={user?.id ?? null}
@@ -490,6 +492,10 @@ interface DraftRoomLiveProps {
   picks: DraftPickSummary[]
   connection: DraftRoomConnection
   offsetMs: number
+  /** §8.6.9's room beat, latched at the payload by `useDraftRoom` (AP.2).
+   *  The award is already committed when this arrives — the room only says
+   *  so, for 3 seconds, in the gap before the next nomination (§16.5.4). */
+  uncontestedBeat: UncontestedBeat | null
   onlineTeamIds: ReadonlySet<string>
   myMemberTeamId: string | null
   userId: string | null
@@ -505,6 +511,7 @@ function DraftRoomLive({
   picks,
   connection,
   offsetMs,
+  uncontestedBeat,
   onlineTeamIds,
   myMemberTeamId,
   userId,
@@ -1033,6 +1040,7 @@ function DraftRoomLive({
       roster={detail.settings.roster_settings}
       myTeamId={myTeamId}
       offsetMs={offsetMs}
+      uncontestedBeat={uncontestedBeat}
       nomineeId={nomineeId}
       onClearNominee={() => setNomineeId(null)}
       onNominate={handleNominate}

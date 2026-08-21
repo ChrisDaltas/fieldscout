@@ -67,7 +67,7 @@
 --     `search_path=''`, and is REVOKEd from PUBLIC/anon/authenticated.
 -- ============================================================================
 begin;
-select plan(35);
+select plan(36);
 
 -- ---------------------------------------------------------------------------
 -- A. draft_auction_reserve — the ONE authority (D198(1))
@@ -113,10 +113,20 @@ select is(
      and p.proname in ('draft_team_budget','draft_auction_solvent','draft_start_internal',
                        'draft_adjust_budget','draft_force_pick','create_mock_draft',
                        'draft_reassign_pick','draft_move_player','draft_place_bid_internal',
-                       'draft_system_nominate_internal','draft_nominate','draft_tick')
+                       'draft_system_nominate_internal','draft_nominate',
+                       -- 093/AP.2: draft_tick's ONE reserve read served ARM
+                       -- 2.6(b)'s award refusal and moved WITH that arm into
+                       -- draft_award_nomination_internal. The list swaps one
+                       -- name for the other; the count and the claim stand.
+                       'draft_award_nomination_internal')
      and p.prosrc like '%draft_auction_reserve(%'),
   12,
-  'ALL TWELVE replaced bodies call draft_auction_reserve — one authority, no private COALESCE (D198(1))');
+  'ALL TWELVE bodies that read the reserve call draft_auction_reserve — one authority, no private COALESCE (D198(1)); 093/AP.2 moved the twelfth read out of draft_tick and into the extracted award');
+select ok(
+  (select p.prosrc not like '%draft_auction_reserve(%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'draft_tick'),
+  '…and draft_tick no longer reads the reserve AT ALL — it delegates the only arm that needed it, so the swap above is a move and not a dropped call (093/AP.2)');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures + the max-bid goldens, both toggle states, ONE draft row

@@ -457,3 +457,150 @@ export function nominationBidHistory(
     .slice(0, limit)
     .map((row) => ({ teamId: row.team_id, amount: row.amount, createdAt: row.created_at }))
 }
+
+// ---------------------------------------------------------------------------
+// The uncontestable award's 3-second beat (§8.6.9/E67; §16.5.4; D199(4);
+// task AP.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * CHRIS'S ORDER, VERBATIM (2026-08-20): *"It awards the player immediately and
+ * then displays that message for 3 seconds until the next nomination."*
+ *
+ * So this is a **display/pacing beat over an award the server has already
+ * committed**, living in the gap that already exists before the next
+ * nomination opens — never a decision window, never a delay on the award path,
+ * and never a server-side wait (tasks-AP §4 rule 11; spec §16.5.4). Migration
+ * 093 awards inside the nominating transaction; all the room does is say so.
+ *
+ * Everything here is pure. The instant comes in as a parameter — the component
+ * samples it through `systemTime` (D3's one sanctioned wall-clock seam), the
+ * way `pick-clock-ops.ts` and `antiSnipeView` above take theirs — so the
+ * boundary below is pinnable at exact milliseconds instead of by waiting.
+ */
+
+/** How long the message reads on screen. Spec §8.6.9/§16.5.4: **exactly 3
+ *  seconds**, identical on every client. ONE constant, one place — the room
+ *  never writes `3000` at a call site. */
+export const UNCONTESTED_BEAT_MS = 3_000
+
+/**
+ * **Q18 IS OPEN AND THIS IS WHERE IT LANDS.** Chris's own words were *"No one
+ * can bid. Awarding Player Name to the Nominator."*; the alternative names the
+ * team. Spec §8.6.9/§16.5.4/E67 print the TEAM form — *"No one can bid.
+ * Awarding {Player} to {Team}."* — and tasks-AP §AP.2 item 4 says to ship that
+ * behind a single constant so the ruling is a one-line change. It is this
+ * function, and nothing else in the app composes the sentence.
+ */
+export function uncontestedBeatMessage(playerName: string, teamName: string): string {
+  return `No one can bid. Awarding ${playerName} to ${teamName}.`
+}
+
+/** What the room latched when it saw the announcement on the wire. */
+export interface UncontestedBeat {
+  playerId: string
+  /** The nominator — `current_nomination.high_bidder_team_id`, which 085 sets
+   *  to the nominating team at the open and which the award pays. */
+  teamId: string
+  /** The instant the room OBSERVED it (sampled, injected — never `Date.now()`). */
+  atMs: number
+}
+
+/**
+ * Read the additive `"uncontested": true` marker off a broadcast payload's
+ * `current_nomination` (093/D199(4); 088/D134 puts the whole object on the
+ * wire). Returns null for every ordinary nomination.
+ *
+ * **The marker exists only on the wire, never at rest** — 093 commits the
+ * announcement and the award together, so any SELECT already sees
+ * `current_nomination` NULL. That is what makes §16.5.4's rules structural
+ * rather than a matter of client discipline: a reconnect lands on the
+ * completed award, a late joiner sees the completed award, and there is
+ * exactly one payload that can start the beat, so it cannot be shown twice.
+ */
+export function readUncontestedNomination(
+  value: unknown,
+): { playerId: string; teamId: string } | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (record.uncontested !== true) return null
+  const playerId = record.player_id
+  const teamId = record.high_bidder_team_id
+  if (typeof playerId !== 'string' || playerId.length === 0) return null
+  if (typeof teamId !== 'string' || teamId.length === 0) return null
+  return { playerId, teamId }
+}
+
+/**
+ * Is a latched beat still on screen at `nowMs`? Half-open by design: the
+ * message is visible for the first 3000 ms and gone AT 3000, so "exactly 3
+ * seconds" means three seconds of message rather than three-and-a-frame.
+ * Pinned one millisecond either side (D146).
+ *
+ * The predicate — not the timer that wakes the component — is what decides,
+ * so a late or coalesced timer can never leave the message up past its window.
+ */
+export function uncontestedBeatVisible(
+  beat: UncontestedBeat | null,
+  nowMs: number,
+): boolean {
+  if (beat === null) return false
+  const elapsed = nowMs - beat.atMs
+  return elapsed >= 0 && elapsed < UNCONTESTED_BEAT_MS
+}
+
+/** Milliseconds until the beat expires, for scheduling the one re-render that
+ *  takes it off screen. Never negative; 0 once it is already over. */
+export function uncontestedBeatRemainingMs(
+  beat: UncontestedBeat | null,
+  nowMs: number,
+): number {
+  if (beat === null) return 0
+  return Math.max(0, beat.atMs + UNCONTESTED_BEAT_MS - nowMs)
+}
+
+/**
+ * How often the room re-samples while a beat is on screen (R464).
+ *
+ * The exact-boundary `setTimeout` is what makes "exactly 3 seconds" exact; this
+ * interval exists for the case the timeout cannot cover — a **clamped**
+ * background-tab timer. Nothing decides anything on this cadence; it only
+ * causes a render, and the render re-reads the clock.
+ */
+export const UNCONTESTED_BEAT_SAMPLE_MS = 500
+
+/**
+ * THE WHOLE §8.6.9 RENDER DECISION, as one pure function of the latched beat
+ * and a SAMPLED instant (R464).
+ *
+ * This exists because the first revision of AP.2 put the decision in the
+ * component, against a `nowMs` held in state whose only writers were the
+ * initialiser and a `setTimeout` callback — which made the timeout the sole
+ * thing that could retire the message, so a render at t+4000 with a clamped
+ * timer still showed it (measured at review: visible at t+4000 and t+9000).
+ * §16.5.4 is LAW that the beat is *"exactly 3 seconds … on every client"*, so
+ * the behaviour had to move, not the claim.
+ *
+ * With the decision here, the component's only jobs are to **sample** and to
+ * **cause renders**: every render re-decides against a fresh instant, and no
+ * timer can gate the answer. It is also the reason the t+9000-with-no-timer
+ * case is testable at all — `jsx: "preserve"` keeps the `.tsx` out of a vitest
+ * import, so a decision left in the component could only ever be pinned
+ * structurally.
+ */
+export function uncontestedBeatSentence(
+  beat: UncontestedBeat | null,
+  nowMs: number,
+  playerNameById: ReadonlyMap<string, { full_name: string }>,
+  teamNameById: ReadonlyMap<string, string>,
+): string | null {
+  if (!uncontestedBeatVisible(beat, nowMs) || beat === null) return null
+  // The player's REAL name, which Chris confirmed. A room that has not yet
+  // resolved the identity says nothing at all rather than announcing an award
+  // as "Loading player…" — the board shows the pick either way. An unresolved
+  // TEAM is different: the award still happened and naming it matters more
+  // than naming its buyer, so that half falls back.
+  const player = playerNameById.get(beat.playerId)
+  if (!player) return null
+  return uncontestedBeatMessage(player.full_name, teamNameById.get(beat.teamId) ?? 'the nominator')
+}
