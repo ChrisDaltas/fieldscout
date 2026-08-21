@@ -206,7 +206,7 @@ values
                      "c6000000-0000-4000-8000-00aa00000005","c6000000-0000-4000-8000-00aa00000006",
                      "c6000000-0000-4000-8000-00aa00000007","c6000000-0000-4000-8000-00aa00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'),
   ('a6000000-0000-4000-8000-0000000000bb', '8d000000-0000-4000-8000-000000000001',
@@ -218,7 +218,7 @@ values
                      "c6000000-0000-4000-8000-00bb00000005","c6000000-0000-4000-8000-00bb00000006",
                      "c6000000-0000-4000-8000-00bb00000007","c6000000-0000-4000-8000-00bb00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 3, "auction_min_bid": 1,
+     "auction_budget": 3, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'),
   ('a6000000-0000-4000-8000-0000000000cc', '8d000000-0000-4000-8000-000000000001',
@@ -230,7 +230,7 @@ values
                      "c6000000-0000-4000-8000-00cc00000005","c6000000-0000-4000-8000-00cc00000006",
                      "c6000000-0000-4000-8000-00cc00000007","c6000000-0000-4000-8000-00cc00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 1, "auction_min_bid": 0,
+     "auction_budget": 1, "auction_zero_dollar_nominations": true,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'),
   ('a6000000-0000-4000-8000-0000000000dd', '8d000000-0000-4000-8000-000000000001',
@@ -311,7 +311,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config, total_ro
   ('e6000000-0000-4000-8000-0000000000dd', 'a6000000-0000-4000-8000-0000000000dd',
    'snake', 'live', false, '{"pick_timer_seconds": 90}', 15),
   ('e6000000-0000-4000-8000-0000000000ee', 'a6000000-0000-4000-8000-0000000000aa',
-   'auction', 'live', true, '{"auction_budget": 200, "auction_min_bid": 1}', 15);
+   'auction', 'live', true, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', 15);
 
 insert into players (id, full_name, position)
 select 'pgtap-ab-p' || lpad(i::text, 2, '0'),
@@ -493,13 +493,13 @@ select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
        'pgtap-ab-p01', 0, 'a6000000-0000-4000-8000-00000000000d') $$,
   'P0001',
-  'draft_nominate: an opening bid of $0 is below this league''s $1 minimum bid (§7.3.8)',
-  'MIN-BID BOUNDARY, one dollar short: $0 is refused at auction_min_bid = 1');
+  'draft_nominate: an opening bid of $0 is below this league''s $1 nomination floor (§7.3.8)',
+  'NOMINATION-FLOOR BOUNDARY, one dollar short: $0 is refused with $0 nominations OFF (floor $1)');
 select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
        'pgtap-ab-p01', 187, 'a6000000-0000-4000-8000-00000000000e') $$,
   'P0001',
-  'draft_nominate: an opening bid of $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 minimum bid (§8.6.7(a))',
+  'draft_nominate: an opening bid of $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 per-slot reserve (§8.6.7(a))',
   'MAX-BID BOUNDARY, one dollar over: $187 is refused against a $186 max bid, and the message names the formula''s number AND the money behind it (§8.6.7(a))');
 
 -- The accepted side of the same boundary: EXACTLY max_bid opens bidding.
@@ -686,7 +686,7 @@ select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
        187, 'a6000000-0000-4000-8000-000000000016') $$,
   'P0001',
-  'draft_place_bid: $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 minimum bid (§8.6.1/E5)',
+  'draft_place_bid: $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
   'E5 MAX-BID BOUNDARY, one dollar over: $187 is refused against a $186 max bid — THE DoD BREAK PROBE''S PRIMARY TARGET');
 
 -- ---------------------------------------------------------------------------
@@ -1029,7 +1029,7 @@ select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000bb',
        'pgtap-ab-p01', 2, 'a6000000-0000-4000-8000-000000000025') $$,
   'P0001',
-  'draft_nominate: an opening bid of $2 is over your max bid of $1 — you have $3 for 3 open roster spots at a $1 minimum bid (§8.6.7(a))',
+  'draft_nominate: an opening bid of $2 is over your max bid of $1 — you have $3 for 3 open roster spots at a $1 per-slot reserve (§8.6.7(a))',
   'E25, one dollar over: the $1-max team cannot open at $2 — the endgame refusal that keeps its last two slots fillable');
 select is(
   (public.draft_nominate('e6000000-0000-4000-8000-0000000000bb',
@@ -1045,17 +1045,18 @@ select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000bb',
        2, 'a6000000-0000-4000-8000-000000000027') $$,
   'P0001',
-  'draft_place_bid: $2 is over your max bid of $1 — you have $3 for 3 open roster spots at a $1 minimum bid (§8.6.1/E5)',
+  'draft_place_bid: $2 is over your max bid of $1 — you have $3 for 3 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
   'E25''s bid half: a $1-max RIVAL cannot raise a $1 opening at all — when every seat is at its ceiling an opening simply stands (E26''s no-raise award is 086''s)');
 
 -- ---------------------------------------------------------------------------
--- N. C38/C40 — auction_min_bid = 0 (LD: $1 across THREE slots, min bid $0)
+-- N. C38/C40, re-pointed at the toggle (092/AP.1/D198(3)) —
+--    auction_zero_dollar_nominations ON (LD: $1 across THREE slots, floor $0)
 -- ---------------------------------------------------------------------------
 reset role;
 select is(
   (public.draft_start_internal('a6000000-0000-4000-8000-0000000000cc', false)->>'started')::boolean,
   true,
-  'LD starts with auction_min_bid = 0 (catalog-legal — C38''s degenerate floor; solvency is 1 ≥ 3 × $0)');
+  'LD starts with auction_zero_dollar_nominations ON (§7.3.8 v2.13 — the degenerate floor; solvency is 1 ≥ 3 × $0)');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "8d000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1063,14 +1064,14 @@ select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000cc',
        'pgtap-ab-p01', -1, 'a6000000-0000-4000-8000-000000000028') $$,
   'P0001',
-  'draft_nominate: an opening bid of $-1 is below this league''s $0 minimum bid (§7.3.8)',
+  'draft_nominate: an opening bid of $-1 is below this league''s $0 nomination floor (§7.3.8)',
   'MIN-BID 0, one dollar short: −$1 is still refused — the floor moves with the setting, it does not vanish (and 083''s amount >= 0 CHECK would have caught it anyway, loudly instead of friendly)');
 select is(
   (public.draft_nominate('e6000000-0000-4000-8000-0000000000cc',
      'pgtap-ab-p01', 0, 'a6000000-0000-4000-8000-000000000029')
    #>> '{draft,current_nomination,high_bid}'),
   '0',
-  'C38: a $0 OPENING is legal at auction_min_bid = 0');
+  'a $0 OPENING is legal with $0 nominations ON — "a nomination should allow any number that the player can afford" (Chris, 2026-08-20)');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -1080,7 +1081,7 @@ select throws_ok(
        0, 'a6000000-0000-4000-8000-00000000002a') $$,
   'P0001',
   'draft_place_bid: outbid at $0 — pgtap-ab-LD-t1 holds the high bid; bid $1 or more',
-  'C40: RAISES ARE STILL INTEGER INCREMENTS at min_bid 0 — a $0 "raise" is refused and the message names the next legal number');
+  'C40 PROMOTED TO LAW (§8.6.3): THE INCREMENT IS A FIXED $1 IN BOTH COLUMNS — with $0 nominations ON a $0 "raise" is still refused and the message still names $1, because the toggle moves the FLOOR and never the increment');
 select is(
   (public.draft_place_bid('e6000000-0000-4000-8000-0000000000cc',
      1, 'a6000000-0000-4000-8000-00000000002c')
@@ -1098,8 +1099,8 @@ select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000cc',
        2, 'a6000000-0000-4000-8000-00000000002b') $$,
   'P0001',
-  'draft_place_bid: $2 is over your max bid of $1 — you have $1 for 3 open roster spots at a $0 minimum bid (§8.6.1/E5)',
-  '§8.6.7(d), one dollar over: with a $1 budget and a $0 minimum bid the max bid is the whole $1, so $2 is refused');
+  'draft_place_bid: $2 is over your max bid of $1 — you have $1 for 3 open roster spots at a $0 per-slot reserve (§8.6.1/E5)',
+  '§8.6.7(d), one dollar over: with a $1 budget and $0 nominations ON the max bid is the whole $1, so $2 is refused');
 
 -- ---------------------------------------------------------------------------
 -- O. Cross-cutting: the max-bid property over EVERY bid this file wrote,

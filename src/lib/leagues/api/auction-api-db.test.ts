@@ -102,7 +102,11 @@ const DRAFT_INSTANT = '2028-09-01T17:00:00+00:00'
 const TEAM_COUNT = 8
 
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 /** Catalog maxima — the live cron must not reach an expiry between steps. */
 const NOMINATION_SECONDS = 120
 const BID_SECONDS = 60
@@ -111,8 +115,8 @@ const GRACE_SECONDS = 120
 /** D91 draftable slots for the default roster (9 starters + 6 bench, IR
  *  excluded) — the auction's per-team capacity (D126). */
 const OPEN_SLOTS = 15
-/** §8.6.1: max_bid = remaining − (open_slots − 1) × min_bid. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_MIN_BID // 186
+/** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
 
 const COMMISH = {
   email: 'auction-api-commish@fieldscout.test',
@@ -394,7 +398,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: ANTI_SNIPE_SECONDS,
@@ -900,7 +904,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(overMax.status).toBe(400)
     expect(errorText(overMax.body)).toContain(`$${MAX_BID + 1} is over your max bid of $${MAX_BID}`)
     expect(errorText(overMax.body)).toContain(
-      `you have $${AUCTION_BUDGET} for ${OPEN_SLOTS} open roster spots at a $${AUCTION_MIN_BID} minimum bid`,
+      `you have $${AUCTION_BUDGET} for ${OPEN_SLOTS} open roster spots at a $${AUCTION_RESERVE} per-slot reserve`,
     )
     expect(await bidCount(draftId)).toBe(4)
   })
@@ -1055,7 +1059,7 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
     }
     expect(inputs).toMatchObject({
       auctionBudget: AUCTION_BUDGET,
-      minBid: AUCTION_MIN_BID,
+      reserve: AUCTION_RESERVE,
       totalRounds: OPEN_SLOTS,
     })
 

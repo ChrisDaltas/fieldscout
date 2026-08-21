@@ -294,29 +294,57 @@ describe('§7.3.5 R columns: veto votes and trade deadline (cross-field)', () =>
   })
 })
 
-describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size × auction_min_bid', () => {
-  const auction = (budget: number, minBid: number): LeagueSettings => {
+// 092/AP.1 (spec v2.13 §7.3.8): the bullet used to read
+// `× auction_min_bid`; the field is retired and the reserve is derived from
+// `auction_zero_dollar_nominations` — 1 OFF, 0 ON.
+//
+// **Reachability, stated rather than left to be discovered.** With the reserve
+// capped at $1, `auction_budget < roster_size × 1` cannot be produced by a
+// SCHEMA-VALID settings object: `auction_budget` is `min(50)` and
+// `deriveRosterSize` tops out at 20 starters + 20 bench + 6 IR = 46. The rule
+// is therefore defence in depth at the API surface — and it is NOT deleted
+// (tasks-M3 §4 rule 7, never-weaken). These tests call the validator directly,
+// which is the layer the rule lives at, and use budgets the schema would
+// reject in order to exercise it at all. The API-surface half of this group
+// moved to a Zod-layer boundary in `settings-round-trip-db.test.ts`.
+describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size × reserve', () => {
+  const auction = (budget: number, zeroDollar = false): LeagueSettings => {
     const s = settings()
-    s.draft = { ...s.draft, draft_type: 'auction', auction_budget: budget, auction_min_bid: minBid }
+    s.draft = {
+      ...s.draft,
+      draft_type: 'auction',
+      auction_budget: budget,
+      auction_zero_dollar_nominations: zeroDollar,
+    }
     return s
   }
 
-  it('violating fixture: budget 50, min bid 5, default 16-spot roster (needs 80) → error on draft.auction_budget', () => {
+  it('violating fixture: budget 10 against the default 16-spot roster at a $1 reserve (needs 16) → error on draft.auction_budget', () => {
     expect(deriveRosterSize(LEAGUE_SETTINGS_DEFAULTS.roster_settings)).toBe(16)
-    const result = validateLeagueSettings(auction(50, 5))
+    const result = validateLeagueSettings(auction(10))
     expect(result.valid).toBe(false)
     expect(result.errors[0]).toMatchObject({ field: 'draft.auction_budget' })
-    expect(result.errors[0].message).toMatch(/80/)
+    expect(result.errors[0].message).toMatch(/needs at least 16/)
+    // The remedy the message points at is the one that exists now.
+    expect(result.errors[0].message).toMatch(/Allowing \$0 nominations removes the reserve\./)
   })
 
-  it('boundary: budget exactly roster_size × min_bid passes; one below fails', () => {
-    expect(errorFields(auction(80, 5))).toStrictEqual([])
-    expect(errorFields(auction(79, 5))).toContain('draft.auction_budget')
+  it('D146 BOUNDARY at reserve 1: budget exactly roster_size passes; one dollar below fails', () => {
+    expect(errorFields(auction(16))).toStrictEqual([])
+    expect(errorFields(auction(15))).toContain('draft.auction_budget')
+  })
+
+  it('D146 BOUNDARY at reserve 0: the SAME $15 budget passes, and so does $0 — the floor is vacuous, not absent (§8.6.8)', () => {
+    expect(errorFields(auction(15, true))).toStrictEqual([])
+    expect(errorFields(auction(0, true))).toStrictEqual([])
+    // …and the check is still RUNNING: nothing can be under a floor of 0, so
+    // a negative budget (schema-impossible, constructed here) still trips it.
+    expect(errorFields(auction(-1, true))).toContain('draft.auction_budget')
   })
 
   it('the floor applies to auction drafts only (the bullet is prefixed "Auction:")', () => {
     const snake = settings()
-    snake.draft = { ...snake.draft, draft_type: 'snake', auction_budget: 50, auction_min_bid: 5 }
+    snake.draft = { ...snake.draft, draft_type: 'snake', auction_budget: 10 }
     expect(errorFields(snake)).toStrictEqual([])
   })
 })

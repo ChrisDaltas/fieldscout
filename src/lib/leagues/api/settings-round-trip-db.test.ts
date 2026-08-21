@@ -152,10 +152,10 @@ function boundaryMin(): LeagueSettings {
     stat_correction_window: 0,
     draft: {
       ...s.draft,
-      draft_type: 'auction', // solvency active: 50 ≥ 1-player roster × 0
+      draft_type: 'auction', // solvency: at $0 nominations the floor is vacuous (092/AP.1)
       pick_timer_seconds: 0,
       auction_budget: 50,
-      auction_min_bid: 0,
+      auction_zero_dollar_nominations: true, // the MIN end of the toggle's two states
       auction_nomination_seconds: 10,
       auction_bid_seconds: 10,
       auction_anti_snipe_seconds: 0,
@@ -205,10 +205,10 @@ function boundaryMax(): LeagueSettings {
     stat_correction_window: 168,
     draft: {
       ...s.draft,
-      draft_type: 'auction', // solvency: 1000 ≥ 46-player roster × 5 = 230
+      draft_type: 'auction', // solvency: 1000 ≥ 46-player roster × $1 reserve
       pick_timer_seconds: 86400,
       auction_budget: 1000,
-      auction_min_bid: 5,
+      auction_zero_dollar_nominations: false, // the MAX end of the toggle's two states
       auction_nomination_seconds: 120,
       auction_bid_seconds: 60,
       auction_anti_snipe_seconds: 15,
@@ -516,13 +516,22 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       })
     })
 
-    it('§7.3.8 draft — auction budget below the solvency floor rejects per-field', async () => {
-      const body = (await expectRejected((s) => {
+    // 092/AP.1 — this case USED to reach the per-field §8.6.8 solvency
+    // refusal by setting `auction_min_bid: 5` against a 16-spot roster
+    // (16 × 5 = 80 > 50). With the field retired the reserve is at most $1,
+    // and the catalog's own bounds (`auction_budget` ≥ 50,
+    // `deriveRosterSize` ≤ 20 starters + 20 bench + 6 IR = 46) make
+    // `budget < roster × 1` UNREACHABLE through a schema-valid settings
+    // object. The validator arm is NOT removed — it is still enforced and
+    // still exercised directly, one dollar either side, in
+    // `validate-league-settings.test.ts` — but this file drives the real API,
+    // so the §7.3.8 group's rejection case becomes the Zod-layer boundary the
+    // roster / faab / stat-window cases above already use.
+    it('§7.3.8 draft — auction_budget 49 (one past the min) rejects at the Zod layer', async () => {
+      await expectRejected((s) => {
         s.draft.draft_type = 'auction'
-        s.draft.auction_budget = 50
-        s.draft.auction_min_bid = 5 // 16-player default roster × 5 = 80 > 50
-      })) as { error: { fieldErrors: Record<string, string[]> } }
-      expect(body.error.fieldErrors['draft.auction_budget']?.[0]).toContain("can't fill")
+        s.draft.auction_budget = 49
+      })
     })
   })
 

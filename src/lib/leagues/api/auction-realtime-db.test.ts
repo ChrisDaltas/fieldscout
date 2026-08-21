@@ -250,7 +250,7 @@ beforeAll(async () => {
         draft_order: [commishTeamId, mgr2TeamId, ...placeholderIds],
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: 200,
-        auction_min_bid: 1,
+        auction_zero_dollar_nominations: false, // 092/AP.1 (was auction_min_bid: 1 — same behaviour, derived)
         auction_nomination_seconds: 45,
         auction_bid_seconds: 30,
         auction_anti_snipe_seconds: 10,

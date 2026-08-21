@@ -210,6 +210,32 @@ export function isIanaTimeZone(zone: string): boolean {
   }
 }
 
+/**
+ * The ONE TypeScript derivation of the auction's per-slot RESERVE and
+ * nomination FLOOR — the mirror of migration 092's
+ * `draft_auction_reserve(jsonb)` (task AP.1; spec v2.13 §7.3.8/§8.6.1/§8.6.2;
+ * D198(1), the §4.7 one-authority discipline applied to a second quantity).
+ *
+ * `auction_zero_dollar_nominations` OFF ⇒ **1**: a nomination opens at ≥ $1
+ * and every team holds $1 back per still-empty roster slot
+ * (`max_bid = remaining − (open_slots − 1) × 1`).
+ * ON ⇒ **0**: a nomination may open at any amount the nominator can afford,
+ * including $0, and `max_bid = remaining` flat —
+ * *"with $0 nominations there is no $1 per slot reserve"* (Chris, 2026-08-20).
+ *
+ * **This is not the bid increment.** A raise must exceed the standing high
+ * bid, so the minimum legal raise is `high_bid + 1` in BOTH columns (§8.6.3),
+ * including from a $0 opening. The retired `auction_min_bid` conflated the
+ * two and governed neither honestly; keeping them apart is Chris's ruling
+ * (*"Nomination and Min Bid need to be different"*), and it is why nothing in
+ * this function is ever read by a raise clause. `auction-budget.ts` (the
+ * display-only mirror of `draft_team_budget`) reads the reserve through here;
+ * a second derivation anywhere is a review finding.
+ */
+export function auctionReserve(zeroDollarNominations: boolean | null | undefined): 0 | 1 {
+  return zeroDollarNominations === true ? 0 : 1
+}
+
 const draftConfigSchema = z.strictObject({
   draft_type: z.enum(['snake', 'auction', 'linear']).default('snake'),
   snake_reversal: z.boolean().default(false),
@@ -217,7 +243,17 @@ const draftConfigSchema = z.strictObject({
   draft_order: z.array(z.uuid()).nullable().default(null),
   pick_timer_seconds: z.literal(PICK_TIMER_SECONDS).default(90),
   auction_budget: z.number().int().min(50).max(1000).default(200),
-  auction_min_bid: z.number().int().min(0).max(5).default(1),
+  // 092/AP.1 (spec v2.13 §7.3.8): `auction_min_bid` is RETIRED and this
+  // toggle carries the two jobs it really did — the §8.6.2 NOMINATION
+  // FLOOR and the §8.6.1 PER-SLOT RESERVE. OFF (the default, today's
+  // behaviour exactly): floor $1, reserve $1. ON: floor $0, reserve $0, so
+  // `max_bid = remaining` flat and "a nomination should allow any number
+  // that the player can afford" (Chris, 2026-08-20).
+  // It does NOT touch the BID INCREMENT, which is a fixed $1 in both
+  // columns (§8.6.3) and lives in the raise clause, not here — the
+  // distinction the retired field collapsed ("you can't have a $0 minimum
+  // bid, those are two different settings").
+  auction_zero_dollar_nominations: z.boolean().default(false),
   auction_nomination_seconds: z.number().int().min(10).max(120).default(30),
   auction_bid_seconds: z.number().int().min(10).max(60).default(20),
   auction_anti_snipe_seconds: z.number().int().min(0).max(15).default(10),
@@ -539,14 +575,24 @@ export function validateLeagueSettings(s: LeagueSettings, ctx: { draftablePoolSi
   const rosterSize = deriveRosterSize(s.roster_settings)
 
   // §7.3.8 bullet: auction solvency floor — auction_budget ≥ roster_size ×
-  // auction_min_bid (every team can fill a legal roster). The bullet is
-  // prefixed "Auction:" — enforced when the league drafts by auction (D60).
-  if (s.draft.draft_type === 'auction' && s.draft.auction_budget < rosterSize * s.draft.auction_min_bid) {
+  // reserve (every team can fill a legal roster). The bullet is prefixed
+  // "Auction:" — enforced when the league drafts by auction (D60).
+  //
+  // 092/AP.1 (v2.13): the bullet used to read `× auction_min_bid`; the field
+  // is gone and the reserve is DERIVED from the toggle through the ONE
+  // authority below. With $0 nominations ON the reserve is 0, so every legal
+  // budget satisfies it — that is the point, not a hole (§8.6.8: the
+  // machinery stays correct and stops binding). The check is NOT made
+  // conditional on the toggle and NOT removed; the algebra goes slack on its
+  // own (D198(4)).
+  const reserve = auctionReserve(s.draft.auction_zero_dollar_nominations)
+  if (s.draft.draft_type === 'auction' && s.draft.auction_budget < rosterSize * reserve) {
     errors.push({
       field: 'draft.auction_budget',
       message:
         `Auction budget (${s.draft.auction_budget}) can't fill a ${rosterSize}-player roster at the ` +
-        `minimum bid of ${s.draft.auction_min_bid} — needs at least ${rosterSize * s.draft.auction_min_bid}.`,
+        `$${reserve} per-slot reserve — needs at least ${rosterSize * reserve}. ` +
+        `Allowing $0 nominations removes the reserve.`,
     })
   }
 

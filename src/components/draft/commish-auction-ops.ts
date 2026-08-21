@@ -150,7 +150,9 @@ export interface BudgetEditInput {
   /** The CUMULATIVE dollar delta (087 composes successive corrections into
    *  `drafts.budget_adjustments[team]`). 0 is refused by the RPC. */
   delta: number
-  minBid: number
+  /** The §8.6.1 per-slot reserve (092's `draft_auction_reserve` — 1, or 0
+   *  with `auction_zero_dollar_nominations` on). Never the bid increment. */
+  reserve: 0 | 1
   /** The live high bid this team is currently holding, or null when it is
    *  not the high bidder (D131(4)'s arm 3 — a bid holds no money, but the
    *  award a tick away spends it). */
@@ -169,7 +171,7 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
 
   const remaining = before.remaining + input.delta
   const openSlots = before.openSlots
-  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * input.minBid
+  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * input.reserve
   const after: TeamBudget = { remaining, openSlots, maxBid, committed: before.committed }
 
   // Arm 1 — below committed spend. Kept ahead of arm 2 because the remedy
@@ -183,13 +185,13 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
     }
   }
   // Arm 2 — below the §8.6.8 solvency floor.
-  const floor = openSlots * input.minBid
+  const floor = openSlots * input.reserve
   if (remaining < floor) {
     return {
       before,
       after,
       refusal: 'below-floor',
-      note: `That leaves $${remaining} for ${openSlots} open roster ${openSlots === 1 ? 'spot' : 'spots'} at a $${input.minBid} minimum bid — §8.6.8 needs at least $${floor}.`,
+      note: `That leaves $${remaining} for ${openSlots} open roster ${openSlots === 1 ? 'spot' : 'spots'} at a $${input.reserve} per-slot reserve — §8.6.8 needs at least $${floor}.`,
     }
   }
   // Arm 3 (D131(4)) — insolvent against the LIVE high bid this team holds.
@@ -212,7 +214,9 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
 export type PriceEntryBlocker = 'empty' | 'not-a-number' | 'below-min' | 'over-max' | null
 
 export interface PriceEntryModel {
-  /** The league minimum bid (§7.3.8) — 090 refuses anything under it. */
+  /** The league's price floor (§7.3.8) — the derived reserve, $1 or $0.
+   *  090's `draft_move_player` / `draft_reassign_pick` refuse anything under
+   *  it. Never the bid increment (§8.6.3). */
   min: number
   /** The RECEIVING team's max bid: what they can afford while still filling
    *  a legal roster (§8.6.8). Null when the mirror cannot derive it. */
@@ -232,30 +236,35 @@ export interface PriceEntryModel {
  */
 export function priceEntry(input: {
   raw: string
-  minBid: number
+  /** The price floor a re-entered pick must clear AND the per-slot reserve
+   *  the hint names — 090's `draft_reassign_pick` / `draft_move_player` use
+   *  the one derived number for both (092/AP.1; D198(1)). */
+  reserve: 0 | 1
   receivingBudget: TeamBudget | null
 }): PriceEntryModel {
   const max = input.receivingBudget ? input.receivingBudget.maxBid : null
   const hint =
     max === null
-      ? `At least $${input.minBid}.`
-      : `$${input.minBid}–$${max} — the receiving team keeps $${input.minBid} per remaining roster spot.`
+      ? `At least $${input.reserve}.`
+      : input.reserve === 0
+        ? `$0–$${max} — this league allows $0 nominations, so nothing is held back per roster spot.`
+        : `$${input.reserve}–$${max} — the receiving team keeps $${input.reserve} per remaining roster spot.`
 
   const trimmed = input.raw.trim()
   if (trimmed === '') {
-    return { min: input.minBid, max, parsed: null, blocker: 'empty', hint }
+    return { min: input.reserve, max, parsed: null, blocker: 'empty', hint }
   }
   if (!/^\d+$/.test(trimmed)) {
-    return { min: input.minBid, max, parsed: null, blocker: 'not-a-number', hint }
+    return { min: input.reserve, max, parsed: null, blocker: 'not-a-number', hint }
   }
   const parsed = Number.parseInt(trimmed, 10)
-  if (parsed < input.minBid) {
-    return { min: input.minBid, max, parsed, blocker: 'below-min', hint }
+  if (parsed < input.reserve) {
+    return { min: input.reserve, max, parsed, blocker: 'below-min', hint }
   }
   if (max !== null && parsed > max) {
-    return { min: input.minBid, max, parsed, blocker: 'over-max', hint }
+    return { min: input.reserve, max, parsed, blocker: 'over-max', hint }
   }
-  return { min: input.minBid, max, parsed, blocker: null, hint }
+  return { min: input.reserve, max, parsed, blocker: null, hint }
 }
 
 // ---------------------------------------------------------------------------

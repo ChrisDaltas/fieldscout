@@ -155,7 +155,7 @@ describe('the bid box — minimums, the max-bid cap, and one sentence per refusa
     myBudget: budget(50, 3, 48),
     nomination: { player_id: 'p1', high_bid: 9, high_bidder_team_id: T2 },
     nominatingTeamId: T2,
-    minBid: 1,
+    nominationFloor: 1 as const,
   }
   const nominating = {
     phase: 'nominating' as const,
@@ -164,17 +164,36 @@ describe('the bid box — minimums, the max-bid cap, and one sentence per refusa
     myBudget: budget(50, 3, 48),
     nomination: null,
     nominatingTeamId: T1,
-    minBid: 1,
+    nominationFloor: 1 as const,
   }
 
-  it('bidding: the minimum is high_bid + 1; nominating: it is auction_min_bid', () => {
+  it('bidding: the minimum is high_bid + 1; nominating: it is the §8.6.2 nomination floor', () => {
     expect(buildBidBox(bidding)).toMatchObject({ minAmount: 10, maxAmount: 48, canAct: true })
     expect(buildBidBox(nominating)).toMatchObject({ minAmount: 1, maxAmount: 48, canAct: true })
   })
 
-  it('C38: min_bid 0 makes a $0 opening the legal minimum, not a falsy nothing', () => {
-    expect(buildBidBox({ ...nominating, minBid: 0 }).minAmount).toBe(0)
-    expect(bidAmountAcceptable(buildBidBox({ ...nominating, minBid: 0 }), 0)).toBe(true)
+  // 092/AP.1 — C38's substance re-pointed at the toggle (D198(3)), and the
+  // ruling that made it two settings: *"you can't have a $0 minimum bid,
+  // those are two different settings"* (Chris, 2026-08-20).
+  it('$0 nominations ON: a $0 opening is the legal minimum, not a falsy nothing', () => {
+    expect(buildBidBox({ ...nominating, nominationFloor: 0 }).minAmount).toBe(0)
+    expect(bidAmountAcceptable(buildBidBox({ ...nominating, nominationFloor: 0 }), 0)).toBe(true)
+  })
+
+  it('D146: THE FLOOR AND THE INCREMENT ARE DIFFERENT RULES — the floor moves with the toggle, the raise minimum never does', () => {
+    // Nominating: the floor is the toggle's number, one unit apart.
+    expect(buildBidBox({ ...nominating, nominationFloor: 1 }).minAmount).toBe(1)
+    expect(buildBidBox({ ...nominating, nominationFloor: 0 }).minAmount).toBe(0)
+    // Bidding: high_bid + 1 at BOTH toggle states — including from a $0
+    // standing bid, which is raised to $1 and never to $0 (§8.6.3).
+    const overZero = {
+      ...bidding,
+      nomination: { player_id: 'p1', high_bid: 0, high_bidder_team_id: T2 },
+    }
+    expect(buildBidBox({ ...overZero, nominationFloor: 1 }).minAmount).toBe(1)
+    expect(buildBidBox({ ...overZero, nominationFloor: 0 }).minAmount).toBe(1)
+    expect(bidAmountAcceptable(buildBidBox({ ...overZero, nominationFloor: 0 }), 0)).toBe(false)
+    expect(bidAmountAcceptable(buildBidBox({ ...overZero, nominationFloor: 0 }), 1)).toBe(true)
   })
 
   it('every blocker, in the order a user meets them — the whole enumeration', () => {

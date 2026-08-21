@@ -22,7 +22,8 @@
  *    against this module — the same literals the SQL answers to (the
  *    fresh-start 200/15/186, the $50 buy → 150/14/137, the ignored undone
  *    $999 row, the ±adjustment rows, E25's $3-over-3-slots ⇒ $1, E27's
- *    complete roster ⇒ 0/0/0, C38's min_bid 0, the $50/min-3 reserve);
+ *    complete roster ⇒ 0/0/0, and — 092/AP.1 — BOTH toggle states of
+ *    `auction_zero_dollar_nominations` (reserve 1 and reserve 0);
  *  - `auction-api-db.test.ts` (stack-backed) sweeps TS ≡ the REAL
  *    `draft_team_budget` for every franchise of a driven auction — real
  *    award rows, a planted undone row, planted ± adjustments and a planted
@@ -34,12 +35,14 @@
  *    NON-undone picks (undo refunds by derivation — D131); `committed` is
  *    that Σ; `open_slots = total_rounds − count(non-undone picks)`
  *    (`total_rounds` IS the auction's per-team capacity — D91/D126);
- *  - `max_bid = remaining − (open_slots − 1) × min_bid` (§8.6.1), UNCLAMPED
+ *  - `max_bid = remaining − (open_slots − 1) × reserve` (§8.6.1), UNCLAMPED
  *    except for the ONE special case 084 has: a complete roster
  *    (`open_slots ≤ 0`) reads `max_bid 0` (E27 — a full team cannot bid).
  *    A negative max bid on an open roster is left VISIBLE, exactly as the
  *    SQL leaves it for `draft_auction_solvent` to see;
- *  - config defaults are 084's COALESCEs (budget 200, min bid 1 — §7.3.8);
+ *  - config defaults are 084's COALESCE for the budget (200) and 092's
+ *    `draft_auction_reserve` for the reserve (1 unless
+ *    `auction_zero_dollar_nominations` is on — §7.3.8/§8.6.1);
  *  - where 084 RAISES (no/invalid `total_rounds`), the mirror returns null —
  *    render nothing, never guess (the draft-order.ts convention). The
  *    membership/retired-seat guards are the SQL's; a caller passes the
@@ -47,6 +50,7 @@
  */
 
 import type { Json } from '@/types/database'
+import { auctionReserve } from '@/lib/leagues/settings/league-settings'
 
 /** The slice of a pick row the derivation reads (the `DraftPickSummary`
  *  shape `use-draft.ts` caches — `price` rides the broadcast since 088). */
@@ -69,15 +73,28 @@ export interface TeamBudget {
 export interface AuctionBudgetInputs {
   /** `drafts.config` (the D95 hydrated settings blob) — or the two knobs. */
   auctionBudget: number
-  minBid: number
+  /** The §8.6.1 PER-SLOT RESERVE — 092's `draft_auction_reserve`, derived
+   *  from `auction_zero_dollar_nominations` (1 off, 0 on). **Not** the bid
+   *  increment, which is a fixed $1 (§8.6.3) and appears nowhere in this
+   *  file's arithmetic. */
+  reserve: 0 | 1
   /** `drafts.total_rounds` — the per-team roster capacity (D91/D126). */
   totalRounds: number | null
   /** `drafts.budget_adjustments` — `{ [team_id]: integer delta }` (D127). */
   budgetAdjustments: Json | null | undefined
 }
 
-/** 084's defaults: `COALESCE((config->>'auction_budget')::int, 200)` and
- *  `COALESCE((config->>'auction_min_bid')::int, 1)`.
+/** 084's default for the budget, `COALESCE((config->>'auction_budget')::int, 200)`,
+ *  and 092's `draft_auction_reserve(config)` for the reserve.
+ *
+ *  The reserve half has no such divergence: 092's helper is
+ *  `COALESCE((config->>'auction_zero_dollar_nominations')::boolean, FALSE)`,
+ *  and `boolOrDefault` below accepts exactly what PostgreSQL's `::boolean`
+ *  accepts from a `->>` text (`true/false`, `t/f`, `yes/no`, `on/off`,
+ *  `1/0`, case-insensitive, trimmed) — so a JSON `true`, the string
+ *  `"true"` and the string `"1"` all read ON on both sides, and anything
+ *  else falls to OFF where the SQL would raise 22P02. Same deliberate
+ *  asymmetry, same reason.
  *
  *  Parity holds where the SQL is DEFINED — a missing or JSON-null knob falls
  *  to the default on both sides (`->>` yields NULL, COALESCE substitutes;
@@ -93,12 +110,15 @@ export interface AuctionBudgetInputs {
  *  produce `drafts.config` (§7.3.8's typed knobs), which is why it stays. */
 export function auctionKnobsOf(config: Json | null | undefined): {
   auctionBudget: number
-  minBid: number
+  reserve: 0 | 1
 } {
   const record = isRecord(config) ? config : {}
   return {
     auctionBudget: intOrDefault(record.auction_budget, 200),
-    minBid: intOrDefault(record.auction_min_bid, 1),
+    // THE ONE derivation (D198(1)) — `auctionReserve` is shared with the
+    // settings validator; this function only turns the raw blob into the
+    // boolean it takes.
+    reserve: auctionReserve(boolOrDefault(record.auction_zero_dollar_nominations, false)),
   }
 }
 
@@ -133,7 +153,7 @@ export function teamBudget(
   const remaining =
     inputs.auctionBudget + adjustmentFor(inputs.budgetAdjustments, teamId) - committed
   const openSlots = totalRounds - filled
-  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * inputs.minBid
+  const maxBid = openSlots <= 0 ? 0 : remaining - (openSlots - 1) * inputs.reserve
   return { remaining, openSlots, maxBid, committed }
 }
 
@@ -178,6 +198,20 @@ export function readLiveNomination(value: Json | null | undefined): LiveNominati
 
 function isRecord(value: unknown): value is Record<string, Json | undefined> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** PostgreSQL's `->>`-then-`::boolean` coercion, for the one knob that is a
+ *  boolean. Accepts every literal `::boolean` accepts; anything else falls to
+ *  the fallback (where the SQL would raise 22P02 — the same forgiving
+ *  divergence `intOrDefault` documents above). */
+function boolOrDefault(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase()
+    if (v === 'true' || v === 't' || v === 'yes' || v === 'y' || v === 'on' || v === '1') return true
+    if (v === 'false' || v === 'f' || v === 'no' || v === 'n' || v === 'off' || v === '0') return false
+  }
+  return fallback
 }
 
 function intOrDefault(value: unknown, fallback: number): number {

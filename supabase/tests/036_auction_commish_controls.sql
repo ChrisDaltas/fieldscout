@@ -463,7 +463,7 @@ insert into leagues (id, owner_id, name, season, status, team_count,
 select ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        '9f000000-0000-4000-8000-000000000001',
        'pgtap-cm5-' || w.nm, 2026, 'drafting', 8, null,
-       ('{"draft": {"auction_budget": 200, "auction_min_bid": 1,
+       ('{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": false,
           "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
           "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
           "pick_timer_seconds": 90}}')::jsonb,
@@ -484,7 +484,7 @@ insert into leagues (id, owner_id, name, season, status, team_count,
 values ('b8000000-0000-4000-8000-0000000000a6',
         '9f000000-0000-4000-8000-000000000001',
         'pgtap-cm5-LM-minbid0', 2026, 'drafting', 8, null,
-        '{"draft": {"auction_budget": 200, "auction_min_bid": 0,
+        '{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": true,
            "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
            "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
            "pick_timer_seconds": 90}}'::jsonb,
@@ -532,7 +532,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
 select ('e8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        'auction', 'live', w.sfx = 'a4',
-       '{"auction_budget": 200, "auction_min_bid": 1,
+       '{"auction_budget": 200, "auction_zero_dollar_nominations": false,
          "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
          "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
          "pick_timer_seconds": 90}'::jsonb,
@@ -562,7 +562,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
                     current_deadline, deadline_remaining_ms, started_at)
 values ('e8000000-0000-4000-8000-0000000000a6',
         'b8000000-0000-4000-8000-0000000000a6', 'auction', 'paused', false,
-        '{"auction_budget": 200, "auction_min_bid": 0,
+        '{"auction_budget": 200, "auction_zero_dollar_nominations": true,
           "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
           "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
           "pick_timer_seconds": 90}'::jsonb,
@@ -1110,7 +1110,7 @@ select throws_ok(
   $$ select public.draft_adjust_budget('e8000000-0000-4000-8000-0000000000ee',
        'd8000000-0000-4000-8000-00ee00000001', -149) $$,
   'P0001',
-  'draft_adjust_budget: that leaves pgtap-cm5-ee-t1 with $1 for 2 open roster spots at a $1 minimum bid — §8.6.8 needs at least $2; reverse a won bid to free a spot, or make the adjustment smaller (E28)',
+  'draft_adjust_budget: that leaves pgtap-cm5-ee-t1 with $1 for 2 open roster spots at a $1 per-slot reserve — §8.6.8 needs at least $2; reverse a won bid to free a spot, or make the adjustment smaller (E28)',
   'E28 ARM 2 — ONE DOLLAR SHORT of the §8.6.8 floor (remaining 1 vs 2 open spots at $1) is refused (D146)');
 select is(
   (select budget_adjustments from drafts where id = 'e8000000-0000-4000-8000-0000000000ee'),
@@ -1403,7 +1403,7 @@ select throws_ok(
        'd8000000-0000-4000-8000-00a100000001', 'd8000000-0000-4000-8000-00a100000002',
        null, 199) $$,
   'P0001',
-  'draft_move_player: $199 is over that team''s max bid of $198 — they have $200 for 3 open roster spots at a $1 minimum bid; reverse a won bid or adjust their budget first (E28/§8.6.8)',
+  'draft_move_player: $199 is over that team''s max bid of $198 — they have $200 for 3 open roster spots at a $1 per-slot reserve; reverse a won bid or adjust their budget first (E28/§8.6.8)',
   'D142 PRICED MOVE — ONE DOLLAR OVER the receiving team''s max bid ($198) is refused, the same algebra the award uses (E28-class, §8.6.8) (D146)');
 select is(
   (select team_id from draft_picks
@@ -1793,7 +1793,7 @@ select is(
   (select current_nomination->>'player_id' || '/' || (current_nomination->>'high_bid')
    from drafts where id = 'e8000000-0000-4000-8000-0000000000aa'),
   'cm5-rb04/1',
-  'FORCE-NOMINATE GOLDEN: the nomination opens exactly as the seat''s own would — at auction_min_bid (D129(1))');
+  'FORCE-NOMINATE GOLDEN: the nomination opens exactly as the seat''s own would — at the §8.6.2 nomination floor (D129(1))');
 select is(
   (select count(*) from draft_bids
    where draft_id = 'e8000000-0000-4000-8000-0000000000aa'
@@ -1817,15 +1817,15 @@ select is(
   (select b.remaining || '/' || b.open_slots || '/' || b.max_bid
    from public.draft_team_budget('e8000000-0000-4000-8000-0000000000aa',
                                  'd8000000-0000-4000-8000-00aa00000004') b),
-  '2/3/0', 't4 is starved to $2 against 3 open spots — max bid $0, exactly ONE dollar short of the $1 minimum bid');
+  '2/3/0', 't4 is starved to $2 against 3 open spots — max bid $0, exactly ONE dollar short of the $1 nomination floor');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.draft_force_pick('e8000000-0000-4000-8000-0000000000aa', 'cm5-rb05') $$,
   'P0001',
-  'draft_force_pick: pgtap-cm5-aa-t4 cannot afford the $1 minimum bid — max bid is $0 ($2 for 3 open spots) (§8.6.7(a))',
-  '§8.6.7(a) ONE UNIT SHORT: a force-nomination is validated exactly as the seat''s own would be, and a seat that cannot afford the minimum bid is REFUSED — no commissioner bypass (D146)');
+  'draft_force_pick: pgtap-cm5-aa-t4 cannot afford the $1 nomination floor — max bid is $0 ($2 for 3 open spots) (§8.6.7(a))',
+  '§8.6.7(a) ONE UNIT SHORT: a force-nomination is validated exactly as the seat''s own would be, and a seat that cannot afford the nomination floor bid is REFUSED — no commissioner bypass (D146)');
 reset role;
 update drafts set budget_adjustments =
   jsonb_build_object('d8000000-0000-4000-8000-00aa00000004', -197)

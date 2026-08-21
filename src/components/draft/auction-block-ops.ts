@@ -224,9 +224,14 @@ export type BidBlocker =
 
 export interface BidBoxModel {
   phase: AuctionPhase
-  /** The smallest amount the server will accept from me right now:
-   *  `high_bid + 1` while bidding, `auction_min_bid` while nominating
-   *  (§8.6.2/§8.6.3; C38 — a $0 opening is legal when `min_bid` is 0). */
+  /** The smallest amount the server will accept from me right now, and the
+   *  two are DIFFERENT RULES (Chris, 2026-08-20 — *"Nomination and Min Bid
+   *  need to be different"*):
+   *   - BIDDING: `high_bid + 1`. The increment is a fixed $1 in every league
+   *     (§8.6.3) — no setting reaches it, including a $0 opening, which is
+   *     raised to $1 and never to $0.
+   *   - NOMINATING: the §8.6.2 nomination FLOOR — $1, or $0 when
+   *     `auction_zero_dollar_nominations` is on (092/AP.1; §7.3.8). */
   minAmount: number
   /** My ceiling from the parity-pinned mirror (§8.6.1) — null when the
    *  budget is underivable, in which case the box renders no cap rather
@@ -245,7 +250,11 @@ export interface BidBoxInput {
   myBudget: TeamBudget | null
   nomination: LiveNomination | null
   nominatingTeamId: string | null
-  minBid: number
+  /** The §8.6.2 NOMINATION FLOOR — 092's `draft_auction_reserve` read through
+   *  `auctionKnobsOf().reserve`. Used only on the nominating branch below;
+   *  the bidding branch never reads it, because the increment is not a
+   *  setting. */
+  nominationFloor: 0 | 1
 }
 
 /**
@@ -256,7 +265,7 @@ export interface BidBoxInput {
  */
 export function buildBidBox(input: BidBoxInput): BidBoxModel {
   const bidding = input.phase === 'bidding'
-  const minAmount = bidding ? (input.nomination?.high_bid ?? 0) + 1 : input.minBid
+  const minAmount = bidding ? (input.nomination?.high_bid ?? 0) + 1 : input.nominationFloor
   const maxAmount = input.myBudget?.maxBid ?? null
 
   const blocker = ((): BidBlocker | null => {

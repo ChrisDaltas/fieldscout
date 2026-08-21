@@ -24,8 +24,11 @@ import {
 const T1 = 'c5000000-0000-4000-8000-00aa00000001'
 const T2 = 'c5000000-0000-4000-8000-00aa00000002'
 
-/** 033's 12-team $200 / min-bid 1 / 15-slot league. */
-const LA = { auctionBudget: 200, minBid: 1, totalRounds: 15, budgetAdjustments: {} }
+/** 033's 12-team $200 / 15-slot league, reserve 1 ($0 nominations OFF — the
+ *  §7.3.8 default). 092/AP.1 renamed the knob from `minBid` to `reserve` and
+ *  derived it from `auction_zero_dollar_nominations`; every literal below is
+ *  UNCHANGED at the default, which is the parity claim. */
+const LA = { auctionBudget: 200, reserve: 1 as const, totalRounds: 15, budgetAdjustments: {} }
 
 const pick = (team: string, price: number | null, undone = false): BudgetPickRow => ({
   team_id: team,
@@ -97,7 +100,7 @@ describe('teamBudget ≡ pgTAP 033 §D goldens (stored literals)', () => {
   })
 
   it('E25 GOLDEN (§8.6.7(d)): $3 across 3 open slots ⇒ max_bid $1; one dollar less ⇒ $0', () => {
-    const le = { auctionBudget: 3, minBid: 1, totalRounds: 3, budgetAdjustments: {} }
+    const le = { auctionBudget: 3, reserve: 1 as const, totalRounds: 3, budgetAdjustments: {} }
     expect(teamBudget(le, [], T2)).toEqual({ remaining: 3, openSlots: 3, maxBid: 1, committed: 0 })
     expect(teamBudget({ ...le, budgetAdjustments: { [T2]: -1 } }, [], T2)).toEqual({
       remaining: 2,
@@ -108,7 +111,7 @@ describe('teamBudget ≡ pgTAP 033 §D goldens (stored literals)', () => {
   })
 
   it('E27: a COMPLETE roster reads open_slots 0 and max_bid 0 — the ONE special case (a full team cannot bid)', () => {
-    const le = { auctionBudget: 3, minBid: 1, totalRounds: 3, budgetAdjustments: {} }
+    const le = { auctionBudget: 3, reserve: 1 as const, totalRounds: 3, budgetAdjustments: {} }
     expect(teamBudget(le, [pick(T1, 1), pick(T1, 1), pick(T1, 1)], T1)).toEqual({
       remaining: 0,
       openSlots: 0,
@@ -117,18 +120,39 @@ describe('teamBudget ≡ pgTAP 033 §D goldens (stored literals)', () => {
     })
   })
 
-  it('C38 GOLDEN: at min_bid 0 the whole remaining budget is bidable (200 − 14×0 = 200)', () => {
-    expect(teamBudget({ ...LA, minBid: 0 }, [], T1)).toMatchObject({
+  // 092/AP.1 — C38's substance, RE-POINTED at the toggle rather than deleted
+  // (D198(3)). The vehicle (a 0–5 `auction_min_bid` field) is retired; the
+  // finding it pinned — a $0 reserve makes the whole remaining budget bidable
+  // — is now spec law at §8.6.1/§7.3.8 and is pinned here at reserve 0.
+  // These two pins are the TS half of pgTAP 040 §B's stored literals.
+  it('$0 NOMINATIONS ON (reserve 0) GOLDEN: the whole remaining budget is bidable (200 − 14×0 = 200)', () => {
+    expect(teamBudget({ ...LA, reserve: 0 }, [], T1)).toMatchObject({
       remaining: 200,
       openSlots: 15,
       maxBid: 200,
     })
   })
 
-  it('GOLDEN $50/min-3: max_bid 8 (50 − 14×3) — the reserve keeps the other fourteen slots affordable', () => {
-    expect(
-      teamBudget({ auctionBudget: 50, minBid: 3, totalRounds: 15, budgetAdjustments: {} }, [], T1),
-    ).toMatchObject({ remaining: 50, openSlots: 15, maxBid: 8 })
+  it('D146 BOUNDARY, one unit either side of the toggle: reserve 1 ⇒ 186, reserve 0 ⇒ 200, and the gap is exactly (open−1)×1 = 14', () => {
+    const off = teamBudget({ ...LA, reserve: 1 }, [], T1)
+    const on = teamBudget({ ...LA, reserve: 0 }, [], T1)
+    expect(off?.maxBid).toBe(186)
+    expect(on?.maxBid).toBe(200)
+    expect((on?.maxBid ?? 0) - (off?.maxBid ?? 0)).toBe(14)
+  })
+
+  it('D146 BOUNDARY at the LAST slot: with ONE slot open the reserve term vanishes and both toggle states agree at 200', () => {
+    // (open_slots − 1) × reserve is 0 whichever the reserve is, so this is
+    // the one shape where the toggle CANNOT show — a pin that would stay
+    // green under any reserve, kept as the negative control for the two above.
+    const one = { ...LA, totalRounds: 1 }
+    expect(teamBudget({ ...one, reserve: 1 }, [], T1)?.maxBid).toBe(200)
+    expect(teamBudget({ ...one, reserve: 0 }, [], T1)?.maxBid).toBe(200)
+  })
+
+  it('E25 at reserve 0: $3 across 3 open slots is the WHOLE $3 — nothing is held back (§8.6.8 stops binding)', () => {
+    const le = { auctionBudget: 3, reserve: 0 as const, totalRounds: 3, budgetAdjustments: {} }
+    expect(teamBudget(le, [], T2)).toEqual({ remaining: 3, openSlots: 3, maxBid: 3, committed: 0 })
   })
 
   it('a NULL-price row (a snake-shaped pick) counts a slot and no money — SUM ignores NULL, COUNT does not', () => {
@@ -147,17 +171,33 @@ describe('teamBudget ≡ pgTAP 033 §D goldens (stored literals)', () => {
 })
 
 describe('the drafts-row readers (084 COALESCE defaults; 065:121 nomination shape)', () => {
-  it('auctionKnobsOf: 084 defaults (200 / 1) when absent; the stored knobs when present (number or numeric string)', () => {
-    expect(auctionKnobsOf(null)).toEqual({ auctionBudget: 200, minBid: 1 })
-    expect(auctionKnobsOf({})).toEqual({ auctionBudget: 200, minBid: 1 })
-    expect(auctionKnobsOf({ auction_budget: 50, auction_min_bid: 0 })).toEqual({
+  it('auctionKnobsOf: 084/092 defaults (200 / reserve 1) when absent; the stored knobs when present', () => {
+    expect(auctionKnobsOf(null)).toEqual({ auctionBudget: 200, reserve: 1 })
+    expect(auctionKnobsOf({})).toEqual({ auctionBudget: 200, reserve: 1 })
+    expect(auctionKnobsOf({ auction_budget: 50, auction_zero_dollar_nominations: true })).toEqual({
       auctionBudget: 50,
-      minBid: 0,
+      reserve: 0,
     })
-    expect(auctionKnobsOf({ auction_budget: '300', auction_min_bid: '2' })).toEqual({
+    expect(auctionKnobsOf({ auction_budget: '300', auction_zero_dollar_nominations: false })).toEqual({
       auctionBudget: 300,
-      minBid: 2,
+      reserve: 1,
     })
+  })
+
+  it('auctionKnobsOf ≡ 092 draft_auction_reserve: every `::boolean` literal reads ON, everything else falls to OFF', () => {
+    // `COALESCE((config->>'auction_zero_dollar_nominations')::boolean, FALSE)`
+    // — `->>` yields text, so a JSON `true`, the string "true" and the string
+    // "1" are all TRUE in Postgres. Anything else falls to the default here
+    // (where the SQL would raise 22P02), the same deliberate asymmetry
+    // `intOrDefault` carries for the budget.
+    for (const on of [true, 'true', 'TRUE', ' t ', 'yes', 'on', '1']) {
+      expect(auctionKnobsOf({ auction_zero_dollar_nominations: on }).reserve).toBe(0)
+    }
+    for (const off of [false, 'false', 'f', 'no', 'off', '0', null, 'abc', 2, {}]) {
+      expect(auctionKnobsOf({ auction_zero_dollar_nominations: off }).reserve).toBe(1)
+    }
+    // The RETIRED key is inert: a stale blob cannot resurrect the old floor.
+    expect(auctionKnobsOf({ auction_min_bid: 0 }).reserve).toBe(1)
   })
 
   it('adjustmentFor: 0 when absent / malformed; the integer delta when present', () => {

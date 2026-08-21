@@ -506,7 +506,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
                      "c3000000-0000-4000-8000-00ab00000003","c3000000-0000-4000-8000-00ab00000004",
                      "c3000000-0000-4000-8000-00ab00000005","c3000000-0000-4000-8000-00ab00000006",
                      "c3000000-0000-4000-8000-00ab00000007","c3000000-0000-4000-8000-00ab00000008"],
-     "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 45,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 45,
      "pick_timer_seconds": 0}}');
 
 -- LD: roster override → exactly 2 draftable rounds (D91).

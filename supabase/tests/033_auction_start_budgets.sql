@@ -192,14 +192,14 @@ values
                      "c5000000-0000-4000-8000-00aa00000009","c5000000-0000-4000-8000-00aa00000010",
                      "c5000000-0000-4000-8000-00aa00000011","c5000000-0000-4000-8000-00aa00000012"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1, "auction_nomination_seconds": 45,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 45,
      "pick_timer_seconds": 0}}'),
   ('a5000000-0000-4000-8000-0000000000bb', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LB-random', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
      "nomination_order_mode": "random",
-     "auction_budget": 300, "auction_min_bid": 2, "pick_timer_seconds": 90}}'),
+     "auction_budget": 300, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000cc', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LC-manualnom', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -209,22 +209,33 @@ values
    'pgtap-as-LD-minbid0', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 200, "auction_min_bid": 0, "pick_timer_seconds": 90}}'),
+     "auction_budget": 200, "auction_zero_dollar_nominations": true, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000ee', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LE-belowfloor', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+   -- 092/AP.1: the below-floor world used to be bought with min_bid 3 ($20 <
+   -- 15 × $3). The reserve is now DERIVED and at most $1, so the only way
+   -- below the floor is a budget under the slot count: $14 against 15
+   -- draftable slots, i.e. EXACTLY ONE DOLLAR SHORT (D146 — LF below is the
+   -- same league one dollar up, and starts). The budget is under the
+   -- catalog's own `min(50)` on purpose: pgTAP writes the blob directly, and
+   -- this is the only remaining way to reach the arm at all (the same
+   -- reachability note `validate-league-settings.test.ts` carries).
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 20, "auction_min_bid": 3, "pick_timer_seconds": 90}}'),
+     "auction_budget": 14, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000ff', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LF-atfloor', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+   -- 092/AP.1: EXACTLY AT the floor on the derived scale — $15 for 15
+   -- draftable slots at a $1 reserve. LE above is the same shape one dollar
+   -- down and is refused; this one starts. The pair brackets the start gate.
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 50, "auction_min_bid": 3, "pick_timer_seconds": 90}}'),
+     "auction_budget": 15, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000e2', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LG-e25', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 3, "auction_min_bid": 1, "pick_timer_seconds": 90}}'),
+     "auction_budget": 3, "auction_zero_dollar_nominations": false, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000e3', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LH-noteams', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -241,7 +252,7 @@ values
    'pgtap-as-LN-adjshort', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 200, "auction_min_bid": 1, "pick_timer_seconds": 90}}');
+     "auction_budget": 200, "auction_zero_dollar_nominations": false, "pick_timer_seconds": 90}}');
 
 -- LG's roster: THREE draftable slots (2 RB starters + 1 bench, IR excluded
 -- per D91) — E25's "$3 budget, 3 open slots" fixture.
@@ -330,9 +341,9 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config, budget_a
 -- LH/LI: hand-built rows for the two loudness probes (never started).
 insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds) values
   ('e5000000-0000-4000-8000-0000000000e3', 'a5000000-0000-4000-8000-0000000000e3',
-   'auction', 'live', false, '{"auction_budget": 200, "auction_min_bid": 1}', 15),
+   'auction', 'live', false, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', 15),
   ('e5000000-0000-4000-8000-0000000000e4', 'a5000000-0000-4000-8000-0000000000e4',
-   'auction', 'live', false, '{"auction_budget": 200, "auction_min_bid": 1}', null),
+   'auction', 'live', false, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', null),
   ('e5000000-0000-4000-8000-0000000000e6', 'a5000000-0000-4000-8000-0000000000e4',
    'snake', 'live', true, '{}', 15);
 
@@ -491,8 +502,8 @@ select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from public.draft_team_budget('e5000000-0000-4000-8000-0000000000bb',
                                    'c5000000-0000-4000-8000-00bb00000001') b $$,
-  $$ values (300, 15, 272) $$,
-  'GOLDEN 8-team $300/min-2: max_bid 272 (300 − 14×2) — the reserve scales with the minimum bid');
+  $$ values (300, 15, 286) $$,
+  'GOLDEN 8-team $300: max_bid 286 (300 − 14×$1 reserve) — 092/AP.1 retired the 0–5 min-bid field, so the reserve is the DERIVED $1 (§8.6.1/§7.3.8)');
 
 -- (2) manual: refuses without a stored permutation, then honors one.
 select throws_ok(
@@ -661,37 +672,38 @@ select ok(
     (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000e2')),
   '…and a fully-spent, fully-rostered team is still SOLVENT (0 ≥ 0×1) — completion is not insolvency');
 
--- C38: auction_min_bid = 0 degenerates the floor to ≥ 0, and max_bid to
--- the whole remaining budget.
+-- 092/AP.1 — C38's SUBSTANCE, re-pointed at the toggle rather than deleted
+-- (D198(3)): `auction_zero_dollar_nominations` ON degenerates the §8.6.8
+-- floor to ≥ 0, and max_bid to the whole remaining budget.
 select is(
   (public.draft_start_internal('a5000000-0000-4000-8000-0000000000dd', false)->>'started')::boolean,
   true,
-  'LD starts with auction_min_bid = 0 (catalog-legal per §7.3.8; C38)');
+  'LD starts with auction_zero_dollar_nominations ON (§7.3.8 v2.13; C38 promoted to law)');
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00dd00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000dd' $$,
   $$ values (200, 15, 200) $$,
-  'C38 GOLDEN: at min_bid 0 the whole remaining budget is bidable (200 − 14×0) — the reserve for later slots is $0');
+  '$0-NOMINATIONS GOLDEN: with the toggle ON the whole remaining budget is bidable (200 − 14×0) — "with $0 nominations there is no $1 per slot reserve" (Chris, 2026-08-20)');
 
 -- The start-time backstop, both sides.
 select is(
   (public.draft_start_internal('a5000000-0000-4000-8000-0000000000ff', false)->>'started')::boolean,
   true,
-  'LF starts: $50 across 15 slots at min_bid 3 is legal at the settings floor (16 × 3 = 48 ≤ 50) — the POSITIVE control through a legal league');
+  'LF starts: $15 across 15 draftable slots is EXACTLY at the §8.6.8 floor (15 ≥ 15 × $1) — the POSITIVE control one dollar above LE (D146)');
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00ff00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000ff' $$,
-  $$ values (50, 15, 8) $$,
-  '…GOLDEN $50/min-3: max_bid 8 (50 − 14×3) — the reserve keeps the other fourteen slots affordable');
+  $$ values (15, 15, 1) $$,
+  '…GOLDEN at the floor: max_bid $1 (15 − 14×$1) — the reserve keeps the other fourteen slots affordable, and there is exactly one dollar of room');
 select throws_ok(
   $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000ee', false) $$,
   'P0001',
-  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $20 budget cannot fill 15 draftable roster spots at a $3 minimum bid (§8.6.8 solvency); raise the auction budget or lower the minimum bid in League settings → Draft setup',
-  'LE: a BELOW-floor auction is refused by the §8.6.8 start backstop, with the numbers, the UNIT (D91 draftable slots — not the settings validator''s IR-inclusive roster size) and the remedy in the message');
+  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $14 budget cannot fill 15 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
+  'LE: a BELOW-floor auction is refused by the §8.6.8 start backstop, with the numbers, the UNIT (D91 draftable slots — not the settings validator''s IR-inclusive roster size) and a remedy that names a knob that EXISTS (092/AP.1: "lower the minimum bid" pointed at a retired field)');
 select is(
   (select status || '|' || (select count(*) from drafts
      where league_id = 'a5000000-0000-4000-8000-0000000000ee')::text
@@ -711,7 +723,7 @@ select ok(
 select throws_ok(
   $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000e7', false) $$,
   'P0001',
-  'draft_start: league a5000000-0000-4000-8000-0000000000e7 cannot start an auction — pgtap-as-LN-t1 has $14 for 15 draftable roster spots at a $1 minimum bid (§8.6.8 solvency). The league''s $200 auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7) or lower the minimum bid in League settings → Draft setup',
+  'draft_start: league a5000000-0000-4000-8000-0000000000e7 cannot start an auction — pgtap-as-LN-t1 has $14 for 15 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency). The league''s $200 auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7), or allow $0 nominations in League settings → Draft setup',
   'LN: a settings-LEGAL league made insolvent by a PRE-START budget adjustment is refused by the named franchise and its real numbers — never by the settings sentence, which is false for this league (R318); the state is one slot short, so a floor loosened by one slot would start it (R320)');
 
 -- ---------------------------------------------------------------------------

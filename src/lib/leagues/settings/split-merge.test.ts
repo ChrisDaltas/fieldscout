@@ -270,7 +270,7 @@ function randomSettings(rng: () => number): LeagueSettings {
       draft_order: bool(rng) ? null : TEAM_IDS.slice(0, int(rng, 1, 16)),
       pick_timer_seconds: pick(rng, PICK_TIMER_SECONDS),
       auction_budget: int(rng, 50, 1000),
-      auction_min_bid: int(rng, 0, 5),
+      auction_zero_dollar_nominations: bool(rng),
       auction_nomination_seconds: int(rng, 10, 120),
       auction_bid_seconds: int(rng, 10, 60),
       auction_anti_snipe_seconds: int(rng, 0, 15),

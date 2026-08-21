@@ -74,14 +74,18 @@ const TEAM_COUNT = 8
  *  — the auction's per-team roster CAPACITY (D126). */
 const SLOTS_PER_TEAM = 2
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 const NOMINATION_SECONDS = 45
 const BID_SECONDS = 30
 const GRACE_SECONDS = 30
-/** §8.6.1: max_bid = remaining − (open_slots − 1) × min_bid. At full budget
+/** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. At full budget
  *  with 2 open slots that is 200 − 1 = 199, so $200 is over by exactly one
  *  dollar — the D146 shape, used here to forge the insolvent award. */
-const MAX_BID_AT_START = AUCTION_BUDGET - (SLOTS_PER_TEAM - 1) * AUCTION_MIN_BID
+const MAX_BID_AT_START = AUCTION_BUDGET - (SLOTS_PER_TEAM - 1) * AUCTION_RESERVE
 const OVER_MAX_BID = MAX_BID_AT_START + 1
 
 const COMMISH = {
@@ -271,7 +275,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: NOMINATION_SECONDS,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: 10,
@@ -420,7 +424,7 @@ describe('auction commissioner controls over PostgREST (migration 087)', () => {
     expect(recovered.status).toBe('live')
     const live = recovered.current_nomination as unknown as LiveNomination | null
     expect(live).not.toBeNull()
-    expect(live?.high_bid).toBe(AUCTION_MIN_BID)
+    expect(live?.high_bid).toBe(AUCTION_RESERVE)
     // Still sequence 1 — the number D143 refused to consume.
     expect(recovered.current_pick_number).toBe(started.current_pick_number)
 

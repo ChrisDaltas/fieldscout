@@ -3267,6 +3267,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      draft_auction_reserve: { Args: { p_config: Json }; Returns: number }
       draft_auction_solvent: { Args: { p_draft_id: string }; Returns: boolean }
       draft_autopick_resolve: {
         Args: { p_draft_id: string; p_team_id: string }

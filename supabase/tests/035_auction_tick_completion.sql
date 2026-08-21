@@ -225,7 +225,7 @@ values
                      "c7000000-0000-4000-8000-00aa00000005","c7000000-0000-4000-8000-00aa00000006",
                      "c7000000-0000-4000-8000-00aa00000007","c7000000-0000-4000-8000-00aa00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
      "pick_timer_seconds": 90}}'),
@@ -238,7 +238,7 @@ values
                      "c7000000-0000-4000-8000-00bb00000005","c7000000-0000-4000-8000-00bb00000006",
                      "c7000000-0000-4000-8000-00bb00000007","c7000000-0000-4000-8000-00bb00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
      "pick_timer_seconds": 90}}'),
@@ -251,7 +251,7 @@ values
                      "c7000000-0000-4000-8000-00cc00000005","c7000000-0000-4000-8000-00cc00000006",
                      "c7000000-0000-4000-8000-00cc00000007","c7000000-0000-4000-8000-00cc00000008"],
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 200, "auction_min_bid": 1,
+     "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
      "pick_timer_seconds": 90}}'),
@@ -391,7 +391,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
                     total_rounds, current_round, current_pick_number,
                     on_clock_team_id, current_nomination, current_deadline) values
   ('e7000000-0000-4000-8000-0000000000ff', 'a7000000-0000-4000-8000-0000000000ff',
-   'auction', 'live', false, '{"auction_budget": 200, "auction_min_bid": 1}', 3, 1, 4,
+   'auction', 'live', false, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', 3, 1, 4,
    'c7000000-0000-4000-8000-00ff00000001',
    '{"player_id": "tk26-rb59", "high_bid": 4, "high_bidder_team_id": "c7000000-0000-4000-8000-00ff00000002"}',
    now() + interval '1 hour');
@@ -408,7 +408,7 @@ insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
 insert into drafts (id, league_id, draft_type, status, is_mock, config,
                     total_rounds, on_clock_team_id, current_deadline) values
   ('e7000000-0000-4000-8000-0000000000a1', 'a7000000-0000-4000-8000-0000000000a1',
-   'auction', 'live', true, '{"auction_budget": 200, "auction_min_bid": 1}', 3, null, null);
+   'auction', 'live', true, '{"auction_budget": 200, "auction_zero_dollar_nominations": false}', 3, null, null);
 insert into draft_picks (draft_id, league_id, pick_number, round, team_id,
                          player_id, price, is_auto, made_via) values
   ('e7000000-0000-4000-8000-0000000000a1', 'a7000000-0000-4000-8000-0000000000a1',
@@ -443,7 +443,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
                     started_at) values
   ('e7000000-0000-4000-8000-0000000000a5', 'a7000000-0000-4000-8000-0000000000a5',
    'auction', 'live', true,
-   '{"pick_timer_seconds": 90, "auction_budget": 200, "auction_min_bid": 1,
+   '{"pick_timer_seconds": 90, "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "disconnect_grace_seconds": 30,
      "mock": {"human_team_id": "c7000000-0000-4000-8000-00a500000001",
               "launched_by": "8e000000-0000-4000-8000-000000000001",
@@ -470,7 +470,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
                     current_deadline, started_at) values
   ('e7000000-0000-4000-8000-0000000000a6', 'a7000000-0000-4000-8000-0000000000a6',
    'auction', 'live', false,
-   '{"auction_budget": 200, "auction_min_bid": 1,
+   '{"auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "disconnect_grace_seconds": 30}',
    '["c7000000-0000-4000-8000-00a600000001", "c7000000-0000-4000-8000-00a600000002"]',
@@ -575,7 +575,7 @@ select is(
           || '|' || amount::text || '|' || coalesce(action_id::text, 'NULL')
    from draft_bids where draft_id = 'e7000000-0000-4000-8000-0000000000aa'),
   '1|tk26-rb01|c7000000-0000-4000-8000-00aa00000001|1|NULL',
-  'F62: the system nomination opened with a draft_bids row — nomination_seq 1, the minimum bid, action_id NULL (§12.5''s one uniform history)');
+  'F62: the system nomination opened with a draft_bids row — nomination_seq 1, the nomination floor, action_id NULL (§12.5''s one uniform history)');
 select is(
   (select count(*) from draft_bids where draft_id = 'e7000000-0000-4000-8000-0000000000aa'),
   1::bigint,
@@ -967,7 +967,7 @@ select is(
 -- H. LX — §8.6.8 AT THE AWARD, one dollar either side (D146), the F62
 --    load-bearing half, and the "budgets exhausted is unreachable" spot
 --    check (D130): a team that spends to its ceiling still fills a legal
---    roster at the minimum bid.
+--    roster at the nomination floor.
 -- ---------------------------------------------------------------------------
 select is(
   (public.draft_start_internal('a7000000-0000-4000-8000-0000000000cc', false)->>'started')::boolean,
@@ -1090,7 +1090,7 @@ select is(
   (select count(*) from draft_picks
    where draft_id = 'e7000000-0000-4000-8000-0000000000cc' and price < 1),
   0::bigint,
-  '…and every price is at or above the $1 minimum bid (§7.3.8)');
+  '…and every price is at or above the $1 nomination floor (§7.3.8)');
 
 -- ---------------------------------------------------------------------------
 -- I. THE COMPLETION WRITER ITSELF — the partial board L.C1.5's draft_end

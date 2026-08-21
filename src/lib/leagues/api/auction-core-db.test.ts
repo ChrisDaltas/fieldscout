@@ -61,14 +61,18 @@ const TEAM_COUNT = 8
 /** §7.3.8 auction block — every value differs from a default that could
  *  mask a bug (bid clock 30 vs default 20, nomination 45 vs 30). */
 const AUCTION_BUDGET = 200
-const AUCTION_MIN_BID = 1
+/** 092/AP.1: the DERIVED §8.6.1 per-slot reserve / §8.6.2 nomination floor
+ *  — `draft_auction_reserve(config)` answers 1 with
+ *  `auction_zero_dollar_nominations` false. It is NOT the bid increment,
+ *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
+const AUCTION_RESERVE = 1
 const BID_SECONDS = 30
 const ANTI_SNIPE_SECONDS = 10
 /** D91 draftable slots for the default roster (9 starters + 6 bench, IR
  *  excluded) — the auction's per-team roster capacity (D126). */
 const OPEN_SLOTS = 15
-/** §8.6.1: max_bid = remaining − (open_slots − 1) × min_bid. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_MIN_BID // 186
+/** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
 
 const COMMISH = {
   email: 'auction-core-commish@fieldscout.test',
@@ -292,7 +296,7 @@ beforeAll(async () => {
         draft_order: orderedTeamIds,
         nomination_order_mode: 'same_as_draft_order',
         auction_budget: AUCTION_BUDGET,
-        auction_min_bid: AUCTION_MIN_BID,
+        auction_zero_dollar_nominations: false, // 092/AP.1: the retired min-bid field's replacement; false ⇒ the $1 reserve/floor below
         auction_nomination_seconds: 45,
         auction_bid_seconds: BID_SECONDS,
         auction_anti_snipe_seconds: ANTI_SNIPE_SECONDS,
