@@ -420,6 +420,8 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 
 ### MP.6b — The standalone action surface: seventeen verbs, ONE resolver *(LAYER 3 — server)*
 
+> **BUILT 2026-08-24** (`feat/MP-MP.6b-standalone-actions`; PROGRESS **D245**). **No migration was needed and the PR says why:** 095 already carries every RPC's standalone arm, so the whole server-side obstruction was item 1's `.eq(…)` and the URL shape. **Item 4's `useDeleteMockDraft` hook arm already existed** (MP.5, `use-mock-drafts.ts:176–190`) — measured, and no hook was edited. **Item 5's review question is answered in the build** (three break probes, one RED). **Two rows came out of it: F121** — a standalone practice auction has NO bidding, because `draft_nomination_uncontestable` (093:590–653) filters `t.league_id = v_league_id` — **and MP.6c's own acceptance depends on it** (see MP.6c's added note); **F122** — which lists a standalone room OFFERS is unowned.
+
 > Read **D243**, **Q25**'s measurement, **D226(3)**, **D233(5)**, **MS.2**'s launcher-gate predicate; `tasks-M3` §4 rules 1–8; **§4 rules 10–13**. **Depends on MP.6. Prerequisite of MP.6c.**
 > **Built BEFORE the spine (3 before 2), and the reason is a rule rather than a preference:** MP.6c's acceptance is a **browser drive** — *watch bots act, pause and resume, the chat posts render* — and **none of it can be performed until these verbs work league-free.** Built the other way round MP.6c would have to claim its states from intent, which **§4 rule 9 forbids**.
 
@@ -434,6 +436,8 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 ---
 
 ### MP.6c — The league-optional room *(LAYER 2 — the spine, the hooks, and the exits)*
+
+> **ADDED 2026-08-24 at MP.6b's landing (D245(7)), because item 9's acceptance cannot be performed without it: `F121` — on today's engine a STANDALONE AUCTION HAS NO BIDDING.** `draft_nomination_uncontestable` filters `t.league_id = v_league_id`, so with a NULL league every nomination is declared uncontestable and awarded instantly at its opening bid (measured: the predicate answers `t` where a NULL-aware scan finds **7** contenders). Item 9 says *launch a standalone auction … **watch the bots act***; there is nothing to watch until F121 is fixed, and a Builder who reaches this task must **not** write that state up from intent (§4 rule 9). **Take F121 first, or drive the auction half only as far as the engine honestly goes and say so.** **Also inherited: `F122`** — item 2 lists the room's non-draft context sources (seats, roster, scoring) and does **not** mention LISTS; §8.9's *"My Lists"* panel is a league surface, and the server rule for a standalone mock is now OWNERSHIP (spec **v2.16.3**). Decide what the panel shows, and do not offer what the verb would refuse (D110(1)).
 
 > Read **D243**, **Q25**, **§4 rules 12/14/15/16**, **D229(5)**; ledger rows **F114**, **F117**, **F119**. **Depends on MP.6b. Prerequisite of MP.7's leagues-off pin.** **Discharges F114, F117, and F119's ROOM half.**
 
