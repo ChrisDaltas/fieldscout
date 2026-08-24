@@ -500,7 +500,13 @@ select is(
   now() + interval '30 seconds',
   'the first clock is the NOMINATION clock: now() + auction_nomination_seconds (30), never the snake pick timer');
 select is(
-  (select d.config - 'mock' - 'draft_order' from drafts d join ma_la on ma_la.id = d.id),
+  -- 094/MP.2: `- 'roster'` joins the subtraction list. The roster SHAPE is now
+  -- part of the launch snapshot (it never was, and both hot readers went back
+  -- to the live league for it — the D95 hole this pin could not see). Its
+  -- VALUE is asserted in 042 §A (the launch snapshot); here it is subtracted
+  -- so this pin keeps testing exactly what it always tested: the §7.3.8
+  -- draft block.
+  (select d.config - 'mock' - 'draft_order' - 'roster' from drafts d join ma_la on ma_la.id = d.id),
   '{"draft_type": "auction", "draft_order_mode": "manual", "nomination_order_mode": "same_as_draft_order",
     "auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 30,
     "auction_bid_seconds": 20, "auction_anti_snipe_seconds": 10,
