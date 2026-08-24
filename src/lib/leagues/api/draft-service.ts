@@ -446,6 +446,7 @@ async function resolveStandaloneMockForAction(
     .from('drafts')
     .select('id, status, is_mock, config')
     .eq('id', scope.mockId)
+    .is('league_id', null)
     .eq('is_mock', true)
     .eq('config->mock->>launched_by' as 'id', scope.userId)
     .maybeSingle()
