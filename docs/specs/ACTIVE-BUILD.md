@@ -104,26 +104,41 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
 | **MS breakdown** | `docs/specs/tasks-MS-mock-sandbox.md` (Architect, 2026-08-20; PR #184) |
 | **MS task id prefix** | `MS.` |
 | **MS spec fold** | `spec-redraft-leagues.md` **v2.15** (§8.7 · §8.8 · §19.2 · E75–E77) |
-| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all five checklists |
+| **MP breakdown** | `docs/specs/tasks-MP-mock-practice.md` (Architect, 2026-08-21; PR #187 — **standalone mocks, base scoring templates, no league inheritance**; the league-attached practice launch is DEFERRED until league demand, per Chris) |
+| **MP task id prefix** | `MP.` |
+| **MP spec fold** | `spec-redraft-leagues.md` **v2.16** (§8.8 · E78–E80; Q23 lapsed, F85 de-targeted) |
+| **MP release gate** | `NEXT_PUBLIC_FLAG_MOCK_DRAFTS` — never the `leagues` flag; everything must work with `leagues` OFF (E79) |
+| **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all six checklists |
 
 **The loop's order, precisely:**
 
 1. Take the next unblocked **`DR.*`** task (dependency order in tasks-DR §5).
    *(**The DR lane is COMPLETE — DR.1–DR.8 all landed 2026-08-18**, so this step
    never fires again; the DR prerequisites in step 3 are all satisfied.)*
-1a. **Take the next unblocked `AP.*` task (dependency order in tasks-AP §7) BEFORE any
-   remaining `L.C*` task.** `AP.4` is **blocked on Q17** (Chris's sign-off on the bid-clock
-   default) — skip it and take the next AP task; do not guess the number. When every `AP.*`
-   task is done or blocked, fall through to step 2.
-1b. **When no `AP.*` task is unblocked, take the next unblocked `MS.*` task** (dependency order
-   in `tasks-MS-mock-sandbox.md` §5) **before any remaining `L.C*` task.** The lane makes the
-   mock launcher the commissioner of their own mock (**D216–D223**, spec **v2.15**).
+1a. **THE MOCK TRACK RUNS AHEAD OF THE LEAGUE LANES — take the next unblocked `MP.*` task
+   first** (dependency order in `tasks-MP-mock-practice.md` §5; **D225–D233**, spec **v2.16**).
+   Chris's ruling, 2026-08-21: standalone mocks are what users are invited to during the
+   2026 launch, while league work waits for demand (*"until then we can invite users to come
+   do mocks for practice"*) — and he opened the build in-session (*"perfect, lets build"*).
+   `MP.1` (the storage investigation) is first and writes no code; its finding gates the
+   lane's shape. **The lane's one cross-lane constraint: MP.4's launch dialog/RPC and MS.8's
+   slot picker compose — one dialog, one RPC; whichever lands second composes, never forks.**
+1b. **When no `MP.*` task is unblocked, take the next unblocked `AP.*` task** (dependency
+   order in tasks-AP §7) before any remaining `L.C*` task. **`AP.4` is CLOSED with no code**
+   (Q17's numbers already ship; Q23 lapsed with the standalone rewrite; the measurement is
+   banked in the AP.4 closure row — do NOT re-run a ~52-minute mock to re-derive it). The
+   remaining AP tasks are **AP.5 / AP.6 / AP.7**.
+1c. **When no `MP.*` or `AP.*` task is unblocked, take the next unblocked `MS.*` task**
+   (dependency order in `tasks-MS-mock-sandbox.md` §5, as re-read by tasks-MP §7) **before any
+   remaining `L.C*` task.** The lane makes the mock launcher the commissioner of their own mock
+   (**D216–D223**, spec **v2.15**). **MS.1, MS.4 and MS.6 serve the DEFERRED league-attached
+   feature and are parked with it** (tasks-MP §7) — skip them until that feature returns.
    **One hard ordering constraint, and it is the only correctness-affecting one in the lane:
    `MS.7` must land BEFORE `MS.5` renders the order control.** `draft_set_order`'s route
    resolves `.eq('is_mock', false)`, so today the control is aimed at the REAL draft; it is
    live but latent, and rendering it in a mock room first makes the bug one click away
-   (R468/D222). `MS.1` is an audit and changes no behaviour — it gates `MS.2`.
-2. When no `DR.*`, `AP.*` or `MS.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
+   (R468/D222).
+2. When no `MP.*`, `AP.*` or `MS.*` task is unblocked, take the next **`L.C*`** engine task (tasks-M3 §6).
    **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started while any
    `AP.*` task is unblocked** (the ordering above). `L.C6.1` additionally owes **F84**: the gate
    composes the AP suites by name.
