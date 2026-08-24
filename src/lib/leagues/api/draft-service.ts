@@ -74,6 +74,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
+import {
+  draftConfigSchema,
+  rosterSettingsSchema,
+} from '@/lib/leagues/settings/league-settings'
 import type { Database, Draft, Json } from '@/types/database'
 
 import type { ServiceResult } from './leagues-service'
@@ -283,6 +287,14 @@ export async function startDraft(supabase: Supabase, leagueId: string): Promise<
 // ===========================================================================
 
 export const NOT_A_MEMBER_MESSAGE = 'You are not a member of this league.'
+
+/** The 42501 arm of the STANDALONE launch (MP.4). `create_mock_draft`'s
+ *  league arm answers 42501 for "not a member"; its standalone arm answers it
+ *  only for `auth.uid() IS NULL`, which the route's own auth gate already
+ *  covers — so this is the honest text for a path that should be
+ *  unreachable, not a membership message about a league that does not
+ *  exist. */
+export const MOCK_SIGNED_OUT_MESSAGE = 'Sign in to start a practice draft.'
 export const NOT_YOUR_MOCK_MESSAGE =
   "This mock draft is another member's solo practice (§8.8)."
 export const LIST_NOT_ATTACHED_MESSAGE = 'That list is not attached to this league.'
@@ -1402,6 +1414,81 @@ export async function launchMockDraft(
   const result = data as unknown as DraftStateBody
   // created:false = the E2 replay of a retried submit — the ORIGINAL mock as
   // a 200, never a duplicate-launch error (D110(11)).
+  return { status: result.created ? 201 : 200, body: result as unknown as Json }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/mocks — launch a STANDALONE practice draft (MP task MP.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The settings OBJECT `create_mock_draft`'s standalone arm takes (095 §7;
+ * tasks-MP §4 rule 12 / D229(5)).
+ *
+ * Parsed with the league contract's OWN schemas — `rosterSettingsSchema` and
+ * `draftConfigSchema`, the same two `leagueSettingsSchema` composes — because
+ * this object IS a league's three settings fields under different cover
+ * (`leagues.team_count`, `leagues.roster_settings`,
+ * `leagues.settings->'draft'`). That is what makes the deferred league-mock
+ * feature a new SOURCE for this object rather than a rewrite of this path,
+ * and it is why MP.4 exported `draftConfigSchema` instead of restating its
+ * ranges: a second copy of the §7.3.8 catalog here would drift from the one
+ * every league surface validates against.
+ *
+ * `scoring_system_id` (D229(1): pick one of the six shipped templates at
+ * launch) rides the draft block, so it lands in `drafts.config` beside
+ * MP.2's `config->'roster'` with NO RPC signature change — exactly the seam
+ * D236(4) predicted. It is not range-checked in the database: a forged id
+ * resolves to no template row and the launcher's own board renders "—" for
+ * the projection columns (§16.5.4's "never wrong numbers"), which harms
+ * nobody but the forger's own practice — tasks-MP §4 rule 10 forbids a
+ * protection with no party to protect. Shape IS checked (a uuid), because a
+ * non-uuid would be stored and read back by a column-typed client.
+ *
+ * NOT the authority on the ranges either: `draft_settings_range_guard`
+ * (095 §2) re-checks every clock, the budget and the roster bounds in-body,
+ * because `create_mock_draft` is EXECUTE-able by `authenticated` and a
+ * client that skips this route reaches it directly (MP.4 item 5).
+ */
+export const standaloneMockSettingsSchema = z.strictObject({
+  team_count: z.literal([8, 10, 12, 14, 16]),
+  roster_settings: rosterSettingsSchema,
+  draft: draftConfigSchema.extend({ scoring_system_id: z.uuid() }),
+})
+
+export const launchStandaloneMockInputSchema = z.strictObject({
+  cpu_speed: z.enum(['realistic', 'fast']).optional(),
+  settings: standaloneMockSettingsSchema,
+  /** Hook-minted per submit (D68(1)); the route mints otherwise — the RPC
+   *  ALWAYS receives a key (D110(11)). */
+  action_id: z.uuid().optional(),
+})
+
+/**
+ * POST /api/mocks — a practice draft with NO league (spec v2.16 §8.8;
+ * D226/D227/D234/D237). `p_league_id` and `p_human_team_id` are deliberately
+ * NOT sent: the two arms of `create_mock_draft` are mutually exclusive BY
+ * REFUSAL (095), so sending either alongside `p_settings` is a 22023 rather
+ * than a silent precedence guess. Every rule stays the RPC's — the §22.5
+ * caps, the seat minting, the solvency backstop — and its refusals surface
+ * verbatim (they were written to be read by the launcher).
+ */
+export async function launchStandaloneMockDraft(
+  supabase: Supabase,
+  rawBody: unknown,
+  deps: LaunchMockDeps,
+): Promise<ServiceResult> {
+  const parsed = launchStandaloneMockInputSchema.safeParse(rawBody ?? {})
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { data, error } = await supabase.rpc('create_mock_draft', {
+    p_cpu_speed: parsed.data.cpu_speed ?? 'realistic',
+    p_action_id: parsed.data.action_id ?? deps.mintActionId(),
+    p_settings: parsed.data.settings as unknown as Json,
+  })
+  if (error) return mapDraftRpcError(error, MOCK_SIGNED_OUT_MESSAGE)
+  const result = data as unknown as DraftStateBody
   return { status: result.created ? 201 : 200, body: result as unknown as Json }
 }
 

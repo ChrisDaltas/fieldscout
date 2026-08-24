@@ -189,7 +189,12 @@ const STATUS_SOURCE: {
     // panel never says what the floor IS or that it re-armed, and it renders
     // only inside a commissioner sheet. Dispositioned here rather than
     // widened into `announcedBy`, so a real second teller still fails.
-    alsoNamedBy: ['commish-draft-panel.tsx'],
+    // MP.4: the practice-draft LAUNCH dialog carries the same §7.3.8 field
+    // label for the same reason — it is the control that SETS the value
+    // before a draft exists, so there is no live state for it to be a second
+    // telling of. It is not even a room surface: it renders in a dialog off
+    // the practice entry points, never inside the draft room.
+    alsoNamedBy: ['commish-draft-panel.tsx', 'mock-launch-dialog.tsx'],
     why:
       'the floor and its re-arm are stated ONCE, beside the nomination. It is not a ' +
       "second clock — the strip's PickClock is the room's only countdown, and this " +

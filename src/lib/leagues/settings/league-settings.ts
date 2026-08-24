@@ -236,7 +236,15 @@ export function auctionReserve(zeroDollarNominations: boolean | null | undefined
   return zeroDollarNominations === true ? 0 : 1
 }
 
-const draftConfigSchema = z.strictObject({
+/**
+ * §7.3.8 draft-configuration block — exported (MP.4) because it is also the
+ * shape of `drafts.config`'s settings half: a standalone practice draft
+ * sends this exact object as `create_mock_draft`'s `p_settings.draft` and
+ * the RPC stores it verbatim, so the launch route parses with the SAME
+ * schema the league surfaces validate against rather than a second opinion
+ * (tasks-MP §4 rule 12 / MP.4 item 5).
+ */
+export const draftConfigSchema = z.strictObject({
   draft_type: z.enum(['snake', 'auction', 'linear']).default('snake'),
   snake_reversal: z.boolean().default(false),
   draft_order_mode: z.enum(['random', 'manual', 'custom']).default('random'),
