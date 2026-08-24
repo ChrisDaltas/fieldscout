@@ -255,16 +255,46 @@ describe('practice is released on its OWN flag (E79 / D231)', () => {
     expect(code(GATE)).not.toContain('featureFlags.leagues')
   })
 
-  it('nothing under /app/mocks reads the leagues flag either', () => {
-    // The gate is one file; the pages under it are the other half of the
-    // same claim. `mocks-home.tsx` is swept with them because it IS the
-    // page's body (the route file is two lines).
+  it('nothing under /app/mocks GATES on the leagues flag', () => {
+    // The gate is one file; the pages under it are the other half of the same
+    // claim. `mocks-home.tsx` is swept with them because it IS the page's
+    // body (the route file is two lines).
+    //
+    // **Narrowed at review (R519), and the narrowing was forced by this pin
+    // going RED — which is the pin working.** The first version forbade the
+    // STRING `featureFlags.leagues` anywhere under /app/mocks. R519's fix
+    // then needed a legitimate read of it: a league-attached mock listed here
+    // while leagues is off has a real link that silently redirects to `/app`,
+    // so the page disables that control. **That is presentation, not a gate**
+    // — the page still renders in full, every standalone row still works, and
+    // nothing about access changes. What must never exist is a *gate* keyed
+    // on the leagues flag, so that is what is pinned: no `redirect(`, no
+    // `notFound(`, and no early return, in the same statement as the flag.
     for (const rel of [
+      'src/app/app/(shell)/mocks/layout.tsx',
       'src/app/app/(shell)/mocks/page.tsx',
       'src/components/draft/mocks-home.tsx',
     ]) {
-      expect(code(rel), rel).not.toContain('featureFlags.leagues')
+      const source = code(rel)
+      for (const [at, line] of source.split('\n').entries()) {
+        if (!line.includes('featureFlags.leagues')) continue
+        expect(line, `${rel}:${at + 1}`).not.toMatch(/redirect\(|notFound\(/)
+      }
     }
+  })
+
+  it('the ONE leagues-flag read under /app/mocks is the R519 disabled state', () => {
+    // The other side of the narrowing: the exemption is a named function with
+    // a stated job, not a licence. A second read appearing anywhere on this
+    // page reddens here and has to argue for itself.
+    const home = code('src/components/draft/mocks-home.tsx')
+    const reads = (home.match(/featureFlags\.leagues/g) ?? []).length
+    expect(reads, 'exactly one leagues-flag read').toBe(1)
+    const fn = home.indexOf('function openBlockedReason')
+    expect(fn, 'openBlockedReason found').toBeGreaterThan(-1)
+    expect(home.indexOf('featureFlags.leagues')).toBeGreaterThan(fn)
+    // The gate itself stays entirely free of it.
+    expect(code('src/app/app/(shell)/mocks/layout.tsx')).not.toContain('featureFlags.leagues')
   })
 
   it('the MP.4 dev harness is gone (F115) — the dialog has a real mount now', () => {

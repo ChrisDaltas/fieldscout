@@ -100,7 +100,12 @@ export function useLaunchMockDraft(leagueId: string) {
         jsonInit('POST', variables),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: mockDraftKeys.list(leagueId) })
+      // R517/R518: the PREFIX, not `list(leagueId)`. A league mock launched
+      // from a league also belongs on `/app/mocks` (the practice home lists
+      // every mock this user launched), and invalidating one key left the
+      // other list stale — the exact disagreement `useDeleteMockDraft`'s
+      // docblock warns about, one mutation over.
+      void queryClient.invalidateQueries({ queryKey: ['mock-drafts'] })
     },
   })
 

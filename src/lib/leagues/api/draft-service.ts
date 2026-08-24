@@ -978,6 +978,20 @@ export async function setAutodraft(
 
 export const MOCK_NOT_FOUND_MESSAGE = 'No such mock draft in this league.'
 
+/** R516: the league-free door's own voice. The message above names a league,
+ *  which is false on `/api/mocks/[mockId]` — there is no league in the
+ *  question there, and a user told "in this league" about a standalone
+ *  practice draft has been handed a smaller version of the same mistake this
+ *  whole lane exists to correct. */
+export const MOCK_NOT_FOUND_STANDALONE_MESSAGE = 'No such practice draft.'
+
+/** R516: the 42501 fallback for the league-free delete door. NOT
+ *  `MOCK_SIGNED_OUT_MESSAGE` — that route already answers 401 before the RPC
+ *  is reached, so "Sign in…" can only ever be wrong there. `delete_mock_draft`
+ *  is launcher-keyed (D110(1)), so 42501 means exactly this. */
+export const MOCK_NOT_YOURS_MESSAGE = "That practice draft isn't yours to delete."
+
+
 const reasonSchema = z.string().trim().min(1).max(500).optional()
 
 /** Shared shape: every control accepts an optional target draft + reason. */
@@ -1604,7 +1618,7 @@ export async function deleteStandaloneMockDraft(
   draftId: string,
 ): Promise<ServiceResult> {
   if (!z.uuid().safeParse(draftId).success) {
-    return { status: 404, body: { error: MOCK_NOT_FOUND_MESSAGE } }
+    return { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } }
   }
   const { data: row, error: probeError } = await supabase
     .from('drafts')
@@ -1617,10 +1631,10 @@ export async function deleteStandaloneMockDraft(
     return { status: 500, body: { error: probeError.message } }
   }
   if (!row) {
-    return { status: 404, body: { error: MOCK_NOT_FOUND_MESSAGE } }
+    return { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } }
   }
   const { error } = await supabase.rpc('delete_mock_draft', { p_draft_id: draftId })
-  if (error) return mapDraftRpcError(error, MOCK_SIGNED_OUT_MESSAGE)
+  if (error) return mapDraftRpcError(error, MOCK_NOT_YOURS_MESSAGE)
   return { status: 200, body: { deleted: true, draft_id: draftId } }
 }
 

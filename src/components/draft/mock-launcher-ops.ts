@@ -29,9 +29,22 @@ export const MOCK_HOURLY_CAP = 5
  *  message" + the hourly half so the server's refusal never surprises). */
 export const MOCK_CAP_NOTE = `Up to ${MOCK_ACTIVE_CAP} practice drafts running at once, ${MOCK_HOURLY_CAP} launches per hour.`
 
-/** §8.8: abandoned (paused) mocks auto-expire; finished recaps never do. */
-export const MOCK_EXPIRY_NOTE =
-  'A paused practice draft keeps for 72 hours of inactivity, then cleans itself up. Finished recaps stay until you delete them.'
+/** §8.8: abandoned (paused) mocks auto-expire. The half that is true of the
+ *  ACTIVE list on every surface, whatever the finished ones are called. */
+export const MOCK_PAUSED_EXPIRY_NOTE =
+  'A paused practice draft keeps for 72 hours of inactivity, then cleans itself up.'
+
+/**
+ * The league launcher's combined note — the sentence above plus the kept-recap
+ * half (§8.8: finished recaps never expire).
+ *
+ * **Composed, not restated, and deliberately NOT used on `/app/mocks` (R517).**
+ * A standalone mock's finished state is a *report*, not a *recap* (D241(7)), so
+ * printing this second sentence there would put both words on one screen — the
+ * one-voice rule broken by the very constant that carries the rule's other
+ * half. The practice home prints `MOCK_PAUSED_EXPIRY_NOTE` alone.
+ */
+export const MOCK_EXPIRY_NOTE = `${MOCK_PAUSED_EXPIRY_NOTE} Finished recaps stay until you delete them.`
 
 /**
  * Why the launch button is disabled, or null when launching is offered.

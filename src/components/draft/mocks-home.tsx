@@ -8,13 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMyMockDrafts, type MockDraftSummary } from '@/hooks/use-mock-drafts'
+import { featureFlags } from '@/lib/feature-flags'
 
 import { MockRow } from './mock-draft-launcher'
 import { MockLaunchDialog } from './mock-launch-dialog'
 import {
   launchDisabledReason,
   MOCK_CAP_NOTE,
-  MOCK_EXPIRY_NOTE,
+  MOCK_PAUSED_EXPIRY_NOTE,
   mockSeatCount,
 } from './mock-launcher-ops'
 
@@ -38,13 +39,22 @@ import {
  * two) and the only change it needed was `leagueId: string | null`. A second
  * row treatment for the same object is the LV.7 failure pattern.
  *
- * **Known, deliberate, and stated rather than worked around:** a STANDALONE
- * row's *Rejoin* and *View report* links point at `/app/mocks/[mockId]` and
- * `/app/mocks/[mockId]/report`, which **MP.6 and MP.8 build** — until they
- * land, those two 404. MP.6 exists because `(room)/leagues/layout.tsx`
- * hard-redirects every `/app/leagues` URL when the leagues flag is off, mock
- * room included (D231(3a)/R470), so pointing them at the room's current URL
- * would be a workaround that breaks the very independence this lane is for.
+ * **`openBlocked` is where this page is honest about what does not exist yet
+ * (R515/R519), and it is a rendered state rather than a comment.** Two rows
+ * can offer a control that goes nowhere, and both are disabled with the
+ * reason printed on the row:
+ *
+ *   - a STANDALONE row, whose *Rejoin* / *View report* point at
+ *     `/app/mocks/[mockId]` and `…/report` — **MP.6's and MP.8's routes**,
+ *     which 404 until they land. The href stays (pointing it at the room's
+ *     current `/app/leagues` URL is the workaround D231(3a) exists to
+ *     prevent); the CONTROL waits.
+ *   - a LEAGUE-attached row while `featureFlags.leagues` is OFF, whose link
+ *     is real but silently redirects to `/app`. **The flag read is a
+ *     presentation decision made HERE, by the surface that knows which page
+ *     it is** — never in `MockRow` (shared) and never in an authorization
+ *     path (§4 rule 13 / D231(4)).
+ *
  * The launch flow therefore does NOT navigate: it closes and the new mock
  * appears in the list below.
  *
@@ -136,7 +146,7 @@ export function MocksHome() {
       ) : (
         <>
           {active.length > 0 && (
-            <MockSection title="In progress" rows={active} note={MOCK_EXPIRY_NOTE} />
+            <MockSection title="In progress" rows={active} note={MOCK_PAUSED_EXPIRY_NOTE} />
           )}
           {recaps.length > 0 && <MockSection title="Finished" rows={recaps} note={null} />}
         </>
@@ -177,6 +187,7 @@ function MockSection({
             // carries its own in `config.mock.cpu_seats` (095), and a
             // league-attached row honestly reports none.
             seatCount={mockSeatCount(row, null)}
+            openBlocked={openBlockedReason(row)}
             row={row}
           />
         ))}
@@ -184,4 +195,20 @@ function MockSection({
       </CardContent>
     </Card>
   )
+}
+
+/**
+ * Why a listed mock's open control cannot be used from THIS page, or null.
+ * Colocated with the mount rather than inside `MockRow`, because both answers
+ * are facts about `/app/mocks` — where the route does not exist yet, and which
+ * release flags this page is rendering under. See `MocksHome`'s docblock.
+ *
+ * Both arms are TEMPORARY by construction: MP.6/MP.8 delete the first by
+ * building the routes, and the second disappears the day the leagues flag is
+ * on — neither needs a decision later, only a route or a flag.
+ */
+function openBlockedReason(row: MockDraftSummary): string | null {
+  if (row.league_id === null) return 'Opens when the practice room lands.'
+  if (!featureFlags.leagues) return 'This league is hidden right now.'
+  return null
 }

@@ -303,12 +303,23 @@ function MockList({
  * league everywhere else.
  *
  * **The standalone links point at routes MP.6 and MP.8 build**, and until
- * they land those two URLs 404. That is deliberate and it is stated rather
- * than worked around: MP.6 moves the room to `/app/mocks/[mockId]` because
- * `(room)/leagues/layout.tsx` hard-redirects every `/app/leagues` URL with
- * the leagues flag off (D231(3a)/R470), and MP.8 owns
- * `/app/mocks/[mockId]/report`. Pointing them anywhere else today would be
- * a workaround that MP.6 then has to find and undo.
+ * they land those two URLs 404. MP.6 moves the room to `/app/mocks/[mockId]`
+ * because `(room)/leagues/layout.tsx` hard-redirects every `/app/leagues` URL
+ * with the leagues flag off (D231(3a)/R470), and MP.8 owns
+ * `/app/mocks/[mockId]/report`. Pointing them anywhere else today would be a
+ * workaround MP.6 then has to find and undo — so the href stays, and
+ * **`openBlocked` disables the control instead (R515)**. A disclosure that
+ * lives only in a docblock is a disclosure the user never reads: a
+ * live-styled button that dead-ends on a 404 page (which cannot even route
+ * back to `/app/mocks`) is a lie the row is telling, and `disabled` + one
+ * line of state is the honest version. **MP.6/MP.8 remove the reason, not
+ * the link.**
+ *
+ * `openBlocked` also covers the OTHER way this row can offer a dead control:
+ * a league-attached mock listed on `/app/mocks` while the leagues flag is off
+ * (R519) — its link is real, and it silently redirects to `/app`. The caller
+ * decides, because only the caller knows which surface it is on; a flag read
+ * here would be a presentation gate buried in a shared row.
  *
  * `seatCount` is the progress line's denominator and is a NUMBER, not a
  * `LeagueDetail`: the practice home has no league to hand over, and it reads
@@ -319,10 +330,14 @@ export function MockRow({
   leagueId,
   seatCount,
   row,
+  openBlocked = null,
 }: {
   leagueId: string | null
   seatCount: number | null
   row: MockDraftSummary
+  /** Why *Rejoin* / *View report* cannot be used yet, or null when it can.
+   *  Disables the control and prints the reason on the row (R515/R519). */
+  openBlocked?: string | null
 }) {
   const deleteMock = useDeleteMockDraft(leagueId)
   const complete = row.status === 'complete'
@@ -339,6 +354,11 @@ export function MockRow({
     leagueId === null
       ? `/app/mocks/${row.id}/report`
       : `/app/leagues/${leagueId}/draft/recap?draft=${row.id}`
+  const openLabel = complete
+    ? `View ${finishedNoun}`
+    : row.status === 'paused'
+      ? 'Resume'
+      : 'Rejoin'
 
   const handleDelete = () => {
     deleteMock.mutateAsync(row.id).catch((error: unknown) => {
@@ -376,15 +396,27 @@ export function MockRow({
               : 'Finished'
             : mockProgressLabel(row, seatCount)}
         </p>
+        {openBlocked && (
+          <p className="truncate text-[10px] font-semibold text-n-3" role="status">
+            {openBlocked}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {complete ? (
+        {openBlocked ? (
+          // Not styled as the primary action either: a disabled blue button
+          // still reads as "the thing to press". Stroke + disabled says
+          // "later", which is what is true.
+          <Button variant="stroke" size="sm" disabled>
+            {openLabel}
+          </Button>
+        ) : complete ? (
           <Button variant="stroke" size="sm" asChild>
-            <Link href={reportHref}>View {finishedNoun}</Link>
+            <Link href={reportHref}>{openLabel}</Link>
           </Button>
         ) : (
           <Button variant="blue" size="sm" asChild>
-            <Link href={openHref}>{row.status === 'paused' ? 'Resume' : 'Rejoin'}</Link>
+            <Link href={openHref}>{openLabel}</Link>
           </Button>
         )}
         <Button
