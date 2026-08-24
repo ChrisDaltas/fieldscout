@@ -20,12 +20,26 @@ import { describe, expect, it } from 'vitest'
  *     place on mobile/SSR).
  *   - `draft-bar-ops.ts` — 1 site (the href builder); the consuming Link in
  *     `draft-bar.tsx` is SPLIT the same way.
- *   - `mock-launcher-entry.ts` — 1 site, IN PLACE: `?practice=1` opens the
+ *   - `mock-launcher-entry.ts` — 2 sites, BOTH IN PLACE. (1) `?practice=1`
+ *     opens the
  *     practice LAUNCHER (a config surface — no draft id, no channel, no
  *     room), and the CTA that renders it (`PracticeCta`) is deliberately
  *     one component mounted on BOTH the league home and the in-room lobby
  *     (R279 — no fork), so it navigates in place everywhere. The mock room
- *     the launcher then opens is an in-room-world navigation.
+ *     the launcher then opens is an in-room-world navigation. (2) MP.6/R521
+ *     added `leagueMockRoomHref` — the LEAGUE-attached mock room's shipped
+ *     URL, named here when a second caller appeared. Its caller is a SERVER
+ *     `redirect()` in `(room)/mocks/[mockId]/page.tsx`, sending a
+ *     league-attached mock id typed at the standalone route to the room it
+ *     actually has. A redirect has no anchor and no tab to open, so the
+ *     desktop split cannot apply to it — in place by construction, not by
+ *     choice.
+ *
+ * **MP.6 opened a SECOND room URL family that this sweep cannot see**
+ * (`/app/mocks/[mockId]`, D244) — harmless while the room still mounts
+ * league-side only, and `ROOM_URL` gains its `/app/mocks/${…}` arm in MP.6c,
+ * when the room actually moves. Recorded in MP.6c item 6 rather than left to
+ * be noticed (R520).
  *   - `mock-draft-launcher.tsx` — 2 sites, IN PLACE: the post-launch
  *     `router.push` and the resume link both navigate WITHIN the
  *     chrome-free room world (the launcher lives on the room route); the
@@ -79,7 +93,7 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
     hits.sort((a, b) => a[0].localeCompare(b[0]))
     expect(hits).toEqual([
       ['src/components/draft/mock-draft-launcher.tsx', 2], // in-room-world, in place
-      ['src/components/draft/mock-launcher-entry.ts', 1], // launcher entry, in place (shared mount)
+      ['src/components/draft/mock-launcher-entry.ts', 2], // launcher entry + the league mock room's URL (R521), both in place
       ['src/components/layout/draft-bar-ops.ts', 1], // SPLIT via draft-bar.tsx
       ['src/components/leagues/league-home-states.tsx', 2], // both SPLIT
     ])

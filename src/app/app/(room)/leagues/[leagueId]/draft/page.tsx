@@ -1,4 +1,8 @@
+import { redirect } from 'next/navigation'
+
 import { DraftRoom } from '@/components/draft/draft-room'
+import { mockRoomHref } from '@/components/draft/mock-launcher-entry'
+import { createServerClient } from '@/lib/supabase/server'
 
 export const metadata = { title: 'Draft room · FieldScout' }
 
@@ -30,6 +34,30 @@ export default async function DraftRoomPage({ params, searchParams }: DraftRoomP
   const draftParam = Array.isArray(draft) ? draft[0] : draft
   const draftIdParam = draftParam && UUID_RE.test(draftParam) ? draftParam : undefined
   const practiceParam = Array.isArray(practice) ? practice[0] : practice
+
+  // An old URL lands on the new route rather than on a dead end (MP.6 item
+  // 6). `?draft=<id>` room links exist in the wild, and a STANDALONE mock's
+  // id typed (or bookmarked) into one has no league to resolve against: the
+  // room below would fall through to its "no draft" state on a league that
+  // has nothing to do with the mock. `/app/mocks/[mockId]` is where that id
+  // lives now, so send it there.
+  //
+  // The probe is deliberately narrow and leaks nothing: `league_id IS NULL`
+  // + `is_mock`, under the caller's own RLS. A mock that is not theirs, a
+  // league-attached id, and an unknown id all answer NO ROW and fall through
+  // to the room unchanged — this arm can only ever redirect the one case it
+  // is for.
+  if (draftIdParam) {
+    const supabase = await createServerClient()
+    const { data: standalone } = await supabase
+      .from('drafts')
+      .select('id')
+      .eq('id', draftIdParam)
+      .eq('is_mock', true)
+      .is('league_id', null)
+      .maybeSingle()
+    if (standalone) redirect(mockRoomHref(draftIdParam))
+  }
 
   return (
     <DraftRoom
