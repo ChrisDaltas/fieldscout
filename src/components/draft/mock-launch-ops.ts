@@ -35,28 +35,42 @@
  * own settings). Adding it needed no signature change, exactly as D236(4)
  * predicted.
  *
- * Defaults are NOT restated here. Every number comes from
- * `defaultsForTeamCount` → `leagueSettingsSchema` → the §7.3 catalog, so
- * D229(3)'s "no mock-specific default of any kind" is structural rather than
- * a promise: there is nowhere in this file for a mock-specific default to
- * live. (Verified against `league-settings.ts` rather than copied from the
- * task text: pick clock 90, nomination 30, bid 20, anti-snipe 10,
- * `DEFAULT_ROSTER_SETTINGS` — pinned in the colocated test.)
+ * Defaults are NOT restated here. `initialMockLaunchDraft()` returns
+ * `defaultsForTeamCount(...)` — the contract's own parsed defaults — so
+ * D229(3)'s **"no mock-specific default of any kind"** is structural rather
+ * than a promise: there is no expression in this module that could produce
+ * one. (The claim is exactly that, and no wider — R507 corrected a first cut
+ * that said "no numeric literal for any clock anywhere in the new code",
+ * which one `grep` disproves: option labels and input bounds are numbers, and
+ * they are OFFERED values, not defaults. Verified against
+ * `league-settings.ts` rather than copied from the task text: pick clock 90,
+ * nomination 30, bid 20, anti-snipe 10, `DEFAULT_ROSTER_SETTINGS` — pinned in
+ * the colocated test.)
  */
-import {
-  reconcileDerived,
-} from '@/lib/leagues/settings/derived-settings'
+import type { StandaloneMockSettings } from '@/lib/leagues/api/draft-service'
+import { reconcileDerived } from '@/lib/leagues/settings/derived-settings'
 import {
   defaultsForTeamCount,
   validateLeagueSettings,
   type FieldIssue,
+  LEAGUE_SETTINGS_DEFAULTS,
   type LeagueSettings,
-  type RosterSettings,
 } from '@/lib/leagues/settings/league-settings'
 
-/** The team count the dialog opens on — the §7.3.1 "D" column, through the
- *  same constant the create wizard uses (never a second 12). */
-export const MOCK_DEFAULT_TEAM_COUNT: LeagueSettings['team_count'] = 12
+/**
+ * The team count the dialog opens on — **read off the contract's own parsed
+ * defaults**, so it is not a literal at all (R508).
+ *
+ * The first cut wrote `= 12` and claimed it was "the same constant the create
+ * wizard uses". That was false in a way worth recording: `league-settings`'
+ * `DEFAULT_TEAM_COUNT` is module-private and the wizard exports its OWN
+ * `DEFAULT_WIZARD_TEAM_COUNT`, so the literal here would have been a **third**
+ * 12. `LEAGUE_SETTINGS_DEFAULTS` is `leagueSettingsSchema.parse({})`, i.e. the
+ * §7.3.1 "D" column itself. The wizard's duplicate is left alone — it is not
+ * this task's file — but nothing new joins it.
+ */
+export const MOCK_DEFAULT_TEAM_COUNT: LeagueSettings['team_count'] =
+  LEAGUE_SETTINGS_DEFAULTS.team_count
 
 export type CpuSpeed = 'realistic' | 'fast'
 
@@ -121,11 +135,7 @@ export function patchMockDraftConfig(
  * three: `leagues.team_count`, `leagues.roster_settings`,
  * `leagues.settings->'draft'`.
  */
-export interface MockLaunchSettings {
-  team_count: LeagueSettings['team_count']
-  roster_settings: RosterSettings
-  draft: LeagueSettings['draft'] & { scoring_system_id: string }
-}
+export type MockLaunchSettings = StandaloneMockSettings
 
 export interface MockLaunchInput {
   cpu_speed: CpuSpeed

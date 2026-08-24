@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { MockLaunchSettings } from '@/components/draft/mock-launch-ops'
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import type { StandaloneMockSettings } from '@/lib/leagues/api/draft-service'
 import type { Draft } from '@/types/database'
 
 /**
@@ -87,7 +87,7 @@ export function useLaunchMockDraft(leagueId: string) {
 
 export interface LaunchStandaloneMockVariables {
   cpu_speed?: 'realistic' | 'fast'
-  settings: MockLaunchSettings
+  settings: StandaloneMockSettings
   /** Stamped by the wrapper below — one UUID per user submit (D68(1)). */
   action_id: string
 }

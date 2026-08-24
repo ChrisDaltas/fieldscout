@@ -2,14 +2,17 @@
 
 import { useState } from 'react'
 
+import {
+  AuctionConfigFields,
+  PickClockField,
+  SnakeReversalField,
+} from '@/components/leagues/draft-config-fields'
 import { RosterSlotBuilder } from '@/components/leagues/roster-slot-builder'
 import { ScoringTemplatePicker } from '@/components/leagues/scoring-template-picker'
 import {
   ChoiceSelect,
   FieldRow,
   InlineIssue,
-  ToggleRow,
-  clampInt,
   numOptions,
 } from '@/components/leagues/settings-form-controls'
 import { Button } from '@/components/ui/button'
@@ -21,12 +24,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useLaunchStandaloneMock } from '@/hooks/use-mock-drafts'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
-import { PICK_TIMER_SECONDS, type LeagueSettings } from '@/lib/leagues/settings/league-settings'
+import {
+  V1_TEAM_COUNTS,
+  type LeagueSettings,
+} from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 import type { Draft } from '@/types/database'
 
@@ -77,21 +82,6 @@ import {
 
 const STEPS = ['Format', 'Clocks', 'Roster', 'Scoring'] as const
 
-/** The §7.3.8 pick-clock options, labelled — the settings panel's own set,
- *  trimmed to what a solo practice draft can sit through (the multi-hour and
- *  day-long clocks are for a league draft nobody is at their desk for; the
- *  contract still accepts them and the server still validates the full set). */
-const MOCK_PICK_TIMER_LABELS: Record<number, string> = {
-  0: 'No clock',
-  30: '30 seconds',
-  45: '45 seconds',
-  60: '1 minute',
-  90: '90 seconds',
-  120: '2 minutes',
-  180: '3 minutes',
-  300: '5 minutes',
-  600: '10 minutes',
-}
 
 export interface MockLaunchDialogProps {
   open: boolean
@@ -153,6 +143,8 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
 
   const d = draft.settings.draft
   const auction = d.draft_type === 'auction'
+  const onDraftConfig = (patch: Partial<LeagueSettings['draft']>) =>
+    setDraft((p) => patchMockDraftConfig(p, patch))
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -199,7 +191,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
                   id="mock-team-count"
                   ariaLabel="Number of teams"
                   value={String(draft.settings.team_count)}
-                  options={numOptions([8, 10, 12, 14, 16])}
+                  options={numOptions([...V1_TEAM_COUNTS])}
                   width="w-28"
                   onValueChange={(v) =>
                     setDraft((p) =>
@@ -236,165 +228,27 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
 
           {step === 1 && (
             <div className="flex flex-col gap-3">
-              {d.draft_type !== 'auction' && (
-                <FieldRow label="Pick clock" htmlFor="mock-pick-timer">
-                  <ChoiceSelect
-                    id="mock-pick-timer"
-                    ariaLabel="Pick clock"
-                    value={String(d.pick_timer_seconds)}
-                    width="w-40"
-                    options={Object.entries(MOCK_PICK_TIMER_LABELS).map(([v, label]) => ({
-                      value: v,
-                      label,
-                    }))}
-                    onValueChange={(v) =>
-                      setDraft((p) =>
-                        patchMockDraftConfig(p, {
-                          pick_timer_seconds: Number(v) as (typeof PICK_TIMER_SECONDS)[number],
-                        }),
-                      )
-                    }
-                  />
-                </FieldRow>
-              )}
-
+              {/* R505: these are the SHARED §7.3.8 fields — the same
+                  components the league settings panel mounts, not a copy of
+                  them. The pick clock offers the WHOLE `PICK_TIMER_SECONDS`
+                  catalog (R506: D229(4) says let the launcher make the clocks
+                  what they want, and a trim would be a product decision
+                  living in a code comment). */}
+              {!auction && <PickClockField value={d} onChange={onDraftConfig} idPrefix="mock" />}
               {d.draft_type === 'snake' && (
-                <ToggleRow
-                  id="mock-snake-reversal"
-                  label="Third-round reversal"
-                  hint="Sleeper-style — the 3rd round doesn't flip."
-                  checked={d.snake_reversal}
-                  onCheckedChange={(snake_reversal) =>
-                    setDraft((p) => patchMockDraftConfig(p, { snake_reversal }))
-                  }
-                />
+                <SnakeReversalField value={d} onChange={onDraftConfig} idPrefix="mock" />
               )}
-
               {auction && (
-                <>
-                  <FieldRow label="Auction budget" htmlFor="mock-auction-budget">
-                    <Input
-                      id="mock-auction-budget"
-                      type="number"
-                      min={50}
-                      max={1000}
-                      value={d.auction_budget}
-                      onChange={(e) =>
-                        setDraft((p) =>
-                          patchMockDraftConfig(p, {
-                            auction_budget: clampInt(e.target.value, 50, 1000, d.auction_budget),
-                          }),
-                        )
-                      }
-                      className="h-btn-md w-24 text-[12px]"
-                    />
-                  </FieldRow>
-                  <ToggleRow
-                    id="mock-auction-zero-dollar"
-                    label="Allow $0 nominations"
-                    hint="A nomination can open at any amount the team can afford, and no budget is held back per empty roster spot. Raises are always $1 more, either way."
-                    checked={d.auction_zero_dollar_nominations}
-                    onCheckedChange={(auction_zero_dollar_nominations) =>
-                      setDraft((p) =>
-                        patchMockDraftConfig(p, { auction_zero_dollar_nominations }),
-                      )
-                    }
-                  />
-                  <FieldRow label="Nomination clock" htmlFor="mock-auction-nom" hint="Seconds to nominate.">
-                    <Input
-                      id="mock-auction-nom"
-                      type="number"
-                      min={10}
-                      max={120}
-                      value={d.auction_nomination_seconds}
-                      onChange={(e) =>
-                        setDraft((p) =>
-                          patchMockDraftConfig(p, {
-                            auction_nomination_seconds: clampInt(
-                              e.target.value,
-                              10,
-                              120,
-                              d.auction_nomination_seconds,
-                            ),
-                          }),
-                        )
-                      }
-                      className="h-btn-md w-24 text-[12px]"
-                    />
-                  </FieldRow>
-                  <FieldRow label="Bid clock" htmlFor="mock-auction-bid" hint="Seconds each bid resets the clock to.">
-                    <Input
-                      id="mock-auction-bid"
-                      type="number"
-                      min={10}
-                      max={60}
-                      value={d.auction_bid_seconds}
-                      onChange={(e) =>
-                        setDraft((p) =>
-                          patchMockDraftConfig(p, {
-                            auction_bid_seconds: clampInt(e.target.value, 10, 60, d.auction_bid_seconds),
-                          }),
-                        )
-                      }
-                      className="h-btn-md w-24 text-[12px]"
-                    />
-                  </FieldRow>
-                  <FieldRow
-                    label="Anti-snipe"
-                    htmlFor="mock-auction-anti-snipe"
-                    hint="A bid inside this many seconds resets the clock to it. 0 turns anti-snipe off."
-                  >
-                    <Input
-                      id="mock-auction-anti-snipe"
-                      type="number"
-                      min={0}
-                      max={15}
-                      value={d.auction_anti_snipe_seconds}
-                      onChange={(e) =>
-                        setDraft((p) =>
-                          patchMockDraftConfig(p, {
-                            auction_anti_snipe_seconds: clampInt(
-                              e.target.value,
-                              0,
-                              15,
-                              d.auction_anti_snipe_seconds,
-                            ),
-                          }),
-                        )
-                      }
-                      className="h-btn-md w-24 text-[12px]"
-                    />
-                  </FieldRow>
-                  <FieldRow
-                    label="Nomination order"
-                    htmlFor="mock-nomination-order-mode"
-                    hint="Who nominates next, circularly."
-                  >
-                    <ChoiceSelect
-                      id="mock-nomination-order-mode"
-                      ariaLabel="Nomination order"
-                      value={d.nomination_order_mode}
-                      width="w-52"
-                      // `manual` is not offered here for a reason of this
-                      // lane's own on top of the settings panel's: a
-                      // standalone mock has no commissioner and no stored
-                      // order, and 095 REFUSES anything but
-                      // same_as_draft_order/random by name.
-                      options={[
-                        { value: 'same_as_draft_order', label: 'Same as draft order' },
-                        { value: 'random', label: 'Random' },
-                      ]}
-                      onValueChange={(v) =>
-                        setDraft((p) =>
-                          patchMockDraftConfig(p, {
-                            nomination_order_mode:
-                              v as LeagueSettings['draft']['nomination_order_mode'],
-                          }),
-                        )
-                      }
-                    />
-                  </FieldRow>
-                </>
+                <AuctionConfigFields
+                  value={d}
+                  onChange={onDraftConfig}
+                  idPrefix="mock"
+                  // `offerStoredManual` is deliberately absent: a standalone
+                  // practice draft has no stored order and no commissioner,
+                  // and 095 refuses anything but same_as_draft_order/random
+                  // by name.
+                  issues={issues.filter((i) => i.field.startsWith('draft'))}
+                />
               )}
             </div>
           )}
@@ -417,9 +271,24 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
           )}
         </div>
 
+        {/* R509: a SETTINGS violation renders on the step that owns the
+            field — the auction rows through `AuctionConfigFields`' own
+            `issues`, the roster rows through `RosterSlotBuilder`'s inline
+            `validateLeagueSettings` render. A step-4 catch-all naming a
+            control the user cannot see is not a message. What is left here
+            is the SERVER's refusal, which belongs to the submit and to no
+            step. */}
         {refusal && <InlineIssue tone="error" message={refusal} />}
-        {step === STEPS.length - 1 && !refusal && blocked && issues.length > 0 && (
-          <InlineIssue tone="error" message={blocked} />
+
+        {step === STEPS.length - 1 && !pending && !refusal && blocked && (
+          // R509: above the footer rule, not below it — a line under the
+          // action row reads as a footnote to the stepper rather than a
+          // reason the button is disabled. When `issues` is non-empty this
+          // repeats the offending step's own inline message, which is the
+          // point: it names why the button will not fire.
+          <p className="text-[11px] font-semibold text-n-3" role="status">
+            {blocked}
+          </p>
         )}
 
         <div className="flex items-center gap-2.5 border-t border-n-4 pt-3">
@@ -454,11 +323,6 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
             )}
           </div>
         </div>
-        {step === STEPS.length - 1 && !pending && blocked && issues.length === 0 && (
-          <p className="text-[11px] font-semibold text-n-3" role="status">
-            {blocked}
-          </p>
-        )}
       </DialogContent>
     </Dialog>
   )

@@ -3,6 +3,8 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { DRAFT_FIELD_BOUNDS } from '@/components/leagues/draft-config-fields-ops'
+
 import {
   activeFranchises,
   auctionTimerPayload,
@@ -50,6 +52,10 @@ import {
 
 const PANEL = 'src/components/draft/commish-draft-panel.tsx'
 const SETTINGS = 'src/components/leagues/settings-panel.tsx'
+/** MP.4/R505 — the §7.3.8 draft rows' ONE implementation, composed by the
+ *  settings panel and by the practice-draft launch dialog. */
+const FIELDS = 'src/components/leagues/draft-config-fields.tsx'
+const LAUNCH_DIALOG = 'src/components/draft/mock-launch-dialog.tsx'
 const MIGRATIONS = 'supabase/migrations'
 const GATE = 'draft_auction_pause_gate_internal'
 
@@ -624,16 +630,39 @@ describe('Manual Edit Mode offers EXACTLY two choices (D142)', () => {
 
 describe('the three UI-less §7.3.8 auction fields now have inputs', () => {
   const settings = code(SETTINGS)
+  // MP.4 / R505: these rows were LIFTED out of `settings-panel.tsx` into the
+  // shared `draft-config-fields` so the practice-draft launch dialog could
+  // compose them instead of forking them. **Nothing this section asserts has
+  // changed** — the same three controls, the same ids at runtime
+  // (`idPrefix="set"`), the same catalog ranges. What changed is which file
+  // spells them, so the pins follow the source. The panel's own half — that
+  // it still MOUNTS them — is asserted first, because a pin that reads only
+  // the shared file would go on passing if the panel dropped the mount.
+  const fields = code(FIELDS)
 
-  for (const id of ['set-auction-bid', 'set-auction-anti-snipe', 'set-nomination-order-mode']) {
-    it(`${id} renders`, () => {
-      expect(settings).toContain(`id="${id}"`)
+  it('the panel still mounts the auction block (and now composes it)', () => {
+    expect(settings).toContain('<AuctionConfigFields')
+    expect(settings).toContain('idPrefix="set"')
+    expect(settings).toContain("d.draft_type === 'auction'")
+  })
+
+  for (const id of ['auction-bid', 'auction-anti-snipe', 'nomination-order-mode']) {
+    it(`set-${id} renders`, () => {
+      // The id is composed from the mount's prefix, so the runtime id is
+      // still exactly `set-${id}`.
+      expect(fields).toContain(`id={\`\${idPrefix}-${id}\`}`)
     })
   }
 
   it('keeps the catalog ranges (§7.3.8) on the two clocks', () => {
-    expect(settings).toMatch(/id="set-auction-bid"[\s\S]{0,120}min=\{10\}[\s\S]{0,40}max=\{60\}/)
-    expect(settings).toMatch(/id="set-auction-anti-snipe"[\s\S]{0,140}min=\{0\}[\s\S]{0,40}max=\{15\}/)
+    // Through the ONE named bounds table, which `draft-config-fields.test.ts`
+    // pins edge-by-edge against `draftConfigSchema` — a stronger statement
+    // than the literal-adjacency regex this replaces, and the reason the
+    // fourth hand-typed copy of these numbers is gone.
+    expect(fields).toMatch(/id=\{`\$\{idPrefix\}-auction-bid`\}[\s\S]{0,200}b\.auction_bid_seconds\.min[\s\S]{0,80}b\.auction_bid_seconds\.max/)
+    expect(fields).toMatch(/id=\{`\$\{idPrefix\}-auction-anti-snipe`\}[\s\S]{0,220}b\.auction_anti_snipe_seconds\.min[\s\S]{0,90}b\.auction_anti_snipe_seconds\.max/)
+    expect(DRAFT_FIELD_BOUNDS.auction_bid_seconds).toEqual({ min: 10, max: 60 })
+    expect(DRAFT_FIELD_BOUNDS.auction_anti_snipe_seconds).toEqual({ min: 0, max: 15 })
   })
 
   it('does NOT offer nomination_order_mode `manual` — it would make the draft unstartable (F80)', () => {
@@ -651,14 +680,18 @@ describe('the three UI-less §7.3.8 auction fields now have inputs', () => {
     // Scoped to the NOMINATION select's own block — the DRAFT-order select
     // above it keeps its `manual` arm, which has a real editor
     // (`DraftOrderEditor`) and a working pre-start write.
-    const start = settings.indexOf('id="set-nomination-order-mode"')
+    const start = fields.indexOf('id={`${idPrefix}-nomination-order-mode`}')
     expect(start).toBeGreaterThan(-1)
-    const block = settings.slice(start, settings.indexOf('/>', start))
+    const block = fields.slice(start, fields.indexOf('/>', start))
     expect(block).not.toMatch(/\{ value: 'manual', label: 'Commissioner sets' \}/)
-    // Offered ONLY as the escape hatch for a league that already stores it.
+    // Offered ONLY as the escape hatch for a league that already stores it —
+    // and now only when the MOUNT opts in, which the panel does and the
+    // standalone practice dialog cannot (095 refuses the mode by name).
     expect(block).toMatch(
-      /d\.nomination_order_mode === 'manual'[\s\S]{0,160}Commissioner sets \(no editor yet/,
+      /offerStoredManual && value\.nomination_order_mode === 'manual'[\s\S]{0,160}Commissioner sets \(no editor yet/,
     )
+    expect(settings).toContain('offerStoredManual')
+    expect(code(LAUNCH_DIALOG)).not.toContain('offerStoredManual={')
   })
 })
 

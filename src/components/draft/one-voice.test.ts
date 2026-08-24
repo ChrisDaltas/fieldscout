@@ -189,12 +189,15 @@ const STATUS_SOURCE: {
     // panel never says what the floor IS or that it re-armed, and it renders
     // only inside a commissioner sheet. Dispositioned here rather than
     // widened into `announcedBy`, so a real second teller still fails.
-    // MP.4: the practice-draft LAUNCH dialog carries the same §7.3.8 field
-    // label for the same reason — it is the control that SETS the value
-    // before a draft exists, so there is no live state for it to be a second
-    // telling of. It is not even a room surface: it renders in a dialog off
-    // the practice entry points, never inside the draft room.
-    alsoNamedBy: ['commish-draft-panel.tsx', 'mock-launch-dialog.tsx'],
+    // MP.4 note (R505): the practice-draft launch dialog briefly joined this
+    // list, because its first cut FORKED the settings panel's §7.3.8 rows.
+    // The extraction that fixed the fork also fixed this — the label now
+    // lives once, in `components/leagues/draft-config-fields.tsx`, which is
+    // not a draft-room file at all. **The pin needing to be widened was the
+    // duplication announcing itself**, and it is worth saying so: a
+    // one-voice row growing an entry is evidence about the diff, not
+    // paperwork to be updated.
+    alsoNamedBy: ['commish-draft-panel.tsx'],
     why:
       'the floor and its re-arm are stated ONCE, beside the nomination. It is not a ' +
       "second clock — the strip's PickClock is the room's only countdown, and this " +

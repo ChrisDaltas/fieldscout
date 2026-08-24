@@ -1456,6 +1456,15 @@ export const standaloneMockSettingsSchema = z.strictObject({
   draft: draftConfigSchema.extend({ scoring_system_id: z.uuid() }),
 })
 
+/**
+ * The wire payload, inferred from the schema that validates it (R510). It
+ * lives HERE, with the route contract, rather than in a component module:
+ * `use-mock-drafts.ts` needs it, and a hook importing its request type from
+ * a component inverts the layering. `mock-launch-ops` imports it back — the
+ * ops layer BUILDS this object, it does not define it.
+ */
+export type StandaloneMockSettings = z.infer<typeof standaloneMockSettingsSchema>
+
 export const launchStandaloneMockInputSchema = z.strictObject({
   cpu_speed: z.enum(['realistic', 'fast']).optional(),
   settings: standaloneMockSettingsSchema,
