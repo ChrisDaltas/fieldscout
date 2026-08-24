@@ -73,6 +73,7 @@ import {
   movePlayer,
   patchDraftOrder,
   pauseOrResumeDraft,
+  leagueScope,
   reassignPick,
   reverseWonBid,
   setClock,
@@ -716,7 +717,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     const before = await readDraft()
     const seq = before.current_pick_number as number
 
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, {
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), {
       action: 'pause',
       reason: 'pause-first (D141)',
     })
@@ -756,7 +757,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
 
   it('priced reassign + move-player land behind the pause (D142 — the re-entered cost rides the pick row); the E28-class and missing-price refusals pass through', async () => {
     // Resume, renominate (same nominator — D143), award by rewind + tick.
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
     await nominate(commishClient, P2, 5, ACTION.nominate2)
     await rewindAndTick()
@@ -781,7 +782,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     })
     expect(liveReassign.status).toBe(400)
     expect((liveReassign.body as { error: string }).error).toBe(PAUSE_FIRST('draft_reassign_pick'))
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, { action: 'pause' })
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'pause' })
     expect(paused.status).toBe(200)
 
     // Hands change WITHOUT a price on an auction → the RPC's 22023 (the
@@ -985,7 +986,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     // One REAL award on the board first (so prices ride into rosters): the
     // rotation is at mgr2 (advanced after the P2 award); resume, mgr2
     // nominates P3 at $7, rewind + tick awards it.
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
     const onClock = (await readDraft()).on_clock_team_id
     expect(onClock).toBe(mgr2TeamId)

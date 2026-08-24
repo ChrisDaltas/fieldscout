@@ -62,6 +62,7 @@ import {
   POST_START_RANDOMIZE_MESSAGE,
   POST_START_REASON_REQUIRED_MESSAGE,
   reassignPick,
+  leagueScope,
   resetDraft,
   setClock,
   startDraft,
@@ -397,7 +398,7 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
   it('pause/resume ride the SAME route, LAUNCHER-only: the commissioner is refused, the launcher pauses and resumes (D110(1)/E59)', async () => {
     // Commissioner pause on the mock → the RPC's friendly launcher-only
     // refusal (P0001 → 400) — role confers nothing on a mock.
-    const commishPause = await pauseOrResumeDraft(commishClient, leagueId, {
+    const commishPause = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), {
       draft_id: mock1Id,
       action: 'pause',
     })
@@ -405,7 +406,7 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
     expect(JSON.stringify(commishPause.body)).toContain('only the member practicing this mock')
 
     // The launcher pauses… (this is the E59 resumable-card state)
-    const paused = await pauseOrResumeDraft(mgr2Client, leagueId, {
+    const paused = await pauseOrResumeDraft(mgr2Client, leagueScope(leagueId), {
       draft_id: mock1Id,
       action: 'pause',
     })
@@ -413,7 +414,7 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
     expect((paused.body as unknown as DraftBody).draft.status).toBe('paused')
 
     // …and resumes — the E59 comeback path L.B3.5's card will call.
-    const resumed = await pauseOrResumeDraft(mgr2Client, leagueId, {
+    const resumed = await pauseOrResumeDraft(mgr2Client, leagueScope(leagueId), {
       draft_id: mock1Id,
       action: 'resume',
     })
@@ -481,7 +482,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     draftId = (started.body as unknown as DraftBody).draft.id
 
     // Pick 1 (commish, P1) — material for undo/reassign/move below.
-    const pick1 = await makePick(commishClient, leagueId, {
+    const pick1 = await makePick(commishClient, leagueScope(leagueId), {
       player_id: P1,
       action_id: ACTION.pick1,
     })
@@ -491,8 +492,8 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
 
   it('AUTH SWEEP: a plain manager answers 403 on EVERY commissioner verb (§17); an outsider answers the no-leak 404', async () => {
     const managerCalls: [string, Promise<{ status: number; body: unknown }>][] = [
-      ['pause', pauseOrResumeDraft(mgr2Client, leagueId, { action: 'pause' })],
-      ['resume', pauseOrResumeDraft(mgr2Client, leagueId, { action: 'resume' })],
+      ['pause', pauseOrResumeDraft(mgr2Client, leagueScope(leagueId), { action: 'pause' })],
+      ['resume', pauseOrResumeDraft(mgr2Client, leagueScope(leagueId), { action: 'resume' })],
       ['undo', undoDraft(mgr2Client, leagueId, {})],
       [
         'reassign',
@@ -531,7 +532,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(managerOrder.status).toBe(403)
 
     // Outsider: the RLS probe sees no draft — the no-leak 404 (R155 class).
-    const outsiderPause = await pauseOrResumeDraft(outsiderClient, leagueId, { action: 'pause' })
+    const outsiderPause = await pauseOrResumeDraft(outsiderClient, leagueScope(leagueId), { action: 'pause' })
     expect(outsiderPause.status).toBe(404)
 
     // Nothing changed: the draft is still live on pick 2.
@@ -544,7 +545,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
   })
 
   it('pause → resume CLOCK INTEGRITY over the wire: resumed deadline = updated_at + the persisted remaining (§8.7 v2.0)', async () => {
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, {
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), {
       action: 'pause',
       reason: 'wire clock-integrity check',
     })
@@ -558,7 +559,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(remaining!).toBeGreaterThan(0)
     expect(remaining!).toBeLessThanOrEqual(300_000)
 
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
     const resumedDraft = (resumed.body as unknown as DraftBody).draft
     expect(resumedDraft.status).toBe('live')
@@ -584,14 +585,14 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       'draft_undo: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)',
     )
 
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, { action: 'pause' })
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'pause' })
     expect(paused.status).toBe(200)
     const undone = await undoDraft(commishClient, leagueId, { reason: 'wire undo check' })
     expect(undone.status).toBe(200)
     const afterUndo = (undone.body as unknown as DraftBody).draft
     expect(afterUndo.current_pick_number).toBe(1)
     expect(afterUndo.on_clock_team_id).toBe(commishTeamId)
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
 
     const forced = await forcePick(commishClient, leagueId, {
@@ -649,7 +650,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
   })
 
   it('clock edit, reassign, and move-player round-trip over the wire (E15 + the §8.7 correction pair) — behind a pause (F57/090)', async () => {
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, {
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), {
       action: 'pause',
       reason: 'pause-first edits (F57/090)',
     })
@@ -726,7 +727,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(JSON.stringify(badMove.body)).toContain('player vitest-dc-no-such-player not found')
     expect(JSON.stringify(badMove.body)).not.toContain('League not found')
 
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
   })
 
@@ -759,7 +760,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     expect(forced2Body.draft.current_pick_number).toBe(3)
 
     // Pause-first (F57/090): the cascade runs behind a pause.
-    const paused = await pauseOrResumeDraft(commishClient, leagueId, { action: 'pause' })
+    const paused = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'pause' })
     expect(paused.status).toBe(200)
 
     // THE R160 PIN: 0 passes the wire schema (`min(0)`, not `min(1)`) and
@@ -794,7 +795,7 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
     // still proves "every pick soft-undone" against a non-empty board (this
     // cascade must run BEFORE reset — undo needs a live/paused draft, and
     // force-pick needs the live board).
-    const resumed = await pauseOrResumeDraft(commishClient, leagueId, { action: 'resume' })
+    const resumed = await pauseOrResumeDraft(commishClient, leagueScope(leagueId), { action: 'resume' })
     expect(resumed.status).toBe(200)
     const restored = await forcePick(commishClient, leagueId, {
       player_id: P1,

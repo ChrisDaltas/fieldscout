@@ -85,7 +85,7 @@ import type { ServiceResult } from './leagues-service'
 type Supabase = SupabaseClient<Database>
 
 const NOT_COMMISH_MESSAGE = 'Only the commissioner can manage the draft.'
-const NO_ACTIVE_DRAFT_MESSAGE =
+export const NO_ACTIVE_DRAFT_MESSAGE =
   'No draft is scheduled for this league yet — create one from Draft setup first.'
 export const POST_START_RANDOMIZE_MESSAGE =
   'The draft has already started — a mid-draft order change must be an explicit order (E31), not a randomize.'
@@ -298,6 +298,9 @@ export const MOCK_SIGNED_OUT_MESSAGE = 'Sign in to start a practice draft.'
 export const NOT_YOUR_MOCK_MESSAGE =
   "This mock draft is another member's solo practice (§8.8)."
 export const LIST_NOT_ATTACHED_MESSAGE = 'That list is not attached to this league.'
+/** The standalone arm of the same refusal (MP.6b): a practice draft has no
+ *  league to attach a list TO, so what it can load is what the caller owns. */
+export const LIST_NOT_YOURS_MESSAGE = 'That list is not one of yours.'
 export const NO_SEAT_MESSAGE = 'You do not manage a franchise in this league.'
 export const AUTODRAFT_FORBIDDEN_MESSAGE =
   "Only that seat's manager or a commissioner can toggle autodraft."
@@ -308,6 +311,56 @@ type DraftActionRow = {
   is_mock: boolean
   config: Json
 }
+
+/**
+ * WHOSE draft an action targets — the ONE thing that differs between a
+ * league room and a standalone practice room (MP task MP.6b; D243(5);
+ * spec v2.16 §8.8).
+ *
+ * Every room verb used to take `leagueId: string`, and the whole write path
+ * funnels through `resolveDraftForAction`, whose only draft lookup was
+ * `.eq('league_id', leagueId)`. A `league_id = <uuid>` predicate can never
+ * match NULL, so on a standalone mock (095 dropped the four `NOT NULL`s)
+ * pick / nominate / bid / pause / resume / queue all answered 404 — measured
+ * in a rolled-back transaction at the MP.6 halt (Q25): 0 rows against every
+ * league in the schema, 1 row by draft id alone.
+ *
+ * The fix is a DISCRIMINATED SCOPE, not a second resolver and not a per-verb
+ * branch (D243(5) — "the fork this lane keeps refusing", the LV.7 pattern).
+ * The verbs are unchanged below the resolver; the two arms differ only in
+ * how the target row is found:
+ *
+ *   - `league`   — byte-identical to the shipped query (`.eq('league_id',
+ *     leagueId)`, optional-`draft_id` probe, the same no-leak 404).
+ *   - `standalone-mock` — the mock's OWN id, scoped by `league_id IS NULL`
+ *     + the launcher predicate (`config->'mock'->>'launched_by' = the
+ *     caller`), which is MS.2's launcher gate expressed the way this layer
+ *     already expresses it (`listMyMockDrafts`) — ONE ownership predicate,
+ *     never a membership graph (D226(3)).
+ *
+ * The `league_id IS NULL` conjunct on the standalone arm is LOAD-BEARING and
+ * is the answer to the task's own review question (D233(5) one layer up):
+ * WITHOUT it the standalone door would reach a league's draft on the
+ * launcher predicate alone. `standalone-actions-db.test.ts` §D drives that
+ * break RED and the league arm is untouched either way.
+ */
+export type DraftActionScope =
+  | { kind: 'league'; leagueId: string }
+  | { kind: 'standalone-mock'; mockId: string; userId: string }
+
+/** The shipped shape: this league's draft. Every league route passes this. */
+export const leagueScope = (leagueId: string): DraftActionScope => ({
+  kind: 'league',
+  leagueId,
+})
+
+/** The MP.6b shape: this launcher's league-less practice draft. Only the
+ *  `/api/mocks/[mockId]/…` routes pass this. */
+export const standaloneMockScope = (mockId: string, userId: string): DraftActionScope => ({
+  kind: 'standalone-mock',
+  mockId,
+  userId,
+})
 
 /**
  * Resolve the draft an action targets. `draft_id` is optional: absent, the
@@ -327,13 +380,16 @@ type DraftActionRow = {
  */
 async function resolveDraftForAction(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   draftId: string | undefined,
 ): Promise<{ draft: DraftActionRow } | { failure: ServiceResult }> {
+  if (scope.kind === 'standalone-mock') {
+    return resolveStandaloneMockForAction(supabase, scope, draftId)
+  }
   const base = supabase
     .from('drafts')
     .select('id, status, is_mock, config')
-    .eq('league_id', leagueId)
+    .eq('league_id', scope.leagueId)
   const { data, error } = draftId
     ? await base.eq('id', draftId).maybeSingle()
     : await base
@@ -346,6 +402,57 @@ async function resolveDraftForAction(
   if (!data) {
     return { failure: { status: 404, body: { error: NO_ACTIVE_DRAFT_MESSAGE } } }
   }
+  return { draft: data as DraftActionRow }
+}
+
+/**
+ * The standalone arm of the ONE resolver above (MP.6b). Not a second
+ * resolver: nothing calls this but `resolveDraftForAction`, and every verb
+ * still reaches it through that single door.
+ *
+ * FOUR conjuncts, and each one is load-bearing:
+ *   - `id = <the mock in the URL>` — a standalone mock's id IS the draft id
+ *     (there is no league to probe an "active draft" for), so the optional
+ *     `draft_id` in the body may only AGREE with the URL. A body naming a
+ *     different draft is the same no-leak 404 an unknown id is, never a
+ *     second target.
+ *   - `league_id IS NULL` — THE conjunct the task's review question is
+ *     about. It is what makes this door provably unable to reach a row that
+ *     HAS a league, independently of who launched that league's mock.
+ *   - `is_mock` — the standalone door is a practice door; a hypothetical
+ *     league-less real draft is not reachable through it.
+ *   - the launcher predicate, TEXT-compared (R117) — MS.2's gate, reused
+ *     verbatim rather than reinvented (D226(3)). RLS already applies it
+ *     (095's `drafts` SELECT arm); repeating it here is `listMyMockDrafts`'
+ *     belt-and-suspenders for the same reason it gives — the explicit filter
+ *     is the one a reader of THIS file can see.
+ *
+ * Every miss is ONE answer — `MOCK_NOT_FOUND_STANDALONE_MESSAGE`, 404 — so
+ * "not yours", "not standalone" and "never existed" are indistinguishable
+ * from the wire, the D244(3) property one layer down.
+ */
+async function resolveStandaloneMockForAction(
+  supabase: Supabase,
+  scope: { mockId: string; userId: string },
+  draftId: string | undefined,
+): Promise<{ draft: DraftActionRow } | { failure: ServiceResult }> {
+  const notFound: { failure: ServiceResult } = {
+    failure: { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } },
+  }
+  if (!z.uuid().safeParse(scope.mockId).success) return notFound
+  if (draftId !== undefined && draftId !== scope.mockId) return notFound
+
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('id, status, is_mock, config')
+    .eq('id', scope.mockId)
+    .eq('is_mock', true)
+    .eq('config->mock->>launched_by' as 'id', scope.userId)
+    .maybeSingle()
+  if (error) {
+    return { failure: { status: 500, body: { error: error.message } } }
+  }
+  if (!data) return notFound
   return { draft: data as DraftActionRow }
 }
 
@@ -372,7 +479,7 @@ async function resolveDraftForAction(
  */
 async function resolveActingSeat(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   userId: string,
   draft: DraftActionRow,
 ): Promise<{ teamId: string } | { failure: ServiceResult }> {
@@ -384,10 +491,17 @@ async function resolveActingSeat(
     }
     return { teamId: mock.human_team_id }
   }
+  if (scope.kind !== 'league') {
+    // Unreachable by construction: the standalone arm of the resolver above
+    // filters `is_mock`, so a non-mock row can never arrive here on a
+    // standalone scope. Answered as the same no-leak 404 rather than left to
+    // a non-null assertion (MP.6b).
+    return { failure: { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } } }
+  }
   const { data: seat, error } = await supabase
     .from('league_members')
     .select('team_id')
-    .eq('league_id', leagueId)
+    .eq('league_id', scope.leagueId)
     .eq('user_id', userId)
     .maybeSingle()
   if (error) {
@@ -461,7 +575,7 @@ export const makePickInputSchema = z.strictObject({
 
 export async function makePick(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   rawBody: unknown,
 ): Promise<ServiceResult> {
   const parsed = makePickInputSchema.safeParse(rawBody)
@@ -469,7 +583,7 @@ export async function makePick(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
 
   // The RPC is the authority (turn, availability/E1, replay/E2, mock seam —
@@ -609,7 +723,7 @@ export interface AuctionActionBody {
 
 export async function nominatePlayer(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   userId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
@@ -618,7 +732,7 @@ export async function nominatePlayer(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
 
   const { data, error } = await supabase.rpc('draft_nominate', {
@@ -636,7 +750,7 @@ export async function nominatePlayer(
   // else's row to this caller. Identity FIRST (R420): the acting seat is the
   // fact a member reading `draft_bids` cannot forge; the arguments catch a
   // caller reusing their OWN id across verbs.
-  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
   if (
     body.bid.team_id !== seat.teamId ||
@@ -652,7 +766,7 @@ export async function nominatePlayer(
 
 export async function placeBid(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   userId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
@@ -661,7 +775,7 @@ export async function placeBid(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
 
   // F64: the nomination identity rides EVERY call — never omitted, never
@@ -681,7 +795,7 @@ export async function placeBid(
   // returns its original row, which still matches on both counts) —
   // otherwise the action_id was a nomination's, or another manager's, and
   // the caller never placed it. Identity FIRST (R420).
-  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
   if (
     body.bid.team_id !== seat.teamId ||
@@ -713,7 +827,7 @@ export const upsertQueueInputSchema = z
 
 export async function upsertQueue(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   userId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
@@ -722,9 +836,9 @@ export async function upsertQueue(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
 
   // Validate every player id BEFORE the destructive replace: PostgREST gives
@@ -787,7 +901,7 @@ export const queueFromListInputSchema = z.strictObject({
 
 export async function queueFromList(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   userId: string,
   listId: string,
   rawBody: unknown,
@@ -800,25 +914,50 @@ export async function queueFromList(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  const resolved = await resolveDraftForAction(supabase, leagueId, parsed.data.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveActingSeat(supabase, leagueId, userId, resolved.draft)
+  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
   if ('failure' in seat) return seat.failure
 
-  // The list must be ATTACHED to this league and visible to the caller (own
-  // attachment or a league-shared one — the 067 RLS scope). Invisible ≡ not
-  // attached (no-leak 404).
-  const { data: attachment, error: attachError } = await supabase
-    .from('league_lists')
-    .select('id, list_id')
-    .eq('league_id', leagueId)
-    .eq('list_id', listId)
-    .maybeSingle()
-  if (attachError) {
-    return { status: 500, body: { error: attachError.message } }
+  // WHICH LISTS THIS VERB WILL LOAD, and the two arms answer it differently
+  // because §8.9's own scoping mechanism is the league tag (MP.6b).
+  //
+  //  - LEAGUE (unchanged, byte for byte): the list must be ATTACHED to this
+  //    league and visible to the caller (own attachment or a league-shared
+  //    one — the 067 RLS scope). Invisible ≡ not attached (no-leak 404).
+  //  - STANDALONE: there is no league to tag a list to, so the scope is the
+  //    only one left and it is the one §8.8 v2.16 names — OWNERSHIP. The
+  //    caller may load a list they OWN, and nothing else. Narrower than the
+  //    league arm on purpose: a public list somebody else owns is readable
+  //    under `lists` RLS, and admitting it here would be a rule this task
+  //    invented rather than one the spec ruled. Widening it later is
+  //    additive; the room's list PICKER is MP.6c's surface question.
+  const listCheck =
+    scope.kind === 'league'
+      ? await supabase
+          .from('league_lists')
+          .select('id, list_id')
+          .eq('league_id', scope.leagueId)
+          .eq('list_id', listId)
+          .maybeSingle()
+      : await supabase
+          .from('lists')
+          .select('id')
+          .eq('id', listId)
+          .eq('owner_id', scope.userId)
+          .is('deleted_at', null)
+          .maybeSingle()
+  if (listCheck.error) {
+    return { status: 500, body: { error: listCheck.error.message } }
   }
-  if (!attachment) {
-    return { status: 404, body: { error: LIST_NOT_ATTACHED_MESSAGE } }
+  if (!listCheck.data) {
+    return {
+      status: 404,
+      body: {
+        error:
+          scope.kind === 'league' ? LIST_NOT_ATTACHED_MESSAGE : LIST_NOT_YOURS_MESSAGE,
+      },
+    }
   }
 
   // List order = `list_players.position, player_id` — EXACTLY the order the
@@ -1095,7 +1234,7 @@ type ControlArgs = Record<string, unknown>
  */
 async function dispatchControl<S extends z.ZodType>(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   rawBody: unknown,
   schema: S,
   rpc: (body: z.infer<S>, draftId: string) => { fn: ControlRpcName; args: ControlArgs },
@@ -1105,7 +1244,7 @@ async function dispatchControl<S extends z.ZodType>(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
   const body = parsed.data as z.infer<S> & { draft_id?: string; reason?: string }
-  const resolved = await resolveDraftForAction(supabase, leagueId, body.draft_id)
+  const resolved = await resolveDraftForAction(supabase, scope, body.draft_id)
   if ('failure' in resolved) return resolved.failure
 
   const { fn, args } = rpc(parsed.data, resolved.draft.id)
@@ -1141,10 +1280,10 @@ const withReason = (reason: string | undefined): ControlArgs =>
 /** POST …/draft/pause — §15.2's one route for BOTH verbs (`action` in body). */
 export async function pauseOrResumeDraft(
   supabase: Supabase,
-  leagueId: string,
+  scope: DraftActionScope,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, pauseDraftInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, scope, rawBody, pauseDraftInputSchema, (body, draftId) => ({
     fn: body.action === 'pause' ? 'draft_pause' : 'draft_resume',
     args: { p_draft_id: draftId, ...withReason(body.reason) },
   }))
@@ -1156,7 +1295,7 @@ export async function undoDraft(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, undoDraftInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, undoDraftInputSchema, (body, draftId) => ({
     fn: 'draft_undo',
     args: {
       p_draft_id: draftId,
@@ -1174,7 +1313,7 @@ export async function reassignPick(
 ): Promise<ServiceResult> {
   return dispatchControl(
     supabase,
-    leagueId,
+    leagueScope(leagueId),
     rawBody,
     reassignPickInputSchema,
     (body, draftId) => ({
@@ -1198,7 +1337,7 @@ export async function forcePick(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, forcePickInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, forcePickInputSchema, (body, draftId) => ({
     fn: 'draft_force_pick',
     args: {
       p_draft_id: draftId,
@@ -1215,7 +1354,7 @@ export async function movePlayer(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, movePlayerInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, movePlayerInputSchema, (body, draftId) => ({
     fn: 'draft_move_player',
     args: {
       p_draft_id: draftId,
@@ -1235,7 +1374,7 @@ export async function resetDraft(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, resetDraftInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, resetDraftInputSchema, (body, draftId) => ({
     fn: 'draft_reset',
     args: { p_draft_id: draftId, ...withReason(body.reason) },
   }))
@@ -1247,7 +1386,7 @@ export async function setClock(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, setClockInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, setClockInputSchema, (body, draftId) => ({
     fn: 'draft_set_clock',
     args: {
       p_draft_id: draftId,
@@ -1331,7 +1470,7 @@ export async function reverseWonBid(
 ): Promise<ServiceResult> {
   return dispatchControl(
     supabase,
-    leagueId,
+    leagueScope(leagueId),
     rawBody,
     reverseWonBidInputSchema,
     (body, draftId) => ({
@@ -1347,7 +1486,7 @@ export async function adjustBudget(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, adjustBudgetInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, adjustBudgetInputSchema, (body, draftId) => ({
     fn: 'draft_adjust_budget',
     args: {
       p_draft_id: draftId,
@@ -1366,7 +1505,7 @@ export async function cancelNomination(
 ): Promise<ServiceResult> {
   return dispatchControl(
     supabase,
-    leagueId,
+    leagueScope(leagueId),
     rawBody,
     cancelNominationInputSchema,
     (body, draftId) => ({
@@ -1382,7 +1521,7 @@ export async function endDraft(
   leagueId: string,
   rawBody: unknown,
 ): Promise<ServiceResult> {
-  return dispatchControl(supabase, leagueId, rawBody, endDraftInputSchema, (body, draftId) => ({
+  return dispatchControl(supabase, leagueScope(leagueId), rawBody, endDraftInputSchema, (body, draftId) => ({
     fn: 'draft_end',
     args: { p_draft_id: draftId, p_reason: body.reason },
   }))

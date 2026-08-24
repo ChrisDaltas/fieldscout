@@ -50,6 +50,7 @@ import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import {
+  leagueScope,
   makePick,
   queueFromList,
   setAutodraft,
@@ -361,7 +362,7 @@ afterAll(async () => {
 
 describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
   it('round-trip: POST the full order, read it back (response + RLS + stored rows agree); reorder replaces', async () => {
-    const posted = await upsertQueue(mgr2Client, leagueId, mgr2Id, {
+    const posted = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
       players: [P5, P4, P3],
     })
     expect(posted.status).toBe(200)
@@ -384,7 +385,7 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
     expect((mine ?? []).map((r) => r.player_id)).toEqual([P5, P4, P3])
 
     // Reorder = the same set in a new order, whole-queue replace.
-    const reordered = await upsertQueue(mgr2Client, leagueId, mgr2Id, {
+    const reordered = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
       players: [P3, P5],
     })
     expect(reordered.status).toBe(200)
@@ -397,12 +398,12 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
   it('duplicate and unknown-player bodies 400 with the queue UNTOUCHED (validate before the destructive replace)', async () => {
     const before = await storedQueue(draftId, mgr2TeamId)
 
-    const dupe = await upsertQueue(mgr2Client, leagueId, mgr2Id, {
+    const dupe = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
       players: [P3, P3],
     })
     expect(dupe.status).toBe(400)
 
-    const unknown = await upsertQueue(mgr2Client, leagueId, mgr2Id, {
+    const unknown = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
       players: [P3, 'vitest-dq-ghost'],
     })
     expect(unknown.status).toBe(400)
@@ -414,7 +415,7 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
 
   it('MOCK seam (D103(3) at the service layer): the LAUNCHER writes the human seat queue; the seat REAL owner is refused', async () => {
     // Commish launched the mock on MGR2'S franchise — the launcher writes.
-    const launcher = await upsertQueue(commishClient, leagueId, commishId, {
+    const launcher = await upsertQueue(commishClient, leagueScope(leagueId), commishId, {
       draft_id: mockDraftId,
       players: [P6],
     })
@@ -426,7 +427,7 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
     // mgr2 owns the franchise but did NOT launch: the route refuses (the
     // mock room is the launcher's solo practice — autopick reads mocks
     // launcher-keyed, 068).
-    const owner = await upsertQueue(mgr2Client, leagueId, mgr2Id, {
+    const owner = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
       draft_id: mockDraftId,
       players: [P5],
     })
@@ -449,8 +450,8 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
     // wins with dense ranks, and each response is its OWN call's outcome.
     const volley = async (setA: string[], setB: string[]) => {
       const [ra, rb] = await Promise.all([
-        upsertQueue(mgr2Client, leagueId, mgr2Id, { players: setA }),
-        upsertQueue(mgr2Client, leagueId, mgr2Id, { players: setB }),
+        upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, { players: setA }),
+        upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, { players: setB }),
       ])
       // OVERLAP face (D123(6)): pre-082 the loser 500'd AFTER its delete
       // (queue GONE, 3/3 in the focused probe). Now both commit whole.
@@ -476,7 +477,7 @@ describe('queue upsert/reorder over PostgREST (§8.4/§12.6)', () => {
       await volley([P3, P4, P5], [P4, P3])
     }
     // Leave the queue as the earlier tests expect for any later reader.
-    const restore = await upsertQueue(mgr2Client, leagueId, mgr2Id, { players: [P3, P5] })
+    const restore = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, { players: [P3, P5] })
     expect(restore.status).toBe(200)
   })
 })
@@ -496,7 +497,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
     // not found" — the league was resolved over RLS one statement earlier.
     // Unreachable from the shipped UI (ids come from the pool); pinned
     // because the fix is CENTRAL, and this is the consumer F77 named first.
-    const unknownPlayer = await makePick(commishClient, leagueId, {
+    const unknownPlayer = await makePick(commishClient, leagueScope(leagueId), {
       player_id: 'vitest-dq-no-such-player',
       action_id: 'ad700000-0000-4000-8000-0000000000f7',
     })
@@ -506,7 +507,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
     )
     expect(JSON.stringify(unknownPlayer.body)).not.toContain('League not found')
 
-    const pick1 = await makePick(commishClient, leagueId, {
+    const pick1 = await makePick(commishClient, leagueScope(leagueId), {
       player_id: P1,
       action_id: ACTION.pick1,
     })
@@ -517,7 +518,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
 
     // Two clients, one player: mgr2 (now legitimately on the clock) submits
     // the SAME player — the loser's message is the UX (§8.3), pinned.
-    const loser = await makePick(mgr2Client, leagueId, {
+    const loser = await makePick(mgr2Client, leagueScope(leagueId), {
       player_id: P1,
       action_id: ACTION.loser,
     })
@@ -528,14 +529,14 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
   })
 
   it('E2: the SAME action_id replays as a 200 no-op — same pick row, one row total (D68(1))', async () => {
-    const first = await makePick(mgr2Client, leagueId, {
+    const first = await makePick(mgr2Client, leagueScope(leagueId), {
       player_id: P2,
       action_id: ACTION.pick2,
     })
     expect(first.status).toBe(200)
     const firstPick = (first.body as unknown as PickResponse).pick
 
-    const replay = await makePick(mgr2Client, leagueId, {
+    const replay = await makePick(mgr2Client, leagueScope(leagueId), {
       player_id: P2,
       action_id: ACTION.pick2,
     })
@@ -551,7 +552,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
 
     // action_id is REQUIRED wire-side (the stamping contract): a body
     // without one is a 400 before any RPC call.
-    const missing = await makePick(mgr2Client, leagueId, { player_id: P3 })
+    const missing = await makePick(mgr2Client, leagueScope(leagueId), { player_id: P3 })
     expect(missing.status).toBe(400)
 
   })
@@ -560,7 +561,7 @@ describe('picks over PostgREST — E1 race + E2 replay (§8.1)', () => {
 describe('§8.9 from-list — load into queue (skip drafted; replace/append)', () => {
   it('replace: the attached list loads in LIST ORDER with drafted players SKIPPED (the task pin)', async () => {
     // List order [P1, P2, P4, P6]; P1 and P2 are drafted (live picks above).
-    const loaded = await queueFromList(mgr2Client, leagueId, mgr2Id, listId, {
+    const loaded = await queueFromList(mgr2Client, leagueScope(leagueId), mgr2Id, listId, {
       mode: 'replace',
     })
     expect(loaded.status).toBe(200)
@@ -587,10 +588,10 @@ describe('§8.9 from-list — load into queue (skip drafted; replace/append)', (
 
   it('append ("Add remaining"): adds after the queue tail, skipping queued AND drafted players', async () => {
     // Reset the queue to just P4 (rank 1), then append the list.
-    const reset = await upsertQueue(mgr2Client, leagueId, mgr2Id, { players: [P4] })
+    const reset = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, { players: [P4] })
     expect(reset.status).toBe(200)
 
-    const appended = await queueFromList(mgr2Client, leagueId, mgr2Id, listId, {
+    const appended = await queueFromList(mgr2Client, leagueScope(leagueId), mgr2Id, listId, {
       mode: 'append',
     })
     expect(appended.status).toBe(200)
@@ -613,9 +614,7 @@ describe('§8.9 from-list — load into queue (skip drafted; replace/append)', (
     const before = await storedQueue(draftId, mgr2TeamId)
     // The commissioner never attached a list — any random uuid behaves the
     // same as a real-but-foreign one under the 067 RLS scope.
-    const result = await queueFromList(
-      commishClient,
-      leagueId,
+    const result = await queueFromList(commishClient, leagueScope(leagueId),
       commishId,
       '00000000-0000-4000-8000-0000000000aa',
       {},
@@ -713,19 +712,19 @@ describe('OUTSIDER no-leak sweep (R155 class, the room surface)', () => {
     const outsiderId = (await outsiderClient.auth.getUser()).data.user!.id
 
     // Explicit draft_id changes nothing: the RLS probe sees no row.
-    const pick = await makePick(outsiderClient, leagueId, {
+    const pick = await makePick(outsiderClient, leagueScope(leagueId), {
       draft_id: draftId,
       player_id: P3,
       action_id: 'ad700000-0000-4000-8000-000000000099',
     })
     expect(pick.status).toBe(404)
 
-    const queue = await upsertQueue(outsiderClient, leagueId, outsiderId, {
+    const queue = await upsertQueue(outsiderClient, leagueScope(leagueId), outsiderId, {
       players: [P3],
     })
     expect(queue.status).toBe(404)
 
-    const fromList = await queueFromList(outsiderClient, leagueId, outsiderId, listId, {})
+    const fromList = await queueFromList(outsiderClient, leagueScope(leagueId), outsiderId, listId, {})
     expect(fromList.status).toBe(404)
 
     const toggle = await setAutodraft(outsiderClient, leagueId, outsiderId, { on: true })
