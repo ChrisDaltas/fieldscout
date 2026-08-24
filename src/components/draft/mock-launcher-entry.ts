@@ -17,3 +17,22 @@ export const MOCK_LAUNCHER_READY = true
 export function mockLauncherHref(leagueId: string): string {
   return `/app/leagues/${leagueId}/draft?practice=1`
 }
+
+/**
+ * Where a STANDALONE practice draft's room lives (MP.6; spec v2.16 §8.8).
+ *
+ * The league arm above is unchanged and stays league-side: a league-attached
+ * mock is still `…/draft?draft=<id>` on its own league's room route, because
+ * that is where the room mounts (MP.6 is the route and only the route —
+ * D243). This is the other arm, and it is a different URL rather than a
+ * widened one because a standalone mock has no league id to put in the
+ * league one.
+ *
+ * Keyed on the MOCK's id, under `(room)/mocks/`'s `mockDrafts` gate — the
+ * `/app/leagues` URL space is redirected away wholesale when the leagues
+ * flag is off (R470 / D231(3a)), which is the defect this route exists to
+ * escape.
+ */
+export function mockRoomHref(mockId: string): string {
+  return `/app/mocks/${mockId}`
+}

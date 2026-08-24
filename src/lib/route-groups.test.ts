@@ -339,6 +339,20 @@ describe('the mock room is released on the mockDrafts flag, past the leagues gat
     expect(leaguesGate).toContain('if (!featureFlags.leagues) redirect')
   })
 
+  it('an old league-side URL for a STANDALONE mock redirects, never 404s (MP.6 item 6)', () => {
+    // `?draft=<id>` room links exist in the wild. The redirect is the reason
+    // this route move costs nobody a dead end, so it is pinned at the file
+    // that performs it — and pinned to the SHARED href builder, because a
+    // hand-rolled `/app/mocks/${…}` here is the second source of truth the
+    // seam exists to prevent.
+    const source = code('src/app/app/(room)/leagues/[leagueId]/draft/page.tsx')
+    expect(source).toContain("import { mockRoomHref } from '@/components/draft/mock-launcher-entry'")
+    expect(source).toMatch(/redirect\(mockRoomHref\(/)
+    // Narrow by construction: only a mock with no league is re-routed.
+    expect(source).toContain(".is('league_id', null)")
+    expect(source).toContain(".eq('is_mock', true)")
+  })
+
   it('MP.6 is the ROUTE only — the room still mounts league-side (D243)', () => {
     // The scope pin, from the side that would fail loudest. MP.6c mounts
     // `DraftRoom` here; doing it at layer 1 would ship a URL that renders an
