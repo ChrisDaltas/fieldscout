@@ -204,3 +204,152 @@ describe('the transient skeleton carries an exit too (DR.2’s deliberate call)'
     expect(source.slice(start, end)).toMatch(EXIT)
   })
 })
+
+/**
+ * MP.5 — the STANDALONE arm, and the measurement that decided where it goes.
+ *
+ * The task named five *"Back to league"* links to re-point —
+ * `draft-recap.tsx` ×3 and `mock-draft-launcher.tsx` ×2 (verified on `main`
+ * @ `6e9e8d1`: `grep -n "Back to league" -r src` puts them at 143/235/555 and
+ * 103/119 exactly). **Measured, none of the five is on a standalone mock's
+ * path, so re-pointing any of them would send a LEAGUE mock's user to the
+ * wrong place:**
+ *
+ *   - `MockDraftLauncher` takes `leagueId: string` and `detail: LeagueDetail`
+ *     (both required) and is mounted only at `?practice=1` on the league
+ *     draft route. There is no league-less way to render it.
+ *   - `DraftRecap` takes `leagueId: string`, is mounted only under
+ *     `/app/leagues/[leagueId]/draft/recap`, and refuses to render a body
+ *     unless `draft.league_id === leagueId` — which a `league_id IS NULL`
+ *     mock can never satisfy.
+ *
+ * So the standalone exits MP.5 actually owns are the ones on the surfaces it
+ * builds: `MockRow`'s league-optional arm, and `/app/mocks` itself. Those are
+ * pinned below. The recap's standalone half belongs to **MP.8**, which builds
+ * `/app/mocks/[mockId]/report` — handed over as ledger row **F119** rather
+ * than left implied (R51).
+ */
+describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
+  const ROW_FILE = 'src/components/draft/mock-draft-launcher.tsx'
+  const HOME = 'src/components/draft/mocks-home.tsx'
+
+  /** `MockRow`'s body, so a neighbour in the same file cannot satisfy these. */
+  function mockRowBody(): string {
+    const source = code(ROW_FILE)
+    const start = source.indexOf('export function MockRow')
+    expect(start, 'MockRow found').toBeGreaterThan(-1)
+    return source.slice(start)
+  }
+
+  it('every league-scoped URL in the row sits behind the league-optional arm', () => {
+    // The defect this catches: a later edit adding an unconditional
+    // `/app/leagues/...` link to the row, which would 404 (or redirect, with
+    // the leagues flag off) for every standalone mock listed on /app/mocks.
+    //
+    // **R513 — the first version of this pin PASSED with exactly that edit
+    // planted.** It walked BACKWARD from each URL (`lastIndexOf('leagueId
+    // === null')`) and happily landed on an unrelated earlier ternary, so any
+    // stray league URL after the first one satisfied it. A guard found by
+    // scanning backwards is not the guard the URL is under. The fix is to
+    // match the WHOLE conditional as one expression and require every league
+    // URL to be inside one — proximity replaced by structure.
+    const body = mockRowBody()
+    const leagueUrls = body.match(/`\/app\/leagues\/[^`]*`/g) ?? []
+    expect(leagueUrls.length, 'league URLs present to check').toBeGreaterThan(0)
+
+    // `leagueId === null ? <standalone> : <league URL>` — the false arm is the
+    // ONLY place a league URL may appear, and it must be THIS ternary's.
+    const guardedArms =
+      body.match(/leagueId === null\s*\?[^:]*:\s*`\/app\/leagues\/[^`]*`/g) ?? []
+    const guardedUrls = guardedArms.map((arm) => arm.slice(arm.lastIndexOf('`/app/leagues/')))
+
+    // Set equality, not a count: an unguarded URL is one this list misses.
+    expect([...leagueUrls].sort()).toEqual([...guardedUrls].sort())
+  })
+
+  it('the standalone half points into /app/mocks, where MP.6 and MP.8 build', () => {
+    const body = mockRowBody()
+    expect(body).toContain('`/app/mocks/${row.id}`')
+    expect(body).toContain('`/app/mocks/${row.id}/report`')
+  })
+
+  it('the practice home SOURCE builds no /app/leagues URL of its own', () => {
+    // R519 — renamed to what it actually measures. The old name ("contains no
+    // /app/leagues URL at all") was true of the FILE and false of the PAGE: a
+    // league-attached row rendered here gets its URL from `MockRow`, not from
+    // this file. What this pin really says is that the practice home never
+    // hand-rolls a league route — the page-level half is `openBlockedReason`,
+    // pinned below.
+    expect(code(HOME)).not.toContain('/app/leagues')
+  })
+
+  it('the page disables an open control it knows goes nowhere (R515/R519)', () => {
+    // The half the source pin above cannot see. Two rows can offer a control
+    // that dead-ends — a standalone one (MP.6/MP.8 have not built the route)
+    // and a league-attached one with the leagues flag off (the link silently
+    // redirects to /app) — and BOTH must arrive at `MockRow` blocked. A
+    // docblock disclosure is not a disclosure the user reads.
+    const home = code(HOME)
+    expect(home).toContain('openBlocked={openBlockedReason(row)}')
+    const start = home.indexOf('function openBlockedReason')
+    expect(start, 'openBlockedReason found').toBeGreaterThan(-1)
+    const body = home.slice(start)
+    expect(body).toMatch(/row\.league_id === null\s*\)?\s*return '/)
+    expect(body).toMatch(/!featureFlags\.leagues\s*\)?\s*return '/)
+
+    // …and the row honours it by disabling rather than by hiding: a hidden
+    // control is a second dead end (nothing to press, nothing explained).
+    const rowBody = mockRowBody()
+    expect(rowBody).toMatch(/\{openBlocked \?/)
+    expect(rowBody).toContain('disabled>')
+  })
+
+  it('the five shipped Back-to-league links are still exactly five, all league-only', () => {
+    // Re-pointed by measurement rather than by count: the inventory is
+    // unchanged BECAUSE none of it is reachable without a league. If a later
+    // change makes either surface league-optional, this count moves and the
+    // decision above gets re-taken instead of silently inherited.
+    const recap = read('src/components/draft/draft-recap.tsx')
+    const launcher = read(ROW_FILE)
+    const count = (s: string) => (s.match(/Back to league/g) ?? []).length
+    expect(count(recap)).toBe(3)
+    expect(count(launcher)).toBe(2)
+    // …and both surfaces still REQUIRE a league, which is why that is right.
+    //
+    // **R514 — this half was vacuous TWICE and the reviewer proved it**: it
+    // used `read()` (so each file's docblock, which quotes `leagueId: string`
+    // while explaining this very decision, satisfied it on its own), and
+    // `/\bleagueId: string\b/` matches inside `leagueId: string | null` —
+    // so widening either prop kept the suite green and the decision WAS
+    // silently inheritable, the one thing this pin claims to prevent. That is
+    // D241(8)'s lesson recurring on the sibling pin, which is why the fix is
+    // structural: comments stripped, and the match anchored to end-of-line so
+    // a union cannot satisfy it.
+    // …and SCOPED to each entry point's own props block. Anchoring alone was
+    // not enough — re-probing the R514 fix caught it a THIRD time: both files
+    // contain inner helpers (`MockList`, `DraftRecapBody`, `RecapProblem`)
+    // whose own `leagueId: string` satisfied a file-wide match while the
+    // exported component's prop had been widened. A pin must name the symbol
+    // it is about.
+    const propsBlock = (source: string, name: string): string => {
+      const start = source.indexOf(`interface ${name} {`)
+      expect(start, `${name} found`).toBeGreaterThan(-1)
+      const end = source.indexOf('\n}', start)
+      expect(end, `${name} closes`).toBeGreaterThan(start)
+      return source.slice(start, end)
+    }
+    const recapCode = code('src/components/draft/draft-recap.tsx')
+    const launcherCode = code(ROW_FILE)
+    expect(
+      propsBlock(recapCode, 'DraftRecapProps'),
+      'DraftRecap requires a league',
+    ).toMatch(/^\s*leagueId: string\s*$/m)
+    expect(
+      propsBlock(launcherCode, 'MockDraftLauncherProps'),
+      'MockDraftLauncher requires a league',
+    ).toMatch(/^\s*leagueId: string\s*$/m)
+    // The guard that makes DraftRecap unreachable for a NULL-league mock —
+    // the OTHER half of why its three exits are correctly league-voiced.
+    expect(recapCode).toContain('draft.league_id !== leagueId')
+  })
+})

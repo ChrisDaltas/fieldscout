@@ -86,6 +86,7 @@ describe('mockSeatOptions / defaultMockSeatId', () => {
 function mockRow(over: Partial<MockDraftSummary> = {}): MockDraftSummary {
   return {
     id: 'm1',
+    league_id: 'l1',
     status: 'paused',
     draft_type: 'snake',
     created_at: '2026-08-13T00:00:00.000Z',

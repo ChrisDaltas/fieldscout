@@ -10,6 +10,7 @@ import {
   mockLauncherHref,
 } from '@/components/draft/mock-launcher-entry'
 import { MockRow } from '@/components/draft/mock-draft-launcher'
+import { mockSeatCount } from '@/components/draft/mock-launcher-ops'
 import { MOCK_EXPIRY_NOTE } from '@/components/draft/mock-launcher-ops'
 import { useMockDrafts } from '@/hooks/use-mock-drafts'
 import { Badge } from '@/components/ui/badge'
@@ -178,10 +179,20 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5">
         {active.map((row) => (
-          <MockRow key={row.id} leagueId={leagueId} detail={data} row={row} />
+          <MockRow
+            key={row.id}
+            leagueId={leagueId}
+            seatCount={mockSeatCount(row, data.teams)}
+            row={row}
+          />
         ))}
         {recaps.map((row) => (
-          <MockRow key={row.id} leagueId={leagueId} detail={data} row={row} />
+          <MockRow
+            key={row.id}
+            leagueId={leagueId}
+            seatCount={mockSeatCount(row, data.teams)}
+            row={row}
+          />
         ))}
         {active.length > 0 && (
           <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>

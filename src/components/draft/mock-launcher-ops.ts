@@ -29,9 +29,22 @@ export const MOCK_HOURLY_CAP = 5
  *  message" + the hourly half so the server's refusal never surprises). */
 export const MOCK_CAP_NOTE = `Up to ${MOCK_ACTIVE_CAP} practice drafts running at once, ${MOCK_HOURLY_CAP} launches per hour.`
 
-/** §8.8: abandoned (paused) mocks auto-expire; finished recaps never do. */
-export const MOCK_EXPIRY_NOTE =
-  'A paused practice draft keeps for 72 hours of inactivity, then cleans itself up. Finished recaps stay until you delete them.'
+/** §8.8: abandoned (paused) mocks auto-expire. The half that is true of the
+ *  ACTIVE list on every surface, whatever the finished ones are called. */
+export const MOCK_PAUSED_EXPIRY_NOTE =
+  'A paused practice draft keeps for 72 hours of inactivity, then cleans itself up.'
+
+/**
+ * The league launcher's combined note — the sentence above plus the kept-recap
+ * half (§8.8: finished recaps never expire).
+ *
+ * **Composed, not restated, and deliberately NOT used on `/app/mocks` (R517).**
+ * A standalone mock's finished state is a *report*, not a *recap* (D241(7)), so
+ * printing this second sentence there would put both words on one screen — the
+ * one-voice rule broken by the very constant that carries the rule's other
+ * half. The practice home prints `MOCK_PAUSED_EXPIRY_NOTE` alone.
+ */
+export const MOCK_EXPIRY_NOTE = `${MOCK_PAUSED_EXPIRY_NOTE} Finished recaps stay until you delete them.`
 
 /**
  * Why the launch button is disabled, or null when launching is offered.
@@ -61,7 +74,7 @@ export interface MockSeatOption {
   isMine: boolean
 }
 
-interface SeatTeamInput {
+export interface SeatTeamInput {
   id: string
   name: string
   status?: string | null
@@ -114,4 +127,50 @@ export function mockProgressLabel(row: MockDraftSummary, teamCount: number | nul
   return total !== null
     ? `${state} · pick ${pick} of ${total}`
     : `${state} · pick ${pick}`
+}
+
+// ---------------------------------------------------------------------------
+// Seat counts — the denominator of the progress line, from two sources
+// ---------------------------------------------------------------------------
+
+/** A league mock's seat count: the league's non-retired franchises, the
+ *  same filter `mockSeatOptions` uses. Extracted so the three `MockRow`
+ *  mounts pass a NUMBER rather than a whole `LeagueDetail` — the practice
+ *  home has no league to hand it (MP.5). */
+export function activeSeatCount(teams: readonly SeatTeamInput[]): number {
+  return teams.filter((t) => t.status !== 'retired').length
+}
+
+/**
+ * A STANDALONE mock's seat count, read off the row itself: 095 stores the
+ * bot `teams` ids it minted at `config.mock.cpu_seats`, one per opponent, so
+ * the board is `cpu_seats.length + 1` — the human's own seat is the `+ 1`
+ * and is not in that array (095's loop runs `1..team_count - 1`).
+ *
+ * Derived rather than selected because it is already stored: `cpu_seats` is
+ * the DELETE authority for cleanup (D227(4)), not a field invented for this.
+ *
+ * NULL for a league-attached mock — 095 deliberately writes no `cpu_seats`
+ * key there (a league mock mints nothing, so it stores nothing) — and null
+ * is the honest answer: `mockProgressLabel` then prints the position with no
+ * total instead of a made-up one.
+ */
+export function standaloneSeatCount(row: MockDraftSummary): number | null {
+  const config = row.config as { mock?: { cpu_seats?: unknown } } | null
+  const seats = config?.mock?.cpu_seats
+  if (!Array.isArray(seats) || seats.length === 0) return null
+  return seats.length + 1
+}
+
+/** The denominator for whichever shape the row is (MP.5). A league row gets
+ *  its league's seat count; a standalone row reads its own. */
+export function mockSeatCount(
+  row: MockDraftSummary,
+  leagueTeams: readonly SeatTeamInput[] | null,
+): number | null {
+  if (leagueTeams !== null) {
+    const count = activeSeatCount(leagueTeams)
+    return count > 0 ? count : null
+  }
+  return standaloneSeatCount(row)
 }

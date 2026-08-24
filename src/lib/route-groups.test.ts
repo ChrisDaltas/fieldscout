@@ -130,12 +130,16 @@ const APP_URLS_GOLDEN = [
  * when it leaves.
  */
 const APP_URLS_ADDED_SINCE_GOLDEN = [
-  // MP.4 — the DEV-ONLY harness that mounts the practice-draft launch
-  // dialog so it can be driven in a browser. `notFound()` in production
-  // (`process.env.NODE_ENV`, the `dev-pro-menu-item` pattern), never a
-  // feature flag. MP.5 owns `/app/mocks` and DELETES this page when it
-  // lands — ledger row F115.
-  '/app/dev/mock-launch',
+  // MP.5 — the practice home (spec v2.16 §8.8). Its own route family, NOT a
+  // page under /app/leagues, because `(room)/leagues/layout.tsx` redirects
+  // that whole URL space away when the leagues flag is off (D231(3a)/R470)
+  // and practice must survive that (E79). Gated on `featureFlags.mockDrafts`
+  // — asserted below. Permanent; MP.6 adds `/app/mocks/[mockId]` and MP.8
+  // `/app/mocks/[mockId]/report` beside it, each declared here in turn.
+  //
+  // MP.4's dev-only `/app/dev/mock-launch` harness lived here and is DELETED
+  // by this same task (F115) — the launch dialog's real mount is /app/mocks.
+  '/app/mocks',
 ]
 
 describe('route groups are invisible to the URL space', () => {
@@ -229,6 +233,73 @@ describe('the room frame is chrome-free and full-viewport', () => {
     for (const geometry of ['pr-rail-strip', 'px-4', 'lg:px-7', 'pb-[20vh]']) {
       expect(source, geometry).not.toContain(geometry)
     }
+  })
+})
+
+describe('practice is released on its OWN flag (E79 / D231)', () => {
+  // The lane's central claim, pinned at the layer it is easiest to break:
+  // a later editor "tidying" this gate onto `featureFlags.leagues` would
+  // silently re-couple practice to the league product, and flags default ON
+  // in development so nothing would show it until a deploy.
+  const GATE = 'src/app/app/(shell)/mocks/layout.tsx'
+
+  it('/app/mocks redirects on featureFlags.mockDrafts', () => {
+    // `code()`, not `read()`: this file's docblock NAMES both flags to
+    // explain the distinction, and a pin a comment can satisfy is not a pin.
+    const source = code(GATE)
+    expect(source).toContain('featureFlags.mockDrafts')
+    expect(source).toContain("redirect('/app')")
+  })
+
+  it('/app/mocks never reads the leagues flag — with leagues OFF it still renders', () => {
+    expect(code(GATE)).not.toContain('featureFlags.leagues')
+  })
+
+  it('nothing under /app/mocks GATES on the leagues flag', () => {
+    // The gate is one file; the pages under it are the other half of the same
+    // claim. `mocks-home.tsx` is swept with them because it IS the page's
+    // body (the route file is two lines).
+    //
+    // **Narrowed at review (R519), and the narrowing was forced by this pin
+    // going RED — which is the pin working.** The first version forbade the
+    // STRING `featureFlags.leagues` anywhere under /app/mocks. R519's fix
+    // then needed a legitimate read of it: a league-attached mock listed here
+    // while leagues is off has a real link that silently redirects to `/app`,
+    // so the page disables that control. **That is presentation, not a gate**
+    // — the page still renders in full, every standalone row still works, and
+    // nothing about access changes. What must never exist is a *gate* keyed
+    // on the leagues flag, so that is what is pinned: no `redirect(`, no
+    // `notFound(`, and no early return, in the same statement as the flag.
+    for (const rel of [
+      'src/app/app/(shell)/mocks/layout.tsx',
+      'src/app/app/(shell)/mocks/page.tsx',
+      'src/components/draft/mocks-home.tsx',
+    ]) {
+      const source = code(rel)
+      for (const [at, line] of source.split('\n').entries()) {
+        if (!line.includes('featureFlags.leagues')) continue
+        expect(line, `${rel}:${at + 1}`).not.toMatch(/redirect\(|notFound\(/)
+      }
+    }
+  })
+
+  it('the ONE leagues-flag read under /app/mocks is the R519 disabled state', () => {
+    // The other side of the narrowing: the exemption is a named function with
+    // a stated job, not a licence. A second read appearing anywhere on this
+    // page reddens here and has to argue for itself.
+    const home = code('src/components/draft/mocks-home.tsx')
+    const reads = (home.match(/featureFlags\.leagues/g) ?? []).length
+    expect(reads, 'exactly one leagues-flag read').toBe(1)
+    const fn = home.indexOf('function openBlockedReason')
+    expect(fn, 'openBlockedReason found').toBeGreaterThan(-1)
+    expect(home.indexOf('featureFlags.leagues')).toBeGreaterThan(fn)
+    // The gate itself stays entirely free of it.
+    expect(code('src/app/app/(shell)/mocks/layout.tsx')).not.toContain('featureFlags.leagues')
+  })
+
+  it('the MP.4 dev harness is gone (F115) — the dialog has a real mount now', () => {
+    expect(() => read('src/app/app/(shell)/dev/mock-launch/page.tsx')).toThrow()
+    expect(read('src/components/draft/mocks-home.tsx')).toContain('MockLaunchDialog')
   })
 })
 

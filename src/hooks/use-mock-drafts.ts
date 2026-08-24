@@ -15,11 +15,19 @@ import type { Draft } from '@/types/database'
 
 export const mockDraftKeys = {
   list: (leagueId: string) => ['mock-drafts', leagueId] as const,
+  /** Every mock I launched, league or not — the `/app/mocks` home (MP.5).
+   *  Under the same `['mock-drafts', …]` prefix the launch mutations
+   *  already invalidate, which is why `useLaunchStandaloneMock` needed no
+   *  edit to keep this list honest. */
+  mine: ['mock-drafts', 'mine'] as const,
 }
 
 /** The GET's column-selected row (draft-service `listMockDrafts`). */
 export interface MockDraftSummary {
   id: string
+  /** NULL ⇒ a STANDALONE practice draft (v2.16 §8.8) — the discriminant
+   *  `MockRow` branches its links and its delete door on. */
+  league_id: string | null
   status: 'live' | 'paused' | 'complete'
   draft_type: string
   created_at: string | null
@@ -49,6 +57,24 @@ export function useMockDrafts(leagueId: string | undefined, opts?: { enabled?: b
   })
 }
 
+/**
+ * GET /api/mocks — EVERY mock I launched, league-attached or standalone.
+ * The `/app/mocks` practice home's read (MP.5).
+ *
+ * Same shape as `useMockDrafts` above on purpose (`MockDraftLists`), because
+ * the rows render through the same `MockRow`. What differs is the QUESTION:
+ * this one has no league in it. Not `useMockDrafts(undefined)` — that hook
+ * disables itself without a league id, which is the correct answer to a
+ * league-scoped question and the wrong one here.
+ */
+export function useMyMockDrafts(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: mockDraftKeys.mine,
+    enabled: opts?.enabled ?? true,
+    queryFn: async (): Promise<MockDraftLists> => sendLeagueAction<MockDraftLists>('/api/mocks'),
+  })
+}
+
 export interface LaunchMockVariables {
   human_team_id?: string
   cpu_speed?: 'realistic' | 'fast'
@@ -74,7 +100,12 @@ export function useLaunchMockDraft(leagueId: string) {
         jsonInit('POST', variables),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: mockDraftKeys.list(leagueId) })
+      // R517/R518: the PREFIX, not `list(leagueId)`. A league mock launched
+      // from a league also belongs on `/app/mocks` (the practice home lists
+      // every mock this user launched), and invalidating one key left the
+      // other list stale — the exact disagreement `useDeleteMockDraft`'s
+      // docblock warns about, one mutation over.
+      void queryClient.invalidateQueries({ queryKey: ['mock-drafts'] })
     },
   })
 
@@ -127,19 +158,33 @@ export function useLaunchStandaloneMock() {
   }
 }
 
-/** DELETE /api/leagues/[id]/mock-drafts/[did] — abandon a paused mock OR
- *  delete a finished recap (one verb covers both — §8.8; launcher-only,
- *  the RPC refuses everyone else including commissioners, D110(1)). */
-export function useDeleteMockDraft(leagueId: string) {
+/**
+ * Delete a mock — abandon a live/paused one OR delete a finished recap (one
+ * verb covers both, §8.8; launcher-only, and the RPC refuses everyone else
+ * including commissioners — D110(1)).
+ *
+ * TWO DOORS, one per shape, because the shipped league route is
+ * `/api/leagues/[id]/mock-drafts/[did]` and a standalone mock has no id to
+ * put in that slot: `leagueId === null` uses `/api/mocks/[mockId]`. Same
+ * RPC behind both (095's `delete_mock_draft`), same refusals.
+ *
+ * Invalidates the whole `['mock-drafts', …]` PREFIX rather than one key:
+ * a mock deleted from the practice home also leaves its league's list, and
+ * one deleted from a league launcher also leaves the practice home. A
+ * key-by-key invalidation here is how the two lists start disagreeing.
+ */
+export function useDeleteMockDraft(leagueId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (draftId: string) =>
       sendLeagueAction<{ deleted: boolean; draft_id: string }>(
-        `/api/leagues/${leagueId}/mock-drafts/${draftId}`,
+        leagueId === null
+          ? `/api/mocks/${draftId}`
+          : `/api/leagues/${leagueId}/mock-drafts/${draftId}`,
         jsonInit('DELETE'),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: mockDraftKeys.list(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: ['mock-drafts'] })
     },
   })
 }

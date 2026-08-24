@@ -978,6 +978,20 @@ export async function setAutodraft(
 
 export const MOCK_NOT_FOUND_MESSAGE = 'No such mock draft in this league.'
 
+/** R516: the league-free door's own voice. The message above names a league,
+ *  which is false on `/api/mocks/[mockId]` — there is no league in the
+ *  question there, and a user told "in this league" about a standalone
+ *  practice draft has been handed a smaller version of the same mistake this
+ *  whole lane exists to correct. */
+export const MOCK_NOT_FOUND_STANDALONE_MESSAGE = 'No such practice draft.'
+
+/** R516: the 42501 fallback for the league-free delete door. NOT
+ *  `MOCK_SIGNED_OUT_MESSAGE` — that route already answers 401 before the RPC
+ *  is reached, so "Sign in…" can only ever be wrong there. `delete_mock_draft`
+ *  is launcher-keyed (D110(1)), so 42501 means exactly this. */
+export const MOCK_NOT_YOURS_MESSAGE = "That practice draft isn't yours to delete."
+
+
 const reasonSchema = z.string().trim().min(1).max(500).optional()
 
 /** Shared shape: every control accepts an optional target draft + reason. */
@@ -1501,6 +1515,21 @@ export async function launchStandaloneMockDraft(
   return { status: result.created ? 201 : 200, body: result as unknown as Json }
 }
 
+/**
+ * The `drafts` projection BOTH mock lists read. One constant, because the
+ * two endpoints answer different QUESTIONS but must describe a mock the same
+ * way — a second column list here is how two surfaces start disagreeing
+ * about what a practice draft is.
+ *
+ * `league_id` joins the league route's original selection and is the ONE
+ * addition (MP.5): the practice home lists mocks with and without a league,
+ * and `MockRow`'s league-optional arm has to know which it is holding. It is
+ * not decoration — a stored field nobody reads is D236(4)'s failure — it is
+ * the discriminant the row branches on.
+ */
+const MOCK_LIST_COLUMNS =
+  'id, league_id, status, draft_type, created_at, started_at, completed_at, current_pick_number, current_round, total_rounds, config'
+
 /** The §16.5.2 list surface: my active mocks (live|paused — the resumable
  *  cards, E59) + my recaps (complete — kept until owner-deleted, §8.8).
  *  RLS-scoped member SELECT; launcher-filtered server-side. */
@@ -1511,9 +1540,7 @@ export async function listMockDrafts(
 ): Promise<ServiceResult> {
   const { data, error } = await supabase
     .from('drafts')
-    .select(
-      'id, status, draft_type, created_at, started_at, completed_at, current_pick_number, current_round, total_rounds, config',
-    )
+    .select(MOCK_LIST_COLUMNS)
     .eq('league_id', leagueId)
     .eq('is_mock', true)
     .eq('config->mock->>launched_by' as 'id', userId)
@@ -1530,6 +1557,85 @@ export async function listMockDrafts(
       recaps: rows.filter((row) => row.status === 'complete'),
     } as unknown as Json,
   }
+}
+
+/**
+ * GET /api/mocks — EVERY mock this user launched, league-attached or not
+ * (MP task MP.5; spec v2.16 §8.8 "practice is the purpose, a league is
+ * optional context"). The `/app/mocks` practice home's read.
+ *
+ * **Deliberately not `listMockDrafts` widened to mean "all".** That function
+ * answers *"my practice drafts for THIS league"* and its whole shape is the
+ * league id; this answers *"my practice drafts"*, and there is no league in
+ * the question. Two questions, two endpoints (the rule `POST /api/mocks`
+ * already states from the launch side).
+ *
+ * Launcher-scoped BOTH ways, belt and suspenders. RLS already does it — the
+ * D234/095 ownership arm is `league_id IS NULL AND config->mock->>launched_by
+ * = auth.uid()` for a standalone mock, league membership for an attached one
+ * — and the `launched_by` filter below repeats it explicitly, because a
+ * league mock is visible to a MEMBER under RLS and only its launcher owns it
+ * (D110(1)). Without the explicit filter this endpoint would leak a
+ * league-mate's practice.
+ */
+export async function listMyMockDrafts(
+  supabase: Supabase,
+  userId: string,
+): Promise<ServiceResult> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select(MOCK_LIST_COLUMNS)
+    .eq('is_mock', true)
+    .eq('config->mock->>launched_by' as 'id', userId)
+    .in('status', ['live', 'paused', 'complete'])
+    .order('created_at', { ascending: false })
+  if (error) {
+    return { status: 500, body: { error: error.message } }
+  }
+  const rows = data ?? []
+  return {
+    status: 200,
+    body: {
+      active: rows.filter((row) => row.status === 'live' || row.status === 'paused'),
+      recaps: rows.filter((row) => row.status === 'complete'),
+    } as unknown as Json,
+  }
+}
+
+/**
+ * DELETE /api/mocks/[mockId] — abandon a standalone practice draft or delete
+ * its report (MP.5). The league sibling below scopes the id to a league
+ * before calling the RPC; this scopes it to "has no league", so a
+ * league-attached id answers the same no-leak 404 an unknown one does and
+ * cannot be deleted through the door that has no league to check.
+ *
+ * Every rule is still `delete_mock_draft`'s (095): launcher-only, draft
+ * first then the bot `teams` rows it minted, `league_id IS NULL` + owner on
+ * the seat sweep.
+ */
+export async function deleteStandaloneMockDraft(
+  supabase: Supabase,
+  draftId: string,
+): Promise<ServiceResult> {
+  if (!z.uuid().safeParse(draftId).success) {
+    return { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } }
+  }
+  const { data: row, error: probeError } = await supabase
+    .from('drafts')
+    .select('id')
+    .is('league_id', null)
+    .eq('id', draftId)
+    .eq('is_mock', true)
+    .maybeSingle()
+  if (probeError) {
+    return { status: 500, body: { error: probeError.message } }
+  }
+  if (!row) {
+    return { status: 404, body: { error: MOCK_NOT_FOUND_STANDALONE_MESSAGE } }
+  }
+  const { error } = await supabase.rpc('delete_mock_draft', { p_draft_id: draftId })
+  if (error) return mapDraftRpcError(error, MOCK_NOT_YOURS_MESSAGE)
+  return { status: 200, body: { deleted: true, draft_id: draftId } }
 }
 
 /** DELETE …/mock-drafts/[did] — launcher-only (the RPC refuses everyone

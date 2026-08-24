@@ -34,6 +34,7 @@ import {
   MOCK_CAP_NOTE,
   MOCK_EXPIRY_NOTE,
   mockProgressLabel,
+  mockSeatCount,
   mockSeatOptions,
 } from './mock-launcher-ops'
 
@@ -266,10 +267,20 @@ function MockList({
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5">
         {active.map((row) => (
-          <MockRow key={row.id} leagueId={leagueId} detail={detail} row={row} />
+          <MockRow
+            key={row.id}
+            leagueId={leagueId}
+            seatCount={mockSeatCount(row, detail.teams)}
+            row={row}
+          />
         ))}
         {recaps.map((row) => (
-          <MockRow key={row.id} leagueId={leagueId} detail={detail} row={row} />
+          <MockRow
+            key={row.id}
+            leagueId={leagueId}
+            seatCount={mockSeatCount(row, detail.teams)}
+            row={row}
+          />
         ))}
         {active.length > 0 && (
           <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>
@@ -279,25 +290,82 @@ function MockList({
   )
 }
 
-/** One resumable/recap row (§16.5.2). Exported for the league-home card —
- *  one row treatment, two mounts, no fork. */
+/**
+ * One resumable/recap row (§16.5.2). Exported and mounted THREE times now —
+ * the launcher below, the league-home card, and MP.5's practice home. One
+ * row treatment, no fork: MP.5 gave it props instead of a copy.
+ *
+ * **`leagueId: string | null` is the league-optional arm** (spec v2.16 §8.8
+ * — practice is the purpose, a league is optional context). A standalone
+ * mock has no league, so it gets neither league-scoped links nor the
+ * league-scoped delete door; both branch on this one discriminant, taken
+ * from `row.league_id` at the practice-home mount and from the surrounding
+ * league everywhere else.
+ *
+ * **The standalone links point at routes MP.6 and MP.8 build**, and until
+ * they land those two URLs 404. MP.6 moves the room to `/app/mocks/[mockId]`
+ * because `(room)/leagues/layout.tsx` hard-redirects every `/app/leagues` URL
+ * with the leagues flag off (D231(3a)/R470), and MP.8 owns
+ * `/app/mocks/[mockId]/report`. Pointing them anywhere else today would be a
+ * workaround MP.6 then has to find and undo — so the href stays, and
+ * **`openBlocked` disables the control instead (R515)**. A disclosure that
+ * lives only in a docblock is a disclosure the user never reads: a
+ * live-styled button that dead-ends on a 404 page (which cannot even route
+ * back to `/app/mocks`) is a lie the row is telling, and `disabled` + one
+ * line of state is the honest version. **MP.6/MP.8 remove the reason, not
+ * the link.**
+ *
+ * `openBlocked` also covers the OTHER way this row can offer a dead control:
+ * a league-attached mock listed on `/app/mocks` while the leagues flag is off
+ * (R519) — its link is real, and it silently redirects to `/app`. The caller
+ * decides, because only the caller knows which surface it is on; a flag read
+ * here would be a presentation gate buried in a shared row.
+ *
+ * `seatCount` is the progress line's denominator and is a NUMBER, not a
+ * `LeagueDetail`: the practice home has no league to hand over, and it reads
+ * the count off the row's own `config.mock.cpu_seats` instead
+ * (`mockSeatCount`). Null ⇒ the label states the position with no total.
+ */
 export function MockRow({
   leagueId,
-  detail,
+  seatCount,
   row,
+  openBlocked = null,
 }: {
-  leagueId: string
-  detail: LeagueDetail
+  leagueId: string | null
+  seatCount: number | null
   row: MockDraftSummary
+  /** Why *Rejoin* / *View report* cannot be used yet, or null when it can.
+   *  Disables the control and prints the reason on the row (R515/R519). */
+  openBlocked?: string | null
 }) {
   const deleteMock = useDeleteMockDraft(leagueId)
-  const teamCount = detail.teams.filter((t) => t.status !== 'retired').length
   const complete = row.status === 'complete'
+  // A finished LEAGUE mock has a "recap" (the shipped §16.1 surface); a
+  // finished STANDALONE one has a "report" (D230's table, MP.8's
+  // `/app/mocks/[mockId]/report`). One row, one voice: badge, button and
+  // delete label all follow the same word rather than mixing the two.
+  const finishedNoun = leagueId === null ? 'report' : 'recap'
+  const openHref =
+    leagueId === null
+      ? `/app/mocks/${row.id}`
+      : `/app/leagues/${leagueId}/draft?draft=${row.id}`
+  const reportHref =
+    leagueId === null
+      ? `/app/mocks/${row.id}/report`
+      : `/app/leagues/${leagueId}/draft/recap?draft=${row.id}`
+  const openLabel = complete
+    ? `View ${finishedNoun}`
+    : row.status === 'paused'
+      ? 'Resume'
+      : 'Rejoin'
 
   const handleDelete = () => {
     deleteMock.mutateAsync(row.id).catch((error: unknown) => {
       toast({
-        title: complete ? "Couldn't delete the recap" : "Couldn't delete the practice draft",
+        title: complete
+          ? `Couldn't delete the ${finishedNoun}`
+          : "Couldn't delete the practice draft",
         description:
           error instanceof LeagueActionError ? error.message : 'Something went wrong.',
         variant: 'destructive',
@@ -308,7 +376,13 @@ export function MockRow({
   return (
     <div className="flex flex-wrap items-center gap-2.5 rounded-sm border border-ink bg-white px-2.5 py-2">
       <Badge variant={complete ? 'stroke' : row.status === 'paused' ? 'yellow' : 'green'}>
-        {complete ? 'Recap' : row.status === 'paused' ? 'Paused' : 'Live'}
+        {complete
+          ? leagueId === null
+            ? 'Report'
+            : 'Recap'
+          : row.status === 'paused'
+            ? 'Paused'
+            : 'Live'}
       </Badge>
       <div className="mr-auto min-w-0">
         <p className="truncate text-[12px] font-extrabold leading-tight">Practice draft</p>
@@ -320,19 +394,29 @@ export function MockRow({
                   day: 'numeric',
                 })}`
               : 'Finished'
-            : mockProgressLabel(row, teamCount > 0 ? teamCount : null)}
+            : mockProgressLabel(row, seatCount)}
         </p>
+        {openBlocked && (
+          <p className="truncate text-[10px] font-semibold text-n-3" role="status">
+            {openBlocked}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {complete ? (
+        {openBlocked ? (
+          // Not styled as the primary action either: a disabled blue button
+          // still reads as "the thing to press". Stroke + disabled says
+          // "later", which is what is true.
+          <Button variant="stroke" size="sm" disabled>
+            {openLabel}
+          </Button>
+        ) : complete ? (
           <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}/draft/recap?draft=${row.id}`}>View recap</Link>
+            <Link href={reportHref}>{openLabel}</Link>
           </Button>
         ) : (
           <Button variant="blue" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}/draft?draft=${row.id}`}>
-              {row.status === 'paused' ? 'Resume' : 'Rejoin'}
-            </Link>
+            <Link href={openHref}>{openLabel}</Link>
           </Button>
         )}
         <Button
@@ -340,7 +424,7 @@ export function MockRow({
           size="sm"
           disabled={deleteMock.isPending}
           onClick={handleDelete}
-          aria-label={complete ? 'Delete recap' : 'Delete practice draft'}
+          aria-label={complete ? `Delete ${finishedNoun}` : 'Delete practice draft'}
         >
           {deleteMock.isPending ? 'Deleting…' : 'Delete'}
         </Button>
