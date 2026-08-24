@@ -208,12 +208,23 @@ values
    now(), now());
 
 -- Pool: the 20 best ADPs are ALL QBs (the shared-strategy discriminator —
--- raw ADP drafts QBs only); RBs sit at 101+.
+-- raw ADP drafts QBs only); RBs sit at 0.101+.
+--
+-- FIXTURE ADP IS FRACTIONAL, DELIBERATELY (the R286 lesson / ledger F60/F110;
+-- the same band 035 has carried since M3). Every value below is the former
+-- INTEGER scale (QBs 1…20, RBs 101…112) divided by 1000, so it lands in
+-- (0, 1) — strictly below the real pool's global minimum ADP — while the
+-- order among fixtures, and therefore the "20 best ADPs are all QBs"
+-- discriminator, is unchanged. `draft_autopick_resolve` reads adp ONLY as an
+-- ordering key (`ORDER BY pl.adp NULLS LAST, pl.id`, 086:692/742), so a
+-- fixture now wins BY VALUE and this suite is green whether `players` is
+-- empty after a reset (F94) or holds a seeded 1,000-row pool (F110).
+-- Do NOT restore integers.
 insert into players (id, full_name, position, adp)
-select 'mk-qb' || lpad(i::text, 2, '0'), 'MK QB ' || lpad(i::text, 2, '0'), 'QB', i
+select 'mk-qb' || lpad(i::text, 2, '0'), 'MK QB ' || lpad(i::text, 2, '0'), 'QB', i / 1000.0
 from generate_series(1, 20) i;
 insert into players (id, full_name, position, adp)
-select 'mk-rb' || lpad(i::text, 2, '0'), 'MK RB ' || lpad(i::text, 2, '0'), 'RB', 100 + i
+select 'mk-rb' || lpad(i::text, 2, '0'), 'MK RB ' || lpad(i::text, 2, '0'), 'RB', (100 + i) / 1000.0
 from generate_series(1, 12) i;
 
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings) values
