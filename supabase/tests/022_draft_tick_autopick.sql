@@ -162,7 +162,10 @@ select ok(
 --                NULL so the tick never claims it; resolve() called direct)
 --      LC b3…c1  greedy world (1-QB roster, 7 rounds; fabricated live
 --                draft e3…c1; seeded picks + queues per seat)
---      LD b3…d1  floor world (te-only roster, 1 round; zero TEs exist)
+--      LD b3…d1  floor world (one-slot roster, 1 round; the slot's ONLY
+--                eligible position is a token no player pool can carry, so
+--                "nothing fits the forced need" is true BY CONSTRUCTION —
+--                see the note at the roster_settings write, ledger F110)
 --      LB b3…b1  grace world (REAL draft_start; deadline-rewind harness)
 --      LE b3…e1  D94 auto-start (settings blob only, NO drafts row;
 --                instant future at fixture time, flipped past in §G)
@@ -195,21 +198,30 @@ values
 
 -- Players: RB/WR/QB/K plus DEF-position defenses (the research-surface
 -- spelling — the DST normalization fixture) and one NULL-adp row.
+--
+-- FIXTURE ADP IS FRACTIONAL, DELIBERATELY (the R286 lesson / ledger F60/F110;
+-- the same band 035 has carried since M3). Every value below is the former
+-- INTEGER scale divided by 1000, so it lands in (0, 1) — strictly below the
+-- real pool's global minimum ADP — while the order among fixtures is
+-- unchanged. `draft_autopick_resolve` reads adp ONLY as an ordering key
+-- (`ORDER BY pl.adp NULLS LAST, pl.id`, 086:692/742), so a fixture now wins
+-- BY VALUE and this suite is green whether `players` is empty after a reset
+-- (F94) or holds a seeded 1,000-row pool (F110). Do NOT restore integers.
 insert into players (id, full_name, position, adp)
-select 'tk-rb' || lpad(i::text, 2, '0'), 'TK RB ' || lpad(i::text, 2, '0'), 'RB', i
+select 'tk-rb' || lpad(i::text, 2, '0'), 'TK RB ' || lpad(i::text, 2, '0'), 'RB', i / 1000.0
 from generate_series(1, 17) i;
 insert into players (id, full_name, position, adp)
-select 'tk-wr' || lpad(i::text, 2, '0'), 'TK WR ' || lpad(i::text, 2, '0'), 'WR', 30 + i
+select 'tk-wr' || lpad(i::text, 2, '0'), 'TK WR ' || lpad(i::text, 2, '0'), 'WR', (30 + i) / 1000.0
 from generate_series(1, 10) i;
 insert into players (id, full_name, position, adp)
-select 'tk-qb' || lpad(i::text, 2, '0'), 'TK QB ' || lpad(i::text, 2, '0'), 'QB', 50 + i
+select 'tk-qb' || lpad(i::text, 2, '0'), 'TK QB ' || lpad(i::text, 2, '0'), 'QB', (50 + i) / 1000.0
 from generate_series(1, 7) i;
 insert into players (id, full_name, position, adp) values
-  ('tk-k01', 'TK K 01', 'K', 151),
-  ('tk-k02', 'TK K 02', 'K', 152),
-  ('tk-k03', 'TK K 03', 'K', 153),
-  ('tk-dst01', 'TK DST 01', 'DEF', 161),
-  ('tk-dst02', 'TK DST 02', 'DEF', 162),
+  ('tk-k01', 'TK K 01', 'K', 0.151),
+  ('tk-k02', 'TK K 02', 'K', 0.152),
+  ('tk-k03', 'TK K 03', 'K', 0.153),
+  ('tk-dst01', 'TK DST 01', 'DEF', 0.161),
+  ('tk-dst02', 'TK DST 02', 'DEF', 0.162),
   ('tk-nullap', 'TK NULL ADP', 'RB', null);
 
 -- Leagues.
@@ -262,9 +274,20 @@ set roster_settings = '{"starting_slots": [
     "bench": 2, "ir_slots": [], "swap_spots": 0}'
 where id = 'b3000000-0000-4000-8000-0000000000c1';
 -- LD roster: te-only, 1 round (the floor world — zero TEs exist in the pool).
+-- LD, the FLOOR world. The slot's single eligible position is the fabricated
+-- token 'NOPOS', NOT 'TE' (ledger F110). What step h needs is a forced need
+-- that NOTHING in the candidate set can fill; `eligible: ["TE"]` only
+-- delivered that while `players` happened to hold zero TEs, which is a
+-- statement about the WHOLE table and not about this fixture — on a seeded
+-- dev pool (231 TEs, 94 with an ADP) a real TE fits the need, step h is never
+-- reached, and the pin below went red. `draft_autopick_resolve` builds
+-- v_need straight from this array and tests membership with
+-- `v_row.pos = ANY(v_need)` (086:631/706) — no slot vocabulary is validated
+-- and no other branch keys off 'TE' — so an unmatchable token reaches step h
+-- by exactly the same path, in an empty pool and a full one alike.
 update leagues
 set roster_settings = '{"starting_slots": [
-      {"key": "te", "label": "TE", "eligible": ["TE"], "count": 1}],
+      {"key": "floor", "label": "FLOOR", "eligible": ["NOPOS"], "count": 1}],
     "bench": 0, "ir_slots": [], "swap_spots": 0}'
 where id = 'b3000000-0000-4000-8000-0000000000d1';
 
@@ -624,7 +647,7 @@ select is(
   public.draft_autopick_resolve('e3000000-0000-4000-8000-0000000000d1',
                                 'c4000000-0000-4000-8000-00d100000001'),
   'tk-rb01',
-  'the FLOOR (greedy step h): a forced TE need with ZERO TEs in the pool → lowest-ADP available, filters dropped — the draft never stalls (§22.3)');
+  'the FLOOR (greedy step h): a forced need NO player in the pool can fill → lowest-ADP available, filters dropped — the draft never stalls (§22.3)');
 
 -- ---------------------------------------------------------------------------
 -- F. The grace world (LB): REAL draft_start + the D100 deadline-rewind

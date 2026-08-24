@@ -149,14 +149,24 @@ values
    '{"provider": "email", "providers": ["email"]}', '{"username": "lr_outsider_99"}',
    now(), now());
 
--- Pool: 20 QBs at ADP 1..20 (lr-p001..020) + 20 RBs at ADP 101..120
--- (lr-p021..040) — the E48 autopick lands lr-p003 (lowest available ADP,
--- fits the open QB slot) deterministically.
+-- Pool: 20 QBs at ADP 0.001..0.020 (lr-p001..020) + 20 RBs at ADP
+-- 0.101..0.120 (lr-p021..040) — the E48 autopick lands lr-p003 (lowest
+-- available ADP, fits the open QB slot) deterministically.
+--
+-- FIXTURE ADP IS FRACTIONAL, DELIBERATELY (the R286 lesson / ledger F60/F110;
+-- the same band 035 has carried since M3). Every value below is the former
+-- INTEGER scale (QBs 1…20, RBs 101…120) divided by 1000, so it lands in
+-- (0, 1) — strictly below the real pool's global minimum ADP — while the
+-- order among fixtures is unchanged, and so is the lr-p003 pin.
+-- `draft_autopick_resolve` reads adp ONLY as an ordering key (`ORDER BY
+-- pl.adp NULLS LAST, pl.id`, 086:692/742), so a fixture now wins BY VALUE and
+-- this suite is green whether `players` is empty after a reset (F94) or holds
+-- a seeded 1,000-row pool (F110). Do NOT restore integers.
 insert into players (id, full_name, position, adp)
-select 'lr-p' || lpad(i::text, 3, '0'), 'LR QB ' || lpad(i::text, 3, '0'), 'QB', i
+select 'lr-p' || lpad(i::text, 3, '0'), 'LR QB ' || lpad(i::text, 3, '0'), 'QB', i / 1000.0
 from generate_series(1, 20) i;
 insert into players (id, full_name, position, adp)
-select 'lr-p' || lpad(i::text, 3, '0'), 'LR RB ' || lpad(i::text, 3, '0'), 'RB', 80 + i
+select 'lr-p' || lpad(i::text, 3, '0'), 'LR RB ' || lpad(i::text, 3, '0'), 'RB', (80 + i) / 1000.0
 from generate_series(21, 40) i;
 
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings) values
