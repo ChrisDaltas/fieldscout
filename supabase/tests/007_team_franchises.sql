@@ -30,7 +30,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(65);
+select plan(67);
 
 -- ---------------------------------------------------------------------------
 -- A. teams shape: §12.22 franchise columns + D35a list_id nullability.
@@ -56,12 +56,17 @@ select col_is_null('public', 'teams', 'list_id',
 -- B. teams RLS surface post-swap (D35b).
 -- ---------------------------------------------------------------------------
 select policies_are('public', 'teams',
-  array['Teams are viewable by everyone', 'Users can manage own standalone teams'],
-  'post-swap teams policy list — 001''s unscoped "Users can manage own teams" is gone');
+  array['Teams are viewable by everyone', 'Users can delete own standalone teams',
+        'Users can insert own standalone teams', 'Users can update own standalone teams'],
+  'post-swap teams policy list — 001''s unscoped "Users can manage own teams" is gone, and 053''s ONE `FOR ALL` policy is now THREE (095/MP.3, D227(4)): the FOR ALL form could not narrow DELETE alone, and DELETE is the only verb whose meaning changed');
 select policy_cmd_is('public', 'teams', 'Teams are viewable by everyone', 'SELECT',
   'world-readable SELECT stays (§17 public league summary)');
-select policy_cmd_is('public', 'teams', 'Users can manage own standalone teams', 'ALL',
-  'owner-manage policy is FOR ALL (scoped league_id IS NULL)');
+select policy_cmd_is('public', 'teams', 'Users can insert own standalone teams', 'INSERT',
+  'owner-manage INSERT keeps 053''s predicate exactly (scoped league_id IS NULL)');
+select policy_cmd_is('public', 'teams', 'Users can update own standalone teams', 'UPDATE',
+  '…and UPDATE too — renaming your own standalone team, or your own CPU seat, is cosmetic and stays permitted (D227(4))');
+select policy_cmd_is('public', 'teams', 'Users can delete own standalone teams', 'DELETE',
+  '…and DELETE is its own policy now, because it is the one that had to be NARROWED: deleting a seat a live mock is drafting into wedges the draft with no in-product recovery (R473). 043 §F pins the refusal');
 
 -- ---------------------------------------------------------------------------
 -- C. team_managers shape: §12.22 column-for-column.

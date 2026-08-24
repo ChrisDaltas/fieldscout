@@ -164,7 +164,7 @@ select is(
      and policyname = 'members read draft topics'),
   $g$((( SELECT realtime.topic() AS topic) ~~ 'draft:%'::text) AND (EXISTS ( SELECT 1
    FROM drafts d
-  WHERE ((('draft:'::text || (d.id)::text) = ( SELECT realtime.topic() AS topic)) AND is_league_member(d.league_id)))))$g$,
+  WHERE ((('draft:'::text || (d.id)::text) = ( SELECT realtime.topic() AS topic)) AND (is_league_member(d.league_id) OR is_standalone_mock_launcher(d.id))))))$g$,
   'draft READ policy definition golden pin — the drafts.league_id lookup in the R117 exact-grammar shape (no cast)');
 select is(
   (select with_check from pg_policies
@@ -178,7 +178,7 @@ select is(
      and policyname = 'members track presence on draft topics'),
   $g$((extension = 'presence'::text) AND (( SELECT realtime.topic() AS topic) ~~ 'draft:%'::text) AND (EXISTS ( SELECT 1
    FROM drafts d
-  WHERE ((('draft:'::text || (d.id)::text) = ( SELECT realtime.topic() AS topic)) AND is_league_member(d.league_id)))))$g$,
+  WHERE ((('draft:'::text || (d.id)::text) = ( SELECT realtime.topic() AS topic)) AND (is_league_member(d.league_id) OR is_standalone_mock_launcher(d.id))))))$g$,
   'draft WRITE policy golden pin — presence ONLY');
 select ok(
   (select count(*) = 4 and bool_and(roles::text[] = array['authenticated'])

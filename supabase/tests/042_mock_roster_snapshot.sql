@@ -315,15 +315,15 @@ select ok(
     where n.nspname = 'public' and p.proname = 'create_mock_draft'),
   'FORM SURVIVES THE REPLACE (§4.1): cpu_need STABLE + INVOKER + search_path='''' (038:145''s shape), autopick search_path='''', create_mock_draft SECURITY DEFINER + search_path=''''');
 select ok(
-  not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.draft_autopick_resolve(uuid, uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_autopick_resolve(uuid, uuid)', 'EXECUTE'),
   '…and so do the GRANTS (D18→D23): create_mock_draft REVOKEd from anon only, draft_autopick_resolve from anon AND authenticated — the server picks, a client never asks');
 select ok(
-  has_function_privilege('authenticated', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE')
-  and has_function_privilege('anon', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE'),
-  'RECORDED, NOT ENDORSED (R497): draft_mock_cpu_need is EXECUTE-able by anon AND authenticated — 089 shipped it with no REVOKE and 094 preserves that exactly, because changing a grant is not a settings-reader fix. It is a STABLE read-only pricing helper, so the exposure is a value not a write; the question of whether it should be revoked goes to MP.3 (F112). This pin exists so the state is a measured fact rather than an assumption, and so a future REVOKE reddens here and gets read');
+  not has_function_privilege('authenticated', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE'),
+  'F112 CLOSED (095/MP.3): draft_mock_cpu_need is REVOKEd from anon AND authenticated. R497 recorded the OPEN grant here on purpose — "so a future REVOKE reddens here and gets read" — and this is that flip, read and taken rather than discovered by an outage. No client path called it (measured: no `.rpc(''draft_mock_cpu_need''` in src/), so D18→D23 applies with no carve-out and it joins draft_autopick_resolve''s posture');
 
 -- ---------------------------------------------------------------------------
 -- F. THE BOUNDARY (D146), and it is computed from the SNAPSHOT. Greedy step d
