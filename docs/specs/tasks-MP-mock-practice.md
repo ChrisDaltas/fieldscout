@@ -122,7 +122,7 @@ WHERE n.nspname='public' AND p.proname ~ '^(draft|create_mock|delete_mock|mock_d
 
 - **`src/lib/feature-flags.ts`** states its own doctrine: *"One flag per surface, deliberately"* (`:27–31`) and *"a flag with one branch is a lie about what ships"* (`:51–54`); `enabled()` at `:13–17`; each flag must read its env var **literally** (`:9–11`). **`featureFlags.leagues`' docblock is stale** — *"mock-data UI, no backend yet"* (`:20`) — filed as **F103**.
 - **Every `/app/leagues` URL is hard-redirected when the leagues flag is off, and the mock room is one of them.** `src/app/app/(room)/leagues/layout.tsx:18` is `if (!featureFlags.leagues) redirect('/app')`; its docblock (`:5–12`) says *"every /app/leagues route (index, workspace, live draft) is unreachable — even by direct URL"*. `find 'src/app/app/(room)' -type f` → **three** files: `layout.tsx`, `leagues/layout.tsx` (the gate), `leagues/[leagueId]/draft/page.tsx` (the room). **Pinned at `src/lib/route-groups.test.ts:223–232`.**
-- **So `featureFlags.mockDrafts` cannot reach past it** — different flag, different layout. **MP.6 gives the mock room a route of its own, keyed on the mock's id.** Under the new shape this is no longer a rescue of a container's URL; it is simply where a standalone thing belongs.
+- **So `featureFlags.mockDrafts` cannot reach past it** — different flag, different layout. **MP.6 gives the mock room a route of its own, keyed on the mock's id.** Under the new shape this is no longer a rescue of a container's URL; it is simply where a standalone thing belongs. **AND THE ROUTE IS ONLY THE FIRST OF THREE LAYERS — this section, as authored, is the one that under-read the task** (**Q25** / **D243**): the component's data spine and the whole `/api/leagues/[id]/draft/*` write path each carry their own copy of the coupling. See §5's MP.6 banner.
 - **Measured: no conflict with PR #180.** `git diff main...pr180 --stat` → **five files, all under `docs/`**. DR2's PR touches **no code at all**.
 
 ### 1.8 The base scoring templates exist, and they are exactly what the ruling names
@@ -329,7 +329,9 @@ Seven more join them for this lane:
 
 Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Migration and pgTAP numbers are **expected** — confirm the real next-free at task time (§1.10).
 
-**Eleven tasks. Three are server** (MP.2 the config fix, MP.3 the standalone mock, MP.4 the settings), **one is an investigation** (MP.1), **six are surfaces** (MP.5–MP.10), **one is the closing sweep** (MP.11). **MP.1 comes first and decides the shape the rest is built on.**
+**THIRTEEN tasks — MP.6 SPLIT IN THREE at build time (2026-08-24; PROGRESS **D243**, answering **Q25**).** **Four are server** (MP.2 the config fix, MP.3 the standalone mock, MP.4 the settings, **MP.6b the standalone action surface**), **one is an investigation** (MP.1), **seven are surfaces** (MP.5, **MP.6**, **MP.6c**, MP.7–MP.10), **one is the closing sweep** (MP.11). **MP.1 comes first and decides the shape the rest is built on.**
+
+> **WHY MP.6 IS THREE TASKS, AND IT IS THIS DOCUMENT'S OWN ERROR BEING CORRECTED.** MP.6 was written as a route move and priced off the route wrapper — *"20 lines and mounts `DraftRoom`"*. The MP.6 Builder measured it and halted (**Q25**, blocker **B6**, `halt/MP.6-standalone-room-Q25`): the wrapper is **41 lines**, and the component it mounts declares **`leagueId: string`, not optional** (`draft-room.tsx:82`), which `/app/mocks/[mockId]` has nothing to pass. **The room is league-coupled at THREE layers and only the first is a route** — the route gate; the component's data spine (`useLeague` → `LeagueDetail`, **42 `detail` / 48 `leagueId`** lines, `!detail.data` ⇒ an error card at `:271–283`); and **the entire write path**, where **17 service verbs** funnel through one `resolveDraftForAction` (`draft-service.ts:328–350`) filtering `.eq('league_id', leagueId)`. **Live-probed in a rolled-back transaction:** a minted standalone mock answers **0 rows** to that query against every league in the schema and **1 row** by draft id alone — so pick / bid / nominate / pause / resume / queue **all 404** in a standalone room. **Nothing in this document owned layers 2–3**, yet MP.7(4) (*"the room loads"*) and MP.11(1) (*"Home → launch → **draft** → complete"*) both depend on them — the **R51** shape. **The generalisable half, and it is D231(3a) one level DOWN:** *the fix for a route guard was itself scoped as a route matter, and the component layer and the action layer each carry their own copy of the coupling that the route layer's fix cannot see.* **Independence is a property of every layer a request passes through, and has to be measured at each one rather than argued from the topmost.**
 
 ---
 
@@ -402,22 +404,55 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 
 ---
 
-### MP.6 — The mock room leaves `/app/leagues`
+### MP.6 — The mock room leaves `/app/leagues` *(LAYER 1: the route, and only the route)*
 
-> Read **§1.7**, **D231(3a)**, **§4 rule 15**. **Depends on MP.5. Prerequisite of MP.7's leagues-off pin.**
+> Read **§1.7**, **D231(3a)**, **§4 rule 15**, **D243**. **Depends on MP.5. Prerequisite of MP.6b.**
+> **SCOPE, STATED SO IT CANNOT DRIFT: this task adds a route and changes no component.** `DraftRoom` is not touched, not widened and not forked. **The room still mounts league-side only when this lands, and the PR says so plainly** — the new URL exists, the gate is pinned, and the `/app/mocks` **Resume** stays **disabled** on `openBlockedReason`'s room half until **MP.6c**. A Builder who finds themselves editing `draft-room.tsx` has left this task.
 
 1. **The defect:** `(room)/leagues/layout.tsx:18` hard-redirects **every** `/app/leagues` URL when the leagues flag is off — the room included, by design and by its own docblock — and the mock room is that route (`mock-launcher-entry.ts:18`). **`featureFlags.mockDrafts` cannot reach past it.**
-2. **Give the room its own route keyed on the MOCK's id:** `/app/mocks/[mockId]` beside `/app/mocks` (MP.5) and the report (MP.8). Gated on **`mockDrafts`**, and nothing else.
-3. **Re-point, do not fork:** `mockLauncherHref` (`mock-launcher-entry.ts:13–19`), `room-entry.test.ts`, `room-exits.test.ts`, and `route-groups.test.ts:223–232`, which gains the mock room's own gate assertion beside the two leagues ones. **A second room component is the LV.7 failure pattern** — this is a route move around the same component.
-4. **§4 rule 15 is NOT engaged and this task says so out loud.** DR2 owns the room's **layout**; this moves the **route wrapper** (`(room)/leagues/[leagueId]/draft/page.tsx` is 20 lines and mounts `DraftRoom`). **Measured: PR #180 touches no code at all** (`git diff main...pr180 --stat` → five files, all `docs/`). If the *component* needs restructuring to serve two routes, **that** is the DR2 question.
-5. **Pins:** with `leagues` **off** and `mockDrafts` **on**, the mock room renders **and** the leagues room route still redirects — both, in one test. **Show the new gate assertion RED** by pointing it at the un-gated route first.
+2. **Give the room its own route keyed on the MOCK's id:** `/app/mocks/[mockId]` beside `/app/mocks` (MP.5) and the report (MP.8). Gated on **`mockDrafts`**, and nothing else — the gate is a `(room)/mocks/layout.tsx` copy of MP.5's `(shell)/mocks/layout.tsx`, because the room needs the **chrome-free frame**, not the shell.
+3. **Re-point, do not fork:** `mockLauncherHref` (`mock-launcher-entry.ts:13–19`), `room-entry.test.ts`, `room-exits.test.ts`, and `route-groups.test.ts:223–232`, which gains the mock room's own gate assertion beside the two leagues ones, **and declares `/app/mocks/[mockId]` in `APP_URLS_ADDED_SINCE_GOLDEN`** with the note that file's own comment already forecasts. **A second room component is the LV.7 failure pattern.**
+4. **§4 rule 15 is NOT engaged and this task says so out loud.** DR2 owns the room's **layout**; this moves the **route wrapper**. **Re-measured 2026-08-24:** `git diff main...origin/docs/DR2-draft-room-v2 --stat` → **five files, all docs** — PR #180 touches no code at all. **And none of the three layers is a region, a resized zone or a breakpoint**, so DR2 is not the addressee for MP.6c either: that is a **source** question, governed by D229(5)/§4 rule 12.
+5. **Pins:** with `leagues` **off** and `mockDrafts` **on**, the mock room's route is reachable **and** the leagues room route still redirects — both, in one test. **Show the new gate assertion RED** by pointing it at the un-gated route first.
 6. **Old URLs redirect, never 404** — `?draft=<id>` room links exist in the wild (`mock-draft-launcher.tsx:333`).
+
+---
+
+### MP.6b — The standalone action surface: seventeen verbs, ONE resolver *(LAYER 3 — server)*
+
+> Read **D243**, **Q25**'s measurement, **D226(3)**, **D233(5)**, **MS.2**'s launcher-gate predicate; `tasks-M3` §4 rules 1–8; **§4 rules 10–13**. **Depends on MP.6. Prerequisite of MP.6c.**
+> **Built BEFORE the spine (3 before 2), and the reason is a rule rather than a preference:** MP.6c's acceptance is a **browser drive** — *watch bots act, pause and resume, the chat posts render* — and **none of it can be performed until these verbs work league-free.** Built the other way round MP.6c would have to claim its states from intent, which **§4 rule 9 forbids**.
+
+1. **The defect, live-probed rather than argued** (Q25): every room action posts to `/api/leagues/[id]/draft/*`, and **all 17 service verbs funnel through one `resolveDraftForAction`** (`draft-service.ts:328–350`) whose only draft lookup is `.eq('league_id', leagueId)`. A `league_id = <uuid>` predicate **can never match NULL**, and there is no `[id]` the client could supply that changes it. **The RPCs themselves already work** (095 dropped the four `NOT NULL`s) and **`resolveActingSeat` already carries its league-free mock arm** (`:379–386`). **The single server-side obstruction is that one `.eq(…)` and the URL shape around it.**
+2. **THE SCOPE GUARD, AND IT IS THE POINT OF THE TASK: the write path stays ONE resolver.** `resolveDraftForAction` gains a **standalone arm** — a mock id resolving on `league_id IS NULL` plus the launcher predicate — and **seventeen verbs inherit it**. **A second resolver, or a per-verb branch, is the fork this lane keeps refusing** (the LV.7 / D230(3) pattern). **Reuse MS.2's launcher-gate predicate — `config->'mock'->>'launched_by' = auth.uid()::text` — do not invent a second one**: that is D226(3)'s *"one ownership predicate, not a membership graph"*, and MP.1 was already told to reuse it (§7).
+3. **The URL shape follows the house rule the lane has now stated three times** — *"Two questions, two endpoints — deliberately NOT the league route widened"* (`api/mocks/route.ts:13–17`; `[mockId]/route.ts:15–19`). **The standalone verbs live under `/api/mocks/[mockId]/…`** as thin wrappers over the same service functions. **Whichever way the shared code is factored, item 2's one-resolver constraint binds** — and **MP.8's report route and every future standalone verb inherit this decision**, so the PR states it as a decision rather than a detail.
+4. **The verbs a standalone practice room actually needs**, from the room's own eight league-keyed hook sites (`draft-room.tsx` `:196/:550/:705/:727/:778/:803/:804/:841`): **pick · nominate · bid · pause · resume · queue · queue-from-list**, plus `useDeleteMockDraft`, whose standalone door **already exists** (`DELETE /api/mocks/[mockId]`, MP.5) and needs only the hook arm. **The §8.7 commissioner verbs are NOT in scope** — they refuse mocks today and that is **MS**'s lane (§7).
+5. **THE REVIEW QUESTION, NAMED, BECAUSE IT IS D233(5) ONE LAYER UP:** a resolver that reads *"this league's draft OR this launcher's standalone mock"* must be **provably no more permissive for a row that HAS a league.** MP.1 answered exactly this shape at the RLS layer and showed the deliberate break RED before reverting it (**D234**); **this task owes the same treatment at the service layer.** **If it cannot be shown, the answer changes and the task says so.**
+6. **§4 rule 11 in full force:** no diff whose effect is visible on a real league's draft. The league routes keep their shipped behaviour and their pins pass untouched.
+7. **§4 rule 13:** no `featureFlags.*` read anywhere in this task — these are server-authoritative surfaces, and the flag gates the UI that calls them.
+
+---
+
+### MP.6c — The league-optional room *(LAYER 2 — the spine, the hooks, and the exits)*
+
+> Read **D243**, **Q25**, **§4 rules 12/14/15/16**, **D229(5)**; ledger rows **F114**, **F117**, **F119**. **Depends on MP.6b. Prerequisite of MP.7's leagues-off pin.** **Discharges F114, F117, and F119's ROOM half.**
+
+1. **`DraftRoom` becomes league-optional — ONE component, widened, never forked.** Today: `leagueId: string` (`:82`), `useLeague(leagueId)` (`:196`), `!detail.data` ⇒ an error card (`:271–283`), `DraftRoomLive`'s `detail: LeagueDetail` required (`:490`), **42 `detail` / 48 `leagueId`** lines. **A second room component is the LV.7 failure pattern** and this task is where that temptation is strongest.
+2. **THE SHAPE THAT KEEPS §4 RULE 12 TRUE: the room's non-draft context arrives as an OBJECT, and where it comes from is the mount's business.** A league mounts it from `useLeague`; a standalone mock fills the same object from the draft itself — the seats from the mock's own `teams` rows, the roster from **MP.2's `config->'roster'`**, the scoring from **`config->>'scoring_system_id'`**. **This is D229(5)'s deferral seam applied one layer out, and the deferred league-attached mock is then a third source rather than a rewrite.** A Builder who hard-codes either source inside the room has broken the rule.
+3. **The room's own guard needs its mock arm.** `draft-room.tsx:391` is `if (!draft || draft.league_id !== leagueId)` — a NULL-league draft can never satisfy it. **R470's class:** keyed on the mock id on the standalone arm, and the honest no-leak state is unchanged (see item 6).
+4. **F114 — the chat pane's league-keyed READ.** `useDraftChat` (`use-draft-chat.ts:44–50`) is `enabled: Boolean(leagueId && draftId)` and filters `.eq('league_id', leagueId)`, so on a standalone mock **the query never runs** and the engine's own **D97 system posts** — pause, resume, the clock notices — are invisible. **The rows exist and are readable** (095 + pgTAP 043 §C): this is a query that does not ask for them. **Fix shape: key the read on `context = 'draft:' || draftId`** — the column every writer stamps and the one the RLS arm itself uses — and drop `leagueId` from the `enabled` guard. **The SEND side for standalone stays as D226(2) left it: bots do not chat; what must render is the engine's system posts.**
+5. **F117 — the board's scoring reader.** `useLeagueScoringFamily(leagueId)` (`use-draft-pool.ts:207–231`) selects from `leagues` and is `enabled: Boolean(leagueId)`, so the two projection columns render "—" on a standalone mock. **Fix shape: a second source** — resolve `scoring_systems.rules` from `drafts.config->>'scoring_system_id'` when there is no league, which is **the hook's own existing fallback branch reached from a different id**.
+6. **The exits, and they are the R340 invariant restated for a room with no league.** `draft-room.tsx` carries **7** `Back to league` links; `room-exits.test.ts` pins **≥4** surviving `PageHeader` deletion, plus the takeover and skeleton states by name. **On the standalone arm every one of them goes to `/app/mocks`, never to a league** — and `room-exits.test.ts`'s five-link inventory pin (MP.5/F119) **moves by measurement here**, exactly as its own comment says it should: *"If a later change makes either surface league-optional, this count moves and the decision above gets re-taken."*
+7. **F119's ROOM half clears HERE, not in MP.6** — remove the room reason from `openBlockedReason` (`mocks-home.tsx`), **never by editing a link**. **View report stays blocked; that reason is MP.8's to remove.** **Clearing it any earlier ships a live blue *Resume* into a room that cannot pick — R515 verbatim, one task later**, and that is why the split puts it last.
+8. **The launch-facing states (§4 rule 14), each named so none is inferred:** the room **loading**; a **completed** standalone mock (what renders until MP.8 exists — state it plainly rather than borrowing the league-shaped recap redirect); a **dead mock id** (the honest not-found with a route back to `/app/mocks`, never a 404 dead end — R515); and **someone else's mock id**, where the RLS answer is empty and **the page must say not-found and never leak that the row exists.**
+9. **The proof is a browser drive, not an assertion (§4 rule 9):** with `leagues` **OFF** and `mockDrafts` **ON**, launch a standalone **snake** and a standalone **auction** from `/app/mocks`, land in the room via the now-live **Resume**, **watch the bots act** (the tick claims it — MP.3's work), **pause and resume and see the system posts render** (F114's proof), and drive one to completion or force the states. **Screenshots in the PR.** Then re-drive a **league** room with `leagues` **ON** to prove nothing league-side moved (§4 rule 11).
+10. **§4 rule 15:** this is the room's **data spine**, not its layout. **If a state needs a new region, a resized zone or a new breakpoint, STOP and flag it** — *that* is the DR2 question.
 
 ---
 
 ### MP.7 — Launch a mock from Home
 
-> Read **§3.4** (entry point one), **D229**, **D231**; **§1.5**. **Depends on MP.4** (there is nothing to launch without it) **and MP.6** (the room must be reachable with leagues off).
+> Read **§3.4** (entry point one), **D229**, **D231**; **§1.5**. **Depends on MP.4** (there is nothing to launch without it) **and MP.6c** (its item 4 pin needs a room that RENDERS and ACTS with leagues off — MP.6 alone gives it only a URL; D243).
 
 1. **The affordance sits in the existing Home structure** (§4 rule 15) — the natural place is `HomeQuickActions`' chip row (`home-quick-actions.tsx:47–90`), which already renders one un-gated chip beside two `leagues`-gated ones. **A new hub card is a layout decision and belongs to DR2/the Figma.**
 2. **It opens the launch dialog** — MP.4's settings form — and lands the user in the room.
@@ -429,7 +464,7 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 
 ### MP.8 — The Mock Draft Report
 
-> Read **§3.5**, **D230**; **§1.6**. **Depends on MP.5** for its home.
+> Read **§3.5**, **D230**; **§1.6**. **Depends on MP.5** for its home — and **SEQUENCED AFTER the MP.6 chain even though it is takeable earlier (D243(4))**: a standalone mock cannot **complete** until the room works, so a report built first would be verified only against league-attached mocks — **exactly the half the lane exists to escape.** The report lands against the real thing.
 
 1. **`/app/mocks/[mockId]/report`** renders the report for any mock the viewer launched. An unknown, foreign or unfinished id lands on one honest empty state — the existing recap page's no-leak posture (`recap/page.tsx:15–21`).
 2. **A real table with column headers. Two column sets** (D230(2)): auction = *player · position · team · **price** · **nomination #*** plus per-team spend; snake/linear = *player · position · team · **round** · **pick #***. **Never one table with blank columns.**
@@ -553,8 +588,10 @@ MP.1 (the storage investigation — decides the shape)          ← lane opener,
   │           └─→ MP.4 (settings from the base templates)
   │                 └─→ MP.7 (launch from Home)  ←─── also needs MP.6
 MP.5 (the mockDrafts flag + /app/mocks + the user-scoped list) ← independent; unblocks four surfaces
-  ├─→ MP.6 (the room leaves /app/leagues)  ────────────────────┘
-  ├─→ MP.8 (the report: one table, two column sets)
+  ├─→ MP.6  (LAYER 1 — the room's route leaves /app/leagues)
+  │     └─→ MP.6b (LAYER 3 — the standalone action surface: ONE resolver)
+  │           └─→ MP.6c (LAYER 2 — league-optional spine; F114/F117/F119) ──┘
+  ├─→ MP.8 (the report: one table, two column sets)   ← AFTER the 6-chain
   └─→ MP.9 (Mock Drafts under More… — BOTH lists + the pin)
                           MP.10 (launch-facing states + polish)  ← after the surfaces exist
                           MP.11 (closing sweep)                  ← last, by definition
@@ -562,9 +599,11 @@ MP.5 (the mockDrafts flag + /app/mocks + the user-scoped list) ← independent; 
 
 - **`MP.1` is first and nothing skips it.** It is an investigation with no behaviour change, and every server task is built on its answer.
 - **`MP.2` is worth taking even if MP.1's answer surprises everyone** — the roster-shape read is a live D95 violation for the mocks that exist today, independent of the new shape.
-- **`MP.5` may start immediately** and in parallel with the server chain; it unblocks MP.6, MP.8 and MP.9.
+- **`MP.5` may start immediately** and in parallel with the server chain; it unblocks the `MP.6` chain, MP.8 and MP.9.
 - **The migration lane is serialized** (delivery plan §2.2): `MP.2` → `MP.3`, each `CREATE OR REPLACE` authored against the chain HEAD's **file text** (D137/CLAUDE.md).
-- **One hard ordering constraint: `MP.6` before `MP.7`'s leagues-off pin.** Until the mock room has a route outside `/app/leagues`, that pin cannot pass (§1.7 / D231(3a)).
+- **The `MP.6` chain is ordered 1 → 3 → 2 — route, then write path, then spine — and the order is a rule, not a preference (D243).** `MP.6c`'s acceptance is a browser drive (bots acting, pause/resume, the chat posts rendering) and **none of it can be performed until `MP.6b`'s verbs work league-free**; built the other way round it would have to claim its states from intent, which **§4 rule 9 forbids**.
+- **`MP.7`'s leagues-off pin needs `MP.6c`, not `MP.6`.** MP.6 gives the room a URL; **MP.7(4) asserts the room LOADS**, which is the spine's property (§1.7 / D231(3a) / D243).
+- **`MP.8` and `MP.9` are takeable the moment `MP.5` lands, but `MP.8` is SEQUENCED AFTER the 6-chain (D243(4))** — a standalone mock cannot complete until the room works, and a report verified only against league-attached mocks is the half the lane exists to escape. **`MP.9` has no such dependency.**
 - **`MP.10` after the surfaces exist; `MP.11` last** — a verification pass over an unfinished lane verifies nothing.
 - **One cross-lane seam: `MP.4` and `MS.8`** both touch the launch form and the launch RPC. **Neither forks; whichever lands second composes** (§7).
 
