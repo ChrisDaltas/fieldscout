@@ -604,8 +604,20 @@ values (
     "c7000000-0000-4000-8000-00a100000007", "c7000000-0000-4000-8000-00a100000008"]'::jsonb,
   jsonb_build_object('player_id', 'ap3-rb01', 'high_bid', 175,
                      'high_bidder_team_id', 'c7000000-0000-4000-8000-00a100000001'),
+  -- 094/MP.2: `config.roster` is what `draft_mock_cpu_need` now reads for the
+  -- slot shape (it read `leagues.roster_settings` LIVE through a JOIN until
+  -- 094). This fixture builds its mock row directly, so it must carry the
+  -- snapshot `create_mock_draft` would have written — and the value below is
+  -- exactly this league's `roster_settings` (:332-334), so every stored
+  -- literal in this section is unchanged by the migration. Without it the
+  -- need term collapses to an empty slot list and the ladder below stops at
+  -- the first rung: that is the 094 defect, and this fixture is where it
+  -- shows.
   '{"auction_budget": 200, "auction_zero_dollar_nominations": false, "auction_bid_seconds": 20,
     "auction_anti_snipe_seconds": 10, "auction_nomination_seconds": 30,
+    "roster": {"starting_slots": [
+                 {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1}],
+               "bench": 1, "ir_slots": [], "swap_spots": 0},
     "mock": {"human_team_id": "c7000000-0000-4000-8000-00a100000001",
              "launched_by": "97100000-0000-4000-8000-000000000001",
              "cpu_speed": "fast"}}'::jsonb);
