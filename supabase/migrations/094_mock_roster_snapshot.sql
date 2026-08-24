@@ -52,6 +52,31 @@
 -- SOURCE rather than a rewrite.
 --
 -- ---------------------------------------------------------------------------
+-- BANNER ITEM 2a — AND ABSENCE IS A LOUD FAILURE, NOT AN EMPTY ROSTER (R491).
+-- ---------------------------------------------------------------------------
+-- `COALESCE(config->'roster'->'starting_slots', '[]')` cannot distinguish
+-- "never snapshotted" from "legitimately no starting slots" (an all-bench
+-- roster is legal), and the first of those collapses every need term to the
+-- same value — this migration's own defect, arriving silently. So both
+-- readers RAISE on a mock whose config lacks the `roster` KEY (key absence,
+-- never an empty array), and §2's backfill ends by PROVING that no
+-- unsnapshotted mock remains rather than trusting an UPDATE's row count.
+-- None of this is reachable today — `league_id` is NOT NULL with a live FK,
+-- so the backfill's join covers every mock — but **MP.3 drops that NOT NULL
+-- and MP.4 adds a settings writer**, and a guard has to exist before the
+-- reachability does. CLAUDE.md, verbatim: assert the REASON for emptiness.
+--
+-- ---------------------------------------------------------------------------
+-- BANNER ITEM 2b — WHAT §2's BACKFILL FIRES (R496), recorded so it is not
+-- rediscovered. `public.drafts` carries `tr_broadcast_drafts` with **no WHEN
+-- clause** (measured: `pg_get_triggerdef(...) ~ 'WHEN'` is false), so the
+-- UPDATE emits one broadcast per stamped mock. Impact on this deploy is
+-- ZERO — prod's migration history still ends pre-league-schema (F12), so
+-- there are no mock rows to stamp — and on any environment that does have
+-- them the audience is a room whose draft did not change. Named, not fixed:
+-- narrowing a shipped trigger is not MP.2's to do.
+--
+-- ---------------------------------------------------------------------------
 -- BANNER ITEM 3 — REAL DRAFTS ARE UNCHANGED, DELIBERATELY AND EXPLICITLY.
 -- ---------------------------------------------------------------------------
 -- `draft_autopick_resolve` serves real drafts too. Its non-mock arm keeps the
@@ -78,10 +103,23 @@
 -- `draft_autopick_resolve`'s two are the DECLARE (`v_league public.leagues`)
 -- and the SELECT, and the SELECT is now unreachable on a mock.
 --
+-- **AND THE CLAIM STOPS THERE, DELIBERATELY (R492).** "No `public.leagues`
+-- reference remains reachable on a mock's path" is TRUE and is what the
+-- sweep pins. "The league coupling is exhausted" would be FALSE: this body
+-- still carries **two `v_draft.league_id` predicates on the mock path** —
+-- the autopick queue source's `t.league_id = v_draft.league_id` (the R120
+-- join) and the primary-board source's `ll.league_id = v_draft.league_id`.
+-- They read `drafts.league_id`, not the `leagues` table, so they are outside
+-- MP.2's charter and outside F109(a)'s `EXISTS(leagues …)` class — but with
+-- a NULL `league_id` both silently yield NOTHING, and the launcher's own
+-- queue and board would be ignored while best-ADP quietly wins. **Added to
+-- F109(a)'s inventory for MP.3.**
+--
 -- ---------------------------------------------------------------------------
 -- Migration checklist (delivery plan §8.1 / tasks-M3 §4.4): NO DDL — no
 -- table, no column, no policy, no index, no signature change; three CREATE
--- OR REPLACEs and one data backfill · rollback = re-apply 092:1128-1422,
+-- OR REPLACEs, one data backfill and its post-condition assertion (R491)
+-- · rollback = re-apply 092:1128-1422,
 -- 086:552-746 and 089:394-497 verbatim, then
 -- `UPDATE public.drafts SET config = config - 'roster' WHERE is_mock` (the
 -- three head texts ARE the rollback text and the backfill is reversible by
@@ -440,6 +478,28 @@ WHERE l.id = d.league_id
   AND d.is_mock
   AND d.config->'roster' IS NULL;
 
+-- R491 — AND THE BACKFILL PROVES ITSELF RATHER THAN ENDING QUIETLY. An
+-- UPDATE that matches zero rows is exactly the shape CLAUDE.md's "never let
+-- 'nothing happened' mean 'it worked'" rule is about: today `league_id` is
+-- NOT NULL with a live FK, so every mock has a league to copy from and the
+-- coverage is total — but that is a fact about TODAY's schema, and MP.3
+-- drops the NOT NULL. If a mock ever escapes the join, this migration must
+-- refuse to land rather than ship the readers' guard as the thing that
+-- discovers it.
+DO $$
+DECLARE
+  v_unsnapshotted INTEGER;
+BEGIN
+  SELECT count(*) INTO v_unsnapshotted
+  FROM public.drafts d
+  WHERE d.is_mock AND NOT (d.config ? 'roster');
+  IF v_unsnapshotted > 0 THEN
+    RAISE EXCEPTION
+      '094 §2: % mock draft(s) still carry no roster snapshot after the backfill — the UPDATE''s join did not reach them (MP.2/094, R491)',
+      v_unsnapshotted;
+  END IF;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- 3. draft_autopick_resolve — REPLACED FROM
 --    086_auction_tick_completion.sql:552-749 (D137 head rule; 068 -> 086, and
@@ -520,6 +580,22 @@ BEGIN
   --     settings edits go through the D141 pause-first commissioner
   --     controls); it is deliberately NOT decided here.
   IF v_draft.is_mock THEN
+    -- R491 — ASSERT THE REASON FOR EMPTINESS, NEVER INFER IT (CLAUDE.md).
+    -- The COALESCE below cannot tell "this mock was never snapshotted" from
+    -- "this roster legitimately has no starting slots" (an all-bench roster
+    -- is legal), and the first of those collapses every need term to the
+    -- SAME value — the exact failure this migration exists to eliminate,
+    -- arriving silently. Unreachable today (§1 writes the key at launch, §2
+    -- backfills every existing mock and then PROVES none is left), but MP.3
+    -- makes `league_id` nullable and MP.4 adds a settings writer, so the
+    -- guard must exist BEFORE the reachability does. Keyed on KEY ABSENCE,
+    -- not on an empty array.
+    IF NOT (v_draft.config ? 'roster') THEN
+      RAISE EXCEPTION
+        'draft_autopick_resolve: mock draft % carries no roster snapshot (config->''roster'') — refusing to price an unsnapshotted mock as if every seat were filled (MP.2/094, R491)',
+        p_draft_id
+        USING ERRCODE = 'P0001';
+    END IF;
     v_slots := COALESCE(v_draft.config->'roster'->'starting_slots', '[]'::jsonb);
   ELSE
     SELECT l.* INTO v_league FROM public.leagues l WHERE l.id = v_draft.league_id;
@@ -684,6 +760,8 @@ SET search_path = ''
 AS $$
 DECLARE
   v_pos       TEXT;
+  v_config    JSONB;                -- 094/R491: the draft's own config
+  v_is_mock   BOOLEAN;              -- 094/R491: NULL when no draft row exists
   v_slots     JSONB;
   v_n_slots   INTEGER;
   v_counts    INTEGER[] := '{}';
@@ -715,12 +793,24 @@ BEGIN
   -- backfilled for every pre-094 mock (094 §2). With the JOIN gone the
   -- function names no league at all, which is the assertion MP.2 pins:
   -- `prosrc !~ 'public\.leagues'`.
-  SELECT COALESCE(d.config->'roster'->'starting_slots', '[]'::jsonb),
-         COALESCE(d.total_rounds, 0)
-    INTO v_slots, v_total
+  SELECT d.config, d.is_mock, COALESCE(d.total_rounds, 0)
+    INTO v_config, v_is_mock, v_total
   FROM public.drafts d
   WHERE d.id = p_draft_id;
-  v_slots   := COALESCE(v_slots, '[]'::jsonb);
+  -- R491, the sibling guard. Same argument as draft_autopick_resolve's, and
+  -- this is the WORSE of the two sites: an unsnapshotted mock prices every
+  -- position identically and the bots go on bidding, so nothing anywhere
+  -- reports a fault. Predicated on `v_is_mock` so an ABSENT draft row keeps
+  -- 089's behaviour exactly (v_is_mock NULL ⇒ no raise ⇒ the empty-slot
+  -- path), which is what makes this additive rather than a signature change
+  -- in disguise.
+  IF v_is_mock AND NOT (v_config ? 'roster') THEN
+    RAISE EXCEPTION
+      'draft_mock_cpu_need: mock draft % carries no roster snapshot (config->''roster'') — refusing to price every position identically and call it a need model (MP.2/094, R491)',
+      p_draft_id
+      USING ERRCODE = 'P0001';
+  END IF;
+  v_slots   := COALESCE(v_config->'roster'->'starting_slots', '[]'::jsonb);
   v_n_slots := COALESCE(jsonb_array_length(v_slots), 0);
 
   -- 086's greedy steps a–c, verbatim in shape: capacities, then the team's

@@ -56,7 +56,7 @@
 -- goldens are stored literals (§4.3); the whole file rolls back.
 -- ============================================================================
 begin;
-select plan(24);
+select plan(29);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures. Users u01…u08. Players: 12 QBs (0.201…0.212), 12 RBs
@@ -175,7 +175,24 @@ select is(
 select is(
   (select d.config ? 'roster' from drafts d where d.id = 'e6000000-0000-4000-8000-0000000000d1'),
   false,
-  'THE NEGATIVE: a REAL draft gets NO roster key — nothing reads one, and an unread stored field is a claim nobody checks (094 banner item 3)');
+  'THE NEGATIVE, stated at the width it is measured at (R494): create_mock_draft stamps no roster key on a SIBLING REAL DRAFT in the same league. It says nothing about §2''s backfill, which ran before this fixture existed — that guard is replayed on its own two tests down');
+
+-- R494: §2's backfill carries its own `is_mock` guard, and no test could see
+-- it — the migration ran long before this fixture existed. Replay the
+-- statement VERBATIM here, on a real draft that lacks the key, and show it
+-- stays untouched. (The mock already has one, so the guard's positive half is
+-- §A above; this is the half a REAL draft depends on.)
+UPDATE public.drafts d
+SET config = jsonb_set(d.config, '{roster}',
+                       COALESCE(l.roster_settings, '{}'::jsonb))
+FROM public.leagues l
+WHERE l.id = d.league_id
+  AND d.is_mock
+  AND d.config->'roster' IS NULL;
+select is(
+  (select d.config ? 'roster' from drafts d where d.id = 'e6000000-0000-4000-8000-0000000000d1'),
+  false,
+  '…and §2''s BACKFILL statement, replayed verbatim, leaves the real draft alone too — the is_mock guard is in the statement, not in the accident of what the table held on migration day (tasks-MP §4 rule 11)');
 
 -- T2's filler pick in the MOCK (the forced-arm seat) and T4's (the §F forced
 -- CPU seat). T3 stays empty — the §F open seat, one pick behind them.
@@ -265,10 +282,13 @@ select is(
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname ~ '^(draft|create_mock|delete_mock|mock_draft)'
-      and p.prosrc ~ '(roster_settings|l\.settings|v_league\.settings)'),
+      -- R495: alias-agnostic. §1.2's query hard-coded the alias `l.`, so a
+      -- future body that writes `lg.settings` would escape the sweep that is
+      -- supposed to be exhaustive.
+      and p.prosrc ~ '(roster_settings|[a-z_]+\.settings)'),
   array['create_mock_draft', 'draft_autopick_resolve', 'draft_create_internal',
         'draft_start_internal', 'draft_tick'],
-  'THE SWEEP, as a stored literal: exactly five functions in the draft family read league settings at all — three are LAUNCH-TIME (create_mock_draft, draft_create_internal, draft_start_internal), draft_tick''s is the D94 auto-start arm which scans is_mock = FALSE drafts only, and draft_autopick_resolve''s is its non-mock arm (§E next). draft_mock_cpu_need is NO LONGER IN THIS SET');
+  'THE SWEEP, as a stored literal: exactly five functions in the draft family read league settings at all — three are LAUNCH-TIME (create_mock_draft, draft_create_internal, draft_start_internal), draft_tick''s is the D94 auto-start arm, which scans scheduled LEAGUES and reaches drafts only through draft_start_internal''s is_mock = FALSE filter (R495 — the earlier wording said it scanned drafts, which it does not), and draft_autopick_resolve''s is its non-mock arm (next test). draft_mock_cpu_need is NO LONGER IN THIS SET');
 select ok(
   (select p.prosrc !~ 'public\.leagues'
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -300,6 +320,10 @@ select ok(
   and not has_function_privilege('authenticated', 'public.draft_autopick_resolve(uuid, uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_autopick_resolve(uuid, uuid)', 'EXECUTE'),
   '…and so do the GRANTS (D18→D23): create_mock_draft REVOKEd from anon only, draft_autopick_resolve from anon AND authenticated — the server picks, a client never asks');
+select ok(
+  has_function_privilege('authenticated', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE')
+  and has_function_privilege('anon', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE'),
+  'RECORDED, NOT ENDORSED (R497): draft_mock_cpu_need is EXECUTE-able by anon AND authenticated — 089 shipped it with no REVOKE and 094 preserves that exactly, because changing a grant is not a settings-reader fix. It is a STABLE read-only pricing helper, so the exposure is a value not a write; the question of whether it should be revoked goes to MP.3 (F112). This pin exists so the state is a measured fact rather than an assumption, and so a future REVOKE reddens here and gets read');
 
 -- ---------------------------------------------------------------------------
 -- F. THE BOUNDARY (D146), and it is computed from the SNAPSHOT. Greedy step d
@@ -324,6 +348,42 @@ select is(
   (select public.draft_autopick_resolve(m.id, 'c6000000-0000-4000-8000-00a100000004') from mp2_mock m),
   'mp2-qb01',
   'and the autopick agrees with the need model on the forced side — one implementation of the greedy shape, two readers, one snapshot');
+
+
+-- ---------------------------------------------------------------------------
+-- G. R491 — AN UNSNAPSHOTTED MOCK IS A LOUD FAILURE, NOT AN EMPTY ROSTER.
+--    Strip the key (what MP.3's nullable league_id and MP.4's settings writer
+--    could each produce) and both readers must REFUSE. Before the guard this
+--    section is the migration's own defect wearing a different hat: autopick
+--    still returns a player and every position prices at 0.5, with no error
+--    anywhere. Keyed on KEY ABSENCE — an all-bench roster (`starting_slots:
+--    []` present) is legal and must still price, which is the last test here.
+-- ---------------------------------------------------------------------------
+update drafts d set config = d.config - 'roster' from mp2_mock m where m.id = d.id;
+
+select throws_ok(
+  $$ select public.draft_autopick_resolve((select id from mp2_mock),
+       'c6000000-0000-4000-8000-00a100000002') $$,
+  'P0001',
+  null,
+  'autopick REFUSES an unsnapshotted mock (P0001) instead of pricing it as an all-filled roster — CLAUDE.md: assert the REASON for emptiness, never infer it');
+select throws_ok(
+  $$ select public.draft_mock_cpu_need((select id from mp2_mock),
+       'c6000000-0000-4000-8000-00a100000003', 'mp2-qb01') $$,
+  'P0001',
+  null,
+  '…and so does the CPU need model — the worse of the two sites, because an unguarded collapse there prices EVERY position identically and the bots go on bidding while nothing reports a fault');
+
+-- The discriminator that keeps the guard honest: an all-bench roster is a
+-- LEGAL roster and must price, so the guard cannot key on an empty array.
+update drafts d
+set config = jsonb_set(d.config, '{roster}',
+      '{"starting_slots": [], "bench": 2, "ir_slots": [], "swap_spots": 0}'::jsonb)
+from mp2_mock m where m.id = d.id;
+select is(
+  (select public.draft_mock_cpu_need(m.id, 'c6000000-0000-4000-8000-00a100000003', 'mp2-qb01') from mp2_mock m),
+  0.5,
+  'AN ALL-BENCH ROSTER STILL PRICES (0.5, the bench weight): the guard keys on the KEY being absent, not on the slot list being empty — a guard that conflated the two would refuse a legal league');
 
 select * from finish();
 rollback;
