@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import type { StandaloneMockSettings } from '@/lib/leagues/api/draft-service'
 import type { Draft } from '@/types/database'
 
 /**
@@ -80,6 +81,48 @@ export function useLaunchMockDraft(leagueId: string) {
   return {
     ...mutation,
     launchMockAsync: (input: Omit<LaunchMockVariables, 'action_id'>) =>
+      mutation.mutateAsync({ ...input, action_id: crypto.randomUUID() }),
+  }
+}
+
+export interface LaunchStandaloneMockVariables {
+  cpu_speed?: 'realistic' | 'fast'
+  settings: StandaloneMockSettings
+  /** Stamped by the wrapper below — one UUID per user submit (D68(1)). */
+  action_id: string
+}
+
+/**
+ * POST /api/mocks — launch a STANDALONE practice draft (MP task MP.4; spec
+ * v2.16 §8.8). Same dedupe contract as the league launcher above: ONE
+ * `action_id` per user submit, so a React Query retry or a double-tap
+ * replays server-side as the SAME mock instead of minting a second one —
+ * and a second one here would also mint a second set of bot seats.
+ *
+ * The cache invalidation is the `['mock-drafts', …]` PREFIX rather than a
+ * key of its own: the standalone list is MP.5's surface and owns its key,
+ * and a key invented here that nothing reads would be a claim nobody checks
+ * (D236(4)). The prefix covers whatever MP.5 registers, and today covers the
+ * league-scoped lists that a standalone launch cannot change (a no-op
+ * refetch is the cheap side of that trade).
+ */
+export function useLaunchStandaloneMock() {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: async (variables: LaunchStandaloneMockVariables) =>
+      sendLeagueAction<{ draft: Draft; created: boolean }>(
+        '/api/mocks',
+        jsonInit('POST', variables),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mock-drafts'] })
+    },
+  })
+
+  return {
+    ...mutation,
+    launchStandaloneAsync: (input: Omit<LaunchStandaloneMockVariables, 'action_id'>) =>
       mutation.mutateAsync({ ...input, action_id: crypto.randomUUID() }),
   }
 }

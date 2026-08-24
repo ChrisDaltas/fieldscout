@@ -37,6 +37,11 @@ import { DraftOrderEditor } from './draft-order-editor'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
+  AuctionConfigFields,
+  PickClockField,
+  SnakeReversalField,
+} from './draft-config-fields'
+import {
   ChoiceSelect,
   clampInt,
   FieldRow,
@@ -1375,21 +1380,6 @@ function ScheduleDraftGroup({
 // §7.3.8 — Draft configuration
 // ---------------------------------------------------------------------------
 
-const PICK_TIMER_LABELS: Record<number, string> = {
-  0: 'No clock (untimed)',
-  30: '30 seconds',
-  45: '45 seconds',
-  60: '1 minute',
-  90: '90 seconds',
-  120: '2 minutes',
-  180: '3 minutes',
-  300: '5 minutes',
-  600: '10 minutes',
-  3600: '1 hour',
-  14400: '4 hours',
-  28800: '8 hours',
-  86400: '24 hours',
-}
 
 function DraftGroup({
   s,
@@ -1424,13 +1414,7 @@ function DraftGroup({
       </FieldRow>
 
       {d.draft_type === 'snake' && (
-        <ToggleRow
-          id="set-snake-reversal"
-          label="Third-round reversal"
-          hint="Sleeper-style — the 3rd round doesn't flip."
-          checked={d.snake_reversal}
-          onCheckedChange={(snake_reversal) => onDraft({ snake_reversal })}
-        />
+        <SnakeReversalField value={d} onChange={onDraft} idPrefix="set" />
       )}
 
       <FieldRow label="Draft order" htmlFor="set-order-mode" hint="Set before the room opens.">
@@ -1461,139 +1445,27 @@ function DraftGroup({
         canEdit={canEdit}
       />
 
-      <FieldRow label="Pick clock" htmlFor="set-pick-timer">
-        <ChoiceSelect
-          id="set-pick-timer"
-          ariaLabel="Pick clock"
-          value={String(d.pick_timer_seconds)}
-          width="w-48"
-          options={Object.entries(PICK_TIMER_LABELS).map(([v, label]) => ({ value: v, label }))}
-          onValueChange={(v) =>
-            onDraft({ pick_timer_seconds: Number(v) as LeagueSettings['draft']['pick_timer_seconds'] })
-          }
-        />
-      </FieldRow>
+      <PickClockField value={d} onChange={onDraft} idPrefix="set" />
 
       {d.draft_type === 'auction' && (
-        <>
-          <FieldRow label="Auction budget" htmlFor="set-auction-budget" hint="One-time draft budget.">
-            <Input
-              id="set-auction-budget"
-              type="number"
-              min={50}
-              max={1000}
-              value={d.auction_budget}
-              onChange={(e) => onDraft({ auction_budget: clampInt(e.target.value, 50, 1000, d.auction_budget) })}
-              className="h-btn-md w-24 text-[12px]"
-            />
-          </FieldRow>
-          {/* 092/AP.1 — the "Minimum bid" number input is GONE (§7.3.8
-              v2.13). It was a 0–5 field that set the nomination floor and
-              the per-slot reserve and did NOT set the bid increment, which
-              has always been a fixed $1; a commissioner who typed 5 got $1
-              raises. What replaces it is the toggle that names one real
-              behaviour, and the copy says both halves of what it does so a
-              commissioner is never surprised by the reserve going away. */}
-          <ToggleRow
-            id="set-auction-zero-dollar"
-            label="Allow $0 nominations"
-            hint="A nomination can open at any amount the team can afford, and no budget is held back per empty roster spot. Raises are always $1 more, either way."
-            checked={d.auction_zero_dollar_nominations}
-            onCheckedChange={(auction_zero_dollar_nominations) =>
-              onDraft({ auction_zero_dollar_nominations })
-            }
-          />
-          <FieldRow label="Nomination clock" htmlFor="set-auction-nom" hint="Seconds to nominate.">
-            <Input
-              id="set-auction-nom"
-              type="number"
-              min={10}
-              max={120}
-              value={d.auction_nomination_seconds}
-              onChange={(e) =>
-                onDraft({ auction_nomination_seconds: clampInt(e.target.value, 10, 120, d.auction_nomination_seconds) })
-              }
-              className="h-btn-md w-24 text-[12px]"
-            />
-          </FieldRow>
-          {/* M3 task L.C3.2 item 2 — the three §7.3.8 auction knobs that were
-              persisted and validated (`draftConfigSchema`) but had no input:
-              a setting nobody can reach is a setting the league does not
-              have. Ranges are the catalog's, enforced again by the schema on
-              save; the room's own Clock & timers section edits the two clocks
-              mid-draft (087's `draft_set_clock` auction arm). */}
-          <FieldRow label="Bid clock" htmlFor="set-auction-bid" hint="Seconds each bid resets the clock to.">
-            <Input
-              id="set-auction-bid"
-              type="number"
-              min={10}
-              max={60}
-              value={d.auction_bid_seconds}
-              onChange={(e) =>
-                onDraft({ auction_bid_seconds: clampInt(e.target.value, 10, 60, d.auction_bid_seconds) })
-              }
-              className="h-btn-md w-24 text-[12px]"
-            />
-          </FieldRow>
-          <FieldRow
-            label="Anti-snipe"
-            htmlFor="set-auction-anti-snipe"
-            hint="A bid inside this many seconds resets the clock to it. 0 turns anti-snipe off."
-          >
-            <Input
-              id="set-auction-anti-snipe"
-              type="number"
-              min={0}
-              max={15}
-              value={d.auction_anti_snipe_seconds}
-              onChange={(e) =>
-                onDraft({
-                  auction_anti_snipe_seconds: clampInt(e.target.value, 0, 15, d.auction_anti_snipe_seconds),
-                })
-              }
-              className="h-btn-md w-24 text-[12px]"
-            />
-          </FieldRow>
-          <FieldRow
-            label="Nomination order"
-            htmlFor="set-nomination-order-mode"
-            hint="Who nominates next, circularly (§8.3)."
-          >
-            <ChoiceSelect
-              id="set-nomination-order-mode"
-              ariaLabel="Nomination order"
-              value={d.nomination_order_mode}
-              width="w-56"
-              // `manual` is DELIBERATELY not offered: 084's start arm
-              // validates a stored `drafts.nomination_order`, and nothing can
-              // write one before the draft exists (087's `draft_set_order`
-              // refuses a pre-start auction by name), so choosing it today
-              // makes the draft unstartable — the UI must not offer what the
-              // engine forbids (D110(1)'s rule). The editor that would make
-              // it reachable is ledger row **F80**. A league that already
-              // STORES `manual` (set through the API) still sees its own
-              // value, labelled for what it is, so the select never renders
-              // blank and the way out is one click.
-              options={[
-                { value: 'same_as_draft_order', label: 'Same as draft order' },
-                { value: 'random', label: 'Random' },
-                ...(d.nomination_order_mode === 'manual'
-                  ? [{ value: 'manual', label: 'Commissioner sets (no editor yet — pick another)' }]
-                  : []),
-              ]}
-              onValueChange={(v) =>
-                onDraft({
-                  nomination_order_mode: v as LeagueSettings['draft']['nomination_order_mode'],
-                })
-              }
-            />
-          </FieldRow>
-        </>
+        <AuctionConfigFields
+          value={d}
+          onChange={onDraft}
+          idPrefix="set"
+          // The panel keeps the legacy `manual` escape hatch (F80); a
+          // standalone practice draft has no stored order to honour and 095
+          // refuses the mode by name, so the dialog passes nothing.
+          offerStoredManual
+          issues={errorsFor('draft.auction_budget')}
+        />
       )}
 
-      {['draft.auction_budget'].flatMap((field) =>
-        errorsFor(field).map((e) => <InlineIssue key={e.message} tone="error" message={e.message} />),
-      )}
+      {/* R505: `draft.auction_budget`'s inline issue moved INTO
+          `AuctionConfigFields` (it belongs beside the field it names, and
+          both mount points now render it identically). A non-auction league
+          cannot produce one — the validator's only `draft.*` bullet is the
+          budget range — so nothing is lost by it living inside the auction
+          arm. */}
     </GroupCard>
   )
 }

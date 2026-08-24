@@ -122,10 +122,26 @@ const APP_URLS_GOLDEN = [
   '/app/weekly-ranks/history',
 ]
 
+/**
+ * URLs ADDED since the golden — and the golden above stays byte-frozen so
+ * the two stay distinguishable. A NEW route is not the thing this pin was
+ * written to catch (that is a MOVED one), but an unannounced new route is
+ * how a moved one would hide, so every entry here has to say what it is and
+ * when it leaves.
+ */
+const APP_URLS_ADDED_SINCE_GOLDEN = [
+  // MP.4 — the DEV-ONLY harness that mounts the practice-draft launch
+  // dialog so it can be driven in a browser. `notFound()` in production
+  // (`process.env.NODE_ENV`, the `dev-pro-menu-item` pattern), never a
+  // feature flag. MP.5 owns `/app/mocks` and DELETES this page when it
+  // lands — ledger row F115.
+  '/app/dev/mock-launch',
+]
+
 describe('route groups are invisible to the URL space', () => {
-  it('the /app page URLs match the pre-split golden exactly', () => {
+  it('the /app page URLs match the pre-split golden exactly (plus the declared additions)', () => {
     expect(pageUrls().filter((u) => u === '/app' || u.startsWith('/app/'))).toEqual(
-      APP_URLS_GOLDEN,
+      [...APP_URLS_GOLDEN, ...APP_URLS_ADDED_SINCE_GOLDEN].sort(),
     )
   })
 
