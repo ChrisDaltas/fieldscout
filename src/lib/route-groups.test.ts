@@ -140,6 +140,14 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // MP.4's dev-only `/app/dev/mock-launch` harness lived here and is DELETED
   // by this same task (F115) — the launch dialog's real mount is /app/mocks.
   '/app/mocks',
+  // MP.6 — the practice ROOM's own route, keyed on the MOCK's id (D243,
+  // layer 1 of three). It is here rather than under `/app/leagues` because
+  // that whole URL space is redirected away when the leagues flag is off
+  // (R470), and because a standalone mock has no league id to key a URL on.
+  // Gated on `featureFlags.mockDrafts` by `(room)/mocks/layout.tsx` —
+  // asserted below, beside the two leagues gates. Permanent; MP.6c mounts
+  // the room in it, MP.8 adds `/app/mocks/[mockId]/report` beside it.
+  '/app/mocks/[mockId]',
 ]
 
 describe('route groups are invisible to the URL space', () => {
@@ -300,6 +308,45 @@ describe('practice is released on its OWN flag (E79 / D231)', () => {
   it('the MP.4 dev harness is gone (F115) — the dialog has a real mount now', () => {
     expect(() => read('src/app/app/(shell)/dev/mock-launch/page.tsx')).toThrow()
     expect(read('src/components/draft/mocks-home.tsx')).toContain('MockLaunchDialog')
+  })
+})
+
+describe('the mock room is released on the mockDrafts flag, past the leagues gate (MP.6)', () => {
+  // ONE test for both halves on purpose (MP.6 item 5). The claim is not "the
+  // mock room has a gate" — it is that the two gates are INDEPENDENT: with
+  // `leagues` off the room's `/app/leagues` URL space is still redirected
+  // away, and `/app/mocks/[mockId]` is still reachable. Asserting either one
+  // alone leaves the coupling R470 found (a different flag on a different
+  // layout) invisible.
+  const MOCK_ROOM_GATE = 'src/app/app/(room)/mocks/layout.tsx'
+  const MOCK_ROOM_PAGE = 'src/app/app/(room)/mocks/[mockId]/page.tsx'
+
+  it('/app/mocks/[mockId] gates on mockDrafts ONLY, while /app/leagues still redirects on leagues', () => {
+    // `code()`, not `read()`: the gate's docblock names both flags to explain
+    // the distinction, and a pin a comment can satisfy is not a pin.
+    const gate = code(MOCK_ROOM_GATE)
+    expect(gate).toContain('featureFlags.mockDrafts')
+    expect(gate).toContain("redirect('/app')")
+    expect(gate, 'the mock room never reads the leagues flag').not.toContain(
+      'featureFlags.leagues',
+    )
+    // …and the page under it does not smuggle one in either.
+    expect(code(MOCK_ROOM_PAGE)).not.toContain('featureFlags.leagues')
+
+    // The other half, in the same test: the leagues room gate is untouched,
+    // so this route is an escape from it rather than a hole in it.
+    const leaguesGate = code('src/app/app/(room)/leagues/layout.tsx')
+    expect(leaguesGate).toContain('if (!featureFlags.leagues) redirect')
+  })
+
+  it('MP.6 is the ROUTE only — the room still mounts league-side (D243)', () => {
+    // The scope pin, from the side that would fail loudest. MP.6c mounts
+    // `DraftRoom` here; doing it at layer 1 would ship a URL that renders an
+    // error card and 404s every pick (Q25's measurement).
+    expect(code(MOCK_ROOM_PAGE)).not.toContain('@/components/draft/draft-room')
+    expect(code('src/app/app/(room)/leagues/[leagueId]/draft/page.tsx')).toContain(
+      '@/components/draft/draft-room',
+    )
   })
 })
 
