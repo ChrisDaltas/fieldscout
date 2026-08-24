@@ -102,8 +102,8 @@ select ok(
    where n.nspname = 'public' and p.proname = 'mock_draft_expire'),
   'mock_draft_expire is SECURITY DEFINER with the exact spec-form search_path');
 select ok(
-  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text,uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text,uuid)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.delete_mock_draft(uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.delete_mock_draft(uuid)', 'EXECUTE'),
   'create/delete_mock_draft: anon revoked, authenticated keeps EXECUTE (in-body auth is the gate)');

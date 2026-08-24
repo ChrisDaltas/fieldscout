@@ -96,7 +96,8 @@ select fk_ok('public', 'draft_bids', 'league_id', 'public', 'leagues', 'id', 'le
 select fk_ok('public', 'draft_bids', 'player_id', 'public', 'players', 'id', 'player_id → players (TEXT id)');
 select fk_ok('public', 'draft_bids', 'team_id', 'public', 'teams', 'id', 'team_id → teams');
 select col_not_null('public', 'draft_bids', 'draft_id', 'draft_id NOT NULL');
-select col_not_null('public', 'draft_bids', 'league_id', 'league_id NOT NULL');
+select col_is_null('public', 'draft_bids', 'league_id',
+  'league_id is NULLABLE (095/MP.3, D234) — the engine''s own bid writer stamps the draft''s league_id, which is NULL on a standalone mock. FK kept');
 select col_not_null('public', 'draft_bids', 'nomination_seq', 'nomination_seq NOT NULL');
 select col_not_null('public', 'draft_bids', 'player_id', 'player_id NOT NULL');
 select col_not_null('public', 'draft_bids', 'team_id', 'team_id NOT NULL');

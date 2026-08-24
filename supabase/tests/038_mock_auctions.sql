@@ -132,8 +132,8 @@ select ok(
   and has_function_privilege('authenticated', 'public.draft_nominate(uuid, text, integer, uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_place_bid(uuid, integer, uuid, integer, text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.draft_place_bid(uuid, integer, uuid, integer, text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid)', 'EXECUTE'),
+  and not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE'),
   'the three replaced RPCs keep their posture: anon none, authenticated EXECUTE (CREATE OR REPLACE preserved the ACLs; the REVOKEs restated)');
 select ok(
   (select p.provolatile = 'i' and array_to_string(p.proconfig, ',') = 'search_path=""'

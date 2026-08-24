@@ -150,10 +150,10 @@ select is(
   '5 seconds|SELECT public.draft_tick()',
   'ONE cron entry: draft-tick every 5 seconds calling public.draft_tick() (D87/§22.3)');
 select ok(
-  (select p.prosrc like '%t.league_id = v_draft.league_id%'
+  (select p.prosrc like '%t.league_id IS NOT DISTINCT FROM v_draft.league_id%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_autopick_resolve'),
-  'R120 structural pin: the queue branch joins teams to the DRAFT''s league (queue rows are untrusted hints — 065 banner)');
+  'R120 structural pin, AMENDED BY 095/MP.3 (R492): the queue branch still joins teams to the DRAFT''s league — queue rows are untrusted hints (065 banner) — but with `IS NOT DISTINCT FROM`, which is term-for-term identical for every non-NULL league and is what lets a STANDALONE mock''s launcher have their own queue honoured instead of silently ignored while best-ADP wins (043 §E)');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).

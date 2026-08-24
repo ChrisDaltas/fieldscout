@@ -304,7 +304,7 @@ export type Database = {
           created_at: string | null
           draft_id: string
           id: string
-          league_id: string
+          league_id: string | null
           nomination_seq: number
           player_id: string
           team_id: string
@@ -316,7 +316,7 @@ export type Database = {
           created_at?: string | null
           draft_id: string
           id?: string
-          league_id: string
+          league_id?: string | null
           nomination_seq: number
           player_id: string
           team_id: string
@@ -328,7 +328,7 @@ export type Database = {
           created_at?: string | null
           draft_id?: string
           id?: string
-          league_id?: string
+          league_id?: string | null
           nomination_seq?: number
           player_id?: string
           team_id?: string
@@ -452,7 +452,7 @@ export type Database = {
           id: string
           is_auto: boolean | null
           is_undone: boolean | null
-          league_id: string
+          league_id: string | null
           made_via: string | null
           pick_number: number
           picked_by: string | null
@@ -468,7 +468,7 @@ export type Database = {
           id?: string
           is_auto?: boolean | null
           is_undone?: boolean | null
-          league_id: string
+          league_id?: string | null
           made_via?: string | null
           pick_number: number
           picked_by?: string | null
@@ -484,7 +484,7 @@ export type Database = {
           id?: string
           is_auto?: boolean | null
           is_undone?: boolean | null
-          league_id?: string
+          league_id?: string | null
           made_via?: string | null
           pick_number?: number
           picked_by?: string | null
@@ -595,7 +595,7 @@ export type Database = {
           draft_type: string
           id: string
           is_mock: boolean
-          league_id: string
+          league_id: string | null
           nomination_order: Json | null
           on_clock_team_id: string | null
           paused_at: string | null
@@ -618,7 +618,7 @@ export type Database = {
           draft_type?: string
           id?: string
           is_mock?: boolean
-          league_id: string
+          league_id?: string | null
           nomination_order?: Json | null
           on_clock_team_id?: string | null
           paused_at?: string | null
@@ -641,7 +641,7 @@ export type Database = {
           draft_type?: string
           id?: string
           is_mock?: boolean
-          league_id?: string
+          league_id?: string | null
           nomination_order?: Json | null
           on_clock_team_id?: string | null
           paused_at?: string | null
@@ -886,7 +886,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_system: boolean | null
-          league_id: string
+          league_id: string | null
           message: string
           user_id: string | null
         }
@@ -895,7 +895,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_system?: boolean | null
-          league_id: string
+          league_id?: string | null
           message: string
           user_id?: string | null
         }
@@ -904,7 +904,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_system?: boolean | null
-          league_id?: string
+          league_id?: string | null
           message?: string
           user_id?: string | null
         }
@@ -3225,7 +3225,8 @@ export type Database = {
           p_action_id?: string
           p_cpu_speed?: string
           p_human_team_id?: string
-          p_league_id: string
+          p_league_id?: string
+          p_settings?: Json
         }
         Returns: Json
       }
@@ -3309,7 +3310,7 @@ export type Database = {
           draft_type: string
           id: string
           is_mock: boolean
-          league_id: string
+          league_id: string | null
           nomination_order: Json | null
           on_clock_team_id: string | null
           paused_at: string | null
@@ -3343,6 +3344,7 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_league_alive: { Args: { p_league_id: string }; Returns: boolean }
       draft_liveness_freshness: { Args: never; Returns: string }
       draft_make_pick: {
         Args: { p_action_id: string; p_draft_id: string; p_player_id: string }
@@ -3532,6 +3534,10 @@ export type Database = {
         Args: { p_draft_id: string; p_order: string[]; p_reason?: string }
         Returns: Json
       }
+      draft_settings_range_guard: {
+        Args: { p_draft: Json; p_roster: Json }
+        Returns: undefined
+      }
       draft_start: { Args: { p_league_id: string }; Returns: Json }
       draft_start_internal: {
         Args: { p_league_id: string; p_require_commish: boolean }
@@ -3618,6 +3624,10 @@ export type Database = {
       get_join_preview: { Args: { p_value: string }; Returns: Json }
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
+      is_standalone_mock_launcher: {
+        Args: { p_draft_id: string }
+        Returns: boolean
+      }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
       league_broadcast_payload: {
         Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
@@ -3719,6 +3729,7 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
       update_league_profile: {
         Args: {
           p_avatar_url?: string
@@ -3882,6 +3893,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 // ============================================================================
 // Hand-written convenience aliases.

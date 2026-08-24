@@ -72,7 +72,8 @@ select columns_are('public', 'drafts',
   'exact §12.3 column set (+ budget_adjustments, migration 083 — D127; its shape/default pins live in 032)');
 select col_is_pk('public', 'drafts', 'id', 'PK id');
 select col_type_is('public', 'drafts', 'league_id', 'uuid', 'league_id is UUID');
-select col_not_null('public', 'drafts', 'league_id', 'league_id NOT NULL');
+select col_is_null('public', 'drafts', 'league_id',
+  'league_id is NULLABLE (095/MP.3, D234): a standalone practice draft has no league, and the column is how that is said. The FK is KEPT — a NULL passes an FK, a WRONG id still fails — and the ownership arm that governs a NULL row carries the `league_id IS NULL` conjunct D234(7) proved load-bearing (043 §B)');
 select fk_ok('public', 'drafts', 'league_id', 'public', 'leagues', 'id', 'league_id → leagues');
 select fk_ok('public', 'drafts', 'on_clock_team_id', 'public', 'teams', 'id', 'on_clock_team_id → teams');
 select col_type_is('public', 'drafts', 'config', 'jsonb', 'config is JSONB');
