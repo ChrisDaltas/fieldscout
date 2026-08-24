@@ -198,7 +198,17 @@
 -- whole-schema delta the task asks for: a user in ZERO leagues launches,
 -- drafts, completes and deletes a standalone mock, and the delta over all
 -- `public` tables is confined to the mock's own rows and its bot seats — no
--- `leagues`, no `league_members`, no `league_rosters`, no `transactions`.
+-- `leagues`, no `league_members`, no `league_rosters`, no `league_weeks`.
+-- **§G uses the R383 COMPOSITE — `to_jsonb(l)::text` plus the league-scoped
+-- counts — and not a row count, because a row count cannot see an in-place
+-- UPDATE and R383 exists for exactly that reason** (R499: the first cut
+-- CLAIMED the composite and compared five `count(*)`s, so a regression that
+-- touched only `leagues.status` or `.updated_at` would have passed it). §F
+-- brackets a LEAGUE-attached launch with the same composite, so the rule is
+-- measured on the path where it has always had full force, not only on the
+-- standalone one. (`transactions` is deliberately absent from both lists: the
+-- table does not exist yet — it arrives with the in-season lane — and naming
+-- it would have made the section pass vacuously.)
 --
 -- ---------------------------------------------------------------------------
 -- BANNER ITEM 9 — D137 HEAD PROVENANCE (re-derived here, not recalled).
@@ -319,6 +329,22 @@ $$;
 -- SECURITY DEFINER on purpose: the answer must not depend on whether the
 -- deleting user can SEE the draft that names the seat. A wedge caused by an
 -- invisible row is still a wedge.
+--
+-- AND THE DISCLOSURE ARGUMENT, MADE AT THE LEVEL D50 ASKS FOR (R501) — because
+-- "the policy is TO public" says why the GRANT is needed, not why the ANSWER
+-- is safe. This function reads RLS-hidden `drafts` rows and returns one bit
+-- about a `teams` row. **That bit is already public through a row the caller
+-- can read anyway**: `teams` is world-readable by design ("Teams are viewable
+-- by everyone", 001, §17) and a mock seat is exactly a `teams` row with
+-- `league_id IS NULL`, `list_id NULL`, `status 'active'` and a name matching
+-- `CPU n`. It reveals nothing about the draft — not its id, its owner, its
+-- type, its status, or that it exists at all — and it is only ASKABLE about a
+-- team id the caller already holds. **The one thing it does add is a
+-- reachability signal about someone else's team** ("this row is spoken for"),
+-- and that is the property the guard exists to have; withholding it would mean
+-- the caller learns the same fact from a 23503 FK error instead. Stated
+-- rather than assumed, because "the helper is DEFINER and public" is exactly
+-- the shape that deserves the argument written down.
 CREATE OR REPLACE FUNCTION team_is_mock_seat(p_team_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -333,6 +359,21 @@ AS $$
            OR (d.config->'mock'->'cpu_seats') ? p_team_id::text)
   );
 $$;
+
+-- THE SCOPE IS EVERY MOCK, NOT EVERY *LIVE* MOCK, AND THAT IS DELIBERATE
+-- (R502). Banner item 5 justifies the guard by the pre-first-pick wedge, which
+-- is a LIVE-draft argument, so a reader is right to ask why a COMPLETED mock's
+-- seats stay undeletable until `delete_mock_draft` removes them. **Because the
+-- recap holds them.** Every `draft_picks` row names its `team_id` and that FK
+-- is plain `NO ACTION`, so a seat with picks against it is not deletable in
+-- any case — narrowing the helper to `status <> 'complete'` would not GRANT
+-- the delete, it would only change the refusal from this policy's clean
+-- "0 rows" into a raw 23503 the user cannot act on. And a completed mock with
+-- ZERO picks against a given seat (an all-CPU board where one seat never
+-- picked) is precisely the row whose deletion would corrupt the report's seat
+-- map. **The right lifetime for the protection is the lifetime of the thing it
+-- protects, and that is the mock — which ends when the launcher deletes it or
+-- the 72h expiry does, both of which sweep the seats themselves.**
 
 -- Same carve-out, same reason: it is read inside the `teams` DELETE policy,
 -- which is `TO public` (D50).
@@ -368,24 +409,60 @@ $$;
 -- Engine-internal: no client asks whether a league is alive (D18->D23).
 REVOKE EXECUTE ON FUNCTION draft_league_alive(UUID) FROM PUBLIC, anon, authenticated;
 
--- 2d. THE §7.3.8 RANGE GUARD for a caller-supplied settings object. The
--- ranges mirror the ONE catalog the app validates against —
--- `draftConfigSchema`, `src/lib/leagues/settings/league-settings.ts:244-259`
--- — and the mirroring is deliberate, not an accident of duplication:
--- `create_mock_draft` is EXECUTE-able by `authenticated`, so a client that
--- skips the route reaches it directly, and every knob below can WEDGE the
--- engine rather than merely look wrong (a 0-second bid clock never closes a
--- nomination; a budget under the reserve floor makes the board unfillable).
--- MP.4's launch form parses with the zod schema; this is the server floor
--- under it. Each bound is pinned one step either side in 043 §D (D146).
-CREATE OR REPLACE FUNCTION draft_settings_range_guard(p_draft JSONB)
+-- 2d. THE §7.3.8 / §7.3.2 RANGE GUARD for a caller-supplied settings object.
+-- The ranges mirror the ONE catalog the app validates against —
+-- `draftConfigSchema` and `rosterSettingsSchema` /
+-- `validateLeagueSettings`, `src/lib/leagues/settings/league-settings.ts`
+-- (`:244-262` the draft knobs, `:153` bench, `:108` slot count, `:480-485` the
+-- starting-lineup sum) — and the mirroring is deliberate, not an accident of
+-- duplication: `create_mock_draft` is EXECUTE-able by `authenticated`, so a
+-- client that skips the route reaches it directly, and every knob below can
+-- WEDGE the engine rather than merely look wrong (a 0-second bid clock never
+-- closes a nomination; a budget under the reserve floor makes the board
+-- unfillable). MP.4's launch form parses with the zod schema; this is the
+-- server floor under it.
+--
+-- **IT TAKES THE ROSTER TOO, AND THE FIRST CUT DID NOT (R498).** Bounding the
+-- five draft knobs while leaving `roster_settings` open on the SAME
+-- client-reachable arm contradicted this comment's own rationale, and it was
+-- not theoretical: probed as `authenticated`, `bench 5000` launched a
+-- 5,010-round draft, `starting_slots[{count: 999}]` launched, `bench -3`
+-- launched, and `disconnect_grace_seconds 999999` was stored verbatim. The
+-- roster is a **solvency input**, not decoration — `draft_team_budget` reads
+-- `drafts.total_rounds` as the auction's per-team capacity, and `total_rounds`
+-- is derived from exactly these numbers — so an unbounded roster is an
+-- unbounded budget model. **Every bound below is now pinned ONE STEP EITHER
+-- SIDE in 043 §D (D146), against this function directly, and tied to the TS
+-- catalog by `src/lib/leagues/settings/draft-settings-guard.test.ts` so drift
+-- reddens (R503).**
+--
+-- THE SUM CHECK IS UNCONDITIONAL, AND THAT IS THE POINT OF IT. A guard that
+-- only runs `IF p_roster ? 'starting_slots'` can be evaded by OMITTING the key
+-- — which is R498's own species one level down — and `draft_rounds_from_roster`
+-- already treats an absent array as 0, so the guard treats it the same way.
+-- CONSEQUENCE, STATED: with the sum floored at 1, `total_rounds < 1` becomes
+-- UNREACHABLE on the standalone arm, so `create_mock_draft`'s standalone
+-- no-draftable-rounds RAISE is a backstop behind another guard. It is KEPT
+-- (a guard that holds only while a second guard holds is one edit from being
+-- wrong) and deliberately NOT pinned — a pin on a line that cannot execute is
+-- a pin that can never go red. The LEAGUE arm's version of that RAISE is
+-- reachable and is golden-pinned in pgTAP 025.
+--
+-- *(An all-bench roster stays a legal thing for the PRICING model to handle —
+-- 042 §F pins `draft_mock_cpu_need` returning the bench weight for one, and
+-- R491's guard keys on the `roster` KEY being absent rather than on an empty
+-- slot array. That is a different question from what a LAUNCH accepts: the
+-- catalog has required a 1-20 starting lineup since §7.3.8, and this guard
+-- stops inventing a laxer rule for practice than a league gets.)*
+CREATE OR REPLACE FUNCTION draft_settings_range_guard(p_draft JSONB, p_roster JSONB)
 RETURNS VOID
 LANGUAGE plpgsql
 IMMUTABLE
 SET search_path = ''
 AS $$
 DECLARE
-  v INTEGER;
+  v     INTEGER;
+  v_sum INTEGER;
 BEGIN
   IF p_draft ? 'pick_timer_seconds' THEN
     v := (p_draft->>'pick_timer_seconds')::int;
@@ -422,10 +499,54 @@ BEGIN
         USING ERRCODE = '22023';
     END IF;
   END IF;
+  IF p_draft ? 'disconnect_grace_seconds' THEN
+    v := (p_draft->>'disconnect_grace_seconds')::int;
+    IF v < 0 OR v > 120 THEN
+      RAISE EXCEPTION 'draft settings: disconnect_grace_seconds % is outside 0-120 (§7.3.8)', v
+        USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  -- §7.3.2 roster bounds (R498). These decide `total_rounds`, which
+  -- `draft_team_budget` reads as the auction's per-team capacity.
+  IF p_roster ? 'bench' THEN
+    v := (p_roster->>'bench')::int;
+    IF v < 0 OR v > 20 THEN
+      RAISE EXCEPTION 'roster settings: bench % is outside 0-20 (§7.3.2)', v
+        USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  -- Both ends, separately: a single max() would let a NEGATIVE count through
+  -- whenever some other slot is larger, which is the bound looking checked
+  -- and not being.
+  SELECT min((slot->>'count')::int) INTO v
+  FROM jsonb_array_elements(COALESCE(p_roster->'starting_slots', '[]'::jsonb)) AS slot;
+  IF v IS NOT NULL AND v < 0 THEN
+    RAISE EXCEPTION 'roster settings: a starting slot count of % is outside 0-10 (§7.3.2)', v
+      USING ERRCODE = '22023';
+  END IF;
+  SELECT max((slot->>'count')::int) INTO v
+  FROM jsonb_array_elements(COALESCE(p_roster->'starting_slots', '[]'::jsonb)) AS slot;
+  IF v IS NOT NULL AND v > 10 THEN
+    RAISE EXCEPTION 'roster settings: a starting slot count of % is outside 0-10 (§7.3.2)', v
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Unconditional (see the header): an ABSENT starting_slots array sums to 0
+  -- and is refused, exactly as draft_rounds_from_roster would read it.
+  SELECT COALESCE(sum((slot->>'count')::int)::int, 0) INTO v_sum
+  FROM jsonb_array_elements(COALESCE(p_roster->'starting_slots', '[]'::jsonb)) AS slot;
+  IF v_sum < 1 OR v_sum > 20 THEN
+    RAISE EXCEPTION
+      'roster settings: the starting lineup totals % slots — it must total between 1 and 20 (§7.3.8)', v_sum
+      USING ERRCODE = '22023';
+  END IF;
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION draft_settings_range_guard(JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION draft_settings_range_guard(JSONB, JSONB)
+  FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. THE FOUR SELECT ARMS (D234(4): four required, not five). Each is the
@@ -447,6 +568,17 @@ CREATE POLICY "Drafts viewable by league members"
         AND config->'mock'->>'launched_by' = auth.uid()::text)
   );
 
+-- THE `league_id IS NULL` CONJUNCT ON THE THREE CHILD POLICIES IS REDUNDANT
+-- WITH THE HELPER'S OWN, AND IS KEPT ON PURPOSE (R504). `is_standalone_mock_
+-- launcher` carries the same conjunct, so behaviourally either copy alone
+-- would do — which means removing one of them reddens NOTHING at runtime.
+-- That is exactly why it gets a STRUCTURAL pin instead of a behavioural one:
+-- 043 §B asserts the conjunct's presence in each policy's `qual` text, so an
+-- edit that "simplifies" it away goes RED even though no query would change.
+-- The redundancy is defence in depth against a future edit of the HELPER —
+-- the one place (the two `realtime.messages` policies) where the helper's copy
+-- is the only guard is the reason the helper must keep it, and the reason
+-- these three should not depend on it.
 DROP POLICY IF EXISTS "Picks viewable by league members" ON draft_picks;
 CREATE POLICY "Picks viewable by league members"
   ON draft_picks FOR SELECT
@@ -732,15 +864,17 @@ BEGIN
         USING ERRCODE = '22023';
     END IF;
 
-    -- The §7.3.8 ranges, mirrored from the ONE catalog the app validates
-    -- against (`draftConfigSchema`, src/lib/leagues/settings/league-settings.ts
-    -- :244-259). Mirrored DELIBERATELY rather than trusted: this RPC is
-    -- EXECUTE-able by `authenticated`, so a client that skips the route
-    -- reaches it directly, and every one of these knobs can WEDGE the
-    -- engine (a 0-second bid clock never closes a nomination; a 0-round
-    -- roster has nothing to draft). MP.4's form parses with the zod schema;
-    -- this is the server floor under it, not a second opinion.
-    PERFORM public.draft_settings_range_guard(v_config);
+    -- The §7.3.8 draft ranges AND the §7.3.2 roster bounds, mirrored from the
+    -- ONE catalog the app validates against (see the guard's own header).
+    -- Mirrored DELIBERATELY rather than trusted: this RPC is EXECUTE-able by
+    -- `authenticated`, so a client that skips the route reaches it directly,
+    -- and every one of these numbers can WEDGE the engine (a 0-second bid
+    -- clock never closes a nomination; an unbounded bench is an unbounded
+    -- auction capacity, because `draft_team_budget` reads `total_rounds`).
+    -- MP.4's form parses with the zod schema; this is the server floor under
+    -- it, not a second opinion. R498: the roster half was missing from the
+    -- first cut and is the reason this call takes two arguments.
+    PERFORM public.draft_settings_range_guard(v_config, v_roster);
 
     v_order_mode := COALESCE(v_config->>'draft_order_mode', 'random');
     IF v_order_mode <> 'random' THEN

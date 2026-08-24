@@ -3535,7 +3535,7 @@ export type Database = {
         Returns: Json
       }
       draft_settings_range_guard: {
-        Args: { p_draft: Json }
+        Args: { p_draft: Json; p_roster: Json }
         Returns: undefined
       }
       draft_start: { Args: { p_league_id: string }; Returns: Json }
@@ -3893,6 +3893,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 // ============================================================================
 // Hand-written convenience aliases.

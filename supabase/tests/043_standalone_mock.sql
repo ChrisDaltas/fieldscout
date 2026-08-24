@@ -40,16 +40,23 @@
 --      autopick returning it) and their BIG BOARD does too. Reddens if the
 --      queue join goes back to `=`.
 --
---   §F R473's WEDGE, AND THE §8.8 ZERO-SIDE-EFFECT COMPOSITE. The owner
---      cannot DELETE a live mock's seat; they CAN still rename it; the seat
---      is still world-readable. And a LEAGUE-attached mock's whole-row
---      composite over `leagues`/`teams`/`league_members` is unchanged across
---      the launch (the R383 shape, run on the new path).
+--   §F R473's WEDGE. The owner cannot DELETE a live mock's seat; they CAN
+--      still rename it; the seat is still world-readable; a stranger still
+--      cannot touch it. Nothing else — the zero-side-effect measurements live
+--      where their launches do (§B and §G), and R499 is why this header no
+--      longer claims one here.
 --
---   §G THE WHOLE-SCHEMA DELTA the task asks for: launch → draft → delete, by
---      a user in zero leagues, with the delta over every `public` table
---      confined to the mock's own rows and its bot seats. Fixture asserted
---      NON-EMPTY first (F94).
+--   §G THE ZERO-SIDE-EFFECT MEASUREMENT, WITH THE INSTRUMENT R383 EXISTS FOR.
+--      A user in ZERO leagues launches, drafts and deletes; the delta over the
+--      league product is taken as the **R383 WHOLE-ROW COMPOSITE** —
+--      `to_jsonb(l)::text` plus the league-scoped counts, the 041:719-736
+--      idiom — and NOT as a row count. R499: the first cut CLAIMED the
+--      composite and compared five `count(*)`s, which is the exact instrument
+--      R383 exists because it cannot see an in-place UPDATE; a regression
+--      touching only `leagues.status` or `.updated_at` passed it. §B brackets
+--      a LEAGUE-attached launch with the same composite, so the rule is
+--      measured on the path where it has always had full force too. Fixture
+--      asserted NON-EMPTY first (F94).
 --
 --   §H FORM AND GRANTS (§4.1 / D18->D23), including F112's flip.
 --
@@ -64,7 +71,7 @@
 -- goldens are stored literals (§4.3); the whole file rolls back.
 -- ============================================================================
 begin;
-select plan(60);
+select plan(97);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures. Users u01…u04. u01 is in NO league at all — that is the point of
@@ -200,6 +207,20 @@ select is(
 --    `league_id IS NULL` conjunct they would keep read on a row that HAS a
 --    league — strictly more permissive, which D233(5) forbids.
 -- ---------------------------------------------------------------------------
+-- The R383 composite, taken BEFORE the league-attached launch (041:719-736's
+-- idiom). A count cannot see an in-place UPDATE and several of the writes this
+-- rule forbids are in-place — `leagues.status`, `leagues.settings`,
+-- `leagues.updated_at` — so the whole ROW goes into the comparison.
+create temp table mp3_lx_before as
+select (select to_jsonb(l)::text from leagues l where l.id = 'b8000000-0000-4000-8000-0000000000a1') as league_row,
+       (select count(*) from league_members where league_id = 'b8000000-0000-4000-8000-0000000000a1') as members,
+       (select count(*) from teams where league_id = 'b8000000-0000-4000-8000-0000000000a1') as teams,
+       (select count(*) from league_rosters where league_id = 'b8000000-0000-4000-8000-0000000000a1') as rosters,
+       (select count(*) from league_weeks where league_id = 'b8000000-0000-4000-8000-0000000000a1') as weeks,
+       (select count(*) from league_lists where league_id = 'b8000000-0000-4000-8000-0000000000a1') as lists;
+select isnt((select league_row from mp3_lx_before), null,
+  'FIXTURE NON-EMPTY (F94): the league-attached bracket has a real leagues row to be wrong about');
+
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "97100000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
@@ -207,6 +228,17 @@ select lives_ok(
   $$ select public.create_mock_draft('b8000000-0000-4000-8000-0000000000a1') $$,
   'u04 launches a LEAGUE-attached mock (the league arm is untouched — §4 rule 11)');
 reset role;
+
+select is(
+  (select to_jsonb(l)::text from leagues l where l.id = 'b8000000-0000-4000-8000-0000000000a1')
+    || '|' || (select count(*) from league_members where league_id = 'b8000000-0000-4000-8000-0000000000a1')
+    || '/' || (select count(*) from teams where league_id = 'b8000000-0000-4000-8000-0000000000a1')
+    || '/' || (select count(*) from league_rosters where league_id = 'b8000000-0000-4000-8000-0000000000a1')
+    || '/' || (select count(*) from league_weeks where league_id = 'b8000000-0000-4000-8000-0000000000a1')
+    || '/' || (select count(*) from league_lists where league_id = 'b8000000-0000-4000-8000-0000000000a1'),
+  (select league_row || '|' || members || '/' || teams || '/' || rosters || '/' || weeks || '/' || lists
+     from mp3_lx_before),
+  '§8.8 ZERO SIDE EFFECTS ON THE LEAGUE-ATTACHED PATH, measured with the R383 COMPOSITE (041:719-736): the WHOLE `leagues` row — status, settings, updated_at — and every league-scoped count are byte-identical across a launch through the REWRITTEN RPC. A row count could not have seen any of the three (R499)');
 
 create temp table mp3_lmock as
 select id from drafts where is_mock and league_id = 'b8000000-0000-4000-8000-0000000000a1';
@@ -264,6 +296,26 @@ select is(
   1::bigint,
   'THE POSITIVE HALF: the launcher CAN read their own standalone mock — an arm that refused everyone would pass the negative pins and ship a dead room');
 reset role;
+
+-- THE REDUNDANT CONJUNCT, ALARMED (R504). The three CHILD policies carry
+-- `league_id IS NULL` even though `is_standalone_mock_launcher` carries it
+-- too, so removing either copy alone changes no query's answer — which means
+-- a behavioural pin on them is impossible in principle, and leaving them
+-- unalarmed would make "defence in depth" indistinguishable from "nobody
+-- checks". So it is pinned STRUCTURALLY: an edit that "simplifies" the
+-- conjunct away goes RED here even though nothing would have gone red at
+-- runtime.
+select is(
+  (select count(*) from pg_policies
+    where schemaname = 'public'
+      and (tablename, policyname) in (
+        ('draft_picks', 'Picks viewable by league members'),
+        ('draft_bids',  'Bids viewable by league members'),
+        ('league_chat', 'Chat viewable by league members'))
+      and qual like '%league_id IS NULL%'
+      and qual like '%is_standalone_mock_launcher%'),
+  3::bigint,
+  'ALL THREE CHILD POLICIES CARRY BOTH HALVES (R504): the redundant `league_id IS NULL` conjunct AND the helper call. Redundant is not the same as unnecessary — the helper''s copy is the ONLY guard at the two `realtime.messages` policies, which is precisely why these three should not lean on it');
 
 -- ---------------------------------------------------------------------------
 -- C. THE ENGINE CLAIMS IT (F109(a)). Both halves: the SILENT one (the tick
@@ -347,9 +399,29 @@ select ok(
   'THE SHAPE, STATED ONCE: "the league, if there is one, is alive" — NULL is alive (a mock''s existence check is the draft row itself), a nonexistent league is not, a live league is. A real draft''s league_id is never NULL, so this is provably inert for one');
 
 -- ---------------------------------------------------------------------------
--- D. THE SETTINGS OBJECT AND ITS BOUNDARIES (§4 rule 12; D146: one step
---    either side, never the boundary alone).
+-- D. THE SETTINGS OBJECT (§4 rule 12) AND ITS BOUNDARIES (D146 — one step
+--    either side of EVERY bound, never the boundary alone).
+--
+--    D.1 is the ARM CONTRACT and D.3 the WIRING, both driven through
+--    `create_mock_draft` because that is where a client reaches them. D.2 is
+--    the BOUND SWEEP and it drives `draft_settings_range_guard` DIRECTLY —
+--    measured at the layer the claim is about (tasks-DR §4 rule 9), and
+--    cheap enough to be exhaustive because it mints no seats and trips no
+--    §22.5 cap. R498/R500: the first cut bounded five knobs, pinned two of
+--    them, and left `roster_settings` open on the same client-reachable arm.
 -- ---------------------------------------------------------------------------
+
+-- Two one-line drivers, so each pin below reads as the number it is about.
+-- The "other half" of each call is a known-good object, so a failure can only
+-- come from the half under test.
+create function mp3_d(p jsonb) returns void language sql as
+$$ select public.draft_settings_range_guard(p,
+     '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}],
+       "bench": 1, "ir_slots": [], "swap_spots": 0}'::jsonb) $$;
+create function mp3_r(p jsonb) returns void language sql as
+$$ select public.draft_settings_range_guard('{}'::jsonb, p) $$;
+
+-- D.1 THE ARM CONTRACT ------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "97100000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
@@ -366,51 +438,162 @@ select throws_ok(
   '…and sending neither is refused too');
 select throws_ok(
   $$ select public.create_mock_draft(p_settings := '{"team_count": 11,
-       "roster_settings": {"starting_slots": [], "bench": 2}}'::jsonb) $$,
+       "roster_settings": {"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 1}}'::jsonb) $$,
   '22023',
   'create_mock_draft: team_count 11 is not a v1 league size — practice with 8, 10, 12, 14 or 16 seats',
-  'BOUNDARY (D146): team_count 11 is refused — the number that decides how many rows the transaction MINTS is checked before anything is written');
-select lives_ok(
-  $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 2},
-       "draft": {"draft_type": "snake"}}'::jsonb) $$,
-  '…and 8, one step the other side of it, launches (an all-bench roster is a LEGAL roster — the 042 §F discriminator, honoured here)');
+  'BOUNDARY: team_count 11 is refused — the number that decides how many rows the transaction MINTS is checked before anything is written');
+reset role;
+
+-- D.2 THE BOUND SWEEP, one step either side of all NINE bounds --------------
+select throws_ok($$ select mp3_d('{"pick_timer_seconds": 31}') $$, '22023',
+  'draft settings: pick_timer_seconds 31 is not one of the offered clocks (§7.3.8)',
+  'pick_timer_seconds: 31 is refused — the clock is a WHITELIST (PICK_TIMER_SECONDS), not a range, so "one step" means the value next to an offered one');
+select lives_ok($$ select mp3_d('{"pick_timer_seconds": 30}') $$,
+  '…and 30, the offered clock beside it, passes');
+select lives_ok($$ select mp3_d('{"pick_timer_seconds": 86400}') $$,
+  '…and 86400, the largest offered clock, passes');
+select throws_ok($$ select mp3_d('{"pick_timer_seconds": 86401}') $$, '22023',
+  'draft settings: pick_timer_seconds 86401 is not one of the offered clocks (§7.3.8)',
+  '…and one second past it does not');
+
+select throws_ok($$ select mp3_d('{"auction_budget": 49}') $$, '22023',
+  'draft settings: auction_budget 49 is outside 50-1000 (§7.3.8)',
+  'auction_budget: 49 refused one step below the floor');
+select lives_ok($$ select mp3_d('{"auction_budget": 50}') $$, '…and 50, the floor itself, passes');
+select lives_ok($$ select mp3_d('{"auction_budget": 1000}') $$, '…and 1000, the ceiling itself, passes');
+select throws_ok($$ select mp3_d('{"auction_budget": 1001}') $$, '22023',
+  'draft settings: auction_budget 1001 is outside 50-1000 (§7.3.8)',
+  '…and 1001 refused one step above it');
+
+select throws_ok($$ select mp3_d('{"auction_nomination_seconds": 9}') $$, '22023',
+  'draft settings: auction_nomination_seconds 9 is outside 10-120 (§7.3.8)',
+  'auction_nomination_seconds: 9 refused one step below the floor');
+select lives_ok($$ select mp3_d('{"auction_nomination_seconds": 10}') $$, '…and 10 passes');
+select lives_ok($$ select mp3_d('{"auction_nomination_seconds": 120}') $$, '…and 120 passes');
+select throws_ok($$ select mp3_d('{"auction_nomination_seconds": 121}') $$, '22023',
+  'draft settings: auction_nomination_seconds 121 is outside 10-120 (§7.3.8)',
+  '…and 121 refused one step above the ceiling');
+
+select throws_ok($$ select mp3_d('{"auction_bid_seconds": 9}') $$, '22023',
+  'draft settings: auction_bid_seconds 9 is outside 10-60 (§7.3.8)',
+  'auction_bid_seconds: 9 refused one step below the floor — a clock under it never closes a nomination');
+select lives_ok($$ select mp3_d('{"auction_bid_seconds": 10}') $$, '…and 10 passes');
+select lives_ok($$ select mp3_d('{"auction_bid_seconds": 60}') $$, '…and 60 passes');
+select throws_ok($$ select mp3_d('{"auction_bid_seconds": 61}') $$, '22023',
+  'draft settings: auction_bid_seconds 61 is outside 10-60 (§7.3.8)',
+  '…and 61 refused one step above the ceiling');
+
+select throws_ok($$ select mp3_d('{"auction_anti_snipe_seconds": -1}') $$, '22023',
+  'draft settings: auction_anti_snipe_seconds -1 is outside 0-15 (§7.3.8)',
+  'auction_anti_snipe_seconds: -1 refused one step below the floor');
+select lives_ok($$ select mp3_d('{"auction_anti_snipe_seconds": 0}') $$,
+  '…and 0 passes — anti-snipe OFF is a legal setting, not a missing one');
+select lives_ok($$ select mp3_d('{"auction_anti_snipe_seconds": 15}') $$, '…and 15 passes');
+select throws_ok($$ select mp3_d('{"auction_anti_snipe_seconds": 16}') $$, '22023',
+  'draft settings: auction_anti_snipe_seconds 16 is outside 0-15 (§7.3.8)',
+  '…and 16 refused one step above the ceiling');
+
+select throws_ok($$ select mp3_d('{"disconnect_grace_seconds": -1}') $$, '22023',
+  'draft settings: disconnect_grace_seconds -1 is outside 0-120 (§7.3.8)',
+  'disconnect_grace_seconds: -1 refused (R498 — 999999 was stored VERBATIM before this bound existed)');
+select lives_ok($$ select mp3_d('{"disconnect_grace_seconds": 0}') $$, '…and 0 passes');
+select lives_ok($$ select mp3_d('{"disconnect_grace_seconds": 120}') $$, '…and 120 passes');
+select throws_ok($$ select mp3_d('{"disconnect_grace_seconds": 121}') $$, '22023',
+  'draft settings: disconnect_grace_seconds 121 is outside 0-120 (§7.3.8)',
+  '…and 121 refused one step above the ceiling');
+
+-- The roster half — R498's headline. These numbers ARE `total_rounds`, which
+-- `draft_team_budget` reads as the auction's per-team capacity.
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 1}], "bench": -1}') $$, '22023',
+  'roster settings: bench -1 is outside 0-20 (§7.3.2)',
+  'bench: -1 refused (R498 — it LAUNCHED before this bound existed)');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 1}], "bench": 0}') $$,
+  '…and 0 passes — a bench-less roster is legal');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 1}], "bench": 20}') $$,
+  '…and 20, the ceiling itself, passes');
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 1}], "bench": 21}') $$, '22023',
+  'roster settings: bench 21 is outside 0-20 (§7.3.2)',
+  '…and 21 refused one step above it. `bench: 5000` launched a 5,010-round draft before R498');
+
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 11}], "bench": 1}') $$, '22023',
+  'roster settings: a starting slot count of 11 is outside 0-10 (§7.3.2)',
+  'starting slot count: 11 refused one step above the ceiling (`count: 999` launched before R498)');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 10}], "bench": 1}') $$,
+  '…and 10 passes');
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": -1}, {"key": "rb", "count": 2}], "bench": 1}') $$, '22023',
+  'roster settings: a starting slot count of -1 is outside 0-10 (§7.3.2)',
+  '…and -1 refused one step below the floor, on a roster whose SUM is legal — so the pin discriminates the per-slot bound from the sum bound');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 0}, {"key": "rb", "count": 2}], "bench": 1}') $$,
+  '…and a 0-count slot passes: an EMPTY slot is legal, it just contributes nothing to the sum');
+
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 0}], "bench": 5}') $$, '22023',
+  'roster settings: the starting lineup totals 0 slots — it must total between 1 and 20 (§7.3.8)',
+  'starting-lineup SUM: 0 refused one step below the floor (§7.3.8 has required 1-20 since it was written; this guard stops inventing a laxer rule for practice than a league gets)');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 1}], "bench": 5}') $$,
+  '…and 1 passes');
+select lives_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 10}, {"key": "rb", "count": 10}], "bench": 5}') $$,
+  '…and 20, the ceiling itself, passes');
+select throws_ok($$ select mp3_r('{"starting_slots": [{"key": "qb", "count": 10}, {"key": "rb", "count": 10}, {"key": "wr", "count": 1}], "bench": 5}') $$, '22023',
+  'roster settings: the starting lineup totals 21 slots — it must total between 1 and 20 (§7.3.8)',
+  '…and 21 refused one step above it');
+select throws_ok($$ select mp3_r('{"bench": 5}') $$, '22023',
+  'roster settings: the starting lineup totals 0 slots — it must total between 1 and 20 (§7.3.8)',
+  'THE EVASION IS CLOSED TOO: OMITTING `starting_slots` sums to 0 and is refused, exactly as draft_rounds_from_roster reads it. A bound that only runs `IF p_roster ? key` is R498''s own species one level down');
+
+-- D.3 THE GUARD IS ACTUALLY WIRED INTO THE RPC ------------------------------
+-- D.2 proves the function; these prove `create_mock_draft` calls it. Without
+-- this pair the whole sweep above could pass against a function nothing runs.
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "97100000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 2},
+       "roster_settings": {"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 1},
        "draft": {"draft_type": "auction", "auction_bid_seconds": 9}}'::jsonb) $$,
   '22023',
   'draft settings: auction_bid_seconds 9 is outside 10-60 (§7.3.8)',
-  'BOUNDARY: a 9-second bid clock is refused one step below the floor — this RPC is EXECUTE-able by `authenticated`, so a client that skips the route reaches it directly, and a clock under the floor WEDGES the auction rather than merely looking wrong');
+  'WIRED, draft half: the RPC refuses a 9-second bid clock. This RPC is EXECUTE-able by `authenticated`, so a client that skips the route reaches it directly');
 select throws_ok(
   $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 2},
-       "draft": {"draft_type": "auction", "auction_anti_snipe_seconds": 16}}'::jsonb) $$,
-  '22023',
-  'draft settings: auction_anti_snipe_seconds 16 is outside 0-15 (§7.3.8)',
-  'BOUNDARY: anti-snipe 16 is refused one step above the ceiling (0 is legal and 15 is the last legal value — D128''s floor is a different question)');
-select throws_ok(
-  $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 0},
+       "roster_settings": {"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 5000},
        "draft": {"draft_type": "snake"}}'::jsonb) $$,
-  'P0001',
-  'create_mock_draft: these roster settings produce no draftable rounds (rounds = starters + bench, D91) — add starting slots or bench spots',
-  'a roster with nothing to draft is refused — and with its OWN message: the league arm''s golden text names a league and a settings screen that do not exist here, so it is left byte-for-byte alone (pgTAP 025 pins it)');
-select throws_ok(
-  $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 60},
-       "draft": {"draft_type": "auction", "auction_budget": 50}}'::jsonb) $$,
-  'P0001',
-  null,
-  'THE §8.6.8 SOLVENCY BACKSTOP REACHES THE STANDALONE ARM: a $50 budget over 2 slots at the $1 reserve is refused at launch. Before 095 this could not even be asked — draft_auction_solvent swept `t.league_id = NULL`, got zero rows, and its own (correct) empty-set guard refused EVERY standalone auction (banner item 4)');
+  '22023',
+  'roster settings: bench 5000 is outside 0-20 (§7.3.2)',
+  'WIRED, roster half — the exact probe R498 filed: `bench: 5000` LAUNCHED a 5,010-round draft before this bound existed');
 select lives_ok(
   $$ select public.create_mock_draft(p_settings := '{"team_count": 8,
-       "roster_settings": {"starting_slots": [], "bench": 2},
+       "roster_settings": {"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 1},
        "draft": {"draft_type": "auction", "auction_budget": 200,
                  "auction_nomination_seconds": 30, "auction_bid_seconds": 20,
                  "auction_anti_snipe_seconds": 10}}'::jsonb) $$,
-  '…and a solvent standalone AUCTION launches — the same engine, with the mock''s own seat map as the team set');
+  'AND A SOLVENT STANDALONE AUCTION LAUNCHES — which is banner item 4''s pin, not a smoke test: before 095 `draft_auction_solvent` swept `t.league_id = NULL`, got zero rows, and its own (correct) empty-set guard refused EVERY standalone auction at launch');
 reset role;
+
+create temp table mp3_auc as
+select d.id from drafts d
+where d.is_mock and d.league_id is null and d.draft_type = 'auction'
+  and d.config->'mock'->>'launched_by' = '97100000-0000-4000-8000-000000000002';
+select is((select count(*) from mp3_auc), 1::bigint, 'exactly one standalone auction to measure');
+select ok(
+  (select public.draft_auction_solvent(a.id) from mp3_auc a),
+  '…and `draft_auction_solvent` ANSWERS TRUE for it rather than raising — the standalone arm sweeps the mock''s own `draft_order`, which is the team set `create_mock_draft` built from the seats it minted');
+select is(
+  (select b.open_slots from mp3_auc a, drafts d,
+     lateral public.draft_team_budget(a.id, (d.config->'mock'->>'human_team_id')::uuid) b
+    where d.id = a.id),
+  2,
+  '…and `draft_team_budget` answers for a standalone seat instead of raising P0002: 2 open slots (1 starter + 1 bench), the same number `total_rounds` was derived from. Before 095 this raised for EVERY seat');
+
+-- WHY THERE IS NO INSOLVENCY REFUSAL PINNED HERE, said out loud rather than
+-- left as a gap: with the roster bounds in place (R498) the largest legal
+-- roster is 20 starters + 20 bench = 40 draftable spots, and the smallest
+-- legal budget is $50, so at the $1 reserve `remaining >= open_slots * 1`
+-- holds for every settings object this guard admits. **The §8.6.8 refusal is
+-- UNREACHABLE on the standalone arm — redundant with the roster bounds, which
+-- is v2.13.3''s finding arriving on a second path.** The backstop is kept (it
+-- is one `auction_zero_dollar_nominations` change and one bound change away
+-- from mattering) and is deliberately NOT pinned: a pin on a line that cannot
+-- execute is a pin that can never go red.
 
 -- ---------------------------------------------------------------------------
 -- E. R492's TWO PREDICATES. The launcher's QUEUE must be honoured on a
@@ -504,19 +687,27 @@ select is(
 reset role;
 
 -- ---------------------------------------------------------------------------
--- G. THE WHOLE-SCHEMA DELTA (the task's §6). A user in zero leagues launches,
---    drafts, and deletes; nothing outside the mock's own rows moves.
+-- G. THE ZERO-SIDE-EFFECT MEASUREMENT, WITH THE INSTRUMENT R383 EXISTS FOR.
+--    A user in ZERO leagues launches, drafts and deletes; nothing in the
+--    league product moves. Taken as the R383 WHOLE-ROW COMPOSITE (041:719-736)
+--    and NOT as a row count — R499: a count cannot see an in-place UPDATE, and
+--    `leagues.status` / `.settings` / `.updated_at` are exactly the writes
+--    §8.8 forbids and exactly the ones a count sails past.
 -- ---------------------------------------------------------------------------
 create temp table mp3_before as
-select 'leagues' as t, count(*) as n from leagues
-union all select 'league_members', count(*) from league_members
-union all select 'league_rosters', count(*) from league_rosters
-union all select 'league_weeks', count(*) from league_weeks
-union all select 'league_lists', count(*) from league_lists
-union all select 'teams', count(*) from teams
-union all select 'drafts', count(*) from drafts;
-select cmp_ok((select n from mp3_before where t = 'teams'), '>', 0::bigint,
-  'FIXTURE NON-EMPTY (F94): the before-snapshot has rows to be wrong about');
+select (select string_agg(to_jsonb(l)::text, '|' order by l.id) from leagues l) as league_rows,
+       (select count(*) from leagues) as leagues,
+       (select count(*) from league_members) as members,
+       (select count(*) from league_rosters) as rosters,
+       (select count(*) from league_weeks) as weeks,
+       (select count(*) from league_lists) as lists,
+       (select count(*) from teams where league_id is not null) as league_teams,
+       (select string_agg(to_jsonb(t)::text, '|' order by t.id)
+          from teams t where t.league_id is not null) as league_team_rows;
+select isnt((select league_rows from mp3_before), null,
+  'FIXTURE NON-EMPTY (F94): the before-composite carries real `leagues` rows, so the comparison below can be wrong about something');
+select cmp_ok((select league_teams from mp3_before), '>', 0::bigint,
+  '…and real league franchises too — the rows the cleanup safety belt must not reach');
 
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -536,28 +727,23 @@ select is(
   (select count(*) from league_chat c, mp3_mock m where c.context = 'draft:' || m.id::text),
   0::bigint,
   '…and its chat goes with it: the sweep is NULL-safe now (`league_id IS NOT DISTINCT FROM`), where `= NULL` would have orphaned every standalone post');
-select is(
-  (select n from mp3_before where t = 'leagues'), (select count(*) from leagues),
-  '§8.8 ZERO SIDE EFFECTS over the whole lifecycle: `leagues` is unchanged');
-select is(
-  (select n from mp3_before where t = 'league_members'), (select count(*) from league_members),
-  '…`league_members` is unchanged');
-select is(
-  (select n from mp3_before where t = 'league_rosters'), (select count(*) from league_rosters),
-  '…`league_rosters` is unchanged — draft_complete_internal''s roster write stays inside its `IF NOT v_draft.is_mock`');
-select is(
-  (select n from mp3_before where t = 'league_weeks'), (select count(*) from league_weeks),
-  '…`league_weeks` is unchanged');
-select is(
-  (select n from mp3_before where t = 'league_lists'), (select count(*) from league_lists),
-  '…and `league_lists` is unchanged. The R383 whole-row composite shape, run on the new path. (`transactions` is NOT in this list because it does not exist yet — the table arrives with the in-season lane; naming a table that is not there would have made this section pass vacuously)');
 
--- The safety belt, stated as a test rather than a comment.
+-- THE COMPOSITE ITSELF.
 select is(
-  (select count(*) from teams t
-    where t.league_id = 'b8000000-0000-4000-8000-0000000000a1'),
-  8::bigint,
-  'THE SAFETY BELT: the league''s eight real franchises are all still there. Both cleanup paths carry `t.league_id IS NULL` AND an owner check, so a malformed cpu_seats array is INCAPABLE of deleting a real franchise, whatever it happens to contain');
+  (select string_agg(to_jsonb(l)::text, '|' order by l.id) from leagues l)
+    || '|' || (select count(*) from leagues)
+    || '/' || (select count(*) from league_members)
+    || '/' || (select count(*) from league_rosters)
+    || '/' || (select count(*) from league_weeks)
+    || '/' || (select count(*) from league_lists),
+  (select league_rows || '|' || leagues || '/' || members || '/' || rosters
+          || '/' || weeks || '/' || lists
+     from mp3_before),
+  '§8.8 ZERO SIDE EFFECTS over the WHOLE standalone lifecycle — launch, tick, human pick, pause, resume, delete — measured as the R383 COMPOSITE: EVERY `leagues` row entire (status, settings, updated_at) plus every league-scoped count, byte-identical. This is the assertion R499 found missing: the five `count(*)`s it replaces would have passed a regression that flipped a league to `in_season` and back, or that merely bumped `updated_at`');
+select is(
+  (select string_agg(to_jsonb(t)::text, '|' order by t.id) from teams t where t.league_id is not null),
+  (select league_team_rows from mp3_before),
+  '…AND EVERY LEAGUE FRANCHISE ROW ENTIRE — not a count of them. This is where the cleanup safety belt is really pinned: a malformed `cpu_seats` array is incapable of deleting a real franchise (`t.league_id IS NULL` + owner), and a count alone could not tell a deleted franchise from a renamed one');
 
 -- ---------------------------------------------------------------------------
 -- H. FORM AND GRANTS (§4.1 / D18->D23), including F112's flip.
@@ -583,7 +769,7 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'public.draft_league_alive(uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_league_alive(uuid)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.draft_settings_range_guard(jsonb)', 'EXECUTE'),
+  and not has_function_privilege('authenticated', 'public.draft_settings_range_guard(jsonb, jsonb)', 'EXECUTE'),
   '…and the two engine-internal helpers are REVOKEd from every client role — no client asks whether a league is alive (D18->D23)');
 select ok(
   not has_function_privilege('authenticated', 'public.draft_mock_cpu_need(uuid, uuid, text)', 'EXECUTE')
