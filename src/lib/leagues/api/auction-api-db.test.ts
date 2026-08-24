@@ -80,6 +80,7 @@ import {
   ACTION_ID_REUSED_MESSAGE,
   deleteMockDraft,
   launchMockDraft,
+  leagueScope,
   nominatePlayer,
   placeBid,
   startDraft,
@@ -449,7 +450,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect(mock.draft_type).toBe('auction')
     expect(mock.on_clock_team_id).toBe(commishTeamId)
 
-    const intruder = await nominatePlayer(commishClient, leagueId, commishId, {
+    const intruder = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, {
       draft_id: mockId,
       player_id: P4,
       opening_bid: 1,
@@ -458,7 +459,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect(intruder.status).toBe(400)
     expect(errorText(intruder.body)).toContain("another member's solo practice")
 
-    const opened = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
+    const opened = await nominatePlayer(mgr2Client, leagueScope(leagueId), mgr2Id, {
       draft_id: mockId,
       player_id: P4,
       opening_bid: 1,
@@ -483,7 +484,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
   // `resolveActingSeat`'s mock arm (config.mock.human_team_id, D103(2)) is
   // what refuses it now — measured 403, not the RPC's 400.
   it('R426: a non-launcher replaying a CONSUMED mock action_id is refused by the seat check, not handed the launcher’s row', async () => {
-    const replay = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
+    const replay = await nominatePlayer(mgr3Client, leagueScope(leagueId), mgr3Id, {
       draft_id: mockId,
       player_id: P4,
       opening_bid: 1,
@@ -497,7 +498,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
 
   it('launcher bids FOR the human seat through the bid route (after a real CPU raise); the seat’s real manager’s bid is refused', async () => {
     // The intruder's bid — the D138 extension of D103(2) to bids.
-    const intruder = await placeBid(commishClient, leagueId, commishId, {
+    const intruder = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       draft_id: mockId,
       nomination_seq: 1,
       player_id: P4,
@@ -528,7 +529,7 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     // observed high bid: a CPU raises by exactly $1 per pass and at most one
     // cron pass can land between the read and this call.
     const amount = nomination.high_bid + 3
-    const bid = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const bid = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       draft_id: mockId,
       nomination_seq: 1,
       player_id: P4,
@@ -572,11 +573,11 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   }, 60_000)
 
   it('wire-side contract: a body without action_id is a 400 on that field BEFORE any RPC (probe B’s target); a non-integer opening bid likewise', async () => {
-    const missing = await nominatePlayer(commishClient, leagueId, commishId, { player_id: P1, opening_bid: 1 })
+    const missing = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, { player_id: P1, opening_bid: 1 })
     expect(missing.status).toBe(400)
     expect((missing.body as unknown as FieldErrorBody).error.fieldErrors.action_id).toBeDefined()
 
-    const fractional = await nominatePlayer(commishClient, leagueId, commishId, {
+    const fractional = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, {
       player_id: P1,
       opening_bid: 1.5,
       action_id: ACTION.nominate1,
@@ -589,7 +590,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   })
 
   it('063 mapping: an unknown player is a 404 carrying the RPC’s OWN message (never "League not found"); wrong turn is the friendly 400; the outsider gets the no-leak 404', async () => {
-    const unknown = await nominatePlayer(commishClient, leagueId, commishId, {
+    const unknown = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, {
       player_id: 'vitest-aa-no-such-player',
       opening_bid: 1,
       action_id: ACTION.nominateUnknown,
@@ -598,7 +599,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
     expect(errorText(unknown.body)).toContain('player vitest-aa-no-such-player not found')
     expect(errorText(unknown.body)).not.toContain('League not found')
 
-    const wrongTurn = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
+    const wrongTurn = await nominatePlayer(mgr2Client, leagueScope(leagueId), mgr2Id, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominateWrongTurn,
@@ -608,7 +609,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
 
     // The R155 class: an explicit draft_id changes nothing — the RLS probe
     // sees no row, the answer is the draftless 404.
-    const outsider = await nominatePlayer(outsiderClient, leagueId, outsiderId, {
+    const outsider = await nominatePlayer(outsiderClient, leagueScope(leagueId), outsiderId, {
       draft_id: draftId,
       player_id: P1,
       opening_bid: 1,
@@ -619,7 +620,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
   })
 
   it('the on-clock commissioner nominates: 200 with the authoritative state; the SAME body again is the D68 no-op (same row, one row)', async () => {
-    const opened = await nominatePlayer(commishClient, leagueId, commishId, {
+    const opened = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominate1,
@@ -640,7 +641,7 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
       action_id: ACTION.nominate1,
     })
 
-    const replay = await nominatePlayer(commishClient, leagueId, commishId, {
+    const replay = await nominatePlayer(commishClient, leagueScope(leagueId), commishId, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.nominate1,
@@ -657,13 +658,13 @@ describe('POST …/draft/nominate (§8.6.2; action_id REQUIRED wire-side — D68
 
 describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (F64) and action ids are per verb (F65)', () => {
   it('F64 wire-side: a body without nomination_seq + player_id is a 400 on BOTH fields before any RPC; a missing action_id likewise (probe B); nothing written', async () => {
-    const noIdentity = await placeBid(mgr2Client, leagueId, mgr2Id, { amount: 2, action_id: ACTION.bid1 })
+    const noIdentity = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, { amount: 2, action_id: ACTION.bid1 })
     expect(noIdentity.status).toBe(400)
     const fields = (noIdentity.body as unknown as FieldErrorBody).error.fieldErrors
     expect(fields.nomination_seq).toBeDefined()
     expect(fields.player_id).toBeDefined()
 
-    const noAction = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const noAction = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -671,7 +672,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(noAction.status).toBe(400)
     expect((noAction.body as unknown as FieldErrorBody).error.fieldErrors.action_id).toBeDefined()
 
-    const outsider = await placeBid(outsiderClient, leagueId, outsiderId, {
+    const outsider = await placeBid(outsiderClient, leagueScope(leagueId), outsiderId, {
       draft_id: draftId,
       nomination_seq: 1,
       player_id: P1,
@@ -684,7 +685,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
 
   it('F64 END-TO-END (probe A’s target): a stale identity is refused through the route with the §16.3 copy as a 400 — the player arm AND the seq arm with a MATCHING player (R337)', async () => {
     // The room was looking at p2 (it was not — p1 is live): the player arm.
-    const stalePlayer = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const stalePlayer = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 1,
       player_id: P2,
       amount: 2,
@@ -698,7 +699,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // number (D143's renominate / an undone award both produce this): the
     // seq arm — only reachable when the route actually transports the seq
     // (R337: neither arm subsumes the other).
-    const staleSeq = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const staleSeq = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 2,
       player_id: P1,
       amount: 2,
@@ -716,7 +717,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
   })
 
   it('a raise lands (200, the room’s identity echoed); the instant loser is the friendly "outbid" 400 (D136: never a 429); the D68 replay is the same row', async () => {
-    const raise = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const raise = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -737,7 +738,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       high_bidder_team_id: mgr2TeamId,
     })
 
-    const loser = await placeBid(mgr3Client, leagueId, mgr3Id, {
+    const loser = await placeBid(mgr3Client, leagueScope(leagueId), mgr3Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -749,7 +750,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
 
     // D68: the SAME body (the variables a React Query retry re-sends) is the
     // same 200 with the same row — one row total for this submit.
-    const replay = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const replay = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -765,7 +766,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // as a bid: the RPC's verb-blind replay returns the OPENING row (R331 —
     // the false-success shape); the service sees a row that is not this
     // bid and refuses.
-    const crossVerb = await placeBid(commishClient, leagueId, commishId, {
+    const crossVerb = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: 3,
@@ -778,7 +779,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // member who is not the nominator while bidding is open: without the
     // check this is F65's live-proven false success (a 200 carrying
     // ANOTHER manager's raise row); with it, a 409.
-    const converse = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
+    const converse = await nominatePlayer(mgr3Client, leagueScope(leagueId), mgr3Id, {
       player_id: P1,
       opening_bid: 1,
       action_id: ACTION.bid1,
@@ -817,7 +818,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // shape an ARGUMENT-ONLY check answers 200 to, because every argument
     // agrees with the row the verb-blind replay hands back (R331). The one
     // fact mgr3 cannot supply is the acting seat.
-    const forgedNomination = await nominatePlayer(mgr3Client, leagueId, mgr3Id, {
+    const forgedNomination = await nominatePlayer(mgr3Client, leagueScope(leagueId), mgr3Id, {
       player_id: raise.player_id,
       opening_bid: raise.amount,
       action_id: raise.action_id,
@@ -838,7 +839,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       .single()
     expect(opening).toMatchObject({ team_id: commishTeamId, nomination_seq: 1, amount: 1 })
     if (!opening?.action_id) throw new Error('mgr3 could not read the opening row')
-    const forgedBid = await placeBid(mgr3Client, leagueId, mgr3Id, {
+    const forgedBid = await placeBid(mgr3Client, leagueScope(leagueId), mgr3Id, {
       nomination_seq: opening.nomination_seq,
       player_id: opening.player_id,
       amount: opening.amount,
@@ -873,7 +874,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     // The commissioner (the nominator — bidding has no turn, §8.6.3) raises
     // to one under its own ceiling; mgr2 holds the standing high bid, so
     // the raise comes from a seat that is NOT the high bidder.
-    const under = await placeBid(commishClient, leagueId, commishId, {
+    const under = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID - 1,
@@ -881,7 +882,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     })
     expect(under.status).toBe(200)
 
-    const atMax = await placeBid(mgr3Client, leagueId, mgr3Id, {
+    const atMax = await placeBid(mgr3Client, leagueScope(leagueId), mgr3Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID,
@@ -896,7 +897,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       high_bidder_team_id: mgr3TeamId,
     })
 
-    const overMax = await placeBid(commishClient, leagueId, commishId, {
+    const overMax = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID + 1,
@@ -948,7 +949,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     // sent (seq 1, p1, $2 — F64 means every real retry carries identity),
     // and the live phase is now NOMINATING on seq 2. The replay arm sits
     // above the identity guard in 085/089, so the original row comes back.
-    const replay = await placeBid(mgr2Client, leagueId, mgr2Id, {
+    const replay = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       nomination_seq: 1,
       player_id: P1,
       amount: 2,
@@ -965,7 +966,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
   })
 
   it('mgr2 nominates p2; mgr3 (a $186 buy ⇒ $14 over 14 slots ⇒ max bid $1) is refused at $2 with the derivation’s numbers; the commissioner raises', async () => {
-    const opened = await nominatePlayer(mgr2Client, leagueId, mgr2Id, {
+    const opened = await nominatePlayer(mgr2Client, leagueScope(leagueId), mgr2Id, {
       player_id: P2,
       opening_bid: 1,
       action_id: ACTION.nominate2,
@@ -973,7 +974,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     expect(opened.status).toBe(200)
     expect((opened.body as unknown as AuctionBody).bid.nomination_seq).toBe(2)
 
-    const overOne = await placeBid(mgr3Client, leagueId, mgr3Id, {
+    const overOne = await placeBid(mgr3Client, leagueScope(leagueId), mgr3Id, {
       nomination_seq: 2,
       player_id: P2,
       amount: 2,
@@ -983,7 +984,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     expect(errorText(overOne.body)).toContain('$2 is over your max bid of $1')
     expect(errorText(overOne.body)).toContain('you have $14 for 14 open roster spots')
 
-    const raise = await placeBid(commishClient, leagueId, commishId, {
+    const raise = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       nomination_seq: 2,
       player_id: P2,
       amount: 2,

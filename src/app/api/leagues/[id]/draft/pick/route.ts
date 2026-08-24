@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { makePick } from '@/lib/leagues/api/draft-service'
+import { leagueScope, makePick } from '@/lib/leagues/api/draft-service'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -32,6 +32,6 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const body = await request.json().catch(() => null)
-  const result = await makePick(supabase, id, body)
+  const result = await makePick(supabase, leagueScope(id), body)
   return NextResponse.json(result.body, { status: result.status })
 }

@@ -63,7 +63,7 @@ import type { Database } from '@/types/database'
 import { claimInvite, createInvite } from '../api/invites-service'
 import { createLeague, patchLeague } from '../api/leagues-service'
 import { addPlaceholderSeat } from '../api/members-service'
-import { createDraft, makePick, startDraft, upsertQueue } from '../api/draft-service'
+import { createDraft, leagueScope, makePick, startDraft, upsertQueue } from '../api/draft-service'
 import { defaultsForTeamCount } from '../settings/league-settings'
 import type { RosterSettings } from '../settings/league-settings'
 
@@ -595,7 +595,7 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
         await chaosQueueDoubleTap(args, bot, leagueId, draftId, seat.teamId, queuePlan.players, queuePlan.concurrentAlternate, label, workerErrors)
       } else {
         const saved = await limit(() =>
-          upsertQueue(bot.client, leagueId, bot.userId, {
+          upsertQueue(bot.client, leagueScope(leagueId), bot.userId, {
             draft_id: draftId,
             players: queuePlan.players,
           }),
@@ -631,12 +631,12 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
       // queue double-tap does: a saturated limiter would serialize the taps
       // and the E2/E1 concurrency under test would never actually occur.
       const volley: Array<Promise<{ status: number; body: unknown }>> = [
-        makePick(bot.client, leagueId, { draft_id: draftId, player_id: decision.playerId, action_id: actionId }),
-        makePick(bot.client, leagueId, { draft_id: draftId, player_id: decision.playerId, action_id: actionId }),
+        makePick(bot.client, leagueScope(leagueId), { draft_id: draftId, player_id: decision.playerId, action_id: actionId }),
+        makePick(bot.client, leagueScope(leagueId), { draft_id: draftId, player_id: decision.playerId, action_id: actionId }),
       ]
       if (decision.strayPlayerId !== null) {
         volley.push(
-          makePick(bot.client, leagueId, {
+          makePick(bot.client, leagueScope(leagueId), {
             draft_id: draftId,
             player_id: decision.strayPlayerId!,
             action_id: uuidFromRng(actionRng),
@@ -687,7 +687,7 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
       }
     } else {
       const picked = await limit(() =>
-        makePick(bot.client, leagueId, {
+        makePick(bot.client, leagueScope(leagueId), {
           draft_id: draftId,
           player_id: decision.playerId,
           action_id: actionId,
@@ -872,8 +872,8 @@ async function chaosQueueDoubleTap(
   // A user's double-tap has no semaphore; neither does this one (bounded:
   // +2 in-flight requests per chaos turn).
   const [a, b] = await Promise.all([
-    upsertQueue(bot.client, leagueId, bot.userId, { draft_id: draftId, players: orderA }),
-    upsertQueue(bot.client, leagueId, bot.userId, { draft_id: draftId, players: orderB }),
+    upsertQueue(bot.client, leagueScope(leagueId), bot.userId, { draft_id: draftId, players: orderA }),
+    upsertQueue(bot.client, leagueScope(leagueId), bot.userId, { draft_id: draftId, players: orderB }),
   ])
   // Classify every failed leg by STATUS (R287): a 400 is a friendly
   // refusal (expected chaos traffic — e.g. the seat's turn advanced

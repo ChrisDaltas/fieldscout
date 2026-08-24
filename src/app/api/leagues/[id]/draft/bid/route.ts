@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { placeBid } from '@/lib/leagues/api/draft-service'
+import { leagueScope, placeBid } from '@/lib/leagues/api/draft-service'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -43,6 +43,6 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const body = await request.json().catch(() => null)
-  const result = await placeBid(supabase, id, user.id, body)
+  const result = await placeBid(supabase, leagueScope(id), user.id, body)
   return NextResponse.json(result.body, { status: result.status })
 }

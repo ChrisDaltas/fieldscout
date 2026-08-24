@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { queueFromList } from '@/lib/leagues/api/draft-service'
+import { leagueScope, queueFromList } from '@/lib/leagues/api/draft-service'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -33,6 +33,6 @@ export async function POST(request: Request, { params }: RouteParams) {
 
   // An empty body is legal (mode defaults to replace).
   const body = await request.json().catch(() => null)
-  const result = await queueFromList(supabase, id, user.id, listId, body ?? {})
+  const result = await queueFromList(supabase, leagueScope(id), user.id, listId, body ?? {})
   return NextResponse.json(result.body, { status: result.status })
 }
