@@ -36,3 +36,20 @@ export function mockLauncherHref(leagueId: string): string {
 export function mockRoomHref(mockId: string): string {
   return `/app/mocks/${mockId}`
 }
+
+/**
+ * Where a LEAGUE-attached mock's room lives — the shipped URL, named
+ * (R521). `MockRow` has hand-rolled this string since L.B3.5 and still
+ * does; this is the seam's copy, added when a SECOND caller appeared, and
+ * unifying the row's is MP.6c's if it touches that file at all.
+ *
+ * It exists because `/app/mocks/[mockId]` is keyed on a mock id and a
+ * league-attached mock has a working room already: rather than render the
+ * standalone room's state over a mock that does not belong to it, that id
+ * is sent to the room it actually has. Under the leagues flag being off
+ * that URL redirects to `/app` — correct, and the same honest answer
+ * `/app/mocks` already gives the row (R519).
+ */
+export function leagueMockRoomHref(leagueId: string, mockId: string): string {
+  return `/app/leagues/${leagueId}/draft?draft=${mockId}`
+}

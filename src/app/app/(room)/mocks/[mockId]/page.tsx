@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
+import { leagueMockRoomHref } from '@/components/draft/mock-launcher-entry'
 import { mockProgressLabel, mockSeatCount } from '@/components/draft/mock-launcher-ops'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -70,6 +72,18 @@ export default async function MockRoomPage({ params }: MockRoomPageProps) {
       const lists = result.body as unknown as MockDraftLists
       mock = [...lists.active, ...lists.recaps].find((row) => row.id === mockId) ?? null
     }
+  }
+
+  // A LEAGUE-attached mock has a working room already, league-side, and this
+  // route is not it (R521). The read above is every mock this user launched —
+  // league or not, deliberately, because it is MP.5's list — so an id typed
+  // here CAN resolve to one, and rendering the standalone page over it would
+  // put a "the board lands here next" notice on a mock whose board is a click
+  // away. Send it to the room it has. (With the leagues flag off that URL
+  // redirects to `/app`, which is the same honest answer `/app/mocks` already
+  // gives such a row — R519.)
+  if (mock && mock.league_id !== null) {
+    redirect(leagueMockRoomHref(mock.league_id, mock.id))
   }
 
   return (

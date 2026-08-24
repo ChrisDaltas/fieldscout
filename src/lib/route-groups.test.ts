@@ -353,6 +353,21 @@ describe('the mock room is released on the mockDrafts flag, past the leagues gat
     expect(source).toContain(".eq('is_mock', true)")
   })
 
+  it('a LEAGUE-attached mock id is sent to the room it already has (R521)', () => {
+    // The route is keyed on a mock id, and MP.5's list — which this page
+    // reads — contains league-attached mocks too. Rendering the standalone
+    // page over one would put "the board lands here next" on a mock whose
+    // board is a click away.
+    const page = code(MOCK_ROOM_PAGE)
+    expect(page).toMatch(/mock\.league_id !== null/)
+    expect(page).toMatch(/redirect\(leagueMockRoomHref\(/)
+    // The URL comes from the seam, not a second hand-rolled copy — and the
+    // seam's own entry-sweep disposition lives in `room-entry.test.ts`.
+    expect(page).toContain(
+      "import { leagueMockRoomHref } from '@/components/draft/mock-launcher-entry'",
+    )
+  })
+
   it('MP.6 is the ROUTE only — the room still mounts league-side (D243)', () => {
     // The scope pin, from the side that would fail loudest. MP.6c mounts
     // `DraftRoom` here; doing it at layer 1 would ship a URL that renders an
