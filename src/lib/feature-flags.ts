@@ -17,10 +17,35 @@ function enabled(value: string | undefined): boolean {
 }
 
 export const featureFlags = {
-  /** Leagues, league teams, and the live draft — mock-data UI, no backend yet. */
+  /** Leagues, league teams, and the live draft (/app/leagues). Server-backed
+   *  since M1 — schema, RLS, the draft engine and the room all ship; the flag
+   *  is a release gate on the SURFACES while the 2026 launch is Lists-only
+   *  (F103: this docblock said "mock-data UI, no backend yet" until MP.5). */
   leagues: enabled(process.env.NEXT_PUBLIC_FLAG_LEAGUES),
   /** Direct messages (rail panel) — mock-data UI, no backend yet. */
   messages: enabled(process.env.NEXT_PUBLIC_FLAG_MESSAGES),
+  /**
+   * Practice (mock) drafts — `/app/mocks`, the launch dialog, the mock room
+   * and the report (spec v2.16 §8.8; MP lane; D231).
+   *
+   * **A RELEASE STATEMENT, NOT A CODE-ISOLATION ONE (D231(2)).** A mock runs
+   * on the SHARED draft engine — the same `drafts` rows, the same
+   * `draft_tick`, the same RPC family, the same room component — and that
+   * sharing is correct and stays. What this flag buys is release
+   * INDEPENDENCE: no practice surface may be gated on `leagues`, and turning
+   * `leagues` off must not turn practice off (E79 — pinned in
+   * `route-groups.test.ts`).
+   *
+   * **Isolation is a different mechanism entirely and is never flag-dependent
+   * (D231(2)/(4)).** A mock's separation from a real league is RLS and schema
+   * — the `league_id IS NULL` ownership arm (D234/095) and §8.8's
+   * zero-side-effects rule — enforced server-side, identically whatever this
+   * flag says. `NEXT_PUBLIC_` values are inlined into the client bundle, so a
+   * flag read in an authorization path would be a client-side gate on a
+   * server-authoritative surface (§12; tasks-MP §4 rule 13): this flag gates
+   * SURFACES only, never an RPC, a route handler's auth path or a policy.
+   */
+  mockDrafts: enabled(process.env.NEXT_PUBLIC_FLAG_MOCK_DRAFTS),
 
   // ---------------------------------------------------------------------
   // 2026 go-live scope (CLAUDE.md → Active Builds). The soft launch ships

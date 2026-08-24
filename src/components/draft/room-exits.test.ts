@@ -204,3 +204,84 @@ describe('the transient skeleton carries an exit too (DR.2’s deliberate call)'
     expect(source.slice(start, end)).toMatch(EXIT)
   })
 })
+
+/**
+ * MP.5 — the STANDALONE arm, and the measurement that decided where it goes.
+ *
+ * The task named five *"Back to league"* links to re-point —
+ * `draft-recap.tsx` ×3 and `mock-draft-launcher.tsx` ×2 (verified on `main`
+ * @ `6e9e8d1`: `grep -n "Back to league" -r src` puts them at 143/235/555 and
+ * 103/119 exactly). **Measured, none of the five is on a standalone mock's
+ * path, so re-pointing any of them would send a LEAGUE mock's user to the
+ * wrong place:**
+ *
+ *   - `MockDraftLauncher` takes `leagueId: string` and `detail: LeagueDetail`
+ *     (both required) and is mounted only at `?practice=1` on the league
+ *     draft route. There is no league-less way to render it.
+ *   - `DraftRecap` takes `leagueId: string`, is mounted only under
+ *     `/app/leagues/[leagueId]/draft/recap`, and refuses to render a body
+ *     unless `draft.league_id === leagueId` — which a `league_id IS NULL`
+ *     mock can never satisfy.
+ *
+ * So the standalone exits MP.5 actually owns are the ones on the surfaces it
+ * builds: `MockRow`'s league-optional arm, and `/app/mocks` itself. Those are
+ * pinned below. The recap's standalone half belongs to **MP.8**, which builds
+ * `/app/mocks/[mockId]/report` — handed over as ledger row **F119** rather
+ * than left implied (R51).
+ */
+describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
+  const ROW_FILE = 'src/components/draft/mock-draft-launcher.tsx'
+  const HOME = 'src/components/draft/mocks-home.tsx'
+
+  /** `MockRow`'s body, so a neighbour in the same file cannot satisfy these. */
+  function mockRowBody(): string {
+    const source = code(ROW_FILE)
+    const start = source.indexOf('export function MockRow')
+    expect(start, 'MockRow found').toBeGreaterThan(-1)
+    return source.slice(start)
+  }
+
+  it('every league-scoped URL in the row sits behind the league-optional arm', () => {
+    // The defect this catches: a later edit adding an unconditional
+    // `/app/leagues/...` link to the row, which would 404 (or redirect, with
+    // the leagues flag off) for every standalone mock listed on /app/mocks.
+    const body = mockRowBody()
+    const leagueUrls = body.match(/`\/app\/leagues\/[^`]*`/g) ?? []
+    expect(leagueUrls.length).toBeGreaterThan(0)
+    for (const url of leagueUrls) {
+      // Each one is the false half of a `leagueId === null ? … : …` ternary.
+      const at = body.indexOf(url)
+      const guard = body.lastIndexOf('leagueId === null', at)
+      expect(guard, url).toBeGreaterThan(-1)
+      expect(body.slice(guard, at)).toContain('?')
+    }
+  })
+
+  it('the standalone half points into /app/mocks, where MP.6 and MP.8 build', () => {
+    const body = mockRowBody()
+    expect(body).toContain('`/app/mocks/${row.id}`')
+    expect(body).toContain('`/app/mocks/${row.id}/report`')
+  })
+
+  it('the practice home contains no /app/leagues URL at all', () => {
+    // E79 at the surface level: /app/mocks must render, and be usable, with
+    // the leagues flag off — so it may not route into a URL space that flag
+    // redirects away.
+    expect(code(HOME)).not.toContain('/app/leagues')
+  })
+
+  it('the five shipped Back-to-league links are still exactly five, all league-only', () => {
+    // Re-pointed by measurement rather than by count: the inventory is
+    // unchanged BECAUSE none of it is reachable without a league. If a later
+    // change makes either surface league-optional, this count moves and the
+    // decision above gets re-taken instead of silently inherited.
+    const recap = read('src/components/draft/draft-recap.tsx')
+    const launcher = read(ROW_FILE)
+    const count = (s: string) => (s.match(/Back to league/g) ?? []).length
+    expect(count(recap)).toBe(3)
+    expect(count(launcher)).toBe(2)
+    // …and both surfaces still REQUIRE a league, which is why that is right.
+    expect(recap).toMatch(/\bleagueId: string\b/)
+    expect(launcher).toMatch(/\bleagueId: string\b/)
+  })
+})

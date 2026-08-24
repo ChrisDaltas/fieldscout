@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { launchStandaloneMockDraft } from '@/lib/leagues/api/draft-service'
+import {
+  launchStandaloneMockDraft,
+  listMyMockDrafts,
+} from '@/lib/leagues/api/draft-service'
 import { createServerClient } from '@/lib/supabase/server'
 
 /**
@@ -45,5 +48,34 @@ export async function POST(request: Request) {
   const result = await launchStandaloneMockDraft(supabase, body ?? {}, {
     mintActionId: () => crypto.randomUUID(),
   })
+  return NextResponse.json(result.body, { status: result.status })
+}
+
+/**
+ * GET /api/mocks — EVERY practice draft this user launched, active and
+ * complete, league-attached or standalone (MP task MP.5). The `/app/mocks`
+ * practice home's read.
+ *
+ * The league route (`GET /api/leagues/[id]/mock-drafts`) is NOT widened to
+ * mean "all": it answers "practice drafts for THIS league" and its shape is
+ * the league id all the way down. Two questions, two endpoints.
+ *
+ * Launcher-scoped server-side in `listMyMockDrafts` on top of RLS — see its
+ * docblock for why the explicit filter is not redundant on the
+ * league-attached rows.
+ *
+ * NO feature-flag read (§4 rule 13 / D231(4)) — the surfaces are gated, not
+ * this.
+ */
+export async function GET() {
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const result = await listMyMockDrafts(supabase, user.id)
   return NextResponse.json(result.body, { status: result.status })
 }

@@ -61,7 +61,7 @@ export interface MockSeatOption {
   isMine: boolean
 }
 
-interface SeatTeamInput {
+export interface SeatTeamInput {
   id: string
   name: string
   status?: string | null
@@ -114,4 +114,50 @@ export function mockProgressLabel(row: MockDraftSummary, teamCount: number | nul
   return total !== null
     ? `${state} · pick ${pick} of ${total}`
     : `${state} · pick ${pick}`
+}
+
+// ---------------------------------------------------------------------------
+// Seat counts — the denominator of the progress line, from two sources
+// ---------------------------------------------------------------------------
+
+/** A league mock's seat count: the league's non-retired franchises, the
+ *  same filter `mockSeatOptions` uses. Extracted so the three `MockRow`
+ *  mounts pass a NUMBER rather than a whole `LeagueDetail` — the practice
+ *  home has no league to hand it (MP.5). */
+export function activeSeatCount(teams: readonly SeatTeamInput[]): number {
+  return teams.filter((t) => t.status !== 'retired').length
+}
+
+/**
+ * A STANDALONE mock's seat count, read off the row itself: 095 stores the
+ * bot `teams` ids it minted at `config.mock.cpu_seats`, one per opponent, so
+ * the board is `cpu_seats.length + 1` — the human's own seat is the `+ 1`
+ * and is not in that array (095's loop runs `1..team_count - 1`).
+ *
+ * Derived rather than selected because it is already stored: `cpu_seats` is
+ * the DELETE authority for cleanup (D227(4)), not a field invented for this.
+ *
+ * NULL for a league-attached mock — 095 deliberately writes no `cpu_seats`
+ * key there (a league mock mints nothing, so it stores nothing) — and null
+ * is the honest answer: `mockProgressLabel` then prints the position with no
+ * total instead of a made-up one.
+ */
+export function standaloneSeatCount(row: MockDraftSummary): number | null {
+  const config = row.config as { mock?: { cpu_seats?: unknown } } | null
+  const seats = config?.mock?.cpu_seats
+  if (!Array.isArray(seats) || seats.length === 0) return null
+  return seats.length + 1
+}
+
+/** The denominator for whichever shape the row is (MP.5). A league row gets
+ *  its league's seat count; a standalone row reads its own. */
+export function mockSeatCount(
+  row: MockDraftSummary,
+  leagueTeams: readonly SeatTeamInput[] | null,
+): number | null {
+  if (leagueTeams !== null) {
+    const count = activeSeatCount(leagueTeams)
+    return count > 0 ? count : null
+  }
+  return standaloneSeatCount(row)
 }
