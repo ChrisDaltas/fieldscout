@@ -44,19 +44,22 @@ import {
  * can offer a control that goes nowhere, and both are disabled with the
  * reason printed on the row:
  *
- *   - a STANDALONE row, whose *Rejoin* / *View report* point at
- *     `/app/mocks/[mockId]` and `…/report` — **MP.6's and MP.8's routes**,
- *     which 404 until they land. The href stays (pointing it at the room's
- *     current `/app/leagues` URL is the workaround D231(3a) exists to
- *     prevent); the CONTROL waits.
+ *   - a FINISHED STANDALONE row, whose *View report* points at
+ *     `/app/mocks/[mockId]/report` — **MP.8's route**, which 404s until it
+ *     lands. The href stays (pointing it at the league recap's URL is the
+ *     workaround D231(3a) exists to prevent); the CONTROL waits.
+ *     **An UNFINISHED standalone row's *Rejoin* / *Resume* is LIVE since
+ *     MP.6c**, which mounts the room at `/app/mocks/[mockId]` — F119's room
+ *     half, discharged there and deliberately not one task earlier (a live
+ *     blue button into a room that cannot pick is R515 verbatim).
  *   - a LEAGUE-attached row while `featureFlags.leagues` is OFF, whose link
  *     is real but silently redirects to `/app`. **The flag read is a
  *     presentation decision made HERE, by the surface that knows which page
  *     it is** — never in `MockRow` (shared) and never in an authorization
  *     path (§4 rule 13 / D231(4)).
  *
- * The launch flow therefore does NOT navigate: it closes and the new mock
- * appears in the list below.
+ * The launch flow still does NOT navigate: it closes and the new mock appears
+ * in the list below, now with a live *Rejoin* beside it.
  *
  * Copy is what-is-empty and what-a-control-does, never an explainer
  * (§4 rule 16).
@@ -94,9 +97,12 @@ export function MocksHome() {
         open={launchOpen}
         onOpenChange={setLaunchOpen}
         onLaunched={() => {
-          // No navigation: MP.6 owns the room's route and it does not exist
-          // yet (see the docblock). The launch mutation invalidates the
-          // `['mock-drafts', …]` prefix, so the new run lands in the list.
+          // Still no navigation, now by CHOICE rather than by absence
+          // (MP.6c: the room exists). The dialog closes and the new run
+          // appears in the list with a live *Rejoin* — the launcher decides
+          // whether to walk in, which is also what MP.7's Home chip will
+          // hand them. The mutation invalidates the `['mock-drafts', …]`
+          // prefix, so the row is there before the dialog finishes closing.
           setLaunchOpen(false)
         }}
       />
@@ -208,7 +214,15 @@ function MockSection({
  * on — neither needs a decision later, only a route or a flag.
  */
 function openBlockedReason(row: MockDraftSummary): string | null {
-  if (row.league_id === null) return 'Opens when the practice room lands.'
+  // MP.6c cleared the ROOM half (F119): `/app/mocks/[mockId]` mounts the
+  // real room now, so an unfinished standalone run's *Resume* / *Rejoin* is
+  // a live link. **What remains is MP.8's half** — a FINISHED standalone
+  // run's *View report* still points at `/app/mocks/[mockId]/report`, which
+  // does not exist. One reason used to cover both controls; splitting it is
+  // the whole mechanism F119 describes: each task removes its own.
+  if (row.league_id === null) {
+    return row.status === 'complete' ? 'Opens when the report lands.' : null
+  }
   if (!featureFlags.leagues) return 'This league is hidden right now.'
   return null
 }

@@ -25,7 +25,10 @@ import { DraftOptionsMenu } from './draft-options-menu'
 import { type DraftOptionsSectionId } from './draft-options-ops'
 
 interface DraftCommandBarProps {
-  leagueId: string
+  /** Where Exit Draft goes — the ROOM SCOPE's exit (MP.6c). A league room
+   *  leaves to its league home; a standalone practice room to `/app/mocks`,
+   *  which is the only place it could honestly go. */
+  exitHref: string
   /** The raw pieces of the D154 variant derivation — `command-bar-ops.ts`
    *  re-applies the D110(1) mock mask itself; see `CommandBarInput`. */
   bar: CommandBarInput
@@ -63,7 +66,8 @@ interface DraftCommandBarProps {
  * rendered only in the shell's `AppHeader` at ≥lg, and — after DR.1 moved
  * the room out of the shell — nowhere at all.
  *
- * Exit Draft (Q13, ruled): a plain in-place navigation to the league home.
+ * Exit Draft (Q13, ruled): a plain in-place navigation to the room's exit —
+ * the league home, or (MP.6c) `/app/mocks` for a standalone practice room.
  * No `window.close()` (fails silently on non-script-opened tabs), no
  * confirmation. Leaving simply unmounts the room, which stops the
  * `draft_touch` heartbeat (`use-draft.ts` cleanup) — the §8.5.5 away path
@@ -80,7 +84,7 @@ interface DraftCommandBarProps {
  * yet). The one-voice mapping is pinned in `one-voice.test.ts`.
  */
 export function DraftCommandBar({
-  leagueId,
+  exitHref,
   bar,
   hasSeat,
   isAuction = false,
@@ -235,7 +239,7 @@ export function DraftCommandBar({
         asChild
       >
         <Link
-          href={`/app/leagues/${leagueId}`}
+          href={exitHref}
           onClick={() => {
             toast({ title: 'Left the draft room', description: exitTitle })
           }}

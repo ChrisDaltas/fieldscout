@@ -166,7 +166,7 @@ export function DraftLobby({
           reads — R340's mechanism) and the card's in-card Back-to-league +
           "Draft scheduled" badge, each a second voice under the bar. */}
       <DraftCommandBar
-        leagueId={leagueId}
+        exitHref={`/app/leagues/${leagueId}`}
         bar={{
           commishRole: isCommish,
           isMock: false,

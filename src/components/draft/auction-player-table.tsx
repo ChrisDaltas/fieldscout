@@ -54,7 +54,12 @@ const POSITION_FILTERS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 const SEARCH_DEBOUNCE_MS = 250
 
 interface AuctionPlayerTableProps {
-  leagueId: string
+  /** The room's scope league, `null` on a standalone practice draft. */
+  leagueId: string | null
+  /** F117: the scoring family's SOURCE when there is no league — the
+   *  template the practice draft was launched with
+   *  (`config->>'scoring_system_id'`, MP.4), carried by the room's scope. */
+  scoringSystemId?: string | null
   draftId: string
   userId: string | undefined
   /** Every pick row the room holds (undone included — the ops layer drops
@@ -133,6 +138,7 @@ interface AuctionPlayerTableProps {
  */
 export function AuctionPlayerTable({
   leagueId,
+  scoringSystemId = null,
   draftId,
   userId,
   picks,
@@ -199,7 +205,7 @@ export function AuctionPlayerTable({
   const favorites = useFavoritePlayerIds()
   const dnd = useDraftDndMarks(draftId)
   const toggleDnd = useToggleDndMark(draftId, userId)
-  const scoring = useLeagueScoringFamily(leagueId)
+  const scoring = useLeagueScoringFamily(leagueId, scoringSystemId)
   const overlayRows = useLeagueListPlayers(overlay?.listId)
 
   const favoriteIds = useMemo(() => favorites.data ?? new Set<string>(), [favorites.data])

@@ -126,9 +126,15 @@ describe('release rides the existing cleanups, through the gate (DR.6 contract 1
   })
 
   it('the released branch renders the takeover state before any other arm', () => {
+    // MP.6c moved the room's resolution states into `DraftRoomResolved`, the
+    // spine both mounts share (the league one and the standalone practice
+    // one). The guard lives there, WITH the hook it withholds the id from,
+    // so the property is measured inside the spine: released is answered
+    // before the room query's own pending/error/not-found arms, which would
+    // otherwise misread an idle query as loading.
     const source = code(ROOM)
-    const gate = source.indexOf("if (draftId && guard.role === 'released')")
-    const skeleton = source.indexOf('detail.isPending')
+    const gate = source.indexOf("if (guard.role === 'released')")
+    const skeleton = source.indexOf('room.isPending')
     expect(gate, 'released branch exists').toBeGreaterThan(-1)
     expect(source).toContain('<DraftRoomTakenOver')
     expect(skeleton, 'skeleton arm exists').toBeGreaterThan(-1)

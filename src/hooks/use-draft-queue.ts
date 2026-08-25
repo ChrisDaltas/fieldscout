@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { createBrowserClient } from '@/lib/supabase/client'
 
+import { draftVerbPath, queueFromListPath } from './use-draft-action-path'
+
 /**
  * My draft queue — M2 task L.B2.2 (spec §8.4, §8.9, §15.2, §15.5, §15.6;
  * tasks-M2 D92).
@@ -59,13 +61,13 @@ export function useDraftQueue(draftId: string | undefined, teamId: string | unde
  * (§15.6): the new order renders immediately; the server row set (RLS +
  * the 065 policy + the service's player validation) stays the truth.
  */
-export function useUpdateDraftQueue(leagueId: string, draftId: string, teamId: string) {
+export function useUpdateDraftQueue(leagueId: string | null, draftId: string, teamId: string) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
   return useMutation({
     mutationFn: (players: string[]) =>
       sendLeagueAction<QueueResponse>(
-        `/api/leagues/${leagueId}/draft/queue`,
+        draftVerbPath(leagueId, draftId, 'queue'),
         jsonInit('POST', { draft_id: draftId, players }),
       ),
     onMutate: async (players) => {
@@ -98,13 +100,13 @@ export interface QueueFromListVars {
  * queue (replace) / "Add remaining" (append). NOT optimistic: the server
  * computes the skip-drafted result — the settle refetch renders it.
  */
-export function useQueueFromList(leagueId: string, draftId: string, teamId: string) {
+export function useQueueFromList(leagueId: string | null, draftId: string, teamId: string) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
   return useMutation({
     mutationFn: ({ listId, mode }: QueueFromListVars) =>
       sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
-        `/api/leagues/${leagueId}/draft/queue/from-list/${listId}`,
+        queueFromListPath(leagueId, draftId, listId),
         jsonInit('POST', { draft_id: draftId, ...(mode ? { mode } : {}) }),
       ),
     onSettled: () => {

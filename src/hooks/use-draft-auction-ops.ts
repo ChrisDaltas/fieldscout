@@ -20,6 +20,8 @@
  *    knows its draft (a mock room sends the mock's id — D113(2)).
  */
 
+import { draftVerbPath } from './use-draft-action-path'
+
 export interface AuctionRequest {
   /** Route path (POST). */
   path: string
@@ -35,14 +37,14 @@ export interface BidIntent {
 
 /** POST …/draft/nominate — `player_id` + `opening_bid` + the minted `action_id`. */
 export function nominateRequest(
-  leagueId: string,
+  leagueId: string | null,
   draftId: string,
   playerId: string,
   openingBid: number,
   actionId: string,
 ): AuctionRequest {
   return {
-    path: `/api/leagues/${leagueId}/draft/nominate`,
+    path: draftVerbPath(leagueId, draftId, 'nominate'),
     body: { draft_id: draftId, player_id: playerId, opening_bid: openingBid, action_id: actionId },
   }
 }
@@ -50,13 +52,13 @@ export function nominateRequest(
 /** POST …/draft/bid — the nomination identity (F64) + `amount` + the minted
  *  `action_id`. There is deliberately no overload that omits the identity. */
 export function bidRequest(
-  leagueId: string,
+  leagueId: string | null,
   draftId: string,
   intent: BidIntent,
   actionId: string,
 ): AuctionRequest {
   return {
-    path: `/api/leagues/${leagueId}/draft/bid`,
+    path: draftVerbPath(leagueId, draftId, 'bid'),
     body: {
       draft_id: draftId,
       nomination_seq: intent.nominationSeq,

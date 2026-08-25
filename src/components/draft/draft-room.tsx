@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
@@ -25,9 +25,10 @@ import {
   useUpdateDraftQueue,
   type DraftQueueRow,
 } from '@/hooks/use-draft-queue'
-import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useLeague } from '@/hooks/use-league'
 import { useLeagueLists } from '@/hooks/use-league-lists'
 import { useDeleteMockDraft } from '@/hooks/use-mock-drafts'
+import { useMockRoomContext } from '@/hooks/use-mock-room'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -70,13 +71,28 @@ import {
   absentDraftIsHonest,
   queryHealth,
   worstHealth,
+  type FetchHealth,
 } from './room-health-ops'
+import {
+  PRACTICE_HOME_HREF,
+  scopeFromLeague,
+  scopeFromMock,
+  type RoomScope,
+} from './room-scope'
 import { type PresenceSeat } from './presence-bar'
 import { useSingleRoomTab } from './use-single-room-tab'
 
 /** League statuses that can only be reached PAST a completed draft (§7.1) —
  *  the no-param room's recap-pointer arm (L.B3.5 2b). */
 const POST_DRAFT_LEAGUE_STATUSES = new Set(['in_season', 'playoffs', 'complete'])
+
+/** Every resolver state's way out (R340), from the room's scope — a league
+ *  room says "Back to league", a standalone practice room "Back to practice
+ *  drafts". No state builds a URL of its own. */
+interface RoomExit {
+  exitHref: string
+  exitLabel: string
+}
 
 interface DraftRoomProps {
   leagueId: string
@@ -126,8 +142,11 @@ interface DraftRoomProps {
  *     so the pin cannot be satisfied by prose).
  *   - **Every resolver state now offers an exit** (R340's enumeration,
  *     closed out by DR.2): **empty / problem / not-found / post-draft**
- *     carry an in-card *Back to league* from M2; the **lobby** and the
- *     **practice launcher** got theirs in DR.1's review fix (R340); the
+ *     carry an in-card exit from M2 — since MP.6c it is the SCOPE's, not a
+ *     league's: those four states take a `RoomExit` and render `{exitLabel}`
+ *     at `{exitHref}`, so the words are *Back to league* on the league mount
+ *     and *Back to practice drafts* on the standalone one; the **lobby**
+ *     and the **practice launcher** got theirs in DR.1's review fix (R340); the
  *     **skeleton** got one in DR.2 (the DR.7(5)/R348 deliberate call,
  *     recorded at PROGRESS D176 — in a chrome-free frame a hung fetch was a
  *     zero-affordance dead end); and the **live room**'s is the command
@@ -207,65 +226,29 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     return detail.data.members.find((m) => m.user_id === user.id)?.team_id ?? null
   }, [user, detail.data])
 
-  // The two-tabs guard (DR.6; D156; spec §9.3 v2.12 — RULED: newest tab
-  // wins). A released tab passes NO draft id into the room spine below, so
-  // `useDraftRoom`'s own effect cleanups do the release — the §9.3 channel
-  // teardown unsubscribes `draft:<id>` and the heartbeat effect's cleanup
-  // stops `draft_touch`. No second mechanism; the guard only withholds the
-  // id. Pinned in single-room-tab.test.ts.
-  const guard = useSingleRoomTab(draftId)
-  const heldDraftId = guard.role === 'released' ? undefined : draftId
-
-  const room = useDraftRoom(heldDraftId, {
-    presence: { team_id: myMemberTeamId, user_id: user?.id ?? null },
+  const health = queryHealth({
+    failureCount: detail.failureCount,
+    isError: detail.isError,
+    hasData: detail.data !== undefined,
   })
-
-  // ----- fetch-path honesty (L.C3.1, PROGRESS F56's room half) ------------
-  // F56 watched a LIVE manager room fall back to the scheduled-lobby
-  // surface — "the settings-countdown branch renders when the room's draft
-  // data is absent". That branch is honest for ONE reason (a scheduled
-  // league whose drafts row the tick hasn't created — D94) and a lie for
-  // every other reason the data can be absent, and the room could not tell
-  // them apart. `room-health-ops.ts` carries the decision and the N-failure
-  // threshold (the SAME constant the subscribe path's R263 banner uses);
-  // here it does two things: it feeds the bar's §16.5.4 degraded banner so a
-  // room drawn from last-good data says so instead of looking current, and
-  // it gates the no-draft branches that have NO banner to say it with (the
-  // recap pointer, the "no draft yet" empty, "Draft not found"). The D94
-  // scheduled lobby mounts the bar, so it takes the BANNER rather than the
-  // gate — R429 → D192; the reasoning lives in `room-health-ops.ts`.
-  const health = worstHealth(
-    queryHealth({
-      failureCount: detail.failureCount,
-      isError: detail.isError,
-      hasData: detail.data !== undefined,
-    }),
-    draftId
-      ? queryHealth({
-          failureCount: room.failureCount,
-          isError: room.isError,
-          hasData: room.data !== undefined,
-        })
-      : 'ok',
-  )
-  const retryRoom = () => {
-    void detail.refetch()
-    if (draftId) void room.refetch()
+  // This mount's exit, once — every state below spreads it, so "Back to
+  // league" is said in exactly one place in this file (MP.6c; the standalone
+  // mount's equivalent is `PRACTICE_HOME_HREF`, in `room-scope.ts`).
+  const leagueExit = {
+    exitHref: `/app/leagues/${leagueId}`,
+    exitLabel: 'Back to league',
   }
 
-  // ----- resolution states (§16.5.4: skeleton / error / honest empties) ----
+  // ----- resolution states the LEAGUE mount owns (§16.5.4) ----------------
+  // Everything below this line needs a league and only a league: the D94
+  // scheduled lobby, the §16.2 practice launcher, the post-draft recap
+  // pointer, the league's own "no draft yet". They stay here rather than
+  // travelling into the shared spine, because a room with no league has no
+  // such states — it is not that they are hidden there, it is that the
+  // objects they are about do not exist (§8.8, spec v2.16).
 
-  // Released FIRST: a taken-over tab renders the §9.3 takeover state and
-  // nothing else (its room query is idle, so every later arm would misread
-  // it as loading). The takeover state carries its own exit (room-exits
-  // pin) plus "Use this tab instead", which re-claims — and the then-older
-  // tab releases in turn.
-  if (draftId && guard.role === 'released') {
-    return <DraftRoomTakenOver leagueId={leagueId} onReclaim={guard.reclaim} />
-  }
-
-  if (detail.isPending || (draftId && room.isPending)) {
-    return <DraftRoomSkeleton leagueId={leagueId} />
+  if (detail.isPending) {
+    return <DraftRoomSkeleton {...leagueExit} />
   }
 
   if (!detail.data) {
@@ -275,13 +258,15 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     // last-good data, never wrong numbers".
     return (
       <DraftRoomProblem
-        leagueId={leagueId}
+        {...leagueExit}
         title="Couldn't load this league."
         body="It may have been removed, or you no longer have access."
         onRetry={() => void detail.refetch()}
       />
     )
   }
+
+  const scope = scopeFromLeague(leagueId, detail.data)
 
   if (practice) {
     // L.B3.5: the `?practice=1` launcher surface (§16.2) — every Practice
@@ -329,10 +314,10 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     if (!absentDraftIsHonest(health)) {
       return (
         <DraftRoomProblem
-          leagueId={leagueId}
+          {...leagueExit}
           title={FETCH_FAILED_TITLE}
           body={FETCH_FAILED_BODY}
-          onRetry={retryRoom}
+          onRetry={() => void detail.refetch()}
         />
       )
     }
@@ -354,7 +339,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
                   <Link href={`/app/leagues/${leagueId}/draft/recap`}>View the recap</Link>
                 </Button>
                 <Button variant="stroke" size="sm" asChild>
-                  <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+                  <Link href={leagueExit.exitHref}>{leagueExit.exitLabel}</Link>
                 </Button>
               </div>
             </CardContent>
@@ -366,11 +351,219 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     // isn't scheduled, so there is no lobby to open either.
     return (
       <DraftRoomEmpty
-        leagueId={leagueId}
+        {...leagueExit}
         title="No draft yet"
         body="This league hasn’t scheduled its draft. The commissioner can schedule it from the league home."
       />
     )
+  }
+
+  return (
+    <DraftRoomResolved
+      scope={scope}
+      draftId={draftId}
+      myMemberTeamId={myMemberTeamId}
+      userId={user?.id ?? null}
+      contextHealth={health}
+      onRetryContext={() => void detail.refetch()}
+      renderScheduled={(draft, onlineTeamIds) => (
+        <DraftLobby
+          leagueId={leagueId}
+          detail={detail.data!}
+          draft={draft}
+          onlineTeamIds={onlineTeamIds}
+          myTeamId={myMemberTeamId}
+          isCommish={canUseCommishPanel(detail.data!.my_role)}
+          stale={health === 'degraded'}
+        />
+      )}
+    />
+  )
+}
+
+interface MockDraftRoomProps {
+  /** `/app/mocks/[mockId]` — the mock IS the draft (MP.6/D244). */
+  mockId: string
+}
+
+/**
+ * **THE STANDALONE PRACTICE ROOM'S MOUNT** — MP task MP.6c (spec v2.16
+ * §8.8: *practice is the purpose, a league is optional context*).
+ *
+ * The second fill site of `room-scope.ts` and nothing else. It is NOT a
+ * second room: it resolves the same `RoomScope` the league mount resolves —
+ * seats, roster, scoring family, exits — from the practice draft itself, and
+ * hands it to the SAME `DraftRoomResolved` spine and the SAME
+ * `DraftRoomLive` below. A second room component is the LV.7 failure
+ * pattern, and this task is where that temptation was strongest.
+ *
+ * Its own three states (MP.6c item 8), each named rather than inferred:
+ *  - **loading** — the shared skeleton, with an exit (the `(room)` frame is
+ *    chrome-free, so a hung fetch with no link is the R340 dead end);
+ *  - **a dead mock id** — the honest not-found with a route back to
+ *    `/app/mocks`, never a 404 dead end (R515);
+ *  - **someone else's mock id** — the SAME state, by construction: 095's
+ *    standalone SELECT arm is keyed on the launcher, so RLS answers the
+ *    empty result for both and this page cannot tell them apart. It never
+ *    says "not yours", because saying that would confirm the row exists.
+ */
+export function MockDraftRoom({ mockId }: MockDraftRoomProps) {
+  const { user } = useAuth()
+  const context = useMockRoomContext(mockId)
+
+  // This mount's exit, once — the mirror of the league mount's `leagueExit`.
+  const practiceExit = { exitHref: PRACTICE_HOME_HREF, exitLabel: 'Back to practice drafts' }
+
+  const health = queryHealth({
+    failureCount: context.failureCount,
+    isError: context.isError,
+    hasData: context.data !== undefined,
+  })
+
+  if (context.isPending) {
+    return <DraftRoomSkeleton {...practiceExit} />
+  }
+
+  if (context.isError) {
+    return (
+      <DraftRoomProblem
+        {...practiceExit}
+        title="Couldn't load this practice draft."
+        body={FETCH_FAILED_BODY}
+        onRetry={() => void context.refetch()}
+      />
+    )
+  }
+
+  if (context.data === null) {
+    return (
+      <DraftRoomEmpty
+        {...practiceExit}
+        title="This practice draft isn’t here"
+        body="It may have been deleted, or expired after 72 hours paused."
+      />
+    )
+  }
+
+  return (
+    <DraftRoomResolved
+      scope={scopeFromMock(context.data)}
+      draftId={mockId}
+      // The one human seat, so §9.3 presence has something honest to
+      // announce (the CPUs are never "online" — they are not users).
+      myMemberTeamId={context.data.humanTeamId}
+      userId={user?.id ?? null}
+      contextHealth={health}
+      onRetryContext={() => void context.refetch()}
+      renderScheduled={() => (
+        // Unreachable on today's engine and rendered anyway rather than
+        // crashed through: `create_mock_draft` INSERTs `status 'live'` in
+        // the launch transaction (`095_standalone_mock.sql:1174-1183` —
+        // "Starts immediately (§8.8)"), so a standalone mock is never
+        // `scheduled`. If that ever changes, this says what is true instead
+        // of borrowing the league lobby, which is a surface about a league.
+        <DraftRoomEmpty
+          {...practiceExit}
+          title="This practice draft hasn’t started"
+          body="Start a new one from your practice drafts."
+        />
+      )}
+    />
+  )
+}
+
+interface DraftRoomResolvedProps {
+  /** The room's non-draft context — filled by the MOUNT (D229(5)/§4 rule
+   *  12), never read from a league or a config in here. */
+  scope: RoomScope
+  draftId: string
+  /** The viewer's league seat, or null (a mock resolves its own "You" seat
+   *  from `config.mock` inside the live room — D103(2)). */
+  myMemberTeamId: string | null
+  userId: string | null
+  /** Fetch health of the SCOPE's own source, merged with the room query's
+   *  below — F56's rule applies to whichever read failed. */
+  contextHealth: FetchHealth
+  onRetryContext: () => void
+  /** The pre-start state, which is a LEAGUE object (the D94 lobby) — so the
+   *  mount owns it. See each mount's renderer. */
+  renderScheduled: (draft: Draft, onlineTeamIds: ReadonlySet<string>) => ReactNode
+}
+
+/**
+ * The room's SPINE — the draft-keyed half, shared by both mounts and league-
+ * optional throughout (MP.6c item 1: ONE component, widened, never forked).
+ *
+ * Everything here keys on the DRAFT: the §9.3 single-tab guard, the one
+ * channel, the §16.5.4 resolution states, the completion beat and the live
+ * room. The only thing it knows about a league is `scope.leagueId`, and
+ * `null` is a legal value of it.
+ */
+function DraftRoomResolved({
+  scope,
+  draftId,
+  myMemberTeamId,
+  userId,
+  contextHealth,
+  onRetryContext,
+  renderScheduled,
+}: DraftRoomResolvedProps) {
+  // The two-tabs guard (DR.6; D156; spec §9.3 v2.12 — RULED: newest tab
+  // wins). A released tab passes NO draft id into the room spine below, so
+  // `useDraftRoom`'s own effect cleanups do the release — the §9.3 channel
+  // teardown unsubscribes `draft:<id>` and the heartbeat effect's cleanup
+  // stops `draft_touch`. No second mechanism; the guard only withholds the
+  // id. Pinned in single-room-tab.test.ts.
+  const guard = useSingleRoomTab(draftId)
+  const heldDraftId = guard.role === 'released' ? undefined : draftId
+
+  const room = useDraftRoom(heldDraftId, {
+    presence: { team_id: myMemberTeamId, user_id: userId },
+  })
+
+  // ----- fetch-path honesty (L.C3.1, PROGRESS F56's room half) ------------
+  // F56 watched a LIVE manager room fall back to the scheduled-lobby
+  // surface — "the settings-countdown branch renders when the room's draft
+  // data is absent". That branch is honest for ONE reason (a scheduled
+  // league whose drafts row the tick hasn't created — D94) and a lie for
+  // every other reason the data can be absent, and the room could not tell
+  // them apart. `room-health-ops.ts` carries the decision and the N-failure
+  // threshold (the SAME constant the subscribe path's R263 banner uses);
+  // here it does two things: it feeds the bar's §16.5.4 degraded banner so a
+  // room drawn from last-good data says so instead of looking current, and
+  // it gates the no-draft branches that have NO banner to say it with.
+  const health = worstHealth(
+    contextHealth,
+    queryHealth({
+      failureCount: room.failureCount,
+      isError: room.isError,
+      hasData: room.data !== undefined,
+    }),
+  )
+  const retryRoom = () => {
+    onRetryContext()
+    void room.refetch()
+  }
+
+  // ----- resolution states (§16.5.4: skeleton / error / honest empties) ----
+
+  // Released FIRST: a taken-over tab renders the §9.3 takeover state and
+  // nothing else (its room query is idle, so every later arm would misread
+  // it as loading). The takeover state carries its own exit (room-exits
+  // pin) plus "Use this tab instead", which re-claims — and the then-older
+  // tab releases in turn.
+  if (guard.role === 'released') {
+    return (
+      <DraftRoomTakenOver
+        exitHref={scope.exitHref}
+        exitLabel={scope.exitLabel}
+        onReclaim={guard.reclaim}
+      />
+    )
+  }
+
+  if (room.isPending) {
+    return <DraftRoomSkeleton exitHref={scope.exitHref} exitLabel={scope.exitLabel} />
   }
 
   if (room.isError && room.data === undefined) {
@@ -378,9 +571,10 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     // over last-good data get the banner and keep the room.
     return (
       <DraftRoomProblem
-        leagueId={leagueId}
+        exitHref={scope.exitHref}
+        exitLabel={scope.exitLabel}
         title="Couldn't load the draft."
-        body="The room state didn't come back. Retry, or head back to the league."
+        body="The room state didn't come back. Retry, or head back."
         onRetry={() => void room.refetch()}
       />
     )
@@ -388,26 +582,36 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
 
   const draft = room.data?.draft ?? null
 
-  if (!draft || draft.league_id !== leagueId) {
+  // MP.6c item 3 — R470's class, with the mock arm. The guard is unchanged
+  // in shape and now TRUE for both rooms: a league room requires the draft
+  // to belong to THIS league, and a standalone room requires it to belong to
+  // no league at all (`scope.leagueId` is null, `draft.league_id` is null).
+  // A league-attached draft opened at `/app/mocks/[mockId]` therefore lands
+  // in the same honest not-found — and the route redirects it to the room it
+  // has before this is reached (R521).
+  if (!draft || draft.league_id !== scope.leagueId) {
     if (!absentDraftIsHonest(health)) {
-      // Same rule as the `!draftId` arm: "Draft not found" is a claim about
-      // the world, and a failing fetch has not earned it.
+      // Same rule as the league mount's no-draft arm: "Draft not found" is a
+      // claim about the world, and a failing fetch has not earned it.
       return (
         <DraftRoomProblem
-          leagueId={leagueId}
+          exitHref={scope.exitHref}
+          exitLabel={scope.exitLabel}
           title={FETCH_FAILED_TITLE}
           body={FETCH_FAILED_BODY}
           onRetry={retryRoom}
         />
       )
     }
-    // RLS returned no row (not a member / unknown id) or the id belongs to
-    // another league — one indistinguishable honest state, no leak.
+    // RLS returned no row (not a member / not the launcher / unknown id) or
+    // the id belongs somewhere else — one indistinguishable honest state, no
+    // leak.
     return (
       <DraftRoomEmpty
-        leagueId={leagueId}
+        exitHref={scope.exitHref}
+        exitLabel={scope.exitLabel}
         title="Draft not found"
-        body="There's no draft here by that id. Head back to the league."
+        body="There's no draft here by that id."
       />
     )
   }
@@ -417,25 +621,22 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
     // room's ONE channel is already open (useDraftRoom subscribed after the
     // fetch), so presence works here and the start flip arrives as the
     // drafts UPDATE broadcast — the lobby becomes the live room in place.
-    return (
-      <DraftLobby
-        leagueId={leagueId}
-        detail={detail.data}
-        draft={draft}
-        onlineTeamIds={room.onlineTeamIds}
-        myTeamId={myMemberTeamId}
-        isCommish={canUseCommishPanel(detail.data.my_role)}
-        stale={health === 'degraded'}
-      />
-    )
+    // The surface itself is the MOUNT's (a lobby is a league object).
+    return <>{renderScheduled(draft, room.onlineTeamIds)}</>
   }
 
   if (draft.status === 'complete') {
     // The completion moment (§16.5.2's draft-night row ends at the recap):
     // when the final pick's broadcast flips `status` to complete, this
-    // branch renders IN PLACE — the room's own "view the recap" beat. The
-    // explicit `?draft=` keeps a mock's recap pointed at the mock (§16.1
-    // serves real & mock).
+    // branch renders IN PLACE — the room's own "view the recap" beat.
+    //
+    // MP.6c item 8: a completed STANDALONE mock has no recap route to point
+    // at — `/app/mocks/[mockId]/report` is MP.8's and does not exist yet, so
+    // this states the finish plainly and routes to the practice home rather
+    // than borrowing the league-shaped recap link (which would 404). The
+    // report control on `/app/mocks` is disabled for the same reason, with
+    // its reason printed (R515) — one story in both places.
+    const standalone = scope.leagueId === null
     return (
       <div className="flex flex-col gap-4">
         <Card>
@@ -449,13 +650,15 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
                 : 'Every seat is filled — the final board and rosters are on the recap.'}
             </p>
             <div className="flex items-center gap-2.5">
-              <Button variant="blue" size="sm" shadow asChild>
-                <Link href={`/app/leagues/${leagueId}/draft/recap?draft=${draft.id}`}>
-                  View the recap
-                </Link>
-              </Button>
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+              {!standalone && (
+                <Button variant="blue" size="sm" shadow asChild>
+                  <Link href={`/app/leagues/${scope.leagueId}/draft/recap?draft=${draft.id}`}>
+                    View the recap
+                  </Link>
+                </Button>
+              )}
+              <Button variant={standalone ? 'blue' : 'stroke'} size="sm" shadow={standalone} asChild>
+                <Link href={scope.exitHref}>{scope.exitLabel}</Link>
               </Button>
             </div>
           </CardContent>
@@ -466,8 +669,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
 
   return (
     <DraftRoomLive
-      leagueId={leagueId}
-      detail={detail.data}
+      scope={scope}
       draft={draft}
       picks={room.data?.picks ?? []}
       connection={room.connection}
@@ -475,7 +677,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       uncontestedBeat={room.uncontestedBeat}
       onlineTeamIds={room.onlineTeamIds}
       myMemberTeamId={myMemberTeamId}
-      userId={user?.id ?? null}
+      userId={userId}
       stale={health === 'degraded'}
     />
   )
@@ -486,8 +688,10 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
 // ---------------------------------------------------------------------------
 
 interface DraftRoomLiveProps {
-  leagueId: string
-  detail: LeagueDetail
+  /** The room's non-draft context (MP.6c item 2). A LEAGUE room's is filled
+   *  from `LeagueDetail`, a standalone practice room's from the draft
+   *  itself — and this component cannot tell which, deliberately. */
+  scope: RoomScope
   draft: Draft
   picks: DraftPickSummary[]
   connection: DraftRoomConnection
@@ -505,8 +709,7 @@ interface DraftRoomLiveProps {
 }
 
 function DraftRoomLive({
-  leagueId,
-  detail,
+  scope,
   draft,
   picks,
   connection,
@@ -547,7 +750,7 @@ function DraftRoomLive({
 
   // The add-list modal's Attached flags: MY attached list ids (fetched only
   // once the modal opens; shares the panel's query cache).
-  const leagueListRows = useLeagueLists(leagueId, addListOpen)
+  const leagueListRows = useLeagueLists(scope.leagueId ?? undefined, addListOpen)
   const myAttachedListIds = useMemo(
     () =>
       new Set(
@@ -559,12 +762,12 @@ function DraftRoomLive({
   )
 
   const teamsById = useMemo(
-    () => new Map(detail.teams.map((t) => [t.id, t])),
-    [detail.teams],
+    () => new Map(scope.teams.map((t) => [t.id, t])),
+    [scope.teams],
   )
   const teamNameById = useMemo(
-    () => new Map(detail.teams.map((t) => [t.id, t.name])),
-    [detail.teams],
+    () => new Map(scope.teams.map((t) => [t.id, t.name])),
+    [scope.teams],
   )
 
   // In a mock, the human seat is `config.mock.human_team_id` and its ONLY
@@ -675,15 +878,15 @@ function DraftRoomLive({
   const autopickTeamIds = useMemo(() => {
     if (draft.is_mock) return new Set<string>()
     const ids = new Set<string>()
-    for (const member of detail.members) {
+    for (const member of scope.members) {
       if (member.team_id && (member.is_autodraft === true || !member.user_id)) {
         ids.add(member.team_id)
       }
     }
     return ids
-  }, [draft.is_mock, detail.members])
+  }, [draft.is_mock, scope.members])
 
-  const seatIds = order.length > 0 ? order : detail.teams.map((t) => t.id)
+  const seatIds = order.length > 0 ? order : scope.teams.map((t) => t.id)
   const seats: PresenceSeat[] = seatIds.map((teamId) => ({
     teamId,
     name: teamsById.get(teamId)?.name ?? 'Team',
@@ -701,8 +904,8 @@ function DraftRoomLive({
 
   // §8.7 surface: commissioner/co-commissioner, NON-mock only (D110(1) —
   // the controls refuse mocks in-RPC; the UI must not offer them).
-  const isCommish = canUseCommishPanel(detail.my_role) && !draft.is_mock
-  const pauseResume = usePauseResumeDraft(leagueId, draft.id)
+  const isCommish = canUseCommishPanel(scope.myRole) && !draft.is_mock
+  const pauseResume = usePauseResumeDraft(scope.leagueId, draft.id)
   // DR.2: one pause/resume handler for the bar — the SHIPPED
   // usePauseResumeDraft mutation, no new route (DR.2 item 5). The bar is
   // the ONE pause/resume site since DR.7/D155 retired the overlay's Resume
@@ -724,13 +927,13 @@ function DraftRoomLive({
   // The bar's reduced Practice-options menu (D154): delete-and-exit through
   // the SHIPPED delete verb (071's `delete_mock_draft` refuses everyone but
   // the launcher in-RPC — same door the launcher's MockRow uses).
-  const deleteMock = useDeleteMockDraft(leagueId)
+  const deleteMock = useDeleteMockDraft(scope.leagueId)
   const handleDeletePractice = () => {
     deleteMock
       .mutateAsync(draft.id)
       .then(() => {
         toast({ title: 'Practice draft deleted' })
-        router.push(`/app/leagues/${leagueId}`)
+        router.push(scope.exitHref)
       })
       .catch((error: unknown) => {
         toast({
@@ -775,7 +978,7 @@ function DraftRoomLive({
   // NEVER optimistic (§15.6): the button shows "submitting…" (§16.3) and the
   // board reflects the broadcast/refetch; the E1 race loser's friendly
   // message surfaces verbatim.
-  const makePick = useMakePick(leagueId, draft.id)
+  const makePick = useMakePick(scope.leagueId, draft.id)
   const canDraft = !isAuction && youAreOnClock && draft.status === 'live'
   const handleDraft = (playerId: string) => {
     if (!canDraft || makePick.isPending) return
@@ -800,8 +1003,8 @@ function DraftRoomLive({
   // The RPC's product copy — "outbid at $2 — … bid $3 or more", "just went
   // off the board", the E5 ceiling with the server's own numbers — is
   // surfaced VERBATIM (D189(3): callers never paraphrase it).
-  const nominate = useNominate(leagueId, draft.id)
-  const placeBid = usePlaceBid(leagueId, draft.id)
+  const nominate = useNominate(scope.leagueId, draft.id)
+  const placeBid = usePlaceBid(scope.leagueId, draft.id)
   const auctionSubmitting = nominate.isPending || placeBid.isPending
   const auctionFailureToast = (title: string) => (error: unknown) => {
     toast({
@@ -838,7 +1041,7 @@ function DraftRoomLive({
   // ----- queue (own rows; a mock's launcher drives the human seat — D103(3))
   const queueTeamId = myTeamId
   const queue = useDraftQueue(draft.id, queueTeamId ?? undefined)
-  const updateQueue = useUpdateDraftQueue(leagueId, draft.id, queueTeamId ?? '')
+  const updateQueue = useUpdateDraftQueue(scope.leagueId, draft.id, queueTeamId ?? '')
   const queueView = useMemo(
     () => deriveQueueView(queue.data ?? [], draftedIds),
     [queue.data, draftedIds],
@@ -926,7 +1129,8 @@ function DraftRoomLive({
   // for every other draft type, unchanged.
   const playersCard = isAuction ? (
     <AuctionPlayerTable
-      leagueId={leagueId}
+      leagueId={scope.leagueId}
+      scoringSystemId={scope.scoringSystemId}
       draftId={draft.id}
       userId={userId ?? undefined}
       picks={picks}
@@ -936,7 +1140,7 @@ function DraftRoomLive({
       canNominate={canNominate}
       onNominate={setNomineeId}
       submitting={auctionSubmitting}
-      regularSeasonWeeks={detail.settings.regular_season_weeks}
+      regularSeasonWeeks={scope.regularSeasonWeeks}
       overlay={overlay}
       onClearOverlay={() => setOverlay(null)}
     />
@@ -949,7 +1153,7 @@ function DraftRoomLive({
   // honest no-seat copy instead of vanishing.
   const queueCard = queueTeamId ? (
     <MyQueue
-      leagueId={leagueId}
+      leagueId={scope.leagueId}
       draftId={draft.id}
       teamId={queueTeamId}
       draftedIds={draftedIds}
@@ -966,7 +1170,7 @@ function DraftRoomLive({
     <MyRosterTracker
       picks={myPicks}
       playerById={playerById}
-      roster={detail.settings.roster_settings}
+      roster={scope.roster}
       // L.C3.2 item 3: on an auction the needs line carries what the needs
       // COST — remaining budget and max bid, off the same parity-pinned
       // mirror the board's team columns use (§8.6.1).
@@ -994,9 +1198,9 @@ function DraftRoomLive({
   // mounted at room level OUTSIDE every overlay.
   const listsCard = (
     <MyListsPanel
-      leagueId={leagueId}
+      leagueId={scope.leagueId}
       draftId={draft.id}
-      detail={detail}
+      members={scope.members}
       userId={userId}
       queueTeamId={queueTeamId}
       draftedIds={draftedIds}
@@ -1007,13 +1211,16 @@ function DraftRoomLive({
       onQueue={handleQueue}
       overlay={overlay}
       onOverlayChange={setOverlay}
-      onAddList={() => setAddListOpen(true)}
+      // §8.9's Add-a-draft-list attaches a list to a LEAGUE, so a standalone
+      // practice room does not offer it (F122: the panel offers what the
+      // verb accepts — the caller's OWN lists — and nothing else).
+      onAddList={scope.leagueId === null ? null : () => setAddListOpen(true)}
       inlineCheatSheet
     />
   )
 
   const chatCard = (
-    <DraftChat leagueId={leagueId} draftId={draft.id} detail={detail} userId={userId} />
+    <DraftChat scope={scope} draftId={draft.id} userId={userId} />
   )
 
   // The auction's board (D135's "auction center stage"): §16.2's
@@ -1034,10 +1241,10 @@ function DraftRoomLive({
         budget_adjustments: draft.budget_adjustments,
         nomination_order: draft.nomination_order,
       }}
-      teams={detail.teams}
+      teams={scope.teams}
       picks={picks}
       playerById={playerById}
-      roster={detail.settings.roster_settings}
+      roster={scope.roster}
       myTeamId={myTeamId}
       offsetMs={offsetMs}
       uncontestedBeat={uncontestedBeat}
@@ -1113,9 +1320,9 @@ function DraftRoomLive({
           re-applied. The launcher's old header "Pause practice" button and
           the old "Exit room" ghost link both live here now. */}
       <DraftCommandBar
-        leagueId={leagueId}
+        exitHref={scope.exitHref}
         bar={{
-          commishRole: canUseCommishPanel(detail.my_role),
+          commishRole: canUseCommishPanel(scope.myRole),
           isMock: draft.is_mock,
           isMockLauncher,
           paused,
@@ -1258,7 +1465,7 @@ function DraftRoomLive({
                   compact
                   picks={myPicks}
                   playerById={playerById}
-                  roster={detail.settings.roster_settings}
+                  roster={scope.roster}
                   budget={isAuction ? (myBudget ?? null) : null}
                 />
               </CardContent>
@@ -1309,32 +1516,43 @@ function DraftRoomLive({
           commissioner/co-commissioner on a NON-mock draft (D110(1) — the
           gate is `isCommish`, which carries `&& !draft.is_mock`). */}
       {isCommish && (
-        <CommishDraftPanel
-          leagueId={leagueId}
-          draft={draft}
-          detail={detail}
-          picks={picks}
-          playerById={playerById}
-          open={draftOptionsOpen}
-          onOpenChange={(open) => {
-            setDraftOptionsOpen(open)
-            if (!open) setDraftOptionsSection(null)
-          }}
-          openAtSection={draftOptionsSection}
-        />
+        // MP.6c: the inner check is a TYPE narrowing, not a second gate —
+        // `isCommish` is already false without a league (a standalone
+        // practice room's `myRole` is null and `canUseCommishPanel(null)` is
+        // false), and §8.7's panel takes a `LeagueDetail` because it is a
+        // league surface. A practice draft has no commissioner at all
+        // (D110(1)/D226(2)).
+        scope.league !== null &&
+        scope.leagueId !== null && (
+          <CommishDraftPanel
+            leagueId={scope.leagueId}
+            draft={draft}
+            detail={scope.league}
+            picks={picks}
+            playerById={playerById}
+            open={draftOptionsOpen}
+            onOpenChange={(open) => {
+              setDraftOptionsOpen(open)
+              if (!open) setDraftOptionsSection(null)
+            }}
+            openAtSection={draftOptionsSection}
+          />
+        )
       )}
 
       {/* The lifted Add-a-draft-list modal (D119(6): mounted at room
           level, OUTSIDE every overlay — a sibling of the dock, never a
           panel body inside it). */}
-      <AddDraftListModal
-        open={addListOpen}
-        onOpenChange={setAddListOpen}
-        leagueId={leagueId}
-        leagueName={detail.league.name}
-        scoringSystemId={detail.league.scoring_system_id}
-        attachedListIds={myAttachedListIds}
-      />
+      {scope.league !== null && scope.leagueId !== null && (
+        <AddDraftListModal
+          open={addListOpen}
+          onOpenChange={setAddListOpen}
+          leagueId={scope.leagueId}
+          leagueName={scope.league.league.name}
+          scoringSystemId={scope.league.league.scoring_system_id}
+          attachedListIds={myAttachedListIds}
+        />
+      )}
     </div>
   )
 }
@@ -1343,7 +1561,18 @@ function DraftRoomLive({
 // Skeleton / problem / honest-empty states (§16.5.4)
 // ---------------------------------------------------------------------------
 
-function DraftRoomSkeleton({ leagueId }: { leagueId: string }) {
+/**
+ * The four resolver states, MP.6c: each takes its way out as `exitHref` +
+ * `exitLabel` from the room's scope instead of building a league URL.
+ *
+ * **That is the R340 invariant restated for a room with no league** — the
+ * `(room)` frame is chrome-free, so every state still carries an exit; what
+ * changed is that a standalone practice room's exit goes to `/app/mocks` and
+ * never says "Back to league", because it has none to go back to.
+ * `room-exits.test.ts` moved with it: it now pins that every state has an
+ * exit AND that not one of them hard-codes `/app/leagues`.
+ */
+function DraftRoomSkeleton({ exitHref, exitLabel }: RoomExit) {
   return (
     <div className="flex flex-col gap-4">
       {/* DR.2's deliberate call on DR.7(5)'s open question (R348; PROGRESS
@@ -1353,7 +1582,7 @@ function DraftRoomSkeleton({ leagueId }: { leagueId: string }) {
           state. Pinned in room-exits.test.ts. */}
       <div className="flex items-center justify-end">
         <Button variant="stroke" size="sm" asChild>
-          <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+          <Link href={exitHref}>{exitLabel}</Link>
         </Button>
       </div>
       <Skeleton className="h-9 rounded-sm" />
@@ -1363,12 +1592,12 @@ function DraftRoomSkeleton({ leagueId }: { leagueId: string }) {
 }
 
 function DraftRoomProblem({
-  leagueId,
+  exitHref,
+  exitLabel,
   title,
   body,
   onRetry,
-}: {
-  leagueId: string
+}: RoomExit & {
   title: string
   body: string
   onRetry: () => void
@@ -1386,7 +1615,7 @@ function DraftRoomProblem({
               <Icon name="reset" size={13} /> Retry
             </Button>
             <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+              <Link href={exitHref}>{exitLabel}</Link>
             </Button>
           </div>
         </CardContent>
@@ -1396,11 +1625,11 @@ function DraftRoomProblem({
 }
 
 function DraftRoomEmpty({
-  leagueId,
+  exitHref,
+  exitLabel,
   title,
   body,
-}: {
-  leagueId: string
+}: RoomExit & {
   title: string
   body: string
 }) {
@@ -1411,7 +1640,7 @@ function DraftRoomEmpty({
           <p className="text-[13px] font-bold">{title}</p>
           <p className="text-[12px] font-medium text-n-3">{body}</p>
           <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+            <Link href={exitHref}>{exitLabel}</Link>
           </Button>
         </CardContent>
       </Card>
@@ -1431,10 +1660,10 @@ function DraftRoomEmpty({
  * in turn.
  */
 function DraftRoomTakenOver({
-  leagueId,
+  exitHref,
+  exitLabel,
   onReclaim,
-}: {
-  leagueId: string
+}: RoomExit & {
   onReclaim: () => void
 }) {
   return (
@@ -1452,7 +1681,7 @@ function DraftRoomTakenOver({
               Use this tab instead
             </Button>
             <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}`}>Back to league</Link>
+              <Link href={exitHref}>{exitLabel}</Link>
             </Button>
           </div>
         </CardContent>

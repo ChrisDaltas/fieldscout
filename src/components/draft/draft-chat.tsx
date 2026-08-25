@@ -15,14 +15,16 @@ import {
   chatItemView,
   type ChatItemView,
 } from '@/hooks/use-draft-chat-ops'
-import type { LeagueDetail } from '@/hooks/use-league'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
+import type { RoomScope } from './room-scope'
+
 interface DraftChatProps {
-  leagueId: string
+  /** The room's context object (MP.6c). `scope.leagueId === null` is a
+   *  STANDALONE practice room: the feed renders, the composer does not. */
+  scope: RoomScope
   draftId: string
-  detail: LeagueDetail
   userId: string | null
   className?: string
 }
@@ -39,16 +41,31 @@ interface DraftChatProps {
  * Render shapes incl. BOTH authorless arms are the pure `chatItemView`
  * (D108(15)): system rows actorless by shape; ordinary `user_id`-NULL rows
  * (a deleted account's messages — R137) as the former-member fallback.
+ *
+ * **STANDALONE PRACTICE (MP.6c / ledger F114): the FEED is the point and the
+ * COMPOSER is not there.** The engine's own D97 system posts — auto-paused,
+ * resumed, the clock notices — are written for a league-less mock too (095,
+ * with a NULL `league_id`), and until F114 the pane never asked for them.
+ * They render here. The SEND side stays where D226(2) left it: a mock has
+ * one human and eleven bots, so there is nobody to message — the input is
+ * not disabled-with-a-reason, it is absent, because a control that could
+ * never do anything is not a control (§16.3's one-voice rule, and §4 rule
+ * 16 forbids explaining the absence).
  */
-export function DraftChat({ leagueId, draftId, detail, userId, className }: DraftChatProps) {
-  const chat = useDraftChat(leagueId, draftId)
-  const send = useSendDraftChat(leagueId, draftId, userId)
+export function DraftChat({ scope, draftId, userId, className }: DraftChatProps) {
+  const standalone = scope.leagueId === null
+  const chat = useDraftChat(draftId)
+  // The league id, or NULL — never a placeholder `''` (R534). Sending is
+  // league-only (D226(2)) and the composer below is absent standalone, so
+  // this mutation is unfireable there; the hook refuses a null league rather
+  // than being handed a blank that looks like an id.
+  const send = useSendDraftChat(scope.leagueId, draftId, userId)
   const [text, setText] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
 
   const authors = useMemo(
-    () => chatAuthorsById(detail.members, detail.teams),
-    [detail.members, detail.teams],
+    () => chatAuthorsById(scope.members, scope.teams),
+    [scope.members, scope.teams],
   )
   const items = useMemo(
     () => (chat.data ?? []).map((row) => ({ id: row.id, view: chatItemView(row, authors, userId) })),
@@ -110,7 +127,11 @@ export function DraftChat({ leagueId, draftId, detail, userId, className }: Draf
           )}
           {chat.isSuccess && items.length === 0 && (
             <p className="text-[12px] font-medium text-n-3">
-              No messages yet — the room can hear you.
+              {standalone
+                ? // Nobody to hear you: the seats are CPUs (D226(2)). What
+                  // lands here is the engine's own notices.
+                  'No messages yet.'
+                : 'No messages yet — the room can hear you.'}
             </p>
           )}
           {items.map(({ id, view }) => (
@@ -118,32 +139,34 @@ export function DraftChat({ leagueId, draftId, detail, userId, className }: Draf
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <Input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            maxLength={CHAT_MAX_LENGTH}
-            placeholder={userId ? 'Message the room…' : 'Sign in to chat'}
-            disabled={!userId || send.isPending}
-            aria-label="Chat message"
-            className="h-btn-md text-[12px]"
-          />
-          <Button
-            variant="blue"
-            size="sm"
-            onClick={handleSend}
-            disabled={!sendable}
-            aria-label="Send message"
-          >
-            <Icon name="send" size={13} />
-          </Button>
-        </div>
+        {!standalone && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              maxLength={CHAT_MAX_LENGTH}
+              placeholder={userId ? 'Message the room…' : 'Sign in to chat'}
+              disabled={!userId || send.isPending}
+              aria-label="Chat message"
+              className="h-btn-md text-[12px]"
+            />
+            <Button
+              variant="blue"
+              size="sm"
+              onClick={handleSend}
+              disabled={!sendable}
+              aria-label="Send message"
+            >
+              <Icon name="send" size={13} />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

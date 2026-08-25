@@ -34,16 +34,25 @@ import { describe, expect, it } from 'vitest'
  *     actually has. A redirect has no anchor and no tab to open, so the
  *     desktop split cannot apply to it — in place by construction, not by
  *     choice.
- *
- * **MP.6 opened a SECOND room URL family that this sweep cannot see**
- * (`/app/mocks/[mockId]`, D244) — harmless while the room still mounts
- * league-side only, and `ROOM_URL` gains its `/app/mocks/${…}` arm in MP.6c,
- * when the room actually moves. Recorded in MP.6c item 6 rather than left to
- * be noticed (R520).
  *   - `mock-draft-launcher.tsx` — 2 sites, IN PLACE: the post-launch
  *     `router.push` and the resume link both navigate WITHIN the
  *     chrome-free room world (the launcher lives on the room route); the
  *     split governs entry FROM the app, not movement inside the room.
+ *
+ * **MP.6c: the sweep now covers the SECOND room URL family too** — R520,
+ * discharged here because this is the task where the room actually mounts at
+ * `/app/mocks/[mockId]`. Two new hits, both dispositioned:
+ *   - `mock-launcher-entry.ts` — `mockRoomHref`, the seam itself. Its
+ *     callers are the ones dispositioned; the builder is not an entry.
+ *   - `mock-draft-launcher.tsx` — `MockRow`'s *Rejoin* / *Resume*, live
+ *     since MP.6c (F119's room half). **IN PLACE, and it is a decision
+ *     rather than a default:** `MockRow` is mounted THREE times — the
+ *     in-room practice launcher, the league-home card and MP.5's practice
+ *     home — so the desktop split cannot be applied to the row without a
+ *     per-mount prop, and applying it to all three would open a new tab from
+ *     INSIDE the room world, which the split explicitly does not do.
+ *     Recorded as ledger **F123** for the launch-facing pass rather than
+ *     improvised here (R51).
  *
  * Draft-related NOTIFICATIONS never point here at all — they route to the
  * league/app home where these CTAs are the one entry point (Chris,
@@ -78,10 +87,16 @@ function sourceFiles(dir = 'src'): string[] {
   return out
 }
 
-/** A template-literal URL into the room route: `/app/leagues/${…}/draft`
- *  NOT followed by `/recap` (the recap keeps the app shell and is not an
- *  entry into the room). API routes never match (they are `/api/…`). */
-const ROOM_URL = /\/app\/leagues\/\$\{[^}]+\}\/draft(?!\/)/g
+/** A template-literal URL into EITHER room route (MP.6c / R520):
+ *   - `/app/leagues/${…}/draft` NOT followed by `/recap` (the recap keeps the
+ *     app shell and is not an entry into the room);
+ *   - `/app/mocks/${…}` NOT followed by `/report` — the STANDALONE practice
+ *     room, which MP.6 opened and MP.6c actually mounts the room at. The
+ *     report is the same shape of exclusion as the recap: a shell page.
+ *  API routes never match (they are `/api/…`), and `/app/mocks` with no id
+ *  is the practice HOME, not a room. */
+const ROOM_URL =
+  /(\/app\/leagues\/\$\{[^}]+\}\/draft(?!\/)|\/app\/mocks\/\$\{[^}]+\}(?!\/))/g
 
 describe('every room-entry URL in src/ is enumerated with a disposition', () => {
   it('the sweep matches the dispositioned set exactly', () => {
@@ -92,8 +107,8 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
     }
     hits.sort((a, b) => a[0].localeCompare(b[0]))
     expect(hits).toEqual([
-      ['src/components/draft/mock-draft-launcher.tsx', 2], // in-room-world, in place
-      ['src/components/draft/mock-launcher-entry.ts', 2], // launcher entry + the league mock room's URL (R521), both in place
+      ['src/components/draft/mock-draft-launcher.tsx', 3], // in-room-world ×2 + MockRow's standalone Rejoin (F123), all in place
+      ['src/components/draft/mock-launcher-entry.ts', 3], // launcher entry + the league mock room's URL (R521) + mockRoomHref, all in place
       ['src/components/layout/draft-bar-ops.ts', 1], // SPLIT via draft-bar.tsx
       ['src/components/leagues/league-home-states.tsx', 2], // both SPLIT
     ])

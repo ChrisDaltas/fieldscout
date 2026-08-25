@@ -111,8 +111,14 @@ describe('Exit Draft is for everyone (Q13; §16.4 zone 1)', () => {
     ]) {
       source = withoutAllGates(source, cond)
     }
-    expect(source).toMatch(/<Link\s+href=\{`\/app\/leagues\/\$\{leagueId\}`\}/)
+    // MP.6c: the destination is the ROOM SCOPE's exit, not a league URL the
+    // bar builds — a standalone practice room leaves to `/app/mocks`. What
+    // this pin is about is unchanged and is what still fails if it breaks:
+    // Exit Draft survives every variant gate, and it is a real link.
+    expect(source).toMatch(/<Link\s+href=\{exitHref\}/)
     expect(source).toMatch(/Exit Draft/)
+    // …and the bar cannot quietly re-acquire a league of its own.
+    expect(source).not.toMatch(/\/app\/leagues/)
   })
 
   it('is a navigation, not a window.close or a confirm', () => {
@@ -140,7 +146,10 @@ describe('the room hosts the bar and the PageHeader stays deleted (DR.2)', () =>
   })
 
   it('passes the RAW role and the mock flag separately, so the ops mask is live', () => {
-    expect(room).toMatch(/commishRole:\s*canUseCommishPanel\(detail\.my_role\)/)
+    // MP.6c: the role now arrives on the room's scope object (`scope.myRole`
+    // — null on a standalone practice draft, where there is no commissioner
+    // at all). Still the RAW role, still masked in the ops.
+    expect(room).toMatch(/commishRole:\s*canUseCommishPanel\(scope\.myRole\)/)
     expect(room).toMatch(/isMock:\s*draft\.is_mock/)
   })
 })
@@ -150,7 +159,7 @@ describe('no commissioner control is reachable on a mock (D110(1))', () => {
 
   it('isCommish still carries the !draft.is_mock mask at its one definition', () => {
     expect(room).toMatch(
-      /const isCommish = canUseCommishPanel\(detail\.my_role\) && !draft\.is_mock/,
+      /const isCommish = canUseCommishPanel\(scope\.myRole\) && !draft\.is_mock/,
     )
   })
 
