@@ -10,7 +10,7 @@ import {
   mockLauncherHref,
 } from '@/components/draft/mock-launcher-entry'
 import { MockRow } from '@/components/draft/mock-draft-launcher'
-import { mockSeatCount } from '@/components/draft/mock-launcher-ops'
+import { leagueMockOpenBlocked, mockSeatCount } from '@/components/draft/mock-launcher-ops'
 import { MOCK_EXPIRY_NOTE } from '@/components/draft/mock-launcher-ops'
 import { useMockDrafts } from '@/hooks/use-mock-drafts'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,7 @@ import {
 import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { leaguesKeys } from '@/hooks/use-leagues'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 import { AddDraftListCta } from './attach-list-modal'
@@ -182,6 +183,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, data.teams)}
             row={row}
           />
@@ -190,6 +192,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, data.teams)}
             row={row}
           />

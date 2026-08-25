@@ -26,11 +26,13 @@ import {
   type MockDraftSummary,
 } from '@/hooks/use-mock-drafts'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 
 import {
   defaultMockSeatId,
   launchDisabledReason,
+  leagueMockOpenBlocked,
   MOCK_CAP_NOTE,
   MOCK_EXPIRY_NOTE,
   mockProgressLabel,
@@ -270,6 +272,7 @@ function MockList({
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, detail.teams)}
             row={row}
           />
@@ -278,6 +281,7 @@ function MockList({
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, detail.teams)}
             row={row}
           />

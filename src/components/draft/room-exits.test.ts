@@ -301,6 +301,7 @@ describe('the transient skeleton carries an exit too (DR.2’s deliberate call)'
  */
 describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
   const ROW_FILE = 'src/components/draft/mock-draft-launcher.tsx'
+  const LEAGUE_HOME = 'src/components/leagues/league-home-states.tsx'
   const HOME = 'src/components/draft/mocks-home.tsx'
 
   /** `MockRow`'s body, so a neighbour in the same file cannot satisfy these. */
@@ -341,6 +342,39 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     const body = mockRowBody()
     expect(body).toContain('`/app/mocks/${row.id}`')
     expect(body).toContain('`/app/mocks/${row.id}/report`')
+  })
+
+  it('EVERY MockRow mount discloses when its open control goes nowhere (R540)', () => {
+    // **The gap R540 found, pinned at the level it actually lives.** MP.8 made
+    // `reportHref` unconditionally `/app/mocks/[id]/report` for all three
+    // mounts, but only `/app/mocks` passed an `openBlocked` reason — so on the
+    // two LEAGUE mounts a finished mock's *View report* became a live control
+    // that silently bounces to `/app` whenever `mockDrafts` is off.
+    //
+    // The pin is an ENUMERATION rather than two file checks, because the
+    // failure mode is a mount that does not exist yet: every `<MockRow` in the
+    // tree must pass `openBlocked`, and every mount file must read the flag it
+    // passes AT THE MOUNT (§4 rule 13 / R519 — never inside the shared row).
+    const files = ['src/components/draft/mocks-home.tsx', ROW_FILE, LEAGUE_HOME]
+    const found = files.flatMap((file) => {
+      const source = code(file)
+      const mounts = source.match(/<MockRow[\s\S]*?\/>/g) ?? []
+      return mounts.map((mount) => ({ file, mount }))
+    })
+    // Set equality on the count, so a mount in a file this list does not name
+    // is a failure of the list rather than an invisible pass.
+    expect(found).toHaveLength(5)
+    for (const { file, mount } of found) {
+      expect(mount, `${file} passes openBlocked`).toMatch(/openBlocked=\{/)
+    }
+    // The two LEAGUE mounts take the practice flag at the call site…
+    for (const file of [ROW_FILE, LEAGUE_HOME]) {
+      expect(code(file), file).toContain(
+        'leagueMockOpenBlocked(row, featureFlags.mockDrafts)',
+      )
+    }
+    // …and the shared row still reads no flag of its own.
+    expect(mockRowBody()).not.toContain('featureFlags')
   })
 
   it('EVERY mock row\u2019s report link is the /app/mocks one (MP.8 / D230(4))', () => {

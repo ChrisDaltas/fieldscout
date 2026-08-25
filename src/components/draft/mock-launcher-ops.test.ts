@@ -10,6 +10,8 @@ import type { MockDraftSummary } from '@/hooks/use-mock-drafts'
 
 import {
   defaultMockSeatId,
+  leagueMockOpenBlocked,
+  MOCK_REPORT_HIDDEN_NOTE,
   launchDisabledReason,
   MOCK_ACTIVE_CAP,
   MOCK_CAP_NOTE,
@@ -110,5 +112,34 @@ describe('mockProgressLabel', () => {
     expect(mockProgressLabel(mockRow({ total_rounds: null }), 8)).toBe('Paused · pick 37')
     expect(mockProgressLabel(mockRow(), null)).toBe('Paused · pick 37')
     expect(mockProgressLabel(mockRow({ current_pick_number: null }), 8)).toBe('Paused')
+  })
+})
+
+describe('leagueMockOpenBlocked — the leagues ON / mockDrafts OFF cell (MP.8 / R540)', () => {
+  // R515's defect in the MIRROR direction, and the one flag combination no
+  // suite drove before this test existed: `/app/mocks/[id]/report` lives
+  // inside the practice gate, so with practice OFF a finished league mock's
+  // *View report* is a live control that silently bounces to `/app`.
+  const row = (status: MockDraftSummary['status']) => ({ status })
+
+  it('a FINISHED row is blocked, with a reason, when practice is OFF', () => {
+    expect(leagueMockOpenBlocked(row('complete'), false)).toBe(MOCK_REPORT_HIDDEN_NOTE)
+  })
+
+  it('…and is NOT blocked when practice is on — the report renders', () => {
+    expect(leagueMockOpenBlocked(row('complete'), true)).toBeNull()
+  })
+
+  it('an UNFINISHED row is never blocked by the PRACTICE flag, either way', () => {
+    // Its *Rejoin* goes to `/app/leagues/…`, which this flag has nothing to
+    // do with. Blocking it here would be the same lie one row over.
+    for (const enabled of [true, false]) {
+      expect(leagueMockOpenBlocked(row('live'), enabled)).toBeNull()
+      expect(leagueMockOpenBlocked(row('paused'), enabled)).toBeNull()
+    }
+  })
+
+  it('the reason says what is hidden, not what a mock draft is (§4 rule 16)', () => {
+    expect(MOCK_REPORT_HIDDEN_NOTE).toBe('Practice drafts are hidden right now.')
   })
 })

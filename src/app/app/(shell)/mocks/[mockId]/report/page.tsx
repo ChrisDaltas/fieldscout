@@ -56,12 +56,19 @@ export default async function MockReportPage({ params }: MockReportPageProps) {
     }
   }
 
-  // **A FAILED READ IS NOT AN EMPTY ONE** (CLAUDE.md: "never let 'nothing
-  // happened' mean 'it worked'"). Only a read that SUCCEEDED and found
-  // nothing is allowed to render the not-found; when the lookup itself
-  // failed, the component mounts and its own client read decides — it has a
-  // loud error arm with a retry, which is the honest answer to "we could not
-  // look".
+  // **A FAILED READ IS NOT AN EMPTY ONE HERE** (CLAUDE.md: "never let
+  // 'nothing happened' mean 'it worked'"). Only a read that SUCCEEDED and
+  // found nothing may short-circuit to the not-found; when THIS lookup
+  // failed, the component mounts and its own client read decides.
+  //
+  // **What that does and does not promise (R543).** It does not promise the
+  // page can never show the empty state while something is broken — if this
+  // resolution fails and the client read then succeeds with no rows (a
+  // foreign id, say), the empty state is the CORRECT answer and it renders.
+  // What it promises is narrower and is the part worth having: **the answer
+  // always comes from a read that actually answered**, and a read that could
+  // not answer at all errs loudly — the component's error arm, with a retry —
+  // instead of being silently reported as "nothing here".
   if (!failed && mock === null) return <MockReportMissing />
 
   return <MockDraftReport mockId={mockId} />

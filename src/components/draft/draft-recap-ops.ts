@@ -194,6 +194,15 @@ export interface RecapDraftedRow {
  * "an empty column claims the value exists and is unknown" failure D230(2)
  * names, one column over.
  *
+ * **`pickInRound` is ALWAYS the arithmetic, even when the stored round wins**
+ * (R542). The two therefore come from different sources in the one case they
+ * can disagree, and a `9.01` label is then a real round with a derived slot.
+ * That is deliberate: the stored round is the ENGINE's record of which round a
+ * pick belongs to, while the slot is a position within the sheet's own
+ * numbering and has no stored counterpart to prefer — deriving it from the
+ * stored round would invent a coordinate the sheet never assigned. Callers
+ * that need the two to agree should print the round alone.
+ *
  * `teamCount` is the number of seats (`draft_order.length`). With no seats to
  * divide by, the arithmetic cannot answer: the round falls back to the stored
  * value or 1 and the slot to the pick number, so a malformed draft still
