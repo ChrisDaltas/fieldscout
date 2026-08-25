@@ -33,6 +33,19 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
 
         <ul className="mt-3">
           <Row href="/app/stats" icon="chart" label="My stats" onClick={close} />
+          {/* Practice drafts (MP.9; ruling §3.7) — the mobile half of the
+              row `sidebar.tsx`'s MORE_ITEMS carries. Same label, same icon,
+              same flag, and `mockDrafts` alone: with `leagues` off this row
+              still renders (E79/D231(3)). The two lists stay separate on
+              purpose; `more-lists.test.ts` pins that they agree here. */}
+          {featureFlags.mockDrafts && (
+            <Row
+              href="/app/mocks"
+              icon="rocket"
+              label="Mock Drafts"
+              onClick={close}
+            />
+          )}
           {featureFlags.bigBoard && (
             <Row
               href="/app/big-board"

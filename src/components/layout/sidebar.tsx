@@ -71,6 +71,22 @@ const MORE_ITEMS: NavEntry[] = [
     icon: 'chart',
     matchPrefix: '/app/stats',
   },
+  // Practice drafts (MP.9; ruling §3.7). Gated on `mockDrafts` and nothing
+  // else — with `leagues` off this row still renders, which is the whole of
+  // E79/D231(3). The mobile half of this row lives in `more-sheet.tsx`: the
+  // two lists are deliberately separate (form factors show different
+  // overflow), and `more-lists.test.ts` pins that they agree about the
+  // entries they share.
+  ...(featureFlags.mockDrafts
+    ? [
+        {
+          href: '/app/mocks',
+          label: 'Mock Drafts',
+          icon: 'rocket',
+          matchPrefix: '/app/mocks',
+        } as NavEntry,
+      ]
+    : []),
 ]
 
 const ROLE_LABEL: Record<string, string> = {
