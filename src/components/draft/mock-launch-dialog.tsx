@@ -243,10 +243,11 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
                   value={d}
                   onChange={onDraftConfig}
                   idPrefix="mock"
-                  // `offerStoredManual` is deliberately absent: a standalone
-                  // practice draft has no stored order and no commissioner,
-                  // and 095 refuses anything but same_as_draft_order/random
-                  // by name.
+                  // `offerManual` is deliberately absent: a standalone
+                  // practice draft has no league and no commissioner, and
+                  // 095 refuses anything but same_as_draft_order/random by
+                  // name (D110(1) — even now that the league panel offers
+                  // `manual` for real, 098/AP.5).
                   issues={issues.filter((i) => i.field.startsWith('draft'))}
                 />
               )}

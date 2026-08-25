@@ -665,33 +665,48 @@ describe('the three UI-less §7.3.8 auction fields now have inputs', () => {
     expect(DRAFT_FIELD_BOUNDS.auction_anti_snipe_seconds).toEqual({ min: 0, max: 15 })
   })
 
-  it('does NOT offer nomination_order_mode `manual` — it would make the draft unstartable (F80)', () => {
-    // The engine's side of the same fact: 084's manual arm validates a
-    // STORED `drafts.nomination_order`, and 087's `draft_set_order` refuses
-    // to write one before an auction starts, so `manual` has no reachable
-    // path today. Offering it would be offering a refusal.
+  it('offers nomination_order_mode `manual` for real — editor, field, and start path all exist (F80 → AP.5/098)', () => {
+    // This test used to pin the GATE-OUT (L.C3.2: `manual` was unstartable,
+    // so the select refused to offer it). 098/AP.5 shipped F80's arm (b) —
+    // a §7.3.8 `nomination_order` field, the settings fallback in the manual
+    // arm, and a second mount of the ONE order editor — so the same pins now
+    // hold the WORKING path (AP.5 item 5: moved, never deleted).
     const head = headBodies()
-    expect(head.get('draft_nomination_order_internal')?.body ?? '').toContain(
+    const nom = head.get('draft_nomination_order_internal')
+    // The refusal text survives byte-identically (033:518's pin) — a league
+    // whose stored AND settings orders are both missing/invalid still fails
+    // loudly, by name…
+    expect(nom?.body ?? '').toContain(
       'nomination_order_mode=manual but the stored nomination order does not cover every active franchise exactly once',
     )
+    // …but the manual arm now resolves candidate-then-settings (D101/D201):
+    // the head carries the `p_config_order` fallback, and the head is 098.
+    expect(nom?.body ?? '').toContain("jsonb_typeof(p_config_order) = 'array' THEN p_config_order")
+    expect(nom?.file).toBe('098_manual_nomination_order.sql')
+    // `draft_set_order` still refuses the pre-start auction edit (the order
+    // lives in settings until start), and the message now points at an
+    // editor that exists rather than a field that did not.
     expect(head.get('draft_set_order')?.body ?? '').toContain(
-      'this auction has not started — set nomination_order_mode and its order in League settings',
+      'this auction has not started — set nomination_order_mode and drag the nomination order in League settings (Draft configuration); draft_start hydrates it',
     )
-    // Scoped to the NOMINATION select's own block — the DRAFT-order select
-    // above it keeps its `manual` arm, which has a real editor
-    // (`DraftOrderEditor`) and a working pre-start write.
+    // Scoped to the NOMINATION select's own block: `manual` is a plain
+    // option again, behind the mount's opt-in, with the panel's own label —
+    // and the L.C3.2 "(no editor yet — pick another)" fallback branch is GONE.
     const start = fields.indexOf('id={`${idPrefix}-nomination-order-mode`}')
     expect(start).toBeGreaterThan(-1)
     const block = fields.slice(start, fields.indexOf('/>', start))
-    expect(block).not.toMatch(/\{ value: 'manual', label: 'Commissioner sets' \}/)
-    // Offered ONLY as the escape hatch for a league that already stores it —
-    // and now only when the MOUNT opts in, which the panel does and the
-    // standalone practice dialog cannot (095 refuses the mode by name).
-    expect(block).toMatch(
-      /offerStoredManual && value\.nomination_order_mode === 'manual'[\s\S]{0,160}Commissioner sets \(no editor yet/,
+    expect(block).toMatch(/offerManual \? \[\{ value: 'manual', label: 'Commissioner sets' \}\] : \[\]/)
+    expect(fields).not.toContain('no editor yet')
+    // The panel opts in AND mounts the ONE editor on the second field
+    // (D201(3): `DraftOrderEditor`, never a second reorder component); the
+    // standalone launch dialog still passes nothing — 095 refuses `manual`
+    // by name (D110(1)).
+    expect(settings).toContain('offerManual')
+    expect(settings).toMatch(
+      /d\.nomination_order_mode === 'manual' &&[\s\S]{0,120}<DraftOrderEditor[\s\S]{0,240}value=\{d\.nomination_order\}/,
     )
-    expect(settings).toContain('offerStoredManual')
-    expect(code(LAUNCH_DIALOG)).not.toContain('offerStoredManual={')
+    expect(code(LAUNCH_DIALOG)).not.toContain('offerManual={')
+    expect(code(LAUNCH_DIALOG)).not.toMatch(/offerManual\s*$/m)
   })
 })
 

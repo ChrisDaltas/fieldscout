@@ -40,6 +40,10 @@ const DRAFT_ORDER = [
   '00000000-0000-4000-8000-000000000110',
 ]
 
+/** 098/AP.5: the auction's manual nomination order — the SAME ten seats,
+ *  reversed, so the round trip provably carries two DIFFERENT orders. */
+const NOMINATION_ORDER = [...DRAFT_ORDER].reverse()
+
 export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   // §7.3.1 — format & structure
   format: 'redraft', // single-option field (v1)
@@ -126,6 +130,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
     auction_bid_seconds: 45,
     auction_anti_snipe_seconds: 0,
     nomination_order_mode: 'random',
+    nomination_order: NOMINATION_ORDER, // 098/AP.5 — differs from the null default (and from DRAFT_ORDER)
     autopick_default: 'queue_then_board_then_adp', // single-option field (fixed strategy)
     disconnect_grace_seconds: 0,
     draft_scheduled_at: '2028-08-30T23:00:00.000Z', // F49 sweep (L.B7.1): far-future

@@ -1448,16 +1448,36 @@ function DraftGroup({
       <PickClockField value={d} onChange={onDraft} idPrefix="set" />
 
       {d.draft_type === 'auction' && (
-        <AuctionConfigFields
-          value={d}
-          onChange={onDraft}
-          idPrefix="set"
-          // The panel keeps the legacy `manual` escape hatch (F80); a
-          // standalone practice draft has no stored order to honour and 095
-          // refuses the mode by name, so the dialog passes nothing.
-          offerStoredManual
-          issues={errorsFor('draft.auction_budget')}
-        />
+        <>
+          <AuctionConfigFields
+            value={d}
+            onChange={onDraft}
+            idPrefix="set"
+            // 098/AP.5 (F80): `manual` is a real choice here — the editor
+            // below writes `settings.draft.nomination_order` and
+            // `draft_start` hydrates it. The standalone launch dialog still
+            // passes nothing: 095 refuses the mode by name (D110(1)).
+            offerManual
+            issues={errorsFor('draft.auction_budget')}
+          />
+          {/* AP.5 (spec §16.2/§8.3): the SECOND mount of the ONE order
+              editor — `DraftOrderEditor` pointed at `nomination_order`, the
+              same component the draft-order rows above mount (D201(3): a
+              second reorder component would be the LV.7 failure pattern).
+              `mode` is pinned to 'manual': `same_as_draft_order` has nothing
+              to edit and `random` seeds from the draft id at start — the
+              randomize affordance belongs to the DRAFT order only. */}
+          {d.nomination_order_mode === 'manual' && (
+            <DraftOrderEditor
+              leagueId={leagueId}
+              detail={detail}
+              mode="manual"
+              value={d.nomination_order}
+              onChange={(nomination_order) => onDraft({ nomination_order })}
+              canEdit={canEdit}
+            />
+          )}
+        </>
       )}
 
       {/* R505: `draft.auction_budget`'s inline issue moved INTO

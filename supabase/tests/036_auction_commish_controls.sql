@@ -1896,6 +1896,10 @@ select is(
 -- shipped verb in a fix cycle, and which way it should align is the same
 -- standing product question F57 already carries. The reset above is what puts
 -- an AUCTION back into `scheduled`, which is the only way to reach this arm.
+-- (098/AP.5 re-worded the refusal — the §7.3.8 `nomination_order` field and
+-- its editor exist now, so the message finally points at something real —
+-- but the DIVERGENCE this section pins is unchanged: the auction arm still
+-- refuses the pre-start edit where the snake arm accepts one.)
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -1904,7 +1908,7 @@ select throws_ok(
        (select array_agg(t.id order by t.name) from teams t
         where t.league_id = 'b8000000-0000-4000-8000-0000000000a3')) $$,
   'P0001',
-  'draft_set_order: this auction has not started — set nomination_order_mode and its order in League settings before the draft (§7.3.8)',
+  'draft_set_order: this auction has not started — set nomination_order_mode and drag the nomination order in League settings (Draft configuration); draft_start hydrates it (§7.3.8)',
   'R373: a SCHEDULED auction refuses a pre-start order edit — where a scheduled SNAKE draft accepts one (023:1248). Divergence pinned, F57-adjacent');
 reset role;
 

@@ -266,6 +266,13 @@ export const draftConfigSchema = z.strictObject({
   auction_bid_seconds: z.number().int().min(10).max(60).default(20),
   auction_anti_snipe_seconds: z.number().int().min(0).max(15).default(10),
   nomination_order_mode: z.enum(['same_as_draft_order', 'random', 'manual']).default('same_as_draft_order'),
+  // 098/AP.5 (spec v2.13 §7.3.8, F80 arm (b)): the auction's counterpart to
+  // `draft_order`, and for the same reason — `manual` needs somewhere
+  // pre-draft to store the order the commissioner set. `draft_start` hydrates
+  // it into `drafts.nomination_order` (candidate-then-settings, the D101
+  // rule); the permutation is validated AT START, server-side, exactly like
+  // `draft_order`'s — this field is storage, never authority.
+  nomination_order: z.array(z.uuid()).nullable().default(null),
   autopick_default: z.literal('queue_then_board_then_adp').default('queue_then_board_then_adp'),
   disconnect_grace_seconds: z.number().int().min(0).max(120).default(30),
   draft_scheduled_at: z.iso.datetime({ offset: true }).nullable().default(null),
