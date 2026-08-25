@@ -434,8 +434,14 @@ export async function provisionBotUsers(service: Supabase, count: number): Promi
  * Stage the LIVE bid clock to `now + msFromNow` — INTO the anti-snipe window,
  * so the next accepted bid must move the server deadline LATER (the D128
  * re-floor, asserted from the drafts row afterwards). Forward-pointed and
- * `.eq('status','live')`-conditional (the F52 lesson); a 0-row write means
- * the engine advanced first and the caller re-checks.
+ * `.eq('status','live')`-conditional (the F52 lesson). A 0-row write means
+ * the engine advanced past `live` between the caller's read and this write —
+ * that staging never happened, and pretending otherwise would let the spec
+ * assert a re-floor against a deadline nobody staged, so it THROWS a
+ * staging-specific error rather than returning as success (R564: the first
+ * draft of this docblock promised "the caller re-checks" while the matched
+ * count was discarded — nobody re-checked; the CLAUDE.md rule is that
+ * "nothing happened" must never mean "it worked").
  */
 export async function stageBidDeadline(
   service: Supabase,
@@ -443,12 +449,19 @@ export async function stageBidDeadline(
   msFromNow: number,
 ): Promise<void> {
   const staged = new Date(Date.now() + msFromNow).toISOString()
-  const { error } = await service
+  const { data, error } = await service
     .from('drafts')
     .update({ current_deadline: staged })
     .eq('id', draftId)
     .eq('status', 'live')
+    .select('id')
   throwIfError(error, 'harness bid-deadline staging')
+  if ((data ?? []).length === 0) {
+    throw new Error(
+      `stageBidDeadline matched 0 rows — draft ${draftId} is no longer 'live' ` +
+        `(the engine advanced first); the staged deadline was NOT written`,
+    )
+  }
 }
 
 // ---------------------------------------------------------------------------

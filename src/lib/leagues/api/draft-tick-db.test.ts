@@ -62,14 +62,26 @@ const COMMISH = {
   username: 'tk_wire_commish',
 }
 
-/** 20 RBs, adp 1..20. The commissioner queues the WORST-adp player so the
- *  queue source is discriminable from ADP on the wire (no ADP-driven seat
- *  ever reaches tk-wire-rb20 in 16 picks). */
+/** 20 RBs, adp 0.01..0.20 — a FRACTIONAL band below every real ADP (the
+ *  F60/R286 discipline, the draft-realtime-db precedent: integer `i + 1`
+ *  had `tk-wire-rb01` sitting at adp 1 ALONGSIDE a real player at adp 1
+ *  after `RESTORE_SCOPE=draft`, losing 068's `pl.id` tiebreak — R315's
+ *  measured collision). With the fractional band the fixtures win the ADP
+ *  walk BY VALUE against any restored pool, so the suite can assert
+ *  fixture identity on ADP-resolved picks (the discrimination F60's sweep
+ *  demands) instead of being green only by never looking. The band choice
+ *  is F94-safe: fractional rows sit below all real ADPs like realtime's
+ *  /100 band, the stack lane is serialized (vitest.config.ts), and no
+ *  auction CPU-value suite coexists with these rows.
+ *
+ *  The commissioner queues the WORST-adp player so the queue source is
+ *  discriminable from ADP on the wire (no ADP-driven seat ever reaches
+ *  tk-wire-rb20 in 16 picks). */
 const PLAYERS = Array.from({ length: 20 }, (_, i) => ({
   id: `tk-wire-rb${String(i + 1).padStart(2, '0')}`,
   full_name: `TK Wire RB ${String(i + 1).padStart(2, '0')}`,
   position: 'RB',
-  adp: i + 1,
+  adp: (i + 1) / 100,
 }))
 const QUEUED_PLAYER_ID = 'tk-wire-rb20'
 
@@ -309,6 +321,16 @@ describe('the authoritative clock over PostgREST (migration 068)', () => {
     // No duplicate players (E1 held under pure system traffic).
     const players = (picks ?? []).map((p) => p.player_id)
     expect(new Set(players).size).toBe(TOTAL_PICKS)
+    // F60's added DISCRIMINATION (L.C6.1 sweep; R315 — this suite was
+    // green only because it never asserted fixture identity on an
+    // ADP-resolved pick): with the fractional band the 15 ADP-resolved
+    // picks are deterministically tk-wire-rb01..rb15 (best remaining adp,
+    // walked over the WHOLE pool — restored or empty) and the queued
+    // rb20 completes the set. A restored real pool capturing any pick
+    // reds this line by name instead of passing silently.
+    expect(new Set(players)).toEqual(
+      new Set([...PLAYERS.slice(0, 15).map((p) => p.id), QUEUED_PLAYER_ID]),
+    )
     // Every team drafted exactly `rounds` players.
     const byTeam = new Map<string, number>()
     for (const p of picks ?? []) byTeam.set(p.team_id, (byTeam.get(p.team_id) ?? 0) + 1)
