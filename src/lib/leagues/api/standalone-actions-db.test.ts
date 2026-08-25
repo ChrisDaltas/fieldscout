@@ -1207,3 +1207,70 @@ describe('§D the league arm answers exactly what it answered before (§4 rule 1
     expect(counts.drafts).toBeGreaterThan(0)
   }, 60_000)
 })
+
+// ===========================================================================
+// §E — the auto-pause post (ledger F120; migration 097; MP.6c)
+// ===========================================================================
+describe('§E the auto-pause post says where YOUR practice resumes (F120)', () => {
+  /**
+   * Drive `draft_tick`'s ARM 1.5 (the mock stale-pause loop) on one mock and
+   * return the system post it wrote.
+   *
+   * Looking like someone who left is TWO facts, both the arm's own: no
+   * heartbeat row for the launcher, and a `started_at` older than
+   * `disconnect_grace_seconds + 5s` (the arm COALESCEs liveness →
+   * `started_at` → `created_at`). The timestamp is a fixed literal rather
+   * than a wall-clock offset — this suite reads server time, never
+   * `Date.now()`.
+   */
+  async function autoPausePost(draftId: string): Promise<{
+    message: string
+    leagueId: string | null
+  }> {
+    await service.from('draft_liveness').delete().eq('draft_id', draftId)
+    const { error: rewound } = await service
+      .from('drafts')
+      .update({ status: 'live', started_at: '2020-01-01T00:00:00+00:00' })
+      .eq('id', draftId)
+    expect(rewound).toBeNull()
+
+    await tick()
+
+    const after = await readDraft(draftId)
+    expect(after.status, 'the arm actually fired').toBe('paused')
+
+    const { data, error } = await service
+      .from('league_chat')
+      .select('message, league_id, is_system, user_id')
+      .eq('context', `draft:${draftId}`)
+      .eq('is_system', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (error) throw new Error(`system post read failed: ${error.message}`)
+    // D97's shape, re-asserted here because the copy claim is only
+    // interesting on a post that is actually the tick's.
+    expect(data.user_id).toBeNull()
+    return { message: data.message, leagueId: data.league_id }
+  }
+
+  it('a STANDALONE practice draft is sent to Mock drafts, never to a league page', async () => {
+    const post = await autoPausePost(snakeMockId)
+    // F120: this row used to read "…from the league page." on a draft that
+    // has no league page — written with a NULL league_id, and invisible
+    // until F114 re-keyed the room's chat read on the draft's context.
+    expect(post.leagueId).toBeNull()
+    expect(post.message).toBe(
+      'Mock draft auto-paused — you left the room. Resume your practice from Mock drafts.',
+    )
+    expect(post.message).not.toContain('league page')
+  }, 60_000)
+
+  it('a LEAGUE-attached mock keeps 068’s sentence, byte for byte (§4 rule 11)', async () => {
+    const post = await autoPausePost(leagueMockId)
+    expect(post.leagueId).toBe(leagueId)
+    expect(post.message).toBe(
+      'Mock draft auto-paused — you left the room. Resume your practice from the league page.',
+    )
+  }, 60_000)
+})

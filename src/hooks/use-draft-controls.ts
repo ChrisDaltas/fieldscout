@@ -40,7 +40,7 @@ import { leaguesKeys } from './use-leagues'
  */
 
 function useControlMutation<TVars>(
-  leagueId: string,
+  leagueId: string | null,
   draftId: string,
   toRequest: (vars: TVars) => ControlRequest,
 ) {
@@ -52,13 +52,19 @@ function useControlMutation<TVars>(
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(draftId) })
-      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      // MP.6c: a standalone practice draft has no league detail to
+      // reconcile — the draft row IS the whole truth (there is no
+      // `leagues` row behind it). Skipped rather than invalidated under a
+      // placeholder key, which would silently evict a real league's cache.
+      if (leagueId !== null) {
+        void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      }
     },
   })
 }
 
 /** POST …/draft/pause — pause | resume (one route, `action` body verb). */
-export function usePauseResumeDraft(leagueId: string, draftId: string) {
+export function usePauseResumeDraft(leagueId: string | null, draftId: string) {
   return useControlMutation(
     leagueId,
     draftId,

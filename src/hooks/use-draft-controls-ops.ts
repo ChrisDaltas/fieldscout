@@ -20,6 +20,8 @@
  *    is the hook's (entropy is injected, never read here).
  */
 
+import { draftVerbPath } from './use-draft-action-path'
+
 export interface ControlRequest {
   /** Route path (POST unless stated on the builder). */
   path: string
@@ -31,13 +33,17 @@ const reasonField = (reason: string | undefined): Record<string, unknown> =>
 
 /** POST …/draft/pause — ONE route for both verbs (`action` in body). */
 export function pauseResumeRequest(
-  leagueId: string,
+  leagueId: string | null,
   draftId: string,
   action: 'pause' | 'resume',
   reason?: string,
 ): ControlRequest {
   return {
-    path: `/api/leagues/${leagueId}/draft/pause`,
+    // MP.6c: the ONE control verb a standalone practice room can send
+    // (§8.8's E59 resume path). `null` ⇒ `/api/mocks/[mockId]/pause`; every
+    // other control in this file stays league-only, because §8.7 is a
+    // commissioner surface and a mock has no commissioner (D110(1)).
+    path: draftVerbPath(leagueId, draftId, 'pause'),
     body: { draft_id: draftId, action, ...reasonField(reason) },
   }
 }

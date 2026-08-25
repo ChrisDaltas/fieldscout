@@ -42,6 +42,7 @@ import {
   bestAvailableFromBoard,
   deriveListsPanelRows,
   fromListToastLine,
+  standaloneListRows,
   type PanelListRow,
 } from './my-lists-panel-ops'
 
@@ -51,9 +52,14 @@ export interface PoolOverlaySelection {
 }
 
 interface MyListsPanelProps {
-  leagueId: string
+  /** The room's scope league — `null` on a STANDALONE practice draft, where
+   *  the panel offers the caller's own lists (F122) and the queue write
+   *  goes to `/api/mocks/[mockId]/queue/from-list/[listId]`. */
+  leagueId: string | null
   draftId: string
-  detail: LeagueDetail
+  /** League members, for the `@username` label on a shared row. Empty on a
+   *  standalone practice draft — every row is the caller's own. */
+  members: LeagueDetail['members']
   userId: string | null
   /** My seat (a mock's launcher passes the human seat — D103(3)); null =
    *  no queue to load into (spectator / mock non-launcher). */
@@ -76,7 +82,7 @@ interface MyListsPanelProps {
    *  purpose: the mobile panel lives inside a bottom Sheet, and a Dialog
    *  portal opened from inside a Sheet steals focus and closes both (the
    *  D119(6) nested-dialog lesson) — so the modal always mounts outside. */
-  onAddList: () => void
+  onAddList: (() => void) | null
   /** Render the cheat sheet as an in-panel drill-in instead of a side
    *  Sheet — the mobile bottom-sheet variant (same D119(6) reason). */
   inlineCheatSheet?: boolean
@@ -100,7 +106,7 @@ interface MyListsPanelProps {
 export function MyListsPanel({
   leagueId,
   draftId,
-  detail,
+  members,
   userId,
   queueTeamId,
   draftedIds,
@@ -128,22 +134,28 @@ export function MyListsPanel({
    */
   const closeDockPanel = useDockPanelClose()
 
-  const lists = useLeagueLists(leagueId)
+  // MP.6c/F122: a standalone practice room has no attachments to read —
+  // `useLeagueLists` never runs, and the rows come from the caller's own
+  // lists instead. The three attachment MUTATIONS are league verbs and are
+  // never reachable standalone (their menu items do not render); they keep
+  // the league id they have always taken.
+  const standalone = leagueId === null
+  const lists = useLeagueLists(leagueId ?? undefined)
   const myLists = useMyDraftLists(userId ?? undefined)
-  const updateList = useUpdateLeagueList(leagueId)
-  const detach = useDetachList(leagueId)
-  const attach = useAttachList(leagueId)
+  const updateList = useUpdateLeagueList(leagueId ?? '')
+  const detach = useDetachList(leagueId ?? '')
+  const attach = useAttachList(leagueId ?? '')
   const fromList = useQueueFromList(leagueId, draftId, queueTeamId ?? '')
   const [cheatSheet, setCheatSheet] = useState<{ listId: string; title: string } | null>(null)
 
   const usernameByUserId = useMemo(
     () =>
       new Map(
-        detail.members
+        members
           .filter((m) => m.user_id && m.profiles?.username)
           .map((m) => [m.user_id as string, m.profiles!.username]),
       ),
-    [detail.members],
+    [members],
   )
 
   const bigBoard = useMemo(() => {
@@ -154,8 +166,11 @@ export function MyListsPanel({
   }, [myLists.data])
 
   const rows = useMemo(
-    () => deriveListsPanelRows(lists.data ?? [], userId, bigBoard, usernameByUserId),
-    [lists.data, userId, bigBoard, usernameByUserId],
+    () =>
+      standalone
+        ? standaloneListRows(myLists.data ?? [])
+        : deriveListsPanelRows(lists.data ?? [], userId, bigBoard, usernameByUserId),
+    [standalone, myLists.data, lists.data, userId, bigBoard, usernameByUserId],
   )
 
   // §8.9 best-available-from-my-board: the PRIMARY board's top not-drafted
@@ -242,31 +257,41 @@ export function MyListsPanel({
         <span className="fs-num text-[10px] font-semibold text-n-3">{rows.length}</span>
       </CardHeader>
 
-      {lists.isPending || myLists.isPending ? (
+      {(standalone ? myLists.isPending : lists.isPending || myLists.isPending) ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : lists.isError ? (
+      ) : (standalone ? myLists.isError : lists.isError) ? (
         <div className="flex flex-col items-start gap-2 p-card-pad">
           <p className="text-[12px] font-medium text-n-3" role="alert">
             Your lists didn&rsquo;t load.
           </p>
-          <Button variant="stroke" size="sm" onClick={() => void lists.refetch()}>
+          <Button
+            variant="stroke"
+            size="sm"
+            onClick={() => void (standalone ? myLists.refetch() : lists.refetch())}
+          >
             Retry
           </Button>
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-start gap-2 p-card-pad">
           <p className="text-[12px] font-medium text-n-3">
-            No lists here yet. Attach one and your prep is one tap away on the
-            clock — a primary board even feeds your autopick.
+            {standalone
+              ? // Nothing to attach to and nothing to attach: what is empty
+                // is the caller's own lists (§4 rule 16 — say what is empty,
+                // do not explain the feature).
+                'No lists yet.'
+              : 'No lists here yet. Attach one and your prep is one tap away on the clock — a primary board even feeds your autopick.'}
           </p>
-          <Button variant="stroke" size="sm" onClick={onAddList}>
-            <Icon name="list" size={13} />
-            Add a draft list
-          </Button>
+          {onAddList && (
+            <Button variant="stroke" size="sm" onClick={onAddList}>
+              <Icon name="list" size={13} />
+              Add a draft list
+            </Button>
+          )}
         </div>
       ) : inlineCheatSheet && cheatSheet ? (
         // Mobile drill-in (the D119(6) no-nested-portal variant): the cheat
@@ -395,7 +420,7 @@ export function MyListsPanel({
                     >
                       <Icon name="eye" size={13} />
                     </Button>
-                    {queueTeamId && row.attached && (
+                    {queueTeamId && (row.attached || standalone) && (
                       // §8.9 one-tap load (replace) — the dots menu carries
                       // "Add remaining" (append). Unattached rows (the Big
                       // Board default) attach first: the from-list route
@@ -422,13 +447,13 @@ export function MyListsPanel({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[196px]">
-                      {!row.attached && (
+                      {!row.attached && !standalone && (
                         <DropdownMenuItem onSelect={() => attachBigBoard(row)}>
                           <Icon name="cup" size={13} />
                           Attach to this league
                         </DropdownMenuItem>
                       )}
-                      {row.attached && !row.dangling && queueTeamId && (
+                      {(row.attached || standalone) && !row.dangling && queueTeamId && (
                         <DropdownMenuItem onSelect={() => loadIntoQueue(row, 'append')}>
                           <Icon name="plus" size={13} />
                           Add remaining to Targets
@@ -453,10 +478,12 @@ export function MyListsPanel({
             ))}
           </ul>
 
-          <Button variant="ghost" size="sm" className="w-fit" onClick={onAddList}>
-            <Icon name="plus" size={13} />
-            Add a draft list
-          </Button>
+          {onAddList && (
+            <Button variant="ghost" size="sm" className="w-fit" onClick={onAddList}>
+              <Icon name="plus" size={13} />
+              Add a draft list
+            </Button>
+          )}
         </div>
       )}
 

@@ -368,14 +368,24 @@ describe('the mock room is released on the mockDrafts flag, past the leagues gat
     )
   })
 
-  it('MP.6 is the ROUTE only — the room still mounts league-side (D243)', () => {
-    // The scope pin, from the side that would fail loudest. MP.6c mounts
-    // `DraftRoom` here; doing it at layer 1 would ship a URL that renders an
-    // error card and 404s every pick (Q25's measurement).
-    expect(code(MOCK_ROOM_PAGE)).not.toContain('@/components/draft/draft-room')
-    expect(code('src/app/app/(room)/leagues/[leagueId]/draft/page.tsx')).toContain(
-      '@/components/draft/draft-room',
-    )
+  it('MP.6c: the ROOM mounts here — ONE component, two mounts (D243)', () => {
+    // MP.6's pin said the opposite and said why: at layer 1 this route
+    // could only have rendered an error card and 404'd every pick (Q25's
+    // measurement). Layers 3 (MP.6b) and 2 (MP.6c) landed, so it flips —
+    // and what it now pins is the LV.7 rule: BOTH routes mount out of the
+    // SAME module. A second room component would show up here as a second
+    // import path.
+    const mockPage = code(MOCK_ROOM_PAGE)
+    const leaguePage = code('src/app/app/(room)/leagues/[leagueId]/draft/page.tsx')
+    expect(mockPage).toContain('@/components/draft/draft-room')
+    expect(leaguePage).toContain('@/components/draft/draft-room')
+    expect(mockPage).toMatch(/import \{ MockDraftRoom \} from '@\/components\/draft\/draft-room'/)
+    expect(leaguePage).toMatch(/import \{ DraftRoom \} from '@\/components\/draft\/draft-room'/)
+    // …and neither route reaches for a room file of its own.
+    for (const source of [mockPage, leaguePage]) {
+      const roomImports = [...source.matchAll(/from '@\/components\/draft\/[a-z-]*room[a-z-]*'/g)]
+      expect(roomImports).toHaveLength(1)
+    }
   })
 })
 

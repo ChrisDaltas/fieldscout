@@ -90,6 +90,59 @@ export function deriveListsPanelRows(
   return rows
 }
 
+/**
+ * **THE STANDALONE PRACTICE ROOM'S ROWS — MP.6c / ledger F122.**
+ *
+ * §8.9's panel is written as a LEAGUE surface: *"every list the user
+ * attached to this league, any league-shared lists"*. A practice draft has
+ * no league, so there are no attachments and no fellow members to share
+ * anything — the question *"which lists does the panel offer?"* had no
+ * answer and MP.6b filed it rather than let the first Builder invent one.
+ *
+ * **THE ANSWER: the caller's OWN lists, Big Board included, and nothing
+ * else** — the same OWNERSHIP predicate MP.6b gave the server (spec erratum
+ * v2.16.3: the standalone `queue-from-list` arm scopes by owner, and refuses
+ * a public list somebody else owns even though it is readable). The panel
+ * therefore cannot offer what the verb would refuse, which is D110(1)'s
+ * rule; and it needs no new read — `useMyDraftLists` is the query the panel
+ * already ran for the Big Board row.
+ *
+ * Every row is `attached: false` because nothing IS attached — the flag is
+ * about a `league_lists` row, and there are none — but each is loadable,
+ * because loadable standalone means "yours". `isPrimary` is false on every
+ * row and stays false: a primary board is an ATTACHMENT flag
+ * (`league_lists.is_primary_board`, `uniq_primary_board_per_member`), so a
+ * standalone room has no primary board and does not render §8.9's
+ * best-available helper. That is an absence with a cause, not a gap.
+ */
+export function standaloneListRows(
+  myLists: ReadonlyArray<{
+    id: string
+    title: string
+    player_count: number | null
+    is_big_board: boolean | null
+  }>,
+): PanelListRow[] {
+  const rows = myLists.map((list) => ({
+    key: list.id,
+    listId: list.id,
+    leagueListId: null,
+    title: list.title,
+    playerCount: list.player_count,
+    isMine: true,
+    ownerLabel: null,
+    isPrimary: false,
+    isShared: false,
+    isBigBoard: list.is_big_board === true,
+    attached: false,
+    dangling: false,
+  }))
+  // The Big Board first: it is the one list §8.9 calls out by name, and the
+  // league arm's ordering puts the user's own most-load-bearing row on top.
+  rows.sort((a, b) => Number(b.isBigBoard) - Number(a.isBigBoard))
+  return rows
+}
+
 /** §8.9 "best available from my board": the highest-ranked (first in list
  *  order) player not yet drafted; null when the board is exhausted. */
 export function bestAvailableFromBoard(

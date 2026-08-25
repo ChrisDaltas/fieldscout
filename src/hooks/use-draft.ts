@@ -8,6 +8,7 @@ import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { createBrowserClient } from '@/lib/supabase/client'
 import type { Draft } from '@/types/database'
 
+import { draftVerbPath } from './use-draft-action-path'
 import {
   applyDraftRoomEvent,
   bestClockOffsetMs,
@@ -632,21 +633,26 @@ export function useDraftOrder(leagueId: string) {
 }
 
 /**
- * POST /api/leagues/[id]/draft/pick — make a pick (L.B2.2). NEVER
+ * POST …/pick — make a pick (L.B2.2). NEVER
  * optimistic (§15.6 — picks reflect the broadcast/refetch, not the cache).
  * Idempotency (D68(1), the create-league stamping pattern): `makePick`
  * stamps ONE `action_id` per user submit — the mutation variables carry it,
  * so a React Query retry REPLAYS server-side (E2) instead of double-picking.
  * Callers use the returned `makePick`/`makePickAsync` wrappers, not
  * `mutate` directly.
+ *
+ * MP.6c: `leagueId` is the ROOM SCOPE's — `null` on a standalone practice
+ * draft, which sends the same body to `/api/mocks/[mockId]/pick` (MP.6b's
+ * wrapper over the same service). `draftVerbPath` is the one site that
+ * decides; nothing else in this hook changes.
  */
-export function useMakePick(leagueId: string, draftId: string) {
+export function useMakePick(leagueId: string | null, draftId: string) {
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
     mutationFn: async (variables: { player_id: string; action_id: string }) =>
       sendLeagueAction<{ draft: Draft; pick: { id: string; player_id: string } }>(
-        `/api/leagues/${leagueId}/draft/pick`,
+        draftVerbPath(leagueId, draftId, 'pick'),
         jsonInit('POST', { draft_id: draftId, ...variables }),
       ),
     onSettled: () => {

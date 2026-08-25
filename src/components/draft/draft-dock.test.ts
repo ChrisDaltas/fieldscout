@@ -213,7 +213,14 @@ describe('D119(6): the modal stays at room level, outside the dock', () => {
   })
 
   it('onAddList opens the modal directly — the dock stays open (nothing closes it)', () => {
-    expect(room).toMatch(/onAddList=\{\(\) => setAddListOpen\(true\)\}/)
+    // MP.6c: the handler is now league-arm'd — a STANDALONE practice room
+    // has no league to attach a list to, so it passes `null` and the panel
+    // renders no Add control (ledger F122). What D119(6) is about is
+    // unchanged and still pinned: when there IS one, it opens the modal
+    // DIRECTLY — no close-the-dock step in front of it.
+    expect(room).toMatch(
+      /onAddList=\{scope\.leagueId === null \? null : \(\) => setAddListOpen\(true\)\}/,
+    )
   })
 
   it('the dock exposes NO external open/close API a dialog could trip', () => {

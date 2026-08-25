@@ -75,7 +75,7 @@ function useAuctionMutation<TVars>(draftId: string, toRequest: (vars: TVars) => 
  * this submit's action_id; the RPC validates turn / phase / availability /
  * the §8.6.7(a) opening ceiling and answers with the authoritative state.
  */
-export function useNominate(leagueId: string, draftId: string) {
+export function useNominate(leagueId: string | null, draftId: string) {
   const mutation = useAuctionMutation(
     draftId,
     (vars: { playerId: string; openingBid: number; actionId: string }) =>
@@ -98,7 +98,7 @@ export function useNominate(leagueId: string, draftId: string) {
  * intent (the nomination moved on) is refused by the RPC with §16.3's
  * "just went off the board" — a friendly 400 the room should show as-is.
  */
-export function usePlaceBid(leagueId: string, draftId: string) {
+export function usePlaceBid(leagueId: string | null, draftId: string) {
   const mutation = useAuctionMutation(draftId, (vars: { intent: BidIntent; actionId: string }) =>
     bidRequest(leagueId, draftId, vars.intent, vars.actionId),
   )

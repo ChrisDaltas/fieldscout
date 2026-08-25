@@ -205,24 +205,38 @@ export function useAuctionPlayersByIds(ids: readonly string[]) {
  * loud: §16.5.4's "never wrong numbers" forbids substituting a default
  * scoring family for the league's real one.
  */
-export function useLeagueScoringFamily(leagueId: string | undefined) {
+export function useLeagueScoringFamily(
+  leagueId: string | null | undefined,
+  scoringSystemId?: string | null,
+) {
   const query = useQuery({
-    queryKey: auctionPoolKeys.scoring(leagueId ?? 'none'),
-    enabled: Boolean(leagueId),
+    queryKey: auctionPoolKeys.scoring(leagueId ?? scoringSystemId ?? 'none'),
+    enabled: Boolean(leagueId ?? scoringSystemId),
     queryFn: async (): Promise<Json | null> => {
       const supabase = createBrowserClient()
-      const { data: league, error } = await supabase
-        .from('leagues')
-        .select('scoring_rules_snapshot, scoring_system_id')
-        .eq('id', leagueId!)
-        .maybeSingle()
-      if (error) throw error
-      if (league?.scoring_rules_snapshot != null) return league.scoring_rules_snapshot
-      if (!league?.scoring_system_id) return null
+      // MP.6c / ledger F117 — THE SECOND SOURCE. A STANDALONE practice draft
+      // has no `leagues` row to read a snapshot off; what it has is the
+      // template it was launched with, in `config->>'scoring_system_id'`
+      // (MP.4), handed here by the room's scope object. It resolves through
+      // the SAME `scoring_systems.rules` fallback the league arm already
+      // used for a mock whose league had no snapshot yet — the hook's own
+      // branch, reached from a different id, never a second hook.
+      let systemId = scoringSystemId ?? null
+      if (leagueId) {
+        const { data: league, error } = await supabase
+          .from('leagues')
+          .select('scoring_rules_snapshot, scoring_system_id')
+          .eq('id', leagueId)
+          .maybeSingle()
+        if (error) throw error
+        if (league?.scoring_rules_snapshot != null) return league.scoring_rules_snapshot
+        systemId = league?.scoring_system_id ?? null
+      }
+      if (!systemId) return null
       const { data: system, error: systemError } = await supabase
         .from('scoring_systems')
         .select('rules')
-        .eq('id', league.scoring_system_id)
+        .eq('id', systemId)
         .maybeSingle()
       if (systemError) throw systemError
       return system?.rules ?? null

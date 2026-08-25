@@ -121,8 +121,33 @@ function withoutGate(source: string, cond: string): string {
   return source.slice(0, start) + source.slice(i + 1)
 }
 
-/** The literal exit link both surfaces now carry. */
+/** The literal exit link the two LEAGUE-ONLY surfaces carry (the lobby and
+ *  the practice launcher — both require a league; see the MP.5 block). */
 const EXIT = /<Link href=\{`\/app\/leagues\/\$\{leagueId\}`\}>\s*Back to league\s*<\/Link>/
+
+/**
+ * **MP.6c — THE ROOM'S OWN EXITS MOVED, BY MEASUREMENT, EXACTLY AS THE MP.5
+ * BLOCK BELOW SAID THEY WOULD** (*"If a later change makes either surface
+ * league-optional, this count moves and the decision above gets re-taken"*).
+ *
+ * `draft-room.tsx` is league-OPTIONAL now: one component, two mounts, and a
+ * standalone practice room whose exits go to `/app/mocks` because it has no
+ * league to go back to. So the room's four resolver states, its takeover
+ * state and its skeleton no longer carry a `Back to league` literal at all —
+ * they render `{exitLabel}` at `{exitHref}`, from the room's scope object.
+ *
+ * The invariant is unchanged and is now pinned in the stronger form:
+ *   1. every one of those states still carries an exit **link**, and
+ *   2. **not one of them builds a league URL**, which is the way this could
+ *      regress — a state that hard-coded `/app/leagues/…` would 404 (or, with
+ *      the leagues flag off, redirect to `/app`) for every practice room.
+ *
+ * Measured on this branch: `grep -c 'Back to league' draft-room.tsx` → **0**
+ * (it was 7), and the three remaining `/app/leagues` template literals are
+ * enumerated in the pin below — all three are the LEAGUE mount's or are
+ * gated on `scope.leagueId !== null`.
+ */
+const SCOPED_EXIT = /<Link href=\{exitHref\}>\{exitLabel\}<\/Link>/
 
 describe('the chrome-free lobby carries its own exit (R340 → DR.7(4): the bar)', () => {
   it('mounts DraftCommandBar — whose Exit Draft is unconditional (Q13)', () => {
@@ -161,17 +186,55 @@ describe('the chrome-free practice launcher carries its own exit (R340)', () => 
 })
 
 describe("the resolver's own states keep the exits their docblock claims", () => {
-  it('four or more in-card Back-to-league exits survive PageHeader deletion', () => {
+  it('four or more in-card scoped exits survive PageHeader deletion', () => {
     // `draft-room.tsx`'s docblock asserts the empty / problem / not-found /
-    // post-draft arms each carry one. DR.7 sweeps these states inside the new
-    // frame; this is the pin that keeps the claim true while it does.
-    const matches = withoutPageHeader(ROOM).match(new RegExp(EXIT.source, 'g')) ?? []
+    // takeover / skeleton arms each carry one. MP.6c re-pointed them at the
+    // room's scope (see SCOPED_EXIT above) — the count is what stays.
+    const matches = withoutPageHeader(ROOM).match(new RegExp(SCOPED_EXIT.source, 'g')) ?? []
     expect(matches.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('no room state hard-codes a league URL except the league-only recap pointer', () => {
+    // The MP.6c defect this catches: a state that keeps (or regrows) an
+    // `/app/leagues/...` link, which a standalone practice room cannot use.
+    // The ONE survivor is the post-draft *View the recap* pointer, and it is
+    // inside the LEAGUE mount — reachable only with a league in hand.
+    const source = withoutPageHeader(ROOM)
+    const leagueUrls = source.match(/`\/app\/leagues\/[^`]*`/g) ?? []
+    // Set equality, so a new one is a failure rather than a passing count.
+    // The three survivors, each a LEAGUE object by construction:
+    //   1. the league MOUNT's own `exitHref` fill (it has a league id — that
+    //      is what makes it the league mount);
+    //   2. the post-draft recap pointer, inside that same mount;
+    //   3. the completion beat's *View the recap*, rendered only when
+    //      `scope.leagueId !== null` (the standalone arm gets the practice
+    //      home instead — MP.8 owns its report).
+    expect([...leagueUrls].sort()).toEqual([
+      '`/app/leagues/${leagueId}/draft/recap`',
+      '`/app/leagues/${leagueId}`',
+      '`/app/leagues/${scope.leagueId}/draft/recap?draft=${draft.id}`',
+    ])
+    // And "Back to league" is said ONCE in the whole file — in the LEAGUE
+    // mount's own exit constant, above the standalone mount. The shared
+    // spine and every state it renders take the words from the scope.
+    const says = [...source.matchAll(/Back to league/g)].map((m) => m.index ?? -1)
+    expect(says).toHaveLength(1)
+    expect(says[0]).toBeLessThan(source.indexOf('export function MockDraftRoom'))
+  })
+
+  it('the standalone mount takes its exits from the practice home, not a league', () => {
+    // The other half: the scope object is where the exit comes from, and the
+    // standalone fill site is the practice home. Pinned at the fill site so
+    // no mount can invent one of its own.
+    const scope = code('src/components/draft/room-scope.ts')
+    expect(scope).toContain("export const PRACTICE_HOME_HREF = '/app/mocks'")
+    expect(scope).toMatch(/exitHref: PRACTICE_HOME_HREF/)
+    expect(scope).toMatch(/exitHref: `\/app\/leagues\/\$\{leagueId\}`/)
   })
 })
 
 describe('the takeover state carries its exit AND the ruled takeover action (DR.6)', () => {
-  it('DraftRoomTakenOver renders Back to league and "Use this tab instead"', () => {
+  it('DraftRoomTakenOver renders its scoped exit and "Use this tab instead"', () => {
     // The §9.3 v2.12 takeover state (D156 — newest tab wins): a released
     // tab renders THIS and nothing else, in the chrome-free frame — so an
     // exit-less takeover is the R340 dead-end class, and a takeover state
@@ -183,13 +246,13 @@ describe('the takeover state carries its exit AND the ruled takeover action (DR.
     expect(start, 'DraftRoomTakenOver found').toBeGreaterThan(-1)
     const nextFn = source.indexOf('function ', start + 'function DraftRoomTakenOver'.length)
     const slice = source.slice(start, nextFn === -1 ? source.length : nextFn)
-    expect(slice).toMatch(EXIT)
+    expect(slice).toMatch(SCOPED_EXIT)
     expect(slice).toContain('Use this tab instead')
   })
 })
 
 describe('the transient skeleton carries an exit too (DR.2’s deliberate call)', () => {
-  it('DraftRoomSkeleton renders its own Back to league', () => {
+  it('DraftRoomSkeleton renders its own scoped exit', () => {
     // DR.7(5)/R348 left the skeleton as the last exit-less resolver state,
     // "transient — decide deliberately". DR.2 decided YES (PROGRESS D176):
     // in the chrome-free frame a slow or hung fetch renders the skeleton
@@ -201,7 +264,7 @@ describe('the transient skeleton carries an exit too (DR.2’s deliberate call)'
     const end = source.indexOf('function DraftRoomProblem')
     expect(start, 'DraftRoomSkeleton found').toBeGreaterThan(-1)
     expect(end, 'DraftRoomProblem follows it').toBeGreaterThan(start)
-    expect(source.slice(start, end)).toMatch(EXIT)
+    expect(source.slice(start, end)).toMatch(SCOPED_EXIT)
   })
 })
 
@@ -294,7 +357,13 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     const start = home.indexOf('function openBlockedReason')
     expect(start, 'openBlockedReason found').toBeGreaterThan(-1)
     const body = home.slice(start)
-    expect(body).toMatch(/row\.league_id === null\s*\)?\s*return '/)
+    // MP.6c discharged F119's ROOM half: an unfinished standalone row's
+    // Resume is LIVE (the room mounts at `/app/mocks/[mockId]`), and what is
+    // still blocked is the FINISHED row's *View report* — MP.8's route.
+    // Pinned in the split form so removing the remaining half is a
+    // deliberate edit rather than an inherited one.
+    expect(body).toMatch(/row\.league_id === null/)
+    expect(body).toMatch(/row\.status === 'complete' \? '[^']+' : null/)
     expect(body).toMatch(/!featureFlags\.leagues\s*\)?\s*return '/)
 
     // …and the row honours it by disabling rather than by hiding: a hidden

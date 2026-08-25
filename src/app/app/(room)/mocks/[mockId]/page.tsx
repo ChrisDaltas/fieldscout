@@ -1,9 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { MockDraftRoom } from '@/components/draft/draft-room'
 import { leagueMockRoomHref } from '@/components/draft/mock-launcher-entry'
-import { mockProgressLabel, mockSeatCount } from '@/components/draft/mock-launcher-ops'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -30,17 +29,13 @@ interface MockRoomPageProps {
  * `(room)/mocks/layout.tsx` beside this file on `mockDrafts` and nothing else
  * (E79).
  *
- * **What this page deliberately is NOT yet: the room.** MP.6 is the route and
- * only the route (D243) — `DraftRoom` is `leagueId: string` (not optional)
- * and all seventeen room verbs resolve through `.eq('league_id', leagueId)`,
- * so mounting it here today would render a URL that loads an error card and
- * 404s every pick. **MP.6b builds the standalone action surface and MP.6c the
- * league-optional spine; the room mounts here then, replacing this body.**
- * Until then this page states what the mock IS and what is missing, which is
- * the honest version of a route that exists before its contents (§4 rule 14).
- * The `/app/mocks` *Resume* control stays disabled meanwhile — F119's room
- * half is MP.6c's to discharge, and clearing it here would ship a live blue
- * button into a room that cannot pick (R515 verbatim, one task later).
+ * **MP.6c: THE ROOM MOUNTS HERE.** Layer 1 (this route) landed first, then
+ * layer 3 (`/api/mocks/[mockId]/…`, MP.6b), then layer 2 — the league-
+ * optional spine — and `MockDraftRoom` is that spine's standalone mount: the
+ * SAME `DraftRoom` component tree, given its non-draft context from the
+ * practice draft instead of from a league (`room-scope.ts`; D229(5)/§4 rule
+ * 12). F119's ROOM half clears with it: `/app/mocks`' *Resume* is live.
+ * *View report* stays blocked — that half is MP.8's.
  *
  * **The read is the shipped launcher-scoped one** (`listMyMockDrafts`, MP.5's
  * `GET /api/mocks`), not a new query: this task adds no server surface. That
@@ -87,14 +82,25 @@ export default async function MockRoomPage({ params }: MockRoomPageProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
-      <Link
-        href="/app/mocks"
-        className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
-      >
-        <Icon name="arrow-prev" size={13} />
-        Practice drafts
-      </Link>
+    <div
+      className={
+        mock === null || failed
+          ? 'mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6'
+          : 'h-full min-h-0'
+      }
+    >
+      {/* The room carries its own exits (the command bar's Exit Draft and
+          every resolver state's — `room-exits.test.ts`), so this page-level
+          way back renders only for the states that are NOT the room. */}
+      {(failed || mock === null) && (
+        <Link
+          href="/app/mocks"
+          className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
+        >
+          <Icon name="arrow-prev" size={13} />
+          Practice drafts
+        </Link>
+      )}
 
       {failed ? (
         <Card className="border-negative bg-negative-soft">
@@ -126,49 +132,10 @@ export default async function MockRoomPage({ params }: MockRoomPageProps) {
           </CardContent>
         </Card>
       ) : (
-        <>
-          <Card>
-            <CardContent className="flex flex-wrap items-center gap-2.5 p-4">
-              <Badge
-                variant={
-                  mock.status === 'complete'
-                    ? 'stroke'
-                    : mock.status === 'paused'
-                      ? 'yellow'
-                      : 'green'
-                }
-              >
-                {mock.status === 'complete'
-                  ? mock.league_id === null
-                    ? 'Report'
-                    : 'Recap'
-                  : mock.status === 'paused'
-                    ? 'Paused'
-                    : 'Live'}
-              </Badge>
-              <div className="min-w-0">
-                <p className="truncate text-h5 leading-tight text-ink">Practice draft</p>
-                <p className="truncate text-[11px] font-semibold text-n-3">
-                  {mock.status === 'complete'
-                    ? 'Finished'
-                    : mockProgressLabel(mock, mockSeatCount(mock, null))}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="flex flex-col items-start gap-2 p-4">
-              <p className="text-[13px] font-bold text-ink">The draft board lands here next</p>
-              <p className="text-[13px] font-medium text-n-3">
-                Picking, bidding and the board open in the next release.
-              </p>
-              <Button variant="stroke" size="sm" asChild>
-                <Link href="/app/mocks">Back to practice drafts</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </>
+        // MP.6c: the room itself, full-frame. The two states above stay in
+        // the padded card layout because they are NOT the room — they are
+        // the route being honest about a mock that is not there.
+        <MockDraftRoom mockId={mock.id} />
       )}
     </div>
   )

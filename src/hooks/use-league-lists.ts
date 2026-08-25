@@ -34,13 +34,17 @@ interface LeagueListsResponse {
 }
 
 /** My attached lists + league-shared ones (§15.5 GET). */
-export function useLeagueLists(leagueId: string, enabled = true) {
+export function useLeagueLists(leagueId: string | undefined, enabled = true) {
   return useQuery({
-    queryKey: leagueListsKeys.all(leagueId),
+    // MP.6c: `undefined` is the STANDALONE room (no league to attach lists
+    // to), and the query simply never runs — §8.9's attachments are a league
+    // object. What a standalone room offers instead is the caller's OWN
+    // lists (F122), read through `useMyDraftLists` in the panel.
+    queryKey: leagueListsKeys.all(leagueId ?? 'none'),
     enabled: enabled && Boolean(leagueId),
     queryFn: async (): Promise<LeagueListWithList[]> => {
       const body = await sendLeagueAction<LeagueListsResponse>(
-        `/api/leagues/${leagueId}/lists`,
+        `/api/leagues/${leagueId!}/lists`,
       )
       return body.league_lists ?? []
     },

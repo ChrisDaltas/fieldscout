@@ -33,7 +33,9 @@ import {
 } from './my-queue-ops'
 
 interface MyQueueProps {
-  leagueId: string
+  /** The room's scope league, `null` on a standalone practice draft —
+   *  `useUpdateDraftQueue` routes to `/api/mocks/[mockId]/queue` then. */
+  leagueId: string | null
   draftId: string
   /** My seat (a mock's launcher passes the human seat — D103(3)). */
   teamId: string
