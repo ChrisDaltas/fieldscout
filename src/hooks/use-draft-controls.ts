@@ -201,14 +201,28 @@ export function useReverseWonBid(leagueId: string, draftId: string) {
   )
 }
 
-/** POST …/draft/budget — the budget editor (E28's refusals surface with their remedy copy). */
+/**
+ * POST …/draft/budget — the budget editor (E28's refusals surface with their
+ * remedy copy). The wrapper mints ONE `action_id` per submit (D68(1)/D114(4)
+ * — the same stamping contract as `useForcePick`; 099/AP.6/E69): a React
+ * Query retry, a double-click past the pending guard, or a proxy replaying a
+ * lost-response POST all land server-side as an E2 replay of the ORIGINAL
+ * result instead of moving the money twice (F82, discharged).
+ */
 export function useAdjustBudget(leagueId: string, draftId: string) {
-  return useControlMutation(
+  const mutation = useControlMutation(
     leagueId,
     draftId,
-    (vars: { teamId: string; delta: number; reason: string }) =>
-      adjustBudgetRequest(leagueId, draftId, vars.teamId, vars.delta, vars.reason),
+    (vars: { teamId: string; delta: number; actionId: string; reason: string }) =>
+      adjustBudgetRequest(leagueId, draftId, vars.teamId, vars.delta, vars.actionId, vars.reason),
   )
+  return {
+    ...mutation,
+    adjustBudget: (teamId: string, delta: number, reason: string) =>
+      mutation.mutate({ teamId, delta, actionId: crypto.randomUUID(), reason }),
+    adjustBudgetAsync: (teamId: string, delta: number, reason: string) =>
+      mutation.mutateAsync({ teamId, delta, actionId: crypto.randomUUID(), reason }),
+  }
 }
 
 /** POST …/draft/cancel-nomination — cancel-and-renominate (D143; paused only — D141). */

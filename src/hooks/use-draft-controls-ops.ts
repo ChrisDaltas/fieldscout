@@ -206,17 +206,21 @@ export function reverseWonBidRequest(
   }
 }
 
-/** POST …/draft/budget — §8.7's budget editor (E28 in the RPC; not pause-gated). */
+/** POST …/draft/budget — §8.7's budget editor (E28 in the RPC; not
+ *  pause-gated). `actionId` is REQUIRED wire-side (D68(1)/D114(4), the
+ *  force-pick contract — 099/AP.6/E69): a retried POST replays server-side
+ *  as E2 instead of double-charging (F82, discharged). */
 export function adjustBudgetRequest(
   leagueId: string,
   draftId: string,
   teamId: string,
   delta: number,
+  actionId: string,
   reason: string,
 ): ControlRequest {
   return {
     path: `/api/leagues/${leagueId}/draft/budget`,
-    body: { draft_id: draftId, team_id: teamId, delta, reason: reason.trim() },
+    body: { draft_id: draftId, team_id: teamId, delta, action_id: actionId, reason: reason.trim() },
   }
 }
 

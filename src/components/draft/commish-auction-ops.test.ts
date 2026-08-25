@@ -345,10 +345,16 @@ describe('the panel disables every pause-first control while a draft RUNS', () =
 describe('double submit: the budget delta is the one that duplicates money', () => {
   const head = headBodies()
 
-  it('draft_adjust_budget composes its delta CUMULATIVELY and takes no action_id', () => {
+  it('draft_adjust_budget composes its delta CUMULATIVELY and, since 099/AP.6, dedupes on p_action_id with the E2 replay (E69 — F82 discharged)', () => {
+    // Flipped from its pre-099 form ("takes no action_id"): the pin now
+    // asserts the FIX is in the head — the parameter, the select-then-insert
+    // replay over the store, and the store insert. Removing any of the three
+    // reddens here at the gate, before pgTAP 047 even runs.
     const body = head.get('draft_adjust_budget')?.body ?? ''
     expect(body).toContain('v_after   := v_before + p_delta')
-    expect(body).not.toContain('p_action_id')
+    expect(body).toContain('p_action_id')
+    expect(body).toMatch(/IF p_action_id IS NOT NULL THEN\s+SELECT a\.result INTO v_result\s+FROM public\.draft_budget_adjustments a/)
+    expect(body).toContain('INSERT INTO public.draft_budget_adjustments')
   })
 
   it('the other three self-guard on a replay (their own refusals)', () => {
