@@ -23,7 +23,14 @@ import { describe, expect, it } from 'vitest'
  *      label, the same icon, and the same release flag. This is what catches
  *      a one-file edit; an intersection-only check cannot, because a row
  *      that exists in one file is simply absent from the intersection.
- *   2. Anything else that happens to appear in both must not disagree about
+ *   2. **Completeness (R544)** — every href in either file must be either in
+ *      `SHARED` or in an explicit `DESKTOP_ONLY` / `SHEET_ONLY` exclusion.
+ *      Without this, `SHARED` is opt-in and catches one-file edits ONLY for
+ *      hrefs already enrolled: a brand-new row added to one file is simply
+ *      absent from it, and an href deleted FROM it shrinks a loop that
+ *      cannot notice it generated one case fewer. **Enrollment is not
+ *      coverage** (the D248(1)/D250(1)/R532 species).
+ *   3. Anything else that happens to appear in both must not disagree about
  *      its label or icon.
  *
  * Source-text idiom (`elevation-rule.test.ts` / `draft-command-bar.test.ts`):
@@ -43,7 +50,9 @@ interface MoreEntry {
 }
 
 /** Entries that belong on BOTH form factors. Adding one to a single file is
- *  the F104 defect, and this is the list that makes it fail. */
+ *  the F104 defect, and this is the list that makes it fail — but ONLY for
+ *  the hrefs enrolled here, which is why `every entry is classified` below
+ *  exists (R544: enrollment is not coverage). */
 const SHARED: MoreEntry[] = [
   { href: '/app/stats', label: 'My stats', icon: 'chart', flag: null },
   {
@@ -53,6 +62,27 @@ const SHARED: MoreEntry[] = [
     flag: 'mockDrafts',
   },
 ]
+
+/**
+ * The deliberate asymmetries, named one by one (R544).
+ *
+ * Every href in either file must be classified — SHARED, or one of these two
+ * — so that a NEW row landing in one file only is a failure rather than an
+ * absence. An href listed here must genuinely be missing from the other
+ * file: an exclusion list you can park a shared entry in is the escape hatch
+ * that would make the whole pin optional, so both directions are asserted.
+ */
+/** Desktop-only: the sidebar's More carries it, the sheet does not. */
+const DESKTOP_ONLY = ['/app/explore'] as const
+/** Sheet-only: mobile's five bottom tabs push far more overflow into the
+ *  sheet than desktop's More expander shows. */
+const SHEET_ONLY = [
+  '/app/big-board',
+  '/app/weekly-ranks',
+  '/app/start-or-sit',
+  '/app/teams',
+  '/app/leagues',
+] as const
 
 function read(rel: string): string {
   return readFileSync(path.resolve(process.cwd(), rel), 'utf8')
@@ -144,6 +174,50 @@ describe('the two More lists (F104)', () => {
       }
     })
   }
+
+  // R544 — THE MANIFEST ABOVE IS OPT-IN, AND THIS IS WHAT MAKES IT COMPLETE.
+  // Two edits the SHARED loop alone is green on: a brand-new row added to one
+  // file (its href is simply not enrolled), and an href quietly DELETED from
+  // SHARED (the loop shrinks, and a loop that generates its own cases cannot
+  // notice that it generated one fewer). Both are caught here, because every
+  // href in either file has to be accounted for BY NAME.
+  it('every entry in either list is classified — SHARED, desktop-only or sheet-only', () => {
+    const classified = new Set<string>([
+      ...SHARED.map((e) => e.href),
+      ...DESKTOP_ONLY,
+      ...SHEET_ONLY,
+    ])
+    for (const [file, entries] of [
+      [SIDEBAR, sidebar],
+      [SHEET, sheet],
+    ] as const) {
+      for (const entry of entries) {
+        expect(
+          classified.has(entry.href),
+          `${entry.href} (${file}) is in neither SHARED nor an explicit ` +
+            `DESKTOP_ONLY / SHEET_ONLY exclusion. If it belongs on both form ` +
+            `factors, add it to BOTH files and to SHARED; if it is deliberately ` +
+            `one-sided, say so in the matching exclusion list.`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('the one-sided lists are genuinely one-sided, both directions', () => {
+    // Otherwise an exclusion list is an escape hatch: park a shared entry in
+    // one and the SHARED manifest becomes optional.
+    for (const href of DESKTOP_ONLY) {
+      expect(sidebar.some((e) => e.href === href), `${href} in ${SIDEBAR}`).toBe(true)
+      expect(sheet.some((e) => e.href === href), `${href} in ${SHEET}`).toBe(false)
+    }
+    for (const href of SHEET_ONLY) {
+      expect(sheet.some((e) => e.href === href), `${href} in ${SHEET}`).toBe(true)
+      expect(sidebar.some((e) => e.href === href), `${href} in ${SIDEBAR}`).toBe(false)
+    }
+    for (const href of [...DESKTOP_ONLY, ...SHEET_ONLY]) {
+      expect(SHARED.map((e) => e.href), href).not.toContain(href)
+    }
+  })
 
   it('entries that appear in both do not disagree about label or icon', () => {
     for (const a of sidebar) {
