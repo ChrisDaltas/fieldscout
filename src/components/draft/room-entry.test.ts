@@ -54,6 +54,31 @@ import { describe, expect, it } from 'vitest'
  *     Recorded as ledger **F123** for the launch-facing pass rather than
  *     improvised here (R51).
  *
+ * **R536: THE SWEEP NOW SEES HELPER CALLERS, NOT ONLY LITERALS — and that
+ * gap is why MP.7 walked past it.** `ROOM_URL` matches a template literal, so
+ * a file that routes into the room by CALLING one of `mock-launcher-entry`'s
+ * href builders scored zero hits and never had to disposition itself. That is
+ * the census's own property failing quietly: the builders exist precisely so
+ * callers stop writing the literal, and every caller that adopts the seam
+ * disappears from the sweep that adoption was supposed to keep honest.
+ * `ROOM_HREF_HELPER` counts those calls (definitions excluded), which adds
+ * three previously invisible entries — two of them pre-existing:
+ *   - `(room)/leagues/[leagueId]/draft/page.tsx` — MP.6's legacy-URL
+ *     `redirect(mockRoomHref(…))`. IN PLACE BY CONSTRUCTION: a server
+ *     `redirect()` has no anchor and no tab to open.
+ *   - `(room)/mocks/[mockId]/page.tsx` — R521's `redirect(leagueMockRoomHref(…))`,
+ *     same argument, same construction.
+ *   - `home-quick-actions.tsx` — **MP.7's Home chip, the third entry into the
+ *     room and the first from OUTSIDE the room world.** IN PLACE, and for the
+ *     redirect's reason rather than the launcher's: the navigation is a
+ *     programmatic `router.push` in the launch dialog's `onLaunched`, after a
+ *     POST — there is no anchor to spread `useRoomEntryTarget`'s props onto,
+ *     and a `window.open` from a mutation callback is a popup, not a split.
+ *     The chip itself opens a DIALOG, not the room.
+ *   - `league-home-states.tsx` gains its `mockLauncherHref` call for the same
+ *     reason (2 literals + 1 helper): the practice CTA, already IN PLACE
+ *     above.
+ *
  * Draft-related NOTIFICATIONS never point here at all — they route to the
  * league/app home where these CTAs are the one entry point (Chris,
  * 2026-08-17); pinned in `notification-href.test.ts`.
@@ -98,19 +123,35 @@ function sourceFiles(dir = 'src'): string[] {
 const ROOM_URL =
   /(\/app\/leagues\/\$\{[^}]+\}\/draft(?!\/)|\/app\/mocks\/\$\{[^}]+\}(?!\/))/g
 
+/**
+ * A CALL into one of the seam's href builders (R536) — the other way a file
+ * routes into the room, and the way the literal sweep cannot see. Definitions
+ * are excluded (`function <name>(`), bare imports never match (no paren), so
+ * what is left is exactly the callers. Adding a builder to
+ * `mock-launcher-entry.ts` means adding it here; the enumeration below is what
+ * forces that to be a deliberate edit.
+ */
+const ROOM_HREF_HELPER =
+  /(?<!function\s)\b(?:mockRoomHref|leagueMockRoomHref|mockLauncherHref)\(/g
+
 describe('every room-entry URL in src/ is enumerated with a disposition', () => {
   it('the sweep matches the dispositioned set exactly', () => {
     const hits: Array<[string, number]> = []
     for (const rel of sourceFiles()) {
-      const count = (code(rel).match(ROOM_URL) ?? []).length
+      const source = code(rel)
+      const count =
+        (source.match(ROOM_URL) ?? []).length + (source.match(ROOM_HREF_HELPER) ?? []).length
       if (count > 0) hits.push([rel, count])
     }
     hits.sort((a, b) => a[0].localeCompare(b[0]))
     expect(hits).toEqual([
+      ['src/app/app/(room)/leagues/[leagueId]/draft/page.tsx', 1], // MP.6's legacy-URL redirect — in place by construction (R536)
+      ['src/app/app/(room)/mocks/[mockId]/page.tsx', 1], // R521's redirect to the league mock's own room — same (R536)
       ['src/components/draft/mock-draft-launcher.tsx', 3], // in-room-world ×2 + MockRow's standalone Rejoin (F123), all in place
       ['src/components/draft/mock-launcher-entry.ts', 3], // launcher entry + the league mock room's URL (R521) + mockRoomHref, all in place
+      ['src/components/home/home-quick-actions.tsx', 1], // MP.7's Home chip — router.push after a POST, no anchor to split (R536)
       ['src/components/layout/draft-bar-ops.ts', 1], // SPLIT via draft-bar.tsx
-      ['src/components/leagues/league-home-states.tsx', 2], // both SPLIT
+      ['src/components/leagues/league-home-states.tsx', 3], // 2 literals SPLIT + the practice CTA's helper call, in place
     ])
   })
 })
@@ -136,6 +177,13 @@ describe('the split sites carry the entry-target spread on a real anchor', () =>
     for (const rel of [
       'src/components/draft/mock-draft-launcher.tsx',
       'src/components/draft/mock-launcher-entry.ts',
+      // R536: the three helper callers, in place for the redirect's reason —
+      // no anchor exists at any of them (two server redirects and a
+      // post-mutation router.push), so the split is not applicable rather
+      // than declined.
+      'src/app/app/(room)/leagues/[leagueId]/draft/page.tsx',
+      'src/app/app/(room)/mocks/[mockId]/page.tsx',
+      'src/components/home/home-quick-actions.tsx',
     ]) {
       expect(code(rel), rel).not.toContain('useRoomEntryTarget')
     }
