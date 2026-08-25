@@ -174,7 +174,7 @@ async function main(): Promise<void> {
   if (report.auction !== undefined) {
     const a = report.auction
     console.log(
-      `AUCTION: ${a.solvencyChecks} live solvency checks · ${a.instantAwards} §8.6.9 instant awards · ` +
+      `AUCTION: ${a.solvencyChecks} live solvency checks · ${a.instantAwards} §8.6.9 instant awards (nominate-path observed; tick-path instants are invisible to this counter — the deterministic §8.6.9 pin is WORLD E of the DB property suite) · ` +
         `anti-snipe ${a.antiSnipeObserved}/${a.antiSnipeStaged} staged snipes re-floored`,
     )
     console.log(

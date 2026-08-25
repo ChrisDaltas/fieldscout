@@ -967,6 +967,80 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
     )
   }, 600_000)
 
+  it('WORLD E — a DETERMINISTIC §8.6.9 mid-board instant award: constructed uncontestable, awarded in the nominate txn, solvent', async () => {
+    // The randomized runs CROSS the §8.6.9 region (endgame instants ride
+    // the system-nomination tick), but a sweep counter cannot distinguish a
+    // tick-path instant from a plain no-raise award after the fact — so the
+    // mid-board instant is CONSTRUCTED here, once, deterministically:
+    // legal budget edits pin every rival to the exact solvency floor
+    // (remaining = open_slots × $1 ⇒ max_bid = $1 < opening + 1), then the
+    // on-clock human nominates at $1 — no rival can reach $2, the award
+    // commits in the nomination's own transaction (v2.13.4: the row is
+    // ALREADY awarded in the 200; no bid window ever opens), and solvency
+    // holds through it. E67's exact broadcast pins are
+    // auction-uncontestable-db's; this is the PROPERTY crossing the rule.
+    const world = await provisionLeagueWorld(false, 50)
+    try {
+      const draftId = world.draftId
+      const row0 = await readDraft(draftId)
+      expect(readLiveNomination(row0.current_nomination)).toBeNull()
+      // Rotate to a HUMAN nominator if a placeholder opens the order.
+      for (let i = 0; i < TEAM_COUNT; i++) {
+        const r = await readDraft(draftId)
+        if (world.humanTeams.some((h) => h.teamId === r.on_clock_team_id)) break
+        await rewindAndTick(draftId)
+        // A system nomination opened a market — close it (no raises).
+        await rewindAndTick(draftId)
+      }
+      const row = await readDraft(draftId)
+      const nominator = world.humanTeams.find((h) => h.teamId === row.on_clock_team_id)
+      expect(nominator, 'a human seat must reach the nomination clock').toBeDefined()
+      // Pin every RIVAL to the floor: delta = −(remaining − open_slots) is
+      // E28-LEGAL (lands exactly ON the floor — the D146 boundary from the
+      // legal side) and leaves max_bid = remaining − (open−1) = 1.
+      for (const teamId of world.teamIds) {
+        if (teamId === nominator!.teamId) continue
+        const view = await viewTeam(draftId, teamId, row)
+        const delta = -(view.remaining - view.openSlots * 1)
+        if (delta === 0) continue
+        const res = await adjustBudget(clients[0]!, world.leagueId, {
+          draft_id: draftId,
+          team_id: teamId,
+          delta,
+          reason: 'property: pin rival to the solvency floor (uncontestable construction)',
+          action_id: mintActionId(),
+        })
+        expect(res.status, errorText(res.body)).toBe(200)
+      }
+      await assertSolvent(draftId, 'the floor-pinned board (every edit legal)')
+      const seqBefore = row.current_pick_number ?? 0
+      const player = await availablePlayer(draftId, 0)
+      const res = await nominatePlayer(nominator!.client, leagueScope(world.leagueId), nominator!.userId, {
+        draft_id: draftId,
+        player_id: player!,
+        opening_bid: 1,
+        action_id: mintActionId(),
+      })
+      expect(res.status, errorText(res.body)).toBe(200)
+      const after = (res.body as { draft: { current_nomination: Json | null; current_pick_number: number } }).draft
+      // THE INSTANT AWARD, observed in the nomination's own response: no
+      // market is live and the sequence has already advanced (v2.13.4 —
+      // "there is no interval in which the award is pending").
+      expect(readLiveNomination(after.current_nomination)).toBeNull()
+      expect(after.current_pick_number).toBe(seqBefore + 1)
+      const { data: awarded } = await service
+        .from('draft_picks')
+        .select('team_id, price, is_undone')
+        .eq('draft_id', draftId)
+        .eq('pick_number', seqBefore)
+        .single()
+      expect(awarded).toMatchObject({ team_id: nominator!.teamId, price: 1, is_undone: false })
+      await assertSolvent(draftId, 'the §8.6.9 instant award')
+    } finally {
+      await teardownLeagueWorld(world.leagueId)
+    }
+  }, 300_000)
+
   it('WORLD D — STANDALONE mock, slot-pinned, $0 nominations: the MP/MS world holds the invariant end to end', async () => {
     await fc.assert(
       fc.asyncProperty(commandsArb, async (cmds) => {
