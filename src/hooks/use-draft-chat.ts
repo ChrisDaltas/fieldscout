@@ -81,9 +81,17 @@ export function useDraftChat(draftId: string | undefined) {
  * explicit value keeps the sanctioned write self-describing). On success the
  * returned row is folded into the cache through the reducer — the broadcast
  * echo of the same INSERT dedupes by id when it arrives.
+ *
+ * **`leagueId` is `string | null`, and NULL is a refusal, not a blank**
+ * (R534). Sending is league-only (D226(2)): a standalone practice room
+ * renders the feed and no composer, so this mutation is unfireable there —
+ * but the caller still has to instantiate the hook, and handing it `''`
+ * would be the placeholder-id idiom the codebase refuses everywhere else.
+ * A null league says what is true, and firing it anyway fails loudly rather
+ * than posting a row keyed on nothing.
  */
 export function useSendDraftChat(
-  leagueId: string,
+  leagueId: string | null,
   draftId: string,
   userId: string | null,
 ) {
@@ -91,6 +99,12 @@ export function useSendDraftChat(
   return useMutation({
     mutationFn: async (message: string): Promise<DraftChatRow> => {
       if (!userId) throw new Error('Sign in to chat.')
+      if (!leagueId) {
+        // Unreachable by construction (no composer standalone). If it ever
+        // becomes reachable, the room learns about it here rather than
+        // writing a league-less ordinary post.
+        throw new Error('A practice draft has no chat to post to.')
+      }
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('league_chat')

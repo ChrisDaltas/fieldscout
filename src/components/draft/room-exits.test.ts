@@ -142,9 +142,15 @@ const EXIT = /<Link href=\{`\/app\/leagues\/\$\{leagueId\}`\}>\s*Back to league\
  *      regress — a state that hard-coded `/app/leagues/…` would 404 (or, with
  *      the leagues flag off, redirect to `/app`) for every practice room.
  *
- * Measured on this branch: `grep -c 'Back to league' draft-room.tsx` → **0**
- * (it was 7), and the three remaining `/app/leagues` template literals are
- * enumerated in the pin below — all three are the LEAGUE mount's or are
+ * Measured on this branch, stated the way the pin below states it — over
+ * COMMENT-STRIPPED source, because prose is not code (R530): `draft-room.tsx`
+ * holds exactly **1** `Back to league` code literal, the LEAGUE mount's own
+ * `exitLabel` constant, and the room's states hold none. (A raw
+ * `grep -c 'Back to league' draft-room.tsx` answers **4**: that one literal
+ * plus three comment mentions — including this one's counterpart at the top
+ * of that file. The pin is `toHaveLength(1)` on the stripped source; trust
+ * it, not the grep.) The three remaining `/app/leagues` template literals
+ * are enumerated in the pin below — all three are the LEAGUE mount's or are
  * gated on `scope.leagueId !== null`.
  */
 const SCOPED_EXIT = /<Link href=\{exitHref\}>\{exitLabel\}<\/Link>/

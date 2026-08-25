@@ -142,8 +142,11 @@ interface DraftRoomProps {
  *     so the pin cannot be satisfied by prose).
  *   - **Every resolver state now offers an exit** (R340's enumeration,
  *     closed out by DR.2): **empty / problem / not-found / post-draft**
- *     carry an in-card *Back to league* from M2; the **lobby** and the
- *     **practice launcher** got theirs in DR.1's review fix (R340); the
+ *     carry an in-card exit from M2 — since MP.6c it is the SCOPE's, not a
+ *     league's: those four states take a `RoomExit` and render `{exitLabel}`
+ *     at `{exitHref}`, so the words are *Back to league* on the league mount
+ *     and *Back to practice drafts* on the standalone one; the **lobby**
+ *     and the **practice launcher** got theirs in DR.1's review fix (R340); the
  *     **skeleton** got one in DR.2 (the DR.7(5)/R348 deliberate call,
  *     recorded at PROGRESS D176 — in a chrome-free frame a hung fetch was a
  *     zero-affordance dead end); and the **live room**'s is the command

@@ -55,7 +55,11 @@ interface DraftChatProps {
 export function DraftChat({ scope, draftId, userId, className }: DraftChatProps) {
   const standalone = scope.leagueId === null
   const chat = useDraftChat(draftId)
-  const send = useSendDraftChat(scope.leagueId ?? '', draftId, userId)
+  // The league id, or NULL — never a placeholder `''` (R534). Sending is
+  // league-only (D226(2)) and the composer below is absent standalone, so
+  // this mutation is unfireable there; the hook refuses a null league rather
+  // than being handed a blank that looks like an id.
+  const send = useSendDraftChat(scope.leagueId, draftId, userId)
   const [text, setText] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
 

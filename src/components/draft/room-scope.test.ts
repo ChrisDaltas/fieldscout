@@ -153,9 +153,26 @@ describe('the ROOM cannot tell where its context came from (§4 rule 12)', () =>
     const ids = [...room.matchAll(/scoring_system_id/g)]
     expect(ids).toHaveLength(1)
     expect(room).toContain('scope.league.league.scoring_system_id')
-    // …and the roster shape likewise: no `config->'roster'` read, no roster
-    // default imported to fall back on. That belongs to `use-mock-room.ts`.
-    expect(room).not.toMatch(/config\.roster|\bconfig\?\.roster\b/)
+
+    // …and the roster shape likewise — pinned BY OCCURRENCE COUNT, the way
+    // the `scoring_system_id` line above is, and for the reason R532 found
+    // the hard way. A regex that spells the forbidden shape (`config.roster`
+    // / `config?.roster`) only forbids the BARE property access; the form a
+    // Builder would actually write against a Json column is the cast —
+    // `(draft.config as { roster?: unknown } | null)?.roster` — and that
+    // slipped straight past the old pin. So the invariant is stated instead
+    // of the defect: EVERY `.roster` read in this file is `scope.roster`,
+    // and every `roster=` prop in the JSX is fed from it. Any second source
+    // — a config cast, a default, a schema parse — moves the first count
+    // without moving the second.
+    const rosterReads = [...room.matchAll(/\.roster\b/g)]
+    const fromScope = [...room.matchAll(/\bscope\.roster\b/g)]
+    expect(fromScope).toHaveLength(rosterReads.length)
+    const rosterProps = [...room.matchAll(/\broster=\{([^}]*)\}/g)].map((m) => m[1])
+    expect(rosterProps).toEqual(['scope.roster', 'scope.roster', 'scope.roster'])
+    expect(rosterReads).toHaveLength(rosterProps.length)
+    // The roster default and the parse belong to `use-mock-room.ts`; there
+    // is nothing here to fall back to, which is why the counts can be equal.
     expect(room).not.toContain('DEFAULT_ROSTER_SETTINGS')
     expect(room).not.toContain('rosterSettingsSchema')
   })

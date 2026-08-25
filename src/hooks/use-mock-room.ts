@@ -83,20 +83,38 @@ export function useMockRoomContext(mockId: string | undefined) {
         ? parsed.data
         : structuredClone(DEFAULT_ROSTER_SETTINGS)
 
+      // **"Nothing happened" must never read as "it worked"** (CLAUDE.md;
+      // R535). A standalone mock is minted with its whole seat set inside
+      // `create_mock_draft`'s one transaction (D227) — the `teams` rows and
+      // the `draft_order` that names them. So neither shortfall below is a
+      // small draft, it is a BROKEN one, and the mount's problem state is
+      // the honest answer:
+      //   - an EMPTY `draft_order` would otherwise resolve to a non-null
+      //     context with zero seats, and the room would render a board with
+      //     no columns as though that were the draft;
+      //   - a `.in()` read that comes back SHORT (a seat deleted, or hidden
+      //     from this reader) would otherwise be filtered away silently and
+      //     seat a board with a hole where a bot should be picking.
+      // Both fail loudly instead, and say which.
       const order = Array.isArray(draft.draft_order) ? (draft.draft_order as string[]) : []
-      let teams: Array<{ id: string; name: string }> = []
-      if (order.length > 0) {
-        const { data: rows, error: teamsError } = await supabase
-          .from('teams')
-          .select('id, name')
-          .in('id', order)
-        if (teamsError) throw teamsError
-        const byId = new Map((rows ?? []).map((row) => [row.id, row.name]))
-        // Draft-order order: the board's columns are the draft's order (D90),
-        // and `.in()` returns rows in no promised order.
-        teams = order
-          .filter((id) => byId.has(id))
-          .map((id) => ({ id, name: byId.get(id) as string }))
+      if (order.length === 0) {
+        throw new Error('This practice draft has no seats recorded, so its board cannot be built.')
+      }
+      const { data: rows, error: teamsError } = await supabase
+        .from('teams')
+        .select('id, name')
+        .in('id', order)
+      if (teamsError) throw teamsError
+      const byId = new Map((rows ?? []).map((row) => [row.id, row.name]))
+      // Draft-order order: the board's columns are the draft's order (D90),
+      // and `.in()` returns rows in no promised order.
+      const teams = order
+        .filter((id) => byId.has(id))
+        .map((id) => ({ id, name: byId.get(id) as string }))
+      if (teams.length !== order.length) {
+        throw new Error(
+          `This practice draft is missing seats: ${teams.length} of ${order.length} found.`,
+        )
       }
 
       return {
