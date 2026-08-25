@@ -649,6 +649,43 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     expect(realChat).toEqual([])
   })
 
+  it('MS.3/E76 over the wire: the LAUNCHER edits all three auction clocks on the RUNNING mock, no pause — and the real auction is untouched', async () => {
+    const { data: realBefore } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realBefore).not.toBeNull() // R554 — no vacuous composite
+    const { data: mockBefore } = await service
+      .from('drafts')
+      .select('status, current_deadline')
+      .eq('id', mockId)
+      .single()
+    expect(mockBefore?.status).toBe('live') // the carve-out's whole point: no pause first
+
+    const edited = await setClock(mgr2Client, leagueId, {
+      draft_id: mockId,
+      nomination_seconds: 12,
+      bid_seconds: 8,
+      anti_snipe_seconds: 3,
+    })
+    expect(edited.status).toBe(200)
+    const editedDraft = (edited.body as unknown as { draft: DraftRow }).draft
+    expect(editedDraft.id).toBe(mockId)
+    expect(editedDraft.status).toBe('live')
+    const cfg = editedDraft.config as Record<string, unknown>
+    expect(cfg.auction_nomination_seconds).toBe(12)
+    expect(cfg.auction_bid_seconds).toBe(8)
+    expect(cfg.auction_anti_snipe_seconds).toBe(3)
+    // E15: the running deadline is never rewritten by the edit (compared
+    // through the same PostgREST representation on both sides).
+    const { data: mockAfter } = await service
+      .from('drafts')
+      .select('status, current_deadline')
+      .eq('id', mockId)
+      .single()
+    expect(mockAfter).toEqual(mockBefore)
+
+    const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realAfter).toEqual(realBefore)
+  })
+
   it('D141 over the wire: reverse-bid and cancel-nomination refuse LIVE with the ruling’s exact copy (byte-compared); budget is NOT gated', async () => {
     // Fixture: the commissioner nominates P1 at $150 — bidding phase, the
     // commissioner is the standing high bidder (§8.6.7(b)).

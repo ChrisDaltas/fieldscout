@@ -429,7 +429,7 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
     expect((resumed.body as unknown as DraftBody).draft.status).toBe('live')
   })
 
-  it('the still-shut §8.7 controls refuse a mock BY NAME (MS.2/E75): the non-launcher commissioner hits the launcher gate, the LAUNCHER hits each verb\'s own reason', async () => {
+  it('the mock §8.7 gates at the wire (MS.2/E75 + MS.3/E76): non-launchers hit the launcher gate, the LAUNCHER hits each shut verb\'s own reason — and the CLOCK, open since 101, lands unpaused', async () => {
     // The commissioner did not launch mock1 (mgr2 did) — the MS.2 gate
     // answers the friendly launcher-only refusal, role conferring nothing
     // (D103(2), no bypass).
@@ -453,14 +453,30 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
     expect(JSON.stringify(launcherUndo.body)).toContain(
       'draft_undo: undo is not open in a practice yet (§8.8/E75)',
     )
+    // 101/MS.3 (spec §8.7 v2.15; E76): the CLOCK is the carve-out — the
+    // launcher edits it on the RUNNING mock (resumed live above), no pause.
+    // Around the 200 the real league's whole `leagues` row is unmoved
+    // (§4 rule 10's wire-layer arm; pgTAP 049 carries the full composite).
+    const { data: leagueBefore } = await service
+      .from('leagues')
+      .select('*')
+      .eq('id', leagueId)
+      .single()
     const launcherClock = await setClock(mgr2Client, leagueId, {
       draft_id: mock1Id,
       pick_timer_seconds: 60,
     })
-    expect(launcherClock.status).toBe(400)
-    expect(JSON.stringify(launcherClock.body)).toContain(
-      'draft_set_clock: clock edits are not open in a practice yet (§8.8/E75)',
-    )
+    expect(launcherClock.status).toBe(200)
+    const editedMock = (launcherClock.body as unknown as DraftBody).draft
+    expect(editedMock.id).toBe(mock1Id)
+    expect(editedMock.status).toBe('live')
+    expect((editedMock.config as Record<string, unknown>).pick_timer_seconds).toBe(60)
+    const { data: leagueAfter } = await service
+      .from('leagues')
+      .select('*')
+      .eq('id', leagueId)
+      .single()
+    expect(leagueAfter).toEqual(leagueBefore)
   })
 
   it('the 4th active mock is a FRIENDLY 4xx naming the 3-active cap (§22.5)', async () => {

@@ -412,13 +412,14 @@ select ok(
 -- PERFORM sites were always unconditional — 087 scoped the ruling inside
 -- the helper — so the alignment is one predicate and the list stays six.)
 select ok(
-  (select p.prosrc like '%IF p_draft.status = ''live'' THEN%'
+  (select p.prosrc like '%IF p_draft.status = ''live''%'
+      and p.prosrc like '%AND NOT (p_draft.is_mock AND p_verb = ''draft_set_clock'')%'
       and p.prosrc not like '%draft_type = ''auction'' AND p_draft.status%'
       and p.prosrc like '%pause the draft first — auction commissioner controls run on a paused board (§8.7 v2.10)%'
       and p.prosrc like '%pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_auction_pause_gate_internal'),
-  'the ONE D141 gate is type-neutral (F57 ALIGN, 090): the live-status predicate carries no draft_type conjunction and both refusal sentences are present — auction byte-identical to 087, snake citing §8.7 v2.12.5');
+  'the ONE D141 gate is type-neutral with the ONE mock carve-out (F57 ALIGN, 090; §8.7 v2.15, 101/MS.3): the live-status predicate carries no draft_type conjunction, the carve-out is exactly (is_mock AND draft_set_clock), and both refusal sentences are present — auction byte-identical to 087, snake citing §8.7 v2.12.5');
 
 -- ---------------------------------------------------------------------------
 -- B. draft_bids' CLIENT-FACING posture is UNCHANGED by voided_at (D162's
