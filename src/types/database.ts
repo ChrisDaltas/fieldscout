@@ -3285,6 +3285,7 @@ export type Database = {
           p_human_team_id?: string
           p_league_id?: string
           p_settings?: Json
+          p_slot?: number
         }
         Returns: Json
       }
@@ -3504,6 +3505,8 @@ export type Database = {
           p_label: string
           p_league_id: string
           p_mode: string
+          p_pin_slot?: number
+          p_pin_team?: string
           p_seed: string
           p_team_count: number
         }
@@ -3571,6 +3574,8 @@ export type Database = {
           p_label: string
           p_league_id: string
           p_mode: string
+          p_pin_slot?: number
+          p_pin_team?: string
           p_seed: string
           p_team_count: number
         }
@@ -3960,6 +3965,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 // ============================================================================

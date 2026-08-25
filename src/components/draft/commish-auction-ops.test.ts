@@ -704,9 +704,12 @@ describe('the three UI-less §7.3.8 auction fields now have inputs', () => {
       'nomination_order_mode=manual but the stored nomination order does not cover every active franchise exactly once',
     )
     // …but the manual arm now resolves candidate-then-settings (D101/D201):
-    // the head carries the `p_config_order` fallback, and the head is 098.
+    // the head carries the `p_config_order` fallback. The head moved
+    // 098 → 102 when MS.8's slot pin appended its two DEFAULTed parameters
+    // (the pin moves with the behaviour; the fallback CASE is 098's text,
+    // carried verbatim).
     expect(nom?.body ?? '').toContain("jsonb_typeof(p_config_order) = 'array' THEN p_config_order")
-    expect(nom?.file).toBe('098_manual_nomination_order.sql')
+    expect(nom?.file).toBe('102_mock_slot_choice.sql')
     // `draft_set_order` still refuses the pre-start auction edit (the order
     // lives in settings until start), and the message now points at an
     // editor that exists rather than a field that did not.

@@ -19,6 +19,10 @@ import {
   mockIdentityLabel,
   mockProgressLabel,
   mockSeatOptions,
+  drawnOrderSlotReason,
+  mockSlotOptions,
+  RANDOM_SLOT,
+  slotFromPickerValue,
 } from './mock-launcher-ops'
 
 // ---------------------------------------------------------------------------
@@ -167,5 +171,62 @@ describe('mockIdentityLabel — MP.10: a list of identical rows is not a list', 
     // never render is `salary_cap` itself.
     expect(mockIdentityLabel({ draft_type: 'salary_cap' }, 8)).toBe('Practice draft · 8 teams')
     expect(mockIdentityLabel({ draft_type: '' }, null)).toBe('Practice draft')
+  })
+})
+
+describe('MS.8 — the slot picker (D223/E77): options, wire value, drawn-order reason', () => {
+  it('offers Random first, then 1st..Nth — one option per seat, none past the board', () => {
+    const options = mockSlotOptions(8)
+    expect(options).toHaveLength(9)
+    expect(options[0]).toEqual({ value: RANDOM_SLOT, label: 'Random' })
+    expect(options[1]).toEqual({ value: '1', label: '1st' })
+    expect(options[8]).toEqual({ value: '8', label: '8th' })
+  })
+
+  it('English ordinals hold through the v1 ceiling — 11th/12th/13th are not 11st/12nd/13rd', () => {
+    const labels = mockSlotOptions(16).map((o) => o.label)
+    expect(labels.slice(1)).toEqual([
+      '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th',
+      '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th',
+    ])
+  })
+
+  it('Random maps to undefined on the wire — the key is OMITTED so the RPC default (NULL = the pre-MS.8 shuffle) runs', () => {
+    expect(slotFromPickerValue(RANDOM_SLOT)).toBeUndefined()
+    expect(slotFromPickerValue('3')).toBe(3)
+  })
+
+  it('a drawn manual/custom order disables the picker with the inheritance reason (§8.8 fidelity)', () => {
+    const order = Array.from({ length: 8 }, (_, i) => `t${i}`)
+    for (const mode of ['manual', 'custom']) {
+      expect(
+        drawnOrderSlotReason({
+          team_count: 8,
+          draft: { draft_order_mode: mode, draft_order: order },
+        }),
+      ).toBe(
+        'This league’s draft order is already set — your practice draft inherits it, your actual slot included.',
+      )
+    }
+  })
+
+  it('random mode, a missing order, or a partial order leaves the choice live — the normal preseason case', () => {
+    const order = Array.from({ length: 8 }, (_, i) => `t${i}`)
+    // random mode: the mode whose stored settings field the resolver ignores
+    // (R123/R126) — no reason, whatever the field holds.
+    expect(
+      drawnOrderSlotReason({ team_count: 8, draft: { draft_order_mode: 'random', draft_order: order } }),
+    ).toBeNull()
+    // manual but nothing stored, or stored short of the board: the server
+    // would refuse the launch on its own terms; the slot is not the blocker.
+    expect(
+      drawnOrderSlotReason({ team_count: 8, draft: { draft_order_mode: 'manual', draft_order: null } }),
+    ).toBeNull()
+    expect(
+      drawnOrderSlotReason({
+        team_count: 8,
+        draft: { draft_order_mode: 'manual', draft_order: order.slice(0, 7) },
+      }),
+    ).toBeNull()
   })
 })

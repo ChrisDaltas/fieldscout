@@ -102,8 +102,8 @@ select ok(
    where n.nspname = 'public' and p.proname = 'mock_draft_expire'),
   'mock_draft_expire is SECURITY DEFINER with the exact spec-form search_path');
 select ok(
-  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb,integer)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid,uuid,text,uuid,jsonb,integer)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.delete_mock_draft(uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.delete_mock_draft(uuid)', 'EXECUTE'),
   'create/delete_mock_draft: anon revoked, authenticated keeps EXECUTE (in-body auth is the gate)');
@@ -117,9 +117,9 @@ select ok(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_resolve_order_internal')
   and not has_function_privilege('anon',
-    'public.draft_resolve_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text)', 'EXECUTE')
+    'public.draft_resolve_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,uuid,integer)', 'EXECUTE')
   and not has_function_privilege('authenticated',
-    'public.draft_resolve_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text)', 'EXECUTE'),
+    'public.draft_resolve_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,uuid,integer)', 'EXECUTE'),
   'draft_resolve_order_internal is plain (non-SECURITY-DEFINER) with the 062-form triple REVOKE');
 select ok(
   (select count(*) = 2 and bool_and(p.provolatile = 'i') and bool_and(not p.prosecdef)

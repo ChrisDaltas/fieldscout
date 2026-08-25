@@ -760,8 +760,8 @@ select ok(
     where n.nspname = 'public' and p.proname = 'team_is_mock_seat'),
   'FORM (§4.1): create_mock_draft and both policy helpers are SECURITY DEFINER with the exact spec-form search_path');
 select ok(
-  not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb, integer)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb, integer)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.is_standalone_mock_launcher(uuid)', 'EXECUTE')
   and has_function_privilege('anon', 'public.is_standalone_mock_launcher(uuid)', 'EXECUTE')
   and has_function_privilege('anon', 'public.team_is_mock_seat(uuid)', 'EXECUTE'),

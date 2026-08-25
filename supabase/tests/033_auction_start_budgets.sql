@@ -107,8 +107,8 @@ select has_function('public', 'draft_team_budget', array['uuid', 'uuid'],
 select has_function('public', 'draft_auction_solvent', array['uuid'],
   'draft_auction_solvent(uuid) exists — the §8.6.8 invariant');
 select has_function('public', 'draft_nomination_order_internal',
-  array['uuid', 'integer', 'text', 'jsonb', 'jsonb', 'uuid', 'text', 'jsonb'],
-  'draft_nomination_order_internal(...) exists — §8.3/§7.3.8 nomination-order resolution (098/AP.5: + the trailing DEFAULTed p_config_order — 7-arg call texts still bind)');
+  array['uuid', 'integer', 'text', 'jsonb', 'jsonb', 'uuid', 'text', 'jsonb', 'uuid', 'integer'],
+  'draft_nomination_order_internal(...) exists — §8.3/§7.3.8 nomination-order resolution (098/AP.5 + 102/MS.8: trailing DEFAULTed p_config_order + slot pin — 7- and 8-arg call texts still bind)');
 select ok(
   (select count(*) = 2 and bool_and(p.provolatile = 's') and bool_and(not p.prosecdef)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -129,9 +129,9 @@ select ok(
   and not has_function_privilege('anon', 'public.draft_auction_solvent(uuid)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.draft_auction_solvent(uuid)', 'EXECUTE')
   and not has_function_privilege('anon',
-        'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb)', 'EXECUTE')
+        'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb,uuid,integer)', 'EXECUTE')
   and not has_function_privilege('authenticated',
-        'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb)', 'EXECUTE'),
+        'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb,uuid,integer)', 'EXECUTE'),
   'anon AND authenticated hold EXECUTE on none of the three (engine internals — triple REVOKE, the 062 form)');
 select ok(
   has_function_privilege('service_role', 'public.draft_team_budget(uuid,uuid)', 'EXECUTE')

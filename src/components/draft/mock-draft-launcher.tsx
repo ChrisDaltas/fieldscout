@@ -32,6 +32,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 
 import {
   defaultMockSeatId,
+  drawnOrderSlotReason,
   launchDisabledReason,
   leagueMockOpenBlocked,
   MOCK_CAP_NOTE,
@@ -40,6 +41,9 @@ import {
   mockProgressLabel,
   mockSeatCount,
   mockSeatOptions,
+  mockSlotOptions,
+  RANDOM_SLOT,
+  slotFromPickerValue,
 } from './mock-launcher-ops'
 
 interface MockDraftLauncherProps {
@@ -70,6 +74,14 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
   )
   const [seatId, setSeatId] = useState<string | null>(() => defaultMockSeatId(seatOptions))
   const [cpuSpeed, setCpuSpeed] = useState<'realistic' | 'fast'>('realistic')
+  // MS.8 (D223/E77): the launch-time slot. Random by default; when the
+  // league's order is already drawn the picker is disabled with the reason
+  // (§8.8 fidelity — the mock inherits a drawn order, actual slot included).
+  // A PARTIAL pre-flight (the R280 shape): a lobby-randomized order on the
+  // real draft row is invisible here, and the RPC's verbatim refusal is the
+  // authority for that case.
+  const [slotValue, setSlotValue] = useState<string>(RANDOM_SLOT)
+  const slotDisabledReason = drawnOrderSlotReason(detail.settings)
 
   const activeCount = mocks.data?.active.length ?? 0
   const capReason = launchDisabledReason(activeCount)
@@ -81,7 +93,16 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
   const handleLaunch = () => {
     if (launch.isPending || capReason || !seatId) return
     launch
-      .launchMockAsync({ human_team_id: seatId, cpu_speed: cpuSpeed })
+      .launchMockAsync({
+        human_team_id: seatId,
+        cpu_speed: cpuSpeed,
+        // Random (or a drawn-order league) sends no key at all — the RPC's
+        // DEFAULT NULL is the pre-MS.8 behaviour, byte-for-byte (pgTAP 050).
+        ...(slotDisabledReason === null &&
+        slotFromPickerValue(slotValue) !== undefined
+          ? { slot: slotFromPickerValue(slotValue) }
+          : {}),
+      })
       .then(({ draft }) => {
         // created:false is the SAME success (a replayed submit returns the
         // original mock — D110(11)); either way the launcher's room opens.
@@ -158,6 +179,39 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* MS.8 (D223/E77): one control beside the seat — your draft
+                slot, 1..N or Random. Disabled with the reason when the
+                league's order is already drawn (§8.8 fidelity: the mock
+                inherits it, actual slot included). */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold">Draft slot</span>
+              <Select
+                value={slotDisabledReason === null ? slotValue : ''}
+                onValueChange={setSlotValue}
+                disabled={slotDisabledReason !== null}
+              >
+                <SelectTrigger
+                  className="h-btn-md w-full max-w-xs text-[12px] font-bold"
+                  aria-label="Draft slot"
+                >
+                  {/* An inherited order is not "Random" — the disabled state
+                      names what actually happens (no explanatory copy, just
+                      the control's own value). */}
+                  <SelectValue placeholder="Your league’s order" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mockSlotOptions(detail.settings.team_count).map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {slotDisabledReason !== null && (
+                <p className="text-[10px] font-medium text-n-3">{slotDisabledReason}</p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
