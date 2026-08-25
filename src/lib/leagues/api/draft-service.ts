@@ -152,9 +152,20 @@ export async function createDraft(supabase: Supabase, leagueId: string): Promise
  * dispatch (D97) and stored nowhere (the F32 pattern). strictObject is the
  * D95 fence: `draft_scheduled_at` (or any other key) in this body is a 400 —
  * the league-settings PATCH is the only schedule writer.
+ *
+ * `draft_id` (MS.7 — D222/R468): WHICH of the league's drafts the edit
+ * targets. Every other draft control already carries one (11/11 across the
+ * `…Request(` builders); this body's omission was the R468 mis-target — a
+ * mock room had no way to say "my mock", so the service picked the league's
+ * REAL active draft and rewrote a negotiated order. Adding exactly ONE named
+ * optional key deliberately WIDENS the D95 fence by that key and nothing
+ * else — the fence still 400s `draft_scheduled_at` and every other stray
+ * key; do not relax this to a passthrough. Absent, the shipped active
+ * non-mock probe runs unchanged (every existing caller keeps its behavior).
  */
 export const patchDraftInputSchema = z
   .strictObject({
+    draft_id: z.uuid().optional(),
     order: z.array(z.uuid()).min(1).optional(),
     randomize: z.literal(true).optional(),
     reason: z.string().trim().min(1).max(500).optional(),
@@ -196,22 +207,21 @@ export async function patchDraftOrder(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
 
-  // Locate the active non-mock draft over RLS (member SELECT, 065): a
-  // non-member sees no row — 404, indistinguishable from no draft (no-leak);
-  // the D95 partial unique guarantees at most one row matches.
-  const { data: draft, error: draftError } = await supabase
-    .from('drafts')
-    .select('id, status')
-    .eq('league_id', leagueId)
-    .eq('is_mock', false)
-    .in('status', [...ACTIVE_DRAFT_STATUSES])
-    .maybeSingle()
-  if (draftError) {
-    return { status: 500, body: { error: draftError.message } }
+  // MS.7 (D222/R468): resolve through the ONE resolver every other control
+  // uses, not a private probe. Absent `draft_id`, the league arm's probe is
+  // the shipped query verbatim (active non-mock over member RLS — 404
+  // no-leak, the D95 partial unique guarantees at most one row); present,
+  // the row is fetched scoped to THIS league, so a mock room's edit reaches
+  // the mock's own draft and `draft_set_order`'s in-body guards finally see
+  // it (until MS.2 lands its launcher arm, that guard REFUSES the mock
+  // loudly — the correct interim, and strictly better than the silent
+  // real-draft rewrite R468 filed). Authority stays in the RPC: the service
+  // only picks the target (§12, server-authoritative).
+  const resolved = await resolveDraftForAction(supabase, leagueScope(leagueId), parsed.data.draft_id)
+  if ('failure' in resolved) {
+    return resolved.failure
   }
-  if (!draft) {
-    return { status: 404, body: { error: NO_ACTIVE_DRAFT_MESSAGE } }
-  }
+  const draft = resolved.draft
   if (draft.status !== 'scheduled') {
     // The L.B2.3 post-start dispatch (E31 — §15.2's PATCH prints no
     // pre-start restriction): an order body on a live/paused draft is the

@@ -253,15 +253,22 @@ export function endDraftRequest(
  * REQUIRED here (D114(3): the route 400s without it on a live/paused
  * draft) — the builder's signature makes the requirement structural.
  * NOTE: this is the one PATCH in the family (the rest POST).
+ *
+ * `draftId` (MS.7 — D222/R468): this was the ONE builder in the family
+ * whose body carried no draft id (measured 11/11 for the rest), which is
+ * exactly how a mock room's order edit resolved the league's REAL draft
+ * (the R468 mis-target). The signature now makes the target structural,
+ * like every sibling.
  */
 export function orderRequest(
   leagueId: string,
+  draftId: string,
   order: readonly string[],
   reason: string,
 ): ControlRequest {
   return {
     path: `/api/leagues/${leagueId}/draft`,
-    body: { order: [...order], reason: reason.trim() },
+    body: { draft_id: draftId, order: [...order], reason: reason.trim() },
   }
 }
 

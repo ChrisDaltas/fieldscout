@@ -1127,7 +1127,12 @@ function OrderSection({
           disabled={!dirty || reason.trim().length === 0 || patchOrder.isPending}
           onClick={() =>
             patchOrder
-              .mutateAsync({ order: [...working], reason: reason.trim() })
+              // MS.7 (D222/R468): the room names ITS OWN draft. Without the
+              // id, a mock room's save resolved the league's REAL active
+              // draft and rewrote a negotiated order (+ posted the system
+              // line into the real room). Every other panel control already
+              // sends draft_id; this was the one that could not.
+              .mutateAsync({ draft_id: draft.id, order: [...working], reason: reason.trim() })
               .then(() => {
                 setOrder(null)
                 setReason('')
