@@ -2080,9 +2080,11 @@ select throws_ok(
   '42501', 'draft_end: not a commissioner of this draft''s league',
   '…and a NONEXISTENT draft answers the same way (is_league_commish(NULL) is FALSE)');
 
--- D138: every auction commissioner verb refuses a MOCK. LJ is a live auction
--- mock; the commissioner is refused even though they are the commissioner,
--- because a mock has no commissioner — only a launcher (D110(1)/D103(2)).
+-- D138, re-pointed by MS.2/100 (§8.8 v2.15): on a mock the §8.7 verbs are
+-- the LAUNCHER's. LJ is a fixture-inserted mock with NO launched_by key, so
+-- the gate fails closed for EVERYONE — the commissioner is refused though
+-- they are the commissioner (D103(2), no bypass). The launcher arm and the
+-- per-verb E75 refusals are pgTAP 048's.
 --
 -- R383 — THE ZERO-SIDE-EFFECT CAPTURE, taken IMMEDIATELY before the sweep (the
 -- 025 §F pattern). The counter that used to close this section summed
@@ -2116,23 +2118,23 @@ select throws_ok(
   $$ select public.draft_reverse_won_bid('e8000000-0000-4000-8000-0000000000a4',
        '00000000-0000-4000-8000-000000000001') $$,
   'P0001',
-  'draft_reverse_won_bid: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reverse_won_bid: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reverse_won_bid refuses a mock');
 select throws_ok(
   $$ select public.draft_adjust_budget('e8000000-0000-4000-8000-0000000000a4',
        'd8000000-0000-4000-8000-00a400000001', 10) $$,
   'P0001',
-  'draft_adjust_budget: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_adjust_budget: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_adjust_budget refuses a mock');
 select throws_ok(
   $$ select public.draft_cancel_nomination('e8000000-0000-4000-8000-0000000000a4') $$,
   'P0001',
-  'draft_cancel_nomination: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_cancel_nomination: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_cancel_nomination refuses a mock');
 select throws_ok(
   $$ select public.draft_end('e8000000-0000-4000-8000-0000000000a4') $$,
   'P0001',
-  'draft_end: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_end: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_end refuses a mock');
 -- R369(b): the 087 banner claimed "036 §H sweeps all eleven" and §H is the
 -- reverse-won-bid/E29 section — the sweep is HERE and it covered the FOUR new
@@ -2148,42 +2150,42 @@ select throws_ok(
 select throws_ok(
   $$ select public.draft_set_clock('e8000000-0000-4000-8000-0000000000a4', 60) $$,
   'P0001',
-  'draft_set_clock: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_set_clock: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_set_clock refuses a mock (NEW BODY — 087 DROPped and re-CREATEd it for the three auction timers)');
 select throws_ok(
   $$ select public.draft_undo('e8000000-0000-4000-8000-0000000000a4') $$,
   'P0001',
-  'draft_undo: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_undo: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_undo refuses a mock');
 select throws_ok(
   $$ select public.draft_reassign_pick('e8000000-0000-4000-8000-0000000000a4',
        '00000000-0000-4000-8000-000000000001',
        p_team_id => 'd8000000-0000-4000-8000-00a400000002') $$,
   'P0001',
-  'draft_reassign_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reassign_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reassign_pick refuses a mock (NEW BODY — p_price widened the signature)');
 select throws_ok(
   $$ select public.draft_move_player('e8000000-0000-4000-8000-0000000000a4', 'cm5-rb01',
        'd8000000-0000-4000-8000-00a400000001', 'd8000000-0000-4000-8000-00a400000002') $$,
   'P0001',
-  'draft_move_player: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_move_player: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_move_player refuses a mock (NEW BODY — p_price widened the signature)');
 select throws_ok(
   $$ select public.draft_force_pick('e8000000-0000-4000-8000-0000000000a4', 'cm5-rb01') $$,
   'P0001',
-  'draft_force_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_force_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_force_pick refuses a mock');
 select throws_ok(
   $$ select public.draft_set_order('e8000000-0000-4000-8000-0000000000a4',
        (select array_agg(t.id order by t.name) from teams t
         where t.league_id = 'b8000000-0000-4000-8000-0000000000a4')) $$,
   'P0001',
-  'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_set_order: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_set_order refuses a mock');
 select throws_ok(
   $$ select public.draft_reset('e8000000-0000-4000-8000-0000000000a4') $$,
   'P0001',
-  'draft_reset: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reset: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reset refuses a mock — the one whose bypass would be an outright §8.8 zero-side-effect breach (it writes leagues.status)');
 reset role;
 select is(

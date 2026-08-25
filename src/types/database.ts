@@ -3464,6 +3464,13 @@ export type Database = {
         Args: { p_draft_id: string }
         Returns: number
       }
+      draft_mock_launcher_gate_internal: {
+        Args: {
+          p_draft: Database["public"]["Tables"]["drafts"]["Row"]
+          p_verb: string
+        }
+        Returns: undefined
+      }
       draft_mock_think_fraction: {
         Args: { p_draft_id: string; p_pick_number: number }
         Returns: number
