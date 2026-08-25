@@ -24,43 +24,38 @@
  *     $-per-point ratio) — read from the LEAGUE'S OWN scoring rules
  *     (§7.3.3's `leagues.scoring_rules_snapshot`, the frozen copy),
  *     never from an app-wide default.
- *  3. **The C43 gate** — which of §16.4's nine Rushing/Receiving/Passing
- *     split columns may render at all, decided by what the projections
- *     blob actually CARRIES rather than by a flag someone has to
- *     remember to flip.
+ *  3. **The C43 gate** — which of §16.4's split columns may render at
+ *     all, decided by what the projections blob actually CARRIES rather
+ *     than by a flag someone has to remember to flip.
  *
- * ## The C43 gate, stated (read this before touching SPLIT_GROUPS)
+ * ## The C43 gate, stated (read this before touching the split catalog)
  *
- * §16.4 names three split groups, each a triple: Rushing Att-Yds-TDs ·
- * Receiving Tgt-Yds-TDs · Passing Att-Yds-TDs. C43 (RULED
- * 2026-08-16) routes the missing data to a standalone projections-sync
- * task running in PARALLEL with the M3 build, and requires that the group
- * stay gated until it lands — *"No fake/empty columns ever ship"*.
+ * §16.4 names three split groups — Rushing Att-Yds-TDs · Receiving
+ * Tgt-Yds-TDs · Passing Att-Yds-TDs — plus `receptions`, which the blob
+ * carries and the printed nine never named. C43 (RULED 2026-08-16)
+ * routes the missing data to a standalone projections-sync task running
+ * in PARALLEL with the M3 build, and requires that a column stay gated
+ * until its data lands — *"No fake/empty columns ever ship"*.
  *
- * The gate is therefore a DATA gate, not a constant: a group renders iff
- * the loaded pool carries **every** key in that group. That is the
- * banner's own wording ("they render only when the projections blob
- * carries the keys") and it means the columns light up by themselves the
- * moment the sync extension lands — nobody has to ship a second PR to
- * flip a boolean.
+ * The gate is a DATA gate, not a constant, and since Q16 (RULED
+ * 2026-08-20: *"Ship with 6"*; spec §16.4 v2.16 / D202) its unit is the
+ * COLUMN: a column renders iff the loaded pool witnesses **its own** stat
+ * key. Measured on the local pool at AP.7 (588 blobs), the six yards/TD
+ * fields plus `receptions` are present and the three VOLUME fields
+ * (`rush_attempts`, `targets`, `pass_attempts`) are witnessed exactly
+ * zero times — so seven columns light up now and three stay dark until
+ * F81's `sync:projections` extension lands, at which point they light up
+ * by themselves. Nobody ships a second PR to flip a boolean.
  *
- * **The group is the unit, deliberately.** `sleeperProjectionToStatRow`
- * (`src/lib/sports-data/sleeper.ts:157`) already writes YARDS and TDS for
- * all three phases (`rush_yards`, `rush_tds`, `pass_yards`, `pass_tds`,
- * `receiving_yards`, `receiving_tds`, plus `receptions`) — measured on the
- * local pool, 590 blobs, 17 distinct keys, none of them a volume field.
- * What is missing everywhere is exactly the VOLUME column of each triple:
- * `rush_attempts`, `targets`, `pass_attempts`. A per-COLUMN gate would
- * therefore light up two-thirds of each group today and ship "Rushing"
- * without carries — a half-group is the fake column C43 forbids, and it
- * is not the shipping outcome C43 describes. So the triple lights up
- * together or not at all.
- *
- * *(C43's own evidence line — "no rushing/receiving/passing splits exist
- * anywhere" — is wrong about the codebase; the ruling it carries is not.
- * Corrected at spec v2.12.9 and filed as **Q16** for Chris's read, since
- * whether the six yards/TD columns should ship AHEAD of the volume fields
- * is a product call he has not made. Nothing here improvises it.)*
+ * **Presentation follows the same measurement (D202(2)).** A Rushing /
+ * Receiving / Passing group header over a partial triple promises a
+ * column it does not have — the half-built lie L.C3.3 declined to ship —
+ * so an INCOMPLETE group's columns render under FLAT stat labels ("Rush
+ * Yds", "Rec TDs") with no group header, and the grouped presentation
+ * (the group overline in the customizer, the short adjacent labels in
+ * the header row) reassembles per group when F81 completes its triple.
+ * `splitColumnAvailability` reports both facts: per-column presence (may
+ * it render?) and per-group completeness (how is it labelled?).
  *
  * Key names come from the app's ONE canonical stat namespace (D33) — the
  * `StatRow` convention in `lib/scoring/default.ts` and the column catalog
@@ -256,6 +251,7 @@ export type AuctionColumnKey =
   | 'rush_yards'
   | 'rush_tds'
   | 'targets'
+  | 'receptions'
   | 'receiving_yards'
   | 'receiving_tds'
   | 'pass_attempts'
@@ -264,7 +260,10 @@ export type AuctionColumnKey =
 
 export interface AuctionColumn {
   key: AuctionColumnKey
-  /** Table header — short, because the header row is 11px in a panel. */
+  /** Table header — short, because the header row is 11px in a panel.
+   *  For a split column this is the GROUPED short form ('Yds', 'TD'),
+   *  legible only beside its siblings; it renders only when the group is
+   *  complete (D202(2)) — see `columnHeaderLabel`. */
   label: string
   /** The customizer's full name (and the expanded row's label). */
   full: string
@@ -272,6 +271,10 @@ export interface AuctionColumn {
   group: 'value' | 'schedule' | SplitGroupKey
   /** Blob key for a split column; absent for the derived/typed columns. */
   statKey?: string
+  /** The FLAT header label a split column wears while its group is
+   *  incomplete ('Rush Yds', 'Rec TDs') — D202(2)'s no-half-group rule.
+   *  Present on exactly the split columns. */
+  flat?: string
   /** Survives the §16.4 mobile density collapse (the rest move into the
    *  expanded row, which is where the customizer's picks live at 375). */
   essential?: boolean
@@ -290,16 +293,19 @@ export const AUCTION_COLUMNS: readonly AuctionColumn[] = [
   { key: 'bye', label: 'Bye', full: 'Bye week', group: 'schedule' },
   { key: 'sos', label: 'SOS', full: 'Strength of schedule', group: 'schedule' },
   { key: 'adp', label: 'ADP', full: 'Average draft position', group: 'schedule' },
-  // ---- C43-gated: the three split triples (§16.4). ----
-  { key: 'rush_attempts', label: 'Att', full: 'Rushing attempts', group: 'rushing', statKey: 'rush_attempts' },
-  { key: 'rush_yards', label: 'Yds', full: 'Rushing yards', group: 'rushing', statKey: 'rush_yards' },
-  { key: 'rush_tds', label: 'TD', full: 'Rushing touchdowns', group: 'rushing', statKey: 'rush_tds' },
-  { key: 'targets', label: 'Tgt', full: 'Targets', group: 'receiving', statKey: 'targets' },
-  { key: 'receiving_yards', label: 'Yds', full: 'Receiving yards', group: 'receiving', statKey: 'receiving_yards' },
-  { key: 'receiving_tds', label: 'TD', full: 'Receiving touchdowns', group: 'receiving', statKey: 'receiving_tds' },
-  { key: 'pass_attempts', label: 'Att', full: 'Passing attempts', group: 'passing', statKey: 'pass_attempts' },
-  { key: 'pass_yards', label: 'Yds', full: 'Passing yards', group: 'passing', statKey: 'pass_yards' },
-  { key: 'pass_tds', label: 'TD', full: 'Passing touchdowns', group: 'passing', statKey: 'pass_tds' },
+  // ---- C43-gated per COLUMN (§16.4 / Q16 / D202): the three split
+  // triples, plus `receptions`, which the blob carries and the printed
+  // nine never named (D202(2) ships it beside the six). ----
+  { key: 'rush_attempts', label: 'Att', flat: 'Rush Att', full: 'Rushing attempts', group: 'rushing', statKey: 'rush_attempts' },
+  { key: 'rush_yards', label: 'Yds', flat: 'Rush Yds', full: 'Rushing yards', group: 'rushing', statKey: 'rush_yards' },
+  { key: 'rush_tds', label: 'TD', flat: 'Rush TDs', full: 'Rushing touchdowns', group: 'rushing', statKey: 'rush_tds' },
+  { key: 'targets', label: 'Tgt', flat: 'Tgt', full: 'Targets', group: 'receiving', statKey: 'targets' },
+  { key: 'receptions', label: 'Rec', flat: 'Rec', full: 'Receptions', group: 'receiving', statKey: 'receptions' },
+  { key: 'receiving_yards', label: 'Yds', flat: 'Rec Yds', full: 'Receiving yards', group: 'receiving', statKey: 'receiving_yards' },
+  { key: 'receiving_tds', label: 'TD', flat: 'Rec TDs', full: 'Receiving touchdowns', group: 'receiving', statKey: 'receiving_tds' },
+  { key: 'pass_attempts', label: 'Att', flat: 'Pass Att', full: 'Passing attempts', group: 'passing', statKey: 'pass_attempts' },
+  { key: 'pass_yards', label: 'Yds', flat: 'Pass Yds', full: 'Passing yards', group: 'passing', statKey: 'pass_yards' },
+  { key: 'pass_tds', label: 'TD', flat: 'Pass TDs', full: 'Passing touchdowns', group: 'passing', statKey: 'pass_tds' },
 ]
 
 export const COLUMN_GROUP_LABELS: Record<AuctionColumn['group'], string> = {
@@ -312,14 +318,29 @@ export const COLUMN_GROUP_LABELS: Record<AuctionColumn['group'], string> = {
 
 export const SPLIT_GROUP_KEYS: readonly SplitGroupKey[] = ['rushing', 'receiving', 'passing']
 
-/** The blob keys each split group needs, all of them, before it renders. */
+/** The blob keys each split group needs, ALL of them, before its GROUPED
+ *  presentation reassembles (D202(2)) — group membership per the catalog,
+ *  so `receptions` counts toward Receiving. Rendering is gated per COLUMN
+ *  (Q16), not by these lists. */
 export const SPLIT_GROUP_STAT_KEYS: Record<SplitGroupKey, readonly string[]> = {
   rushing: ['rush_attempts', 'rush_yards', 'rush_tds'],
-  receiving: ['targets', 'receiving_yards', 'receiving_tds'],
+  receiving: ['targets', 'receptions', 'receiving_yards', 'receiving_tds'],
   passing: ['pass_attempts', 'pass_yards', 'pass_tds'],
 }
 
-/** The default visible set — §16.4's ungated columns. Reset restores it. */
+/** The blob keys the catalog's split columns read — the per-column gate's
+ *  domain. Derived from the catalog so the two can never disagree. */
+export const SPLIT_STAT_KEYS: readonly string[] = AUCTION_COLUMNS.filter(
+  (column) => column.statKey !== undefined,
+).map((column) => column.statKey!)
+
+/** The default visible set — §16.4's printed column list. The split keys
+ *  are all here because the DATA gate, not the default, is what keeps an
+ *  absent column out (`visibleColumns` intersects with the gate): today
+ *  that renders the seven witnessed splits and none of the three volume
+ *  columns, and the day F81's sync lands those three light up by
+ *  themselves with no code change — the F81 promise. Reset restores it;
+ *  a user's persisted set always wins over this list. */
 export const DEFAULT_VISIBLE_COLUMNS: readonly AuctionColumnKey[] = [
   'cost',
   'dollars_per_point',
@@ -328,48 +349,116 @@ export const DEFAULT_VISIBLE_COLUMNS: readonly AuctionColumnKey[] = [
   'bye',
   'sos',
   'adp',
+  'rush_attempts',
+  'rush_yards',
+  'rush_tds',
+  'targets',
+  'receptions',
+  'receiving_yards',
+  'receiving_tds',
+  'pass_attempts',
+  'pass_yards',
+  'pass_tds',
 ]
 
 function isSplitGroup(group: AuctionColumn['group']): group is SplitGroupKey {
   return group === 'rushing' || group === 'receiving' || group === 'passing'
 }
 
-/**
- * THE C43 GATE. A split group is available iff every stat key in its
- * triple appears on at least one loaded row's blob — "at least one"
- * because a blob only carries a player's OWN non-zero stats (the sync's
- * `set()` skips zeroes), so a key's existence is a property of the FEED,
- * evidenced by any player who has it, not of every row.
- */
-export function splitGroupAvailability(
-  rows: ReadonlyArray<{ splits: Record<string, number> }>,
-): Record<SplitGroupKey, boolean> {
-  const seen = new Set<string>()
-  for (const row of rows) for (const key of Object.keys(row.splits)) seen.add(key)
-  const out = {} as Record<SplitGroupKey, boolean>
-  for (const group of SPLIT_GROUP_KEYS) {
-    out[group] = SPLIT_GROUP_STAT_KEYS[group].every((key) => seen.has(key))
-  }
-  return out
+/** What the C43 gate knows about the loaded pool: whether each split
+ *  column may RENDER (per column — Q16), and whether each group's
+ *  presentation may REGROUP (per group — D202(2)). */
+export interface SplitAvailability {
+  /** statKey → witnessed on at least one loaded row's blob. */
+  columns: Record<string, boolean>
+  /** group → EVERY one of its catalog columns is witnessed, so the
+   *  grouped presentation (overline + short adjacent labels) is honest. */
+  groups: Record<SplitGroupKey, boolean>
 }
 
-/** The catalog minus every column a gate closes — what the table may
+/**
+ * THE C43 GATE, per COLUMN since Q16 (RULED 2026-08-20; D202). A split
+ * column is available iff its own stat key appears on at least one loaded
+ * row's blob — "at least one" because a blob only carries a player's OWN
+ * non-zero stats (the sync's `set()` skips zeroes), so a key's existence
+ * is a property of the FEED, evidenced by any player who has it, not of
+ * every row. A group regroups iff every one of its columns is available.
+ */
+export function splitColumnAvailability(
+  rows: ReadonlyArray<{ splits: Record<string, number> }>,
+): SplitAvailability {
+  const seen = new Set<string>()
+  for (const row of rows) for (const key of Object.keys(row.splits)) seen.add(key)
+  const columns: Record<string, boolean> = {}
+  for (const key of SPLIT_STAT_KEYS) columns[key] = seen.has(key)
+  const groups = {} as Record<SplitGroupKey, boolean>
+  for (const group of SPLIT_GROUP_KEYS) {
+    groups[group] = SPLIT_GROUP_STAT_KEYS[group].every((key) => seen.has(key))
+  }
+  return { columns, groups }
+}
+
+/** The catalog minus every column the gate closes — what the table may
  *  render AND what the customizer may offer (an option that can only
  *  produce an empty column is the same lie as the column). */
-export function availableColumns(
-  availability: Record<SplitGroupKey, boolean>,
-): AuctionColumn[] {
+export function availableColumns(availability: SplitAvailability): AuctionColumn[] {
   return AUCTION_COLUMNS.filter(
-    (column) => !isSplitGroup(column.group) || availability[column.group],
+    (column) => column.statKey === undefined || availability.columns[column.statKey] === true,
   )
 }
 
 /** Catalog order ∩ the user's visible set ∩ what the gate allows. */
 export function visibleColumns(
   visible: ReadonlySet<AuctionColumnKey>,
-  availability: Record<SplitGroupKey, boolean>,
+  availability: SplitAvailability,
 ): AuctionColumn[] {
   return availableColumns(availability).filter((column) => visible.has(column.key))
+}
+
+/** The header label a column wears (D202(2)): a split column in an
+ *  INCOMPLETE group carries its FLAT label ("Rush Yds"), because the
+ *  short form ('Yds') is legible only beside a complete set of siblings;
+ *  when F81 completes the triple the short grouped form returns. */
+export function columnHeaderLabel(
+  column: AuctionColumn,
+  availability: SplitAvailability,
+): string {
+  if (!isSplitGroup(column.group)) return column.label
+  return availability.groups[column.group] ? column.label : (column.flat ?? column.label)
+}
+
+/** One customizer section: an overline label and its columns. */
+export interface CustomizerGroup {
+  label: string
+  columns: AuctionColumn[]
+}
+
+/**
+ * The customizer's sections (D202(2)). Value and Schedule keep their
+ * overlines; a COMPLETE split group keeps its Rushing/Receiving/Passing
+ * overline; the available columns of INCOMPLETE groups are collected
+ * under one flat "Splits" section, because a "Rushing" header over two
+ * of three columns promises the missing one. Buttons render `full`
+ * names, so the flat section stays unambiguous.
+ */
+export function customizerGroups(
+  offerable: readonly AuctionColumn[],
+  availability: SplitAvailability,
+): CustomizerGroup[] {
+  const sections: CustomizerGroup[] = []
+  const byLabel = new Map<string, CustomizerGroup>()
+  for (const column of offerable) {
+    const grouped = !isSplitGroup(column.group) || availability.groups[column.group]
+    const label = grouped ? COLUMN_GROUP_LABELS[column.group] : 'Splits'
+    let section = byLabel.get(label)
+    if (section === undefined) {
+      section = { label, columns: [] }
+      byLabel.set(label, section)
+      sections.push(section)
+    }
+    section.columns.push(column)
+  }
+  return sections
 }
 
 /** The cell's value for one row/column, or null for "—". */
