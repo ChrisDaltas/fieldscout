@@ -101,10 +101,10 @@ describe('control request wiring (§8.7 → the L.B2.3 routes)', () => {
     expect(resetRequest(LG, D).body).toEqual({ draft_id: D })
   })
 
-  it('order dispatch: the PATCH body always carries the reason (D114(3) — the signature makes it structural)', () => {
-    const request = orderRequest(LG, ['t2', 't1'], '  seat swap fix  ')
+  it('order dispatch: the PATCH body always carries the reason (D114(3)) AND the target draft (MS.7/D222 — the R468 mis-target was this one builder omitting draft_id)', () => {
+    const request = orderRequest(LG, D, ['t2', 't1'], '  seat swap fix  ')
     expect(request.path).toBe(`/api/leagues/${LG}/draft`)
-    expect(request.body).toEqual({ order: ['t2', 't1'], reason: 'seat swap fix' })
+    expect(request.body).toEqual({ draft_id: D, order: ['t2', 't1'], reason: 'seat swap fix' })
   })
 
   it('member autodraft toggle: ONE verb in the body (the members-PATCH contract)', () => {

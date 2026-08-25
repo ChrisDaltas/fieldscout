@@ -613,8 +613,15 @@ export function useCreateDraft(leagueId: string) {
 
 /** PATCH body: exactly one of `order`/`randomize`. `reason` is REQUIRED by
  *  the route when the draft is live/paused (the L.B2.3 post-start E31
- *  dispatch — D114(3); randomize is refused post-start), optional pre-start. */
-export type DraftOrderBody = { order: string[]; reason?: string } | { randomize: true }
+ *  dispatch — D114(3); randomize is refused post-start), optional pre-start.
+ *  `draft_id` (MS.7 — D222/R468): WHICH of the league's drafts the edit
+ *  targets — a room MUST send its own draft's id (a mock room's edit
+ *  without one resolved the league's REAL draft, the R468 mis-target).
+ *  Absent, the service's shipped active non-mock probe runs (the pre-start
+ *  lobby's shape, unchanged). */
+export type DraftOrderBody =
+  | { draft_id?: string; order: string[]; reason?: string }
+  | { draft_id?: string; randomize: true }
 
 /** PATCH /api/leagues/[id]/draft — order edit (pre-start incl. randomize;
  *  post-start = the E31 dispatch, reason required — the commish panel's

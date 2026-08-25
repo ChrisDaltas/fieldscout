@@ -57,6 +57,7 @@ import {
   listMockDrafts,
   makePick,
   movePlayer,
+  NO_ACTIVE_DRAFT_MESSAGE,
   patchDraftOrder,
   pauseOrResumeDraft,
   POST_START_RANDOMIZE_MESSAGE,
@@ -117,6 +118,7 @@ const ACTION = {
   mockLaunch2: 'ad800000-0000-4000-8000-000000000032',
   mockLaunch3: 'ad800000-0000-4000-8000-000000000033',
   mockLaunch4: 'ad800000-0000-4000-8000-000000000034',
+  mockLaunchC: 'ad800000-0000-4000-8000-000000000035',
 } as const
 
 /** Harness minting for the route's `mintActionId` dep — each launch test
@@ -152,6 +154,7 @@ let placeholderIds: string[] = []
 let mock1Id: string
 let mock2Id: string
 let mock3Id: string
+let commishMockId: string
 
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
@@ -827,5 +830,201 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
       .eq('draft_id', draftId)
       .eq('is_undone', false)
     expect(liveCount).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// C. MS.7 — the order edit reaches the mock's OWN draft (D222; the R468 fix)
+//
+// R468 as filed: `patchDraftOrder`'s body carried no draft id, the service
+// resolved `.eq('league_id', …).eq('is_mock', false)` unconditionally, and a
+// commissioner practicing in their own league rewrote the REAL draft's
+// negotiated order — with the "Draft order changed by …" system line posted
+// into the REAL draft's chat, making the accident read as a deliberate act
+// (D222(5): a draft order is negotiated property). RE-MEASURED at main
+// 0a41d1e before this fix: the mock-room-shaped edit answered 200, the real
+// draft's `draft_order` held the new permutation, and the system line sat in
+// `draft:<realDraftId>`.
+//
+// The fix is SERVICE-LAYER (an RPC change cannot work — the RPC was never
+// handed the mock): the body names its draft and `patchDraftOrder` resolves
+// through the ONE resolver (D245). Authority stays in `draft_set_order`.
+// UNTIL MS.2 lands its launcher arm, the RPC's D103 mock guard — which
+// R468 proved could NEVER fire — now fires loudly: the pinned refusal below
+// is the enablement seam MS.2 re-points (loud refusal ≫ silent mis-write).
+//
+// League state here: post-reset (`scheduled` again — the mock launch window
+// is open), real draft alive as `scheduled`, mgr2's mocks m2/m3 still live.
+// ---------------------------------------------------------------------------
+
+describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', () => {
+  beforeAll(async () => {
+    // The R468 actor: the COMMISSIONER launches their own practice mock.
+    const launched = await launchMockDraft(
+      commishClient,
+      leagueId,
+      {},
+      mintFixed(ACTION.mockLaunchC),
+    )
+    if (launched.status !== 201) {
+      throw new Error(`commish mock launch failed: ${JSON.stringify(launched.body)}`)
+    }
+    commishMockId = (launched.body as unknown as DraftBody).draft.id
+  }, 60_000)
+
+  it('THE R468 PIN: a mock-room edit that names its mock NEVER touches the real draft — the RPC\'s D103 guard finally fires (loud refusal until MS.2), and the REAL draft\'s whole row + chat are byte-identical', async () => {
+    // Whole-row composite over the REAL draft — the house instrument
+    // (D222(5): the pin is over the stored order and its chat context,
+    // never a count; a count cannot see an in-place UPDATE).
+    const { data: realBefore } = await service
+      .from('drafts')
+      .select('*')
+      .eq('id', draftId)
+      .single()
+    const { data: chatBefore } = await service
+      .from('league_chat')
+      .select('id, message, context')
+      .eq('context', `draft:${draftId}`)
+      .order('id', { ascending: true })
+    const { data: mockBefore } = await service
+      .from('drafts')
+      .select('draft_order, current_pick_number')
+      .eq('id', commishMockId)
+      .single()
+
+    const attempted = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      {
+        draft_id: commishMockId,
+        order: [mgr2TeamId, commishTeamId, ...placeholderIds],
+        reason: 'practice-room order edit (MS.7 pin)',
+      },
+      noEntropy,
+    )
+    // The interim contract (MS.2 not landed): draft_set_order's mock guard
+    // — unreachable before this fix, R468's whole point — REFUSES loudly.
+    // MS.2's launcher arm re-points THIS assertion to a 200; the isolation
+    // assertions below outlive it.
+    expect(attempted.status).toBe(400)
+    expect(JSON.stringify(attempted.body)).toContain(
+      'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+    )
+
+    // The severity pin: the REAL draft's whole row is byte-identical…
+    const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realAfter).toEqual(realBefore)
+    // …and its chat context gained NOTHING (no "order changed" line that
+    // makes an accident read as a commissioner's act).
+    const { data: chatAfter } = await service
+      .from('league_chat')
+      .select('id, message, context')
+      .eq('context', `draft:${draftId}`)
+      .order('id', { ascending: true })
+    expect(chatAfter).toEqual(chatBefore)
+
+    // The refused mock wrote nothing either (targeted columns, not the
+    // whole row — the E59 stale-pause may legally flip live→paused under
+    // this suite, per the header's live-cron note).
+    const { data: mockAfter } = await service
+      .from('drafts')
+      .select('draft_order, current_pick_number')
+      .eq('id', commishMockId)
+      .single()
+    expect(mockAfter).toEqual(mockBefore)
+    const { data: mockChat } = await service
+      .from('league_chat')
+      .select('id')
+      .eq('context', `draft:${commishMockId}`)
+      .like('message', 'Draft order %')
+    expect(mockChat).toEqual([])
+  })
+
+  it('randomize rides the same path (D222/MS.7 item 5): naming the mock cannot mis-target — the live mock hits the post-start randomize refusal and the real draft is untouched', async () => {
+    const { data: realBefore } = await service
+      .from('drafts')
+      .select('*')
+      .eq('id', draftId)
+      .single()
+    const randomize = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      { draft_id: commishMockId, randomize: true, reason: 'mock randomize (MS.7 pin)' },
+      { randomValues: (n) => Array.from({ length: n }, () => 0.5) },
+    )
+    // The mock is live → the E31 post-start branch refuses randomize at the
+    // service, BEFORE any write — a second mis-target with R468's shape is
+    // structurally closed.
+    expect(randomize.status).toBe(400)
+    expect(JSON.stringify(randomize.body)).toContain(POST_START_RANDOMIZE_MESSAGE)
+    const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realAfter).toEqual(realBefore)
+  })
+
+  it('a plain member naming their OWN mock is refused at the identity gate (42501 → 403, the D110(1) interim MS.2 reorders) and nothing is written', async () => {
+    const { data: mockBefore } = await service
+      .from('drafts')
+      .select('draft_order, current_pick_number')
+      .eq('id', mock2Id)
+      .single()
+    const attempted = await patchDraftOrder(
+      mgr2Client,
+      leagueId,
+      {
+        draft_id: mock2Id,
+        order: [mgr2TeamId, commishTeamId, ...placeholderIds],
+        reason: 'launcher order edit (pre-MS.2 interim)',
+      },
+      noEntropy,
+    )
+    // 087/098's identity gate runs BEFORE the mock guard (measured in
+    // tasks-MS §1.1), so a non-commissioner launcher gets 42501 → 403
+    // today. MS.2's reorder + launcher arm makes this the launcher's 200;
+    // this assertion is the OTHER half of that seam.
+    expect(attempted.status).toBe(403)
+    const { data: mockAfter } = await service
+      .from('drafts')
+      .select('draft_order, current_pick_number')
+      .eq('id', mock2Id)
+      .single()
+    expect(mockAfter).toEqual(mockBefore)
+  })
+
+  it('a deleted/unknown draft_id answers the no-leak 404 (the resolver\'s league-scoped fetch — R155 class)', async () => {
+    const gone = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      { draft_id: mock1Id, order: [commishTeamId, mgr2TeamId, ...placeholderIds], reason: 'gone' },
+      noEntropy,
+    )
+    expect(gone.status).toBe(404)
+    expect(JSON.stringify(gone.body)).toContain(NO_ACTIVE_DRAFT_MESSAGE)
+  })
+
+  it('NO REGRESSION (§4 rule 11): the id-less body still probes the active non-mock draft exactly as shipped, and naming the real draft explicitly is equivalent', async () => {
+    // Post-reset the real draft is `scheduled` — a pre-start edit.
+    const orderA = [mgr2TeamId, ...placeholderIds, commishTeamId]
+    const probeArm = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      { order: orderA, reason: 'probe-arm regression pin' },
+      noEntropy,
+    )
+    expect(probeArm.status).toBe(200)
+    const probeDraft = (probeArm.body as unknown as DraftBody).draft
+    expect(probeDraft.id).toBe(draftId) // the REAL draft, as always
+    expect(probeDraft.draft_order).toEqual(orderA)
+
+    const orderB = [commishTeamId, mgr2TeamId, ...placeholderIds]
+    const explicitArm = await patchDraftOrder(
+      commishClient,
+      leagueId,
+      { draft_id: draftId, order: orderB, reason: 'explicit-id equivalence pin' },
+      noEntropy,
+    )
+    expect(explicitArm.status).toBe(200)
+    const explicitDraft = (explicitArm.body as unknown as DraftBody).draft
+    expect(explicitDraft.id).toBe(draftId)
+    expect(explicitDraft.draft_order).toEqual(orderB)
   })
 })
