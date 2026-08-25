@@ -34,7 +34,10 @@ interface DraftOrderEditorProps {
   leagueId: string
   detail: LeagueDetail
   mode: LeagueSettings['draft']['draft_order_mode']
-  /** The settings store (`draft.draft_order`) — the manual/custom save. */
+  /** The settings store — `draft.draft_order`, or (098/AP.5, §16.2's "ONE
+   *  editor, two consumers") `draft.nomination_order`, whose mount pins
+   *  `mode="manual"`: the randomize arm below PATCHes the DRAFT order and
+   *  must never be reachable from the nomination mount. */
   value: string[] | null
   onChange: (next: string[]) => void
   canEdit: boolean

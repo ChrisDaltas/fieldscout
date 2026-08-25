@@ -91,21 +91,20 @@ export function SnakeReversalField({ value, onChange, idPrefix }: DraftFieldsPro
 
 export interface AuctionConfigFieldsProps extends DraftFieldsProps {
   /**
-   * Offer `manual` in the nomination-order select ONLY when the surface has a
-   * league that already stores it.
+   * Offer `manual` in the nomination-order select.
    *
-   * The settings panel does: `manual` is not offered as a choice (084's start
-   * arm validates a stored `drafts.nomination_order` and nothing can write
-   * one pre-start, so choosing it makes the draft unstartable — the editor
-   * that fixes that is ledger row **F80**), but a league that got there
-   * through the API still sees its own value labelled for what it is, so the
-   * select never renders blank and the way out is one click.
+   * 098/AP.5 (F80): `manual` is a real choice again — the §7.3.8 catalog now
+   * has a `nomination_order` array, the settings panel mounts
+   * `DraftOrderEditor` on it (the SAME editor snake uses — never a fork), and
+   * `draft_start` hydrates and validates the permutation. The settings panel
+   * passes `true`.
    *
-   * A standalone practice draft has no stored order and no commissioner, and
+   * A standalone practice draft has no league and no commissioner, and
    * migration 095 refuses anything but `same_as_draft_order`/`random` by
-   * name — so it passes `false` and the arm cannot appear.
+   * name — so the launch dialog passes nothing and the arm cannot appear
+   * (D110(1): the UI must not offer what the engine forbids).
    */
-  offerStoredManual?: boolean
+  offerManual?: boolean
   /** Field-level §7.3.8 violations to render under the group — the
    *  contract's own messages (`validateLeagueSettings`), never re-worded. */
   issues?: FieldIssue[]
@@ -116,7 +115,7 @@ export function AuctionConfigFields({
   value,
   onChange,
   idPrefix,
-  offerStoredManual = false,
+  offerManual = false,
   issues = [],
 }: AuctionConfigFieldsProps) {
   const b = DRAFT_FIELD_BOUNDS
@@ -260,9 +259,7 @@ export function AuctionConfigFields({
           options={[
             { value: 'same_as_draft_order', label: 'Same as draft order' },
             { value: 'random', label: 'Random' },
-            ...(offerStoredManual && value.nomination_order_mode === 'manual'
-              ? [{ value: 'manual', label: 'Commissioner sets (no editor yet — pick another)' }]
-              : []),
+            ...(offerManual ? [{ value: 'manual', label: 'Commissioner sets' }] : []),
           ]}
           onValueChange={(v) =>
             onChange({ nomination_order_mode: v as DraftConfig['nomination_order_mode'] })

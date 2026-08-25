@@ -3433,6 +3433,7 @@ export type Database = {
       draft_nomination_order_internal: {
         Args: {
           p_candidate: Json
+          p_config_order?: Json
           p_draft_order: Json
           p_label: string
           p_league_id: string

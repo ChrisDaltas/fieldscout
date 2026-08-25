@@ -82,10 +82,10 @@ describe('R505 — one implementation, two mount points', () => {
     expect(src).toContain("Sleeper-style — the 3rd round doesn't flip.")
   })
 
-  it('the two mounts differ ONLY where a real rule differs — the panel offers the stored `manual` nomination arm (F80), the standalone mock cannot (095 refuses it by name)', () => {
-    expect(read(PANEL)).toContain('offerStoredManual')
-    expect(read(DIALOG)).not.toContain('offerStoredManual={')
-    expect(read(DIALOG)).not.toContain('offerStoredManual\n')
+  it('the two mounts differ ONLY where a real rule differs — the panel offers the `manual` nomination arm (F80 → AP.5/098), the standalone mock cannot (095 refuses it by name)', () => {
+    expect(read(PANEL)).toContain('offerManual')
+    expect(read(DIALOG)).not.toContain('offerManual={')
+    expect(read(DIALOG)).not.toContain('offerManual\n')
   })
 
   it('element ids stay namespaced per mount, so two mounts on one page cannot collide', () => {
