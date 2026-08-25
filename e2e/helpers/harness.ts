@@ -1,8 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/database'
+import type { AuctionDraftAudit, AuctionAuditBid, AuctionAuditBudget, AuctionAuditPick } from '@/lib/leagues/sim/invariants'
+import { auctionKnobsOf } from '@/components/draft/auction-budget'
 
-import { E2E_LEAGUE_PREFIX, LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY, LOCAL_URL } from './local-env'
+import {
+  E2E_BOT_EMAIL_DOMAIN,
+  E2E_BOT_PASSWORD,
+  E2E_BOT_USERNAME_PREFIX,
+  E2E_LEAGUE_PREFIX,
+  LOCAL_ANON_KEY,
+  LOCAL_SERVICE_ROLE_KEY,
+  LOCAL_URL,
+} from './local-env'
 
 type Supabase = SupabaseClient<Database>
 
@@ -12,7 +22,8 @@ type Supabase = SupabaseClient<Database>
  * precedent): the service CLIENT is constructed ONLY in this file — the key
  * CONSTANT lives in local-env.ts, and playwright.config.ts also injects it
  * into the app server's process env (the webServer's own admin client) —
- * and the client does exactly FIVE jobs, nothing else:
+ * and the client does exactly EIGHT jobs, nothing else (5 from M2's L.B5.1;
+ * 6–8 added by M3's L.C5.1 — enumerated extensions, the R290 precedent):
  *
  *   1. the E2E-prefix fixture-cleanup sweep (start-stale + per-spec finally,
  *      loud + byte-clean-verified — the R285 class; delete order mirrors the
@@ -35,7 +46,19 @@ type Supabase = SupabaseClient<Database>
  *      date — bumping the created league's season server-side BEFORE the
  *      schedule step keeps the picker interaction identical while the
  *      stored instant lands far-future (the F49 row's "season-year bump"
- *      arm; non-literal by construction — year follows the season).
+ *      arm; non-literal by construction — year follows the season);
+ *   6. (L.C5.1, the R290 enumerated-extension precedent) storm-bot
+ *      provisioning/teardown: `auth.admin.createUser` for the bid storm's
+ *      seated actors (the sim runner's bot-pool shape, own prefix), swept
+ *      by the same cleanup;
+ *   7. (L.C5.1) bid-deadline STAGING into the anti-snipe window — a
+ *      forward-pointed, `.eq('status','live')`-conditional write of
+ *      `now + N ms` (the L.C4.1 sniper-staging arm; the D128 re-floor is
+ *      then asserted from the SERVER's own deadline moving later);
+ *   8. (L.C5.1) the auction-audit reads for `sweepAuctionAudit` — including
+ *      the `draft_team_budget` oracle calls, which are REVOKEd from
+ *      authenticated (§4.7's one authority is exactly why the harness must
+ *      hold the key — the L.C4.1 precedent).
  *
  * Everything the USER does in a spec rides the browser or a seed-user's own
  * authed anon-key client (provision.ts) — production RPCs never accept a
@@ -84,6 +107,20 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     throwIfError(leaguesError, 'cleanup: leagues delete')
   }
+  // Job 6's teardown half (L.C5.1): the storm-bot users, by their own
+  // prefix — the sim runner's profile-sweep shape. Seed users are untouched.
+  const { data: botProfiles, error: botError } = await service
+    .from('profiles')
+    .select('id, username')
+    .like('username', `${E2E_BOT_USERNAME_PREFIX}%`)
+  throwIfError(botError, 'cleanup: bot-profile lookup')
+  for (const row of botProfiles ?? []) {
+    const { error: deleteError } = await service.auth.admin.deleteUser(row.id)
+    if (deleteError) {
+      throw new Error(`cleanup: deleteUser ${row.username} failed: ${deleteError.message}`)
+    }
+  }
+
   const { count, error: verifyError } = await service
     .from('leagues')
     .select('id', { count: 'exact', head: true })
@@ -92,7 +129,15 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
   if ((count ?? -1) !== 0) {
     throw new Error(`cleanup: stack NOT clean — ${count} e2e leagues remain`)
   }
-  return `CLEANUP: swept ${ids.length} e2e league(s) — 0 remain`
+  const { count: botCount, error: botVerifyError } = await service
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .like('username', `${E2E_BOT_USERNAME_PREFIX}%`)
+  throwIfError(botVerifyError, 'cleanup: bot verification')
+  if ((botCount ?? -1) !== 0) {
+    throw new Error(`cleanup: stack NOT clean — ${botCount} e2e bot user(s) remain`)
+  }
+  return `CLEANUP: swept ${ids.length} e2e league(s) + ${(botProfiles ?? []).length} bot user(s) — 0 remain`
 }
 
 // ---------------------------------------------------------------------------
@@ -339,5 +384,220 @@ export async function assertPlayerPoolPresent(service: Supabase): Promise<void> 
       `players table has ${count ?? 0} rows — the local stack needs its data restored ` +
         '(npm run restore:dev pinned to the LOCAL stack; see ACTIVE-BUILD.md) before test:e2e can run.',
     )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Job 6 — storm-bot provisioning (L.C5.1; the sim runner's bot-pool shape)
+// ---------------------------------------------------------------------------
+
+export interface BotSeatUser {
+  userId: string
+  client: Supabase
+  username: string
+}
+
+/**
+ * Mint `count` real auth users (own prefix, `email_confirm` — the sim
+ * runner's exact shape) and sign each into its OWN anon-key client. Every
+ * storm bid then travels the same service fn + JWT path a browser's would
+ * (D100) — the service client itself never bids.
+ */
+export async function provisionBotUsers(service: Supabase, count: number): Promise<BotSeatUser[]> {
+  const bots: BotSeatUser[] = []
+  for (let i = 0; i < count; i++) {
+    const username = `${E2E_BOT_USERNAME_PREFIX}${String(i + 1).padStart(2, '0')}`
+    const email = `e2e-c5-bot-${String(i + 1).padStart(2, '0')}@${E2E_BOT_EMAIL_DOMAIN}`
+    const { data: created, error: createError } = await service.auth.admin.createUser({
+      email,
+      password: E2E_BOT_PASSWORD,
+      email_confirm: true,
+      user_metadata: { username },
+    })
+    if (createError) throw new Error(`bot createUser ${username} failed: ${createError.message}`)
+    const client = anonClient()
+    const { error: signInError } = await client.auth.signInWithPassword({
+      email,
+      password: E2E_BOT_PASSWORD,
+    })
+    if (signInError) throw new Error(`bot sign-in ${username} failed: ${signInError.message}`)
+    bots.push({ userId: created.user.id, client, username })
+  }
+  return bots
+}
+
+// ---------------------------------------------------------------------------
+// Job 7 — bid-deadline staging (the L.C4.1 sniper arm; D128's test bench)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stage the LIVE bid clock to `now + msFromNow` — INTO the anti-snipe window,
+ * so the next accepted bid must move the server deadline LATER (the D128
+ * re-floor, asserted from the drafts row afterwards). Forward-pointed and
+ * `.eq('status','live')`-conditional (the F52 lesson); a 0-row write means
+ * the engine advanced first and the caller re-checks.
+ */
+export async function stageBidDeadline(
+  service: Supabase,
+  draftId: string,
+  msFromNow: number,
+): Promise<void> {
+  const staged = new Date(Date.now() + msFromNow).toISOString()
+  const { error } = await service
+    .from('drafts')
+    .update({ current_deadline: staged })
+    .eq('id', draftId)
+    .eq('status', 'live')
+  throwIfError(error, 'harness bid-deadline staging')
+}
+
+// ---------------------------------------------------------------------------
+// Job 8 — auction reads (the L.C4.1 audit shape, service-side; job-4 class)
+// ---------------------------------------------------------------------------
+
+/** The authoritative auction market: nomination + deadline in one read. */
+export async function readAuctionMarket(
+  service: Supabase,
+  draftId: string,
+): Promise<{
+  status: string
+  currentPickNumber: number | null
+  currentDeadline: string | null
+  onClockTeamId: string | null
+  nomination: { player_id: string; high_bid: number; high_bidder_team_id: string | null } | null
+}> {
+  const { data, error } = await service
+    .from('drafts')
+    .select('status, current_pick_number, current_deadline, on_clock_team_id, current_nomination')
+    .eq('id', draftId)
+    .single()
+  throwIfError(error, 'read auction market')
+  const raw = data!.current_nomination as
+    | { player_id?: string; high_bid?: number; high_bidder_team_id?: string | null }
+    | null
+  return {
+    status: data!.status as string,
+    currentPickNumber: data!.current_pick_number,
+    currentDeadline: data!.current_deadline,
+    onClockTeamId: data!.on_clock_team_id,
+    nomination:
+      raw && typeof raw.player_id === 'string'
+        ? {
+            player_id: raw.player_id,
+            high_bid: Number(raw.high_bid ?? 0),
+            high_bidder_team_id: (raw.high_bidder_team_id as string | null) ?? null,
+          }
+        : null,
+  }
+}
+
+/** Every bid row for one draft (optionally one nomination), in commit order. */
+export async function readBidLedger(
+  service: Supabase,
+  draftId: string,
+  nominationSeq?: number,
+): Promise<
+  Array<{
+    id: string
+    nomination_seq: number
+    player_id: string
+    team_id: string
+    amount: number
+    action_id: string | null
+    created_at: string
+  }>
+> {
+  let query = service
+    .from('draft_bids')
+    .select('id, nomination_seq, player_id, team_id, amount, action_id, created_at')
+    .eq('draft_id', draftId)
+  if (nominationSeq !== undefined) query = query.eq('nomination_seq', nominationSeq)
+  const { data, error } = await query
+    .order('created_at', { ascending: true })
+    .order('amount', { ascending: true })
+  throwIfError(error, 'read bid ledger')
+  return (data ?? []) as never
+}
+
+/**
+ * Build the L.C4.1 `AuctionDraftAudit` for ONE finished draft so the spec can
+ * run `sweepAuctionAudit` VERBATIM — the invariant helpers are reused, never
+ * re-derived (the task charter's own words). Mirrors the sim runner's
+ * `collectAuctionAudit` read-for-read.
+ */
+export async function collectAuctionAudit(
+  service: Supabase,
+  input: { label: string; leagueId: string; draftId: string; teamCount: number; totalRounds: number },
+): Promise<AuctionDraftAudit> {
+  const { data: draftRow, error: draftError } = await service
+    .from('drafts')
+    .select('status, config, budget_adjustments, nomination_order')
+    .eq('id', input.draftId)
+    .single()
+  throwIfError(draftError, 'audit draft read')
+  const { data: picks, error: picksError } = await service
+    .from('draft_picks')
+    .select('pick_number, team_id, player_id, price, is_undone')
+    .eq('draft_id', input.draftId)
+    .order('pick_number')
+  throwIfError(picksError, 'audit picks read')
+  const { data: bids, error: bidsError } = await service
+    .from('draft_bids')
+    .select('nomination_seq, team_id, player_id, amount')
+    .eq('draft_id', input.draftId)
+    .order('created_at')
+  throwIfError(bidsError, 'audit bids read')
+  const { data: rosters, error: rostersError } = await service
+    .from('league_rosters')
+    .select('team_id, player_id')
+    .eq('league_id', input.leagueId)
+  throwIfError(rostersError, 'audit rosters read')
+  const { data: league, error: leagueError } = await service
+    .from('leagues')
+    .select('status')
+    .eq('id', input.leagueId)
+    .single()
+  throwIfError(leagueError, 'audit league read')
+  const { data: teams, error: teamsError } = await service
+    .from('teams')
+    .select('id')
+    .eq('league_id', input.leagueId)
+    .neq('status', 'retired')
+  throwIfError(teamsError, 'audit team read')
+
+  const workerErrors: string[] = []
+  const sqlBudgets: AuctionAuditBudget[] = []
+  for (const t of teams ?? []) {
+    const { data, error } = await service.rpc('draft_team_budget', {
+      p_draft_id: input.draftId,
+      p_team_id: t.id as string,
+    })
+    if (error) {
+      workerErrors.push(`draft_team_budget(${t.id}) errored: ${error.message}`)
+      continue
+    }
+    const row = (
+      data as Array<{ remaining: number; open_slots: number; max_bid: number; committed: number }>
+    )[0]
+    if (row !== undefined) sqlBudgets.push({ team_id: t.id as string, ...row })
+  }
+
+  const knobs = auctionKnobsOf((draftRow!.config ?? {}) as never)
+  return {
+    leagueLabel: input.label,
+    draftId: input.draftId,
+    teamCount: input.teamCount,
+    totalRounds: input.totalRounds,
+    budget: knobs.auctionBudget,
+    reserve: knobs.reserve,
+    budgetAdjustments: (draftRow!.budget_adjustments ?? {}) as Record<string, number>,
+    picks: (picks ?? []) as AuctionAuditPick[],
+    bids: (bids ?? []) as AuctionAuditBid[],
+    sqlBudgets,
+    rosters: (rosters ?? []) as Array<{ team_id: string; player_id: string }>,
+    nominationOrderPin: null,
+    leagueStatus: league!.status as string,
+    draftStatus: draftRow!.status as string,
+    workerErrors,
   }
 }

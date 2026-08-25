@@ -60,3 +60,13 @@ export const STORAGE_STATE = {
  * prefix registration is needed beyond this name.
  */
 export const E2E_LEAGUE_PREFIX = 'E2E L.B5.1'
+
+/**
+ * L.C5.1 storm-bot fixture identity (the sim's `sim_b6_bot_` shape, distinct
+ * prefix so neither suite can sweep the other's users). Minted by harness
+ * job 6, swept by `cleanupSweep`'s profile arm. Local-dev only, like the two
+ * seed passwords above.
+ */
+export const E2E_BOT_USERNAME_PREFIX = 'e2e_c5_bot_'
+export const E2E_BOT_EMAIL_DOMAIN = 'fieldscout.test'
+export const E2E_BOT_PASSWORD = 'e2e-c5-pass-1234'

@@ -217,6 +217,7 @@ import {
   checkAuctionRostersMatchPicks,
   checkAuctionSequenceOrdered,
   checkAuctionSolvency,
+  checkAuctionNoWorkerErrors,
   checkNominationOrderPinned,
   sweepAuctionAudit,
   type AuctionDraftAudit,
@@ -369,5 +370,10 @@ describe('auction sweep — green baseline + one falsification per invariant', (
     expect(checkNominationOrderPinned(a)[0]!.invariant).toBe('auction-nomination-order-pinned')
     // …and a same_as_draft_order league (null pin) asserts nothing:
     expect(checkNominationOrderPinned({ ...g, nominationOrderPin: null })).toEqual([])
+  })
+
+  it('auction-zero-worker-errors: any recorded tick failure fails the draft (R561)', () => {
+    const failures = checkAuctionNoWorkerErrors({ ...greenAuctionAudit(), workerErrors: ['boom'] })
+    expect(failures.map((f) => f.invariant)).toEqual(['auction-zero-worker-errors'])
   })
 })
