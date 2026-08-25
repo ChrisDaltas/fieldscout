@@ -365,6 +365,64 @@ export type Database = {
           },
         ]
       }
+      draft_budget_adjustments: {
+        Row: {
+          action_id: string | null
+          adjustment_after: number
+          created_at: string | null
+          delta: number
+          draft_id: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id?: string | null
+          adjustment_after: number
+          created_at?: string | null
+          delta: number
+          draft_id: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string | null
+          adjustment_after?: number
+          created_at?: string | null
+          delta?: number
+          draft_id?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_budget_adjustments_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_budget_adjustments_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_budget_adjustments_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       draft_dnd_marks: {
         Row: {
           created_at: string | null
@@ -3234,6 +3292,7 @@ export type Database = {
       draft_actor_name: { Args: never; Returns: string }
       draft_adjust_budget: {
         Args: {
+          p_action_id?: string
           p_delta: number
           p_draft_id: string
           p_reason?: string

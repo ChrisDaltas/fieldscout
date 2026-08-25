@@ -507,7 +507,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
       ],
       [
         'budget',
-        adjustBudget(mgr2Client, leagueId, { team_id: mgr2TeamId, delta: 50, reason: 'nope' }),
+        adjustBudget(mgr2Client, leagueId, { team_id: mgr2TeamId, delta: 50, action_id: crypto.randomUUID(), reason: 'nope' }),
       ],
       ['cancel-nomination', cancelNomination(mgr2Client, leagueId, { reason: 'nope' })],
       ['end', endDraft(mgr2Client, leagueId, { reason: 'nope' })],
@@ -533,7 +533,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     // on every route (explicit draft_id too — the same member-scoped read).
     for (const call of [
       reverseWonBid(outsiderClient, leagueId, { pick_id: NO_SUCH_PICK, reason: 'x' }),
-      adjustBudget(outsiderClient, leagueId, { team_id: mgr2TeamId, delta: 1, reason: 'x' }),
+      adjustBudget(outsiderClient, leagueId, { team_id: mgr2TeamId, delta: 1, action_id: crypto.randomUUID(), reason: 'x' }),
       cancelNomination(outsiderClient, leagueId, { reason: 'x' }),
       endDraft(outsiderClient, leagueId, { draft_id: draftId, reason: 'x' }),
     ]) {
@@ -551,7 +551,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
   it('`reason` is REQUIRED on all four: missing → 400 naming the field; blank → 400; an unknown key → 400 (strict bodies)', async () => {
     const missing: [string, Promise<{ status: number; body: unknown }>][] = [
       ['reverse-bid', reverseWonBid(commishClient, leagueId, { pick_id: NO_SUCH_PICK })],
-      ['budget', adjustBudget(commishClient, leagueId, { team_id: commishTeamId, delta: -5 })],
+      ['budget', adjustBudget(commishClient, leagueId, { team_id: commishTeamId, delta: -5, action_id: crypto.randomUUID() })],
       ['cancel-nomination', cancelNomination(commishClient, leagueId, {})],
       ['end', endDraft(commishClient, leagueId, {})],
     ]
@@ -584,7 +584,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
       ],
       [
         'draft_adjust_budget',
-        adjustBudget(commishClient, leagueId, { draft_id: mockId, team_id: mgr2TeamId, delta: 5, reason: 'x' }),
+        adjustBudget(commishClient, leagueId, { draft_id: mockId, team_id: mgr2TeamId, delta: 5, action_id: crypto.randomUUID(), reason: 'x' }),
       ],
       [
         'draft_cancel_nomination',
@@ -650,9 +650,11 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
 
     // d = −49: max_bid' = 199 − 49 = 150 = the standing high bid → LANDS,
     // and NOT pause-gated — the draft is LIVE (D141 does not name budget).
+    const landsActionId = crypto.randomUUID()
     const lands = await adjustBudget(commishClient, leagueId, {
       team_id: commishTeamId,
       delta: EXACT_CUT,
+      action_id: landsActionId,
       reason: REASON,
     })
     expect(lands.status).toBe(200)
@@ -675,12 +677,37 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
       committed: 0,
     })
 
+    // 099/AP.6 (E69 — F82 discharged): the SAME POST again, byte-for-byte —
+    // the lost-response retry. It answers 200 with the ORIGINAL body and the
+    // money moves ONCE (the pre-099 engine composed it to 2 × EXACT_CUT
+    // here). Route-level corroboration of pgTAP 047's replay pins.
+    const replay = await adjustBudget(commishClient, leagueId, {
+      team_id: commishTeamId,
+      delta: EXACT_CUT,
+      action_id: landsActionId,
+      reason: REASON,
+    })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toEqual(lands.body)
+    expect((await readDraft()).budget_adjustments).toEqual({ [commishTeamId]: EXACT_CUT })
+    // …and a POST with NO action_id never reaches the RPC at all (strict
+    // body, D68 wire-side requirement): 400 naming the field.
+    const unstamped = await adjustBudget(commishClient, leagueId, {
+      team_id: commishTeamId,
+      delta: EXACT_CUT,
+      reason: REASON,
+    })
+    expect(unstamped.status).toBe(400)
+    expect(JSON.stringify(unstamped.body)).toContain('"action_id"')
+    expect((await readDraft()).budget_adjustments).toEqual({ [commishTeamId]: EXACT_CUT })
+
     // One more dollar: max_bid' = 149 < 150 → E28 arm 3, the exact copy
     // (team name, player name, the two numbers, and the NOT-pause-gated
     // remedy — 087's parameterised sentence for THIS verb).
     const refused = await adjustBudget(commishClient, leagueId, {
       team_id: commishTeamId,
       delta: ONE_MORE_DOLLAR,
+      action_id: crypto.randomUUID(),
       reason: REASON,
     })
     expect(refused.status).toBe(400)
@@ -932,6 +959,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     const bogusTeam = await adjustBudget(commishClient, leagueId, {
       team_id: NO_SUCH_TEAM,
       delta: 5,
+      action_id: crypto.randomUUID(),
       reason: 'bogus team (must 404)',
     })
     expect(bogusTeam.status).toBe(404)
@@ -1068,6 +1096,7 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
       draft_id: draftId,
       team_id: mgr2TeamId,
       delta: 1,
+      action_id: crypto.randomUUID(),
       reason: 'after end',
     })
     expect(afterEnd.status).toBe(400)

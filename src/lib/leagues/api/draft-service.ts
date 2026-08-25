@@ -1448,6 +1448,11 @@ export const adjustBudgetInputSchema = z.strictObject({
   reason: reasonRequiredSchema,
   team_id: z.uuid(),
   delta: z.number().int().min(-1_000_000).max(1_000_000),
+  // 099/AP.6 (E69, discharges F82): REQUIRED wire-side — the D68(1)/D114(4)
+  // contract, the force-pick precedent. The RPC dedupes a retried POST on it
+  // and replays the ORIGINAL result; only unstamped non-route callers
+  // (tests, psql) pass SQL NULL.
+  action_id: z.uuid(),
 })
 
 /** POST …/draft/cancel-nomination — `draft_cancel_nomination(draft, reason)` (D143). */
@@ -1494,6 +1499,7 @@ export async function adjustBudget(
       p_team_id: body.team_id,
       p_delta: body.delta,
       p_reason: body.reason,
+      p_action_id: body.action_id,
     },
   }))
 }

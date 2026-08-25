@@ -137,17 +137,24 @@ describe('auction control request wiring (§8.7 auction rows → the L.C2.2 rout
     })
   })
 
-  it('budget: team_id + an integer delta + the REQUIRED reason; a negative delta is sent as-is (the RPC composes cumulatively)', () => {
-    expect(adjustBudgetRequest(LG, D, 't2', -25, 'typo at setup')).toEqual({
+  it('budget: team_id + an integer delta + the REQUIRED action_id (099/AP.6 — E69/D68) + the REQUIRED reason; a negative delta is sent as-is (the RPC composes cumulatively)', () => {
+    expect(adjustBudgetRequest(LG, D, 't2', -25, 'a0a0a0a0-0000-4000-8000-000000000001', 'typo at setup')).toEqual({
       path: `/api/leagues/${LG}/draft/budget`,
-      body: { draft_id: D, team_id: 't2', delta: -25, reason: 'typo at setup' },
+      body: {
+        draft_id: D,
+        team_id: 't2',
+        delta: -25,
+        action_id: 'a0a0a0a0-0000-4000-8000-000000000001',
+        reason: 'typo at setup',
+      },
     })
     // 0 is SENT, not dropped — the RPC's own 22023 refusal is the honest
     // answer and the builder must not mask it (a falsy-check regression).
-    expect(adjustBudgetRequest(LG, D, 't2', 0, 'oops').body).toEqual({
+    expect(adjustBudgetRequest(LG, D, 't2', 0, 'a0a0a0a0-0000-4000-8000-000000000002', 'oops').body).toEqual({
       draft_id: D,
       team_id: 't2',
       delta: 0,
+      action_id: 'a0a0a0a0-0000-4000-8000-000000000002',
       reason: 'oops',
     })
   })

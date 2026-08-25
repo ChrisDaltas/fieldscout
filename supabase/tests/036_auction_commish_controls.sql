@@ -295,13 +295,14 @@ select ok(
   'all four NEW §8.7 auction RPCs are SECURITY DEFINER with the exact spec-form search_path');
 select ok(
   not has_function_privilege('anon', 'public.draft_reverse_won_bid(uuid,uuid,text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_adjust_budget(uuid,uuid,integer,text)', 'EXECUTE')
+  -- 099/AP.6: the signature gained p_action_id (E69) — the pin moves WITH it
+  and not has_function_privilege('anon', 'public.draft_adjust_budget(uuid,uuid,integer,text,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_cancel_nomination(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_end(uuid,text)', 'EXECUTE'),
   'anon is revoked on all four');
 select ok(
   has_function_privilege('authenticated', 'public.draft_reverse_won_bid(uuid,uuid,text)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.draft_adjust_budget(uuid,uuid,integer,text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.draft_adjust_budget(uuid,uuid,integer,text,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.draft_cancel_nomination(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.draft_end(uuid,text)', 'EXECUTE'),
   '…and authenticated keeps EXECUTE (in-body auth is the gate, §4.1)');

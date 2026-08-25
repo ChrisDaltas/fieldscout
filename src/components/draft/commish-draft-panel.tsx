@@ -1876,18 +1876,13 @@ function BudgetSection({
       <Button
         variant="stroke"
         size="sm"
-        // DOUBLE-SUBMIT GUARD (load-bearing, not manners): 087's delta is
-        // CUMULATIVE and the verb takes no action_id, so two clicks move
-        // twice the money and the engine has nothing to dedupe them with.
-        //
-        // R438 — WHAT THIS GUARD DOES NOT COVER, stated rather than implied:
-        // it is MOUNT-SCOPED. `SheetContent` has no `forceMount`, so closing
-        // the panel mid-flight destroys this observer and a reopened panel
-        // submits again. The reach is narrow (the reopened form is empty —
-        // team, delta and reason must all be re-entered), but the residual
-        // is wider than any client can close: `draft_adjust_budget` takes no
-        // `action_id`, so a retry after a lost response double-charges no
-        // matter what the UI does. That engine gap is ledger row **F82**.
+        // DOUBLE-SUBMIT GUARD — a UX courtesy now, not the safety mechanism:
+        // since 099/AP.6 (E69, F82 discharged) `useAdjustBudget` mints ONE
+        // `action_id` per submit and `draft_adjust_budget` replays the
+        // ORIGINAL result on a repeat, so the double-charge R438 named is
+        // closed in the engine where it bites (the guard's mount-scoping —
+        // no `forceMount` on `SheetContent` — no longer matters for money;
+        // it just spares the commissioner a duplicate no-op round-trip).
         disabled={
           !teamId ||
           parsedDelta === null ||
@@ -1898,7 +1893,8 @@ function BudgetSection({
         onClick={() =>
           parsedDelta !== null &&
           adjustBudget
-            .mutateAsync({ teamId, delta: parsedDelta, reason: reason.trim() })
+            // adjustBudgetAsync mints the per-submit action_id (D68 pattern).
+            .adjustBudgetAsync(teamId, parsedDelta, reason.trim())
             .then(() => {
               setDelta('')
               setReason('')
