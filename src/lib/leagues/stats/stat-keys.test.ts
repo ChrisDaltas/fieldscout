@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
+import {
+  DEF_PA_PREFIX,
+  DEF_YA_PREFIX,
+  ESPN_PA_CUTS,
+  SHARED_PA_CUTS,
+  YA_CUTS,
+  tierKeysFromCuts,
+} from '@/lib/leagues/scoring/tier-cuts'
+
 import { STAT_KEYS } from './stat-keys'
 
 // Every core_box key Appendix B.1 names (the "fumble_recovery_td /
@@ -314,6 +323,166 @@ describe('STAT_KEYS registry', () => {
   it('labels every key', () => {
     for (const def of STAT_KEYS) {
       expect(def.label.trim().length, def.key).toBeGreaterThan(0)
+    }
+  })
+})
+
+// ── SE.1 · scoring_surface (§23.5 v2.11 / §7.3.3.1) ────────────────────────
+
+// §7.3.3.1's "Section catalog (pinned — the ops layer renders this, never
+// invents)", transcribed from the spec sentence. SE.7 builds the editor's
+// real catalog (with D173's `gated` flag); this literal exists so the
+// REGISTRY's scorable set can be proved equal to the editor's surface
+// before any editor code exists.
+//
+// `return_yards` is deliberately absent: Q13/D173 ship the Special Teams
+// section with `return_td` only, and the registry entry itself does not
+// exist until the data task lands (the standing-E61 Q9 lesson — a rules key
+// whose stat is never delivered is a permanent pending badge).
+const SECTION_CATALOG_KEYS = [
+  // Passing
+  'pass_yards',
+  'pass_tds',
+  'pass_2pt',
+  'qb_sack_taken',
+  // Rushing
+  'rush_yards',
+  'rush_tds',
+  'rush_2pt',
+  // Receiving
+  'receptions',
+  'receiving_yards',
+  'receiving_tds',
+  'rec_2pt',
+  // Special Teams
+  'return_td',
+  // Turnovers
+  'interceptions',
+  'fumbles_lost',
+  'fumble_recovery_td',
+  // Kicking (the K page)
+  'fg_0_39',
+  'fg_40_49',
+  'fg_50_plus',
+  'pat_made',
+  'fg_missed',
+  'pat_missed',
+  // D/ST events (the D/ST page, above its tier tables)
+  'def_sack',
+  'def_int',
+  'def_fumble_rec',
+  'def_td',
+  'def_safety',
+  'def_block',
+  'def_return_td',
+]
+
+// §23.5's own enumeration of the context surface, transcribed verbatim from
+// the v2.11 registry bullet: "raw sources def_points_allowed/
+// def_yards_allowed + aggregates fg_made/fg_attempted/pat_attempted/
+// pass_attempts/pass_completions/rush_attempts/targets".
+const CONTEXT_KEYS = [
+  'def_points_allowed',
+  'def_yards_allowed',
+  'fg_made',
+  'fg_attempted',
+  'pat_attempted',
+  'pass_attempts',
+  'pass_completions',
+  'rush_attempts',
+  'targets',
+]
+
+// §23.5's reserved surface: "deferred bonuses, placeholders, IDP" — the two
+// Appendix B.4 bonuses and the two D15 placeholders today; no IDP key
+// exists yet.
+const RESERVED_KEYS = [
+  'pass_300_bonus',
+  'rush_100_bonus',
+  'example_tracking_yards',
+  'example_charted_yards',
+]
+
+const surfaceKeys = (surface: string) =>
+  STAT_KEYS.filter((def) => def.scoring_surface === surface)
+    .map((def) => def.key)
+    .sort()
+
+describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable scope)', () => {
+  it('classifies the WHOLE registry — the three surfaces partition it, 48/9/4 = 61', () => {
+    const scorable = surfaceKeys('scorable')
+    const context = surfaceKeys('context')
+    const reserved = surfaceKeys('reserved')
+
+    expect(scorable.length).toBe(48)
+    expect(context.length).toBe(9)
+    expect(reserved.length).toBe(4)
+    // Partition, not just counts: every key classified exactly once, and no
+    // entry left with an unrecognised (or absent) surface. A required field
+    // with no default means the type-checker catches an omission at authoring
+    // time; this catches a typo'd literal at test time.
+    expect([...scorable, ...context, ...reserved].sort()).toEqual(
+      STAT_KEYS.map((def) => def.key).sort(),
+    )
+    expect(STAT_KEYS.length).toBe(61)
+  })
+
+  it('THE SCORABLE SET ≡ the §7.3.3.1 section catalog ∪ the CUT-GENERATED tier keys (set equality, not a count)', () => {
+    // The editor exposes exactly `scoring_surface: 'scorable'` (§7.3.3.1's
+    // editable-scope bullet), and it renders the section catalog plus the
+    // D/ST tier tables. If those two sets ever diverge, either the editor
+    // silently drops a payable key or it offers one the registry does not
+    // carry — both silent-wrong-total shapes. Note the tier half is the
+    // GENERATED names (§23.5(b) cut lists), not a second literal list: this
+    // is the registry proved against the generator, in one assertion.
+    const generatedTierKeys = [
+      ...tierKeysFromCuts(DEF_PA_PREFIX, SHARED_PA_CUTS),
+      ...tierKeysFromCuts(DEF_PA_PREFIX, ESPN_PA_CUTS),
+      ...tierKeysFromCuts(DEF_YA_PREFIX, YA_CUTS),
+    ]
+    // 7 shared PA + 8 ESPN PA (4 key names genuinely shared) + 9 YA = 20.
+    const tierUnion = [...new Set(generatedTierKeys)]
+    expect(tierUnion.length).toBe(20)
+    // …and the catalog half is 28 (4 Passing + 3 Rushing + 4 Receiving +
+    // 1 Special Teams + 3 Turnovers + 6 Kicking + 7 D/ST events), so the
+    // 28 + 20 = 48 arithmetic is measured here, not asserted in prose.
+    expect(SECTION_CATALOG_KEYS.length).toBe(28)
+
+    const expected = [...new Set([...SECTION_CATALOG_KEYS, ...tierUnion])].sort()
+    expect(expected.length).toBe(48)
+    expect(surfaceKeys('scorable')).toEqual(expected)
+  })
+
+  it('pins the context surface as §23.5 enumerates it — raw sources + aggregates, never scorable', () => {
+    expect(surfaceKeys('context')).toEqual([...CONTEXT_KEYS].sort())
+    // The raw sources are the reason the surface exists: a doc that could
+    // pay def_points_allowed AND its derived buckets would double-pay the
+    // same week (F21). SE.3/SE.4's guardrail (1) rejects them; here we pin
+    // that the registry hands that validator the right allowlist.
+    for (const key of ['def_points_allowed', 'def_yards_allowed']) {
+      expect(surfaceKeys('scorable')).not.toContain(key)
+    }
+  })
+
+  it('pins the reserved surface — deferred bonuses + D15 placeholders (no IDP key exists yet)', () => {
+    expect(surfaceKeys('reserved')).toEqual([...RESERVED_KEYS].sort())
+  })
+
+  it('keeps surface consistent with tier/storage: scorable ⊆ core_box, every derived key scorable, every placeholder and deferred key reserved', () => {
+    for (const def of STAT_KEYS) {
+      if (def.scoring_surface === 'scorable') {
+        // The cohort editor never exposes a tracking/charted key — those are
+        // placeholders today (Q2) and unfunded product stats tomorrow.
+        expect(def.tier, def.key).toBe('core_box')
+      }
+      if (def.storage === 'derived') {
+        // The def_pa_*/def_ya_* one-hots ARE the D/ST tier tables the editor
+        // pays (D44).
+        expect(def.scoring_surface, def.key).toBe('scorable')
+      }
+      if (def.placeholder || def.storage === 'deferred') {
+        expect(def.scoring_surface, def.key).toBe('reserved')
+      }
     }
   })
 })
