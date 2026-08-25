@@ -33,7 +33,15 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  *                             goldens as stored literals)
  *   auction-solvency-property     — pure layer (fast-check, seed printed)
  *   auction-solvency-property-db  — DB layer: four worlds + WORLD E over
- *                                   the real RPCs (exit criterion 2)
+ *                                   the real RPCs (exit criterion 2).
+ *                                   NOT in this config's include: it
+ *                                   drafts the REAL restored pool (its
+ *                                   own loud premise, `pool.length > 64`,
+ *                                   red-lit this config's first composed
+ *                                   run on the empty post-reset pool), so
+ *                                   it is D144(5)-restored-side like the
+ *                                   sim and E2E — gate-m3.sh runs it as
+ *                                   its own stage AFTER the restore.
  *
  * ── Sim unit suites (L.B6.1/L.C4.1) — 3 ────────────────────────────────
  *   sim/plan · sim/personas · sim/invariants (incl. the auction pins and
@@ -77,7 +85,7 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  *                             auction-completion wedge fix) + R565's
  *                             replay-is-same-reference pin
  *
- * TOTAL: 37 files. The other slices of `test:gate:m3` (scripts/gate-m3.sh)
+ * TOTAL: 36 files here + the property-DB suite at its own post-restore stage = 37 enumerated. The other slices of `test:gate:m3` (scripts/gate-m3.sh)
  * prove the rest: fresh `db reset` → full pgTAP (032–050 are the
  * M3/AP/MP/MS files) → THIS config → the draft-scope restore → the
  * L.C4.1 25-league auction sim run → the F56 bounded settle → `test:e2e`
@@ -104,10 +112,10 @@ export default defineConfig({
       'src/lib/leagues/api/auction-api-db.test.ts',
       'src/lib/leagues/api/auction-realtime-db.test.ts',
       'src/lib/leagues/api/mock-auction-db.test.ts',
-      // Derivation parity + the property test (3)
+      // Derivation parity + the property test's pure layer (2; the DB layer
+      // runs post-restore in gate-m3.sh — see the header)
       'src/components/draft/auction-budget.test.ts',
       'src/components/draft/auction-solvency-property.test.ts',
-      'src/lib/leagues/api/auction-solvency-property-db.test.ts',
       // Sim unit suites (3)
       'src/lib/leagues/sim/plan.test.ts',
       'src/lib/leagues/sim/personas.test.ts',

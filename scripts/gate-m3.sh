@@ -20,12 +20,12 @@
 #         restore, and a session that re-runs `test:db` AFTER a restore
 #         (or after a vitest run leaves `vitest-%` players — F94/F127)
 #         should expect reds that are ordering artifacts, not regressions.
-#   [3/9] vitest -c vitest.gate-m3.config.ts — 37 files, enumerated by name
+#   [3/9] vitest -c vitest.gate-m3.config.ts — 36 files, enumerated by name
 #         in that config (F84): the 8 M3 engine stack suites, the
-#         derivation-parity fixture + BOTH property-test layers (exit
-#         criterion 2), the 3 sim unit suites, AP's 4, MP's 13, the 2
-#         MP-extended room suites, MS's 3, and L.C5.1's client-fix pin
-#         home. Serialized (the F52 discipline).
+#         derivation-parity fixture + the property test's PURE layer, the
+#         3 sim unit suites, AP's 4, MP's 13, the 2 MP-extended room
+#         suites, MS's 3, and L.C5.1's client-fix pin home. Serialized
+#         (the F52 discipline).
 #   [3.5] Draft-scope data restore (RESTORE_SCOPE=draft, local-pinned) —
 #         the other half of D144(5): the sim and the E2E suite draft the
 #         REAL local pool (D123(11)/R286: no fixture ADP band is safe by
@@ -33,6 +33,14 @@
 #         two suites cannot both be green in the same DB state, so the
 #         canonical order is reset → test:db → restore → everything
 #         pool-dependent — exactly as gate-m2.sh stages it.
+#   [3.6] THE property test, DB layer (auction-solvency-property-db) — the
+#         37th enumerated suite, run on the RESTORED pool. Its own loud
+#         premise (`pool.length > 64` real non-K/DEF players — F94's
+#         never-let-nothing-mean-worked shape) red-lit the gate's FIRST
+#         composed run when it sat pre-restore in [3/9]: the suite drafts
+#         the REAL pool, so it is D144(5)-restored-side exactly like the
+#         sim and E2E stages. Runs under the root config's stack project
+#         (serialized).
 #   [4/9] The L.C4.1 25-league AUCTION sim gate run — the F84-recorded
 #         literal: mixed sizes incl. 16-team, five auction personas incl.
 #         the T-1s sniper and chaos double-taps, ≥1 all-afk league, seed 42
@@ -103,13 +111,17 @@ echo "    (D144(5): this stage NEEDS the empty post-reset pool — before restor
 npm run test:db
 
 echo ""
-echo "==> [3/9] M3 vitest gate — 37 enumerated suites (F84; see the config header)"
+echo "==> [3/9] M3 vitest gate — 36 enumerated suites (F84; see the config header)"
 npx vitest run -c vitest.gate-m3.config.ts
 
 echo ""
-echo "==> [3.5] Draft-scope data restore (local-pinned; the sim/E2E pool)"
-echo "    (D144(5): sim + E2E NEED the restored real pool — after test:db)"
+echo "==> [3.5] Draft-scope data restore (local-pinned; the sim/E2E/property pool)"
+echo "    (D144(5): sim + E2E + the property-DB suite NEED the restored real pool)"
 RESTORE_SCOPE=draft bash scripts/restore-dev.sh
+
+echo ""
+echo "==> [3.6] THE solvency property test, DB layer — on the restored pool (F84 #37)"
+npx vitest run src/lib/leagues/api/auction-solvency-property-db.test.ts
 
 echo ""
 echo "==> [4/9] League Simulator — 25 concurrent bot AUCTION drafts (seed 42)"
