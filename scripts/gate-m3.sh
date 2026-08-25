@@ -102,6 +102,13 @@ echo "  M3 GATE (L.C6.1) — exit-criteria proof over the FULL migration chain"
 echo "======================================================================"
 
 echo ""
+echo "!! THIS RESETS THE LOCAL DB — user-created local data (leagues, lists,"
+echo "!! avatars) will be DESTROYED and cannot be restored; dev login and the"
+echo "!! player pool are restored automatically (seed.sql + restore-dev.sh)."
+echo "!! (L.C6.1 orchestrator ruling: the milestone gates are the sanctioned"
+echo "!! exception to the no-ad-hoc-reset rule, and they announce themselves.)"
+
+echo ""
 echo "==> [1/9] Fresh local stack reset (pristine, fully-migrated chain 001-102)"
 npx supabase db reset
 
