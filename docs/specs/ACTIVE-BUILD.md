@@ -110,7 +110,7 @@ layout over — for the second time, and this time the spec was the thing at fau
 dock paragraph said "one panel open at a time" and DR.5 built exactly that**, which is right for a
 drawer and wrong for surfaces a manager uses together: choosing Roster hid the entire player pool.
 The corrections: the dock is **ONE unit holding three simultaneous regions** (Players · Targets ·
-Roster), **Lists becomes a filter** and **Chat a pop-out**; overflow is **horizontal within each
+Roster), ~~**Lists becomes a filter**~~ *(withdrawn 2026-08-25 — the Lists section stays; D208(1)–(3))* and **Chat a pop-out**; overflow is **horizontal within each
 region** rather than a rearrangement, behind **one named breakpoint token**; the **room goes dark,
 room-only**, as a named carve-out from CLAUDE.md's single-theme rule; the auction's board zone
 becomes **team columns**; list notes render **in the player row**; the **draft schedule becomes
