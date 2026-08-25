@@ -44,6 +44,7 @@ import {
   toMockLaunchInput,
   type MockLaunchDraft,
 } from './mock-launch-ops'
+import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launcher-ops'
 
 /**
  * The practice-draft launch dialog (MP task MP.4; spec v2.16 §8.8; D229).
@@ -199,6 +200,23 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
                         team_count: Number(v) as LeagueSettings['team_count'],
                       }),
                     )
+                  }
+                />
+              </FieldRow>
+
+              {/* MS.8 (D223/E77): the ONE launch question the ruling added —
+                  your draft slot. A standalone practice has no stored order,
+                  so the picker is always live; Random (the default) sends no
+                  key and the server's seeded shuffle runs unchanged. */}
+              <FieldRow label="Draft slot" htmlFor="mock-slot">
+                <ChoiceSelect
+                  id="mock-slot"
+                  ariaLabel="Draft slot"
+                  value={draft.slot === null ? RANDOM_SLOT : String(draft.slot)}
+                  options={mockSlotOptions(draft.settings.team_count)}
+                  width="w-28"
+                  onValueChange={(v) =>
+                    setDraft((p) => ({ ...p, slot: slotFromPickerValue(v) ?? null }))
                   }
                 />
               </FieldRow>

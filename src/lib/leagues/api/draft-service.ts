@@ -1552,6 +1552,12 @@ export async function endDraft(
 export const launchMockInputSchema = z.strictObject({
   human_team_id: z.uuid().optional(),
   cpu_speed: z.enum(['realistic', 'fast']).optional(),
+  /** MS.8 (102/D223/E77): the launch-time draft slot, 1..N; omitted =
+   *  Random (the server's seeded shuffle, unchanged). Shape-checked here
+   *  against the v1 ceiling (16 seats, §7.2); the RPC is the authority on
+   *  the board's actual N and on drawn-order fidelity (§8.8), and its
+   *  refusals surface verbatim. */
+  slot: z.number().int().min(1).max(16).optional(),
   /** Hook-minted per submit when the launcher UI sends one (D68(1)); the
    *  route mints otherwise — the RPC ALWAYS receives a key (D110(11)). */
   action_id: z.uuid().optional(),
@@ -1578,6 +1584,7 @@ export async function launchMockDraft(
       ? { p_human_team_id: parsed.data.human_team_id }
       : {}),
     ...(parsed.data.cpu_speed !== undefined ? { p_cpu_speed: parsed.data.cpu_speed } : {}),
+    ...(parsed.data.slot !== undefined ? { p_slot: parsed.data.slot } : {}),
     p_action_id: parsed.data.action_id ?? deps.mintActionId(),
   })
   if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
@@ -1638,6 +1645,10 @@ export type StandaloneMockSettings = z.infer<typeof standaloneMockSettingsSchema
 export const launchStandaloneMockInputSchema = z.strictObject({
   cpu_speed: z.enum(['realistic', 'fast']).optional(),
   settings: standaloneMockSettingsSchema,
+  /** MS.8 (102/D223/E77): the draft slot, 1..N; omitted = Random. Same
+   *  contract as the league launcher's — the RPC range-checks against the
+   *  settings object's own team_count and refuses by name. */
+  slot: z.number().int().min(1).max(16).optional(),
   /** Hook-minted per submit (D68(1)); the route mints otherwise — the RPC
    *  ALWAYS receives a key (D110(11)). */
   action_id: z.uuid().optional(),
@@ -1665,6 +1676,7 @@ export async function launchStandaloneMockDraft(
     p_cpu_speed: parsed.data.cpu_speed ?? 'realistic',
     p_action_id: parsed.data.action_id ?? deps.mintActionId(),
     p_settings: parsed.data.settings as unknown as Json,
+    ...(parsed.data.slot !== undefined ? { p_slot: parsed.data.slot } : {}),
   })
   if (error) return mapDraftRpcError(error, MOCK_SIGNED_OUT_MESSAGE)
   const result = data as unknown as DraftStateBody

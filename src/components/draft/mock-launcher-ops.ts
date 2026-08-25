@@ -111,6 +111,79 @@ export function defaultMockSeatId(options: readonly MockSeatOption[]): string | 
 }
 
 // ---------------------------------------------------------------------------
+// Slot picker (MS.8; §8.8 parity/E77; D223 — "choose your slot at launch")
+// ---------------------------------------------------------------------------
+
+/** The picker's default option value: no slot sent, the server's seeded
+ *  shuffle unchanged (byte-for-byte the pre-MS.8 behaviour — pgTAP 050). */
+export const RANDOM_SLOT = 'random'
+
+export interface MockSlotOption {
+  /** `RANDOM_SLOT` or the slot number as a string (Select values are strings). */
+  value: string
+  label: string
+}
+
+/** "1st", "2nd", "3rd", … "11th", "12th", "13th", … — English ordinals over
+ *  the v1 seat range (≤ 16). */
+export function ordinalSlotLabel(n: number): string {
+  const tens = n % 100
+  if (tens >= 11 && tens <= 13) return `${n}th`
+  const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th'
+  return `${n}${suffix}`
+}
+
+/** Random (default) + 1st..Nth for an N-seat board. Both launch surfaces
+ *  render exactly this list — one implementation, two mounts (D223(4): the
+ *  launch dialog answers one question with one control; the full editor
+ *  lives in the room). */
+export function mockSlotOptions(teamCount: number): MockSlotOption[] {
+  return [
+    { value: RANDOM_SLOT, label: 'Random' },
+    ...Array.from({ length: teamCount }, (_, i) => ({
+      value: String(i + 1),
+      label: ordinalSlotLabel(i + 1),
+    })),
+  ]
+}
+
+/** The wire value for a picker selection: undefined for Random (key omitted
+ *  — the RPC's DEFAULT NULL is the equivalence pin), the number otherwise. */
+export function slotFromPickerValue(value: string): number | undefined {
+  return value === RANDOM_SLOT ? undefined : Number(value)
+}
+
+/**
+ * Why the slot picker is disabled on a LEAGUE launch, or null when the
+ * choice is live. §8.8 fidelity: a mock INHERITS a drawn order ("order
+ * incl. their actual slot"), so when the league's order is already set the
+ * honest UI is the picker disabled with the reason — not a control that
+ * launches into a refusal.
+ *
+ * A PARTIAL pre-flight, deliberately (the `launchDisabledReason` R280
+ * shape): this sees what `LeagueDetail.settings` carries — a manual/custom
+ * mode whose stored order covers the board. A `random` league whose lobby
+ * already randomized onto the REAL draft row is invisible from here (the
+ * draft row's order is not in the detail payload), so that case stays
+ * enabled and the RPC's verbatim drawn-order refusal is the authority
+ * (migration 102's resolver arm; pinned pgTAP 050 §E).
+ */
+export function drawnOrderSlotReason(settings: {
+  team_count: number
+  draft: { draft_order_mode: string; draft_order: string[] | null }
+}): string | null {
+  const { draft_order_mode: mode, draft_order: stored } = settings.draft
+  if (
+    (mode === 'manual' || mode === 'custom') &&
+    stored !== null &&
+    stored.length === settings.team_count
+  ) {
+    return 'This league’s draft order is already set — your practice draft inherits it, your actual slot included.'
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Resume / recap card labels (§16.5.2 mock-workflow row)
 // ---------------------------------------------------------------------------
 

@@ -78,6 +78,9 @@ export function useMyMockDrafts(opts?: { enabled?: boolean }) {
 export interface LaunchMockVariables {
   human_team_id?: string
   cpu_speed?: 'realistic' | 'fast'
+  /** MS.8 (D223/E77): the draft slot, 1..N; omitted = Random (the server's
+   *  seeded shuffle, unchanged). */
+  slot?: number
   /** Stamped by the wrapper below — one UUID per user submit (D68(1)). */
   action_id: string
 }
@@ -119,6 +122,8 @@ export function useLaunchMockDraft(leagueId: string) {
 export interface LaunchStandaloneMockVariables {
   cpu_speed?: 'realistic' | 'fast'
   settings: StandaloneMockSettings
+  /** MS.8 (D223/E77): the draft slot, 1..N; omitted = Random. */
+  slot?: number
   /** Stamped by the wrapper below — one UUID per user submit (D68(1)). */
   action_id: string
 }

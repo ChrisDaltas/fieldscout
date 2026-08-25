@@ -255,3 +255,51 @@ describe('pre-flight validation (the contract’s own messages; the server re-ch
     expect(mockLaunchBlockedReason(draft)).toBeNull()
   })
 })
+
+describe('MS.8 — the slot rides the standalone launch (D223/E77)', () => {
+  it('a fresh draft has NO slot — Random is the default, structurally (no key can reach the wire)', () => {
+    expect(initialMockLaunchDraft().slot).toBeNull()
+  })
+
+  it('Random OMITS the key entirely — the RPC default (NULL = the pre-MS.8 shuffle) is what runs', () => {
+    const draft = { ...initialMockLaunchDraft(), scoringSystemId: TEMPLATE_ID }
+    const input = toMockLaunchInput(draft)
+    expect(input).not.toBeNull()
+    expect(input && 'slot' in input).toBe(false)
+  })
+
+  it('a chosen slot rides the payload as a number', () => {
+    const draft = { ...initialMockLaunchDraft(), scoringSystemId: TEMPLATE_ID, slot: 7 }
+    expect(toMockLaunchInput(draft)?.slot).toBe(7)
+  })
+
+  it('a team-count shrink below the chosen slot resets it to Random — never a silent clamp to a slot nobody picked', () => {
+    const at12 = { ...initialMockLaunchDraft(), scoringSystemId: TEMPLATE_ID }
+    const withSlot = { ...patchMockSettings(at12, { team_count: 12 }), slot: 11 }
+    const shrunk = patchMockSettings(withSlot, { team_count: 8 })
+    expect(shrunk.slot).toBeNull()
+  })
+
+  it('…and a slot that still fits the new board survives the change', () => {
+    const withSlot = { ...initialMockLaunchDraft(), scoringSystemId: TEMPLATE_ID, slot: 5 }
+    const shrunk = patchMockSettings(withSlot, { team_count: 8 })
+    expect(shrunk.slot).toBe(5)
+  })
+})
+
+describe('MS.8 — the slot at the wire schema (shape floor; the RPC owns the board bound)', () => {
+  const settings = mockLaunchSettings(defaultsForTeamCount(12), TEMPLATE_ID)
+
+  it('accepts 1 and 16 (the v1 seat ceiling), refuses 0, 17 and fractions — D146 one unit either side of the schema edge', () => {
+    for (const slot of [1, 16]) {
+      expect(launchStandaloneMockInputSchema.safeParse({ settings, slot }).success).toBe(true)
+    }
+    for (const slot of [0, 17, 2.5]) {
+      expect(launchStandaloneMockInputSchema.safeParse({ settings, slot }).success).toBe(false)
+    }
+  })
+
+  it('the key is optional — an omitted slot parses exactly as before MS.8', () => {
+    expect(launchStandaloneMockInputSchema.safeParse({ settings }).success).toBe(true)
+  })
+})

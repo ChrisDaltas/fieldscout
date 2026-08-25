@@ -84,6 +84,9 @@ export interface MockLaunchDraft {
   settings: LeagueSettings
   scoringSystemId: string | null
   cpuSpeed: CpuSpeed
+  /** MS.8 (D223/E77): the draft slot, 1..team_count; null = Random (no key
+   *  on the wire — the server's seeded shuffle, byte-for-byte unchanged). */
+  slot: number | null
 }
 
 /**
@@ -99,6 +102,7 @@ export function initialMockLaunchDraft(): MockLaunchDraft {
     settings: defaultsForTeamCount(MOCK_DEFAULT_TEAM_COUNT),
     scoringSystemId: null,
     cpuSpeed: 'realistic',
+    slot: null,
   }
 }
 
@@ -109,9 +113,16 @@ export function patchMockSettings(
   draft: MockLaunchDraft,
   patch: Partial<LeagueSettings>,
 ): MockLaunchDraft {
+  const settings = reconcileDerived(draft.settings, { ...draft.settings, ...patch })
   return {
     ...draft,
-    settings: reconcileDerived(draft.settings, { ...draft.settings, ...patch }),
+    settings,
+    // MS.8: a chosen slot cannot outlive the board it was chosen on — a
+    // team-count shrink below it resets to Random (null) rather than
+    // silently clamping to a slot nobody picked. The server refuses an
+    // out-of-range slot independently (102's 22023); this keeps the form
+    // from ever building that request.
+    slot: draft.slot !== null && draft.slot > settings.team_count ? null : draft.slot,
   }
 }
 
@@ -140,6 +151,9 @@ export type MockLaunchSettings = StandaloneMockSettings
 export interface MockLaunchInput {
   cpu_speed: CpuSpeed
   settings: MockLaunchSettings
+  /** MS.8: present only when a slot was chosen — Random omits the key, so
+   *  the RPC's DEFAULT NULL (= the pre-MS.8 shuffle) is what runs. */
+  slot?: number
 }
 
 /**
@@ -179,6 +193,7 @@ export function toMockLaunchInput(draft: MockLaunchDraft): MockLaunchInput | nul
   return {
     cpu_speed: draft.cpuSpeed,
     settings: mockLaunchSettings(draft.settings, draft.scoringSystemId),
+    ...(draft.slot !== null ? { slot: draft.slot } : {}),
   }
 }
 

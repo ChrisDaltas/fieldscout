@@ -46,8 +46,8 @@ select plan(21);
 -- A. Function form (§4.1; D201(2)'s DROP+CREATE)
 -- ---------------------------------------------------------------------------
 select has_function('public', 'draft_nomination_order_internal',
-  array['uuid', 'integer', 'text', 'jsonb', 'jsonb', 'uuid', 'text', 'jsonb'],
-  'draft_nomination_order_internal grew the trailing p_config_order (098/AP.5)');
+  array['uuid', 'integer', 'text', 'jsonb', 'jsonb', 'uuid', 'text', 'jsonb', 'uuid', 'integer'],
+  'draft_nomination_order_internal grew the trailing p_config_order (098/AP.5), then the slot pin (102/MS.8) — both DEFAULTed, old call texts still bind');
 select is(
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_nomination_order_internal'),
@@ -60,9 +60,9 @@ select ok(
   'still a plain internal (callers are DEFINER) with search_path='''' after the re-create');
 select ok(
   not has_function_privilege('anon',
-    'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb)', 'EXECUTE')
+    'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb,uuid,integer)', 'EXECUTE')
   and not has_function_privilege('authenticated',
-    'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb)', 'EXECUTE'),
+    'public.draft_nomination_order_internal(uuid,integer,text,jsonb,jsonb,uuid,text,jsonb,uuid,integer)', 'EXECUTE'),
   'the REVOKE was re-emitted for the NEW signature (a dropped function forgets its ACL)');
 
 -- ---------------------------------------------------------------------------
