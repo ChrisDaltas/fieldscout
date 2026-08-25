@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { forkTemplateDoc } from '@/lib/leagues/scoring/rules-doc'
+import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
 import {
   AUCTION_COLUMNS,
   availableColumns,
@@ -148,6 +150,89 @@ describe('scoringFamilyFromRules — the league’s own rules pick the column', 
     expect(scoringFamilyFromRules({ receptions: Number.NaN })).toBeNull()
     expect(scoringFamilyFromRules([1, 2, 3] as never)).toBeNull()
     expect(scoringFamilyFromRules('ppr' as never)).toBeNull()
+  })
+})
+
+describe('scoringFamilyFromRules — it reads THROUGH the format-2 envelope (SE.2(6) / F133)', () => {
+  // Added BESIDE the flat cases above, never in place of them (§4 rule 5).
+  // Those cases are exactly why this defect was invisible: a suite that only
+  // ever passes `{ receptions: n }` stays green while every customized
+  // auction room renders "Scoring not readable — projections hidden".
+  const forkOf = (name: string) => {
+    const t = SCORING_TEMPLATES.find((t) => t.name === name)
+    if (!t) throw new Error(`template not found: ${name}`)
+    return forkTemplateDoc(t.rules)
+  }
+
+  it('A FORKED TEMPLATE CLASSIFIES TO ITS TEMPLATE’S FAMILY — all six, fork vs flat', () => {
+    for (const t of SCORING_TEMPLATES) {
+      const fromTemplate = scoringFamilyFromRules(t.rules)
+      expect(fromTemplate, `${t.name} must classify at all`).not.toBeNull()
+      expect(
+        scoringFamilyFromRules(forkTemplateDoc(t.rules) as never),
+        `${t.name}: the fork must classify exactly like its template`,
+      ).toBe(fromTemplate)
+    }
+  })
+
+  it('the three shipped per-reception values survive the envelope', () => {
+    expect(scoringFamilyFromRules(forkOf('ESPN Full PPR') as never)).toBe('ppr')
+    expect(scoringFamilyFromRules(forkOf('Yahoo Half PPR') as never)).toBe('half_ppr')
+    expect(scoringFamilyFromRules(forkOf('ESPN Standard') as never)).toBe('standard')
+  })
+
+  it('a PER-POSITION override of `receptions` is what the room reflects — the WR value wins', () => {
+    // The classifier picks a whole-table column, so it asks the resolver for
+    // the position `receptions` belongs to. A league that keeps 0 PPR
+    // everywhere but pays WRs a full point is a PPR room.
+    const doc = forkOf('ESPN Standard')
+    doc.positions.WR = { receptions: 1 }
+    expect(scoringFamilyFromRules(doc as never)).toBe('ppr')
+
+    // …and an override on some OTHER position does not move the column.
+    const teOnly = forkOf('ESPN Standard')
+    teOnly.positions.TE = { receptions: 1.5 }
+    expect(scoringFamilyFromRules(teOnly as never)).toBe('standard')
+  })
+
+  it('the boundary instants survive the envelope too (0.24 / 0.25 / 0.74 / 0.75)', () => {
+    const at = (receptions: number) => {
+      const doc = forkOf('ESPN Standard')
+      doc.base.receptions = receptions
+      return scoringFamilyFromRules(doc as never)
+    }
+    expect(at(0.24)).toBe('standard')
+    expect(at(HALF_PPR_FLOOR)).toBe('half_ppr')
+    expect(at(0.74)).toBe('half_ppr')
+    expect(at(PPR_FLOOR)).toBe('ppr')
+  })
+
+  it('IS A STRICT NO-OP FOR FORMAT 1 — every flat case above is unchanged by the resolver', () => {
+    // The identity property, asserted at THIS call site: reading through the
+    // envelope cannot regress a template league, because for a template
+    // league there is no envelope to read through.
+    for (const receptions of [0, 0.1, 0.24, 0.25, 0.5, 0.74, 0.75, 1, 1.5]) {
+      expect(scoringFamilyFromRules({ receptions })).toBe(
+        scoringFamilyFromRules({ receptions } as never),
+      )
+    }
+    expect([0, 0.5, 1].map((r) => scoringFamilyFromRules({ receptions: r }))).toEqual([
+      'standard',
+      'half_ppr',
+      'ppr',
+    ])
+  })
+
+  it('an UNREADABLE document is null, never a guessed family and never a thrown render', () => {
+    // §16.5.4's degraded rule. `resolveRules` fails loudly on an unknown
+    // format; this surface turns that into the "Scoring not readable" state
+    // rather than crashing the room mid-render.
+    expect(scoringFamilyFromRules({ format: 3, base: { receptions: 1 } } as never)).toBeNull()
+    expect(scoringFamilyFromRules({ format: 2 } as never)).toBeNull()
+    expect(scoringFamilyFromRules({ format: 2, base: { receptions: 1 } } as never)).toBeNull()
+    expect(
+      scoringFamilyFromRules({ format: 2, base: {}, positions: {}, tier_cuts: {} } as never),
+    ).toBeNull()
   })
 })
 

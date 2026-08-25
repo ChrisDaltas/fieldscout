@@ -65,6 +65,7 @@
  * shut.
  */
 
+import { resolveRules, type ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
 import type { Json } from '@/types/database'
 
 // ---------------------------------------------------------------------------
@@ -96,10 +97,44 @@ export const PPR_FLOOR = 0.75
  * caller renders "—" and says so, because §16.5.4's degraded rule is
  * "never wrong numbers" and half-PPR-because-it-is-usually-half-PPR is a
  * wrong number wearing a plausible hat.
+ *
+ * ## It reads THROUGH the envelope (SE.2(6); ledger F133; tasks-SE §0(A))
+ *
+ * A §7.3.3.1 custom league document is format 2 — `{ format, base,
+ * positions, tier_cuts }` — and has **no top-level `receptions`**. Reading
+ * the raw document, as this function did before SE.2, returned `null` for
+ * every customized league: `projectedPointsFor` null → `decorateRows` nulls
+ * Proj, Pts/wk **and $/pt** → the room renders "Scoring not readable —
+ * projections hidden". Both arms of `useLeagueScoringFamily` hand the raw
+ * document straight here (the snapshot is the doc verbatim; the fallback is
+ * `scoring_systems.rules`), so neither escapes it.
+ *
+ * `resolveRules` fixes it at the cheapest correct place, and **it is a
+ * strict no-op for format 1** — the resolver's identity property means a
+ * template league resolves to the very same object it passed in, so no
+ * existing league's family can move by this change.
+ *
+ * `'WR'` is the position asked for because `receptions` is a WR-relevant
+ * coefficient and a per-position override of it is exactly the case the
+ * room must reflect. This is a family classifier for a whole-table column,
+ * not per-player scoring: M4's fan-out resolves per player position.
  */
 export function scoringFamilyFromRules(rules: Json | null | undefined): ScoringFamily | null {
   if (rules === null || typeof rules !== 'object' || Array.isArray(rules)) return null
-  const perReception = (rules as Record<string, unknown>).receptions
+
+  // A document this build cannot resolve (an unknown `format`, a malformed
+  // envelope) is exactly what "unreadable rules" means at this surface: the
+  // room prints "Scoring not readable" rather than guessing a family or
+  // throwing inside a render. The loud arm lives in `resolveRules`, where
+  // the engine and M4's fan-out meet it.
+  let effective: Record<string, unknown>
+  try {
+    effective = resolveRules(rules as unknown as ScoringRulesDoc, 'WR')
+  } catch {
+    return null
+  }
+
+  const perReception = effective.receptions
   if (typeof perReception !== 'number' || !Number.isFinite(perReception)) return null
   if (perReception >= PPR_FLOOR) return 'ppr'
   if (perReception >= HALF_PPR_FLOOR) return 'half_ppr'
