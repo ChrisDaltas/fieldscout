@@ -148,6 +148,12 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // asserted below, beside the two leagues gates. Permanent; MP.6c mounts
   // the room in it, MP.8 adds `/app/mocks/[mockId]/report` beside it.
   '/app/mocks/[mockId]',
+  // MP.8 — the MOCK DRAFT REPORT (D230): the flat table of every player, its
+  // price and the team it went to. It is in `(shell)` rather than `(room)`
+  // for Q12's reason, already applied to the league recap — a report is not
+  // a draft surface, so it keeps the app chrome. Gated on
+  // `featureFlags.mockDrafts` by `(shell)/mocks/layout.tsx`. Permanent.
+  '/app/mocks/[mockId]/report',
 ]
 
 describe('route groups are invisible to the URL space', () => {
@@ -170,6 +176,14 @@ describe('route groups are invisible to the URL space', () => {
     const roomPage = 'src/app/app/(room)/leagues/[leagueId]/draft/page.tsx'
     expect(() => read(roomPage)).not.toThrow()
     expect(read(roomPage)).toContain('@/components/draft/draft-room')
+  })
+
+  it('the mock report is in the shell too, for the same reason (MP.8/Q12)', () => {
+    const REPORT = 'src/app/app/(shell)/mocks/[mockId]/report/page.tsx'
+    expect(() => read(REPORT)).not.toThrow()
+    expect(() => read('src/app/app/(room)/mocks/[mockId]/report/page.tsx')).toThrow()
+    // …and it is the report component that is mounted there, not the room's.
+    expect(read(REPORT)).toContain('@/components/draft/mock-report')
   })
 
   it('the recap stayed in the shell (Q12: a recap is not a draft surface)', () => {

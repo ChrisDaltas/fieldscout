@@ -212,9 +212,10 @@ describe("the resolver's own states keep the exits their docblock claims", () =>
     //   1. the league MOUNT's own `exitHref` fill (it has a league id — that
     //      is what makes it the league mount);
     //   2. the post-draft recap pointer, inside that same mount;
-    //   3. the completion beat's *View the recap*, rendered only when
-    //      `scope.leagueId !== null` (the standalone arm gets the practice
-    //      home instead — MP.8 owns its report).
+    //   3. the completion beat's *View the recap*, which MP.8 narrowed to
+    //      REAL drafts only — a finished MOCK (league-attached or not) now
+    //      goes to `/app/mocks/[mockId]/report` (D230), and a real draft
+    //      always has a league, so this href is never built without one.
     expect([...leagueUrls].sort()).toEqual([
       '`/app/leagues/${leagueId}/draft/recap`',
       '`/app/leagues/${leagueId}`',
@@ -342,6 +343,16 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     expect(body).toContain('`/app/mocks/${row.id}/report`')
   })
 
+  it('EVERY mock row\u2019s report link is the /app/mocks one (MP.8 / D230(4))', () => {
+    // The report is one surface for both kinds of mock, so `reportHref` has
+    // no league arm any more — the legacy `?draft=<mock_id>` recap URL is a
+    // REDIRECT, not a link anyone still builds. A regrown branch here would
+    // put half the mocks back on the league recap and quietly un-move them.
+    const body = mockRowBody()
+    expect(body).toMatch(/const reportHref = `\/app\/mocks\/\$\{row\.id\}\/report`/)
+    expect(body).not.toContain('draft/recap')
+  })
+
   it('the practice home SOURCE builds no /app/leagues URL of its own', () => {
     // R519 — renamed to what it actually measures. The old name ("contains no
     // /app/leagues URL at all") was true of the FILE and false of the PAGE: a
@@ -363,14 +374,19 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     const start = home.indexOf('function openBlockedReason')
     expect(start, 'openBlockedReason found').toBeGreaterThan(-1)
     const body = home.slice(start)
-    // MP.6c discharged F119's ROOM half: an unfinished standalone row's
-    // Resume is LIVE (the room mounts at `/app/mocks/[mockId]`), and what is
-    // still blocked is the FINISHED row's *View report* — MP.8's route.
-    // Pinned in the split form so removing the remaining half is a
-    // deliberate edit rather than an inherited one.
-    expect(body).toMatch(/row\.league_id === null/)
-    expect(body).toMatch(/row\.status === 'complete' \? '[^']+' : null/)
-    expect(body).toMatch(/!featureFlags\.leagues\s*\)?\s*return '/)
+    // **F119 IS DISCHARGED — and the pin now says so in the form that keeps
+    // it honest.** MP.6c cleared the ROOM half and MP.8 the REPORT half, so
+    // a STANDALONE row is not blocked at all: it must return null outright,
+    // never a reason. Re-adding one would mean a control that dead-ends,
+    // which is the thing R515 was about.
+    expect(body).toMatch(/if \(row\.league_id === null\) return null/)
+
+    // The one surviving reason is the LEAGUE row's, and MP.8 narrowed it to
+    // the control it is true of: a FINISHED league mock's *View report* goes
+    // to `/app/mocks/…`, which the leagues flag does not gate, so blocking
+    // it would be a lie in the other direction. The status conjunct is the
+    // pin — an unconditional `!featureFlags.leagues` here fails.
+    expect(body).toMatch(/!featureFlags\.leagues && row\.status !== 'complete'/)
 
     // …and the row honours it by disabling rather than by hiding: a hidden
     // control is a second dead end (nothing to press, nothing explained).

@@ -630,13 +630,19 @@ function DraftRoomResolved({
     // when the final pick's broadcast flips `status` to complete, this
     // branch renders IN PLACE — the room's own "view the recap" beat.
     //
-    // MP.6c item 8: a completed STANDALONE mock has no recap route to point
-    // at — `/app/mocks/[mockId]/report` is MP.8's and does not exist yet, so
-    // this states the finish plainly and routes to the practice home rather
-    // than borrowing the league-shaped recap link (which would 404). The
-    // report control on `/app/mocks` is disabled for the same reason, with
-    // its reason printed (R515) — one story in both places.
-    const standalone = scope.leagueId === null
+    // MP.8: a finished MOCK — league-attached or standalone — goes to its
+    // REPORT (`/app/mocks/[mockId]/report`, D230), and only a finished REAL
+    // draft goes to the league recap. MP.6c had to route a standalone finish
+    // at the practice home because the report did not exist yet; it does
+    // now, so the completion beat points at the thing Chris asked for
+    // instead of at a list.
+    const finishHref = draft.is_mock
+      ? `/app/mocks/${draft.id}/report`
+      : `/app/leagues/${scope.leagueId}/draft/recap?draft=${draft.id}`
+    // Both arms always resolve: a mock has its own report route, and a REAL
+    // draft always has a league (only a mock can be standalone), so the
+    // league-shaped href is never built without one. There is no third case
+    // and therefore no "no link" state to render.
     return (
       <div className="flex flex-col gap-4">
         <Card>
@@ -650,14 +656,12 @@ function DraftRoomResolved({
                 : 'Every seat is filled — the final board and rosters are on the recap.'}
             </p>
             <div className="flex items-center gap-2.5">
-              {!standalone && (
-                <Button variant="blue" size="sm" shadow asChild>
-                  <Link href={`/app/leagues/${scope.leagueId}/draft/recap?draft=${draft.id}`}>
-                    View the recap
-                  </Link>
-                </Button>
-              )}
-              <Button variant={standalone ? 'blue' : 'stroke'} size="sm" shadow={standalone} asChild>
+              <Button variant="blue" size="sm" shadow asChild>
+                <Link href={finishHref}>
+                  {draft.is_mock ? 'View the report' : 'View the recap'}
+                </Link>
+              </Button>
+              <Button variant="stroke" size="sm" asChild>
                 <Link href={scope.exitHref}>{scope.exitLabel}</Link>
               </Button>
             </div>
