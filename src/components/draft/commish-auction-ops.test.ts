@@ -152,14 +152,18 @@ const GATE_EXEMPT_ONCLICK: ReadonlyArray<{ needle: string; why: string }> = [
 describe('the D141 pause-first gate mirrors migration 090, for BOTH draft types', () => {
   const head = headBodies()
 
-  it('the gate exists at the head of the chain, in 090', () => {
-    expect(head.get(GATE)?.file).toBe('090_snake_pause_first.sql')
+  it('the gate exists at the head of the chain, in 101 (the MS.3 carve-out)', () => {
+    expect(head.get(GATE)?.file).toBe('101_mock_clock_carveout.sql')
   })
 
-  it('its head predicate is draft-type NEUTRAL (F57 ALIGN, spec §8.7 v2.12.5)', () => {
+  it('its head predicate is draft-type NEUTRAL with the ONE mock carve-out (F57 ALIGN + §8.7 v2.15 / MS.3)', () => {
     const body = head.get(GATE)?.body ?? ''
-    // The refusal fires on status alone; the type only picks the sentence.
-    expect(body).toContain("IF p_draft.status = 'live' THEN")
+    // The refusal fires on status plus the 101 carve-out — is_mock AND the
+    // clock verb, exactly one verb wide (D219(2)); the type only picks the
+    // sentence. A widening to `NOT p_draft.is_mock` alone (all six verbs)
+    // fails the second assertion.
+    expect(body).toContain("IF p_draft.status = 'live'")
+    expect(body).toContain("AND NOT (p_draft.is_mock AND p_verb = 'draft_set_clock')")
     expect(body).not.toContain("IF p_draft.draft_type = 'auction' AND p_draft.status = 'live'")
   })
 
@@ -224,38 +228,50 @@ describe('pauseFirstGate — one predicate, both types (golden)', () => {
   const cases: ReadonlyArray<{
     status: string
     draft_type: string
+    is_mock: boolean
     blocked: boolean
     reason: string | null
   }> = [
     {
       status: 'live',
       draft_type: 'auction',
+      is_mock: false,
       blocked: true,
       reason: 'Pause the draft first — auction commissioner controls run on a paused board.',
     },
     {
       status: 'live',
       draft_type: 'snake',
+      is_mock: false,
       blocked: true,
       reason: 'Pause the draft first — commissioner controls run on a paused board.',
     },
     {
       status: 'live',
       draft_type: 'linear',
+      is_mock: false,
       blocked: true,
       reason: 'Pause the draft first — commissioner controls run on a paused board.',
     },
-    { status: 'paused', draft_type: 'auction', blocked: false, reason: null },
-    { status: 'paused', draft_type: 'snake', blocked: false, reason: null },
+    { status: 'paused', draft_type: 'auction', is_mock: false, blocked: false, reason: null },
+    { status: 'paused', draft_type: 'snake', is_mock: false, blocked: false, reason: null },
+    // 101/MS.3 (spec §8.7 v2.15; E76): a MOCK is never pause-first-blocked
+    // here — the clock is the one pause-first section a mock room renders
+    // (D221(4)), and it is live unpaused.
+    { status: 'live', draft_type: 'snake', is_mock: true, blocked: false, reason: null },
+    { status: 'live', draft_type: 'auction', is_mock: true, blocked: false, reason: null },
+    { status: 'live', draft_type: 'linear', is_mock: true, blocked: false, reason: null },
     // Not this gate's business — `scheduled`/`complete` refusals are the
     // RPCs' own, with their own sentences (D188(3): no second spelling).
-    { status: 'scheduled', draft_type: 'auction', blocked: false, reason: null },
-    { status: 'complete', draft_type: 'snake', blocked: false, reason: null },
+    { status: 'scheduled', draft_type: 'auction', is_mock: false, blocked: false, reason: null },
+    { status: 'complete', draft_type: 'snake', is_mock: false, blocked: false, reason: null },
   ]
 
   for (const row of cases) {
-    it(`${row.draft_type}/${row.status} ⇒ ${row.blocked ? 'blocked' : 'open'}`, () => {
-      expect(pauseFirstGate({ status: row.status, draft_type: row.draft_type })).toEqual({
+    it(`${row.draft_type}/${row.status}${row.is_mock ? ' (mock)' : ''} ⇒ ${row.blocked ? 'blocked' : 'open'}`, () => {
+      expect(
+        pauseFirstGate({ status: row.status, draft_type: row.draft_type, is_mock: row.is_mock }),
+      ).toEqual({
         blocked: row.blocked,
         reason: row.reason,
       })
@@ -266,7 +282,9 @@ describe('pauseFirstGate — one predicate, both types (golden)', () => {
     // The shipped panel offered undo/fix/clock on a live snake and let the
     // server refuse each click (F72). This is the assertion that fails if
     // that posture ever returns.
-    expect(pauseFirstGate({ status: 'live', draft_type: 'snake' }).blocked).toBe(true)
+    expect(pauseFirstGate({ status: 'live', draft_type: 'snake', is_mock: false }).blocked).toBe(
+      true,
+    )
   })
 })
 

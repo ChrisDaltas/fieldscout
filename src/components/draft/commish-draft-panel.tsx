@@ -135,7 +135,9 @@ export function CommishDraftPanel({
   // migration 090's type-neutral `draft_auction_pause_gate_internal`. Every
   // pause-first section takes it and renders disabled-with-copy while the
   // draft RUNS, instead of offering a click the server answers with a
-  // refusal (spec §8.7 v2.12.5; D141).
+  // refusal (spec §8.7 v2.12.5; D141). On a MOCK the gate is open (101 /
+  // MS.3 — §8.7's v2.15 carve-out): the clock section is live unpaused,
+  // and the still-shut groups never render in a mock at all (D221(4)).
   const gate = pauseFirstGate(draft)
   const isAuction = draft.draft_type === 'auction'
   const livePicks = useMemo(

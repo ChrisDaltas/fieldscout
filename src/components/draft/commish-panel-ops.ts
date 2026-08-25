@@ -66,11 +66,24 @@ const OPEN_GATE: ControlGate = { blocked: false, reason: null }
  * `complete` draft is NOT blocked here — those refusals are the RPCs' own,
  * with their own sentences, and re-implementing them in the UI would be the
  * second spelling that drifts (D188(3)).
+ *
+ * MOCKS (migration 101 / MS.3 — spec §8.7's v2.15 carve-out, D219, E76):
+ * on a mock the gate is OPEN. In the SQL the carve-out is one verb wide
+ * (`is_mock AND draft_set_clock`); here it is a blanket `is_mock` arm, and
+ * that is not a drift: the CLOCK is the only pause-first section a mock
+ * room ever renders — the still-shut groups must not render at all in a
+ * mock (D221(4)), and for them pause-first is not even the true reason
+ * (their RPCs refuse a mock at the E75 arms, pause or no pause), so
+ * disabling them with pause-first copy would be the wrong sentence. The
+ * RPC stays the authority (§4.7) — this only stops the panel inviting a
+ * click the server would refuse, or refusing one it would take.
  */
 export function pauseFirstGate(draft: {
   status: string
   draft_type: string
+  is_mock: boolean
 }): ControlGate {
+  if (draft.is_mock) return OPEN_GATE
   if (draft.status !== 'live') return OPEN_GATE
   const clause =
     draft.draft_type === 'auction' ? PAUSE_FIRST_CLAUSE.auction : PAUSE_FIRST_CLAUSE.other

@@ -14,7 +14,7 @@
 --     commissioner included, D103(2) no bypass — get the friendly P0001.
 --     The launcher reaches each verb's own answer: draft_set_order OPENS
 --     (the only control whose route-level isolation was measured, MS.7/
---     D258); the other ten refuse with per-verb E75 reasons (the MS.1
+--     D258); the others refuse with per-verb E75 reasons (the MS.1
 --     audit is parked — tasks-MP §7 — and §8.8 v2.15 says enablement is
 --     "settled by MEASUREMENT, per control, not by reading the code").
 --
@@ -98,8 +98,8 @@ select is(
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosrc like '%(§8.8/E75)%'),
-  11,
-  'eleven bodies carry an E75 reason-naming refusal: the ten shut controls plus draft_set_order''s standalone arm');
+  10,
+  'TEN bodies carry an E75 reason-naming refusal: the nine shut controls plus draft_set_order''s standalone arm (was eleven — 101/MS.3 retired draft_set_clock''s arm when the clock opened; the pin moved WITH the behaviour, §4 rule 11)');
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: one snake world (real scheduled draft + live league-attached
@@ -372,17 +372,17 @@ select is(
   '…landing on the REAL draft as a stored literal (the pre-start arm — "Draft order updated by")');
 
 -- ---------------------------------------------------------------------------
--- D. The ten still-shut controls, as the LAUNCHER: each names ITS OWN
+-- D. The still-shut controls, as the LAUNCHER: each names ITS OWN
 --    reason (E75). On the SNAKE mock deliberately — the mock refusal must
---    precede every draft-type arm.
+--    precede every draft-type arm. (Ten at MS.2; the clock opened with
+--    101/MS.3 and its line below re-pointed to a lives_ok.)
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "90480000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
-select throws_ok(
+select lives_ok(
   $$ select public.draft_set_clock('e0480000-0000-4000-8000-0000000000ab', 60) $$,
-  'P0001', 'draft_set_clock: clock edits are not open in a practice yet (§8.8/E75)',
-  'draft_set_clock: shut for the launcher too, by its own name (MS.3/D219 owns the carve-out)');
+  'draft_set_clock: OPEN since 101/MS.3 (the D219 carve-out this pin used to name as its owner) — the launcher edits the clock unpaused; 049 carries the full contract, this line re-points rather than deletes (§4 rule 11)');
 select throws_ok(
   $$ select public.draft_undo('e0480000-0000-4000-8000-0000000000ab') $$,
   'P0001', 'draft_undo: undo is not open in a practice yet (§8.8/E75)',
