@@ -403,6 +403,8 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 
 ### MS.5 — The tools are present in the mock room (findable, not explained)
 
+> **Carried note from MS.3's review (R556 NIT, 2026-08-25):** `pauseFirstGate`'s mock arm is a BLANKET `is_mock` open — safe only while D221(4) holds (the still-shut groups never render in a mock). MS.5 is the task that makes D221(4) real in the DOM, so its Builder and Reviewer must verify the still-shut groups are absent in a mock room rather than merely disabled — a shut group that renders would inherit an OPEN gate with no pause-first copy.
+
 > Read spec **v2.15 §8.8's surfacing sentence**, §8.7's v2.12 door note, §16.3 (say-a-thing-once), §16.5.4's designed-copy rule; this doc **§1.7, D221**, **§3 ruling 3** and **§4 rules 14 and 15**; `command-bar-ops.ts:97–129`, `draft-command-bar.tsx:150–185`, `draft-options-menu.tsx`, `draft-options-ops.ts:32–86`, `draft-room.tsx:704` + `:1311`, `draft-command-bar.test.ts:151–153`. **Depends MS.2** (and MS.3/MS.4 for which groups exist). **UI + ops only — no migration, no DB surface.**
 >
 > 1. **The seam is already there.** `commandBarModel` separates `draftOptions` (commissioner, real draft) from `practiceOptions` (launcher, mock) as two booleans, and `isMockLauncher` is already an input. The change is **which groups a launcher's menu holds**, computed in the pure ops layer where it is golden-pinnable.

@@ -52,6 +52,13 @@
 -- own arm per-verb AND the E75 fronting arms). E15 holds in both worlds:
 -- the running deadline is untouched by an edit and the NEXT clock takes
 -- the new value — 049 pins the boundary instant on both draft types.
+-- R556: after an unpaused mid-bid-window edit, the NEXT bid's anti-snipe
+-- floor uses the NEW value — draft_place_bid_internal reads config LIVE at
+-- bid time (GREATEST(standing deadline, now() + anti_snipe), 087/D128),
+-- uniform with real drafts after a paused edit, so BY DESIGN; 101 is the
+-- first migration to make it reachable with no pause on a live window, and
+-- 049 §C pins both halves (window untouched at the edit; floored at the
+-- next bid).
 -- STANDALONE mocks are covered by the same gates (095's member floor +
 -- 100's launcher arm are uniform; the clock body is draft-scoped, and the
 -- chat post writes a NULL league_id per 095 banner item 3(b)) — pinned in

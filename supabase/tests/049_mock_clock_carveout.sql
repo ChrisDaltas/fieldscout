@@ -16,7 +16,10 @@
 --     edit, incl. the league:<id> broadcast topic (D218(6)).
 --   * §C AUCTION MOCK, RUNNING: all three §7.3.8 timers land unpaused as
 --     stored literals; the running nomination deadline untouched; the next
---     BID window opens at the NEW bid seconds (E76's own example).
+--     BID window opens at the NEW bid seconds (E76's own example); and R556 —
+--     a MID-BID-WINDOW edit leaves the running window byte-untouched while
+--     the NEXT bid's anti-snipe floor uses the NEW value (the floor reads
+--     config live at bid time, by design — 087/D128).
 --   * §D REAL DRAFTS DO NOT CHANGE (§4 rule 13): a running real snake and
 --     a running real auction still refuse with the byte-identical
 --     §8.7 v2.12.5 / v2.10 sentences — the probe reddens exactly these.
@@ -32,7 +35,7 @@
 --     the launcher-gate P0001 (no bypass, D103(2)); outsider 42501.
 -- ============================================================================
 begin;
-select plan(44);
+select plan(50);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -355,6 +358,55 @@ select is(
      except all select * from ms3_au_real_before) x),
   0,
   'ISOLATION: the REAL live auction draft''s whole row is byte-identical around the mock''s clock edit + nomination');
+
+-- R556 — THE SHARPEST CORNER 101 CREATED, PINNED. The anti-snipe floor
+-- reads config LIVE at bid time (draft_place_bid_internal, 087/D128 shape:
+-- GREATEST(standing deadline, now() + anti_snipe)) — uniform with real
+-- drafts after a paused edit, so BY DESIGN, but 101 is the first migration
+-- to make it reachable with NO pause on a LIVE bid window. Two pins:
+-- (1) a mid-BID-window edit leaves the running window byte-untouched
+-- (E15's rule holds at the edit); (2) the NEXT bid's floor uses the NEW
+-- value (the live read, stated as the contract rather than discovered).
+create temp table ms3_au_bid_window_before as
+  select on_clock_team_id, current_deadline, current_nomination from drafts
+  where id = 'e0490000-0000-4000-8000-0000000000bb';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "90490000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_set_clock('e0490000-0000-4000-8000-0000000000bb',
+       null, false, null, null, null, 40) $$,
+  'R556 scaffold: the launcher raises anti-snipe 2 -> 40 MID-BID-WINDOW, unpaused (the E76 scenario walked one step further)');
+reset role;
+select is(
+  (select to_jsonb(y) from (
+     select on_clock_team_id, current_deadline, current_nomination from drafts
+     where id = 'e0490000-0000-4000-8000-0000000000bb') y),
+  (select to_jsonb(b) from ms3_au_bid_window_before b),
+  'R556 pin 1: the RUNNING bid window is byte-untouched by the mid-window edit — still now()+5s, the nomination unchanged (E15 at the edit; the probe that floors the window at EDIT time reddens exactly this)');
+-- The next bid: t3 raises to $4 through the internal writer (client bids
+-- are launcher-only on a mock; the internal is the CPU/service path and is
+-- what the reviewer probed — REVOKEd from clients, callable here as
+-- postgres, the 048/049 direct-call idiom).
+select lives_ok(
+  $$ select public.draft_place_bid_internal('e0490000-0000-4000-8000-0000000000bb',
+       'd0490000-0000-4000-8000-00bb00000003', 4,
+       'a0490000-0000-4000-8000-000000000003', 'CPU') $$,
+  'R556 scaffold: the next bid lands on the running window');
+select is(
+  (select current_deadline from drafts where id = 'e0490000-0000-4000-8000-0000000000bb'),
+  now() + interval '40 seconds',
+  'R556 pin 2: the bid''s anti-snipe floor is GREATEST(standing now()+5s, now() + THE NEW 40s) = now()+40s — the floor reads config LIVE at bid time, by design (087/D128; the stale-read probe reddens exactly this)');
+select isnt(
+  (select current_deadline from drafts where id = 'e0490000-0000-4000-8000-0000000000bb'),
+  now() + interval '2 seconds',
+  '…and NOT the old 2s floor (D146''s either-side check)');
+select is(
+  (select count(*)::int from (
+     select * from drafts where id = 'e0490000-0000-4000-8000-0000000000ba'
+     except all select * from ms3_au_real_before) x),
+  0,
+  '…and the REAL auction''s whole row is STILL byte-identical after the mid-window edit + floored bid (rule 10 re-closed over the new path)');
 
 -- ---------------------------------------------------------------------------
 -- D. Real drafts do not change (§4 rule 13): the byte-identical refusals
