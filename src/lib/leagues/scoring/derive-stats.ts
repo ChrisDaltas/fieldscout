@@ -44,12 +44,20 @@
  * custom-editor double-pay footgun is ledgered as F21, not this task).
  */
 
-export interface TierBucket {
-  key: string
-  /** Inclusive bounds; -Infinity/Infinity for the open ends. */
-  lo: number
-  hi: number
-}
+import {
+  DEF_PA_FIRST_TIER,
+  DEF_PA_PREFIX,
+  DEF_YA_FIRST_TIER,
+  DEF_YA_PREFIX,
+  type TierBucket,
+  type TierCuts,
+  tierBucketsFromCuts,
+} from './tier-cuts'
+
+/** Re-exported so the type's importers are unaffected by SE.1 moving its
+ *  declaration to `tier-cuts.ts` (the cut-list generator returns it, and a
+ *  module must not import back into its own consumer). */
+export type { TierBucket }
 
 /** Raw source key for the def_pa_* family (registry storage: 'column'). */
 export const DEF_PA_SOURCE_KEY = 'def_points_allowed'
@@ -133,22 +141,46 @@ function familyMaps(buckets: readonly TierBucket[], value: unknown): value is nu
  * def_ya_* key is stripped regardless (indicators are never stored, D44, so
  * an inbound value is by definition bogus) — an indicator can exist in the
  * output only because its raw source was delivered and mapped this call.
+ *
+ * SE.1 — OPTIONAL `cuts` (§7.3.3.1(a); D174). A format-2 document carries
+ * its own `tier_cuts`, so a caller may derive against the document's tiers
+ * instead of the literals above; each family independently falls back to
+ * its literal table when its cut list is absent. **Passing no cuts is
+ * today's behavior exactly** — the generated tables for the three shipped
+ * families are byte-identical to the literals (`tier-cuts.test.ts`'s
+ * regeneration + derive-agreement pins), which is the "no behavior change"
+ * clause of §7.3.3.1(a). PA floors at its first cut and YA stays open below
+ * (D174), so a negative or fractional PA is withheld under BOTH readings.
+ *
+ * The strip sweep covers the literal families AND the active ones, so a
+ * cuts-generated key that today's literals do not name (only reachable once
+ * F59 ships boundary editing) can never survive from the input either.
  */
 export function deriveTierIndicators(
   raw: Record<string, number>,
+  cuts?: TierCuts,
 ): Record<string, number> {
+  const paBuckets = cuts?.def_pa
+    ? tierBucketsFromCuts(DEF_PA_PREFIX, cuts.def_pa, DEF_PA_FIRST_TIER)
+    : DEF_PA_BUCKETS
+  const yaBuckets = cuts?.def_ya
+    ? tierBucketsFromCuts(DEF_YA_PREFIX, cuts.def_ya, DEF_YA_FIRST_TIER)
+    : DEF_YA_BUCKETS
+
   const out: Record<string, number> = { ...raw }
   for (const { key } of DEF_PA_BUCKETS) delete out[key]
   for (const { key } of DEF_YA_BUCKETS) delete out[key]
+  for (const { key } of paBuckets) delete out[key]
+  for (const { key } of yaBuckets) delete out[key]
 
   const pa = raw[DEF_PA_SOURCE_KEY]
-  if (familyMaps(DEF_PA_BUCKETS, pa)) {
-    emitFamily(out, DEF_PA_BUCKETS, pa)
+  if (familyMaps(paBuckets, pa)) {
+    emitFamily(out, paBuckets, pa)
   }
 
   const ya = raw[DEF_YA_SOURCE_KEY]
-  if (familyMaps(DEF_YA_BUCKETS, ya)) {
-    emitFamily(out, DEF_YA_BUCKETS, ya)
+  if (familyMaps(yaBuckets, ya)) {
+    emitFamily(out, yaBuckets, ya)
   }
 
   return out
