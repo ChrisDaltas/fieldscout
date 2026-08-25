@@ -98,12 +98,15 @@ export function MockDraftReport({ mockId }: { mockId: string }) {
   )
 
   if (room.isPending) {
+    // MP.10: through `ReportShell` like the other two non-body states, so
+    // the page is NAMED while it loads. It used to render two grey blocks
+    // and — below `lg`, where the shell header is hidden — nothing else at
+    // all: a phone got an unlabelled skeleton with no way back.
     return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title="Mock draft report" />
+      <ReportShell>
         <Skeleton className="h-9 rounded-sm" />
         <Skeleton className="h-64 rounded-sm" />
-      </div>
+      </ReportShell>
     )
   }
 
@@ -152,10 +155,17 @@ export function MockDraftReport({ mockId }: { mockId: string }) {
   )
 }
 
+/**
+ * The frame every NON-body state renders in — loading, error, and the one
+ * no-leak empty state. MP.10 gave it the mobile title the body arm carries:
+ * below `lg` the shell header is hidden, so without this an errored or
+ * loading report was an unnamed card on a phone.
+ */
 function ReportShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Mock draft report" />
+      <h3 className="text-h5 lg:hidden">Mock draft report</h3>
       {children}
     </div>
   )
@@ -251,8 +261,18 @@ function MockReportBody({
           live in an invisible header is the R340 dead end on a phone.
           Mobile-first: the same controls, in the page, at the widths the
           header is not there. `MocksHome` does exactly this for its Start
-          control (MP.5). */}
-      <div className="flex flex-wrap items-center gap-2.5 lg:hidden">{actions}</div>
+          control (MP.5).
+
+          **MP.10: with the title, for the same reason.** Below `lg` the page
+          opened on *Delete report* / *Back to practice drafts* and then a card
+          headed *Every pick* — nothing named the surface, and *Delete report*
+          is the more destructive of two unlabelled buttons. Same element and
+          tokens as `/app/lists`' mobile row (`lists-page-v2.tsx`) and as
+          `MocksHome`'s. */}
+      <div className="flex flex-wrap items-center gap-2.5 lg:hidden">
+        <h3 className="mr-auto text-h5">Mock draft report</h3>
+        {actions}
+      </div>
 
       {seatsMissing > 0 && (
         // A short seat read is a BROKEN draft, not a small one — say so
@@ -336,11 +356,21 @@ function MockReportBody({
  * `role="region"` with an `aria-label`, so a keyboard user can scroll it.
  * `Table` brings its own `overflow-x-auto` wrapper, so the page body never
  * scrolls sideways. **No resting elevation** — a table is not an overlay.
+ *
+ * **MP.10: the VERTICAL cap is desktop-only, and that is the whole of the
+ * change.** Measured at 375px on a 16-pick report: the region was 560px tall
+ * over 875px of rows, so a phone got a scroll box nested inside the shell's
+ * own scroller — two stacked vertical scrollers, and a finger resting on the
+ * table could not move the page. Without a `max-h` the `overflow-y-auto` is
+ * inert (nothing constrains the height, so nothing overflows): the table
+ * simply grows and the shell scrolls it, which is one axis instead of two.
+ * From `sm` up the cap returns, because a 200-row desktop report inside a
+ * page-length scroll is the case it was added for.
  */
 function ScrollRegion({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div
-      className="max-h-[560px] overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:max-h-[560px]"
       role="region"
       aria-label={label}
       tabIndex={0}
@@ -445,7 +475,16 @@ function SnakeReportTable({
               <TableCell className="fs-num text-right font-bold">{round}</TableCell>
               <TableCell className="fs-num text-right text-n-3">
                 {pick.pick_number}
-                <span className="ml-1 text-[10px] text-n-3">({round}.{String(pickInRound).padStart(2, '0')})</span>
+                {/* MP.10: the `1.04` notation is the same two numbers the
+                    Round column and this one already print, in the shorthand
+                    a drafter reads them in. It is what tipped the table 22px
+                    past 375px — measured `scrollWidth` 332 over `clientWidth`
+                    310 — so below `sm` it stands down and the table fits with
+                    no sideways scroll at all. Nothing leaves the screen with
+                    it: the round is its own column. */}
+                <span className="ml-1 hidden text-[10px] text-n-3 sm:inline">
+                  ({round}.{String(pickInRound).padStart(2, '0')})
+                </span>
               </TableCell>
             </TableRow>
           ))}

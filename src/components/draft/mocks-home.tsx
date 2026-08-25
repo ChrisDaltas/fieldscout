@@ -110,8 +110,19 @@ export function MocksHome() {
 
       {/* The shell header is `hidden lg:block`, so the header action above
           reaches nobody below `lg`. Mobile-first: the same control, rendered
-          in the page, at the widths the header is not there. */}
-      <div className="flex flex-wrap items-center gap-2.5 lg:hidden">{startButton}</div>
+          in the page, at the widths the header is not there.
+
+          **MP.10: the TITLE rides in this row too.** Below `lg` the shell
+          header takes the page name with it, and this page opened on a bare
+          blue button with nothing naming the surface — measured at 375px
+          against `/app/lists`, the launch scope's own reskinned page, which
+          prints `<h3 className="mr-auto text-h5">Lists</h3>` in exactly this
+          row (`lists-page-v2.tsx`). Same element, same tokens: the practice
+          home was the one that had drifted, not the pattern. */}
+      <div className="flex flex-wrap items-center gap-2.5 lg:hidden">
+        <h3 className="mr-auto text-h5">Mock drafts</h3>
+        {startButton}
+      </div>
 
       {capReason && (
         <p className="text-[11px] font-semibold text-negative-strong" role="status">

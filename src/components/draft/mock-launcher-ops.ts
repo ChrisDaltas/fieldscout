@@ -216,3 +216,53 @@ export function leagueMockOpenBlocked(
   if (row.status !== 'complete') return null
   return mockDraftsEnabled ? null : MOCK_REPORT_HIDDEN_NOTE
 }
+
+// ---------------------------------------------------------------------------
+// The row's OWN identity (MP.10 — the launch-facing pass)
+// ---------------------------------------------------------------------------
+
+/**
+ * §7.3.8's three draft types, in the words the launch dialog offers them by
+ * (`mock-launch-dialog.tsx`'s Format step). Stored as a literal map rather
+ * than derived from the string, so an unknown value CANNOT be printed: a raw
+ * enum leaking onto a launch-facing row is the failure this guards.
+ */
+const MOCK_FORMAT_LABEL: Record<string, string> = {
+  snake: 'Snake',
+  auction: 'Auction',
+  linear: 'Linear',
+}
+
+/**
+ * What ONE row is, from the data the row already carries — MP.10 item 2's
+ * overflow/long-content state for a LIST.
+ *
+ * Every `MockRow` printed the constant *"Practice draft"*, so the §22.5 cap's
+ * three in-progress runs and every finished report beside them read as the
+ * same object: nothing on screen separated a 12-team snake from an 8-team
+ * auction. Chris's own use case is comparing runs (*"practice drafting these
+ * players at these rounds or cost"*), and a list you cannot tell apart does
+ * not support it. Measured on the local stack: three rows, three identical
+ * titles, two identical progress lines.
+ *
+ * **No new read and no new column** — `draft_type` is already selected into
+ * `MockDraftSummary` and the seat count is the denominator `mockProgressLabel`
+ * already takes (`mockSeatCount`). This is presentation of data in hand.
+ *
+ * **It degrades rather than guesses** (the `mockProgressLabel` rule one line
+ * up): an unrecognised `draft_type` falls back to the NOUN — *"Practice
+ * draft"*, the constant this replaced — keeping the size half, which is still
+ * true; and a row with no derivable seat count prints the format alone. It
+ * never invents a team count and never prints a raw enum.
+ *
+ * §4 rule 16: this NAMES the object, it does not explain it — no sentence
+ * about what a mock draft is.
+ */
+export function mockIdentityLabel(
+  row: Pick<MockDraftSummary, 'draft_type'>,
+  seatCount: number | null,
+): string {
+  const format = MOCK_FORMAT_LABEL[row.draft_type] ?? 'Practice draft'
+  if (seatCount === null || seatCount <= 0) return format
+  return `${format} · ${seatCount} teams`
+}
