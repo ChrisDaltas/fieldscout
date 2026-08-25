@@ -923,19 +923,48 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
     expect(sweep.auction_cpu_folded).toBeGreaterThan(0)
     expect(sweep.auction_cpu_raised).toBe(0)
 
-    // AND THE HEADLINE, FROM THE ROWS RATHER THAN A COUNTER: bots bid on a
-    // league-less auction AT ALL. Before 096 this number was 0 for every
-    // nomination the launcher ever made — the market closed at the opening
-    // bid before anyone could answer.
+    // AND THE HEADLINE, FROM THE ROWS RATHER THAN A COUNTER: a bot ANSWERED
+    // a market on a league-less auction. Before 096 no bot ever could — every
+    // nomination was declared uncontestable and awarded at its opening bid
+    // before anyone had the chance.
+    //
+    // WHAT "A RAISE" HAS TO MEAN HERE, AND THE FIRST CUT GOT IT WRONG (R527).
+    // It filtered `action_id === null && team_id !== human` and called the
+    // result raises. That also matches the row `draft_system_nominate_internal`
+    // writes for EVERY CPU NOMINATION — the $1 opening bid, on the on-clock
+    // CPU seat, with a NULL action_id by design (093:2090-2094; the column is
+    // NULLable precisely for the system path). So the pin could not fail for
+    // the reason its comment gave: with F121 ACTIVE, a 30-tick drive produces
+    // six such rows and not one of them is an answer to anything.
+    //
+    // A RAISE IS A SECOND BID ON THE SAME NOMINATION. `nomination_seq` groups
+    // the market and the opening bid is its cheapest row, so a raise is any
+    // bid strictly above its own nomination's minimum — the one shape a board
+    // of instant awards can never produce, because an instantly-awarded
+    // nomination has exactly one bid.
     const { data: allBids } = await service
       .from('draft_bids')
-      .select('team_id, amount, action_id')
+      .select('team_id, amount, action_id, nomination_seq')
       .eq('draft_id', auctionMockId)
       .is('voided_at', null)
-    const systemRaises = (allBids ?? []).filter(
-      (b) => b.action_id === null && b.team_id !== auctionHumanTeamId,
+    const opening = new Map<number, number>()
+    for (const b of allBids ?? []) {
+      const seq = b.nomination_seq as number
+      const low = opening.get(seq)
+      if (low === undefined || b.amount < low) opening.set(seq, b.amount)
+    }
+    const botRaisesOverall = (allBids ?? []).filter(
+      (b) =>
+        b.action_id === null &&
+        b.team_id !== auctionHumanTeamId &&
+        b.amount > (opening.get(b.nomination_seq as number) as number),
     )
-    expect(systemRaises.length).toBeGreaterThan(0)
+    expect(botRaisesOverall.length).toBeGreaterThan(0)
+    // …and the market it answered had more than one bid in it, stated
+    // separately so the count above cannot be satisfied by a single row that
+    // some later refactor reclassifies.
+    const contestedMarkets = new Set(botRaisesOverall.map((b) => b.nomination_seq))
+    expect(contestedMarkets.size).toBeGreaterThan(0)
   }, 180_000)
 })
 

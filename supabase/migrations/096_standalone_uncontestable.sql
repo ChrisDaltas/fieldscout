@@ -189,6 +189,26 @@ BEGIN
   --                           second, disagreeing authority.
   --   the money test is the SAME two conjuncts, because §8.6.1/§8.6.7(d) are
   --                           properties of a budget, not of a league.
+  --
+  -- ON THE `COALESCE(v_draft_order, '[]')` BELOW, because 095's sibling arm
+  -- pairs the same COALESCE with a LOUD guard and this one does not (R529).
+  -- An empty set here would scan zero rows, make `NOT EXISTS` TRUE and
+  -- degrade silently back into F121's exact behaviour — so the reason it is
+  -- safe has to be a CHAIN, not a shrug, and it is three links long:
+  --   1. `create_mock_draft` (095:709-1226) writes `draft_order` in the same
+  --      transaction that mints the seats and validates it as a permutation
+  --      of them — a standalone mock with a NULL order is not a row any
+  --      shipped path can produce.
+  --   2. `draft_auction_solvent` (095 §17) sweeps that SAME array and RAISES
+  --      on an empty set ("no active franchises to check — refusing to
+  --      report solvency over an empty set") at LAUNCH, before a nomination
+  --      can exist. A league-less auction with no order refuses itself.
+  --   3. Reaching this line at all means a nomination is in flight, which
+  --      means the launch already passed (2).
+  -- So the guard 095 needed one level down is already discharged one level
+  -- down; a second copy here would be a second authority for the same fact.
+  -- The COALESCE stays only so a NULL cannot make the whole predicate NULL
+  -- (093's own "not the place to be clever about NULLs" rule).
   IF v_league_id IS NULL THEN
     RETURN NOT EXISTS (
       SELECT 1
