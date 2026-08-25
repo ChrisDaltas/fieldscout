@@ -132,7 +132,16 @@ export function HomeQuickActions() {
       <ActionChip
         icon="rocket"
         label="Mock"
-        tileClassName="bg-accent-soft text-ink"
+        // A SATURATED resting fill, like all three of its row-mates (R538).
+        // `bg-accent-soft` was the first cut and is withdrawn: globals.css
+        // annotates it "hover surfaces" (`:37`), and a tile that reads
+        // lighter than every neighbour looks like an unfinished state rather
+        // than a fourth identity. `brand-strong` is the shipped `lime`
+        // button variant's own resting fill (button.tsx:37), with that
+        // variant's ink pairing — the three saturated tiles beside it are
+        // taken (brand / accent / ink), and lime is "look here", which is
+        // what a practice draft you are about to start is.
+        tileClassName="bg-brand-strong text-ink"
         onClick={() => setMockLaunchOpen(true)}
       />
       <MockLaunchDialog
