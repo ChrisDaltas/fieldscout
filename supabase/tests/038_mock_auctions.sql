@@ -1359,12 +1359,14 @@ select is(
   '…the only liveness row is the launcher''s — CPUs heartbeat nothing');
 
 -- ---------------------------------------------------------------------------
--- G. D138 AFTER CPU BIDS — every commissioner verb refuses the LIVE mock
---    auction (LA: bidding phase, CPU raises in history, a CPU award on the
---    board), bracketed by the whole-row composite (R383). The commissioner
---    u01 is refused though they ARE the commissioner — a mock has no
---    commissioner, only a launcher (D110(1)). Pause/resume by a
---    non-launcher refuse too.
+-- G. D138 AFTER CPU BIDS, re-pointed by MS.2/100 (§8.8 v2.15) — every
+--    commissioner verb refuses the LIVE mock auction (LA: bidding phase,
+--    CPU raises in history, a CPU award on the board), bracketed by the
+--    whole-row composite (R383). The actor u01 IS the commissioner but is
+--    NOT the launcher (u02 launched LA), so every verb answers the friendly
+--    launcher-only refusal — D103(2), no role bypass. The launcher's own
+--    arm (order opens, the rest carry per-verb E75 refusals) is pgTAP
+--    048's. Pause/resume by a non-launcher refuse too.
 -- ---------------------------------------------------------------------------
 create temp table ma_g_before as
 select
@@ -1393,64 +1395,64 @@ select throws_ok(
   format($$ select public.draft_reverse_won_bid('%s', (select id from draft_picks where draft_id = '%s' limit 1)) $$,
          (select id from ma_la), (select id from ma_la)),
   'P0001',
-  'draft_reverse_won_bid: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reverse_won_bid: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reverse_won_bid refuses the mock (the CPU''s won bid is not reversible by anyone)');
 select throws_ok(
   format($$ select public.draft_adjust_budget('%s', 'c9000000-0000-4000-8000-00a100000001', 10) $$,
          (select id from ma_la)),
   'P0001',
-  'draft_adjust_budget: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_adjust_budget: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_adjust_budget refuses the mock');
 select throws_ok(
   format($$ select public.draft_cancel_nomination('%s') $$, (select id from ma_la)),
   'P0001',
-  'draft_cancel_nomination: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_cancel_nomination: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_cancel_nomination refuses the mock (the live CPU nomination cannot be voided by a commissioner)');
 select throws_ok(
   format($$ select public.draft_end('%s') $$, (select id from ma_la)),
   'P0001',
-  'draft_end: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_end: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_end refuses the mock');
 select throws_ok(
   format($$ select public.draft_set_clock('%s', 60) $$, (select id from ma_la)),
   'P0001',
-  'draft_set_clock: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_set_clock: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_set_clock refuses the mock');
 select throws_ok(
   format($$ select public.draft_undo('%s') $$, (select id from ma_la)),
   'P0001',
-  'draft_undo: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_undo: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_undo refuses the mock');
 select throws_ok(
   format($$ select public.draft_reassign_pick('%s', (select id from draft_picks where draft_id = '%s' limit 1),
        p_team_id => 'c9000000-0000-4000-8000-00a100000002') $$,
          (select id from ma_la), (select id from ma_la)),
   'P0001',
-  'draft_reassign_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reassign_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reassign_pick refuses the mock');
 select throws_ok(
   format($$ select public.draft_move_player('%s', 'ma-rb05',
        (select team_id from draft_picks where draft_id = '%s' limit 1), 'c9000000-0000-4000-8000-00a100000002') $$,
          (select id from ma_la), (select id from ma_la)),
   'P0001',
-  'draft_move_player: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_move_player: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_move_player refuses the mock');
 select throws_ok(
   format($$ select public.draft_force_pick('%s', 'ma-rb07') $$, (select id from ma_la)),
   'P0001',
-  'draft_force_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_force_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_force_pick refuses the mock (no force-nominate into a practice)');
 select throws_ok(
   format($$ select public.draft_set_order('%s',
        (select array_agg(t.id order by t.name) from teams t where t.league_id = 'b9000000-0000-4000-8000-0000000000a1')) $$,
          (select id from ma_la)),
   'P0001',
-  'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_set_order: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_set_order refuses the mock');
 select throws_ok(
   format($$ select public.draft_reset('%s') $$, (select id from ma_la)),
   'P0001',
-  'draft_reset: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
+  'draft_reset: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
   'D138: draft_reset refuses the mock — the verb whose bypass would be an outright §8.8 breach');
 select throws_ok(
   format($$ select public.draft_pause('%s') $$, (select id from ma_la)),

@@ -363,8 +363,14 @@ async function nominate(
 /** Stub entropy for patchDraftOrder calls that never randomize. */
 const noEntropy = { randomValues: () => [] as number[] }
 
+/**
+ * MS.2 (migration 100): on a mock the §8.7 verbs are the LAUNCHER's, and a
+ * non-launcher — the commissioner included, D103(2) no bypass — answers the
+ * friendly launcher-only refusal. The retired class sentence ("mock drafts
+ * have no commissioner controls") appears in no deployed body (§4 rule 11).
+ */
 const MOCK_REFUSAL = (verb: string) =>
-  `${verb}: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)`
+  `${verb}: only the member practicing this mock can use its commissioner controls (§8.8/D103)`
 const PAUSE_FIRST = (verb: string) =>
   `${verb}: pause the draft first — auction commissioner controls run on a paused board (§8.7 v2.10)`
 
@@ -600,6 +606,47 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     // The mock is untouched — still the launcher's live practice.
     const { data: mock } = await service.from('drafts').select('status, is_mock').eq('id', mockId).single()
     expect(mock).toMatchObject({ status: 'live', is_mock: true })
+  })
+
+  it('F126 pin (e) — the LAUNCHER edits their auction mock\'s NOMINATION order through the same PATCH (MS.2; §8.3\'s other arm) and the real auction is untouched', async () => {
+    const { data: realBefore } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realBefore).not.toBeNull() // R554 — no vacuous composite
+
+    // mgr2 launched this mock and is NOT a commissioner — pre-100 this
+    // exact call answered the 42501→403 identity gate (the gate-order bug,
+    // tasks-MS §1.1); MS.2's reorder + launcher arm makes it the 200.
+    const newOrder = [mgr2TeamId, commishTeamId, ...placeholderIds]
+    const edited = await patchDraftOrder(
+      mgr2Client,
+      leagueId,
+      { draft_id: mockId, order: newOrder, reason: 'launcher nomination-order edit (F126 pin e)' },
+      noEntropy,
+    )
+    expect(edited.status).toBe(200)
+    const editedDraft = (edited.body as unknown as { draft: DraftRow }).draft
+    expect(editedDraft.id).toBe(mockId)
+    // The AUCTION arm writes nomination_order (draft_order untouched) and
+    // deliberately recomputes nothing — the seat mid-nomination keeps its
+    // turn (087's arm; pgTAP 048 §E pins the SQL side).
+    expect(editedDraft.nomination_order).toEqual(newOrder)
+
+    // The REAL auction draft's whole row is byte-identical (the R468
+    // severity pin, held on the auction arm too)…
+    const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realAfter).toEqual(realBefore)
+    // …and the system line landed in the MOCK's chat context only.
+    const { data: mockChat } = await service
+      .from('league_chat')
+      .select('id')
+      .eq('context', `draft:${mockId}`)
+      .like('message', 'Nomination order changed by %')
+    expect(mockChat).toHaveLength(1)
+    const { data: realChat } = await service
+      .from('league_chat')
+      .select('id')
+      .eq('context', `draft:${draftId}`)
+      .like('message', 'Nomination order changed by %')
+    expect(realChat).toEqual([])
   })
 
   it('D141 over the wire: reverse-bid and cancel-nomination refuse LIVE with the ruling’s exact copy (byte-compared); budget is NOT gated', async () => {

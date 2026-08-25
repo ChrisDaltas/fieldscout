@@ -28,7 +28,11 @@
  *     (launcher-only) → gone from GET;
  *   - CAP refusals surfaced as friendly 4xx (§22.5: the 4th active mock
  *     answers a 400 naming the 3-active cap);
- *   - every OTHER §8.7 control refusing mocks outright (D110(1)).
+ *   - the MS.2 mock gate over the wire (§8.8 v2.15/E75): non-launchers —
+ *     commissioner included — get the friendly launcher-only refusal; the
+ *     launcher's order edit is a 200 landing on the MOCK (§C, the F126
+ *     pins); the still-shut controls refuse the launcher by their own
+ *     per-verb reasons.
  *
  * LIVE-CRON SAFETY (the 022/068 concurrent-actor rule): 300s pick clock
  * (no timeout can land mid-test), `cpu_speed: 'realistic'` on every mock
@@ -425,17 +429,38 @@ describe('mock routes — launch / replay / list / launcher lifecycle (§8.8; D1
     expect((resumed.body as unknown as DraftBody).draft.status).toBe('live')
   })
 
-  it('every OTHER §8.7 control refuses mocks outright (D110(1))', async () => {
+  it('the still-shut §8.7 controls refuse a mock BY NAME (MS.2/E75): the non-launcher commissioner hits the launcher gate, the LAUNCHER hits each verb\'s own reason', async () => {
+    // The commissioner did not launch mock1 (mgr2 did) — the MS.2 gate
+    // answers the friendly launcher-only refusal, role conferring nothing
+    // (D103(2), no bypass).
     const undo = await undoDraft(commishClient, leagueId, { draft_id: mock1Id })
     expect(undo.status).toBe(400)
-    expect(JSON.stringify(undo.body)).toContain('mock drafts have no commissioner controls')
+    expect(JSON.stringify(undo.body)).toContain('only the member practicing this mock')
 
     const clock = await setClock(commishClient, leagueId, {
       draft_id: mock1Id,
       pick_timer_seconds: 60,
     })
     expect(clock.status).toBe(400)
-    expect(JSON.stringify(clock.body)).toContain('mock drafts have no commissioner controls')
+    expect(JSON.stringify(clock.body)).toContain('only the member practicing this mock')
+
+    // The LAUNCHER passes the gate and reaches the per-verb E75 refusal —
+    // these controls are not yet cleared through §8.8's per-control
+    // isolation measurement (the parked MS.1 audit; tasks-MP §7), and each
+    // says so under its own name (the retired class sentence is gone).
+    const launcherUndo = await undoDraft(mgr2Client, leagueId, { draft_id: mock1Id })
+    expect(launcherUndo.status).toBe(400)
+    expect(JSON.stringify(launcherUndo.body)).toContain(
+      'draft_undo: undo is not open in a practice yet (§8.8/E75)',
+    )
+    const launcherClock = await setClock(mgr2Client, leagueId, {
+      draft_id: mock1Id,
+      pick_timer_seconds: 60,
+    })
+    expect(launcherClock.status).toBe(400)
+    expect(JSON.stringify(launcherClock.body)).toContain(
+      'draft_set_clock: clock edits are not open in a practice yet (§8.8/E75)',
+    )
   })
 
   it('the 4th active mock is a FRIENDLY 4xx naming the 3-active cap (§22.5)', async () => {
@@ -849,9 +874,10 @@ describe('commissioner control routes over PostgREST (§8.7/§15.2/§17)', () =>
 // The fix is SERVICE-LAYER (an RPC change cannot work — the RPC was never
 // handed the mock): the body names its draft and `patchDraftOrder` resolves
 // through the ONE resolver (D245). Authority stays in `draft_set_order`.
-// UNTIL MS.2 lands its launcher arm, the RPC's D103 mock guard — which
-// R468 proved could NEVER fire — now fires loudly: the pinned refusal below
-// is the enablement seam MS.2 re-points (loud refusal ≫ silent mis-write).
+// MS.2 (migration 100) landed the launcher arm: the two interim refusal
+// pins this section carried (commissioner-launcher P0001→400, plain-member
+// launcher 42501→403) are now the launcher's 200s — F126's wire pins (a)
+// and (e), with the MS.7 isolation assertions kept verbatim around them.
 //
 // League state here: post-reset (`scheduled` again — the mock launch window
 // is open), real draft alive as `scheduled`, mgr2's mocks m2/m3 still live.
@@ -872,7 +898,7 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
     commishMockId = (launched.body as unknown as DraftBody).draft.id
   }, 60_000)
 
-  it('THE R468 PIN: a mock-room edit that names its mock NEVER touches the real draft — the RPC\'s D103 guard finally fires (loud refusal until MS.2), and the REAL draft\'s whole row + chat are byte-identical', async () => {
+  it('THE R468 PIN, MS.2 half (F126 pin a): the mock-naming edit LANDS on the MOCK\'s own draft_order with its system line in draft:<mock_id> — and the REAL draft\'s whole row + chat are byte-identical', async () => {
     // Whole-row composite over the REAL draft — the house instrument
     // (D222(5): the pin is over the stored order and its chat context,
     // never a count; a count cannot see an in-place UPDATE).
@@ -908,14 +934,14 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
       },
       noEntropy,
     )
-    // The interim contract (MS.2 not landed): draft_set_order's mock guard
-    // — unreachable before this fix, R468's whole point — REFUSES loudly.
-    // MS.2's launcher arm re-points THIS assertion to a 200; the isolation
-    // assertions below outlive it.
-    expect(attempted.status).toBe(400)
-    expect(JSON.stringify(attempted.body)).toContain(
-      'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-    )
+    // MS.2's launcher arm (migration 100): the launcher — here the
+    // commissioner, who launched THIS mock — gets the 200, and the edit
+    // lands on the MOCK. The isolation assertions below are MS.7's and
+    // outlive the flip unchanged.
+    expect(attempted.status).toBe(200)
+    const attemptedDraft = (attempted.body as unknown as DraftBody).draft
+    expect(attemptedDraft.id).toBe(commishMockId)
+    expect(attemptedDraft.draft_order).toEqual([mgr2TeamId, commishTeamId, ...placeholderIds])
 
     // The severity pin: the REAL draft's whole row is byte-identical…
     const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
@@ -929,21 +955,26 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
       .order('id', { ascending: true })
     expect(chatAfter).toEqual(chatBefore)
 
-    // The refused mock wrote nothing either (targeted columns, not the
-    // whole row — the E59 stale-pause may legally flip live→paused under
-    // this suite, per the header's live-cron note).
+    // The MOCK took the write (targeted columns, not the whole row — the
+    // E59 stale-pause may legally flip live→paused under this suite, per
+    // the header's live-cron note): its stored order is the launcher's
+    // permutation and its pick counter did not move.
     const { data: mockAfter } = await service
       .from('drafts')
       .select('draft_order, current_pick_number')
       .eq('id', commishMockId)
       .single()
-    expect(mockAfter).toEqual(mockBefore)
+    expect(mockAfter!.draft_order).toEqual([mgr2TeamId, commishTeamId, ...placeholderIds])
+    expect(mockAfter!.current_pick_number).toBe(mockBefore!.current_pick_number)
+    // …and the system line landed in the MOCK's chat context, nowhere else
+    // (D222(5) — the negotiated-property line reads as the launcher's own
+    // act, in the launcher's own room).
     const { data: mockChat } = await service
       .from('league_chat')
       .select('id')
       .eq('context', `draft:${commishMockId}`)
       .like('message', 'Draft order %')
-    expect(mockChat).toEqual([])
+    expect(mockChat).toHaveLength(1)
   })
 
   it('randomize rides the same path (D222/MS.7 item 5): naming the mock cannot mis-target — the live mock hits the post-start randomize refusal and the real draft is untouched', async () => {
@@ -968,34 +999,39 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
     expect(realAfter).toEqual(realBefore)
   })
 
-  it('a plain member naming their OWN mock is refused at the identity gate (42501 → 403, the D110(1) interim MS.2 reorders) and nothing is written', async () => {
-    const { data: mockBefore } = await service
+  it('a PLAIN MEMBER naming their OWN mock gets the launcher\'s 200 (MS.2\'s gate reorder — the exact person the pre-100 42501 shut out) and the real draft is untouched', async () => {
+    const { data: realBefore } = await service
       .from('drafts')
-      .select('draft_order, current_pick_number')
-      .eq('id', mock2Id)
+      .select('*')
+      .eq('id', draftId)
       .single()
-    expect(mockBefore).not.toBeNull() // R554 — no vacuous composite
+    expect(realBefore).not.toBeNull() // R554 — no vacuous composite
     const attempted = await patchDraftOrder(
       mgr2Client,
       leagueId,
       {
         draft_id: mock2Id,
         order: [mgr2TeamId, commishTeamId, ...placeholderIds],
-        reason: 'launcher order edit (pre-MS.2 interim)',
+        reason: 'launcher order edit (MS.2 — the gate-order fix)',
       },
       noEntropy,
     )
-    // 087/098's identity gate runs BEFORE the mock guard (measured in
-    // tasks-MS §1.1), so a non-commissioner launcher gets 42501 → 403
-    // today. MS.2's reorder + launcher arm makes this the launcher's 200;
-    // this assertion is the OTHER half of that seam.
-    expect(attempted.status).toBe(403)
+    // Pre-100, 087/098's identity gate ran BEFORE the mock guard (measured
+    // in tasks-MS §1.1), so this exact call answered 42501 → 403 — the
+    // friendly refusal was unreachable for a non-commissioner launcher.
+    // MS.2's reorder (member floor → real ⇒ commissioner → mock ⇒
+    // launcher) makes it the launcher's 200 — the lane's product moment.
+    expect(attempted.status).toBe(200)
     const { data: mockAfter } = await service
       .from('drafts')
       .select('draft_order, current_pick_number')
       .eq('id', mock2Id)
       .single()
-    expect(mockAfter).toEqual(mockBefore)
+    expect(mockAfter!.draft_order).toEqual([mgr2TeamId, commishTeamId, ...placeholderIds])
+    // The real draft's whole row is byte-identical around the member's
+    // mock edit — the R468 severity pin, held on this arm too.
+    const { data: realAfter } = await service.from('drafts').select('*').eq('id', draftId).single()
+    expect(realAfter).toEqual(realBefore)
   })
 
   it('a deleted/unknown draft_id answers the no-leak 404 (the resolver\'s league-scoped fetch — R155 class)', async () => {

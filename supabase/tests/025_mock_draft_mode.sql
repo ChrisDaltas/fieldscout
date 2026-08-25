@@ -783,45 +783,48 @@ select is(
   'paused',
   'the manual pause holds (and parks the LB mock out of later ticks'' way)');
 
--- §8.7 controls refuse mocks (the launcher surface is pause/resume/
--- delete; draft_reset on a mock was the live-proven league write).
+-- §8.7 controls on a mock are the LAUNCHER's (MS.2/100, §8.8 v2.15). The
+-- actor below is the COMMISSIONER, who did not launch this mock, so every
+-- verb answers the friendly launcher-only refusal — D103(2), no role
+-- bypass. (draft_reset on a mock was the live-proven league write; it
+-- stays shut for the launcher too — E75, pinned in pgTAP 048.)
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
   format($$ select public.draft_reset('%s') $$, (select id from mk_lb)),
   'P0001',
-  'draft_reset: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_reset refuses mocks — the zero-side-effect breach (league status + schedule write) is closed');
+  'draft_reset: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_reset refuses the non-launcher commissioner (MS.2 gate; the reset breach stays closed — E75/048 pins the launcher arm)');
 select throws_ok(
   format($$ select public.draft_undo('%s') $$, (select id from mk_lb)),
   'P0001',
-  'draft_undo: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_undo refuses mocks');
+  'draft_undo: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_undo refuses the non-launcher commissioner on a mock');
 select throws_ok(
   format($$ select public.draft_force_pick('%s', 'mk-qb18') $$, (select id from mk_lb)),
   'P0001',
-  'draft_force_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_force_pick refuses mocks (no commissioner completes someone''s practice)');
+  'draft_force_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_force_pick refuses the non-launcher commissioner (no commissioner completes someone''s practice)');
 select throws_ok(
   format($$ select public.draft_set_clock('%s', 60) $$, (select id from mk_lb)),
   'P0001',
-  'draft_set_clock: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_set_clock refuses mocks');
+  'draft_set_clock: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_set_clock refuses the non-launcher commissioner on a mock');
 select throws_ok(
   format($$ select public.draft_reassign_pick('%s', 'a7000000-0000-4000-8000-000000000099',
        'c7000000-0000-4000-8000-00b100000003') $$,
          (select id from mk_lb)),
   'P0001',
-  'draft_reassign_pick: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_reassign_pick refuses mocks (a well-formed request — the arg-shape check precedes the guard)');
+  'draft_reassign_pick: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_reassign_pick refuses the non-launcher commissioner (a well-formed request — the arg-shape check precedes the guard)');
 select throws_ok(
   format($$ select public.draft_move_player('%s', 'mk-qb01',
        'c7000000-0000-4000-8000-00b100000002', 'c7000000-0000-4000-8000-00b100000001') $$,
          (select id from mk_lb)),
   'P0001',
-  'draft_move_player: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_move_player refuses mocks');
+  'draft_move_player: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_move_player refuses the non-launcher commissioner on a mock');
 select throws_ok(
   format($$ select public.draft_set_order('%s', array[
        'c7000000-0000-4000-8000-00b100000001', 'c7000000-0000-4000-8000-00b100000002',
@@ -830,8 +833,8 @@ select throws_ok(
        'c7000000-0000-4000-8000-00b100000007', 'c7000000-0000-4000-8000-00b100000008']::uuid[]) $$,
          (select id from mk_lb)),
   'P0001',
-  'draft_set_order: mock drafts have no commissioner controls — the launcher can pause, resume, or delete their practice (§8.8/D103)',
-  'draft_set_order refuses mocks');
+  'draft_set_order: only the member practicing this mock can use its commissioner controls (§8.8/D103)',
+  'draft_set_order refuses the non-launcher commissioner (the launcher''s success is pgTAP 048''s)');
 reset role;
 select is(
   (select status from leagues where id = 'b7000000-0000-4000-8000-0000000000b1'),
