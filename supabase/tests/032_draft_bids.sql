@@ -441,9 +441,15 @@ select is(
 -- The commissioner's DND writes against ANOTHER member's marks — the banner's
 -- "even for the commissioner" claim made literal (R307; §4.2 full matrix).
 -- Privileged baseline first: the rows the refusals are probed against.
+-- F118 (2026-08-25, MP.11): every privileged baseline in this file is scoped
+-- to the fixture's own two drafts. The whole-table form asserted a premise
+-- about what the SHARED table does NOT contain (D235/F110's species) and
+-- went RED at (11,2)-want-(6,2) against three live standalone mocks left by
+-- a browser session — a green suite must not depend on an empty database.
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
             (select count(*) from draft_dnd_marks
              where user_id = '8b000000-0000-4000-8000-000000000002') $$,
   $$ values (6::bigint, 2::bigint) $$,
@@ -473,7 +479,8 @@ select results_eq(
 
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
             (select count(*) from draft_dnd_marks
              where user_id = '8b000000-0000-4000-8000-000000000002') $$,
   $$ values (6::bigint, 2::bigint) $$,
@@ -508,8 +515,10 @@ select is(
 -- insert below, so the outsider owns no row of either table here.
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
-            (select count(*) from draft_dnd_marks) $$,
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
+            (select count(*) from draft_dnd_marks
+             where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')) $$,
   $$ values (6::bigint, 4::bigint) $$,
   'privileged baseline BEFORE the outsider write sweep: 6 bid rows + 4 DND marks exist (all invisible to the outsider — the rows the next four zero-counts are probed against)');
 set local role authenticated;
@@ -539,8 +548,10 @@ select results_eq(
 
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
-            (select count(*) from draft_dnd_marks) $$,
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
+            (select count(*) from draft_dnd_marks
+             where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')) $$,
   $$ values (6::bigint, 4::bigint) $$,
   'privileged baseline AFTER the outsider sweep: both counts unchanged — nothing was updated or deleted behind the zero-counts');
 set local role authenticated;
@@ -578,8 +589,10 @@ select throws_ok(
 -- zero-counts need a row-exists pin to discriminate — §4.2, R307).
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
-            (select count(*) from draft_dnd_marks) $$,
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
+            (select count(*) from draft_dnd_marks
+             where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')) $$,
   $$ values (6::bigint, 5::bigint) $$,
   'privileged baseline BEFORE the anon write sweep: 6 bid rows + 5 DND marks exist (4 fixture + the outsider''s recorded residual) — the rows the next four zero-counts are probed against');
 set local role anon;
@@ -608,8 +621,10 @@ select results_eq(
 
 reset role;
 select results_eq(
-  $$ select (select count(*) from draft_bids),
-            (select count(*) from draft_dnd_marks) $$,
+  $$ select (select count(*) from draft_bids
+            where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')),
+            (select count(*) from draft_dnd_marks
+             where draft_id in ('e3000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002')) $$,
   $$ values (6::bigint, 5::bigint) $$,
   'privileged baseline AFTER the anon sweep: both counts unchanged');
 

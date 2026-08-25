@@ -747,7 +747,9 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
       await beat(auctionMockId)
       await service
         .from('drafts')
-        .update({ updated_at: shifted(draft.updated_at as string, -30_000) })
+        // -180s, not -30s: the base value may carry F113's +90s freeze from
+        // a failed attempt, and the rewind must land in the past either way.
+        .update({ updated_at: shifted(draft.updated_at as string, -180_000) })
         .eq('id', auctionMockId)
         .eq('status', 'live')
       const summary = await tick()
@@ -789,11 +791,32 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
       // `draft_nominate`'s own transaction and the market is already
       // contested. If a bot has not answered yet, the sweep is driven until
       // one has — the safety net doing the same job.
-      const nomination = market.current_nomination as unknown as LiveMarket
-      if (nomination.high_bidder_team_id === auctionHumanTeamId) {
+      const preFreeze = market.current_nomination as unknown as LiveMarket
+      if (preFreeze.high_bidder_team_id === auctionHumanTeamId) {
         await provoke(market)
         continue
       }
+
+      // F113 (MP.11): FREEZE the CPUs across the read-then-bid pair — the
+      // same mechanism `auction-api-db.test.ts` carries, because this is the
+      // same read-then-bid pair on the standalone door (R539 widened the row
+      // to the mechanism). CPU think-time rides the SERVER-written
+      // `updated_at` (that is what `provoke` rewinds), so pushing it 90s
+      // into the future makes every bot undue for the whole pair; a
+      // successful RPC writes `updated_at = now()`, unfreezing them, and a
+      // failed attempt leaves the freeze in place for the next loop pass.
+      // The freeze happens only on the branch that BIDS — the provoke branch
+      // above needs the bots live. The market is re-read INSIDE the frozen
+      // window so the amount below cannot be stale.
+      await service
+        .from('drafts')
+        .update({ updated_at: shifted(market.updated_at as string, 90_000) })
+        .eq('id', auctionMockId)
+        .eq('status', 'live')
+      market = await readDraft(auctionMockId)
+      if (market.status !== 'live' || market.current_nomination === null) continue
+      const nomination = market.current_nomination as unknown as LiveMarket
+      if (nomination.high_bidder_team_id === auctionHumanTeamId) continue
 
       // ~9s on the SERVER-written clock: inside the 10s anti-snipe window,
       // with as much margin as the window allows.

@@ -25,6 +25,7 @@ import {
   useMockDrafts,
   type MockDraftSummary,
 } from '@/hooks/use-mock-drafts'
+import type { RoomEntryTargetProps } from '@/hooks/use-room-entry-target-ops'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -336,6 +337,7 @@ export function MockRow({
   seatCount,
   row,
   openBlocked = null,
+  roomEntry = {},
 }: {
   leagueId: string | null
   seatCount: number | null
@@ -343,6 +345,15 @@ export function MockRow({
   /** Why *Rejoin* / *View report* cannot be used yet, or null when it can.
    *  Disables the control and prints the reason on the row (R515/R519). */
   openBlocked?: string | null
+  /** F123 (MP.11): DR.6's desktop split for the *Resume* / *Rejoin* link INTO
+   *  the room, per MOUNT — the two SHELL mounts (league home, `/app/mocks`)
+   *  spread `useRoomEntryTarget()`'s props here; the in-room practice
+   *  launcher passes nothing, because movement inside the room world stays
+   *  in place. A prop rather than a hook or flag read inside the row —
+   *  the row cannot know which world mounted it (the F123 fix shape,
+   *  verbatim). *View report* never takes it: the report is a shell page,
+   *  not the room. */
+  roomEntry?: RoomEntryTargetProps
 }) {
   const deleteMock = useDeleteMockDraft(leagueId)
   const complete = row.status === 'complete'
@@ -428,7 +439,9 @@ export function MockRow({
           </Button>
         ) : (
           <Button variant="blue" size="sm" asChild>
-            <Link href={openHref}>{openLabel}</Link>
+            <Link href={openHref} {...roomEntry}>
+              {openLabel}
+            </Link>
           </Button>
         )}
         <Button

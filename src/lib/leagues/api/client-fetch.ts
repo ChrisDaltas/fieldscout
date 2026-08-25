@@ -24,6 +24,26 @@ export class LeagueActionError extends Error {
   }
 }
 
+/**
+ * F116 (MP.11): a `RAISE EXCEPTION` message arrives on the wire as
+ * `create_mock_draft: you already have 3 active mock drafts — finish or
+ * delete one first (§22.5)`. The BODY is deliberate product copy and is
+ * surfaced verbatim (§16.5.2); the `<function_name>: ` prefix and the
+ * trailing `(§x.y)` spec citation are the raiser's context, not copy, and
+ * they reached launch-facing users through both mock launchers (observed in
+ * MP.4's error-state drive). Stripped HERE, once, at the one surfacing
+ * layer every launcher throws through — never per call site — so the route
+ * bodies (and every stack-backed assertion on them) keep the raw string.
+ * The tail decision: the spec citation goes too — a section number is a
+ * builder's pointer, not a user's.
+ */
+export function userFacingMessage(raw: string): string {
+  return raw
+    .replace(/^[a-z0-9_]+: /, '')
+    .replace(/\s*\(§\d+(?:\.\d+)*\)\s*$/, '')
+    .trim()
+}
+
 function firstFieldMessage(fieldErrors: Record<string, string[]>): string | undefined {
   for (const messages of Object.values(fieldErrors)) {
     if (messages && messages.length > 0) return messages[0]
@@ -49,7 +69,7 @@ export async function sendLeagueAction<T = unknown>(
       typeof error === 'string'
         ? error
         : (fieldErrors && firstFieldMessage(fieldErrors)) ?? 'Something went wrong. Please try again.'
-    throw new LeagueActionError(response.status, message, fieldErrors)
+    throw new LeagueActionError(response.status, userFacingMessage(message), fieldErrors)
   }
 
   return body as T

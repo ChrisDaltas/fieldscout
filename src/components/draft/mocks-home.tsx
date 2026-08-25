@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMyMockDrafts, type MockDraftSummary } from '@/hooks/use-mock-drafts'
+import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { featureFlags } from '@/lib/feature-flags'
 
 import { MockRow } from './mock-draft-launcher'
@@ -187,6 +188,9 @@ function MockSection({
   rows: MockDraftSummary[]
   note: string | null
 }) {
+  // F123 (MP.11): `/app/mocks` is a SHELL page, so a row's *Resume* / *Rejoin*
+  // is an entry into the room FROM the app and takes DR.6's desktop split.
+  const roomEntry = useRoomEntryTarget()
   return (
     <Card>
       <CardHeader>
@@ -199,6 +203,7 @@ function MockSection({
           <MockRow
             key={row.id}
             leagueId={row.league_id}
+            roomEntry={roomEntry}
             // No league to read a seat count from here: a standalone row
             // carries its own in `config.mock.cpu_seats` (095), and a
             // league-attached row honestly reports none.

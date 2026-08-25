@@ -520,14 +520,34 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
       .eq('status', 'live')
     const summary = await tick()
     expect(summary.auction_cpu_failures).toEqual([])
+
+    // F113 (MP.11): FREEZE the CPUs across the read-then-bid pair instead of
+    // widening the margin. CPU think-time rides the SERVER-written
+    // `updated_at` (the rewind above is how the raise was provoked), and the
+    // live 5s cron is a legal concurrent actor — under full-suite load a
+    // second pass landed between the read below and the bid, and the
+    // launcher's bid was no longer top when the response was built (observed
+    // once, 2026-08-24; filed rather than shrugged off). Pushing
+    // `updated_at` 45s into the future makes every bot's think-time undue
+    // for the whole pair — the shared clock is REMOVED, not out-margined —
+    // and the bid RPC writes `updated_at = now()` on commit, unfreezing
+    // them. The nomination is re-read INSIDE the frozen window so the
+    // amount below cannot be stale.
+    const afterRaise = await readDraft(mockId)
+    await service
+      .from('drafts')
+      .update({ updated_at: shifted(afterRaise.updated_at as string, 45_000) })
+      .eq('id', mockId)
+      .eq('status', 'live')
     const raised = await readDraft(mockId)
     const nomination = raised.current_nomination as unknown as LiveNomination
     expect(nomination.high_bidder_team_id).not.toBe(commishTeamId)
     expect(nomination.high_bid).toBeGreaterThanOrEqual(2)
 
-    // The launcher bids through the route FOR the human seat. +3 over the
-    // observed high bid: a CPU raises by exactly $1 per pass and at most one
-    // cron pass can land between the read and this call.
+    // The launcher bids through the route FOR the human seat, +3 over the
+    // high bid read inside the frozen window (the margin predates the
+    // freeze and stays — changing it would change the in-RPC responder's
+    // odds, which is not this fix's mandate).
     const amount = nomination.high_bid + 3
     const bid = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       draft_id: mockId,
