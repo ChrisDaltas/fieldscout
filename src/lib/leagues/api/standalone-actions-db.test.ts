@@ -747,7 +747,9 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
       await beat(auctionMockId)
       await service
         .from('drafts')
-        .update({ updated_at: shifted(draft.updated_at as string, -30_000) })
+        // -180s, not -30s: the base value may carry F113's +90s freeze from
+        // a failed attempt, and the rewind must land in the past either way.
+        .update({ updated_at: shifted(draft.updated_at as string, -180_000) })
         .eq('id', auctionMockId)
         .eq('status', 'live')
       const summary = await tick()
@@ -789,11 +791,32 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
       // `draft_nominate`'s own transaction and the market is already
       // contested. If a bot has not answered yet, the sweep is driven until
       // one has — the safety net doing the same job.
-      const nomination = market.current_nomination as unknown as LiveMarket
-      if (nomination.high_bidder_team_id === auctionHumanTeamId) {
+      const preFreeze = market.current_nomination as unknown as LiveMarket
+      if (preFreeze.high_bidder_team_id === auctionHumanTeamId) {
         await provoke(market)
         continue
       }
+
+      // F113 (MP.11): FREEZE the CPUs across the read-then-bid pair — the
+      // same mechanism `auction-api-db.test.ts` carries, because this is the
+      // same read-then-bid pair on the standalone door (R539 widened the row
+      // to the mechanism). CPU think-time rides the SERVER-written
+      // `updated_at` (that is what `provoke` rewinds), so pushing it 90s
+      // into the future makes every bot undue for the whole pair; a
+      // successful RPC writes `updated_at = now()`, unfreezing them, and a
+      // failed attempt leaves the freeze in place for the next loop pass.
+      // The freeze happens only on the branch that BIDS — the provoke branch
+      // above needs the bots live. The market is re-read INSIDE the frozen
+      // window so the amount below cannot be stale.
+      await service
+        .from('drafts')
+        .update({ updated_at: shifted(market.updated_at as string, 90_000) })
+        .eq('id', auctionMockId)
+        .eq('status', 'live')
+      market = await readDraft(auctionMockId)
+      if (market.status !== 'live' || market.current_nomination === null) continue
+      const nomination = market.current_nomination as unknown as LiveMarket
+      if (nomination.high_bidder_team_id === auctionHumanTeamId) continue
 
       // ~9s on the SERVER-written clock: inside the 10s anti-snipe window,
       // with as much margin as the window allows.
@@ -818,11 +841,35 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
         },
       )
       if (raise.status !== 200) {
-        // The only tolerated loss is the market going off the board under a
-        // concurrent tick — anything else is a real refusal and fails here.
+        // TWO tolerated losses, both terminal states of THIS market and not
+        // defects (R545): (1) the market went off the board under a
+        // concurrent tick; (2) the provoked bot ladder ratcheted `high_bid`
+        // to (or past) the launcher's own §8.6.1 max, so `high_bid + 1` is
+        // the budget refusal — observed reproducibly (2 of 6 isolated runs
+        // RED at this line before this arm existed), and plausibly
+        // accelerated by the -180s provoke rewind above, which makes more
+        // bots overdue per tick and the ladder climb faster. Anything else
+        // is a real refusal and fails here.
         const message = (raise.body as { error: string }).error
         expect(raise.status).toBe(400)
-        expect(message).toMatch(/off the board/)
+        expect(message).toMatch(/off the board|over your max bid/)
+        if (/over your max bid/.test(message)) {
+          // Close the ratcheted market and move on: the nomination clock is
+          // deadline-keyed (not think-keyed), so rewinding the deadline and
+          // ticking awards it to the standing high bot, and the next loop
+          // pass nominates a fresh $1 player the ladder has not touched.
+          const stuck = await readDraft(auctionMockId)
+          if (stuck.status === 'live' && stuck.current_nomination !== null) {
+            await service
+              .from('drafts')
+              .update({
+                current_deadline: shifted(stuck.current_deadline as string, -600_000),
+              })
+              .eq('id', auctionMockId)
+              .eq('status', 'live')
+            await tick()
+          }
+        }
         continue
       }
       landed = {

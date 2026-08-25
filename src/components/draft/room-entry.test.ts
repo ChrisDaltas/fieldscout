@@ -45,14 +45,16 @@ import { describe, expect, it } from 'vitest'
  *   - `mock-launcher-entry.ts` — `mockRoomHref`, the seam itself. Its
  *     callers are the ones dispositioned; the builder is not an entry.
  *   - `mock-draft-launcher.tsx` — `MockRow`'s *Rejoin* / *Resume*, live
- *     since MP.6c (F119's room half). **IN PLACE, and it is a decision
- *     rather than a default:** `MockRow` is mounted THREE times — the
- *     in-room practice launcher, the league-home card and MP.5's practice
- *     home — so the desktop split cannot be applied to the row without a
- *     per-mount prop, and applying it to all three would open a new tab from
- *     INSIDE the room world, which the split explicitly does not do.
- *     Recorded as ledger **F123** for the launch-facing pass rather than
- *     improvised here (R51).
+ *     since MP.6c (F119's room half). **F123 TAKEN (MP.11): SPLIT PER
+ *     MOUNT via a `roomEntry` prop — exactly the fix shape the row
+ *     specified.** `MockRow` is mounted THREE times; the two SHELL mounts
+ *     (the league-home card and `/app/mocks`) spread
+ *     `useRoomEntryTarget()`'s props into the row, and the in-room practice
+ *     launcher passes nothing, so the same control opens a new tab on
+ *     measured desktop when reached FROM the app and stays in place inside
+ *     the room world. Never a flag or hook read inside the row — the row
+ *     cannot know which world mounted it. Pinned in the `F123` describe
+ *     block below.
  *
  * **R536: THE SWEEP NOW SEES HELPER CALLERS, NOT ONLY LITERALS — and that
  * gap is why MP.7 walked past it.** `ROOM_URL` matches a template literal, so
@@ -186,6 +188,54 @@ describe('the split sites carry the entry-target spread on a real anchor', () =>
       'src/components/home/home-quick-actions.tsx',
     ]) {
       expect(code(rel), rel).not.toContain('useRoomEntryTarget')
+    }
+  })
+})
+
+describe('F123: MockRow takes the split per MOUNT, through a prop (MP.11)', () => {
+  it('MockRow spreads roomEntry on the unfinished open Link, and only there', () => {
+    const source = code('src/components/draft/mock-draft-launcher.tsx')
+    // The row's room-entry Link carries the spread…
+    expect(source).toMatch(/<Link href=\{openHref\} \{\.\.\.roomEntry\}>/)
+    // …and the finished row's report Link does NOT — the report is a shell
+    // page, not the room, so the split does not apply to it.
+    expect(source).toMatch(/<Link href=\{reportHref\}>/)
+    // The prop is typed, optional, and defaults to the same-tab {}.
+    expect(source).toContain('roomEntry = {},')
+    expect(source).toContain('roomEntry?: RoomEntryTargetProps')
+  })
+
+  it('the two SHELL mounts pass it; the in-room launcher mounts do not', () => {
+    const shellMountCounts: Array<[string, number, number]> = []
+    for (const rel of [
+      'src/components/leagues/league-home-states.tsx', // the league-home card
+      'src/components/draft/mocks-home.tsx', // MP.5's practice home
+      'src/components/draft/mock-draft-launcher.tsx', // the IN-ROOM launcher
+    ]) {
+      const source = code(rel)
+      const mounts = (source.match(/<MockRow/g) ?? []).length
+      const spreads = (source.match(/roomEntry=\{roomEntry\}/g) ?? []).length
+      shellMountCounts.push([rel, mounts, spreads])
+    }
+    expect(shellMountCounts).toEqual([
+      // Both league-home mounts spread it (2 of 2)…
+      ['src/components/leagues/league-home-states.tsx', 2, 2],
+      // …the practice home's one mount spreads it (1 of 1)…
+      ['src/components/draft/mocks-home.tsx', 1, 1],
+      // …and the launcher's two IN-ROOM mounts pass NOTHING: movement inside
+      // the room world stays in place (DR.6's doctrine, the F123 reason).
+      ['src/components/draft/mock-draft-launcher.tsx', 2, 0],
+    ])
+  })
+
+  it('both shell hosts read the split from the real hook', () => {
+    for (const rel of [
+      'src/components/leagues/league-home-states.tsx',
+      'src/components/draft/mocks-home.tsx',
+    ]) {
+      expect(code(rel), rel).toContain(
+        "import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'",
+      )
     }
   })
 })

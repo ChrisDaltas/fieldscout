@@ -166,6 +166,10 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
  */
 function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const mocks = useMockDrafts(leagueId)
+  // F123 (MP.11): this card is a SHELL mount of `MockRow`, so its
+  // *Resume* / *Rejoin* is an entry into the room FROM the app and takes
+  // DR.6's desktop split — same as the two draft CTAs above.
+  const roomEntry = useRoomEntryTarget()
   const active = mocks.data?.active ?? []
   const recaps = mocks.data?.recaps ?? []
   if (active.length === 0 && recaps.length === 0) return null
@@ -186,6 +190,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
             openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, data.teams)}
             row={row}
+            roomEntry={roomEntry}
           />
         ))}
         {recaps.map((row) => (
@@ -195,6 +200,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
             openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, data.teams)}
             row={row}
+            roomEntry={roomEntry}
           />
         ))}
         {active.length > 0 && (
