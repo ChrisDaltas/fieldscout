@@ -44,16 +44,15 @@ import {
  * can offer a control that goes nowhere, and both are disabled with the
  * reason printed on the row:
  *
- *   - a FINISHED STANDALONE row, whose *View report* points at
- *     `/app/mocks/[mockId]/report` — **MP.8's route**, which 404s until it
- *     lands. The href stays (pointing it at the league recap's URL is the
- *     workaround D231(3a) exists to prevent); the CONTROL waits.
- *     **An UNFINISHED standalone row's *Rejoin* / *Resume* is LIVE since
- *     MP.6c**, which mounts the room at `/app/mocks/[mockId]` — F119's room
- *     half, discharged there and deliberately not one task earlier (a live
- *     blue button into a room that cannot pick is R515 verbatim).
- *   - a LEAGUE-attached row while `featureFlags.leagues` is OFF, whose link
- *     is real but silently redirects to `/app`. **The flag read is a
+ *   - **STANDALONE rows are no longer blocked at all — F119 is discharged.**
+ *     MP.6c mounted the room at `/app/mocks/[mockId]` and MP.8 built
+ *     `/app/mocks/[mockId]/report`, so both controls land somewhere. Each
+ *     task removed its own reason and never touched the href, which is what
+ *     made the hand-off checkable rather than remembered.
+ *   - an UNFINISHED LEAGUE-attached row while `featureFlags.leagues` is OFF,
+ *     whose *Rejoin* is real but silently redirects to `/app`. **A FINISHED
+ *     one is not blocked**: its *View report* now goes to `/app/mocks/…`,
+ *     which the leagues flag does not gate. **The flag read is a
  *     presentation decision made HERE, by the surface that knows which page
  *     it is** — never in `MockRow` (shared) and never in an authorization
  *     path (§4 rule 13 / D231(4)).
@@ -205,24 +204,31 @@ function MockSection({
 
 /**
  * Why a listed mock's open control cannot be used from THIS page, or null.
- * Colocated with the mount rather than inside `MockRow`, because both answers
- * are facts about `/app/mocks` — where the route does not exist yet, and which
- * release flags this page is rendering under. See `MocksHome`'s docblock.
+ * Colocated with the mount rather than inside `MockRow`, because the answer
+ * is a fact about `/app/mocks` — which release flags this page is rendering
+ * under. See `MocksHome`'s docblock.
  *
- * Both arms are TEMPORARY by construction: MP.6/MP.8 delete the first by
- * building the routes, and the second disappears the day the leagues flag is
- * on — neither needs a decision later, only a route or a flag.
+ * **One arm left, and it is a flag rather than a gap.** The "route does not
+ * exist yet" arm is gone: MP.6c built the room and MP.8 built the report, so
+ * a standalone row's controls all land somewhere. What survives is the
+ * LEAGUE row whose *Rejoin* would walk into a hidden `/app/leagues` URL, and
+ * it disappears the day the leagues flag is on.
  */
 function openBlockedReason(row: MockDraftSummary): string | null {
-  // MP.6c cleared the ROOM half (F119): `/app/mocks/[mockId]` mounts the
-  // real room now, so an unfinished standalone run's *Resume* / *Rejoin* is
-  // a live link. **What remains is MP.8's half** — a FINISHED standalone
-  // run's *View report* still points at `/app/mocks/[mockId]/report`, which
-  // does not exist. One reason used to cover both controls; splitting it is
-  // the whole mechanism F119 describes: each task removes its own.
-  if (row.league_id === null) {
-    return row.status === 'complete' ? 'Opens when the report lands.' : null
+  // **F119 is fully discharged.** MP.6c cleared the ROOM half
+  // (`/app/mocks/[mockId]` mounts the real room), and MP.8 clears the REPORT
+  // half by building `/app/mocks/[mockId]/report` — the reason is removed
+  // rather than the link changed, exactly as D242 set it up. A standalone
+  // row now has nowhere left to dead-end, so it has no reason at all.
+  if (row.league_id === null) return null
+  // A LEAGUE-attached row keeps ONE reason, and MP.8 narrowed it to the
+  // control it is actually true of. *View report* now goes to
+  // `/app/mocks/[mockId]/report` for EVERY mock (D230(4)), and that route is
+  // gated on `mockDrafts` — the leagues flag cannot hide it. Only the
+  // unfinished row's *Rejoin* / *Resume* still walks into `/app/leagues/…`,
+  // which silently redirects to `/app` with the flag off.
+  if (!featureFlags.leagues && row.status !== 'complete') {
+    return 'This league is hidden right now.'
   }
-  if (!featureFlags.leagues) return 'This league is hidden right now.'
   return null
 }

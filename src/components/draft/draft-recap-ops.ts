@@ -14,6 +14,8 @@
 import type { DraftPickSummary } from '@/hooks/use-draft'
 import type { Draft } from '@/types/database'
 
+import { roundForPick } from './draft-order'
+
 // ---------------------------------------------------------------------------
 // Variant resolution (mock vs real; the delete affordance is launcher-only)
 // ---------------------------------------------------------------------------
@@ -156,4 +158,74 @@ export function recapTeamSpend(picks: readonly DraftPickSummary[]): RecapSpend {
  */
 export function recapBuysInOrder(picks: readonly DraftPickSummary[]): DraftPickSummary[] {
   return picks.filter((p) => !p.is_undone).sort((a, b) => a.pick_number - b.pick_number)
+}
+
+// ---------------------------------------------------------------------------
+// The SNAKE/LINEAR flat cut (MP task MP.8 — D230(2)/(3): two column sets,
+// never one table with blanks)
+// ---------------------------------------------------------------------------
+
+/** One drafted player, with the two coordinates a snake row is read by. */
+export interface RecapDraftedRow {
+  pick: DraftPickSummary
+  /** 1-based round. */
+  round: number
+  /** 1-based slot WITHIN that round (the ".04" of "3.04"). */
+  pickInRound: number
+}
+
+/**
+ * The SNAKE/LINEAR sibling of `recapBuysInOrder` — every live pick in pick
+ * order, each carrying the round and the slot-in-round it landed on.
+ *
+ * **Why this is a second derivation rather than a reuse.** `recapBuysInOrder`
+ * answers the auction's question: `pick_number` there is a NOMINATION
+ * sequence and there is no round at all, which is the whole reason D230(2)
+ * refuses one table with a blank `round` column. Here `pick_number` is a
+ * board coordinate, and the report's column set is *round · pick #* — so the
+ * round has to be resolved rather than printed.
+ *
+ * **`round` is resolved, not trusted, and the fallback is not cosmetic.**
+ * `draft_picks.round` is nullable on the wire (`DraftPickSummary.round`), and
+ * an auction award writes NULL into it (066). A row whose stored round
+ * disagrees with the arithmetic is a row the engine wrote out of band, so the
+ * stored value wins when it is a sane positive integer and the arithmetic
+ * fills in only when it is absent — printing a blank round would be the
+ * "an empty column claims the value exists and is unknown" failure D230(2)
+ * names, one column over.
+ *
+ * **`pickInRound` is ALWAYS the arithmetic, even when the stored round wins**
+ * (R542). The two therefore come from different sources in the one case they
+ * can disagree, and a `9.01` label is then a real round with a derived slot.
+ * That is deliberate: the stored round is the ENGINE's record of which round a
+ * pick belongs to, while the slot is a position within the sheet's own
+ * numbering and has no stored counterpart to prefer — deriving it from the
+ * stored round would invent a coordinate the sheet never assigned. Callers
+ * that need the two to agree should print the round alone.
+ *
+ * `teamCount` is the number of seats (`draft_order.length`). With no seats to
+ * divide by, the arithmetic cannot answer: the round falls back to the stored
+ * value or 1 and the slot to the pick number, so a malformed draft still
+ * prints its picks rather than rendering nothing.
+ */
+export function recapPicksByRound(
+  picks: readonly DraftPickSummary[],
+  teamCount: number,
+): RecapDraftedRow[] {
+  const live = picks.filter((p) => !p.is_undone).sort((a, b) => a.pick_number - b.pick_number)
+  return live.map((pick) => {
+    const derivedRound = roundForPick(pick.pick_number, teamCount)
+    const storedRound =
+      typeof pick.round === 'number' && Number.isInteger(pick.round) && pick.round > 0
+        ? pick.round
+        : null
+    return {
+      pick,
+      round: storedRound ?? (derivedRound > 0 ? derivedRound : 1),
+      pickInRound:
+        teamCount > 0 && pick.pick_number > 0
+          ? ((pick.pick_number - 1) % teamCount) + 1
+          : pick.pick_number,
+    }
+  })
 }

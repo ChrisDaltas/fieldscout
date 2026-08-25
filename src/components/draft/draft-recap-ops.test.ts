@@ -12,6 +12,7 @@ import type { Draft } from '@/types/database'
 
 import {
   recapBuysInOrder,
+  recapPicksByRound,
   recapRostersFromPicks,
   recapTeamOrder,
   recapTeamSpend,
@@ -175,5 +176,75 @@ describe('recapBuysInOrder — the auction final board is the spend, in order', 
 
   it('an ended-early auction with no buys returns nothing to render', () => {
     expect(recapBuysInOrder([])).toEqual([])
+  })
+})
+
+describe('recapPicksByRound — the SNAKE/LINEAR flat cut (MP.8 / D230(2))', () => {
+  // A 4-seat board, three rounds deep. `round` is stored on every row here,
+  // which is the healthy case: pick 5 is round 2 slot 1, pick 8 is round 2
+  // slot 4, pick 9 is round 3 slot 1. Stored literals, not recomputed.
+  const board: DraftPickSummary[] = [
+    pick(1, 't1', 'a', { round: 1 }),
+    pick(5, 't4', 'b', { round: 2 }),
+    pick(8, 't1', 'c', { round: 2 }),
+    pick(9, 't1', 'd', { round: 3 }),
+    pick(3, 't3', 'undone', { round: 1, is_undone: true }),
+  ]
+
+  it('live picks ascending, with round and slot-in-round resolved', () => {
+    expect(recapPicksByRound(board, 4).map((r) => [r.pick.player_id, r.round, r.pickInRound])).toEqual([
+      ['a', 1, 1],
+      ['b', 2, 1],
+      ['c', 2, 4],
+      ['d', 3, 1],
+    ])
+  })
+
+  it('undone picks are audit history and never appear (E4, one layer out)', () => {
+    expect(recapPicksByRound(board, 4).some((r) => r.pick.player_id === 'undone')).toBe(false)
+  })
+
+  it('a NULL stored round is derived rather than printed blank', () => {
+    // `draft_picks.round` is nullable on the wire, and an empty round column
+    // would claim the value exists and is unknown — which it is not.
+    const rows = recapPicksByRound([pick(7, 't3', 'x', { round: null })], 4)
+    expect(rows[0].round).toBe(2)
+    expect(rows[0].pickInRound).toBe(3)
+  })
+
+  it('a nonsense stored round (0, negative, fractional) falls back to the arithmetic', () => {
+    expect(recapPicksByRound([pick(6, 't2', 'x', { round: 0 })], 4)[0].round).toBe(2)
+    expect(recapPicksByRound([pick(6, 't2', 'x', { round: -3 })], 4)[0].round).toBe(2)
+    expect(recapPicksByRound([pick(6, 't2', 'x', { round: 1.5 })], 4)[0].round).toBe(2)
+  })
+
+  it('the STORED round wins when it is sane and disagrees with the arithmetic', () => {
+    // An order edit (E31) can move a seat without renumbering the sheet; the
+    // engine's own round is the record, and the arithmetic is the fallback.
+    expect(recapPicksByRound([pick(5, 't1', 'x', { round: 9 })], 4)[0].round).toBe(9)
+  })
+
+  it('round boundaries are exact at the seam (last of a round, first of the next)', () => {
+    const seam = recapPicksByRound(
+      [pick(4, 't4', 'last', { round: null }), pick(5, 't4', 'first', { round: null })],
+      4,
+    )
+    expect(seam.map((r) => [r.round, r.pickInRound])).toEqual([
+      [1, 4],
+      [2, 1],
+    ])
+  })
+
+  it('a seatless draft still prints its picks rather than rendering nothing', () => {
+    // teamCount 0: the arithmetic cannot answer, so the row survives with the
+    // stored round and its own pick number rather than disappearing.
+    const rows = recapPicksByRound([pick(3, 't1', 'x', { round: null })], 0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].round).toBe(1)
+    expect(rows[0].pickInRound).toBe(3)
+  })
+
+  it('a draft that ended before anyone was picked returns nothing to render', () => {
+    expect(recapPicksByRound([], 12)).toEqual([])
   })
 })

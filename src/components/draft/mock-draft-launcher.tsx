@@ -26,11 +26,13 @@ import {
   type MockDraftSummary,
 } from '@/hooks/use-mock-drafts'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 
 import {
   defaultMockSeatId,
   launchDisabledReason,
+  leagueMockOpenBlocked,
   MOCK_CAP_NOTE,
   MOCK_EXPIRY_NOTE,
   mockProgressLabel,
@@ -270,6 +272,7 @@ function MockList({
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, detail.teams)}
             row={row}
           />
@@ -278,6 +281,7 @@ function MockList({
           <MockRow
             key={row.id}
             leagueId={leagueId}
+            openBlocked={leagueMockOpenBlocked(row, featureFlags.mockDrafts)}
             seatCount={mockSeatCount(row, detail.teams)}
             row={row}
           />
@@ -341,19 +345,17 @@ export function MockRow({
 }) {
   const deleteMock = useDeleteMockDraft(leagueId)
   const complete = row.status === 'complete'
-  // A finished LEAGUE mock has a "recap" (the shipped §16.1 surface); a
-  // finished STANDALONE one has a "report" (D230's table, MP.8's
-  // `/app/mocks/[mockId]/report`). One row, one voice: badge, button and
-  // delete label all follow the same word rather than mixing the two.
-  const finishedNoun = leagueId === null ? 'report' : 'recap'
+  // **MP.8: EVERY finished mock has a "report"**, league-attached or not —
+  // one surface, one word (D230(4): the league recap keeps REAL drafts, and
+  // the legacy `?draft=<mock_id>` URL redirects into the report). Before
+  // MP.8 this row branched, because only a standalone mock had somewhere
+  // else to go; the branch is gone rather than widened.
+  const finishedNoun = 'report'
   const openHref =
     leagueId === null
       ? `/app/mocks/${row.id}`
       : `/app/leagues/${leagueId}/draft?draft=${row.id}`
-  const reportHref =
-    leagueId === null
-      ? `/app/mocks/${row.id}/report`
-      : `/app/leagues/${leagueId}/draft/recap?draft=${row.id}`
+  const reportHref = `/app/mocks/${row.id}/report`
   const openLabel = complete
     ? `View ${finishedNoun}`
     : row.status === 'paused'
@@ -377,9 +379,7 @@ export function MockRow({
     <div className="flex flex-wrap items-center gap-2.5 rounded-sm border border-ink bg-white px-2.5 py-2">
       <Badge variant={complete ? 'stroke' : row.status === 'paused' ? 'yellow' : 'green'}>
         {complete
-          ? leagueId === null
-            ? 'Report'
-            : 'Recap'
+          ? 'Report'
           : row.status === 'paused'
             ? 'Paused'
             : 'Live'}

@@ -174,3 +174,45 @@ export function mockSeatCount(
   }
   return standaloneSeatCount(row)
 }
+
+// ---------------------------------------------------------------------------
+// The LEAGUE mounts' open-blocked reason (MP.8 fix round — R540)
+// ---------------------------------------------------------------------------
+
+/** Why a finished mock's *View report* cannot be used while practice is off. */
+export const MOCK_REPORT_HIDDEN_NOTE = 'Practice drafts are hidden right now.'
+
+/**
+ * Why a LEAGUE-mounted row's open control cannot be used, or null — MP.8's
+ * fix round (**R540**), and it is **R515's defect in the mirror direction**.
+ *
+ * MP.8 made `MockRow`'s `reportHref` unconditionally `/app/mocks/[id]/report`
+ * for all three mounts (D230(4): one surface, one word). That route lives
+ * under `(shell)/mocks/layout.tsx`, which redirects the whole subtree to
+ * `/app` when **`featureFlags.mockDrafts`** is off. So in the one flag cell
+ * nobody's suite drove — **`leagues` ON, `mockDrafts` OFF** — a finished
+ * league mock's *View report* became a live blue control that silently
+ * bounces to `/app`. On `main` that href was the league recap, which renders
+ * fine under that combination; the report link took the hazard on and nothing
+ * disclosed it.
+ *
+ * `/app/mocks`' own mount does NOT need this arm — that page is inside the
+ * same gate, so it cannot render at all with practice off. This is the two
+ * LEAGUE mounts' answer (`league-home-states.tsx`, `mock-draft-launcher.tsx`),
+ * and only a FINISHED row is affected: an unfinished league row's *Rejoin*
+ * goes to `/app/leagues/…`, which the practice flag has nothing to do with
+ * (that row's own hazard is the `leagues` flag, and `/app/mocks` owns it).
+ *
+ * **The flag is an ARGUMENT, not a read** (§4 rule 13 / D231(4); R519's
+ * "in the PAGE, never in the shared row"): each mount reads
+ * `featureFlags.mockDrafts` at its own call site and passes it, so the
+ * decision stays visible where the page is and this stays a pure function
+ * with a truth table.
+ */
+export function leagueMockOpenBlocked(
+  row: Pick<MockDraftSummary, 'status'>,
+  mockDraftsEnabled: boolean,
+): string | null {
+  if (row.status !== 'complete') return null
+  return mockDraftsEnabled ? null : MOCK_REPORT_HIDDEN_NOTE
+}
