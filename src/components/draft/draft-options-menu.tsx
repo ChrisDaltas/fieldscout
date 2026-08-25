@@ -22,7 +22,7 @@ import { draftOptionsEntries, type DraftOptionsSectionId } from './draft-options
  * panel AT that section (D153: this is a menu over the SHIPPED panel body,
  * never a reimplementation — the section bodies, gates, confirm dialogs and
  * system-post semantics live in the panel and are untouched here). The group
- * catalog itself is `draft-options-ops.ts`'s `draftOptionsEntries(isAuction)`
+ * catalog itself is `draft-options-ops.ts`'s `draftOptionsEntries(isAuction, isMock)`
  * — an enumerated list, per DRAFT TYPE since L.C3.2: an auction room lists
  * Manual Edit Mode, Edit current nomination, Team budgets and End draft, and
  * a snake room never does (their RPCs refuse a snake draft outright — the UI
