@@ -891,6 +891,12 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
       .select('draft_order, current_pick_number')
       .eq('id', commishMockId)
       .single()
+    // R554: an errored fixture read yields null on BOTH sides of the
+    // composite and toEqual(null, null) passes vacuously — assert the
+    // premise (the CLAUDE.md "nothing happened means it worked" rule).
+    expect(realBefore).not.toBeNull()
+    expect(chatBefore).not.toBeNull()
+    expect(mockBefore).not.toBeNull()
 
     const attempted = await patchDraftOrder(
       commishClient,
@@ -946,6 +952,7 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
       .select('*')
       .eq('id', draftId)
       .single()
+    expect(realBefore).not.toBeNull() // R554 — no vacuous composite
     const randomize = await patchDraftOrder(
       commishClient,
       leagueId,
@@ -967,6 +974,7 @@ describe('MS.7 — the order edit targets the room\'s own draft (D222/R468)', ()
       .select('draft_order, current_pick_number')
       .eq('id', mock2Id)
       .single()
+    expect(mockBefore).not.toBeNull() // R554 — no vacuous composite
     const attempted = await patchDraftOrder(
       mgr2Client,
       leagueId,
