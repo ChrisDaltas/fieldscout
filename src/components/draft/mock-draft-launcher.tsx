@@ -35,6 +35,7 @@ import {
   leagueMockOpenBlocked,
   MOCK_CAP_NOTE,
   MOCK_EXPIRY_NOTE,
+  mockIdentityLabel,
   mockProgressLabel,
   mockSeatCount,
   mockSeatOptions,
@@ -376,7 +377,14 @@ export function MockRow({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2.5 rounded-sm border border-ink bg-white px-2.5 py-2">
+    // MP.10: the wrap is DECIDED rather than tipped. `flex-wrap` alone let a
+    // one-word difference in badge width decide whether the action group sat
+    // inline or dropped below — measured at 375px, a *Paused* row wrapped and
+    // the *Live* row beside it did not, so two rows in one list disagreed
+    // about their own shape. Below `sm` the actions take their own full-width
+    // line every time; at `sm` and up they sit inline. The text block shrinks
+    // (`min-w-0 flex-1`) instead of pushing them out.
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-sm border border-ink bg-white px-2.5 py-2">
       <Badge variant={complete ? 'stroke' : row.status === 'paused' ? 'yellow' : 'green'}>
         {complete
           ? 'Report'
@@ -384,8 +392,12 @@ export function MockRow({
             ? 'Paused'
             : 'Live'}
       </Badge>
-      <div className="mr-auto min-w-0">
-        <p className="truncate text-[12px] font-extrabold leading-tight">Practice draft</p>
+      <div className="min-w-0 flex-1 basis-32">
+        {/* What this run WAS — not the constant "Practice draft" every row
+            used to print. See `mockIdentityLabel` (MP.10). */}
+        <p className="truncate text-[12px] font-extrabold leading-tight">
+          {mockIdentityLabel(row, seatCount)}
+        </p>
         <p className="truncate text-[10px] font-semibold text-n-3">
           {complete
             ? row.completed_at
@@ -402,7 +414,7 @@ export function MockRow({
           </p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto">
         {openBlocked ? (
           // Not styled as the primary action either: a disabled blue button
           // still reads as "the thing to press". Stroke + disabled says

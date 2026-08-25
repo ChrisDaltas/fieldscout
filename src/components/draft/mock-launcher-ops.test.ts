@@ -16,6 +16,7 @@ import {
   MOCK_ACTIVE_CAP,
   MOCK_CAP_NOTE,
   MOCK_HOURLY_CAP,
+  mockIdentityLabel,
   mockProgressLabel,
   mockSeatOptions,
 } from './mock-launcher-ops'
@@ -141,5 +142,30 @@ describe('leagueMockOpenBlocked — the leagues ON / mockDrafts OFF cell (MP.8 /
 
   it('the reason says what is hidden, not what a mock draft is (§4 rule 16)', () => {
     expect(MOCK_REPORT_HIDDEN_NOTE).toBe('Practice drafts are hidden right now.')
+  })
+})
+
+describe('mockIdentityLabel — MP.10: a list of identical rows is not a list', () => {
+  // The defect this exists for, measured on the local stack: three rows at
+  // the §22.5 cap all read "Practice draft", two of them "Live · pick 1 of
+  // 16". Nothing separated the 12-team snake from the 8-team auction.
+  it('names the format and the size, from data already on the row', () => {
+    expect(mockIdentityLabel({ draft_type: 'auction' }, 8)).toBe('Auction · 8 teams')
+    expect(mockIdentityLabel({ draft_type: 'snake' }, 12)).toBe('Snake · 12 teams')
+    expect(mockIdentityLabel({ draft_type: 'linear' }, 10)).toBe('Linear · 10 teams')
+  })
+
+  it('with no derivable seat count it prints the format alone — never an invented total', () => {
+    // A LEAGUE-attached row hands `mockSeatCount` a null, exactly as
+    // `mockProgressLabel` receives it, and answers the same way.
+    expect(mockIdentityLabel({ draft_type: 'auction' }, null)).toBe('Auction')
+    expect(mockIdentityLabel({ draft_type: 'snake' }, 0)).toBe('Snake')
+  })
+
+  it('an unrecognised draft type falls back to the NOUN — a raw enum never reaches a user', () => {
+    // The size half is still true and still useful, so it stays; what must
+    // never render is `salary_cap` itself.
+    expect(mockIdentityLabel({ draft_type: 'salary_cap' }, 8)).toBe('Practice draft · 8 teams')
+    expect(mockIdentityLabel({ draft_type: '' }, null)).toBe('Practice draft')
   })
 })

@@ -488,7 +488,9 @@ Every task: branch from up-to-date `main`, **one task one PR, do not merge**. Mi
 
 ### MP.9 — Mock Drafts under More… *(both lists, and the pin)*
 
-> Read **§3.7**, **§1.5**, **§4 rule 17** *(the nav rule — see below)*. **Depends on MP.5.**
+> Read **§3.7**, **§1.5**, and **item 2 below** *(the nav rule — do not unify the two lists)*. **Depends on MP.5.**
+>
+> *(Corrected 2026-08-25 by MP.10, discharging **F124**: this line cited a `§4 rule 17` that does not exist — §4 numbers 10–16. The rule the parenthetical meant has always been item 2 of this task, so the citation is re-pointed rather than a seventeenth rule invented; MP.9 was not blocked, it read item 2 and built to it.)*
 
 1. **Add a `Mock Drafts` entry pointing at `/app/mocks`, gated on `featureFlags.mockDrafts`, to BOTH** `MORE_ITEMS` (`sidebar.tsx:57–74`) and `more-sheet.tsx`'s inline rows (`:35–64`). **Same label, same icon, same flag.**
 2. **Do not unify the two lists.** The split is deliberate and form-factor driven — desktop's sidebar shows primaries directly (`sidebar.tsx:26–55`) with a small More; mobile's five bottom tabs push overflow into the sheet; **the same flags govern both, and Chris confirmed the production behaviour.** A PR that refactors them into one source has left this lane.
