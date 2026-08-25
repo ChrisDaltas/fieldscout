@@ -15,6 +15,14 @@
  *   §A  the STANDALONE arm: seven verbs, driven by the launcher over the
  *       real PostgREST wire path, on a real snake mock and a real auction
  *       mock, with the ENGINE's bots answering (MP.3/091).
+ *       **AMENDED at F121's fix (migration 096).** The nominate and bid
+ *       tests were written against an engine on which a standalone auction
+ *       had NO bidding — `draft_nomination_uncontestable` scanned
+ *       `t.league_id = v_league_id`, so with a NULL league every nomination
+ *       was declared uncontestable and awarded instantly at its opening
+ *       bid. The bid test named itself as the assertion that would move
+ *       (D245(7)) and it has: it is now a real 200 raise over a bot's
+ *       standing high bid, with the D128 anti-snipe floor measured on it.
  *   §B  a STRANGER gets the one no-leak 404 on every verb — the same answer
  *       an unknown id gets, so "not yours" and "never existed" are
  *       indistinguishable from the wire.
@@ -112,9 +120,10 @@ const USERS = [LAUNCHER, MEMBER, EX, STRANGER]
 
 /** 60 RBs at adp 0.001…0.060 — below every real ADP (see the header). The
  *  pool is deliberately DEEPER than the board (32 slots): a CPU whose roster
- *  need has run out stops bidding, and an uncontested nomination is awarded
- *  instantly (093), which would leave the bid verb below nothing to raise
- *  on. Depth is what keeps the market contested. */
+ *  need has run out stops bidding, and a genuinely uncontested nomination is
+ *  still awarded instantly (§8.6.9/093 — 096 restored the predicate's team
+ *  set, it did not soften the rule), which would leave the bid verb below
+ *  nothing to raise on. Depth is what keeps the market contested. */
 const PLAYERS = Array.from({ length: 60 }, (_, i) => ({
   id: `sa-wire-rb${String(i + 1).padStart(2, '0')}`,
   full_name: `SA Wire RB ${String(i + 1).padStart(2, '0')}`,
@@ -276,9 +285,23 @@ async function readDraft(id: string): Promise<DraftRow> {
   return data as DraftRow
 }
 
-async function tick(): Promise<void> {
-  const { error } = await service.rpc('draft_tick')
+/** `draft_tick`'s own report (093:1670-1685). The auction CPU counters are
+ *  what F121 was measured WITH — `auction_cpu_raised: 0` over a 12-tick
+ *  drive was the wire half of the finding — so the fixed suite reads them
+ *  rather than inferring bidding from the board. */
+type TickSummary = {
+  auction_cpu_claimed: number
+  auction_cpu_raised: number
+  auction_cpu_folded: number
+  auction_cpu_nominated: number
+  auction_cpu_failures: unknown[]
+  auction_failures: unknown[]
+}
+
+async function tick(): Promise<TickSummary> {
+  const { data, error } = await service.rpc('draft_tick')
   if (error) throw new Error(`draft_tick failed: ${error.message}`)
+  return data as unknown as TickSummary
 }
 
 /** The launcher's heartbeat, through the real RPC (server clock). */
@@ -626,7 +649,7 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
     expect(mine?.team_id).toBe(snakeHumanTeamId)
   }, 180_000)
 
-  it('nominate: the launcher opens a market on a league-less auction — and F121 is why no bot answers it', async () => {
+  it('nominate: the launcher opens a market on a league-less auction — and a bot ANSWERS it (F121)', async () => {
     const onClock = await advanceToHumanTurn(auctionMockId, auctionHumanTeamId)
     expect(onClock.on_clock_team_id).toBe(auctionHumanTeamId)
 
@@ -661,61 +684,288 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
     expect(opened.bid.amount).toBe(1)
 
     // ---------------------------------------------------------------------
-    // F121, MEASURED HERE AND DELIBERATELY NOT FIXED HERE (engine, not the
-    // action surface — tasks-MP §4's no-drive-by rule).
+    // F121, FIXED BY MIGRATION 096 — and this is the assertion that MOVED.
     //
-    // `draft_nomination_uncontestable` (093:590–653) asks "can any OTHER
-    // franchise reach high + $1?" with `WHERE t.league_id = v_league_id`.
-    // On a standalone mock `v_league_id` is NULL, so that predicate matches
-    // NO seat, `NOT EXISTS` is TRUE, and EVERY nomination is declared
-    // uncontestable and awarded instantly at its opening bid. Probed
-    // directly against this exact draft:
-    //   draft_nomination_uncontestable(…) -> t
-    //   the same scan with `IS NOT DISTINCT FROM` -> 7 contenders
-    // So a standalone practice auction is not an auction yet: no CPU ever
-    // bids, and there is no live market for a human raise to land on.
+    // It used to read `expect(settled.current_nomination).toBeNull()` and
+    // pin the instant award, because `draft_nomination_uncontestable`
+    // (093:590-652) scanned `FROM public.teams t WHERE t.league_id =
+    // v_league_id`: with a NULL league that matched NO seat, `NOT EXISTS`
+    // was TRUE, and §8.6.9's instant award fired on EVERY nomination. 096
+    // gave the predicate a `league_id IS NULL` arm over the mock's OWN
+    // `drafts.draft_order` (095 banner item 4's idiom), so a $1 opening on
+    // a board of $47-max-bid rivals is now what it always should have been:
+    // an ordinary nomination with a live clock.
     // ---------------------------------------------------------------------
     const settled = await readDraft(auctionMockId)
-    expect(settled.current_nomination).toBeNull()
-    const { data: award } = await service
+    expect(settled.current_nomination).not.toBeNull()
+    const market = settled.current_nomination as unknown as {
+      player_id: string
+      high_bid: number
+      high_bidder_team_id: string
+    }
+    expect(market.player_id).toBe(free)
+    // NOT awarded: no pick row exists for the nominated player.
+    const { count: awarded } = await service
       .from('draft_picks')
-      .select('team_id, price')
+      .select('player_id', { count: 'exact', head: true })
       .eq('draft_id', auctionMockId)
       .eq('player_id', free as string)
-      .single()
-    expect(award?.team_id).toBe(auctionHumanTeamId)
-    expect(award?.price).toBe(1)
+    expect(awarded).toBe(0)
   }, 180_000)
 
-  it('bid: the verb REACHES THE ENGINE on a league-less auction — the 404 became the RPC’s own refusal', async () => {
-    // What this layer owes is that the request resolves to the mock and the
-    // RPC decides. Before MP.6b every bid on a standalone mock died in
-    // `resolveDraftForAction` with the resolver's 404 and `draft_place_bid`
-    // was never called; now the answer is the ENGINE's product copy about
-    // the market — a friendly 400 (D136), never a 429 and never a 404.
+  it('bid: the launcher RAISES a bot on their own practice auction, and the raise floors the clock (D128)', async () => {
+    // WHAT THIS TEST USED TO BE: a pin on the ENGINE's 400, with a comment
+    // naming itself as the assertion that moves when F121 is fixed
+    // (D245(7)). F121 is fixed by migration 096, so it moved — this is a
+    // real 200 raise over a bot's standing high bid, driven end to end:
+    // nominate -> the AP.3 responder answers -> the human raises -> the D128
+    // anti-snipe floor extends the clock.
     //
-    // A 200 here is unreachable while F121 stands (see the test above): with
-    // every nomination instantly awarded there is no live market to raise
-    // on. **When F121 is fixed, this is the assertion that moves** — to a
-    // real raise over a CPU's standing high bid.
-    const raise = await placeBid(
-      launcherClient,
-      standaloneMockScope(auctionMockId, launcherId),
-      launcherId,
-      {
-        draft_id: auctionMockId,
-        amount: 2,
-        nomination_seq: 1,
-        player_id: PLAYER_IDS[40],
-        action_id: ACTION.bid,
-      },
+    // HARNESS (D100, unchanged): no wall clock is read. CPU think-time is
+    // made due by rewinding the SERVER-written `updated_at`.
+    //
+    // WHY THE WHOLE DRIVE IS A RETRY LOOP AND NOT A STRAIGHT LINE — measured,
+    // not defensive: `draft_tick()` is GLOBAL, the live 5s pg_cron runs it,
+    // and every other stack-backed suite in `npm run test` runs it too. A
+    // market opened in one round trip is not guaranteed to still be live in
+    // the next, and the first cut of this test passed alone and failed 400
+    // ("just went off the board") in the full run, twice. The assertion is
+    // therefore on CONVERGED state — that a human raise over a bot lands and
+    // floors the clock — never on a particular market surviving.
+    const freePlayer = async (): Promise<string> => {
+      const { data: won } = await service
+        .from('draft_picks')
+        .select('player_id')
+        .eq('draft_id', auctionMockId)
+        .eq('is_undone', false)
+      const gone = new Set((won ?? []).map((row) => row.player_id))
+      const free = PLAYER_IDS.find((id) => !gone.has(id))
+      if (free === undefined) throw new Error('the fixture pool is exhausted')
+      return free
+    }
+    const provoke = async (draft: DraftRow): Promise<void> => {
+      await beat(auctionMockId)
+      await service
+        .from('drafts')
+        .update({ updated_at: shifted(draft.updated_at as string, -30_000) })
+        .eq('id', auctionMockId)
+        .eq('status', 'live')
+      const summary = await tick()
+      expect(summary.auction_cpu_failures).toEqual([])
+      expect(summary.auction_failures).toEqual([])
+    }
+
+    type LiveMarket = { player_id: string; high_bid: number; high_bidder_team_id: string }
+    let landed: {
+      before: LiveMarket
+      windowed: string
+      body: { bid: { team_id: string; amount: number; action_id: string | null } }
+    } | null = null
+
+    for (let attempt = 0; attempt < 12 && landed === null; attempt += 1) {
+      let market = await readDraft(auctionMockId)
+      expect(market.status).toBe('live')
+
+      if (market.current_nomination === null) {
+        await advanceToHumanTurn(auctionMockId, auctionHumanTeamId)
+        const opened = await nominatePlayer(
+          launcherClient,
+          standaloneMockScope(auctionMockId, launcherId),
+          launcherId,
+          {
+            draft_id: auctionMockId,
+            player_id: await freePlayer(),
+            opening_bid: 1,
+            action_id: crypto.randomUUID(),
+          },
+        )
+        expect(opened.status).toBe(200)
+        market = await readDraft(auctionMockId)
+        if (market.current_nomination === null) continue
+      }
+
+      // PROVOKED, NOT SWEPT (§8.8/D200(1)): 091/AP.3 calls the responder from
+      // the ONE bid writer, so the ladder normally runs inside
+      // `draft_nominate`'s own transaction and the market is already
+      // contested. If a bot has not answered yet, the sweep is driven until
+      // one has — the safety net doing the same job.
+      const nomination = market.current_nomination as unknown as LiveMarket
+      if (nomination.high_bidder_team_id === auctionHumanTeamId) {
+        await provoke(market)
+        continue
+      }
+
+      // ~9s on the SERVER-written clock: inside the 10s anti-snipe window,
+      // with as much margin as the window allows.
+      const windowed = shifted(market.current_deadline as string, -(20 - 9) * 1_000)
+      const { error: windowError } = await service
+        .from('drafts')
+        .update({ current_deadline: windowed })
+        .eq('id', auctionMockId)
+        .eq('status', 'live')
+      expect(windowError).toBeNull()
+
+      const raise = await placeBid(
+        launcherClient,
+        standaloneMockScope(auctionMockId, launcherId),
+        launcherId,
+        {
+          draft_id: auctionMockId,
+          amount: nomination.high_bid + 1,
+          nomination_seq: market.current_pick_number as number,
+          player_id: nomination.player_id,
+          action_id: ACTION.bid,
+        },
+      )
+      if (raise.status !== 200) {
+        // The only tolerated loss is the market going off the board under a
+        // concurrent tick — anything else is a real refusal and fails here.
+        const message = (raise.body as { error: string }).error
+        expect(raise.status).toBe(400)
+        expect(message).toMatch(/off the board/)
+        continue
+      }
+      landed = {
+        before: nomination,
+        windowed,
+        body: raise.body as unknown as {
+          bid: { team_id: string; amount: number; action_id: string | null }
+        },
+      }
+    }
+
+    expect(landed).not.toBeNull()
+    const won = landed as NonNullable<typeof landed>
+
+    // THE 200 ITSELF — the assertion D245(7) said would move.
+    expect(won.body.bid.team_id).toBe(auctionHumanTeamId)
+    expect(won.body.bid.amount).toBe(won.before.high_bid + 1)
+    // A HUMAN raise carries the caller's action_id; a CPU's is NULL (D130).
+    expect(won.body.bid.action_id).toBe(ACTION.bid)
+    // …and it is a ROW, exactly one, on the human's seat.
+    const { data: mine } = await service
+      .from('draft_bids')
+      .select('team_id, amount, action_id')
+      .eq('draft_id', auctionMockId)
+      .eq('action_id', ACTION.bid)
+    expect(mine?.length).toBe(1)
+    expect(mine?.[0].team_id).toBe(auctionHumanTeamId)
+    expect(mine?.[0].amount).toBe(won.before.high_bid + 1)
+
+    // D128: the raise floors the deadline to server-now + 10s — later than
+    // the windowed value, and NOT a reset to the full 20s bid clock. Read off
+    // the RPC's OWN returned draft, so a concurrent tick cannot move it
+    // between the write and the assertion.
+    const floored = (won.body as unknown as { draft: DraftRow }).draft
+    const flooredMs = Date.parse(floored.current_deadline as string)
+    expect(flooredMs).toBeGreaterThan(Date.parse(won.windowed))
+    expect(flooredMs - Date.parse(floored.updated_at as string)).toBeLessThanOrEqual(10 * 1_000 + 50)
+    expect(flooredMs - Date.parse(floored.updated_at as string)).toBeGreaterThanOrEqual(
+      10 * 1_000 - 1_000,
     )
-    expect(raise.status).toBe(400)
-    const message = (raise.body as { error: string }).error
-    expect(typeof message).toBe('string')
-    expect(message).not.toBe(MOCK_NOT_FOUND_STANDALONE_MESSAGE)
-    expect(message).not.toBe(NO_ACTIVE_DRAFT_MESSAGE)
-  }, 120_000)
+
+    // ---------------------------------------------------------------------
+    // THE INVERTED WIRE MEASUREMENT — AND IT IS NOT THE COUNTER THE F121 ROW
+    // ASKED FOR, BECAUSE THE ENGINE MEASURABLY DOES NOT WORK THAT WAY.
+    //
+    // F121's evidence was a 12-tick drive reporting `auction_cpu_raised: 0`
+    // with one bid and one pick per nomination. The obvious inversion is
+    // "assert the tick counter goes positive" — and it does not, for a
+    // reason that is 091/AP.3's design rather than a defect: the responder is
+    // called from the ONE bid writer, so EVERY bid in a mock auction provokes
+    // its answer INSIDE the same transaction (091:715-733, "not three call
+    // sites remembered to"). The tick's ARM 2.6(c) is the no-actor SAFETY
+    // NET, and on a market the in-transaction ladder has already settled it
+    // correctly reports `raised: 0` / `folded: n`. MEASURED, not assumed: a
+    // 60-pass sweep drive over this mock reported
+    // `{ claimed: 0, raised: 0, nominated: 0 }` with the clock expired (the
+    // arm re-verifies `current_deadline > now()` under the lock) and
+    // `{ claimed: 3, raised: 0 }` with it live.
+    //
+    // So the counter is asserted the way `mock-auction-db.test.ts` asserts
+    // the same thing on a LEAGUE mock — the FOLD, POSITIVELY: the arm claimed
+    // the standalone row, priced the settled market and declined. A zero
+    // payload from an arm that never claimed the row would read as agreement
+    // (CLAUDE.md, "never let nothing happened mean it worked"), and that is
+    // exactly the shape F121 hid behind.
+    // ---------------------------------------------------------------------
+    let swept: TickSummary | null = null
+    for (let attempt = 0; attempt < 8 && swept === null; attempt += 1) {
+      const live = await readDraft(auctionMockId)
+      if (live.status !== 'live' || live.current_nomination === null) {
+        await advanceToHumanTurn(auctionMockId, auctionHumanTeamId)
+        await nominatePlayer(
+          launcherClient,
+          standaloneMockScope(auctionMockId, launcherId),
+          launcherId,
+          {
+            draft_id: auctionMockId,
+            player_id: await freePlayer(),
+            opening_bid: 1,
+            action_id: crypto.randomUUID(),
+          },
+        )
+        continue
+      }
+      await beat(auctionMockId)
+      await service
+        .from('drafts')
+        .update({ updated_at: shifted(live.updated_at as string, -30_000) })
+        .eq('id', auctionMockId)
+        .eq('status', 'live')
+      const summary = await tick()
+      expect(summary.auction_cpu_failures).toEqual([])
+      if (summary.auction_cpu_claimed > 0) swept = summary
+    }
+    expect(swept).not.toBeNull()
+    const sweep = swept as NonNullable<typeof swept>
+    expect(sweep.auction_cpu_claimed).toBeGreaterThan(0)
+    expect(sweep.auction_cpu_folded).toBeGreaterThan(0)
+    expect(sweep.auction_cpu_raised).toBe(0)
+
+    // AND THE HEADLINE, FROM THE ROWS RATHER THAN A COUNTER: a bot ANSWERED
+    // a market on a league-less auction. Before 096 no bot ever could — every
+    // nomination was declared uncontestable and awarded at its opening bid
+    // before anyone had the chance.
+    //
+    // WHAT "A RAISE" HAS TO MEAN HERE, AND THE FIRST CUT GOT IT WRONG (R527).
+    // It filtered `action_id === null && team_id !== human` and called the
+    // result raises. That also matches the row `draft_system_nominate_internal`
+    // writes for EVERY CPU NOMINATION — the $1 opening bid, on the on-clock
+    // CPU seat, with a NULL action_id by design (093:2090-2094; the column is
+    // NULLable precisely for the system path). So the pin could not fail for
+    // the reason its comment gave: with F121 ACTIVE, a 30-tick drive produces
+    // six such rows and not one of them is an answer to anything.
+    //
+    // A RAISE IS A SECOND BID ON THE SAME NOMINATION. `nomination_seq` groups
+    // the market and the opening bid is its cheapest row, so a raise is any
+    // bid strictly above its own nomination's minimum — the one shape a board
+    // of instant awards can never produce, because an instantly-awarded
+    // nomination has exactly one bid.
+    const { data: allBids } = await service
+      .from('draft_bids')
+      .select('team_id, amount, action_id, nomination_seq')
+      .eq('draft_id', auctionMockId)
+      .is('voided_at', null)
+    const opening = new Map<number, number>()
+    for (const b of allBids ?? []) {
+      const seq = b.nomination_seq as number
+      const low = opening.get(seq)
+      if (low === undefined || b.amount < low) opening.set(seq, b.amount)
+    }
+    const botRaisesOverall = (allBids ?? []).filter(
+      (b) =>
+        b.action_id === null &&
+        b.team_id !== auctionHumanTeamId &&
+        b.amount > (opening.get(b.nomination_seq as number) as number),
+    )
+    expect(botRaisesOverall.length).toBeGreaterThan(0)
+    // …and the market it answered had more than one bid in it, stated
+    // separately so the count above cannot be satisfied by a single row that
+    // some later refactor reclassifies.
+    const contestedMarkets = new Set(botRaisesOverall.map((b) => b.nomination_seq))
+    expect(contestedMarkets.size).toBeGreaterThan(0)
+  }, 180_000)
 })
 
 // ===========================================================================
