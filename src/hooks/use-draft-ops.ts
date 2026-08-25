@@ -205,6 +205,23 @@ function reduceDraftsEvent(state: DraftState, record: DraftsBroadcastRecord): Re
     record.current_pick_number !== null &&
     record.current_pick_number > maxKnownPickNumber(state.picks) + 1
 
+  // R565: an identical-field replay (a true redelivery — every patched
+  // field already equals what we hold) returns the SAME state reference so
+  // React sees no change and re-renders nothing. Shallow-compare via the
+  // patched object's own keys; the two jsonb fields compare by content
+  // (realtime hands us a fresh parse per event, so reference equality
+  // would call every redelivery "changed").
+  const prev = state.draft
+  const identical =
+    !gap &&
+    (Object.keys(draft) as (keyof Draft)[]).every((key) => {
+      if (key === 'current_nomination' || key === 'budget_adjustments') {
+        return JSON.stringify(draft[key] ?? null) === JSON.stringify(prev[key] ?? null)
+      }
+      return draft[key] === prev[key]
+    })
+  if (identical) return { state, refetch: false }
+
   return { state: { draft, picks: state.picks }, refetch: gap }
 }
 

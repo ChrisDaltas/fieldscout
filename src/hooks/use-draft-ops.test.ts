@@ -169,6 +169,27 @@ describe('applyDraftRoomEvent · drafts', () => {
     expect(twice.state.draft).toEqual(once.state.draft)
   })
 
+  // R565 (recorded at L.C5.1's review, taken at L.C6.1): the no-op above
+  // used to mint a NEW state object per redelivery — one wasted render per
+  // replay. An identical-field equal-version replay now short-circuits to
+  // the SAME reference; a same-version event whose fields DIFFER (the
+  // same-transaction pair the flip above exists for) must still apply.
+  it('R565: an identical-field replay returns the SAME state reference', () => {
+    const state = baseState({ picks: [...baseState().picks, pick(4, 'pl-d')] })
+    const identical = draftsRecord()
+    const once = applyDraftRoomEvent(state, { event: 'drafts', operation: 'UPDATE', record: identical })
+    const twice = applyDraftRoomEvent(once.state, { event: 'drafts', operation: 'UPDATE', record: identical })
+    expect(twice.state).toBe(once.state) // reference equality — zero re-render
+    // The short-circuit must NOT swallow a same-version field change:
+    const changed = applyDraftRoomEvent(once.state, {
+      event: 'drafts',
+      operation: 'UPDATE',
+      record: draftsRecord({ status: 'complete', current_pick_number: 5 }),
+    })
+    expect(changed.state).not.toBe(once.state)
+    expect(changed.state.draft?.status).toBe('complete')
+  })
+
   it('GAP ⇒ refetch: a drafts advance past picks we never received', () => {
     // We hold picks 1–3; the server says pick 6 is on the clock — picks 4–5
     // never arrived. The hint still applies (render freshest), but the

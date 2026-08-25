@@ -78,6 +78,13 @@ echo "==> [4/7] League Simulator — 25 concurrent bot snake drafts (seed 42)"
 npm run sim -- draft --leagues 25 --clock 30 --seed 42
 
 echo ""
+echo "==> [4.5] F56 bounded stack-health settle (added at L.C6.1 review, R566 —"
+echo "    THIS boundary is where F56 was observed: the 2026-08-14 gate red and"
+echo "    both R400 reviewer reds hit the post-sim E2E start here; a diagnosed"
+echo "    wait, never a blind sleep — see scripts/gate-settle.ts)"
+npx tsx scripts/gate-settle.ts
+
+echo ""
 echo "==> [5/7] Playwright E2E — live draft / reconnect < 2s / solo mock / journey"
 npm run test:e2e
 

@@ -35,6 +35,7 @@
     "test:gate": "vitest run src/lib/leagues/gate",
     "test:gate:m1": "bash scripts/gate-m1.sh",
     "test:gate:m2": "bash scripts/gate-m2.sh",
+    "test:gate:m3": "bash scripts/gate-m3.sh",
     "test:db": "supabase test db"
   },
   "dependencies": {
