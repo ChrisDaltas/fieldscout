@@ -27,6 +27,8 @@ import { SCORING_TEMPLATES } from './templates'
 import {
   DEF_PA_FIRST_TIER,
   DEF_PA_PREFIX,
+  type EnvelopeTierCuts,
+  type TierCuts,
   DEF_YA_FIRST_TIER,
   DEF_YA_PREFIX,
   ESPN_PA_CUTS,
@@ -91,6 +93,12 @@ const TEMPLATE_FAMILIES: Record<
   'Sleeper Standard': { pa: SHARED_PA_CUTS, ya: null },
   'Sleeper Full PPR': { pa: SHARED_PA_CUTS, ya: null },
 }
+
+// Cut lists used ONLY to exercise the active-family strip: each generates a
+// key that NEITHER literal table names, so nothing but the active-table
+// sweep can remove it from an input. (Premise asserted below, not assumed.)
+const PA_PROBE_CUTS: readonly number[] = [0, 5, 10]
+const YA_PROBE_CUTS: readonly number[] = [0, 50, 100]
 
 const keysWithPrefix = (obj: Record<string, unknown>, prefix: string) =>
   Object.keys(obj)
@@ -174,6 +182,46 @@ describe('tierKeysFromCuts — the §7.3.3.1(a) generation rule', () => {
       'def_pa_6_9',
       'def_pa_10_plus',
     ])
+  })
+
+  it('PREMISE of the strip pins: the probe cut lists generate keys NO literal table names (R576)', () => {
+    const literalKeys = new Set([
+      ...DEF_PA_BUCKETS.map((b) => b.key),
+      ...DEF_YA_BUCKETS.map((b) => b.key),
+    ])
+    expect(tierKeysFromCuts(DEF_PA_PREFIX, PA_PROBE_CUTS)).toEqual([
+      'def_pa_0_4',
+      'def_pa_5_9',
+      'def_pa_10_plus',
+    ])
+    expect(tierKeysFromCuts(DEF_YA_PREFIX, YA_PROBE_CUTS)).toEqual([
+      'def_ya_0_49',
+      'def_ya_50_99',
+      'def_ya_100_plus',
+    ])
+    expect(literalKeys.has('def_pa_5_9')).toBe(false)
+    expect(literalKeys.has('def_ya_50_99')).toBe(false)
+  })
+
+  it('gives the format-2 envelope its OWN required shape — an envelope\u2019s cuts are still a legal derive parameter (R577)', () => {
+    // Compile-time half: EnvelopeTierCuts (both tables REQUIRED, the shape a
+    // stored document carries) is assignable to TierCuts (the derive
+    // parameter, both optional). The reverse is deliberately NOT true —
+    // omitting a table from a DOCUMENT is a format defect, so SE.2 must
+    // reference EnvelopeTierCuts, never TierCuts.
+    const envelope: EnvelopeTierCuts = { def_pa: ESPN_PA_CUTS, def_ya: YA_CUTS }
+    const asParam: TierCuts = envelope
+    expect(Object.keys(envelope).sort()).toEqual(['def_pa', 'def_ya'])
+    // …and it derives, unchanged, through the ordinary path.
+    expect(
+      hotKeys(
+        deriveTierIndicators(
+          { [DEF_PA_SOURCE_KEY]: 17, [DEF_YA_SOURCE_KEY]: 289 },
+          asParam,
+        ),
+        DEF_PA_PREFIX,
+      ),
+    ).toEqual(['def_pa_14_17'])
   })
 
   it('refuses a malformed cut list LOUDLY — with the one-unit case on every guard (D146)', () => {
@@ -265,11 +313,17 @@ describe('deriveTierIndicators with cuts — the derive-agreement invariant (§7
     }
   })
 
-  it('withholds the PA family for a negative or fractional source under BOTH readings (D174 / R58/D58)', () => {
-    // D174 pins this exact case: §7.3.3.1(a) says "first open-below" while
-    // the shipped table floors def_pa_0 at 0. The agreement clause decides
-    // it — and the two readings are indistinguishable here because a floored
-    // PA family withholds the negative value either way.
+  it('withholds the PA family for a negative or fractional source under BOTH DERIVATIONS — literal table and cuts-generated (D174 / R58/D58)', () => {
+    // D174 pins this exact case, and "BOTH readings" here means the LITERAL
+    // TABLE and the CUTS-DERIVED table — not floor-vs-open-below, which are
+    // genuinely distinguishable at exactly these values (R580): a literal
+    // reading of §7.3.3.1(a)'s "first open-below" would give the first PA
+    // tier lo = -Infinity and PAY PA = -2. D174 resolves that for PA in
+    // favour of the same bullet's agreement clause ("no behavior change"):
+    // the cuts-generated PA table keeps `lo = first cut`, preserving R58/D58
+    // withholding. So the thing pinned is that the reading we SHIP agrees
+    // with today's literals — and it is falsifiable, because adopting
+    // open-below for PA would make every assertion below fail.
     for (const pa of [-1, -2, 13.5, 14.5]) {
       expect(keysWithPrefix(derivePa(pa), DEF_PA_PREFIX), `literal PA=${pa}`).toEqual([])
       expect(
@@ -337,14 +391,18 @@ describe('deriveTierIndicators with cuts — the derive-agreement invariant (§7
     ])
   })
 
-  it('strips an inbound indicator the ACTIVE cut list generates but the literal tables do not name (D44 — an indicator is never stored, so an inbound value is by definition bogus)', () => {
+  it('re-derives the whole ACTIVE family from the source when the source is mappable (end state — NOT the strip; see the next two)', () => {
     const derived = deriveTierIndicators(
       { [DEF_PA_SOURCE_KEY]: 20, def_pa_5_9: 1, def_pa_46_plus: 1 },
-      { def_pa: [0, 5, 10] },
+      { def_pa: PA_PROBE_CUTS },
     )
-    // def_pa_46_plus is swept by the literal-table pass; def_pa_5_9 is swept
-    // ONLY by the active-table pass — the inbound 1 comes back as the
-    // derivation's own 0, not as the caller's assertion.
+    // HONEST ABOUT WHAT THIS PINS (R576): with a MAPPABLE source,
+    // `emitFamily` rewrites every active key to 0/1, so the inbound 1 would
+    // be overwritten even with no strip at all — this assertion cannot fail
+    // if the active-table strip is deleted. It pins the end state only. The
+    // strip is the ONLY thing standing between an inbound indicator and the
+    // output when the source is ABSENT or UNMAPPABLE, which is what the two
+    // tests below drive, per family.
     expect(keysWithPrefix(derived, DEF_PA_PREFIX)).toEqual([
       'def_pa_0_4',
       'def_pa_10_plus',
@@ -352,6 +410,61 @@ describe('deriveTierIndicators with cuts — the derive-agreement invariant (§7
     ])
     expect(derived.def_pa_5_9).toBe(0)
     expect(hotKeys(derived, DEF_PA_PREFIX)).toEqual(['def_pa_10_plus'])
+  })
+
+  it('STRIPS an active-family indicator the literal tables do not name when the PA source is ABSENT or UNMAPPABLE (D44 — an inbound indicator is by definition bogus)', () => {
+    // `def_pa_5_9` is generated by PA_PROBE_CUTS and named by NEITHER
+    // literal table, so only the active-table sweep can remove it — and
+    // with no emitted family behind it, nothing else can overwrite it.
+    // MEASURED: delete `for (const { key } of paBuckets) delete out[key]`
+    // from derive-stats.ts and this test goes RED (`test:unit` 2 failed /
+    // 2197 passed — this one and case (c) of the YA test below).
+
+    // (a) source absent — the family is not emitted at all.
+    expect(deriveTierIndicators({ def_pa_5_9: 1 }, { def_pa: PA_PROBE_CUTS })).toEqual({})
+
+    // (b) source unmappable, below the floor (R58/D58 withholding).
+    expect(
+      deriveTierIndicators(
+        { [DEF_PA_SOURCE_KEY]: -3, def_pa_5_9: 1 },
+        { def_pa: PA_PROBE_CUTS },
+      ),
+    ).toEqual({ [DEF_PA_SOURCE_KEY]: -3 })
+
+    // (c) source unmappable, fractional inside an interval.
+    expect(
+      deriveTierIndicators(
+        { [DEF_PA_SOURCE_KEY]: 6.5, def_pa_5_9: 1, def_sack: 3 },
+        { def_pa: PA_PROBE_CUTS },
+      ),
+    ).toEqual({ [DEF_PA_SOURCE_KEY]: 6.5, def_sack: 3 })
+  })
+
+  it('STRIPS an active-family indicator the literal tables do not name when the YA source is ABSENT or UNMAPPABLE (the same guard, second family)', () => {
+    // `def_ya_50_99` is generated by YA_PROBE_CUTS and named by no literal
+    // row. MEASURED: delete `for (const { key } of yaBuckets) delete
+    // out[key]` and this test goes RED (`test:unit` 1 failed / 2198 passed).
+
+    // (a) source absent.
+    expect(deriveTierIndicators({ def_ya_50_99: 1 }, { def_ya: YA_PROBE_CUTS })).toEqual({})
+
+    // (b) source unmappable — YA is open below, so fractional is its only
+    // unmappable shape (a negative total-yards game is REAL and maps).
+    expect(
+      deriveTierIndicators(
+        { [DEF_YA_SOURCE_KEY]: 99.5, def_ya_50_99: 1 },
+        { def_ya: YA_PROBE_CUTS },
+      ),
+    ).toEqual({ [DEF_YA_SOURCE_KEY]: 99.5 })
+
+    // (c) …and one both-families case, so a strip deleted on either side
+    // alone is caught here too.
+    expect(
+      deriveTierIndicators(
+        { def_pa_5_9: 1, def_ya_50_99: 1, def_sack: 2 },
+        { def_pa: PA_PROBE_CUTS, def_ya: YA_PROBE_CUTS },
+      ),
+    ).toEqual({ def_sack: 2 })
   })
 
   it('leaves a def_pa_* key that NEITHER table names alone — unchanged behavior, not a new sweep', () => {
