@@ -70,10 +70,22 @@ export interface ProvisionedLeague {
   commishTeamId: string
   /** Present when a manager seat was claimed. */
   managerTeamId: string | null
+  /** Seat team ids for `extraManagers`, in input order (storm bots). */
+  extraTeamIds: string[]
   placeholderTeamIds: string[]
   teamCount: number
   totalRounds: number
   totalPicks: number
+}
+
+/** §7.3.8 auction knobs a spec pins explicitly (L.C5.1) — every value is
+ *  validated by the real settings schema on `createLeague`, so an
+ *  out-of-catalog number fails loudly at provisioning, never mid-spec. */
+export interface AuctionProvisionConfig {
+  budget: number
+  nominationSeconds: number
+  bidSeconds: number
+  antiSnipeSeconds: number
 }
 
 export interface ProvisionInput {
@@ -86,6 +98,15 @@ export interface ProvisionInput {
   commish: AuthedUser
   /** When present, claims seat 2 via the real invite/claim path. */
   manager?: AuthedUser
+  /** Additional SEATED users (L.C5.1's storm bots — harness job 6) — each
+   *  claims its own invite through the real path, after `manager`. They
+   *  join the stored order after the two humans, before placeholders. */
+  extraManagers?: AuthedUser[]
+  /** 'auction' flips §7.3.8 on with the knobs below; default stays 'snake'
+   *  byte-identical (the M2 specs are untouched by L.C5.1). */
+  draftType?: 'snake' | 'auction'
+  /** REQUIRED when draftType === 'auction'. */
+  auction?: AuctionProvisionConfig
   /** Human seats lead the stored order: [commish, manager?, ...placeholders]
    *  unless 'manager-first' flips the two. */
   order?: 'commish-first' | 'manager-first'
@@ -127,16 +148,35 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   if (templateError) throw new Error(`scoring-template lookup failed: ${templateError.message}`)
 
   const settings = defaultsForTeamCount(input.teamCount)
+  if (input.draftType === 'auction' && !input.auction) {
+    throw new Error('provisionLeague: draftType "auction" requires the auction knobs (loud, not defaulted)')
+  }
   const configured = {
     ...settings,
     roster_settings: rosterForRounds(input.rounds),
     draft: {
       ...settings.draft,
-      draft_type: 'snake' as const,
-      draft_order_mode: input.orderMode ?? ('manual' as const),
+      draft_type: (input.draftType ?? 'snake') as 'snake',
+      // AP.5: an auction's rotation is the NOMINATION order, set through
+      // League settings (below, once the seats exist) — the draft-order
+      // PATCH refuses a pre-start auction, so the board order stays random.
+      draft_order_mode:
+        input.draftType === 'auction' ? ('random' as const) : (input.orderMode ?? ('manual' as const)),
       pick_timer_seconds: input.clockSeconds as (typeof settings.draft)['pick_timer_seconds'],
       disconnect_grace_seconds: GRACE_SECONDS,
       draft_scheduled_at: DRAFT_INSTANT,
+      // §7.3.8 (L.C5.1): the auction clocks a spec pins. Validated by the
+      // real settings schema at createLeague — nothing here defaults.
+      ...(input.auction
+        ? {
+            auction_budget: input.auction.budget as (typeof settings.draft)['auction_budget'],
+            auction_nomination_seconds:
+              input.auction.nominationSeconds as (typeof settings.draft)['auction_nomination_seconds'],
+            auction_bid_seconds: input.auction.bidSeconds as (typeof settings.draft)['auction_bid_seconds'],
+            auction_anti_snipe_seconds:
+              input.auction.antiSnipeSeconds as (typeof settings.draft)['auction_anti_snipe_seconds'],
+          }
+        : {}),
     },
   }
 
@@ -161,7 +201,19 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
     managerTeamId = (claim.body as { team_id: string }).team_id
   }
 
-  const humanSeats = manager ? 2 : 1
+  // L.C5.1: the storm's bot seats — every one claims its own invite through
+  // the REAL path (D100), exactly the sim runner's bot-pool shape.
+  const extraTeamIds: string[] = []
+  for (const extra of input.extraManagers ?? []) {
+    const invite = await createInvite(commish.client, leagueId, {})
+    expectStatus(invite, [200, 201], 'createInvite (extra seat)')
+    const token = (invite.body as { token: string }).token
+    const claim = await claimInvite(extra.client, { token })
+    expectStatus(claim, [200], 'claimInvite (extra seat)')
+    extraTeamIds.push((claim.body as { team_id: string }).team_id)
+  }
+
+  const humanSeats = (manager ? 2 : 1) + extraTeamIds.length
   for (let i = 0; i < input.teamCount - humanSeats; i++) {
     const filled = await addPlaceholderSeat(commish.client, leagueId, {})
     expectStatus(filled, [201], 'addPlaceholderSeat')
@@ -183,7 +235,7 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   if (teamsError) throw new Error(`teams read failed: ${teamsError.message}`)
   const placeholderTeamIds = (teamRows ?? [])
     .map((t) => t.id as string)
-    .filter((id) => id !== commishTeamId && id !== managerTeamId)
+    .filter((id) => id !== commishTeamId && id !== managerTeamId && !extraTeamIds.includes(id))
 
   const totalRounds = input.rounds
   const result: ProvisionedLeague = {
@@ -191,6 +243,7 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
     draftId: null,
     commishTeamId,
     managerTeamId,
+    extraTeamIds,
     placeholderTeamIds,
     teamCount: input.teamCount,
     totalRounds,
@@ -198,6 +251,31 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   }
 
   if (input.stayInSetup) return result
+
+  const humanOrder =
+    input.order === 'manager-first' && managerTeamId
+      ? [managerTeamId, commishTeamId]
+      : managerTeamId
+        ? [commishTeamId, managerTeamId]
+        : [commishTeamId]
+  const order = [...humanOrder, ...extraTeamIds, ...placeholderTeamIds]
+
+  if (input.draftType === 'auction') {
+    // AP.5 (098): the auction's rotation is the MANUAL nomination order,
+    // written through the real settings PATCH; `draft_start` hydrates
+    // `drafts.nomination_order` from it. The draft-order PATCH refuses a
+    // pre-start auction by design, so it is never called on this arm.
+    const patched = await patchLeague(commish.client, leagueId, {
+      settings: {
+        draft: {
+          ...configured.draft,
+          nomination_order_mode: 'manual',
+          nomination_order: order,
+        },
+      },
+    })
+    expectStatus(patched, [200], 'manual nomination-order PATCH')
+  }
 
   const scheduled = await patchLeague(commish.client, leagueId, { status: 'scheduled' })
   expectStatus(scheduled, [200], 'status → scheduled PATCH')
@@ -208,20 +286,15 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   expectStatus(draftCreated, [200, 201], 'createDraft')
   result.draftId = (draftCreated.body as { draft: { id: string } }).draft.id
 
-  const humanOrder =
-    input.order === 'manager-first' && managerTeamId
-      ? [managerTeamId, commishTeamId]
-      : managerTeamId
-        ? [commishTeamId, managerTeamId]
-        : [commishTeamId]
-  const order = [...humanOrder, ...placeholderTeamIds]
-  const ordered = await patchDraftOrder(
-    commish.client,
-    leagueId,
-    { order },
-    { randomValues: () => [] }, // explicit order — the shuffle arm is unused
-  )
-  expectStatus(ordered, [200], 'patchDraftOrder')
+  if (input.draftType !== 'auction') {
+    const ordered = await patchDraftOrder(
+      commish.client,
+      leagueId,
+      { order },
+      { randomValues: () => [] }, // explicit order — the shuffle arm is unused
+    )
+    expectStatus(ordered, [200], 'patchDraftOrder')
+  }
 
   if (input.start) {
     const started = await startDraft(commish.client, leagueId)

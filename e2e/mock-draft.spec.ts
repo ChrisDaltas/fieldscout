@@ -74,7 +74,10 @@ test.describe('solo mock draft (launch → CPUs → recap → zero league writes
 
       // ---- Launch (§16.2 mock-draft-launcher at ?practice=1) -------------
       await page.goto(`/app/leagues/${league.leagueId}/draft?practice=1`)
-      await expect(page.getByText('Practice this draft').first()).toBeVisible()
+      // MP-era copy (the launcher card renamed at MP.10; this spec's old
+      // 'Practice this draft' assertion was the suite's first red after the
+      // rename — found by L.C5.1's full-suite run and updated here).
+      await expect(page.getByText('Run mock draft').first()).toBeVisible()
       // Fast CPUs (~2s think-time) keep the spec at cron pace, not clock
       // pace. The CPU-speed control is a Segment (aria-pressed buttons).
       await page.getByRole('button', { name: 'Fast', exact: true }).click()
@@ -145,11 +148,11 @@ test.describe('solo mock draft (launch → CPUs → recap → zero league writes
       )
 
       // ---- The recap (mock variant: launcher anchor + delete) ------------
-      await page.getByRole('link', { name: 'View the recap' }).click()
-      await page.waitForURL('**/draft/recap**')
-      await expect(page.getByText('Final board')).toBeVisible()
-      await expect(page.getByText('Your roster vs the CPUs')).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Delete recap' })).toBeVisible()
+      // MP.8/D230: a finished mock goes to its REPORT — the mock's recap.
+      await page.getByRole('link', { name: 'View the report' }).click()
+      await page.waitForURL('**/mocks/**/report**')
+      await expect(page.getByText('Mock draft report').first()).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Delete report' }).first()).toBeVisible()
 
       // ---- ZERO league writes: the DB diff (the 025 §F twin) -------------
       const after = await snapshotLeagueWrites(

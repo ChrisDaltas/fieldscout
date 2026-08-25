@@ -84,8 +84,10 @@ export interface AuctionLeaguePlan {
   /** `auction_zero_dollar_nominations` — reserve $0 (ON) vs $1 (OFF). The
    *  plan guarantees BOTH columns appear whenever the run has ≥2 leagues. */
   zeroDollarNominations: boolean
-  /** Seeded from a small catalog band (50..300) — small budgets make the
-   *  §8.6.7 endgame clamps bind early, big ones exercise jump-bids. */
+  /** Seeded from the plan's catalog — [50, 100, 200] (`AUCTION_BUDGET_CHOICES`,
+   *  plan.ts) — small budgets make the §8.6.7 endgame clamps bind early, big
+   *  ones exercise jump-bids. (R562: this line once said "50..300", which no
+   *  code ever drew from.) */
   budget: number
   /** ≥1 'manual' league per multi-league run (098's hydration path); the
    *  runner sets the permutation through the real settings write and the
@@ -173,7 +175,14 @@ export interface RunReport {
 }
 
 /** What the auction gate run reports beyond the invariant sweep — every
- *  count is REAL traffic the run drove, never a target massaged to pass. */
+ *  count is REAL traffic the run drove, never a target massaged to pass.
+ *  Stability (R563): the STRUCTURAL counters (`solvencyChecks`,
+ *  `budgetEditReplaysVerified`, `refusedEditsVerified`, `reversalsApplied`
+ *  — traffic the runner itself schedules) repeat at a fixed seed; the
+ *  PERSONA-PROVOKED counters (`instantAwards`, `antiSnipe*`,
+ *  `staleBidRefusals`, `overMaxRefusals`) are run-specific, because the
+ *  live 5s cron shares the clock with the personas — compare those as
+ *  ≥ floors across runs, never as equalities. */
 export interface AuctionRunCounters {
   /** Mid-run `draft_auction_solvent` samples (service-role oracle) — one
    *  per observed award, plus one final full check per league. */

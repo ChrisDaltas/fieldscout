@@ -159,9 +159,21 @@ function reduceDraftsEvent(state: DraftState, record: DraftsBroadcastRecord): Re
   const known = instantMs(state.draft.updated_at)
   const incoming = instantMs(record.updated_at)
 
-  // Stale or replayed state_version ⇒ ignore (the newer state is already
+  // STRICTLY stale state_version ⇒ ignore (the newer state is already
   // rendered; cache-hint semantics make dropping the old hint safe).
-  if (incoming !== null && known !== null && incoming <= known) {
+  //
+  // EQUAL versions APPLY, in delivery order — changed `<=` → `<` at L.C5.1,
+  // and the change was DRIVEN, not reasoned: one engine transaction may
+  // UPDATE the drafts row more than once, and every statement shares the
+  // transaction's `now()`. The auction completion is exactly that shape —
+  // the E2E's room wedged live-with-no-clock forever because the final
+  // `status='complete'` event carried the same `updated_at` as its
+  // same-transaction predecessor and was dropped as a "replay" (probe:
+  // both events measured at v=…10.177269, live → complete). Realtime
+  // delivers a topic in commit order, so last-write-wins on an equal
+  // version IS the server's own truth; a genuine replay re-applies
+  // identical fields, which is harmless by construction (a pure copy).
+  if (incoming !== null && known !== null && incoming < known) {
     return { state, refetch: false }
   }
   // A hint with no parsable version is doubt, not data.

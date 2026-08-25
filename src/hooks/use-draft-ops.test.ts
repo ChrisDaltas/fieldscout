@@ -137,15 +137,36 @@ describe('applyDraftRoomEvent · drafts', () => {
     expect(result.state).toBe(state) // same reference — nothing applied
   })
 
-  it('ignores an EQUAL state_version (replayed broadcast)', () => {
+  // FLIPPED at L.C5.1 (was "ignores an EQUAL state_version"): one engine
+  // transaction can UPDATE the drafts row twice with ONE now() — the
+  // auction completion does (live/no-clock → complete, both at the same
+  // updated_at, measured by the E2E's probe) — and dropping the equal
+  // version wedged every auction room at completion forever. Equal
+  // versions now APPLY in delivery order (realtime delivers a topic in
+  // commit order, so last-write-wins IS the server's truth); a genuine
+  // replay re-applies identical fields, which is a no-op by construction.
+  it('applies an EQUAL state_version in delivery order (same-transaction pair — L.C5.1)', () => {
     const state = baseState()
     const result = applyDraftRoomEvent(state, {
       event: 'drafts',
       operation: 'UPDATE',
-      record: draftsRecord({ updated_at: '2026-08-13T00:00:30.000Z' }),
+      record: draftsRecord({
+        updated_at: '2026-08-13T00:00:30.000Z',
+        status: 'complete',
+        current_pick_number: 3, // no gap — the pair's second write, alone
+      }),
     })
     expect(result.refetch).toBe(false)
-    expect(result.state).toBe(state)
+    expect(result.state.draft?.status).toBe('complete')
+  })
+
+  it('a replayed broadcast (equal version, identical fields) is a no-op copy', () => {
+    const state = baseState({ picks: [...baseState().picks, pick(4, 'pl-d')] })
+    const identical = draftsRecord()
+    const once = applyDraftRoomEvent(state, { event: 'drafts', operation: 'UPDATE', record: identical })
+    const twice = applyDraftRoomEvent(once.state, { event: 'drafts', operation: 'UPDATE', record: identical })
+    expect(twice.refetch).toBe(false)
+    expect(twice.state.draft).toEqual(once.state.draft)
   })
 
   it('GAP ⇒ refetch: a drafts advance past picks we never received', () => {
