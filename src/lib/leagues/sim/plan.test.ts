@@ -110,3 +110,54 @@ describe('seeded streams (sim-rng)', () => {
     expect(seqB[0]).toBeCloseTo(0.4598701929207891, 12)
   })
 })
+
+describe('buildRunPlan — the auction matrix (L.C4.1)', () => {
+  it('a snake plan is BYTE-IDENTICAL to the M2 derivation (no auction rng draws leak in)', () => {
+    const snakeDefault = buildRunPlan({ leagues: 4, teams: 'mixed', clockSeconds: 30, seed: 42 })
+    const snakeExplicit = buildRunPlan({
+      leagues: 4,
+      teams: 'mixed',
+      clockSeconds: 30,
+      seed: 42,
+      draftType: 'snake',
+    })
+    expect(snakeExplicit).toEqual(snakeDefault)
+    expect(snakeDefault.leagues.every((l) => l.auction === undefined)).toBe(true)
+  })
+
+  it('an auction plan guarantees BOTH reserve columns and ≥1 manual nomination order (≥2 leagues)', () => {
+    for (const seed of [1, 7, 42, 1234]) {
+      const plan = buildRunPlan({
+        leagues: 5,
+        teams: 'mixed',
+        clockSeconds: 30,
+        seed,
+        draftType: 'auction',
+      })
+      const auctions = plan.leagues.map((l) => l.auction!)
+      expect(auctions.every((a) => a !== undefined)).toBe(true)
+      expect(auctions.some((a) => a.zeroDollarNominations)).toBe(true)
+      expect(auctions.some((a) => !a.zeroDollarNominations)).toBe(true)
+      expect(auctions.some((a) => a.nominationOrderMode === 'manual')).toBe(true)
+      // The all-afk league keeps the DEFAULT reserve column (its traffic is
+      // all system nominations; the $0 column always gets manual bidders).
+      const allAfk = plan.leagues.find((l) => l.allAfk)!
+      expect(allAfk.auction!.zeroDollarNominations).toBe(false)
+      expect(allAfk.auction!.commishEdits).toBe(false)
+      // Every non-all-afk league seats chaos + a full persona set head.
+      for (const l of plan.leagues.filter((x) => !x.allAfk)) {
+        const personas = l.humanSeats.map((s) => s.auctionPersona)
+        expect(personas).toContain('chaos')
+        expect(personas).toContain('value-bidder')
+        expect(personas).toContain('sniper')
+        expect(personas).toContain('budget-hoarder')
+      }
+    }
+  })
+
+  it('the auction plan replays byte-for-byte from its seed', () => {
+    const a = buildRunPlan({ leagues: 6, teams: 'mixed', clockSeconds: 30, seed: 99, draftType: 'auction' })
+    const b = buildRunPlan({ leagues: 6, teams: 'mixed', clockSeconds: 30, seed: 99, draftType: 'auction' })
+    expect(a).toEqual(b)
+  })
+})

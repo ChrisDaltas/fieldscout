@@ -201,3 +201,173 @@ describe('duplicateQueueRanks — the F54 signature detector', () => {
     expect(duplicateQueueRanks([])).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Auction sweep pins — L.C4.1 (each invariant falsifiable ALONE, §4.3; the
+// sweep-level falsification against a live planted engine bug is the task
+// log's psql probe). A compact 2-team × 2-slot audit, fully consistent.
+// ---------------------------------------------------------------------------
+import {
+  checkAuctionBidsConsistent,
+  checkAuctionBoardComplete,
+  checkAuctionBudgetParity,
+  checkAuctionComplete,
+  checkAuctionNoDuplicatePlayers,
+  checkAuctionPriceFloor,
+  checkAuctionRostersMatchPicks,
+  checkAuctionSequenceOrdered,
+  checkAuctionSolvency,
+  checkNominationOrderPinned,
+  sweepAuctionAudit,
+  type AuctionDraftAudit,
+} from './invariants'
+
+/** Teams A and B, $50 each, 2 slots: A buys p1 ($10, seq 1) and p3 ($5,
+ *  seq 3); B buys p2 ($40, seq 2) and p4 ($1, seq 4). A also had a
+ *  REVERSED $9 buy at seq 5 → renominated as seq 6? — kept simpler: the
+ *  undone row sits at seq 5 and p3's live row at seq 3 (sequence order is
+ *  over ALL rows). SQL budgets mirror the math exactly. */
+function greenAuctionAudit(): AuctionDraftAudit {
+  return {
+    leagueLabel: 'PIN L',
+    draftId: 'draft-pin',
+    teamCount: 2,
+    totalRounds: 2,
+    budget: 50,
+    reserve: 1,
+    budgetAdjustments: { A: 5 },
+    picks: [
+      { pick_number: 1, team_id: 'A', player_id: 'p1', price: 10, is_undone: false },
+      { pick_number: 2, team_id: 'B', player_id: 'p2', price: 40, is_undone: false },
+      { pick_number: 3, team_id: 'A', player_id: 'p3', price: 5, is_undone: false },
+      { pick_number: 4, team_id: 'B', player_id: 'p4', price: 1, is_undone: false },
+      { pick_number: 5, team_id: 'A', player_id: 'p5', price: 9, is_undone: true },
+    ],
+    bids: [
+      { nomination_seq: 1, team_id: 'B', player_id: 'p1', amount: 9 },
+      { nomination_seq: 1, team_id: 'A', player_id: 'p1', amount: 10 },
+      { nomination_seq: 2, team_id: 'B', player_id: 'p2', amount: 40 },
+      { nomination_seq: 3, team_id: 'A', player_id: 'p3', amount: 5 },
+      { nomination_seq: 4, team_id: 'B', player_id: 'p4', amount: 1 },
+      { nomination_seq: 5, team_id: 'A', player_id: 'p5', amount: 9 },
+    ],
+    sqlBudgets: [
+      { team_id: 'A', remaining: 40, open_slots: 0, max_bid: 0, committed: 15 },
+      { team_id: 'B', remaining: 9, open_slots: 0, max_bid: 0, committed: 41 },
+    ],
+    rosters: [
+      { team_id: 'A', player_id: 'p1' },
+      { team_id: 'A', player_id: 'p3' },
+      { team_id: 'B', player_id: 'p2' },
+      { team_id: 'B', player_id: 'p4' },
+    ],
+    nominationOrderPin: { expected: ['A', 'B'], stored: ['A', 'B'] },
+    leagueStatus: 'in_season',
+    draftStatus: 'complete',
+    workerErrors: [],
+  }
+}
+
+describe('auction sweep — green baseline + one falsification per invariant', () => {
+  it('the green audit sweeps clean', () => {
+    expect(sweepAuctionAudit(greenAuctionAudit())).toEqual([])
+  })
+
+  it('auction-draft-complete / league-in-season', () => {
+    const a = { ...greenAuctionAudit(), draftStatus: 'live', leagueStatus: 'scheduled' }
+    const names = checkAuctionComplete(a).map((f) => f.invariant)
+    expect(names).toEqual(['auction-draft-complete', 'auction-league-in-season'])
+  })
+
+  it('auction-board-complete: a missing buy names the short team', () => {
+    const g = greenAuctionAudit()
+    const a = { ...g, picks: g.picks.filter((p) => p.player_id !== 'p4') }
+    expect(checkAuctionBoardComplete(a)[0]!.invariant).toBe('auction-board-complete')
+    expect(checkAuctionBoardComplete(a)[0]!.detail).toContain('B')
+  })
+
+  it('auction-zero-duplicate-players: the same player on two live picks', () => {
+    const g = greenAuctionAudit()
+    const a = {
+      ...g,
+      picks: g.picks.map((p) => (p.player_id === 'p3' ? { ...p, player_id: 'p1' } : p)),
+    }
+    expect(checkAuctionNoDuplicatePlayers(a)[0]!.invariant).toBe('auction-zero-duplicate-players')
+  })
+
+  it('auction-sequence-ordered: a reused pick_number (undone rows included)', () => {
+    const g = greenAuctionAudit()
+    const a = {
+      ...g,
+      picks: g.picks.map((p) => (p.pick_number === 5 ? { ...p, pick_number: 4 } : p)),
+    }
+    expect(checkAuctionSequenceOrdered(a)[0]!.invariant).toBe('auction-sequence-ordered')
+  })
+
+  it('auction-solvency: ONE dollar over budget flips it (the D146 unit)', () => {
+    const g = greenAuctionAudit()
+    // B spent 41 of 50: bump p2 to $50 ⇒ remaining −1 < 0 × reserve.
+    const a = {
+      ...g,
+      picks: g.picks.map((p) => (p.player_id === 'p2' ? { ...p, price: 50 } : p)),
+    }
+    expect(checkAuctionSolvency(a).map((f) => f.invariant)).toEqual(['auction-solvency'])
+    // …and the empty-set trap is LOUD, not vacuous:
+    expect(checkAuctionSolvency({ ...g, sqlBudgets: [] })[0]!.detail).toContain('expected 2')
+  })
+
+  it('auction-budget-parity: a drifted SQL column names team and columns', () => {
+    const g = greenAuctionAudit()
+    const a = {
+      ...g,
+      sqlBudgets: g.sqlBudgets.map((b) =>
+        b.team_id === 'A' ? { ...b, remaining: 41 } : b,
+      ),
+    }
+    const out = checkAuctionBudgetParity(a)
+    expect(out[0]!.invariant).toBe('auction-budget-parity')
+    expect(out[0]!.detail).toContain('team A')
+  })
+
+  it('auction-price-floor: a $0 award in the reserve-$1 column', () => {
+    const g = greenAuctionAudit()
+    const a = {
+      ...g,
+      picks: g.picks.map((p) => (p.player_id === 'p4' ? { ...p, price: 0 } : p)),
+    }
+    expect(checkAuctionPriceFloor(a)[0]!.invariant).toBe('auction-price-floor')
+    // …and the same $0 award is LEGAL in the $0-nominations column:
+    expect(
+      checkAuctionPriceFloor({ ...a, reserve: 0 }),
+    ).toEqual([])
+  })
+
+  it('auction-bids-consistent: an award whose price is not its top bid', () => {
+    const g = greenAuctionAudit()
+    const a = {
+      ...g,
+      bids: g.bids.map((b) =>
+        b.nomination_seq === 2 ? { ...b, amount: 41 } : b,
+      ),
+    }
+    expect(checkAuctionBidsConsistent(a)[0]!.invariant).toBe('auction-bids-consistent')
+    // …and a live pick with NO bid rows at all is loud too:
+    expect(
+      checkAuctionBidsConsistent({ ...g, bids: g.bids.filter((b) => b.nomination_seq !== 4) })[0]!.detail,
+    ).toContain('no bid rows')
+  })
+
+  it('auction-rosters-consistent: a bought player missing from league_rosters', () => {
+    const g = greenAuctionAudit()
+    const a = { ...g, rosters: g.rosters.filter((r) => r.player_id !== 'p3') }
+    expect(checkAuctionRostersMatchPicks(a)[0]!.invariant).toBe('auction-rosters-consistent')
+  })
+
+  it('auction-nomination-order-pinned: the stored order differs from what was SET', () => {
+    const g = greenAuctionAudit()
+    const a = { ...g, nominationOrderPin: { expected: ['A', 'B'], stored: ['B', 'A'] } }
+    expect(checkNominationOrderPinned(a)[0]!.invariant).toBe('auction-nomination-order-pinned')
+    // …and a same_as_draft_order league (null pin) asserts nothing:
+    expect(checkNominationOrderPinned({ ...g, nominationOrderPin: null })).toEqual([])
+  })
+})

@@ -10,9 +10,38 @@
  * supplies both.
  */
 
-/** The four M2 personas (plan §4.2; tasks-M2 §5). The sniper and the Ghost
- *  are M3/M4's (auction / in-season) — deliberately absent here. */
+/** The four M2 personas (plan §4.2; tasks-M2 §5). The Ghost is M4's
+ *  (in-season) — deliberately absent here. */
 export type PersonaKind = 'queue-drafter' | 'adp-drafter' | 'afk' | 'chaos'
+
+/**
+ * The five M3 auction personas (L.C4.1; tasks-M3 §5 sim sketch; delivery
+ * plan §4.2 "sniper who bids at T-1s"):
+ *   - `value-bidder`   — seeded per-player dollar values (ADP-rank shaped,
+ *     the D132 family curve); raises while `high_bid + 1 ≤ min(value,
+ *     max_bid)`, with seeded JUMP bids within value (v2.13 §8.8's two
+ *     textures — the nibble and the jump);
+ *   - `sniper`         — bids only inside the anti-snipe window; the runner
+ *     stages the T-1s instant with a service-role deadline rewind (harness
+ *     move, D100) and asserts the clock re-floors (§8.6.3/D128);
+ *   - `budget-hoarder` — sits out early markets, hoards cash; the endgame
+ *     max-bid clamp (§8.6.7(d)) is what its pile runs into;
+ *   - `afk`            — never nominates or bids: every one of its turns is
+ *     the §8.6.2 timeout system-nomination and the no-raise award to the
+ *     nominator (§8.6.7(b));
+ *   - `chaos`          — E2 double-taps bids (same action_id twice → the
+ *     same row), fires STALE-identity bids (a previous `nomination_seq` —
+ *     the F64 refusal), and over-max bids (the E5 refusal); refusals must
+ *     change nothing.
+ */
+export type AuctionPersonaKind =
+  | 'value-bidder'
+  | 'sniper'
+  | 'budget-hoarder'
+  | 'afk'
+  | 'chaos'
+
+export type SimDraftType = 'snake' | 'auction'
 
 /** v1 legal sizes (§7.3.8; 040's CHECK — {8,10,12,14,16}). */
 export const LEGAL_TEAM_COUNTS = [8, 10, 12, 14, 16] as const
@@ -23,6 +52,10 @@ export interface SeatPlan {
   /** Index into the run's bot-user pool. Seat 0's bot is the commissioner. */
   botIndex: number
   persona: PersonaKind
+  /** Auction runs seat auction personas instead (`persona` is unused there —
+   *  one SeatPlan shape, two matrices, so the runner's seat plumbing is
+   *  shared). */
+  auctionPersona?: AuctionPersonaKind
 }
 
 /** One league of the run matrix (derived deterministically from the seed). */
@@ -31,7 +64,8 @@ export interface LeaguePlan {
   /** League name — carries the run prefix so cleanup can sweep by name. */
   name: string
   teamCount: LegalTeamCount
-  /** Draftable rounds (D91: starters + bench of the compact roster preset). */
+  /** Draftable rounds (D91: starters + bench of the compact roster preset).
+   *  In an auction this IS the per-team roster capacity (D126). */
   rounds: number
   snakeReversal: boolean
   /** Human seats (seat 0 = commissioner). The rest are placeholder seats. */
@@ -39,10 +73,31 @@ export interface LeaguePlan {
   placeholderCount: number
   /** The all-timeout league (every human seat afk — the gate's requirement). */
   allAfk: boolean
+  /** Auction-only knobs (undefined on a snake plan). */
+  auction?: AuctionLeaguePlan
+}
+
+/** The auction matrix axes L.C4.1 must cover at head (the five-lane rule in
+ *  the task charter): BOTH reserve columns (092's $0-nomination toggle),
+ *  seeded budgets, and ≥1 manual nomination order (098/AP.5). */
+export interface AuctionLeaguePlan {
+  /** `auction_zero_dollar_nominations` — reserve $0 (ON) vs $1 (OFF). The
+   *  plan guarantees BOTH columns appear whenever the run has ≥2 leagues. */
+  zeroDollarNominations: boolean
+  /** Seeded from a small catalog band (50..300) — small budgets make the
+   *  §8.6.7 endgame clamps bind early, big ones exercise jump-bids. */
+  budget: number
+  /** ≥1 'manual' league per multi-league run (098's hydration path); the
+   *  runner sets the permutation through the real settings write and the
+   *  sweep pins `drafts.nomination_order` against it. */
+  nominationOrderMode: 'same_as_draft_order' | 'manual'
+  /** Mid-draft commissioner traffic (E28/E69 arms) runs in this league. */
+  commishEdits: boolean
 }
 
 export interface RunPlan {
   seed: number
+  draftType: SimDraftType
   clockSeconds: number
   leagues: LeaguePlan[]
   /** Distinct pool bots the plan references (runner provisions exactly these). */
@@ -113,4 +168,35 @@ export interface RunReport {
   workerErrors: string[]
   cleanupSummary: string
   green: boolean
+  /** Auction-mode counters (absent on a snake run). */
+  auction?: AuctionRunCounters
+}
+
+/** What the auction gate run reports beyond the invariant sweep — every
+ *  count is REAL traffic the run drove, never a target massaged to pass. */
+export interface AuctionRunCounters {
+  /** Mid-run `draft_auction_solvent` samples (service-role oracle) — one
+   *  per observed award, plus one final full check per league. */
+  solvencyChecks: number
+  /** §8.6.9 uncontestable nominations awarded in the nominate transaction
+   *  (observed: nominate 200 → phase already advanced, no bid window). */
+  instantAwards: number
+  /** Sniper T-1s stagings (harness rewound the bid deadline into the
+   *  anti-snipe window before the sniper's raise). */
+  antiSnipeStaged: number
+  /** Stagings whose post-bid deadline moved LATER (the §8.6.3 re-floor). */
+  antiSnipeObserved: number
+  /** E69: budget edits replayed with the SAME action_id that answered the
+   *  original result and wrote nothing twice. */
+  budgetEditReplaysVerified: number
+  /** E28: commissioner edits the engine refused (solvency floor) where the
+   *  re-read showed nothing changed. */
+  refusedEditsVerified: number
+  /** Won bids reversed mid-draft (`draft_reverse_won_bid`) — the undo half
+   *  of the exit-criterion sentence. */
+  reversalsApplied: number
+  /** Chaos stale-identity bids answered with the F64 friendly refusal. */
+  staleBidRefusals: number
+  /** Chaos over-max bids answered with the E5 friendly refusal. */
+  overMaxRefusals: number
 }

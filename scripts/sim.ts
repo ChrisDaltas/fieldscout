@@ -30,7 +30,25 @@
  */
 import { PICK_TIMER_SECONDS } from '../src/lib/leagues/settings/league-settings'
 import { runDraftSim } from '../src/lib/leagues/sim/runner'
-import { LEGAL_TEAM_COUNTS, type LegalTeamCount } from '../src/lib/leagues/sim/sim-types'
+import {
+  LEGAL_TEAM_COUNTS,
+  type LegalTeamCount,
+  type SimDraftType,
+} from '../src/lib/leagues/sim/sim-types'
+
+/** Every flag the CLI understands. Anything else `--*` is REFUSED — the
+ *  silent-ignore gap tasks-M3 §2 recorded closes here (L.C4.1 item 1): a
+ *  typo'd flag must never quietly run the default matrix. */
+const KNOWN_FLAGS = new Set([
+  'type',
+  'leagues',
+  'teams',
+  'clock',
+  'seed',
+  'concurrency',
+  'verbose',
+])
+const VALUE_FLAGS = new Set(['type', 'leagues', 'teams', 'clock', 'seed', 'concurrency'])
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -47,12 +65,45 @@ function flagValue(argv: string[], name: string): string | undefined {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
-  const command = argv.find((a) => !a.startsWith('--'))
-  if (command !== 'draft') {
-    console.error(`Unknown sim command '${command ?? ''}' — the M2 scenario is: sim draft`)
-    console.error('Usage: npm run sim -- draft --leagues 25 --clock 30 [--teams mixed|8..16] [--seed K]')
+  // Flag hygiene FIRST (L.C4.1: unknown flags are refused, never ignored).
+  // Also refuses stray positionals beyond the one command word — a value
+  // that lost its `--flag` would otherwise vanish the same silent way.
+  const positionals: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2)
+      if (!KNOWN_FLAGS.has(name)) {
+        console.error(`Unknown flag --${name} — known flags: ${[...KNOWN_FLAGS].map((f) => `--${f}`).join(' ')}`)
+        process.exit(2)
+      }
+      if (VALUE_FLAGS.has(name)) {
+        const value = argv[i + 1]
+        if (value === undefined || value.startsWith('--')) {
+          console.error(`--${name} needs a value`)
+          process.exit(2)
+        }
+        i += 1
+      }
+    } else {
+      positionals.push(arg)
+    }
+  }
+  const command = positionals[0]
+  if (command !== 'draft' || positionals.length > 1) {
+    console.error(`Unknown sim command '${positionals.join(' ')}' — the scenario is: sim draft`)
+    console.error(
+      'Usage: npm run sim -- draft [--type snake|auction] --leagues 25 --clock 30 [--teams mixed|8..16] [--seed K]',
+    )
     process.exit(2)
   }
+
+  const typeRaw = flagValue(argv, 'type') ?? 'snake'
+  if (typeRaw !== 'snake' && typeRaw !== 'auction') {
+    console.error(`--type must be 'snake' or 'auction' (got ${typeRaw})`)
+    process.exit(2)
+  }
+  const draftType: SimDraftType = typeRaw
 
   const leagues = Number(flagValue(argv, 'leagues') ?? 25)
   if (!Number.isInteger(leagues) || leagues < 1 || leagues > 100) {
@@ -67,7 +118,18 @@ async function main(): Promise<void> {
     process.exit(2)
   }
   const clockSeconds = Number(flagValue(argv, 'clock') ?? 30)
-  if (!PICK_TIMER_SECONDS.includes(clockSeconds as (typeof PICK_TIMER_SECONDS)[number]) || clockSeconds === 0) {
+  if (draftType === 'auction') {
+    // In auction mode --clock is the NOMINATION clock (§7.3.8's
+    // `auction_nomination_seconds` band, 10..120); the bid clock is pinned
+    // at the catalog max inside the runner (live-cron discipline).
+    if (!Number.isInteger(clockSeconds) || clockSeconds < 10 || clockSeconds > 120) {
+      console.error(`--clock (auction nomination seconds) must be an integer 10..120 — got ${clockSeconds}`)
+      process.exit(2)
+    }
+  } else if (
+    !PICK_TIMER_SECONDS.includes(clockSeconds as (typeof PICK_TIMER_SECONDS)[number]) ||
+    clockSeconds === 0
+  ) {
     console.error(
       `--clock must be a non-zero §7.3.8 catalog value (${PICK_TIMER_SECONDS.filter((s) => s > 0).join('|')}) — got ${clockSeconds}`,
     )
@@ -85,7 +147,7 @@ async function main(): Promise<void> {
   const runTag = Date.now().toString(36)
 
   const report = await runDraftSim(
-    { leagues, teams, clockSeconds, seed, concurrency, verbose },
+    { leagues, teams, clockSeconds, seed, concurrency, verbose, draftType },
     {
       clock: {
         nowMs: () => Date.now(),
@@ -109,6 +171,20 @@ async function main(): Promise<void> {
   console.log(
     `CHAOS: ${report.replayVerified} E2 double-tap replays verified identical · ${report.expectedRefusals} expected refusals (E1/wrong-turn)`,
   )
+  if (report.auction !== undefined) {
+    const a = report.auction
+    console.log(
+      `AUCTION: ${a.solvencyChecks} live solvency checks · ${a.instantAwards} §8.6.9 instant awards · ` +
+        `anti-snipe ${a.antiSnipeObserved}/${a.antiSnipeStaged} staged snipes re-floored`,
+    )
+    console.log(
+      `COMMISH: ${a.budgetEditReplaysVerified} E69 idempotent budget-edit replays · ` +
+        `${a.refusedEditsVerified} E28 refusals (nothing changed) · ${a.reversalsApplied} won bids reversed`,
+    )
+    console.log(
+      `ILLEGALS REFUSED: ${a.staleBidRefusals} stale-identity bids (F64) · ${a.overMaxRefusals} over-max bids (E5)`,
+    )
+  }
   if (report.f54Total > 0) {
     // The TRUE total; detail rows are capped in the runner (R288 — the cap
     // must never wear the total's name).
