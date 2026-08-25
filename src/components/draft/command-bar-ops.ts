@@ -8,15 +8,26 @@
  *   - **member**       — status + Exit.
  *   - **mock**         — MOCK identity + status + Exit for everyone; the
  *     LAUNCHER (`config.mock.launched_by`) additionally gets Pause/Resume
- *     practice and the reduced Practice-options menu (delete-and-exit —
- *     the shipped `delete_mock_draft` verb, launcher-only in-RPC).
+ *     practice and, since MS.5, the tools:
+ *       - **league-attached** mock: the launcher gets **Draft Options**
+ *         itself — the same door with the same name (§8.8 v2.15 / D259:
+ *         the launcher is the commissioner of their own mock; D221(2)'s
+ *         container ruling) — holding the MOCK catalog
+ *         (`draft-options-ops.ts` MOCK_ENABLED_SECTIONS: clock + order),
+ *         with *Delete practice & exit* joining its destructive group.
+ *         The single-item Practice-options menu dissolves into it.
+ *       - **standalone** mock: the reduced Practice-options menu
+ *         (delete-and-exit) stays — NO control has a wire door there yet
+ *         (F128: order; F129: clock), and a door holding no working
+ *         control would lie about its contents (R515's rule one level up).
  *
- * D110(1) is enforced HERE as well as at the call site: `commissioner`
- * requires `!isMock`, so a caller passing a commissioner role into a mock
- * still gets the mock variant with NO Draft Options — "no commissioner
- * control becomes reachable on a mock". `draft-room.tsx` computes the same
- * thing at its `isCommish` site (`canUseCommishPanel(detail.my_role) &&
- * !draft.is_mock`); both layers must agree, and the golden table carries the
+ * D110(1)'s surviving half is enforced HERE as well as at the call site:
+ * `commissioner` requires `!isMock`, so a commissioner role NEVER opens the
+ * full catalog on a mock — a commissioner who is not the launcher gets
+ * nothing at all (D103(2): nobody else drives a solo practice), and the
+ * LAUNCHER's door comes from `isMockLauncher`, not from role.
+ * `draft-room.tsx` computes the same predicate at its panel-mount site;
+ * both layers must agree, and the golden table carries the
  * commissioner-in-a-mock case that would catch either one drifting.
  *
  * Status words: the paused arm says "Draft paused" WITHOUT the spec's
@@ -53,6 +64,12 @@ export interface CommandBarInput {
   isMock: boolean
   /** `config.mock.launched_by === userId` — always false on a real draft. */
   isMockLauncher: boolean
+  /** `scope.leagueId === null` (MP.6c's standalone practice room). Only
+   *  meaningful with `isMock` — the model ignores it on a real draft. It
+   *  picks WHICH menu the launcher gets (MS.5): Draft Options when a
+   *  league is attached (the enabled controls have wire doors there),
+   *  Practice options when standalone (no door yet — F128/F129). */
+  standalone?: boolean
   paused: boolean
   /** Pre-start lobby (DR.7(4)). Real drafts only — a mock is born live
    *  (§8.8), so no caller can be both `lobby` and `isMock`. */
@@ -77,10 +94,13 @@ export interface CommandBarModel {
    *  DR.7/D155 retired the overlay's Resume button: the bar is the one
    *  place the legal caller acts. */
   pauseResume: 'pause' | 'resume' | null
-  /** Draft Options (the §8.7 door) — commissioner on a REAL, RUNNING draft
-   *  only (§8.7's controls act on a draft in flight — no door pre-start). */
+  /** Draft Options (the §8.7 door) — commissioner on a REAL, RUNNING draft,
+   *  or (MS.5) the LAUNCHER on a league-attached mock, where it holds the
+   *  MOCK catalog (never pre-start — no door in the lobby). */
   draftOptions: boolean
-  /** The reduced launcher-only practice menu (delete-and-exit). */
+  /** The reduced launcher-only practice menu (delete-and-exit) — STANDALONE
+   *  mocks only since MS.5: on a league-attached mock the delete item lives
+   *  in Draft Options' destructive group instead (D221(2)). */
   practiceOptions: boolean
   /** MOCK identity chip (D154: the banner is absorbed into the bar). */
   mockBadge: boolean
@@ -97,8 +117,15 @@ export interface CommandBarModel {
 export function commandBarModel(input: CommandBarInput): CommandBarModel {
   const { isMock, isMockLauncher, paused } = input
   const lobby = input.lobby ?? false
+  const standalone = input.standalone ?? false
   // D110(1): a commissioner in a mock is NOT a commissioner.
   const commissioner = input.commishRole && !isMock
+  // MS.5 (§8.8 v2.15/D259): the LAUNCHER is the commissioner of their own
+  // league-attached mock — the same Draft Options door opens for them,
+  // holding the mock catalog. A STANDALONE practice has no wire door for
+  // any control yet (F128/F129), so its launcher keeps the reduced
+  // Practice-options menu — render what works, never a dead control (R515).
+  const launcherTools = isMock && isMockLauncher && !standalone
 
   const variant: CommandBarVariant = isMock
     ? 'mock'
@@ -111,8 +138,8 @@ export function commandBarModel(input: CommandBarInput): CommandBarModel {
   return {
     variant,
     pauseResume: canPauseResume ? (paused ? 'resume' : 'pause') : null,
-    draftOptions: commissioner && !lobby,
-    practiceOptions: isMock && isMockLauncher && !lobby,
+    draftOptions: (commissioner || launcherTools) && !lobby,
+    practiceOptions: isMock && isMockLauncher && standalone && !lobby,
     mockBadge: isMock,
     statusText: lobby
       ? 'Draft scheduled'

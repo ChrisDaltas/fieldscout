@@ -50,8 +50,10 @@ interface DraftCommandBarProps {
    *  `Draft Options` control is the `draft-options-menu` — choosing a group
    *  opens the shipped `CommishDraftPanel` at that section. */
   onOpenDraftOptions?: (section: DraftOptionsSectionId) => void
-  /** The reduced practice menu's delete-and-exit (launcher-only; the
-   *  shipped `delete_mock_draft` verb — refuses everyone else in-RPC). */
+  /** Delete-and-exit for a mock's launcher (the shipped `delete_mock_draft`
+   *  verb — refuses everyone else in-RPC). Rendered in the reduced practice
+   *  menu on a STANDALONE mock, and inside Draft Options' destructive group
+   *  on a league-attached one (MS.5/D221(2)). */
   onDeletePractice?: () => void
   deletePending?: boolean
 }
@@ -157,9 +159,16 @@ export function DraftCommandBar({
       {showDraftOptions && (
         // The §8.7 door (DR.3): the menu of control groups, mapping 1:1 onto
         // the shipped commissioner-panel sections. Its trigger carries the
-        // §16.3 accent treatment inside `draft-options-menu.tsx`.
+        // §16.3 accent treatment inside `draft-options-menu.tsx`. On a
+        // league-attached mock (MS.5) the model opens this same door for the
+        // LAUNCHER — the menu filters its catalog to the enabled mock groups
+        // and absorbs Delete practice & exit into its destructive group
+        // (D221(2): the single-item practice menu dissolves).
         <DraftOptionsMenu
           isAuction={isAuction}
+          isMock={bar.isMock}
+          onDeletePractice={onDeletePractice}
+          deletePending={deletePending}
           onOpenSection={(section) => onOpenDraftOptions?.(section)}
         />
       )}

@@ -79,9 +79,48 @@ export const AUCTION_DRAFT_OPTIONS_ENTRIES: readonly DraftOptionsEntry[] = [
   { id: 'end', label: 'End draft', destructive: true },
 ]
 
-/** The groups this room's commissioner sees. */
-export function draftOptionsEntries(isAuction: boolean): readonly DraftOptionsEntry[] {
-  return isAuction ? AUCTION_DRAFT_OPTIONS_ENTRIES : DRAFT_OPTIONS_ENTRIES
+/**
+ * The MOCK catalog's ONE predicate (MS.5; D221(4)) — the section ids a
+ * league-attached mock room renders, and the ONLY place they are listed.
+ * Both consumers derive from it through `draftOptionsEntries(isAuction,
+ * isMock)`: the menu's group list and the panel's section mounts — never
+ * hand-maintained in two places (D110(1)'s rule, and its D222 converse:
+ * the UI must not offer what the engine forbids, and must not WITHHOLD
+ * what it allows).
+ *
+ * Why exactly these two, with the door named per control (R515: a control
+ * that renders and then 400s is a defect):
+ *   - `order` — enabled end-to-end: MS.7/D258 targets the mock's own draft
+ *     through the PATCH, MS.2/D259 (migration 100) answers the launcher
+ *     with a 200 (the honest enable set), on both arms (§8.3: a running
+ *     auction's `order` edits `nomination_order`).
+ *   - `clock` — enabled end-to-end: MS.3/D260 (migration 101) opened
+ *     `draft_set_clock` on a running mock (§8.7 v2.15's carve-out, E76);
+ *     the wire suites pin the launcher's 200 on both draft types.
+ * Every other group stays ABSENT — not disabled (D221(4); a rendered shut
+ * group would also inherit `pauseFirstGate`'s open mock arm with no
+ * pause-first copy, R556): `autopick`/`seats` reach league verbs by
+ * construction (tasks-MS §2.2), `reset` awaits MS.4's mock-safe variant
+ * (D220), and the remaining groups' RPCs refuse a mock with their per-verb
+ * E75 reasons until the MS.1 audit clears them (D259(1)).
+ *
+ * A STANDALONE practice room renders NONE of this — no wire door exists
+ * for any of its controls yet (F128: order; F129: clock) — the room's own
+ * door predicate requires a league (`draft-room.tsx`).
+ */
+export const MOCK_ENABLED_SECTIONS: readonly DraftOptionsSectionId[] = ['clock', 'order']
+
+/** The groups this room's Draft Options door holds — the commissioner's
+ *  full per-type catalog on a real draft; the MOCK_ENABLED_SECTIONS subset
+ *  (same ids, same labels, same order) for a league-attached mock's
+ *  launcher (MS.5; §8.8 v2.15: the launcher is the commissioner of their
+ *  own mock). */
+export function draftOptionsEntries(
+  isAuction: boolean,
+  isMock = false,
+): readonly DraftOptionsEntry[] {
+  const catalog = isAuction ? AUCTION_DRAFT_OPTIONS_ENTRIES : DRAFT_OPTIONS_ENTRIES
+  return isMock ? catalog.filter((entry) => MOCK_ENABLED_SECTIONS.includes(entry.id)) : catalog
 }
 
 // ---------------------------------------------------------------------------

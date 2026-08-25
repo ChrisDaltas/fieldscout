@@ -9,10 +9,15 @@ import {
 
 /**
  * The D154 golden table (tasks-DR DR.2 DoD): every viewer × draft-state cell
- * of the command bar's variant derivation, stored as literals. The three
- * commissioner-in-a-mock rows are the D110(1) pins — "a commissioner in a
- * mock is NOT a commissioner", so a mock may NEVER surface Draft Options or
- * commissioner pause, no matter what role the caller passes.
+ * of the command bar's variant derivation, stored as literals. The
+ * commissioner-in-a-mock rows are the D110(1) pins that SURVIVE MS.5 — "a
+ * commissioner in a mock is not a commissioner": role never opens the door
+ * on a mock. What opens it there is being the LAUNCHER of a LEAGUE-ATTACHED
+ * mock (MS.5 — §8.8 v2.15/D259: the launcher is the commissioner of their
+ * own mock; the menu holds the MOCK catalog). A STANDALONE mock's launcher
+ * keeps the reduced practice menu — no control has a wire door there yet
+ * (F128/F129), and the model must not offer a control that would 400
+ * (R515).
  *
  * Break probes recorded in the DR.2 PR (shown RED, then reverted):
  *   - dropping the `!isMock` mask from the commissioner derivation reddens
@@ -89,8 +94,54 @@ const GOLDEN: GoldenRow[] = [
     },
   },
   {
-    name: 'mock launcher · live',
+    // MS.5 (§8.8 v2.15/D259): the launcher of a LEAGUE-ATTACHED mock gets
+    // Draft Options ITSELF — the same door with the same name (D221(2)),
+    // holding the mock catalog — and the single-item practice menu
+    // dissolves into its destructive group. Role plays no part: this row's
+    // commishRole is false (a plain member who launched a practice — the
+    // exact person MS.2's gate reorder was for).
+    name: 'mock launcher (league-attached, plain member) · live — MS.5',
     input: { commishRole: false, isMock: true, isMockLauncher: true, paused: false },
+    expected: {
+      variant: 'mock',
+      pauseResume: 'pause',
+      draftOptions: true,
+      practiceOptions: false,
+      mockBadge: true,
+      statusText: 'Practice live',
+      reconnecting: false,
+      stale: false,
+      exit: true,
+    },
+  },
+  {
+    name: 'mock launcher (league-attached, plain member) · paused — MS.5',
+    input: { commishRole: false, isMock: true, isMockLauncher: true, paused: true },
+    expected: {
+      variant: 'mock',
+      pauseResume: 'resume',
+      draftOptions: true,
+      practiceOptions: false,
+      mockBadge: true,
+      statusText: 'Practice paused',
+      reconnecting: false,
+      stale: false,
+      exit: true,
+    },
+  },
+  {
+    // MS.5's honest-render rule (R515): a STANDALONE practice has no wire
+    // door for any control yet (F128: order; F129: clock), so its launcher
+    // keeps the reduced Practice-options menu — Draft Options stays shut
+    // until the /api/mocks commissioner wire family exists.
+    name: 'STANDALONE mock launcher · live — practice menu, no Draft Options (F128/F129)',
+    input: {
+      commishRole: false,
+      isMock: true,
+      isMockLauncher: true,
+      standalone: true,
+      paused: false,
+    },
     expected: {
       variant: 'mock',
       pauseResume: 'pause',
@@ -104,8 +155,14 @@ const GOLDEN: GoldenRow[] = [
     },
   },
   {
-    name: 'mock launcher · paused',
-    input: { commishRole: false, isMock: true, isMockLauncher: true, paused: true },
+    name: 'STANDALONE mock launcher · paused — practice menu, no Draft Options (F128/F129)',
+    input: {
+      commishRole: false,
+      isMock: true,
+      isMockLauncher: true,
+      standalone: true,
+      paused: true,
+    },
     expected: {
       variant: 'mock',
       pauseResume: 'resume',
@@ -149,10 +206,13 @@ const GOLDEN: GoldenRow[] = [
     },
   },
   {
-    // D110(1): the room's own gate is `canUseCommishPanel(role) &&
-    // !draft.is_mock`; this row is the ops layer enforcing the same mask
-    // for a caller that forgot it.
-    name: 'commissioner in a MOCK is not a commissioner · live (D110(1))',
+    // D110(1)'s SURVIVING half after MS.5: role never opens the door on a
+    // mock. A commissioner viewing somebody else's practice gets NOTHING —
+    // not the full catalog, not the mock catalog, not pause (D103(2):
+    // nobody else drives a solo practice; 069's arms give commissioners no
+    // bypass). This row is the ops layer enforcing that for a caller that
+    // forgot it.
+    name: 'commissioner in a MOCK who is NOT the launcher gets nothing · live (D110(1)/D103(2))',
     input: { commishRole: true, isMock: true, isMockLauncher: false, paused: false },
     expected: {
       variant: 'mock',
@@ -167,7 +227,7 @@ const GOLDEN: GoldenRow[] = [
     },
   },
   {
-    name: 'commissioner in a MOCK is not a commissioner · paused (D110(1))',
+    name: 'commissioner in a MOCK who is NOT the launcher gets nothing · paused (D110(1)/D103(2))',
     input: { commishRole: true, isMock: true, isMockLauncher: false, paused: true },
     expected: {
       variant: 'mock',
@@ -183,14 +243,17 @@ const GOLDEN: GoldenRow[] = [
   },
   {
     // A commissioner who launched their OWN practice gets exactly the
-    // launcher's rights (069/071's mock-launcher arm) — never Draft Options.
-    name: 'commissioner who is the mock LAUNCHER · live',
+    // LAUNCHER's rights (069/071's mock-launcher arm) — since MS.5 that
+    // includes Draft Options with the MOCK catalog on a league-attached
+    // mock, and it comes from `isMockLauncher`, never from the role (the
+    // model output is identical to the plain-member launcher rows above).
+    name: 'commissioner who is the mock LAUNCHER (league-attached) · live',
     input: { commishRole: true, isMock: true, isMockLauncher: true, paused: false },
     expected: {
       variant: 'mock',
       pauseResume: 'pause',
-      draftOptions: false,
-      practiceOptions: true,
+      draftOptions: true,
+      practiceOptions: false,
       mockBadge: true,
       statusText: 'Practice live',
       reconnecting: false,
@@ -358,10 +421,40 @@ describe('commandBarModel — the D154 golden table', () => {
     }
   })
 
-  it('no mock row ever surfaces Draft Options (D110(1), swept)', () => {
+  it('Draft Options on a mock is the LAUNCHER of a league-attached mock and nobody else (MS.5, swept)', () => {
+    // D110(1)'s surviving half + MS.5's honest-render rule, as one sweep:
+    // role never opens the door on a mock, being the launcher does — and
+    // only where the enabled controls have wire doors (league-attached;
+    // standalone waits on F128/F129).
     for (const row of GOLDEN.filter((r) => r.input.isMock)) {
-      expect(commandBarModel(row.input).draftOptions, row.name).toBe(false)
+      const shouldOpen =
+        row.input.isMockLauncher && !(row.input.standalone ?? false) && !(row.input.lobby ?? false)
+      expect(commandBarModel(row.input).draftOptions, row.name).toBe(shouldOpen)
     }
+  })
+
+  it('the two menus never render together, and a launcher always has exactly one (MS.5)', () => {
+    // D221(2): one door — the practice menu DISSOLVES into Draft Options on
+    // a league-attached mock rather than standing beside it.
+    for (const row of GOLDEN) {
+      const model = commandBarModel(row.input)
+      expect(model.draftOptions && model.practiceOptions, row.name).toBe(false)
+      if (row.input.isMock && row.input.isMockLauncher && !(row.input.lobby ?? false)) {
+        expect(model.draftOptions || model.practiceOptions, row.name).toBe(true)
+      }
+    }
+  })
+
+  it('standalone is meaningless on a real draft — the commissioner keeps the door (guard)', () => {
+    const model = commandBarModel({
+      commishRole: true,
+      isMock: false,
+      isMockLauncher: false,
+      standalone: true,
+      paused: false,
+    })
+    expect(model.draftOptions).toBe(true)
+    expect(model.practiceOptions).toBe(false)
   })
 })
 

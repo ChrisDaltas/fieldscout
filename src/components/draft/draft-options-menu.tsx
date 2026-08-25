@@ -22,7 +22,7 @@ import { draftOptionsEntries, type DraftOptionsSectionId } from './draft-options
  * panel AT that section (D153: this is a menu over the SHIPPED panel body,
  * never a reimplementation — the section bodies, gates, confirm dialogs and
  * system-post semantics live in the panel and are untouched here). The group
- * catalog itself is `draft-options-ops.ts`'s `draftOptionsEntries(isAuction)`
+ * catalog itself is `draft-options-ops.ts`'s `draftOptionsEntries(isAuction, isMock)`
  * — an enumerated list, per DRAFT TYPE since L.C3.2: an auction room lists
  * Manual Edit Mode, Edit current nomination, Team budgets and End draft, and
  * a snake room never does (their RPCs refuse a snake draft outright — the UI
@@ -33,12 +33,19 @@ import { draftOptionsEntries, type DraftOptionsSectionId } from './draft-options
  * reaches for while something is going wrong, and must not be two clicks
  * deep).
  *
- * Reachability (D110(1)): this component renders only behind the bar's
+ * Reachability: this component renders only behind the bar's
  * `showDraftOptions` gate, which is `commandBarModel(...).draftOptions` —
- * commissioner on a NON-mock draft, with the `!isMock` mask re-applied at
- * the ops layer. No commissioner group is reachable on a mock; the mock
- * launcher's reduced *Practice options* menu is a separate control in the
- * bar and shares nothing with this one.
+ * the commissioner on a real draft, or (MS.5 — §8.8 v2.15/D259: the
+ * launcher is the commissioner of their own mock) the LAUNCHER on a
+ * league-attached mock. On a mock the catalog filters to
+ * `MOCK_ENABLED_SECTIONS` (clock + order — the controls with working
+ * doors, D221(4): the still-shut groups are ABSENT, never disabled), and
+ * *Delete practice & exit* joins the destructive group — the same door
+ * with the same name, one catalog and one panel (D221(2); the LV.7
+ * anti-pattern is a second menu re-solving a solved one). A STANDALONE
+ * practice room never mounts this menu (no wire door exists for any of
+ * its controls yet — F128/F129); its launcher keeps the bar's reduced
+ * *Practice options* menu.
  */
 
 interface DraftOptionsMenuProps {
@@ -47,12 +54,26 @@ interface DraftOptionsMenuProps {
   onOpenSection: (section: DraftOptionsSectionId) => void
   /** `draft.draft_type === 'auction'` — picks the group catalog (L.C3.2). */
   isAuction?: boolean
+  /** League-attached mock (MS.5): filters the catalog to the enabled mock
+   *  groups and appends *Delete practice & exit* to the destructive group. */
+  isMock?: boolean
+  /** The mock arm's delete-and-exit (the shipped `delete_mock_draft` verb —
+   *  launcher-only in-RPC). Only rendered with `isMock`. */
+  onDeletePractice?: () => void
+  deletePending?: boolean
 }
 
-export function DraftOptionsMenu({ onOpenSection, isAuction = false }: DraftOptionsMenuProps) {
-  const entries = draftOptionsEntries(isAuction)
+export function DraftOptionsMenu({
+  onOpenSection,
+  isAuction = false,
+  isMock = false,
+  onDeletePractice,
+  deletePending = false,
+}: DraftOptionsMenuProps) {
+  const entries = draftOptionsEntries(isAuction, isMock)
   // The destructive group sits below ONE separator, however many entries it
-  // holds (an auction has two — Reset and End; a snake has one).
+  // holds (an auction has two — Reset and End; a snake has one; a mock has
+  // none in the catalog — its destructive group is the delete item below).
   const firstDestructiveId = entries.find((entry) => entry.destructive)?.id ?? null
   return (
     <DropdownMenu>
@@ -96,6 +117,23 @@ export function DraftOptionsMenu({ onOpenSection, isAuction = false }: DraftOpti
               {entry.label}
             </DropdownMenuItem>
           ),
+        )}
+        {isMock && onDeletePractice && (
+          // MS.5 / D221(2): on a league-attached mock the single-item
+          // Practice-options menu dissolves into this door — its one item
+          // takes the same destructive treatment and position the real
+          // catalog gives Reset/End. No catalog entry: delete-and-exit is a
+          // bar-level action (the room's handler), not a panel section.
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-negative-strong focus:text-negative-strong"
+              disabled={deletePending}
+              onSelect={() => onDeletePractice()}
+            >
+              {deletePending ? 'Deleting…' : 'Delete practice & exit'}
+            </DropdownMenuItem>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -81,7 +81,11 @@ import {
   type UndoTarget,
 } from './commish-panel-ops'
 import { abbreviateName, parseDraftOrder } from './draft-board-ops'
-import { sectionDomId, type DraftOptionsSectionId } from './draft-options-ops'
+import {
+  draftOptionsEntries,
+  sectionDomId,
+  type DraftOptionsSectionId,
+} from './draft-options-ops'
 
 interface CommishDraftPanelProps {
   leagueId: string
@@ -107,9 +111,16 @@ interface CommishDraftPanelProps {
  * system message in-txn, so every action here VISIBLY lands in chat — the
  * §16.3 transparency loop).
  *
- * Renders ONLY for commissioner/co-commissioner (§17) on a NON-mock draft
- * (D110(1): the §8.7 controls refuse mocks in-RPC; the UI must not offer
- * what the engine forbids). The panel is UNMISTAKABLE (§16.3): accent
+ * Renders for commissioner/co-commissioner (§17) on a real draft — and,
+ * since MS.5, for the LAUNCHER on a league-attached MOCK (§8.8 v2.15/D259:
+ * the launcher is the commissioner of their own mock), where the section
+ * list filters to `MOCK_ENABLED_SECTIONS` (clock + order — the controls
+ * with working doors). The still-shut groups are ABSENT from a mock's DOM,
+ * never disabled (D221(4)): their RPCs refuse a mock outright (E75 /
+ * league-verb breaches / MS.4's pending reset), so pause-first copy or a
+ * disabled row would state the wrong reason — the UI must not offer what
+ * the engine forbids (D110(1)'s surviving rule), and must not WITHHOLD
+ * what it allows (D222's converse). The panel is UNMISTAKABLE (§16.3): accent
  * treatment on the sheet's leading edge and the header badge — and, since
  * DR.2 (D153), on its ONE door: the command bar's accent-filled
  * `Draft Options` control. The panel's own blue trigger is retired; the
@@ -140,6 +151,19 @@ export function CommishDraftPanel({
   // and the still-shut groups never render in a mock at all (D221(4)).
   const gate = pauseFirstGate(draft)
   const isAuction = draft.draft_type === 'auction'
+  // MS.5 / D221(4): the section list is the SAME derivation the Draft
+  // Options menu renders — `draftOptionsEntries(isAuction, is_mock)`, whose
+  // mock arm filters to `MOCK_ENABLED_SECTIONS` (draft-options-ops.ts, the
+  // ONE place the enabled set is listed). Every section mount below gates
+  // on membership, so on a mock the still-shut groups are ABSENT from the
+  // DOM by construction — menu and panel cannot disagree. (This also
+  // replaces the mount list's `isAuction` forks: `fix-pick` is only in the
+  // snake catalog and `manual-edit`/`cancel-nomination`/`budget`/`end` only
+  // in the auction one, so catalog membership is the same condition.)
+  const sections = useMemo(
+    () => new Set(draftOptionsEntries(isAuction, draft.is_mock).map((entry) => entry.id)),
+    [isAuction, draft.is_mock],
+  )
   const livePicks = useMemo(
     () => picks.filter((p) => !p.is_undone).sort((a, b) => a.pick_number - b.pick_number),
     [picks],
@@ -269,74 +293,88 @@ export function CommishDraftPanel({
         {/* DR.3 open-at-section: each section mount gets a focusable scroll
             anchor (`sectionDomId`, tabIndex -1) so onOpenAutoFocus above can
             land the sheet on the chosen group. The anchors belong to this
-            mount site — the section BODIES below are D153-untouched. */}
-        <div id={sectionDomId('clock')} tabIndex={-1}>
-          <ClockSection
-            leagueId={leagueId}
-            draft={draft}
-            paused={paused}
-            isAuction={isAuction}
-            gate={gate}
-            onError={surfaceError}
-          />
-        </div>
-        <div id={sectionDomId('undo')} tabIndex={-1}>
-          <UndoSection
-            leagueId={leagueId}
-            draftId={draft.id}
-            livePicks={livePicks}
-            pickSummary={pickSummary}
-            isAuction={isAuction}
-            gate={gate}
-            onError={surfaceError}
-          />
-        </div>
+            mount site — the section BODIES below are D153-untouched.
+
+            MS.5: every mount gates on `sections.has(id)` — catalog
+            membership, per draft type AND per mock-ness (D221(4)). This is
+            what the old `isAuction` forks said (`fix-pick` is snake-only in
+            the catalog; `manual-edit`/`cancel-nomination`/`budget`/`end`
+            auction-only), plus the mock filter, in ONE condition. */}
+        {sections.has('clock') && (
+          <div id={sectionDomId('clock')} tabIndex={-1}>
+            <ClockSection
+              leagueId={leagueId}
+              draft={draft}
+              paused={paused}
+              isAuction={isAuction}
+              gate={gate}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('undo') && (
+          <div id={sectionDomId('undo')} tabIndex={-1}>
+            <UndoSection
+              leagueId={leagueId}
+              draftId={draft.id}
+              livePicks={livePicks}
+              pickSummary={pickSummary}
+              isAuction={isAuction}
+              gate={gate}
+              onError={surfaceError}
+            />
+          </div>
+        )}
         {/* §8.7's v2.10 ruling: Manual Edit Mode REPLACES the reassign/move
             articulation on an auction (D142), so the two never both render —
-            one pair of engine paths, one door. */}
-        {isAuction ? (
-          <>
-            <div id={sectionDomId('manual-edit')} tabIndex={-1}>
-              <ManualEditSection
-                leagueId={leagueId}
-                draftId={draft.id}
-                columns={auctionColumns}
-                budgets={budgets}
-                reserve={auctionKnobs.reserve}
-                playerById={playerById}
-                livePicks={livePicks}
-                gate={gate}
-                onError={surfaceError}
-              />
-            </div>
-            <div id={sectionDomId('cancel-nomination')} tabIndex={-1}>
-              <CancelNominationSection
-                leagueId={leagueId}
-                draftId={draft.id}
-                nomination={nomination}
-                nominatingTeamName={
-                  draft.on_clock_team_id
-                    ? (teamsById.get(draft.on_clock_team_id)?.name ?? null)
-                    : null
-                }
-                playerLabel={playerLabel}
-                gate={gate}
-                onError={surfaceError}
-              />
-            </div>
-            <div id={sectionDomId('budget')} tabIndex={-1}>
-              <BudgetSection
-                leagueId={leagueId}
-                draftId={draft.id}
-                teams={activeTeams}
-                budgets={budgets}
-                reserve={auctionKnobs.reserve}
-                nomination={nomination}
-                onError={surfaceError}
-              />
-            </div>
-          </>
-        ) : (
+            one pair of engine paths, one door (the catalogs encode it:
+            `manual-edit` is auction-only, `fix-pick` snake-only). */}
+        {sections.has('manual-edit') && (
+          <div id={sectionDomId('manual-edit')} tabIndex={-1}>
+            <ManualEditSection
+              leagueId={leagueId}
+              draftId={draft.id}
+              columns={auctionColumns}
+              budgets={budgets}
+              reserve={auctionKnobs.reserve}
+              playerById={playerById}
+              livePicks={livePicks}
+              gate={gate}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('cancel-nomination') && (
+          <div id={sectionDomId('cancel-nomination')} tabIndex={-1}>
+            <CancelNominationSection
+              leagueId={leagueId}
+              draftId={draft.id}
+              nomination={nomination}
+              nominatingTeamName={
+                draft.on_clock_team_id
+                  ? (teamsById.get(draft.on_clock_team_id)?.name ?? null)
+                  : null
+              }
+              playerLabel={playerLabel}
+              gate={gate}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('budget') && (
+          <div id={sectionDomId('budget')} tabIndex={-1}>
+            <BudgetSection
+              leagueId={leagueId}
+              draftId={draft.id}
+              teams={activeTeams}
+              budgets={budgets}
+              reserve={auctionKnobs.reserve}
+              nomination={nomination}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('fix-pick') && (
           <div id={sectionDomId('fix-pick')} tabIndex={-1}>
             <FixPickSection
               leagueId={leagueId}
@@ -350,34 +388,44 @@ export function CommishDraftPanel({
             />
           </div>
         )}
-        <div id={sectionDomId('force-pick')} tabIndex={-1}>
-          <ForcePickSection
-            leagueId={leagueId}
-            draft={draft}
-            teamsById={teamsById}
-            isAuction={isAuction}
-            onError={surfaceError}
-          />
-        </div>
-        <div id={sectionDomId('order')} tabIndex={-1}>
-          <OrderSection
-            leagueId={leagueId}
-            draft={draft}
-            detail={detail}
-            isAuction={isAuction}
-            onError={surfaceError}
-          />
-        </div>
-        <div id={sectionDomId('autopick')} tabIndex={-1}>
-          <AutopickSection leagueId={leagueId} detail={detail} onError={surfaceError} />
-        </div>
-        <div id={sectionDomId('seats')} tabIndex={-1}>
-          <SeatControlsSection leagueId={leagueId} detail={detail} />
-        </div>
-        <div id={sectionDomId('reset')} tabIndex={-1}>
-          <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
-        </div>
-        {isAuction && (
+        {sections.has('force-pick') && (
+          <div id={sectionDomId('force-pick')} tabIndex={-1}>
+            <ForcePickSection
+              leagueId={leagueId}
+              draft={draft}
+              teamsById={teamsById}
+              isAuction={isAuction}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('order') && (
+          <div id={sectionDomId('order')} tabIndex={-1}>
+            <OrderSection
+              leagueId={leagueId}
+              draft={draft}
+              detail={detail}
+              isAuction={isAuction}
+              onError={surfaceError}
+            />
+          </div>
+        )}
+        {sections.has('autopick') && (
+          <div id={sectionDomId('autopick')} tabIndex={-1}>
+            <AutopickSection leagueId={leagueId} detail={detail} onError={surfaceError} />
+          </div>
+        )}
+        {sections.has('seats') && (
+          <div id={sectionDomId('seats')} tabIndex={-1}>
+            <SeatControlsSection leagueId={leagueId} detail={detail} />
+          </div>
+        )}
+        {sections.has('reset') && (
+          <div id={sectionDomId('reset')} tabIndex={-1}>
+            <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
+          </div>
+        )}
+        {sections.has('end') && (
           <div id={sectionDomId('end')} tabIndex={-1}>
             <EndDraftSection
               leagueId={leagueId}
