@@ -21,8 +21,11 @@ import {
   PPR_FLOOR,
   projectedPointsFor,
   scoringFamilyFromRules,
+  columnHeaderLabel,
+  customizerGroups,
   SPLIT_GROUP_STAT_KEYS,
-  splitGroupAvailability,
+  SPLIT_STAT_KEYS,
+  splitColumnAvailability,
   statSplits,
   tablePending,
   visibleColumns,
@@ -43,19 +46,22 @@ import {
  * player, the ÷-weeks rounding — because they are the inputs a derived
  * column meets on draft night and never in a demo.
  *
- * The C43 gate is pinned in BOTH directions the banner asks for: the
- * SHIPPED blob shape (measured off the local pool — yards and TDs for all
- * three phases, no volume field anywhere) leaves all three groups shut,
- * and a blob carrying a complete triple opens exactly that one.
+ * The C43 gate is pinned in BOTH directions, per COLUMN since Q16 (RULED
+ * 2026-08-20; D202): the SHIPPED blob shape (measured off the local pool
+ * — yards, TDs and receptions for the three phases, no volume field
+ * anywhere) opens exactly the seven witnessed columns under FLAT labels,
+ * and a blob completing a triple opens its volume column and REGROUPS
+ * that group.
  */
 
 // ---------------------------------------------------------------------------
 // The projections blob, verbatim — the 18 keys `sync:projections` CAN emit
 // (`sleeperProjectionToStatRow`, sleeper.ts:157). 17 of them are PRESENT in
-// the pool measured at build time (590 blobs, these keys, nothing else);
+// the pool RE-measured at AP.7 (588 blobs, these keys, nothing else);
 // `def_safeties` is the writer's 18th and no measured row carried it, which
 // is why the list here is one longer than the measurement. Either way there
-// is no volume field — no attempts, no targets — which is the C43 fact.
+// is no volume field — no attempts, no targets — which is the C43 fact the
+// per-column gate now ships around (Q16).
 // ---------------------------------------------------------------------------
 const SHIPPED_BLOB_KEYS = [
   'pass_yards',
@@ -259,90 +265,136 @@ describe('statSplits — numeric keys only, never coerced', () => {
   })
 })
 
-describe('splitGroupAvailability — the C43 gate, both directions', () => {
-  it('the SHIPPED blob shape leaves all three groups SHUT', () => {
-    // This is C43's ruled outcome, pinned against the real feed rather
-    // than against a flag: yards and TDs exist for every phase, and the
-    // VOLUME column of each triple (rush_attempts / targets /
-    // pass_attempts) exists nowhere.
+describe('splitColumnAvailability — the C43 gate, per COLUMN (Q16/D202)', () => {
+  it('the SHIPPED blob shape opens EXACTLY the seven witnessed columns and regroups nothing', () => {
+    // Q16's ruled outcome, pinned against the real feed (re-measured at
+    // AP.7 on the local pool: 588 blobs; rush_yards 351 · rush_tds 141 ·
+    // targets 0 · receptions 445 · receiving_yards 445 · receiving_tds
+    // 292 · pass_yards 72 · pass_tds 72 · rush_attempts 0 ·
+    // pass_attempts 0): yards and TDs exist for every phase, receptions
+    // exists, and the VOLUME column of each triple exists nowhere.
     const rows = [{ splits: blobOf(SHIPPED_BLOB_KEYS) }]
-    expect(splitGroupAvailability(rows)).toEqual({
+    const availability = splitColumnAvailability(rows)
+    expect(availability.columns).toEqual({
+      rush_attempts: false,
+      rush_yards: true,
+      rush_tds: true,
+      targets: false,
+      receptions: true,
+      receiving_yards: true,
+      receiving_tds: true,
+      pass_attempts: false,
+      pass_yards: true,
+      pass_tds: true,
+    })
+    // No triple is complete, so NO group may wear its header (D202(2)).
+    expect(availability.groups).toEqual({
+      rushing: false,
+      receiving: false,
+      passing: false,
+    })
+    // …and the table therefore offers the seven, as a stored literal.
+    expect(availableColumns(availability).map((c) => c.key)).toEqual([
+      'cost',
+      'dollars_per_point',
+      'proj_points',
+      'proj_points_week',
+      'bye',
+      'sos',
+      'adp',
+      'rush_yards',
+      'rush_tds',
+      'receptions',
+      'receiving_yards',
+      'receiving_tds',
+      'pass_yards',
+      'pass_tds',
+    ])
+  })
+
+  it('a blob with yards+TDs and NO volume field opens exactly the SIX ruled columns', () => {
+    // Q16's own sentence — "ship the six" — as a stored literal list,
+    // not a count.
+    const rows = [
+      {
+        splits: blobOf([
+          'rush_yards',
+          'rush_tds',
+          'receiving_yards',
+          'receiving_tds',
+          'pass_yards',
+          'pass_tds',
+        ]),
+      },
+    ]
+    const availability = splitColumnAvailability(rows)
+    expect(availableColumns(availability).map((c) => c.key)).toEqual([
+      'cost',
+      'dollars_per_point',
+      'proj_points',
+      'proj_points_week',
+      'bye',
+      'sos',
+      'adp',
+      'rush_yards',
+      'rush_tds',
+      'receiving_yards',
+      'receiving_tds',
+      'pass_yards',
+      'pass_tds',
+    ])
+    expect(availability.groups).toEqual({
       rushing: false,
       receiving: false,
       passing: false,
     })
   })
 
-  it('a blob carrying a COMPLETE triple opens exactly that group', () => {
+  it('a COMPLETE triple opens its volume column and REGROUPS that group — F81\u2019s promise', () => {
+    // The day the sync writes `rush_attempts`, the seventh column opens
+    // and Rushing reassembles under its header, with no code change.
     const rows = [{ splits: blobOf([...SHIPPED_BLOB_KEYS, 'rush_attempts']) }]
-    expect(splitGroupAvailability(rows)).toEqual({
+    const availability = splitColumnAvailability(rows)
+    expect(availability.columns.rush_attempts).toBe(true)
+    expect(availability.groups).toEqual({
       rushing: true,
       receiving: false,
       passing: false,
     })
   })
 
-  it('all three triples ⇒ all three groups', () => {
-    const rows = [
-      {
-        splits: blobOf([
-          ...SPLIT_GROUP_STAT_KEYS.rushing,
-          ...SPLIT_GROUP_STAT_KEYS.receiving,
-          ...SPLIT_GROUP_STAT_KEYS.passing,
-        ]),
-      },
-    ]
-    expect(splitGroupAvailability(rows)).toEqual({
+  it('all ten keys ⇒ all ten columns and all three groups', () => {
+    const rows = [{ splits: blobOf(SPLIT_STAT_KEYS) }]
+    const availability = splitColumnAvailability(rows)
+    expect(Object.values(availability.columns).every(Boolean)).toBe(true)
+    expect(availability.groups).toEqual({
       rushing: true,
       receiving: true,
       passing: true,
     })
+    expect(availableColumns(availability)).toHaveLength(AUCTION_COLUMNS.length)
   })
 
   it('the keys may be spread across ROWS — the feed is the subject, not the player', () => {
-    // A QB's blob carries no rushing volume and an RB's carries no passing
-    // attempts; the question the gate asks is whether the FEED has the
-    // field, evidenced by anyone who has it.
+    // A QB\u2019s blob carries no rushing volume and an RB\u2019s carries no
+    // passing attempts; the question the gate asks is whether the FEED
+    // has the field, evidenced by anyone who has it.
     const rows = [
       { splits: blobOf(['rush_attempts', 'rush_yards']) },
       { splits: blobOf(['rush_tds']) },
     ]
-    expect(splitGroupAvailability(rows).rushing).toBe(true)
+    expect(splitColumnAvailability(rows).groups.rushing).toBe(true)
   })
 
-  it('an empty pool opens nothing (no rows ⇒ no evidence)', () => {
-    expect(splitGroupAvailability([])).toEqual({
-      rushing: false,
-      receiving: false,
-      passing: false,
-    })
-  })
-
-  it('every gated column’s key IS its blob key, and the two lists agree', () => {
-    // Two places name the same nine facts — the catalog's `statKey` and
-    // the gate's per-group list — and a gate keyed off a spelling the
-    // catalog does not use would stay shut forever while the data sat in
-    // the blob. The invariant is that they are one set.
-    const catalogKeys = AUCTION_COLUMNS.filter((c) => c.statKey !== undefined)
-      .map((c) => c.statKey!)
-      .sort()
-    const gateKeys = Object.values(SPLIT_GROUP_STAT_KEYS).flat().sort()
-    expect(catalogKeys).toEqual(gateKeys)
-    expect(catalogKeys).toHaveLength(9)
-    // …and the column key is the blob key, so a cell can never read a
-    // different field from the one the gate proved exists.
-    for (const column of AUCTION_COLUMNS) {
-      if (column.statKey === undefined) continue
-      expect(column.key).toBe(column.statKey)
-    }
-  })
-
-  it('the gated columns are exactly the nine §16.4 split columns', () => {
-    const shut = { rushing: false, receiving: false, passing: false }
-    const open = { rushing: true, receiving: true, passing: true }
-    expect(AUCTION_COLUMNS.length - availableColumns(shut).length).toBe(9)
-    expect(availableColumns(open).length).toBe(AUCTION_COLUMNS.length)
-    expect(availableColumns(shut).map((c) => c.key)).toEqual([
+  it('the gate\u2019s boundary: zero witnesses shuts a column, ONE opens it (D146)', () => {
+    // An empty pool is no evidence, and a single row carrying a single
+    // key is all the evidence the gate needs — key PRESENCE is the
+    // predicate, so a stored 0 (a numeric key the blob does carry)
+    // counts as a witness too.
+    const empty = splitColumnAvailability([])
+    expect(Object.values(empty.columns).some(Boolean)).toBe(false)
+    expect(empty.groups).toEqual({ rushing: false, receiving: false, passing: false })
+    expect(availableColumns(empty).map((c) => c.key)).toEqual([
       'cost',
       'dollars_per_point',
       'proj_points',
@@ -351,17 +403,120 @@ describe('splitGroupAvailability — the C43 gate, both directions', () => {
       'sos',
       'adp',
     ])
+    const one = splitColumnAvailability([{ splits: { rush_yards: 0 } }])
+    expect(one.columns.rush_yards).toBe(true)
+    expect(
+      Object.entries(one.columns)
+        .filter(([, open]) => open)
+        .map(([key]) => key),
+    ).toEqual(['rush_yards'])
+  })
+
+  it('every gated column\u2019s key IS its blob key, and the three lists agree', () => {
+    // Three places name the same ten facts — the catalog\u2019s `statKey`,
+    // the derived SPLIT_STAT_KEYS domain, and the regroup lists — and a
+    // gate keyed off a spelling the catalog does not use would stay shut
+    // forever while the data sat in the blob. The invariant is that they
+    // are one set.
+    const catalogKeys = AUCTION_COLUMNS.filter((c) => c.statKey !== undefined)
+      .map((c) => c.statKey!)
+      .sort()
+    const groupKeys = Object.values(SPLIT_GROUP_STAT_KEYS).flat().sort()
+    expect(catalogKeys).toEqual(groupKeys)
+    expect(catalogKeys).toEqual([...SPLIT_STAT_KEYS].sort())
+    expect(catalogKeys).toHaveLength(10)
+    // …and the column key is the blob key, so a cell can never read a
+    // different field from the one the gate proved exists.
+    for (const column of AUCTION_COLUMNS) {
+      if (column.statKey === undefined) continue
+      expect(column.key).toBe(column.statKey)
+      // D202(2): every split column carries the flat label it wears
+      // while its group is incomplete.
+      expect(column.flat).toBeTruthy()
+    }
+  })
+
+  it('the gated columns are exactly the TEN split columns (§16.4\u2019s nine + receptions)', () => {
+    const shut = splitColumnAvailability([])
+    const open = splitColumnAvailability([{ splits: blobOf(SPLIT_STAT_KEYS) }])
+    expect(AUCTION_COLUMNS.length - availableColumns(shut).length).toBe(10)
+    expect(availableColumns(open).length).toBe(AUCTION_COLUMNS.length)
   })
 
   it('a gated column cannot be shown even if the stored visible set names it', () => {
-    // The user's persisted set outlives a gate closing (a projections
+    // The user\u2019s persisted set outlives a gate closing (a projections
     // rollback, a different environment) — the gate wins, so a column can
     // never render as a run of dashes.
     const visible = new Set<AuctionColumnKey>(['cost', 'rush_yards'])
-    const shut = { rushing: false, receiving: false, passing: false }
+    const shut = splitColumnAvailability([])
     expect(visibleColumns(visible, shut).map((c) => c.key)).toEqual(['cost'])
-    const open = { rushing: true, receiving: false, passing: false }
+    const open = splitColumnAvailability([{ splits: blobOf(['rush_yards']) }])
     expect(visibleColumns(visible, open).map((c) => c.key)).toEqual(['cost', 'rush_yards'])
+  })
+})
+
+describe('columnHeaderLabel / customizerGroups — flat labels, no half-group header (D202(2))', () => {
+  const shipped = splitColumnAvailability([{ splits: blobOf(SHIPPED_BLOB_KEYS) }])
+
+  it('the SHIPPED seven wear their FLAT labels, as stored literals', () => {
+    const labels = availableColumns(shipped)
+      .filter((c) => c.statKey !== undefined)
+      .map((c) => columnHeaderLabel(c, shipped))
+    expect(labels).toEqual([
+      'Rush Yds',
+      'Rush TDs',
+      'Rec',
+      'Rec Yds',
+      'Rec TDs',
+      'Pass Yds',
+      'Pass TDs',
+    ])
+  })
+
+  it('a COMPLETE group returns to the short grouped form; ungated columns are untouched', () => {
+    const complete = splitColumnAvailability([
+      { splits: blobOf([...SHIPPED_BLOB_KEYS, 'rush_attempts']) },
+    ])
+    const by = (key: AuctionColumnKey) => AUCTION_COLUMNS.find((c) => c.key === key)!
+    expect(columnHeaderLabel(by('rush_yards'), complete)).toBe('Yds')
+    expect(columnHeaderLabel(by('rush_attempts'), complete)).toBe('Att')
+    // Receiving is still incomplete (no targets), so its columns stay flat.
+    expect(columnHeaderLabel(by('receiving_yards'), complete)).toBe('Rec Yds')
+    expect(columnHeaderLabel(by('cost'), complete)).toBe('$')
+    expect(columnHeaderLabel(by('cost'), shipped)).toBe('$')
+  })
+
+  it('the customizer collects INCOMPLETE groups\u2019 columns under one flat "Splits" section', () => {
+    const sections = customizerGroups(availableColumns(shipped), shipped)
+    expect(sections.map((s) => s.label)).toEqual(['Value', 'Schedule', 'Splits'])
+    expect(sections[2].columns.map((c) => c.key)).toEqual([
+      'rush_yards',
+      'rush_tds',
+      'receptions',
+      'receiving_yards',
+      'receiving_tds',
+      'pass_yards',
+      'pass_tds',
+    ])
+  })
+
+  it('a COMPLETE group gets its own overline back — the grouped presentation reassembles', () => {
+    const complete = splitColumnAvailability([
+      { splits: blobOf([...SHIPPED_BLOB_KEYS, 'rush_attempts']) },
+    ])
+    const sections = customizerGroups(availableColumns(complete), complete)
+    expect(sections.map((s) => s.label)).toEqual(['Value', 'Schedule', 'Rushing', 'Splits'])
+    expect(sections[2].columns.map((c) => c.key)).toEqual([
+      'rush_attempts',
+      'rush_yards',
+      'rush_tds',
+    ])
+  })
+
+  it('a pool with NO split data offers no Splits section at all — the empty answer is deliberate', () => {
+    const none = splitColumnAvailability([])
+    const sections = customizerGroups(availableColumns(none), none)
+    expect(sections.map((s) => s.label)).toEqual(['Value', 'Schedule'])
   })
 })
 
@@ -770,7 +925,12 @@ describe('failureReason — a failed read is an ERROR, never a designed empty st
 // ---------------------------------------------------------------------------
 
 describe('columnsReducer — add, remove, reset (§16.4)', () => {
-  it('starts at the seven ungated columns', () => {
+  it('the default is §16.4’s printed list — the DATA gate, not the default, keeps absent columns out', () => {
+    // Q16/D202: the split keys live in the default so the ruled six (plus
+    // receptions) render without a customizer visit, and F81's three
+    // volume columns light up by themselves when the sync lands —
+    // `visibleColumns` intersects this with the gate, so nothing here can
+    // render a column the pool does not witness.
     expect(DEFAULT_VISIBLE_COLUMNS).toEqual([
       'cost',
       'dollars_per_point',
@@ -779,6 +939,16 @@ describe('columnsReducer — add, remove, reset (§16.4)', () => {
       'bye',
       'sos',
       'adp',
+      'rush_attempts',
+      'rush_yards',
+      'rush_tds',
+      'targets',
+      'receptions',
+      'receiving_yards',
+      'receiving_tds',
+      'pass_attempts',
+      'pass_yards',
+      'pass_tds',
     ])
     expect(columnsAreDefault([...DEFAULT_VISIBLE_COLUMNS])).toBe(true)
   })

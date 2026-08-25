@@ -180,13 +180,15 @@ describe('C42: the engine never reads draft_dnd_marks (the ruled skip stays decl
 // 2. C43 — the split columns are gated, and the gate is the only door
 // ---------------------------------------------------------------------------
 
-describe('C43: nine split columns exist only behind the data gate', () => {
+describe('C43: the ten split columns exist only behind the data gate (per COLUMN — Q16/D202)', () => {
   it('the table renders headers from the GATED catalog, never a literal', () => {
     const table = code(TABLE)
     expect(table).toContain('visibleColumns(new Set(visible), availability)')
     expect(table).toContain('availableColumns(availability)')
-    expect(table).toContain('splitGroupAvailability(rows)')
-    expect(table).toContain('{column.label}')
+    expect(table).toContain('splitColumnAvailability(rows)')
+    // D202(2): the header label is CHOSEN per gate state (flat while the
+    // group is incomplete), never read raw off the catalog.
+    expect(table).toContain('columnHeaderLabel(column, availability)')
     // A hard-coded split header would bypass the gate entirely.
     for (const literal of ['Rushing yards', 'Receiving yards', 'Passing yards', 'Targets']) {
       expect(`${literal}: ${table.includes(`>${literal}<`)}`).toBe(`${literal}: false`)
@@ -198,12 +200,21 @@ describe('C43: nine split columns exist only behind the data gate', () => {
     // only produce a column of dashes is the same lie as the column.
     const table = code(TABLE)
     expect(table).toMatch(/const offerable = useMemo\(\s*\(\) => availableColumns\(availability\)/)
-    expect(table).toContain('groups.map(([group, cols])')
+    // D202(2): the sections come from `customizerGroups`, which is where
+    // the no-half-group-header rule lives — not from a hand-rolled
+    // group-by that would resurrect a Rushing overline over two columns.
+    expect(table).toContain('customizerGroups(offerable, availability)')
+    // The no-split-data sentence (the gate's deliberate empty answer)
+    // keys off the SAME per-column record the gate renders from, so it
+    // appears exactly when zero split columns can.
+    expect(table).toContain('!Object.values(availability.columns).some(Boolean)')
+    expect(table).toContain('groups.map(({ label, columns: cols })')
     expect(table).not.toContain('AUCTION_COLUMNS.map')
   })
 
   it('the gate is DATA-driven — no build flag, no env var, no hard-coded false', () => {
     const ops = code(OPS)
+    expect(ops).toContain('columns[key] = seen.has(key)')
     expect(ops).toContain('SPLIT_GROUP_STAT_KEYS[group].every((key) => seen.has(key))')
     for (const flag of ['process.env', 'NEXT_PUBLIC_', 'SPLITS_ENABLED', 'featureFlag']) {
       expect(`${flag}: ${ops.includes(flag)}`).toBe(`${flag}: false`)

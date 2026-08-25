@@ -31,9 +31,10 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import {
   availableColumns,
+  columnHeaderLabel,
   columnsAreDefault,
   columnValue,
-  COLUMN_GROUP_LABELS,
+  customizerGroups,
   decorateRows,
   EMPTY_COPY,
   emptyReason,
@@ -42,7 +43,7 @@ import {
   filterRows,
   formatColumnValue,
   mergeSources,
-  splitGroupAvailability,
+  splitColumnAvailability,
   tablePending,
   visibleColumns,
   type AuctionColumn,
@@ -265,7 +266,7 @@ export function AuctionPlayerTable({
     ],
   )
 
-  const availability = useMemo(() => splitGroupAvailability(rows), [rows])
+  const availability = useMemo(() => splitColumnAvailability(rows), [rows])
   const columns = useMemo(
     () => visibleColumns(new Set(visible), availability),
     [visible, availability],
@@ -308,15 +309,13 @@ export function AuctionPlayerTable({
     overlayError: overlayRows.isError,
   })
 
-  const groups = useMemo(() => {
-    const byGroup = new Map<AuctionColumn['group'], AuctionColumn[]>()
-    for (const column of offerable) {
-      const list = byGroup.get(column.group) ?? []
-      list.push(column)
-      byGroup.set(column.group, list)
-    }
-    return Array.from(byGroup.entries())
-  }, [offerable])
+  // D202(2): a COMPLETE split group keeps its overline; the columns of
+  // incomplete groups collect under one flat "Splits" section, so no
+  // header ever promises a column the pool cannot witness.
+  const groups = useMemo(
+    () => customizerGroups(offerable, availability),
+    [offerable, availability],
+  )
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-2.5', className)}>
@@ -412,10 +411,10 @@ export function AuctionPlayerTable({
           // the C43 gate allows are offered — an option that can only
           // produce an empty column is the same lie as the column.
           <div className="flex flex-col gap-2 rounded-sm border border-n-4 bg-page p-2">
-            {groups.map(([group, cols]) => (
-              <div key={group} className="flex flex-wrap items-center gap-1">
+            {groups.map(({ label, columns: cols }) => (
+              <div key={label} className="flex flex-wrap items-center gap-1">
                 <span className="fs-overline mr-1 w-16 shrink-0 text-[9px] text-n-3">
-                  {COLUMN_GROUP_LABELS[group]}
+                  {label}
                 </span>
                 {cols.map((column) => {
                   const on = visible.includes(column.key)
@@ -444,12 +443,12 @@ export function AuctionPlayerTable({
                 <Icon name="reset" size={13} />
                 Reset columns
               </Button>
-              {/* C43: a gated-shut split group is ABSENT, not empty — so
-                  the absence is said out loud here instead of leaving nine
-                  columns nobody can find. The sentence disappears by
-                  itself when the projections sync starts carrying the
-                  keys, because it is keyed off the same gate. */}
-              {!Object.values(availability).some(Boolean) && (
+              {/* C43: a gated-shut split column is ABSENT, not empty — so
+                  a pool with NO split data says the absence out loud here
+                  instead of leaving ten columns nobody can find. The
+                  sentence disappears by itself when projections carry any
+                  split key, because it is keyed off the same gate. */}
+              {!Object.values(availability.columns).some(Boolean) && (
                 <span className="text-[11px] font-medium text-n-3">
                   Rushing, receiving and passing splits appear once projections carry them.
                 </span>
@@ -548,7 +547,10 @@ export function AuctionPlayerTable({
                     )}
                     title={column.full}
                   >
-                    {column.label}
+                    {/* D202(2): flat stat labels while a split group is
+                        incomplete; the short grouped form returns when
+                        F81 completes the triple. */}
+                    {columnHeaderLabel(column, availability)}
                   </TableHead>
                 ))}
                 <TableHead className="px-1.5 text-right lg:px-2">Actions</TableHead>
