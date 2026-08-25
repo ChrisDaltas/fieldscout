@@ -1,6 +1,7 @@
 -- ============================================================================
 -- `draft_adjust_budget` joins the E2 contract — migration 099 (task AP.6;
--- spec v2.16.4 E69, §8.1's idempotency bullet, §8.7's budget row; D203;
+-- spec v2.16.4 E69, §8.1's idempotency bullet, §8.7's budget row
+-- (store: §12.26, v2.16.5 — this PR's erratum); D203;
 -- discharges F82). pgTAP file is **047** (046 = manual nomination order;
 -- next free confirmed at task time with `ls`).
 --
@@ -39,7 +40,7 @@
 --     text verbatim; the suite run over the full chain is the proof).
 -- ============================================================================
 begin;
-select plan(33);
+select plan(35);
 
 -- ---------------------------------------------------------------------------
 -- A. Form: one function, the right posture, the grants moved with the
@@ -154,6 +155,17 @@ select is(
      and action_id = 'ac000000-0000-4000-8000-0000000000a1'),
   1,
   '…and ONE store row exists for the action — the replay wrote nothing');
+select is(
+  public.draft_adjust_budget('e8a60000-0000-4000-8000-0000000000aa',
+    'c8a60000-0000-4000-8000-000000000001', -99, 'ap6 different delta',
+    'ac000000-0000-4000-8000-0000000000a1')->>'adjustment_after',
+  '-10',
+  'A RETRIED action_id CARRYING A DIFFERENT DELTA still replays the ORIGINAL (R552): the lookup keys on (draft, action) ONLY, so -99 under action A answers the stored -10 payload and moves nothing — a lookup that matched delta too would land this as a fresh -99 edit');
+select is(
+  (select budget_adjustments->>'c8a60000-0000-4000-8000-000000000001'
+   from drafts where id = 'e8a60000-0000-4000-8000-0000000000aa'),
+  '-10',
+  '…and the map still reads -10 (the mismatched retry moved nothing)');
 
 -- The originality discriminator: move the draft on, then replay. A
 -- fresh-success implementation would answer with the CURRENT (paused) draft

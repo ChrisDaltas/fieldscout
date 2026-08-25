@@ -1488,6 +1488,18 @@ Per-user, per-draft marks ("Do Not Draft") set from the auction player table (§
 
 **No new columns.** The §7.3.3.1 editor reuses the existing table and the existing `leagues.scoring_system_id` reference; a custom system is an ordinary row (`owner_id` = commissioner, `is_template = FALSE`) whose `rules` may be the format-2 envelope. The D59 doctrine is untouched: templates stay ownerless and client-immutable under the `scoring_systems_template_ownerless` CHECK.
 
+- **Additive SELECT policy — league members read a league-referenced system:** members must see their league's custom rules pre-draft (post-draft they read the snapshot). Add alongside 001's owner policy and 058's template read:
+```sql
+CREATE POLICY "League members read league scoring" ON scoring_systems FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM leagues l
+    JOIN league_members lm ON lm.league_id = l.id AND lm.user_id = (SELECT auth.uid())
+    WHERE l.scoring_system_id = scoring_systems.id AND l.deleted_at IS NULL
+  ));
+```
+- **Writes are server-authoritative:** the fork (template → custom row + `scoring_system_id` repoint) and every rules edit go through SECURITY DEFINER RPCs (`search_path=''`, the §12 house pattern; commissioner-only, league in `setup`/`scheduled` per the §7.3 header) that run the §7.3.3.1 guardrail validation — 001's owner FOR ALL would let a commissioner hand-write an arbitrary doc, so the **snapshot-time re-validation in `draft_start` is the integrity backstop** (an invalid doc can never reach `scoring_rules_snapshot`; §7.3.8). Exact RPC names/migration number are the follow-up breakdown's to assign.
+- **Orphan hygiene:** re-picking a plain template (or re-forking) detaches the previous custom row. Detached rows are **left in place** for the cohort: `scoring_systems` has no `deleted_at`, a fork-created row is not distinguishable from a personal one (no marker column — "no new columns" above), and deleting a row we cannot prove fork-created risks user data; the member SELECT policy stops matching the moment it is unreferenced, so the only cost is clutter in the owner's personal-systems list. If cohort feedback cares, a marker column is a v-next decision.
+
 ### 12.26 `draft_budget_adjustments` (E69's idempotency store — NEW v2.16.5)
 ```sql
 CREATE TABLE draft_budget_adjustments (
@@ -1510,18 +1522,6 @@ CREATE UNIQUE INDEX uniq_draft_budget_adjust_action
   ON draft_budget_adjustments(draft_id, action_id) WHERE action_id IS NOT NULL;
 ```
 One row per **landed** commissioner budget edit (§8.7), written by `draft_adjust_budget` in the same transaction as the cumulative `drafts.budget_adjustments` write — E69's replay looks a retried `action_id` up here and returns the stored `result` verbatim, moving nothing. `drafts.budget_adjustments` (§12.3) stays the ONE stored input the D127 budget derivation reads; **no budget arithmetic ever reads this table** — it exists for the replay lookup alone. An `action_id` is an idempotency key, **not** an audit record — `commissioner_actions` remains M6. A refused edit leaves no row (the RAISE rolls it back with the money), so a refused `action_id` is not consumed and the corrected retry may reuse it.
-
-- **Additive SELECT policy — league members read a league-referenced system:** members must see their league's custom rules pre-draft (post-draft they read the snapshot). Add alongside 001's owner policy and 058's template read:
-```sql
-CREATE POLICY "League members read league scoring" ON scoring_systems FOR SELECT
-  USING (EXISTS (
-    SELECT 1 FROM leagues l
-    JOIN league_members lm ON lm.league_id = l.id AND lm.user_id = (SELECT auth.uid())
-    WHERE l.scoring_system_id = scoring_systems.id AND l.deleted_at IS NULL
-  ));
-```
-- **Writes are server-authoritative:** the fork (template → custom row + `scoring_system_id` repoint) and every rules edit go through SECURITY DEFINER RPCs (`search_path=''`, the §12 house pattern; commissioner-only, league in `setup`/`scheduled` per the §7.3 header) that run the §7.3.3.1 guardrail validation — 001's owner FOR ALL would let a commissioner hand-write an arbitrary doc, so the **snapshot-time re-validation in `draft_start` is the integrity backstop** (an invalid doc can never reach `scoring_rules_snapshot`; §7.3.8). Exact RPC names/migration number are the follow-up breakdown's to assign.
-- **Orphan hygiene:** re-picking a plain template (or re-forking) detaches the previous custom row. Detached rows are **left in place** for the cohort: `scoring_systems` has no `deleted_at`, a fork-created row is not distinguishable from a personal one (no marker column — "no new columns" above), and deleting a row we cannot prove fork-created risks user data; the member SELECT policy stops matching the moment it is unreferenced, so the only cost is clutter in the owner's personal-systems list. If cohort feedback cares, a marker column is a v-next decision.
 
 ## 13. Transactions — Waivers, FAAB, Trades & Free Agency
 
