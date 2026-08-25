@@ -9,7 +9,9 @@
 
 ---
 
-## Active: Redraft Leagues M3 — Auction engine (in build)
+## Active: Redraft Leagues M3 — Auction engine (**COMPLETE**) → the remaining lane is **SE**
+
+> **[corrected 2026-08-25, PROGRESS D266]** ~~M3 — Auction engine (in build)~~ — **M3 is COMPLETE.** HEAD commit subject: *"L.C6.1 — THE M3 GATE: `test:gate:m3` green twice; F84/F56/F60 discharged; M3 complete (#215)"*; PROGRESS §1 → **🟢 Gate passed 2026-08-25**. This file had not been touched since `8fc5852` (2026-08-24), so the header outlived the milestone. **The one lane with unchecked tasks is SE** (`SE.1`–`SE.10`, prefix `SE.`, table below) — plus MS.1/MS.4/MS.6, which stay **parked** with the deferred league-attached feature per step 1c. **Before taking ANY `SE.*` task, read `docs/specs/tasks-SE-scoring-editor.md` §0** — that breakdown sat unrevised through five lanes and was re-measured 2026-08-25; two of its corrections change what gets built.
 
 *(Set 2026-08-14 — **ruled by Chris in-session** ("M3 — Auction engine", the
 recommended option of the M2-gate-passed question), recorded here per this
@@ -33,7 +35,7 @@ in parallel with the loop, never an `L.C` dependency.
 | **Delivery plan** | `docs/specs/delivery-plan-redraft-leagues.md` (v1.4 — §3 M3 row: Phase C gate; solvency property test incl. bot-driven mocks; bid-storm E2E) |
 | **Spec (LAW)** | `docs/specs/spec-redraft-leagues.md` — **v2.13** (§8.6 auction incl. §8.6.7–8 endgame/solvency and **§8.6.9 the uncontestable instant award**; §8.8's pacing bar; L.C1) |
 | **Task breakdown** | `docs/specs/tasks-M3-auction.md` (Architect; **approved & merged 2026-08-16**, PR #150) |
-| **Task id prefix** | `L.C` |
+| **Task id prefix** | ~~`L.C`~~ **`SE.`** *(corrected 2026-08-25 — the `L.C` lane is complete; SE is the only lane with unchecked tasks. `SE.` was already declared below and step 3 already routes to it.)* |
 
 **Standing constraints:** CLAUDE.md + the M2-era standing rules carry forward
 (spec is LAW; server-authoritative always; branch + PR per task; proof chains
@@ -45,8 +47,8 @@ auction refusal seams in 066/071 name M3; the 2026 test-cohort note (CLAUDE.md)
 makes **auction + custom scoring the headline feedback goals** — ~~the custom
 scoring editor un-punt still needs its spec changelog entry (Architect) before
 any build touches it~~ *(satisfied 2026-08-18: spec v2.11/§7.3.3.1 merged as
-PR #152, and the SE lane block below carries the build — no editor build until
-Chris also merges the SE breakdown PR)*.
+PR #152, and the SE lane block below carries the build — ~~no editor build until
+Chris also merges the SE breakdown PR~~ **[corrected 2026-08-25: he merged it 2026-08-19 (#161); the editor build is authorized]**)*.
 
 **Lane precedence — TWO lanes under one active build (added 2026-08-17; takes effect when
 the draft-room redesign PR merges, and is part of what Chris approves with it).**
@@ -62,19 +64,21 @@ file's pointer does not move: **M3 stays the active build and gains a second lan
 | **Spec fold** | `spec-redraft-leagues.md` **v2.12** (§16.1/§16.2/§16.3/§16.4/§16.5, §8.7, §9.3) |
 | **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries both checklists |
 
-**Third concurrent lane — SE, the custom scoring editor (added 2026-08-18; takes effect
-when the SE breakdown PR merges, and is part of what Chris approves with it).**
+**Third concurrent lane — SE, the custom scoring editor (added 2026-08-18; ~~takes effect
+when the SE breakdown PR merges~~ — **LIVE: PR #161 merged 2026-08-19**, and as of 2026-08-25 it is the
+**only lane with unblocked tasks**).**
 Spec **v2.11** (§7.3.3.1, approved & merged 2026-08-18 as PR #152) made the test-cohort
 custom scoring editor LAW and required a follow-up Architect breakdown before build; that
 breakdown exists and this row activates it. SE is the **C37 separate parallel track — never
 an M3 lane**: it never blocks and is never blocked by `DR.*` or `L.C*` (its schema work is
-additive; SE migration numbers stay **above tasks-M3 §7's 088/089 reservations**). The only
+additive; ~~SE migration numbers stay **above tasks-M3 §7's 088/089 reservations**~~ **[corrected 2026-08-25 — that band is a dead
+letter 13 numbers behind the head; SE takes the NEXT FREE number measured at task time, heads 102 / 050]**). The only
 shared surface is `PROGRESS-leagues.md` (append-collisions resolved at merge, the
 established two-lane pattern).
 
 | | |
 | --- | --- |
-| **SE breakdown** | `docs/specs/tasks-SE-scoring-editor.md` (Architect, 2026-08-18) |
+| **SE breakdown** | `docs/specs/tasks-SE-scoring-editor.md` (Architect, 2026-08-18; **AMENDED 2026-08-25 — read its §0 before any `SE.*` task**: five lanes landed under it unrevised, and two of the corrections change what gets built — §0(A)/**F133** adds SE.2 a sixth deliverable, §0(B)/§0(C) retire SE.6's planned hook. PROGRESS **D266**) |
 | **SE task id prefix** | `SE.` |
 | **Spec fold** | `spec-redraft-leagues.md` **v2.11** (§7.3.3.1, §7.3.8, §12.25, §16.2, §23.5, App B.4) |
 | **PROGRESS** | the same file — `docs/specs/PROGRESS-leagues.md` §2 carries all three checklists |
@@ -142,13 +146,13 @@ rewritten and, worse, a green gate certifying the wrong thing. Reasoning recorde
    **The three that remain — `L.C4.1`, `L.C5.1`, `L.C6.1` — must not be started while any
    `AP.*` task is unblocked** (the ordering above). `L.C6.1` additionally owes **F84**: the gate
    composes the AP suites by name.
-3. When **all three** are blocked — or when Chris directs by name ("build SE.x") — take the
+3. ~~When **all three** are blocked~~ **[corrected 2026-08-25 — there is no "three": FIVE steps precede this one (1 DR, 1a MP, 1b AP, 1c MS, 2 L.C). Read it as: **when no `MP.*`, `AP.*`, `MS.*` or `L.C*` task is unblocked** — which, as of 2026-08-25, is the case: DR, AP, MP and L.C are all complete, and the only unchecked MS tasks (MS.1/MS.4/MS.6) are parked by step 1c. **SE is the live lane.**]** — or when Chris directs by name ("build SE.x") — take the
    next unblocked **`SE.*`** task (dependency order in tasks-SE §5). *(Its breakdown PR #161
    **merged 2026-08-19**, so this clause is live.)* The pure-TS opener
    chain (SE.1 → SE.2 → SE.3) touches no migration, so it is always safe to take while
-   the schema lanes are contended. **AP and SE contend for migration numbers 091+ and pgTAP
-   039+** — both lanes confirm the real next-free with `ls supabase/migrations/` at task time
-   (D161/D166); neither trusts a number written in a planning document.
+   the schema lanes are contended. ~~**AP and SE contend for migration numbers 091+ and pgTAP 039+**~~ **[corrected 2026-08-25 — false in both halves: AP has ZERO unchecked tasks, and 091 / pgTAP 039 were consumed by `091_mock_cpu_reactive_bidding.sql` / `039_mock_cpu_reactive_bidding.sql` (AP.3). Heads on 2026-08-25 are **migration 102 / pgTAP 050**.]** — **the rule below is unchanged and is the half of this bullet that MATTERED:** both lanes confirm the real next-free with
+   `ls supabase/migrations/` at task time (D161/D166); **neither trusts a number written in a planning document** — which is exactly what kept SE from
+   colliding when every number its breakdown "expected" was taken out from under it.
 4. **Do not start `L.C3.1` until DR.1, DR.4 and DR.5 have landed** — it builds into the
    new shell (tasks-M3 §6's amended banners carry the dependency). `L.C3.2` additionally
    waits on DR.3; `L.C3.3` on DR.5.
