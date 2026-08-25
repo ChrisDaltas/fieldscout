@@ -45,6 +45,14 @@
 --      practice seats — and NOT ONE league-product table. Reddens if any
 --      live function grows a league write reachable from a standalone mock
 --      (the F109 species, as a permanent assertion).
+--   §E THE AUCTION BRACKET (R546). §B–§D bracket the SNAKE lifecycle, so a
+--      league write growing on the AUCTION path — nominate, bid, queue —
+--      would be invisible to them. A second, shorter bracket with the same
+--      three-snapshot instrument: launch a standalone auction, the human
+--      nominates, a provoked bot answers, the human raises, a queue row is
+--      written, delete — mid-state delta a stored literal, final delta
+--      EMPTY. §D's post-delete state is §E's baseline, which §D has just
+--      proven equal to 'before'.
 --   §D ZERO DELTA AFTER DELETE — THE HEADLINE. The launcher deletes their
 --      practice; every one of the 56 tables' count AND whole-row digest
 --      equals the baseline. Reddens on: a leaked bot seat (R473/D227(6)'s
@@ -71,7 +79,7 @@ begin;
 set transaction isolation level repeatable read;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(24);
+select plan(35);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures. One user, u01, in NO league (asserted below — F94). 20 players:
@@ -111,8 +119,24 @@ select is(
 create temp table mp11_tables on commit drop as
 select tablename::text as tbl from pg_tables where schemaname = 'public';
 
-select is((select count(*) from mp11_tables), 56::bigint,
-  'THE CENSUS, as a stored literal: 56 public tables. A migration that adds or drops one moves this number — re-derive §C''s mid-state allowlist in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+-- R547: the sorted NAME LIST is the literal, not the count — a same-count
+-- table swap (drop one, add another) must red here, not pass silently.
+select is(
+  (select array_agg(tbl order by tbl) from mp11_tables),
+  array['ai_call_log', 'ai_generation_usage', 'ai_personas', 'big_board_snapshots',
+        'big_board_weekly', 'cred_scores', 'defense_position_splits', 'draft_bids',
+        'draft_dnd_marks', 'draft_liveness', 'draft_picks', 'draft_queues', 'drafts',
+        'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
+        'league_chat', 'league_invites', 'league_lists', 'league_members',
+        'league_rosters', 'league_weeks', 'leagues', 'list_comments', 'list_favorites',
+        'list_folders', 'list_likes', 'list_links', 'list_player_drafted',
+        'list_players', 'list_tags', 'lists', 'nfl_games', 'nfl_weeks', 'notifications',
+        'persona_content_items', 'persona_context', 'persona_context_versions',
+        'persona_posts', 'persona_source_rankings', 'persona_sources', 'player_stats',
+        'player_usage', 'players', 'profiles', 'ranking_history', 'research_configs',
+        'scoring_systems', 'start_sit_questions', 'start_sit_votes', 'tags',
+        'team_lineups', 'team_managers', 'teams', 'weekly_rankings'],
+  'THE CENSUS, as a stored literal: the 56 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -140,6 +164,10 @@ end $fn$;
 -- QUIESCENT residue — pre-existing rows cancel out — but a committed draft
 -- that is DUE would be claimed by OUR OWN tick inside this transaction's
 -- snapshot, and its writes would land in the deltas as a false leak).
+-- R548: the check is taken at file start, so a committed live draft whose
+-- deadline passes MID-file would still be claimed by our tick — a residual
+-- window of this file's own runtime (seconds), accepted and named rather
+-- than defended against.
 select is(
   (select count(*) from drafts where status in ('live', 'drafting')
      and current_deadline is not null and current_deadline < now()),
@@ -306,6 +334,120 @@ select is(
        on c.context = 'draft:' || m.id::text),
   0::bigint,
   '…and the chat sweep reached the NULL-league posts (`IS NOT DISTINCT FROM`, not `= NULL`)');
+
+-- ---------------------------------------------------------------------------
+-- E. THE AUCTION BRACKET (R546) — the verbs §B never ran: nominate, bid,
+--    queue. Baseline = the 'after' snapshot, which §D proved equal to
+--    'before', so a leak here names itself against a proven-clean floor.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9b100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.create_mock_draft(
+       p_settings := '{"team_count": 8,
+                       "roster_settings": {"starting_slots": [
+                          {"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}],
+                          "bench": 1, "ir_slots": [], "swap_spots": 0},
+                       "draft": {"draft_type": "auction", "pick_timer_seconds": 90}}'::jsonb,
+       p_cpu_speed := 'fast') $$,
+  '§E LAUNCH: the same zero-league user starts a standalone AUCTION practice draft');
+reset role;
+
+create temp table mp11_auction on commit drop as
+select id from drafts
+ where is_mock and league_id is null and draft_type = 'auction'
+   and config->'mock'->>'launched_by' = '9b100000-0000-4000-8000-000000000001';
+grant select on mp11_auction to authenticated;
+select is((select count(*) from mp11_auction), 1::bigint,
+  'exactly one standalone auction mock exists');
+
+-- The human nominates (their seat put on the clock the way §B did).
+update drafts d
+   set on_clock_team_id = (d.config->'mock'->>'human_team_id')::uuid,
+       current_deadline = now() + interval '5 minutes'
+  from mp11_auction m where d.id = m.id;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9b100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_nominate((select id from mp11_auction), 'mp11-rb01', 1, gen_random_uuid()) $$,
+  '§E NOMINATE: the human''s $1 opening on the best fixture RB lands (draft_bids gains the opening row)');
+reset role;
+
+-- Provoke the AP.3 responder until a BOT holds the high bid (the 043/§B
+-- rewind idiom; the fixture RB is the best value on the board, so the CPUs
+-- engage — the behavior 039/041/044 pin).
+do $prov$
+declare
+  v_id uuid;
+  v_human uuid;
+  i int;
+begin
+  select m.id, (d.config->'mock'->>'human_team_id')::uuid into v_id, v_human
+    from mp11_auction m join drafts d on d.id = m.id;
+  for i in 1..5 loop
+    exit when (select (d.current_nomination->>'high_bidder_team_id')::uuid <> v_human
+                 from drafts d where d.id = v_id);
+    update drafts set updated_at = now() - interval '180 seconds'
+     where id = v_id and status = 'live';
+    perform public.draft_tick();
+  end loop;
+end $prov$;
+select isnt(
+  (select (d.current_nomination->>'high_bidder_team_id')::uuid
+     from drafts d join mp11_auction m on d.id = m.id),
+  (select (d.config->'mock'->>'human_team_id')::uuid
+     from drafts d join mp11_auction m on d.id = m.id),
+  '§E a provoked bot holds the high bid — the precondition for a legal human raise (a red here means the CPU value model stopped engaging, which 039/044 also pin)');
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9b100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_place_bid(
+       (select id from mp11_auction),
+       (select ((d.current_nomination->>'high_bid')::int + 1)
+          from drafts d join mp11_auction m on d.id = m.id),
+       gen_random_uuid(),
+       (select (d.current_nomination->>'nomination_seq')::int
+          from drafts d join mp11_auction m on d.id = m.id),
+       'mp11-rb01') $$,
+  '§E BID: the human raises the bot by $1 through the real RPC ($200 budget — nowhere near the §8.6.1 max)');
+select lives_ok(
+  $$ select public.draft_queue_replace(
+       (select id from mp11_auction),
+       (select (d.config->'mock'->>'human_team_id')::uuid
+          from drafts d join mp11_auction m on d.id = m.id),
+       array['mp11-rb02']) $$,
+  '§E QUEUE: the launcher''s queue row lands (draft_queues — the third verb §B never ran)');
+reset role;
+
+select lives_ok($$ select pg_temp.mp11_take('a_during') $$,
+  '§E MID-STATE: snapshot taken with the auction live — opening + ladder + human raise + queue row all standing');
+select is(
+  (select array_agg(a.tbl order by a.tbl)
+     from mp11_snap a join mp11_snap d on d.tbl = a.tbl and d.phase = 'a_during'
+    where a.phase = 'after' and (a.n, a.digest) is distinct from (d.n, d.digest)),
+  array['draft_bids', 'draft_liveness', 'draft_queues', 'drafts', 'teams'],
+  '§E THE AUCTION MID-STATE ALLOWLIST, as a stored literal: a live standalone auction has touched exactly five tables — drafts, draft_bids (opening + ladder + the human raise), draft_liveness (the auction verbs beat the caller''s liveness themselves — measured, not assumed), draft_queues, teams (the seats). NOT ONE league-product table, and NOT draft_picks (the market is contested and still open). The auction path''s own writers are now inside the permanent assertion (R546)');
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "9b100000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.delete_mock_draft((select id from mp11_auction)) $$,
+  '§E the launcher deletes the live auction mid-market');
+reset role;
+
+select lives_ok($$ select pg_temp.mp11_take('a_final') $$,
+  '§E FINAL: all 56 tables snapshotted a fourth time');
+select is(
+  (select coalesce(array_agg(a.tbl order by a.tbl), '{}'::text[])
+     from mp11_snap a join mp11_snap f on f.tbl = a.tbl and f.phase = 'a_final'
+    where a.phase = 'after' and (a.n, a.digest) is distinct from (f.n, f.digest)),
+  '{}'::text[],
+  '§E ZERO DELTA AFTER THE AUCTION LIFECYCLE TOO: launch → nominate → bot ladder → human raise → queue → delete-mid-market, and all 56 tables are byte-identical to the proven-clean baseline — bids, queue rows and seats all swept by the one delete (the FK cascade + D227(6) cleanup, exercised on the auction path)');
 
 select * from finish();
 rollback;

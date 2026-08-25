@@ -841,11 +841,35 @@ describe('§A a standalone practice draft can be DRIVEN (MP.6b)', () => {
         },
       )
       if (raise.status !== 200) {
-        // The only tolerated loss is the market going off the board under a
-        // concurrent tick — anything else is a real refusal and fails here.
+        // TWO tolerated losses, both terminal states of THIS market and not
+        // defects (R545): (1) the market went off the board under a
+        // concurrent tick; (2) the provoked bot ladder ratcheted `high_bid`
+        // to (or past) the launcher's own §8.6.1 max, so `high_bid + 1` is
+        // the budget refusal — observed reproducibly (2 of 6 isolated runs
+        // RED at this line before this arm existed), and plausibly
+        // accelerated by the -180s provoke rewind above, which makes more
+        // bots overdue per tick and the ladder climb faster. Anything else
+        // is a real refusal and fails here.
         const message = (raise.body as { error: string }).error
         expect(raise.status).toBe(400)
-        expect(message).toMatch(/off the board/)
+        expect(message).toMatch(/off the board|over your max bid/)
+        if (/over your max bid/.test(message)) {
+          // Close the ratcheted market and move on: the nomination clock is
+          // deadline-keyed (not think-keyed), so rewinding the deadline and
+          // ticking awards it to the standing high bot, and the next loop
+          // pass nominates a fresh $1 player the ladder has not touched.
+          const stuck = await readDraft(auctionMockId)
+          if (stuck.status === 'live' && stuck.current_nomination !== null) {
+            await service
+              .from('drafts')
+              .update({
+                current_deadline: shifted(stuck.current_deadline as string, -600_000),
+              })
+              .eq('id', auctionMockId)
+              .eq('status', 'live')
+            await tick()
+          }
+        }
         continue
       }
       landed = {
