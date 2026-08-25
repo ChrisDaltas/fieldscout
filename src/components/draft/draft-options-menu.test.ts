@@ -7,6 +7,7 @@ import {
   AUCTION_DRAFT_OPTIONS_ENTRIES,
   DRAFT_OPTIONS_ENTRIES,
   draftOptionsEntries,
+  MOCK_ENABLED_SECTIONS,
   sectionDomId,
   type DraftOptionsEntry,
   type DraftOptionsSectionId,
@@ -29,11 +30,13 @@ import {
  *     four is reachable in a snake room (their RPCs refuse a snake draft);
  *   - the enumerated-list construction (no hard-coded ladder — L.C3.2
  *     appends entries, never restructures);
- *   - the mock gate: the ONLY `<DraftOptionsMenu` mount sits behind the
- *     bar's `showDraftOptions` (D110(1) — the ops golden in
- *     `command-bar-ops.test.ts` pins `draftOptions: false` for every mock
- *     row of the variant table, so gate + model together keep every
- *     commissioner group off a mock);
+ *   - the mock catalog (MS.5 — §8.8 v2.15/D259, D221(4)): the ONLY
+ *     `<DraftOptionsMenu` mount still sits behind the bar's
+ *     `showDraftOptions`, which since MS.5 also opens for the LAUNCHER of
+ *     a league-attached mock; on a mock the catalog is the
+ *     `MOCK_ENABLED_SECTIONS` subset (clock + order, stored as literals
+ *     below) and every still-shut group is ABSENT — from the menu AND from
+ *     the panel's DOM (the section mounts gate on the same derivation);
  *   - the open-at-section wiring: menu choice → room state → panel anchor,
  *     with every catalog entry owning a `sectionDomId` anchor in the panel;
  *   - NO SECOND DOOR to commissioner power in the room (the
@@ -197,11 +200,87 @@ describe('the AUCTION catalog (L.C3.2) — eleven groups, in the panel order', (
   })
 })
 
+// ---------------------------------------------------------------------------
+// The MOCK catalog (MS.5 — the launcher's door on a league-attached mock)
+// ---------------------------------------------------------------------------
+
+/** The exact group ids a mock room's door holds, stored as literals — the
+ *  enabled set with a working wire door end-to-end (order: MS.7+MS.2;
+ *  clock: MS.3), labels carried from the per-type catalogs. */
+const GOLDEN_MOCK_ENTRIES: readonly DraftOptionsEntry[] = [
+  { id: 'clock', label: 'Clock & timers' },
+  { id: 'order', label: 'Draft order' },
+]
+
+const GOLDEN_MOCK_AUCTION_ENTRIES: readonly DraftOptionsEntry[] = [
+  { id: 'clock', label: 'Clock & timers' },
+  { id: 'order', label: 'Nomination order' },
+]
+
+/** Every group a mock room must NOT render (D221(4): ABSENT, not disabled —
+ *  a rendered shut group would inherit `pauseFirstGate`'s open mock arm
+ *  with no pause-first copy, R556). Derived as the complement so a future
+ *  catalog entry cannot dodge the sweep by being new. */
+const MOCK_SHUT_IDS: readonly DraftOptionsSectionId[] = [
+  ...new Set([...DRAFT_OPTIONS_ENTRIES, ...AUCTION_DRAFT_OPTIONS_ENTRIES].map((e) => e.id)),
+].filter((id) => !MOCK_ENABLED_SECTIONS.includes(id))
+
+describe('the MOCK catalog (MS.5/D221(4)) — clock + order, everything else ABSENT', () => {
+  it('matches the golden tables exactly (ids, labels, order)', () => {
+    expect(draftOptionsEntries(false, true)).toEqual(GOLDEN_MOCK_ENTRIES)
+    expect(draftOptionsEntries(true, true)).toEqual(GOLDEN_MOCK_AUCTION_ENTRIES)
+  })
+
+  it('MOCK_ENABLED_SECTIONS is the one predicate, and it is exactly clock + order', () => {
+    expect(MOCK_ENABLED_SECTIONS).toEqual(['clock', 'order'])
+  })
+
+  it('every still-shut group is absent from both mock catalogs (the D221(4) sweep)', () => {
+    expect(MOCK_SHUT_IDS.length).toBeGreaterThan(0)
+    for (const isAuction of [false, true]) {
+      const ids = draftOptionsEntries(isAuction, true).map((e) => e.id)
+      for (const shut of MOCK_SHUT_IDS) {
+        expect(ids, `${shut} (auction=${String(isAuction)})`).not.toContain(shut)
+      }
+    }
+  })
+
+  it('the real catalogs are untouched by the mock arm (default parameter)', () => {
+    expect(draftOptionsEntries(false)).toEqual(DRAFT_OPTIONS_ENTRIES)
+    expect(draftOptionsEntries(true)).toEqual(AUCTION_DRAFT_OPTIONS_ENTRIES)
+  })
+
+  it('the PANEL gates every section mount on the same derivation (absence in the DOM)', () => {
+    const panel = code(PANEL)
+    // One `sections` set, derived from draftOptionsEntries(isAuction,
+    // draft.is_mock) — the menu's own derivation, not a second list.
+    expect(panel).toMatch(
+      /new Set\(draftOptionsEntries\(isAuction, draft\.is_mock\)\.map\(\(entry\) => entry\.id\)\)/,
+    )
+    // Every catalog id's mount sits behind `sections.has('<id>')` — so on a
+    // mock the still-shut groups are ABSENT from the panel's tree by
+    // construction, and a new section cannot mount ungated.
+    for (const entry of [...DRAFT_OPTIONS_ENTRIES, ...AUCTION_DRAFT_OPTIONS_ENTRIES]) {
+      expect(panel, entry.id).toMatch(
+        new RegExp(
+          `\\{sections\\.has\\('${entry.id}'\\)\\s*&&\\s*\\(\\s*<div id=\\{sectionDomId\\('${entry.id}'\\)\\}`,
+        ),
+      )
+    }
+    // No section anchor mounts outside the gate: every sectionDomId mount
+    // site in the panel is preceded by its sections.has guard (counted).
+    const anchorMounts = (panel.match(/<div id=\{sectionDomId\(/g) ?? []).length
+    const gatedMounts = (panel.match(/\{sections\.has\('[a-z-]+'\) && \(\s*<div id=\{sectionDomId\(/g) ?? [])
+      .length
+    expect(gatedMounts).toBe(anchorMounts)
+  })
+})
+
 describe('the menu renders the enumerated catalog, not a hard-coded ladder', () => {
   const menu = code(MENU)
 
-  it('maps the enumerated catalog for its draft type', () => {
-    expect(menu).toMatch(/draftOptionsEntries\(isAuction\)/)
+  it('maps the enumerated catalog for its draft type AND mock-ness (MS.5)', () => {
+    expect(menu).toMatch(/draftOptionsEntries\(isAuction, isMock\)/)
     expect(menu).toMatch(/entries\.map/)
   })
 

@@ -906,9 +906,19 @@ function DraftRoomLive({
   const youAreOnClock = Boolean(myTeamId) && draft.on_clock_team_id === myTeamId
   const paused = draft.status === 'paused'
 
-  // §8.7 surface: commissioner/co-commissioner, NON-mock only (D110(1) —
-  // the controls refuse mocks in-RPC; the UI must not offer them).
-  const isCommish = canUseCommishPanel(scope.myRole) && !draft.is_mock
+  // §8.7 surface — the room's ONE door predicate (MS.5): the commissioner
+  // on a real draft, the LAUNCHER on a league-attached mock (§8.8 v2.15 /
+  // D259: the launcher is the commissioner of their own mock — role is
+  // irrelevant there, D103(2): a commissioner who is not the launcher gets
+  // nothing). On a mock the panel renders ONLY the MOCK_ENABLED_SECTIONS
+  // catalog (D221(4): the still-shut groups are ABSENT, never disabled). A
+  // STANDALONE practice keeps the door shut — no wire door exists for any
+  // of its controls yet (F128: order; F129: clock), and a control that
+  // renders and then 400s is R515's defect. `command-bar-ops.ts` derives
+  // the same predicate for the bar; the golden table keeps the two agreeing.
+  const canOpenDraftOptions = draft.is_mock
+    ? isMockLauncher && scope.leagueId !== null
+    : canUseCommishPanel(scope.myRole)
   const pauseResume = usePauseResumeDraft(scope.leagueId, draft.id)
   // DR.2: one pause/resume handler for the bar — the SHIPPED
   // usePauseResumeDraft mutation, no new route (DR.2 item 5). The bar is
@@ -1329,6 +1339,10 @@ function DraftRoomLive({
           commishRole: canUseCommishPanel(scope.myRole),
           isMock: draft.is_mock,
           isMockLauncher,
+          // MS.5: picks WHICH menu a mock's launcher gets — Draft Options
+          // when a league is attached (the enabled controls have doors
+          // there), the reduced practice menu when standalone (F128/F129).
+          standalone: scope.leagueId === null,
           paused,
           // DR.7(3): the §16.5.4 reconnecting state renders IN the bar —
           // same trigger the M2 board-zone banner used, one strip not a
@@ -1516,16 +1530,17 @@ function DraftRoomLive({
 
       {/* §8.7 panel — trigger-less and CONTROLLED since DR.2 (D153); the
           bar's Draft Options MENU is its one door since DR.3, opening it at
-          the chosen section. Gated exactly as before:
-          commissioner/co-commissioner on a NON-mock draft (D110(1) — the
-          gate is `isCommish`, which carries `&& !draft.is_mock`). */}
-      {isCommish && (
+          the chosen section. Gated by `canOpenDraftOptions` (MS.5): the
+          commissioner on a real draft, the LAUNCHER on a league-attached
+          mock — where the panel mounts only the MOCK_ENABLED_SECTIONS
+          (D221(4): still-shut groups absent from the DOM). */}
+      {canOpenDraftOptions && (
         // MP.6c: the inner check is a TYPE narrowing, not a second gate —
-        // `isCommish` is already false without a league (a standalone
-        // practice room's `myRole` is null and `canUseCommishPanel(null)` is
-        // false), and §8.7's panel takes a `LeagueDetail` because it is a
-        // league surface. A practice draft has no commissioner at all
-        // (D110(1)/D226(2)).
+        // `canOpenDraftOptions` is already false without a league (a
+        // standalone practice room's mock arm requires `scope.leagueId !==
+        // null`, and its `myRole` is null so the real arm is false too),
+        // and §8.7's panel takes a `LeagueDetail` because it is a league
+        // surface.
         scope.league !== null &&
         scope.leagueId !== null && (
           <CommishDraftPanel

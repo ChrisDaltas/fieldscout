@@ -18,9 +18,12 @@ import { describe, expect, it } from 'vitest'
  *     (Q13: everyone can leave — commissioner, member, mock);
  *   - the room mounting the bar and containing no PageHeader element or
  *     app-header import (the DR.2 deletion staying deleted);
- *   - the D110(1) seam: `isCommish` still carries `&& !draft.is_mock`, and
- *     the ONLY `CommishDraftPanel` mount sits behind it (the variant table
- *     in `command-bar-ops.test.ts` pins the same mask at the ops layer);
+ *   - the door seam (D110(1) as amended by MS.5): the room's ONE door
+ *     predicate is `canOpenDraftOptions` — commissioner on a real draft,
+ *     the LAUNCHER on a LEAGUE-ATTACHED mock (§8.8 v2.15/D259; standalone
+ *     stays shut, F128/F129) — and the ONLY `CommishDraftPanel` mount sits
+ *     behind it (the variant table in `command-bar-ops.test.ts` pins the
+ *     same derivation at the ops layer);
  *   - the panel's old blue trigger staying retired (D153): no SheetTrigger
  *     anywhere in `commish-draft-panel.tsx`, and its Sheet controlled.
  */
@@ -154,18 +157,23 @@ describe('the room hosts the bar and the PageHeader stays deleted (DR.2)', () =>
   })
 })
 
-describe('no commissioner control is reachable on a mock (D110(1))', () => {
+describe('the room’s ONE door predicate (D110(1) as amended by MS.5)', () => {
   const room = code(ROOM)
 
-  it('isCommish still carries the !draft.is_mock mask at its one definition', () => {
+  it('canOpenDraftOptions: commissioner on a real draft, the LAUNCHER on a league-attached mock', () => {
+    // The pin MOVED here from the pre-MS.5 `isCommish … && !draft.is_mock`
+    // text (D221(5): moved, never deleted). What it still guarantees: role
+    // alone NEVER opens the door on a mock (the mock arm reads only
+    // `isMockLauncher`), and a STANDALONE practice room opens nothing
+    // (`scope.leagueId !== null` — no wire door exists there, F128/F129).
     expect(room).toMatch(
-      /const isCommish = canUseCommishPanel\(scope\.myRole\) && !draft\.is_mock/,
+      /const canOpenDraftOptions = draft\.is_mock\s*\n\s*\? isMockLauncher && scope\.leagueId !== null\s*\n\s*: canUseCommishPanel\(scope\.myRole\)/,
     )
   })
 
-  it('the ONLY CommishDraftPanel mount sits behind the isCommish gate', () => {
+  it('the ONLY CommishDraftPanel mount sits behind the canOpenDraftOptions gate', () => {
     expect(room).toMatch(/<CommishDraftPanel/)
-    expect(withoutAllGates(room, 'isCommish')).not.toMatch(/<CommishDraftPanel/)
+    expect(withoutAllGates(room, 'canOpenDraftOptions')).not.toMatch(/<CommishDraftPanel/)
   })
 })
 
