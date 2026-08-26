@@ -663,17 +663,42 @@ BEGIN
   -- a stale snapshot and committed a live league referencing the F21 document
   -- — reproduced by four reviewers, in BOTH orderings, first try each time,
   -- with single-transaction controls correctly refused in both orderings, so
-  -- the interleave was the only variable. `FOR NO KEY UPDATE` is the weakest
-  -- lock that conflicts with the rules-UPDATE this seam races (it does NOT
-  -- conflict with the FK's `FOR KEY SHARE`, so ordinary league writes are not
-  -- serialised behind scoring edits — measured at 1.162 ms through a held
-  -- `FOR KEY SHARE`). Both orderings then serialise: the later transaction
-  -- either blocks and re-reads the invalid document, or commits first and is
-  -- caught by wall 1's arm (c) seeing the live league.
+  -- the interleave was the only variable. Both orderings then serialise: the
+  -- later transaction either blocks and re-reads the invalid document, or
+  -- commits first and is caught by wall 1's arm (c) seeing the live league.
   --
-  -- **It introduces a two-direction lock pattern and therefore a deadlock
-  -- surface**, which is a clean rollback rather than corruption — pinned with
-  -- its own isolation cell (pgTAP 052 §K) rather than landed as a drive-by.
+  -- ── TWO CLAIMS THAT USED TO STAND HERE WERE MEASURED FALSE (F147), AND SE.5
+  --    READS THIS COMMENT, SO THEY ARE CORRECTED RATHER THAN SOFTENED ──────
+  -- (1) It said `FOR NO KEY UPDATE` is "the weakest lock that conflicts with
+  --     the rules-UPDATE this seam races". **`FOR SHARE` is weaker and also
+  --     conflicts** — self-conflict-free at 1.264 ms, and it still blocks the
+  --     racing UPDATE (measured 3480 ms). So this is *a* sufficient lock, not
+  --     the minimal one.
+  -- (2) It said "ordinary league writes are not serialised behind scoring
+  --     edits", which contradicted its own first half: a lock that conflicts
+  --     with the racing UPDATE necessarily makes league writes wait on one.
+  --     Measured A-holds/B-requests at **4495 ms**, against **0.957 ms** at the
+  --     pre-104 FK level — **the contention is NEW, introduced by this lock**,
+  --     and pretending otherwise would have handed SE.5 a false premise.
+  -- **The lock is deliberately NOT changed here.** `FOR NO KEY UPDATE` ships;
+  -- choosing between it and `FOR SHARE` is SE.5's, with the trade named: the
+  -- weaker mode is a *shared* lock, so concurrent holders go through a
+  -- multixact — cheaper contention, more bookkeeping — and SE.5 is where the
+  -- write pattern that makes the choice measurable finally exists.
+  --
+  -- **The deadlock question, corrected in the same register (F148).** This was
+  -- described as "a two-direction lock pattern and therefore a deadlock
+  -- surface, pinned with its own isolation cell". Neither half held: **wall 1
+  -- takes NO lock at all** — its arm (c) is a bare `EXISTS` with no `FOR`
+  -- clause — so the second direction of the cycle does not exist and cannot
+  -- deadlock against this one; and §K is a CATALOG pin, which pgTAP 052 says in
+  -- bold about itself. **The residual isolation coverage R626 asked for is
+  -- NAMED RATHER THAN PINNED** (the 066/084/098 idiom) and carried as ledger
+  -- **F151**, owned by SE.5: today no server function does DML on
+  -- `scoring_systems` and the only application write path is a single
+  -- auto-commit PostgREST statement, so the reverse-order leg cannot be
+  -- assembled at all — an argument that expires the moment
+  -- `scoring_update_rules` lands.
   SELECT s.rules INTO v_rules
   FROM public.scoring_systems s
   WHERE s.id = NEW.scoring_system_id

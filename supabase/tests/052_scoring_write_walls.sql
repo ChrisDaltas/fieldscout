@@ -1218,22 +1218,29 @@ set local role postgres;
 -- after — is a two-session measurement recorded in the PR body and in
 -- PROGRESS D272, where a measurement that cannot live in the suite belongs.
 --
--- **The deadlock surface is real and is named rather than pinned:** this is a
--- two-direction lock pattern (wall 1 reads `leagues` while holding
--- `scoring_systems`; wall 3 the reverse), so a genuinely concurrent pair can
--- deadlock. A deadlock is a clean rollback with `40P01`, not corruption — the
--- outcome this seam is being traded UP to from a committed invalid state.
+-- **THE DEADLOCK CLAIM THAT USED TO STAND HERE WAS WRONG, AND THE CORRECTION
+-- IS THE MORE USEFUL FACT (F148).** It said this is a two-direction lock
+-- pattern — "wall 1 reads `leagues` while holding `scoring_systems`; wall 3 the
+-- reverse". **Wall 1 takes NO lock at all:** its arm (c) is a bare `EXISTS`
+-- with no `FOR` clause. There is only one direction, so there is no cycle to
+-- deadlock. The residual isolation coverage R626 asked for is therefore
+-- **named rather than pinned** (the 066/084/098 idiom) and carried as ledger
+-- **F151**, owned by SE.5: today no server function does DML on
+-- `scoring_systems` and the only application write path is a single
+-- auto-commit PostgREST statement, so the reverse-order leg cannot be
+-- assembled — an argument that expires the moment `scoring_update_rules`
+-- lands.
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'leagues_scoring_reference_guard'
-      and p.prosrc ~ 'SELECT\s+s\.rules\s+INTO\s+v_rules(.|\n)*FOR NO KEY UPDATE'),
-  1, 'K1 (R626): wall 3 resolves the reference `FOR NO KEY UPDATE` — the lock is on the SELECT that reads the other table''s premise, not merely somewhere in the body. Two concurrent transactions committed a live league in front of the F21 document without it (reproduced by four reviewers in both orderings); with it, both orderings serialise');
+      and p.prosrc ~ 'WHERE\s+s\.id\s*=\s*NEW\.scoring_system_id\s+FOR NO KEY UPDATE'),
+  1, 'K1 (R626): wall 3 resolves the reference `FOR NO KEY UPDATE` — the lock is on the SELECT that reads the other table''s premise, not merely somewhere in the body. Two concurrent transactions committed a live league in front of the F21 document without it (reproduced by four reviewers in both orderings); with it, both orderings serialise. **The regex is ANCHORED TO THE STATEMENT (F149), and that is the whole cell:** its first form matched the phrase anywhere after the SELECT, so deleting the lock while leaving the words in a comment BELOW it left this cell GREEN — the non-discriminating-probe trap that bit this lane once already, in the mirror direction. It matters because §A22 is a golden pin that every legitimate body edit reds and a human hand-clears, and that hand-clearing window is exactly what K1 is here to cover');
 
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'leagues_scoring_reference_guard'
-      and p.prosrc ~ 'FOR (UPDATE|SHARE|KEY SHARE)(\s|;)'),
-  0, 'K2: …and it is that lock and not a stronger or weaker one. `FOR UPDATE` would conflict with the FK''s own `FOR KEY SHARE` and serialise ordinary league writes behind scoring edits; `FOR KEY SHARE` would not conflict with the rules-UPDATE this seam races, and would be a lock that reads as protection while providing none');
+      and p.prosrc ~ 'FOR (UPDATE|KEY SHARE)(\s|;)'),
+  0, 'K2: …and not a lock at either extreme. `FOR UPDATE` conflicts with the FK''s own `FOR KEY SHARE` and would serialise league writes against the FK path itself; `FOR KEY SHARE` does NOT conflict with the rules-UPDATE this seam races and would read as protection while providing none. **`FOR SHARE` is deliberately NOT in this list (F147):** it is weaker than what ships and still blocks the racing UPDATE (measured 3480 ms, self-conflict-free at 1.264 ms), so choosing it is a real decision — SE.5''s, with the multixact trade named in 104 — and this cell must not turn that decision into a fight with a green pin');
 
 select * from finish();
 rollback;
