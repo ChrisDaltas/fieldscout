@@ -104,6 +104,22 @@ async function cleanup(): Promise<void> {
   for (const u of [USER_A, USER_B]) {
     await deleteUserByUsername(u.username)
   }
+  // F127: these `players` fixtures are SHARED-POOL rows and nothing
+  // deleted them — `vitest-lpd-p1/p2/p3` outlived every run and went on to
+  // decide other suites' assertions over the one local database. They are
+  // 3 of the 5 rows behind `draft-board-autopick-db`'s CI red, and the
+  // residue F94 measured turning `test:db` red after a vitest run. The
+  // users go first: their lists cascade to `list_players`, which is what
+  // references these rows. LOUD on failure — a swallowed release is how the
+  // residue survived in the first place.
+  const { error } = await service
+    .from('players')
+    .delete()
+    .in(
+      'id',
+      PLAYERS.map((row) => row.id),
+    )
+  if (error) throw new Error(`cleanup: players delete failed: ${error.message}`)
 }
 
 async function createUser(user: {
@@ -197,6 +213,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
+  // F127's measurement, in the suite that owes it: zero fixture players
+  // left in the shared pool, asserted rather than assumed.
+  const { count } = await service
+    .from('players')
+    .select('id', { count: 'exact', head: true })
+    .in(
+      'id',
+      PLAYERS.map((row) => row.id),
+    )
+  expect(count, 'fixture players left in the shared pool (F127)').toBe(0)
 })
 
 describe('drafted marks — the happy path and its idempotency (D2)', () => {

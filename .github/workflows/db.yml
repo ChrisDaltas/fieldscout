@@ -12,16 +12,33 @@ name: Database
 #     replay ends with the guards missing — the deployed body looked fine)
 #   - pgTAP 004 test 2 sitting red for weeks
 #   - a migration that only applies cleanly on top of a drifted database
+#
+# THE `-db.test.ts` GLOB IS NOT SCOPE CREEP (2026-08-26, F94/F70): the
+# "Database-backed tests" step below RUNS files that live in `src/`, and this
+# trigger did not watch a single one of them. A PR that edited a stack suite
+# got no database run at all, and the alarm that finally rang rang on someone
+# else's migration. The glob connects the job to the files it executes; the
+# broad `src/**` is still deliberately excluded, so a React-only PR remains
+# outside the expensive lane exactly as before.
 
 on:
   pull_request:
     paths:
       - 'supabase/**'
       - '.github/workflows/db.yml'
+      - '**/*-db.test.ts'
+      - 'src/lib/leagues/gate/**'
+      - 'vitest.shared.ts'
+      - 'vitest.config.ts'
   push:
     branches: [main]
     paths:
       - 'supabase/**'
+      - '.github/workflows/db.yml'
+      - '**/*-db.test.ts'
+      - 'src/lib/leagues/gate/**'
+      - 'vitest.shared.ts'
+      - 'vitest.config.ts'
 
 concurrency:
   group: db-${{ github.workflow }}-${{ github.ref }}

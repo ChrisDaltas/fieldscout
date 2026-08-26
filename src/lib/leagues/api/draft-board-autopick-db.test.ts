@@ -22,10 +22,27 @@
  * Seats: 1 real commissioner (STALE — never heartbeats; every rewind jumps
  * past deadline + grace) + 7 placeholder seats (E48 autopilot, ADP).
  * Board: the commissioner's PRIMARY list ranks 5 fixture RBs carrying
- * `adp: NULL` — NULLS LAST in 068's source-4 walk puts them behind the
- * ENTIRE real pool, so no ADP-driven seat (in this league or in ANY
- * co-scheduled suite) can ever reach them: a fixture pick is board-sourced
- * by construction (R286).
+ * `adp: NULL` — NULLS LAST in 068's source-4 walk puts them behind every
+ * ADP'd row, so no ADP-driven seat (in this league or in ANY co-scheduled
+ * suite) can ever reach them: a fixture pick is board-sourced by
+ * construction (R286).
+ *
+ * THE PREMISE IS A PRESENCE, AND THE FIXTURE NOW MAKES IT TRUE (F70/F94 —
+ * D235(5)'s sibling half). "Behind the ENTIRE real pool" was a claim about
+ * a table this suite never populated. CI replays the migrations into an
+ * EMPTY `players` (seed.sql inserts none), so the ADP'd pool did not exist
+ * and the 7 placeholder seats walked straight onto the NULL-adp board,
+ * eating it from the top; the commissioner's own board read then returned
+ * whatever survived to its randomly-drawn slot. That is the whole content
+ * of F70's "ordinal wander" — `draft_order_mode` here is `random`, so the
+ * received id is `BOARD_ORDER[slot - 1]`, NOT a per-run counter (rb03 then
+ * rb05 is slot 3 then slot 5), and once the 5-row board is gone the read
+ * falls through to source 4 over whatever residue is in the table
+ * (`vitest-lpd-p2`, F127). Its original `length 10 != 16` is the same
+ * cause counted differently: 5 fixtures + 5 residue rows = 10 draftable
+ * players for a 16-pick board. The DECOYS below are the ADP'd pool the
+ * premise names, seeded here, in the same residency window as the board
+ * and released with it.
  *
  * Requires the local stack — D59(5); FAILS loudly when the stack is down,
  * never skips (§4.3). Fixture prefixes: username `bap_`, players
@@ -99,6 +116,37 @@ const PLAYERS = Array.from({ length: 5 }, (_, i) => ({
 const BOARD_ORDER = PLAYERS.map((p) => p.id)
 const BOARD_NEXT = BOARD_ORDER[1] as string
 
+/** THE DECOY POOL — the ADP'd rows the 7 placeholder seats (and the
+ *  demoted commissioner's round-2 pick) are meant to eat, so nothing but a
+ *  primary-board read can reach a NULL-adp fixture. 15 of this board's 16
+ *  picks are ADP-sourced; 32 rows is that with headroom, and the mix covers
+ *  the forced RB need in round 1 (7 seats) plus an open-mode bench round.
+ *
+ *  BAND — 9100+, ABOVE the real pool (measured 2026-08-26 on the dev stack:
+ *  1074 players, 549 with ADP, min 1.6, MAX 700.9) and above every fixture
+ *  band in the repo (F110/D235's `(0, 1)`, the `/100` bands). The direction
+ *  is deliberate and it is what F94's measured extension demands:
+ *  `draft_mock_cpu_bid_value` ranks a player as
+ *  `count(*) WHERE adp IS NOT NULL AND adp < v_adp`, so a row placed BELOW
+ *  the real pool shifts every other suite's CPU seed, while a row placed
+ *  ABOVE it shifts none. Locally these are never reached (549 real ADP'd
+ *  rows sit in front of them), so this suite's local behavior is exactly
+ *  what it was; in CI, where the real pool does not exist, they ARE the
+ *  pool. Either way the board is unreachable — the only property the
+ *  assertions below rest on. */
+const DECOY_POSITIONS = [
+  ...Array.from({ length: 16 }, () => 'RB'),
+  ...Array.from({ length: 8 }, () => 'WR'),
+  ...Array.from({ length: 4 }, () => 'TE'),
+  ...Array.from({ length: 4 }, () => 'QB'),
+]
+const DECOYS = DECOY_POSITIONS.map((position, i) => ({
+  id: `bap-decoy-${String(i + 1).padStart(2, '0')}`,
+  full_name: `BAP Decoy ${position} ${String(i + 1).padStart(2, '0')}`,
+  position,
+  adp: 9100 + i + 1,
+}))
+
 const ACTION = { create: 'af200000-0000-4000-8000-000000000001' } as const
 
 type DraftRow = Database['public']['Tables']['drafts']['Row']
@@ -162,7 +210,7 @@ async function releaseSharedRows(): Promise<void> {
     .delete()
     .in(
       'id',
-      PLAYERS.map((p) => p.id),
+      [...PLAYERS, ...DECOYS].map((p) => p.id),
     )
   throwIfError(playersError, 'cleanup: players delete')
 }
@@ -314,6 +362,30 @@ describe('§8.9 autopick tie-in over the real tick (L.B4.2)', () => {
       //    residency in the pool every db suite walks.
       const { error: upsertError } = await service.from('players').upsert([...PLAYERS])
       throwIfError(upsertError, 'players upsert')
+      const { error: decoyError } = await service.from('players').upsert([...DECOYS])
+      throwIfError(decoyError, 'decoy pool upsert')
+
+      // 0b. THE PREMISE, ASSERTED (F70/F94; D235(5)'s sibling half — a
+      //     fixture whose premise is a PRESENCE must make that presence
+      //     true within its own fixture). Every assertion below rests on
+      //     "the NULL-adp board is behind every ADP'd row", which is a
+      //     property of the TABLE, not of this file. It holds iff the ADP'd
+      //     pool outlasts this board's ADP-sourced picks (15 of 16 — the 7
+      //     placeholders twice, plus the demoted commissioner's round 2).
+      //     On an empty pool this read is 0 and the failure lands HERE,
+      //     naming its reason, instead of 200 lines later as a confusing
+      //     `expected 'vitest-lpd-p2' to be 'bap-wire-rb01'`.
+      const { count: adpPool, error: adpPoolError } = await service
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .not('adp', 'is', null)
+      throwIfError(adpPoolError, 'ADP-pool premise read')
+      expect(
+        adpPool ?? 0,
+        "PREMISE: the ADP walk must hold more ADP'd players than this board has picks, or the " +
+          'placeholder seats eat the NULL-adp board and every assertion below is about the ' +
+          'wrong thing (F70/F94 — the DECOYS above exist to make this true)',
+      ).toBeGreaterThanOrEqual(TOTAL_PICKS)
 
       // The commissioner's ranked list, made through the ordinary client
       // write path (own list + list_players — the lists surface the attach
@@ -384,9 +456,25 @@ describe('§8.9 autopick tie-in over the real tick (L.B4.2)', () => {
       )
       // §8.9: "if the user set a primary draft board, autopick uses it
       // before the generic Big Board" — the board's #1 carries adp NULL,
-      // behind the ENTIRE real pool, so no other source could have
-      // produced it.
-      expect(round1?.player_id).toBe(BOARD_ORDER[0])
+      // behind every ADP'd row, so no other source could have produced it.
+      //
+      // The message carries the commissioner's DRAW — F70's own standing
+      // request (capture before reasoning). `draft_order_mode` is `random`
+      // here, and on an under-populated pool the received id is exactly
+      // `BOARD_ORDER[slot - 1]`; printing the slot is what turns the next
+      // red from "unexplained wander" into an arithmetic statement.
+      const { data: orderRow, error: orderError } = await service
+        .from('drafts')
+        .select('draft_order')
+        .eq('id', draftId)
+        .single()
+      throwIfError(orderError, 'draft_order read')
+      const slot = ((orderRow?.draft_order as string[] | null) ?? []).indexOf(commishTeamId) + 1
+      expect(
+        round1?.player_id,
+        `board-sourced round-1 pick (commissioner drew slot ${slot} of ${TEAM_COUNT}; a received ` +
+          "BOARD_ORDER[slot - 1] means ADP seats ate the board — check the ADP'd pool)",
+      ).toBe(BOARD_ORDER[0])
       expect(round1?.is_auto).toBe(true)
       expect(round1?.made_via).toBe('autopick')
 
