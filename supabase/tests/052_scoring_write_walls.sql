@@ -537,7 +537,7 @@ select is(
     where not t.tgisinternal
       and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
       and t.tgrelid in ('public.leagues'::regclass, 'public.scoring_systems'::regclass)),
-  'leagues.trg_leagues_scoring_reference_guard=ad626c38ca8a2d70f9cc0a860adac47d | leagues.trg_leagues_scoring_rules_valid=8eefa42191daba5ae5d9db5e5ef0c67d | leagues.trg_leagues_snapshot_guard=769a68bcfb6bb599732f68c3c507c94d | scoring_systems.trg_scoring_systems_rules_guard=009f9c68b41f1ff6fb58dfcc3d7725b1',
+  'leagues.trg_leagues_scoring_reference_guard=7a5a02731ca9deef114305d6e8b35ab4 | leagues.trg_leagues_scoring_rules_valid=8eefa42191daba5ae5d9db5e5ef0c67d | leagues.trg_leagues_snapshot_guard=769a68bcfb6bb599732f68c3c507c94d | scoring_systems.trg_scoring_systems_rules_guard=009f9c68b41f1ff6fb58dfcc3d7725b1',
   'A22 (R635): the BEFORE ROW trigger set on `leagues` and `scoring_systems`, in FIRE ORDER, each with the md5 of its function body. Triggers fire in NAME order, so a trigger that sorts after a wall and assigns the column the wall guards silently un-does it — with an identical catalog. Both halves of that are pinned here');
 
 select is(
