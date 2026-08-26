@@ -250,7 +250,17 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
 -- insert or a two-step flip refuses).
 update leagues
 set status = 'drafting',
-    scoring_rules_snapshot = '{"rules": {}, "fixture": "mk-LD"}'
+    -- [104/SE.4b/D272] This literal used to be `{"rules": {}, "fixture": "mk-LD"}`
+    -- and is changed here because the WALL refuses it by name, not because the
+    -- test was weakened: `leagues.scoring_rules_snapshot` is now validated on
+    -- every write (trg_leagues_scoring_rules_valid), and `rules`/`fixture` are
+    -- not §23.5 stat keys — `Scorable allowlist (§7.3.3.1 guardrail 1):
+    -- "rules" cannot be scored`. Nothing in this file or in src/ reads the
+    -- `fixture` marker (`grep -rn "mk-LD" supabase/tests/ src/` → this file
+    -- only, the league NAME and this line), and 025 needs only a NON-NULL
+    -- snapshot for the D43 guard it is exercising. Replaced with 013's own
+    -- valid literal.
+    scoring_rules_snapshot = '{"pass_yards": 0.04}'
 where id = 'b7000000-0000-4000-8000-0000000000f1';
 -- LB + LZ rosters: {QB:1, RB:1, bench:1} → 3 rounds (D91).
 update leagues
