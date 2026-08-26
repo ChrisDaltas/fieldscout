@@ -106,6 +106,21 @@ async function cleanup(): Promise<void> {
   for (const u of [OWNER, MEMBER, OUTSIDER]) {
     await deleteUserByUsername(u.username)
   }
+  // F127: `vitest-lla-p1/p2` are SHARED-POOL rows and nothing deleted them
+  // — 2 of the 5 residue rows that outlived every `npm run test` and went
+  // on to decide other suites' assertions (F94's pgTAP-022 residue; the CI
+  // red in `draft-board-autopick-db`). The users and leagues go first:
+  // their lists cascade to `list_players`, which is what references these
+  // rows. LOUD on failure — a swallowed release is how the residue survived
+  // in the first place.
+  const { error } = await service
+    .from('players')
+    .delete()
+    .in(
+      'id',
+      PLAYERS.map((row) => row.id),
+    )
+  if (error) throw new Error(`cleanup: players delete failed: ${error.message}`)
 }
 
 async function createUser(user: {
@@ -215,6 +230,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
+  // F127's measurement, in the suite that owes it: zero fixture players
+  // left in the shared pool, asserted rather than assumed.
+  const { count } = await service
+    .from('players')
+    .select('id', { count: 'exact', head: true })
+    .in(
+      'id',
+      PLAYERS.map((row) => row.id),
+    )
+  expect(count, 'fixture players left in the shared pool (F127)').toBe(0)
 })
 
 function rowsOf(result: { body: unknown }): LeagueListWithList[] {

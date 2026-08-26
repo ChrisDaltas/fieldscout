@@ -106,6 +106,48 @@ const RUNS = process.env.SOLVENCY_RUNS !== undefined ? Number(process.env.SOLVEN
 const FC = { seed: SEED, numRuns: RUNS, endOnFailure: true, verbose: true } as const
 
 const LEAGUE_PREFIX = 'vitest-solvprop'
+/** THE NOMINATABLE POOL, SEEDED BY THIS FIXTURE (F94; D235(5)'s sibling
+ *  half — a fixture whose premise is a PRESENCE must make that presence
+ *  true within its own fixture).
+ *
+ *  This suite's premise is "a pool large enough to draft from": four worlds
+ *  x 8 seats x 2 slots, plus the `pool.length > 64` floor below. It read
+ *  that pool out of `players` and never put one there — a premise nothing
+ *  satisfies on a fresh database, because `supabase/seed.sql` inserts ZERO
+ *  players and CI replays the migrations into an empty table. The measured
+ *  CI failure is `expected 0 to be greater than 64`, every run.
+ *
+ *  BAND — 9200+, ABOVE the real pool (measured 2026-08-26 on the dev stack:
+ *  1074 players, 549 with ADP, min 1.6, MAX 700.9) and disjoint from
+ *  `draft-board-autopick-db`'s 9100 decoys. The direction is what F94's own
+ *  measured extension demands: `draft_mock_cpu_bid_value` ranks a player as
+ *  `count(*) WHERE adp IS NOT NULL AND adp < v_adp`, so a row BELOW the
+ *  real pool shifts every other suite's CPU seed while a row ABOVE it
+ *  shifts none. NULL adp — that extension's other suggestion — is wrong
+ *  HERE: 091 maps NULL adp to rank N + 1 => value 0 => "nobody raises on an
+ *  unranked player", which would silently empty the CPU ladders worlds C
+ *  and D exist to exercise.
+ *
+ *  Consequence, stated plainly: LOCALLY nothing changes — the `.limit(200)`
+ *  read below still returns the real top-200 (549 real ADP'd rows sit in
+ *  front of this band), so M3-gate behavior is exactly what it was. In CI,
+ *  where no real pool exists, THIS is the pool, with the same shape (ranks
+ *  1..N against `k.n = slots x teams = 16`, so the same top slice carries
+ *  CPU value). No K/DEF: the roster is 1 RB + 1 bench, the pool filter
+ *  drops them, and auction K/DST eligibility never engages. */
+const POOL_PREFIX = 'vitest-solvpool'
+const POOL_POSITIONS = [
+  ...Array.from({ length: 40 }, () => 'RB'),
+  ...Array.from({ length: 32 }, () => 'WR'),
+  ...Array.from({ length: 12 }, () => 'TE'),
+  ...Array.from({ length: 12 }, () => 'QB'),
+]
+const POOL_PLAYERS = POOL_POSITIONS.map((position, i) => ({
+  id: `${POOL_PREFIX}-${String(i + 1).padStart(3, '0')}`,
+  full_name: `Solvency Pool ${position} ${String(i + 1).padStart(3, '0')}`,
+  position,
+  adp: 9200 + i + 1,
+}))
 const DRAFT_INSTANT = '2028-09-01T17:00:00+00:00' // F49: far future
 const TEAM_COUNT = 8
 const SLOTS_PER_TEAM = 2 // 1 starter + 1 bench — 16 nominations per board
@@ -175,6 +217,12 @@ async function cleanup(): Promise<void> {
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
   }
+  // The seeded pool, released LAST — the league graph above owns the NO
+  // ACTION player FKs on draft_picks. LOUD on failure: F127's lesson is
+  // that a swallowed players delete is how `vitest-%` rows outlive their
+  // suite and go on to decide somebody else's assertion.
+  const { error: poolError } = await service.from('players').delete().like('id', `${POOL_PREFIX}-%`)
+  if (poolError) throw new Error(`cleanup: seeded-pool delete failed: ${poolError.message}`)
 }
 
 async function tick(): Promise<Record<string, unknown>> {
@@ -828,6 +876,8 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
       clients.push(client)
     }
     await cleanup()
+    const { error: seedError } = await service.from('players').upsert([...POOL_PLAYERS])
+    expect(seedError, `seeded-pool upsert failed: ${seedError?.message}`).toBeNull()
     const { data: template, error: templateError } = await clients[0]!
       .from('scoring_systems')
       .select('id')
@@ -845,7 +895,14 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
     pool = (players ?? [])
       .filter((p) => p.position !== 'K' && p.position !== 'DEF')
       .map((p) => p.id as string)
-    expect(pool.length).toBeGreaterThan(64) // loud, not an empty walk
+    // Loud, not an empty walk — and after the seed above this is a premise
+    // the fixture MAKES true rather than one it hopes the environment will
+    // supply (F94: on `main` this read is 0 in CI, every run).
+    expect(
+      pool.length,
+      `nominatable pool (top 200 by ADP, no K/DEF) — the seeded ${POOL_PLAYERS.length}-player ` +
+        'fixture pool alone clears this floor, so a failure here means the seed did not land',
+    ).toBeGreaterThan(64)
   }, 120_000)
 
   afterAll(async () => {
@@ -865,6 +922,13 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
     // corrected sweep). Logged loud; asserted zero because this suite's own
     // worlds are the only standalone mints in a test run.
     expect(orphanTeams, 'orphan standalone-mock teams (league_id IS NULL) left behind').toBe(0)
+    // F127's sweep, extended to `players`: this suite seeds a pool, so it
+    // owes the measurement that it left none of it behind.
+    const { count: poolLeft } = await service
+      .from('players')
+      .select('id', { count: 'exact', head: true })
+      .like('id', `${POOL_PREFIX}-%`)
+    expect(poolLeft, 'seeded pool rows left in `players`').toBe(0)
     for (const u of USERS) await deleteUserByUsername(u.username)
   }, 120_000)
 
