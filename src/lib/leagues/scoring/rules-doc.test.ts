@@ -291,13 +291,18 @@ describe('resolveRules — format 2 is `{...base, ...positions[P]}`', () => {
     const doc = envelope({ ...base }, { TE: { receptions: 1.5 } })
     const snapshot = JSON.stringify(doc)
 
+    // The two casts below are the test deliberately doing what the return
+    // type now FORBIDS (R586 — `Readonly<FlatScoringRules>`): without them
+    // these lines are compile errors, which is the point. The runtime pin
+    // stays because the document also arrives from JSON at runtime, where no
+    // type protects it.
     const resolved = resolveRules(doc, 'WR')
     expect(resolved).not.toBe(doc.base)
-    resolved.receptions = 99
+    ;(resolved as FlatScoringRules).receptions = 99
     expect(doc.base.receptions).toBe(0.5)
 
     const overridden = resolveRules(doc, 'TE')
-    overridden.receptions = 99
+    ;(overridden as FlatScoringRules).receptions = 99
     expect(doc.positions.TE).toStrictEqual({ receptions: 1.5 })
 
     expect(JSON.stringify(doc)).toBe(snapshot)
@@ -397,6 +402,42 @@ describe('normalizeScoringDoc — the normal form the All-Positions switch rides
     expect(out.positions).toStrictEqual({ FB: { receptions: 1 } })
   })
 
+  it('PRESERVES a `__proto__` position key as an OWN key, and never installs it as a prototype (R582)', () => {
+    // `__proto__` is the one key name where "copy the entries into a fresh
+    // object" is not a copy: plain-object assignment invokes the inherited
+    // setter, which DELETES the entry and silently re-parents the result.
+    // A document from the database is `JSON.parse`d, which does create an own
+    // `__proto__` data property — so this shape is reachable, and the two
+    // claims it would falsify are this file's own: the preserve rule above,
+    // and the never-changes-a-scored-outcome property below.
+    const doc = JSON.parse(
+      '{"format":2,"base":{"receptions":0.5,"receiving_tds":6},' +
+        '"positions":{"FB":{"receptions":2},"__proto__":{"receptions":1}},' +
+        '"tier_cuts":{"def_pa":[0,1,7,14,21,28,35],"def_ya":[0,100,200,300,350,400,450,500,550]}}',
+    ) as ScoringRulesDocV2
+
+    expect(Object.keys(doc.positions)).toStrictEqual(['FB', '__proto__'])
+
+    const out = normalizeScoringDoc(doc) as ScoringRulesDocV2
+    expect(Object.keys(out.positions)).toStrictEqual(['FB', '__proto__'])
+    expect(Object.getPrototypeOf(out.positions)).toBe(Object.prototype)
+    expect(JSON.parse(JSON.stringify(out.positions)).__proto__).toStrictEqual({
+      receptions: 1,
+    })
+  })
+
+  it('the same key name inside an OVERRIDE survives normalization too (R582, second accumulator)', () => {
+    const doc = JSON.parse(
+      '{"format":2,"base":{"receptions":0.5},' +
+        '"positions":{"TE":{"receptions":1,"__proto__":3}},' +
+        '"tier_cuts":{"def_pa":[0,1,7,14,21,28,35],"def_ya":[0,100,200,300,350,400,450,500,550]}}',
+    ) as ScoringRulesDocV2
+
+    const out = normalizeScoringDoc(doc) as ScoringRulesDocV2
+    expect(Object.keys(out.positions.TE ?? {})).toStrictEqual(['receptions', '__proto__'])
+    expect(Object.getPrototypeOf(out.positions.TE)).toBe(Object.prototype)
+  })
+
   it('is IDEMPOTENT — normalize ∘ normalize ≡ normalize', () => {
     const docs: ScoringRulesDocV2[] = [
       envelope(base, {}),
@@ -411,12 +452,17 @@ describe('normalizeScoringDoc — the normal form the All-Positions switch rides
   })
 
   it('NEVER CHANGES A SCORED OUTCOME — resolveRules(normalize(d), P) ≡ resolveRules(d, P) at every position', () => {
-    const doc = envelope(base, {
-      TE: { receptions: 0.5 },
-      WR: { receptions: 1 },
-      RB: {},
-      K: { receiving_tds: 6, receptions: 0.25 },
-    })
+    // The `positions` map is JSON-parsed so it can carry an OWN `__proto__`
+    // key (R582) — `ALL_POSITION_INPUTS` resolves at `__proto__`, so an
+    // accumulator that dropped or re-parented that entry would move a scored
+    // outcome and this property is what has to see it.
+    const doc: ScoringRulesDocV2 = {
+      ...envelope(base, {}),
+      positions: JSON.parse(
+        '{"TE":{"receptions":0.5},"WR":{"receptions":1},"RB":{},' +
+          '"K":{"receiving_tds":6,"receptions":0.25},"__proto__":{"receptions":0.75}}',
+      ),
+    }
     const normalized = normalizeScoringDoc(doc)
     for (const position of ALL_POSITION_INPUTS) {
       expect(

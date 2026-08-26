@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { forkTemplateDoc } from '@/lib/leagues/scoring/rules-doc'
+import { forkTemplateDoc, resolveRules } from '@/lib/leagues/scoring/rules-doc'
 import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
 import {
   AUCTION_COLUMNS,
@@ -207,20 +207,39 @@ describe('scoringFamilyFromRules — it reads THROUGH the format-2 envelope (SE.
     expect(at(PPR_FLOOR)).toBe('ppr')
   })
 
-  it('IS A STRICT NO-OP FOR FORMAT 1 — every flat case above is unchanged by the resolver', () => {
-    // The identity property, asserted at THIS call site: reading through the
-    // envelope cannot regress a template league, because for a template
-    // league there is no envelope to read through.
-    for (const receptions of [0, 0.1, 0.24, 0.25, 0.5, 0.74, 0.75, 1, 1.5]) {
-      expect(scoringFamilyFromRules({ receptions })).toBe(
-        scoringFamilyFromRules({ receptions } as never),
-      )
+  it('IS A STRICT NO-OP FOR FORMAT 1 — the flat answers are the STORED pre-SE.2 literals, and the mechanism is the identity', () => {
+    // R583 — as first written this pin compared `f(x)` with `f(x)`, the same
+    // call on both sides, so its loop could not fail for its stated reason:
+    // it passed with the function stubbed to return `null` for every input.
+    // The fix is the same rule this PR's headline finding is about — assert
+    // against a value the code under test cannot supply.
+    //
+    // These nine are STORED LITERALS (D62): the families the PRE-SE.2
+    // top-level read produced, transcribed. Nothing the resolver returns can
+    // satisfy them by accident.
+    const PRE_SE2_ANSWERS: ReadonlyArray<[number, ScoringFamily]> = [
+      [0, 'standard'],
+      [0.1, 'standard'],
+      [0.24, 'standard'],
+      [0.25, 'half_ppr'],
+      [0.5, 'half_ppr'],
+      [0.74, 'half_ppr'],
+      [0.75, 'ppr'],
+      [1, 'ppr'],
+      [1.5, 'ppr'],
+    ]
+    for (const [receptions, family] of PRE_SE2_ANSWERS) {
+      expect(
+        scoringFamilyFromRules({ receptions }),
+        `receptions ${receptions} must still answer ${family}`,
+      ).toBe(family)
     }
-    expect([0, 0.5, 1].map((r) => scoringFamilyFromRules({ receptions: r }))).toEqual([
-      'standard',
-      'half_ppr',
-      'ppr',
-    ])
+
+    // …and the MECHANISM that makes "no-op" true rather than coincidental:
+    // at this call site the resolver hands back the very document it was
+    // given, so there is no copy in which a coefficient could drift.
+    const flat = { receptions: 0.5 }
+    expect(resolveRules(flat, 'WR')).toBe(flat)
   })
 
   it('an UNREADABLE document is null, never a guessed family and never a thrown render', () => {

@@ -189,14 +189,20 @@ function assertResolvableV2(doc: unknown): asserts doc is ScoringRulesDocV2 {
  * the six, resolves to `base` alone*"). Own-property lookup keeps `'__proto__'`
  * and `'constructor'` on that same path instead of reaching the prototype.
  *
- * Pure: never mutates `doc`. The returned map is READ-ONLY by contract —
- * format 1 hands back the document itself so the identity is exact, and every
- * consumer today (the calculator, `scoringFamilyFromRules`) only reads.
+ * Pure: never mutates `doc`. **The returned map is READ-ONLY, and the type
+ * says so (R586).** The two arms differ in a way the caller cannot observe —
+ * format 1 hands back the document ITSELF so the identity is exact, format 2
+ * builds a fresh object per call — so the only contract that is safe for both
+ * is the weaker one. `Readonly<Record<string, number>>` still assigns to
+ * `Record<string, number>` (TypeScript does not check readonly modifiers in
+ * assignability), so `scorePlayerWeek` and every other consumer are unchanged;
+ * what it buys is that writing THROUGH a resolved map is now a compile error
+ * rather than a convention nobody is holding.
  */
 export function resolveRules(
   doc: ScoringRulesDoc,
   position: string,
-): FlatScoringRules {
+): Readonly<FlatScoringRules> {
   if (isFormat1Doc(doc)) return doc
 
   assertResolvableV2(doc)
@@ -254,7 +260,18 @@ export function normalizeScoringDoc(doc: ScoringRulesDoc): ScoringRulesDoc {
   assertResolvableV2(doc)
 
   const source = doc.positions as Record<string, FlatScoringRules>
-  const positions: Record<string, FlatScoringRules> = {}
+  // NULL-PROTOTYPE ACCUMULATORS, and this is not defensive dressing (R582).
+  // `__proto__` is the one key name where assigning into a plain `{}` is not
+  // a copy: it invokes the inherited setter, which DROPS the entry and
+  // silently RE-PARENTS the accumulator. A document read back from the
+  // database is `JSON.parse`d, which does create an own `__proto__` data
+  // property, so the shape is reachable — and dropping it would falsify both
+  // of this function's headline claims at once (the preserve rule below, and
+  // "normalization never changes a scored outcome"). Spreading a
+  // null-prototype object back into `{}` at the end uses CreateDataProperty
+  // semantics, so the own key survives AND the returned document keeps an
+  // ordinary prototype, like `forkTemplateDoc`'s `positions: {}`.
+  const positions: Record<string, FlatScoringRules> = Object.create(null)
 
   for (const position of Object.keys(source)) {
     const override = source[position]
@@ -264,13 +281,13 @@ export function normalizeScoringDoc(doc: ScoringRulesDoc): ScoringRulesDoc {
       )
     }
 
-    const kept: FlatScoringRules = {}
+    const kept: FlatScoringRules = Object.create(null)
     for (const key of Object.keys(override)) {
       if (hasOwn(doc.base, key) && doc.base[key] === override[key]) continue
       kept[key] = override[key]
     }
 
-    if (Object.keys(kept).length > 0) positions[position] = kept
+    if (Object.keys(kept).length > 0) positions[position] = { ...kept }
   }
 
   return {
@@ -279,7 +296,7 @@ export function normalizeScoringDoc(doc: ScoringRulesDoc): ScoringRulesDoc {
     // The accumulator is keyed by `string` because an illegal position key is
     // preserved rather than dropped (above); the declared type stays the
     // spec's six so every WRITER of a document is held to guardrail 3.
-    positions: positions as ScoringRulesDocV2['positions'],
+    positions: { ...positions } as ScoringRulesDocV2['positions'],
     tier_cuts: doc.tier_cuts,
   }
 }
