@@ -84,7 +84,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(112);
+select plan(114);
 
 -- ---------------------------------------------------------------------------
 -- Helpers. `verdict` collapses a call into `ACCEPT` or `<family>|<path>` so a
@@ -537,8 +537,10 @@ select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.01}'::jsonb)), 'ACCEPT',
   'E5: 0.01 ACCEPTS — the 2dp step itself');
 select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.001}'::jsonb)), 'bounds|base.pass_tds',
   'E6: 0.001 REFUSES — one decimal place past');
-select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.10}'::jsonb)), 'ACCEPT',
-  'E7: 0.10 ACCEPTS — TRAILING ZEROS are not decimal places. jsonb preserves the literal byte-exactly, so a bare scale() would refuse this while the TS rule (the SHORTEST round-tripping rendering) accepts it; the mirror is scale(trim_scale(v)) and this is the pin that says so');
+select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.100}'::jsonb)), 'ACCEPT',
+  'E7: 0.100 ACCEPTS — TRAILING ZEROS ARE NOT DECIMAL PLACES, and this is the pin that says WHICH mirror shipped. jsonb preserves the literal byte-exactly (scale() = 3 here), so D269(6)''s hand-off — a bare scale(p) <= 2 — would REFUSE a value the TS rule accepts, because String() renders the shortest round-tripping decimal. The mirror is scale(trim_scale(v)) <= 2. NOTE the digit: 0.10 has scale 2 and would pass either rule, so it would have been a decoration');
+select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 4.0}'::jsonb)), 'ACCEPT',
+  'E7b: …and an INTEGER written with a trailing zero accepts too — the shape a hand-authored or psql-authored document actually takes');
 select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.07}'::jsonb)), 'ACCEPT',
   'E8: 0.07 ACCEPTS — the value that reds a naive (v*100) %% 1 = 0 implementation in floating point');
 
@@ -653,7 +655,18 @@ select is_empty(
               'tier_cuts', jsonb_build_object('def_pa', '[0,1,7,14,18,28,35,46]'::jsonb,
                                               'def_ya', '[0,100,200,300,350,400,450,500,550]'::jsonb)))
             <> 'ACCEPT' $$,
-  'G2: ZERO false rejections across ALL 20,001 legal 2dp values in [-100, 100] — the exactness property SE.3 measured in TS, re-measured against the SQL rule');
+  'G2: ZERO false rejections across ALL 20,001 legal 2dp VALUES in [-100, 100] — the exactness property SE.3 measured in TS, re-measured against the SQL rule. (`k::numeric / 100` yields a scale-TWENTY numeric — `select scale(10::numeric/100)` → 20 — so this is simultaneously a 20,001-wide sweep of the TRAILING-ZERO class, and it is the sweep that reds when the mirror is weakened to a bare scale().)');
+
+select is_empty(
+  $$ select (round(k::numeric / 100, 2))::text
+       from generate_series(-10000, 10000) k
+      where pg_temp.verdict(jsonb_build_object('format', 2,
+              'base', jsonb_build_object('pass_tds', round(k::numeric / 100, 2)),
+              'positions', '{}'::jsonb,
+              'tier_cuts', jsonb_build_object('def_pa', '[0,1,7,14,18,28,35,46]'::jsonb,
+                                              'def_ya', '[0,100,200,300,350,400,450,500,550]'::jsonb)))
+            <> 'ACCEPT' $$,
+  'G2b: …and the same 20,001 values written at EXACTLY scale 2 also all accept — the other reading of "legal 2dp value", so G2 cannot be passing for a reason peculiar to how the division stores its result');
 
 select is(
   pg_temp.verdict(pg_temp.env('{"pass_tds": 100.01}'::jsonb)) || ' / ' ||
