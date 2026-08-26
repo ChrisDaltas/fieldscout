@@ -32,4 +32,9 @@
 # profiles(id) from two NEW tables, so once pushed they will constrain DELETEs on
 # players — which is sync-script-owned. Neither table's own definition changes.
 # These go up when the invite-only test cohort starts.
-082-104
+#
+# 105 added 2026-08-26 with SE.5 (the scoring fork/save RPCs). This is the
+# mechanism working as designed, not an exception: 105 fell OUTSIDE the closed
+# range and would have reddened the check on merge, so holding it back is an
+# explicit act recorded here rather than an inherited default.
+082-105
