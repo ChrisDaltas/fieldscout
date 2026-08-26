@@ -13,21 +13,32 @@ name: Database
 #   - pgTAP 004 test 2 sitting red for weeks
 #   - a migration that only applies cleanly on top of a drifted database
 #
-# THE `-db.test.ts` GLOB IS NOT SCOPE CREEP (2026-08-26, F94/F70): the
+# THE STACK-LANE GLOBS ARE NOT SCOPE CREEP (2026-08-26, F94/F70): the
 # "Database-backed tests" step below RUNS files that live in `src/`, and this
 # trigger did not watch a single one of them. A PR that edited a stack suite
 # got no database run at all, and the alarm that finally rang rang on someone
-# else's migration. The glob connects the job to the files it executes; the
+# else's migration. The globs connect the job to the files it executes; the
 # broad `src/**` is still deliberately excluded, so a React-only PR remains
 # outside the expensive lane exactly as before.
+#
+# The two `src/`-facing patterns below are `vitest.shared.ts`'s `stackInclude`
+# VERBATIM — that array is the definition of what this step runs, so this
+# filter mirrors it rather than paraphrasing it. The first cut paraphrased
+# and got it wrong in both directions at once (R608): it watched
+# `src/lib/leagues/gate/**`, which holds only the M0 gate this job never
+# runs, and therefore left `src/lib/leagues/m1-gate/m1-phase-a-journey.test.ts`
+# — one of the 31 files it DOES run — unwatched. `ci-stack-lane-trigger.test.ts`
+# now pins the mirror in both directions and runs in the fast lane, so the
+# two lists cannot drift apart again without a red.
 
 on:
   pull_request:
     paths:
       - 'supabase/**'
       - '.github/workflows/db.yml'
+      # stackInclude, verbatim — see ci-stack-lane-trigger.test.ts
       - '**/*-db.test.ts'
-      - 'src/lib/leagues/gate/**'
+      - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
   push:
@@ -35,8 +46,9 @@ on:
     paths:
       - 'supabase/**'
       - '.github/workflows/db.yml'
+      # stackInclude, verbatim — see ci-stack-lane-trigger.test.ts
       - '**/*-db.test.ts'
-      - 'src/lib/leagues/gate/**'
+      - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
 
