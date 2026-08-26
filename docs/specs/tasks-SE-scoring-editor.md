@@ -154,7 +154,7 @@ Dependency order:
 
 ```
 ENGINE   SE.1 (registry + cuts + generation) → SE.2 (format 2 + resolver + fork doc) → SE.3 (the guardrail validator, TS)
-SQL      SE.3 → SE.4 (validate fns + parity) → SE.4b (the two write walls — D175) → SE.5 (fork/save RPCs + §12.25 policy + 061 amendment)
+SQL      SE.3 → SE.4 (validate fns + parity) → SE.4b (the write walls — D175) → SE.5 (fork/save RPCs + §12.25 policy + 061 amendment)
 API      SE.5 → SE.6 (routes + hooks + §15.1 erratum)
 UI       SE.6 → SE.7 (ops + editor shell) → SE.8 (K/D-ST pages + the six live sample lines)
          {SE.6, SE.7} → SE.9 (Customize entry + fork flow + member view)
@@ -213,7 +213,7 @@ SE.1–SE.3 are pure TS (no migration, no stack writes) and may run while other 
 >
 > DoD: plan §2.3; §4 rules 1–6/9; fresh `npx supabase db reset` over the full chain SHOWN + `npm run test:db` + `npm run test` + `test:gate` + `type-check`; break probe — weaken the SQL bounds arm to `<= 101` and show exactly the |coef| one-unit pgTAP pins RED, revert. (F21 does NOT flip here — the walls are SE.4b's.)
 
-### SE.4b — Migration B: the two write walls — the `scoring_systems` league-profile trigger + the `leagues` snapshot backstop (D175/D168; F21 flips here)
+### SE.4b — Migration B: the write walls — the `scoring_systems` league-profile trigger + the `leagues` snapshot backstop (D175/D168; F21 flips here) **[built as THREE, not two — review R618 measured F142's "one door" at six, five of them raw-table writes no RPC fronts, so migration 104 also ships `leagues_scoring_reference_guard()` on `leagues (UPDATE OF scoring_system_id, deleted_at)`; PROGRESS D272]**
 > Read **D175 in full** (Chris's ruling + the league-profile boundary, **including its added (6) — the mock reference path**), D168 **and its 2026-08-25 amendment**, §12.25's backstop sentence, §7.3.8's v2.11 bullet (~~spec:436~~ **[→ `spec:439`, cite by phrase]**), 059's D43 trigger (the pattern; cited in §1), plan §8.1–8.2. Depends SE.4. ~~Migration expected **091**~~ **[corrected 2026-08-25 — 091 is consumed (`091_mock_cpu_reactive_bidding.sql`, AP.3). Next free at task time; head was 102 / pgTAP 050, so expect 104 and 052 AFTER SE.4 takes its own — confirm with `ls`, never inherit.]**
 >
 > 1. **The table wall (D175):** `scoring_systems_rules_guard()` + BEFORE INSERT OR UPDATE trigger on `scoring_systems` — when NEW is in the **league profile** (`is_template = TRUE` OR `NEW.rules ? 'format'` OR live-league-referenced per D175(2)'s EXISTS) and `rules` is new or changed, `PERFORM scoring_rules_validate(NEW.rules)`. Plain trigger fn, `SET search_path = ''` with schema-qualified reads (it reads `public.leagues`, unlike 059's NEW-only guard). Triggers fire for every role including service_role (the D43 argument) — that is the point: **an invalid league doc cannot be written by ANY path**, including 001:623's owner FOR ALL.

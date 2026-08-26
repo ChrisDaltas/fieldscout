@@ -1,5 +1,5 @@
 -- ============================================================================
--- The two write walls — pgTAP 052 (migration 104, task SE.4b; D175 (Chris,
+-- The THREE write walls — pgTAP 052 (migration 104, task SE.4b; D175 (Chris,
 -- 2026-08-18: "creating an invalid scoring system should not be possible") +
 -- D168(2); spec §7.3.3.1(5), §12.25, §7.3.8's v2.11 bullet; PROGRESS D272).
 --

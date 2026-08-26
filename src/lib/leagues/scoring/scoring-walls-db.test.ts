@@ -309,7 +309,7 @@ afterAll(async () => {
   await cleanup()
 })
 
-describe('SE.4b — the two write walls, over the wire (migration 104; D175/D168)', () => {
+describe('SE.4b — the three write walls, over the wire (migration 104; D175/D168/R618)', () => {
   it('act 1 premise: 001:623 FOR ALL is LIVE — the commissioner writes their own scoring row with no RPC in the path', async () => {
     const { error, data } = await commishClient
       .from('scoring_systems')
