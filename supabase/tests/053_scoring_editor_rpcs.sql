@@ -92,7 +92,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(69);
+select plan(71);
 
 -- ---------------------------------------------------------------------------
 -- Helpers. Each performs a REAL call and collapses it into one comparable
@@ -102,28 +102,80 @@ select plan(69);
 --   OK|<uuid>            — the RPC returned an id
 --   <sqlstate>|<hint>    — it raised, and which guardrail family said so
 --   <sqlstate>|MSG:<...> — it raised without a HINT (an RPC-level refusal)
+--   …|raised_in:<layer>   — WHICH layer raised it
+--
+-- ── WHY EVERY HELPER REPORTS THE RAISER (the SE.5 review's §6 shape) ────────
+-- **In a defence-in-depth design where every layer raises the same error
+-- family, an assertion on the OUTCOME cannot localize.** That convergence is a
+-- FEATURE — one user-facing error however you arrive at it, which is why TS↔SQL
+-- guardrail parity is pinned byte-for-byte — and it is exactly what makes this
+-- surface untestable by outcome. The review found six cells whose observable
+-- alphabet was coarser than the distinction the cell's own text claimed to
+-- make: three `scoring_update_rules` refusals collapsed to one string because
+-- `left(sqlerrm, 44)` ends 22 characters before they diverge; the front door's
+-- `PERFORM scoring_rules_validate` and wall 1 behind it emit the same SQLSTATE,
+-- HINT **and MESSAGE**, because they call the same validator.
+--
+-- The instrument already existed — `pg_temp.attach` read `pg_exception_context`
+-- — and was applied to one helper of three. It is now shared by all of them.
+-- Two moves, and both are needed: **report the raiser**, and **strip the league
+-- uuid before truncating** so the 36 characters that are identical in every
+-- message stop consuming the budget.
 -- ---------------------------------------------------------------------------
+
+/** The INNERMOST named frame of an exception context, as a short token.
+ *  `scoring_rules_validate` is deliberately skipped: it is the shared validator
+ *  every layer calls, so it is the one frame that can never discriminate. */
+create function pg_temp.raiser(p_ctx text) returns text language plpgsql as $$
+declare ln text;
+begin
+  foreach ln in array string_to_array(coalesce(p_ctx, ''), E'\n') loop
+    if ln ~ 'scoring_rules_validate|scoring_tier_keys_from_cuts' then continue; end if;
+    if ln ~ 'scoring_fork_template'            then return 'scoring_fork_template';   end if;
+    if ln ~ 'scoring_update_rules'             then return 'scoring_update_rules';    end if;
+    if ln ~ 'update_league_settings'           then return 'update_league_settings';  end if;
+    if ln ~ 'scoring_detect_tier_cuts'         then return 'scoring_detect_tier_cuts';end if;
+    if ln ~ 'scoring_systems_rules_guard'      then return 'wall1';                   end if;
+    if ln ~ 'leagues_scoring_rules_valid'      then return 'wall2';                   end if;
+    if ln ~ 'leagues_scoring_reference_guard'  then return 'wall3';                   end if;
+  end loop;
+  return 'other';
+end;
+$$;
+
+/** MESSAGE, with the league uuid stripped and then truncated. Both halves are
+ *  load-bearing: every `scoring_update_rules` refusal opens with
+ *  `scoring_update_rules: league <36-char uuid>`, so an un-stripped 44-char
+ *  window ends before any distinguishing word — the three refusals were one
+ *  byte-identical string and two guards had no mutation coverage at all. */
+create function pg_temp.msg(p_err text, p_league uuid) returns text
+language sql immutable as $$
+  select 'MSG:' || left(replace(p_err, p_league::text, '<L>'), 60);
+$$;
+
 create function pg_temp.fork(p_league uuid, p_template uuid) returns text
 language plpgsql as $$
-declare v_id uuid; v_hint text;
+declare v_id uuid; v_hint text; v_ctx text;
 begin
   v_id := public.scoring_fork_template(p_league, p_template);
   return 'OK|' || v_id::text;
 exception when others then
-  get stacked diagnostics v_hint = pg_exception_hint;
-  return sqlstate || '|' || coalesce(nullif(v_hint, ''), 'MSG:' || left(sqlerrm, 44));
+  get stacked diagnostics v_hint = pg_exception_hint, v_ctx = pg_exception_context;
+  return sqlstate || '|' || coalesce(nullif(v_hint, ''), pg_temp.msg(sqlerrm, p_league))
+      || '|raised_in:' || pg_temp.raiser(v_ctx);
 end;
 $$;
 
 create function pg_temp.save(p_league uuid, p_doc jsonb) returns text
 language plpgsql as $$
-declare v_id uuid; v_hint text;
+declare v_id uuid; v_hint text; v_ctx text;
 begin
   v_id := public.scoring_update_rules(p_league, p_doc);
   return 'OK|' || v_id::text;
 exception when others then
-  get stacked diagnostics v_hint = pg_exception_hint;
-  return sqlstate || '|' || coalesce(nullif(v_hint, ''), 'MSG:' || left(sqlerrm, 44));
+  get stacked diagnostics v_hint = pg_exception_hint, v_ctx = pg_exception_context;
+  return sqlstate || '|' || coalesce(nullif(v_hint, ''), pg_temp.msg(sqlerrm, p_league))
+      || '|raised_in:' || pg_temp.raiser(v_ctx);
 end;
 $$;
 
@@ -142,10 +194,8 @@ begin
       l.waiver_type, l.faab_budget, l.trade_review, l.trade_deadline_week, l.lineup_lock);
   exception when others then
     get stacked diagnostics v_hint = pg_exception_hint, v_ctx = pg_exception_context;
-    return sqlstate || '|' || coalesce(nullif(v_hint, ''), 'MSG:' || left(sqlerrm, 44))
-        || '|raised_in:' || case when v_ctx ~ 'update_league_settings' then 'update_league_settings'
-                                 when v_ctx ~ 'leagues_scoring_reference_guard' then 'wall3'
-                                 else 'other' end;
+    return sqlstate || '|' || coalesce(nullif(v_hint, ''), pg_temp.msg(sqlerrm, p_league))
+        || '|raised_in:' || pg_temp.raiser(v_ctx);
   end;
   select scoring_system_id into v_after from public.leagues where id = p_league;
   return 'OK|ref=' || coalesce(v_after::text, 'NULL');
@@ -157,6 +207,13 @@ $$;
  *  and every cell reported "1 rows" — the planner elides an unreferenced
  *  subquery output column, so the function was never called and three refusal
  *  pins were VACUOUS. Assigning the result makes the call unremovable. */
+/**  …and its verdict carries a MESSAGE FRAGMENT, not just the HINT (R646).
+ *   All three refusal arms of `scoring_detect_tier_cuts` share one HINT, so the
+ *   HINT alone cannot separate them — and B5's arm was measured satisfiable by
+ *   a DIFFERENT arm: delete the no-PA-keys guard and `'{}' <@ anything` is TRUE
+ *   for BOTH published families, so the ambiguity arm raises with the identical
+ *   hint. `raised_in:` is no help here — all three arms live in one function —
+ *   so this is the same widening applied on the message axis. */
 create function pg_temp.detect(p_doc jsonb) returns text language plpgsql as $$
 declare v jsonb; v_hint text;
 begin
@@ -164,7 +221,11 @@ begin
   return 'OK|' || v::text;
 exception when others then
   get stacked diagnostics v_hint = pg_exception_hint;
-  return sqlstate || '|' || coalesce(nullif(v_hint, ''), '?');
+  return sqlstate || '|' || coalesce(nullif(v_hint, ''), '?')
+      || '|' || case when sqlerrm ~ 'no def_pa_\* keys'      then 'ARM:no_pa_keys'
+                     when sqlerrm ~ 'match [0-9]+ published' then 'ARM:ambiguous'
+                     when sqlerrm ~ 'yards-allowed cut list' then 'ARM:stray_ya'
+                     else 'ARM:?' end;
 end;
 $$;
 
@@ -371,17 +432,17 @@ select is(
 
 select is(
   pg_temp.detect('{"def_pa_0": 1, "def_pa_1_6": 1, "def_pa_7_13": 1, "def_pa_28_34": 1}'::jsonb),
-  'P0001|tier_cuts_undetectable',
+  'P0001|tier_cuts_undetectable|ARM:ambiguous',
   'B4: a document naming ONLY the four key names the two PA families SHARE is a member of both, and it RAISES rather than being assigned one. Guessing would silently re-cut a defense''s tiers — the F21 defect wearing a different hat, and invisible afterwards because the resulting document is perfectly valid');
 
 select is(
   pg_temp.detect('{"pass_yards": 0.04}'::jsonb),
-  'P0001|tier_cuts_undetectable',
+  'P0001|tier_cuts_undetectable|ARM:no_pa_keys',
   'B5: a document with NO def_pa_* keys has no detectable cut list, and the fork refuses rather than defaulting to a family');
 
 select is(
   pg_temp.detect('{"def_pa_0": 1, "def_pa_14_17": 1, "def_ya_0_150": 2}'::jsonb),
-  'P0001|tier_cuts_undetectable',
+  'P0001|tier_cuts_undetectable|ARM:stray_ya',
   'B6: a def_ya_* key the published yards-allowed cut list does not generate refuses too — writing the published list over it would RE-CUT that table. Adding or re-cutting a YA table is F59''s follow-up, explicitly not this fork (§7.3.3.1(b))');
 
 -- ===========================================================================
@@ -391,16 +452,16 @@ set local role authenticated;
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000004","role":"authenticated"}';
 
 select is(pg_temp.fork('b0530000-0000-4000-8000-0000000000a1', (select id from t_ids where name = 'ESPN Full PPR')),
-  '42501|MSG:scoring_fork_template: not a commissioner of',
+  '42501|MSG:scoring_fork_template: not a commissioner of this league|raised_in:scoring_fork_template',
   'C1 (§4.1 in-body authorization): an outsider is refused 42501 — the RPC is SECURITY DEFINER, so RLS protects nothing here and the in-body check is the ONLY gate');
 
 select is(pg_temp.fork('b0530000-0000-4000-8000-00000000dead', (select id from t_ids where name = 'ESPN Full PPR')),
-  '42501|MSG:scoring_fork_template: not a commissioner of',
+  '42501|MSG:scoring_fork_template: not a commissioner of this league|raised_in:scoring_fork_template',
   'C2: a NONEXISTENT league yields the same 42501 and the same message — 061''s no-existence-leak rule. A distinct "not found" here would let any signed-in user enumerate league ids');
 
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000003","role":"authenticated"}';
 select is(pg_temp.fork('b0530000-0000-4000-8000-0000000000a1', (select id from t_ids where name = 'ESPN Full PPR')),
-  '42501|MSG:scoring_fork_template: not a commissioner of',
+  '42501|MSG:scoring_fork_template: not a commissioner of this league|raised_in:scoring_fork_template',
   'C3: a plain MANAGER of the league is refused too. §7.3.3.1''s access bullet: the commissioner edits, members view — and membership is not the predicate');
 
 -- ── C4: THE WINDOW, ENUMERATED. The DoD break-probe target. ────────────────
@@ -420,7 +481,7 @@ select is(left(pg_temp.fork('b0530000-0000-4000-8000-0000000000a7', (select id f
   'C6: a SOFT-DELETED league refuses — and WHICH guard refuses it was measured rather than predicted. `is_league_commish` does NOT filter deleted_at, so the commissioner still passes step 1; it is step 2''s `WHERE deleted_at IS NULL ... FOR UPDATE` that finds nothing and raises P0002. The distinction matters because it means the deleted-league defense lives in the lock, not in the auth check — move the lock and this protection moves with it');
 
 select is(pg_temp.fork('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
-  'P0001|MSG:scoring_fork_template: p_template_id must re',
+  'P0001|MSG:scoring_fork_template: p_template_id must reference one of t|raised_in:scoring_fork_template',
   'C7 (§7.3.3.1 + D33): a personal research row cannot be a fork''s STARTING POINT. "A fork always starts from a template"; pre-existing personal systems live in the legacy namespace and stay unattachable');
 
 -- ── C8: the document the fork actually writes ──────────────────────────────
@@ -467,12 +528,28 @@ select is(
   'true',
   'C14: a CO-COMMISSIONER''s retry is idempotent too, and this is why the idempotency predicate is "owned by a commissioner of this league" and not "owner_id = auth.uid()". Under the narrower reading this call would miss the test and mint a duplicate — a retry-safety hole opened by the tighter-looking predicate');
 
+-- ── C15 (R639): THE SAVE'S CO-COMMISSIONER ARM — the `lives_ok` §C14 has and
+-- §D did not. `scoring_update_rules` step 5 uses the same "owned by a
+-- commissioner of this league" predicate the fork's idempotency clause uses,
+-- and PROGRESS D273(4) says the two RPCs AGREE on it — but only the fork half
+-- was pinned. Narrowing the SAVE's predicate alone to `= auth.uid()` red
+-- NOTHING while the capability demonstrably regressed: a co-commissioner could
+-- no longer save the league's own fork, and the refusal told them the row "is
+-- not this league's own forked custom row", which is false and unactionable.
+-- Still running as u2 from §C14, and league …a1 still references its own fork.
+select is(
+  left(pg_temp.save('b0530000-0000-4000-8000-0000000000a1',
+    (select s.rules from leagues l join scoring_systems s on s.id = l.scoring_system_id
+      where l.id = 'b0530000-0000-4000-8000-0000000000a1')), 2),
+  'OK',
+  'C15 (R639 — the standing rule at PROGRESS §(20) applied to the arm that was missing it): a CO-COMMISSIONER can SAVE the league''s own fork, not only fork it idempotently. The predicate is shared between the two RPCs deliberately, so that they cannot disagree about what "the league''s own fork row" is — and a shared predicate needs a `lives_ok` on BOTH sides, because a narrowing applied to one is invisible to the other''s cell');
+
 -- ===========================================================================
 -- §D THE SAVE RPC (§12.25 "every rules edit goes through SECURITY DEFINER RPCs")
 -- ===========================================================================
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000003","role":"authenticated"}';
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a1', '{}'::jsonb),
-  '42501|MSG:scoring_update_rules: not a commissioner of ',
+  '42501|MSG:scoring_update_rules: not a commissioner of this league|raised_in:scoring_update_rules',
   'D1: a plain manager cannot save — same in-body gate, same SQLSTATE');
 
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000001","role":"authenticated"}';
@@ -492,7 +569,7 @@ select is(
 -- pgtap-se5-other is on no scoring system at all.
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000005","role":"authenticated"}';
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league b0530000-0000-4',
+  'P0001|MSG:scoring_update_rules: league <L> references no scoring syste|raised_in:scoring_update_rules',
   'D4: a league referencing NO scoring system is told to fork first, not handed a NULL dereference');
 
 -- Put the "other" league on a plain template so D5 can refuse it.
@@ -502,7 +579,7 @@ update leagues set scoring_system_id = (select id from t_ids where name = 'Yahoo
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8',
     (select rules from t_ids t join scoring_systems s on s.id = t.id where t.name = 'Yahoo Standard')),
-  'P0001|MSG:scoring_update_rules: league b0530000-0000-4',
+  'P0001|MSG:scoring_update_rules: league <L> is on a shared template — f|raised_in:scoring_update_rules',
   'D5 (§7.3.3.1 + D59): a league sitting on a shared TEMPLATE cannot be edited in place — "templates themselves are never edited". Without this the first commissioner to save would rewrite the scoring of every other league on that template');
 
 set local role postgres;
@@ -512,7 +589,7 @@ update leagues set scoring_system_id = '50530000-0000-4000-8000-000000000001'
  where id = 'b0530000-0000-4000-8000-0000000000a8';
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{"pass_yards": 0.05}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league b0530000-0000-4',
+  'P0001|MSG:scoring_update_rules: league <L> references scoring system 5|raised_in:scoring_update_rules',
   'D6: a referenced row that is NOT owned by a commissioner of this league is refused. The commissioner may not edit someone else''s scoring document just because a privileged write pointed their league at it');
 
 -- ── D7/D8: un-normalized refused, and its control ──────────────────────────
@@ -523,8 +600,8 @@ select is(
        jsonb_build_object('pass_tds', s.rules -> 'base' -> 'pass_tds'))
        from leagues l join scoring_systems s on s.id = l.scoring_system_id
       where l.id = 'b0530000-0000-4000-8000-0000000000a1')),
-  'P0001|normal_form',
-  'D7 (§7.3.3.1 guardrail 4; the SE.5(2) decision): an override EQUAL to the base value is refused, not silently stripped. Normalization is the client''s save-time duty and the All-Positions switch state is DERIVED from the document — a server that quietly rewrote what it was sent would change what the editor shows on the next load, with no error and no diff. CLAUDE.md''s "nothing happened" class, refused loudly instead');
+  'P0001|normal_form|raised_in:scoring_update_rules',
+  'D7 (§7.3.3.1 guardrail 4; the SE.5(2) decision): an override EQUAL to the base value is refused, not silently stripped. Normalization is the client''s save-time duty and the All-Positions switch state is DERIVED from the document — a server that quietly rewrote what it was sent would change what the editor shows on the next load, with no error and no diff. CLAUDE.md''s "nothing happened" class, refused loudly instead. **`raised_in:` is what makes this cell about the FRONT DOOR** (R641): delete the RPC''s own `PERFORM scoring_rules_validate` and wall 1 refuses the identical document with the same SQLSTATE, the same HINT *and the same MESSAGE* — because both call the same validator — so the verdict changes only in the raiser');
 
 select is(
   left(pg_temp.save('b0530000-0000-4000-8000-0000000000a1',
@@ -545,8 +622,8 @@ select is(
     (select jsonb_set(s.rules, '{base,def_pa_14_20}', '2')
        from leagues l join scoring_systems s on s.id = l.scoring_system_id
       where l.id = 'b0530000-0000-4000-8000-0000000000a1')),
-  'P0001|tier_exclusivity',
-  'D10 (F21, at the front door): the save refuses a def_pa key the document''s own cut list does not generate, and the HINT is the guardrail FAMILY — so the route can turn it into a field-level error rather than a toast. The error contract is 103''s, propagated unwrapped through the RPC exactly as it is through the walls');
+  'P0001|tier_exclusivity|raised_in:scoring_update_rules',
+  'D10 (F21, at the front door): the save refuses a def_pa key the document''s own cut list does not generate, and the HINT is the guardrail FAMILY — so the route can turn it into a field-level error rather than a toast. The error contract is 103''s, propagated unwrapped through the RPC exactly as it is through the walls — and, per §D7, the raiser is what distinguishes the front door from the wall standing behind it emitting the byte-identical error');
 
 -- ===========================================================================
 -- §E §12.25's MEMBER SELECT POLICY
@@ -567,7 +644,44 @@ select is(
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000004","role":"authenticated"}';
 select is(
   (select count(*)::int from scoring_systems where name = 'pgtap-se5-setup Custom'),
-  0, 'E3: a NON-MEMBER cannot. The policy joins league_members, so visibility follows the league and nothing else');
+  0, 'E3: a NON-MEMBER cannot — **and the mechanism is NOT the one an earlier draft of this cell claimed** (R640). This cell passes even with §12.25''s identity clause deleted, because the policy''s own subquery reads `leagues` and `league_members`, both of which are RLS-protected, and `league_members`'' `is_league_member(league_id)` is itself an `auth.uid()` test that empties the join for an outsider. So what E3 measures is "an outsider reads 0" — an answer THREE independent tables'' policies can produce. §E3b is the cell that isolates this one');
+
+-- ── E3b (R640): THE IDENTITY CLAUSE'S KILLING CELL. ────────────────────────
+-- §12.25's policy has three clauses. Two were already pinned — `deleted_at IS
+-- NULL` by §E5 and `scoring_system_id = …id` by §E4/§E5 — and the third, the
+-- one that decides **who** may read, had none: deleting
+-- `lm.user_id = (SELECT auth.uid())` left all 69 cells green.
+--
+-- It is masked, and by the OTHER tables rather than by this one. Measured: the
+-- dominant masker is `league_members`'' `is_league_member(league_id)`; widening
+-- `leagues` alone still yields 0 under the mutant. And the obvious fixture —
+-- "give the outsider membership in a DIFFERENT live league" — is measured
+-- NON-KILLING, because `l.scoring_system_id = scoring_systems.id` pins `l` to
+-- the target league; 053 already carries that fixture (u5, commissioner of live
+-- league …a8) and it reads 0 under the mutant too. Writing it would have added
+-- a cell that passes for an unrelated reason: the exact vacuity class this lane
+-- has spent three rounds removing.
+--
+-- So the fixture DEFEATS the other two tables' policies and leaves this one as
+-- the only thing standing. That is also the stronger invariant to own: **this
+-- policy denies a non-member even if `leagues` and `league_members` were
+-- world-readable** — which is what a future public-league browse surface would
+-- make true.
+set local role postgres;
+create policy tmp_open_l  on leagues        for select using (true);
+create policy tmp_open_lm on league_members for select using (true);
+set local role authenticated;
+set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000004","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from scoring_systems where name = 'pgtap-se5-setup Custom'),
+  0, 'E3b (R640): with `leagues` AND `league_members` temporarily world-readable, the outsider STILL reads 0 — so the denial is §12.25''s own `lm.user_id = (SELECT auth.uid())` and not a borrowed one. Shipped 0 / mutant 1, measured. This is the only cell in the file that reds when that clause is deleted');
+
+set local role postgres;
+drop policy tmp_open_l  on leagues;
+drop policy tmp_open_lm on league_members;
+set local role authenticated;
+set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000004","role":"authenticated"}';
 
 -- ── E4/E5: the two clauses that decide whether the policy matches AT ALL ────
 set local role postgres;
@@ -616,7 +730,7 @@ set local role anon;
 set local "request.jwt.claims" = '';
 select is(
   (select count(*)::int from scoring_systems where name = 'pgtap-se5-setup Custom'),
-  0, 'E10: `anon` reads nothing — the policy''s `(SELECT auth.uid())` is NULL, so the league_members join is empty');
+  0, 'E10: `anon` reads nothing. **Stated as what it measures rather than as a mechanism it does not isolate** (R640): `anon` is denied by every policy in the stack at once — this one''s `(SELECT auth.uid())` is NULL, and so is `is_league_member`''s inside the subquery''s own RLS, and `anon` holds no table grant besides. The cell is worth keeping as a role-sweep entry; it is §E3b, not this, that isolates §12.25''s identity clause');
 
 select is(
   pg_temp.wrote($$with u as (update public.scoring_systems set rules = '{"pass_yards": 9}'::jsonb
@@ -651,14 +765,14 @@ select is(
   'F1 (D169''s NEW ARM — a `lives_ok`): re-attaching the league''s OWN currently-referenced custom row is ACCEPTED. Before this amendment 061 refused every non-template row, so a settings PATCH that merely re-sent the current reference would have failed once a league was customized — §7.3.8 v2.11: "a template OR the league''s own §7.3.3.1 forked custom row"');
 
 select is(
-  left(pg_temp.attach('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'), 30),
-  'P0001|MSG:update_league_settin',
+  pg_temp.attach('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
   'F2: a PERSONAL research system still refuses — "nothing else" is the other half of §7.3.8''s sentence, and D33''s one-namespace rule is what it protects');
 
 select is(
-  left(pg_temp.attach('b0530000-0000-4000-8000-0000000000a1',
-       (select id from scoring_systems where name = 'pgtap-se5-scheduled Custom')), 30),
-  'P0001|MSG:update_league_settin',
+  pg_temp.attach('b0530000-0000-4000-8000-0000000000a1',
+       (select id from scoring_systems where name = 'pgtap-se5-scheduled Custom')),
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
   'F3: ANOTHER LEAGUE''S FORK refuses too — and it is the cell that proves F1''s arm is an IDENTITY test on this league''s current reference rather than a blanket "any non-template row owned by a commissioner"');
 
 select is(
