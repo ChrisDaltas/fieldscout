@@ -21,7 +21,8 @@
 -- fact: `public.leagues` carries a single SELECT-only policy, and BOTH attach
 -- RPCs restrict `p_scoring_system_id` to `is_template = TRUE AND owner_id IS
 -- NULL`, so no application role can put a user-writable row in front of a
--- league. **§4 below removes exactly the second half of that.** After this
+-- league. **§2 and §6 below remove exactly the second half of that** (the fork
+-- RPC mints the row; D169's amendment lets the settings path re-attach it). After this
 -- migration a league can reference a row its own commissioner writes through
 -- 001:623's `FOR ALL` policy. The confinement argument is therefore RE-DERIVED
 -- here rather than inherited:
@@ -35,21 +36,56 @@
 --     the referenced document on assignment. §4's new arm widens WHICH row an
 --     RPC will point a league at; it does not widen what a league may end up
 --     pointing at, because wall 3 is downstream of every one of them.
---   • What genuinely changes is CONCURRENCY, and that is §5's subject: a
---     commissioner's save is now a multi-statement transaction that writes
---     `scoring_systems` while a league write may be resolving the same row.
---     That is the leg F151 was filed for, and it is measured rather than
---     argued — see §5.
+--   • CONCURRENCY changes, and that is §5's subject: a commissioner's save is
+--     now a multi-statement transaction that writes `scoring_systems` while a
+--     league write may be resolving the same row. That is the leg F151 was
+--     filed for, and it is measured rather than argued — see §5.
+--   • **AND THE §7.3 LIFECYCLE WINDOW STOPS BEING STRUCTURAL (R645).** An
+--     earlier form of this list ended at concurrency and claimed a
+--     completeness it did not have. Before 105 no league could reference a
+--     client-writable row, so "scoring is editable only in setup/scheduled" was
+--     airtight by unreachability. It is now a check in `scoring_update_rules`,
+--     and the row's OWNER — not any commissioner — can still write the row
+--     directly through 001:623 at any status. Deliberately NOT closed here, and
+--     the reason is the spec: §7.3's header makes post-draft scoring an
+--     *allowed* commissioner override, and §7.3.3.1 scopes the window to the
+--     EDITOR SURFACE. Nothing reads the live row post-draft either —
+--     `useLeagueScoringFamily` short-circuits on a non-NULL snapshot, which
+--     059's guard makes non-NULL from `drafting` on. A status predicate on wall
+--     1 would make a commissioner's own row un-writable through a route the
+--     override law contemplates, to close a drift nothing reads. **Revisit when
+--     SE.7's editor and a member-facing league-scoring view land** — at that
+--     point §12.25's policy (which has no status predicate) makes the drift
+--     member-visible and the guard would earn its keep.
+--   • The checklist this list is an instance of, so the next task does not
+--     enumerate from memory: when a row becomes client-writable in front of a
+--     league, ask **who else reads this namespace** (→ F156), **what invariants
+--     were enforced by unreachability** (→ the lifecycle bullet above), and
+--     **what referential-integrity edges become reachable** (→ the FK lock
+--     direction in this file's header).
 --
 -- ── LOCK ORDER, STATED ONCE AND HELD BY EVERY FUNCTION HERE ────────────────
 -- **`leagues` FIRST, `scoring_systems` SECOND.** Both new RPCs take the league
 -- row `FOR UPDATE` (061's step-2 idiom) before they touch `scoring_systems`,
--- and `update_league_settings` already did. Wall 1 — the only guard that reads
+-- and `update_league_settings` already did. Wall 1 — the only GUARD that reads
 -- in the opposite direction — takes NO lock at all: its arm (c) is a bare
--- `EXISTS` with no `FOR` clause, which is the fact F148 corrected and the
--- reason there is no cycle to deadlock. **A `FOR` clause added to wall 1 would
--- create one**, so that absence is pinned in pgTAP 053 §F rather than left to
--- this comment.
+-- `EXISTS` with no `FOR` clause, which is the fact F148 corrected. **A `FOR`
+-- clause added to wall 1 would create a cycle**, so that absence is pinned in
+-- pgTAP 053 §G rather than left to this comment.
+--
+-- **THAT IS THE PL/pgSQL LOCK GRAPH AND NOT THE WHOLE ONE (R644).**
+-- `leagues_scoring_system_id_fkey` is `ON DELETE NO ACTION`, so deleting a
+-- referenced `scoring_systems` row locks the scoring row first and then takes
+-- `FOR KEY SHARE` on the referencing `leagues` row — the reverse direction,
+-- executed by RI machinery that appears in no `prosrc` and that no catalog pin
+-- can reach. **SE.5 is what makes it reachable at all**, because §2 is the
+-- first thing in the chain to put an owner-owned — hence owner-DELETABLE — row
+-- in front of a live league; before 105 the reference was always an ownerless
+-- template that `authenticated` cannot delete. It is named rather than fixed:
+-- the DELETE that opens it is refused by the FK itself 100% of the time
+-- (23503), the resulting 40P01 is a transient abort with no partial write, no
+-- DELETE route exists, and §12.25's own hygiene case (deleting an ORPHANED
+-- fork) takes no RI lock at all. See §5's body comment for the full statement.
 --
 -- Migration checklist (§8.1 / §4.4):
 --   • Additive-first: three new functions, one new policy, one `CREATE OR
@@ -403,8 +439,19 @@ COMMENT ON FUNCTION public.scoring_fork_template(UUID, UUID) IS
 -- is the "nothing happened" class** — the commissioner's All-Positions switch
 -- state is DERIVED from the document (§7.3.3.1), so a server-side strip would
 -- change what the editor shows next load with no error and no diff. One
--- canonical byte-shape in the database, and the refusal names
--- `normalizeScoringDoc` so the client knows whose job it skipped.
+-- canonical byte-shape in the database.
+--
+-- **What the refusal does NOT do, corrected in place (R648):** an earlier form
+-- of this sentence said it "names `normalizeScoringDoc` so the client knows
+-- whose job it skipped". It does not — measured on both guardrail-4 arms across
+-- MESSAGE, DETAIL and HINT, the string appears nowhere; every occurrence of it
+-- in 103 and 105 is a `--` comment. The refusal carries `HINT = normal_form`
+-- and a DETAIL dot path, which is what a route has to map. **103's messages are
+-- deliberately NOT edited to make the sentence true:** they are byte-identical
+-- mirrors of `validate-rules-doc.ts`, and `scoring-parity-db.test.ts` compares
+-- only `REJECT|hint|path` under a family regex that would still match an
+-- appended function name — so a divergence introduced there would go unpinned.
+-- Trimming a banner is free; editing a mirrored literal is not.
 --
 -- Naturally idempotent: the same document written twice leaves the same row
 -- state, so a retried save needs no key.
@@ -576,16 +623,44 @@ CREATE POLICY "League members read league scoring" ON scoring_systems FOR SELECT
 --       Wall 3's highest-frequency writer is `create_league`, whose INSERT arm
 --       locks the referenced row — and the product has exactly **six template
 --       rows**, so every league creation in the app contends on one of six.
---       Measured INSIDE the database (6 workers x 40 `create_league` calls,
---       all on one template; per-worker elapsed via `clock_timestamp`, so
---       process startup is not in the number), reproduced across two runs:
---         FOR NO KEY UPDATE   20  37  53  70  88 104 ms   (run 2: 18 36 53 69 86 102)
---         FOR SHARE           19  19  19  19  19  19 ms   (run 2: 19 19 19 20 20 20)
---       The first line is a textbook serialization staircase: each worker waits
---       for every worker ahead of it, and throughput is one league creation at
---       a time, globally, per template. The second is six workers running in
---       parallel at the uncontended cost. **~5.5x at 6-way concurrency**, and
---       the gap grows linearly with the number of concurrent creators.
+--
+--       **THE AXIS IS CONCURRENCY.** For each level W, W concurrent workers
+--       each issue K = 20 `create_league` calls against the SAME template row;
+--       the figure is the mean ms/call at that level, elapsed taken INSIDE the
+--       database (`clock_timestamp`) so process startup is not in the number.
+--       Two independent reps per arm:
+--
+--         W                    1     2     4     6     8    10
+--         FOR NO KEY UPDATE  0.60  0.93  1.50  1.95  2.46  2.96   (rep 2: 0.85 1.02 1.55 1.91 2.41 2.94)
+--         FOR SHARE          0.85  0.70  0.66  0.74  0.82  0.81   (rep 2: 0.55 0.65 0.66 0.68 0.69 0.76)
+--
+--       **`FOR NO KEY UPDATE` rises monotonically in W; `FOR SHARE` is flat.**
+--       That, and not any single ratio, is the claim: each additional concurrent
+--       creator adds one full call to every other creator's wait, so the gap
+--       grows without bound in W (2.6x at W=6, 3.7x at W=10). Within a level the
+--       per-worker elapsed under the strong lock is a DRAIN CASCADE — at W=6,
+--       [11 23 33 44 54 64] ms sorted — while `FOR SHARE` is flat
+--       ([13 13 13 14 14 14]); that spread is a second observation and not six
+--       samples of one quantity.
+--
+--       **AN EARLIER FORM OF THIS BLOCK WAS MISLABELLED, AND THE CORRECTION IS
+--       RECORDED RATHER THAN QUIETLY APPLIED (R647).** It printed
+--       `20/37/53/70/88/104 ms` beside `19/19/19/19/19/19` as though both were
+--       six comparable per-worker figures at a fixed W=6. They were the sorted
+--       drain cascade at one level, and presenting them that way invited — and
+--       got — the reading that they were a concurrency sweep. Worse, its
+--       headline "~5.5x at 6-way" was `104/19`: the LAST element of a cascade
+--       over the flat value, which is not a like-for-like ratio. Nothing about
+--       the decision changes; the evidence for it is now stated on the axis it
+--       actually varies.
+--
+--       **AND THE 8-WAY RUN THAT WAS ONCE "DISCARDED AS NOISE" IS NOW
+--       MEASURED.** An early fixed-W=8 attempt showed the opposite sign and was
+--       dropped as `docker exec` startup noise — justified in outcome, sloppy
+--       in process, because a discarded measurement needs a stated exclusion
+--       rule *or* a re-measurement, and it had neither. It has the second now:
+--       the sweep above reaches **W = 8 and W = 10 and the sign holds in both
+--       reps**. That is the sentence that belongs here, not "discarded".
 --
 --   (iii) THE MULTIXACT TRADE, MEASURED RATHER THAN NAMED. `FOR SHARE` is a
 --       SHARED lock, so concurrent holders of one row go through a multixact —
@@ -651,28 +726,48 @@ BEGIN
   -- Under READ COMMITTED two concurrent transactions therefore each passed on
   -- a stale snapshot and committed a live league referencing the F21 document.
   --
-  -- `FOR SHARE` is the WEAKEST mode that closes it: it conflicts with the
-  -- `FOR NO KEY UPDATE` every UPDATE of the referenced row takes, so the
-  -- document cannot change underneath this read, while two transactions
-  -- attaching leagues to the same VALID document no longer serialise. Measured
-  -- both ways, in both orderings, against a no-lock control that BREACHES in
-  -- both — and the mode this replaces turned wall 3's highest-frequency writer
-  -- (`create_league`, six template rows for the whole product) into a global
-  -- serialization point: 20/37/53/70/88/104 ms for six concurrent workers,
-  -- against 19/19/19/19/19/19 here. The multixact that shared holders create is
-  -- real (`pg_get_multixact_members` → two `sh` members) and its cost is inside
-  -- that 19 ms; it would need long-lived overlapping sharers to matter, and
-  -- every wall-3 writer in this repo is a short RPC transaction.
+  -- **THE ARGUMENT IS THE CONFLICT TABLE, NOT THE STRENGTH ORDERING.** This
+  -- statement's premise is exactly *"the row I just resolved does not change
+  -- under me."* `FOR SHARE` conflicts with `FOR NO KEY UPDATE` and with
+  -- `FOR UPDATE` — which are precisely the locks an UPDATE and a DELETE of that
+  -- row acquire — so every WRITER is excluded and the premise holds. What
+  -- `FOR NO KEY UPDATE` additionally excluded was other wall-3 invocations,
+  -- and those are READERS: they cannot invalidate each other's premise. That
+  -- extra exclusion buys nothing and costs the serialization.
   --
-  -- **The deadlock question, and why there is still no cycle (F148/F151).**
-  -- Wall 1 takes NO lock at all — its arm (c) is a bare `EXISTS` with no `FOR`
-  -- clause — so the reverse direction of a cycle does not exist. SE.5's two new
-  -- RPCs take `leagues` FOR UPDATE before they touch `scoring_systems`, the
-  -- same order `update_league_settings` has always used, so the multi-statement
-  -- write pattern F151 was filed for does not introduce one either. That is
-  -- measured (both orderings, repeated, zero 40P01 — see the PR) and the
-  -- structural premise underneath it — wall 1 holding no lock — is pinned in
-  -- pgTAP 053 §F, because it is the thing a future edit would silently break.
+  -- Measured both ways, in both orderings, against a no-lock control that
+  -- BREACHES in both. The mode this replaces turned wall 3's highest-frequency
+  -- writer (`create_league`, six template rows for the whole product) into a
+  -- global serialization point — swept over CONCURRENCY (W workers x 20 calls
+  -- on one template, mean ms/call, two reps), `FOR NO KEY UPDATE` rises
+  -- monotonically 0.60 → 2.96 ms across W = 1..10 while `FOR SHARE` stays flat
+  -- at ~0.7; full table in 105 §5(ii). The multixact that shared holders create
+  -- is real (`pg_get_multixact_members` → two `sh` members) and its cost is
+  -- inside that flat figure; it would need long-lived overlapping sharers to
+  -- matter, and every wall-3 writer in this repo is a short RPC transaction.
+  --
+  -- **The deadlock question — and the absolute that used to stand here was too
+  -- strong (R644).** Among PL/pgSQL lock sites there is one direction: wall 1
+  -- takes NO lock at all (its arm (c) is a bare `EXISTS` with no `FOR` clause),
+  -- and SE.5's two new RPCs take `leagues` FOR UPDATE before they touch
+  -- `scoring_systems`, the order `update_league_settings` has always used — so
+  -- the multi-statement write pattern F151 was filed for adds no cycle
+  -- (measured: both orderings, repeated, zero 40P01, against an inverted-order
+  -- control that deadlocks 8/8). **But PL/pgSQL is not the whole lock graph.**
+  -- `leagues_scoring_system_id_fkey` is `ON DELETE NO ACTION`, so a DELETE of a
+  -- referenced `scoring_systems` row locks the scoring row FIRST and then takes
+  -- `FOR KEY SHARE` on the referencing `leagues` row — scoring_systems →
+  -- leagues, the reverse direction. That RI machinery is not `prosrc` and no
+  -- catalog pin can see it. **SE.5 is what makes it reachable**: before 105 a
+  -- league could only reference an ownerless template, which `authenticated`
+  -- cannot delete. It is deliberately left alone — the DELETE it needs is
+  -- refused by the FK 100% of the time (23503), 40P01 is a transient retryable
+  -- abort with no partial write, no DELETE route exists, and adding an
+  -- ON DELETE RESTRICT-shaped guard would be new surface on a security wall to
+  -- defend against a statement that already fails (CLAUDE.md's "no defending
+  -- against personal problems"). Named so the comment stops asserting an
+  -- absolute it cannot support. The PL/pgSQL premises are pinned in pgTAP
+  -- 053 §G, because those are the ones a future edit would silently break.
   SELECT s.rules INTO v_rules
   FROM public.scoring_systems s
   WHERE s.id = NEW.scoring_system_id
@@ -695,7 +790,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.leagues_scoring_reference_guard() IS
-  'SE.4b / R618: BEFORE INSERT OR UPDATE OF scoring_system_id, deleted_at on leagues — resolves the referenced scoring_systems row and PERFORMs scoring_rules_validate on its rules. Closes the five raw-table doors D169''s RPC-shaped remedy is not in the path of (repoint, INSERT-carrying-a-reference, un-delete revive, detach-rewrite-reattach incl. mid-draft). Fires on ASSIGNMENT (UPDATE OF), so an ordinary league edit pays nothing. SECURITY DEFINER as a structural precaution (R636): wall 1''s DEFINER-ness is measured, wall 3''s has no constructible twin today because leagues is SELECT-only, but the predicate is a SYSTEM fact and must not become role-dependent the day a leagues write policy is added. [SE.5 / D273 / F147] The reference is resolved FOR SHARE, not FOR NO KEY UPDATE: the weaker mode still conflicts with every UPDATE of the referenced row (so the TOCTOU seam stays closed in both orderings, measured against a no-lock control that breaches in both), while the stronger one made create_league serialise globally on six template rows — 20/37/53/70/88/104 ms for six concurrent workers against 19 ms flat. See migration 105 §5.';
+  'SE.4b / R618: BEFORE INSERT OR UPDATE OF scoring_system_id, deleted_at on leagues — resolves the referenced scoring_systems row and PERFORMs scoring_rules_validate on its rules. Closes the five raw-table doors D169''s RPC-shaped remedy is not in the path of (repoint, INSERT-carrying-a-reference, un-delete revive, detach-rewrite-reattach incl. mid-draft). Fires on ASSIGNMENT (UPDATE OF), so an ordinary league edit pays nothing. SECURITY DEFINER as a structural precaution (R636): wall 1''s DEFINER-ness is measured, wall 3''s has no constructible twin today because leagues is SELECT-only, but the predicate is a SYSTEM fact and must not become role-dependent the day a leagues write policy is added. [SE.5 / D273 / F147] The reference is resolved FOR SHARE, not FOR NO KEY UPDATE: the weaker mode still conflicts with every UPDATE of the referenced row (so the TOCTOU seam stays closed in both orderings, measured against a no-lock control that breaches in both), while the stronger one made create_league serialise globally on six template rows: swept over CONCURRENCY (W workers x 20 calls, mean ms/call), FOR NO KEY UPDATE rises monotonically 0.60 -> 2.96 ms across W = 1..10 while FOR SHARE stays flat at ~0.7. The argument is the conflict table, not the strength ordering: FOR SHARE excludes every WRITER of the resolved row, and what the stronger mode additionally excluded was other wall-3 invocations, which are readers. See migration 105 §5.';
 
 -- ---------------------------------------------------------------------------
 -- 6. D169 — the 061 attach amendment
@@ -845,6 +940,18 @@ BEGIN
   IF p_scoring_system_id IS NOT NULL THEN
     SELECT s.rules INTO v_attach_rules
     FROM public.scoring_systems s WHERE s.id = p_scoring_system_id;
+    -- SHADOWED, NOT UNREACHABLE — and it stays (R649). Step 5 above already
+    -- refuses a nonexistent id that differs from the current reference, and the
+    -- FK refuses the equal-to-current arm, so no probe reaches this RAISE
+    -- today. But step 5's `NOT EXISTS` and this `SELECT … INTO` are SEPARATE
+    -- STATEMENTS over separate snapshots under read committed, and step 5 takes
+    -- no tuple lock — the same unlocked cross-table premise wall 3 bought a row
+    -- lock for (R626). A template deleted and committed between the two lands
+    -- here. Deleting it would also make the two walls disagree on an idiom 104
+    -- carries byte-identically, and would downgrade an accurate message into
+    -- `scoring_rules_validate(NULL)`'s "must be a JSON object; got nothing" —
+    -- loud for the wrong reason, which is precisely what CLAUDE.md's
+    -- assert-the-reason-for-emptiness rule points away from.
     IF NOT FOUND THEN
       RAISE EXCEPTION 'update_league_settings: scoring system % does not exist (§7.3.8)',
         p_scoring_system_id

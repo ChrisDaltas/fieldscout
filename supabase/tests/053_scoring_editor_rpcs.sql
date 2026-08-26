@@ -832,12 +832,24 @@ select is(
 --
 -- 052 §K pins wall 3's own lock clause. What is pinned HERE is the structural
 -- premise that makes the F147 choice safe and that nothing pinned before:
--- there is exactly ONE lock direction in this system.
+-- among PL/pgSQL lock sites there is ONE direction.
+--
+-- **"IN THIS SYSTEM" WAS TOO STRONG AND IS CORRECTED IN PLACE (R644).**
+-- `leagues_scoring_system_id_fkey` is `ON DELETE NO ACTION`, so a DELETE of a
+-- referenced `scoring_systems` row locks the scoring row first and then takes
+-- `FOR KEY SHARE` on the referencing `leagues` row — the reverse direction,
+-- run by RI machinery that lives in no `prosrc`, which is the only place these
+-- two cells look. **SE.5 is what makes it reachable**, because §2 is the first
+-- thing in the chain to put an owner-DELETABLE row in front of a live league.
+-- It is deliberately not defended against (the DELETE fails 23503 anyway; see
+-- 105 §5), and it is deliberately not pinned here: a catalog cell over
+-- `prosrc` structurally cannot see it, and writing one that appeared to would
+-- be worse than the sentence it replaced.
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'scoring_systems_rules_guard'
       and p.prosrc ~ 'FOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)'),
-  0, 'G1 (F148/F151 — THE PREMISE THE WHOLE DEADLOCK ARGUMENT RESTS ON): **wall 1 takes NO row lock at all.** Its arm (c) is a bare EXISTS with no FOR clause, so the second direction of a lock cycle does not exist and wall 3''s lock — whatever its strength — cannot deadlock against it. F148 was filed because 104 once claimed a "two-direction lock pattern" that had never existed. Add a FOR clause to wall 1 and this cell goes red: it is the single edit that would turn F147''s choice from a performance question into a correctness one');
+  0, 'G1 (F148/F151 — THE PREMISE THE PL/pgSQL HALF OF THE DEADLOCK ARGUMENT RESTS ON; see this section''s banner for the FK-induced direction it does NOT cover, R644): **wall 1 takes NO row lock at all.** Its arm (c) is a bare EXISTS with no FOR clause, so the second direction of a lock cycle does not exist and wall 3''s lock — whatever its strength — cannot deadlock against it. F148 was filed because 104 once claimed a "two-direction lock pattern" that had never existed. Add a FOR clause to wall 1 and this cell goes red: it is the single edit that would turn F147''s choice from a performance question into a correctness one');
 
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
