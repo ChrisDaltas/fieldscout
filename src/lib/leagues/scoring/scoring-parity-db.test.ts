@@ -81,8 +81,18 @@ const db: SupabaseClient = createClient(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY)
  * ──────────────────────────────────────────────────────────────────────── */
 
 /** `ACCEPT` | `REJECT|<family>|<path>` — TS. A document-level path is `''` in
- *  TS and `(document)` in SQL (the DETAIL sentinel, so PostgREST cannot turn
- *  "the document itself" into `null` and lose the distinction). */
+ *  TS.
+ *
+ *  **The `''` → `(document)` mapping is DELIBERATELY ASYMMETRIC, and that is a
+ *  finding, not a convenience (R602).** SQL now distinguishes the two cases:
+ *  a document-level refusal carries DETAIL `(document)`, and the (legal) JSON
+ *  key `""` carries an empty DETAIL. TS cannot — `violation.path` is `''` for
+ *  both. So this helper maps TS's `''` to `(document)`, which is right for
+ *  every document in the corpus except one, and that one is pinned explicitly
+ *  in "the empty-string key" block below rather than smoothed over here. The
+ *  earlier version of this comment claimed the sentinel preserved the
+ *  distinction; it did not, and the fixture could not see that it did not,
+ *  because it erased the distinction before comparing. */
 const tsVerdict = (doc: unknown): string => {
   const r = validateScoringRulesDoc(doc)
   if (r.valid) return 'ACCEPT'
@@ -131,15 +141,34 @@ interface Case {
   doc: unknown
 }
 
-/** The whole-corpus assertion: verdict, family and path identical, reported
- *  with the labels of every case that disagreed (a bare count is unreadable). */
-const expectParity = async (cases: readonly Case[]): Promise<number> => {
+/**
+ * The one place the two layers are ALLOWED to differ, and it is a refinement,
+ * not a divergence (R602): TS reports path `''` both for a document-level
+ * refusal and for the legal JSON key `""`; SQL distinguishes them, saying
+ * `(document)` for the first and an empty DETAIL for the second. So an SQL
+ * empty DETAIL is a legal refinement of TS's `''`. Nothing else is relaxed —
+ * and every sweep asserts HOW MANY of its cases used the relaxation, so it
+ * cannot quietly grow into a hole.
+ */
+const refines = (ts: string, sql: string): boolean =>
+  ts === sql || (ts.endsWith('|(document)') && sql === `${ts.slice(0, -'(document)'.length)}`)
+
+/** The whole-corpus assertion: verdict, family and path identical (or the one
+ *  named refinement above), reported with the labels of every case that
+ *  disagreed — a bare count is unreadable when it reds. Returns
+ *  `[caseCount, refinedCount]`. */
+const expectParity = async (
+  cases: readonly Case[],
+  expectedRefinements = 0,
+): Promise<number> => {
   expect(cases.length).toBeGreaterThan(0) // never a vacuous sweep (F94 shape)
   const sql = await mapLimit(cases, 32, (c) => sqlVerdict(c.doc))
-  const disagreements = cases
-    .map((c, i) => ({ label: c.label, ts: tsVerdict(c.doc), sql: sql[i] }))
-    .filter((r) => r.ts !== r.sql)
-  expect(disagreements).toEqual([])
+  const rows = cases.map((c, i) => ({ label: c.label, ts: tsVerdict(c.doc), sql: sql[i] }))
+  expect(rows.filter((r) => !refines(r.ts, r.sql))).toEqual([])
+  expect(
+    rows.filter((r) => r.ts !== r.sql).map((r) => r.label),
+    'the R602 refinement is used exactly where it is expected, and nowhere else',
+  ).toHaveLength(expectedRefinements)
   return cases.length
 }
 
@@ -172,9 +201,18 @@ const positionMatrixCases: Case[] = SCORING_POSITIONS.flatMap((position) =>
   })),
 )
 
+// ⚠ EVERY VALUE HERE GOES OUT THROUGH `JSON.stringify`, so a value that
+// literal cannot render faithfully never reaches SQL at all. `1e400` used to
+// sit in this list labelled "a coefficient past the double range"; it
+// serialises to `null`, so it measured the finiteness arm and not the
+// magnitude one. It is kept, honestly relabelled — a `null` coefficient IS a
+// real arm — and the number-model edges it was meant to cover are measured
+// over raw bytes in "the number-model edges" block below. **The lane rule
+// this earned: a parity claim about a number literal must be measured over
+// raw bytes, never over a serializing client.**
 const COEFFICIENT_EDGES = [
   100, -100, 100.01, -100.01, 0.01, -0.01, 0.001, 0, 1, 0.1, 0.07, 99.99, 2.5001,
-  0.30000000000000004, 1e-7, 1e21, 1e400, -1e400, 1.5, 12.34, 0.005, 50.5,
+  0.30000000000000004, 1e-7, 1e21, 1.5, 12.34, 0.005, 50.5,
 ]
 const coefficientCases: Case[] = COEFFICIENT_EDGES.flatMap((n) => [
   { label: `base.pass_tds = ${n}`, doc: withBase(fork(), { pass_tds: n }) },
@@ -221,8 +259,13 @@ const positionNameCases: Case[] = POSITION_NAMES.map((p) => ({
 const CUT_LISTS: unknown[] = [
   [0, 1, 7, 14, 18, 28, 35, 46], [0, 1, 7, 14, 21, 28, 35], [0, 7], [0, 100],
   [0], [], [0, 7, 7], [0, 7, 6], [7, 14], [-1, 0, 7], [1, 7, 14],
-  [0, 7.5, 14], [0, '7', 14], [0, null, 14], [0, true], [0, [7]], [0, 1e400],
-  [-1e400, 0], 'x', 42, null, {}, true,
+  [0, 7.5, 14], [0, '7', 14], [0, null, 14], [0, true], [0, [7]],
+  // `[0, 1e400]` and `[-1e400, 0]` used to live here labelled as the
+  // double-range arm. `JSON.stringify([0, 1e400])` is `[0,null]`, so what
+  // actually crossed the wire was the non-number arm one line up. Written as
+  // `null` now, and the real double-range and 2^53 cases are measured over raw
+  // bytes below (R601).
+  [0, null], [null, 0], 'x', 42, null, {}, true,
 ]
 const tierCutCases: Case[] = [
   ...CUT_LISTS.map((c) => ({
@@ -279,6 +322,11 @@ const envelopeCases: Case[] = [
   { label: 'the document itself is a number', doc: 42 },
   { label: 'the document itself is a string', doc: 'rules' },
   { label: 'the document is {}', doc: {} },
+  // R602: `""` is a legal JSON key. These three are in the CORPUS (not only in
+  // the dedicated block) so the whole-corpus family/path comparison sees them.
+  { label: 'flat {"": 1} — a field violation at the empty key', doc: { '': 1 } },
+  { label: 'a format-2 stray member named ""', doc: { ...fork(), '': 1 } },
+  { label: 'a format-2 base key named ""', doc: withBase(fork(), { '': 1 }) },
 ]
 
 const normalFormCases: Case[] = [
@@ -319,16 +367,17 @@ const exclusivityCases: Case[] = [
     doc: { def_pa_0: 5, def_pa_1_6: 4, def_pa_7_13: 3, def_pa_28_34: -1 },
   },
   { label: 'a YA key the published cut list does not generate', doc: { def_ya_0_50: 1 } },
-  // MEASURED, and it went the other way from how it was first written — the
-  // note is here because F59 inherits it (ledger F137). Guardrail 1 (the
-  // REGISTRY allowlist) runs ahead of guardrail 2 (the document's own cuts),
-  // and §23.5 carries exactly the 20 PUBLISHED tier key names — so a
-  // per-league re-cut cannot today name a tier outside those 20, even though
-  // §7.3.3.1(a) reserves the cut points per league. BOTH layers agree, which
-  // is what these two cases pin; the constraint is the spec's, not a mirror
-  // defect.
+  // F137, and the mechanism is SCOPE — not order (an earlier draft of this
+  // note said "guardrail 1 runs AHEAD of guardrail 2", which is true and is
+  // not the cause). Measured: the first document draws exactly ONE violation,
+  // because `def_pa_0_13` IS in the set its own cuts generate, so guardrail 2
+  // has no complaint at any position in the sequence — reordering the families
+  // would change nothing. Guardrail 1 is a membership test against §23.5's
+  // CLOSED 20-name registry list, so it refuses a re-cut name wherever it
+  // runs. That is why resolution (b) follows from the diagnosis. BOTH layers
+  // agree; the constraint is the spec's, not a mirror defect. PROGRESS §3 Q26.
   {
-    label: 'a key the docs OWN re-cut table generates but the registry does not carry',
+    label: 'SCOPE: a key the docs OWN re-cut table generates but the registry does not carry',
     doc: withBase(withCuts({ ...fork(), base: {} }, { def_pa: [0, 14, 28] }), {
       def_pa_0_13: 5,
     }),
@@ -337,6 +386,29 @@ const exclusivityCases: Case[] = [
     label: 'a PUBLISHED key the docs own re-cut table does not generate',
     doc: withBase(withCuts({ ...fork(), base: {} }, { def_pa: [0, 14, 28] }), {
       def_pa_1_6: 5,
+    }),
+  },
+  {
+    // The one document here that breaks TWO families, so it is the only one
+    // that actually exercises precedence — the property the pair above was
+    // described as pinning and does not (neither of them violates two).
+    label: 'PRECEDENCE: a registry-absent key under the PUBLISHED cuts (TS: 2 violations)',
+    doc: withBase({ ...fork(), base: {} }, { def_pa_0_13: 5 }),
+  },
+  {
+    // R607: §7.3.3.1(c)'s OWN printed example cut list. The list is legal and
+    // its six published tiers are payable; what is refused is the FIRST tier
+    // it generates.
+    label: 'the specs own printed cut list, paying the first tier it generates',
+    doc: withBase(withCuts({ ...fork(), base: {} }, { def_pa: [0, 7, 14, 18, 28, 35, 46] }), {
+      def_pa_0_6: 5,
+    }),
+  },
+  {
+    label: 'the specs own printed cut list, paying only its PUBLISHED tiers',
+    doc: withBase(withCuts({ ...fork(), base: {} }, { def_pa: [0, 7, 14, 18, 28, 35, 46] }), {
+      def_pa_7_13: 3, def_pa_14_17: 1, def_pa_18_27: 0,
+      def_pa_28_34: -1, def_pa_35_45: -3, def_pa_46_plus: -5,
     }),
   },
 ]
@@ -442,7 +514,10 @@ describe('the sweeps — where a transcription could have drifted from the regis
   })
 
   it('every envelope shape agrees, including the front door (R588/R597)', async () => {
-    await expectParity(envelopeCases)
+    // 2 refinements, both the R602 empty-key case: TS says `''` (ambiguous),
+    // SQL says an empty DETAIL (a field path). Named here so the allowance is
+    // a fact about two documents rather than a hole in the comparator.
+    await expectParity(envelopeCases, 2)
   })
 
   it('the normal form agrees (guardrail 4 — the strip has one definition)', async () => {
@@ -520,11 +595,20 @@ const rawRpc = async (bodyJson: string): Promise<string> => {
   const body = (await res.json()) as { code?: string; hint?: string; details?: string }
   return `REJECT|${body.hint}|${body.details}`
 }
+
+/** TS's verdict from the SAME raw bytes — `JSON.parse`, so the doubles the
+ *  engine will actually score with. */
+const tsVerdictRaw = (docJson: string): string => tsVerdict(JSON.parse(docJson))
 // ESPN Standard already carries `pass_yards`, so the appended member is a
 // DUPLICATE JSON key — kept deliberately, because `JSON.parse` and `jsonb`
 // both take the LAST occurrence, which is what makes the literal reach both
 // layers unchanged. (Measured: the 0.30000000000000004 case below refuses,
 // which it could only do if the appended value won on the SQL side too.)
+/** Send an arbitrary raw document body — the transport that actually reaches
+ *  the number-model edges. */
+const rawValidate = async (docJson: string): Promise<string> =>
+  rawRpc(`{"p_rules":${docJson}}`)
+
 const rawDoc = (literal: string): string =>
   `{"p_rules":${JSON.stringify(template('ESPN Standard')).slice(0, -1)},"pass_yards":${literal}}}`
 
@@ -564,6 +648,175 @@ describe('the decimal rule: the trailing-zero class, and the one-sided residue',
       expect(await rawRpc(rawDoc(JSON.stringify(parsed.pass_yards)))).toBe('ACCEPT')
     },
   )
+})
+
+describe('the number-model edges — measured over RAW BYTES, because the client cannot deliver them', () => {
+  /**
+   * **This block exists because the rest of the suite has exactly one
+   * transport, and that transport is `JSON.stringify` (R599/R601).**
+   *
+   * Anything that literal cannot render faithfully is invisible to all 668
+   * corpus documents, to the 80,000-document fuzz, and to all 31 break probes:
+   *
+   *   JSON.stringify([0, 1e400])              → "[0,null]"
+   *   JSON.stringify([0, 9007199254740993])   → "[0,9007199254740992]"   ← a
+   *                                             DIFFERENT integer, silently
+   *
+   * The second one is how a real defect survived every layer of this suite:
+   * `numeric` separates integers above 2^53 that IEEE-754 double cannot, so
+   * `[0, 2^53, 2^53+1]` ascends in SQL and REPEATS a cut in JS. SQL accepted
+   * it (HTTP 204); TS refused it; and `tierKeysFromCuts` — on the production
+   * scoring path via `tierBucketsFromCuts` → `deriveTierIndicators` — threw on
+   * it. The cap is now 2^53 in both the residual and the generator.
+   *
+   * Every case below therefore ships its document as **literal text**, parsed
+   * by `JSON.parse` for TS and by `jsonb` for SQL, so both layers see the same
+   * bytes rather than the same JS value.
+   */
+  const YA = '[0,100,200,300,350,400,450,500,550]'
+  const doc = (base: string, pa: string) =>
+    `{"format":2,"base":${base},"positions":{},"tier_cuts":{"def_pa":${pa},"def_ya":${YA}}}`
+
+  const AGREE: Array<{ label: string; json: string; verdict: string }> = [
+    {
+      label: 'R599: a list that ascends in numeric and REPEATS once parsed as doubles',
+      json: doc('{}', '[0,9007199254740992,9007199254740993]'),
+      verdict: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      label: 'R599 second instance: 1e21 and 1e21+1',
+      json: doc('{}', '[0,1e21,1000000000000000000001]'),
+      verdict: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      label: '2^53 EXACTLY — inside the boundary, and cut-1 is still exact',
+      json: doc('{}', '[0,9007199254740992]'),
+      verdict: 'ACCEPT',
+    },
+    {
+      label: 'a cut that parses to Infinity (the case [0,1e400] could never deliver)',
+      json: doc('{}', '[0,1e400]'),
+      verdict: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      label: 'a negative cut that parses to -Infinity',
+      json: doc('{}', '[-1e400,0]'),
+      verdict: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    { label: 'the published ESPN list (control)', json: doc('{}', '[0,1,7,14,18,28,35,46]'), verdict: 'ACCEPT' },
+  ]
+
+  it.each(AGREE)('$label — both layers agree, family and path', async ({ json, verdict }) => {
+    expect(tsVerdictRaw(json)).toBe(verdict)
+    expect(await rawValidate(json)).toBe(verdict)
+  })
+
+  /**
+   * Above 2^53 the two number models genuinely cannot be reconciled, so SQL is
+   * deliberately the STRICTER side — the wall fails loud rather than admitting
+   * a list the engine would read as a different list. Stated as measurement,
+   * with witnesses, exactly like the >17-significant-decimal residue.
+   */
+  const SQL_STRICTER: Array<{ label: string; json: string; ts: string; sql: string }> = [
+    {
+      label: '2^53 + 1 as a single cut',
+      json: doc('{}', '[0,9007199254740993]'),
+      ts: 'ACCEPT',
+      sql: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      label: '1.5e308 — a finite JS integer above 2^53',
+      json: doc('{}', '[0,1.5e308]'),
+      ts: 'ACCEPT',
+      sql: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      label: '1e20 — reachable through plain JSON.stringify, and it used to fork the KEY NAMES',
+      json: doc('{}', '[0,100000000000000000000]'),
+      ts: 'ACCEPT',
+      sql: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+    {
+      // Both refuse; the FAMILY differs, because TS considers the list sound
+      // and refuses at guardrail 2 while SQL voids the list at the residual.
+      label: '1.5e308 while paying def_pa_0 — both refuse, different family',
+      json: doc('{"def_pa_0":1}', '[0,1.5e308]'),
+      ts: 'REJECT|tier_exclusivity|base.def_pa_0',
+      sql: 'REJECT|tier_cuts|tier_cuts.def_pa',
+    },
+  ]
+
+  it.each(SQL_STRICTER)('$label — SQL is the stricter side, measured', async ({ json, ts, sql }) => {
+    expect(tsVerdictRaw(json)).toBe(ts)
+    expect(await rawValidate(json)).toBe(sql)
+  })
+
+  it('THE PROPERTY, restated over the edges that broke it: SQL accepts ⟹ TS accepts', async () => {
+    const all = [...AGREE.map((c) => c.json), ...SQL_STRICTER.map((c) => c.json)]
+    for (const json of all) {
+      const sql = await rawValidate(json)
+      if (sql === 'ACCEPT') expect(tsVerdictRaw(json), json).toBe('ACCEPT')
+    }
+    // Non-vacuity: the set really does contain accepts on the SQL side.
+    const accepts = await Promise.all(all.map((j) => rawValidate(j)))
+    expect(accepts.filter((v) => v === 'ACCEPT').length).toBeGreaterThan(0)
+  })
+
+  it('the generator refuses above 2^53 too — the same cap at the other door', async () => {
+    const keys = await fetch(`${LOCAL_URL}/rest/v1/rpc/scoring_tier_keys_from_cuts`, {
+      method: 'POST',
+      headers: {
+        apikey: LOCAL_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${LOCAL_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{"p_prefix":"def_pa","p_cuts":[0,9007199254740993]}',
+    })
+    expect(keys.status).toBe(400)
+    const body = (await keys.json()) as { code?: string; message?: string }
+    expect(body.code).toBe('22023')
+    // R600's E75 half: the refusal names MAGNITUDE, not integrality. The first
+    // cut of this clause told a caller that 1.5e308 "must be an integer".
+    expect(body.message).toMatch(/exactly-representable integer range/)
+  })
+})
+
+describe('the empty-string key: SQL distinguishes what TS cannot (R602)', () => {
+  // `""` is a legal JSON key. The DETAIL sentinel used to be "empty path ⇒
+  // (document)", so this concrete field violation was reported to SE.5/SE.6 as
+  // a document-level refusal. The fixture could not see it, because the parity
+  // helper normalises `'' → (document)` before comparing — it erased the
+  // distinction under test.
+  it('a flat {"": 1} is a FIELD violation in SQL, with an empty path — not (document)', async () => {
+    const ts = validateScoringRulesDoc({ '': 1 })
+    expect(ts.violations.map((v) => [v.code, v.path])).toEqual([['scorable_allowlist', '']])
+    expect(await rawValidate('{"":1}')).toBe('REJECT|scorable_allowlist|')
+  })
+
+  it('…and a genuine document-level refusal still says (document), so the two differ', async () => {
+    expect(await rawValidate('{"def_pa_14_20":4,"def_pa_18_27":3}')).toBe(
+      'REJECT|tier_exclusivity|(document)',
+    )
+  })
+
+  it('TS is the layer that still cannot tell them apart — named, and routed to F138', () => {
+    // Both come back with path ''. This is a `validate-rules-doc.ts` contract
+    // that SE.6's route layer consumes, so SE.4 does not change it from under
+    // it; it is filed instead (ledger F138), together with the `base.` path a
+    // format-2 empty key produces, whose `split('.')` has an empty segment.
+    expect(validateScoringRulesDoc({ '': 1 }).violations[0].path).toBe('')
+    expect(
+      validateScoringRulesDoc({ def_pa_14_20: 4, def_pa_18_27: 3 }).violations[0].path,
+    ).toBe('')
+    expect(
+      validateScoringRulesDoc({
+        format: 2,
+        base: { '': 1 },
+        positions: {},
+        tier_cuts: { def_pa: ESPN_PA_CUTS, def_ya: YA_CUTS },
+      }).violations[0].path,
+    ).toBe('base.')
+  })
 })
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -633,7 +886,12 @@ describe('scoring_tier_keys_from_cuts ≡ tierKeysFromCuts (SE.4(2))', () => {
     { label: 'a flat pair', cuts: [0, 7, 7] },
     { label: 'a descending pair', cuts: [0, 7, 6] },
     { label: 'a non-integer cut', cuts: [0, 7.5] },
-    { label: 'a cut past the double range (Number.isInteger(Infinity) is false)', cuts: [0, 1e400] },
+    // NOT `[0, 1e400]`: supabase-js sends `[0,null]`, which refuses for a
+    // different reason than the label claimed (R601). 2^53 + 1 is a number the
+    // serializer DOES preserve... as a different integer — so even this case
+    // is only honest because the assertion is about the refusal, not the value.
+    // The value-exact version is in "the number-model edges" block.
+    { label: 'a null cut (what [0, 1e400] actually serialises to)', cuts: [0, null] },
   ])('$label raises 22023 rather than generating a plausible name', async ({ cuts }) => {
     const { error } = await db.rpc('scoring_tier_keys_from_cuts', {
       p_prefix: 'def_pa',

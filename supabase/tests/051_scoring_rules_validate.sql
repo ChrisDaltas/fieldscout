@@ -45,7 +45,16 @@
 --      0 / -1 · format 2 / 1 and 2 / 3 · the position vocabulary QB / qb · the
 --      K↔DST scope clause both ways.
 --
---   §F THE F21 LITERAL, AT EVERY LAYER. `def_pa_14_20` + `def_pa_18_27` in one
+--   §F THE F21 LITERAL, AT EVERY LAYER, plus F137's own documents (F5–F10).
+--      The cause there is SCOPE, not order (R604): guardrail 2 accepts a
+--      re-cut key — its own cuts generate it — so reordering the families
+--      changes nothing; guardrail 1 is a membership test against §23.5's
+--      CLOSED 20-name list. §F7 is the one document here that breaks TWO
+--      families and therefore the only one that pins precedence at all;
+--      §F8–F10 use §7.3.3.1(c)'s OWN printed example cut list (R607).
+--      The ruling this raises is PROGRESS §3 Q26 — not F59's to choose.
+--
+--   §B/§D THE 2^53 DOMAIN BOUNDARY (R599). `def_pa_14_20` + `def_pa_18_27` in one
 --      document — the pair the ledger row was filed for — refused flat, in a
 --      format-2 `base`, and in a `positions.DST` override (R593: the same
 --      defect one layer down, which had no fixture until the SE.3 review).
@@ -60,6 +69,23 @@
 --      from the three cut lists, and the two SQL sources are made to agree
 --      here (near-miss names — `def_pa_0_13`, `def_ya_0_50` — draw guardrail 1
 --      by name, so the allowlist is not merely a prefix match).
+--
+--   §H4 THE PREMISE THAT MAKES ONE ARM UNREACHABLE (R603). Guardrail 2's
+--      format-1 `def_ya` arm cannot fire today and deleting it is invisible to
+--      every test in this repo — because every `def_ya_*` name that clears
+--      guardrail 1 is one the published cut list generates. That is a PREMISE,
+--      and §H2 only proves one direction of it. §H4 reads the allowlist out of
+--      the DEPLOYED FUNCTION BODY and set-compares its `def_ya` half against
+--      the generator, so the day §23.5 carries a re-cut YA key (§3 Q26) this
+--      cell reds and the arm goes live. Shipping a guard whose fixture cannot
+--      reach it is only honest if the reason it cannot is itself pinned.
+--
+--   §J THE DETAIL SENTINEL IS INJECTIVE (R602). `(document)` has to mean the
+--      document and nothing else, because SE.5/SE.6 turn DETAIL into a field
+--      path. `""` is a legal JSON key, and the first cut of the rule ("empty
+--      path ⇒ (document)") reported `{"": 1}` — a real field violation — as a
+--      document-level one. Pinned as the PROPERTY (J4: no field violation can
+--      be mistaken for a document-level one), not as two examples.
 --
 --   §I THE POSITION MAP, AS A HAND-COMPUTED HISTOGRAM. The full 6 × 48 matrix
 --      through the validator, summarised per position into ACCEPT /
@@ -84,7 +110,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(114);
+select plan(130);
 
 -- ---------------------------------------------------------------------------
 -- Helpers. `verdict` collapses a call into `ACCEPT` or `<family>|<path>` so a
@@ -286,7 +312,34 @@ select throws_ok(
 select throws_ok(
   $$ select public.scoring_tier_keys_from_cuts('def_pa', '[0,1e400]'::jsonb) $$,
   '22023', null,
-  'B16: a cut past the double range refuses — Number.isInteger(Infinity) is FALSE in TS, and numeric has no such range, so without this clause SQL would generate from a list TS refuses');
+  'B16: a cut that parses to Infinity in TS refuses — Number.isInteger(Infinity) is FALSE, and numeric has no such range');
+
+-- ── THE 2^53 DOMAIN BOUNDARY (R599), one unit either side ─────────────────
+-- The cut-point domain here is `numeric`; the domain the engine SCORES in is
+-- IEEE-754 double. Above 2^53 `numeric` separates integers a double cannot,
+-- which is what made the strictly-ascending residual unmirrorable: `[0, 2^53,
+-- 2^53+1]` ascends in numeric and collapses to a REPEATED cut in JS. The old
+-- clause was `> 1e308` and never saw it.
+select is(
+  public.scoring_tier_keys_from_cuts('def_pa', '[0,9007199254740992]'::jsonb),
+  array['def_pa_0_9007199254740991','def_pa_9007199254740992_plus']::text[],
+  'B16a: 2^53 EXACTLY is legal — it is exactly representable as a double, and so is cut-1 at that bound, so both layers read the same list (D146, from inside the boundary)');
+
+select throws_ok(
+  $$ select public.scoring_tier_keys_from_cuts('def_pa', '[0,9007199254740993]'::jsonb) $$,
+  '22023', null,
+  'B16b: 2^53 + 1 refuses — ONE unit past, and the first magnitude at which numeric and double stop agreeing about which integer this is');
+
+select throws_like(
+  $$ select public.scoring_tier_keys_from_cuts('def_pa', '[0,1.5e308]'::jsonb) $$,
+  '%exactly-representable integer range%',
+  'B16c: …and the refusal names MAGNITUDE, not integrality (R600''s E75 half): 1.5e308 IS an integer and IS a finite JS number, and the first cut of this clause refused it with "must be integers", which is a false statement about the value');
+
+select is(
+  public.scoring_tier_keys_from_cuts('def_pa', '[0,9007199254740990,9007199254740992]'::jsonb),
+  array['def_pa_0_9007199254740989','def_pa_9007199254740990_9007199254740991',
+        'def_pa_9007199254740992_plus']::text[],
+  'B16d: the RENDERING agrees with the TS generator right up to the boundary (R606) — above it SQL used to mint names TS cannot produce (`1e20 - 1 === 1e20` in JS, and 1e21 renders as `1e+21`), which the 2^53 cap now makes unconstructible at both doors');
 
 select throws_ok(
   $$ select public.scoring_tier_keys_from_cuts('def_pa', '"nope"'::jsonb) $$,
@@ -472,7 +525,31 @@ select is(
 select is(
   pg_temp.verdict(pg_temp.env('{"pass_tds": 4}'::jsonb, '{}'::jsonb, '[0,1e400]'::jsonb)),
   'tier_cuts|tier_cuts.def_pa',
-  'D8f: a cut past the DOUBLE range is refused at the document level too — Number.isInteger(Infinity) is false in TS, so without this arm SQL would accept a cut list TS refuses (the only place the two number models could differ in the UNSAFE direction)');
+  'D8f: a cut that parses to Infinity in TS is refused at the document level too — Number.isInteger(Infinity) is false, so without this arm SQL would accept a cut list TS refuses');
+
+-- ── R599: THE CLAIM D8f USED TO CARRY WAS FALSE, AND THIS IS THE DOCUMENT
+--    THAT FALSIFIED IT ─────────────────────────────────────────────────────
+-- D8f used to end "…the only place the two number models could differ in the
+-- UNSAFE direction". It was not. The list below ASCENDS in `numeric` and
+-- collapses to a repeated cut in JS, so SQL ACCEPTED it (HTTP 204 over
+-- PostgREST) while TS refused it — and `tierKeysFromCuts`, on the production
+-- scoring path via `tierBucketsFromCuts` → `deriveTierIndicators`, then THREW.
+-- `> 1e308` could never have caught it. The clause is now `> 2^53`.
+select is(
+  pg_temp.verdict(pg_temp.env('{}'::jsonb, '{}'::jsonb,
+                              '[0,9007199254740992,9007199254740993]'::jsonb)),
+  'tier_cuts|tier_cuts.def_pa',
+  'D8f2 (R599): a cut list that ascends in `numeric` but REPEATS a cut once parsed as doubles is refused — same family and same path as TS, which refuses it for the ascending residual. This exact document was an ACCEPT before the fix');
+
+select is(
+  pg_temp.verdict(pg_temp.env('{}'::jsonb, '{}'::jsonb, '[0,9007199254740992]'::jsonb)),
+  'ACCEPT',
+  'D8f3: 2^53 EXACTLY accepts at the document level too — the boundary is inclusive, and TS accepts the same bytes (D146, from inside)');
+
+select is(
+  pg_temp.verdict(pg_temp.env('{}'::jsonb, '{}'::jsonb, '[0,9007199254740993]'::jsonb)),
+  'tier_cuts|tier_cuts.def_pa',
+  'D8f4: 2^53 + 1 refuses — one unit past. TS ACCEPTS this one (it cannot see the difference), so here SQL is deliberately the STRICTER side: the wall fails loud rather than admitting a list the engine would read as something else');
 
 select is(
   pg_temp.verdict('{"format": 2, "base": {}, "positions": {}}'::jsonb),
@@ -618,24 +695,62 @@ select is(
   'ACCEPT',
   'F4: the FOUR SHARED key names alone ACCEPT — D269(3)''s relaxed reading, mirrored verbatim and not re-litigated: they are a subset of BOTH families and cannot double-pay anything, because within one family the tiers are non-overlapping by construction');
 
--- The two cells below were written the other way round and MEASURED wrong, so
--- they are recorded as what they are: guardrail 1 (the REGISTRY allowlist) runs
--- ahead of guardrail 2 (the document's own cuts), and §23.5's registry contains
--- exactly the 20 PUBLISHED tier key names. A per-league re-cut therefore cannot
--- today name a tier outside those 20, even though §7.3.3.1(a) reserves the cut
--- points per league. That is not a defect in either validator — TS and SQL
--- agree, arm for arm (scoring-parity-db.test.ts) — but it is a constraint F59's
--- boundary editor inherits, and it is filed as ledger **F137** rather than
--- discovered by whoever builds it.
+-- ── F137: THE CAUSE IS SCOPE, NOT ORDER (R604 corrected an earlier reading) ─
+-- These two cells were first written the other way round, and the correction
+-- after that was ALSO wrong: it said guardrail 1 "runs ahead of" guardrail 2,
+-- as though precedence were the mechanism. It is not. Measured: the F5
+-- document draws exactly ONE violation, because `def_pa_0_13` IS in the set
+-- its own cuts generate (`scoring_tier_keys_from_cuts('def_pa','[0,14,28]')` →
+-- `def_pa_0_13, def_pa_14_27, def_pa_28_plus`) and both layers `continue` on a
+-- generated key. Guardrail 2 has no complaint at any position in the sequence,
+-- so REORDERING THE FAMILIES WOULD CHANGE NOTHING.
+-- The cause is SCOPE: guardrail 1 is a membership test against §23.5's CLOSED
+-- 20-name registry list, so it refuses a re-cut name wherever it runs. That is
+-- why resolution (b) — carve `def_pa_*`/`def_ya_*` out of guardrail 1 and let
+-- guardrail 2 own them — is the one that follows from the diagnosis. Ledger
+-- **F137**, and the spec question it raises is PROGRESS §3 (Q26).
 select is(
   pg_temp.verdict(pg_temp.env('{"def_pa_0_13": 5}'::jsonb, '{}'::jsonb, '[0,14,28]'::jsonb)),
   'scorable_allowlist|base.def_pa_0_13',
-  'F5: a key a RE-CUT table generates but the REGISTRY does not carry is refused by guardrail 1, not guardrail 2 — the allowlist is checked first and holds only the 20 published tier names (F137: F59''s boundary editor must either extend §23.5 or carve cut-generated keys out of guardrail 1)');
+  'F5: a key a RE-CUT table generates but the REGISTRY does not carry is refused by guardrail 1 — a SCOPE refusal, not a precedence one: guardrail 2 accepts this key (its own cuts generate it) and TS returns exactly ONE violation for this document');
 
 select is(
   pg_temp.verdict(pg_temp.env('{"def_pa_1_6": 5}'::jsonb, '{}'::jsonb, '[0,14,28]'::jsonb)),
   'tier_exclusivity|base.def_pa_1_6',
-  'F6: …and a PUBLISHED key the document''s OWN cuts do not generate is refused by guardrail 2 — it passes guardrail 1 (it IS in the registry), so this is the format-2 arm doing exactly its job, and the pair pins WHICH family answers (the ordering contract SE.4 inherits from D269(7))');
+  'F6: …and a PUBLISHED key the document''s OWN cuts do not generate is refused by guardrail 2 — it clears guardrail 1 (it IS in the registry), so the format-2 arm is doing exactly its job');
+
+-- The document that DOES exercise precedence, added because the F5/F6 pair
+-- was described as pinning it and does not: neither of them violates two
+-- families, so no precedence is ever taken. This one violates BOTH (TS returns
+-- 2 violations, allowlist first), so it is the cell that would red if the
+-- family ORDER ever changed.
+select is(
+  pg_temp.verdict(pg_temp.env('{"def_pa_0_13": 5}'::jsonb, '{}'::jsonb, '[0,1,7,14,18,28,35,46]'::jsonb)),
+  'scorable_allowlist|base.def_pa_0_13',
+  'F7: the one document here that breaks TWO families — a registry-absent key under the PUBLISHED cuts, which guardrail 1 refuses for scope AND guardrail 2 refuses for exclusivity (TS: 2 violations, allowlist first). This is the cell that pins WHICH family answers');
+
+-- R607: §7.3.3.1(c) prints its own example cut list — `0, 7, 14, 18, 28, 35,
+-- 46` — as the shape F59's boundary editor takes. Using the spec's own list
+-- rather than an invented one costs nothing and makes the ledger row concrete.
+-- Precision, because it is easy to overstate: the cut LIST alone is fine, and
+-- paying only the six PUBLISHED tiers it generates is fine. What is refused is
+-- paying the FIRST tier it generates, `def_pa_0_6`, which no registry entry
+-- carries.
+select is(
+  pg_temp.verdict(pg_temp.env('{}'::jsonb, '{}'::jsonb, '[0,7,14,18,28,35,46]'::jsonb)),
+  'ACCEPT',
+  'F8: §7.3.3.1(c)''s OWN printed cut list is accepted as a cut list — F59''s input shape is legal today');
+
+select is(
+  pg_temp.verdict(pg_temp.env('{"def_pa_7_13": 3, "def_pa_14_17": 1, "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5}'::jsonb,
+                              '{}'::jsonb, '[0,7,14,18,28,35,46]'::jsonb)),
+  'ACCEPT',
+  'F9: …and paying the six PUBLISHED tiers it generates is accepted too');
+
+select is(
+  pg_temp.verdict(pg_temp.env('{"def_pa_0_6": 5}'::jsonb, '{}'::jsonb, '[0,7,14,18,28,35,46]'::jsonb)),
+  'scorable_allowlist|base.def_pa_0_6',
+  'F10: …but paying the FIRST tier it generates is refused — the whole of F137 in the spec''s own example: a commissioner who cuts PA where §7.3.3.1(c) says they may cannot pay the tier that cut creates');
 
 -- ===========================================================================
 -- §G THE MAGNITUDE/PRECISION ARM IS EXACT
@@ -693,6 +808,29 @@ select is_empty(
      || public.scoring_tier_keys_from_cuts('def_ya', '[0,100,200,300,350,400,450,500,550]'::jsonb)) k
       where pg_temp.verdict(jsonb_build_object(k, 1)) <> 'ACCEPT' $$,
   'H2: EVERY generated tier key is in the validator''s scorable allowlist — the allowlist''s tier half and the generator agree, so the two SQL sources cannot drift apart');
+
+-- ── R603: THE PREMISE THAT MAKES ONE ARM UNREACHABLE, PINNED BOTH WAYS ────
+-- Guardrail 2's format-1 `def_ya` arm (migration 103, the `v_strays` block)
+-- currently cannot fire: deleting it leaves this file at 114/114 and the
+-- parity suite at 78/78, because every `def_ya_*` name that clears guardrail 1
+-- is one the published cut list generates, so there is nothing left for
+-- guardrail 2 to refuse. That is a PREMISE, not a property — and §H2 only
+-- proves one direction (generated ⊆ allowlist). This proves the other, by
+-- reading the allowlist out of the DEPLOYED FUNCTION BODY and set-comparing it
+-- against the generator's output. The day §23.5 carries a re-cut YA key (F137
+-- / the §3 question it raises), this cell reds and the arm goes live — which
+-- is the honest way to ship a guard whose fixture cannot reach it.
+-- (The extraction is body-wide on purpose: a `def_ya_*` name hard-coded
+-- anywhere in this function other than the allowlist is itself a finding.)
+select is(
+  (select array_agg(m[1] order by m[1])
+     from (select p.prosrc t from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.proname = 'scoring_rules_validate') src,
+          regexp_matches(src.t, '''(def_ya_[a-z0-9_]+)''', 'g') m),
+  (select array_agg(k order by k)
+     from unnest(public.scoring_tier_keys_from_cuts(
+       'def_ya', '[0,100,200,300,350,400,450,500,550]'::jsonb)) k),
+  'H4 (R603): the allowlist''s def_ya half is SET-EQUAL to the generator''s output — the premise that makes guardrail 2''s format-1 def_ya arm unreachable today, pinned in the direction §H2 does not cover. Deleting that arm is invisible to every test in this repo; deleting this premise is not');
 
 select is(
   (select array_agg(pg_temp.verdict(jsonb_build_object(k, 1)) order by k)
@@ -763,6 +901,36 @@ select is_empty(
   $$ select position || '.' || key || ' -> ' || family from pg_temp_matrix
       where family not in ('ACCEPT', 'position_scope', 'tier_exclusivity') $$,
   'I4: no cell answers with any OTHER family — in particular none errors out (an ERROR| verdict would prove the validator THREW where it must answer)');
+
+-- ===========================================================================
+-- §J THE DETAIL SENTINEL IS INJECTIVE (R602)
+-- ===========================================================================
+--
+-- `(document)` has to mean the document and nothing else, because SE.5's RPCs
+-- and SE.6's routes turn DETAIL into a form-field path. The first cut of the
+-- rule was "empty path ⇒ (document)" — and `""` is a LEGAL JSON key, so
+-- `{"": 1}`, a concrete allowlist violation at a real field, was reported as a
+-- document-level refusal. The document-level sites now carry a NULL path.
+
+select is(
+  pg_temp.verdict('{"": 1}'::jsonb),
+  'scorable_allowlist|',
+  'J1: the empty-string KEY reports an EMPTY path — a field violation, not a document one');
+
+select is(
+  pg_temp.verdict('{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
+  'tier_exclusivity|(document)',
+  'J2: …and a genuine document-level refusal still reports `(document)`, so the two are distinguishable — which is exactly what the pair proves and what a single `= ''''` test could not');
+
+select is(
+  pg_temp.verdict(pg_temp.env('{"pass_tds": 4}'::jsonb) || '{"": 1}'::jsonb),
+  'document_shape|',
+  'J3: the same, one layer up — a format-2 stray member NAMED "" reports its own (empty) name, not `(document)`');
+
+select isnt(
+  pg_temp.verdict('{"": 1}'::jsonb),
+  pg_temp.verdict('{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
+  'J4: stated as the property rather than as two examples — no field violation can be mistaken for a document-level one through the DETAIL channel');
 
 select * from finish();
 rollback;

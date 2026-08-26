@@ -73,8 +73,19 @@
 --              1): …"), which is what `FAMILY_NAME_IN_MESSAGE` matches on
 --     DETAIL   the dot path of the offending member (`base.def_points_allowed`,
 --              `positions.QB.fg_0_39`, `tier_cuts.def_pa`), or `(document)`
---              for a document-level refusal — never empty, so PostgREST cannot
---              turn "the document itself" into `null` and lose the distinction
+--              for a document-level refusal. **The sentinel is INJECTIVE, and
+--              the first cut of it was not (R602):** it read "empty path ⇒
+--              (document)", but `""` is a legal JSON key, so `{"": 1}` — a
+--              concrete allowlist violation at a real field — was reported to
+--              SE.5/SE.6 as a document-level refusal. The document-level sites
+--              now carry a NULL path and the RAISE COALESCEs, so `(document)`
+--              means the document and an empty DETAIL means the empty key.
+--              *Residue, named rather than hidden:* the TS side is still
+--              ambiguous here (`violation.path` is `''` for both cases) and a
+--              format-2 empty key still produces the path `base.`, whose
+--              `split('.')` has an empty segment — both are `validate-rules-
+--              doc.ts` contracts that SE.6's route layer consumes, so they are
+--              filed as **F138** rather than changed from under it
 --     HINT     the guardrail family code, the same seven strings the TS
 --              `ScoringViolation.code` uses
 -- The parity fixture compares all three. SE.5's RPCs and SE.6's routes get the
@@ -169,17 +180,33 @@ BEGIN
   -- function has not itself vouched for.
   FOR i IN 0 .. v_n - 1 LOOP
     v_elem := p_cuts -> i;
-    -- `Number.isInteger` is FALSE for Infinity, and a JSON literal past the
-    -- double range parses to Infinity — so a 1e400 cut is "not an integer" in
-    -- TS. `numeric` has no such range, and without this clause SQL would
-    -- happily generate `def_pa_1000…0_plus` from a list TS refuses. It is the
-    -- only place the two number models differ in the UNSAFE direction, so it
-    -- is closed rather than documented.
     IF jsonb_typeof(v_elem) <> 'number'
-       OR (v_elem #>> '{}')::NUMERIC <> trunc((v_elem #>> '{}')::NUMERIC)
-       OR abs((v_elem #>> '{}')::NUMERIC) > 1e308 THEN
+       OR (v_elem #>> '{}')::NUMERIC <> trunc((v_elem #>> '{}')::NUMERIC) THEN
       RAISE EXCEPTION
         'tier cut list for "%" must be integers, got % at index % (§7.3.3.1(c); R58/D58 — the published tables'' domain is the integers)',
+        p_prefix, v_elem::TEXT, i USING ERRCODE = '22023';
+    END IF;
+    -- ── THE DOMAIN CLAUSE (R599; it used to read `> 1e308` and that was the
+    -- WRONG BOUND, in the unsafe direction) ─────────────────────────────────
+    -- A cut point's domain here is `numeric`; the domain the rest of the
+    -- system scores in is IEEE-754 double. Above **2^53** `numeric` holds
+    -- integers a double cannot tell apart, and that is what makes the
+    -- strictly-ascending residual UNMIRRORABLE: `[0, 9007199254740992,
+    -- 9007199254740993]` ascends in `numeric` and collapses to a repeated cut
+    -- in JS, so SQL accepted a list TS refuses — and `tierKeysFromCuts`, which
+    -- is on the production scoring path via `tierBucketsFromCuts` →
+    -- `deriveTierIndicators`, then THREW on it. `> 1e308` never caught it,
+    -- and was not even the double range (`Number.MAX_VALUE` is
+    -- 1.7976931348623157e308, so `1.5e308` is a finite JS integer this clause
+    -- used to void — flipping the reported family and path for no reason).
+    -- 2^53 itself is allowed: it is exactly representable, and `cut - 1` at
+    -- that bound still is. A PA/YA cut beyond 2^53 has no meaning under
+    -- R58/D58 anyway. **The magnitude condition is its own IF so the refusal
+    -- names its own reason** (E75): the old single RAISE told a caller that
+    -- 1.5e308 "must be an integer", which it is.
+    IF abs((v_elem #>> '{}')::NUMERIC) > 9007199254740992 THEN
+      RAISE EXCEPTION
+        'tier cut list for "%" has a cut of magnitude % at index %, beyond the exactly-representable integer range (|cut| <= 2^53 = 9007199254740992). Above it `numeric` distinguishes integers that IEEE-754 double cannot, so this list would not mean the same thing to the engine that scores it (§7.3.3.1(c); R599)',
         p_prefix, v_elem::TEXT, i USING ERRCODE = '22023';
     END IF;
     v_lo := trim_scale((v_elem #>> '{}')::NUMERIC);
@@ -349,7 +376,7 @@ BEGIN
 
   -- ══ The front door ═══════════════════════════════════════════════════════
   IF p_rules IS NULL OR jsonb_typeof(p_rules) <> 'object' THEN
-    v_code := 'document_shape'; v_path := '';
+    v_code := 'document_shape'; v_path := NULL;
     v_msg := 'Document shape (§7.3.3.1): a scoring rules document must be a JSON object; got '
              || CASE WHEN p_rules IS NULL THEN 'nothing'
                      WHEN jsonb_typeof(p_rules) = 'null' THEN 'null'
@@ -370,7 +397,7 @@ BEGIN
       FROM jsonb_object_keys(p_rules) k
      WHERE k <> 'format' AND k = ANY(c_envelope);
     IF v_strays IS NOT NULL THEN
-      v_code := 'document_shape'; v_path := '';
+      v_code := 'document_shape'; v_path := NULL;
       v_msg := 'Document shape (§7.3.3.1): this document carries no "format" member, so it reads as a flat format-1 map — but it holds '
                || array_to_string(v_strays, ', ')
                || ', which are format-2 envelope members. Add "format": 2, or make it a genuine flat map of coefficients.';
@@ -412,7 +439,7 @@ BEGIN
         v_homes := v_homes + 1;
       END IF;
       IF v_homes = 0 THEN
-        v_code := 'tier_exclusivity'; v_path := '';
+        v_code := 'tier_exclusivity'; v_path := NULL;
         v_msg := 'Tier exclusivity (§7.3.3.1 guardrail 2): the points-allowed keys ['
                  || array_to_string(v_pa_keys, ', ')
                  || '] are not all cut on one published family (shared (Yahoo/Sleeper) or ESPN). Mixing families double-pays every week that lands in the overlap — the F21 defect.';
@@ -425,7 +452,7 @@ BEGIN
      WHERE starts_with(k, 'def_ya_')
        AND NOT (k = ANY(public.scoring_tier_keys_from_cuts('def_ya', c_ya)));
     IF v_strays IS NOT NULL THEN
-      v_code := 'tier_exclusivity'; v_path := '';
+      v_code := 'tier_exclusivity'; v_path := NULL;
       v_msg := 'Tier exclusivity (§7.3.3.1 guardrail 2): the yards-allowed keys ['
                || array_to_string(v_strays, ', ')
                || '] are not generated by the published yards-allowed cut list.';
@@ -593,12 +620,14 @@ BEGIN
 
       v_bad := NULL;
       FOR i IN 0 .. v_n - 1 LOOP
-        -- The 1e308 clause mirrors `Number.isInteger(Infinity) === false`
-        -- (see scoring_tier_keys_from_cuts) — without it a cut list TS refuses
-        -- would pass residuals here and feed the generator.
+        -- The magnitude clause is `> 2^53`, not `> 1e308` — see the long note
+        -- at scoring_tier_keys_from_cuts (R599). Above 2^53 the ascending
+        -- residual cannot be mirrored, because `numeric` separates integers a
+        -- double does not; below it the two number models agree exactly, which
+        -- is what makes `SQL accepts ⟹ TS accepts` true rather than hoped.
         IF jsonb_typeof(v_list -> i) <> 'number'
            OR ((v_list -> i) #>> '{}')::NUMERIC <> trunc(((v_list -> i) #>> '{}')::NUMERIC)
-           OR abs(((v_list -> i) #>> '{}')::NUMERIC) > 1e308 THEN
+           OR abs(((v_list -> i) #>> '{}')::NUMERIC) > 9007199254740992 THEN
           v_bad := i; EXIT;
         END IF;
       END LOOP;
@@ -606,7 +635,10 @@ BEGIN
         IF v_cut_path IS NULL THEN
           v_cut_path := 'tier_cuts.' || v_table;
           v_cut_msg := 'Tier cuts (§7.3.3.1(c)): tier_cuts.' || v_table
-                       || ' must be integers; index ' || v_bad || ' is '
+                       || CASE WHEN jsonb_typeof(v_list -> v_bad) = 'number'
+                                 AND ((v_list -> v_bad) #>> '{}')::NUMERIC = trunc(((v_list -> v_bad) #>> '{}')::NUMERIC)
+                               THEN ' carries a cut beyond the exactly-representable integer range (|cut| <= 2^53); index '
+                               ELSE ' must be integers; index ' END || v_bad || ' is '
                        || CASE WHEN jsonb_typeof(v_list -> v_bad) = 'number' THEN ((v_list -> v_bad) #>> '{}')
                                WHEN jsonb_typeof(v_list -> v_bad) = 'string' THEN (v_list -> v_bad)::TEXT
                                WHEN jsonb_typeof(v_list -> v_bad) = 'null' THEN 'null'
@@ -898,7 +930,13 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = 'P0001',
       MESSAGE = v_msg,
-      DETAIL  = CASE WHEN v_path = '' THEN '(document)' ELSE v_path END,
+      -- R602: the sentinel is now injective. It used to be
+      -- `CASE WHEN v_path = '' THEN '(document)'`, and `""` is a LEGAL JSON
+      -- key — so `{"": 1}` reported a concrete field violation to SE.5/SE.6 as
+      -- a document-level one. The four document-level sites set v_path to NULL
+      -- instead, so `(document)` now means exactly one thing and an empty
+      -- DETAIL means the empty-string key.
+      DETAIL  = COALESCE(v_path, '(document)'),
       HINT    = v_code;
   END IF;
 END;
