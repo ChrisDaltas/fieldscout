@@ -1,0 +1,35 @@
+# Migrations deliberately NOT yet applied to production.
+#
+# WHY THIS FILE EXISTS
+# The drift check (.github/workflows/db-drift.yml) exists because on 2026-08-05
+# production was found missing THIRTY-SIX migrations, discovered only because a
+# signup broke. From 2026-08-13 the check went red again and STAYED red for
+# twelve days — not because anything was wrong, but because the leagues schema
+# is deliberately held back until the 2026 invite-only test cohort. A permanently
+# red alarm cannot alarm. This file is how "deliberately held" is SAID OUT LOUD,
+# so the check can go green and start distinguishing again.
+#
+# RULES THAT KEEP THIS FILE FROM BECOMING THE PROBLEM IT SOLVES
+#  1. Ranges are CLOSED. There is no "082+". A new migration falls OUTSIDE every
+#     hold by default and reds the check until someone deliberately either pushes
+#     it or adds it here. That default is the whole point.
+#  2. A hold naming a migration that IS applied to production is STALE and fails
+#     the check. Holds expire loudly, not silently.
+#  3. A hold naming a migration that is not in the repo is ROT and fails the check.
+#  4. Nothing here suppresses a STRAY — a version applied to production that the
+#     repo does not have. That is the hand-applied-migration direction that caused
+#     the 2026-08-05 incident and it always fails.
+#
+# FORMAT: one NNN or NNN-MMM per line. '#' starts a comment.
+
+# ---------------------------------------------------------------------------
+# Redraft Leagues — auction, mocks, and the custom scoring editor.
+# Flag-gated behind NEXT_PUBLIC_FLAG_* and not reachable in the shipped app.
+# Verified 2026-08-26: none of these alter lists, list_players, players,
+# player_stats or profiles — no ALTER TABLE, index, trigger, policy or grant
+# against them, and none of the 60 functions they define is a launch-surface
+# function. One qualification (R659): 083 adds FK references to players(id) and
+# profiles(id) from two NEW tables, so once pushed they will constrain DELETEs on
+# players — which is sync-script-owned. Neither table's own definition changes.
+# These go up when the invite-only test cohort starts.
+082-104

@@ -7,6 +7,13 @@ name: Production drift check
 # auto-generated version numbers — discovered only because a signup broke and
 # someone went looking. This job makes that state loud within a day.
 #
+# Migrations may be DECLARED as deliberately held back, in
+# supabase/HELD-FROM-PRODUCTION.txt. Holds are closed ranges, so a new
+# migration falls outside every hold by default and still reds this check — the
+# alarm keeps working while the leagues schema waits for its cohort. A hold that
+# is already applied, or that names a migration the repo no longer has, fails too:
+# holds expire loudly. Nothing suppresses a STRAY.
+#
 # Read-only. Reads the applied list over HTTPS via
 # public.applied_migration_versions() (migration 078) rather than a direct
 # Postgres connection: that would need the database password and the
@@ -21,6 +28,14 @@ on:
     branches: [main]
     paths:
       - 'supabase/migrations/**'   # a merged migration should reach prod promptly
+      # R652 — the job's OWN inputs, or the intended hold-expiry edit ("we pushed
+      # 082-104, delete the holds") touches only the declaration file and no run
+      # fires until the next 14:00 schedule. This is the R608 shape: a filter that
+      # stopped matching the files the job depends on. Pinned by
+      # src/lib/ci-drift-holds.test.ts.
+      - 'supabase/HELD-FROM-PRODUCTION.txt'
+      - '.github/scripts/drift_compare.py'
+      - '.github/workflows/db-drift.yml'
 
 jobs:
   drift:
@@ -69,32 +84,5 @@ jobs:
             | grep -E '^[0-9]{3}_' \
             | cut -c1-3 | sort > /tmp/local.txt
 
-          echo "applied on production: $(wc -l < /tmp/remote.txt)"
-          echo "migrations in repo:    $(wc -l < /tmp/local.txt)"
-          echo
-
-          unapplied=$(comm -23 /tmp/local.txt /tmp/remote.txt || true)
-          stray=$(comm -13 /tmp/local.txt /tmp/remote.txt || true)
-
-          status=0
-
-          if [ -n "$unapplied" ]; then
-            echo "::error::In the repo but NOT applied to production:"
-            echo "$unapplied"
-            echo "Fix: npx supabase db push"
-            status=1
-          fi
-
-          if [ -n "$stray" ]; then
-            echo "::error::Applied to production but NOT in the repo \
-          (a hand-applied migration, or an auto-generated version number):"
-            echo "$stray"
-            echo "Fix: see docs/specs/runbook-hosted-migration-reconciliation.md"
-            status=1
-          fi
-
-          if [ "$status" -eq 0 ]; then
-            echo "In sync — every migration in the repo is applied, and nothing extra."
-          fi
-
-          exit "$status"
+          python3 .github/scripts/drift_compare.py \
+            /tmp/local.txt /tmp/remote.txt supabase/HELD-FROM-PRODUCTION.txt
