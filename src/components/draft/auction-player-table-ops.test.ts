@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { forkTemplateDoc, resolveRules } from '@/lib/leagues/scoring/rules-doc'
+import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
 import {
   AUCTION_COLUMNS,
   availableColumns,
@@ -148,6 +150,108 @@ describe('scoringFamilyFromRules — the league’s own rules pick the column', 
     expect(scoringFamilyFromRules({ receptions: Number.NaN })).toBeNull()
     expect(scoringFamilyFromRules([1, 2, 3] as never)).toBeNull()
     expect(scoringFamilyFromRules('ppr' as never)).toBeNull()
+  })
+})
+
+describe('scoringFamilyFromRules — it reads THROUGH the format-2 envelope (SE.2(6) / F133)', () => {
+  // Added BESIDE the flat cases above, never in place of them (§4 rule 5).
+  // Those cases are exactly why this defect was invisible: a suite that only
+  // ever passes `{ receptions: n }` stays green while every customized
+  // auction room renders "Scoring not readable — projections hidden".
+  const forkOf = (name: string) => {
+    const t = SCORING_TEMPLATES.find((t) => t.name === name)
+    if (!t) throw new Error(`template not found: ${name}`)
+    return forkTemplateDoc(t.rules)
+  }
+
+  it('A FORKED TEMPLATE CLASSIFIES TO ITS TEMPLATE’S FAMILY — all six, fork vs flat', () => {
+    for (const t of SCORING_TEMPLATES) {
+      const fromTemplate = scoringFamilyFromRules(t.rules)
+      expect(fromTemplate, `${t.name} must classify at all`).not.toBeNull()
+      expect(
+        scoringFamilyFromRules(forkTemplateDoc(t.rules) as never),
+        `${t.name}: the fork must classify exactly like its template`,
+      ).toBe(fromTemplate)
+    }
+  })
+
+  it('the three shipped per-reception values survive the envelope', () => {
+    expect(scoringFamilyFromRules(forkOf('ESPN Full PPR') as never)).toBe('ppr')
+    expect(scoringFamilyFromRules(forkOf('Yahoo Half PPR') as never)).toBe('half_ppr')
+    expect(scoringFamilyFromRules(forkOf('ESPN Standard') as never)).toBe('standard')
+  })
+
+  it('a PER-POSITION override of `receptions` is what the room reflects — the WR value wins', () => {
+    // The classifier picks a whole-table column, so it asks the resolver for
+    // the position `receptions` belongs to. A league that keeps 0 PPR
+    // everywhere but pays WRs a full point is a PPR room.
+    const doc = forkOf('ESPN Standard')
+    doc.positions.WR = { receptions: 1 }
+    expect(scoringFamilyFromRules(doc as never)).toBe('ppr')
+
+    // …and an override on some OTHER position does not move the column.
+    const teOnly = forkOf('ESPN Standard')
+    teOnly.positions.TE = { receptions: 1.5 }
+    expect(scoringFamilyFromRules(teOnly as never)).toBe('standard')
+  })
+
+  it('the boundary instants survive the envelope too (0.24 / 0.25 / 0.74 / 0.75)', () => {
+    const at = (receptions: number) => {
+      const doc = forkOf('ESPN Standard')
+      doc.base.receptions = receptions
+      return scoringFamilyFromRules(doc as never)
+    }
+    expect(at(0.24)).toBe('standard')
+    expect(at(HALF_PPR_FLOOR)).toBe('half_ppr')
+    expect(at(0.74)).toBe('half_ppr')
+    expect(at(PPR_FLOOR)).toBe('ppr')
+  })
+
+  it('IS A STRICT NO-OP FOR FORMAT 1 — the flat answers are the STORED pre-SE.2 literals, and the mechanism is the identity', () => {
+    // R583 — as first written this pin compared `f(x)` with `f(x)`, the same
+    // call on both sides, so its loop could not fail for its stated reason:
+    // it passed with the function stubbed to return `null` for every input.
+    // The fix is the same rule this PR's headline finding is about — assert
+    // against a value the code under test cannot supply.
+    //
+    // These nine are STORED LITERALS (D62): the families the PRE-SE.2
+    // top-level read produced, transcribed. Nothing the resolver returns can
+    // satisfy them by accident.
+    const PRE_SE2_ANSWERS: ReadonlyArray<[number, ScoringFamily]> = [
+      [0, 'standard'],
+      [0.1, 'standard'],
+      [0.24, 'standard'],
+      [0.25, 'half_ppr'],
+      [0.5, 'half_ppr'],
+      [0.74, 'half_ppr'],
+      [0.75, 'ppr'],
+      [1, 'ppr'],
+      [1.5, 'ppr'],
+    ]
+    for (const [receptions, family] of PRE_SE2_ANSWERS) {
+      expect(
+        scoringFamilyFromRules({ receptions }),
+        `receptions ${receptions} must still answer ${family}`,
+      ).toBe(family)
+    }
+
+    // …and the MECHANISM that makes "no-op" true rather than coincidental:
+    // at this call site the resolver hands back the very document it was
+    // given, so there is no copy in which a coefficient could drift.
+    const flat = { receptions: 0.5 }
+    expect(resolveRules(flat, 'WR')).toBe(flat)
+  })
+
+  it('an UNREADABLE document is null, never a guessed family and never a thrown render', () => {
+    // §16.5.4's degraded rule. `resolveRules` fails loudly on an unknown
+    // format; this surface turns that into the "Scoring not readable" state
+    // rather than crashing the room mid-render.
+    expect(scoringFamilyFromRules({ format: 3, base: { receptions: 1 } } as never)).toBeNull()
+    expect(scoringFamilyFromRules({ format: 2 } as never)).toBeNull()
+    expect(scoringFamilyFromRules({ format: 2, base: { receptions: 1 } } as never)).toBeNull()
+    expect(
+      scoringFamilyFromRules({ format: 2, base: {}, positions: {}, tier_cuts: {} } as never),
+    ).toBeNull()
   })
 })
 
