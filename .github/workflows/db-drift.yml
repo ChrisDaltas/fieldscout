@@ -28,6 +28,14 @@ on:
     branches: [main]
     paths:
       - 'supabase/migrations/**'   # a merged migration should reach prod promptly
+      # R652 — the job's OWN inputs, or the intended hold-expiry edit ("we pushed
+      # 082-104, delete the holds") touches only the declaration file and no run
+      # fires until the next 14:00 schedule. This is the R608 shape: a filter that
+      # stopped matching the files the job depends on. Pinned by
+      # src/lib/ci-drift-holds.test.ts.
+      - 'supabase/HELD-FROM-PRODUCTION.txt'
+      - '.github/scripts/drift_compare.py'
+      - '.github/workflows/db-drift.yml'
 
 jobs:
   drift:

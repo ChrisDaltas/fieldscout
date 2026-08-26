@@ -97,11 +97,28 @@ def main():
              rot, 'remove them from ' + holds_p)
 
     held_present = sorted(holds & local)
-    if held_present and status == 0:
-        print(f'::notice::{len(held_present)} migration(s) deliberately held from '
-              f'production: {held_present[0]}-{held_present[-1]}. '
-              f'Everything else in the repo is applied, and nothing is extra.')
-        print('In sync, allowing for declared holds.')
+    if status == 0:
+        if held_present:
+            # Compact into runs. min-max would render {082,083,084,090} as
+            # "082-090", a range that contradicts its own count.
+            runs, start, prev = [], held_present[0], held_present[0]
+            for v in held_present[1:]:
+                if int(v) == int(prev) + 1:
+                    prev = v
+                    continue
+                runs.append(start if start == prev else f'{start}-{prev}')
+                start = prev = v
+            runs.append(start if start == prev else f'{start}-{prev}')
+            print(f'::notice::{len(held_present)} migration(s) deliberately held '
+                  f'from production: {", ".join(runs)}. Everything else in the '
+                  f'repo is applied, and nothing is extra.')
+            print('In sync, allowing for declared holds.')
+        else:
+            # Reached once the holds are finally pushed and the file emptied.
+            # This branch must print SOMETHING: a green run that says nothing is
+            # indistinguishable from a run that did nothing.
+            print('In sync — every migration in the repo is applied, '
+                  'and nothing extra.')
 
     return status
 

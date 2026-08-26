@@ -26,6 +26,10 @@
 # Redraft Leagues — auction, mocks, and the custom scoring editor.
 # Flag-gated behind NEXT_PUBLIC_FLAG_* and not reachable in the shipped app.
 # Verified 2026-08-26: none of these alter lists, list_players, players,
-# player_stats or profiles — the tables the live launch surfaces read.
+# player_stats or profiles — no ALTER TABLE, index, trigger, policy or grant
+# against them, and none of the 60 functions they define is a launch-surface
+# function. One qualification (R659): 083 adds FK references to players(id) and
+# profiles(id) from two NEW tables, so once pushed they will constrain DELETEs on
+# players — which is sync-script-owned. Neither table's own definition changes.
 # These go up when the invite-only test cohort starts.
 082-104

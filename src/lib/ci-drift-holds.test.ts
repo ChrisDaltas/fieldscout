@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -78,6 +79,27 @@ describe('production drift check — declared holds', () => {
     expectFailure(run(REPO, [...PROD, '999'], HELD), /NOT in the repo[\s\S]*999/)
   })
 
+  it('FAILS on a stray even when a hold explicitly names it', () => {
+    // R654. The case above chose a stray OUTSIDE the hold set, so it could not
+    // detect a hold that suppresses strays: the mutant
+    // `stray = remote - local - holds` passed the whole file. Naming 999 in the
+    // hold file is the only fixture that puts the suppression on trial — and it
+    // must red twice, since a hold on something absent from the repo is also rot.
+    const r = run(REPO, [...PROD, '999'], '082-084\n999\n')
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/NOT in the repo[\s\S]*999/)
+    expect(r.out).toMatch(/names nothing:[\s\S]*999/)
+  })
+
+  it('cannot express an open-ended hold at all', () => {
+    // R655. Rule 1 of HELD-FROM-PRODUCTION.txt is "ranges are CLOSED; there is
+    // no 082+". The load-bearing case pins that a closed range MISSES 085 — it
+    // does not pin that the syntax cannot express "and everything after". A
+    // mutant teaching the parser `\d{3}\+` passed all eight cases.
+    expectFailure(run(REPO, PROD, '082+\n'), /Malformed[\s\S]*not NNN/)
+    expectFailure(run(REPO, PROD, '082-\n'), /Malformed/)
+  })
+
   it('FAILS when a held migration has since been applied (the hold is stale)', () => {
     expectFailure(run(REPO, [...PROD, '083'], HELD), /hold is stale:[\s\S]*083/)
   })
@@ -96,7 +118,52 @@ describe('production drift check — declared holds', () => {
     expectFailure(run(REPO, PROD, ''), /NOT declared held:[\s\S]*082/)
   })
 
+  it('still announces success once the holds are gone — the end state', () => {
+    // R656. The success line was nested inside the has-holds branch, so the
+    // intended end state (leagues pushed, file emptied) printed the counts and
+    // then nothing at all. A green run that says nothing is indistinguishable
+    // from a run that did nothing — CLAUDE.md's rule, in this file's own code.
+    const r = run(['001', '002'], ['001', '002'], '')
+    expect(r.code).toBe(0)
+    expect(r.out).toMatch(/In sync/)
+  })
+
+  it('reports non-contiguous holds as separate runs, not one span', () => {
+    // R657. min-max rendered {082,083,084,090} as "082-090" — a range that
+    // contradicts its own count.
+    const r = run(['001', '082', '083', '084', '090'], ['001'], '082-084\n090\n')
+    expect(r.code).toBe(0)
+    expect(r.out).toMatch(/082-084, 090/)
+    expect(r.out).not.toMatch(/082-090/)
+  })
+
   it('ignores comments and blank lines', () => {
     expect(run(REPO, PROD, '# leagues, awaiting the cohort\n\n082-084\n').code).toBe(0)
+  })
+})
+
+describe('the drift workflow watches the files it depends on', () => {
+  // R652. This PR cited R608 as its precedent and then reproduced it: the push
+  // trigger watched only supabase/migrations/**, so the intended hold-expiry
+  // edit ("we pushed 082-104, delete the holds") would touch the declaration
+  // file and dispatch nothing until the next daily schedule. A filter that has
+  // stopped matching the job's inputs is the R608 defect exactly.
+  const yml = readFileSync('.github/workflows/db-drift.yml', 'utf8')
+
+  it.each([
+    ['the migrations it compares', 'supabase/migrations/**'],
+    ['the hold declarations it honours', 'supabase/HELD-FROM-PRODUCTION.txt'],
+    ['the comparator it runs', '.github/scripts/drift_compare.py'],
+    ['its own definition', '.github/workflows/db-drift.yml'],
+  ])('re-runs when %s changes', (_what, path) => {
+    expect(yml).toContain(`- '${path}'`)
+  })
+
+  it('invokes the comparator with local, remote and holds in that order', () => {
+    // A swapped argument order fails closed (23 spurious "stray" lines) rather
+    // than passing, but it should not be reachable by a silent edit either.
+    expect(yml).toMatch(
+      /drift_compare\.py[\s\\]+\/tmp\/local\.txt[\s]+\/tmp\/remote\.txt[\s]+supabase\/HELD-FROM-PRODUCTION\.txt/,
+    )
   })
 })
