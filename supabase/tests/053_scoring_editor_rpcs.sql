@@ -92,7 +92,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(67);
+select plan(69);
 
 -- ---------------------------------------------------------------------------
 -- Helpers. Each performs a REAL call and collapses it into one comparable
@@ -165,6 +165,23 @@ begin
 exception when others then
   get stacked diagnostics v_hint = pg_exception_hint;
   return sqlstate || '|' || coalesce(nullif(v_hint, ''), '?');
+end;
+$$;
+
+/** The SAVE's window verdict, discriminating on WHICH guard refused.
+ *  §D2's first form compared only the SQLSTATE, and the probe that deletes the
+ *  window check red NOTHING: the leagues it uses reference no scoring system,
+ *  so the very next guard raises P0001 too and the cell could not tell the two
+ *  apart. A refusal pin that any refusal satisfies is a decoration. */
+create function pg_temp.savewindow(p_league uuid) returns text language plpgsql as $$
+declare v_status text;
+begin
+  select status into v_status from public.leagues where id = p_league;
+  perform public.scoring_update_rules(p_league, '{}'::jsonb);
+  return v_status || '=ACCEPTED';
+exception when others then
+  return v_status || '=' || sqlstate
+      || case when sqlerrm like '%is in ' || v_status || ' —%' then '|window' else '|other:' || left(sqlerrm, 30) end;
 end;
 $$;
 
@@ -460,10 +477,10 @@ select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a1', '{}'::jsonb),
 
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000001","role":"authenticated"}';
 select is(
-  (select string_agg(l.status || '=' || left(pg_temp.save(l.id, '{}'::jsonb), 5), ' | ' order by l.status)
+  (select string_agg(pg_temp.savewindow(l.id), ' | ' order by l.status)
      from leagues l where l.name in ('pgtap-se5-drafting','pgtap-se5-inseason','pgtap-se5-playoffs','pgtap-se5-complete')),
-  'complete=P0001 | drafting=P0001 | in_season=P0001 | playoffs=P0001',
-  'D2: the save carries the SAME §7.3 window as the fork, enumerated the same way. A surface with two doors and one lock is a surface with no lock');
+  'complete=P0001|window | drafting=P0001|window | in_season=P0001|window | playoffs=P0001|window',
+  'D2: the save carries the SAME §7.3 window as the fork, enumerated the same way — a surface with two doors and one lock is a surface with no lock. **The verdict names WHICH guard refused, and that is the whole cell (measured, not styled):** its first form compared only the SQLSTATE, and the probe that deletes the window check red NOTHING, because these leagues reference no scoring system and the very next guard raises P0001 too. Now the refusal must name the league''s own status, so only the window can produce it');
 
 select is(
   left(pg_temp.save('b0530000-0000-4000-8000-0000000000a2',
@@ -723,6 +740,35 @@ select is(
                      'trg_scoring_systems_rules_guard')),
   'trg_leagues_scoring_reference_guard=A | trg_leagues_scoring_rules_valid=A | trg_scoring_systems_rules_guard=A',
   'G3 (R616, re-asserted after §F6''s forge and at the END of the file): SE.4b''s THREE wall triggers are all still ENABLE ALWAYS. Scoped to those three by name and not to "every trigger on both tables", because F144 records that every OTHER non-internal trigger in `public` sits at the default ''O'' — the broader form would have asserted something this PR neither owns nor fixes, and would have read as a finding about SE.5. 052 §A16 asserts this in its own transaction; this file DISABLES one of them mid-run, so it owes its own closing check — a forge that restored the wrong enablement would otherwise be invisible until the next migration');
+
+-- ── G4/G5: SE.5(3)'s REACHABILITY RE-DERIVATION, made falsifiable ──────────
+-- Every "not reachable today" in 104, D272 and F142/F151 rested on one fact:
+-- `leagues` is SELECT-only to clients AND both attach RPCs restricted
+-- p_scoring_system_id to `is_template = TRUE AND owner_id IS NULL`, so no
+-- application role could put a USER-WRITABLE row in front of a league.
+-- **§F1's arm removes exactly that restriction**, so the argument expires and
+-- is re-derived here instead of inherited: the row is user-writable, and it is
+-- STILL not corruptible, because a fork is a format-2 envelope and therefore in
+-- wall 1's profile by arm (b) whether or not anyone is looking at arm (c).
+set local role postgres;
+update leagues set scoring_system_id = (select id from scoring_systems where name = 'pgtap-se5-setup Custom')
+ where id = 'b0530000-0000-4000-8000-0000000000a1';
+set local role authenticated;
+set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000001","role":"authenticated"}';
+
+select is(
+  (select (s.rules ? 'format')::text || '|' ||
+          exists(select 1 from leagues l where l.scoring_system_id = s.id and l.deleted_at is null)::text
+     from scoring_systems s where s.name = 'pgtap-se5-setup Custom'),
+  'true|true',
+  'G4 (premise, F94): the row `scoring_fork_template` created is in wall 1''s league profile by TWO arms at once — it carries a `format` member (arm b) AND it is referenced by a live league (arm c). Two arms matter: arm (c) alone would lapse the moment the league detached, and arm (b) alone would lapse if a future fork wrote a flat document. The fork is covered by either');
+
+select is(
+  pg_temp.wrote($$with u as (update public.scoring_systems
+                                set rules = jsonb_set(rules, '{base,def_pa_14_20}', '2')
+                              where name = 'pgtap-se5-setup Custom' returning 1) select count(*)::int from u$$),
+  'ERROR|P0001',
+  'G5 (SE.5(3) — THE CONFINEMENT ARGUMENT, RE-DERIVED RATHER THAN INHERITED): the commissioner writes to their OWN fork row through 001:623''s `FOR ALL` — no RPC anywhere in the path, and this is the route SE.5 newly makes reachable against a LEAGUE-REFERENCED row — and the write is REFUSED at the table. So the surface this task opens is "a user-writable row in front of a league" and NOT "a corruptible one". Delete either profile arm and §G4 still passes while this cell is what goes red');
 
 select * from finish();
 rollback;
