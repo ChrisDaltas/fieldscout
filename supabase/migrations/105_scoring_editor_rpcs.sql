@@ -33,9 +33,12 @@
 --     unchanged: the document cannot become invalid, by any role or path.
 --   • The reference is user-reachable — and every write to
 --     `leagues.scoring_system_id` still goes through WALL 3, which re-validates
---     the referenced document on assignment. §4's new arm widens WHICH row an
---     RPC will point a league at; it does not widen what a league may end up
---     pointing at, because wall 3 is downstream of every one of them.
+--     the referenced document on assignment. **§2 and §6** — the same two arms
+--     named on line 24, and not §4, which is the read-only §12.25 SELECT
+--     policy and points no league at anything (corrected 2026-08-26, R-item 6)
+--     — widen WHICH row an RPC will point a league at; they do not widen what
+--     a league may end up pointing at, because wall 3 is downstream of every
+--     one of them.
 --   • CONCURRENCY changes, and that is §5's subject: a commissioner's save is
 --     now a multi-statement transaction that writes `scoring_systems` while a
 --     league write may be resolving the same row. That is the leg F151 was
@@ -600,7 +603,10 @@ CREATE POLICY "League members read league scoring" ON scoring_systems FOR SELECT
 -- between it and `FOR SHARE` is SE.5's, with the trade named". This is that
 -- decision, and it is made on measurements taken with this task's own write
 -- pattern in place. Every number below was measured on the local stack against
--- the 001–105 chain; the harness and its outputs are in the SE.5 PR.
+-- the 001–105 chain; the harness's OUTPUTS are in the SE.5 PR — the harness
+-- itself is in no part of it (not the tree, not the body, not a comment, not a
+-- commit message), and saying otherwise made a reader's reproduction attempt a
+-- search for something that was never there (corrected 2026-08-26, R-item 7).
 --
 --   (i) BOTH MODES ARE EQUALLY PROTECTIVE — and the harness discriminates.
 --       The seam: T1 makes an UNREFERENCED flat row invalid (wall 1 passes; the
@@ -669,8 +675,13 @@ CREATE POLICY "League members read league scoring" ON scoring_systems FOR SELECT
 --         select pg_get_multixact_members(s.xmax::text::xid) …
 --             →  1454180/sh, 1454182/sh
 --       Two `sh` members on the row, so the bookkeeping is real. Its COST is
---       inside the 19 ms figure above — i.e. it does not show up at this shape
---       — and the risk it carries (multixact member-space pressure) needs
+--       inside the FLAT ~0.7 ms `FOR SHARE` row of the sweep in (ii) above —
+--       i.e. it does not show up at this shape. (It used to say "inside the
+--       19 ms figure above", which R647 retracted one paragraph earlier and
+--       did not sweep: after the relabel the only `19` above this line sat
+--       INSIDE the paragraph that withdraws it. A relabel has to sweep its own
+--       back-references or it leaves the retracted number load-bearing.)
+--       And the risk it carries (multixact member-space pressure) needs
 --       long-lived overlapping sharers, while every wall-3 writer in this repo
 --       is a short RPC transaction that releases at commit. If a long-running
 --       league-write transaction is ever introduced, this trade is the thing to

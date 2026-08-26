@@ -158,14 +158,24 @@ begin
 end;
 $$;
 
-/** MESSAGE, with the league uuid stripped and then truncated. Both halves are
+/** MESSAGE, with EVERY uuid stripped and then truncated. All three moves are
  *  load-bearing: every `scoring_update_rules` refusal opens with
  *  `scoring_update_rules: league <36-char uuid>`, so an un-stripped 44-char
  *  window ends before any distinguishing word — the three refusals were one
- *  byte-identical string and two guards had no mutation coverage at all. */
+ *  byte-identical string and two guards had no mutation coverage at all.
+ *  **`p_league` is not the only uuid a message carries (widened 2026-08-26,
+ *  R-item 8).** §D6's refusal names the SCORING SYSTEM as well, and with only
+ *  `p_league` stripped the 60-char window ended ONE CHARACTER into a fixture
+ *  uuid: discriminating against today's fixtures and brittle to renumbering
+ *  them, which is a pin that would move for a reason that is not a code change.
+ *  Every remaining uuid therefore becomes `<S>`, and the window is 72 so that
+ *  no expectation in this file terminates inside a placeholder. */
 create function pg_temp.msg(p_err text, p_league uuid) returns text
 language sql immutable as $$
-  select 'MSG:' || left(replace(p_err, p_league::text, '<L>'), 60);
+  select 'MSG:' || left(
+    regexp_replace(replace(p_err, p_league::text, '<L>'),
+                   '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                   '<S>', 'g'), 72);
 $$;
 
 create function pg_temp.fork(p_league uuid, p_template uuid) returns text
@@ -496,7 +506,7 @@ select is(left(pg_temp.fork('b0530000-0000-4000-8000-0000000000a7', (select id f
   'C6: a SOFT-DELETED league refuses — and WHICH guard refuses it was measured rather than predicted. `is_league_commish` does NOT filter deleted_at, so the commissioner still passes step 1; it is step 2''s `WHERE deleted_at IS NULL ... FOR UPDATE` that finds nothing and raises P0002. The distinction matters because it means the deleted-league defense lives in the lock, not in the auth check — move the lock and this protection moves with it');
 
 select is(pg_temp.fork('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
-  'P0001|MSG:scoring_fork_template: p_template_id must reference one of t|raised_in:scoring_fork_template',
+  'P0001|MSG:scoring_fork_template: p_template_id must reference one of the scoring t|raised_in:scoring_fork_template',
   'C7 (§7.3.3.1 + D33): a personal research row cannot be a fork''s STARTING POINT. "A fork always starts from a template"; pre-existing personal systems live in the legacy namespace and stay unattachable');
 
 -- ── C8: the document the fork actually writes ──────────────────────────────
@@ -584,7 +594,7 @@ select is(
 -- pgtap-se5-other is on no scoring system at all.
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000005","role":"authenticated"}';
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league <L> references no scoring syste|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> references no scoring system — fork a t|raised_in:scoring_update_rules',
   'D4: a league referencing NO scoring system is told to fork first, not handed a NULL dereference');
 
 -- Put the "other" league on a plain template so D5 can refuse it.
@@ -594,7 +604,7 @@ update leagues set scoring_system_id = (select id from t_ids where name = 'Yahoo
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8',
     (select rules from t_ids t join scoring_systems s on s.id = t.id where t.name = 'Yahoo Standard')),
-  'P0001|MSG:scoring_update_rules: league <L> is on a shared template — f|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> is on a shared template — fork first, t|raised_in:scoring_update_rules',
   'D5 (§7.3.3.1 + D59): a league sitting on a shared TEMPLATE cannot be edited in place — "templates themselves are never edited". Without this the first commissioner to save would rewrite the scoring of every other league on that template');
 
 set local role postgres;
@@ -604,7 +614,7 @@ update leagues set scoring_system_id = '50530000-0000-4000-8000-000000000001'
  where id = 'b0530000-0000-4000-8000-0000000000a8';
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{"pass_yards": 0.05}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league <L> references scoring system 5|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> references scoring system <S>, which is|raised_in:scoring_update_rules',
   'D6: a referenced row that is NOT owned by a commissioner of this league is refused. The commissioner may not edit someone else''s scoring document just because a privileged write pointed their league at it');
 
 -- ── D7/D8: un-normalized refused, and its control ──────────────────────────
@@ -781,13 +791,13 @@ select is(
 
 select is(
   pg_temp.attach('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
-  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one of the scor|raised_in:update_league_settings',
   'F2: a PERSONAL research system still refuses — "nothing else" is the other half of §7.3.8''s sentence, and D33''s one-namespace rule is what it protects');
 
 select is(
   pg_temp.attach('b0530000-0000-4000-8000-0000000000a1',
        (select id from scoring_systems where name = 'pgtap-se5-scheduled Custom')),
-  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one of the scor|raised_in:update_league_settings',
   'F3: ANOTHER LEAGUE''S FORK refuses too — and it is the cell that proves F1''s arm is an IDENTITY test on this league''s current reference rather than a blanket "any non-template row owned by a commissioner"');
 
 select is(
