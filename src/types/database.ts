@@ -3762,10 +3762,19 @@ export type Database = {
         Returns: undefined
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
+      scoring_detect_tier_cuts: { Args: { p_rules: Json }; Returns: Json }
+      scoring_fork_template: {
+        Args: { p_league_id: string; p_template_id: string }
+        Returns: string
+      }
       scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
       scoring_tier_keys_from_cuts: {
         Args: { p_cuts: Json; p_prefix: string }
         Returns: string[]
+      }
+      scoring_update_rules: {
+        Args: { p_league_id: string; p_rules: Json }
+        Returns: string
       }
       seat_league_member_internal: {
         Args: {
