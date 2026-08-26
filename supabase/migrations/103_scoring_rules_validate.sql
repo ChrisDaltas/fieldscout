@@ -106,10 +106,15 @@
 --     regenerated with the hand-written alias block preserved and re-appended;
 --     the diff is additive-only (md5 of the alias block shown either side in
 --     the PR).
---   • Nothing above is CREATE OR REPLACE'd: `grep -rn "scoring_rules_validate\|
---     scoring_tier_keys_from_cuts" supabase/migrations/` over 001–102 returns
---     nothing, so both names are new and there is no head body to author
---     against (D137's rule, applied by measuring rather than by assuming).
+--   • Nothing above is CREATE OR REPLACE'd, and that was MEASURED rather than
+--     assumed (D137's rule) — with a command that stays reproducible after
+--     this file exists, by pinning the commit it asks about:
+--         git grep -c "scoring_rules_validate\|scoring_tier_keys_from_cuts" \
+--             2d2c04b -- supabase/migrations/          →  0 files
+--     (the same grep at HEAD returns 1 file: this one). So both names are new
+--     and there is no head body to author against. Worth measuring rather than
+--     eyeballing: D168's own 2026-08-25 amendment records `draft_start_internal`
+--     moving 084 → 092 → 098 in the seven days this lane's breakdown sat still.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
