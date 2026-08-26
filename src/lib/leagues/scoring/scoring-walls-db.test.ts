@@ -490,13 +490,12 @@ describe('SE.4b — the two write walls, over the wire (migration 104; D175/D168
     expect(inProfile!.hint).toBe('scorable_allowlist')
   })
 
-  it('act 3: draft_start REFUSES to snapshot a corrupt-while-attached document, and the league stays scheduled', async () => {
+  it('act 3 (R618): the REPOINT is refused by wall 3 — the door F142 was filed for is shut at the column', async () => {
     const { data: session } = await commishClient.auth.getSession()
 
-    // ── THE FORGE (see the module docblock). Step (a): the commissioner
-    // writes the corrupt flat document to a row of their own WHILE IT IS
-    // UNREFERENCED. This must succeed — it is a D33 research row at this
-    // moment — and wall 1 therefore never fires in this act at all.
+    // Step (a) of the escape chain, and it must still SUCCEED: an unreferenced,
+    // non-template flat row is a D33 research row, and the league validator has
+    // no jurisdiction over it.
     const { data: attached, error: attachedError } = await commishClient
       .from('scoring_systems')
       .insert({
@@ -510,47 +509,58 @@ describe('SE.4b — the two write walls, over the wire (migration 104; D175/D168
     expect(attachedError, 'an UNREFERENCED non-template flat row is outside the profile').toBeNull()
     attachedId = attached!.id
 
-    // Step (b): repoint the league at it. Privileged, because 061's step-5
-    // predicate is still template-only until SE.5's D169 amendment.
+    // Step (b) used to be the whole hole: a privileged repoint, which neither
+    // wall watched. Wall 3 watches the column now.
     const { error: repointError } = await service
       .from('leagues')
       .update({ scoring_system_id: attachedId })
       .eq('id', leagueId)
-    expect(repointError).toBeNull()
+    expect(repointError, 'wall 3 must refuse the repoint').not.toBeNull()
+    expect(repointError!.code).toBe('P0001')
+    expect(repointError!.hint).toBe('tier_exclusivity')
+    expect(repointError!.message).toContain('guardrail 2')
 
-    // The forged state exists and is exactly what D175 says must be
-    // unrepresentable — which is the point: it was NOT created by a write the
-    // wall watches.
-    expect(await rulesOf(attachedId)).toEqual(F21_DOUBLE_PAY)
-
-    const { error: startError } = await commishClient.rpc('draft_start', {
-      p_league_id: leagueId,
-    })
-    expect(startError, 'draft_start must refuse at the snapshot wall').not.toBeNull()
-    expect(startError!.code).toBe('P0001')
-    expect(startError!.hint).toBe('tier_exclusivity')
-    expect(startError!.message).toContain('guardrail 2')
-
-    // The whole transaction rolled back: no snapshot, no status change, no
-    // draft row. (`draft_start` is one transaction, so a partial start would
-    // be a far worse bug than the one under test.)
+    // The league still points where it did, and is untouched.
     const { data: league } = await service
       .from('leagues')
-      .select('status, scoring_rules_snapshot')
+      .select('scoring_system_id, status, scoring_rules_snapshot')
       .eq('id', leagueId)
       .single()
+    expect(league!.scoring_system_id).toBe(forkId)
     expect(league!.status).toBe('scheduled')
     expect(league!.scoring_rules_snapshot).toBeNull()
-    const { data: drafts } = await service
-      .from('drafts')
-      .select('id, status')
-      .eq('league_id', leagueId)
-    expect(drafts).toHaveLength(0)
   })
 
-  it('act 3, resolved: fix the document and draft_start freezes it VERBATIM', async () => {
-    // Fixing it now goes THROUGH wall 1 — the row is in the profile via the
-    // reference arm, so this write is validated on its way in.
+  it('act 3b (R615): with the reference door shut, the two-step is_template escape cannot even start', async () => {
+    // The measured escape was: private invalid row (still legal, above) → put
+    // it in the profile via a `leagues` write → PATCH {is_template:true,
+    // owner_id:null}, which the identity short-circuit skipped → a
+    // world-readable template an ordinary commissioner then attaches.
+    //
+    // Step 2 is now refused (act 3). Step 3 is refused independently, which is
+    // what makes the two fixes composable rather than redundant: even from a
+    // state where the row IS in the profile, the promotion is validated.
+    const { error: promoteError } = await service
+      .from('scoring_systems')
+      .update({ is_template: true, owner_id: null })
+      .eq('id', attachedId)
+    expect(promoteError, 'the is_template promotion must be validated').not.toBeNull()
+    expect(promoteError!.code).toBe('P0001')
+    expect(promoteError!.hint).toBe('tier_exclusivity')
+
+    // And nothing leaked into the world-readable template set.
+    const { data: templates } = await service
+      .from('scoring_systems')
+      .select('id')
+      .eq('is_template', true)
+      .eq('id', attachedId)
+    expect(templates).toHaveLength(0)
+
+    // The row is still exactly what the commissioner privately wrote.
+    expect(await rulesOf(attachedId)).toEqual(F21_DOUBLE_PAY)
+  })
+
+  it('act 3c: fix the document, and the repoint + draft_start freeze it VERBATIM', async () => {
     const { error: fixError } = await commishClient
       .from('scoring_systems')
       .update({
@@ -558,6 +568,13 @@ describe('SE.4b — the two write walls, over the wire (migration 104; D175/D168
       })
       .eq('id', attachedId)
     expect(fixError).toBeNull()
+
+    // Now the same repoint lands — wall 3 refuses documents, not repointing.
+    const { error: repointError } = await service
+      .from('leagues')
+      .update({ scoring_system_id: attachedId })
+      .eq('id', leagueId)
+    expect(repointError).toBeNull()
 
     const { data: started, error: startError } = await commishClient.rpc('draft_start', {
       p_league_id: leagueId,

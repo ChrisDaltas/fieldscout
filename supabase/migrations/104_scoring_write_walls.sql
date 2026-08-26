@@ -28,6 +28,20 @@
 --     `service_role`, because a trigger fires for every role (the D43
 --     argument; triggers ignore BYPASSRLS).
 --
+--     **"EVERY ROLE" IS NOT "EVERY MODE", AND THE FIRST CUT OF THIS BANNER
+--     SAID SO TOO BROADLY (R616).** A trigger created with the default
+--     `tgenabled = 'O'` is skipped WHOLESALE under
+--     `session_replication_role = 'replica'`, and `postgres` can set that GUC
+--     — it is the mode `pg_restore`, `supabase db push` and logical apply run
+--     in. Measured, before the fix: an invalid `is_template` row COMMITTED in
+--     replica mode and was read back from another session and over anon
+--     PostgREST. Both walls, both operations. It is refused to
+--     `service_role`, `authenticated` and `anon` (`permission denied to set
+--     parameter`), so it is a privileged door — but it is precisely the door a
+--     RESTORE repopulates the guarded columns through, which is the one place
+--     it would be absurd to leave open. Every trigger here is therefore
+--     `ENABLE ALWAYS`, pinned structurally (§A16) and behaviourally (§F12).
+--
 --   WALL 2 — `leagues.scoring_rules_snapshot`. D168(2) chose a column-level
 --     trigger over a `CREATE OR REPLACE` of `draft_start_internal`, and the
 --     seven days after that decision proved it: `draft_start_internal` was
@@ -51,7 +65,8 @@
 -- context-dependent, and the trigger validates exactly the **league profile**:
 --
 --   (a) `is_template = TRUE`     — the canonical format-1 docs (all 6 pass;
---                                  the census is pinned in pgTAP 052 §C)
+--                                  the census is §1b's apply-time gate and
+--                                  pgTAP 052 §B3b/§B4)
 --   (b) `rules ? 'format'`       — a format-2 envelope is definitionally a
 --                                  §7.3.3.1 league document: `format` is not a
 --                                  registry key and no legacy doc carries it
@@ -123,8 +138,9 @@
 -- `scoring_systems_template_ownerless` CHECK forces `owner_id = NULL`, which
 -- 001:623's `FOR ALL USING (auth.uid() = owner_id)` re-uses as its WITH CHECK
 -- and refuses), but `service_role` can — and D175's whole point is that the
--- wall binds every role. The profile-ENTRY arm is pinned in pgTAP 052 §D6 and
--- is one of the two break probes.
+-- wall binds every role. The profile-ENTRY arm is pinned at pgTAP 052 §E6
+-- (one step) and §E5e (the TWO-step escape R615 measured over PostgREST), and
+-- both are break-probe targets.
 --
 -- ── THE ERROR CONTRACT IS PRESERVED, NOT RE-RAISED ────────────────────────
 -- Neither wall catches, wraps, or re-words anything: each `PERFORM`s
@@ -178,9 +194,18 @@
 --         ls supabase/migrations/ | tail -1  →  103_scoring_rules_validate.sql
 --         ls supabase/tests/      | tail -1  →  051_scoring_rules_validate.sql
 --     ⇒ this migration is 104 and its pgTAP is 052.
---   • Prod-safe: two new functions + two new triggers on tables whose existing
---     rows all pass (the census is asserted, not assumed — pgTAP 052 §C), and
---     one index on a 0-row-to-small table.
+--   • Prod-safe, and the claim is now MEASURED rather than asserted: §1b
+--     pushes every existing league-profile `scoring_systems.rules` AND every
+--     existing non-NULL `leagues.scoring_rules_snapshot` through the validator
+--     before a single trigger is created, NOTICEs both population sizes, and
+--     REFUSES TO APPLY if either carries a document the walls would reject.
+--     The first cut of this banner claimed the walls land on "tables whose
+--     existing rows all pass"; that was true of one table and **unmeasured for
+--     the other** (R625.2) — and the `leagues` population is exactly the one
+--     that turns `draft_start`'s re-freeze into a silent `drafting` breach
+--     (R617). Three new functions, three new triggers, one index on a
+--     0-row-to-small table.
+
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -193,8 +218,102 @@ COMMENT ON INDEX idx_leagues_scoring_system IS
   'SE.4b (104): leagues.scoring_system_id had no index since 001. Probed by scoring_systems_rules_guard()''s live-league-referenced arm (D175(2)) on every in-profile scoring_systems write, and scanned by §12.25''s "League members read league scoring" SELECT policy (SE.5). Plan §8.1: an index for every FK used in policies/joins.';
 
 -- ---------------------------------------------------------------------------
+-- 1b. THE CENSUS, AS A PRECONDITION OF APPLYING AT ALL (D175(4); R617/R625.2)
+-- ---------------------------------------------------------------------------
+--
+-- D175(4) says existing rows are never retroactively invalidated, and the
+-- first draft of this banner claimed the walls land on "tables whose existing
+-- rows all pass". That was true of ONE table and unmeasured for the other:
+-- nothing anywhere pushed an existing `leagues.scoring_rules_snapshot`
+-- through the validator, and that is exactly the population that turns
+-- `draft_start`'s re-freeze into a silent `drafting` breach (R617).
+--
+-- So the census lives HERE rather than in a test, and it is a GATE: if either
+-- population carries a document the walls would refuse, this migration
+-- refuses to apply. A test asserting "0 failures" over a table that happens
+-- to be empty certifies nothing; a precondition that raises makes the banner's
+-- sentence TRUE BY CONSTRUCTION wherever the migration succeeded.
+--
+-- **The population is stated, not dressed up.** Both counts are NOTICEd on
+-- every apply, so "we found nothing" is always distinguishable from "we looked
+-- at nothing" (CLAUDE.md: never let "nothing happened" mean "it worked"). On
+-- this chain and in CI both populations are **0 rows** — `supabase/seed.sql`
+-- seeds no league and no scoring system, and 058's six templates are the only
+-- `scoring_systems` rows — which is why this is a gate for real deployments
+-- rather than local coverage. Its reachability is proved by a probe that
+-- forges an invalid row and shows the block refuse (recorded in the PR).
+--
+-- **The backfill decision, made explicitly rather than left implicit:** there
+-- is NO automatic backfill, because a repair would have to invent the
+-- document the commissioner meant and §7.3.3.1 has no defensible default. If
+-- this gate ever fires, the rows are named in the error and a human decides.
+-- That is the honest form: a wall that only guards new writes would leave old
+-- rows invalid forever, and this converts that silence into a refusal to
+-- deploy.
+DO $census$
+DECLARE
+  v_profile_total INT;
+  v_profile_bad   INT := 0;
+  v_snap_total    INT;
+  v_snap_bad      INT := 0;
+  v_bad_ids       TEXT := '';
+  r               RECORD;
+BEGIN
+  SELECT count(*) INTO v_profile_total
+  FROM public.scoring_systems s
+  WHERE s.is_template
+     OR s.rules ? 'format'
+     OR EXISTS (SELECT 1 FROM public.leagues l
+                 WHERE l.scoring_system_id = s.id AND l.deleted_at IS NULL);
+
+  FOR r IN
+    SELECT s.id, s.rules
+    FROM public.scoring_systems s
+    WHERE s.is_template
+       OR s.rules ? 'format'
+       OR EXISTS (SELECT 1 FROM public.leagues l
+                   WHERE l.scoring_system_id = s.id AND l.deleted_at IS NULL)
+  LOOP
+    BEGIN
+      PERFORM public.scoring_rules_validate(r.rules);
+    EXCEPTION WHEN OTHERS THEN
+      v_profile_bad := v_profile_bad + 1;
+      v_bad_ids := v_bad_ids || ' scoring_systems.' || r.id::TEXT;
+    END;
+  END LOOP;
+
+  SELECT count(*) INTO v_snap_total
+  FROM public.leagues l WHERE l.scoring_rules_snapshot IS NOT NULL;
+
+  FOR r IN
+    SELECT l.id, l.scoring_rules_snapshot AS rules
+    FROM public.leagues l WHERE l.scoring_rules_snapshot IS NOT NULL
+  LOOP
+    BEGIN
+      PERFORM public.scoring_rules_validate(r.rules);
+    EXCEPTION WHEN OTHERS THEN
+      v_snap_bad := v_snap_bad + 1;
+      v_bad_ids := v_bad_ids || ' leagues.' || r.id::TEXT;
+    END;
+  END LOOP;
+
+  RAISE NOTICE
+    '104 census (D175(4)): league-profile scoring_systems rows = %, failing = %; non-NULL leagues.scoring_rules_snapshot rows = %, failing = %',
+    v_profile_total, v_profile_bad, v_snap_total, v_snap_bad;
+
+  IF v_profile_bad > 0 OR v_snap_bad > 0 THEN
+    RAISE EXCEPTION
+      '104 refuses to apply: % existing league-profile scoring document(s) and % existing league snapshot(s) would be refused by the walls this migration installs (§7.3.3.1). Offending rows:%. There is no automatic backfill — a repair would have to invent the intended document. Fix or detach these rows, then re-run.',
+      v_profile_bad, v_snap_bad, v_bad_ids
+      USING ERRCODE = 'P0001';
+  END IF;
+END;
+$census$;
+
+-- ---------------------------------------------------------------------------
 -- 2. WALL 1 — the table wall (D175). An invalid LEAGUE scoring document is
---    unrepresentable in `scoring_systems`, for every role and every path.
+--    unrepresentable in `scoring_systems`, for every role, every path and —
+--    since R616 — every replication mode.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.scoring_systems_rules_guard()
 RETURNS TRIGGER
@@ -230,6 +349,20 @@ BEGIN
   -- never touches `rules`) — is validated.
   IF TG_OP = 'UPDATE'
      AND NEW.rules IS NOT DISTINCT FROM OLD.rules
+     -- ── R615: THE SKIP MUST NOT APPLY TO A ROW *ENTERING* AN ARM ──────────
+     -- Without these two conjuncts the short-circuit is a two-step escape,
+     -- and it was measured over PostgREST: put a private invalid row into the
+     -- profile via arm (c) (a `leagues` write, which fires nothing here), then
+     -- `PATCH {is_template: true, owner_id: null}` — `rules` untouched, OLD
+     -- already in profile, so the guard skipped it and returned 200. The row
+     -- is then a world-readable template (058's "Templates viewable by
+     -- everyone") that an ORDINARY commissioner attaches through
+     -- `create_league` / `update_league_settings`. §E6 pinned only the
+     -- ONE-step flip, which the guard did refuse. One conjunct per arm whose
+     -- membership can change without `rules` changing: `is_template` is arm
+     -- (a); `id` is arm (c)'s subject.
+     AND NEW.is_template IS NOT DISTINCT FROM OLD.is_template
+     AND NEW.id IS NOT DISTINCT FROM OLD.id
      AND (
           COALESCE(OLD.is_template, FALSE)
        OR (OLD.rules ? 'format')
@@ -252,7 +385,16 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.scoring_systems_rules_guard() FROM PUBLIC, anon;
+-- R620: the REVOKE goes all the way. `authenticated` holds TEMP on the
+-- database, so with EXECUTE it can `CREATE TRIGGER` this DEFINER function on
+-- a temp table of its own and use it as a one-bit ORACLE over RLS-protected
+-- `public.leagues` (measured in review: landed-rows 0 for a referenced uuid,
+-- 1 for an unreferenced one). Postgres checks EXECUTE at CREATE TRIGGER time,
+-- not at fire time, so revoking it costs the walls nothing — measured both
+-- ways. `scoring_rules_validate`'s OWN grants are deliberately untouched:
+-- wall 2 is INVOKER and needs them (§A11/§F8).
+REVOKE EXECUTE ON FUNCTION public.scoring_systems_rules_guard()
+  FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON FUNCTION public.scoring_systems_rules_guard() IS
   'SE.4b / D175 (Chris, 2026-08-18: "creating an invalid scoring system should not be possible"): BEFORE INSERT OR UPDATE on scoring_systems, PERFORMs scoring_rules_validate(NEW.rules) whenever the row is in the LEAGUE PROFILE — is_template, or a format-2 envelope, or referenced by a live league (D175(2)). Legacy research rows match none of the three and stay writable under their own D33 namespace; a mock-only reference (drafts.config->>scoring_system_id) is deliberately outside the profile (D175(6)). SECURITY DEFINER because it reads public.leagues, which has RLS — an INVOKER read would make the reference arm role-dependent and silently empty for exactly the writer it exists to stop. Not callable outside a trigger context (0A000), so there is no subject to authorize in-body; pinned in pgTAP 052 §A.';
@@ -261,6 +403,21 @@ CREATE TRIGGER trg_scoring_systems_rules_guard
   BEFORE INSERT OR UPDATE ON scoring_systems
   FOR EACH ROW
   EXECUTE FUNCTION public.scoring_systems_rules_guard();
+
+-- R616: `ENABLE ALWAYS`, not the default `ENABLE`. A trigger created with the
+-- default `tgenabled = 'O'` (origin) is SKIPPED ENTIRELY under
+-- `session_replication_role = 'replica'` — which `postgres` can set (it is
+-- `rolsuper = f, rolbypassrls = t`, and the GUC's `superuser` context still
+-- admits it), and which is the mode `pg_restore` and logical replication apply
+-- run in. Measured: in replica mode an invalid `is_template` row COMMITTED and
+-- was read back from a separate session and over anon PostgREST. `ALWAYS`
+-- makes the trigger fire in both modes. **This is the door a restore
+-- repopulates the guarded column through**, which is the one door it would be
+-- absurd to leave open on the very column a restore rewrites. Contained
+-- otherwise: `service_role`, `authenticated` and `anon` all get
+-- `permission denied to set parameter` (measured).
+ALTER TABLE scoring_systems
+  ENABLE ALWAYS TRIGGER trg_scoring_systems_rules_guard;
 
 -- ---------------------------------------------------------------------------
 -- 3. WALL 2 — the snapshot backstop (D168(2)). Additive beside 059's
@@ -303,22 +460,139 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 BEGIN
-  IF NEW.scoring_rules_snapshot IS NOT NULL
-     AND (TG_OP = 'INSERT'
-          OR NEW.scoring_rules_snapshot IS DISTINCT FROM OLD.scoring_rules_snapshot)
-  THEN
+  -- No value comparison. The "did this write touch the snapshot?" question is
+  -- answered by the TRIGGER's `UPDATE OF scoring_rules_snapshot` clause below,
+  -- which fires on the column being ASSIGNED rather than on its value
+  -- CHANGING — and the difference is a breach, not a nicety (R617): a
+  -- pre-104 invalid snapshot is by construction a copy of its system's
+  -- `rules`, so `draft_start`'s re-freeze writes the IDENTICAL value, an
+  -- `IS DISTINCT FROM OLD` test is FALSE, and the league enters `drafting` on
+  -- an invalid document — silently, with `draft_start` itself as the writer.
+  -- Measured, and measured against its own control (the same call with the
+  -- snapshot NULLed first RAISES). Moving the test into `UPDATE OF` keeps
+  -- D175(4)'s never-retroactively-invalidate guarantee — an ordinary league
+  -- edit does not name this column and does not fire — while making it
+  -- structural rather than a body branch a later edit can delete unnoticed.
+  IF NEW.scoring_rules_snapshot IS NOT NULL THEN
     PERFORM public.scoring_rules_validate(NEW.scoring_rules_snapshot);
   END IF;
   RETURN NEW;
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.leagues_scoring_rules_valid() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.leagues_scoring_rules_valid()
+  FROM PUBLIC, anon, authenticated, service_role;   -- R620, as above
 
 COMMENT ON FUNCTION public.leagues_scoring_rules_valid() IS
   'SE.4b / D168(2) + §12.25: BEFORE INSERT OR UPDATE on leagues, PERFORMs scoring_rules_validate on any new or changed non-NULL scoring_rules_snapshot. The §7.3.8/§12.25 draft-start backstop, placed on the COLUMN rather than in draft_start_internal — which was replaced twice (092, 098) by lanes that had never read the SE breakdown, and a guard in that body would have needed both authors to carry it forward blind (CLAUDE.md''s migration-073 lesson). Additive beside 059''s trg_leagues_snapshot_guard (non-NULL in drafting+); 059 is not edited.';
 
 CREATE TRIGGER trg_leagues_scoring_rules_valid
-  BEFORE INSERT OR UPDATE ON leagues
+  BEFORE INSERT OR UPDATE OF scoring_rules_snapshot ON leagues
   FOR EACH ROW
   EXECUTE FUNCTION public.leagues_scoring_rules_valid();
+
+ALTER TABLE leagues
+  ENABLE ALWAYS TRIGGER trg_leagues_scoring_rules_valid;   -- R616, as above
+
+-- ---------------------------------------------------------------------------
+-- 4. WALL 3 — the REFERENCE guard on `leagues` (R618): D168(2)'s own argument
+--    applied to the column D168(2) missed.
+-- ---------------------------------------------------------------------------
+--
+-- Walls 1 and 2 guard `scoring_systems.rules` and
+-- `leagues.scoring_rules_snapshot`. Between them sits the column that decides
+-- WHICH document a league is governed by — `leagues.scoring_system_id` — and
+-- nothing guarded it. The review of the first cut of this migration measured
+-- **six** transitions that put an invalid document in front of a league
+-- without either wall firing, and the ledger row filed for the first of them
+-- called it "the one door":
+--
+--   1. `leagues.scoring_system_id` REPOINT to an invalid unreferenced row
+--   2. `leagues` INSERT already carrying `scoring_system_id`
+--   3. soft-delete → (legally) rewrite the now-unreferenced doc → **un-delete**
+--      (`deleted_at` NOT NULL → NULL; no un-delete function exists in 001–104)
+--   4. detach → rewrite → re-attach
+--   5. the same, MID-DRAFT
+--   6. an `is_template` promotion out of the profile (R615, fixed above)
+--
+-- **Why a trigger and not an RPC check.** D169 assigns the remedy to
+-- `update_league_settings` — and that RPC is in the path of exactly ONE of
+-- them. `leagues` carries a single SELECT policy, so every league write today
+-- is a SECURITY DEFINER RPC or a `rolbypassrls` role, and five of the six are
+-- raw-table writes no RPC is in front of. This repo's own migration-073 lesson
+-- is this shape in reverse: a guard that lives in a function body has to be
+-- re-remembered by whoever next writes the table. **A guard on the column does
+-- not** — which is the argument D168(2) already won for the snapshot, applied
+-- to the reference. D169's attach-time check stays as SE.5's user-facing error
+-- surface; it is now defense in depth over this, not the only guard.
+--
+-- **It also makes wall 1's identity short-circuit HONEST.** That short-circuit
+-- skips a rules-untouched write on a row already in the profile, justified as
+-- "that document passed this wall on the write that put it there". For arm (c)
+-- that justification was factually wrong before this trigger existed: entry via
+-- arm (c) is a write to `leagues`, which fires nothing on `scoring_systems`, so
+-- the document had never been validated. With this wall, entry via arm (c)
+-- validates at the `leagues` write, and the justification is true for all three
+-- arms. The two fixes compose; neither is sufficient alone.
+--
+-- **Fires on ASSIGNMENT, not on change** (`UPDATE OF …`), for the same reason
+-- wall 2 does: an ordinary league edit names neither column and pays nothing,
+-- while a write that names one is always revalidated. Both columns are needed —
+-- door 3 never touches `scoring_system_id` at all.
+--
+-- `SECURITY DEFINER` for wall 1's reason exactly: it resolves the reference in
+-- `public.scoring_systems`, which has RLS, and a reference the writer cannot
+-- see must not read as "nothing to validate".
+CREATE OR REPLACE FUNCTION public.leagues_scoring_reference_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_rules JSONB;
+BEGIN
+  -- A soft-deleted league references nothing live: §12.25's own predicate, and
+  -- the state §E5 pins as legitimately writable. The guard re-engages the
+  -- instant it is revived, which is door 3.
+  IF NEW.deleted_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.scoring_system_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT s.rules INTO v_rules
+  FROM public.scoring_systems s
+  WHERE s.id = NEW.scoring_system_id;
+
+  IF NOT FOUND THEN
+    -- Loud, never a silent skip. The FK would refuse this at statement end
+    -- anyway, so this arm is defense in depth in 059's exact idiom — but a
+    -- guard whose "I could not find it" branch returns NEW is the failure mode
+    -- CLAUDE.md names, and it would become reachable the moment the FK changed.
+    RAISE EXCEPTION
+      'league %: scoring system % does not exist — a league cannot reference a scoring document that is not there (§7.3.8)',
+      NEW.id, NEW.scoring_system_id
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM public.scoring_rules_validate(v_rules);
+  RETURN NEW;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.leagues_scoring_reference_guard()
+  FROM PUBLIC, anon, authenticated, service_role;   -- R620
+
+COMMENT ON FUNCTION public.leagues_scoring_reference_guard() IS
+  'SE.4b / R618: BEFORE INSERT OR UPDATE OF scoring_system_id, deleted_at on leagues — resolves the referenced scoring_systems row and PERFORMs scoring_rules_validate on its rules. Closes the five raw-table doors D169''s RPC-shaped remedy is not in the path of (repoint, INSERT-carrying-a-reference, un-delete revive, detach-rewrite-reattach incl. mid-draft). Fires on ASSIGNMENT (UPDATE OF), so an ordinary league edit pays nothing. SECURITY DEFINER for wall 1''s reason: scoring_systems has RLS and a reference the writer cannot see must not read as nothing-to-validate.';
+
+CREATE TRIGGER trg_leagues_scoring_reference_guard
+  BEFORE INSERT OR UPDATE OF scoring_system_id, deleted_at ON leagues
+  FOR EACH ROW
+  EXECUTE FUNCTION public.leagues_scoring_reference_guard();
+
+ALTER TABLE leagues
+  ENABLE ALWAYS TRIGGER trg_leagues_scoring_reference_guard;   -- R616
