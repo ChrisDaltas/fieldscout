@@ -401,8 +401,9 @@ select is(
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'create_league'
-      and p.prosrc ~ 'is_template\s*=\s*TRUE'),
-  1, 'A8 (D170): `create_league` still carries the template-only predicate. SE.5 widens the ATTACH path and deliberately not the BIRTH path — a league is always born on a template, and the fork needs a league row to exist before it can own one');
+      and regexp_replace(p.prosrc, '--[^\n]*', '', 'g')
+          ~ 'is_template\s*=\s*TRUE'),
+  1, 'A8 (D170): `create_league` still carries the template-only predicate. SE.5 widens the ATTACH path and deliberately not the BIRTH path — a league is always born on a template, and the fork needs a league row to exist before it can own one. **MATCHED OVER `prosrc` WITH LINE COMMENTS STRIPPED (2026-08-26, R661/F159) — this cell was the FIFTH occurrence of the class and it was in the file its own PR swept.** Measured before the strip: delete `AND s.is_template = TRUE` from `create_league` with no comment and 053 reds here (71 / 1), correctly; delete it and leave `-- (the template arm: s.is_template = TRUE, kept ownerless by 058)` and the **whole file is green (71 / 0) with the template predicate gone** — D170''s birth-path boundary, unpinned, in the exact shape of §K1. With the strip the decoy reds (71 / 1). F159 originally scoped its inventory to the cells *outside* 052–053 and that sentence is struck: **a sweep that exempts its own file is not a sweep**');
 
 select is(
   (select polcmd::text from pg_policy
