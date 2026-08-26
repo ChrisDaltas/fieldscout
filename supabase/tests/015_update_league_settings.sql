@@ -205,7 +205,16 @@ select is(
   (select rules from scoring_systems where is_template and name = 'Sleeper Standard'),
   'the existing snapshot is RE-FROZEN to the NEW template''s rules (§7.3.3 — a keep-the-old implementation fails)');
 
--- 4. v1 templates-only negative (§7.3.3): personal system refused, no write.
+-- 4. ATTACHABLE-SCOPE negative (§7.3.8 v2.11 via D169; was "v1 templates-only",
+--    §7.3.3): a personal system refused, no write.
+--    **The MESSAGE was hand-cleared once, 2026-08-26 by SE.5 (migration 105 §6).**
+--    061's step 5 now admits a template OR the league's own currently-referenced
+--    row, so the refusal it raises is re-cited to §7.3.8 v2.11 and names both
+--    admissible shapes. What this cell measures is unchanged and is the point:
+--    a PERSONAL row is still refused, and the next cell still proves no write
+--    landed. The fixture id here is neither a template nor this league's
+--    reference, so it falls outside BOTH arms — which is exactly the case D169
+--    left alone.
 select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
@@ -213,8 +222,8 @@ select throws_ok(
        '5d000000-0000-4000-8000-000000000001',
        'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
   'P0001',
-  'update_league_settings: scoring_system_id must reference one of the v1 scoring templates — personal scoring systems cannot be attached to a league in v1 (§7.3.3)',
-  'a personal (owner-scoped, non-template) scoring_systems id is rejected with the friendly field-named message');
+  'update_league_settings: scoring_system_id must reference one of the scoring templates, or the league''s own forked custom scoring system — personal scoring systems and other leagues'' systems cannot be attached (§7.3.8 v2.11, §7.3.3.1)',
+  'a personal (owner-scoped, non-template) scoring_systems id is rejected with the friendly field-named message (§7.3.8 v2.11 wording after D169)');
 select is(
   (select scoring_system_id from leagues where creation_action_id = 'ad100000-0000-4000-8000-000000000001'),
   (select id from scoring_systems where is_template and name = 'Sleeper Standard'),

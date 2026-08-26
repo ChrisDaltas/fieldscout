@@ -321,7 +321,12 @@ describe('M1 gate — templates-only invariant (§7.3.3), create AND PATCH', () 
     expect(result.status).toBe(400)
     const body = result.body as { error: { fieldErrors: Record<string, string[]> } }
     expect(body.error.fieldErrors.scoring_system_id?.[0]).toContain(
-      'personal scoring systems cannot be attached to a league in v1',
+      // §7.3.8 v2.11 wording after D169 (migration 105 §6): 061's step 5 now
+      // admits a template OR the league's own currently-referenced row, so the
+      // refusal names both admissible shapes. `create_league`'s message is
+      // deliberately NOT changed and its pins above still assert the old
+      // wording — a league is always born on a template (D170).
+      "or the league's own forked custom scoring system",
     )
 
     // No-write pin: the reference is untouched.

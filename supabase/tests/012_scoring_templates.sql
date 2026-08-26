@@ -64,12 +64,20 @@ select ok(
   ~ '\(name\) WHERE is_template',
   'partial UNIQUE index on (name) WHERE is_template — predicate pinned from indexdef (D51(4) lesson)');
 
+-- HAND-CLEARED ONCE, 2026-08-26 by SE.5 (migration 105 §4): this is an EXACT
+-- list, so an additive policy is supposed to red it and a human is supposed to
+-- read the addition before adding it here. §12.25's member SELECT policy is
+-- that addition — league members must see their league's custom scoring rules
+-- pre-draft. What the cell is really guarding is the three 001 policies staying
+-- put, and they do: dropping 001's owner `FOR ALL` would look like tidying up
+-- the §12.25 bypass and would silently break the D33 research world.
 select policies_are('public', 'scoring_systems',
   array['System defaults are viewable by everyone',
         'Users can view own scoring systems',
         'Users can manage own scoring systems',
-        'Templates viewable by everyone'],
-  'exact policy list: the three 001 policies + the 058 template SELECT');
+        'Templates viewable by everyone',
+        'League members read league scoring'],
+  'exact policy list: the three 001 policies + the 058 template SELECT + §12.25''s member SELECT (SE.5/105)');
 select policy_cmd_is('public', 'scoring_systems', 'Templates viewable by everyone', 'SELECT',
   'template policy is SELECT-only');
 
