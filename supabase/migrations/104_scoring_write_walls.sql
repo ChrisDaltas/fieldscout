@@ -1,10 +1,21 @@
 -- ============================================================================
--- 104 — the two write walls (SE.4b): an invalid league scoring document is
+-- 104 — the THREE write walls (SE.4b): an invalid league scoring document is
 --       UNREPRESENTABLE. `scoring_systems_rules_guard()` on `scoring_systems`
 --       (D175 — Chris's 2026-08-18 ruling, verbatim: "creating an invalid
 --       scoring system should not be possible") + `leagues_scoring_rules_valid()`
---       on `leagues.scoring_rules_snapshot` (D168(2)), plus the FK index the
+--       on `leagues.scoring_rules_snapshot` (D168(2)) + `leagues_scoring_
+--       reference_guard()` on `leagues.scoring_system_id` / `deleted_at`
+--       (R618 — the five raw-table doors no RPC fronts), plus the FK index the
 --       first wall's reference arm and §12.25's member policy both need.
+--
+--       **"UNREPRESENTABLE" is scoped, and the scope was measured (R626):**
+--       sequentially, for every role, every path and every replication mode.
+--       Concurrency is carried by wall 3's `FOR NO KEY UPDATE`; before that
+--       lock two interleaved privileged transactions could each pass on a
+--       stale snapshot and commit a live league in front of an invalid
+--       document. No application role could reach it then and none can now —
+--       `public.leagues` carries one SELECT-only policy — but the sentence was
+--       broader than the code, which is the thing this lane does not do.
 --       tasks-SE §5 SE.4b; spec §7.3.3.1(5) + §12.25 ("the snapshot-time
 --       re-validation in `draft_start` is the integrity backstop") + §7.3.8's
 --       v2.11 bullet ("Exactly one scoring system referenced and readable by
@@ -52,8 +63,28 @@
 --     that body on 2026-08-19 would have needed two unrelated authors to carry
 --     it forward blind — which is CLAUDE.md's migration-073 lesson, where a
 --     `CREATE OR REPLACE` authored against the deployed body silently reverted
---     049/050/051's username guards. **A guard on the column needs no author to
---     remember it.**
+--     049/050/051's username guards.
+--
+--     **THE CLAIM THIS PARAGRAPH USED TO END WITH — "a guard on the column
+--     needs no author to remember it" — IS TOO STRONG, AND MEASURING IT IS
+--     WHAT NARROWED IT (R635).** Postgres fires BEFORE ROW triggers in NAME
+--     order, and 059's `trg_leagues_snapshot_guard` already sorts AFTER
+--     `trg_leagues_scoring_rules_valid`:
+--         trg_leagues_scoring_reference_guard  <  trg_leagues_scoring_rules_valid
+--                                              <  trg_leagues_snapshot_guard
+--     So a body edit to 059's function that assigned `NEW.scoring_rules_snapshot`
+--     would overwrite the value AFTER wall 2 validated it, the invalid document
+--     would COMMIT, the trigger catalog would be byte-identical, and every one
+--     of the 53 pgTAP files and 9 client cells would stay green. It needs DDL,
+--     so it is not a security hole — all four tamper vectors are refused to
+--     `service_role` and `authenticated` — but it is the same migration-073
+--     exposure one function over, which is precisely the exposure D168(2) chose
+--     this form to avoid. **The honest form of the claim: a guard on the column
+--     needs no author to remember it, PROVIDED no BEFORE trigger sorting after
+--     it assigns the column.** That proviso is not left to prose: pgTAP 052 §A22
+--     pins the BEFORE ROW trigger SET on both tables by name AND by the md5 of
+--     each trigger function's `prosrc`, so a new later-sorting trigger and a
+--     body edit to an existing one each go red.
 --
 -- ── THE LEAGUE PROFILE (D175(2)) — WHY THE FIRST WALL IS NOT "VALIDATE
 --    EVERYTHING" ──────────────────────────────────────────────────────────
@@ -237,10 +268,14 @@ COMMENT ON INDEX idx_leagues_scoring_system IS
 -- **The population is stated, not dressed up.** Both counts are NOTICEd on
 -- every apply, so "we found nothing" is always distinguishable from "we looked
 -- at nothing" (CLAUDE.md: never let "nothing happened" mean "it worked"). On
--- this chain and in CI both populations are **0 rows** — `supabase/seed.sql`
--- seeds no league and no scoring system, and 058's six templates are the only
--- `scoring_systems` rows — which is why this is a gate for real deployments
--- rather than local coverage. Its reachability is proved by a probe that
+-- this chain and in CI the NOTICE reads **`league-profile scoring_systems rows
+-- = 6, failing = 0; non-NULL leagues.scoring_rules_snapshot rows = 0, failing
+-- = 0`** — the six are 058's templates, and the snapshot population is the
+-- empty one, because `supabase/seed.sql` seeds no league at all. (R632: an
+-- earlier sentence here said "both populations are 0 rows", which this
+-- migration's own NOTICE contradicts on every apply. The `scoring_systems`
+-- half is therefore real local coverage; the `leagues` half is a gate for real
+-- deployments and is honestly vacuous here.) Its reachability is proved by a probe that
 -- forges an invalid row and shows the block refuse (recorded in the PR).
 --
 -- **The backfill decision, made explicitly rather than left implicit:** there
@@ -256,6 +291,8 @@ DECLARE
   v_profile_bad   INT := 0;
   v_snap_total    INT;
   v_snap_bad      INT := 0;
+  v_archived_total INT;
+  v_archived_bad   INT := 0;
   v_bad_ids       TEXT := '';
   r               RECORD;
 BEGIN
@@ -297,9 +334,43 @@ BEGIN
     END;
   END LOOP;
 
+  -- ── R637: THE POPULATION BOTH LOOPS ABOVE MISS, REPORTED BUT NOT GATED.
+  -- Both reference arms are scoped `l.deleted_at IS NULL`, because that is the
+  -- profile's own predicate — so a scoring system referenced ONLY by
+  -- soft-deleted leagues is censused nowhere. It is also exactly the document
+  -- wall 3 validates on an un-delete (door 3). Counted and NOTICEd so the
+  -- number is never silent, and deliberately NOT part of the gate: those rows
+  -- are outside the profile today, nothing scores from them, and refusing to
+  -- DEPLOY over a document attached to an archived league would be a worse
+  -- trade than refusing the REVIVE, which is what wall 3 already does, loudly.
+  SELECT count(*) INTO v_archived_total
+  FROM public.scoring_systems s
+  WHERE NOT (s.is_template OR s.rules ? 'format')
+    AND EXISTS (SELECT 1 FROM public.leagues l
+                 WHERE l.scoring_system_id = s.id AND l.deleted_at IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM public.leagues l
+                     WHERE l.scoring_system_id = s.id AND l.deleted_at IS NULL);
+
+  FOR r IN
+    SELECT s.id, s.rules
+    FROM public.scoring_systems s
+    WHERE NOT (s.is_template OR s.rules ? 'format')
+      AND EXISTS (SELECT 1 FROM public.leagues l
+                   WHERE l.scoring_system_id = s.id AND l.deleted_at IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM public.leagues l
+                       WHERE l.scoring_system_id = s.id AND l.deleted_at IS NULL)
+  LOOP
+    BEGIN
+      PERFORM public.scoring_rules_validate(r.rules);
+    EXCEPTION WHEN OTHERS THEN
+      v_archived_bad := v_archived_bad + 1;
+    END;
+  END LOOP;
+
   RAISE NOTICE
-    '104 census (D175(4)): league-profile scoring_systems rows = %, failing = %; non-NULL leagues.scoring_rules_snapshot rows = %, failing = %',
-    v_profile_total, v_profile_bad, v_snap_total, v_snap_bad;
+    '104 census (D175(4)): league-profile scoring_systems rows = %, failing = %; non-NULL leagues.scoring_rules_snapshot rows = %, failing = %; archived-only references (reported, NOT gated — wall 3 refuses these at un-delete) = %, failing = %',
+    v_profile_total, v_profile_bad, v_snap_total, v_snap_bad,
+    v_archived_total, v_archived_bad;
 
   IF v_profile_bad > 0 OR v_snap_bad > 0 THEN
     RAISE EXCEPTION
@@ -313,7 +384,9 @@ $census$;
 -- ---------------------------------------------------------------------------
 -- 2. WALL 1 — the table wall (D175). An invalid LEAGUE scoring document is
 --    unrepresentable in `scoring_systems`, for every role, every path and —
---    since R616 — every replication mode.
+--    since R616 — every replication mode. **Sequentially.** Concurrency is
+--    wall 3's `FOR NO KEY UPDATE` (R626); before that lock two interleaved
+--    privileged transactions could each pass on a stale snapshot.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.scoring_systems_rules_guard()
 RETURNS TRIGGER
@@ -360,19 +433,28 @@ BEGIN
      -- `create_league` / `update_league_settings`. §E6 pinned only the
      -- ONE-step flip, which the guard did refuse. One conjunct per arm whose
      -- membership can change without `rules` changing: `is_template` is arm
-     -- (a); `id` is arm (c)'s subject.
+     -- (a); `id` is the SUBJECT the other two arms are read against, so a
+     -- fresh-id write re-enters the predicate under a different identity.
+     -- (R630 corrects an earlier sentence here that called `id` "arm (c)'s
+     -- subject": arm (c) can never be the subject of a PK change — all five
+     -- inbound FKs are `condeferrable = f, confupdtype = 'a'`, so a referenced
+     -- row's id cannot move. The conjunct earns its place on arm (a): forge an
+     -- invalid template and a fresh-id change is refused P0001 with it and
+     -- succeeds without it — measured by three reviewers.)
      AND NEW.is_template IS NOT DISTINCT FROM OLD.is_template
      AND NEW.id IS NOT DISTINCT FROM OLD.id
-     AND (
-          COALESCE(OLD.is_template, FALSE)
-       OR (OLD.rules ? 'format')
-       OR EXISTS (
-            SELECT 1 FROM public.leagues l
-            WHERE l.scoring_system_id = OLD.id
-              AND l.deleted_at IS NULL
-          )
-     )
   THEN
+    -- ── R629: THE OLD-SIDE PROFILE DISJUNCTION USED TO BE RE-EVALUATED HERE,
+    -- AND IT WAS A TAUTOLOGY. Deleted rather than pinned, because a clause
+    -- that cannot change an outcome cannot be given a killing cell and would
+    -- have stood forever as three unfalsifiable lines. The proof is two
+    -- sentences: control has already returned unless NEW is in the profile,
+    -- and the three conjuncts above hold `rules`, `is_template` and `id`
+    -- equal — which are exactly the three inputs the profile predicate reads.
+    -- So OLD-in-profile ≡ NEW-in-profile ≡ TRUE here, always. Measured:
+    -- deleting the whole block leaves 052 at 85/85 and that green is CORRECT,
+    -- while deleting any single disjunct from it changed behaviour and red
+    -- nothing — the signature of a clause whose arms are unreachable.
     RETURN NEW;
   END IF;
 
@@ -540,9 +622,19 @@ ALTER TABLE leagues
 -- while a write that names one is always revalidated. Both columns are needed —
 -- door 3 never touches `scoring_system_id` at all.
 --
--- `SECURITY DEFINER` for wall 1's reason exactly: it resolves the reference in
--- `public.scoring_systems`, which has RLS, and a reference the writer cannot
--- see must not read as "nothing to validate".
+-- `SECURITY DEFINER` **as a structural precaution, and the difference from
+-- wall 1's case is stated rather than glossed (R636).** Wall 1's DEFINER-ness
+-- is MEASURED: demote it to INVOKER and pgTAP 052 §E4c dies, because a writer
+-- who owns the scoring row but cannot see the referencing league is an
+-- ordinary `authenticated` user. Wall 3 has no such twin and cannot have one
+-- today: `public.leagues` carries a single SELECT-only policy, so every writer
+-- that reaches this trigger is `postgres` or a `rolbypassrls` role, both of
+-- which see `public.scoring_systems` whole — an INVOKER wall 3 would behave
+-- identically on every input this repo can construct. It is DEFINER because
+-- the predicate it evaluates is a SYSTEM fact and must not become
+-- role-dependent the day a `leagues` write policy is added (SE.5 does not add
+-- one; a later league-admin surface might). Recorded as a precaution with no
+-- behavioural pin, which is the honest register — not as a measured necessity.
 CREATE OR REPLACE FUNCTION public.leagues_scoring_reference_guard()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -563,9 +655,29 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- ── R626: `FOR NO KEY UPDATE`, AND THE LOCK IS THE POINT OF THE STATEMENT.
+  -- Wall 1's arm (c) reads `public.leagues` and this reads
+  -- `public.scoring_systems`; each holds the row IN FRONT of it, and before
+  -- this lock neither held still the PREMISE it reads from the other's table.
+  -- Under READ COMMITTED two concurrent transactions therefore each passed on
+  -- a stale snapshot and committed a live league referencing the F21 document
+  -- — reproduced by four reviewers, in BOTH orderings, first try each time,
+  -- with single-transaction controls correctly refused in both orderings, so
+  -- the interleave was the only variable. `FOR NO KEY UPDATE` is the weakest
+  -- lock that conflicts with the rules-UPDATE this seam races (it does NOT
+  -- conflict with the FK's `FOR KEY SHARE`, so ordinary league writes are not
+  -- serialised behind scoring edits — measured at 1.162 ms through a held
+  -- `FOR KEY SHARE`). Both orderings then serialise: the later transaction
+  -- either blocks and re-reads the invalid document, or commits first and is
+  -- caught by wall 1's arm (c) seeing the live league.
+  --
+  -- **It introduces a two-direction lock pattern and therefore a deadlock
+  -- surface**, which is a clean rollback rather than corruption — pinned with
+  -- its own isolation cell (pgTAP 052 §K) rather than landed as a drive-by.
   SELECT s.rules INTO v_rules
   FROM public.scoring_systems s
-  WHERE s.id = NEW.scoring_system_id;
+  WHERE s.id = NEW.scoring_system_id
+  FOR NO KEY UPDATE;
 
   IF NOT FOUND THEN
     -- Loud, never a silent skip. The FK would refuse this at statement end

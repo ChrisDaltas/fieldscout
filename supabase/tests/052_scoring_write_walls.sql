@@ -96,8 +96,21 @@
 --   a wall that lets one write through, and it did. **The standing rule
 --   adopted here: every skip/short-circuit clause gets a `lives_ok` fixture
 --   that reds when the clause is deleted, and the probe list enumerates every
---   disjunct of every profile predicate — not only the ones a fixture happens
---   to reach.** Concretely:
+--   disjunct of every profile predicate.**
+--
+--   **That last half was OVERSTATED and is corrected in place (R629): it is
+--   true of the NEW-side predicate and was false of the OLD-side one.** The
+--   OLD-side disjunction turned out to be a tautology — control cannot reach
+--   it unless NEW is in the profile, and the conjuncts above it hold every
+--   input the predicate reads equal — so its arms were unreachable, deleting
+--   any one of them red nothing, and deleting the whole block left 052 green
+--   AND CORRECT. It is deleted in 104 rather than pinned: a clause that cannot
+--   change an outcome cannot be given a killing cell, and pinning it would
+--   have manufactured exactly the decoration this rule exists to prevent.
+--   **The generalisation the second review drew, which is the real rule: the
+--   suite pins what the guards DO and not what determines WHETHER they run.**
+--   Event mask, enablement mode, early returns, skip clauses and cross-table
+--   premises are all part of the guard. Concretely:
 --
 --   §E5c–§E5f  the forged corrupt-while-attached state, built by disabling
 --              WALL 3 and nothing else, so the next four cells measure the
@@ -139,7 +152,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(85);
+select plan(93);
 
 -- ---------------------------------------------------------------------------
 -- Helpers. Every one of them performs a WRITE and reports what the write did.
@@ -270,6 +283,23 @@ begin
       || case when v_after is not distinct from v_before
                 and v_del_after is not distinct from v_del_before
               then 'UNCHANGED' else 'MUTATED' end;
+end;
+$$;
+
+/** WALL 3's INSERT arm (R627, door 2): a `leagues` row born already carrying a
+ *  `scoring_system_id`. `create_league` is its production writer, but the raw
+ *  table takes one too and no RPC is in that path. */
+create function pg_temp.w3ins(p_id uuid, p_owner uuid, p_name text, p_ref uuid)
+returns text language plpgsql as $$
+declare v_hint text; v_detail text;
+begin
+  insert into public.leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings)
+  values (p_id, p_owner, p_name, 2026, 'setup', 8, p_ref, '{}'::jsonb);
+  return 'ACCEPT(1)';
+exception when others then
+  if sqlstate <> 'P0001' then return 'ERROR|' || sqlstate; end if;
+  get stacked diagnostics v_hint = pg_exception_hint, v_detail = pg_exception_detail;
+  return coalesce(v_hint, '?') || '|' || coalesce(v_detail, '?');
 end;
 $$;
 
@@ -485,6 +515,39 @@ select throws_ok(
   $$ select public.leagues_scoring_reference_guard() $$,
   '0A000', null,
   'A21: wall 3 is not callable outside a trigger context either — the same §4.1 discharge as A8/A9');
+
+-- ── A22 (R635): THE BEFORE-ROW TRIGGER SET, BY NAME **AND BY BODY**. ────────
+-- 104's own argument for putting the guard on the column is that "a guard on
+-- the column needs no author to remember it". Measured, that is true only with
+-- a proviso: Postgres fires BEFORE ROW triggers in **name order**, and 059's
+-- `trg_leagues_snapshot_guard` already sorts AFTER `trg_leagues_scoring_rules_valid`.
+-- A body edit to 059's function that assigned `NEW.scoring_rules_snapshot`
+-- would overwrite the value AFTER wall 2 validated it; the invalid document
+-- would COMMIT, the trigger CATALOG would be byte-identical, and all 53 pgTAP
+-- files and 9 client cells would stay green. So the set is pinned by name in
+-- fire order AND by the md5 of each trigger function's `prosrc` — a new
+-- later-sorting trigger moves the first half, a body edit moves the second.
+-- This is a GOLDEN pin: a legitimate future edit to any of these four bodies
+-- is SUPPOSED to red it, and whoever makes that edit re-reads this cell and
+-- re-derives the literal deliberately (the 073 lesson, mechanised).
+select is(
+  (select string_agg(t.tgrelid::regclass::text || '.' || t.tgname || '=' || md5(p.prosrc),
+                     ' | ' order by t.tgrelid::regclass::text, t.tgname)
+     from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal
+      and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
+      and t.tgrelid in ('public.leagues'::regclass, 'public.scoring_systems'::regclass)),
+  'leagues.trg_leagues_scoring_reference_guard=ad626c38ca8a2d70f9cc0a860adac47d | leagues.trg_leagues_scoring_rules_valid=8eefa42191daba5ae5d9db5e5ef0c67d | leagues.trg_leagues_snapshot_guard=769a68bcfb6bb599732f68c3c507c94d | scoring_systems.trg_scoring_systems_rules_guard=009f9c68b41f1ff6fb58dfcc3d7725b1',
+  'A22 (R635): the BEFORE ROW trigger set on `leagues` and `scoring_systems`, in FIRE ORDER, each with the md5 of its function body. Triggers fire in NAME order, so a trigger that sorts after a wall and assigns the column the wall guards silently un-does it — with an identical catalog. Both halves of that are pinned here');
+
+select is(
+  (select (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
+          and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16
+     from pg_trigger t
+    where t.tgrelid = 'public.leagues'::regclass
+      and t.tgname = 'trg_leagues_scoring_reference_guard'),
+  true,
+  'A23 (R627): wall 3''s EVENT MASK — BEFORE, FOR EACH ROW, on INSERT **and** UPDATE, the same assertion A12/A13 make for walls 1 and 2. §A20 pins the COLUMN list and would not notice INSERT being dropped from the mask; with INSERT dropped there were ZERO killing cells across all 53 pgTAP files (swept), and door 2 — a `leagues` row born carrying a bad reference — reopens silently');
 
 -- ===========================================================================
 -- §B THE D175(4) CENSUS — taken BEFORE this file creates a single fixture row
@@ -812,6 +875,46 @@ select is(
   'tier_exclusivity|(document)|UNCHANGED',
   'E5b (R618, door 3): the UN-DELETE is refused. It never touches `scoring_system_id`, so a reference guard watching only that column would miss it entirely — which is why wall 3 fires on `deleted_at` too. The league stays soft-deleted');
 
+-- ── E5b2 (R627, door 2): WALL 3's **INSERT** ARM. §A20 pins the column list and
+--    §A23 the event mask; this is the behaviour behind them. A `leagues` row
+--    born already carrying a bad reference needs no UPDATE at all, and with
+--    INSERT dropped from the mask it landed with ZERO killing cells in 53
+--    files.
+select is(
+  pg_temp.w3ins('b0520000-0000-4000-8000-0000000000f9',
+                '90520000-0000-4000-8000-000000000001', 'pgtap-se4b-born-bad-ref',
+                '50520000-0000-4000-8000-000000000004'),
+  'tier_exclusivity|(document)',
+  'E5b2 (R627): a league BORN carrying a reference to an invalid document is refused. This is door 2 of F142''s inventory, and `create_league` is not in its path — the raw table takes an INSERT too');
+select is(
+  (select count(*)::int from leagues where id = 'b0520000-0000-4000-8000-0000000000f9'),
+  0, 'E5b3: …and no row was left behind (BEFORE, not AFTER — the §A12 argument, at wall 3)');
+
+-- ── E5b4 (R631): WALL 3 IN REPLICA MODE. Walls 1 and 2 each have a behavioural
+--    replica cell; wall 3 had only the catalog flag. **Placed here, ABOVE the
+--    §E5c forge**, and the placement is the finding: that forge does
+--    `enable always` on wall 3, so a cell below it would measure a trigger
+--    state this FILE set rather than the one the MIGRATION set — the exact
+--    trap the note above §F9 documents, which this file has now walked into
+--    once and must not again.
+set local session_replication_role = 'replica';
+select is(
+  pg_temp.w3('b0520000-0000-4000-8000-0000000000bb', null, true),
+  'tier_exclusivity|(document)|UNCHANGED',
+  'E5b4 (R631): the un-delete is still refused in REPLICA MODE — `ENABLE ALWAYS` on wall 3, proved by consequence and not by catalog flag alone');
+set local session_replication_role = 'origin';
+
+-- ── E5b5 (R628): WALL 3's `deleted_at` EARLY RETURN — the last permissive
+--    branch in the migration with a killing cell NOWHERE in 53 files. A write
+--    that leaves the league SOFT-DELETED must land even when the referenced
+--    document is invalid: a soft-deleted league references nothing live, and
+--    refusing here would make an archived league un-archivable because of a
+--    document nothing reads. Delete the early return and this throws.
+select lives_ok(
+  $$ update leagues set deleted_at = now()
+      where id = 'b0520000-0000-4000-8000-0000000000bb' $$,
+  'E5b5 (R628): a write that leaves the league soft-deleted LANDS, even though its referenced document is one the validator refuses — wall 3''s `deleted_at` early return, which had no killing cell anywhere');
+
 -- ── E5c: THE FORGE. With wall 3 shipped there is no un-privileged path left to
 --    the corrupt-while-attached state — that is the point of it — so the state
 --    is forged by disabling wall 3 and nothing else. This is the
@@ -858,7 +961,7 @@ select is(
 select is(
   pg_temp.w1flip('50520000-0000-4000-8000-000000000004'),
   'tier_exclusivity|(document)|UNCHANGED',
-  'E5e (R615): promoting an IN-PROFILE row to a template is refused. `rules` is untouched and OLD was already in the profile, so the identity short-circuit would skip it — the two `IS NOT DISTINCT FROM` conjuncts on `is_template` and `id` are what stop it, and removing either reds exactly here');
+  'E5e (R615): promoting an IN-PROFILE row to a template is refused. `rules` is untouched and OLD was already in the profile, so the identity short-circuit would skip it — the `IS NOT DISTINCT FROM` conjunct on `is_template` is what stops it, and removing it reds exactly here. (R630: an earlier version of this sentence said "removing EITHER" conjunct reds this cell. Only `is_template` does — this write does not change `id`, so the `id` conjunct is not the one being exercised. The `id` conjunct is NOT inert and is not deleted: forge an invalid template and a fresh-id change is refused P0001 with it and succeeds without it, measured by three reviewers on arm (a). It simply has no cell of its own here.)');
 
 -- ── E5f: R617 AT THE ACTUAL WRITER. `snapshot_league_scoring_internal` is what
 --    `draft_start_internal` PERFORMs, and it copies the referenced document
@@ -1086,5 +1189,51 @@ select results_eq(
   'H5: a NON-OWNER authenticated user''s UPDATE of the commissioner''s fork row affects 0 rows — 001:623 is scoped to the owner, and the wall does not replace that scoping, it stands behind it');
 
 set local role postgres;
+
+-- ===========================================================================
+-- §K WALL 3's ROW LOCK — the cross-table premise, held still (R626)
+-- ===========================================================================
+--
+-- Walls 1 and 3 are each correct about the row IN FRONT of them. What neither
+-- held still, before this lock, was the PREMISE it reads from the other's
+-- table — wall 1 asks `public.leagues` "is this row referenced?", wall 3 asks
+-- `public.scoring_systems` "is this document valid?". Under READ COMMITTED two
+-- concurrent transactions each passed on a stale snapshot and committed a live
+-- league in front of the F21 document. `FOR NO KEY UPDATE` in wall 3's
+-- `SELECT` serialises both orderings.
+--
+-- **THIS IS A STRUCTURAL PIN AND THE REGISTER IS DELIBERATE.** A race needs two
+-- transactions, and a pgTAP file is one. The three in-file instruments were
+-- each tried and each measured USELESS here, which is why the honest cell is a
+-- catalog one:
+--   • `dblink` IS installable on this stack but cannot connect — `postgres` is
+--     not superuser and the local `pg_hba` is trust, so it refuses with
+--     *"Non-superusers may only connect using credentials they provide"*
+--     (measured; a password in the string does not help, because trust auth
+--     never consumes it).
+--   • `xmax` on the referenced row does not discriminate: the FK's own
+--     `FOR KEY SHARE` sets it on the same write, to the same xid.
+--   • a same-transaction `NOWAIT` probe never conflicts with its own locks.
+-- The BEHAVIOURAL proof — the race reproducing before the lock and serialising
+-- after — is a two-session measurement recorded in the PR body and in
+-- PROGRESS D272, where a measurement that cannot live in the suite belongs.
+--
+-- **The deadlock surface is real and is named rather than pinned:** this is a
+-- two-direction lock pattern (wall 1 reads `leagues` while holding
+-- `scoring_systems`; wall 3 the reverse), so a genuinely concurrent pair can
+-- deadlock. A deadlock is a clean rollback with `40P01`, not corruption — the
+-- outcome this seam is being traded UP to from a committed invalid state.
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'leagues_scoring_reference_guard'
+      and p.prosrc ~ 'SELECT\s+s\.rules\s+INTO\s+v_rules(.|\n)*FOR NO KEY UPDATE'),
+  1, 'K1 (R626): wall 3 resolves the reference `FOR NO KEY UPDATE` — the lock is on the SELECT that reads the other table''s premise, not merely somewhere in the body. Two concurrent transactions committed a live league in front of the F21 document without it (reproduced by four reviewers in both orderings); with it, both orderings serialise');
+
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'leagues_scoring_reference_guard'
+      and p.prosrc ~ 'FOR (UPDATE|SHARE|KEY SHARE)(\s|;)'),
+  0, 'K2: …and it is that lock and not a stronger or weaker one. `FOR UPDATE` would conflict with the FK''s own `FOR KEY SHARE` and serialise ordinary league writes behind scoring edits; `FOR KEY SHARE` would not conflict with the rules-UPDATE this seam races, and would be a lock that reads as protection while providing none');
+
 select * from finish();
 rollback;
