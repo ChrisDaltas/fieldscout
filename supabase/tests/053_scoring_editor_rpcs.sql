@@ -88,6 +88,21 @@
 -- (D49(7)); every section asserts its own premise before asserting anything
 -- about it (F94); accepts report their ROW COUNT so a write that matched
 -- nothing can never read as a pass (CLAUDE.md); the whole file rolls back.
+--
+-- ⚠ **READING A MUTANT RUN OF THIS FILE: TAKE THE TOTAL, NOT THE NOT-OK COUNT.**
+-- Several cells resolve a fixture by NAME through a scalar subquery
+-- (`(select id from scoring_systems where name = 'pgtap-se5-setup Custom')`),
+-- and that is deliberate — §C11/§C13 are only meaningful while that name
+-- identifies exactly one row. The consequence is that a mutant which makes the
+-- fork mint DUPLICATES aborts the file with `more than one row returned by a
+-- subquery` partway through. Measured on two probes: deleting the fork's
+-- commissioner check reports `ok=41 not_ok=7`, and deleting its idempotency
+-- clause reports `ok=40 not_ok=3` — against a control of `ok=71 not_ok=0`. The
+-- red cells that DO appear are real and they are the cells that detect the
+-- mutation; the truncation is a second-order consequence of the same defect.
+-- **A reader who checks only `not ok` will read a truncated run as a milder
+-- result than it is** — and a reader who checks only `ok` on a run that ends
+-- early will read it as a PASS. Compare `ok + not_ok` against `plan()`.
 -- ============================================================================
 begin;
 
