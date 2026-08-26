@@ -362,8 +362,8 @@ describe('§8.9 autopick tie-in over the real tick (L.B4.2)', () => {
       //    residency in the pool every db suite walks.
       const { error: upsertError } = await service.from('players').upsert([...PLAYERS])
       throwIfError(upsertError, 'players upsert')
-      // *** BREAK PROBE — the decoy seeding removed; reverted in the next
-      //     commit. The premise assertion below must go RED in CI. ***
+      const { error: decoyError } = await service.from('players').upsert([...DECOYS])
+      throwIfError(decoyError, 'decoy pool upsert')
 
       // 0b. THE PREMISE, ASSERTED (F70/F94; D235(5)'s sibling half — a
       //     fixture whose premise is a PRESENCE must make that presence
