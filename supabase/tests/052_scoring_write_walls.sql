@@ -962,6 +962,31 @@ select is(
   'F8 (WHY A11 IS LOAD-BEARING): as `service_role` — rolbypassrls, NOT superuser, and the ONE client role that can write `leagues` at all now that only a SELECT policy remains — the refusal is P0001 with the field path, not 42501. Wall 2 is INVOKER, so it calls the validator as the writing role; REVOKE EXECUTE from service_role and this cell reds with ERROR|42501');
 set local role postgres;
 
+-- ── F12 (R616): THE REPLICA-MODE DOOR, PINNED BEHAVIOURALLY. `ENABLE ALWAYS`
+--    is asserted structurally at §A16; a catalog flag on its own certifies the
+--    keyword, not the consequence (the §A3/§E4c lesson, applied again).
+set local session_replication_role = 'replica';
+select is(
+  pg_temp.w2('b0520000-0000-4000-8000-0000000000cc',
+             '{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
+  'tier_exclusivity|(document)|UNCHANGED',
+  'F12 (R616): the same write in REPLICA MODE is still refused. At the default `tgenabled = ''O''` this write COMMITTED and was read back over anon PostgREST — the mode `pg_restore` and logical apply run in, on the very column a restore rewrites');
+select is(
+  pg_temp.w1('50520000-0000-4000-8000-000000000001',
+             '{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
+  'tier_exclusivity|(document)|UNCHANGED',
+  'F12b (R616): …and so is wall 1''s');
+set local session_replication_role = 'origin';
+
+-- ── ORDERING NOTE, AND IT IS LOAD-BEARING (found by this round's own probe
+--    round — the eighth decoration). The §F9 forge below restores wall 2 with
+--    `ENABLE ALWAYS`, which means every cell AFTER it observes a trigger state
+--    THIS FILE set rather than the one the MIGRATION set. §F12 was originally
+--    written below the forge and could not fail: probe 13 (ENABLE ALWAYS →
+--    plain ENABLE, i.e. the repo default) red §A16 and §F12b and left §F12
+--    green, even though the same write in replica mode at `tgenabled = 'O'`
+--    lands and persists (measured directly). The replica cells therefore run
+--    BEFORE any ALTER TRIGGER in this file.
 -- ── F9–F11 (R621/R617): THE WALL-2 FORGE AND ITS TWO KILLING CELLS.
 --    Wall 2's change-detection had zero killing cells: replacing the body with
 --    an unconditional revalidation left 052 at 63/63, `test:db` at
@@ -995,22 +1020,6 @@ select is(
 
 update leagues set scoring_rules_snapshot = null
   where id = 'b0520000-0000-4000-8000-0000000000cc';
-
--- ── F12 (R616): THE REPLICA-MODE DOOR, PINNED BEHAVIOURALLY. `ENABLE ALWAYS`
---    is asserted structurally at §A16; a catalog flag on its own certifies the
---    keyword, not the consequence (the §A3/§E4c lesson, applied again).
-set local session_replication_role = 'replica';
-select is(
-  pg_temp.w2('b0520000-0000-4000-8000-0000000000cc',
-             '{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
-  'tier_exclusivity|(document)|UNCHANGED',
-  'F12 (R616): the same write in REPLICA MODE is still refused. At the default `tgenabled = ''O''` this write COMMITTED and was read back over anon PostgREST — the mode `pg_restore` and logical apply run in, on the very column a restore rewrites');
-select is(
-  pg_temp.w1('50520000-0000-4000-8000-000000000001',
-             '{"def_pa_14_20": 4, "def_pa_18_27": 3}'::jsonb),
-  'tier_exclusivity|(document)|UNCHANGED',
-  'F12b (R616): …and so is wall 1''s');
-set local session_replication_role = 'origin';
 
 -- ===========================================================================
 -- §G F21 AT BOTH WALLS — the ledger row's own evidence, with its control
