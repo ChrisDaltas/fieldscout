@@ -263,22 +263,72 @@ export const MAX_ABS_COEFFICIENT = 100
 export const COEFFICIENT_STEP = 0.01
 
 /**
- * Is `value` a multiple of 0.01?
+ * How many violations a single answer prints before it stops enumerating
+ * (R595). The verdict never changes — only how much of it is printed — and the
+ * truncation says so out loud rather than trailing off.
  *
- * Binary floating point makes the naive `(value * 100) % 1 === 0` wrong for
- * ordinary template values — `0.07 * 100` is `7.000000000000001` — so the
- * scaled value is snapped first, the same trick and the same reason as the
- * calculator's `toPrecision(13)` rounding snap (D57(2)). 12 significant digits
- * is far more than the ≤ 5 a bounded 2dp coefficient needs (|scaled| ≤ 10000)
- * and far less than the ~17 at which the float noise itself becomes visible.
+ * Why a cap exists at all: guardrails 1 and 5 emit one violation per key, so a
+ * document is free to choose the size of the answer. A 200,000-key flat map
+ * produced **200,000 violations / 25.3 MB** of message text from a body a
+ * fraction of that size, and `scoringRulesDocSchema` republished every one as
+ * a Zod issue. That is a service-layer amplifier, and the caller only ever
+ * shows the first few. *(The related question — whether §7.3.3.1(c) should
+ * also cap a cut LIST's length — is a spec amendment, not this validator's
+ * call: a 20,000-cut ascending integer list satisfies every residual the
+ * section states. Routed to F59, which owns cut-point entry.)*
+ */
+export const MAX_REPORTED_VIOLATIONS = 50
+
+/** Enumerate a key/cut list in a message without letting the document choose
+ *  the message's length (R595). */
+function summarize(items: readonly (string | number)[], max = 8): string {
+  if (items.length <= max) return items.join(', ')
+  return `${items.slice(0, max).join(', ')}, … (${items.length} total)`
+}
+
+/**
+ * Does `value` carry at most 2 decimal places?
+ *
+ * **This is the DECIMAL rule, and it is deliberately the exact mirror of the
+ * SQL side's `scale(p) <= 2` (R589).** `jsonb` preserves a numeric literal
+ * byte-exactly and `scale()` counts the digits after its decimal point, so
+ * testing the JS number's own decimal rendering asks Postgres's question in
+ * JavaScript — the two layers accept and refuse the same documents, and SE.4's
+ * parity fixture measures agreement instead of documenting a divergence.
+ *
+ * The first cut of this module snapped the scaled value (`Number((value *
+ * 100).toPrecision(12))`) to dodge `0.07 * 100 === 7.000000000000001`. That
+ * dodges the float artefact, but it enforces a ~5e-13 RELATIVE TOLERANCE
+ * rather than the spec's rule: it accepted `0.1 + 0.2` (scale 17), accepted
+ * `99.99999999999` (11 dp) while refusing `99.9999999999` (10 dp) — not even
+ * monotone in decimal places — and accepted `1.000000000001` as an "override"
+ * of a base `1`, which scores identically yet survives `normalizeScoringDoc`'s
+ * exact `===` strip and so defeats guardrail 4. Measured against the exact
+ * rule: **0 false rejections across all 20,001 legal 2dp values in [-100, 100]
+ * and across all 218 coefficients of the six shipped templates** (both pinned).
+ *
+ * `String(value)` is the shortest round-tripping decimal rendering, so a
+ * literal that WAS 2dp stays 2dp. Exponential renderings (`1e-7`, `1e+21`)
+ * fail the pattern, which is correct: they are not 2dp decimals. Magnitude is
+ * checked first, so nothing large enough to render exponentially reaches here.
  */
 function isTwoDecimalMultiple(value: number): boolean {
-  return Number.isInteger(Number((value * 100).toPrecision(12)))
+  return /^-?\d+(\.\d{1,2})?$/.test(String(value))
 }
 
 // ---------------------------------------------------------------------------
 // 4. Small helpers
 // ---------------------------------------------------------------------------
+
+/** The four members §7.3.3.1's printed shape defines, and the two tables its
+ *  `tier_cuts` defines — the closed sets R588's member check tests against. */
+const ENVELOPE_MEMBERS: ReadonlySet<string> = new Set([
+  SCORING_DOC_FORMAT_KEY,
+  'base',
+  'positions',
+  'tier_cuts',
+])
+const TIER_CUT_TABLES: readonly ['def_pa', 'def_ya'] = ['def_pa', 'def_ya']
 
 const hasOwn = (object: object, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(object, key)
@@ -364,6 +414,19 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
       ...bounds,
       ...cuts,
     ]
+    if (violations.length > MAX_REPORTED_VIOLATIONS) {
+      return {
+        valid: false,
+        violations: [
+          ...violations.slice(0, MAX_REPORTED_VIOLATIONS),
+          {
+            code: 'document_shape',
+            path: '',
+            message: `Document shape (§7.3.3.1): this document has ${violations.length} problems; the first ${MAX_REPORTED_VIOLATIONS} are listed above (R595 — the answer is capped, the verdict is not).`,
+          },
+        ],
+      }
+    }
     return { valid: violations.length === 0, violations }
   }
 
@@ -372,7 +435,7 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
     shape.push({
       code: 'document_shape',
       path: '',
-      message: `A scoring rules document must be a JSON object (§7.3.3.1); got ${describeType(doc)}.`,
+      message: `Document shape (§7.3.3.1): a scoring rules document must be a JSON object; got ${describeType(doc)}.`,
     })
     return collect()
   }
@@ -381,6 +444,21 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
 
   // ── Format 1: the flat map ──────────────────────────────────────────────
   if (!isFormat2) {
+    // An envelope whose `format` member was dropped reads as a flat map whose
+    // keys happen to be "base", "positions" and "tier_cuts" — and the answer
+    // was six allowlist violations naming nothing a commissioner could act on
+    // (R597). The document says what it is; the refusal should too.
+    const envelopeMembers = Object.keys(doc).filter(
+      (key) => key !== SCORING_DOC_FORMAT_KEY && ENVELOPE_MEMBERS.has(key),
+    )
+    if (envelopeMembers.length > 0) {
+      shape.push({
+        code: 'document_shape',
+        path: '',
+        message: `Document shape (§7.3.3.1): this document carries no "format" member, so it reads as a flat format-1 map — but it holds ${summarize(envelopeMembers)}, which are format-2 envelope members. Add "format": ${SCORING_DOC_FORMAT_2}, or make it a genuine flat map of coefficients.`,
+      })
+    }
+
     const entries = coefficientEntries(doc, [], '')
     checkAllowlist(entries, allowlist)
     checkBounds(entries, bounds)
@@ -399,9 +477,37 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
     shape.push({
       code: 'document_shape',
       path: SCORING_DOC_FORMAT_KEY,
-      message: `Scoring document declares format ${JSON.stringify(format)}; this build validates format 1 (a flat map, no "format" member) and format ${SCORING_DOC_FORMAT_2} (§7.3.3.1). A future format is a future validator, never a silent pass.`,
+      message:
+        format === 1
+          ? // The one version number that needs its own sentence (R597): the
+            // first cut of this message refused a document "for declaring
+            // format 1" while saying in the same breath that it validates
+            // format 1. Both halves are true and the combination is nonsense —
+            // format 1 IS the flat map, identified by carrying NO version
+            // member at all (§7.3.3.1: "no `format` member — the discriminator
+            // is unambiguous"), so a document that names version 1 is not one.
+            `Document shape (§7.3.3.1): this document declares format 1 — but format 1 IS the flat map, identified by carrying NO "format" member at all, so a document that names the version is not one. Drop the "format" member for a flat map, or use format ${SCORING_DOC_FORMAT_2}'s envelope.`
+          : `Document shape (§7.3.3.1): this document declares format ${JSON.stringify(format)}, which this build cannot validate — it knows the flat map (no "format" member) and format ${SCORING_DOC_FORMAT_2}. A future format is a future validator, never a silent pass.`,
     })
     return collect()
+  }
+
+  // §7.3.3.1's printed shape has exactly four members, and a document that
+  // carries a FIFTH is not a document with a harmless extra — it is almost
+  // always a member the writer believed was load-bearing (R588). Nothing else
+  // in this module would ever look at it: every family reads `base` and
+  // `positions`, so `postions: {…}` — one transposed letter — used to validate
+  // clean while `resolveRules` returned the base values and the commissioner's
+  // entire override map evaporated on save. That is CLAUDE.md's
+  // never-let-"nothing happened"-mean-"it worked" and §7.3.3.1(5)'s "never a
+  // silently-ignored key", so an unenumerated member is refused BY NAME.
+  for (const member of Object.keys(doc)) {
+    if (ENVELOPE_MEMBERS.has(member)) continue
+    shape.push({
+      code: 'document_shape',
+      path: member,
+      message: `Document shape (§7.3.3.1's printed shape): "${member}" is not a member of a format-2 scoring document, which carries exactly ${summarize([...ENVELOPE_MEMBERS])}. A member nothing reads is a value silently discarded on save — coefficients belong in "base" or under a position.`,
+    })
   }
 
   const base = doc.base
@@ -409,7 +515,7 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
     shape.push({
       code: 'document_shape',
       path: 'base',
-      message: `A format-2 scoring document needs a "base" object (§7.3.3.1's printed shape); got ${describeType(base)}.`,
+      message: `Document shape (§7.3.3.1's printed shape): a format-2 scoring document needs a "base" object; got ${describeType(base)}.`,
     })
   }
   const positions = doc.positions
@@ -417,7 +523,7 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
     shape.push({
       code: 'document_shape',
       path: 'positions',
-      message: `A format-2 scoring document needs a "positions" object (§7.3.3.1's printed shape); got ${describeType(positions)}.`,
+      message: `Document shape (§7.3.3.1's printed shape): a format-2 scoring document needs a "positions" object; got ${describeType(positions)}.`,
     })
   }
 
@@ -440,7 +546,7 @@ export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
       shape.push({
         code: 'document_shape',
         path: `positions.${position}`,
-        message: `A position override must be an object of coefficients (§7.3.3.1's printed shape); positions.${position} is ${describeType(override)}.`,
+        message: `Document shape (§7.3.3.1's printed shape): a position override must be an object of coefficients; positions.${position} is ${describeType(override)}.`,
       })
       continue
     }
@@ -605,7 +711,7 @@ function checkFormat1TierFamilies(keys: readonly string[], out: ScoringViolation
       out.push({
         code: 'tier_exclusivity',
         path: '',
-        message: `Tier exclusivity (§7.3.3.1 guardrail 2): the points-allowed keys [${paKeys.join(', ')}] are not all cut on one published family (${PA_FAMILY_KEY_SETS.map((f) => f.label).join(' or ')}). Mixing families double-pays every week that lands in the overlap — the F21 defect.`,
+        message: `Tier exclusivity (§7.3.3.1 guardrail 2): the points-allowed keys [${summarize(paKeys)}] are not all cut on one published family (${PA_FAMILY_KEY_SETS.map((f) => f.label).join(' or ')}). Mixing families double-pays every week that lands in the overlap — the F21 defect.`,
       })
     }
   }
@@ -617,7 +723,7 @@ function checkFormat1TierFamilies(keys: readonly string[], out: ScoringViolation
     out.push({
       code: 'tier_exclusivity',
       path: '',
-      message: `Tier exclusivity (§7.3.3.1 guardrail 2): the yards-allowed keys [${stray.join(', ')}] are not generated by the published yards-allowed cut list.`,
+      message: `Tier exclusivity (§7.3.3.1 guardrail 2): the yards-allowed keys [${summarize(stray)}] are not generated by the published yards-allowed cut list.`,
     })
   }
 }
@@ -648,6 +754,10 @@ function checkFormat2TierFamilies(
     [DEF_YA_PREFIX, validCuts.def_ya, 'yards-allowed'],
   ] as const) {
     if (cutList === null) continue
+    // Nothing to compare against if the document names no key in this family —
+    // and generating a key set the document cannot violate is the one place a
+    // long-but-legal cut list would cost real work (R595).
+    if (!entries.some(({ key }) => key.startsWith(`${prefix}_`))) continue
     const generated = new Set(tierKeysFromCuts(prefix, cutList))
     for (const { path, key } of entries) {
       if (!key.startsWith(`${prefix}_`)) continue
@@ -655,7 +765,7 @@ function checkFormat2TierFamilies(
       out.push({
         code: 'tier_exclusivity',
         path,
-        message: `Tier exclusivity (§7.3.3.1 guardrail 2): "${key}" is not a tier this document's own ${table} cut list [${cutList.join(', ')}] generates (${[...generated].join(', ')}). A document cannot name a tier its own cuts do not cut — that is how the F21 double-pay is made inexpressible.`,
+        message: `Tier exclusivity (§7.3.3.1 guardrail 2): "${key}" is not a tier this document's own ${table} cut list [${summarize(cutList)}] generates (${summarize([...generated])}). A document cannot name a tier its own cuts do not cut — that is how the F21 double-pay is made inexpressible.`,
       })
     }
   }
@@ -740,8 +850,21 @@ function checkTierCuts(
     return none
   }
 
+  // R588's second half, and the one a normalize-based fix would MISS:
+  // `normalizeScoringDoc` passes `tier_cuts` through by REFERENCE, so a stray
+  // table inside it is a fixed point of the normal form. It needs its own
+  // member check, here.
+  for (const table of Object.keys(tierCuts)) {
+    if ((TIER_CUT_TABLES as readonly string[]).includes(table)) continue
+    out.push({
+      code: 'tier_cuts',
+      path: `tier_cuts.${table}`,
+      message: `Tier cuts (§7.3.3.1(a)/(c)): "${table}" is not a tier table — a format-2 document cuts exactly ${summarize([...TIER_CUT_TABLES])}, which are independent and additively scored. A table nothing reads is a cut list silently discarded.`,
+    })
+  }
+
   const checked: Record<string, readonly number[] | null> = { def_pa: null, def_ya: null }
-  for (const table of ['def_pa', 'def_ya'] as const) {
+  for (const table of TIER_CUT_TABLES) {
     const path = `tier_cuts.${table}`
     const list = tierCuts[table]
     if (!Array.isArray(list)) {
@@ -775,6 +898,29 @@ function checkTierCuts(
         code: 'tier_cuts',
         path,
         message: `Tier cuts (§7.3.3.1(c)): ${path} must ascend strictly — ${list[flat - 1]} then ${list[flat]} at index ${flat}. Ascending cut points are what make overlapping tiers and coverage gaps unconstructible.`,
+      })
+      continue
+    }
+    // R592 — **the points-allowed table must start at exactly 0**, which is a
+    // fourth residual beyond §7.3.3.1(c)'s three, and it is D174 made
+    // enforceable rather than a new rule. The PA family FLOORS at its first
+    // cut (`tier-cuts.ts`'s `DEF_PA_FIRST_TIER = 'floor'`) because R58/D58
+    // rules a negative points-allowed UNMAPPABLE, and §7.3.3.1(a)'s own
+    // controlling clause is that the cuts reading must AGREE with today's
+    // literals ("no behavior change"). A first cut anywhere but 0 breaks that
+    // agreement in one direction or the other, and both directions are a lie
+    // about the E61 pending badge — measured, and pinned: a first cut BELOW 0
+    // pays a tier for data the derivation refuses to map, and a first cut
+    // ABOVE 0 withholds the whole family on an ordinary low-scoring week
+    // (PA 0/3/6 → a FALSE "waiting on data" badge on a complete week).
+    // Neither moves a total; both move the only signal E61 gives. YA needs no
+    // such rule — its first tier is genuinely open below (D174), because a
+    // negative-total-yards game is real.
+    if (table === 'def_pa' && list[0] !== 0) {
+      out.push({
+        code: 'tier_cuts',
+        path,
+        message: `Tier cuts (§7.3.3.1(c) + §7.3.3.1(a)'s derive-agreement clause): ${path} must start at 0 — a points-allowed table covers a shutout upward, and R58/D58 rules a negative points-allowed unmappable. Starting at ${list[0]} moves the E61 pending badge without moving any total. (Yards allowed has no such floor: its first tier is open below.)`,
       })
       continue
     }

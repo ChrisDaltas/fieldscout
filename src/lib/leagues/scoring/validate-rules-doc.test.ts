@@ -34,6 +34,7 @@ import {
   SCORING_POSITIONS,
   forkTemplateDoc,
   normalizeScoringDoc,
+  resolveRules,
   type FlatScoringRules,
   type ScoringPosition,
   type ScoringRulesDocV2,
@@ -49,6 +50,7 @@ import {
 } from './tier-cuts'
 import {
   MAX_ABS_COEFFICIENT,
+  MAX_REPORTED_VIOLATIONS,
   POSITION_SCORABLE_KEYS,
   SCORABLE_KEYS,
   scoringRulesDocSchema,
@@ -124,16 +126,24 @@ const expectRejection = (
   return result
 }
 
-/** The eight §7.3.3.1 guardrail-family names as they must appear in a message
- *  — stored literals, so a message that stops naming its family reds. */
+/** The seven family names as they must appear in a message — stored literals,
+ *  so a message that stops naming its family reds.
+ *
+ *  **`document_shape`'s entry was `/§7\.3\.3\.1/` in the first cut, which all
+ *  42 messages this module can emit satisfy — including 28 belonging to other
+ *  families (R596). For that family the property proved only "cites the
+ *  section", and renaming the front-door refusal to claim guardrail 2, or
+ *  replacing it with the bare "invalid scoring rules" its own docblock swears
+ *  off, left the suite green.** Every entry is now a prefix no other family's
+ *  message can match, and the mutual exclusivity is itself pinned below. */
 const FAMILY_NAME_IN_MESSAGE: Record<ScoringGuardrail, RegExp> = {
-  document_shape: /§7\.3\.3\.1/,
+  document_shape: /Document shape \(§7\.3\.3\.1/,
   scorable_allowlist: /Scorable allowlist \(§7\.3\.3\.1 guardrail 1\)/,
   tier_exclusivity: /Tier exclusivity \(§7\.3\.3\.1 guardrail 2\)/,
   position_scope: /Position scope \(§7\.3\.3\.1 guardrail 3\)/,
   normal_form: /Normal form \(§7\.3\.3\.1 guardrail 4\)/,
   bounds: /Bounds \(§7\.3\.3\.1 guardrail 5\)/,
-  tier_cuts: /Tier cuts \(§7\.3\.3\.1\(a\)\/\(c\)\)|Tier cuts \(§7\.3\.3\.1\(c\)\)/,
+  tier_cuts: /Tier cuts \(§7\.3\.3\.1/,
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -976,19 +986,69 @@ const REJECTION_CORPUS: unknown[] = [
   { ...espnFork(), base: null },
   null,
   [],
+  // Review round R588–R597 — one document per newly-pinned gap, so the E75
+  // property and the mutual-exclusivity pin above cover them too.
+  { ...espnFork(), postions: { QB: { receptions: 99 } } },
+  { ...espnFork(), def_points_allowed: 1 },
+  withCuts(espnFork(), { def_xx: [0, 1] } as { def_pa?: unknown }),
+  withBase(espnFork(), { receptions: 0.30000000000000004 }),
+  withBase(espnFork(), { pass_tds: 100.01 }),
+  { ...template('ESPN Standard'), pass_tds: 100.01 },
+  withCuts({ ...espnFork(), base: {} }, { def_pa: [7, 14, 21, 28, 35] }),
+  withOverride(espnFork(), 'DST', { def_points_allowed: -0.5 }),
+  withOverride(espnFork(), 'DST', { fg_0_39: 4 }),
+  withOverride(espnFork(), 'qb', { pass_tds: 5 }),
+  { ...espnFork(), format: 1 },
 ]
 
-/** One document per family, each breaking EXACTLY that family — the shape
- *  SE.4's TS≡SQL parity fixture is built from (SQL RAISEs on the first
- *  violation, so a parity document must have only one). */
+/**
+ * Documents that break EXACTLY one family — the shape SE.4's TS≡SQL parity
+ * fixture is built from (SQL RAISEs on the FIRST violation, so a parity
+ * document must have only one).
+ *
+ * **It began as literally one document per family, and that was too narrow to
+ * do the job D168 gives it (review §5).** Every entry was `espnFork()`-derived
+ * — so the format-1 arm, which SE.4(1) must also mirror, had no parity
+ * document at all; the bounds entry short-circuited on magnitude and never
+ * reached the precision arm, which is exactly where the TS and SQL rules could
+ * differ; and the D/ST allowlist layer, the K↔DST scope clause, the position
+ * vocabulary, stray members and the PA floor had no document either. Six of
+ * the review's eleven findings would have propagated into SE.4 through this
+ * one array. It now carries a document per ARM, and the coverage assertion
+ * below is "every family is exercised", not "exactly one document each".
+ */
 const ONE_FAMILY_EACH: Array<{ code: ScoringGuardrail; doc: unknown }> = [
   { code: 'document_shape', doc: { ...espnFork(), format: 3 } },
+  { code: 'document_shape', doc: { ...espnFork(), format: 1 } },
+  { code: 'document_shape', doc: { ...espnFork(), postions: { QB: { receptions: 99 } } } },
   { code: 'scorable_allowlist', doc: withBase(espnFork(), { def_points_allowed: 1 }) },
+  {
+    code: 'scorable_allowlist',
+    doc: withOverride(espnFork(), 'DST', { def_points_allowed: -0.5 }),
+  },
+  { code: 'scorable_allowlist', doc: { ...template('ESPN Standard'), targets: 0.5 } },
   { code: 'tier_exclusivity', doc: withBase(espnFork(), { def_pa_14_20: 4 }) },
+  { code: 'tier_exclusivity', doc: { def_pa_14_20: 4, def_pa_18_27: 3 } },
   { code: 'position_scope', doc: withOverride(espnFork(), 'QB', { fg_0_39: 4 }) },
+  { code: 'position_scope', doc: withOverride(espnFork(), 'DST', { fg_0_39: 4 }) },
+  { code: 'position_scope', doc: withOverride(espnFork(), 'K', { def_sack: 2 }) },
+  { code: 'position_scope', doc: withOverride(espnFork(), 'qb', { pass_tds: 5 }) },
   { code: 'normal_form', doc: withOverride(espnFork(), 'TE', { receptions: 1 }) },
+  // Bounds, one document per ARM — magnitude, precision, finiteness — and on
+  // BOTH layers plus the flat document, because SQL walks base and positions
+  // as separate loops and mirrors the format-1 arm too.
   { code: 'bounds', doc: withOverride(espnFork(), 'QB', { pass_tds: 100.01 }) },
+  { code: 'bounds', doc: withBase(espnFork(), { pass_tds: 100.01 }) },
+  { code: 'bounds', doc: withBase(espnFork(), { receptions: 2.5001 }) },
+  { code: 'bounds', doc: withBase(espnFork(), { receptions: 0.30000000000000004 }) },
+  { code: 'bounds', doc: { ...template('ESPN Standard'), pass_tds: 100.01 } },
+  { code: 'bounds', doc: { ...template('ESPN Standard'), pass_yards: 0.001 } },
   { code: 'tier_cuts', doc: withCuts(espnFork(), { def_pa: [0, 7, 7] }) },
+  { code: 'tier_cuts', doc: withCuts(espnFork(), { def_xx: [0, 1] } as { def_pa?: unknown }) },
+  {
+    code: 'tier_cuts',
+    doc: withCuts({ ...espnFork(), base: {} }, { def_pa: [7, 14, 21, 28, 35] }),
+  },
 ]
 
 describe('the SE.4 contract: one family per parity document, first violation stable', () => {
@@ -999,9 +1059,16 @@ describe('the SE.4 contract: one family per parity document, first violation sta
   })
 
   it('covers all seven families — the parity fixture has no hole', () => {
-    expect(ONE_FAMILY_EACH.map((c) => c.code).sort()).toEqual(
+    expect([...new Set(ONE_FAMILY_EACH.map((c) => c.code))].sort()).toEqual(
       (Object.keys(FAMILY_NAME_IN_MESSAGE) as ScoringGuardrail[]).sort(),
     )
+    // …and both DOCUMENT FORMATS, because SE.4(1) mirrors the format-1 arm and
+    // an all-format-2 fixture cannot see it (review §5).
+    const formats = ONE_FAMILY_EACH.map(({ doc }) =>
+      typeof doc === 'object' && doc !== null && 'format' in doc ? 2 : 1,
+    )
+    expect(formats).toContain(1)
+    expect(formats).toContain(2)
   })
 })
 
@@ -1124,5 +1191,454 @@ describe('POSITION_SCORABLE_KEYS — the map SE.4 mirrors and SE.7 composes (F13
     for (const position of SCORING_POSITIONS) {
       expect(POSITION_SCORABLE_KEYS[position]).not.toContain('return_yards')
     }
+  })
+})
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Review round R588–R598 — the arms the first cut of this suite left with
+ * no RED, and the two code defects those gaps were hiding
+ * ──────────────────────────────────────────────────────────────────────── */
+
+describe('R588 — the envelope\'s own MEMBER SET (a stray member is not invisible)', () => {
+  it('THE DEFECT IS REAL: an unenumerated member means the commissioner’s overrides are silently discarded', () => {
+    // One transposed letter. Every guardrail reads `base` and `positions`, so
+    // before this fix nothing in the document was looked at except the four
+    // members the validator names — and `resolveRules` reads `positions`, not
+    // `postions`, so the whole override map evaporates while the save reports
+    // success. Measured here rather than argued, because it is the reason the
+    // member-set check exists (CLAUDE.md's never-let-"nothing happened"-mean-
+    // "it worked"; §7.3.3.1(5)'s "never a silently-ignored key").
+    const typo = {
+      ...espnFork(),
+      postions: { QB: { receptions: 99 }, TE: { receptions: 2.5 } },
+    }
+    expect(resolveRules(typo as unknown as ScoringRulesDocV2, 'QB').receptions).toBe(1)
+    const spelledRight = withOverride(espnFork(), 'QB', { receptions: 99 })
+    expect(resolveRules(spelledRight, 'QB').receptions).toBe(99)
+
+    expectRejection(typo, 'document_shape', 'postions', /not a member of a format-2/)
+  })
+
+  it('NAMED REJECTION: a case-shadowed member', () => {
+    expectRejection(
+      { ...espnFork(), Positions: { QB: { pass_tds: 99 } } },
+      'document_shape',
+      'Positions',
+      FAMILY_NAME_IN_MESSAGE.document_shape,
+    )
+  })
+
+  it('NAMED REJECTION: a coefficient stranded at the top level is refused there too', () => {
+    // Each of these is already refused INSIDE `base` by its own family; the
+    // point of the member-set check is that the same key alongside a correct
+    // member is not a place a document may hide something.
+    for (const stray of [
+      { def_points_allowed: 1 }, // guardrail 1's named raw source
+      { pass_yards: 5000 }, // 50× the magnitude bound
+      { def_pa_14_20: 4 }, // half of the F21 literal
+    ]) {
+      const key = Object.keys(stray)[0]
+      expectRejection(
+        { ...espnFork(), ...stray },
+        'document_shape',
+        key,
+        FAMILY_NAME_IN_MESSAGE.document_shape,
+      )
+      // …and the same key inside `base` is refused by its own family, so the
+      // two arms disagree about nothing.
+      expect(validateScoringRulesDoc(withBase(espnFork(), stray)).valid).toBe(false)
+    }
+  })
+
+  it('NAMED REJECTION: a stray table inside tier_cuts — the case a normalize-based fix would MISS', () => {
+    // `normalizeScoringDoc` passes `tier_cuts` through by reference, so a
+    // stray table there is a FIXED POINT: "refuse un-normalised documents"
+    // would never see it. It needs its own member-set check.
+    const doc = withCuts(espnFork(), { def_xx: [0, 1] } as { def_pa?: unknown })
+    expect(normalizeScoringDoc(doc)).toEqual(doc)
+    expectRejection(doc, 'tier_cuts', 'tier_cuts.def_xx', FAMILY_NAME_IN_MESSAGE.tier_cuts)
+  })
+
+  it('D269(5) RESTATED CORRECTLY: the accepted set is closed under normalizeScoringDoc, INCLUDING the stray case', () => {
+    // The property as first recorded was refuted by a one-member document
+    // (R588): `{...fork, def_points_allowed: 5}` was accepted and was NOT a
+    // fixed point. Both halves are pinned now — it rejects, and every document
+    // that IS accepted survives normalisation unchanged.
+    expect(validateScoringRulesDoc({ ...espnFork(), def_points_allowed: 5 }).valid).toBe(false)
+    const accepted: unknown[] = [
+      ...SCORING_TEMPLATES.map((t) => forkTemplateDoc(t.rules)),
+      withOverride(espnFork(), 'TE', { receptions: 1.5 }),
+      withOverride(espnFork(), 'K', { fg_missed: 0 }),
+    ]
+    for (const doc of accepted) {
+      expectAccepted(doc)
+      expect(normalizeScoringDoc(doc as ScoringRulesDocV2)).toEqual(doc)
+    }
+  })
+})
+
+describe('R589 — "multiples of 0.01" is the DECIMAL rule, not a float tolerance', () => {
+  it('NAMED REJECTION: values that are not 2dp decimals, at every layer', () => {
+    // 0.1 + 0.2 — the canonical float artefact, and a value a stepper UI
+    // produces on its own — plus a hand-typeable 4dp value and an 11dp one.
+    for (const value of [0.30000000000000004, 2.5001, 99.99999999999, 0.0000001]) {
+      expectRejection(
+        withBase(espnFork(), { receptions: value }),
+        'bounds',
+        'base.receptions',
+        /at most 2 decimal places/,
+      )
+      expectRejection(
+        withOverride(espnFork(), 'TE', { receptions: value }),
+        'bounds',
+        'positions.TE.receptions',
+        /at most 2 decimal places/,
+      )
+      expectRejection(
+        { ...template('ESPN Standard'), receptions: value },
+        'bounds',
+        'receptions',
+        /at most 2 decimal places/,
+      )
+    }
+  })
+
+  it('MONOTONE in decimal places — the property the snap did not have', () => {
+    // The snap accepted 99.99999999999 (11 dp) while refusing 99.9999999999
+    // (10 dp): non-monotonic, so "how precise is too precise" had no answer.
+    for (const value of [
+      99.9, 99.99, 99.999, 99.9999, 99.99999, 99.999999, 99.9999999, 99.99999999,
+      99.999999999, 99.9999999999, 99.99999999999,
+    ]) {
+      const decimals = String(value).split('.')[1]?.length ?? 0
+      const result = validateScoringRulesDoc(withBase(espnFork(), { receptions: value }))
+      expect([value, decimals, result.valid]).toEqual([value, decimals, decimals <= 2])
+    }
+  })
+
+  it('closes guardrail 4’s no-op band: a 1e-12 "override" of the base value is refused', () => {
+    // Under the snap this was ACCEPTED: it scores identically (Gronk's sample
+    // line: 23.9 either way) but survives `normalizeScoringDoc`'s exact `===`
+    // strip, so the All-Positions switch reads OFF for a section whose values
+    // are in fact uniform — verbatim the harm guardrail 4's own message names.
+    const doc = withOverride(espnFork(), 'TE', { receptions: 1.000000000001 })
+    expect(normalizeScoringDoc(doc)).toEqual(doc) // the strip cannot see it
+    expectRejection(doc, 'bounds', 'positions.TE.receptions', /at most 2 decimal places/)
+  })
+
+  it('ZERO false rejections: every legal 2dp coefficient in [-100, 100] is accepted (20,001 values)', () => {
+    // The sweep that makes "adopt the exact decimal rule" safe rather than
+    // merely strict. A flat one-key document keeps it cheap; `receptions` is
+    // scorable and pulls in no other family.
+    let rejected = 0
+    for (let cents = -10000; cents <= 10000; cents++) {
+      const value = cents / 100
+      if (!validateScoringRulesDoc({ receptions: value }).valid) rejected++
+    }
+    expect(rejected).toBe(0)
+  })
+
+  it('ZERO false rejections on the shipped templates: all 218 coefficients pass', () => {
+    const total = SCORING_TEMPLATES.reduce((n, t) => n + Object.keys(t.rules).length, 0)
+    expect(total).toBe(218)
+    for (const t of SCORING_TEMPLATES) expectAccepted(t.rules)
+  })
+
+  it('IS THE SQL RULE: acceptance ≡ Postgres `scale(p) <= 2` on the same literal', () => {
+    // The mirror is exact by construction, so SE.4's parity fixture measures
+    // agreement rather than documenting a divergence. `scale()` is the number
+    // of digits after the decimal point in the jsonb literal, which is what
+    // these strings are.
+    const cases: Array<[number, number]> = [
+      [4, 0],
+      [0.5, 1],
+      [0.04, 2],
+      [-4.35, 2],
+      [100, 0],
+      [0.001, 3],
+      [2.5001, 4],
+      [0.30000000000000004, 17],
+      [99.99999999999, 11],
+    ]
+    for (const [value, scale] of cases) {
+      expect([value, String(value).split('.')[1]?.length ?? 0]).toEqual([value, scale])
+      expect([value, validateScoringRulesDoc({ receptions: value }).valid]).toEqual([
+        value,
+        scale <= 2,
+      ])
+    }
+  })
+})
+
+describe('R592 — the points-allowed table must start at 0 (D174 / R58 / D58)', () => {
+  it('THE DEFECT IS REAL: a shifted PA cut list moves the E61 pending badge, in both directions', () => {
+    // §7.3.3.1(a)'s controlling clause is that the cuts reading AGREES with
+    // today's literals. A first cut below 0 pays a tier for corrupt data that
+    // R58/D58 rules unmappable; a first cut above 0 withholds the family on an
+    // ordinary low-scoring week. Neither moves a TOTAL — both move the badge,
+    // which is the only signal E61 gives that a week is incomplete.
+    const shiftedUp = { def_pa: [7, 14, 21, 28, 35], def_ya: [...YA_CUTS] }
+    const paKeys = tierKeysFromCuts(DEF_PA_PREFIX, shiftedUp.def_pa)
+    const rules = Object.fromEntries(paKeys.map((k) => [k, 1]))
+    for (const pa of [0, 3, 6]) {
+      const literal = scorePlayerWeek(rules, deriveTierIndicators({ def_points_allowed: pa }))
+      const ownCuts = scorePlayerWeek(
+        rules,
+        deriveTierIndicators({ def_points_allowed: pa }, shiftedUp),
+      )
+      expect(literal.pending).toEqual([])
+      expect(ownCuts.pending.length).toBe(paKeys.length) // a FALSE badge
+      expect(ownCuts.total).toBe(literal.total)
+    }
+  })
+
+  it('NAMED REJECTION + D146 ONE UNIT: first cut 0 accepts, −1 and 7 reject', () => {
+    const bare = { ...espnFork(), base: {} }
+    expectAccepted(withCuts(bare, { def_pa: [0, 7, 14, 21, 28, 35] }))
+    const below = expectRejection(
+      withCuts(bare, { def_pa: [-1, 0, 1, 7, 14, 21, 28, 35] }),
+      'tier_cuts',
+      'tier_cuts.def_pa',
+      FAMILY_NAME_IN_MESSAGE.tier_cuts,
+    )
+    expect(below.violations[0].message).toMatch(/must start at 0/)
+    expectRejection(
+      withCuts(bare, { def_pa: [7, 14, 21, 28, 35] }),
+      'tier_cuts',
+      'tier_cuts.def_pa',
+      /must start at 0/,
+    )
+    // YA is untouched: its first tier is genuinely open below (D174), so a
+    // negative-total-yards game belongs to it.
+    expectAccepted(withCuts(bare, { def_ya: [-50, 0, 100] }))
+  })
+})
+
+describe('R595 — a document cannot make the validator generate unbounded output', () => {
+  it('the violation list is capped, and says so', () => {
+    const many: Record<string, number> = {}
+    for (let i = 0; i < 500; i++) many[`bogus_key_${i}`] = 1
+    const result = validateScoringRulesDoc(many)
+    expect(result.valid).toBe(false)
+    expect(result.violations.length).toBe(MAX_REPORTED_VIOLATIONS + 1)
+    const last = result.violations[result.violations.length - 1]
+    expect(last.message).toMatch(/500 problems/)
+    // The cap NEVER changes the verdict — only how much of it is printed.
+    expect(validateScoringRulesDoc({ ...many, receptions: 1 }).valid).toBe(false)
+  })
+
+  it('a long cut list does not become a long message', () => {
+    const long: number[] = []
+    for (let i = 0; i < 2000; i++) long.push(i)
+    const doc = withCuts(withBase({ ...espnFork(), base: {} }, { def_pa_14_20: 1 }), {
+      def_pa: long,
+    })
+    const result = validateScoringRulesDoc(doc)
+    expect(codes(result)).toEqual(['tier_exclusivity'])
+    expect(result.violations[0].message.length).toBeLessThan(600)
+  })
+})
+
+describe('R596/R597 — the front door names ITS family, and format 1 is pinned', () => {
+  it('NAMED REJECTION: the non-object refusal names the family and what it got', () => {
+    for (const [input, got] of [
+      [null, /got null/],
+      [[], /got an array/],
+      ['a scoring system', /got a string/],
+      [42, /got a number/],
+    ] as const) {
+      const result = expectRejection(input, 'document_shape', '', got)
+      expect(result.violations[0].message).toMatch(FAMILY_NAME_IN_MESSAGE.document_shape)
+    }
+  })
+
+  it('D146 ONE UNIT: `format: 1` — one below the accepted value — is refused, and the message is not self-contradictory', () => {
+    // SE.2 pins this exact fixture on the same discriminator
+    // (`rules-doc.test.ts`), and this module claims to mirror it. The message
+    // has to say the true thing: format 1 IS the flat map with no `format`
+    // member, so a document that NAMES version 1 is not one.
+    const result = expectRejection(
+      { ...espnFork(), format: 1 },
+      'document_shape',
+      'format',
+      /format 1 IS the flat map/,
+    )
+    expect(result.violations[0].message).not.toMatch(/this build validates format 1/)
+    expectAccepted(espnFork()) // format 2, one unit up — the accepted value
+  })
+
+  it('NAMED REJECTION: an envelope whose `format` member was DELETED is diagnosed, not buried', () => {
+    // Read as a flat map, its three members are simply unknown keys — six
+    // nonsense allowlist violations that name nothing a commissioner can act
+    // on. The document says what it is; the refusal should too.
+    const noFormat: Record<string, unknown> = { ...espnFork() }
+    delete noFormat.format
+    expect('format' in noFormat).toBe(false)
+    const result = validateScoringRulesDoc(noFormat)
+    expect(result.valid).toBe(false)
+    expect(result.violations[0].code).toBe('document_shape')
+    expect(result.violations[0].path).toBe('')
+    expect(result.violations[0].message).toMatch(/no "format" member/)
+    expect(result.violations[0].message).toMatch(/base, positions, tier_cuts/)
+  })
+})
+
+describe('R590 — guardrail 5 on the layer that actually holds the coefficients', () => {
+  it('NAMED REJECTION: the magnitude arm on `base` (the layer a fork writes the whole template into)', () => {
+    // Every magnitude and precision fixture in the first cut of this suite sat
+    // at `positions.QB.*`, so `if (!path.startsWith('positions.')) continue`
+    // in `checkBounds` left the whole suite green while `base.pass_tds = 1e9`
+    // became `valid: true`. `base` is where a fork writes the template and
+    // where the All-Positions switch writes every edit.
+    expectRejection(
+      withBase(espnFork(), { pass_tds: 100.01 }),
+      'bounds',
+      'base.pass_tds',
+      /\|coef\| ≤ 100/,
+    )
+    expectAccepted(withBase(espnFork(), { pass_tds: 100 }))
+  })
+
+  it('NAMED REJECTION: the precision arm on `base`', () => {
+    expectRejection(
+      withBase(espnFork(), { pass_yards: 0.001 }),
+      'bounds',
+      'base.pass_yards',
+      /at most 2 decimal places/,
+    )
+  })
+
+  it('NAMED REJECTION: bounds on a FORMAT-1 document (the arm SE.4 must mirror)', () => {
+    // Commenting out `checkBounds` in the flat arm left the suite green: a flat
+    // league document got no bounds checking at all — not magnitude, not 2dp,
+    // not even finite. D175's wall validates exactly those rows.
+    expectRejection(
+      { ...template('ESPN Standard'), pass_tds: 100.01 },
+      'bounds',
+      'pass_tds',
+      /\|coef\| ≤ 100/,
+    )
+    expectRejection(
+      { ...template('ESPN Standard'), pass_yards: 0.001 },
+      'bounds',
+      'pass_yards',
+      /at most 2 decimal places/,
+    )
+    expectRejection(
+      { ...template('ESPN Standard'), pass_tds: Number.NaN },
+      'bounds',
+      'pass_tds',
+      /must be a finite number/,
+    )
+  })
+})
+
+describe('R593 — guardrail 1 on the D/ST override layer (the only layer with its own key set)', () => {
+  it('NAMED REJECTION: the raw source under positions.DST — F21 verbatim, one layer down', () => {
+    // `if (path.startsWith('positions.DST.')) continue` in `checkAllowlist`
+    // left the suite green — and then ACCEPTED a fork paying
+    // `positions.DST.def_points_allowed` beside its own eight `def_pa_*` tier
+    // keys, which is the F21 double-count itself. QB/RB/WR/TE share one key
+    // set by object identity, so QB's fixture covers them; D/ST's 27-key set
+    // had no guardrail-1 fixture at all.
+    expectRejection(
+      withOverride(espnFork(), 'DST', { def_points_allowed: -0.5 }),
+      'scorable_allowlist',
+      'positions.DST.def_points_allowed',
+      FAMILY_NAME_IN_MESSAGE.scorable_allowlist,
+    )
+    expectRejection(
+      withOverride(espnFork(), 'DST', { def_yards_allowed: -0.01 }),
+      'scorable_allowlist',
+      'positions.DST.def_yards_allowed',
+      FAMILY_NAME_IN_MESSAGE.scorable_allowlist,
+    )
+  })
+})
+
+describe('R594 — guardrail 3’s K↔DST clause and its position VOCABULARY', () => {
+  it('NAMED REJECTION: K keys under DST and D/ST keys under K (the clause with no fixture)', () => {
+    // §7.3.3.1's sentence has three clauses — "K keys only under K, D/ST keys
+    // only under DST, offense keys never under K/DST". The first cut pinned
+    // only the third: widening `POSITION_KEY_SETS.K`/`.DST` to each other's
+    // keys (leaving the exported catalog correct, so the disjointness and
+    // union pins still saw a correct catalog) left the suite green.
+    expectRejection(
+      withOverride(espnFork(), 'DST', { fg_0_39: 4 }),
+      'position_scope',
+      'positions.DST.fg_0_39',
+      /belongs to K/,
+    )
+    expectRejection(
+      withOverride(espnFork(), 'DST', { pat_made: 2 }),
+      'position_scope',
+      'positions.DST.pat_made',
+      /belongs to K/,
+    )
+    expectRejection(
+      withOverride(espnFork(), 'K', { def_sack: 2 }),
+      'position_scope',
+      'positions.K.def_sack',
+      /belongs to DST/,
+    )
+    expectRejection(
+      withOverride(espnFork(), 'K', { def_pa_14_17: 2 }),
+      'position_scope',
+      'positions.K.def_pa_14_17',
+      /belongs to DST/,
+    )
+  })
+
+  it('NAMED REJECTION: the position vocabulary is EXACT — case and whitespace are not spellings', () => {
+    // The near-boundary a forgiving SQL mirror (`upper(trim(p))`) invites, and
+    // the reason it must not: `resolveRules` looks positions up by exact own
+    // property, so a document accepted under `positions.dst` would pay NOTHING
+    // while the wall said yes — a silently-ignored override map again.
+    for (const spelling of ['qb', 'Qb', 'dst', 'DST ', ' K', 'D/ST', 'DEF']) {
+      expect(resolveRules(withOverride(espnFork(), spelling, { def_sack: 9 }), 'DST').def_sack).toBe(
+        1,
+      )
+      expectRejection(
+        withOverride(espnFork(), spelling, { def_sack: 9 }),
+        'position_scope',
+        `positions.${spelling}`,
+        FAMILY_NAME_IN_MESSAGE.position_scope,
+      )
+    }
+    // …and the six exact spellings are accepted, so this is a boundary and not
+    // a blanket refusal.
+    for (const position of SCORING_POSITIONS) {
+      // Each position's own first catalog key, one point off its base value —
+      // legal everywhere the spelling is exact.
+      const key = POSITION_SCORABLE_KEYS[position][0]
+      const base = espnFork().base[key] ?? 0
+      expectAccepted(withOverride(espnFork(), position, { [key]: base + 1 }))
+    }
+  })
+})
+
+describe('the family names are MUTUALLY EXCLUSIVE (R596 — a message names ITS family, not just the section)', () => {
+  it('no message matches a foreign family’s discriminator, across every rejection fixture', () => {
+    const families = Object.keys(FAMILY_NAME_IN_MESSAGE) as ScoringGuardrail[]
+    let checked = 0
+    for (const doc of REJECTION_CORPUS) {
+      for (const violation of validateScoringRulesDoc(doc).violations) {
+        expect(violation.message).toMatch(FAMILY_NAME_IN_MESSAGE[violation.code])
+        for (const other of families) {
+          if (other === violation.code) continue
+          expect([violation.code, other, FAMILY_NAME_IN_MESSAGE[other].test(violation.message)]).toEqual(
+            [violation.code, other, false],
+          )
+        }
+        checked++
+      }
+    }
+    // The corpus must actually exercise every family, or "mutually exclusive"
+    // is a claim about an empty set.
+    expect(checked).toBeGreaterThan(REJECTION_CORPUS.length)
+    const seen = new Set(
+      REJECTION_CORPUS.flatMap((doc) => codes(validateScoringRulesDoc(doc))),
+    )
+    expect([...seen].sort()).toEqual([...families].sort())
   })
 })
