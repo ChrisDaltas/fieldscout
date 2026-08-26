@@ -542,7 +542,7 @@ select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.100}'::jsonb)), 'ACCEPT',
 select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 4.0}'::jsonb)), 'ACCEPT',
   'E7b: …and an INTEGER written with a trailing zero accepts too — the shape a hand-authored or psql-authored document actually takes');
 select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 0.07}'::jsonb)), 'ACCEPT',
-  'E8: 0.07 ACCEPTS — the value that reds a naive (v*100) %% 1 = 0 implementation in floating point');
+  'E8: 0.07 ACCEPTS — the value that reds a naive (v*100) % 1 = 0 implementation in floating point');
 
 select is(pg_temp.verdict(pg_temp.env('{"pass_tds": 4}'::jsonb, '{}'::jsonb, '[0,7]'::jsonb)), 'ACCEPT',
   'E9: a TWO-cut PA table ACCEPTS — the >= 2 floor, from above');
@@ -699,7 +699,7 @@ select is(
      from unnest(array['def_pa_0_13','def_ya_0_50','def_pa_2','def_ya_600_plus']) k),
   array['scorable_allowlist|def_pa_0_13','scorable_allowlist|def_pa_2',
         'scorable_allowlist|def_ya_0_50','scorable_allowlist|def_ya_600_plus']::text[],
-  'H3: …and NEAR-MISS tier names draw guardrail 1 BY NAME — the allowlist is a membership test, not a `def_pa_%%` prefix match');
+  'H3: …and NEAR-MISS tier names draw guardrail 1 BY NAME — the allowlist is a membership test, not a `def_pa_%` prefix match');
 
 -- ===========================================================================
 -- §I THE POSITION MAP, AS A HAND-COMPUTED HISTOGRAM (§7.3.3.1's catalog)
