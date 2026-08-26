@@ -30,12 +30,22 @@ import { describe, expect, it } from 'vitest'
 import { STAT_KEYS } from '../stats/stat-keys'
 import { scorePlayerWeek } from './calculator'
 import { deriveTierIndicators } from './derive-stats'
+// The fixture builders and `ONE_FAMILY_EACH` live in `parity-fixture.ts` from
+// SE.4 on — one definition, run through BOTH validators (D168(1)).
+import {
+  ONE_FAMILY_EACH,
+  espnFork,
+  template,
+  withBase,
+  withCuts,
+  withOverride,
+  yahooFork,
+} from './parity-fixture'
 import {
   SCORING_POSITIONS,
   forkTemplateDoc,
   normalizeScoringDoc,
   resolveRules,
-  type FlatScoringRules,
   type ScoringPosition,
   type ScoringRulesDocV2,
 } from './rules-doc'
@@ -63,39 +73,13 @@ import {
  * Fixtures and helpers
  * ──────────────────────────────────────────────────────────────────────── */
 
-const template = (name: string): FlatScoringRules => {
-  const found = SCORING_TEMPLATES.find((t) => t.name === name)
-  if (!found) throw new Error(`no template named ${name}`)
-  return found.rules
-}
-
-/** The canonical valid format-2 document: a fresh fork of ESPN Full PPR
- *  (ESPN cuts, a YA table, and a `receptions` coefficient to override). */
-const espnFork = (): ScoringRulesDocV2 => forkTemplateDoc(template('ESPN Full PPR'))
-/** A shared-family fork: Yahoo Half PPR (shared PA cuts, no YA keys paid). */
-const yahooFork = (): ScoringRulesDocV2 => forkTemplateDoc(template('Yahoo Half PPR'))
-
-const withBase = (
-  doc: ScoringRulesDocV2,
-  patch: Record<string, unknown>,
-): ScoringRulesDocV2 =>
-  ({ ...doc, base: { ...doc.base, ...patch } }) as ScoringRulesDocV2
-
-const withOverride = (
-  doc: ScoringRulesDocV2,
-  position: string,
-  map: Record<string, unknown>,
-): ScoringRulesDocV2 =>
-  ({ ...doc, positions: { ...doc.positions, [position]: map } }) as ScoringRulesDocV2
-
-/** A fresh `tier_cuts` — never a mutation: `forkTemplateDoc` writes the module
- *  constants BY REFERENCE (R587), so an in-place edit here would re-cut every
- *  league in the process. */
-const withCuts = (
-  doc: ScoringRulesDocV2,
-  patch: { def_pa?: unknown; def_ya?: unknown },
-): ScoringRulesDocV2 =>
-  ({ ...doc, tier_cuts: { ...doc.tier_cuts, ...patch } }) as ScoringRulesDocV2
+// The builders and the one-family-each corpus MOVED to `parity-fixture.ts`
+// at SE.4 and are imported back here (see the import block above). They are
+// the TS half of the TS≡SQL parity fixture D168(1) requires, and "shared"
+// there means ONE definition — a copy in each suite would recreate, one level
+// up, exactly the drift the fixture exists to prevent (D269(7): "that array is
+// the TS half of SE.4(4)'s parity fixture, ready to lift"). Nothing about
+// their contents changed in the lift.
 
 const codes = (result: ScoringValidationResult): ScoringGuardrail[] =>
   result.violations.map((v) => v.code)
@@ -1001,55 +985,15 @@ const REJECTION_CORPUS: unknown[] = [
   { ...espnFork(), format: 1 },
 ]
 
-/**
- * Documents that break EXACTLY one family — the shape SE.4's TS≡SQL parity
- * fixture is built from (SQL RAISEs on the FIRST violation, so a parity
- * document must have only one).
- *
- * **It began as literally one document per family, and that was too narrow to
- * do the job D168 gives it (review §5).** Every entry was `espnFork()`-derived
- * — so the format-1 arm, which SE.4(1) must also mirror, had no parity
- * document at all; the bounds entry short-circuited on magnitude and never
- * reached the precision arm, which is exactly where the TS and SQL rules could
- * differ; and the D/ST allowlist layer, the K↔DST scope clause, the position
- * vocabulary, stray members and the PA floor had no document either. Six of
- * the review's eleven findings would have propagated into SE.4 through this
- * one array. It now carries a document per ARM, and the coverage assertion
- * below is "every family is exercised", not "exactly one document each".
+/*
+ * `ONE_FAMILY_EACH` — the documents that break EXACTLY one family — MOVED to
+ * `parity-fixture.ts` at SE.4, where `scoring-parity-db.test.ts` runs the same
+ * array through `scoring_rules_validate` in SQL. Its docblock (the "checklist
+ * of NAMES, not of behaviours" argument that widened it from one document per
+ * family to one per ARM) moved with it. The contract it exists to serve is
+ * still asserted HERE, because "exactly one violation, and it is first" is a
+ * fact about the TS validator:
  */
-const ONE_FAMILY_EACH: Array<{ code: ScoringGuardrail; doc: unknown }> = [
-  { code: 'document_shape', doc: { ...espnFork(), format: 3 } },
-  { code: 'document_shape', doc: { ...espnFork(), format: 1 } },
-  { code: 'document_shape', doc: { ...espnFork(), postions: { QB: { receptions: 99 } } } },
-  { code: 'scorable_allowlist', doc: withBase(espnFork(), { def_points_allowed: 1 }) },
-  {
-    code: 'scorable_allowlist',
-    doc: withOverride(espnFork(), 'DST', { def_points_allowed: -0.5 }),
-  },
-  { code: 'scorable_allowlist', doc: { ...template('ESPN Standard'), targets: 0.5 } },
-  { code: 'tier_exclusivity', doc: withBase(espnFork(), { def_pa_14_20: 4 }) },
-  { code: 'tier_exclusivity', doc: { def_pa_14_20: 4, def_pa_18_27: 3 } },
-  { code: 'position_scope', doc: withOverride(espnFork(), 'QB', { fg_0_39: 4 }) },
-  { code: 'position_scope', doc: withOverride(espnFork(), 'DST', { fg_0_39: 4 }) },
-  { code: 'position_scope', doc: withOverride(espnFork(), 'K', { def_sack: 2 }) },
-  { code: 'position_scope', doc: withOverride(espnFork(), 'qb', { pass_tds: 5 }) },
-  { code: 'normal_form', doc: withOverride(espnFork(), 'TE', { receptions: 1 }) },
-  // Bounds, one document per ARM — magnitude, precision, finiteness — and on
-  // BOTH layers plus the flat document, because SQL walks base and positions
-  // as separate loops and mirrors the format-1 arm too.
-  { code: 'bounds', doc: withOverride(espnFork(), 'QB', { pass_tds: 100.01 }) },
-  { code: 'bounds', doc: withBase(espnFork(), { pass_tds: 100.01 }) },
-  { code: 'bounds', doc: withBase(espnFork(), { receptions: 2.5001 }) },
-  { code: 'bounds', doc: withBase(espnFork(), { receptions: 0.30000000000000004 }) },
-  { code: 'bounds', doc: { ...template('ESPN Standard'), pass_tds: 100.01 } },
-  { code: 'bounds', doc: { ...template('ESPN Standard'), pass_yards: 0.001 } },
-  { code: 'tier_cuts', doc: withCuts(espnFork(), { def_pa: [0, 7, 7] }) },
-  { code: 'tier_cuts', doc: withCuts(espnFork(), { def_xx: [0, 1] } as { def_pa?: unknown }) },
-  {
-    code: 'tier_cuts',
-    doc: withCuts({ ...espnFork(), base: {} }, { def_pa: [7, 14, 21, 28, 35] }),
-  },
-]
 
 describe('the SE.4 contract: one family per parity document, first violation stable', () => {
   it.each(ONE_FAMILY_EACH)('$code — reported alone, and first', ({ code, doc }) => {

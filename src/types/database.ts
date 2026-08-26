@@ -3762,6 +3762,11 @@ export type Database = {
         Returns: undefined
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
+      scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
+      scoring_tier_keys_from_cuts: {
+        Args: { p_cuts: Json; p_prefix: string }
+        Returns: string[]
+      }
       seat_league_member_internal: {
         Args: {
           p_faab_budget: number
