@@ -876,8 +876,8 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
       clients.push(client)
     }
     await cleanup()
-    const { error: seedError } = await service.from('players').upsert([...POOL_PLAYERS])
-    expect(seedError, `seeded-pool upsert failed: ${seedError?.message}`).toBeNull()
+    // *** BREAK PROBE — the seeded pool removed; reverted in the next
+    //     commit. The `> 64` premise below must go RED in CI. ***
     const { data: template, error: templateError } = await clients[0]!
       .from('scoring_systems')
       .select('id')
