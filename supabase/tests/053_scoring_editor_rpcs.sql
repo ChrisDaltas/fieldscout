@@ -158,14 +158,24 @@ begin
 end;
 $$;
 
-/** MESSAGE, with the league uuid stripped and then truncated. Both halves are
+/** MESSAGE, with EVERY uuid stripped and then truncated. All three moves are
  *  load-bearing: every `scoring_update_rules` refusal opens with
  *  `scoring_update_rules: league <36-char uuid>`, so an un-stripped 44-char
  *  window ends before any distinguishing word — the three refusals were one
- *  byte-identical string and two guards had no mutation coverage at all. */
+ *  byte-identical string and two guards had no mutation coverage at all.
+ *  **`p_league` is not the only uuid a message carries (widened 2026-08-26,
+ *  R-item 8).** §D6's refusal names the SCORING SYSTEM as well, and with only
+ *  `p_league` stripped the 60-char window ended ONE CHARACTER into a fixture
+ *  uuid: discriminating against today's fixtures and brittle to renumbering
+ *  them, which is a pin that would move for a reason that is not a code change.
+ *  Every remaining uuid therefore becomes `<S>`, and the window is 72 so that
+ *  no expectation in this file terminates inside a placeholder. */
 create function pg_temp.msg(p_err text, p_league uuid) returns text
 language sql immutable as $$
-  select 'MSG:' || left(replace(p_err, p_league::text, '<L>'), 60);
+  select 'MSG:' || left(
+    regexp_replace(replace(p_err, p_league::text, '<L>'),
+                   '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                   '<S>', 'g'), 72);
 $$;
 
 create function pg_temp.fork(p_league uuid, p_template uuid) returns text
@@ -391,8 +401,9 @@ select is(
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'create_league'
-      and p.prosrc ~ 'is_template\s*=\s*TRUE'),
-  1, 'A8 (D170): `create_league` still carries the template-only predicate. SE.5 widens the ATTACH path and deliberately not the BIRTH path — a league is always born on a template, and the fork needs a league row to exist before it can own one');
+      and regexp_replace(p.prosrc, '--[^\n]*', '', 'g')
+          ~ 'is_template\s*=\s*TRUE'),
+  1, 'A8 (D170): `create_league` still carries the template-only predicate. SE.5 widens the ATTACH path and deliberately not the BIRTH path — a league is always born on a template, and the fork needs a league row to exist before it can own one. **MATCHED OVER `prosrc` WITH LINE COMMENTS STRIPPED (2026-08-26, R661/F159) — this cell was the FIFTH occurrence of the class and it was in the file its own PR swept.** Measured before the strip: delete `AND s.is_template = TRUE` from `create_league` with no comment and 053 reds here (71 / 1), correctly; delete it and leave `-- (the template arm: s.is_template = TRUE, kept ownerless by 058)` and the **whole file is green (71 / 0) with the template predicate gone** — D170''s birth-path boundary, unpinned, in the exact shape of §K1. With the strip the decoy reds (71 / 1). F159 originally scoped its inventory to the cells *outside* 052–053 and that sentence is struck: **a sweep that exempts its own file is not a sweep**');
 
 select is(
   (select polcmd::text from pg_policy
@@ -496,7 +507,7 @@ select is(left(pg_temp.fork('b0530000-0000-4000-8000-0000000000a7', (select id f
   'C6: a SOFT-DELETED league refuses — and WHICH guard refuses it was measured rather than predicted. `is_league_commish` does NOT filter deleted_at, so the commissioner still passes step 1; it is step 2''s `WHERE deleted_at IS NULL ... FOR UPDATE` that finds nothing and raises P0002. The distinction matters because it means the deleted-league defense lives in the lock, not in the auth check — move the lock and this protection moves with it');
 
 select is(pg_temp.fork('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
-  'P0001|MSG:scoring_fork_template: p_template_id must reference one of t|raised_in:scoring_fork_template',
+  'P0001|MSG:scoring_fork_template: p_template_id must reference one of the scoring t|raised_in:scoring_fork_template',
   'C7 (§7.3.3.1 + D33): a personal research row cannot be a fork''s STARTING POINT. "A fork always starts from a template"; pre-existing personal systems live in the legacy namespace and stay unattachable');
 
 -- ── C8: the document the fork actually writes ──────────────────────────────
@@ -584,7 +595,7 @@ select is(
 -- pgtap-se5-other is on no scoring system at all.
 set local "request.jwt.claims" = '{"sub":"90530000-0000-4000-8000-000000000005","role":"authenticated"}';
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league <L> references no scoring syste|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> references no scoring system — fork a t|raised_in:scoring_update_rules',
   'D4: a league referencing NO scoring system is told to fork first, not handed a NULL dereference');
 
 -- Put the "other" league on a plain template so D5 can refuse it.
@@ -594,7 +605,7 @@ update leagues set scoring_system_id = (select id from t_ids where name = 'Yahoo
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8',
     (select rules from t_ids t join scoring_systems s on s.id = t.id where t.name = 'Yahoo Standard')),
-  'P0001|MSG:scoring_update_rules: league <L> is on a shared template — f|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> is on a shared template — fork first, t|raised_in:scoring_update_rules',
   'D5 (§7.3.3.1 + D59): a league sitting on a shared TEMPLATE cannot be edited in place — "templates themselves are never edited". Without this the first commissioner to save would rewrite the scoring of every other league on that template');
 
 set local role postgres;
@@ -604,7 +615,7 @@ update leagues set scoring_system_id = '50530000-0000-4000-8000-000000000001'
  where id = 'b0530000-0000-4000-8000-0000000000a8';
 set local role authenticated;
 select is(pg_temp.save('b0530000-0000-4000-8000-0000000000a8', '{"pass_yards": 0.05}'::jsonb),
-  'P0001|MSG:scoring_update_rules: league <L> references scoring system 5|raised_in:scoring_update_rules',
+  'P0001|MSG:scoring_update_rules: league <L> references scoring system <S>, which is|raised_in:scoring_update_rules',
   'D6: a referenced row that is NOT owned by a commissioner of this league is refused. The commissioner may not edit someone else''s scoring document just because a privileged write pointed their league at it');
 
 -- ── D7/D8: un-normalized refused, and its control ──────────────────────────
@@ -781,13 +792,13 @@ select is(
 
 select is(
   pg_temp.attach('b0530000-0000-4000-8000-0000000000a1', '50530000-0000-4000-8000-000000000001'),
-  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one of the scor|raised_in:update_league_settings',
   'F2: a PERSONAL research system still refuses — "nothing else" is the other half of §7.3.8''s sentence, and D33''s one-namespace rule is what it protects');
 
 select is(
   pg_temp.attach('b0530000-0000-4000-8000-0000000000a1',
        (select id from scoring_systems where name = 'pgtap-se5-scheduled Custom')),
-  'P0001|MSG:update_league_settings: scoring_system_id must reference one|raised_in:update_league_settings',
+  'P0001|MSG:update_league_settings: scoring_system_id must reference one of the scor|raised_in:update_league_settings',
   'F3: ANOTHER LEAGUE''S FORK refuses too — and it is the cell that proves F1''s arm is an IDENTITY test on this league''s current reference rather than a blanket "any non-template row owned by a commissioner"');
 
 select is(
@@ -863,17 +874,19 @@ select is(
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'scoring_systems_rules_guard'
-      and p.prosrc ~ 'FOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)'),
-  0, 'G1 (F148/F151 — THE PREMISE THE PL/pgSQL HALF OF THE DEADLOCK ARGUMENT RESTS ON; see this section''s banner for the FK-induced direction it does NOT cover, R644): **wall 1 takes NO row lock at all.** Its arm (c) is a bare EXISTS with no FOR clause, so the second direction of a lock cycle does not exist and wall 3''s lock — whatever its strength — cannot deadlock against it. F148 was filed because 104 once claimed a "two-direction lock pattern" that had never existed. Add a FOR clause to wall 1 and this cell goes red: it is the single edit that would turn F147''s choice from a performance question into a correctness one');
+      and regexp_replace(p.prosrc, '--[^\n]*', '', 'g')
+          ~ 'FOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)'),
+  0, 'G1 (F148/F151 — THE PREMISE THE PL/pgSQL HALF OF THE DEADLOCK ARGUMENT RESTS ON; see this section''s banner for the FK-induced direction it does NOT cover, R644): **wall 1 takes NO row lock at all.** Its arm (c) is a bare EXISTS with no FOR clause, so the second direction of a lock cycle does not exist and wall 3''s lock — whatever its strength — cannot deadlock against it. F148 was filed because 104 once claimed a "two-direction lock pattern" that had never existed. Add a FOR clause to wall 1 and this cell goes red: it is the single edit that would turn F147''s choice from a performance question into a correctness one. **MATCHED OVER `prosrc` WITH LINE COMMENTS STRIPPED (2026-08-26, F159).** This cell is a BAN (expected 0), so over raw body text it is false-POSITIVE-prone in 052 §K2''s exact shape — measured, ONE comment line added to wall 1 reading `-- Lock note: this guard takes no FOR UPDATE and no FOR SHARE anywhere.` reds it against a 71/0 control, with wall 1 unchanged and correct. The strip is LOSSLESS on what the cell is actually for: add a real `PERFORM 1 FROM public.leagues l WHERE l.scoring_system_id = NEW.id FOR UPDATE;` to wall 1 and it reds with the strip in place exactly as it did without it');
 
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    cross join lateral (select regexp_replace(p.prosrc, '--[^\n]*', '', 'g') as src) c
     where n.nspname = 'public'
       and p.proname in ('scoring_fork_template','scoring_update_rules','update_league_settings')
-      and position('FROM public.leagues' in p.prosrc) > 0
-      and position('FOR UPDATE' in p.prosrc) > 0
-      and position('FOR UPDATE' in p.prosrc) < position('public.scoring_systems' in p.prosrc)),
-  3, 'G2 (F151 — LOCK ORDER, PINNED STRUCTURALLY): all three league-writing RPCs take the `leagues` row FOR UPDATE **before** they touch `public.scoring_systems`. One global order, leagues then scoring_systems, is what makes the multi-statement write pattern SE.5 introduces deadlock-free — F151 was filed precisely because `scoring_update_rules` is the leg that made the reverse order assemblable for the first time. Move either RPC''s league lock after its scoring write and this count drops. The BEHAVIOURAL half — both orderings, repeated, zero 40P01 — is a multi-session measurement a one-session pgTAP file cannot host; it is in the SE.5 PR and PROGRESS D273 (the 066/084/098 idiom)');
+      and position('FROM public.leagues' in c.src) > 0
+      and position('FOR UPDATE' in c.src) > 0
+      and position('FOR UPDATE' in c.src) < position('public.scoring_systems' in c.src)),
+  3, 'G2 (F151 — LOCK ORDER, PINNED STRUCTURALLY): all three league-writing RPCs take the `leagues` row FOR UPDATE **before** they touch `public.scoring_systems`. One global order, leagues then scoring_systems, is what makes the multi-statement write pattern SE.5 introduces deadlock-free — F151 was filed precisely because `scoring_update_rules` is the leg that made the reverse order assemblable for the first time. Move either RPC''s league lock after its scoring write and this count drops. The BEHAVIOURAL half — both orderings, repeated, zero 40P01 — is a multi-session measurement a one-session pgTAP file cannot host; it is in the SE.5 PR and PROGRESS D273 (the 066/084/098 idiom). **MATCHED OVER `prosrc` WITH LINE COMMENTS STRIPPED (2026-08-26, F159), and this is the cell that made the sweep worth running:** three raw `position()` probes over body text that INCLUDES comments are false-NEGATIVE-prone in 052 §K1''s exact shape. Measured — delete `scoring_update_rules`'' real `FOR UPDATE` and leave behind two comment lines naming `FROM public.leagues`, `FOR UPDATE` and `public.scoring_systems` in that order, and this cell reported **3 and stayed GREEN** (71 total, 0 not-ok) with the league lock GONE. With the strip it reports 2 and reds. Stripping costs nothing: the unmutated control is 71/0 either way, which is also a measurement that all three RPCs establish their lock ORDER in code rather than in prose');
 
 select is(
   (select string_agg(tgname || '=' || tgenabled::text, ' | ' order by tgname) from pg_trigger
