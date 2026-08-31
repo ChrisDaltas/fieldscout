@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { Crest } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
 import { RosterSlotBuilder } from './roster-slot-builder'
+import { ScoringEditor } from './scoring-editor'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
   AuctionConfigFields,
@@ -153,6 +154,13 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
         detail={data}
         canEdit={canEdit}
       />
+      {/* §7.3.3.1 custom scoring editor (SE.7). Self-governing: renders the
+          per-position editor once the league references its own fork, the
+          designed empty state before that, and read-only past the
+          setup/scheduled window. Sits OUTSIDE SettingsForm on purpose — its
+          save is its own PUT (scoring_update_rules), not part of the panel's
+          atomic settings PATCH, and it must not ride the form's fieldset. */}
+      <ScoringEditor leagueId={leagueId} />
     </PanelShell>
   )
 }
