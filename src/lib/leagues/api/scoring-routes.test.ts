@@ -69,6 +69,14 @@ describe('the two custom-scoring Route Handlers keep the house shape (§15.1)', 
       })
 
       it('answers 404 for a malformed league id rather than passing it down', () => {
+        // R675 — the fence's STRENGTH, not only its presence. Weakening
+        // `z.uuid()` to `z.string()` was green across the whole non-stack
+        // suite, `type-check` and `lint`; a malformed id then reaches
+        // PostgREST, raises 22P02, and the mapper's default arm answers 500
+        // echoing the raw Postgres message. (The obvious pin — importing the
+        // schema — is not available: exporting a non-route symbol from a Next
+        // 15 route file is a build-time type error, measured in review.)
+        expect(source).toContain('const idSchema = z.uuid()')
         expect(source).toContain('idSchema.safeParse(id).success')
         expect(source).toContain("{ error: 'League not found' }, { status: 404 }")
       })

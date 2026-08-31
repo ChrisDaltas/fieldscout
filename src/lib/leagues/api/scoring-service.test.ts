@@ -8,10 +8,15 @@
  *       (`rules` is a `z.unknown()`-rooted schema, and Zod infers such a key
  *       as OPTIONAL, so "did the caller send a document at all?" is answered
  *       by the validator's `document_shape` family rather than by required-ness);
- *   §B  `mapScoringRpcError`'s whole branch table, including the arms that are
- *       unreachable through the route by construction and the arms whose
- *       WRONG answer would be silent (an unknown SQLSTATE answering 400 would
- *       dress a database fault as the commissioner's mistake);
+ *   §B  `mapScoringRpcError`'s whole branch table, including the hint families
+ *       no live document reaches today and the arms whose WRONG answer would be
+ *       silent (an unknown SQLSTATE answering 400 would dress a database fault
+ *       as the commissioner's mistake). **Note what this bullet no longer
+ *       says** (R668): the guardrail-HINT arm is NOT unreachable over the wire
+ *       — the TS≡SQL mirrors are deliberately one-sided (`SQL_STRICTER` in
+ *       `scoring-parity-db.test.ts`), and `scoring-api-db.test.ts` B10 drives
+ *       the arm live through that residue. This suite pins the remaining six
+ *       families, which no shipped document reaches;
  *   §C  the marker lists measured against migration 105's actual text — the
  *       drift pin. A marker that stops matching any 105 message turns a 409
  *       into a 400 with no test noticing, which is why presence is asserted
@@ -29,12 +34,16 @@ import { describe, expect, it } from 'vitest'
 
 import { SCORING_GUARDRAILS } from '../scoring/validate-rules-doc'
 import {
+  FORK_FIELD_MARKERS,
+  STATE_CONFLICT_MARKERS,
+  forkScoringTemplate,
   forkScoringTemplateInputSchema,
   mapScoringRpcError,
   updateScoringRulesInputSchema,
 } from './scoring-service'
 
 const TEMPLATE = '11111111-1111-4111-8111-111111111111'
+const LEAGUE = '11111111-1111-4111-8111-1111111111aa'
 
 /** A valid, normalized format-2 document (the fork shape SE.5's RPC writes). */
 const VALID_DOC = {
@@ -109,6 +118,36 @@ describe('§A the wire schemas', () => {
     if (v1.success) return
     expect(v1.error.issues[0].path.map(String)).toEqual(['rules'])
     expect(v1.error.issues[0].message).toContain('Scorable allowlist')
+  })
+
+  it('save: an unknown top-level key is refused, not stripped (R678)', () => {
+    // The fork's `strictObject` is pinned twice; the save's was pinned nowhere,
+    // so `z.strictObject` → `z.object` here was green. Drift insurance rather
+    // than a live defect — but a silently-stripped key is the exact shape R77
+    // filed against the create path.
+    const parsed = updateScoringRulesInputSchema.safeParse({ rules: VALID_DOC, bogus: 1 })
+    expect(parsed.success).toBe(false)
+    if (parsed.success) return
+    expect(parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys')).toBe(true)
+  })
+
+  it('a path-less refusal lands in formErrors, not under a field named "" (R672)', async () => {
+    // The `formErrors` branch of `flattenIssues` had no killing cell: deleting
+    // it re-keys the message under `''`, which reads as an error on a field
+    // literally named "". Driven through the SERVICE, so the branch actually
+    // runs — the parse fails before any RPC, which this client proves by
+    // exploding if it is ever reached.
+    const neverCalled = {
+      rpc: () => {
+        throw new Error('the RPC must not be reached on a parse failure')
+      },
+    } as unknown as Parameters<typeof forkScoringTemplate>[0]
+
+    const result = await forkScoringTemplate(neverCalled, LEAGUE, ['not', 'an', 'object'])
+    expect(result.status).toBe(400)
+    const error = (result.body as { error: { formErrors: string[]; fieldErrors: object } }).error
+    expect(error.formErrors.length).toBeGreaterThan(0)
+    expect(error.fieldErrors).toEqual({})
   })
 
   it('save: an INVALID document is refused by this layer, before any RPC call', () => {
@@ -295,9 +334,13 @@ describe('§C the 409 / field markers still match migration 105', () => {
     'utf8',
   ).replace(/''/g, "'")
 
-  // These are the strings `scoring-service.ts` matches on. Kept here as
-  // literals ON PURPOSE: importing the arrays would make the pin agree with
-  // itself. If a marker is edited on one side only, this goes RED.
+  // These are the strings `scoring-service.ts` matches on, spelled out here on
+  // purpose so an edit to the service alone cannot make the pin agree with
+  // itself. **They are ALSO compared against the shipped arrays** (R676): with
+  // only the `sql.toContain` half, deleting a marker from the SERVICE was green
+  // in both lanes — the pin watched one side of a two-sided contract, and five
+  // of the six markers survived only by coincidence of separate behavioural
+  // cells. Both halves now have to agree.
   const STATE_MARKERS = [
     'scoring can only be',
     'fork first, templates are immutable',
@@ -309,13 +352,30 @@ describe('§C the 409 / field markers still match migration 105', () => {
     'already carries a "format" member',
   ]
 
-  for (const marker of [...STATE_MARKERS, ...FORK_MARKERS]) {
-    it(`105 still raises a message containing "${marker}"`, () => {
-      // The silent failure this catches: reword the RPC sentence and the 409
-      // quietly becomes a 400 — same body, different contract, no red.
+  for (const marker of STATE_MARKERS) {
+    it(`the 409 marker "${marker}" is still raised by 105 AND still matched by the service`, () => {
+      // Two silent failures, one cell: reword the RPC sentence and the 409
+      // quietly becomes a 400; delete the marker from the service and the same
+      // thing happens from the other side. Same body, different contract, no
+      // red — until now.
       expect(sql).toContain(marker)
+      expect(STATE_CONFLICT_MARKERS).toContain(marker)
     })
   }
+
+  for (const marker of FORK_MARKERS) {
+    it(`the fork field marker "${marker}" is still raised by 105 AND still matched by the service`, () => {
+      expect(sql).toContain(marker)
+      expect(FORK_FIELD_MARKERS).toContain(marker)
+    })
+  }
+
+  it('the service matches on nothing this suite has not enumerated', () => {
+    // The other direction: a marker ADDED to the service without a cell here
+    // would otherwise inherit this suite's credibility without being measured.
+    expect([...STATE_CONFLICT_MARKERS]).toEqual(STATE_MARKERS)
+    expect([...FORK_FIELD_MARKERS]).toEqual(FORK_MARKERS)
+  })
 
   it('no marker is a substring of another, so first-match is order-independent', () => {
     const all = [...STATE_MARKERS, ...FORK_MARKERS]

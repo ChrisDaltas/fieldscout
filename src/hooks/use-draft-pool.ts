@@ -213,15 +213,30 @@ export function useAuctionPlayersByIds(ids: readonly string[]) {
  * `data` — the raw document — where the auction table consumes `family`.
  *
  * **Its key is invalidated by `leagueScoringInvalidationKeys`
- * (`src/hooks/use-league.ts`), and it must stay that way.** `staleTime` is ten
- * minutes, so before SE.6 a commissioner's fork or save left an already-open
- * auction room serving the PRE-EDIT document for up to ten minutes with no
- * error and no empty state — the "nothing happened means it worked" shape
- * CLAUDE.md names. Both scoring mutations invalidate
- * `auctionPoolKeys.scoring(leagueId)`, pinned in
- * `use-league-scoring-invalidation.test.ts`. Any future writer of this
- * document owes the same invalidation; the ten-minute `staleTime` is what
- * makes forgetting it silent rather than loud.
+ * (`src/hooks/use-league.ts`), and it must stay that way.** Before SE.6
+ * nothing in `src/` invalidated it, so a commissioner's fork or save left an
+ * already-open room serving the PRE-EDIT document with no error and no empty
+ * state — the "nothing happened means it worked" shape CLAUDE.md names. **All
+ * three writers of the document now route through that list** (the two SE.6
+ * verbs and `useUpdateLeagueSettings`, whose PATCH carries
+ * `scoring_system_id`); `create_league` mints the league and needs none. A
+ * fourth writer must be added there — the enumeration lives in that function's
+ * docblock, because "any future writer owes it" was a sentence that missed an
+ * existing one (R666).
+ *
+ * **How long the staleness lasts, measured** (a review correction): mounted,
+ * there is no automatic trigger at all — `query-provider.tsx` sets
+ * `refetchOnWindowFocus: false` and no interval — so `staleTime`'s ten minutes
+ * is not an upper bound; unmounted, React Query's browser default `gcTime` of
+ * 5 minutes evicts the entry and a later mount refetches. Invalidation, not the
+ * clock, is what makes the room correct.
+ *
+ * **The ARGUMENT of the key is load-bearing**, not just its name: this
+ * registers under `leagueId ?? scoringSystemId ?? 'none'` while the invalidator
+ * passes `leagueId`, so in a league room — where both are supplied — reversing
+ * that preference would park this query on a key no invalidation reaches.
+ * `use-league-scoring-invalidation.test.ts` pins the argument, not only the
+ * factory name (R669).
  */
 export function useLeagueScoringFamily(
   leagueId: string | null | undefined,

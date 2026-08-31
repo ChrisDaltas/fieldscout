@@ -102,11 +102,23 @@ describe('the fork and the save each invalidate the scoring key (§0(C))', () =>
 
   it('fork: the open room’s scoring entry is invalidated; its neighbours are not', async () => {
     const client = seededClient()
-    stubFetch({ ok: true, status: 200, body: { scoring_system_id: NEW_SYSTEM } })
+    const calls = stubFetch({ ok: true, status: 200, body: { scoring_system_id: NEW_SYSTEM } })
     expect(invalidated(client, auctionPoolKeys.scoring(LEAGUE))).toBe(false)
 
     const observer = new MutationObserver(client, forkScoringTemplateMutationOptions(client, LEAGUE))
     await observer.mutate(TEMPLATE)
+
+    // R670 — **the JOIN, not just the two ends.** The server half of this
+    // contract is pinned twice (the strict schema, and the route's POST-only
+    // export), and the fork's own request was pinned nowhere: URL, method and
+    // body key could each be mutated with the whole suite green, and `PUT`ing
+    // the save's URL with `{ templateId }` is a 405 in production against a
+    // route whose POST-only export is itself pinned. Asserted here the way the
+    // save cell below already does.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`/api/leagues/${LEAGUE}/scoring/fork`)
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ template_id: TEMPLATE })
 
     expect(invalidated(client, auctionPoolKeys.scoring(LEAGUE))).toBe(true)
     // The repoint the fork performs lands in the league detail, so that moves too.
@@ -159,6 +171,26 @@ describe('the fork and the save each invalidate the scoring key (§0(C))', () =>
     expect(invalidated(client, leaguesKeys.detail(LEAGUE))).toBe(false)
   })
 
+  it('a REFUSED fork invalidates nothing either — the determinant, on BOTH verbs', async () => {
+    // R671 — probe (B) flips both mutations at once but only the SAVE's cells
+    // red, so the fork's `onSuccess`-vs-`onSettled` choice was reported as
+    // pinned while nothing tested it. (The harm direction on the fork is the
+    // safe one — an over-invalidation — which is exactly why it would have sat
+    // untested indefinitely.)
+    const client = seededClient()
+    const message =
+      'scoring_fork_template: league x is in drafting — scoring can only be customized while the league is in setup or scheduled'
+    stubFetch({ ok: false, status: 409, body: { error: message } })
+
+    const observer = new MutationObserver(client, forkScoringTemplateMutationOptions(client, LEAGUE))
+    const failure = await observer.mutate(TEMPLATE).catch((error: unknown) => error)
+
+    expect((failure as { status: number }).status).toBe(409)
+    expect((failure as Error).message).toBe(message)
+    expect(invalidated(client, auctionPoolKeys.scoring(LEAGUE))).toBe(false)
+    expect(invalidated(client, leaguesKeys.detail(LEAGUE))).toBe(false)
+  })
+
   it('a 400 with field errors arrives with its paths intact', async () => {
     const client = seededClient()
     stubFetch({
@@ -178,22 +210,77 @@ describe('the fork and the save each invalidate the scoring key (§0(C))', () =>
   })
 })
 
-describe('the reader and the invalidator cannot drift apart', () => {
-  it('useLeagueScoringFamily builds its queryKey from auctionPoolKeys.scoring', () => {
-    // The behavioural pins above compare the invalidated key against
-    // `auctionPoolKeys.scoring`. That is only meaningful while the READER
-    // registers its query under that same factory — a hook that inlined the
-    // literal would drift silently. Source-level for the reason
-    // `use-mock-drafts-cache.test.ts` is: the claim is about what the file
-    // DOES, and mounting the hook needs a DOM this repo deliberately has not.
-    const source = readFileSync(
-      path.resolve(process.cwd(), 'src/hooks/use-draft-pool.ts'),
-      'utf8',
+/**
+ * **THE SEAMS.** The behavioural pins above prove what `invalidateLeagueScoring`
+ * DOES. They cannot see the three edges of the construction it sits inside, and
+ * a review measured all three escaping (R666/R667/R669/R670 — the review's §7
+ * "when a defect class is closed by CONSTRUCTION, the construction gets pinned
+ * and its EDGES do not"):
+ *
+ *   1. which call sites route through it (a whole WRITER was missing);
+ *   2. whether the shipped hooks still use the factories the pins drive;
+ *   3. whether the reader's key ARGUMENT still matches the invalidator's.
+ *
+ * Source-level, for the reason `use-mock-drafts-cache.test.ts` is: the claim is
+ * about which line a file contains at a call site, and mounting a React hook
+ * needs a DOM this repo deliberately does not have. Each assertion below was
+ * shown RED against the exact mutation it exists to catch.
+ */
+describe('the seams of the invalidation construction', () => {
+  const source = (rel: string) => readFileSync(path.resolve(process.cwd(), rel), 'utf8')
+
+  /** One exported function's body, so a neighbour cannot satisfy the pin. */
+  function bodyOf(text: string, name: string): string {
+    const at = text.indexOf(`export function ${name}`)
+    expect(at, `${name} found`).toBeGreaterThan(-1)
+    const next = text.indexOf('\nexport ', at + 1)
+    return text.slice(at, next > at ? next : text.length)
+  }
+
+  it('EVERY writer of the league scoring document routes through the shared list (R666)', () => {
+    // The enumeration is the point. `create_league` is the fourth writer and
+    // is deliberately absent: it mints the league, so there is no prior cache
+    // entry to stale. A fifth writer added without a line here is the defect
+    // this cell exists to catch — the previous docblock addressed "any future
+    // writer" and missed an existing one.
+    const hooks = source('src/hooks/use-league.ts')
+    for (const writer of [
+      'useForkScoringTemplate',
+      'useUpdateLeagueScoring',
+      'useUpdateLeagueSettings',
+    ]) {
+      const body = bodyOf(hooks, writer)
+      expect(body, `${writer} invalidates the scoring key`).toMatch(
+        /invalidateLeagueScoring\(queryClient, leagueId\)|MutationOptions\(queryClient, leagueId\)/,
+      )
+    }
+    // …and `useUpdateLeagueSettings` reaches it directly, not by a rename.
+    expect(bodyOf(hooks, 'useUpdateLeagueSettings')).toContain(
+      'invalidateLeagueScoring(queryClient, leagueId)',
     )
-    const at = source.indexOf('export function useLeagueScoringFamily')
-    expect(at).toBeGreaterThan(-1)
-    const body = source.slice(at, at + 2000)
-    expect(body).toContain('queryKey: auctionPoolKeys.scoring(')
+  })
+
+  it('the shipped hooks still use the factories these pins drive (R667)', () => {
+    // The factories are exported precisely so a pin cannot be defeated by the
+    // call moving somewhere that never runs — and the identical escape lived
+    // one level up: inlining `useMutation({ mutationFn })` with no `onSuccess`
+    // was green on this suite, `tsc` and `lint`.
+    const hooks = source('src/hooks/use-league.ts')
+    expect(bodyOf(hooks, 'useForkScoringTemplate')).toContain(
+      'useMutation(forkScoringTemplateMutationOptions(queryClient, leagueId))',
+    )
+    expect(bodyOf(hooks, 'useUpdateLeagueScoring')).toContain(
+      'useMutation(updateLeagueScoringMutationOptions(queryClient, leagueId))',
+    )
+  })
+
+  it('the reader registers under the same key ARGUMENT the invalidator passes (R669)', () => {
+    // The shared factory fixes the key's SHAPE; its ARGUMENT is chosen per call
+    // site. In a league room BOTH ids are supplied, so reversing this `??`
+    // order parks the reader on a key no invalidation reaches — and it passed
+    // the entire unit lane and `tsc` before this assertion existed.
+    const body = bodyOf(source('src/hooks/use-draft-pool.ts'), 'useLeagueScoringFamily')
+    expect(body).toContain('queryKey: auctionPoolKeys.scoring(leagueId ?? scoringSystemId ??')
     expect(body).toContain('staleTime: 10 * 60 * 1000')
   })
 })

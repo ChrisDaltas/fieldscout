@@ -141,9 +141,15 @@ export function useUpdateLeagueSettings(leagueId: string) {
       }
       return parsed as { ok: true }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
-    },
+    // R666 — **this verb WRITES THE LEAGUE'S SCORING DOCUMENT**, so it owes the
+    // scoring invalidation exactly as SE.6's two verbs do: the panel's body
+    // carries `scoring_system_id` whenever the commissioner re-picks a template
+    // (`settings-panel.tsx`), and `update_league_settings` repoints the league
+    // at it. The two keys are DISJOINT (`['leagues', id]` vs
+    // `['league-scoring-family', id]`), so React Query's prefix matching does
+    // not cover one with the other — this was the writer SE.6's first cut
+    // missed while its docblock addressed "any future writer".
+    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
   })
 }
 
@@ -304,26 +310,53 @@ export function useLeagueProfile(leagueId: string) {
  */
 
 /**
- * Every query key a fork or a save invalidates — one list, both mutations, so
- * the two cannot disagree.
+ * Every query key a write of the league's scoring document invalidates — one
+ * list, every writer, so they cannot disagree.
  *
- * `auctionPoolKeys.scoring(leagueId)` is the load-bearing member and it is
- * imported from the reader's own module rather than re-spelled here, so the
- * key cannot drift from the query it is meant to reach. Before this task
- * `grep -rn "auctionPoolKeys.scoring|league-scoring-family" src/` returned
- * exactly two hits — the definition and the one use — i.e. **nothing
- * invalidated it**, while the query carries `staleTime: 10 * 60 * 1000`. A
- * fork or a save that does not invalidate it therefore leaves an open auction
- * room serving PRE-EDIT scoring for up to ten minutes with no error and no
- * empty state: CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"*
+ * **THE WRITER SET IS ENUMERATED, not gestured at** (R666 — an earlier form of
+ * this docblock said *"any future writer of this document owes the same
+ * invalidation"* while an EXISTING writer was missed). Measured across the
+ * service layer: `scoring_fork_template` and `scoring_update_rules` (SE.6's
+ * two verbs, below), `update_league_settings` via `useUpdateLeagueSettings`
+ * (`leagues-service.ts` passes `p_scoring_system_id`), and `create_league` —
+ * which mints the league, so it can have no stale prior entry. The first three
+ * route their `onSuccess` through `invalidateLeagueScoring`; the fourth needs
+ * nothing. Adding a fifth writer means adding it here.
+ *
+ * **What the shared factory does and does not guarantee** (R669). It fixes the
+ * key's SHAPE — `auctionPoolKeys.scoring` is imported from the reader's own
+ * module rather than re-spelled — so a rename or a re-shaping moves both sides
+ * together. It does NOT fix the key's ARGUMENT: the reader registers under
+ * `auctionPoolKeys.scoring(leagueId ?? scoringSystemId ?? 'none')` and this
+ * invalidates `auctionPoolKeys.scoring(leagueId)`, so the two agree only while
+ * the reader prefers `leagueId`. That preference is load-bearing in a league
+ * room, where both ids are supplied, and it is pinned by argument and not only
+ * by name in `use-league-scoring-invalidation.test.ts`.
+ *
+ * **Why it matters.** Before SE.6, `grep -rn "auctionPoolKeys.scoring|
+ * league-scoring-family" src/` returned exactly two hits — the definition and
+ * the one use — i.e. **nothing invalidated it**. A write that does not
+ * invalidate leaves a surface serving the PRE-EDIT document with no error and
+ * no empty state: CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"*
  * shape. `leaguesKeys.detail` rides along because a fork REPOINTS
  * `leagues.scoring_system_id`, which the detail query carries.
  *
+ * **The window, measured rather than quoted** (a review correction — earlier
+ * drafts of this block said "up to ten minutes", which was wrong in BOTH
+ * directions). `query-provider.tsx` sets `refetchOnWindowFocus: false` and no
+ * `gcTime`. So: for a surface that stays MOUNTED there is no automatic refetch
+ * trigger at all — no focus refetch, no interval — and `staleTime`'s ten
+ * minutes is therefore not an upper bound; the pre-edit document is served
+ * until the next mount or reconnect. For a surface that is CLOSED, React
+ * Query's browser default `gcTime` of 5 minutes
+ * (`query-core/build/modern/removable.js`: `newGcTime ?? (isServer ? Infinity
+ * : 5 * 60 * 1e3)`) evicts the entry, so a later mount refetches regardless.
+ * Ten minutes overstated the closed case and understated the open one.
+ *
  * Scope, stated rather than implied: a React Query cache is per client, so
- * this reaches the surfaces of the app instance that made the edit — the
- * commissioner's own editor and any room open in that instance. Another
- * member's already-open room is bounded by the same `staleTime` and is not
- * something an invalidation can reach. It is also not reachable on a REAL
+ * this reaches the surfaces of the app instance that made the edit. Another
+ * member's already-open room is a different cache and is not something an
+ * invalidation can reach — ledger F167. It is also not reachable on a REAL
  * draft in progress: both RPCs refuse outside `setup`/`scheduled` (§7.3
  * header), and a started draft reads the frozen snapshot.
  */

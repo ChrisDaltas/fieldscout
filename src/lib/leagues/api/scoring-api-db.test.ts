@@ -6,17 +6,28 @@
  * composition the Route Handlers run (the D68 wire-suite convention; pgTAP 053
  * owns the RPC-side matrices and this suite does not re-prove them).
  *
- * **What this suite owns, and why each assertion NAMES ITS LAYER.** Two
- * enforcement layers can answer 400 here: the route's Zod parse (SE.3's
- * validator, UX-layer) and the RPC (`scoring_rules_validate`, the wall). They
- * are byte-identical mirrors on purpose, so a bare "400" cannot tell them
- * apart — the SE.5 lesson, one level up. Every refusal below is therefore
- * asserted on a SENTENCE ONLY ONE LAYER CAN PRODUCE:
- *   - the TS validator's own text (`Document shape (§7.3.3.1) …`) ⇒ the route
- *     refused, and no RPC was called;
- *   - migration 105's own text (`fork first, templates are immutable`,
- *     `scoring can only be …`, `p_template_id must reference …`) ⇒ the RPC
- *     refused, so the mapping under test is the one that ran.
+ * **What this suite owns, and which assertions NAME THEIR LAYER — including
+ * the three that cannot.** Two enforcement layers can answer 400 here: the
+ * route's Zod parse (SE.3's validator, UX-layer) and the RPC
+ * (`scoring_rules_validate`, the wall). They mirror each other on purpose, so a
+ * bare "400" cannot tell them apart — the SE.5 lesson, one level up. Most
+ * refusals below are therefore asserted on something only one layer produces:
+ *   - a 403 or a 409 at all ⇒ the RPC, since the Zod arm can produce neither;
+ *   - migration 105's own sentences (`fork first, templates are immutable`,
+ *     `scoring can only be …`, `p_template_id must reference …`) ⇒ the RPC;
+ *   - B6's missing-`rules` body ⇒ the route, because supabase-js drops an
+ *     `undefined` argument, so the RPC could not have seen it. **Note the
+ *     mechanism, not the string**: `Document shape (§7.3.3.1)` is byte-identical
+ *     in `validate-rules-doc.ts` and in 103, by design.
+ *   - **B10** ⇒ the RPC, and it is the only cell here that localizes by a
+ *     document the route's own validator ACCEPTS (the `SQL_STRICTER` residue).
+ *
+ * **B7, B8 and B9 do NOT localize, and saying they did was an over-claim**
+ * (R677). They assert the mirrored outcome — same family text, same DETAIL dot
+ * path, same mapped `fieldErrors` key — and stay green if the route stops
+ * validating entirely, because the RPC then answers identically. They are pins
+ * on the CONTRACT, not on which layer honoured it; B10 is what covers the wall
+ * behind them.
  *
  * And every refusal is corroborated in the DB: the league's reference and the
  * stored `rules` document are read back and compared to what they were before
@@ -552,6 +563,33 @@ describe('custom scoring routes (105 — local stack, PostgREST wire path)', () 
       expect(result.status).toBe(400)
       expect(Object.keys(fieldErrorsOf(result.body))).toEqual(['rules.base.'])
       expect(errorText(result.body)).toContain('Scorable allowlist')
+      expect(await scoringState(forkLeagueId)).toStrictEqual(before)
+    })
+
+    it('B10 the guardrail-HINT arm fires LIVE, through the mirrors’ deliberate one-sided residue (R668)', async () => {
+      const before = await scoringState(forkLeagueId)
+      // The mapper's guardrail-`HINT` arm was documented as unreachable over
+      // the wire because "Zod answers first while the mirrors agree". The
+      // mirrors are one-sided ON PURPOSE: `scoring-parity-db.test.ts` carries a
+      // corpus named `SQL_STRICTER` recording 1.5e308 / 1e20 /
+      // 9007199254740993 as ts:ACCEPT / sql:REJECT, and its property is the
+      // one-way implication "SQL accepts ⟹ TS accepts". `1e300` is an integer
+      // to `Number.isInteger`, so the TS tier-cut residuals pass it; SQL's
+      // magnitude bound refuses it with HINT = 'tier_cuts'.
+      //
+      // So this document reaches the RPC, and the arm keys its refusal to the
+      // offending path. It is the one live cell in this suite that a route-side
+      // Zod pass CANNOT produce — which is what makes it name its layer.
+      const result = await updateScoringRules(commishClient, forkLeagueId, {
+        rules: {
+          format: 2,
+          base: {},
+          positions: {},
+          tier_cuts: { def_pa: [0, 1, 7, 14, 21, 28, 35], def_ya: [0, 1e300] },
+        },
+      })
+      expect(result.status).toBe(400)
+      expect(Object.keys(fieldErrorsOf(result.body))).toEqual(['rules.tier_cuts.def_ya'])
       expect(await scoringState(forkLeagueId)).toStrictEqual(before)
     })
   })

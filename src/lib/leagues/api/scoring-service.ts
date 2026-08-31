@@ -79,9 +79,21 @@ export const updateScoringRulesInputSchema = z.strictObject({
 // ---------------------------------------------------------------------------
 
 /**
- * A Zod refusal in the SAME `{ formErrors, fieldErrors }` shape
- * `LeaguePatchError` already reads — but keyed by the **full dot path**
- * rather than `z.flattenError`'s first path segment.
+ * A Zod refusal in the `{ formErrors, fieldErrors }` shape `z.flattenError`
+ * produces — but keyed by the **full dot path** rather than its first path
+ * segment.
+ *
+ * **`fieldErrors` is the half that has a consumer; `formErrors` does not, and
+ * saying otherwise was an over-claim** (R672 — an earlier form of this
+ * sentence said the whole shape is one `LeaguePatchError` "already reads").
+ * `LeaguePatchError` (`src/hooks/use-league.ts`) carries `status` and
+ * `fieldErrors` only, on this branch and on `main`; a `formErrors` entry
+ * reaches the client and is dropped there. That is pre-existing and repo-wide
+ * — `z.flattenError` is used at ~30 sites and `useUpdateLeagueSettings` /
+ * `useSetLeagueStatus` have always had the same blind spot — so it is filed as
+ * a repo-wide follow-up rather than fixed unilaterally here. The branch is kept
+ * because a path-less issue must not be silently re-keyed under `''`, where it
+ * would read as an error on a field literally named `""`.
  *
  * The reason is specific to this contract: a scoring violation's path is
  * `rules.base.receptions` / `rules.positions.QB.fg_0_39`, and
@@ -129,7 +141,7 @@ const GUARDRAIL_HINTS: ReadonlySet<string> = new Set<string>(SCORING_GUARDRAILS)
  * them), so first-match is order-independent; every one has an exact-message
  * pin in `scoring-api-db.test.ts`, which is what keeps that true.
  */
-const STATE_CONFLICT_MARKERS: readonly string[] = [
+export const STATE_CONFLICT_MARKERS: readonly string[] = [
   // Both RPCs' §7.3 window refusal ("…can only be customized/edited while…").
   'scoring can only be',
   // The league is still on a shared template — fork before saving.
@@ -145,7 +157,7 @@ const STATE_CONFLICT_MARKERS: readonly string[] = [
  * carries it. Fork only: the save verb's single input is the document, and a
  * bad document arrives with a guardrail HINT instead (below).
  */
-const FORK_FIELD_MARKERS: readonly string[] = [
+export const FORK_FIELD_MARKERS: readonly string[] = [
   'p_template_id must reference one of the scoring templates',
   'already carries a "format" member',
 ]
@@ -161,18 +173,27 @@ const FORK_FIELD_MARKERS: readonly string[] = [
  * the fork document is BUILT IN SQL from the template, so if it fails
  * validation the caller's only input is which template they picked.
  *
- * **Exported for its branch pins, and one branch is deliberately unreachable
- * through the route — said out loud rather than left to look like coverage.**
- * The guardrail-HINT arm can only fire if the RPC's `scoring_rules_validate`
- * rejects a document the TS validator accepted, and the save route parses
- * `rules` through that same TS validator first (`scoringRulesDocSchema`
- * delegates to it) — so while the TS≡SQL mirrors agree (measured by
- * `scoring-parity-db.test.ts`), the Zod layer answers first and this arm never
- * runs. It exists so that a mirror DRIFT surfaces as a keyed field error
- * instead of a bare 400, which is precisely the case no live fixture can
- * construct; `scoring-service.test.ts` drives it directly instead. The other
- * arms ARE live-reachable and are pinned over the stack, each on a sentence
- * only 105 can produce, so those assertions name the layer that answered.
+ * **Exported for its branch pins. The guardrail-HINT arm IS reachable over the
+ * real wire path, through a residue the mirrors carry on purpose** — corrected
+ * here after review (R668); an earlier form of this docblock called the arm
+ * "deliberately unreachable … no live fixture can construct it", and cited for
+ * that the very suite which measures the opposite.
+ *
+ * The arm fires when `scoring_rules_validate` rejects a document the TS
+ * validator accepted. The two are mirrors, but **deliberately one-sided
+ * mirrors**: `scoring-parity-db.test.ts` carries a corpus named `SQL_STRICTER`
+ * recording `1.5e308`, `1e20` and `9007199254740993` as `ts: 'ACCEPT'` /
+ * `sql: 'REJECT'`, and its headline property is the one-way implication *"SQL
+ * accepts ⟹ TS accepts"* — migration `103` says the same in its own banner. So
+ * a document whose `tier_cuts` carry a magnitude past SQL's
+ * `9007199254740992` bound passes Zod and is refused by SQL with
+ * `HINT = 'tier_cuts'`, and this arm keys it to the offending path.
+ * `scoring-api-db.test.ts` B10 drives exactly that over the stack; the unit
+ * suite pins the remaining hint families directly.
+ *
+ * The other arms are live-reachable too and are pinned over the stack, each on
+ * a sentence only 105 can produce, so those assertions name the layer that
+ * answered.
  */
 export function mapScoringRpcError(
   error: RpcError,
