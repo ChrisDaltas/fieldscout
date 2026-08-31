@@ -94,14 +94,28 @@ import {
  * §7.3.3.1(c)'s residual validation, which exists because cut points make
  * overlaps and gaps unconstructible rather than validation-caught.
  */
-export type ScoringGuardrail =
-  | 'document_shape'
-  | 'scorable_allowlist'
-  | 'tier_exclusivity'
-  | 'position_scope'
-  | 'normal_form'
-  | 'bounds'
-  | 'tier_cuts'
+export const SCORING_GUARDRAILS = [
+  'document_shape',
+  'scorable_allowlist',
+  'tier_exclusivity',
+  'position_scope',
+  'normal_form',
+  'bounds',
+  'tier_cuts',
+] as const
+
+/**
+ * SE.6 needed these seven **at runtime**, not only in the type system: 103
+ * puts the family code in the refusal's `HINT` (its own banner: *"HINT the
+ * guardrail family code, the same seven strings the TS…"*), and the route
+ * layer decides "is this a document rejection I can key to a field, or a state
+ * refusal?" by reading that hint. A second hand-written list in the service
+ * could drift from this one silently, so the union is DERIVED from the array
+ * rather than written twice — the seven strings exist once in TypeScript.
+ * (Byte-identical union to the hand-written one it replaces; the TS≡SQL side
+ * of the same seven is measured by `scoring-parity-db.test.ts`, unchanged.)
+ */
+export type ScoringGuardrail = (typeof SCORING_GUARDRAILS)[number]
 
 /**
  * One violation — `src/lib/leagues/settings/`'s `FieldIssue` shape (dot path +

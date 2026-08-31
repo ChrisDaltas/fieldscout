@@ -1,9 +1,14 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
+import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
+// SE.6: the scoring query key comes from the READER's own module (see
+// `leagueScoringInvalidationKeys`) — one factory, so the key a mutation
+// invalidates is by construction the key the query is stored under.
+import { auctionPoolKeys } from './use-draft-pool'
 import { leaguesKeys } from './use-leagues'
 
 /**
@@ -136,9 +141,15 @@ export function useUpdateLeagueSettings(leagueId: string) {
       }
       return parsed as { ok: true }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
-    },
+    // R666 — **this verb WRITES THE LEAGUE'S SCORING DOCUMENT**, so it owes the
+    // scoring invalidation exactly as SE.6's two verbs do: the panel's body
+    // carries `scoring_system_id` whenever the commissioner re-picks a template
+    // (`settings-panel.tsx`), and `update_league_settings` repoints the league
+    // at it. The two keys are DISJOINT (`['leagues', id]` vs
+    // `['league-scoring-family', id]`), so React Query's prefix matching does
+    // not cover one with the other — this was the writer SE.6's first cut
+    // missed while its docblock addressed "any future writer".
+    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
   })
 }
 
@@ -274,4 +285,179 @@ export function useLeagueProfile(leagueId: string) {
   })
 
   return { rename, uploadAvatar, removeAvatar }
+}
+
+// ---------------------------------------------------------------------------
+// Custom scoring — SE.6 (spec §7.3.3.1; routes §15.1 via this task's erratum)
+// ---------------------------------------------------------------------------
+
+/**
+ * **THE READ IS NOT HERE, AND THAT IS THE DISPOSITION.**
+ *
+ * SE.6's original item 2 planned a `use-league-scoring.ts` hook that would
+ * read a league's scoring document. `useLeagueScoringFamily`
+ * (`src/hooks/use-draft-pool.ts`) already does exactly that — snapshot first,
+ * `scoring_systems.rules` by id as the fallback — so a second reader would be
+ * the near-duplicate CLAUDE.md forbids, and the answer is **WRAP/EXTEND, not
+ * COEXIST**: SE.6 writes **no** reader, `useLeagueScoringFamily` stays the one
+ * hook that reads a league's scoring document, and its raw `data` (the
+ * document itself, not only the derived family) is what SE.7's editor consumes.
+ * Measured at build time: `grep -rn "useLeagueScoringFamily" src/` → its
+ * definition plus `auction-player-table.tsx`, and no other hook selects
+ * `scoring_rules_snapshot` or `scoring_systems.rules` for a league.
+ *
+ * What SE.6 adds beside it is the two MUTATIONS, and the invalidation they owe.
+ */
+
+/**
+ * Every query key a write of the league's scoring document invalidates — one
+ * list, every writer, so they cannot disagree.
+ *
+ * **THE WRITER SET IS ENUMERATED, not gestured at** (R666 — an earlier form of
+ * this docblock said *"any future writer of this document owes the same
+ * invalidation"* while an EXISTING writer was missed). Measured across the
+ * service layer: `scoring_fork_template` and `scoring_update_rules` (SE.6's
+ * two verbs, below), `update_league_settings` via `useUpdateLeagueSettings`
+ * (`leagues-service.ts` passes `p_scoring_system_id`), and `create_league` —
+ * which mints the league, so it can have no stale prior entry. The first three
+ * route their `onSuccess` through `invalidateLeagueScoring`; the fourth needs
+ * nothing. Adding a fifth writer means adding it here.
+ *
+ * **What the shared factory does and does not guarantee** (R669). It fixes the
+ * key's SHAPE — `auctionPoolKeys.scoring` is imported from the reader's own
+ * module rather than re-spelled — so a rename or a re-shaping moves both sides
+ * together. It does NOT fix the key's ARGUMENT: the reader registers under
+ * `auctionPoolKeys.scoring(leagueId ?? scoringSystemId ?? 'none')` and this
+ * invalidates `auctionPoolKeys.scoring(leagueId)`, so the two agree only while
+ * the reader prefers `leagueId`. That preference is load-bearing in a league
+ * room, where both ids are supplied, and it is pinned by argument and not only
+ * by name in `use-league-scoring-invalidation.test.ts`.
+ *
+ * **Why it matters.** Before SE.6, `grep -rn "auctionPoolKeys.scoring|
+ * league-scoring-family" src/` returned exactly two hits — the definition and
+ * the one use — i.e. **nothing invalidated it**. A write that does not
+ * invalidate leaves a surface serving the PRE-EDIT document with no error and
+ * no empty state: CLAUDE.md's *"never let 'nothing happened' mean 'it worked'"*
+ * shape. `leaguesKeys.detail` rides along because a fork REPOINTS
+ * `leagues.scoring_system_id`, which the detail query carries.
+ *
+ * **The window, measured rather than quoted** (a review correction — earlier
+ * drafts of this block said "up to ten minutes", which was wrong in BOTH
+ * directions). `query-provider.tsx` sets `refetchOnWindowFocus: false` and no
+ * `gcTime`. So: for a surface that stays MOUNTED there is no automatic refetch
+ * trigger at all — no focus refetch, no interval — and `staleTime`'s ten
+ * minutes is therefore not an upper bound; the pre-edit document is served
+ * until the next mount or reconnect. For a surface that is CLOSED, React
+ * Query's browser default `gcTime` of 5 minutes
+ * (`query-core/build/modern/removable.js`: `newGcTime ?? (isServer ? Infinity
+ * : 5 * 60 * 1e3)`) evicts the entry, so a later mount refetches regardless.
+ * Ten minutes overstated the closed case and understated the open one.
+ *
+ * Scope, stated rather than implied: a React Query cache is per client, so
+ * this reaches the surfaces of the app instance that made the edit. Another
+ * member's already-open room is a different cache and is not something an
+ * invalidation can reach — ledger F167. It is also not reachable on a REAL
+ * draft in progress: both RPCs refuse outside `setup`/`scheduled` (§7.3
+ * header), and a started draft reads the frozen snapshot.
+ */
+export function leagueScoringInvalidationKeys(leagueId: string) {
+  return [leaguesKeys.detail(leagueId), auctionPoolKeys.scoring(leagueId)] as const
+}
+
+function invalidateLeagueScoring(queryClient: QueryClient, leagueId: string) {
+  for (const queryKey of leagueScoringInvalidationKeys(leagueId)) {
+    void queryClient.invalidateQueries({ queryKey })
+  }
+}
+
+/** The two scoring routes' shared failure translation: the service answers
+ *  403 / 404 / 409 / 400-with-fieldErrors, and the panel branches on exactly
+ *  that (`LeaguePatchError`). */
+async function scoringRequest(
+  url: string,
+  method: 'POST' | 'PUT',
+  body: unknown,
+  fallbackMessage: string,
+): Promise<{ scoring_system_id: string }> {
+  const response = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const parsed = (await response.json().catch(() => null)) as
+    | { scoring_system_id?: string; error?: unknown }
+    | null
+  if (!response.ok) {
+    const error = parsed?.error
+    const fieldErrors =
+      error && typeof error === 'object' && 'fieldErrors' in error
+        ? (error as { fieldErrors: Record<string, string[]> }).fieldErrors
+        : undefined
+    const message =
+      typeof error === 'string'
+        ? error
+        : fieldErrors
+          ? 'Some scoring values need attention.'
+          : fallbackMessage
+    throw new LeaguePatchError(response.status, message, fieldErrors)
+  }
+  return parsed as { scoring_system_id: string }
+}
+
+/**
+ * The mutation OPTIONS, exported separately from the hook so the invalidation
+ * can be driven by a real `QueryClient` with no DOM (the
+ * `use-draft-feed-sink.test.ts` posture). A pin that only read the source text
+ * would go green the moment the call moved somewhere that never runs.
+ */
+export function forkScoringTemplateMutationOptions(queryClient: QueryClient, leagueId: string) {
+  return {
+    mutationFn: (templateId: string) =>
+      scoringRequest(
+        `/api/leagues/${leagueId}/scoring/fork`,
+        'POST',
+        { template_id: templateId },
+        'Failed to customize scoring.',
+      ),
+    // onSuccess, never onSettled: a REFUSED fork changed nothing, and
+    // invalidating on failure would refetch the document the room already
+    // holds — noise that looks like a fix and hides the next real staleness.
+    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
+  }
+}
+
+/**
+ * POST /api/leagues/[id]/scoring/fork — "Customize" (§7.3.3.1 entry point).
+ * Takes the template id; resolves to the league's new custom scoring row id.
+ */
+export function useForkScoringTemplate(leagueId: string) {
+  const queryClient = useQueryClient()
+  return useMutation(forkScoringTemplateMutationOptions(queryClient, leagueId))
+}
+
+/** Options for the editor's save — see `forkScoringTemplateMutationOptions`. */
+export function updateLeagueScoringMutationOptions(queryClient: QueryClient, leagueId: string) {
+  return {
+    mutationFn: (rules: ScoringRulesDoc) =>
+      scoringRequest(
+        `/api/leagues/${leagueId}/scoring/rules`,
+        'PUT',
+        { rules },
+        'Failed to save scoring.',
+      ),
+    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
+  }
+}
+
+/**
+ * PUT /api/leagues/[id]/scoring/rules — the editor's save (§7.3.3.1).
+ *
+ * The caller passes the WHOLE document, already normalized
+ * (`normalizeScoringDoc` — SE.7's save-time duty): the RPC refuses an
+ * un-normalized document rather than rewriting it, so no layer between the
+ * editor and the row alters what the commissioner sent.
+ */
+export function useUpdateLeagueScoring(leagueId: string) {
+  const queryClient = useQueryClient()
+  return useMutation(updateLeagueScoringMutationOptions(queryClient, leagueId))
 }

@@ -927,10 +927,19 @@ describe('the document front door', () => {
       for (const violation of result.violations) {
         expect(violation.message).toMatch(FAMILY_NAME_IN_MESSAGE[violation.code])
         expect(typeof violation.path).toBe('string')
-        // A path is dot-delimited and never contains an empty segment — the
-        // Zod delegation splits on '.' to build its issue path.
+        // A path is dot-delimited, and the Zod delegation splits it on '.' to
+        // build its issue path. **The only segment that may be empty is the
+        // LAST one, and when it is, it denotes the empty key `''`** — the
+        // format-2 document `{base: {'': 1}}` yields `base.`, and the empty
+        // segment is the information, not a truncation.
+        //
+        // An earlier form of this assertion claimed NO segment is ever empty
+        // (ledger F138). That was false and green at the same time: the
+        // corpus contained no empty key. Restated to what the module does,
+        // with a fixture that reds the old claim.
         if (violation.path !== '') {
-          expect(violation.path.split('.').every((segment) => segment.length > 0)).toBe(true)
+          const segments = violation.path.split('.')
+          expect(segments.slice(0, -1).every((segment) => segment.length > 0)).toBe(true)
         }
       }
     }
@@ -983,6 +992,12 @@ const REJECTION_CORPUS: unknown[] = [
   withOverride(espnFork(), 'DST', { fg_0_39: 4 }),
   withOverride(espnFork(), 'qb', { pass_tds: 5 }),
   { ...espnFork(), format: 1 },
+  // SE.6 / ledger F138 — THE EMPTY KEY. `''` is a legal JSON key and is not
+  // scorable, so it is an ordinary allowlist rejection; what made it worth a
+  // ledger row is the PATH it produces (`base.`, whose last segment is empty).
+  // The corpus carried no empty key, so the path-shape property below
+  // asserted something it could not see. It can see it now.
+  withBase(espnFork(), { '': 1 }),
 ]
 
 /*
