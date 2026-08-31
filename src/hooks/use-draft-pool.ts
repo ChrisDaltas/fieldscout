@@ -224,12 +224,18 @@ export function useAuctionPlayersByIds(ids: readonly string[]) {
  * docblock, because "any future writer owes it" was a sentence that missed an
  * existing one (R666).
  *
- * **How long the staleness lasts, measured** (a review correction): mounted,
- * there is no automatic trigger at all — `query-provider.tsx` sets
- * `refetchOnWindowFocus: false` and no interval — so `staleTime`'s ten minutes
- * is not an upper bound; unmounted, React Query's browser default `gcTime` of
- * 5 minutes evicts the entry and a later mount refetches. Invalidation, not the
- * clock, is what makes the room correct.
+ * **How long the staleness lasts: NO TIMER GUARANTEES A BOUND** (F173/D276 —
+ * corrected twice; the measurement lives in `use-league.ts`'s
+ * `leagueScoringInvalidationKeys` docblock). Mounted, there is no refetch
+ * trigger at all — `refetchOnWindowFocus: false`, no `refetchInterval`, and
+ * the observer's stale timeout re-renders rather than fetching — so the
+ * pre-edit document is served indefinitely. Closed and reopened, a fetch fires
+ * only if the entry was EVICTED (unobserved past `gcTime`'s 5-minute browser
+ * default) or the data is STALE (past this query's `staleTime` below), so a
+ * room reopened inside 5 minutes over data younger than 10 minutes does not
+ * refetch either. Repeated cycles do eventually refresh once the data crosses
+ * `staleTime`; that is a tendency, not a bound. Invalidation, not the clock,
+ * is what makes the room correct.
  *
  * **The ARGUMENT of the key is load-bearing**, not just its name: this
  * registers under `leagueId ?? scoringSystemId ?? 'none'` while the invalidator

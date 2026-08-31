@@ -1,5 +1,5 @@
 /**
- * **THE TEN-MINUTE HOLE — SE.6 / tasks-SE §0(C).**
+ * **THE INVALIDATION HOLE — SE.6 / tasks-SE §0(C).**
  *
  * `auctionPoolKeys.scoring(leagueId)` = `['league-scoring-family', leagueId]`
  * carries `staleTime: 10 * 60 * 1000`, and before this task
@@ -7,9 +7,14 @@
  * **exactly two hits — the definition and the one use.** Nothing invalidated
  * it. So a commissioner's fork or save left every surface of their own client
  * that reads a league's scoring document — the auction player table today, the
- * §7.3.3.1 editor next — serving the **pre-edit** document for up to ten
- * minutes, with no error, no empty state and no way to tell: CLAUDE.md's
- * *"never let 'nothing happened' mean 'it worked'"* shape exactly.
+ * §7.3.3.1 editor next — serving the **pre-edit** document with no error, no
+ * empty state and no way to tell: CLAUDE.md's *"never let 'nothing happened'
+ * mean 'it worked'"* shape exactly.
+ *
+ * **How long for? NO TIMER GUARANTEES A BOUND** — not the `staleTime` this
+ * docblock used to name (F173/F174/D276; the measurement is in
+ * `use-league.ts`'s `leagueScoringInvalidationKeys` block). Mounted, there is
+ * no refetch trigger at all, so it is served indefinitely.
  *
  * These pins drive a REAL `QueryClient` through the mutations' own options
  * objects with `MutationObserver` — no DOM, no React, no stack (the
@@ -93,7 +98,7 @@ afterEach(() => {
 describe('the fork and the save each invalidate the scoring key (§0(C))', () => {
   it('the invalidation list names the reader’s own key, built by the reader’s own factory', () => {
     // Value-level, so a reader whose key silently changed shape would be
-    // caught here rather than by ten minutes of wrong numbers in a room.
+    // caught here rather than by a room quietly scoring on the wrong numbers.
     expect(leagueScoringInvalidationKeys(LEAGUE)).toEqual([
       ['leagues', LEAGUE],
       ['league-scoring-family', LEAGUE],
@@ -237,12 +242,38 @@ describe('the seams of the invalidation construction', () => {
     return text.slice(at, next > at ? next : text.length)
   }
 
-  it('EVERY writer of the league scoring document routes through the shared list (R666)', () => {
-    // The enumeration is the point. `create_league` is the fourth writer and
-    // is deliberately absent: it mints the league, so there is no prior cache
-    // entry to stale. A fifth writer added without a line here is the defect
-    // this cell exists to catch — the previous docblock addressed "any future
-    // writer" and missed an existing one.
+  it('each of the three ENUMERATED writers routes through the shared list (R666)', () => {
+    // **WHAT THIS CELL PINS, AND WHAT IT DOES NOT (F171 — the previous comment
+    // here claimed the second and was measured false).**
+    //
+    // **A source pin over an ENUMERATED set pins its MEMBERS, never its
+    // MEMBERSHIP.** The loop below walks a literal array of three names and
+    // greps each body. A FIFTH writer appended to `use-league.ts` — one that
+    // PATCHes `{ scoring_system_id }` and invalidates only `leaguesKeys.detail`
+    // — is **green** here, green on the whole unit lane, and green on
+    // `tsc --noEmit`, because no assertion ever asks the file what its writers
+    // ARE. Nothing in this suite can catch a writer that was never listed.
+    //
+    // What it DOES guard is removal: delete the shipped
+    // `invalidateLeagueScoring(queryClient, leagueId)` from
+    // `useUpdateLeagueSettings` and exactly this cell reds (1 failed | 8
+    // passed). That is a real and useful guard, and it is the whole of it.
+    //
+    // The prescription lives at `use-league.ts`'s docblock — *"Adding a fifth
+    // writer means adding it here"* — which is honest as a prescription and is
+    // not a claim about this test. `create_league` is the fourth writer and is
+    // deliberately absent from the list: it mints the league, so there is no
+    // prior cache entry to stale.
+    //
+    // **Deriving the set instead of listing it does not fix this, measured.**
+    // A "grep every exported hook body for `scoring_system_id`" derivation
+    // would (a) miss `useCreateLeague` outright — it lives in `use-leagues.ts`,
+    // a file this pin never opens — and (b) reach `useUpdateLeagueSettings`,
+    // the very writer R666 was about, only through a COMMENT: inside
+    // `bodyOf`'s slice (`use-league.ts:116-154`) the sole `scoring_system_id`
+    // is prose at `:146`, while the real wire field sits at `:105` in
+    // `UpdateLeagueSettingsBody`, OUTSIDE the slice. A derivation satisfied by
+    // prose is D274/F159's defect wearing a fix's name.
     const hooks = source('src/hooks/use-league.ts')
     for (const writer of [
       'useForkScoringTemplate',
