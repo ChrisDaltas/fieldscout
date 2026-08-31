@@ -341,17 +341,37 @@ export function useLeagueProfile(leagueId: string) {
  * shape. `leaguesKeys.detail` rides along because a fork REPOINTS
  * `leagues.scoring_system_id`, which the detail query carries.
  *
- * **The window, measured rather than quoted** (a review correction — earlier
- * drafts of this block said "up to ten minutes", which was wrong in BOTH
- * directions). `query-provider.tsx` sets `refetchOnWindowFocus: false` and no
- * `gcTime`. So: for a surface that stays MOUNTED there is no automatic refetch
- * trigger at all — no focus refetch, no interval — and `staleTime`'s ten
- * minutes is therefore not an upper bound; the pre-edit document is served
- * until the next mount or reconnect. For a surface that is CLOSED, React
- * Query's browser default `gcTime` of 5 minutes
- * (`query-core/build/modern/removable.js`: `newGcTime ?? (isServer ? Infinity
- * : 5 * 60 * 1e3)`) evicts the entry, so a later mount refetches regardless.
- * Ten minutes overstated the closed case and understated the open one.
+ * **The window: NO TIMER GUARANTEES A BOUND** (F173/D276 — corrected TWICE.
+ * The first draft said the room served pre-edit scoring "for up to ten
+ * minutes"; the review replaced that with *"a later mount refetches
+ * regardless"*, which is also false. Both are retracted.) Measured against the
+ * installed `@tanstack/query-core` **5.96.1** with a virtual clock and the
+ * browser branch forced (`environmentManager.setIsServer(() => false)`):
+ *
+ *   - **MOUNTED — no trigger exists at all.** `query-provider.tsx` sets
+ *     `refetchOnWindowFocus: false`, this query sets no `refetchInterval`, and
+ *     `queryObserver`'s own stale timeout only calls `updateResult()` — it
+ *     re-renders, it does not fetch. 60 virtual minutes with an observer
+ *     subscribed: **fetches 1 → 1.** The pre-edit document is served
+ *     INDEFINITELY; `staleTime` bounds nothing in this direction.
+ *   - **CLOSED AND REOPENED — still conditional.** A mount or a reconnect
+ *     fetches only when it finds the entry **evicted** or the data **stale**:
+ *     `shouldFetchOnMount` short-circuits to a load only while
+ *     `query.state.data === undefined`, and otherwise `refetchOnMount`,
+ *     `refetchOnReconnect` and `refetchOnWindowFocus` are gated alike through
+ *     `shouldFetchOn → isStale → query.isStaleByTime(staleTime)`. Eviction
+ *     needs the entry unobserved past `gcTime`, whose browser default is 5
+ *     minutes (`query-core/build/modern/removable.js`: `newGcTime ??
+ *     (environmentManager.isServer() ? Infinity : 5 * 60 * 1e3)`). So **a room
+ *     closed and reopened inside 5 minutes, over data younger than 10 minutes,
+ *     does NOT refetch** — measured 1 → 1, entry still present. Evicted first,
+ *     it does: 1 → 2.
+ *
+ * What is true of the timers is a tendency, not a bound: repeated close/reopen
+ * cycles do eventually refresh once the data crosses `staleTime` — **5 fetches
+ * over 15 four-minute cycles** (on cycles 0, 3, 6, 9, 12), measured. So say
+ * *"no timer guarantees a bound"*, never *"nothing ever refreshes"*, and never
+ * a number. **Invalidation, not a timer, is what makes the room correct.**
  *
  * Scope, stated rather than implied: a React Query cache is per client, so
  * this reaches the surfaces of the app instance that made the edit. Another
