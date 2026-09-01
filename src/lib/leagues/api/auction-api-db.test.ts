@@ -38,7 +38,7 @@
  *     "League not found"), the outsider no-leak 404 (the R155 class);
  *   - the ONE-UNIT max-bid pair through the route: a bid AT max_bid lands,
  *     max_bid + 1 is refused with the E5 copy — and after a REAL award the
- *     derivation moves (a $186 buy leaves a $1 max; $2 refused);
+ *     derivation moves (a $185 buy leaves a $1 max; $2 refused);
  *   - the mock path (089/D138): the launcher nominates and bids FOR the
  *     human seat through these same routes; the seat's REAL manager (a
  *     member of the mock's league) gets the §8.8/D103 refusal as a 400;
@@ -114,11 +114,12 @@ const NOMINATION_SECONDS = 120
 const BID_SECONDS = 60
 const ANTI_SNIPE_SECONDS = 10
 const GRACE_SECONDS = 120
-/** D91 draftable slots for the default roster (9 starters + 6 bench, IR
- *  excluded) — the auction's per-team capacity (D126). */
-const OPEN_SLOTS = 15
+/** D91 draftable slots for the default roster (10 starters + 6 bench, IR
+ *  excluded) — the auction's per-team capacity (D126). 16 since SC.2
+ *  (v2.16.9 §7.3.2 Scout default roster, wr 2 → 3). */
+const OPEN_SLOTS = 16
 /** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 185
 
 const COMMISH = {
   email: 'auction-api-commish@fieldscout.test',
@@ -142,7 +143,7 @@ const OUTSIDER = {
 }
 
 /** Flow fixtures (p1 = nomination 1, p2 = nomination 2, p3 = the planted
- *  undone row, p4 = the mock's nomination) + fifteen for the planted
+ *  undone row, p4 = the mock's nomination) + sixteen for the planted
  *  complete roster. Fractional ADP below every real player (F60). */
 const FLOW_PLAYERS = [
   { id: 'vitest-aa-p1', full_name: 'Vitest AA Player One', position: 'RB', adp: 0.001 },
@@ -178,7 +179,7 @@ const ACTION = {
   bidStaleSeq: 'af300000-0000-4000-8000-000000000022',
   bid1: 'af300000-0000-4000-8000-000000000023',
   bidLoser: 'af300000-0000-4000-8000-000000000024',
-  bid185: 'af300000-0000-4000-8000-000000000025',
+  bidUnderMax: 'af300000-0000-4000-8000-000000000025',
   bidAtMax: 'af300000-0000-4000-8000-000000000026',
   bidOverMax: 'af300000-0000-4000-8000-000000000027',
   nominate2: 'af300000-0000-4000-8000-000000000030',
@@ -890,7 +891,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
     expect(ACTION_ID_REUSED_MESSAGE).toMatch(/place it again/)
   })
 
-  it('ONE UNIT at the ceiling: a bid AT max_bid ($186) lands; max_bid + 1 ($187) is refused with the E5 copy naming the formula’s numbers', async () => {
+  it('ONE UNIT at the ceiling: a bid AT max_bid ($185) lands; max_bid + 1 ($186) is refused with the E5 copy naming the formula’s numbers', async () => {
     // The commissioner (the nominator — bidding has no turn, §8.6.3) raises
     // to one under its own ceiling; mgr2 holds the standing high bid, so
     // the raise comes from a seat that is NOT the high bidder.
@@ -898,7 +899,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
       nomination_seq: 1,
       player_id: P1,
       amount: MAX_BID - 1,
-      action_id: ACTION.bid185,
+      action_id: ACTION.bidUnderMax,
     })
     expect(under.status).toBe(200)
 
@@ -938,7 +939,7 @@ describe('POST …/draft/bid (§8.6.3) — the nomination identity is REQUIRED (
 // ===========================================================================
 
 describe('after the award: E2 outranks the identity guard at the route (R338); the derivation moves with a real buy', () => {
-  it('the real tick awards p1 to mgr3 at $186 and the rotation advances to mgr2', async () => {
+  it('the real tick awards p1 to mgr3 at $185 and the rotation advances to mgr2', async () => {
     const before = await readDraft(draftId)
     await service
       .from('drafts')
@@ -985,7 +986,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     expect(await bidCount(draftId)).toBe(4)
   })
 
-  it('mgr2 nominates p2; mgr3 (a $186 buy ⇒ $14 over 14 slots ⇒ max bid $1) is refused at $2 with the derivation’s numbers; the commissioner raises', async () => {
+  it('mgr2 nominates p2; mgr3 (a $185 buy ⇒ $15 over 15 slots ⇒ max bid $1) is refused at $2 with the derivation’s numbers; the commissioner raises', async () => {
     const opened = await nominatePlayer(mgr2Client, leagueScope(leagueId), mgr2Id, {
       player_id: P2,
       opening_bid: 1,
@@ -1002,7 +1003,7 @@ describe('after the award: E2 outranks the identity guard at the route (R338); t
     })
     expect(overOne.status).toBe(400)
     expect(errorText(overOne.body)).toContain('$2 is over your max bid of $1')
-    expect(errorText(overOne.body)).toContain('you have $14 for 14 open roster spots')
+    expect(errorText(overOne.body)).toContain('you have $15 for 15 open roster spots')
 
     const raise = await placeBid(commishClient, leagueScope(leagueId), commishId, {
       nomination_seq: 2,
@@ -1024,7 +1025,7 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
     const fullTeam = orderedTeamIds[TEAM_COUNT - 1]
     // Privileged plants (the pgTAP-fixture move at the wire layer): the
     // D127 storage half (+25 / −20), an undone $999 row (refunded by
-    // derivation — must be IGNORED by both twins), and fifteen priced picks
+    // derivation — must be IGNORED by both twins), and sixteen priced picks
     // that complete the last placeholder's roster (open_slots 0 ⇒ max_bid
     // 0, the ONE special case).
     const { error: adjustError } = await service
@@ -1116,28 +1117,28 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
     // …and the specific states the plants were for, stated so a both-sides-
     // wrong twin cannot pass by agreeing on nonsense.
     expect(sql.get(mgr3TeamId)).toEqual({
-      remaining: 14,
-      openSlots: 14,
+      remaining: 15,
+      openSlots: 15,
       maxBid: 1,
       committed: MAX_BID,
     })
     expect(sql.get(commishTeamId)).toEqual({
       remaining: 180,
-      openSlots: 15,
-      maxBid: 166,
+      openSlots: 16,
+      maxBid: 165,
       committed: 0,
     })
     expect(sql.get(mgr2TeamId)).toEqual({
       remaining: 225,
-      openSlots: 15,
-      maxBid: 211,
+      openSlots: 16,
+      maxBid: 210,
       committed: 0,
     })
-    expect(sql.get(fullTeam)).toEqual({ remaining: 80, openSlots: 0, maxBid: 0, committed: 120 })
+    expect(sql.get(fullTeam)).toEqual({ remaining: 64, openSlots: 0, maxBid: 0, committed: 136 })
     expect(sql.get(orderedTeamIds[3])).toEqual({
       remaining: 200,
-      openSlots: 15,
-      maxBid: 186,
+      openSlots: 16,
+      maxBid: 185,
       committed: 0,
     })
 
@@ -1219,27 +1220,27 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
     // (c) The named states, as stored literals at reserve 0 — `max_bid` IS
     //     `remaining`, flat (§8.6.1/E68).
     expect(sqlOn.get(mgr3TeamId)).toEqual({
-      remaining: 14,
-      openSlots: 14,
-      maxBid: 14,
+      remaining: 15,
+      openSlots: 15,
+      maxBid: 15,
       committed: MAX_BID,
     })
     expect(sqlOn.get(commishTeamId)).toEqual({
       remaining: 180,
-      openSlots: 15,
+      openSlots: 16,
       maxBid: 180,
       committed: 0,
     })
     expect(sqlOn.get(mgr2TeamId)).toEqual({
       remaining: 225,
-      openSlots: 15,
+      openSlots: 16,
       maxBid: 225,
       committed: 0,
     })
-    expect(sqlOn.get(fullTeam)).toEqual({ remaining: 80, openSlots: 0, maxBid: 0, committed: 120 })
+    expect(sqlOn.get(fullTeam)).toEqual({ remaining: 64, openSlots: 0, maxBid: 0, committed: 136 })
     expect(sqlOn.get(orderedTeamIds[3])).toEqual({
       remaining: 200,
-      openSlots: 15,
+      openSlots: 16,
       maxBid: 200,
       committed: 0,
     })

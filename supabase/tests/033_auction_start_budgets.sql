@@ -16,7 +16,7 @@
 --
 -- Falsifiability notes (§4.3):
 --   * DERIVATION GOLDENS ARE STORED LITERALS, one set per size/config —
---     12-team $200/min-1 (remaining 200, open 15, max_bid 186),
+--     12-team $200/min-1 (remaining 200, open 16, max_bid 185),
 --     8-team $300/min-2 (max_bid 272), $200/min-0 (max_bid 200 — C38's
 --     degenerate floor), $50/min-3 (max_bid 8), and E25's $3-with-3-slots
 --     (max_bid 1 — §8.6.7(d)'s "$1 max bid admits only $1").
@@ -41,14 +41,14 @@
 --     `remaining >= (open_slots - 1) * min_bid` was invisible to the
 --     original 66 pins: three fixtures LOOK like solvency coverage and
 --     none discriminates — LE sits $25 BELOW the floor (both formulas
---     refuse), the FALSE pin has remaining 0 against 14 open slots (both
+--     refuse), the FALSE pin has remaining 0 against 15 open slots (both
 --     say false), and LG's E25 case sits exactly ON equality, 3 ≥ 3×1
 --     (both say true). The two formulas disagree in exactly one place —
 --     ONE SLOT SHORT — so this file now pins that state at BOTH layers:
 --     the FUNCTION (a −$1 adjustment on an untouched LG seat: remaining 2
 --     against 3 open slots → INSOLVENT) and the ENGINE (LN: a
---     settings-LEGAL $200/min-1 league whose pre-start −$186 adjustment
---     leaves $14 against 15 slots → the start REFUSES). Under the
+--     settings-LEGAL $200/min-1 league whose pre-start −$185 adjustment
+--     leaves $15 against 16 slots → the start REFUSES). Under the
 --     loosened floor exactly those two go RED; reverted, 71/71 green.
 --     Reproduced against the pre-fix file for the record: the shipped 66
 --     pins have the SAME failure set with and without the mutation.
@@ -168,7 +168,7 @@ select ok(
 --    LI  one franchise + a hand-built draft with NULL total_rounds
 --    LJ  one franchise, no draft row — the D96 capacity gate on an auction
 --    LN  8-team $200/min-1 (settings-LEGAL) whose pre-created drafts row
---        carries a −$186 budget_adjustment on t1 — the ONE-SLOT-SHORT
+--        carries a −$185 budget_adjustment on t1 — the ONE-SLOT-SHORT
 --        start refusal and the R318 second message (M3 batch-2 review)
 -- ---------------------------------------------------------------------------
 insert into auth.users
@@ -215,8 +215,9 @@ values
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    -- 092/AP.1: the below-floor world used to be bought with min_bid 3 ($20 <
    -- 15 × $3). The reserve is now DERIVED and at most $1, so the only way
-   -- below the floor is a budget under the slot count: $14 against 15
-   -- draftable slots, i.e. EXACTLY ONE DOLLAR SHORT (D146 — LF below is the
+   -- below the floor is a budget under the slot count: $15 against 16
+   -- draftable slots (16 since SC.2 — the v2.16.9 Scout default roster),
+   -- i.e. EXACTLY ONE DOLLAR SHORT (D146 — LF below is the
    -- same league one dollar up, and starts). The budget is under the
    -- catalog's own `min(50)` on purpose: pgTAP writes the blob directly, so
    -- this is the cheapest shape that reaches the ENGINE's start gate.
@@ -228,15 +229,15 @@ values
    -- count different things; see the corrected note in
    -- `validate-league-settings.test.ts` and spec v2.13.3.
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 14, "pick_timer_seconds": 90}}'),
+     "auction_budget": 15, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000ff', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LF-atfloor', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
-   -- 092/AP.1: EXACTLY AT the floor on the derived scale — $15 for 15
+   -- 092/AP.1: EXACTLY AT the floor on the derived scale — $16 for 16
    -- draftable slots at a $1 reserve. LE above is the same shape one dollar
    -- down and is refused; this one starts. The pair brackets the start gate.
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
-     "auction_budget": 15, "pick_timer_seconds": 90}}'),
+     "auction_budget": 16, "pick_timer_seconds": 90}}'),
   ('a5000000-0000-4000-8000-0000000000e2', '8c000000-0000-4000-8000-000000000001',
    'pgtap-as-LG-e25', 2026, 'scheduled', 8,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -333,8 +334,8 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
   ('e5000000-0000-4000-8000-0000000000bb', 'a5000000-0000-4000-8000-0000000000bb',
    'auction', 'scheduled', false, '{}');
 -- LN's drafts row exists to carry a PRE-START budget_adjustment (D127's
--- storage half). The league itself is settings-LEGAL ($200 ≥ 15 × $1); the
--- −$186 delta leaves t1 with $14 against 15 open slots — EXACTLY ONE SLOT
+-- storage half). The league itself is settings-LEGAL ($200 ≥ 16 × $1); the
+-- −$185 delta leaves t1 with $15 against 16 open slots — EXACTLY ONE SLOT
 -- SHORT of §8.6.8's floor, which is the only place the shipped invariant
 -- and a floor loosened by one slot disagree (M3 batch-2 review, R320).
 -- It also proves the derivation HONORS a pre-start adjustment, which is
@@ -343,7 +344,7 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config) values
 insert into drafts (id, league_id, draft_type, status, is_mock, config, budget_adjustments) values
   ('e5000000-0000-4000-8000-0000000000e7', 'a5000000-0000-4000-8000-0000000000e7',
    'auction', 'scheduled', false, '{}',
-   '{"c5000000-0000-4000-8000-00e700000001": -186}'::jsonb);
+   '{"c5000000-0000-4000-8000-00e700000001": -185}'::jsonb);
 -- LH/LI: hand-built rows for the two loudness probes (never started).
 insert into drafts (id, league_id, draft_type, status, is_mock, config, total_rounds) values
   ('e5000000-0000-4000-8000-0000000000e3', 'a5000000-0000-4000-8000-0000000000e3',
@@ -369,8 +370,8 @@ select is(
 select is(
   (select status || '|' || draft_type || '|' || total_rounds::text
    from drafts where league_id = 'a5000000-0000-4000-8000-0000000000aa'),
-  'live|auction|15',
-  '…draft is live, typed auction, total_rounds 15 (D91 draftable slots = the auction''s roster capacity, D126)');
+  'live|auction|16',
+  '…draft is live, typed auction, total_rounds 16 (D91 draftable slots = the auction''s roster capacity, D126; 16 since SC.2 — the v2.16.9 Scout default roster, wr 2 → 3)');
 select is(
   (select status from leagues where id = 'a5000000-0000-4000-8000-0000000000aa'),
   'drafting',
@@ -414,10 +415,10 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (200, 15, 186, 0) $$,
-  'GOLDEN 12-team $200/min-1: remaining 200, open 15, max_bid 186 (200 − 14×1), committed 0');
+  $$ values (200, 16, 185, 0) $$,
+  'GOLDEN 12-team $200/min-1: remaining 200, open 16, max_bid 185 (200 − 15×1), committed 0');
 select ok(
-  (select bool_and(b.remaining = 200 and b.open_slots = 15 and b.max_bid = 186)
+  (select bool_and(b.remaining = 200 and b.open_slots = 16 and b.max_bid = 185)
    from drafts d
    join teams t on t.league_id = d.league_id
    cross join lateral public.draft_team_budget(d.id, t.id) b
@@ -433,8 +434,8 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (150, 14, 137, 50) $$,
-  'after a $50 buy: remaining 150, open 14, max_bid 137 (150 − 13×1), committed 50');
+  $$ values (150, 15, 136, 50) $$,
+  'after a $50 buy: remaining 150, open 15, max_bid 136 (150 − 14×1), committed 50');
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via, is_undone)
 select d.id, d.league_id, 'c5000000-0000-4000-8000-00aa00000001', 'pgtap-as-p2', 2, null, 999, 'manager', true
 from drafts d where d.league_id = 'a5000000-0000-4000-8000-0000000000aa';
@@ -443,7 +444,7 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (150, 14, 137, 50) $$,
+  $$ values (150, 15, 136, 50) $$,
   '…an IS_UNDONE $999 row changes NOTHING — undo refunds by derivation, never by a counter (D127/D131)');
 update drafts
 set budget_adjustments = '{"c5000000-0000-4000-8000-00aa00000001": -20}'::jsonb
@@ -453,7 +454,7 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (130, 14, 117, 50) $$,
+  $$ values (130, 15, 116, 50) $$,
   '…a −$20 commissioner adjustment lands in remaining and max_bid (D127''s storage half, read here)');
 update drafts
 set budget_adjustments = '{"c5000000-0000-4000-8000-00aa00000001": 25}'::jsonb
@@ -463,14 +464,14 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (175, 14, 162, 50) $$,
+  $$ values (175, 15, 161, 50) $$,
   '…and a +$25 adjustment moves them the other way');
 select ok(
-  (select b.remaining = 200 and b.max_bid = 186
+  (select b.remaining = 200 and b.max_bid = 185
    from drafts d
    cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000002') b
    where d.league_id = 'a5000000-0000-4000-8000-0000000000aa'),
-  '…a per-team adjustment is PER TEAM: team 2 still reads the untouched 200/186');
+  '…a per-team adjustment is PER TEAM: team 2 still reads the untouched 200/185');
 update drafts set budget_adjustments = '{}'::jsonb
 where league_id = 'a5000000-0000-4000-8000-0000000000aa';
 
@@ -508,8 +509,8 @@ select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from public.draft_team_budget('e5000000-0000-4000-8000-0000000000bb',
                                    'c5000000-0000-4000-8000-00bb00000001') b $$,
-  $$ values (300, 15, 286) $$,
-  'GOLDEN 8-team $300: max_bid 286 (300 − 14×$1 reserve) — 092/AP.1 retired the 0–5 min-bid field, so the reserve is the DERIVED $1 (§8.6.1/§7.3.8)');
+  $$ values (300, 16, 285) $$,
+  'GOLDEN 8-team $300: max_bid 285 (300 − 15×$1 reserve) — 092/AP.1 retired the 0–5 min-bid field, so the reserve is the DERIVED $1 (§8.6.1/§7.3.8)');
 
 -- (2) manual: refuses without a stored permutation, then honors one.
 select throws_ok(
@@ -588,14 +589,14 @@ select is(
 -- F. §8.6.8 solvency — both ways, plus the start-time backstop
 -- ---------------------------------------------------------------------------
 -- NB the state at this line: LA started fresh, then §D's spend sweep left
--- team 1 holding one $50 buy (its budget reads 150/14 here) and every
--- other seat untouched at 200/15. The invariant holds for both shapes —
--- 150 ≥ 14 × 1 and 200 ≥ 15 × 1 (description corrected, M3 batch-2
+-- team 1 holding one $50 buy (its budget reads 150/15 here) and every
+-- other seat untouched at 200/16. The invariant holds for both shapes —
+-- 150 ≥ 15 × 1 and 200 ≥ 16 × 1 (description corrected, M3 batch-2
 -- review R323: it used to describe the pre-spend state).
 select ok(
   public.draft_auction_solvent(
     (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000aa')),
-  'LA is solvent AFTER the §D spend sweep: the spender reads 150 ≥ 14 × 1 and every other seat 200 ≥ 15 × 1');
+  'LA is solvent AFTER the §D spend sweep: the spender reads 150 ≥ 15 × 1 and every other seat 200 ≥ 16 × 1');
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 select d.id, d.league_id, 'c5000000-0000-4000-8000-00aa00000002', 'pgtap-as-p3', 3, null, 200, 'manager'
 from drafts d where d.league_id = 'a5000000-0000-4000-8000-0000000000aa';
@@ -603,13 +604,13 @@ select is(
   public.draft_auction_solvent(
     (select id from drafts where league_id = 'a5000000-0000-4000-8000-0000000000aa')),
   false,
-  '…and FALSE the instant one team spends its whole budget with 14 slots open — the invariant fn is falsifiable, not decorative');
+  '…and FALSE the instant one team spends its whole budget with 15 slots open — the invariant fn is falsifiable, not decorative');
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00aa00000002') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (0, 14, -13) $$,
+  $$ values (0, 15, -14) $$,
   '…and max_bid goes NEGATIVE rather than clamping to 0 — an insolvent state stays visible (D127/§4.7)');
 delete from draft_picks
 where team_id = 'c5000000-0000-4000-8000-00aa00000002' and player_id = 'pgtap-as-p3';
@@ -690,25 +691,25 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00dd00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000dd' $$,
-  $$ values (200, 15, 200) $$,
-  '$0-NOMINATIONS GOLDEN: with the toggle ON the whole remaining budget is bidable (200 − 14×0) — "with $0 nominations there is no $1 per slot reserve" (Chris, 2026-08-20)');
+  $$ values (200, 16, 200) $$,
+  '$0-NOMINATIONS GOLDEN: with the toggle ON the whole remaining budget is bidable (200 − 15×0) — "with $0 nominations there is no $1 per slot reserve" (Chris, 2026-08-20)');
 
 -- The start-time backstop, both sides.
 select is(
   (public.draft_start_internal('a5000000-0000-4000-8000-0000000000ff', false)->>'started')::boolean,
   true,
-  'LF starts: $15 across 15 draftable slots is EXACTLY at the §8.6.8 floor (15 ≥ 15 × $1) — the POSITIVE control one dollar above LE (D146)');
+  'LF starts: $16 across 16 draftable slots is EXACTLY at the §8.6.8 floor (16 ≥ 16 × $1) — the POSITIVE control one dollar above LE (D146)');
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c5000000-0000-4000-8000-00ff00000001') b
      where d.league_id = 'a5000000-0000-4000-8000-0000000000ff' $$,
-  $$ values (15, 15, 1) $$,
-  '…GOLDEN at the floor: max_bid $1 (15 − 14×$1) — the reserve keeps the other fourteen slots affordable, and there is exactly one dollar of room');
+  $$ values (16, 16, 1) $$,
+  '…GOLDEN at the floor: max_bid $1 (16 − 15×$1) — the reserve keeps the other fifteen slots affordable, and there is exactly one dollar of room');
 select throws_ok(
   $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000ee', false) $$,
   'P0001',
-  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $14 budget cannot fill 15 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
+  'draft_start: league a5000000-0000-4000-8000-0000000000ee cannot start an auction — a $15 budget cannot fill 16 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
   'LE: a BELOW-floor auction is refused by the §8.6.8 start backstop, with the numbers, the UNIT (D91 draftable slots — not the settings validator''s IR-inclusive roster size) and a remedy that names a knob that EXISTS (092/AP.1: "lower the minimum bid" pointed at a retired field)');
 select is(
   (select status || '|' || (select count(*) from drafts
@@ -721,15 +722,15 @@ select ok(
    from leagues where id = 'a5000000-0000-4000-8000-0000000000ee'),
   '…including the snapshot the arm had already taken (the whole txn unwinds — nothing half-started)');
 -- LN: the SECOND backstop message (R318). The settings floor HOLDS here
--- ($200 ≥ 15 × $1), so the LE sentence would have been arithmetically
+-- ($200 ≥ 16 × $1), so the LE sentence would have been arithmetically
 -- FALSE about this league and would have sent the commissioner to the
 -- budget knob instead of the §8.7 adjustment that actually caused it.
--- The state is also EXACTLY ONE SLOT SHORT ($14 against 15 slots at $1),
+-- The state is also EXACTLY ONE SLOT SHORT ($15 against 16 slots at $1),
 -- so a floor loosened by one slot would let this start (R320).
 select throws_ok(
   $$ select public.draft_start_internal('a5000000-0000-4000-8000-0000000000e7', false) $$,
   'P0001',
-  'draft_start: league a5000000-0000-4000-8000-0000000000e7 cannot start an auction — pgtap-as-LN-t1 has $14 for 15 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency). The league''s $200 auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7), or allow $0 nominations in League settings → Draft setup',
+  'draft_start: league a5000000-0000-4000-8000-0000000000e7 cannot start an auction — pgtap-as-LN-t1 has $15 for 16 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency). The league''s $200 auction budget clears that floor, so the shortfall is this franchise''s own: clear its commissioner budget adjustment (§8.7), or allow $0 nominations in League settings → Draft setup',
   'LN: a settings-LEGAL league made insolvent by a PRE-START budget adjustment is refused by the named franchise and its real numbers — never by the settings sentence, which is false for this league (R318); the state is one slot short, so a floor loosened by one slot would start it (R320)');
 
 -- ---------------------------------------------------------------------------
