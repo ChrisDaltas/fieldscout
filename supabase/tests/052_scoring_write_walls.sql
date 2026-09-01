@@ -593,7 +593,10 @@ select is(
 -- 058 seeded the templates" — so the anchor is now min(created_at), which IS
 -- that moment, and the RHS windows itself the same way. Scout Scoring (106)
 -- sits outside this cell's population exactly like a fork does; its own
--- profile membership is B3a's containment arm plus pgTAP 054's pins.]
+-- profile membership is pinned by pgTAP 054 (§A1/§A3/§B*) and 012/053's
+-- census cells. [R686 — an earlier draft also cited B3a's containment arm,
+-- but for a template row that arm is tautological (is_template alone puts it
+-- in the profile), so the citation named coverage that proves nothing.]
 select is(
   (select array_agg(s.id order by s.id) from scoring_systems s
     where s.created_at <= (select min(created_at) from scoring_systems where is_template)
