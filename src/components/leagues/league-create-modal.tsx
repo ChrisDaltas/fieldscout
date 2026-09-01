@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from '@/hooks/use-toast'
 import { useLeagueLists } from '@/hooks/use-league-lists'
 import { useCreateLeague } from '@/hooks/use-leagues'
+import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +30,10 @@ import {
 } from './league-create-wizard-ops'
 import { ChoiceSelect, numOptions } from './settings-form-controls'
 import { ScoringTemplatePicker } from './scoring-template-picker'
+import {
+  effectiveTemplateSelection,
+  resolveDefaultTemplateId,
+} from './scoring-template-picker-ops'
 
 /**
  * Create-league modal — the 3-step replacement for the /leagues/new page
@@ -39,8 +44,12 @@ import { ScoringTemplatePicker } from './scoring-template-picker'
  * every step leads with the "you can change this later" line.
  *
  *   1. Basics    — name, optional avatar, team count
- *   2. Style     — draft type (snake/auction) + scoring style (PPR/no-PPR)
- *   3. Template  — pick a scoring template (filtered by the style pick)
+ *   2. Style     — draft type (snake/auction) + scoring style (PPR/no-PPR;
+ *                  opens on No PPR, Scout Scoring's family — SC.3)
+ *   3. Template  — pick a scoring template (filtered by the style pick;
+ *                  opens with Scout Scoring preselected per §7.3.3's
+ *                  system-default bullet — a derived preselection the user's
+ *                  explicit pick always beats, never a silent write)
  *
  * The bottom stepper moves freely between steps (no gating between
  * sections; only Create validates). The avatar can't upload before the
@@ -60,7 +69,13 @@ export function LeagueCreateModal({
   const router = useRouter()
   const [draft, setDraft] = useState<WizardDraft>(initialWizardDraft)
   const [step, setStep] = useState(0)
-  const [scoringStyle, setScoringStyle] = useState<'ppr' | 'no_ppr'>('ppr')
+  // SC.3 (§7.3.3's system-default bullet): the style step opens on No PPR —
+  // Scout Scoring's own family (`receptions: 0` is one of its STATED
+  // differences, App B.5) — so the scoring step opens with the preselected
+  // Scout card VISIBLE and leading. A 'ppr' default here would filter the
+  // preselected card out of view: a selection the user can't see is the
+  // CLAUDE.md "nothing happened" shape.
+  const [scoringStyle, setScoringStyle] = useState<'ppr' | 'no_ppr'>('no_ppr')
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -75,6 +90,27 @@ export function LeagueCreateModal({
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const { createLeagueAsync } = useCreateLeague()
+
+  // SC.3 — the §7.3.3 system default, as a pure DERIVATION (no effect, no
+  // draft write): Scout Scoring's id resolved by natural key from the
+  // fetched template rows, admitted only while the No-PPR view (Scout's own
+  // family) is active so the default can never point at a filtered-out
+  // card. The user's explicit pick always wins (`effectiveTemplateSelection`
+  // — explicit ?? default), and a missing Scout row degrades loudly to the
+  // explicit-pick flow (`resolveDefaultTemplateId` warns; the create button
+  // stays disabled with the designed "Pick a scoring template" line below).
+  const templatesQuery = useScoringTemplates({ enabled: open })
+  const defaultTemplateId = useMemo(
+    () =>
+      scoringStyle === 'no_ppr'
+        ? resolveDefaultTemplateId(templatesQuery.data)
+        : null,
+    [scoringStyle, templatesQuery.data],
+  )
+  const effectiveScoringId = effectiveTemplateSelection(
+    draft.scoringSystemId,
+    defaultTemplateId,
+  )
 
   // The success step's live attached set: `useAttachList`'s onSettled
   // invalidation refetches it, so a second attach sees the first flagged.
@@ -101,7 +137,7 @@ export function LeagueCreateModal({
       // Reset for the next open — a closed modal is a discarded draft.
       setDraft(initialWizardDraft())
       setStep(0)
-      setScoringStyle('ppr')
+      setScoringStyle('no_ppr') // back to the Scout-default view (SC.3)
       setAvatarFile(null)
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
       setAvatarPreview(null)
@@ -127,7 +163,7 @@ export function LeagueCreateModal({
   }
 
   const nameMissing = draft.name.trim().length === 0
-  const input = toCreateInput(draft)
+  const input = toCreateInput(draft, defaultTemplateId)
   const canCreate = input !== null && !submitting
 
   async function handleCreate() {
@@ -160,7 +196,10 @@ export function LeagueCreateModal({
       setCreated({
         id: result.league_id,
         name: draft.name.trim(),
-        scoringSystemId: draft.scoringSystemId,
+        // The id the league was actually CREATED with — the effective
+        // choice the payload carried (explicit pick or the Scout default),
+        // not the draft's explicit-only field (SC.3).
+        scoringSystemId: input.scoring_system_id,
       })
     } catch (cause) {
       toast({
@@ -266,7 +305,10 @@ export function LeagueCreateModal({
           {step === 2 && (
             <div className="flex flex-col gap-3">
               <ScoringTemplatePicker
-                value={draft.scoringSystemId}
+                // SC.3: the EFFECTIVE selection — explicit pick, else the
+                // Scout preselection while the No-PPR view admits it — so
+                // what renders selected is exactly what Create will submit.
+                value={effectiveScoringId}
                 styleFilter={scoringStyle}
                 onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
               />

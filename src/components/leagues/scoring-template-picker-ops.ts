@@ -8,11 +8,18 @@
  * seeded rows. The colocated test golden-pins each derivation against the
  * templates.ts literals (tasks-M1 §4.3 UI scoping).
  *
- * The two things here that are NOT derived from rules are spec-table
- * metadata that exists only in §7.3.3's printed table (not in the DB row):
- *   - the per-template ONE-LINERS ("ESPN's defaults, 0 PPR" …), verbatim;
- *   - the "(platform default)" markers (Yahoo Half PPR, Sleeper Full PPR).
- * Both are keyed by the row's `name` (the 058/106 seeds' stable natural key,
+ * The things here that are NOT derived from rules are spec metadata that
+ * exists only in the spec's own text (not in the DB row):
+ *   - the six parity-template ONE-LINERS ("ESPN's defaults, 0 PPR" …),
+ *     verbatim from §7.3.3's printed table;
+ *   - Scout Scoring's card copy, TRIMMED from Appendix B.5's Chris-approved
+ *     "why it's better" copy (SC.3/D282 — §16.2 says the card carries B.5's
+ *     copy; the fuller approved sentences ride the seeded row description
+ *     directly beneath it on the same card);
+ *   - the "(platform default)" markers (Yahoo Half PPR, Sleeper Full PPR)
+ *     and the "FieldScout's default" marker on Scout (B.5's own subtitle;
+ *     §7.3.3's system-default bullet).
+ * All are keyed by the row's `name` (the 058/106 seeds' stable natural key,
  * partial UNIQUE) and pinned as stored literals in the test. A row with an
  * unknown name (impossible under the seeds, but never invent data) degrades
  * gracefully: derived PPR one-liner, no marker, sorted after the known seven.
@@ -73,6 +80,14 @@ export interface TemplateCard {
    * spec table prints the possessive, not a generic "Platform default").
    */
   platformDefaultMarker: string | null
+  /**
+   * SC.3 (§7.3.3's system-default bullet, v2.16.9): "FieldScout's default"
+   * on the Scout Scoring card — the same possessive-marker pattern as the
+   * platform rows (R73), copy from App B.5's own subtitle — else null. The
+   * card is what reads as the recommended default; the PRESELECTION itself
+   * is the mounts' business (`resolveDefaultTemplateId` below).
+   */
+  defaultMarker: string | null
   summary: TemplateSummary
 }
 
@@ -89,12 +104,20 @@ export const TEMPLATE_DISPLAY_ORDER: readonly string[] = [
   'Sleeper Full PPR',
 ]
 
-/** §7.3.3 table one-liners, verbatim (Scout's from the amended v2.16.9 row). */
+/**
+ * Card one-liners. The six parity rows are §7.3.3's table one-liners,
+ * verbatim. Scout's is App B.5's Chris-approved "why it's better" copy,
+ * TRIMMED to card length — every phrase taken from the approved text, no
+ * claim changed (SC.3/D282; supersedes the §7.3.3-row-verbatim entry whose
+ * "Appendix B.5" citation tail read oddly on a product card — D279(8)).
+ * The approved copy's remaining sentences — "instead of a pile of inherited
+ * quirks", the per-yard rates, the D/ST model — ride the seeded row
+ * DESCRIPTION rendered directly beneath this line on the same card.
+ */
 export const TEMPLATE_ONE_LINERS: Readonly<Record<string, string>> = {
   'Scout Scoring':
-    'One clean rule set. Every TD 6 — passing TDs included — every FG 3, ' +
-    'no PPR, 0.1/yd rush+rec · 0.05/yd pass, −2 all turnovers. Full table ' +
-    '+ basis: Appendix B.5',
+    'One clean rule set — every TD is 6, every FG is 3, no PPR. Yardage ' +
+    'at flat, memorable rates.',
   'ESPN Standard': "ESPN's defaults, 0 PPR",
   'ESPN Full PPR': "ESPN's defaults, 1.0 PPR",
   'Yahoo Standard': "Yahoo's defaults, 0 PPR (note: −1 INT)",
@@ -108,6 +131,67 @@ export const PLATFORM_DEFAULT_TEMPLATE_NAMES: readonly string[] = [
   'Yahoo Half PPR',
   'Sleeper Full PPR',
 ]
+
+// ---------------------------------------------------------------------------
+// SC.3 — the §7.3.3 system default (spec v2.16.9's system-default bullet)
+// ---------------------------------------------------------------------------
+
+/**
+ * The system-default template's NATURAL KEY: the seeds' stable `name` under
+ * `is_template` (058/106's partial UNIQUE). Resolution is always by this
+ * name against the fetched template rows — never a hardcoded uuid, because
+ * `gen_random_uuid()` makes the row's id differ per environment.
+ */
+export const DEFAULT_TEMPLATE_NAME = 'Scout Scoring'
+
+/**
+ * The Scout card's marker copy — B.5's own subtitle ("FieldScout's
+ * default"), in the platform rows' possessive-marker pattern (R73).
+ */
+export const DEFAULT_TEMPLATE_MARKER = "FieldScout's default"
+
+/**
+ * Resolve the §7.3.3 system default's id from the fetched template rows by
+ * natural key. Returns null — and says so LOUDLY — when the Scout row is
+ * absent (an environment whose seeds stop before migration 106): the
+ * CLAUDE.md "nothing happened" rule forbids a silent un-defaulting, so the
+ * degradation is named in the console and the surfaces fall back to the
+ * pre-SC.3 explicit-pick flow (nothing preselected; both submit gates keep
+ * refusing a null until the user picks a card — a designed state, not a
+ * blank one).
+ */
+export function resolveDefaultTemplateId(
+  rows: readonly ScoringTemplateRow[] | undefined,
+): string | null {
+  if (rows === undefined) return null // still loading — nothing to resolve yet
+  const row = rows.find((r) => r.name === DEFAULT_TEMPLATE_NAME)
+  if (row === undefined) {
+    console.warn(
+      `[scoring-templates] The "${DEFAULT_TEMPLATE_NAME}" template row is ` +
+        'missing from the fetched templates (has this environment run ' +
+        'migration 106?). No template will be preselected — the user must ' +
+        'pick one explicitly (§7.3.3 system-default bullet, SC.3).',
+    )
+    return null
+  }
+  return row.id
+}
+
+/**
+ * The ONE preselection rule, shared by the two league-less mounts (the
+ * create wizard and the MP.4 mock launcher — the settings mount renders the
+ * league's STORED reference and never defaults over it): an explicit pick
+ * always wins; the resolved system default fills only an empty pick — a
+ * preselection, never an override and never a silent write (`create_league`
+ * still receives the explicit id the submit builder emits); null when
+ * neither exists, which the submit gates refuse exactly as before SC.3.
+ */
+export function effectiveTemplateSelection(
+  explicitId: string | null,
+  defaultId: string | null,
+): string | null {
+  return explicitId ?? defaultId
+}
 
 /**
  * §7.3.3 possessive marker copy for the platform-default rows (R73 — the spec
@@ -170,6 +254,8 @@ export function buildTemplateCards(
         description: row.description ?? '',
         isPlatformDefault: PLATFORM_DEFAULT_TEMPLATE_NAMES.includes(row.name),
         platformDefaultMarker: PLATFORM_DEFAULT_MARKERS[row.name] ?? null,
+        defaultMarker:
+          row.name === DEFAULT_TEMPLATE_NAME ? DEFAULT_TEMPLATE_MARKER : null,
         summary,
       }
     })

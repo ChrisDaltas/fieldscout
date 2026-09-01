@@ -14,6 +14,7 @@ import {
   buildTemplateCards,
   canCustomize,
   formatPoints,
+  TEMPLATE_DISPLAY_ORDER,
   type ScoringCustomizeContext,
   type TemplateCard,
 } from './scoring-template-picker-ops'
@@ -34,6 +35,11 @@ import {
  * persisting the choice belongs to the consumers, and even the SE.9
  * Customize affordance only EMITS the clicked template id through the
  * `customize` context: the fork mutation itself lives at the settings mount.
+ * The §7.3.3 SYSTEM-DEFAULT PRESELECTION (SC.3) is likewise the mounts'
+ * business: the two league-less mounts derive `value` through
+ * `effectiveTemplateSelection` (explicit pick ?? resolved Scout default);
+ * this component never preselects on its own — it renders whatever `value`
+ * says, and only marks the Scout card with its "FieldScout's default" badge.
  *
  * Consumed by THREE mounts — never fork this component (CLAUDE.md):
  *   1. the create wizard (`league-create-modal.tsx`) — no league exists yet
@@ -98,7 +104,10 @@ export function ScoringTemplatePicker({
   if (isPending) {
     return (
       <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', className)}>
-        {Array.from({ length: 6 }, (_, i) => (
+        {/* F193: one placeholder per KNOWN template, derived from the §7.3.3
+            order list so an eighth template never re-strands this count at
+            a stale literal (it was a hard 6 after SC.1 made the grid 7). */}
+        {Array.from({ length: TEMPLATE_DISPLAY_ORDER.length }, (_, i) => (
           <Skeleton key={i} className="h-44 rounded-sm" />
         ))}
       </div>
@@ -143,9 +152,12 @@ export function ScoringTemplatePicker({
         <CardContent className="p-4">
           <p className="text-[13px] font-bold">No scoring templates yet.</p>
           <p className="text-[12px] font-semibold text-n-3">
-            The 6 league scoring templates ship with the database seed — if
-            you&apos;re seeing this, the environment hasn&apos;t run its
-            migrations. There&apos;s nothing to pick until they land.
+            {/* F193: count derived from the §7.3.3 order list, never a
+                literal that goes stale when a template joins. */}
+            The {TEMPLATE_DISPLAY_ORDER.length} league scoring templates ship
+            with the database seed — if you&apos;re seeing this, the
+            environment hasn&apos;t run its migrations. There&apos;s nothing
+            to pick until they land.
           </p>
         </CardContent>
       </Card>
@@ -252,10 +264,20 @@ function TemplateCardButton({
             <Badge variant="accent">
               <Icon name="check" /> Selected
             </Badge>
+          ) : card.defaultMarker ? (
+            // SC.3 (§7.3.3 system-default bullet): the recommended default
+            // reads as one — accent-soft tint + accent border, a resting
+            // condition carried by fill/border, never elevation (CLAUDE.md).
+            <Badge variant="stroke-purple">{card.defaultMarker}</Badge>
           ) : (
             card.platformDefaultMarker && <Badge variant="lime">{card.platformDefaultMarker}</Badge>
           )}
         </div>
+        {selected && card.defaultMarker && (
+          <Badge variant="stroke-purple" className="self-start">
+            {card.defaultMarker}
+          </Badge>
+        )}
         {selected && card.platformDefaultMarker && (
           <Badge variant="lime" className="self-start">
             {card.platformDefaultMarker}
@@ -367,6 +389,11 @@ function CompareTable({
                   )}
                 >
                   {card.name}
+                  {card.defaultMarker && (
+                    <span className="block text-[10px] font-semibold text-n-3">
+                      {card.defaultMarker}
+                    </span>
+                  )}
                   {card.platformDefaultMarker && (
                     <span className="block text-[10px] font-semibold text-n-3">
                       {card.platformDefaultMarker}

@@ -23,6 +23,8 @@ import {
   type LeagueSettings,
 } from '@/lib/leagues/settings/league-settings'
 
+import { effectiveTemplateSelection } from './scoring-template-picker-ops'
+
 export { derivePlayoffStartWeek, PLAYOFF_TEAMS_OPTIONS, reconcileDerived }
 
 /**
@@ -41,7 +43,12 @@ export const DEFAULT_WIZARD_TEAM_COUNT = 12
  * The wizard's whole draft: the create-arg fields (name/season/team_name +
  * the §7.3.3 template choice, which is a §12.1 typed column carried ALONGSIDE
  * the settings split, never inside it) plus the full §7.3 `LeagueSettings`
- * object. `scoringSystemId` is null until the scoring step picks one.
+ * object. `scoringSystemId` holds the user's EXPLICIT pick only, null while
+ * none exists — the §7.3.3 system-default preselection (Scout Scoring, SC.3)
+ * is a DERIVED fallback the modal resolves from the fetched template rows
+ * and passes into `toCreateInput`, never a value written into this draft
+ * (so an explicit pick and the default can never be confused, and the
+ * default can never overwrite a pick).
  */
 export interface WizardDraft {
   name: string
@@ -57,7 +64,9 @@ export interface WizardDraft {
  * contract's `defaultsForTeamCount` so the §7.3.5 derived `trade_veto_votes`
  * default (⌈team_count/2⌉, R63) is correct rather than a hard-coded 6, and
  * the returned settings object is a fresh MUTABLE clone (never the frozen
- * module constant). Name/team blank; no template chosen yet.
+ * module constant). Name/team blank; no EXPLICIT template pick yet — the
+ * §7.3.3 Scout preselection is derived at the modal from the fetched rows
+ * (SC.3), never stored into a fresh draft.
  */
 export function initialWizardDraft(): WizardDraft {
   return {
@@ -72,8 +81,17 @@ export function initialWizardDraft(): WizardDraft {
 /**
  * The create payload the wizard POSTs (minus `action_id`, which the
  * `useCreateLeague` hook stamps per-submit for idempotency — D68). Returns
- * null while the draft is not submittable (no name, or no template chosen):
- * the invite/create step disables its button on null.
+ * null while the draft is not submittable (no name, or no template chosen
+ * NOR defaulted): the invite/create step disables its button on null.
+ *
+ * SC.3 (§7.3.3's system-default bullet): `defaultScoringSystemId` is the
+ * Scout Scoring id the modal resolves by natural key
+ * (`resolveDefaultTemplateId`), filling an empty pick through the shared
+ * `effectiveTemplateSelection` rule — an explicit pick always wins, and the
+ * payload always carries an EXPLICIT template id either way (`create_league`
+ * knows nothing of preselection; a preselection, never a silent write).
+ * Null (rows not loaded, or a seed without the Scout row) degrades to the
+ * pre-SC.3 explicit-only gate.
  *
  * `team_name` is omitted when blank — the RPC derives "<username>'s Team"
  * (leagues-service treats ''/whitespace as absent).
@@ -86,14 +104,21 @@ export interface WizardCreateInput {
   settings: LeagueSettings
 }
 
-export function toCreateInput(draft: WizardDraft): WizardCreateInput | null {
+export function toCreateInput(
+  draft: WizardDraft,
+  defaultScoringSystemId: string | null = null,
+): WizardCreateInput | null {
   const name = draft.name.trim()
-  if (name.length === 0 || draft.scoringSystemId === null) return null
+  const scoringSystemId = effectiveTemplateSelection(
+    draft.scoringSystemId,
+    defaultScoringSystemId,
+  )
+  if (name.length === 0 || scoringSystemId === null) return null
   const teamName = draft.teamName.trim()
   return {
     name,
     season: draft.season,
-    scoring_system_id: draft.scoringSystemId,
+    scoring_system_id: scoringSystemId,
     ...(teamName.length > 0 ? { team_name: teamName } : {}),
     settings: draft.settings,
   }

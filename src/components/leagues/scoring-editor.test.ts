@@ -172,7 +172,8 @@ describe('settings-panel mount seam', () => {
     // (`useForkScoringTemplate`) is invoked HERE, at the league-context
     // mount, never inside the shared picker (which only emits the id) and
     // never inside the editor. The two league-less picker mounts are pinned
-    // Customize-free in scoring-template-picker.render.test.tsx.
+    // Customize-free in scoring-template-picker.render.test.ts. (R691: the
+    // suite is a .ts file rendering the .tsx component via createElement.)
     expect(settingsPanelSource).toMatch(/useForkScoringTemplate/)
     expect(settingsPanelSource).toMatch(/customize=\{\{/)
     // The editor itself still never forks — its empty state POINTS at the
@@ -182,5 +183,38 @@ describe('settings-panel mount seam', () => {
     // fork route — it emits the template id through the customize context.
     const pickerSource = read('src/components/leagues/scoring-template-picker.tsx')
     expect(pickerSource).not.toMatch(/scoring\/fork|useForkScoringTemplate|useMutation/)
+  })
+})
+
+describe('F194 — the empty state and the §7.3 window (SE.9 review R689)', () => {
+  // D276 honesty note: these are MEMBER pins over the component source — the
+  // logic they guard is one boolean branch, and the branch's two renderings
+  // are browser-verified (a `setup` league reads the Customize pointer, an
+  // out-of-window league reads the locked line). SC.3's session log carries
+  // that walk.
+  it('the caller passes the ALREADY-COMPUTED window down — never re-derived inside the empty state', () => {
+    expect(editorSource).toMatch(/inEditWindow=\{access\.inEditWindow\}/)
+    // The component takes it as a prop; nothing inside ScoringEditorEmpty
+    // recomputes access (the F194 fix is a pass-down, not a second
+    // derivation).
+    expect(editorSource).toMatch(/inEditWindow: boolean/)
+  })
+
+  it('the Customize pointer renders ONLY inside the window branch; out of it the locked line renders instead', () => {
+    // The empty state's copy branches on the prop…
+    expect(editorSource).toMatch(/\{inEditWindow \? \(/)
+    // …and the out-of-window arm is the shared locked-line constant, not a
+    // re-worded second lock message.
+    expect(editorSource).toMatch(/\) : \(\s*\/\/ F194/)
+    expect(editorSource).toMatch(/SCORING_LOCKED_MESSAGE\s*\)\}/)
+  })
+
+  it('ONE locked line: the literal is defined once and both renderings (notice + empty state) read the constant', () => {
+    const literal = /Scoring locks when the draft starts/g
+    expect(editorSource.match(literal)?.length).toBe(1)
+    // The constant has (at least) its definition, the accessNotices use and
+    // the empty-state use.
+    const uses = editorSource.match(/SCORING_LOCKED_MESSAGE/g) ?? []
+    expect(uses.length).toBeGreaterThanOrEqual(3)
   })
 })

@@ -176,3 +176,38 @@ describe('toCreateInput — submit gating + payload shape', () => {
     expect(input!.settings.playoff_start_week).toBe(input!.settings.regular_season_weeks + 1)
   })
 })
+
+describe('toCreateInput + the SC.3 system default (§7.3.3 system-default bullet)', () => {
+  const DEFAULT_ID = '00000000-0000-4000-8000-0000000005c0'
+  const named = (overrides: Partial<WizardDraft> = {}): WizardDraft => ({
+    ...initialWizardDraft(),
+    name: 'Sunday Legends',
+    ...overrides,
+  })
+
+  it('the resolved Scout default fills an EMPTY pick — the payload carries it as the explicit scoring_system_id', () => {
+    // The preselection is a preselection, never a silent write: what the
+    // wizard submits is a plain explicit id; `create_league` (060, D170's
+    // template-only birth check) is none the wiser.
+    const input = toCreateInput(named(), DEFAULT_ID)
+    expect(input).not.toBeNull()
+    expect(input!.scoring_system_id).toBe(DEFAULT_ID)
+  })
+
+  it("the user's explicit pick ALWAYS beats the default (preselection never overrides)", () => {
+    const input = toCreateInput(named({ scoringSystemId: SCORING_ID }), DEFAULT_ID)
+    expect(input!.scoring_system_id).toBe(SCORING_ID)
+  })
+
+  it('a null default (rows loading, or a seed without the Scout row) degrades to the pre-SC.3 gate: no pick, no payload', () => {
+    // What renders instead is the DESIGNED explicit-pick state — the create
+    // button stays disabled behind the "Pick a scoring template" line —
+    // never a silently un-defaulted submit.
+    expect(toCreateInput(named(), null)).toBeNull()
+    expect(toCreateInput(named())).toBeNull() // omitted param ≡ null default
+  })
+
+  it('the default never rescues a missing name — both gates still hold', () => {
+    expect(toCreateInput({ ...initialWizardDraft() }, DEFAULT_ID)).toBeNull()
+  })
+})

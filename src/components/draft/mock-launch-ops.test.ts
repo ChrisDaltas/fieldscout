@@ -256,6 +256,48 @@ describe('pre-flight validation (the contract’s own messages; the server re-ch
   })
 })
 
+// ---------------------------------------------------------------------------
+// SC.3 — the §8.8 Scout preselection at the launch gate (§7.3.3's
+// system-default bullet; the dialog resolves the id, these ops apply it)
+// ---------------------------------------------------------------------------
+
+describe('SC.3 — the resolved system default at toMockLaunchInput/mockLaunchBlockedReason', () => {
+  const DEFAULT_ID = '00000000-0000-4000-8000-0000000005c0'
+
+  it('the resolved Scout default fills an EMPTY pick: launchable, and the config carries it as the explicit scoring_system_id', () => {
+    const draft = initialMockLaunchDraft()
+    expect(mockLaunchBlockedReason(draft, DEFAULT_ID)).toBeNull()
+    const input = toMockLaunchInput(draft, DEFAULT_ID)
+    expect(input).not.toBeNull()
+    // The mock config's template id is fed exactly as an explicit pick
+    // would feed it — same key, same place (drafts.config->>'scoring_system_id').
+    expect(input!.settings.draft.scoring_system_id).toBe(DEFAULT_ID)
+  })
+
+  it("the launcher's explicit pick ALWAYS beats the default (preselection never overrides)", () => {
+    const draft = { ...initialMockLaunchDraft(), scoringSystemId: TEMPLATE_ID }
+    expect(toMockLaunchInput(draft, DEFAULT_ID)!.settings.draft.scoring_system_id).toBe(
+      TEMPLATE_ID,
+    )
+  })
+
+  it('a null default (rows loading, or a seed without the Scout row) degrades to the pre-SC.3 gate — the designed refusal line renders, nothing launches', () => {
+    const draft = initialMockLaunchDraft()
+    expect(toMockLaunchInput(draft, null)).toBeNull()
+    expect(mockLaunchBlockedReason(draft, null)).toBe('Pick a scoring template to start.')
+  })
+
+  it('a settings violation still outranks the default-filled template — the reason order is unchanged', () => {
+    const draft = patchMockSettings(initialMockLaunchDraft(), {
+      roster_settings: { ...DEFAULT_ROSTER_SETTINGS, starting_slots: [] },
+    })
+    expect(mockLaunchBlockedReason(draft, DEFAULT_ID)).toBe(
+      'Starting lineup must total between 1 and 20 slots (currently 0).',
+    )
+    expect(toMockLaunchInput(draft, DEFAULT_ID)).toBeNull()
+  })
+})
+
 describe('MS.8 — the slot rides the standalone launch (D223/E77)', () => {
   it('a fresh draft has NO slot — Random is the default, structurally (no key can reach the wire)', () => {
     expect(initialMockLaunchDraft().slot).toBeNull()

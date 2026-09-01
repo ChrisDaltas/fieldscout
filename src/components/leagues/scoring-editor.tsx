@@ -144,7 +144,16 @@ export function ScoringEditor({ leagueId, className }: { leagueId: string; class
     const templateName = templatesQuery.data.find(
       (t) => t.id === detail.league.scoring_system_id,
     )?.name
-    return <ScoringEditorEmpty className={className} templateName={templateName} />
+    return (
+      <ScoringEditorEmpty
+        className={className}
+        templateName={templateName}
+        // F194: the already-computed §7.3 window rides down, so the copy can
+        // stop pointing an out-of-window commissioner at a Customize button
+        // that no longer renders (it exists in `setup`/`scheduled` only).
+        inEditWindow={access.inEditWindow}
+      />
+    )
   }
 
   // The stored document. The write walls make an invalid league doc
@@ -227,6 +236,11 @@ const STALE_NOTICE: EditorNotice = {
     "Scoring values couldn't refresh — showing the last loaded copy read-only. Retry when you're back online.",
 }
 
+/** The §7.3.3 locked line — ONE string for the out-of-window notice and the
+ *  out-of-window empty state (F194), so the two renderings cannot drift. */
+const SCORING_LOCKED_MESSAGE =
+  'Scoring locks when the draft starts — the season scores from the copy frozen at that moment (§7.3.3).'
+
 function accessNotices(access: ScoringEditorAccess): EditorNotice[] {
   const notices: EditorNotice[] = []
   if (!access.isCommissioner) {
@@ -237,11 +251,7 @@ function accessNotices(access: ScoringEditorAccess): EditorNotice[] {
     })
   }
   if (!access.inEditWindow) {
-    notices.push({
-      tone: 'warning',
-      message:
-        'Scoring locks when the draft starts — the season scores from the copy frozen at that moment (§7.3.3).',
-    })
+    notices.push({ tone: 'warning', message: SCORING_LOCKED_MESSAGE })
   }
   return notices
 }
@@ -295,13 +305,20 @@ function ScoringEditorLoadError({
  *  (SE.9): now that the Customize entry SHIPS — on the template cards in the
  *  Scoring section above this card — the copy points at it by name instead
  *  of describing a control that doesn't exist. Renders for the commissioner
- *  only (the caller gates), which is exactly who Customize renders for. */
+ *  only (the caller gates the ROLE); Customize itself renders only in the
+ *  §7.3 window (`setup`/`scheduled`), so past it the Customize pointer is
+ *  replaced by the locked line — an instruction that can't be followed is
+ *  F179(a)'s own species (F194, fixing exactly that). */
 function ScoringEditorEmpty({
   className,
   templateName,
+  inEditWindow,
 }: {
   className?: string
   templateName: string | undefined
+  /** The already-computed §7.3 window (`scoringEditorAccess(...).inEditWindow`
+   *  at the caller — F194: passed down, never re-derived here). */
+  inEditWindow: boolean
 }) {
   return (
     <Card className={className}>
@@ -311,9 +328,19 @@ function ScoringEditorEmpty({
           {templateName
             ? `This league scores with the ${templateName} template — one shared rulebook, unedited.`
             : 'This league scores with a shared template — one rulebook, unedited.'}{' '}
-          To make it yours, hit <strong>Customize</strong> on a template card
-          in the Scoring section above — your league gets its own copy, and
-          every value is edited right here, position by position.
+          {inEditWindow ? (
+            <>
+              To make it yours, hit <strong>Customize</strong> on a template
+              card in the Scoring section above — your league gets its own
+              copy, and every value is edited right here, position by
+              position.
+            </>
+          ) : (
+            // F194: out of the §7.3 window the Customize button does not
+            // render (and the picker is inert), so the copy states the lock
+            // instead of pointing at a control that isn't there.
+            SCORING_LOCKED_MESSAGE
+          )}
         </p>
       </CardContent>
     </Card>
