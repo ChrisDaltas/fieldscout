@@ -11,7 +11,7 @@
  * pending), plus a seeded sweep over random flat documents.
  *
  * Its twin is **fork-equivalence** (SE.2(5)): a template and its fork score
- * identically for all 6 templates × 6 positions × the five parity lines, under
+ * identically for all 7 templates × 6 positions × the five parity lines, under
  * BOTH tier readings — `derive-stats.ts`'s literal tables and the fork's own
  * `tier_cuts` — which is §7.3.3.1(a)'s "the two readings agree by
  * construction" made falsifiable.
@@ -195,10 +195,10 @@ describe('resolveRules — THE IDENTITY PROPERTY (format 1 ≡ resolved, every p
       }
     }
     expect(comparisons).toBe(SCORING_TEMPLATES.length * ALL_POSITION_INPUTS.length)
-    expect(comparisons).toBe(66)
+    expect(comparisons).toBe(77)
   })
 
-  it('SCORES IDENTICALLY resolved-or-not: 6 templates × 11 position inputs × 5 parity lines, whole breakdowns', () => {
+  it('SCORES IDENTICALLY resolved-or-not: 7 templates × 11 position inputs × 5 parity lines, whole breakdowns', () => {
     let comparisons = 0
     for (const t of SCORING_TEMPLATES) {
       for (const [lineName, raw] of PARITY_LINES) {
@@ -214,7 +214,7 @@ describe('resolveRules — THE IDENTITY PROPERTY (format 1 ≡ resolved, every p
         }
       }
     }
-    expect(comparisons).toBe(330)
+    expect(comparisons).toBe(385)
   })
 
   it('holds for 200 seeded random flat documents at a random position', () => {
@@ -531,13 +531,15 @@ describe('forkTemplateDoc — a template becomes the league’s own format-2 doc
     }
   })
 
-  it('INHERITS the starting family’s cut lists — ESPN rows ESPN, Yahoo/Sleeper shared, and the YA slot is ALWAYS written', () => {
+  it('INHERITS the starting family’s cut lists — ESPN + Scout rows ESPN, Yahoo/Sleeper shared, and the YA slot is ALWAYS written', () => {
     // Stored literals (D62), not re-derived from the constants under test.
     const espn = [0, 1, 7, 14, 18, 28, 35, 46]
     const shared = [0, 1, 7, 14, 21, 28, 35]
     const ya = [0, 100, 200, 300, 350, 400, 450, 500, 550]
 
     const expected: Record<string, number[]> = {
+      // Scout rides the ESPN split families (App B.5 markup ruling; SC.1).
+      'Scout Scoring': espn,
       'ESPN Standard': espn,
       'ESPN Full PPR': espn,
       'Yahoo Standard': shared,
@@ -615,7 +617,7 @@ describe('forkTemplateDoc — a template becomes the league’s own format-2 doc
  * ──────────────────────────────────────────────────────────────────────── */
 
 describe('fork-equivalence — a fork scores EXACTLY like its template, everywhere', () => {
-  it('6 templates × 6 positions × 5 parity lines × 2 tier readings: totals AND perKey AND pending', () => {
+  it('7 templates × 6 positions × 5 parity lines × 2 tier readings: totals AND perKey AND pending', () => {
     let comparisons = 0
 
     for (const t of SCORING_TEMPLATES) {
@@ -648,7 +650,7 @@ describe('fork-equivalence — a fork scores EXACTLY like its template, everywhe
       }
     }
 
-    expect(comparisons).toBe(360)
+    expect(comparisons).toBe(420)
   })
 
   it('survives normalization — normalize(fork(T)) still scores like T', () => {

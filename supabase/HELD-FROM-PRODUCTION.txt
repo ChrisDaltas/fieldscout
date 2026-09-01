@@ -37,4 +37,9 @@
 # mechanism working as designed, not an exception: 105 fell OUTSIDE the closed
 # range and would have reddened the check on merge, so holding it back is an
 # explicit act recorded here rather than an inherited default.
-082-105
+#
+# 106 added 2026-08-31 with SC.1 (the Scout Scoring template seed — spec
+# v2.16.9 App B.5). Same mechanism, same explicit act: a seed-only migration,
+# no schema change, held with the rest of the leagues chain until the
+# invite-only test cohort starts.
+082-106

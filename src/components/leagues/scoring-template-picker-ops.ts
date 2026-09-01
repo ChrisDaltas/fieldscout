@@ -12,10 +12,10 @@
  * metadata that exists only in §7.3.3's printed table (not in the DB row):
  *   - the per-template ONE-LINERS ("ESPN's defaults, 0 PPR" …), verbatim;
  *   - the "(platform default)" markers (Yahoo Half PPR, Sleeper Full PPR).
- * Both are keyed by the row's `name` (058's stable natural key, partial
- * UNIQUE) and pinned as stored literals in the test. A row with an unknown
- * name (impossible under the 058 seed, but never invent data) degrades
- * gracefully: derived PPR one-liner, no marker, sorted after the known six.
+ * Both are keyed by the row's `name` (the 058/106 seeds' stable natural key,
+ * partial UNIQUE) and pinned as stored literals in the test. A row with an
+ * unknown name (impossible under the seeds, but never invent data) degrades
+ * gracefully: derived PPR one-liner, no marker, sorted after the known seven.
  */
 
 /** The template row shape the picker consumes (world-readable SELECT over
@@ -77,8 +77,10 @@ export interface TemplateCard {
 }
 
 /** §7.3.3 table order — also the picker's card order (and templates.ts's
- *  SCORING_TEMPLATES order). */
+ *  SCORING_TEMPLATES order). v2.16.9: Scout Scoring leads (the amended
+ *  table's order IS the picker order — its system-default bullet). */
 export const TEMPLATE_DISPLAY_ORDER: readonly string[] = [
+  'Scout Scoring',
   'ESPN Standard',
   'ESPN Full PPR',
   'Yahoo Standard',
@@ -87,8 +89,12 @@ export const TEMPLATE_DISPLAY_ORDER: readonly string[] = [
   'Sleeper Full PPR',
 ]
 
-/** §7.3.3 table one-liners, verbatim. */
+/** §7.3.3 table one-liners, verbatim (Scout's from the amended v2.16.9 row). */
 export const TEMPLATE_ONE_LINERS: Readonly<Record<string, string>> = {
+  'Scout Scoring':
+    'One clean rule set. Every TD 6 — passing TDs included — every FG 3, ' +
+    'no PPR, 0.1/yd rush+rec · 0.05/yd pass, −2 all turnovers. Full table ' +
+    '+ basis: Appendix B.5',
   'ESPN Standard': "ESPN's defaults, 0 PPR",
   'ESPN Full PPR': "ESPN's defaults, 1.0 PPR",
   'Yahoo Standard': "Yahoo's defaults, 0 PPR (note: −1 INT)",

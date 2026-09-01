@@ -27,7 +27,7 @@
 --      ever looks at again), and the three §7.3.3.1(c) preconditions raising
 --      22023 instead of generating a plausible name.
 --
---   §C THE ACCEPTANCE FLOOR, READ FROM THE TABLE. All six seeded template
+--   §C THE ACCEPTANCE FLOOR, READ FROM THE TABLE. All seven seeded template
 --      `rules` ACCEPT — SELECTed from `scoring_systems`, never re-authored, so
 --      this is the document D175's wall will actually meet. Plus the
 --      fork-shaped format-2 envelope built from a seeded row, which is what
@@ -101,10 +101,10 @@
 -- does not accept. Everything above is SQL against a stored literal, a
 -- hand-computed count, or a row read from the database.
 --
--- Conventions: no fixtures are written (the validator reads no table; the six
--- template rows are migration 058's seeds, read not created), so there is no
--- role/JWT dance and nothing to clean up; the whole file rolls back anyway.
--- Non-vacuity (F94): §C asserts the six template rows EXIST before asserting
+-- Conventions: no fixtures are written (the validator reads no table; the seven
+-- template rows are migrations 058 + 106's seeds, read not created), so there is
+-- no role/JWT dance and nothing to clean up; the whole file rolls back anyway.
+-- Non-vacuity (F94): §C asserts the seven template rows EXIST before asserting
 -- anything about them, and §G/§I assert their sweep sizes.
 -- ============================================================================
 begin;
@@ -357,14 +357,14 @@ select throws_ok(
 
 select is(
   (select count(*) from public.scoring_systems where is_template),
-  6::bigint,
-  'C1: the six seeded template rows exist — the premise, asserted before anything is asserted about them (F94)');
+  7::bigint,
+  'C1: the seven seeded template rows exist (058''s six + 106''s Scout Scoring) — the premise, asserted before anything is asserted about them (F94)');
 
 select is_empty(
   $$ select s.name || ' -> ' || pg_temp.verdict(s.rules)
        from public.scoring_systems s
       where s.is_template and pg_temp.verdict(s.rules) <> 'ACCEPT' $$,
-  'C2: ALL SIX seeded template `rules` ACCEPT — read from the table, never re-authored. These are the documents D175''s wall meets first (every league reference today is a template row)');
+  'C2: ALL SEVEN seeded template `rules` ACCEPT — read from the table, never re-authored. These are the documents D175''s wall meets first (every league reference today is a template row)');
 
 select is_empty(
   $$ select s.name || ' -> ' || pg_temp.verdict(pg_temp.env(s.rules))

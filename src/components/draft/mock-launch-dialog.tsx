@@ -61,7 +61,7 @@ import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launch
  *   1. Format   — draft type, team count, CPU speed
  *   2. Clocks   — the §7.3.8 knobs for the chosen draft type
  *   3. Roster   — the shipped roster-slot builder
- *   4. Scoring  — one of the six shipped templates (D229(1))
+ *   4. Scoring  — one of the seven shipped templates (D229(1); SC.1 adds Scout Scoring)
  *
  * The defaults on open are the schema's own (D229(3): pick clock 90,
  * nomination 30, bid 20, anti-snipe 10, `DEFAULT_ROSTER_SETTINGS`) and are

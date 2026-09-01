@@ -5,8 +5,9 @@
  * Spec: §7.3.3 (parity guarantee + precision), Appendix B, §19.2 E38/E61;
  * PROGRESS D44 (derive-at-scoring-time), D57 (calculator), D59 (templates).
  *
- * Five canonical player-weeks as stored literals, each scored under all six
- * v1 parity templates: 30 pinned totals. EVERY pin below is HAND-COMPUTED —
+ * Five canonical player-weeks as stored literals, each scored under all
+ * seven shipped templates (the parity six + Scout Scoring, App B.5/SC.1):
+ * 35 pinned totals. EVERY pin below is HAND-COMPUTED —
  * the arithmetic is shown line-by-line in comments and was worked out on
  * paper BEFORE the suite first ran (never pasted from calculator output —
  * that would be a recompute pin, the §4.3 fraud class; a recompute pin can
@@ -69,7 +70,7 @@ const QB_WEEK: Record<string, number> = {
   pass_tds: 2,
   interceptions: 1,
   pass_2pt: 1,
-  qb_sack_taken: 3, // context: unscored by all 6 templates (B.3 is Ultra-only, punted)
+  qb_sack_taken: 3, // context: unscored by all 7 templates (B.3 is Ultra-only, punted)
   rush_yards: 14,
   rush_tds: 0, // delivered zero — a real perKey 0, not pending
   receptions: 0, // delivered zero — PPR delta on this week is exactly 0
@@ -140,9 +141,10 @@ const FIXTURES: Record<string, Record<string, number>> = {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
- * The 30 hand-computed pins (6 templates × 5 weeks), to the cent.
+ * The 35 hand-computed pins (7 templates × 5 weeks), to the cent.
  *
- * QB week — delivered-key arithmetic, common part (all six templates):
+ * QB week — delivered-key arithmetic, common part (the six incumbents;
+ *   Scout's own QB arithmetic is in its block below):
  *   pass_yards   287 × 0.04 = 11.48
  *   pass_tds       2 × 4    =  8.00
  *   pass_2pt       1 × 2    =  2.00
@@ -178,15 +180,32 @@ const FIXTURES: Record<string, Record<string, number>> = {
  *   Yahoo:   12 + 3                  = 15.00   (no miss-penalty keys at all)
  *   Sleeper: 12 + 3 − 1 − 1          = 13.00   (fg_missed −1 AND pat_missed −1)
  *
- * D/ST week — events common to all six:
+ * D/ST week — events common to all seven:
  *   def_sack 3×1 = 3 · def_int 1×2 = 2 · def_fumble_rec 1×2 = 2 · def_td 1×6 = 6
  *   def_safety/def_block/def_return_td 0 × c = 0
  *   events = 3 + 2 + 2 + 6 = 13.00
  *   ESPN (split): PA=19 → def_pa_18_27 hot, 1×0 = 0; YA=249 → def_ya_200_299
  *     hot, 1×2 = +2; every cold bucket 0×c = 0 → 13 + 0 + 2 = 15.00
  *   Yahoo/Sleeper (single): PA=19 → def_pa_14_20 hot, 1×1 = +1 → 14.00
+ *
+ * Scout Scoring (App B.5 as marked up 2026-08-31; SC.1) — worked before the
+ * suite first ran with the new row, per this file's own rule:
+ *   QB week:  pass_yards 287 × 0.05 = 14.35 · pass_tds 2 × 6 = 12.00 ·
+ *     interceptions 1 × −2 = −2.00 · pass_2pt 1 × 2 = 2.00 ·
+ *     rush_yards 14 × 0.1 = 1.40 · rush_tds/receptions 0 → 0
+ *     total = 14.35 + 12 − 2 + 2 + 1.4 = 27.75   (≠ every incumbent — the
+ *     headline 6-pt passing TD and 0.05/yd are both load-bearing here)
+ *   RB week:  same keys and coefficients as the Standard incumbents
+ *     (rush/rec 0.1, TD 6, 2-pt 2, fumble −2, receptions 0) → 19.60
+ *   WR/TE week: same → 18.10
+ *   K week:   flat FGs — fg_0_39 1×3 + fg_40_49 1×3 + fg_50_plus 1×3 = 9 ·
+ *     pat_made 3×1 = 3 · fg_missed 1×−1 = −1 · pat_missed key OMITTED
+ *     (stat ignored) → 9 + 3 − 1 = 11.00   (≠ every incumbent: flat 3s)
+ *   D/ST week: identical tables to ESPN (events 13; split PA=19 → 0;
+ *     YA=249 → +2) → 15.00
  * ──────────────────────────────────────────────────────────────────────── */
 const PINNED_TOTALS: Record<string, Record<string, number>> = {
+  'Scout Scoring': { qb: 27.75, rb: 19.6, wr_te: 18.1, k: 11, dst: 15 },
   'ESPN Standard': { qb: 20.88, rb: 19.6, wr_te: 18.1, k: 14, dst: 15 },
   'ESPN Full PPR': { qb: 20.88, rb: 22.6, wr_te: 26.1, k: 14, dst: 15 },
   'Yahoo Standard': { qb: 21.88, rb: 19.6, wr_te: 18.1, k: 15, dst: 14 },
@@ -195,7 +214,7 @@ const PINNED_TOTALS: Record<string, Record<string, number>> = {
   'Sleeper Full PPR': { qb: 21.88, rb: 22.6, wr_te: 26.1, k: 13, dst: 14 },
 }
 
-describe('parity matrix — 6 templates × 5 canonical player-weeks, to the cent', () => {
+describe('parity matrix — 7 templates × 5 canonical player-weeks, to the cent', () => {
   for (const [templateName, weeks] of Object.entries(PINNED_TOTALS)) {
     for (const [weekId, pinned] of Object.entries(weeks)) {
       it(`${templateName} × ${weekId} week = ${pinned.toFixed(2)}`, () => {

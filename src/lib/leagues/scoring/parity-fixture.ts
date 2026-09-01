@@ -141,9 +141,9 @@ export const ONE_FAMILY_EACH: Array<{ code: ScoringGuardrail; doc: unknown }> = 
 // ---------------------------------------------------------------------------
 
 /**
- * SE.3(3)'s acceptance floor, as data: all six shipped templates (the format-1
+ * SE.3(3)'s acceptance floor, as data: all seven shipped templates (the format-1
  * arm — and the documents D175's wall will actually meet, since every league
- * reference today is a template row), all six of their forks (the format-2
+ * reference today is a template row), all seven of their forks (the format-2
  * arm), and the editor's headline legal edit.
  *
  * Built from `SCORING_TEMPLATES` and `forkTemplateDoc`, never re-authored, so

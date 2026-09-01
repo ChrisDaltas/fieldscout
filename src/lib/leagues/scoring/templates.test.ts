@@ -4,7 +4,7 @@
  * - Registry cross-check: every rules key exists in STAT_KEYS (§7.3.3 one
  *   namespace, mechanically enforced), is core_box, and is not a placeholder.
  * - Golden pins (R23 ordered-literal pattern): the COMPLETE contents of all
- *   six templates — names, descriptions, verification flags, and every
+ *   seven templates — names, descriptions, verification flags, and every
  *   coefficient — as stored flat literals. Any change to templates.ts (or a
  *   drifted spread) fails here visibly.
  * - Counter-pins that encode the specific wrong implementations:
@@ -59,8 +59,9 @@ describe('registry cross-check (§7.3.3 one namespace)', () => {
 })
 
 describe('golden pins — complete template contents as ordered literals', () => {
-  it('templates are exactly the six §7.3.3 rows, in table order', () => {
+  it('templates are exactly the seven §7.3.3 rows, in table order (v2.16.9: Scout first)', () => {
     expect(SCORING_TEMPLATES.map((t) => t.name)).toEqual([
+      'Scout Scoring',
       'ESPN Standard',
       'ESPN Full PPR',
       'Yahoo Standard',
@@ -70,8 +71,12 @@ describe('golden pins — complete template contents as ordered literals', () =>
     ])
   })
 
-  it('verification flags: ESPN/Yahoo source-verified; Sleeper best-known (F24)', () => {
+  it('verification flags: Scout definitional (D278(7)); ESPN/Yahoo source-verified; Sleeper best-known (F24)', () => {
     expect(SCORING_TEMPLATES.map((t) => [t.name, t.valuesVerified])).toEqual([
+      // Scout's values are DEFINITIONAL — the source is the App B.5 ruling
+      // itself (marked up 2026-08-31), so verified-true by construction of
+      // the ruling, not by a platform help page (D278(7), resolved by SC.1).
+      ['Scout Scoring', true],
       ['ESPN Standard', true],
       ['ESPN Full PPR', true],
       ['Yahoo Standard', true],
@@ -79,6 +84,54 @@ describe('golden pins — complete template contents as ordered literals', () =>
       ['Sleeper Standard', false],
       ['Sleeper Full PPR', false],
     ])
+  })
+
+  it('Scout Scoring rules — full literal (App B.5 as marked up 2026-08-31; SC.1)', () => {
+    expect(byName('Scout Scoring').rules).toEqual({
+      pass_yards: 0.05,
+      pass_tds: 6,
+      interceptions: -2,
+      pass_2pt: 2,
+      rush_yards: 0.1,
+      rush_tds: 6,
+      rush_2pt: 2,
+      receptions: 0,
+      receiving_yards: 0.1,
+      receiving_tds: 6,
+      rec_2pt: 2,
+      fumbles_lost: -2,
+      fumble_recovery_td: 6,
+      return_td: 6,
+      fg_0_39: 3,
+      fg_40_49: 3,
+      fg_50_plus: 3,
+      pat_made: 1,
+      fg_missed: -1,
+      def_sack: 1,
+      def_int: 2,
+      def_fumble_rec: 2,
+      def_td: 6,
+      def_safety: 2,
+      def_block: 2,
+      def_return_td: 6,
+      def_pa_0: 5,
+      def_pa_1_6: 4,
+      def_pa_7_13: 3,
+      def_pa_14_17: 1,
+      def_pa_18_27: 0,
+      def_pa_28_34: -1,
+      def_pa_35_45: -3,
+      def_pa_46_plus: -5,
+      def_ya_0_99: 5,
+      def_ya_100_199: 3,
+      def_ya_200_299: 2,
+      def_ya_300_349: 0,
+      def_ya_350_399: -1,
+      def_ya_400_449: -3,
+      def_ya_450_499: -5,
+      def_ya_500_549: -6,
+      def_ya_550_plus: -7,
+    })
   })
 
   it('ESPN Standard rules — full literal (Q9 evidence, 2026-07-21)', () => {
@@ -334,10 +387,14 @@ describe('counter-pins', () => {
   const ESPN_PA_KEYS = ['def_pa_14_17', 'def_pa_18_27', 'def_pa_35_45', 'def_pa_46_plus']
   const SHARED_ONLY_PA_KEYS = ['def_pa_14_20', 'def_pa_21_27', 'def_pa_35_plus']
 
-  it('dst_model: ESPN templates carry def_ya_* (split); Yahoo/Sleeper carry none (single)', () => {
+  // The three split-model rows, enumerated BY MEMBER (D272(20)): the two ESPN
+  // rows plus Scout Scoring, whose split D/ST is B.5's markup ruling (SC.1).
+  const SPLIT_MODEL_NAMES = new Set(['ESPN Standard', 'ESPN Full PPR', 'Scout Scoring'])
+
+  it('dst_model: ESPN + Scout carry def_ya_* (split); Yahoo/Sleeper carry none (single)', () => {
     for (const t of SCORING_TEMPLATES) {
       const yaKeys = Object.keys(t.rules).filter((k) => k.startsWith('def_ya_'))
-      if (t.name.startsWith('ESPN')) {
+      if (SPLIT_MODEL_NAMES.has(t.name)) {
         expect(yaKeys, t.name).toHaveLength(9)
       } else {
         expect(yaKeys, t.name).toHaveLength(0)
@@ -345,10 +402,10 @@ describe('counter-pins', () => {
     }
   })
 
-  it('PA bucket families: ESPN uses ESPN buckets, never the shared-only ones — and vice versa', () => {
+  it('PA bucket families: ESPN + Scout use ESPN buckets, never the shared-only ones — and vice versa', () => {
     for (const t of SCORING_TEMPLATES) {
       const keys = new Set(Object.keys(t.rules))
-      if (t.name.startsWith('ESPN')) {
+      if (SPLIT_MODEL_NAMES.has(t.name)) {
         for (const k of ESPN_PA_KEYS) expect(keys.has(k), `${t.name} missing ${k}`).toBe(true)
         for (const k of SHARED_ONLY_PA_KEYS) expect(keys.has(k), `${t.name} has ${k}`).toBe(false)
       } else {
@@ -379,16 +436,17 @@ describe('counter-pins', () => {
     }
   })
 
-  it('cross-platform INT delta: ESPN −2 vs Yahoo/Sleeper −1 (§7.3.3 parity example)', () => {
+  it('INT delta: ESPN and Scout −2 vs Yahoo/Sleeper −1 (§7.3.3 parity example + B.5 "−2 for all turnovers")', () => {
     for (const t of SCORING_TEMPLATES) {
-      expect(t.rules.interceptions, t.name).toBe(t.name.startsWith('ESPN') ? -2 : -1)
+      const expected = t.name.startsWith('ESPN') || t.name === 'Scout Scoring' ? -2 : -1
+      expect(t.rules.interceptions, t.name).toBe(expected)
     }
   })
 
-  it('miss penalties per platform table: ESPN fg only; Yahoo none; Sleeper both', () => {
+  it('miss penalties per table: ESPN + Scout fg only (B.5: the −1 ruling was FG-specific, never a pair); Yahoo none; Sleeper both', () => {
     for (const t of SCORING_TEMPLATES) {
       const keys = new Set(Object.keys(t.rules))
-      if (t.name.startsWith('ESPN')) {
+      if (t.name.startsWith('ESPN') || t.name === 'Scout Scoring') {
         expect(keys.has('fg_missed'), t.name).toBe(true)
         expect(keys.has('pat_missed'), t.name).toBe(false)
       } else if (t.name.startsWith('Yahoo')) {
@@ -408,7 +466,11 @@ describe('counter-pins', () => {
         expect(/fg_50_59/.test(key), `${t.name}: ${key}`).toBe(false)
         expect(/pat_(safety|return)/.test(key), `${t.name}: ${key}`).toBe(false)
       }
-      expect(t.rules.fg_50_plus, `${t.name}.fg_50_plus`).toBe(5)
+      // Platform rows carry 5 (the 50–59 value — the Q9 exception encoding);
+      // Scout's flat-FG 3 is RULED in B.5 and has no exception to encode.
+      expect(t.rules.fg_50_plus, `${t.name}.fg_50_plus`).toBe(
+        t.name === 'Scout Scoring' ? 3 : 5,
+      )
     }
   })
 
