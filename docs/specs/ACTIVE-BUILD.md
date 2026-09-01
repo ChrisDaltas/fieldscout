@@ -9,7 +9,32 @@
 
 ---
 
-## Active: Redraft Leagues M3 — Auction engine (**COMPLETE**) → the remaining lane is **SE**
+## Active: **NONE — awaiting Chris's direction** *(SE completed 2026-09-01; every candidate next build runs through a Chris gate)*
+
+> **[corrected 2026-09-01]** ~~the remaining lane is SE~~ — **the SE track is COMPLETE.**
+> The gate statement on the record: *"the editor's own quality gate (spec §7.3.3.1,
+> v2.16.11) passed 2026-09-01"* (PROGRESS §1; D286; PR #241). SE.1–SE.10 plus the
+> four SC cuts (Scout Standard + Scout PPR, the rename, the roster default, the
+> preselection) are all built, adversarially reviewed, and merged. **This header
+> outlived the lane exactly as the 2026-08-25 correction above warned; corrected
+> the day the gate passed rather than eleven days later.**
+>
+> **The loop takes NOTHING until this file points somewhere new, and every
+> candidate is gated on Chris:**
+> 1. **F59 — the boundary editor** (the SE successor named in the ledger): gated
+>    on **Q26** (PROGRESS §3 — the tier re-cut allowlist question; silence ships
+>    option (c), which reverses two of his v2.11 rulings), then an Architect
+>    breakdown he approves.
+> 2. **M4** (canonical milestone order M2 ✓ → M3 ✓ → M4): needs its Architect
+>    breakdown, which is his approval gate (the #150/#161 precedent).
+> 3. **DR2 (PR #180)**: parked for his Figma session; owes a rebase (F134's
+>    strike-keeping rule applies).
+> 4. **MS.1/MS.4/MS.6**: parked with the deferred league-attached mock feature,
+>    per the standing ruling (mocks lead, leagues follow demand).
+
+---
+
+## Previous: Redraft Leagues M3 — Auction engine (**COMPLETE**) → SE (**COMPLETE 2026-09-01**)
 
 > **[corrected 2026-08-25, PROGRESS D266]** ~~M3 — Auction engine (in build)~~ — **M3 is COMPLETE.** HEAD commit subject: *"L.C6.1 — THE M3 GATE: `test:gate:m3` green twice; F84/F56/F60 discharged; M3 complete (#215)"*; PROGRESS §1 → **🟢 Gate passed 2026-08-25**. This file had not been touched since `8fc5852` (2026-08-24), so the header outlived the milestone. **The one lane with unchecked tasks is SE** (`SE.1`–`SE.10`, prefix `SE.`, table below) — plus MS.1/MS.4/MS.6, which stay **parked** with the deferred league-attached feature per step 1c. **Before taking ANY `SE.*` task, read `docs/specs/tasks-SE-scoring-editor.md` §0** — that breakdown sat unrevised through five lanes and was re-measured 2026-08-25; two of its corrections change what gets built.
 
