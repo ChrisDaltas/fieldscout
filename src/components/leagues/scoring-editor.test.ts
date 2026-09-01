@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -42,9 +42,38 @@ describe('scoring-editor.tsx source pins', () => {
     expect(editorSource).not.toMatch(/'QB'\s*,\s*'RB'/)
   })
 
-  it('reserves the two SE.8 slots by name (sample lines + D/ST tier tables)', () => {
-    const slots = editorSource.match(/SE\.8 fills this slot/g) ?? []
-    expect(slots.length).toBe(2)
+  it('SE.8 fills SE.7’s two reserved slots: the sample line mounts on every page with the position AND the doc-as-edited; the tier tables mount on the D/ST page (F178)', () => {
+    expect(editorSource).not.toMatch(/SE\.8 fills this slot/)
+    expect(editorSource).toMatch(/<SampleLine position=\{position\} doc=\{activeDoc\} \/>/)
+    expect(editorSource).toMatch(
+      /position === 'DST' && \(\s*<DstTierTables doc=\{activeDoc\}/,
+    )
+    // The doc the sample scores is the WORKING copy while editing (F178:
+    // "not the persisted one — the sample line recomputes as values are
+    // edited"): activeDoc's edit arm reads `working`.
+    expect(editorSource).toMatch(
+      /activeDoc: ScoringRulesDoc = mode\.kind === 'edit' \? \(working \?\? mode\.doc\) : mode\.doc/,
+    )
+  })
+
+  it('F191: the remount key derives from DOCUMENT CONTENT ONLY — status/editable reconcile via props, so a failed refetch cannot discard unsaved typing', () => {
+    expect(editorSource).toMatch(/key=\{canonicalDocJson\(doc\)\}/)
+    // The defective shape — `${canonicalDocJson(doc)}|…status…|…editable…` —
+    // may not reappear: no template literal composes the doc json with
+    // further key segments.
+    expect(editorSource).not.toMatch(/canonicalDocJson\(doc\)\}\s*\|/)
+    expect(editorSource).not.toMatch(/\$\{String\(editable\)\}/)
+  })
+
+  it('R682: the stepper tablist has roving tabindex, arrow-key selection and aria-controls', () => {
+    expect(editorSource).toMatch(/onKeyDown=\{handleStepperKeyDown\}/)
+    expect(editorSource).toMatch(/'ArrowRight'/)
+    expect(editorSource).toMatch(/'ArrowLeft'/)
+    expect(editorSource).toMatch(/'Home'/)
+    expect(editorSource).toMatch(/'End'/)
+    expect(editorSource).toMatch(/aria-controls=\{panelId\}/)
+    expect(editorSource).toMatch(/tabIndex=\{index === stepIndex \? 0 : -1\}/)
+    expect(editorSource).toMatch(/role="tabpanel"/)
   })
 
   it('keeps the design-system rules: no dark: variants, no arbitrary hex or arbitrary shadows, no resting elevation', () => {
@@ -70,6 +99,68 @@ describe('scoring-editor-ops.ts source pins', () => {
     expect(opsSource).toMatch(
       /export const SCORING_EDITOR_SECTIONS[^=]*=\s*composeCatalog\(/,
     )
+  })
+})
+
+describe('the F59 gate — the editor renders ZERO boundary inputs (SE.8(4); the no-second-door sweep)', () => {
+  // D276 honesty note: these are sweep pins over the component tree's
+  // SOURCE — they prove no component can even NAME the cut lists (so no
+  // input can bind one), and that no ops file under src/components writes
+  // one. They cannot prove a future file outside the swept tree stays
+  // clean; the server-side guardrails (SE.3/SE.4) are the law behind them.
+  const componentFiles = (
+    readdirSync(path.resolve(process.cwd(), 'src/components'), {
+      recursive: true,
+    }) as string[]
+  )
+    .filter((rel) => !rel.includes('.test.'))
+    .map((rel) => path.join('src/components', rel))
+
+  it('no component .tsx file mentions tier_cuts at all — a boundary field cannot be rendered by a component that cannot name it', () => {
+    const offenders = componentFiles
+      .filter((file) => file.endsWith('.tsx'))
+      .filter((file) => /tier_cuts/.test(read(file)))
+    expect(offenders).toStrictEqual([])
+  })
+
+  it('no file under src/components WRITES tier_cuts — no object-literal member, no property assignment (reads in ops files are the allowed door)', () => {
+    const offenders = componentFiles
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
+      .filter((file) => {
+        const source = read(file)
+        return /tier_cuts\s*:/.test(source) || /\.tier_cuts\s*=/.test(source)
+      })
+    expect(offenders).toStrictEqual([])
+  })
+})
+
+describe('R687 — the sample-total boundary, pinned rather than asserted (D276)', () => {
+  // The ops docblock's charter sentence says the sample path "NEVER computes
+  // real scores: no league, matchup, or player total anywhere in the product
+  // comes from this path." D276's rule: a "never" needs a killing cell or a
+  // hedge. This is the killing cell — the no-second-door sweep over ALL of
+  // src/: nothing outside the editor's own files may import the sample-total
+  // path, so a draft/room/production surface that reaches for it reds here.
+  // D276 honesty note: a sweep over source proves no CURRENT file imports it;
+  // the server walls (104/105 — clients cannot write scores) are the law
+  // behind the sentence, and this pin is a MEMBERSHIP pin over the swept
+  // tree, red on any new importer inside src/.
+  it('no file outside scoring-editor* imports sampleLineTotal or SAMPLE_PLAYERS', () => {
+    const srcFiles = (
+      readdirSync(path.resolve(process.cwd(), 'src'), {
+        recursive: true,
+      }) as string[]
+    )
+      .filter((rel) => rel.endsWith('.ts') || rel.endsWith('.tsx'))
+      .map((rel) => path.join('src', rel))
+      .filter(
+        (file) =>
+          !file.includes(path.join('components', 'leagues', 'scoring-editor')),
+      )
+    const offenders = srcFiles.filter((file) =>
+      /sampleLineTotal|SAMPLE_PLAYERS/.test(read(file)),
+    )
+    expect(offenders).toStrictEqual([])
   })
 })
 

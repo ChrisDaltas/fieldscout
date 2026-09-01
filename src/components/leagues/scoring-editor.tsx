@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import {
   isFormat1Doc,
   type ScoringPosition,
+  type ScoringRulesDoc,
   type ScoringRulesDocV2,
 } from '@/lib/leagues/scoring/rules-doc'
 import { scoringRulesDocSchema } from '@/lib/leagues/scoring/validate-rules-doc'
@@ -25,15 +26,19 @@ import {
   allPositionsOn,
   applyAllPositionsOn,
   applyEdit,
+  applyTierEdit,
   canonicalDocEqual,
   canonicalDocJson,
   COEFFICIENT_INPUT_MAX,
   COEFFICIENT_INPUT_STEP,
+  dstTierTables,
   format1View,
   isCustomScoringReference,
   isEditableScoringDoc,
   parseCoefficientInput,
   positionLabel,
+  SAMPLE_PLAYERS,
+  sampleLineTotal,
   saveScoringDoc,
   scoringEditorAccess,
   sectionFieldStates,
@@ -57,6 +62,14 @@ import { InlineIssue } from './settings-form-controls'
  * and save through SE.6's `useUpdateLeagueScoring` with the working document
  * normalized at the door (`saveScoringDoc` → `buildSavePayload`; the RPC
  * refuses un-normalized docs rather than rewriting them).
+ *
+ * SE.8 fills SE.7's two reserved slots: every position page carries its
+ * fixed §7.3.3.1 sample line with the live total under the doc-as-edited
+ * (`sampleLineTotal` — the REAL pipeline, D171; the client computes SAMPLE
+ * totals for display and still never computes real scores), and the D/ST
+ * page carries the PA/YA tier tables — labels from the doc's OWN
+ * tier cut list, boundaries read-only, payouts editable (F178; F59 owns
+ * boundary editing).
  *
  * Reads ride the two ALREADY-INVALIDATED query keys and nothing else
  * (D275(1)'s one-reader rule): the league detail (`useLeague`) for role,
@@ -144,7 +157,7 @@ export function ScoringEditor({ leagueId, className }: { leagueId: string; class
       <ScoringEditorBody
         className={className}
         leagueId={leagueId}
-        mode={{ kind: 'readonly', view: format1View(doc) }}
+        mode={{ kind: 'readonly', view: format1View(doc), doc }}
         notices={[
           ...(staleDegraded ? [STALE_NOTICE] : []),
           {
@@ -169,10 +182,17 @@ export function ScoringEditor({ leagueId, className }: { leagueId: string; class
       // Remount on a fresh baseline (the settings-panel round-trip reset):
       // a successful save invalidates → refetches → new canonical json →
       // the working copy re-seeds from the persisted state.
-      key={`${canonicalDocJson(doc)}|${detail.league.status}|${String(editable)}`}
+      //
+      // F191: the key derives from the DOCUMENT CONTENT ONLY. Status and
+      // editability changes reconcile through props WITHOUT a remount — a
+      // failed refetch that flips `editable` with no data change must not
+      // discard the commissioner's typed-but-unsaved values (the body keeps
+      // them and states so). The one thing that still resets the form is a
+      // genuinely different persisted document.
+      key={canonicalDocJson(doc)}
       className={className}
       leagueId={leagueId}
-      mode={editable ? { kind: 'edit', doc } : { kind: 'readonly', view: doc }}
+      mode={editable ? { kind: 'edit', doc } : { kind: 'readonly', view: doc, doc }}
       notices={[...(staleDegraded ? [STALE_NOTICE] : []), ...accessNotices(access)]}
     />
   )
@@ -289,7 +309,7 @@ function ScoringEditorEmpty({
 
 type EditorMode =
   | { kind: 'edit'; doc: ScoringRulesDocV2 }
-  | { kind: 'readonly'; view: ScoringDocView }
+  | { kind: 'readonly'; view: ScoringDocView; doc: ScoringRulesDoc }
 
 function ScoringEditorBody({
   className,
@@ -302,9 +322,13 @@ function ScoringEditorBody({
   mode: EditorMode
   notices: EditorNotice[]
 }) {
-  const [working, setWorking] = useState<ScoringRulesDocV2 | null>(() =>
-    mode.kind === 'edit' ? structuredClone(mode.doc) : null,
-  )
+  // F191: the working copy SURVIVES mode changes. The parent's remount key is
+  // content-only, so a status/editable flip (a failed refetch, the draft
+  // starting) reaches this body as a PROP change — the state below, and the
+  // commissioner's unsaved typing with it, stays put. Seeding is lazy
+  // (`working` falls back to the persisted doc) because the body can now
+  // mount in readonly mode and become editable later without remounting.
+  const [workingState, setWorkingState] = useState<ScoringRulesDocV2 | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
   // The switch is DERIVED from the document (§7.3.3.1); this records only the
   // commissioner's in-session intent to edit per position BEFORE any override
@@ -313,15 +337,29 @@ function ScoringEditorBody({
   const [customizing, setCustomizing] = useState<Partial<Record<ScoringEditorSectionId, boolean>>>({})
   const [refusal, setRefusal] = useState<SaveRefusal | null>(null)
   const [adjustedNote, setAdjustedNote] = useState<string | null>(null)
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const idBase = useId()
 
   const { mutateAsync, isPending: isSaving } = useUpdateLeagueScoring(leagueId)
 
+  const working = workingState ?? (mode.kind === 'edit' ? mode.doc : null)
   const editable = mode.kind === 'edit' && working !== null
   const view: ScoringDocView = mode.kind === 'edit' ? (working ?? mode.doc) : mode.view
   const dirty = mode.kind === 'edit' && working !== null && !canonicalDocEqual(working, mode.doc)
+  // While read-only (degraded refetch, draft started), the page shows the
+  // PERSISTED document — never unconfirmed edits as if they were the
+  // league's scoring — but the unsaved copy is retained and said (F191).
+  const retainedUnsaved =
+    mode.kind === 'readonly' &&
+    workingState !== null &&
+    !canonicalDocEqual(workingState, mode.doc)
+  // What the sample line and tier tables score: the doc-as-edited when
+  // editing, the persisted doc otherwise (matching the grid's values).
+  const activeDoc: ScoringRulesDoc = mode.kind === 'edit' ? (working ?? mode.doc) : mode.doc
 
   const position = STEPPER_POSITIONS[stepIndex] ?? 'QB'
   const sections = sectionsForPosition(position)
+  const panelId = `${idBase}-scoring-tabpanel`
 
   async function handleSave() {
     if (mode.kind !== 'edit' || working === null || !dirty || isSaving) return
@@ -342,6 +380,16 @@ function ScoringEditorBody({
     }
   }
 
+  function noteAdjustment(label: string, adjusted: 'clamped' | 'rounded' | null) {
+    setAdjustedNote(
+      adjusted === 'clamped'
+        ? `Values are capped at ±${COEFFICIENT_INPUT_MAX} — ${label} was adjusted to fit.`
+        : adjusted === 'rounded'
+          ? `Values use ${COEFFICIENT_INPUT_STEP} steps — ${label} was rounded.`
+          : null,
+    )
+  }
+
   function commitEdit(
     sectionId: ScoringEditorSectionId,
     key: string,
@@ -351,14 +399,21 @@ function ScoringEditorBody({
     adjusted: 'clamped' | 'rounded' | null,
   ) {
     if (mode.kind !== 'edit' || working === null) return
-    setWorking(applyEdit(working, { section: sectionId, key, scope, value }))
-    setAdjustedNote(
-      adjusted === 'clamped'
-        ? `Values are capped at ±${COEFFICIENT_INPUT_MAX} — ${label} was adjusted to fit.`
-        : adjusted === 'rounded'
-          ? `Values use ${COEFFICIENT_INPUT_STEP} steps — ${label} was rounded.`
-          : null,
-    )
+    setWorkingState(applyEdit(working, { section: sectionId, key, scope, value }))
+    noteAdjustment(label, adjusted)
+  }
+
+  /** The D/ST tier tables' commit — through the ops layer's
+   *  `applyTierEdit`, the grid's one-write-path sibling (F178). */
+  function commitTierEdit(
+    key: string,
+    label: string,
+    value: number,
+    adjusted: 'clamped' | 'rounded' | null,
+  ) {
+    if (mode.kind !== 'edit' || working === null) return
+    setWorkingState(applyTierEdit(working, key, value))
+    noteAdjustment(label, adjusted)
   }
 
   function toggleAllPositions(sectionId: ScoringEditorSectionId, next: boolean) {
@@ -369,8 +424,24 @@ function ScoringEditorBody({
     }
     setCustomizing((prev) => ({ ...prev, [sectionId]: false }))
     if (!allPositionsOn(working, sectionId)) {
-      setWorking(applyAllPositionsOn(working, sectionId, position))
+      setWorkingState(applyAllPositionsOn(working, sectionId, position))
     }
+  }
+
+  /** R682: the stepper is a real tablist — roving tabindex, arrow-key
+   *  selection (wrapping), Home/End. Activation follows focus (the WAI-ARIA
+   *  automatic-activation pattern). */
+  function handleStepperKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const last = STEPPER_POSITIONS.length - 1
+    let next: number | null = null
+    if (event.key === 'ArrowRight') next = stepIndex === last ? 0 : stepIndex + 1
+    else if (event.key === 'ArrowLeft') next = stepIndex === 0 ? last : stepIndex - 1
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = last
+    if (next === null) return
+    event.preventDefault()
+    setStepIndex(next)
+    tabRefs.current[next]?.focus()
   }
 
   return (
@@ -410,20 +481,36 @@ function ScoringEditorBody({
           <InlineIssue key={notice.message} tone={notice.tone} message={notice.message} />
         ))}
 
+        {retainedUnsaved && (
+          <InlineIssue
+            tone="warning"
+            message="You have unsaved scoring edits from this session — they're kept on this page but haven't been saved."
+          />
+        )}
+
         {refusal && <SaveRefusalNotice refusal={refusal} />}
 
-        {/* The stepper — §7.3.3.1's literal order, one page per position. */}
+        {/* The stepper — §7.3.3.1's literal order, one page per position.
+            R682: roving tabindex + arrow-key selection; every tab controls
+            the one position panel below. */}
         <div
           role="tablist"
           aria-label="Scoring position"
           className="flex gap-1.5 overflow-x-auto pb-0.5"
+          onKeyDown={handleStepperKeyDown}
         >
           {STEPPER_POSITIONS.map((p, index) => (
             <Button
               key={p}
+              ref={(el) => {
+                tabRefs.current[index] = el
+              }}
               type="button"
               role="tab"
+              id={`${idBase}-scoring-tab-${p}`}
               aria-selected={index === stepIndex}
+              aria-controls={panelId}
+              tabIndex={index === stepIndex ? 0 : -1}
               variant={index === stepIndex ? 'dark' : 'stroke'}
               size="md"
               className="shrink-0"
@@ -440,7 +527,12 @@ function ScoringEditorBody({
           </p>
         )}
 
-        <div className="flex flex-col gap-3">
+        <div
+          role="tabpanel"
+          id={panelId}
+          aria-labelledby={`${idBase}-scoring-tab-${position}`}
+          className="flex flex-col gap-3"
+        >
           {sections.map((section) => {
             const derivedOn = allPositionsOn(view, section.id)
             const switchOn = derivedOn && customizing[section.id] !== true
@@ -492,16 +584,18 @@ function ScoringEditorBody({
               </section>
             )
           })}
+
+          {/* The D/ST tier tables — PA + YA payouts over the doc's OWN
+              tier cut list, boundaries read-only (SE.8; §7.3.3.1(b), F178). */}
+          {position === 'DST' && (
+            <DstTierTables doc={activeDoc} disabled={!editable} onCommit={commitTierEdit} />
+          )}
+
+          {/* The live sample line — this position's fixed §7.3.3.1 player
+              through the REAL pipeline, recomputed keystroke-by-keystroke
+              from the doc-as-edited (SE.8; D171, F178). */}
+          <SampleLine position={position} doc={activeDoc} />
         </div>
-
-        {/* D/ST tier tables (PA + YA payouts over the doc's own tier_cuts,
-            boundaries read-only) mount here — SE.8 fills this slot. */}
-        {position === 'DST' && <DstTierTablesSlot />}
-
-        {/* Live sample-player line for this position (Marino/Peterson/Moss/
-            Gronk/Rackers/Seahawks through the REAL pipeline) mounts here —
-            SE.8 fills this slot (it takes the position and the working doc). */}
-        <SampleLineSlot />
 
         <div className="flex items-center justify-between gap-2">
           <Button
@@ -531,16 +625,103 @@ function ScoringEditorBody({
   )
 }
 
-/** SE.8's mount point for the six live sample lines — placeholder only in
- *  SE.7 (tasks-SE SE.7(4)); renders nothing until SE.8 fills it. */
-function SampleLineSlot() {
-  return null
+// ---------------------------------------------------------------------------
+// The live sample line (SE.8; §7.3.3.1's sample-players bullet; D171)
+// ---------------------------------------------------------------------------
+
+/**
+ * One fixed sample player per position, with the live total under the
+ * doc-as-edited. The total runs the REAL pipeline (`sampleLineTotal` —
+ * resolver + derive + calculator, D171); the boundary stands as stated in
+ * the ops layer: the client computes SAMPLE totals for display and still
+ * never computes real scores.
+ */
+function SampleLine({ position, doc }: { position: ScoringPosition; doc: ScoringRulesDoc }) {
+  const sample = SAMPLE_PLAYERS[position]
+  const total = sampleLineTotal(doc, position)
+  return (
+    <div className="flex flex-col gap-1 rounded-sm border border-ink p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-[12px] font-extrabold">
+          Sample week — {sample.name}{' '}
+          <span className="font-semibold text-n-3">({positionLabel(position)})</span>
+        </p>
+        <p aria-live="polite" className="text-[13px] font-extrabold">
+          <span className="fs-num">{total.toFixed(2)}</span>{' '}
+          <span className="text-[11px] font-bold text-n-3">pts under these values</span>
+        </p>
+      </div>
+      <p className="text-[11px] font-semibold text-n-3">{sample.line}</p>
+    </div>
+  )
 }
 
-/** SE.8's mount point for the D/ST tier tables (independent, additively
- *  paying PA + YA — never alternatives); renders nothing until SE.8. */
-function DstTierTablesSlot() {
-  return null
+// ---------------------------------------------------------------------------
+// The D/ST tier tables (SE.8; §7.3.3.1's D/ST bullet (b); F178)
+// ---------------------------------------------------------------------------
+
+/**
+ * PA and YA are two INDEPENDENT, additively-paying tables — never
+ * alternatives. Which tables render is what the doc pays; row labels come
+ * from the doc's own tier cut lists (derived in the ops layer, never
+ * hand-written here); boundaries are read-only — ONLY what each tier pays
+ * is editable. The row the Seahawks sample lands in is marked, so the
+ * family straddle (17 PA: ESPN 14–17 vs shared 14–20) stays visible.
+ */
+function DstTierTables({
+  doc,
+  disabled,
+  onCommit,
+}: {
+  doc: ScoringRulesDoc
+  disabled: boolean
+  onCommit: (key: string, label: string, value: number, adjusted: 'clamped' | 'rounded' | null) => void
+}) {
+  const tables = dstTierTables(doc)
+  if (tables.length === 0) return null
+  return (
+    <>
+      {tables.map((table) => (
+        <section key={table.family} aria-label={`${table.title} tier scoring`}>
+          <div className="flex flex-col gap-2 rounded-sm border border-ink p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <h3 className="text-[13px] font-extrabold">{table.title}</h3>
+              <p className="text-[11px] font-semibold text-n-3">
+                Ranges come with the league&apos;s scoring — only the points are editable.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {table.rows.map((row) => (
+                <CoefficientCell
+                  key={row.key}
+                  field={{
+                    key: row.key,
+                    label: row.label,
+                    value: row.payout,
+                    baseValue: row.basePayout,
+                    overridden: row.overridden,
+                  }}
+                  disabled={disabled}
+                  // §7.3.3.1(b): un-paying a tier outright is table
+                  // structure (F59) — "pays nothing" is an explicit 0.
+                  allowClear={false}
+                  highlight={row.sampleHot}
+                  hint={
+                    row.sampleHot
+                      ? `${SAMPLE_PLAYERS.DST.name} this week: ${table.sampleValue}`
+                      : undefined
+                  }
+                  onCommit={(value, adjusted) => {
+                    if (value !== null) onCommit(row.key, row.label, value, adjusted)
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+    </>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -614,10 +795,21 @@ function CoefficientCell({
   field,
   disabled,
   onCommit,
+  allowClear = true,
+  highlight = false,
+  hint,
 }: {
   field: ScoringFieldState
   disabled: boolean
   onCommit: (value: number | null, adjusted: 'clamped' | 'rounded' | null) => void
+  /** SE.8: tier rows refuse the clear→remove arm (an emptied field falls
+   *  back to the last good value) — removal is table structure, F59's. */
+  allowClear?: boolean
+  /** Resting STATE carried by fill + border (the elevation ruling — never a
+   *  shadow): the tier row the sample week lands in. */
+  highlight?: boolean
+  /** Small note under the label (the sample's raw value on a hot row). */
+  hint?: string
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const shown = draft ?? (field.value === undefined ? '' : String(field.value))
@@ -634,13 +826,19 @@ function CoefficientCell({
     if (draft === null) return
     const parsed = parseCoefficientInput(draft)
     if (parsed.kind === 'value') onCommit(parsed.value, parsed.adjusted)
-    else if (parsed.kind === 'cleared') onCommit(null, null)
-    // 'invalid': nothing commits — the cell falls back to the last good value.
+    else if (parsed.kind === 'cleared' && allowClear) onCommit(null, null)
+    // 'invalid' (or a refused clear): nothing commits — the cell falls back
+    // to the last good value.
     setDraft(null)
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-sm border border-n-4 px-2.5 py-1.5">
+    <div
+      className={cn(
+        'flex items-center justify-between gap-2 rounded-sm border px-2.5 py-1.5',
+        highlight ? 'border-ink bg-accent-soft' : 'border-n-4',
+      )}
+    >
       <div className="min-w-0">
         <label
           htmlFor={`scoring-${field.key}`}
@@ -649,6 +847,9 @@ function CoefficientCell({
         >
           {field.label}
         </label>
+        {hint ? (
+          <p className="text-[10px] font-semibold text-n-3">{hint}</p>
+        ) : null}
         {field.overridden ? (
           <p className="text-[10px] font-semibold text-n-3">
             All positions:{' '}
