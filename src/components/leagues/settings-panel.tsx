@@ -13,12 +13,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/hooks/use-toast'
 import {
   LeaguePatchError,
+  useForkScoringTemplate,
   useLeague,
   useLeagueProfile,
   useUpdateLeagueSettings,
   type LeagueDetail,
   type UpdateLeagueSettingsBody,
 } from '@/hooks/use-league'
+import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import {
   PLAYOFF_TEAMS_OPTIONS,
   reconcileDerived,
@@ -36,6 +38,7 @@ import { Crest } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringEditor } from './scoring-editor'
+import { isCustomScoringReference } from './scoring-editor-ops'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import {
   AuctionConfigFields,
@@ -154,16 +157,26 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
         detail={data}
         canEdit={canEdit}
       />
-      {/* §7.3.3.1 custom scoring editor (SE.7). Self-governing: renders the
+      {/* §7.3.3.1 custom scoring editor (SE.7) + the member read-only view
+          (SE.9 — the spec's access bullet routes member visibility through
+          THIS settings surface, not a new feed). Self-governing: renders the
           per-position editor once the league references its own fork, the
           designed empty state before that, and read-only past the
           setup/scheduled window. Sits OUTSIDE SettingsForm on purpose — its
           save is its own PUT (scoring_update_rules), not part of the panel's
-          atomic settings PATCH, and it must not ride the form's fieldset. */}
-      <ScoringEditor leagueId={leagueId} />
+          atomic settings PATCH, and it must not ride the form's fieldset.
+          The anchor id is where a successful Customize fork scrolls to (the
+          "editor opens on the new doc" beat, SE.9(1)). */}
+      <div id={SCORING_EDITOR_ANCHOR_ID}>
+        <ScoringEditor leagueId={leagueId} />
+      </div>
     </PanelShell>
   )
 }
+
+/** SE.9: the Customize fork's scroll target — the editor section below the
+ *  form. A module constant so the fork handler and the mount cannot drift. */
+const SCORING_EDITOR_ANCHOR_ID = 'league-custom-scoring-editor'
 
 // ---------------------------------------------------------------------------
 // League profile — rename + avatar (migration 064; top of the page)
@@ -359,9 +372,23 @@ function SettingsForm({
 
   const { mutateAsync, isPending } = useUpdateLeagueSettings(leagueId)
 
+  // SE.9 — the Customize fork flow (spec §7.3.3.1 entry point; D170). The
+  // picker only EMITS the clicked template id; the mutation, its refusal
+  // surface, and the success beat all live here at the league-context mount.
+  const forkMutation = useForkScoringTemplate(leagueId)
+  const [forkPendingTemplateId, setForkPendingTemplateId] = useState<string | null>(null)
+  const [forkError, setForkError] = useState<LeaguePatchError | null>(null)
+  const templatesQuery = useScoringTemplates()
+  const templateIds = templatesQuery.data?.map((t) => t.id)
+  // D169 closed the reference world to template-XOR-own-fork, so "not one of
+  // the seeded templates" IS "customized" (the SE.7 determinant, reused).
+  // Undefined while templates load — never guessed.
+  const customized =
+    templateIds !== undefined && isCustomScoringReference(initialScoringId, templateIds)
+
   const validation = useMemo(() => validateLeagueSettings(working), [working])
-  const dirty =
-    JSON.stringify(working) !== JSON.stringify(initialSettings) || scoringId !== initialScoringId
+  const settingsDirty = JSON.stringify(working) !== JSON.stringify(initialSettings)
+  const dirty = settingsDirty || scoringId !== initialScoringId
 
   // Every settings edit reconciles through the shared module (F27 read-only
   // playoff_start_week + R108 dependent re-clamps).
@@ -399,6 +426,58 @@ function SettingsForm({
           description: cause instanceof Error ? cause.message : 'Please try again.',
         })
       }
+    }
+  }
+
+  /**
+   * SE.9(1): Customize on a template card → SE.6's fork mutation → the
+   * editor opens on the new doc (the anchor scroll below; the invalidation
+   * in `forkScoringTemplateMutationOptions` refreshes the league detail, so
+   * the ScoringEditor under this form flips from empty state to the editor).
+   * Re-forking from a different template detaches the old fork row — the
+   * repoint IS the detach, and the row is deliberately left in place
+   * (§12.25 orphan hygiene), which is what the success copy says.
+   */
+  async function handleCustomize(templateId: string) {
+    if (forkMutation.isPending) return
+    setForkError(null)
+    setForkPendingTemplateId(templateId)
+    const wasCustomized = customized
+    const previousReference = initialScoringId
+    const templateName =
+      templatesQuery.data?.find((t) => t.id === templateId)?.name ?? 'the template'
+    try {
+      const result = await forkMutation.mutateAsync(templateId)
+      // The fork RPC is idempotent by STATE (105's natural key): re-forking
+      // an UNEDITED fork of the same template returns the same row — nothing
+      // detached, and the copy must not claim otherwise. A re-fork that
+      // returns a NEW id repointed the league and orphaned the old row
+      // (§12.25 orphan hygiene — left in place, deliberately).
+      const detached = wasCustomized && result.scoring_system_id !== previousReference
+      toast({
+        title: 'Scoring customized',
+        description: detached
+          ? `Your league now edits a fresh copy of ${templateName}. Your previous customizations remain saved but unattached.`
+          : wasCustomized
+            ? `Your league already runs its own copy of ${templateName} — your values are untouched.`
+            : `Your league now edits its own copy of ${templateName} — every value below is yours to change.`,
+      })
+      document
+        .getElementById(SCORING_EDITOR_ANCHOR_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (cause) {
+      if (cause instanceof LeaguePatchError) {
+        // The RPC's P0001 sentences were written user-readable — surface
+        // them verbatim in the Scoring group (never a silent no-op).
+        setForkError(cause)
+      } else {
+        toast({
+          title: "Couldn't customize scoring",
+          description: cause instanceof Error ? cause.message : 'Please try again.',
+        })
+      }
+    } finally {
+      setForkPendingTemplateId(null)
     }
   }
 
@@ -485,9 +564,57 @@ function SettingsForm({
         </GroupCard>
 
         <GroupCard title="Scoring">
+          {/* SE.9 designed copy (§16.5.4): a customized league's fork id
+              matches no card, so without this line the picker would read as
+              "nothing selected" with no explanation. */}
+          {customized && (
+            <p className="text-[12px] font-semibold text-n-3">
+              This league scores with its own custom copy — values are edited
+              in the Custom scoring section below. Picking a template here
+              switches back to that shared rulebook.
+            </p>
+          )}
           <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
-            <ScoringTemplatePicker value={scoringId} onChange={setScoringId} />
+            <ScoringTemplatePicker
+              value={scoringId}
+              onChange={setScoringId}
+              // SE.9/D170: THE league-context mount — the only one of the
+              // picker's three mounts that passes `customize`. Role + status
+              // ride along so the picker itself hides the affordance from
+              // members and out-of-window leagues (the RPC enforces; the UI
+              // states it).
+              customize={{
+                myRole: detail.my_role,
+                leagueStatus: detail.league.status,
+                onCustomize: handleCustomize,
+                pendingTemplateId: forkPendingTemplateId,
+                disabledReason: settingsDirty
+                  ? 'Save or discard your settings changes first — customizing scoring reloads this page.'
+                  : null,
+              }}
+            />
           </div>
+          {/* §12.25 orphan-hygiene copy at the decision point: re-picking a
+              template detaches the fork by repointing; the fork row stays. */}
+          {customized &&
+            scoringId !== null &&
+            scoringId !== initialScoringId &&
+            templateIds?.includes(scoringId) && (
+              <InlineIssue
+                tone="warning"
+                message="Saving switches this league back to the shared template — your previous customizations remain saved but unattached."
+              />
+            )}
+          {forkError && (
+            <InlineIssue
+              tone="error"
+              message={
+                forkError.fieldErrors
+                  ? Object.values(forkError.fieldErrors).flat().join(' ') || forkError.message
+                  : forkError.message
+              }
+            />
+          )}
           {errorsFor('scoring_system_id').map((e) => (
             <InlineIssue key={e.message} tone="error" message={e.message} />
           ))}

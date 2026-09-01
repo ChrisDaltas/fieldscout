@@ -29,13 +29,31 @@ import { resolveAlias, sharedExclude, stackInclude } from './vitest.shared'
  * a root config with `projects` ignores root-level `include`, so they must
  * not merge this one.
  */
+/**
+ * SE.9: the automatic-JSX transform override lets test files IMPORT .tsx
+ * components (for `renderToStaticMarkup` render pins — the three-mount
+ * Customize pin in scoring-template-picker.render.test.ts was the first).
+ * tsconfig keeps Next's required `jsx: "preserve"`, which the test
+ * runner's transform otherwise honors and then fails to parse ("make sure
+ * to not set jsx to preserve" — measured before this override). This
+ * vitest install runs rolldown-vite (see the MIXED_EXPORTS note in
+ * vitest.shared.ts), whose transform is OXC — so the knob is `oxc.jsx`,
+ * not `esbuild.jsx` (the esbuild spelling was tried first and does not
+ * reach the transform here; also measured). Test-runner transform only;
+ * the Next build is untouched. Applied per-project because a projects
+ * entry is its own environment.
+ */
+const transformJsx = { jsx: { runtime: 'automatic' } } as const
+
 export default defineConfig({
   resolve: { alias: resolveAlias },
+  oxc: transformJsx,
   test: {
     exclude: sharedExclude,
     projects: [
       {
         resolve: { alias: resolveAlias },
+        oxc: transformJsx,
         test: {
           name: 'unit',
           exclude: [...sharedExclude, ...stackInclude],
@@ -43,6 +61,7 @@ export default defineConfig({
       },
       {
         resolve: { alias: resolveAlias },
+        oxc: transformJsx,
         test: {
           name: 'stack',
           include: stackInclude,

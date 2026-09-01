@@ -165,11 +165,22 @@ describe('R687 — the sample-total boundary, pinned rather than asserted (D276)
 })
 
 describe('settings-panel mount seam', () => {
-  it('the settings surface mounts the editor (SE.7); the fork ENTRY stays SE.9', () => {
+  it('the settings surface mounts the editor (SE.7) AND carries the fork entry (SE.9/D170)', () => {
     expect(settingsPanelSource).toMatch(/<ScoringEditor leagueId=\{leagueId\} \/>/)
-    // No Customize/fork affordance ships in SE.7 — that entry point is
-    // SE.9's (D170); the editor renders only once a fork already exists.
-    expect(settingsPanelSource).not.toMatch(/Customize/)
+    // SE.9 flipped SE.7's absence pin into its positive form: the settings
+    // mount is where the Customize entry lives — the fork mutation
+    // (`useForkScoringTemplate`) is invoked HERE, at the league-context
+    // mount, never inside the shared picker (which only emits the id) and
+    // never inside the editor. The two league-less picker mounts are pinned
+    // Customize-free in scoring-template-picker.render.test.tsx.
+    expect(settingsPanelSource).toMatch(/useForkScoringTemplate/)
+    expect(settingsPanelSource).toMatch(/customize=\{\{/)
+    // The editor itself still never forks — its empty state POINTS at the
+    // entry (F179(a)) but the mutation and route stay out of this file.
     expect(editorSource).not.toMatch(/scoring\/fork|useForkScoringTemplate/)
+    // …and the shared picker never mutates: no fork hook, no fetch of the
+    // fork route — it emits the template id through the customize context.
+    const pickerSource = read('src/components/leagues/scoring-template-picker.tsx')
+    expect(pickerSource).not.toMatch(/scoring\/fork|useForkScoringTemplate|useMutation/)
   })
 })
