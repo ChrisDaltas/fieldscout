@@ -41,8 +41,8 @@ import {
 // ── Stored literals: today's three families, spelled out ───────────────────
 // Deliberately NOT computed from DEF_PA_BUCKETS/DEF_YA_BUCKETS — that would
 // prove the generator agrees with whatever the table happens to say. These
-// are the key names the six shipped templates and migration 058's seeded
-// rows actually carry (D62: golden pins are stored literals).
+// are the key names the seven shipped templates and migrations 058 + 106's
+// seeded rows actually carry (D62: golden pins are stored literals).
 
 const SHARED_PA_KEYS = [
   'def_pa_0',
@@ -86,6 +86,8 @@ const TEMPLATE_FAMILIES: Record<
   string,
   { pa: readonly number[]; ya: readonly number[] | null }
 > = {
+  // Scout Scoring rides the ESPN split families — B.5's markup ruling (SC.1).
+  'Scout Scoring': { pa: ESPN_PA_CUTS, ya: YA_CUTS },
   'ESPN Standard': { pa: ESPN_PA_CUTS, ya: YA_CUTS },
   'ESPN Full PPR': { pa: ESPN_PA_CUTS, ya: YA_CUTS },
   'Yahoo Standard': { pa: SHARED_PA_CUTS, ya: null },
@@ -149,7 +151,7 @@ describe('tierKeysFromCuts — the §7.3.3.1(a) generation rule', () => {
     )
   })
 
-  it('generates exactly the def_pa_*/def_ya_* keys the SIX SHIPPED TEMPLATES actually reference', () => {
+  it('generates exactly the def_pa_*/def_ya_* keys the SEVEN SHIPPED TEMPLATES actually reference', () => {
     // The pin that matters commercially: the generator must name the keys
     // real rules documents pay. A fork writes its template's cut lists, so a
     // family that is not exactly its cut list's output would score the

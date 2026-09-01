@@ -1612,7 +1612,7 @@ export async function launchMockDraft(
  * ranges: a second copy of the §7.3.8 catalog here would drift from the one
  * every league surface validates against.
  *
- * `scoring_system_id` (D229(1): pick one of the six shipped templates at
+ * `scoring_system_id` (D229(1): pick one of the seven shipped templates at
  * launch) rides the draft block, so it lands in `drafts.config` beside
  * MP.2's `config->'roster'` with NO RPC signature change — exactly the seam
  * D236(4) predicted. It is not range-checked in the database: a forged id

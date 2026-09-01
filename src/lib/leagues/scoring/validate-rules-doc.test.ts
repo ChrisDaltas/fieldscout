@@ -20,7 +20,7 @@
  *    proved: the six sets are pairwise disjoint and their union IS the
  *    registry's `scoring_surface: 'scorable'` set. A drift on either side reds.
  *
- * Acceptance floor (SE.3(3)): all six templates pass the format-1 arm, all six
+ * Acceptance floor (SE.3(3)): all seven templates pass the format-1 arm, all seven
  * forks pass the format-2 arm, and a legal hand-built override document passes.
  * Every rejection fixture below is one edit away from a document in that floor.
  */
@@ -1297,9 +1297,11 @@ describe('R589 — "multiples of 0.01" is the DECIMAL rule, not a float toleranc
     expect(rejected).toBe(0)
   })
 
-  it('ZERO false rejections on the shipped templates: all 218 coefficients pass', () => {
+  it('ZERO false rejections on the shipped templates: all 261 coefficients pass', () => {
+    // 218 across the parity six + Scout Scoring's 43 (B.5's recount:
+    // 14 + 5 + 7 + 8 + 9 — SC.1).
     const total = SCORING_TEMPLATES.reduce((n, t) => n + Object.keys(t.rules).length, 0)
-    expect(total).toBe(218)
+    expect(total).toBe(261)
     for (const t of SCORING_TEMPLATES) expectAccepted(t.rules)
   })
 

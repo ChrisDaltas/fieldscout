@@ -132,7 +132,7 @@ describe('scoringFamilyFromRules — the league’s own rules pick the column', 
   }
 
   it('the three shipped template values map to the three families', () => {
-    // 058 seeds `receptions` at 0 / 0.5 / 1 across its six parity rows.
+    // 058 + 106 seed `receptions` at 0 / 0.5 / 1 across the seven template rows.
     expect([0, 0.5, 1].map((r) => scoringFamilyFromRules({ receptions: r }))).toEqual([
       'standard',
       'half_ppr',

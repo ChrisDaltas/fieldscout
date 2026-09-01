@@ -83,7 +83,8 @@ export const PROJECTED_POINTS_COLUMN = {
 } as const satisfies Record<ScoringFamily, string>
 
 /** Per-reception boundaries. The three shipped shapes are 0 / 0.5 / 1
- *  (migration 058's six parity templates), so the cuts sit at the
+ *  (migrations 058 + 106's seven templates — Scout's 0 joins the Standard
+ *  rows' 0s), so the cuts sit at the
  *  MIDPOINTS — a league on 0.4 or 0.6 lands on the nearer family rather
  *  than falling through to standard. Both boundaries are pinned. */
 export const HALF_PPR_FLOOR = 0.25

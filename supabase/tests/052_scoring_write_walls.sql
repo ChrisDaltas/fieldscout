@@ -581,15 +581,30 @@ select is(
                            where l.scoring_system_id = s.id and l.deleted_at is null))),
   0, 'B3a: PROFILE ⊇ TEMPLATES — every template row is inside the league profile, forever, whatever else the table holds. This is the containment D175(2) arm (a) asserts, and no future fork row can falsify it');
 
+-- [AMENDED at SC.1, 2026-08-31 — F187. The anchor was `max(created_at)` and the
+-- RHS was ALL template rows, which was correct only while every template came
+-- from ONE seeding. Migration 106 added a SECOND template seed moment, and the
+-- max-anchor then swallowed every row created between 058 and 106 — measured
+-- red on the shared box at have:8/want:7, the extra id being SE.7's
+-- legitimate, wall-approved fork row ("SE7 Editor League Custom", created
+-- 2026-08-31 23:07, an hour before 106's seed). That is the same defect class
+-- R624 recorded above: the mechanism asserting the ambient database instead
+-- of the sentence. The sentence names 058's moment — "rows that existed when
+-- 058 seeded the templates" — so the anchor is now min(created_at), which IS
+-- that moment, and the RHS windows itself the same way. Scout Scoring (106)
+-- sits outside this cell's population exactly like a fork does; its own
+-- profile membership is B3a's containment arm plus pgTAP 054's pins.]
 select is(
   (select array_agg(s.id order by s.id) from scoring_systems s
-    where s.created_at <= (select max(created_at) from scoring_systems where is_template)
+    where s.created_at <= (select min(created_at) from scoring_systems where is_template)
       and (s.is_template
            or s.rules ? 'format'
            or exists (select 1 from leagues l
                        where l.scoring_system_id = s.id and l.deleted_at is null))),
-  (select array_agg(id order by id) from scoring_systems where is_template),
-  'B3b (D175(4), scoped to the population the sentence is ABOUT): among rows that existed when 058 seeded the templates — the BUILD-TIME population — the profile is exactly the template rows. Rows created later (a fork, a research system) are outside the claim by construction, so this survives SE.5 instead of reding on the first row SE.5 exists to create');
+  (select array_agg(id order by id) from scoring_systems
+    where is_template
+      and created_at <= (select min(created_at) from scoring_systems where is_template)),
+  'B3b (D175(4), scoped to the population the sentence is ABOUT): among rows that existed when 058 seeded the templates — the BUILD-TIME population — the profile is exactly the template rows seeded then. Rows created later (a fork, a research system, 106''s Scout Scoring) are outside the claim by construction, so this survives SE.5 instead of reding on the first row SE.5 exists to create');
 
 -- B4 — and this cell was VACUOUS in its first form, which is recorded rather
 -- than quietly fixed (§4 rule 9). It re-wrote each profile row's own `rules`
@@ -809,7 +824,7 @@ select is(
   pg_temp.w1('50520000-0000-4000-8000-000000000003',
              '{"passing_yards": 0.06, "touchdowns": 6}'::jsonb),
   'ACCEPT(1)',
-  'D6 (D175(6)): a MOCK-only reference stays writable with a legacy-shaped flat doc. This is the correct outcome and it is pinned so the silence does not read as an oversight — standalone mocks pick from the six shipped templates (arm (a) anyway), the reference is deliberately unvalidated server-side (tasks-MP §4 rule 10), and a mock scores nothing that persists');
+  'D6 (D175(6)): a MOCK-only reference stays writable with a legacy-shaped flat doc. This is the correct outcome and it is pinned so the silence does not read as an oversight — standalone mocks pick from the shipped templates (arm (a) anyway), the reference is deliberately unvalidated server-side (tasks-MP §4 rule 10), and a mock scores nothing that persists');
 
 -- ===========================================================================
 -- §E THE REFERENCE ARM (the DoD break-probe target) AND THE PROFILE-ENTRY ARM

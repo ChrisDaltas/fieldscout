@@ -1,9 +1,12 @@
 /**
- * SCORING_TEMPLATES — the 6 v1 parity templates (spec §7.3.3 / Appendix B;
- * M1 task L.A1.9; PROGRESS D34/D44/D59).
+ * SCORING_TEMPLATES — the 7 shipped templates (spec §7.3.3 / Appendix B;
+ * M1 task L.A1.9; PROGRESS D34/D44/D59): the 6 v1 parity templates plus
+ * Scout Scoring, FieldScout's house template and the system default for new
+ * leagues (App B.5, marked up by Chris 2026-08-31; SC.1/F186/D279).
  *
  * This module is the AUTHORED source of truth for the template rules objects.
- * Migration 058 seeds these exact objects into `scoring_systems` rows
+ * Migrations 058 (the parity six) and 106 (Scout Scoring) seed these exact
+ * objects into `scoring_systems` rows
  * (`is_template = TRUE`, `owner_id NULL`); the TS↔DB equivalence test
  * (templates-db.test.ts) deep-equals every seeded row against these exports,
  * so the rules the parity gate tests in TS (L.A1.10) are provably the rules
@@ -63,8 +66,15 @@ export interface ScoringTemplateDef {
   /** Row `rules` — coefficients over canonical registry keys ONLY. This is
    *  what `snapshot_league_scoring` freezes; no metadata ever lives here. */
   rules: Record<string, number>
-  /** FALSE = values are App B best-known, not source-verified (Sleeper —
-   *  ledger F24). Categories are verified for all six. */
+  /** TRUE = the values match their AUTHORITATIVE SOURCE. For a platform
+   *  parity row that source is the platform's published defaults (FALSE =
+   *  App B best-known, not source-verified — Sleeper, ledger F24). For the
+   *  house template (Scout Scoring) the values are DEFINITIONAL: the source
+   *  is Chris's ruling folded into spec App B.5 (marked up 2026-08-31), so
+   *  the row is verified BY the ruling itself — there is no external page it
+   *  could drift from (D278(7), resolved here by SC.1: `true`, with this
+   *  widened description; no new flag). Categories are verified for all
+   *  seven. */
   valuesVerified: boolean
 }
 
@@ -83,7 +93,8 @@ export const ESPN_PARITY_EXCEPTION_NOTE =
  *    each template's full object is still reviewable in one place; the
  *    golden-pin test stores every template as a flat literal). ──────────── */
 
-/** App B.1 core offense shared by all six (INT and receptions vary). */
+/** App B.1 core offense shared by the six parity templates (INT and
+ *  receptions vary; Scout authors its own offense block — B.5). */
 const CORE_OFFENSE = {
   pass_yards: 0.04,
   pass_tds: 4,
@@ -208,12 +219,66 @@ const SLEEPER_STANDARD_RULES: Record<string, number> = {
   ...SHARED_DEF_PA,
 }
 
+/** Scout Scoring — FieldScout's house template (spec App B.5, marked up by
+ *  Chris 2026-08-31; SC.1). Offense and kicking are authored here per B.5's
+ *  ruled values; D/ST events are the unanimity inherit and PA/YA are the
+ *  RULED ESPN split model, spread from the same Q9-verified consts the two
+ *  ESPN rows use — never retyped. `return_yards` 0.05 is RULED but GATED:
+ *  no registry key exists (Q13/D173/F71), so the key is OMITTED until F71's
+ *  data task lands (F71's checklist carries the Scout seed-update step). */
+const SCOUT_SCORING_RULES: Record<string, number> = {
+  // B.5 offense — the ruled departures: passing 0.05/yd (all six incumbents
+  // 0.04), EVERY TD 6 including passing (the headline — ESPN/Yahoo/Sleeper
+  // pay 4), receptions 0 as a STATED difference, −2 for all turnovers.
+  pass_yards: 0.05,
+  pass_tds: 6,
+  interceptions: -2,
+  pass_2pt: 2,
+  rush_yards: 0.1,
+  rush_tds: 6,
+  rush_2pt: 2,
+  receptions: 0,
+  receiving_yards: 0.1,
+  receiving_tds: 6,
+  rec_2pt: 2,
+  fumbles_lost: -2,
+  fumble_recovery_td: 6,
+  return_td: 6,
+  // B.5 kicking — every FG flat 3 (RULED; all six incumbents tier 3/4/5);
+  // fg_missed −1 RULED 2026-08-31 (the incumbent majority — FG-specific:
+  // pat_missed deliberately stays omitted under the blanket approval).
+  fg_0_39: 3,
+  fg_40_49: 3,
+  fg_50_plus: 3,
+  pat_made: 1,
+  fg_missed: -1,
+  // D/ST — events by unanimity inherit; PA + YA are the RULED ESPN split
+  // model on the shipped Q9-verified values (dst_model 'split').
+  ...DST_EVENTS,
+  ...ESPN_DEF_PA,
+  ...ESPN_DEF_YA,
+}
+
 /**
- * The 6 v1 parity templates, in §7.3.3 table order (also the picker order).
- * PPR variants differ from their Standard sibling in EXACTLY the
+ * The 7 shipped templates, in §7.3.3 table order (also the picker order) —
+ * Scout Scoring first per the amended v2.16.9 table, then the 6 parity
+ * templates. PPR variants differ from their Standard sibling in EXACTLY the
  * `receptions` coefficient (pinned by test).
  */
 export const SCORING_TEMPLATES: readonly ScoringTemplateDef[] = [
+  {
+    name: 'Scout Scoring',
+    description:
+      "FieldScout's own default scoring — one clean rule set instead of a " +
+      'pile of inherited quirks. Six points for every touchdown, whoever ' +
+      "scores it. Three points for every field goal, wherever it's kicked " +
+      'from. No PPR. 10 rushing or receiving yards to the point, 20 passing ' +
+      "yards. −2 for all turnovers. D/ST scored on ESPN's published " +
+      'points-allowed and yards-allowed tables. Defined by FieldScout ' +
+      "(August 2026), not copied from another platform's defaults.",
+    rules: SCOUT_SCORING_RULES,
+    valuesVerified: true,
+  },
   {
     name: 'ESPN Standard',
     description:

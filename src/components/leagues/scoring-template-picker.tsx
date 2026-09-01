@@ -57,7 +57,7 @@ export interface ScoringTemplatePickerProps {
   onChange: (scoringSystemId: string) => void
   /** Narrow the cards by reception scoring: 'ppr' keeps templates whose
    *  derived receptions coefficient is > 0 (full AND half PPR), 'no_ppr'
-   *  keeps the zero-reception ones. Omit for all six (the default). */
+   *  keeps the zero-reception ones. Omit for all seven (the default). */
   styleFilter?: 'ppr' | 'no_ppr'
   className?: string
 }
