@@ -134,6 +134,36 @@ describe('the F59 gate — the editor renders ZERO boundary inputs (SE.8(4); the
   })
 })
 
+describe('R687 — the sample-total boundary, pinned rather than asserted (D276)', () => {
+  // The ops docblock's charter sentence says the sample path "NEVER computes
+  // real scores: no league, matchup, or player total anywhere in the product
+  // comes from this path." D276's rule: a "never" needs a killing cell or a
+  // hedge. This is the killing cell — the no-second-door sweep over ALL of
+  // src/: nothing outside the editor's own files may import the sample-total
+  // path, so a draft/room/production surface that reaches for it reds here.
+  // D276 honesty note: a sweep over source proves no CURRENT file imports it;
+  // the server walls (104/105 — clients cannot write scores) are the law
+  // behind the sentence, and this pin is a MEMBERSHIP pin over the swept
+  // tree, red on any new importer inside src/.
+  it('no file outside scoring-editor* imports sampleLineTotal or SAMPLE_PLAYERS', () => {
+    const srcFiles = (
+      readdirSync(path.resolve(process.cwd(), 'src'), {
+        recursive: true,
+      }) as string[]
+    )
+      .filter((rel) => rel.endsWith('.ts') || rel.endsWith('.tsx'))
+      .map((rel) => path.join('src', rel))
+      .filter(
+        (file) =>
+          !file.includes(path.join('components', 'leagues', 'scoring-editor')),
+      )
+    const offenders = srcFiles.filter((file) =>
+      /sampleLineTotal|SAMPLE_PLAYERS/.test(read(file)),
+    )
+    expect(offenders).toStrictEqual([])
+  })
+})
+
 describe('settings-panel mount seam', () => {
   it('the settings surface mounts the editor (SE.7); the fork ENTRY stays SE.9', () => {
     expect(settingsPanelSource).toMatch(/<ScoringEditor leagueId=\{leagueId\} \/>/)

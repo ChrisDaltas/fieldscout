@@ -723,6 +723,8 @@ export function isCustomScoringReference(
  * THE BOUNDARY, out loud (SE.8's charter sentence): the client computes
  * SAMPLE totals for display — six fixed, spec-pinned stat lines whose totals
  * exist only to show the commissioner what an edit does. It still NEVER
+ * (pinned — the R687 no-second-door sweep in scoring-editor.test.ts reds on
+ * any importer of this path outside the editor's own files)
  * computes real scores: no league, matchup, or player total anywhere in the
  * product comes from this path (server-authoritative law, CLAUDE.md). What
  * keeps the sample honest is that it runs the REAL pipeline all the same —
