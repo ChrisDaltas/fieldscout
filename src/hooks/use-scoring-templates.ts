@@ -10,7 +10,8 @@ export const scoringTemplatesKeys = {
 }
 
 /**
- * The 6 v1 parity template rows (M1 task L.A2.3; spec §7.3.3 / App B).
+ * The 7 shipped template rows — Scout Scoring (SC.1, migration 106) + the 6
+ * v1 parity rows (M1 task L.A2.3; spec §7.3.3 / App B).
  *
  * Reads the REAL seeded rows — `scoring_systems` WHERE `is_template = TRUE`
  * over migration 058's "Templates viewable by everyone" SELECT policy, which
@@ -21,10 +22,17 @@ export const scoringTemplatesKeys = {
  * Templates are seed data (immutable outside migrations), so a long
  * staleTime avoids refetch churn while the picker stays mounted in the
  * wizard/settings panel.
+ *
+ * `enabled` (SC.3): the create modal and the mock-launch dialog resolve the
+ * §7.3.3 Scout preselection from this query at their own top level, and
+ * both are mounted closed on pages the user may never open them from — the
+ * gate keeps the fetch from firing until the dialog actually opens.
+ * Defaults to true (every other caller is a mounted picker surface).
  */
-export function useScoringTemplates() {
+export function useScoringTemplates(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: scoringTemplatesKeys.all,
+    enabled: options?.enabled ?? true,
     queryFn: async (): Promise<ScoringTemplateRow[]> => {
       const supabase = createBrowserClient()
       const { data, error } = await supabase

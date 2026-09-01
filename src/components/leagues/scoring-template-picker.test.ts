@@ -20,10 +20,18 @@
  *   4. v2.8.5 visibility: both ESPN cards' description carries the Q9
  *      parity-exception line VERBATIM and untruncated (description
  *      passthrough is byte-identical to the row).
- *   5. §7.3.3 table metadata: one-liners verbatim; "(platform default)"
- *      markers on exactly Yahoo Half PPR + Sleeper Full PPR.
+ *   5. Card metadata: the six parity one-liners §7.3.3-verbatim + Scout's
+ *      B.5-approved trim (SC.3/D282); "(platform default)" markers on
+ *      exactly Yahoo Half PPR + Sleeper Full PPR; "FieldScout's default"
+ *      on exactly Scout Scoring.
+ *   6. SC.3 preselection ops (§7.3.3's system-default bullet):
+ *      `resolveDefaultTemplateId` resolves Scout by NATURAL KEY (name under
+ *      is_template — never a hardcoded uuid, never input position), warns
+ *      LOUDLY and returns null when the row is absent (the "nothing
+ *      happened" rule: a missing seed must not silently un-default), and
+ *      `effectiveTemplateSelection` lets an explicit pick ALWAYS win.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ESPN_PARITY_EXCEPTION_NOTE,
@@ -32,9 +40,13 @@ import {
 
 import {
   buildTemplateCards,
+  DEFAULT_TEMPLATE_MARKER,
+  DEFAULT_TEMPLATE_NAME,
   deriveTemplateSummary,
+  effectiveTemplateSelection,
   formatPoints,
   PLATFORM_DEFAULT_TEMPLATE_NAMES,
+  resolveDefaultTemplateId,
   TEMPLATE_DISPLAY_ORDER,
   TEMPLATE_ONE_LINERS,
   type ScoringTemplateRow,
@@ -167,13 +179,16 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     }
   })
 
-  it('carries the §7.3.3 one-liners verbatim (stored literals)', () => {
+  it('carries the card one-liners as stored literals — six §7.3.3-verbatim, Scout from B.5\'s approved copy trimmed (SC.3/D282)', () => {
     const oneLiners = Object.fromEntries(cards.map((c) => [c.name, c.oneLiner]))
     expect(oneLiners).toEqual({
+      // App B.5's Chris-approved "why it's better" copy, trimmed to card
+      // length — every phrase from the approved text, no claim changed; the
+      // approved copy's remaining sentences ride the row DESCRIPTION on the
+      // same card (pinned byte-identical below).
       'Scout Scoring':
-        'One clean rule set. Every TD 6 — passing TDs included — every FG 3, ' +
-        'no PPR, 0.1/yd rush+rec · 0.05/yd pass, −2 all turnovers. Full table ' +
-        '+ basis: Appendix B.5',
+        'One clean rule set — every TD is 6, every FG is 3, no PPR. Yardage ' +
+        'at flat, memorable rates.',
       'ESPN Standard': "ESPN's defaults, 0 PPR",
       'ESPN Full PPR': "ESPN's defaults, 1.0 PPR",
       'Yahoo Standard': "Yahoo's defaults, 0 PPR (note: −1 INT)",
@@ -205,6 +220,19 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     for (const card of cards) {
       expect(card.isPlatformDefault).toBe(card.platformDefaultMarker !== null)
       expect(card.platformDefaultMarker).not.toBe('Platform default')
+    }
+  })
+
+  it('SC.3: EXACTLY the Scout card carries the "FieldScout\'s default" marker (B.5\'s subtitle, the R73 possessive pattern)', () => {
+    expect(DEFAULT_TEMPLATE_NAME).toBe('Scout Scoring')
+    expect(DEFAULT_TEMPLATE_MARKER).toBe("FieldScout's default")
+    expect(
+      cards.filter((c) => c.defaultMarker !== null).map((c) => c.name),
+    ).toEqual(['Scout Scoring'])
+    expect(cards[0].defaultMarker).toBe("FieldScout's default")
+    // The default marker and the platform markers never share a card.
+    for (const card of cards) {
+      expect(card.defaultMarker !== null && card.platformDefaultMarker !== null).toBe(false)
     }
   })
 
@@ -240,6 +268,7 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     expect(last.name).toBe('Mystery Template')
     expect(last.oneLiner).toBe('0.5 PPR')
     expect(last.isPlatformDefault).toBe(false)
+    expect(last.defaultMarker).toBeNull()
     expect(last.description).toBe('')
   })
 
@@ -248,6 +277,52 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     expect(Object.keys(TEMPLATE_ONE_LINERS).sort()).toEqual(
       SCORING_TEMPLATES.map((t) => t.name).sort(),
     )
+  })
+})
+
+describe('SC.3 — the §7.3.3 system-default preselection ops', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves Scout Scoring by NATURAL KEY from a shuffled fixture — the name decides, never the input position', () => {
+    // FIXTURE_ROWS is deliberately out of §7.3.3 order (Scout is NOT the
+    // first input row), so an implementation that grabbed rows[0] — or any
+    // position — reds here; only name-resolution yields Scout's id.
+    expect(FIXTURE_ROWS[0].name).not.toBe(DEFAULT_TEMPLATE_NAME)
+    const scoutRow = FIXTURE_ROWS.find((r) => r.name === DEFAULT_TEMPLATE_NAME)!
+    expect(resolveDefaultTemplateId(FIXTURE_ROWS)).toBe(scoutRow.id)
+    // …and the resolved id is an opaque row id, not a name (what the mounts
+    // pass as `scoring_system_id` — a uuid in a real environment, so a
+    // hardcoded id could never have worked across environments).
+    expect(resolveDefaultTemplateId([...FIXTURE_ROWS].reverse())).toBe(scoutRow.id)
+  })
+
+  it('still-loading rows (undefined) resolve to null with NO warning — nothing to resolve is not a failure', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(resolveDefaultTemplateId(undefined)).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('a loaded set WITHOUT the Scout row degrades LOUDLY: null + a console.warn naming the missing seed — never a silent un-default ("nothing happened" rule)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const withoutScout = FIXTURE_ROWS.filter((r) => r.name !== DEFAULT_TEMPLATE_NAME)
+    expect(resolveDefaultTemplateId(withoutScout)).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain(DEFAULT_TEMPLATE_NAME)
+    expect(String(warn.mock.calls[0][0])).toContain('migration 106')
+    // What renders instead is STATED, not left to inference: with a null
+    // default the effective selection is explicit-only — the pre-SC.3 flow,
+    // where both submit gates keep refusing until the user picks a card
+    // (pinned at toCreateInput/toMockLaunchInput in their own suites).
+    expect(effectiveTemplateSelection(null, null)).toBeNull()
+  })
+
+  it('effectiveTemplateSelection: an explicit pick ALWAYS wins; the default fills only an empty pick (all four combos)', () => {
+    expect(effectiveTemplateSelection('explicit-id', 'default-id')).toBe('explicit-id')
+    expect(effectiveTemplateSelection('explicit-id', null)).toBe('explicit-id')
+    expect(effectiveTemplateSelection(null, 'default-id')).toBe('default-id')
+    expect(effectiveTemplateSelection(null, null)).toBeNull()
   })
 })
 

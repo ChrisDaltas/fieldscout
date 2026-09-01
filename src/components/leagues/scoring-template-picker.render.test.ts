@@ -266,3 +266,119 @@ describe('mount census and per-mount prop sweep', () => {
     expect(read('src/components/draft/mock-launch-dialog.tsx')).not.toMatch(/customize=/)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 5. SC.3 — the Scout preselection at the render surface + the F193 counts
+//    (landing BESIDE the rig exactly as the header's SC.3 note reserved)
+// ---------------------------------------------------------------------------
+
+const scoutRow = FIXTURE_ROWS.find((r) => r.name === 'Scout Scoring')!
+const espnRow = FIXTURE_ROWS.find((r) => r.name === 'ESPN Standard')!
+
+/** Count of pressed (selected) cards in the markup. */
+function selectedCount(markup: string): number {
+  return (markup.match(/aria-pressed="true"/g) ?? []).length
+}
+
+describe('SC.3 — preselection renders through `value` (the picker stays controlled; the mounts derive the default)', () => {
+  it('value = the resolved Scout id renders the Scout card selected — and ONLY it', () => {
+    const markup = renderPicker({ value: scoutRow.id })
+    expect(selectedCount(markup)).toBe(1)
+    // The selected card is Scout's: its name sits in the same card as the
+    // pressed state (cards render name-first, Scout leads the grid).
+    const pressedCard = markup.slice(markup.indexOf('aria-pressed="true"'))
+    expect(pressedCard.indexOf('Scout Scoring')).toBeGreaterThan(-1)
+    expect(pressedCard.indexOf('Scout Scoring')).toBeLessThan(pressedCard.indexOf('ESPN Standard'))
+    expect(markup).toContain('Selected')
+  })
+
+  it("an explicit DIFFERENT pick renders selected instead — `value` is law, the default never overrides at any layer", () => {
+    const markup = renderPicker({ value: espnRow.id })
+    expect(selectedCount(markup)).toBe(1)
+    const pressedCard = markup.slice(markup.indexOf('aria-pressed="true"'))
+    // The pressed card is ESPN Standard's (grid order: Scout renders before
+    // the pressed card, so Scout is NOT the pressed one).
+    expect(pressedCard.indexOf('ESPN Standard')).toBeGreaterThan(-1)
+    expect(pressedCard).not.toContain('Scout Scoring')
+  })
+
+  it('a null value renders NOTHING selected (the loud-degradation rendering: no Scout row ⇒ no preselection, the user must pick)', () => {
+    const markup = renderPicker({ value: null })
+    expect(selectedCount(markup)).toBe(0)
+    expect(markup).not.toContain('Selected')
+  })
+
+  it('the Scout card carries the "FieldScout\'s default" marker — the recommended default reads as one', () => {
+    const markup = renderPicker({})
+    expect(markup.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
+    // …and it survives selection (moves below the Selected badge, exactly
+    // like the platform markers do).
+    const selected = renderPicker({ value: scoutRow.id })
+    expect(selected.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
+  })
+})
+
+describe('F193 — the loading/empty counts derive from the template list (never a stale literal)', () => {
+  it('the skeleton renders ONE placeholder per known template (7 today; an eighth template moves this with the order list)', () => {
+    const client = new QueryClient()
+    const markup = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(ScoringTemplatePicker, { value: null, onChange: noop }),
+      ),
+    )
+    expect(markup.match(/h-44/g)?.length).toBe(SCORING_TEMPLATES.length)
+    expect(SCORING_TEMPLATES.length).toBe(7)
+  })
+
+  it('the zero-rows empty state prints the DERIVED count — "The 7 league scoring templates ship with the database seed"', () => {
+    const client = new QueryClient()
+    client.setQueryData(scoringTemplatesKeys.all, [])
+    const markup = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(ScoringTemplatePicker, { value: null, onChange: noop }),
+      ),
+    )
+    expect(markup).toContain('No scoring templates yet.')
+    expect(markup).toMatch(/The <!-- -->7<!-- --> league scoring templates ship|The 7 league scoring templates ship/)
+    expect(markup).not.toContain('The 6 league scoring templates')
+  })
+})
+
+describe('SC.3 — the two league-less mounts WIRE the preselection; the settings mount never defaults over a stored reference', () => {
+  const read = (rel: string): string =>
+    readFileSync(path.resolve(process.cwd(), rel), 'utf8')
+  const wizardSource = read('src/components/leagues/league-create-modal.tsx')
+  const mockSource = read('src/components/draft/mock-launch-dialog.tsx')
+  const settingsSource = read('src/components/leagues/settings-panel.tsx')
+
+  // D276 honesty note: these are MEMBER pins over today's tree — they red
+  // when a mount DROPS the preselection wiring (the resolver call, the
+  // effective value on the picker, the default handed to the submit
+  // builder), and the ops suite reds when the resolver stops resolving
+  // Scout by name. They cannot prove a future fourth mount wires it; the
+  // mount census above bounds the mount set.
+  it('the WIZARD resolves the default (No-PPR view only), renders the effective value, and submits it', () => {
+    expect(wizardSource).toMatch(/scoringStyle === 'no_ppr'\s*\?\s*resolveDefaultTemplateId\(templatesQuery\.data\)/)
+    expect(wizardSource).toMatch(/value=\{effectiveScoringId\}/)
+    expect(wizardSource).toMatch(/toCreateInput\(draft, defaultTemplateId\)/)
+    // The style step opens on Scout's own family so the preselected card is
+    // VISIBLE (a selection the user can't see is the "nothing happened"
+    // shape).
+    expect(wizardSource).toMatch(/useState<'ppr' \| 'no_ppr'>\('no_ppr'\)/)
+  })
+
+  it('the MOCK LAUNCHER resolves the default, renders the effective value, and feeds it to BOTH the payload and the gate reason', () => {
+    expect(mockSource).toMatch(/resolveDefaultTemplateId\(templatesQuery\.data\)/)
+    expect(mockSource).toMatch(/value=\{effectiveScoringId\}/)
+    expect(mockSource).toMatch(/toMockLaunchInput\(draft, defaultTemplateId\)/)
+    expect(mockSource).toMatch(/mockLaunchBlockedReason\(draft, defaultTemplateId\)/)
+  })
+
+  it('the SETTINGS mount never touches the resolver — a league\'s STORED scoring reference is never defaulted over', () => {
+    expect(settingsSource).not.toMatch(/resolveDefaultTemplateId|effectiveTemplateSelection/)
+  })
+})

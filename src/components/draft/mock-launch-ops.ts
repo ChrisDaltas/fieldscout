@@ -47,6 +47,7 @@
  * nomination 30, bid 20, anti-snipe 10, `DEFAULT_ROSTER_SETTINGS` — pinned in
  * the colocated test.)
  */
+import { effectiveTemplateSelection } from '@/components/leagues/scoring-template-picker-ops'
 import type { StandaloneMockSettings } from '@/lib/leagues/api/draft-service'
 import { reconcileDerived } from '@/lib/leagues/settings/derived-settings'
 import {
@@ -93,9 +94,14 @@ export interface MockLaunchDraft {
  * A fresh draft, every setting pre-filled from the creation defaults through
  * `defaultsForTeamCount` (so §7.3.5's derived `trade_veto_votes` is right and
  * the returned object is a fresh MUTABLE clone, never the frozen module
- * constant). No template chosen yet — D229(1)'s "pick one at launch" is the
- * launcher's pick, so it starts null exactly as the create wizard's does
- * (`initialWizardDraft`), and nothing here invents which of the six is best.
+ * constant). No EXPLICIT template pick yet — it starts null exactly as the
+ * create wizard's does (`initialWizardDraft`). The §8.8/§7.3.3 Scout
+ * Scoring preselection (SC.3) is a DERIVED fallback the dialog resolves
+ * from the fetched rows and passes into `toMockLaunchInput` — this module
+ * still invents no default of its own: which template is preselected is the
+ * spec's ruling, resolved by natural key at the dialog, and the launcher's
+ * explicit pick among the seven always wins (D229(1)'s "pick one at launch"
+ * stays the launcher's pick).
  */
 export function initialMockLaunchDraft(): MockLaunchDraft {
   return {
@@ -182,17 +188,33 @@ export function mockLaunchSettings(
 
 /**
  * The POST body, or null while the draft is not launchable. Null has exactly
- * two causes and `mockLaunchBlockedReason` names both: no template chosen,
- * or a §7.3.8 settings violation. The button disables on null; the server
- * refuses independently (095's `draft_settings_range_guard`), so this is a
- * pre-flight, never the authority.
+ * two causes and `mockLaunchBlockedReason` names both: no template chosen
+ * NOR defaulted, or a §7.3.8 settings violation. The button disables on
+ * null; the server refuses independently (095's
+ * `draft_settings_range_guard`), so this is a pre-flight, never the
+ * authority.
+ *
+ * SC.3 (§8.8's preselection sentence / §7.3.3's system-default bullet):
+ * `defaultScoringSystemId` is the Scout Scoring id the dialog resolves by
+ * natural key, filling an empty pick through the shared
+ * `effectiveTemplateSelection` rule — the launcher's explicit pick always
+ * wins, and the payload's `draft.scoring_system_id` carries an EXPLICIT id
+ * either way (the mock config's template id is fed exactly as an explicit
+ * pick would feed it — D170's spirit: a preselection, never a hidden path).
  */
-export function toMockLaunchInput(draft: MockLaunchDraft): MockLaunchInput | null {
-  if (draft.scoringSystemId === null) return null
+export function toMockLaunchInput(
+  draft: MockLaunchDraft,
+  defaultScoringSystemId: string | null = null,
+): MockLaunchInput | null {
+  const scoringSystemId = effectiveTemplateSelection(
+    draft.scoringSystemId,
+    defaultScoringSystemId,
+  )
+  if (scoringSystemId === null) return null
   if (mockLaunchIssues(draft).length > 0) return null
   return {
     cpu_speed: draft.cpuSpeed,
-    settings: mockLaunchSettings(draft.settings, draft.scoringSystemId),
+    settings: mockLaunchSettings(draft.settings, scoringSystemId),
     ...(draft.slot !== null ? { slot: draft.slot } : {}),
   }
 }
@@ -221,9 +243,20 @@ export function mockLaunchIssues(draft: MockLaunchDraft): FieldIssue[] {
  * text (§16.5.2 friendly refusals are UX, and re-wording one here would be a
  * second voice for the same rule).
  */
-export function mockLaunchBlockedReason(draft: MockLaunchDraft): string | null {
+export function mockLaunchBlockedReason(
+  draft: MockLaunchDraft,
+  defaultScoringSystemId: string | null = null,
+): string | null {
   const issues = mockLaunchIssues(draft)
   if (issues.length > 0) return issues[0]!.message
-  if (draft.scoringSystemId === null) return 'Pick a scoring template to start.'
+  // SC.3: the same effective choice `toMockLaunchInput` submits — with the
+  // Scout preselection resolved this line only renders in an environment
+  // whose seeds lack the Scout row (the loud-degradation path).
+  if (
+    effectiveTemplateSelection(draft.scoringSystemId, defaultScoringSystemId) ===
+    null
+  ) {
+    return 'Pick a scoring template to start.'
+  }
   return null
 }

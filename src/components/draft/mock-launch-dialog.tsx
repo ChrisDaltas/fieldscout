@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
   AuctionConfigFields,
@@ -9,6 +9,10 @@ import {
 } from '@/components/leagues/draft-config-fields'
 import { RosterSlotBuilder } from '@/components/leagues/roster-slot-builder'
 import { ScoringTemplatePicker } from '@/components/leagues/scoring-template-picker'
+import {
+  effectiveTemplateSelection,
+  resolveDefaultTemplateId,
+} from '@/components/leagues/scoring-template-picker-ops'
 import {
   ChoiceSelect,
   FieldRow,
@@ -27,6 +31,7 @@ import { Icon } from '@/components/ui/icon'
 import { Label } from '@/components/ui/label'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useLaunchStandaloneMock } from '@/hooks/use-mock-drafts'
+import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import {
   V1_TEAM_COUNTS,
@@ -61,7 +66,10 @@ import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launch
  *   1. Format   — draft type, team count, CPU speed
  *   2. Clocks   — the §7.3.8 knobs for the chosen draft type
  *   3. Roster   — the shipped roster-slot builder
- *   4. Scoring  — one of the seven shipped templates (D229(1); SC.1 adds Scout Scoring)
+ *   4. Scoring  — one of the seven shipped templates, Scout Scoring
+ *                  preselected as the system default and freely changeable
+ *                  (§8.8's preselection sentence; SC.3 — D229(1)'s "pick one
+ *                  at launch" stays the launcher's pick)
  *
  * The defaults on open are the schema's own (D229(3): pick clock 90,
  * nomination 30, bid 20, anti-snipe 10, `DEFAULT_ROSTER_SETTINGS`) and are
@@ -98,8 +106,26 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
   const [refusal, setRefusal] = useState<string | null>(null)
   const launch = useLaunchStandaloneMock()
 
-  const input = toMockLaunchInput(draft)
-  const blocked = mockLaunchBlockedReason(draft)
+  // SC.3 — §8.8's preselection sentence: the launcher preselects Scout
+  // Scoring as the system default, still freely changeable. A pure
+  // DERIVATION (explicit pick ?? the natural-key-resolved Scout id — the
+  // shared `effectiveTemplateSelection` rule), so an explicit pick always
+  // wins and a missing Scout row degrades loudly to the explicit-pick flow
+  // (`resolveDefaultTemplateId` warns; the launch gate keeps refusing with
+  // the designed "Pick a scoring template to start." line). The query is
+  // gated on `open` — this dialog sits mounted-closed on Home.
+  const templatesQuery = useScoringTemplates({ enabled: open })
+  const defaultTemplateId = useMemo(
+    () => resolveDefaultTemplateId(templatesQuery.data),
+    [templatesQuery.data],
+  )
+  const effectiveScoringId = effectiveTemplateSelection(
+    draft.scoringSystemId,
+    defaultTemplateId,
+  )
+
+  const input = toMockLaunchInput(draft, defaultTemplateId)
+  const blocked = mockLaunchBlockedReason(draft, defaultTemplateId)
   const issues = mockLaunchIssues(draft)
   const pending = launch.isPending
 
@@ -284,7 +310,10 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
 
           {step === 3 && (
             <ScoringTemplatePicker
-              value={draft.scoringSystemId}
+              // SC.3: the EFFECTIVE selection (explicit pick ?? the Scout
+              // preselection) — what renders selected is exactly what the
+              // launch will submit.
+              value={effectiveScoringId}
               onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
             />
           )}
