@@ -80,9 +80,23 @@ import { InlineIssue } from './settings-form-controls'
  * bounded by no timer at all (ledger F167 — do not claim more here).
  *
  * Access: commissioner-only editing, league in `setup`/`scheduled` — the
- * RPC enforces, the UI states it (read-only grid + notice otherwise). The
- * member read-only VIEW surface proper is SE.9's; what renders here for a
- * member is the stated-restriction fallback, not that deliverable.
+ * RPC enforces, the UI states it (read-only grid + notice otherwise).
+ *
+ * THE MEMBER READ-ONLY VIEW LIVES HERE (SE.9; ledger F179(b) resolved this
+ * way). Spec §7.3.3.1's access bullet routes member visibility through the
+ * settings surface — "not a new feed" — and the settings panel is exactly
+ * where every league member already reads settings, so SE.7's read-only
+ * fallback IS the member view, kept in place rather than relocated: a
+ * non-commissioner on a customized league reads the full document here
+ * (sections, per-position overrides, tier tables) with zero edit
+ * affordances. Freshness boundary, stated not implied (F167): what a member
+ * sees is their own client's cached read — a commissioner's edit does NOT
+ * live-update a member's already-open view, and nothing bounds that
+ * staleness (no refetch trigger exists on a mounted, connected surface); a
+ * fresh navigation to the panel reads the current document. Do not claim
+ * more here. Post-draft the document shown is the FROZEN snapshot — the
+ * `useLeagueScoringFamily` read prefers `scoring_rules_snapshot` over the
+ * live reference (§7.3.3's snapshot law; existing behavior, stated).
  *
  * Q28 is OPEN and deliberately not improvised around: no shape guardrail
  * anywhere in this surface. The natural flow edits values on a loaded fork
@@ -277,9 +291,11 @@ function ScoringEditorLoadError({
   )
 }
 
-/** §16.5.4 state 2 — designed empty copy, never blank. No fork affordance is
- *  promised here: the "Customize" entry is SE.9's, and this copy is updated
- *  to point at it when it lands (ledger hand-off on SE.7's PR). */
+/** §16.5.4 state 2 — designed empty copy, never blank. F179(a) discharged
+ *  (SE.9): now that the Customize entry SHIPS — on the template cards in the
+ *  Scoring section above this card — the copy points at it by name instead
+ *  of describing a control that doesn't exist. Renders for the commissioner
+ *  only (the caller gates), which is exactly who Customize renders for. */
 function ScoringEditorEmpty({
   className,
   templateName,
@@ -295,8 +311,9 @@ function ScoringEditorEmpty({
           {templateName
             ? `This league scores with the ${templateName} template — one shared rulebook, unedited.`
             : 'This league scores with a shared template — one rulebook, unedited.'}{' '}
-          Once the league has its own custom copy of a template, every value is
-          edited right here, position by position.
+          To make it yours, hit <strong>Customize</strong> on a template card
+          in the Scoring section above — your league gets its own copy, and
+          every value is edited right here, position by position.
         </p>
       </CardContent>
     </Card>

@@ -12,31 +12,47 @@ import { cn } from '@/lib/utils'
 
 import {
   buildTemplateCards,
+  canCustomize,
   formatPoints,
+  type ScoringCustomizeContext,
   type TemplateCard,
 } from './scoring-template-picker-ops'
 
 /**
- * Scoring-template-picker (M1 task L.A2.3; spec §7.3.3 v2.7, §16.2, App B).
+ * Scoring-template-picker (M1 task L.A2.3; spec §7.3.3, §16.2, App B;
+ * Customize entry SE.9 — spec §7.3.3.1 entry-point bullet, D170).
  *
- * The 6 v1 parity-template cards (name + §7.3.3 one-liner) + side-by-side
- * compare of the key category values (PPR, INT, kicking tiers, D/ST model),
- * every displayed value DERIVED from the fetched rows' `rules` via the pure
- * ops layer — never a hand-maintained display table. Rows are the REAL
- * seeded templates (`is_template = TRUE`, world-readable incl. anon) via
- * `useScoringTemplates`.
+ * The seven template cards (6 parity templates + Scout Scoring, SC.1; name +
+ * §7.3.3 one-liner) + side-by-side compare of the key category values (PPR,
+ * INT, kicking tiers, D/ST model), every displayed value DERIVED from the
+ * fetched rows' `rules` via the pure ops layer — never a hand-maintained
+ * display table. Rows are the REAL seeded templates (`is_template = TRUE`,
+ * world-readable incl. anon) via `useScoringTemplates`.
  *
  * Controlled for SELECTION only: `value` is the chosen `scoring_system_id`,
  * clicking a card emits it through `onChange`. NO league writes here —
- * persisting the choice belongs to the consumers (create wizard L.A2.1 via
- * `create_league`, settings panel L.A2.4 via the settings PATCH). Consumed
- * by BOTH of those surfaces — never fork it (CLAUDE.md).
+ * persisting the choice belongs to the consumers, and even the SE.9
+ * Customize affordance only EMITS the clicked template id through the
+ * `customize` context: the fork mutation itself lives at the settings mount.
  *
- * Explicitly ABSENT by spec (v2.7 + §16.5.5) — do not add: the custom
- * scoring editor (v1.1), FieldScout Alpha/Ultra cards (return when advanced
- * stats are funded — no teaser/locked cards), and the "same game, scored
- * three ways" widget. The picker renders exactly one card per fetched row
- * and invents no extra slots (pinned in the colocated test).
+ * Consumed by THREE mounts — never fork this component (CLAUDE.md):
+ *   1. the create wizard (`league-create-modal.tsx`) — no league exists yet
+ *      (D170: a league is born on a template), so NO `customize` context;
+ *   2. the settings panel (`settings-panel.tsx`) — the ONE league-context
+ *      mount, and the only one that passes `customize`;
+ *   3. the standalone mock launcher (`mock-launch-dialog.tsx`, MP.4) — no
+ *      league AT ALL (`drafts.league_id` is nullable, migration 095), so NO
+ *      `customize` context.
+ * The colocated render test pins Customize present in exactly the settings
+ * configuration and absent in the other two, plus a source sweep that the
+ * two league-less mounts never pass the prop.
+ *
+ * Explicitly ABSENT by spec (§16.5.5) — do not add: FieldScout Alpha/Ultra
+ * cards (return when advanced stats are funded — no teaser/locked cards) and
+ * the "same game, scored three ways" widget. The picker renders exactly one
+ * card per fetched row and invents no extra slots (pinned in the colocated
+ * test). The custom scoring EDITOR stays its own §16.2 surface
+ * (`scoring-editor.tsx`): this component only opens the door to it.
  *
  * v2.8.5 parity-exception visibility (Q9): the ESPN rows' `description`
  * carries the commissioner-readable exception line. Design call (PROGRESS
@@ -59,6 +75,12 @@ export interface ScoringTemplatePickerProps {
    *  derived receptions coefficient is > 0 (full AND half PPR), 'no_ppr'
    *  keeps the zero-reception ones. Omit for all seven (the default). */
   styleFilter?: 'ppr' | 'no_ppr'
+  /** SE.9/D170: league context for the Customize entry — passed by the
+   *  settings mount ONLY. Omitted (the default) = no league = templates-only
+   *  rendering; the picker itself decides visibility from the context's
+   *  role + status (`canCustomize`), so a member or an out-of-window league
+   *  never sees the affordance even at the settings mount. */
+  customize?: ScoringCustomizeContext
   className?: string
 }
 
@@ -66,6 +88,7 @@ export function ScoringTemplatePicker({
   value,
   onChange,
   styleFilter,
+  customize,
   className,
 }: ScoringTemplatePickerProps) {
   const { data, isPending, isError, refetch, isRefetching } =
@@ -129,6 +152,10 @@ export function ScoringTemplatePicker({
     )
   }
 
+  // SE.9/D170: the Customize entry renders only with a league context whose
+  // viewer is a commissioner and whose league is still in the §7.3 window.
+  const customizeVisible = canCustomize(customize)
+
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -149,6 +176,12 @@ export function ScoringTemplatePicker({
         </Button>
       </div>
 
+      {customizeVisible && customize?.disabledReason && (
+        <p className="text-[12px] font-semibold text-n-3">
+          {customize.disabledReason}
+        </p>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <TemplateCardButton
@@ -156,6 +189,7 @@ export function ScoringTemplatePicker({
             card={card}
             selected={card.id === value}
             onSelect={() => onChange(card.id)}
+            customize={customizeVisible && customize ? customize : undefined}
           />
         ))}
       </div>
@@ -173,12 +207,20 @@ function TemplateCardButton({
   card,
   selected,
   onSelect,
+  customize,
 }: {
   card: TemplateCard
   selected: boolean
   onSelect: () => void
+  /** Present only when the Customize entry is VISIBLE (the picker gates
+   *  through `canCustomize` before passing it down). */
+  customize?: ScoringCustomizeContext
 }) {
   const { summary } = card
+  const customizePending = customize?.pendingTemplateId === card.id
+  const customizeDisabled =
+    customize !== undefined &&
+    (customize.pendingTemplateId != null || customize.disabledReason != null)
   return (
     <Card
       role="button"
@@ -236,6 +278,40 @@ function TemplateCardButton({
           <p className="text-[11px] font-medium leading-relaxed text-n-3">
             {card.description}
           </p>
+        )}
+        {/* SE.9 — the §7.3.3.1 "Customize" entry (D170: league context
+            only). A real button nested in the role="button" card, so both
+            handlers stop propagation — otherwise activating Customize would
+            also re-select the card (the list-row-parts.tsx house pattern
+            for controls inside clickable rows). */}
+        {customize && (
+          <div className="mt-auto pt-1">
+            <Button
+              type="button"
+              variant="stroke"
+              size="sm"
+              aria-label={`Customize ${card.name}`}
+              disabled={customizeDisabled}
+              title={customize.disabledReason ?? undefined}
+              onClick={(e) => {
+                e.stopPropagation()
+                customize.onCustomize(card.id)
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              {customizePending ? (
+                <>
+                  <Icon name="repeat" size={13} className="animate-spin" />
+                  Customizing…
+                </>
+              ) : (
+                <>
+                  <Icon name="edit" size={13} />
+                  Customize
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

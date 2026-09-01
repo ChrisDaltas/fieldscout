@@ -181,3 +181,58 @@ export function formatPoints(value: number | null): string {
   if (value === null) return '—'
   return String(value).replace('-', '−')
 }
+
+// ---------------------------------------------------------------------------
+// SE.9 — the "Customize" entry's league context (spec §7.3.3.1 entry-point
+// bullet; D170)
+// ---------------------------------------------------------------------------
+
+/**
+ * League context for the ONE mount that has a league — the settings panel.
+ * D170: the Customize affordance lives in league context only. The create
+ * wizard has no league yet (a league is born on a template; `create_league`'s
+ * template-only check is untouched) and the standalone mock launcher has no
+ * league at all (`drafts.league_id` is nullable — migration 095), so BOTH of
+ * those mounts omit this prop and render templates-only, unchanged.
+ */
+export interface ScoringCustomizeContext {
+  /** The viewer's role in the league (league detail `my_role`). */
+  myRole: string | null
+  /** `leagues.status` — Customize renders in `setup`/`scheduled` only. */
+  leagueStatus: string
+  /** Fires SE.6's fork mutation with the clicked card's template id. */
+  onCustomize: (templateId: string) => void
+  /** Template id with a fork in flight — all Customize buttons disable,
+   *  the in-flight card shows the pending label. */
+  pendingTemplateId?: string | null
+  /** When set, Customize renders disabled and this reason renders above the
+   *  grid (e.g. the settings form holds unsaved non-scoring edits — a fork
+   *  re-seeds the form, and silently discarding typed values would be the
+   *  CLAUDE.md "nothing happened" failure shape). */
+  disabledReason?: string | null
+}
+
+/**
+ * Is the Customize affordance visible? Commissioner-only, league in
+ * `setup`/`scheduled` (the §7.3 header window; §7.3.3.1's access bullet —
+ * the RPC enforces, the UI states it), and only where a league context
+ * exists at all (D170).
+ *
+ * Deliberately mirrors `scoringEditorAccess(...).canEdit`
+ * (scoring-editor-ops.ts) WITHOUT importing it: the editor ops module runs
+ * an import-time catalog guard and pulls the scoring engine, none of which
+ * the two league-less picker mounts (wizard, mock launcher) should pay for.
+ * The mirror is pinned, not trusted: the colocated render test asserts this
+ * predicate agrees with `scoringEditorAccess` across the full role × status
+ * matrix.
+ */
+export function canCustomize(
+  context: Pick<ScoringCustomizeContext, 'myRole' | 'leagueStatus'> | undefined,
+): boolean {
+  if (!context) return false
+  const isCommissioner =
+    context.myRole === 'commissioner' || context.myRole === 'co_commissioner'
+  const inEditWindow =
+    context.leagueStatus === 'setup' || context.leagueStatus === 'scheduled'
+  return isCommissioner && inEditWindow
+}
