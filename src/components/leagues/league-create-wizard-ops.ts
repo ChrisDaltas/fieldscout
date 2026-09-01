@@ -44,11 +44,12 @@ export const DEFAULT_WIZARD_TEAM_COUNT = 12
  * the §7.3.3 template choice, which is a §12.1 typed column carried ALONGSIDE
  * the settings split, never inside it) plus the full §7.3 `LeagueSettings`
  * object. `scoringSystemId` holds the user's EXPLICIT pick only, null while
- * none exists — the §7.3.3 system-default preselection (Scout Scoring, SC.3)
- * is a DERIVED fallback the modal resolves from the fetched template rows
- * and passes into `toCreateInput`, never a value written into this draft
- * (so an explicit pick and the default can never be confused, and the
- * default can never overwrite a pick).
+ * none exists — the §7.3.3 default preselection (the active family's Scout:
+ * No PPR → Scout Standard, PPR → Scout PPR; SC.3/SC.4) is a DERIVED
+ * fallback the modal resolves from the fetched template rows and passes
+ * into `toCreateInput`, never a value written into this draft (so an
+ * explicit pick and the default can never be confused, and the default can
+ * never overwrite a pick).
  */
 export interface WizardDraft {
   name: string
@@ -84,13 +85,14 @@ export function initialWizardDraft(): WizardDraft {
  * null while the draft is not submittable (no name, or no template chosen
  * NOR defaulted): the invite/create step disables its button on null.
  *
- * SC.3 (§7.3.3's system-default bullet): `defaultScoringSystemId` is the
- * Scout Scoring id the modal resolves by natural key
- * (`resolveDefaultTemplateId`), filling an empty pick through the shared
+ * SC.3/SC.4 (§7.3.3's system-default bullet): `defaultScoringSystemId` is
+ * the active family's Scout id the modal resolves by natural key
+ * (`resolveDefaultTemplateId` with the style family — No PPR → Scout
+ * Standard, PPR → Scout PPR), filling an empty pick through the shared
  * `effectiveTemplateSelection` rule — an explicit pick always wins, and the
  * payload always carries an EXPLICIT template id either way (`create_league`
  * knows nothing of preselection; a preselection, never a silent write).
- * Null (rows not loaded, or a seed without the Scout row) degrades to the
+ * Null (rows not loaded, or a seed without that Scout row) degrades to the
  * pre-SC.3 explicit-only gate.
  *
  * `team_name` is omitted when blank — the RPC derives "<username>'s Team"

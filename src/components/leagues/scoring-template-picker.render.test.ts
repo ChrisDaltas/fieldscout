@@ -63,7 +63,7 @@ import {
 // Rig
 // ---------------------------------------------------------------------------
 
-/** The 7 authored templates as fetched rows (the ops test's fixture shape). */
+/** The 8 authored templates as fetched rows (the ops test's fixture shape). */
 const FIXTURE_ROWS: ScoringTemplateRow[] = SCORING_TEMPLATES.map((t, i) => ({
   id: `row-${i + 1}`,
   name: t.name,
@@ -272,7 +272,8 @@ describe('mount census and per-mount prop sweep', () => {
 //    (landing BESIDE the rig exactly as the header's SC.3 note reserved)
 // ---------------------------------------------------------------------------
 
-const scoutRow = FIXTURE_ROWS.find((r) => r.name === 'Scout Scoring')!
+const scoutRow = FIXTURE_ROWS.find((r) => r.name === 'Scout Standard')!
+const scoutPprRow = FIXTURE_ROWS.find((r) => r.name === 'Scout PPR')!
 const espnRow = FIXTURE_ROWS.find((r) => r.name === 'ESPN Standard')!
 
 /** Count of pressed (selected) cards in the markup. */
@@ -281,14 +282,26 @@ function selectedCount(markup: string): number {
 }
 
 describe('SC.3 — preselection renders through `value` (the picker stays controlled; the mounts derive the default)', () => {
-  it('value = the resolved Scout id renders the Scout card selected — and ONLY it', () => {
+  it('value = the resolved Scout Standard id renders the Scout Standard card selected — and ONLY it', () => {
     const markup = renderPicker({ value: scoutRow.id })
     expect(selectedCount(markup)).toBe(1)
-    // The selected card is Scout's: its name sits in the same card as the
-    // pressed state (cards render name-first, Scout leads the grid).
+    // The selected card is Scout Standard's: its name sits in the same card
+    // as the pressed state (cards render name-first, Scout Standard leads
+    // the grid).
     const pressedCard = markup.slice(markup.indexOf('aria-pressed="true"'))
-    expect(pressedCard.indexOf('Scout Scoring')).toBeGreaterThan(-1)
-    expect(pressedCard.indexOf('Scout Scoring')).toBeLessThan(pressedCard.indexOf('ESPN Standard'))
+    expect(pressedCard.indexOf('Scout Standard')).toBeGreaterThan(-1)
+    expect(pressedCard.indexOf('Scout Standard')).toBeLessThan(pressedCard.indexOf('Scout PPR'))
+    expect(markup).toContain('Selected')
+  })
+
+  it('SC.4: on the PPR-filtered view, value = the resolved Scout PPR id renders the Scout PPR card selected — the family law at the render surface', () => {
+    const markup = renderPicker({ value: scoutPprRow.id, styleFilter: 'ppr' })
+    expect(selectedCount(markup)).toBe(1)
+    // The PPR view filters Scout Standard out entirely; its own Scout leads.
+    expect(markup).not.toContain('Scout Standard')
+    const pressedCard = markup.slice(markup.indexOf('aria-pressed="true"'))
+    expect(pressedCard.indexOf('Scout PPR')).toBeGreaterThan(-1)
+    expect(pressedCard.indexOf('Scout PPR')).toBeLessThan(pressedCard.indexOf('ESPN Full PPR'))
     expect(markup).toContain('Selected')
   })
 
@@ -296,10 +309,11 @@ describe('SC.3 — preselection renders through `value` (the picker stays contro
     const markup = renderPicker({ value: espnRow.id })
     expect(selectedCount(markup)).toBe(1)
     const pressedCard = markup.slice(markup.indexOf('aria-pressed="true"'))
-    // The pressed card is ESPN Standard's (grid order: Scout renders before
-    // the pressed card, so Scout is NOT the pressed one).
+    // The pressed card is ESPN Standard's (grid order: both Scout cards
+    // render before the pressed card, so neither Scout is the pressed one).
     expect(pressedCard.indexOf('ESPN Standard')).toBeGreaterThan(-1)
-    expect(pressedCard).not.toContain('Scout Scoring')
+    expect(pressedCard).not.toContain('Scout Standard')
+    expect(pressedCard).not.toContain('Scout PPR')
   })
 
   it('a null value renders NOTHING selected (the loud-degradation rendering: no Scout row ⇒ no preselection, the user must pick)', () => {
@@ -308,7 +322,7 @@ describe('SC.3 — preselection renders through `value` (the picker stays contro
     expect(markup).not.toContain('Selected')
   })
 
-  it('the Scout card carries the "FieldScout\'s default" marker — the recommended default reads as one', () => {
+  it('the Scout Standard card carries the "FieldScout\'s default" marker unfiltered — the recommended default reads as one', () => {
     const markup = renderPicker({})
     expect(markup.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
     // …and it survives selection (moves below the Selected badge, exactly
@@ -316,10 +330,24 @@ describe('SC.3 — preselection renders through `value` (the picker stays contro
     const selected = renderPicker({ value: scoutRow.id })
     expect(selected.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
   })
+
+  it('SC.4 (B.5.1\'s marker law): each style-filtered view marks its OWN Scout — exactly one badge, on a visible card', () => {
+    // The PPR view: Scout Standard is filtered out; the one badge sits on
+    // Scout PPR (a badge on a filtered-out card would mark nothing).
+    const ppr = renderPicker({ styleFilter: 'ppr' })
+    expect(ppr.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
+    expect(ppr).toContain('Scout PPR')
+    expect(ppr).not.toContain('Scout Standard')
+    // The No-PPR view: the badge stays with Scout Standard.
+    const noPpr = renderPicker({ styleFilter: 'no_ppr' })
+    expect(noPpr.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
+    expect(noPpr).toContain('Scout Standard')
+    expect(noPpr).not.toContain('Scout PPR')
+  })
 })
 
 describe('F193 — the loading/empty counts derive from the template list (never a stale literal)', () => {
-  it('the skeleton renders ONE placeholder per known template (7 today; an eighth template moves this with the order list)', () => {
+  it('the skeleton renders ONE placeholder per known template (8 today; a ninth template moves this with the order list)', () => {
     const client = new QueryClient()
     const markup = renderToStaticMarkup(
       createElement(
@@ -329,10 +357,13 @@ describe('F193 — the loading/empty counts derive from the template list (never
       ),
     )
     expect(markup.match(/h-44/g)?.length).toBe(SCORING_TEMPLATES.length)
-    expect(SCORING_TEMPLATES.length).toBe(7)
+    // F193's payoff, second pass: the skeleton count DERIVED and moved with
+    // the order list when the Scout pair made the grid 8 — no edit needed
+    // beyond this literal (the pin's own job).
+    expect(SCORING_TEMPLATES.length).toBe(8)
   })
 
-  it('the zero-rows empty state prints the DERIVED count — "The 7 league scoring templates ship with the database seed"', () => {
+  it('the zero-rows empty state prints the DERIVED count — "The 8 league scoring templates ship with the database seed"', () => {
     const client = new QueryClient()
     client.setQueryData(scoringTemplatesKeys.all, [])
     const markup = renderToStaticMarkup(
@@ -343,8 +374,8 @@ describe('F193 — the loading/empty counts derive from the template list (never
       ),
     )
     expect(markup).toContain('No scoring templates yet.')
-    expect(markup).toMatch(/The <!-- -->7<!-- --> league scoring templates ship|The 7 league scoring templates ship/)
-    expect(markup).not.toContain('The 6 league scoring templates')
+    expect(markup).toMatch(/The <!-- -->8<!-- --> league scoring templates ship|The 8 league scoring templates ship/)
+    expect(markup).not.toContain('The 7 league scoring templates')
   })
 })
 
@@ -361,13 +392,17 @@ describe('SC.3 — the two league-less mounts WIRE the preselection; the setting
   // builder), and the ops suite reds when the resolver stops resolving
   // Scout by name. They cannot prove a future fourth mount wires it; the
   // mount census above bounds the mount set.
-  it('the WIZARD resolves the default (No-PPR view only), renders the effective value, and submits it', () => {
-    expect(wizardSource).toMatch(/scoringStyle === 'no_ppr'\s*\?\s*resolveDefaultTemplateId\(templatesQuery\.data\)/)
+  it('the WIZARD resolves the ACTIVE family\'s default (SC.4 — no longer No-PPR-conditional), renders the effective value, and submits it', () => {
+    expect(wizardSource).toMatch(/resolveDefaultTemplateId\(templatesQuery\.data, scoringStyle\)/)
+    // The pre-SC.4 No-PPR-conditional memo is GONE — a null default on the
+    // PPR side would hide Scout PPR's ruled preselection.
+    expect(wizardSource).not.toMatch(/scoringStyle === 'no_ppr'\s*\?\s*resolveDefaultTemplateId/)
     expect(wizardSource).toMatch(/value=\{effectiveScoringId\}/)
     expect(wizardSource).toMatch(/toCreateInput\(draft, defaultTemplateId\)/)
-    // The style step opens on Scout's own family so the preselected card is
-    // VISIBLE (a selection the user can't see is the "nothing happened"
-    // shape).
+    // The style step opens on No PPR — RULED (Chris 2026-09-01): Scout
+    // Standard is the default selected template, and the preselected card
+    // must be visible (a selection the user can't see is the "nothing
+    // happened" shape).
     expect(wizardSource).toMatch(/useState<'ppr' \| 'no_ppr'>\('no_ppr'\)/)
   })
 

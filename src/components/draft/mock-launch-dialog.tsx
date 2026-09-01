@@ -66,10 +66,12 @@ import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launch
  *   1. Format   — draft type, team count, CPU speed
  *   2. Clocks   — the §7.3.8 knobs for the chosen draft type
  *   3. Roster   — the shipped roster-slot builder
- *   4. Scoring  — one of the seven shipped templates, Scout Scoring
+ *   4. Scoring  — one of the eight shipped templates, Scout Standard
  *                  preselected as the system default and freely changeable
- *                  (§8.8's preselection sentence; SC.3 — D229(1)'s "pick one
- *                  at launch" stays the launcher's pick)
+ *                  (§8.8's preselection sentence; SC.3/SC.4 — the launcher
+ *                  is UNFILTERED so it preselects the system default, and
+ *                  D229(1)'s "pick one at launch" stays the launcher's
+ *                  pick)
  *
  * The defaults on open are the schema's own (D229(3): pick clock 90,
  * nomination 30, bid 20, anti-snipe 10, `DEFAULT_ROSTER_SETTINGS`) and are
@@ -106,11 +108,13 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
   const [refusal, setRefusal] = useState<string | null>(null)
   const launch = useLaunchStandaloneMock()
 
-  // SC.3 — §8.8's preselection sentence: the launcher preselects Scout
-  // Scoring as the system default, still freely changeable. A pure
-  // DERIVATION (explicit pick ?? the natural-key-resolved Scout id — the
-  // shared `effectiveTemplateSelection` rule), so an explicit pick always
-  // wins and a missing Scout row degrades loudly to the explicit-pick flow
+  // SC.3/SC.4 — §8.8's preselection sentence: the launcher preselects
+  // Scout Standard, the SYSTEM default (the launcher is unfiltered, so it
+  // never wears a family view's Scout — v2.16.11's family law), still
+  // freely changeable. A pure DERIVATION (explicit pick ?? the
+  // natural-key-resolved Scout Standard id — the shared
+  // `effectiveTemplateSelection` rule), so an explicit pick always wins and
+  // a missing Scout row degrades loudly to the explicit-pick flow
   // (`resolveDefaultTemplateId` warns; the launch gate keeps refusing with
   // the designed "Pick a scoring template to start." line). The query is
   // gated on `open` — this dialog sits mounted-closed on Home.

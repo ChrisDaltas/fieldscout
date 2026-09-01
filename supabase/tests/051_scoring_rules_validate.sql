@@ -357,8 +357,8 @@ select throws_ok(
 
 select is(
   (select count(*) from public.scoring_systems where is_template),
-  7::bigint,
-  'C1: the seven seeded template rows exist (058''s six + 106''s Scout Scoring) — the premise, asserted before anything is asserted about them (F94)');
+  8::bigint,
+  'C1: the eight seeded template rows exist (058''s six + the Scout pair, 106/108) — the premise, asserted before anything is asserted about them (F94)');
 
 select is_empty(
   $$ select s.name || ' -> ' || pg_temp.verdict(s.rules)

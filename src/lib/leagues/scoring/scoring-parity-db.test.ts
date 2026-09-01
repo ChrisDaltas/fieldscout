@@ -472,9 +472,9 @@ describe('SE.4(4) the TS≡SQL parity fixture — the acceptances', () => {
     expect(error, 'SQL refused a document TS accepts').toBeNull()
   })
 
-  it('the acceptance floor is the seven templates, their seven forks, and one legal edit', () => {
+  it('the acceptance floor is the eight templates, their eight forks, and one legal edit', () => {
     expect(ACCEPTANCE_FLOOR).toHaveLength(SCORING_TEMPLATES.length * 2 + 1)
-    expect(SCORING_TEMPLATES).toHaveLength(7)
+    expect(SCORING_TEMPLATES).toHaveLength(8)
   })
 })
 
@@ -560,7 +560,7 @@ describe('the one-sided property: SQL is the wall, so it may never be the looser
     // The corpus size is a stored literal for the same reason ONE_FAMILY_EACH's
     // is: a parity suite rots by SHRINKING, quietly, and a count that has to be
     // edited by hand makes that a deliberate act.
-    expect(WHOLE_CORPUS).toHaveLength(670)
+    expect(WHOLE_CORPUS).toHaveLength(672)
     // Non-vacuity: the corpus contains both verdicts in quantity, so "no
     // looser case" cannot mean "nothing was accepted" (CLAUDE.md: never let
     // "nothing happened" mean "it worked").
@@ -926,14 +926,14 @@ describe('the deployed form (D18/D23 grants doctrine, end to end)', () => {
     expect(keys.error?.code).toBe('42501')
   })
 
-  it('the seven templates AS STORED IN THE DATABASE pass — not the TS copies', async () => {
+  it('the eight templates AS STORED IN THE DATABASE pass — not the TS copies', async () => {
     const { data, error } = await db
       .from('scoring_systems')
       .select('name, rules')
       .eq('is_template', true)
     expect(error).toBeNull()
     const rows = (data ?? []) as Array<{ name: string; rules: Record<string, number> }>
-    expect(rows).toHaveLength(7)
+    expect(rows).toHaveLength(8)
     for (const row of rows) {
       const result = await db.rpc('scoring_rules_validate', { p_rules: row.rules as never })
       expect(result.error, `stored template ${row.name} was refused`).toBeNull()

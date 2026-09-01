@@ -432,14 +432,14 @@ select ok(
 -- §B THE INHERITED FAMILY — §7.3.3.1(b)'s byte-exact regeneration
 -- ===========================================================================
 select is(
-  (select count(*)::int from t_ids), 7,
-  'B1 (premise, F94): seven shipped templates (058''s six + 106''s Scout Scoring) — the population §B2/§B3 quantify over. A set that had silently shrunk would make the next two cells vacuously true');
+  (select count(*)::int from t_ids), 8,
+  'B1 (premise, F94): eight shipped templates (058''s six + the Scout pair, 106/108) — the population §B2/§B3 quantify over. A set that had silently shrunk would make the next two cells vacuously true');
 
 select is(
   (select string_agg(t.name || '=' || (public.scoring_detect_tier_cuts(s.rules) -> 'def_pa')::text, ' | ' order by t.name)
      from t_ids t join scoring_systems s on s.id = t.id),
-  'ESPN Full PPR=[0, 1, 7, 14, 18, 28, 35, 46] | ESPN Standard=[0, 1, 7, 14, 18, 28, 35, 46] | Scout Scoring=[0, 1, 7, 14, 18, 28, 35, 46] | Sleeper Full PPR=[0, 1, 7, 14, 21, 28, 35] | Sleeper Standard=[0, 1, 7, 14, 21, 28, 35] | Yahoo Half PPR=[0, 1, 7, 14, 21, 28, 35] | Yahoo Standard=[0, 1, 7, 14, 21, 28, 35]',
-  'B2 (§7.3.3.1(b), D44): every shipped template resolves to exactly one points-allowed family, and to the RIGHT one — the two ESPN rows AND Scout Scoring (B.5''s split markup ruling, SC.1) to the 8-cut ESPN list, the four single-model rows to the 7-cut shared list. Detected from the KEY SET; matching on the word "ESPN" in the name would make the fork depend on a display string a commissioner can rename');
+  'ESPN Full PPR=[0, 1, 7, 14, 18, 28, 35, 46] | ESPN Standard=[0, 1, 7, 14, 18, 28, 35, 46] | Scout PPR=[0, 1, 7, 14, 18, 28, 35, 46] | Scout Standard=[0, 1, 7, 14, 18, 28, 35, 46] | Sleeper Full PPR=[0, 1, 7, 14, 21, 28, 35] | Sleeper Standard=[0, 1, 7, 14, 21, 28, 35] | Yahoo Half PPR=[0, 1, 7, 14, 21, 28, 35] | Yahoo Standard=[0, 1, 7, 14, 21, 28, 35]',
+  'B2 (§7.3.3.1(b), D44): every shipped template resolves to exactly one points-allowed family, and to the RIGHT one — the two ESPN rows AND the Scout pair (B.5''s split markup ruling SC.1; one body one value apart, B.5.1/SC.4 — Scout PPR name-sorts between ESPN Standard and Scout Standard) to the 8-cut ESPN list, the four single-model rows to the 7-cut shared list. Detected from the KEY SET; matching on the word "ESPN" in the name would make the fork depend on a display string a commissioner can rename');
 
 -- MATERIALIZED is load-bearing here, not style: with the predicate written
 -- against `scoring_systems` directly, the planner pushed
@@ -737,7 +737,7 @@ select is(
 
 select is(
   (select count(*)::int from scoring_systems where is_template),
-  7, 'E7 (058 + 106, untouched): templates stay world-readable to this same non-owner member. The additive policy adds a population; it does not narrow one');
+  8, 'E7 (058 + 106 + 108, untouched): templates stay world-readable to this same non-owner member. The additive policy adds a population; it does not narrow one');
 
 -- ── E8–E12: the no-write sweep, per role, with RETURNING counts (§4.2) ─────
 select is(

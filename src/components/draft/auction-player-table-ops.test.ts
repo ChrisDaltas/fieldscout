@@ -117,6 +117,10 @@ describe('scoringFamilyFromRules — the league’s own rules pick the column', 
   const cases: Array<[number, ScoringFamily]> = [
     [0, 'standard'],
     [0.1, 'standard'],
+    // 0.2 — Scout PPR's shipped value (migration 108, SC.4): DELIBERATELY
+    // `standard`, the NEAREST synced family under the midpoint rule (spec
+    // App B.5.1 states it so this cell is a design pin, not a trip hazard).
+    [0.2, 'standard'],
     [0.24, 'standard'],
     [HALF_PPR_FLOOR, 'half_ppr'], // 0.25 — the boundary INSTANT, inclusive
     [0.5, 'half_ppr'],
@@ -131,13 +135,14 @@ describe('scoringFamilyFromRules — the league’s own rules pick the column', 
     })
   }
 
-  it('the three shipped template values map to the three families', () => {
-    // 058 + 106 seed `receptions` at 0 / 0.5 / 1 across the seven template rows.
-    expect([0, 0.5, 1].map((r) => scoringFamilyFromRules({ receptions: r }))).toEqual([
-      'standard',
-      'half_ppr',
-      'ppr',
-    ])
+  it('the four shipped template values map to their designed families — 0.2 → standard, deliberately', () => {
+    // 058 + 106 + 108 seed `receptions` at 0 / 0.2 / 0.5 / 1 across the
+    // eight template rows. Scout PPR's 0.2 is the first shipped value that
+    // is not one of the three synced projection families; the midpoint rule
+    // maps it to `standard` (nearest — App B.5.1's stated consequence).
+    expect(
+      [0, 0.2, 0.5, 1].map((r) => scoringFamilyFromRules({ receptions: r })),
+    ).toEqual(['standard', 'standard', 'half_ppr', 'ppr'])
   })
 
   it('is NULL — never a default family — when the rules cannot be read', () => {

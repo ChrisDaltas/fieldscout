@@ -1,6 +1,6 @@
 /**
  * templates-db.test.ts — the L.A1.9(5) TS↔DB equivalence link (mechanical,
- * not honor-system): SELECTs each of the 7 seeded template rows from the
+ * not honor-system): SELECTs each of the 8 seeded template rows from the
  * LOCAL Supabase stack and deep-equals `row.rules` against the
  * corresponding `templates.ts` export (values, not just keys) — so the
  * rules the parity gate tests in TS (L.A1.10) are provably the rules
@@ -50,7 +50,7 @@ describe('TS↔DB template equivalence (L.A1.9(5) — local stack, anon read pat
     return data as unknown as TemplateRow[]
   }
 
-  it('the DB holds exactly the seven authored templates, rules deep-equal (values, not just keys)', async () => {
+  it('the DB holds exactly the eight authored templates, rules deep-equal (values, not just keys)', async () => {
     const rows = await fetchRows()
     expect(rows.map((r) => r.name).sort()).toEqual(
       SCORING_TEMPLATES.map((t) => t.name).sort(),

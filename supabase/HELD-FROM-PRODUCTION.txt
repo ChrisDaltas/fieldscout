@@ -47,4 +47,10 @@
 # leagues.roster_settings' column DEFAULT; spec v2.16.9 §7.3.2). Same
 # mechanism, same explicit act: one DEFAULT swap, future rows only, no
 # backfill, held with the rest of the leagues chain.
-082-107
+#
+# 108 added 2026-09-01 with SC.4 (the Scout pair — the 'Scout Scoring' →
+# 'Scout Standard' rename UPDATE + the Scout PPR seed, receptions 0.2; spec
+# v2.16.11 App B.5.1 as marked up). Same mechanism, same explicit act: a
+# seed/rename-only migration, no schema change, held with the rest of the
+# leagues chain until the invite-only test cohort starts.
+082-108

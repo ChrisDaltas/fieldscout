@@ -1,11 +1,15 @@
 /**
- * SCORING_TEMPLATES — the 7 shipped templates (spec §7.3.3 / Appendix B;
- * M1 task L.A1.9; PROGRESS D34/D44/D59): the 6 v1 parity templates plus
- * Scout Scoring, FieldScout's house template and the system default for new
- * leagues (App B.5, marked up by Chris 2026-08-31; SC.1/F186/D279).
+ * SCORING_TEMPLATES — the 8 shipped templates (spec §7.3.3 / Appendix B;
+ * M1 task L.A1.9; PROGRESS D34/D44/D59): the 6 v1 parity templates plus the
+ * Scout PAIR — Scout Standard (FieldScout's house template and the system
+ * default for new leagues; App B.5, marked up 2026-08-31; SC.1/F186/D279 —
+ * seeded as "Scout Scoring", renamed by migration 108 per the 2026-09-01
+ * markup) and Scout PPR (the same 43-key body, ONE value apart:
+ * `receptions: 0.2`; App B.5.1, marked up 2026-09-01; SC.4/F203/D285).
  *
  * This module is the AUTHORED source of truth for the template rules objects.
- * Migrations 058 (the parity six) and 106 (Scout Scoring) seed these exact
+ * Migrations 058 (the parity six), 106 (the Scout row, seed-time name
+ * "Scout Scoring") and 108 (the rename + Scout PPR) seed these exact
  * objects into `scoring_systems` rows
  * (`is_template = TRUE`, `owner_id NULL`); the TS↔DB equivalence test
  * (templates-db.test.ts) deep-equals every seeded row against these exports,
@@ -69,12 +73,13 @@ export interface ScoringTemplateDef {
   /** TRUE = the values match their AUTHORITATIVE SOURCE. For a platform
    *  parity row that source is the platform's published defaults (FALSE =
    *  App B best-known, not source-verified — Sleeper, ledger F24). For the
-   *  house template (Scout Scoring) the values are DEFINITIONAL: the source
-   *  is Chris's ruling folded into spec App B.5 (marked up 2026-08-31), so
-   *  the row is verified BY the ruling itself — there is no external page it
-   *  could drift from (D278(7), resolved here by SC.1: `true`, with this
-   *  widened description; no new flag). Categories are verified for all
-   *  seven. */
+   *  house templates (the Scout pair) the values are DEFINITIONAL: the
+   *  source is Chris's rulings folded into spec App B.5/B.5.1 (marked up
+   *  2026-08-31 and 2026-09-01), so the rows are verified BY the rulings
+   *  themselves — there is no external page they could drift from (D278(7),
+   *  resolved by SC.1: `true`, with this widened description; the same
+   *  ruling source covers Scout PPR's one divergent value, SC.4). Categories
+   *  are verified for all eight. */
   valuesVerified: boolean
 }
 
@@ -219,14 +224,16 @@ const SLEEPER_STANDARD_RULES: Record<string, number> = {
   ...SHARED_DEF_PA,
 }
 
-/** Scout Scoring — FieldScout's house template (spec App B.5, marked up by
- *  Chris 2026-08-31; SC.1). Offense and kicking are authored here per B.5's
- *  ruled values; D/ST events are the unanimity inherit and PA/YA are the
- *  RULED ESPN split model, spread from the same Q9-verified consts the two
- *  ESPN rows use — never retyped. `return_yards` 0.05 is RULED but GATED:
- *  no registry key exists (Q13/D173/F71), so the key is OMITTED until F71's
- *  data task lands (F71's checklist carries the Scout seed-update step). */
-const SCOUT_SCORING_RULES: Record<string, number> = {
+/** Scout Standard — FieldScout's house template (spec App B.5, marked up by
+ *  Chris 2026-08-31; SC.1 — seeded as "Scout Scoring", renamed at SC.4 per
+ *  the 2026-09-01 B.5.1 markup). Offense and kicking are authored here per
+ *  B.5's ruled values; D/ST events are the unanimity inherit and PA/YA are
+ *  the RULED ESPN split model, spread from the same Q9-verified consts the
+ *  two ESPN rows use — never retyped. `return_yards` 0.05 is RULED but
+ *  GATED: no registry key exists (Q13/D173/F71), so the key is OMITTED
+ *  until F71's data task lands (F71's checklist carries the seed-update
+ *  step — for BOTH Scout rows since the 2026-09-01 pair annotation). */
+const SCOUT_STANDARD_RULES: Record<string, number> = {
   // B.5 offense — the ruled departures: passing 0.05/yd (all six incumbents
   // 0.04), EVERY TD 6 including passing (the headline — ESPN/Yahoo/Sleeper
   // pay 4), receptions 0 as a STATED difference, −2 for all turnovers.
@@ -259,15 +266,27 @@ const SCOUT_SCORING_RULES: Record<string, number> = {
   ...ESPN_DEF_YA,
 }
 
+/** Scout PPR — the PPR half of the Scout pair (spec App B.5.1, marked up by
+ *  Chris 2026-09-01; SC.4). Authored as a ONE-KEY SPREAD of Scout
+ *  Standard's body so "the same 43 keys, one value apart" is structural,
+ *  not a claim — the golden-pin tests still store the full literal
+ *  independently (D284(4)). 0.2 is a 2dp value; §7.3.3.1 guardrail 5 holds
+ *  untouched. */
+const SCOUT_PPR_RULES: Record<string, number> = {
+  ...SCOUT_STANDARD_RULES,
+  receptions: 0.2,
+}
+
 /**
- * The 7 shipped templates, in §7.3.3 table order (also the picker order) —
- * Scout Scoring first per the amended v2.16.9 table, then the 6 parity
- * templates. PPR variants differ from their Standard sibling in EXACTLY the
- * `receptions` coefficient (pinned by test).
+ * The 8 shipped templates, in §7.3.3 table order (also the picker order) —
+ * the Scout pair first per the amended v2.16.11 table (Scout Standard, then
+ * Scout PPR), then the 6 parity templates. PPR variants differ from their
+ * Standard sibling in EXACTLY the `receptions` coefficient (pinned by
+ * test).
  */
 export const SCORING_TEMPLATES: readonly ScoringTemplateDef[] = [
   {
-    name: 'Scout Scoring',
+    name: 'Scout Standard',
     description:
       "FieldScout's own default scoring — one clean rule set instead of a " +
       'pile of inherited quirks. Six points for every touchdown, whoever ' +
@@ -276,7 +295,21 @@ export const SCORING_TEMPLATES: readonly ScoringTemplateDef[] = [
       "yards. −2 for all turnovers. D/ST scored on ESPN's published " +
       'points-allowed and yards-allowed tables. Defined by FieldScout ' +
       "(August 2026), not copied from another platform's defaults.",
-    rules: SCOUT_SCORING_RULES,
+    rules: SCOUT_STANDARD_RULES,
+    valuesVerified: true,
+  },
+  {
+    name: 'Scout PPR',
+    description:
+      // App B.5.1's "why it's better" copy, APPROVED as drafted by Chris
+      // 2026-09-01 — ships as written.
+      'Scout PPR is the same clean rule set with one addition: 0.2 points ' +
+      "per reception. The catch earns something — it's how production " +
+      "starts — but a fifth of a point can't outscore the yards and " +
+      "touchdowns it's supposed to lead to. Full PPR pays a full point for " +
+      'volume alone and lets catch counts inflate scores; 0.2 rewards the ' +
+      'catch without inflating it.',
+    rules: SCOUT_PPR_RULES,
     valuesVerified: true,
   },
   {

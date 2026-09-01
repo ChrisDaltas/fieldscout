@@ -6,28 +6,33 @@
  *
  * Pinned here:
  *   1. Compare-view derivation vs the templates.ts literals: for each of
- *      the 7 authored templates (the exact objects migrations 058 + 106 seed),
- *      `deriveTemplateSummary(rules)` deep-equals a STORED literal —
- *      PPR / INT / kicking tiers / D/ST model are derived from rules,
- *      never hand-maintained (§4.3a: literals below are stored, not
+ *      the 8 authored templates (the exact objects migrations 058 + 106 +
+ *      108 seed), `deriveTemplateSummary(rules)` deep-equals a STORED
+ *      literal — PPR / INT / kicking tiers / D/ST model are derived from
+ *      rules, never hand-maintained (§4.3a: literals below are stored, not
  *      recomputed).
- *   2. Exactly-7: a 7-row fixture yields exactly 7 cards in §7.3.3 table
- *      order (v2.16.9: Scout Scoring first), input-order independent, with NO invented slots — no
- *      FieldScout Alpha/Ultra teaser cards, no editor placeholders
- *      (explicit-absence pin; spec v2.7 + §16.5.5).
+ *   2. Exactly-8: an 8-row fixture yields exactly 8 cards in §7.3.3 table
+ *      order (v2.16.11: the Scout pair first), input-order independent,
+ *      with NO invented slots — no FieldScout Alpha/Ultra teaser cards, no
+ *      editor placeholders (explicit-absence pin; spec v2.7 + §16.5.5).
  *   3. Selection emission: each card carries its row's `scoring_systems.id`
  *      verbatim (what `onChange` emits as `scoring_system_id`).
  *   4. v2.8.5 visibility: both ESPN cards' description carries the Q9
  *      parity-exception line VERBATIM and untruncated (description
  *      passthrough is byte-identical to the row).
- *   5. Card metadata: the six parity one-liners §7.3.3-verbatim + Scout's
- *      B.5-approved trim (SC.3/D282); "(platform default)" markers on
- *      exactly Yahoo Half PPR + Sleeper Full PPR; "FieldScout's default"
- *      on exactly Scout Scoring.
- *   6. SC.3 preselection ops (§7.3.3's system-default bullet):
- *      `resolveDefaultTemplateId` resolves Scout by NATURAL KEY (name under
- *      is_template — never a hardcoded uuid, never input position), warns
- *      LOUDLY and returns null when the row is absent (the "nothing
+ *   5. Card metadata: the six parity one-liners §7.3.3-verbatim + Scout
+ *      Standard's B.5-approved trim (SC.3/D282) + Scout PPR's approved
+ *      one-liner (SC.4/B.5.1); "(platform default)" markers on exactly
+ *      Yahoo Half PPR + Sleeper Full PPR; "FieldScout's default" per
+ *      B.5.1's marker law — unfiltered on exactly Scout Standard (the
+ *      system default), and on the family's own Scout when a family is
+ *      passed.
+ *   6. SC.3/SC.4 preselection ops (§7.3.3's system-default bullet, per
+ *      family since v2.16.11): `resolveDefaultTemplateId` resolves the
+ *      family's Scout by NATURAL KEY (name under is_template — never a
+ *      hardcoded uuid, never input position; no_ppr/omitted → Scout
+ *      Standard, ppr → Scout PPR), warns LOUDLY naming whichever half is
+ *      absent and returns null when that row is missing (the "nothing
  *      happened" rule: a missing seed must not silently un-default), and
  *      `effectiveTemplateSelection` lets an explicit pick ALWAYS win.
  */
@@ -42,6 +47,7 @@ import {
   buildTemplateCards,
   DEFAULT_TEMPLATE_MARKER,
   DEFAULT_TEMPLATE_NAME,
+  DEFAULT_TEMPLATE_NAMES,
   deriveTemplateSummary,
   effectiveTemplateSelection,
   formatPoints,
@@ -54,12 +60,13 @@ import {
 } from './scoring-template-picker-ops'
 
 /**
- * The 7-row fetch fixture: the authored templates.ts objects (the exact
- * rules 058 + 106 seed and templates-db.test.ts proves DB-equivalent) with
- * synthetic row ids, DELIBERATELY shuffled out of §7.3.3 order — the DB
- * query promises no order.
+ * The 8-row fetch fixture: the authored templates.ts objects (the exact
+ * rules 058 + 106 + 108 seed and templates-db.test.ts proves DB-equivalent)
+ * with synthetic row ids, DELIBERATELY shuffled out of §7.3.3 order — the
+ * DB query promises no order (and NEITHER Scout row sits first, so
+ * positional "resolution" cannot pass the natural-key pins below).
  */
-const FIXTURE_ROWS: ScoringTemplateRow[] = [3, 6, 0, 5, 2, 4, 1].map((i) => ({
+const FIXTURE_ROWS: ScoringTemplateRow[] = [3, 7, 0, 5, 2, 6, 4, 1].map((i) => ({
   id: `row-${i + 1}`,
   name: SCORING_TEMPLATES[i].name,
   description: SCORING_TEMPLATES[i].description,
@@ -73,11 +80,19 @@ const FIXTURE_ROWS: ScoringTemplateRow[] = [3, 6, 0, 5, 2, 4, 1].map((i) => ({
  * — null, not 0), D/ST split (ESPN `def_ya_*` present) vs single.
  */
 const EXPECTED_SUMMARIES: Record<string, TemplateSummary> = {
-  // Scout Scoring (App B.5 as marked up 2026-08-31; SC.1): no PPR as a
-  // STATED difference, INT −2, flat FG 3s with fg_missed −1 (FG-specific —
-  // pat_missed omitted), ESPN split D/ST.
-  'Scout Scoring': {
+  // Scout Standard (App B.5 as marked up 2026-08-31; SC.1 — renamed at
+  // SC.4): no PPR as a STATED difference, INT −2, flat FG 3s with
+  // fg_missed −1 (FG-specific — pat_missed omitted), ESPN split D/ST.
+  'Scout Standard': {
     ppr: 0,
+    int: -2,
+    kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
+    dstModel: 'split',
+  },
+  // Scout PPR (App B.5.1 as marked up 2026-09-01; SC.4): the same body one
+  // value apart — ppr 0.2 is the pair's ONE divergence.
+  'Scout PPR': {
+    ppr: 0.2,
     int: -2,
     kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
     dstModel: 'split',
@@ -142,14 +157,15 @@ describe('deriveTemplateSummary — golden pins vs templates.ts literals', () =>
   })
 })
 
-describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', () => {
+describe('buildTemplateCards — exactly 8, §7.3.3 order, no invented slots', () => {
   const cards = buildTemplateCards(FIXTURE_ROWS)
 
-  it('renders exactly one card per fetched row (7), in §7.3.3 table order — Scout first', () => {
-    expect(cards).toHaveLength(7)
+  it('renders exactly one card per fetched row (8), in §7.3.3 table order — the Scout pair first', () => {
+    expect(cards).toHaveLength(8)
     // Stored literal — the §7.3.3 table order, not derived from the input.
     expect(cards.map((c) => c.name)).toEqual([
-      'Scout Scoring',
+      'Scout Standard',
+      'Scout PPR',
       'ESPN Standard',
       'ESPN Full PPR',
       'Yahoo Standard',
@@ -179,16 +195,20 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     }
   })
 
-  it('carries the card one-liners as stored literals — six §7.3.3-verbatim, Scout from B.5\'s approved copy trimmed (SC.3/D282)', () => {
+  it('carries the card one-liners as stored literals — six §7.3.3-verbatim, Scout Standard from B.5\'s approved copy trimmed (SC.3/D282), Scout PPR approved as drafted (SC.4/B.5.1)', () => {
     const oneLiners = Object.fromEntries(cards.map((c) => [c.name, c.oneLiner]))
     expect(oneLiners).toEqual({
       // App B.5's Chris-approved "why it's better" copy, trimmed to card
       // length — every phrase from the approved text, no claim changed; the
       // approved copy's remaining sentences ride the row DESCRIPTION on the
       // same card (pinned byte-identical below).
-      'Scout Scoring':
+      'Scout Standard':
         'One clean rule set — every TD is 6, every FG is 3, no PPR. Yardage ' +
         'at flat, memorable rates.',
+      // The §7.3.3 table row's one-liner, APPROVED as drafted by Chris
+      // 2026-09-01 (App B.5.1).
+      'Scout PPR':
+        "The catch counts — volume alone still can't outscore production.",
       'ESPN Standard': "ESPN's defaults, 0 PPR",
       'ESPN Full PPR': "ESPN's defaults, 1.0 PPR",
       'Yahoo Standard': "Yahoo's defaults, 0 PPR (note: −1 INT)",
@@ -223,17 +243,36 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     }
   })
 
-  it('SC.3: EXACTLY the Scout card carries the "FieldScout\'s default" marker (B.5\'s subtitle, the R73 possessive pattern)', () => {
-    expect(DEFAULT_TEMPLATE_NAME).toBe('Scout Scoring')
+  it('SC.3/SC.4: unfiltered, EXACTLY the Scout Standard card carries the "FieldScout\'s default" marker — the system default (B.5\'s subtitle, the R73 possessive pattern)', () => {
+    expect(DEFAULT_TEMPLATE_NAME).toBe('Scout Standard')
     expect(DEFAULT_TEMPLATE_MARKER).toBe("FieldScout's default")
     expect(
       cards.filter((c) => c.defaultMarker !== null).map((c) => c.name),
-    ).toEqual(['Scout Scoring'])
+    ).toEqual(['Scout Standard'])
     expect(cards[0].defaultMarker).toBe("FieldScout's default")
     // The default marker and the platform markers never share a card.
     for (const card of cards) {
       expect(card.defaultMarker !== null && card.platformDefaultMarker !== null).toBe(false)
     }
+  })
+
+  it('SC.4 (B.5.1\'s marker law): a family moves the marker to its OWN Scout — exactly one marked card per family, never both', () => {
+    expect(DEFAULT_TEMPLATE_NAMES).toEqual({
+      no_ppr: 'Scout Standard',
+      ppr: 'Scout PPR',
+    })
+    const noPprCards = buildTemplateCards(FIXTURE_ROWS, 'no_ppr')
+    expect(
+      noPprCards.filter((c) => c.defaultMarker !== null).map((c) => c.name),
+    ).toEqual(['Scout Standard'])
+    const pprCards = buildTemplateCards(FIXTURE_ROWS, 'ppr')
+    expect(
+      pprCards.filter((c) => c.defaultMarker !== null).map((c) => c.name),
+    ).toEqual(['Scout PPR'])
+    // The PPR family's marked card is the one its filtered view SHOWS
+    // (summary.ppr > 0) — a badge on a filtered-out card marks nothing.
+    const marked = pprCards.find((c) => c.defaultMarker !== null)!
+    expect(marked.summary.ppr).toBe(0.2)
   })
 
   it('passes each description through byte-identical — never truncated', () => {
@@ -263,8 +302,8 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
       rules: { receptions: 0.5 },
     }
     const withStray = buildTemplateCards([stray, ...FIXTURE_ROWS])
-    expect(withStray).toHaveLength(8)
-    const last = withStray[7]
+    expect(withStray).toHaveLength(9)
+    const last = withStray[8]
     expect(last.name).toBe('Mystery Template')
     expect(last.oneLiner).toBe('0.5 PPR')
     expect(last.isPlatformDefault).toBe(false)
@@ -272,7 +311,7 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
     expect(last.description).toBe('')
   })
 
-  it('ops metadata covers the 7 §7.3.3 names exactly (drift guard vs templates.ts)', () => {
+  it('ops metadata covers the 8 §7.3.3 names exactly (drift guard vs templates.ts)', () => {
     expect(TEMPLATE_DISPLAY_ORDER).toEqual(SCORING_TEMPLATES.map((t) => t.name))
     expect(Object.keys(TEMPLATE_ONE_LINERS).sort()).toEqual(
       SCORING_TEMPLATES.map((t) => t.name).sort(),
@@ -280,15 +319,16 @@ describe('buildTemplateCards — exactly 7, §7.3.3 order, no invented slots', (
   })
 })
 
-describe('SC.3 — the §7.3.3 system-default preselection ops', () => {
+describe('SC.3/SC.4 — the §7.3.3 default preselection ops, per family', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('resolves Scout Scoring by NATURAL KEY from a shuffled fixture — the name decides, never the input position', () => {
-    // FIXTURE_ROWS is deliberately out of §7.3.3 order (Scout is NOT the
-    // first input row), so an implementation that grabbed rows[0] — or any
-    // position — reds here; only name-resolution yields Scout's id.
+  it('resolves Scout Standard by NATURAL KEY from a shuffled fixture — the name decides, never the input position (family omitted = the system default)', () => {
+    // FIXTURE_ROWS is deliberately out of §7.3.3 order (neither Scout row
+    // is the first input row), so an implementation that grabbed rows[0] —
+    // or any position — reds here; only name-resolution yields Scout
+    // Standard's id.
     expect(FIXTURE_ROWS[0].name).not.toBe(DEFAULT_TEMPLATE_NAME)
     const scoutRow = FIXTURE_ROWS.find((r) => r.name === DEFAULT_TEMPLATE_NAME)!
     expect(resolveDefaultTemplateId(FIXTURE_ROWS)).toBe(scoutRow.id)
@@ -298,19 +338,43 @@ describe('SC.3 — the §7.3.3 system-default preselection ops', () => {
     expect(resolveDefaultTemplateId([...FIXTURE_ROWS].reverse())).toBe(scoutRow.id)
   })
 
-  it('still-loading rows (undefined) resolve to null with NO warning — nothing to resolve is not a failure', () => {
+  it('the FAMILY dimension picks the half (v2.16.11): no_ppr → Scout Standard, ppr → Scout PPR — each by natural key, position-independent', () => {
+    const standardRow = FIXTURE_ROWS.find((r) => r.name === 'Scout Standard')!
+    const pprRow = FIXTURE_ROWS.find((r) => r.name === 'Scout PPR')!
+    expect(FIXTURE_ROWS[0].name).not.toBe('Scout PPR')
+    expect(resolveDefaultTemplateId(FIXTURE_ROWS, 'no_ppr')).toBe(standardRow.id)
+    expect(resolveDefaultTemplateId(FIXTURE_ROWS, 'ppr')).toBe(pprRow.id)
+    expect(resolveDefaultTemplateId([...FIXTURE_ROWS].reverse(), 'ppr')).toBe(pprRow.id)
+    // The two halves never resolve to the same row — the family law is a
+    // real fork, not a synonym.
+    expect(standardRow.id).not.toBe(pprRow.id)
+  })
+
+  it('still-loading rows (undefined) resolve to null with NO warning — nothing to resolve is not a failure (both families)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     expect(resolveDefaultTemplateId(undefined)).toBeNull()
+    expect(resolveDefaultTemplateId(undefined, 'ppr')).toBeNull()
     expect(warn).not.toHaveBeenCalled()
   })
 
-  it('a loaded set WITHOUT the Scout row degrades LOUDLY: null + a console.warn naming the missing seed — never a silent un-default ("nothing happened" rule)', () => {
+  it('a loaded set WITHOUT the family\'s Scout row degrades LOUDLY: null + a console.warn naming the MISSING HALF — never a silent un-default ("nothing happened" rule)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const withoutScout = FIXTURE_ROWS.filter((r) => r.name !== DEFAULT_TEMPLATE_NAME)
-    expect(resolveDefaultTemplateId(withoutScout)).toBeNull()
+    const withoutStandard = FIXTURE_ROWS.filter((r) => r.name !== DEFAULT_TEMPLATE_NAME)
+    expect(resolveDefaultTemplateId(withoutStandard)).toBeNull()
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0][0])).toContain(DEFAULT_TEMPLATE_NAME)
-    expect(String(warn.mock.calls[0][0])).toContain('migration 106')
+    expect(String(warn.mock.calls[0][0])).toContain('migration 108')
+    // The OTHER half missing warns with ITS name (whichever half is absent
+    // is the one the degradation names) — and a set missing only Scout PPR
+    // still resolves the no_ppr family fine (no warn for a half not asked
+    // for).
+    warn.mockClear()
+    const withoutPpr = FIXTURE_ROWS.filter((r) => r.name !== 'Scout PPR')
+    expect(resolveDefaultTemplateId(withoutPpr, 'no_ppr')).not.toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+    expect(resolveDefaultTemplateId(withoutPpr, 'ppr')).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('Scout PPR')
     // What renders instead is STATED, not left to inference: with a null
     // default the effective selection is explicit-only — the pre-SC.3 flow,
     // where both submit gates keep refusing until the user picks a card

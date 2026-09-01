@@ -96,12 +96,13 @@ export interface MockLaunchDraft {
  * the returned object is a fresh MUTABLE clone, never the frozen module
  * constant). No EXPLICIT template pick yet — it starts null exactly as the
  * create wizard's does (`initialWizardDraft`). The §8.8/§7.3.3 Scout
- * Scoring preselection (SC.3) is a DERIVED fallback the dialog resolves
- * from the fetched rows and passes into `toMockLaunchInput` — this module
- * still invents no default of its own: which template is preselected is the
- * spec's ruling, resolved by natural key at the dialog, and the launcher's
- * explicit pick among the seven always wins (D229(1)'s "pick one at launch"
- * stays the launcher's pick).
+ * Standard preselection (SC.3/SC.4 — the launcher is UNFILTERED, so it
+ * preselects the SYSTEM default, not a family view's Scout) is a DERIVED
+ * fallback the dialog resolves from the fetched rows and passes into
+ * `toMockLaunchInput` — this module still invents no default of its own:
+ * which template is preselected is the spec's ruling, resolved by natural
+ * key at the dialog, and the launcher's explicit pick among the eight
+ * always wins (D229(1)'s "pick one at launch" stays the launcher's pick).
  */
 export function initialMockLaunchDraft(): MockLaunchDraft {
   return {
@@ -194,8 +195,9 @@ export function mockLaunchSettings(
  * `draft_settings_range_guard`), so this is a pre-flight, never the
  * authority.
  *
- * SC.3 (§8.8's preselection sentence / §7.3.3's system-default bullet):
- * `defaultScoringSystemId` is the Scout Scoring id the dialog resolves by
+ * SC.3/SC.4 (§8.8's preselection sentence / §7.3.3's system-default
+ * bullet): `defaultScoringSystemId` is the SYSTEM default's id — Scout
+ * Standard, the unfiltered launcher's preselection — the dialog resolves by
  * natural key, filling an empty pick through the shared
  * `effectiveTemplateSelection` rule — the launcher's explicit pick always
  * wins, and the payload's `draft.scoring_system_id` carries an EXPLICIT id
@@ -249,9 +251,13 @@ export function mockLaunchBlockedReason(
 ): string | null {
   const issues = mockLaunchIssues(draft)
   if (issues.length > 0) return issues[0]!.message
-  // SC.3: the same effective choice `toMockLaunchInput` submits — with the
-  // Scout preselection resolved this line only renders in an environment
-  // whose seeds lack the Scout row (the loud-degradation path).
+  // SC.3/SC.4: the same effective choice `toMockLaunchInput` submits — with
+  // the Scout preselection resolved this line only renders while the
+  // template rows are still LOADING (`resolveDefaultTemplateId(undefined)`
+  // is null — the ordinary pre-fetch state) or in an environment whose
+  // seeds lack the Scout row (the loud-degradation path). (The loading
+  // clause was missing — the D276 comment-overclaim class, fixed in passing
+  // per PROGRESS D284(3).)
   if (
     effectiveTemplateSelection(draft.scoringSystemId, defaultScoringSystemId) ===
     null
