@@ -23,7 +23,7 @@
 --      is pinned to STILL carry the template-only predicate (D170).
 --
 --   §B THE INHERITED FAMILY (§7.3.3.1(b)). `scoring_detect_tier_cuts` is
---      checked against ALL SEVEN shipped templates as a set equality — each maps
+--      checked against ALL EIGHT shipped templates as a set equality — each maps
 --      to exactly one family and the family it maps to REGENERATES that
 --      template's own `def_pa_*` keys byte-exactly. That equivalence is the
 --      whole backward-compatibility argument, so it is measured against the
@@ -454,7 +454,7 @@ select is(
     where not (
       (select coalesce(array_agg(k order by k), '{}') from jsonb_object_keys(tpl.rules) k where k like 'def\_pa\_%')
       <@ public.scoring_tier_keys_from_cuts('def_pa', public.scoring_detect_tier_cuts(tpl.rules) -> 'def_pa'))),
-  0, 'B3: …and the family it resolves to REGENERATES that template''s own def_pa_* keys — every one of them, for all seven. **This is the whole backward-compatibility argument** (§7.3.3.1(a): "a doc carrying tier_cuts scores the same whether the engine derives from cuts or from derive-stats.ts''s literals"), measured against the shipped rows rather than against a transcription of them');
+  0, 'B3: …and the family it resolves to REGENERATES that template''s own def_pa_* keys — every one of them, for all eight. **This is the whole backward-compatibility argument** (§7.3.3.1(a): "a doc carrying tier_cuts scores the same whether the engine derives from cuts or from derive-stats.ts''s literals"), measured against the shipped rows rather than against a transcription of them');
 
 select is(
   pg_temp.detect('{"def_pa_0": 1, "def_pa_1_6": 1, "def_pa_7_13": 1, "def_pa_28_34": 1}'::jsonb),

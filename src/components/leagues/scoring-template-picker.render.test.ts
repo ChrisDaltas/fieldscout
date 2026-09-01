@@ -265,6 +265,20 @@ describe('mount census and per-mount prop sweep', () => {
     expect(read('src/components/leagues/league-create-modal.tsx')).not.toMatch(/customize=/)
     expect(read('src/components/draft/mock-launch-dialog.tsx')).not.toMatch(/customize=/)
   })
+
+  it('R695 — the style-flip RESET line exists inside handleScoringStyle (the retired swap hazard rests on it)', () => {
+    // D284(3)/spec §7.3.3: the swap hazard retired BY DESIGN — a style flip
+    // resets the pick and the refill lands on the flipped-to family's own
+    // Scout. The composition has three legs; family resolution and
+    // effective-selection are behaviour-pinned, but the RESET itself was a
+    // single unpinned source line: the review measured that deleting it left
+    // all 71 covering tests green while an explicit no-PPR pick silently
+    // survived into the PPR view as an invisible selected card. A MEMBER pin
+    // on that line, in this file's own source-pin idiom.
+    const modal = read('src/components/leagues/league-create-modal.tsx')
+    const fn = modal.slice(modal.indexOf('function handleScoringStyle'))
+    expect(fn).toMatch(/setDraft\(\(p\) => \(\{ \.\.\.p, scoringSystemId: null \}\)\)/)
+  })
 })
 
 // ---------------------------------------------------------------------------

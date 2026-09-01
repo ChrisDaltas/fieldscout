@@ -655,7 +655,7 @@ describe('the number-model edges — measured over RAW BYTES, because the client
    * **This block exists because the rest of the suite has exactly one
    * transport, and that transport is `JSON.stringify` (R599/R601).**
    *
-   * Anything that literal cannot render faithfully is invisible to all 670
+   * Anything that literal cannot render faithfully is invisible to all 672
    * corpus documents, to the 80,000-document fuzz, and to all 31 break probes:
    *
    *   JSON.stringify([0, 1e400])              → "[0,null]"
