@@ -30,7 +30,7 @@
 --     **(1) THE DoD PROBE — the max-bid clause dropped from
 --     `draft_place_bid` (`IF p_amount > v_max_bid`): 6 of 91 RED**, and
 --     the suite RUNS TO THE END rather than aborting (see the ordering
---     note below) — pins **48** (E5: LA's $187 against a $186 max),
+--     note below) — pins **48** (E5: LA's $186 against a $185 max),
 --     **81** (E25's bid half: $2 against a $1-max seat), **87**
 --     (§8.6.7(d) at min_bid 0: $2 against a $1-max seat), **66** and
 --     **88** (the two population COUNTS: the refused bids landed), and
@@ -87,13 +87,13 @@
 --     the same way if you move a section.)
 --       · opening ≥ min_bid — $0 refused / $1 accepted at min_bid 1 (§E),
 --         and −$1 refused / $0 accepted at min_bid 0 (§N, C38)
---       · opening ≤ max_bid — $187 refused / $186 accepted (§E), and
+--       · opening ≤ max_bid — $186 refused / $185 accepted (§E), and
 --         E25's $2 refused / $1 accepted on a $1-max team (§M)
 --       · amount > high_bid — $1 refused ("outbid at $1") / $2 accepted
 --         (§F), and at min_bid 0 the $0 raise refused / $1 accepted (§N)
---       · amount ≤ max_bid — $187 refused / $186 accepted (§F); §8.6.7(d)
+--       · amount ≤ max_bid — $186 refused / $185 accepted (§F); §8.6.7(d)
 --         exactly-$1 accepted / $2 refused (§N)
---       · open_slots ≥ 1 — a 14-of-15 team bids and a 15-of-15 team is
+--       · open_slots ≥ 1 — a 15-of-16 team bids and a 16-of-16 team is
 --         refused on the BID path (§H); the same pair on the NOMINATE
 --         path is §K (§G is the solvency-CONSEQUENCE section, not this
 --         boundary) (E27)
@@ -317,11 +317,12 @@ insert into players (id, full_name, position)
 select 'pgtap-ab-p' || lpad(i::text, 2, '0'),
        'PgTap Auction Bid ' || i,
        case when i % 3 = 0 then 'WR' else 'RB' end
-from generate_series(1, 40) i;
+from generate_series(1, 56) i;
 
 -- LA starts through the ENGINE (privileged — 033's posture; the wrapper
 -- path is 020's). t1 nominates first, the clock is the 45s nomination
--- clock, and every seat reads 200/15/186/0.
+-- clock, and every seat reads 200/16/185/0 (16 slots since SC.2 — the
+-- v2.16.9 Scout default roster, wr 2 → 3).
 select is(
   (public.draft_start_internal('a6000000-0000-4000-8000-0000000000aa', false)->>'started')::boolean,
   true,
@@ -497,29 +498,29 @@ select throws_ok(
   'NOMINATION-FLOOR BOUNDARY, one dollar short: $0 is refused with $0 nominations OFF (floor $1)');
 select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
-       'pgtap-ab-p01', 187, 'a6000000-0000-4000-8000-00000000000e') $$,
+       'pgtap-ab-p01', 186, 'a6000000-0000-4000-8000-00000000000e') $$,
   'P0001',
-  'draft_nominate: an opening bid of $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 per-slot reserve (§8.6.7(a))',
-  'MAX-BID BOUNDARY, one dollar over: $187 is refused against a $186 max bid, and the message names the formula''s number AND the money behind it (§8.6.7(a))');
+  'draft_nominate: an opening bid of $186 is over your max bid of $185 — you have $200 for 16 open roster spots at a $1 per-slot reserve (§8.6.7(a))',
+  'MAX-BID BOUNDARY, one dollar over: $186 is refused against a $185 max bid, and the message names the formula''s number AND the money behind it (§8.6.7(a))');
 
 -- 093/AP.2 — WHY THIS BLOCK NOW NEEDS A CONTESTANT, STATED IN PLACE.
 -- §8.6.9 awards a nomination NOBODY can outbid inside the nominating
--- transaction, and on the shipped LA board ($200, 15 slots, no adjustments)
--- EVERY seat reads max_bid 186 — so an opening at exactly 186 is
+-- transaction, and on the shipped LA board ($200, 16 slots, no adjustments)
+-- EVERY seat reads max_bid 185 — so an opening at exactly 185 is
 -- uncontestable and there is no bidding phase left to pin. That is correct
 -- behaviour and it is pinned as its own boundary pair in 041 §B/§D. THIS
 -- block is about §8.6.7(a)'s max-bid boundary and D126's phase flip, both of
 -- which presuppose a live bid clock, so the fixture gains exactly ONE
 -- dollar on ONE otherwise-unreferenced seat (t8) to keep a legal contestant
 -- in the room. The two assertions below are the whole justification, and
--- they are a one-unit pair: 186 cannot contest 186, 187 can.
+-- they are a one-unit pair: 185 cannot contest 185, 186 can.
 reset role;
 select is(
   (select b.max_bid from public.draft_team_budget(
      'e6000000-0000-4000-8000-0000000000aa',
      'c6000000-0000-4000-8000-00aa00000008') b),
-  186,
-  '093/AP.2 PRECONDITION: with no adjustment t8 reads max_bid 186 — one dollar short of contesting a $186 opening (§8.6.9)');
+  185,
+  '093/AP.2 PRECONDITION: with no adjustment t8 reads max_bid 185 — one dollar short of contesting a $185 opening (§8.6.9)');
 update drafts
 set budget_adjustments = jsonb_build_object(
       'c6000000-0000-4000-8000-00aa00000008', 1)
@@ -528,13 +529,13 @@ select is(
   (select b.max_bid from public.draft_team_budget(
      'e6000000-0000-4000-8000-0000000000aa',
      'c6000000-0000-4000-8000-00aa00000008') b),
-  187,
-  '…and with the +$1 commissioner adjustment it reads 187 — it CAN bid $187, so the $186 opening below is CONTESTED and D126''s phase flip is a real state (D131(4)/§8.7)');
+  186,
+  '…and with the +$1 commissioner adjustment it reads 186 — it CAN bid $186, so the $185 opening below is CONTESTED and D126''s phase flip is a real state (D131(4)/§8.7)');
 select ok(
   not public.draft_nomination_uncontestable(
     'e6000000-0000-4000-8000-0000000000aa',
-    'c6000000-0000-4000-8000-00aa00000001', 186),
-  '…and the §8.6.9 predicate says so directly: with one seat at 187 the $186 opening is NOT uncontestable');
+    'c6000000-0000-4000-8000-00aa00000001', 185),
+  '…and the §8.6.9 predicate says so directly: with one seat at 186 the $185 opening is NOT uncontestable');
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "8d000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -542,16 +543,16 @@ select set_config('request.jwt.claims',
 -- The accepted side of the same boundary: EXACTLY max_bid opens bidding.
 select is(
   (public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
-     'pgtap-ab-p01', 186, 'a6000000-0000-4000-8000-00000000000f')
+     'pgtap-ab-p01', 185, 'a6000000-0000-4000-8000-00000000000f')
    #>> '{draft,current_nomination,high_bid}'),
-  '186',
-  '…and EXACTLY $186 is accepted — the nominator may spend their whole max bid on their own opening (§8.6.7(a))');
+  '185',
+  '…and EXACTLY $185 is accepted — the nominator may spend their whole max bid on their own opening (§8.6.7(a))');
 select is(
   (select current_nomination
    from drafts where id = 'e6000000-0000-4000-8000-0000000000aa'),
   jsonb_build_object(
     'player_id', 'pgtap-ab-p01',
-    'high_bid', 186,
+    'high_bid', 185,
     'high_bidder_team_id', 'c6000000-0000-4000-8000-00aa00000001'),
   'D126 PHASE FLIP: current_nomination carries EXACTLY 065:121''s printed shape { player_id, high_bid, high_bidder_team_id } — the nominator is the standing high bidder (which is what makes §8.6.7(b)''s no-raise award, E26, well-defined)');
 select is(
@@ -566,7 +567,7 @@ select is(
 select results_eq(
   $$ select nomination_seq, player_id, team_id, amount, action_id
      from draft_bids where draft_id = 'e6000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (1, 'pgtap-ab-p01', 'c6000000-0000-4000-8000-00aa00000001'::uuid, 186,
+  $$ values (1, 'pgtap-ab-p01', 'c6000000-0000-4000-8000-00aa00000001'::uuid, 185,
              'a6000000-0000-4000-8000-00000000000f'::uuid) $$,
   'THE OPENING BID IS A draft_bids ROW (§12.5 uniform history): seq 1, the nominator, the opening amount, and the caller''s action_id — which is also the E2 replay key');
 
@@ -575,7 +576,7 @@ select throws_ok(
   $$ select public.draft_nominate('e6000000-0000-4000-8000-0000000000aa',
        'pgtap-ab-p02', 1, 'a6000000-0000-4000-8000-000000000010') $$,
   'P0001',
-  'draft_nominate: bidding is already open on PgTap Auction Bid 1 at $186 — place a bid instead of nominating (§8.6.3)',
+  'draft_nominate: bidding is already open on PgTap Auction Bid 1 at $185 — place a bid instead of nominating (§8.6.3)',
   'PHASE: nominating during BIDDING is refused, naming the live player and the standing high bid (D126)');
 
 
@@ -704,10 +705,10 @@ select set_config('request.jwt.claims',
   '{"sub": "8d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 select is(
   (public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
-     186, 'a6000000-0000-4000-8000-000000000017')
+     185, 'a6000000-0000-4000-8000-000000000017')
    #>> '{draft,current_nomination,high_bid}'),
-  '186',
-  'MAX-BID BOUNDARY, accepted side: EXACTLY $186 goes through — the formula is a ceiling, not a fence one dollar below it');
+  '185',
+  'MAX-BID BOUNDARY, accepted side: EXACTLY $185 goes through — the formula is a ceiling, not a fence one dollar below it');
 -- The refusal is deliberately the LADDER'S LAST ACT, and by a bidder who
 -- is NOT the standing high bidder: under the DoD break probe the refused
 -- bid LANDS instead, and because nothing after it on this nomination
@@ -721,10 +722,10 @@ select set_config('request.jwt.claims',
   '{"sub": "8d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.draft_place_bid('e6000000-0000-4000-8000-0000000000aa',
-       187, 'a6000000-0000-4000-8000-000000000016') $$,
+       186, 'a6000000-0000-4000-8000-000000000016') $$,
   'P0001',
-  'draft_place_bid: $187 is over your max bid of $186 — you have $200 for 15 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
-  'E5 MAX-BID BOUNDARY, one dollar over: $187 is refused against a $186 max bid — THE DoD BREAK PROBE''S PRIMARY TARGET');
+  'draft_place_bid: $186 is over your max bid of $185 — you have $200 for 16 open roster spots at a $1 per-slot reserve (§8.6.1/E5)',
+  'E5 MAX-BID BOUNDARY, one dollar over: $186 is refused against a $185 max bid — THE DoD BREAK PROBE''S PRIMARY TARGET');
 
 -- ---------------------------------------------------------------------------
 -- G. THE CLAUSE'S CONSEQUENCE (§8.6.8): refusing above max_bid is exactly
@@ -735,56 +736,58 @@ select throws_ok(
 reset role;
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 values ('e6000000-0000-4000-8000-0000000000aa', 'a6000000-0000-4000-8000-0000000000aa',
-        'c6000000-0000-4000-8000-00aa00000003', 'pgtap-ab-p02', 2, null, 186, 'manager');
+        'c6000000-0000-4000-8000-00aa00000003', 'pgtap-ab-p02', 2, null, 185, 'manager');
 select ok(
   public.draft_auction_solvent('e6000000-0000-4000-8000-0000000000aa'),
-  'AWARDED AT EXACTLY max_bid, the winner lands EXACTLY on the §8.6.8 floor (remaining 14 ≥ 14 open × $1) — the equality the formula is built to reach');
-update draft_picks set price = 187
+  'AWARDED AT EXACTLY max_bid, the winner lands EXACTLY on the §8.6.8 floor (remaining 15 ≥ 15 open × $1) — the equality the formula is built to reach');
+update draft_picks set price = 186
 where draft_id = 'e6000000-0000-4000-8000-0000000000aa' and player_id = 'pgtap-ab-p02';
 select is(
   public.draft_auction_solvent('e6000000-0000-4000-8000-0000000000aa'),
   false,
-  '…and ONE DOLLAR MORE breaks §8.6.8 (13 < 14 × $1) — so refusing above max_bid IS the invariant at the bid layer, not a nicety');
+  '…and ONE DOLLAR MORE breaks §8.6.8 (14 < 15 × $1) — so refusing above max_bid IS the invariant at the bid layer, not a nicety');
 delete from draft_picks
 where draft_id = 'e6000000-0000-4000-8000-0000000000aa' and player_id = 'pgtap-ab-p02';
 select ok(
   public.draft_auction_solvent('e6000000-0000-4000-8000-0000000000aa'),
   '…removing the simulated award restores solvency (the derivation has no memory to drift — D127)');
 
--- BIDS NEVER MOVE MONEY (D131(2)/(3)): t3 holds a standing $186 high bid
+-- BIDS NEVER MOVE MONEY (D131(2)/(3)): t3 holds a standing $185 high bid
 -- and its budget is untouched. Only a WON pick spends.
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid, b.committed
      from public.draft_team_budget('e6000000-0000-4000-8000-0000000000aa',
                                    'c6000000-0000-4000-8000-00aa00000003') b $$,
-  $$ values (200, 15, 186, 0) $$,
-  'A STANDING $186 BID COSTS NOTHING: the high bidder still reads 200/15/186/0 — bids never hold budget, only won picks do (D131(2), which is why undo needs no refund bookkeeping)');
+  $$ values (200, 16, 185, 0) $$,
+  'A STANDING $185 BID COSTS NOTHING: the high bidder still reads 200/16/185/0 — bids never hold budget, only won picks do (D131(2), which is why undo needs no refund bookkeeping)');
 
 -- ---------------------------------------------------------------------------
 -- H. E27 — a complete roster cannot bid; a team ONE SLOT from complete can
 --    (the open_slots ≥ 1 pair, isolated from money)
 -- ---------------------------------------------------------------------------
--- t4 fills 14 of 15 slots at $1 (remaining 186, open 1, max_bid 186); t5
--- fills all 15 (remaining 185, open 0, max_bid 0). Both stay solvent, so
--- this fixture tests CAPACITY and nothing else.
+-- t4 fills 15 of 16 slots at $1 (remaining 185, open 1, max_bid 185); t5
+-- fills all 16 (remaining 184, open 0, max_bid 0). Both stay solvent, so
+-- this fixture tests CAPACITY and nothing else. (t5 draws p41–p56 so the
+-- later fixtures' p32/p38/p39 stay available — SC.2 grew the plant by one
+-- pick per team and t5's old p17–p31 range had no room left below p32.)
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 select 'e6000000-0000-4000-8000-0000000000aa', 'a6000000-0000-4000-8000-0000000000aa',
        'c6000000-0000-4000-8000-00aa00000004',
        'pgtap-ab-p' || lpad((i + 2)::text, 2, '0'), 100 + i, null, 1, 'manager'
-from generate_series(1, 14) i;
+from generate_series(1, 15) i;
 insert into draft_picks (draft_id, league_id, team_id, player_id, pick_number, round, price, made_via)
 select 'e6000000-0000-4000-8000-0000000000aa', 'a6000000-0000-4000-8000-0000000000aa',
        'c6000000-0000-4000-8000-00aa00000005',
-       'pgtap-ab-p' || lpad((i + 16)::text, 2, '0'), 200 + i, null, 1, 'manager'
-from generate_series(1, 15) i;
+       'pgtap-ab-p' || lpad((i + 40)::text, 2, '0'), 200 + i, null, 1, 'manager'
+from generate_series(1, 16) i;
 select results_eq(
   $$ select b.open_slots, b.remaining, b.max_bid from public.draft_team_budget(
        'e6000000-0000-4000-8000-0000000000aa', 'c6000000-0000-4000-8000-00aa00000005') b $$,
-  $$ values (0, 185, 0) $$,
+  $$ values (0, 184, 0) $$,
   'fixture check: t5''s roster is COMPLETE (0 open slots ⇒ max_bid 0 via 084''s E27 branch) and it is still solvent — capacity is the only thing that changed');
 
 -- SIMULATED CLOSE of nomination 2 → nomination 3 opens at $1, so the pins
--- below test capacity against a LOW high bid rather than a $186 one.
+-- below test capacity against a LOW high bid rather than a $185 one.
 update drafts
 set current_nomination  = null,
     current_pick_number = 3,
@@ -1080,7 +1083,7 @@ reset role;
 -- closes the market inside the nominating transaction. E25's bid half is no
 -- longer "the rival's raise is refused" — there is no market to raise into,
 -- which is the STRONGER form of the same claim. E5's own max-bid bid clause is
--- untouched and stays pinned twice: at LA ($187 against $186, §F) and in the
+-- untouched and stays pinned twice: at LA ($186 against $185, §F) and in the
 -- $0 column at LD (§N below). Nothing about E25 is relaxed here.
 select is(
   (select current_nomination from drafts where id = 'e6000000-0000-4000-8000-0000000000bb'),

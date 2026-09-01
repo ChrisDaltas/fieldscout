@@ -716,8 +716,8 @@ select is(
   'exactly one LG draft row exists');
 select is(
   (select total_rounds from drafts where league_id = 'b2000000-0000-4000-8000-0000000000a6'),
-  15,
-  'LG draft total_rounds hydrated at create = 15 (default roster, D91)');
+  16,
+  'LG draft total_rounds hydrated at create = 16 (default roster, D91; 16 since SC.2 — the v2.16.9 Scout default roster, wr 2 → 3)');
 select is(
   (public.draft_create('b2000000-0000-4000-8000-0000000000a6')->>'created')::boolean,
   false,
@@ -866,8 +866,8 @@ select is(
   'LB draft_order = the stored manual order (validated permutation, written verbatim)');
 select is(
   (select total_rounds from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
-  15,
-  'LB total_rounds = 15 at start (default roster, D91)');
+  16,
+  'LB total_rounds = 16 at start (default roster, D91; 16 since SC.2)');
 select ok(
   (select nomination_order is null from drafts where id = 'e2000000-0000-4000-8000-0000000000a2'),
   'LB (SNAKE) start writes nomination_order NULL and CLEARS the stale stored one — 084''s shared drafts UPDATE writes the column on both paths, so an auction-arm value leaking onto a snake start fails here (R324)');
@@ -1173,7 +1173,7 @@ select is(
 select is(
   (select status from drafts where id = 'e2000000-0000-4000-8000-0000000000a1'),
   'live',
-  'LA is still live after round 4 (total_rounds 15 — completion untouched)');
+  'LA is still live after round 4 (total_rounds 16 — completion untouched)');
 
 -- ---------------------------------------------------------------------------
 -- L. LC: linear drive + the D95 re-hydration pin

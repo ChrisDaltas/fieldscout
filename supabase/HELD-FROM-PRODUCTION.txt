@@ -42,4 +42,9 @@
 # v2.16.9 App B.5). Same mechanism, same explicit act: a seed-only migration,
 # no schema change, held with the rest of the leagues chain until the
 # invite-only test cohort starts.
-082-106
+#
+# 107 added 2026-08-31 with SC.2 (the Scout default roster — WR 2 → 3 in
+# leagues.roster_settings' column DEFAULT; spec v2.16.9 §7.3.2). Same
+# mechanism, same explicit act: one DEFAULT swap, future rows only, no
+# backfill, held with the rest of the leagues chain.
+082-107

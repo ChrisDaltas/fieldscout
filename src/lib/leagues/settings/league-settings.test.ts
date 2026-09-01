@@ -66,7 +66,7 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
   // a STORED literal — not recomputed. Flipping ANY §7.3 default fails here.
   it('golden pin: full default object serialization matches the stored literal', () => {
     const pinned =
-      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":2},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_process_day":"wed","waiver_process_time":"03:00","waiver_period_hours":48,"free_agency":"immediate_after_waivers","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","player_game_lock":true,"bench_lock":true,"fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
+      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_process_day":"wed","waiver_process_time":"03:00","waiver_period_hours":48,"free_agency":"immediate_after_waivers","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","player_game_lock":true,"bench_lock":true,"fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
     expect(JSON.stringify(LEAGUE_SETTINGS_DEFAULTS)).toBe(pinned)
   })
 
@@ -79,6 +79,21 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
     const pgtapLiteral: unknown = JSON.parse((match as RegExpMatchArray)[1])
     expect(LEAGUE_SETTINGS_DEFAULTS.roster_settings).toStrictEqual(pgtapLiteral)
     expect(DEFAULT_ROSTER_SETTINGS).toStrictEqual(pgtapLiteral)
+  })
+
+  // SC.2 / R601 — the TS≡SQL BYTE BRIDGE. pgTAP 055 §A1 proves the column
+  // DEFAULT (040 as amended by 107) equals its stored TS-form literal as
+  // jsonb (with §A3 pinning the SQL side's raw ::text rendering, which
+  // jsonb-numeric equality alone could mask); THIS test proves that literal
+  // is byte-identical to what the TS constant actually serializes to. The
+  // comparison is `===` on the STRINGS — file bytes against stringify
+  // output — never parsed structures, so a serializer that masks a literal
+  // difference (R601's lesson) has nowhere to hide.
+  it('the TS default serializes byte-identically to pgTAP 055’s TS-form byte-bridge literal (SC.2/R601)', () => {
+    const pgtapSql = readFileSync(join(process.cwd(), 'supabase/tests/055_scout_default_roster.sql'), 'utf8')
+    const match = pgtapSql.match(/TS-FORM BYTE-BRIDGE LITERAL[\s\S]*?'(\{"starting_slots".*?\})'::jsonb/)
+    expect(match, 'pgTAP 055 must contain the TS-form byte-bridge literal').not.toBeNull()
+    expect(JSON.stringify(DEFAULT_ROSTER_SETTINGS)).toBe((match as RegExpMatchArray)[1])
   })
 
   it('DL preset (§7.3.2): restricted, OUT/IR/Doubtful, min_weeks 4, label "DL"', () => {

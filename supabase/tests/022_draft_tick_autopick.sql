@@ -870,8 +870,8 @@ select is(
 select is(
   (select status || '|' || total_rounds::text
    from drafts where league_id = 'b3000000-0000-4000-8000-0000000000e1'),
-  'live|15',
-  '…and STARTED it (live; total_rounds 15 per D91 from the default roster)');
+  'live|16',
+  '…and STARTED it (live; total_rounds 16 per D91 from the default roster — 16 since SC.2, the v2.16.9 Scout default roster)');
 select is(
   (select status from leagues where id = 'b3000000-0000-4000-8000-0000000000e1'),
   'drafting',
