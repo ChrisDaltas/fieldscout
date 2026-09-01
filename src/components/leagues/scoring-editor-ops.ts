@@ -1,12 +1,26 @@
 import {
+  detectTierCuts,
   isFormat1Doc,
   normalizeScoringDoc,
+  resolveRules,
   SCORING_POSITIONS,
   type FlatScoringRules,
   type ScoringPosition,
   type ScoringRulesDoc,
   type ScoringRulesDocV2,
 } from '@/lib/leagues/scoring/rules-doc'
+import { scorePlayerWeek } from '@/lib/leagues/scoring/calculator'
+import {
+  DEF_PA_SOURCE_KEY,
+  DEF_YA_SOURCE_KEY,
+  deriveTierIndicators,
+} from '@/lib/leagues/scoring/derive-stats'
+import {
+  DEF_PA_PREFIX,
+  DEF_YA_PREFIX,
+  tierKeysFromCuts,
+  type EnvelopeTierCuts,
+} from '@/lib/leagues/scoring/tier-cuts'
 import { POSITION_SCORABLE_KEYS } from '@/lib/leagues/scoring/validate-rules-doc'
 import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import { LeaguePatchError } from '@/hooks/use-league'
@@ -589,10 +603,14 @@ export function buildSavePayload(working: ScoringRulesDocV2): ScoringRulesDocV2 
  *  - `validation` — HTTP 400: the route's Zod/TS validator or the RPC's SQL
  *    guardrail mirror (both answer 400 with per-field `fieldErrors`; SE.6's
  *    mapper keys them by document path either way). Rendered per field.
- *  - `refused` — HTTP 403/404/409: the RPC's own refusal sentence (not the
+ *  - `refused` — HTTP 401/403/404/409: the request itself is refused. For
+ *    403/404/409 the message is the RPC's own refusal sentence (not the
  *    commissioner; league not found; outside the `setup`/`scheduled`
- *    window; template not forked). The message is the server's — it is the
- *    sentence only that layer can produce, so it passes through verbatim.
+ *    window; template not forked) — the sentence only that layer can
+ *    produce, so it passes through verbatim. **401 is the one authored
+ *    exception (R683):** a signed-out session's server message is
+ *    generic, and "try again" is advice that cannot succeed signed-out —
+ *    the rendering must say "sign in again".
  *  - `failed` — any other HTTP status (5xx): the request arrived and the
  *    server errored.
  *  - `network` — the request never produced a response. Deliberately NOT
@@ -612,6 +630,15 @@ export function describeSaveRefusal(error: unknown): SaveRefusal {
         kind: 'validation',
         message: error.message,
         fieldErrors: error.fieldErrors ?? {},
+      }
+    }
+    if (error.status === 401) {
+      // R683: signed out. "Try again" cannot succeed from here — the one
+      // actionable next step is signing back in, so the message says that.
+      return {
+        kind: 'refused',
+        status: 401,
+        message: 'Your session has expired — sign in again to save your scoring changes.',
       }
     }
     if (error.status === 403 || error.status === 404 || error.status === 409) {
@@ -686,4 +713,277 @@ export function isCustomScoringReference(
   templateIds: readonly string[],
 ): boolean {
   return scoringSystemId !== null && !templateIds.includes(scoringSystemId)
+}
+
+// ---------------------------------------------------------------------------
+// 10. The six live sample lines (SE.8; §7.3.3.1's sample-players table; D171)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE BOUNDARY, out loud (SE.8's charter sentence): the client computes
+ * SAMPLE totals for display — six fixed, spec-pinned stat lines whose totals
+ * exist only to show the commissioner what an edit does. It still NEVER
+ * computes real scores: no league, matchup, or player total anywhere in the
+ * product comes from this path (server-authoritative law, CLAUDE.md). What
+ * keeps the sample honest is that it runs the REAL pipeline all the same —
+ * `scorePlayerWeek(resolveRules(doc, P), deriveTierIndicators(line, cuts))`
+ * (D171) — never a parallel math path that could drift from what the season
+ * will actually score.
+ */
+export interface SamplePlayerDef {
+  /** §7.3.3.1: sample players are FIXED — never swapped client-side. */
+  name: string
+  /** The spec's fixed line, rendered verbatim as flavor — INCLUDING the
+   *  context numbers (24-of-36, 22 carries) that score nothing. */
+  line: string
+  /**
+   * Delivered stats ONLY (D171): context aggregates are OMITTED from this
+   * object entirely, never zeroed — so a doc that (illegally) referenced an
+   * aggregate would surface as pending, not silently 0. The D/ST line stores
+   * the RAW sources (`def_points_allowed: 17` / `def_yards_allowed: 289`)
+   * and NO tier-indicator keys: the one-hot happens through
+   * `deriveTierIndicators`, exactly where it happens in production.
+   */
+  stats: Readonly<Record<string, number>>
+}
+
+/**
+ * §7.3.3.1's sample table, verbatim, as stored literals. The amendment
+ * window the spec left open ("Chris may amend them on this entry's PR")
+ * closed when #161 merged unamended (tasks-SE §6) — these six lines are
+ * what SE.8 pins.
+ *
+ * NOTE for the reader arriving from `template-parity.test.ts`: these are
+ * DELIBERATELY not that suite's five canonical player-weeks. The parity
+ * fixtures are QA lines chosen to straddle family boundaries for template
+ * comparison (PA=19 / YA=249); the spec pins six DIFFERENT product-voice
+ * lines here (PA=17 / YA=289 — its own straddle, ESPN `def_pa_14_17` vs
+ * shared `def_pa_14_20`). Both sets pin the same pipeline; neither
+ * cross-checks the other's totals.
+ */
+export const SAMPLE_PLAYERS: Readonly<Record<ScoringPosition, SamplePlayerDef>> = {
+  QB: {
+    name: 'Dan Marino',
+    line: '24-of-36, 335 pass yds, 3 pass TD · 6 rush yds · 1 INT, 2 sacks taken',
+    stats: { pass_yards: 335, pass_tds: 3, rush_yards: 6, interceptions: 1, qb_sack_taken: 2 },
+  },
+  RB: {
+    name: 'Adrian Peterson',
+    line: '22 carries, 121 rush yds, 1 rush TD · 4 rec, 23 rec yds · 1 fumble lost',
+    stats: { rush_yards: 121, rush_tds: 1, receptions: 4, receiving_yards: 23, fumbles_lost: 1 },
+  },
+  WR: {
+    name: 'Randy Moss',
+    line: '9 rec, 145 rec yds, 2 rec TD · 12 rush yds · 1 punt-return TD',
+    stats: { receptions: 9, receiving_yards: 145, receiving_tds: 2, rush_yards: 12, return_td: 1 },
+  },
+  TE: {
+    name: 'Gronk',
+    line: '7 rec, 89 rec yds, 1 rec TD · 1 two-pt catch',
+    stats: { receptions: 7, receiving_yards: 89, receiving_tds: 1, rec_2pt: 1 },
+  },
+  K: {
+    name: 'Neil Rackers',
+    line: '2 FG 0–39, 1 FG 40–49, 1 FG 50+ · 3 PAT · 1 FG missed',
+    stats: { fg_0_39: 2, fg_40_49: 1, fg_50_plus: 1, pat_made: 3, fg_missed: 1 },
+  },
+  DST: {
+    name: 'the Seahawks',
+    line: '3 sacks, 1 INT, 1 fumble recovery, 1 defensive TD · 17 points allowed, 289 yards allowed',
+    stats: {
+      def_sack: 3,
+      def_int: 1,
+      def_fumble_rec: 1,
+      def_td: 1,
+      def_points_allowed: 17,
+      def_yards_allowed: 289,
+    },
+  },
+}
+
+/** A format-2 document derives against its OWN `tier_cuts` (§7.3.3.1(a) —
+ *  the seam a re-cut league will walk through when F59 ships); format 1 has
+ *  none and falls back to the shipped literal tables. */
+const docTierCuts = (doc: ScoringRulesDoc): EnvelopeTierCuts | undefined =>
+  isFormat1Doc(doc) ? undefined : doc.tier_cuts
+
+/**
+ * The live sample total for a position's page under the doc-as-edited —
+ * D171's composition, verbatim: the real resolver, the real derive helper
+ * (with the doc's own cuts when it carries them), the real calculator.
+ * Recomputed on every keystroke the grid commits; §7.3.3 half-up rounding
+ * comes out of `scorePlayerWeek` itself.
+ */
+export function sampleLineTotal(doc: ScoringRulesDoc, position: ScoringPosition): number {
+  return scorePlayerWeek(
+    resolveRules(doc, position),
+    deriveTierIndicators(SAMPLE_PLAYERS[position].stats, docTierCuts(doc)),
+  ).total
+}
+
+// ---------------------------------------------------------------------------
+// 11. The D/ST tier tables (SE.8; §7.3.3.1's D/ST bullet; F178's derivation
+//     rule: row labels from the doc's OWN tier_cuts, never hand-written)
+// ---------------------------------------------------------------------------
+
+export type DstTierFamily = 'def_pa' | 'def_ya'
+
+export interface DstTierRowState {
+  /** The generated tier key (`tierKeysFromCuts` over the doc's own cuts). */
+  key: string
+  /**
+   * Row label, derived from the GENERATED key — a pure transform of
+   * `tierKeysFromCuts` output (`14_17` → "14–17", `35_plus` → "35+",
+   * single-value `0` → "0"), so a re-cut league's labels follow its cuts by
+   * construction (F178). Never a hand-written range.
+   */
+  label: string
+  /** What this tier PAYS — the only editable thing (§7.3.3.1(b)).
+   *  `undefined` = the doc does not pay this generated tier (a legal
+   *  subset under guardrail 2; typing a value adds the key). */
+  payout: number | undefined
+  /** True iff `positions.DST` carries this key (unreachable via this
+   *  editor, which writes tier payouts to `base`; a hand-authored API doc
+   *  can arrive with one, and the cell marks it like the grid does). */
+  overridden: boolean
+  /** The `base` value behind an override (the cell's reference line);
+   *  `undefined` when base does not pay the key. */
+  basePayout: number | undefined
+  /** The Seahawks sample's raw value one-hots THIS row under the doc's own
+   *  cuts — the spec's straddle (17 PA: ESPN pays `def_pa_14_17`, shared
+   *  pays `def_pa_14_20`) made visible, per §7.3.3.1's own note. */
+  sampleHot: boolean
+}
+
+export interface DstTierTableState {
+  family: DstTierFamily
+  title: string
+  /** The sample's raw source value (17 PA / 289 YA), for the hot-row
+   *  marker copy. */
+  sampleValue: number
+  rows: DstTierRowState[]
+}
+
+/** `def_pa_14_17` → "14–17" · `def_pa_35_plus` → "35+" · `def_pa_0` → "0".
+ *  Input is always a `tierKeysFromCuts`-generated key, so the label can
+ *  only ever say what the cuts say. */
+const tierRowLabel = (prefix: string, key: string): string => {
+  const suffix = key.slice(prefix.length + 1)
+  if (suffix.endsWith('_plus')) return `${suffix.slice(0, -'_plus'.length)}+`
+  return suffix.replace('_', '–')
+}
+
+/**
+ * The D/ST page's tier tables for a document (§7.3.3.1's D/ST bullet):
+ *
+ *  - **PA and YA are independent, additively-paying tables** — never
+ *    alternatives. **Table presence = what the doc pays**: an ESPN-family
+ *    fork shows PA + YA, a shared-family fork shows PA only (its YA cut
+ *    list is carried but pays no keys). No affordance adds or removes a
+ *    table — that is table structure, F59's follow-up, not a coefficient.
+ *  - **Boundaries are inherited, read-only**: rows come from the doc's own
+ *    `tier_cuts` through `tierKeysFromCuts`, labels derived from the
+ *    generated keys (F178), and only the payout is editable.
+ *  - A format-1 document (read-only in this editor) detects its family
+ *    from its own key set via `detectTierCuts`; an undetectable flat doc
+ *    (no PA keys, or an ambiguous subset) renders no tables rather than
+ *    guessing a family.
+ *  - `sampleHot` runs the REAL derive path over the Seahawks line with the
+ *    same cuts the scoring would use — not a re-implemented bucket lookup.
+ */
+export function dstTierTables(doc: ScoringRulesDoc): DstTierTableState[] {
+  let cuts: EnvelopeTierCuts
+  if (isFormat1Doc(doc)) {
+    try {
+      cuts = detectTierCuts(doc)
+    } catch {
+      return []
+    }
+  } else {
+    cuts = doc.tier_cuts
+  }
+
+  const effective = resolveRules(doc, 'DST')
+  const base: FlatScoringRules = isFormat1Doc(doc) ? doc : doc.base
+  const override = isFormat1Doc(doc) ? undefined : doc.positions.DST
+  const derived = deriveTierIndicators(SAMPLE_PLAYERS.DST.stats, cuts)
+
+  const families: ReadonlyArray<{
+    family: DstTierFamily
+    prefix: string
+    title: string
+    list: readonly number[]
+    sampleValue: number
+  }> = [
+    {
+      family: 'def_pa',
+      prefix: DEF_PA_PREFIX,
+      title: 'Points allowed',
+      list: cuts.def_pa,
+      sampleValue: SAMPLE_PLAYERS.DST.stats[DEF_PA_SOURCE_KEY],
+    },
+    {
+      family: 'def_ya',
+      prefix: DEF_YA_PREFIX,
+      title: 'Yards allowed',
+      list: cuts.def_ya,
+      sampleValue: SAMPLE_PLAYERS.DST.stats[DEF_YA_SOURCE_KEY],
+    },
+  ]
+
+  const tables: DstTierTableState[] = []
+  for (const def of families) {
+    const keys = tierKeysFromCuts(def.prefix, def.list)
+    if (!keys.some((key) => hasOwn(effective, key))) continue
+    tables.push({
+      family: def.family,
+      title: def.title,
+      sampleValue: def.sampleValue,
+      rows: keys.map((key) => ({
+        key,
+        label: tierRowLabel(def.prefix, key),
+        payout: hasOwn(effective, key) ? effective[key] : undefined,
+        overridden: override !== undefined && hasOwn(override, key),
+        basePayout: hasOwn(base, key) ? base[key] : undefined,
+        sampleHot: derived[key] === 1,
+      })),
+    })
+  }
+  return tables
+}
+
+/**
+ * Apply one tier-payout edit — the `applyEdit` equivalent for the D/ST
+ * tables (F178: "through `applyEdit`-equivalent ops … never a second write
+ * path"). Writes `base` (where a fork carries its tier payouts — the same
+ * single-position-page rule the D/ST event grid follows) and returns the
+ * NORMALIZED result, like every other edit.
+ *
+ * Two deliberate restrictions:
+ *
+ *  - the key must be generated by THE DOCUMENT'S OWN `tier_cuts` — the
+ *    tables render only the doc's own tiers, so any other key here is a
+ *    programmer error (and would break F21 guardrail 2 at the save wall
+ *    anyway; failing loud beats a served-then-refused edit).
+ *  - `value` is a number, never null: un-paying a tier outright is how a
+ *    split table would become a single-model one (or vice versa at re-add),
+ *    and §7.3.3.1(b) rules table structure out of this editor (F59). "Pays
+ *    nothing" is an explicit 0 — D59(4)'s score-inert convention.
+ */
+export function applyTierEdit(
+  doc: ScoringRulesDocV2,
+  key: string,
+  value: number,
+): ScoringRulesDocV2 {
+  assertEditable(doc)
+  const generated = new Set([
+    ...tierKeysFromCuts(DEF_PA_PREFIX, doc.tier_cuts.def_pa),
+    ...tierKeysFromCuts(DEF_YA_PREFIX, doc.tier_cuts.def_ya),
+  ])
+  if (!generated.has(key)) {
+    throw new Error(
+      `applyTierEdit: '${key}' is not generated by this document's own tier cuts — the tables render only the doc's own tiers (F21 guardrail 2)`,
+    )
+  }
+  return normalizeV2({ ...doc, base: { ...doc.base, [key]: value } })
 }
