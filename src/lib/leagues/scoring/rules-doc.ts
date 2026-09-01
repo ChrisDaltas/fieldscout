@@ -9,7 +9,7 @@
  * which freezes it VERBATIM at draft start — may now be one of two things:
  *
  *  - **format 1**: a flat `{ stat_key: coefficient }` map. Every one of the
- *    seven shipped templates is one, and stays one, byte-identical. A format-1
+ *    eight shipped templates is one, and stays one, byte-identical. A format-1
  *    doc carries **no `format` member**, and `format` is not a registry key
  *    (`STAT_KEYS`), so the discriminator is unambiguous — pinned by test.
  *  - **format 2**: the base + per-position-override envelope §7.3.3.1 prints:
@@ -27,7 +27,7 @@
  * guarantee of the SE track. §7.3.3.1's own words — *"no existing template
  * league's scored outcome changes by even a cent."* The pin in
  * `rules-doc.test.ts` is therefore a PROPERTY (all six positions, positions
- * outside the six, `__proto__`/`constructor`, all seven templates, every parity
+ * outside the six, `__proto__`/`constructor`, all eight templates, every parity
  * fixture line — totals AND perKey AND pending), not an example, and it is
  * reference-exact: a format-1 doc resolves to THE SAME OBJECT, so there is no
  * copy in which a value could drift.
@@ -338,7 +338,7 @@ const keysWithPrefix = (rules: FlatScoringRules, prefix: string): string[] =>
  * `def_pa_7_13`, `def_pa_28_34`), so a subset match can be AMBIGUOUS — a
  * document naming only those four is a member of both. That case throws
  * rather than picking one: guessing would silently re-cut a defense's tiers.
- * All seven shipped templates carry at least one divergent key and match
+ * All eight shipped templates carry at least one divergent key and match
  * exactly one family (pinned).
  *
  * The YA slot is ALWAYS written (SE.2(4)) — a single-model document simply

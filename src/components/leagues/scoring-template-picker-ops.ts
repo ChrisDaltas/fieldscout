@@ -12,17 +12,20 @@
  * exists only in the spec's own text (not in the DB row):
  *   - the six parity-template ONE-LINERS ("ESPN's defaults, 0 PPR" …),
  *     verbatim from §7.3.3's printed table;
- *   - Scout Scoring's card copy, TRIMMED from Appendix B.5's Chris-approved
+ *   - Scout Standard's card copy, TRIMMED from Appendix B.5's Chris-approved
  *     "why it's better" copy (SC.3/D282 — §16.2 says the card carries B.5's
  *     copy; the fuller approved sentences ride the seeded row description
- *     directly beneath it on the same card);
+ *     directly beneath it on the same card), and Scout PPR's one-liner,
+ *     the §7.3.3 table row's copy APPROVED as drafted 2026-09-01 (B.5.1);
  *   - the "(platform default)" markers (Yahoo Half PPR, Sleeper Full PPR)
- *     and the "FieldScout's default" marker on Scout (B.5's own subtitle;
- *     §7.3.3's system-default bullet).
- * All are keyed by the row's `name` (the 058/106 seeds' stable natural key,
- * partial UNIQUE) and pinned as stored literals in the test. A row with an
- * unknown name (impossible under the seeds, but never invent data) degrades
- * gracefully: derived PPR one-liner, no marker, sorted after the known seven.
+ *     and the "FieldScout's default" marker on the ACTIVE family's Scout
+ *     (B.5's own subtitle; §7.3.3's system-default bullet — per family
+ *     since v2.16.11, see `DEFAULT_TEMPLATE_NAMES` below).
+ * All are keyed by the row's `name` (the 058/106/108 seeds' stable natural
+ * key, partial UNIQUE) and pinned as stored literals in the test. A row with
+ * an unknown name (impossible under the seeds, but never invent data)
+ * degrades gracefully: derived PPR one-liner, no marker, sorted after the
+ * known eight.
  */
 
 /** The template row shape the picker consumes (world-readable SELECT over
@@ -49,7 +52,8 @@ export interface KickingSummary {
 /** The compare view's key category values (task text: PPR, INT, kicking,
  *  D/ST model) — all derived from `rules`. */
 export interface TemplateSummary {
-  /** `receptions` coefficient (0 / 0.5 / 1 across the v1 six). */
+  /** `receptions` coefficient (0 / 0.2 / 0.5 / 1 across the shipped eight
+   *  — Scout PPR's 0.2 joined at SC.4). */
   ppr: number
   /** `interceptions` coefficient (ESPN −2 vs Yahoo/Sleeper −1, App B.1). */
   int: number
@@ -81,21 +85,27 @@ export interface TemplateCard {
    */
   platformDefaultMarker: string | null
   /**
-   * SC.3 (§7.3.3's system-default bullet, v2.16.9): "FieldScout's default"
-   * on the Scout Scoring card — the same possessive-marker pattern as the
-   * platform rows (R73), copy from App B.5's own subtitle — else null. The
-   * card is what reads as the recommended default; the PRESELECTION itself
-   * is the mounts' business (`resolveDefaultTemplateId` below).
+   * SC.3/SC.4 (§7.3.3's system-default bullet, v2.16.11): "FieldScout's
+   * default" on the ACTIVE family's Scout card — the same possessive-marker
+   * pattern as the platform rows (R73), copy from App B.5's own subtitle —
+   * else null. Unfiltered mounts mark the system default (Scout Standard)
+   * alone; a style-filtered view marks its family's own Scout (B.5.1's
+   * marker law — `buildTemplateCards`' `family` argument). The card is what
+   * reads as the recommended default; the PRESELECTION itself is the
+   * mounts' business (`resolveDefaultTemplateId` below).
    */
   defaultMarker: string | null
   summary: TemplateSummary
 }
 
 /** §7.3.3 table order — also the picker's card order (and templates.ts's
- *  SCORING_TEMPLATES order). v2.16.9: Scout Scoring leads (the amended
- *  table's order IS the picker order — its system-default bullet). */
+ *  SCORING_TEMPLATES order). v2.16.11: the Scout pair leads (the amended
+ *  table's order IS the picker order — its system-default bullet), so each
+ *  style-filtered view leads with its own Scout and the unfiltered launcher
+ *  leads with the pair. */
 export const TEMPLATE_DISPLAY_ORDER: readonly string[] = [
-  'Scout Scoring',
+  'Scout Standard',
+  'Scout PPR',
   'ESPN Standard',
   'ESPN Full PPR',
   'Yahoo Standard',
@@ -106,18 +116,23 @@ export const TEMPLATE_DISPLAY_ORDER: readonly string[] = [
 
 /**
  * Card one-liners. The six parity rows are §7.3.3's table one-liners,
- * verbatim. Scout's is App B.5's Chris-approved "why it's better" copy,
- * TRIMMED to card length — every phrase taken from the approved text, no
- * claim changed (SC.3/D282; supersedes the §7.3.3-row-verbatim entry whose
- * "Appendix B.5" citation tail read oddly on a product card — D279(8)).
- * The approved copy's remaining sentences — "instead of a pile of inherited
- * quirks", the per-yard rates, the D/ST model — ride the seeded row
- * DESCRIPTION rendered directly beneath this line on the same card.
+ * verbatim. Scout Standard's is App B.5's Chris-approved "why it's better"
+ * copy, TRIMMED to card length — every phrase taken from the approved text,
+ * no claim changed (SC.3/D282; supersedes the §7.3.3-row-verbatim entry
+ * whose "Appendix B.5" citation tail read oddly on a product card —
+ * D279(8)). The approved copy's remaining sentences — "instead of a pile of
+ * inherited quirks", the per-yard rates, the D/ST model — ride the seeded
+ * row DESCRIPTION rendered directly beneath this line on the same card.
+ * Scout PPR's is its §7.3.3 table row's one-liner, APPROVED as drafted by
+ * Chris 2026-09-01 (App B.5.1) — its fuller approved copy is the seeded row
+ * description, same pattern.
  */
 export const TEMPLATE_ONE_LINERS: Readonly<Record<string, string>> = {
-  'Scout Scoring':
+  'Scout Standard':
     'One clean rule set — every TD is 6, every FG is 3, no PPR. Yardage ' +
     'at flat, memorable rates.',
+  'Scout PPR':
+    "The catch counts — volume alone still can't outscore production.",
   'ESPN Standard': "ESPN's defaults, 0 PPR",
   'ESPN Full PPR': "ESPN's defaults, 1.0 PPR",
   'Yahoo Standard': "Yahoo's defaults, 0 PPR (note: −1 INT)",
@@ -133,28 +148,55 @@ export const PLATFORM_DEFAULT_TEMPLATE_NAMES: readonly string[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// SC.3 — the §7.3.3 system default (spec v2.16.9's system-default bullet)
+// SC.3/SC.4 — the §7.3.3 system default, per reception-style family since
+// v2.16.11 (spec §7.3.3's amended system-default bullet; App B.5.1)
 // ---------------------------------------------------------------------------
 
-/**
- * The system-default template's NATURAL KEY: the seeds' stable `name` under
- * `is_template` (058/106's partial UNIQUE). Resolution is always by this
- * name against the fetched template rows — never a hardcoded uuid, because
- * `gen_random_uuid()` makes the row's id differ per environment.
- */
-export const DEFAULT_TEMPLATE_NAME = 'Scout Scoring'
+/** The wizard's reception-style filter families (§16.2's style step). */
+export type ScoringStyleFamily = 'ppr' | 'no_ppr'
 
 /**
- * The Scout card's marker copy — B.5's own subtitle ("FieldScout's
- * default"), in the platform rows' possessive-marker pattern (R73).
+ * The default template NATURAL KEYS, one per style family (v2.16.11's
+ * preselection law: each family preselects its own Scout — the No-PPR view
+ * Scout Standard, the PPR view Scout PPR). Resolution is always by these
+ * names under `is_template` (058/108's partial UNIQUE) against the fetched
+ * template rows — never a hardcoded uuid, because `gen_random_uuid()` makes
+ * the row's id differ per environment.
+ */
+export const DEFAULT_TEMPLATE_NAMES: Readonly<
+  Record<ScoringStyleFamily, string>
+> = {
+  no_ppr: 'Scout Standard',
+  ppr: 'Scout PPR',
+}
+
+/**
+ * The SYSTEM default's natural key — Scout Standard (no-PPR is the
+ * FieldScout identity of the original 2026-08-26 ruling; RULED again at the
+ * 2026-09-01 markup: "Scout Standard should be the default selected
+ * template."). Unfiltered mounts (the mock launcher) preselect THIS one;
+ * style-filtered views preselect their family's entry above.
+ */
+export const DEFAULT_TEMPLATE_NAME = DEFAULT_TEMPLATE_NAMES.no_ppr
+
+/**
+ * The Scout cards' marker copy — B.5's own subtitle ("FieldScout's
+ * default"), in the platform rows' possessive-marker pattern (R73). Worn by
+ * the system default (Scout Standard) on unfiltered mounts and by the
+ * family's own Scout in a style-filtered view — a badge on a filtered-out
+ * card marks nothing (B.5.1's marker law).
  */
 export const DEFAULT_TEMPLATE_MARKER = "FieldScout's default"
 
 /**
- * Resolve the §7.3.3 system default's id from the fetched template rows by
- * natural key. Returns null — and says so LOUDLY — when the Scout row is
- * absent (an environment whose seeds stop before migration 106): the
- * CLAUDE.md "nothing happened" rule forbids a silent un-defaulting, so the
+ * Resolve the §7.3.3 default's id from the fetched template rows by natural
+ * key — the FAMILY dimension picks which half of the Scout pair (v2.16.11):
+ * omitted/`'no_ppr'` resolves the system default Scout Standard (the
+ * unfiltered mock launcher's call), `'ppr'` resolves Scout PPR (the
+ * wizard's PPR view). Returns null — and says so LOUDLY, naming whichever
+ * half is missing — when that family's Scout row is absent (an environment
+ * whose seeds stop before migration 108, the Scout pair): the CLAUDE.md
+ * "nothing happened" rule forbids a silent un-defaulting, so the
  * degradation is named in the console and the surfaces fall back to the
  * pre-SC.3 explicit-pick flow (nothing preselected; both submit gates keep
  * refusing a null until the user picks a card — a designed state, not a
@@ -162,15 +204,17 @@ export const DEFAULT_TEMPLATE_MARKER = "FieldScout's default"
  */
 export function resolveDefaultTemplateId(
   rows: readonly ScoringTemplateRow[] | undefined,
+  family: ScoringStyleFamily = 'no_ppr',
 ): string | null {
   if (rows === undefined) return null // still loading — nothing to resolve yet
-  const row = rows.find((r) => r.name === DEFAULT_TEMPLATE_NAME)
+  const name = DEFAULT_TEMPLATE_NAMES[family]
+  const row = rows.find((r) => r.name === name)
   if (row === undefined) {
     console.warn(
-      `[scoring-templates] The "${DEFAULT_TEMPLATE_NAME}" template row is ` +
-        'missing from the fetched templates (has this environment run ' +
-        'migration 106?). No template will be preselected — the user must ' +
-        'pick one explicitly (§7.3.3 system-default bullet, SC.3).',
+      `[scoring-templates] The "${name}" template row is missing from the ` +
+        'fetched templates (has this environment run migration 108, the ' +
+        'Scout pair?). No template will be preselected — the user must ' +
+        'pick one explicitly (§7.3.3 system-default bullet, SC.3/SC.4).',
     )
     return null
   }
@@ -231,14 +275,22 @@ export function deriveTemplateSummary(
  * Rows → cards: §7.3.3 order (unknown names after, stable by name), one
  * card per row, id preserved for selection emission. Input order never
  * matters (the DB query doesn't promise one).
+ *
+ * `family` (SC.4 — B.5.1's marker law): which Scout card wears the
+ * "FieldScout's default" marker. Omitted = an unfiltered mount = the system
+ * default, Scout Standard, alone; a style-filtered view passes its family
+ * so the marker moves to that family's own Scout — a badge on a
+ * filtered-out card marks nothing.
  */
 export function buildTemplateCards(
   rows: readonly ScoringTemplateRow[],
+  family?: ScoringStyleFamily,
 ): TemplateCard[] {
   const orderOf = (name: string) => {
     const i = TEMPLATE_DISPLAY_ORDER.indexOf(name)
     return i === -1 ? TEMPLATE_DISPLAY_ORDER.length : i
   }
+  const defaultName = DEFAULT_TEMPLATE_NAMES[family ?? 'no_ppr']
   return [...rows]
     .sort(
       (a, b) =>
@@ -255,7 +307,7 @@ export function buildTemplateCards(
         isPlatformDefault: PLATFORM_DEFAULT_TEMPLATE_NAMES.includes(row.name),
         platformDefaultMarker: PLATFORM_DEFAULT_MARKERS[row.name] ?? null,
         defaultMarker:
-          row.name === DEFAULT_TEMPLATE_NAME ? DEFAULT_TEMPLATE_MARKER : null,
+          row.name === defaultName ? DEFAULT_TEMPLATE_MARKER : null,
         summary,
       }
     })

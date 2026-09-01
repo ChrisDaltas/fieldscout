@@ -10,8 +10,9 @@ export const scoringTemplatesKeys = {
 }
 
 /**
- * The 7 shipped template rows — Scout Scoring (SC.1, migration 106) + the 6
- * v1 parity rows (M1 task L.A2.3; spec §7.3.3 / App B).
+ * The 8 shipped template rows — the Scout pair (Scout Standard: SC.1,
+ * migration 106, renamed by 108; Scout PPR: SC.4, migration 108) + the 6
+ * v1 parity rows (M1 task L.A2.3; spec §7.3.3 / App B + B.5.1).
  *
  * Reads the REAL seeded rows — `scoring_systems` WHERE `is_template = TRUE`
  * over migration 058's "Templates viewable by everyone" SELECT policy, which

@@ -82,11 +82,18 @@ export const PROJECTED_POINTS_COLUMN = {
   standard: 'projected_pts_standard',
 } as const satisfies Record<ScoringFamily, string>
 
-/** Per-reception boundaries. The three shipped shapes are 0 / 0.5 / 1
- *  (migrations 058 + 106's seven templates — Scout's 0 joins the Standard
- *  rows' 0s), so the cuts sit at the
- *  MIDPOINTS — a league on 0.4 or 0.6 lands on the nearer family rather
- *  than falling through to standard. Both boundaries are pinned. */
+/** Per-reception boundaries. The shipped `receptions` shapes are
+ *  0 / 0.2 / 0.5 / 1 (migrations 058 + 106 + 108's eight templates — Scout
+ *  Standard's 0 joins the Standard rows' 0s; Scout PPR's 0.2 is the first
+ *  shipped value that is NOT one of the three synced projection families),
+ *  and the cuts sit at the MIDPOINTS of the three synced families — a
+ *  league on 0.4 or 0.6 lands on the nearer family rather than falling
+ *  through to standard. **0.2 → `standard` is DELIBERATE** (spec App B.5.1,
+ *  marked up 2026-09-01; PROGRESS D284(4)): a Scout PPR league's Proj /
+ *  Pts-wk / $-per-point columns read `projected_pts_standard`, the NEAREST
+ *  synced family (0.2 sits closer to 0 than to 0.5) — the midpoint rule's
+ *  designed output, not a defect; do not special-case it. Both boundaries
+ *  and the 0.2 cell are pinned. */
 export const HALF_PPR_FLOOR = 0.25
 export const PPR_FLOOR = 0.75
 

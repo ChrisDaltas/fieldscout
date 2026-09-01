@@ -45,11 +45,14 @@ import {
  *
  *   1. Basics    — name, optional avatar, team count
  *   2. Style     — draft type (snake/auction) + scoring style (PPR/no-PPR;
- *                  opens on No PPR, Scout Scoring's family — SC.3)
+ *                  opens on No PPR — RULED, Chris 2026-09-01: Scout
+ *                  Standard is the default selected template, and its
+ *                  family's view is where it is visible — SC.4/App B.5.1)
  *   3. Template  — pick a scoring template (filtered by the style pick;
- *                  opens with Scout Scoring preselected per §7.3.3's
- *                  system-default bullet — a derived preselection the user's
- *                  explicit pick always beats, never a silent write)
+ *                  each family opens with its own Scout preselected —
+ *                  No PPR → Scout Standard, PPR → Scout PPR, per §7.3.3's
+ *                  system-default bullet — a derived preselection the
+ *                  user's explicit pick always beats, never a silent write)
  *
  * The bottom stepper moves freely between steps (no gating between
  * sections; only Create validates). The avatar can't upload before the
@@ -69,12 +72,14 @@ export function LeagueCreateModal({
   const router = useRouter()
   const [draft, setDraft] = useState<WizardDraft>(initialWizardDraft)
   const [step, setStep] = useState(0)
-  // SC.3 (§7.3.3's system-default bullet): the style step opens on No PPR —
-  // Scout Scoring's own family (`receptions: 0` is one of its STATED
-  // differences, App B.5) — so the scoring step opens with the preselected
-  // Scout card VISIBLE and leading. A 'ppr' default here would filter the
-  // preselected card out of view: a selection the user can't see is the
-  // CLAUDE.md "nothing happened" shape.
+  // SC.4 (§7.3.3's system-default bullet, v2.16.11): each style family
+  // preselects its OWN Scout — No PPR → Scout Standard, PPR → Scout PPR —
+  // so neither side of the style step hides a default (D282(3) dissolved).
+  // The OPENING side is RULED (Chris, 2026-09-01, verbatim: "Scout Standard
+  // should be the default selected template."): Scout Standard preselected
+  // ⇒ the style step opens on No PPR, its own family — the preselected
+  // card must be visible (a selection the user can't see is the CLAUDE.md
+  // "nothing happened" shape).
   const [scoringStyle, setScoringStyle] = useState<'ppr' | 'no_ppr'>('no_ppr')
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -91,20 +96,19 @@ export function LeagueCreateModal({
 
   const { createLeagueAsync } = useCreateLeague()
 
-  // SC.3 — the §7.3.3 system default, as a pure DERIVATION (no effect, no
-  // draft write): Scout Scoring's id resolved by natural key from the
-  // fetched template rows, admitted only while the No-PPR view (Scout's own
-  // family) is active so the default can never point at a filtered-out
-  // card. The user's explicit pick always wins (`effectiveTemplateSelection`
-  // — explicit ?? default), and a missing Scout row degrades loudly to the
-  // explicit-pick flow (`resolveDefaultTemplateId` warns; the create button
-  // stays disabled with the designed "Pick a scoring template" line below).
+  // SC.4 — the §7.3.3 default, as a pure DERIVATION (no effect, no draft
+  // write): the ACTIVE family's Scout id resolved by natural key from the
+  // fetched template rows (No PPR → Scout Standard, PPR → Scout PPR — the
+  // v2.16.11 family law), so the default always points at a card the active
+  // view shows. The user's explicit pick always wins
+  // (`effectiveTemplateSelection` — explicit ?? default), and a missing
+  // Scout row degrades loudly to the explicit-pick flow
+  // (`resolveDefaultTemplateId` warns, naming the absent half; the create
+  // button stays disabled with the designed "Pick a scoring template" line
+  // below).
   const templatesQuery = useScoringTemplates({ enabled: open })
   const defaultTemplateId = useMemo(
-    () =>
-      scoringStyle === 'no_ppr'
-        ? resolveDefaultTemplateId(templatesQuery.data)
-        : null,
+    () => resolveDefaultTemplateId(templatesQuery.data, scoringStyle),
     [scoringStyle, templatesQuery.data],
   )
   const effectiveScoringId = effectiveTemplateSelection(
@@ -137,7 +141,7 @@ export function LeagueCreateModal({
       // Reset for the next open — a closed modal is a discarded draft.
       setDraft(initialWizardDraft())
       setStep(0)
-      setScoringStyle('no_ppr') // back to the Scout-default view (SC.3)
+      setScoringStyle('no_ppr') // back to the ruled opening side (SC.4)
       setAvatarFile(null)
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
       setAvatarPreview(null)
@@ -158,7 +162,11 @@ export function LeagueCreateModal({
     if (style === scoringStyle) return
     setScoringStyle(style)
     // The style narrows step 3's template list — a previously picked
-    // template may no longer be offered, so the pick resets with it.
+    // template may no longer be offered, so the pick resets with it. The
+    // SC.3 review's swap hazard (a reset-refill silently substituting a
+    // different card for an explicit pick) retired BY DESIGN at v2.16.11:
+    // the refill now lands on the active family's own Scout — the intended
+    // default for that view, never a surprise substitution (D284(3)).
     setDraft((p) => ({ ...p, scoringSystemId: null }))
   }
 
@@ -305,9 +313,9 @@ export function LeagueCreateModal({
           {step === 2 && (
             <div className="flex flex-col gap-3">
               <ScoringTemplatePicker
-                // SC.3: the EFFECTIVE selection — explicit pick, else the
-                // Scout preselection while the No-PPR view admits it — so
-                // what renders selected is exactly what Create will submit.
+                // SC.4: the EFFECTIVE selection — explicit pick, else the
+                // active family's own Scout preselection — so what renders
+                // selected is exactly what Create will submit.
                 value={effectiveScoringId}
                 styleFilter={scoringStyle}
                 onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}

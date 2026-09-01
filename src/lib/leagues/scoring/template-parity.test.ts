@@ -6,8 +6,9 @@
  * PROGRESS D44 (derive-at-scoring-time), D57 (calculator), D59 (templates).
  *
  * Five canonical player-weeks as stored literals, each scored under all
- * seven shipped templates (the parity six + Scout Scoring, App B.5/SC.1):
- * 35 pinned totals. EVERY pin below is HAND-COMPUTED —
+ * eight shipped templates (the parity six + the Scout pair — Scout Standard
+ * App B.5/SC.1, Scout PPR App B.5.1/SC.4): 40 pinned totals. EVERY pin
+ * below is HAND-COMPUTED —
  * the arithmetic is shown line-by-line in comments and was worked out on
  * paper BEFORE the suite first ran (never pasted from calculator output —
  * that would be a recompute pin, the §4.3 fraud class; a recompute pin can
@@ -70,7 +71,7 @@ const QB_WEEK: Record<string, number> = {
   pass_tds: 2,
   interceptions: 1,
   pass_2pt: 1,
-  qb_sack_taken: 3, // context: unscored by all 7 templates (B.3 is Ultra-only, punted)
+  qb_sack_taken: 3, // context: unscored by all 8 templates (B.3 is Ultra-only, punted)
   rush_yards: 14,
   rush_tds: 0, // delivered zero — a real perKey 0, not pending
   receptions: 0, // delivered zero — PPR delta on this week is exactly 0
@@ -103,8 +104,9 @@ const WR_TE_WEEK: Record<string, number> = {
 
 /** K week: one make in EACH distance bucket + an FG miss + a PAT miss.
  *  No 60+ make — named parity exception (v2.8.5), not a scorable category.
- *  `receptions` is deliberately NOT delivered: it is a rules key in all 6
- *  templates, so it lands on the §23.5/E61 pending path here (asserted). */
+ *  `receptions` is deliberately NOT delivered: it is a rules key in all 8
+ *  templates (a pre-SC.1 "6" corrected in passing at SC.4), so it lands on
+ *  the §23.5/E61 pending path here (asserted). */
 const K_WEEK: Record<string, number> = {
   fg_0_39: 1,
   fg_40_49: 1,
@@ -141,7 +143,7 @@ const FIXTURES: Record<string, Record<string, number>> = {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
- * The 35 hand-computed pins (7 templates × 5 weeks), to the cent.
+ * The 40 hand-computed pins (8 templates × 5 weeks), to the cent.
  *
  * QB week — delivered-key arithmetic, common part (the six incumbents;
  *   Scout's own QB arithmetic is in its block below):
@@ -180,7 +182,7 @@ const FIXTURES: Record<string, Record<string, number>> = {
  *   Yahoo:   12 + 3                  = 15.00   (no miss-penalty keys at all)
  *   Sleeper: 12 + 3 − 1 − 1          = 13.00   (fg_missed −1 AND pat_missed −1)
  *
- * D/ST week — events common to all seven:
+ * D/ST week — events common to all eight:
  *   def_sack 3×1 = 3 · def_int 1×2 = 2 · def_fumble_rec 1×2 = 2 · def_td 1×6 = 6
  *   def_safety/def_block/def_return_td 0 × c = 0
  *   events = 3 + 2 + 2 + 6 = 13.00
@@ -188,7 +190,8 @@ const FIXTURES: Record<string, Record<string, number>> = {
  *     hot, 1×2 = +2; every cold bucket 0×c = 0 → 13 + 0 + 2 = 15.00
  *   Yahoo/Sleeper (single): PA=19 → def_pa_14_20 hot, 1×1 = +1 → 14.00
  *
- * Scout Scoring (App B.5 as marked up 2026-08-31; SC.1) — worked before the
+ * Scout Standard (App B.5 as marked up 2026-08-31; SC.1 — seeded as "Scout
+ * Scoring", renamed at SC.4, values byte-identical) — worked before the
  * suite first ran with the new row, per this file's own rule:
  *   QB week:  pass_yards 287 × 0.05 = 14.35 · pass_tds 2 × 6 = 12.00 ·
  *     interceptions 1 × −2 = −2.00 · pass_2pt 1 × 2 = 2.00 ·
@@ -203,9 +206,26 @@ const FIXTURES: Record<string, Record<string, number>> = {
  *     (stat ignored) → 9 + 3 − 1 = 11.00   (≠ every incumbent: flat 3s)
  *   D/ST week: identical tables to ESPN (events 13; split PA=19 → 0;
  *     YA=249 → +2) → 15.00
+ *
+ * Scout PPR (App B.5.1 as marked up 2026-09-01; SC.4) — worked before the
+ * suite first ran with the new row, per this file's own rule. The pair is
+ * Scout Standard's body with receptions 0.2, so ONLY reception-delivered
+ * lines can move (delivered receptions: qb 0 · rb 3 · wr_te 8 ·
+ * k/dst undelivered → pending on both sides):
+ *   QB week:  receptions DELIVERED at 0 → 0 × 0.2 = 0.00 — the pin is
+ *     IDENTICAL to Scout Standard's, and that is correct, not a miss:
+ *     total = 14.35 + 12 − 2 + 2 + 1.4 + 0 = 27.75
+ *   RB week:  receptions 3 × 0.2 = 0.60 on top of the Standard lines →
+ *     19.60 + 0.60 = 20.20
+ *   WR/TE week: receptions 8 × 0.2 = 1.60 → 18.10 + 1.60 = 19.70
+ *   K week:   receptions UNDELIVERED → pending, adds 0 → 11.00
+ *     (byte-identical to Scout Standard)
+ *   D/ST week: receptions UNDELIVERED → pending, adds 0 → 15.00
+ *     (byte-identical to Scout Standard)
  * ──────────────────────────────────────────────────────────────────────── */
 const PINNED_TOTALS: Record<string, Record<string, number>> = {
-  'Scout Scoring': { qb: 27.75, rb: 19.6, wr_te: 18.1, k: 11, dst: 15 },
+  'Scout Standard': { qb: 27.75, rb: 19.6, wr_te: 18.1, k: 11, dst: 15 },
+  'Scout PPR': { qb: 27.75, rb: 20.2, wr_te: 19.7, k: 11, dst: 15 },
   'ESPN Standard': { qb: 20.88, rb: 19.6, wr_te: 18.1, k: 14, dst: 15 },
   'ESPN Full PPR': { qb: 20.88, rb: 22.6, wr_te: 26.1, k: 14, dst: 15 },
   'Yahoo Standard': { qb: 21.88, rb: 19.6, wr_te: 18.1, k: 15, dst: 14 },
@@ -214,7 +234,7 @@ const PINNED_TOTALS: Record<string, Record<string, number>> = {
   'Sleeper Full PPR': { qb: 21.88, rb: 22.6, wr_te: 26.1, k: 13, dst: 14 },
 }
 
-describe('parity matrix — 7 templates × 5 canonical player-weeks, to the cent', () => {
+describe('parity matrix — 8 templates × 5 canonical player-weeks, to the cent', () => {
   for (const [templateName, weeks] of Object.entries(PINNED_TOTALS)) {
     for (const [weekId, pinned] of Object.entries(weeks)) {
       it(`${templateName} × ${weekId} week = ${pinned.toFixed(2)}`, () => {
@@ -273,6 +293,9 @@ describe('cross-platform assertions (§7.3.3 parity guarantee examples)', () => 
   })
 
   const PPR_PAIRS: Array<[string, string, number]> = [
+    // The Scout pair (B.5.1/SC.4) joins the delta-invariant loop AND the
+    // K/DST both-sides-pending pin below at its 0.2 coefficient.
+    ['Scout Standard', 'Scout PPR', 0.2],
     ['ESPN Standard', 'ESPN Full PPR', 1],
     ['Yahoo Standard', 'Yahoo Half PPR', 0.5],
     ['Sleeper Standard', 'Sleeper Full PPR', 1],
@@ -292,8 +315,9 @@ describe('cross-platform assertions (§7.3.3 parity guarantee examples)', () => 
         const delta = roundHalfUp(
           score(pprName, raw).total - score(stdName, raw).total,
         )
-        // Hand-computed: rb×1 = 3.00 · rb×0.5 = 1.50 · wr_te×1 = 8.00 ·
-        // wr_te×0.5 = 4.00 · everything else 0.00.
+        // Hand-computed: rb×1 = 3.00 · rb×0.5 = 1.50 · rb×0.2 = 0.60 ·
+        // wr_te×1 = 8.00 · wr_te×0.5 = 4.00 · wr_te×0.2 = 1.60 ·
+        // everything else 0.00.
         expect(delta, `${pprName} − ${stdName} on ${weekId}`).toBe(
           roundHalfUp(deliveredReceptions[weekId] * coeff),
         )

@@ -23,23 +23,26 @@ import {
  * Scoring-template-picker (M1 task L.A2.3; spec §7.3.3, §16.2, App B;
  * Customize entry SE.9 — spec §7.3.3.1 entry-point bullet, D170).
  *
- * The seven template cards (6 parity templates + Scout Scoring, SC.1; name +
- * §7.3.3 one-liner) + side-by-side compare of the key category values (PPR,
- * INT, kicking tiers, D/ST model), every displayed value DERIVED from the
- * fetched rows' `rules` via the pure ops layer — never a hand-maintained
- * display table. Rows are the REAL seeded templates (`is_template = TRUE`,
- * world-readable incl. anon) via `useScoringTemplates`.
+ * The eight template cards (6 parity templates + the Scout pair — Scout
+ * Standard SC.1, Scout PPR SC.4; name + §7.3.3 one-liner) + side-by-side
+ * compare of the key category values (PPR, INT, kicking tiers, D/ST model),
+ * every displayed value DERIVED from the fetched rows' `rules` via the pure
+ * ops layer — never a hand-maintained display table. Rows are the REAL
+ * seeded templates (`is_template = TRUE`, world-readable incl. anon) via
+ * `useScoringTemplates`.
  *
  * Controlled for SELECTION only: `value` is the chosen `scoring_system_id`,
  * clicking a card emits it through `onChange`. NO league writes here —
  * persisting the choice belongs to the consumers, and even the SE.9
  * Customize affordance only EMITS the clicked template id through the
  * `customize` context: the fork mutation itself lives at the settings mount.
- * The §7.3.3 SYSTEM-DEFAULT PRESELECTION (SC.3) is likewise the mounts'
- * business: the two league-less mounts derive `value` through
- * `effectiveTemplateSelection` (explicit pick ?? resolved Scout default);
- * this component never preselects on its own — it renders whatever `value`
- * says, and only marks the Scout card with its "FieldScout's default" badge.
+ * The §7.3.3 SYSTEM-DEFAULT PRESELECTION (SC.3/SC.4 — per style family
+ * since v2.16.11) is likewise the mounts' business: the two league-less
+ * mounts derive `value` through `effectiveTemplateSelection` (explicit pick
+ * ?? the resolved family Scout); this component never preselects on its own
+ * — it renders whatever `value` says, and only marks the active family's
+ * Scout card with its "FieldScout's default" badge (`styleFilter` picks the
+ * family; unfiltered = the system default, Scout Standard).
  *
  * Consumed by THREE mounts — never fork this component (CLAUDE.md):
  *   1. the create wizard (`league-create-modal.tsx`) — no league exists yet
@@ -78,8 +81,11 @@ export interface ScoringTemplatePickerProps {
   /** Emits the clicked template's `scoring_systems.id`. */
   onChange: (scoringSystemId: string) => void
   /** Narrow the cards by reception scoring: 'ppr' keeps templates whose
-   *  derived receptions coefficient is > 0 (full AND half PPR), 'no_ppr'
-   *  keeps the zero-reception ones. Omit for all seven (the default). */
+   *  derived receptions coefficient is > 0 (full, half AND Scout's 0.2),
+   *  'no_ppr' keeps the zero-reception ones. Omit for all eight (the
+   *  default). Also picks which Scout card wears the "FieldScout's default"
+   *  badge (B.5.1's marker law — the family's own Scout; unfiltered = Scout
+   *  Standard, the system default). */
   styleFilter?: 'ppr' | 'no_ppr'
   /** SE.9/D170: league context for the Customize entry — passed by the
    *  settings mount ONLY. Omitted (the default) = no league = templates-only
@@ -138,7 +144,7 @@ export function ScoringTemplatePicker({
     )
   }
 
-  const cards = buildTemplateCards(data).filter((card) =>
+  const cards = buildTemplateCards(data, styleFilter).filter((card) =>
     styleFilter === undefined
       ? true
       : styleFilter === 'ppr'

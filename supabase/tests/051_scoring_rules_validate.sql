@@ -27,7 +27,7 @@
 --      ever looks at again), and the three §7.3.3.1(c) preconditions raising
 --      22023 instead of generating a plausible name.
 --
---   §C THE ACCEPTANCE FLOOR, READ FROM THE TABLE. All seven seeded template
+--   §C THE ACCEPTANCE FLOOR, READ FROM THE TABLE. All eight seeded template
 --      `rules` ACCEPT — SELECTed from `scoring_systems`, never re-authored, so
 --      this is the document D175's wall will actually meet. Plus the
 --      fork-shaped format-2 envelope built from a seeded row, which is what
@@ -357,14 +357,14 @@ select throws_ok(
 
 select is(
   (select count(*) from public.scoring_systems where is_template),
-  7::bigint,
-  'C1: the seven seeded template rows exist (058''s six + 106''s Scout Scoring) — the premise, asserted before anything is asserted about them (F94)');
+  8::bigint,
+  'C1: the eight seeded template rows exist (058''s six + the Scout pair, 106/108) — the premise, asserted before anything is asserted about them (F94)');
 
 select is_empty(
   $$ select s.name || ' -> ' || pg_temp.verdict(s.rules)
        from public.scoring_systems s
       where s.is_template and pg_temp.verdict(s.rules) <> 'ACCEPT' $$,
-  'C2: ALL SEVEN seeded template `rules` ACCEPT — read from the table, never re-authored. These are the documents D175''s wall meets first (every league reference today is a template row)');
+  'C2: ALL EIGHT seeded template `rules` ACCEPT — read from the table, never re-authored. These are the documents D175''s wall meets first (every league reference today is a template row)');
 
 select is_empty(
   $$ select s.name || ' -> ' || pg_temp.verdict(pg_temp.env(s.rules))

@@ -31,8 +31,8 @@
  * whole backward-compatibility argument." That pin is
  * `tier-cuts.test.ts` → "regenerates today's three families byte-exactly",
  * cross-checked against BOTH `DEF_PA_BUCKETS`/`DEF_YA_BUCKETS` and the keys
- * the seven shipped `SCORING_TEMPLATES` rules objects actually reference
- * (six incumbents + Scout Scoring, SC.1/migration 106 — R684).
+ * the eight shipped `SCORING_TEMPLATES` rules objects actually reference
+ * (six incumbents + the Scout pair — SC.1/migration 106, SC.4/108; R684).
  *
  * This module is NAMES + BOUNDS only. It decides nothing about what a tier
  * PAYS (the rules document does) and nothing about editing boundaries (F59).

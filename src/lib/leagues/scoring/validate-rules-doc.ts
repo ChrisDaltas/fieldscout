@@ -319,8 +319,8 @@ function summarize(items: readonly (string | number)[], max = 8): string {
  * of a base `1`, which scores identically yet survives `normalizeScoringDoc`'s
  * exact `===` strip and so defeats guardrail 4. Measured against the exact
  * rule: **0 false rejections across all 20,001 legal 2dp values in [-100, 100]
- * and across all 261 coefficients of the seven shipped templates** (both
- * pinned; 218 + Scout Scoring's 43, SC.1).
+ * and across all 304 coefficients of the eight shipped templates** (both
+ * pinned; 218 + the Scout pair's 43 × 2 — SC.1/SC.4).
  *
  * `String(value)` is the shortest round-tripping decimal rendering, so a
  * literal that WAS 2dp stays 2dp. Exponential renderings (`1e-7`, `1e+21`)
@@ -407,7 +407,7 @@ function coefficientEntries(
  * guardrail 2 spells out its own format-1 arm, D175's wall validates format-1
  * rows (`is_template = TRUE`, and any live-league-referenced row), and F21's
  * raw-source ban would be hollow if a flat document could still pay
- * `def_points_allowed` next to its derived buckets. All seven templates pass
+ * `def_points_allowed` next to its derived buckets. All eight templates pass
  * (pinned — the acceptance floor, SE.3(3)).
  */
 export function validateScoringRulesDoc(doc: unknown): ScoringValidationResult {
@@ -712,7 +712,7 @@ function describeValue(value: unknown): string {
  * names"**, which refuses exactly the mixed documents and nothing else.
  *
  * Measured, not argued: the two readings agree on every document that exists —
- * all seven templates match exactly one family, and the F21 literal
+ * all eight templates match exactly one family, and the F21 literal
  * (`def_pa_14_20` + `def_pa_18_27`) is refused under both. The divergence is
  * pinned by its own test so a ruling the other way is a one-line change.
  */

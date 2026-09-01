@@ -1,7 +1,8 @@
 -- ============================================================================
 -- scoring_systems.is_template + the 6 parity template rows — migration 058
--- (census cells count SEVEN template rows since 106's Scout Scoring — SC.1;
--- Scout's own golden pins live in pgTAP 054, not retrofitted here)
+-- (census cells count EIGHT template rows since 108's Scout pair — SC.4;
+-- they counted seven from 106's Scout row, SC.1. The Scout rows' own golden
+-- pins live in pgTAP 054/056, not retrofitted here)
 -- (spec §7.3.3/App B.1/B.4; task L.A1.9; PROGRESS D34/D59; standing rules
 -- tasks-M1 §4).
 --
@@ -88,15 +89,15 @@ select policy_cmd_is('public', 'scoring_systems', 'Templates viewable by everyon
 -- ---------------------------------------------------------------------------
 select is(
   (select count(*) from scoring_systems where is_template),
-  7::bigint,
-  'exactly 7 template rows seeded (058''s parity six + 106''s Scout Scoring — SC.1)');
+  8::bigint,
+  'exactly 8 template rows seeded (058''s parity six + the Scout pair — 106 seeded, 108 renamed + added Scout PPR; SC.1/SC.4)');
 
 select results_eq(
   $$ select name from scoring_systems where is_template order by name $$,
-  $$ values ('ESPN Full PPR'), ('ESPN Standard'), ('Scout Scoring'),
-            ('Sleeper Full PPR'), ('Sleeper Standard'), ('Yahoo Half PPR'),
-            ('Yahoo Standard') $$,
-  'template names are §7.3.3''s table verbatim (v2.16.9: + Scout Scoring)');
+  $$ values ('ESPN Full PPR'), ('ESPN Standard'), ('Scout PPR'),
+            ('Scout Standard'), ('Sleeper Full PPR'), ('Sleeper Standard'),
+            ('Yahoo Half PPR'), ('Yahoo Standard') $$,
+  'template names are §7.3.3''s table verbatim (v2.16.11: the Scout pair — Scout PPR name-sorts between ESPN Standard and Scout Standard)');
 
 select is(
   (select count(*) from scoring_systems
@@ -202,7 +203,7 @@ select is(
 
 select is(
   (select count(*) from scoring_systems where is_template and length(coalesce(description, '')) > 40),
-  7::bigint,
+  8::bigint,
   'every template has a commissioner-readable description');
 
 -- ---------------------------------------------------------------------------
@@ -249,8 +250,8 @@ select set_config('request.jwt.claims', '{"role": "anon"}', true);
 
 select is(
   (select count(*) from scoring_systems where is_template),
-  7::bigint,
-  'anon sees all 7 templates (world-readable — the picker''s pre-auth surface)');
+  8::bigint,
+  'anon sees all 8 templates (world-readable — the picker''s pre-auth surface)');
 select is(
   (select count(*) from scoring_systems where not is_template),
   0::bigint,
@@ -280,8 +281,8 @@ select set_config('request.jwt.claims',
 
 select is(
   (select count(*) from scoring_systems where is_template),
-  7::bigint,
-  'u1 sees all 7 templates (SELECT-sees-N pin for the write probes below)');
+  8::bigint,
+  'u1 sees all 8 templates (SELECT-sees-N pin for the write probes below)');
 select is(
   (select count(*) from scoring_systems where owner_id = '73000000-0000-4000-8000-000000000001'),
   2::bigint,
@@ -338,8 +339,8 @@ select set_config('request.jwt.claims',
 
 select is(
   (select count(*) from scoring_systems where is_template),
-  7::bigint,
-  'u2 sees all 7 templates');
+  8::bigint,
+  'u2 sees all 8 templates');
 select is(
   (select count(*) from scoring_systems
    where owner_id = '73000000-0000-4000-8000-000000000001'),
