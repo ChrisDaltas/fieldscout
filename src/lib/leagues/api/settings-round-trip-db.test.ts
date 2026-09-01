@@ -38,8 +38,10 @@
  *     (proven with a privileged-corruption fixture the validator refuses
  *     BEFORE the RPC ever runs).
  *   - the L.A1.6 hand-off (tasks-M1 L.A1.6 item 3): a freshly-defaulted
- *     leagues row's `roster_settings` (040's column DEFAULT) deep-equals
- *     the TS `DEFAULT_ROSTER_SETTINGS` literal.
+ *     leagues row's `roster_settings` (the column DEFAULT — 040 as amended
+ *     by 107, SC.2's Scout wr-3 roster) deep-equals the TS
+ *     `DEFAULT_ROSTER_SETTINGS` literal; §H2 adds the raw-bytes wire pin
+ *     (R601).
  *   - D71 (R79, batch-13 remediation): partial settings bodies deep-merge
  *     over the CURRENT stored settings — the catastrophic-reset probe from
  *     the review is section C2's regression trap (one-key body must change
@@ -1005,5 +1007,36 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
       .single()
     if (error || !data) throw new Error(`defaulted insert failed: ${error?.message}`)
     expect(data.roster_settings).toStrictEqual(DEFAULT_ROSTER_SETTINGS)
+  })
+
+  // H2 — SC.2/R601: the SQL default's bytes OVER THE WIRE. A raw `fetch`
+  // (never supabase-js — R601's lesson: a serializing client masked
+  // Infinity and 2^53+1 from an entire corpus) inserts a row omitting
+  // roster_settings and compares `response.text()` — the raw PostgREST
+  // bytes — against a stored literal of jsonb's normalized rendering
+  // (keys ordered by length then bytes, ", "/": " separators; measured,
+  // and byte-identical to what pgTAP 055 §A3 pins as
+  // `roster_settings::text`). The TS side of the bridge is
+  // league-settings.test.ts's byte pin against 055's TS-form literal;
+  // together: TS stringify bytes ≡ 055's TS-form literal ≡ (as jsonb) the
+  // column DEFAULT, whose raw wire rendering is THIS string. (The service
+  // role is the only writer here by design — 054/Q8: leagues has no client
+  // write path, so the column DEFAULT is reachable over the wire only
+  // above RLS.)
+  it('the wire bytes of a freshly-defaulted roster_settings are the pinned normalized rendering (SC.2/R601 — raw fetch, raw text)', async () => {
+    const res = await fetch(`${LOCAL_URL}/rest/v1/leagues?select=roster_settings`, {
+      method: 'POST',
+      headers: {
+        apikey: LOCAL_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${LOCAL_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({ name: `${LEAGUE_NAME_PREFIX}-default-row-wire`, season: 2026, owner_id: creatorId }),
+    })
+    expect(res.status).toBe(201)
+    expect(await res.text()).toBe(
+      '[{"roster_settings":{"bench": 6, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0, "starting_slots": [{"key": "qb", "count": 1, "label": "QB", "eligible": ["QB"]}, {"key": "rb", "count": 2, "label": "RB", "eligible": ["RB"]}, {"key": "wr", "count": 3, "label": "WR", "eligible": ["WR"]}, {"key": "te", "count": 1, "label": "TE", "eligible": ["TE"]}, {"key": "flex", "count": 1, "label": "FLEX (W/R/T)", "eligible": ["WR", "RB", "TE"]}, {"key": "k", "count": 1, "label": "K", "eligible": ["K"]}, {"key": "dst", "count": 1, "label": "D/ST", "eligible": ["DST"]}]}}]',
+    )
   })
 })

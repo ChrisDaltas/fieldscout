@@ -158,14 +158,20 @@ export type RosterSettings = z.infer<typeof rosterSettingsSchema>
 
 /**
  * §7.3.2 preset-table Default counts rendered in the canonical shape — the
- * SAME object 040's `roster_settings` DEFAULT holds and pgTAP 005 golden-pins
- * as a JSON literal (C9; the cross-pin lives in league-settings.test.ts).
+ * SAME object the `roster_settings` column DEFAULT holds (040 as amended by
+ * 107) and pgTAP 005 golden-pins as a JSON literal (C9; the cross-pin lives
+ * in league-settings.test.ts).
+ *
+ * wr = 3 since v2.16.9: Chris's 2026-08-26 Scout default roster (task SC.2,
+ * F186) — 1 QB / 2 RB / 3 WR / 1 TE / 1 FLEX W-R-T / 1 K / 1 D/ST, bench 6,
+ * 1 IR. Migration 107 swaps the column DEFAULT for future rows only —
+ * existing leagues keep their chosen roster (a default is not a retrofit).
  */
 export const DEFAULT_ROSTER_SETTINGS: RosterSettings = deepFreeze({
   starting_slots: [
     { key: 'qb', label: 'QB', eligible: ['QB'], count: 1 },
     { key: 'rb', label: 'RB', eligible: ['RB'], count: 2 },
-    { key: 'wr', label: 'WR', eligible: ['WR'], count: 2 },
+    { key: 'wr', label: 'WR', eligible: ['WR'], count: 3 },
     { key: 'te', label: 'TE', eligible: ['TE'], count: 1 },
     { key: 'flex', label: 'FLEX (W/R/T)', eligible: ['WR', 'RB', 'TE'], count: 1 },
     { key: 'k', label: 'K', eligible: ['K'], count: 1 },

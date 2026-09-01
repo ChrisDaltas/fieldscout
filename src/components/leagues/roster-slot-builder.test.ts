@@ -76,6 +76,12 @@ describe('golden pin — spec §7.3.2 two-flex printed example (builder-output f
    */
   function buildTwoFlexExample(): RosterSettings {
     let roster = structuredClone(DEFAULT_ROSTER_SETTINGS)
+    // SC.2 (v2.16.9 §7.3.2): the Scout default starts 3 WR; the spec's
+    // printed example (an illustration of the two-flex shape, kept verbatim
+    // — the v2.16.9 markup changed only the preset table's Default column)
+    // still shows wr 2, so the commissioner path now includes turning WR
+    // down by one.
+    roster = setSlotCount(roster, 'wr', 2)
     roster = removeSlot(roster, 'flex')
     roster = addCustomFlex(roster, { eligible: ['WR', 'RB', 'TE'], label: 'W/R/T' })
     roster = addCustomFlex(roster, { eligible: ['WR', 'TE'], label: 'W/T' })

@@ -318,7 +318,9 @@ describe('draft core over PostgREST (migration 066)', () => {
     expect(started.draft.current_pick_number).toBe(1)
     expect(started.draft.on_clock_team_id).toBe(orderedTeamIds[0])
     expect(started.draft.draft_order).toEqual(orderedTeamIds)
-    expect(started.draft.total_rounds).toBe(15)
+    // 16 since SC.2 (v2.16.9 §7.3.2 Scout default roster, wr 2 → 3):
+    // D91 draftable slots for the default roster = 10 starters + 6 bench.
+    expect(started.draft.total_rounds).toBe(16)
     expect(started.draft.current_deadline).not.toBeNull()
 
     // The league transitioned (draft_start's own path) and the snapshot

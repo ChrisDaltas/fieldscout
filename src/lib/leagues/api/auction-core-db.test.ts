@@ -68,11 +68,12 @@ const AUCTION_BUDGET = 200
 const AUCTION_RESERVE = 1
 const BID_SECONDS = 30
 const ANTI_SNIPE_SECONDS = 10
-/** D91 draftable slots for the default roster (9 starters + 6 bench, IR
- *  excluded) — the auction's per-team roster capacity (D126). */
-const OPEN_SLOTS = 15
+/** D91 draftable slots for the default roster (10 starters + 6 bench, IR
+ *  excluded) — the auction's per-team roster capacity (D126). 16 since
+ *  SC.2 (v2.16.9 §7.3.2 Scout default roster, wr 2 → 3). */
+const OPEN_SLOTS = 16
 /** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 185
 
 const COMMISH = {
   email: 'auction-core-commish@fieldscout.test',

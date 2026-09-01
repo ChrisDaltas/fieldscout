@@ -62,11 +62,12 @@ const AUCTION_BUDGET = 200
  *  which is a fixed $1 (§8.6.3) and is written literally where it is used. */
 const AUCTION_RESERVE = 1
 const NOMINATION_SECONDS = 45
-/** D91 draftable slots for the default roster (9 starters + 6 bench; IR
- *  excluded) — the auction's per-team roster capacity (D126). */
-const OPEN_SLOTS = 15
+/** D91 draftable slots for the default roster (10 starters + 6 bench; IR
+ *  excluded) — the auction's per-team roster capacity (D126). 16 since
+ *  SC.2 (v2.16.9 §7.3.2 Scout default roster, wr 2 → 3). */
+const OPEN_SLOTS = 16
 /** §8.6.1: max_bid = remaining − (open_slots − 1) × reserve. */
-const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 186
+const MAX_BID = AUCTION_BUDGET - (OPEN_SLOTS - 1) * AUCTION_RESERVE // 185
 
 const COMMISH = {
   email: 'auction-start-commish@fieldscout.test',
@@ -278,7 +279,7 @@ describe('auction start over the wire (migration 084)', () => {
       expect(rows[0]).toMatchObject({
         remaining: AUCTION_BUDGET,
         open_slots: OPEN_SLOTS,
-        max_bid: MAX_BID, // 186 — the formula, not a copy of the budget
+        max_bid: MAX_BID, // 185 — the formula, not a copy of the budget
         committed: 0,
       })
     }

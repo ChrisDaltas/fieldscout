@@ -27,10 +27,10 @@
 --     `auction_min_bid` and that every one of the twelve replaced bodies
 --     calls the helper — the R381 "the call, not a comment mention" form.
 --   * §B THE MAX-BID GOLDENS, BOTH STATES, ON ONE DRAFT ROW (the point of the
---     task): 200/15/186 with the toggle OFF and 200/15/200 with it ON, as
+--     task): 200/16/185 with the toggle OFF and 200/16/200 with it ON, as
 --     stored literals, flipped on the SAME draft so the toggle is the only
---     variable. The one-unit boundary is pinned from both sides (186 is false
---     at 185 and 187) and the LAST-SLOT negative control is pinned too — with
+--     variable. The one-unit boundary is pinned from both sides (185 is false
+--     at 184 and 186) and the LAST-SLOT negative control is pinned too — with
 --     one slot open the reserve term vanishes and the two states AGREE, which
 --     is the shape that would make a naive "the toggle does something" test
 --     pass for the wrong reason. **The break probe reddens §B's ON pin.**
@@ -40,9 +40,9 @@
 --     the toggle OFF it calls true with the toggle ON — the machinery is
 --     present in both columns, not deleted in one.
 --   * §D THE START GATE, ONE DOLLAR EITHER SIDE AND ONE FLAG EITHER SIDE:
---     $14 against 15 draftable slots is refused with the toggle OFF (exact
+--     $15 against 16 draftable slots is refused with the toggle OFF (exact
 --     message, so the copy that used to send a commissioner to a RETIRED knob
---     cannot come back) and starts with it ON; $15 — one dollar up — starts
+--     cannot come back) and starts with it ON; $16 — one dollar up — starts
 --     with the toggle OFF.
 --   * §E E28'S ARMS, PRESENT IN BOTH COLUMNS: arm 2 refuses at reserve 1 and
 --     is VACUOUS at reserve 0, while arm 1 (below committed spend) still
@@ -143,8 +143,9 @@ from generate_series(1, 2) i;
 
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings)
 values
-  -- LA: the shipped default shape — 12 teams, $200, the default roster's 15
-  -- DRAFTABLE slots (D91: starters + bench, IR excluded).
+  -- LA: the shipped default shape — 12 teams, $200, the default roster's 16
+  -- DRAFTABLE slots (D91: starters + bench, IR excluded; 16 since SC.2 —
+  -- the v2.16.9 Scout default roster, wr 2 → 3).
   ('a7000000-0000-4000-8000-0000000000aa', '8e000000-0000-4000-8000-000000000001',
    'pgtap-rt-LA-main', 2026, 'scheduled', 12,
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -153,7 +154,7 @@ values
      "auction_budget": 200, "auction_zero_dollar_nominations": false,
      "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
      "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'),
-  -- LB: ONE DOLLAR SHORT of the derived floor — $14 against 15 slots. The
+  -- LB: ONE DOLLAR SHORT of the derived floor — $15 against 16 slots. The
   -- budget is under the catalog's own min(50) deliberately: pgTAP writes the
   -- blob directly, so this is the cheapest shape that reaches the ENGINE's
   -- start gate, which counts D91 draftable slots (starters + bench, no IR).
@@ -166,7 +167,7 @@ values
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 14, "auction_zero_dollar_nominations": false,
+     "auction_budget": 15, "auction_zero_dollar_nominations": false,
      "pick_timer_seconds": 90}}'),
   -- LC: LB one dollar up — EXACTLY at the floor with the toggle OFF.
   ('a7000000-0000-4000-8000-0000000000cc', '8e000000-0000-4000-8000-000000000001',
@@ -174,7 +175,7 @@ values
    (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "draft_order_mode": "random",
      "nomination_order_mode": "same_as_draft_order",
-     "auction_budget": 15, "auction_zero_dollar_nominations": false,
+     "auction_budget": 16, "auction_zero_dollar_nominations": false,
      "pick_timer_seconds": 90}}'),
   -- LD: the nomination-floor / increment world — $200, ONE draftable slot is
   -- not enough for §F's raise, so it keeps the default roster and gets a
@@ -221,15 +222,15 @@ from generate_series(1, 20) i;
 select is(
   (public.draft_start_internal('a7000000-0000-4000-8000-0000000000aa', false)->>'started')::boolean,
   true,
-  'LA: the shipped default auction starts (12 × $200 over 15 draftable slots)');
+  'LA: the shipped default auction starts (12 × $200 over 16 draftable slots)');
 
 select results_eq(
   $$ select b.remaining, b.open_slots, b.max_bid, b.committed
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c7000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a7000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (200, 15, 186, 0) $$,
-  'GOLDEN, $0 NOMINATIONS OFF: 200 / 15 / 186 (200 − 14 × $1) / 0 — the shipped default, byte-for-byte what 033 §D has always answered');
+  $$ values (200, 16, 185, 0) $$,
+  'GOLDEN, $0 NOMINATIONS OFF: 200 / 16 / 185 (200 − 15 × $1) / 0 — the shipped default, byte-for-byte what 033 §D has always answered');
 
 -- THE DISCRIMINATOR: flip the toggle on the SAME draft row and nothing else.
 update drafts set config = jsonb_set(config, '{auction_zero_dollar_nominations}', 'true'::jsonb)
@@ -239,14 +240,14 @@ select results_eq(
      from drafts d
      cross join lateral public.draft_team_budget(d.id, 'c7000000-0000-4000-8000-00aa00000001') b
      where d.league_id = 'a7000000-0000-4000-8000-0000000000aa' $$,
-  $$ values (200, 15, 200, 0) $$,
-  'GOLDEN, $0 NOMINATIONS ON: 200 / 15 / 200 — max_bid IS remaining, flat (§8.6.1/E68). Same row, same budget, same slots: the ONLY thing that moved is the toggle. **THE BREAK PROBE REDDENS HERE.**');
+  $$ values (200, 16, 200, 0) $$,
+  'GOLDEN, $0 NOMINATIONS ON: 200 / 16 / 200 — max_bid IS remaining, flat (§8.6.1/E68). Same row, same budget, same slots: the ONLY thing that moved is the toggle. **THE BREAK PROBE REDDENS HERE.**');
 select is(
   (select b.max_bid from drafts d
    cross join lateral public.draft_team_budget(d.id, 'c7000000-0000-4000-8000-00aa00000001') b
-   where d.league_id = 'a7000000-0000-4000-8000-0000000000aa') - 186,
-  14,
-  'D146, the gap is exactly (open_slots − 1) × $1 = 14 — false at 13 and at 15, so a reserve of $0.5 or $2 could not pass this pin');
+   where d.league_id = 'a7000000-0000-4000-8000-0000000000aa') - 185,
+  15,
+  'D146, the gap is exactly (open_slots − 1) × $1 = 15 — false at 14 and at 16, so a reserve of $0.5 or $2 could not pass this pin');
 
 -- THE NEGATIVE CONTROL (the pin that must NOT discriminate). With ONE slot
 -- open the reserve term is (1 − 1) × reserve = 0 whichever the reserve is, so
@@ -267,25 +268,25 @@ select is(
    where d.league_id = 'a7000000-0000-4000-8000-0000000000aa'),
   200,
   '…and toggle OFF answers 200 TOO — the one shape where the toggle cannot show, pinned so a passing test is never mistaken for a discriminating one');
-update drafts set total_rounds = 15 where league_id = 'a7000000-0000-4000-8000-0000000000aa';
+update drafts set total_rounds = 16 where league_id = 'a7000000-0000-4000-8000-0000000000aa';
 
 -- ---------------------------------------------------------------------------
 -- C. §8.6.8 stays correct and stops binding (D198(4) — never-weaken)
 -- ---------------------------------------------------------------------------
-update drafts set budget_adjustments = '{"c7000000-0000-4000-8000-00aa00000002": -186}'::jsonb
+update drafts set budget_adjustments = '{"c7000000-0000-4000-8000-00aa00000002": -185}'::jsonb
 where league_id = 'a7000000-0000-4000-8000-0000000000aa';
 select is(
   public.draft_auction_solvent(
     (select id from drafts where league_id = 'a7000000-0000-4000-8000-0000000000aa')),
   false,
-  '§8.6.8 with the toggle OFF: a seat cut to $14 against 15 open slots is INSOLVENT (14 < 15 × $1) — one dollar short, the discriminating state');
+  '§8.6.8 with the toggle OFF: a seat cut to $15 against 16 open slots is INSOLVENT (15 < 16 × $1) — one dollar short, the discriminating state');
 update drafts set config = jsonb_set(config, '{auction_zero_dollar_nominations}', 'true'::jsonb)
 where league_id = 'a7000000-0000-4000-8000-0000000000aa';
 select is(
   public.draft_auction_solvent(
     (select id from drafts where league_id = 'a7000000-0000-4000-8000-0000000000aa')),
   true,
-  '…and with the toggle ON the SAME board is solvent (14 ≥ 15 × $0): the invariant did not go away, it went slack — every team can fill every slot at $0');
+  '…and with the toggle ON the SAME board is solvent (15 ≥ 16 × $0): the invariant did not go away, it went slack — every team can fill every slot at $0');
 update drafts set budget_adjustments = '{"c7000000-0000-4000-8000-00aa00000002": -201}'::jsonb
 where league_id = 'a7000000-0000-4000-8000-0000000000aa';
 select is(
@@ -303,19 +304,19 @@ where league_id = 'a7000000-0000-4000-8000-0000000000aa';
 select throws_ok(
   $$ select public.draft_start_internal('a7000000-0000-4000-8000-0000000000bb', false) $$,
   'P0001',
-  'draft_start: league a7000000-0000-4000-8000-0000000000bb cannot start an auction — a $14 budget cannot fill 15 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
+  'draft_start: league a7000000-0000-4000-8000-0000000000bb cannot start an auction — a $15 budget cannot fill 16 draftable roster spots at a $1 per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup',
   'START GATE, toggle OFF, ONE DOLLAR SHORT: refused with the numbers, the UNIT (D91 draftable slots) and a remedy that names a knob that EXISTS — the retired "lower the minimum bid" sentence cannot come back without reddening this');
 select is(
   (public.draft_start_internal('a7000000-0000-4000-8000-0000000000cc', false)->>'started')::boolean,
   true,
-  '…and ONE DOLLAR UP ($15 for 15 slots, exactly at the floor) starts — the pair brackets the gate (D146)');
+  '…and ONE DOLLAR UP ($16 for 16 slots, exactly at the floor) starts — the pair brackets the gate (D146)');
 update leagues
 set settings = jsonb_set(settings, '{draft,auction_zero_dollar_nominations}', 'true'::jsonb)
 where id = 'a7000000-0000-4000-8000-0000000000bb';
 select is(
   (public.draft_start_internal('a7000000-0000-4000-8000-0000000000bb', false)->>'started')::boolean,
   true,
-  '…and the SAME $14 league starts once $0 nominations are allowed — one flag, no other change (§8.6.8 stops binding)');
+  '…and the SAME $15 league starts once $0 nominations are allowed — one flag, no other change (§8.6.8 stops binding)');
 
 -- ---------------------------------------------------------------------------
 -- E. E28's arms, present in BOTH columns (D198(4))
@@ -329,7 +330,7 @@ select throws_ok(
        (select id from drafts where league_id = 'a7000000-0000-4000-8000-0000000000aa'),
        'c7000000-0000-4000-8000-00aa00000003', -187, 'pgtap') $$,
   'P0001',
-  'draft_adjust_budget: that leaves pgtap-rt-aa-t3 with $13 for 15 open roster spots at a $1 per-slot reserve — §8.6.8 needs at least $15; reverse a won bid to free a spot, or make the adjustment smaller (E28)',
+  'draft_adjust_budget: that leaves pgtap-rt-aa-t3 with $13 for 16 open roster spots at a $1 per-slot reserve — §8.6.8 needs at least $16; reverse a won bid to free a spot, or make the adjustment smaller (E28)',
   'E28 ARM 2 with the toggle OFF: still refusing, and the message names the RESERVE rather than a "minimum bid" the league does not have');
 reset role;
 update drafts set config = jsonb_set(config, '{auction_zero_dollar_nominations}', 'true'::jsonb)
@@ -343,7 +344,7 @@ select is(
      'c7000000-0000-4000-8000-00aa00000003', -187, 'pgtap')
    #>> '{remaining}'),
   '13',
-  'E28 ARM 2 with the toggle ON: the SAME edit is accepted — the arm is VACUOUS, not removed ($13 ≥ 15 × $0)');
+  'E28 ARM 2 with the toggle ON: the SAME edit is accepted — the arm is VACUOUS, not removed ($13 ≥ 16 × $0)');
 select throws_ok(
   $$ select public.draft_adjust_budget(
        (select id from drafts where league_id = 'a7000000-0000-4000-8000-0000000000aa'),

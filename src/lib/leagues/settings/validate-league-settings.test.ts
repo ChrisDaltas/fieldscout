@@ -328,23 +328,25 @@ describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size ×
     return s
   }
 
-  it('violating fixture: budget 10 against the default 16-spot roster at a $1 reserve (needs 16) → error on draft.auction_budget', () => {
-    expect(deriveRosterSize(LEAGUE_SETTINGS_DEFAULTS.roster_settings)).toBe(16)
+  // 17 since SC.2 (v2.16.9 §7.3.2 Scout default roster, wr 2 → 3): the
+  // default roster derives 10 starters + 6 bench + 1 IR.
+  it('violating fixture: budget 10 against the default 17-spot roster at a $1 reserve (needs 17) → error on draft.auction_budget', () => {
+    expect(deriveRosterSize(LEAGUE_SETTINGS_DEFAULTS.roster_settings)).toBe(17)
     const result = validateLeagueSettings(auction(10))
     expect(result.valid).toBe(false)
     expect(result.errors[0]).toMatchObject({ field: 'draft.auction_budget' })
-    expect(result.errors[0].message).toMatch(/needs at least 16/)
+    expect(result.errors[0].message).toMatch(/needs at least 17/)
     // The remedy the message points at is the one that exists now.
     expect(result.errors[0].message).toMatch(/Allowing \$0 nominations removes the reserve\./)
   })
 
   it('D146 BOUNDARY at reserve 1: budget exactly roster_size passes; one dollar below fails', () => {
-    expect(errorFields(auction(16))).toStrictEqual([])
-    expect(errorFields(auction(15))).toContain('draft.auction_budget')
+    expect(errorFields(auction(17))).toStrictEqual([])
+    expect(errorFields(auction(16))).toContain('draft.auction_budget')
   })
 
-  it('D146 BOUNDARY at reserve 0: the SAME $15 budget passes, and so does $0 — the floor is vacuous, not absent (§8.6.8)', () => {
-    expect(errorFields(auction(15, true))).toStrictEqual([])
+  it('D146 BOUNDARY at reserve 0: the SAME $16 budget passes, and so does $0 — the floor is vacuous, not absent (§8.6.8)', () => {
+    expect(errorFields(auction(16, true))).toStrictEqual([])
     expect(errorFields(auction(0, true))).toStrictEqual([])
     // …and the check is still RUNNING: nothing can be under a floor of 0, so
     // a negative budget (schema-impossible, constructed here) still trips it.
@@ -405,17 +407,18 @@ describe('§7.3.8 bullet: auction solvency — auction_budget ≥ roster_size ×
 })
 
 describe('§7.3.8 bullet: roster_size × team_count ≤ draftable pool — WARNS (§7.3.2)', () => {
-  it('violating fixture: pool one short of 12 × 16 = 192 → warning, not error', () => {
-    const result = validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS, { draftablePoolSize: 191 })
+  // 12 × 17 = 204 since SC.2 (the Scout default roster, wr 2 → 3).
+  it('violating fixture: pool one short of 12 × 17 = 204 → warning, not error', () => {
+    const result = validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS, { draftablePoolSize: 203 })
     expect(result.valid).toBe(true)
     expect(result.errors).toStrictEqual([])
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toMatchObject({ field: 'roster_settings' })
-    expect(result.warnings[0].message).toMatch(/192/)
+    expect(result.warnings[0].message).toMatch(/204/)
   })
 
-  it('boundary: pool exactly 192 → no warning; no ctx → no warning', () => {
-    expect(validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS, { draftablePoolSize: 192 }).warnings).toStrictEqual([])
+  it('boundary: pool exactly 204 → no warning; no ctx → no warning', () => {
+    expect(validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS, { draftablePoolSize: 204 }).warnings).toStrictEqual([])
     expect(validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS).warnings).toStrictEqual([])
   })
 })
