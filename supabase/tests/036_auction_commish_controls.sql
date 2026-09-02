@@ -429,6 +429,17 @@ select ok(
 --    post-change world. Fixtures land first (they are shared by every
 --    section), then the sweep.
 -- ---------------------------------------------------------------------------
+-- 110/L.D1.2 (F215): THE CALENDAR THIS FIXTURE LANDS ON. Completing a real
+-- draft now maps the league onto nfl_weeks at now() and shrinks-or-refuses
+-- the season to end by week 18 (§11.7 Mid-season entry). Pinning season 2026
+-- far-future inside this rolled-back txn makes every completion below map to
+-- NFL week 1 at ANY wall clock — the fixture owns its calendar, never the
+-- clock. A fixture change forced by 110, not a drive-by.
+update nfl_weeks
+set starts_at = starts_at + interval '73 years',
+    correction_window_ends_at = correction_window_ends_at + interval '73 years'
+where season = 2026;
+
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -460,11 +471,12 @@ from generate_series(1, 60) i;
 --   LK a3  draft_reset mid-bidding (R302) + the cross-run rewind (R379) §K
 --   LJ a4  the auction MOCK — D138's refusal sweep                   §M
 --   LM a6  a **min_bid $0** auction — the gate's CAPACITY arm (R378)  §I(c)
+-- 110/L.D1.2 (F143): a drafting+ league must REFERENCE a scoring system (§7.3.8's other half — the guard now refuses a NULL scoring_system_id in drafting+); this fixture's reference is a template. A fixture change forced by 110, not a drive-by.
 insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 select ('b8000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        '9f000000-0000-4000-8000-000000000001',
-       'pgtap-cm5-' || w.nm, 2026, 'drafting', 8, null,
+       'pgtap-cm5-' || w.nm, 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
        ('{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": false,
           "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
           "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,
@@ -485,7 +497,7 @@ insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 values ('b8000000-0000-4000-8000-0000000000a6',
         '9f000000-0000-4000-8000-000000000001',
-        'pgtap-cm5-LM-minbid0', 2026, 'drafting', 8, null,
+        'pgtap-cm5-LM-minbid0', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
         '{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": true,
            "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
            "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,

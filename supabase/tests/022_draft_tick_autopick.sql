@@ -124,8 +124,8 @@ select ok(
   and not has_function_privilege('anon', 'public.draft_apply_pick_internal(uuid,text,boolean,text,uuid,uuid)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.draft_create_internal(uuid,boolean)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.draft_create_internal(uuid,boolean)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.snapshot_league_scoring_internal(uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.snapshot_league_scoring_internal(uuid)', 'EXECUTE'),
   'every internal helper (resolve/apply-pick/create/start/snapshot) is revoked from anon AND authenticated');

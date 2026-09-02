@@ -35,6 +35,7 @@ import {
   splitSettings,
   V1_TEAM_COUNTS,
   type LeagueSettings,
+  mintScheduleSeed,
 } from '../settings/league-settings'
 import {
   createLeague,
@@ -239,8 +240,14 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
       expect(league?.faab_budget).toBe(250)
       expect(league?.scoring_rules_snapshot).toBeNull()
       expect(league?.creation_action_id).toBe(input.action_id)
-      // The stored blob is EXACTLY splitSettings' blob half (D60 authority).
-      expect(league?.settings).toStrictEqual(splitSettings(input.settings).blob)
+      // The stored blob is EXACTLY splitSettings' blob half (D60 authority) —
+      // plus the ONE server-minted key: §11.7's schedule_seed, minted from the
+      // submit's action_id at creation (migration 110 / L.D1.2; deterministic,
+      // so a D68 replay stores the same seed).
+      expect(league?.settings).toStrictEqual({
+        ...(splitSettings(input.settings).blob as Record<string, unknown>),
+        schedule_seed: mintScheduleSeed(input.action_id),
+      })
 
       // Creator seated as commissioner with a team (§12.2), faab_balance
       // seeded from faab_budget — the NON-default 250.
@@ -425,7 +432,8 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
     // Golden round-trip: what came back through splitSettings → DB →
     // mergeSettings is EXACTLY what was submitted (gate item 3's per-field
     // sweep is L.A1.13; this pins the create-path round-trip wholesale).
-    expect(body.settings).toStrictEqual(input.settings)
+    // …with the one server-minted key (§11.7 schedule_seed, from the action_id — migration 110).
+    expect(body.settings).toStrictEqual({ ...input.settings, schedule_seed: mintScheduleSeed(input.action_id) })
     expect(body.league.max_teams).toBe(14)
     expect(body.league.invite_code).toHaveLength(10)
     expect(body.members).toHaveLength(1)

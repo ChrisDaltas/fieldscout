@@ -117,14 +117,15 @@ select '00000000-0000-0000-0000-000000000000',
        ('{"username": "ms2_user_' || i || '"}')::jsonb, now(), now()
 from generate_series(1, 4) i;
 
+-- 110/L.D1.2 (F143): a drafting+ league must REFERENCE a scoring system (§7.3.8's other half — the guard now refuses a NULL scoring_system_id in drafting+); this fixture's reference is a template. A fixture change forced by 110, not a drive-by.
 insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 values
   ('b0480000-0000-4000-8000-0000000000aa', '90480000-0000-4000-8000-000000000001',
-   'pgtap-ms2-snake', 2026, 'drafting', 8, null,
+   'pgtap-ms2-snake', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "snake", "pick_timer_seconds": 90, "disconnect_grace_seconds": 30}}'::jsonb, '{}'::jsonb),
   ('b0480000-0000-4000-8000-0000000000bb', '90480000-0000-4000-8000-000000000001',
-   'pgtap-ms2-auction', 2026, 'drafting', 8, null,
+   'pgtap-ms2-auction', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
    '{"draft": {"draft_type": "auction", "auction_budget": 200,
       "auction_zero_dollar_nominations": false, "auction_nomination_seconds": 45,
       "auction_bid_seconds": 30, "auction_anti_snipe_seconds": 10,

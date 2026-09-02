@@ -20,6 +20,7 @@ import {
   LEAGUE_SETTINGS_DEFAULTS,
   leagueSettingsSchema,
   validateLeagueSettings,
+  mintScheduleSeed,
 } from './league-settings'
 
 // ---------------------------------------------------------------------------
@@ -66,7 +67,7 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
   // a STORED literal — not recomputed. Flipping ANY §7.3 default fails here.
   it('golden pin: full default object serialization matches the stored literal', () => {
     const pinned =
-      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_process_day":"wed","waiver_process_time":"03:00","waiver_period_hours":48,"free_agency":"immediate_after_waivers","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","player_game_lock":true,"bench_lock":true,"fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
+      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"schedule_seed":null,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_process_day":"wed","waiver_process_time":"03:00","waiver_period_hours":48,"free_agency":"immediate_after_waivers","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","player_game_lock":true,"bench_lock":true,"fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
     expect(JSON.stringify(LEAGUE_SETTINGS_DEFAULTS)).toBe(pinned)
   })
 
@@ -183,9 +184,11 @@ const RANGE_CASES: RangeCase[] = [
   // §7.3.1
   { path: 'team_count', ok: [8, 16], bad: [7, 9, 18, 6] },
   { path: 'divisions', ok: [1, 2], bad: [0, 3] },
-  { path: 'regular_season_weeks', ok: [12, 15], bad: [11, 16] },
+  // v2.16.12 (Q31 rider (3)): the PARSE range is the EFFECTIVE range — a mid-season league's stored plan may be engine-shrunk to ≥ 4 (§11.7); the 12–15 CREATION range moved to validateLeagueSettings (pinned in validate-league-settings.test.ts)
+  { path: 'regular_season_weeks', ok: [4, 15], bad: [3, 16] },
   { path: 'playoff_teams', ok: [0, 2, 12], bad: [1, 3, 14, -2] },
-  { path: 'playoff_start_week', ok: [13, 16], bad: [12, 17] }, // R 13–16 (v2.8.6/Q10 erratum); 17 rejected at parse = the old gap pair 12+17 is schema-unrepresentable
+  { path: 'playoff_start_week', ok: [5, 16], bad: [4, 17] }, // parse = effective range (≥ 5 when engine-shrunk, Q31); creation 13–16 → validator; 17 rejected at parse = the old gap pair 12+17 is schema-unrepresentable
+  { path: 'schedule_seed', ok: [0, 2147483647, null], bad: [-1, 2147483648, 1.5] }, // §11.7 seed: 31-bit non-negative or null (not yet minted — migration 110)
   { path: 'playoff_weeks_per_round', ok: [1, 2], bad: [0, 3] },
   { path: 'playoff_byes', ok: ['auto'], bad: ['manual', 0] },
   { path: 'format', ok: ['redraft'], bad: ['keeper', 'dynasty', 'best_ball'] },
@@ -378,5 +381,20 @@ describe('deep-frozen exported constants (R64)', () => {
     derived.trade_veto_votes = 7 // must not throw…
     expect(derived.trade_veto_votes).toBe(7)
     expect(LEAGUE_SETTINGS_DEFAULTS.trade_veto_votes).toBe(6) // …and never aliases the constant
+  })
+})
+
+describe('mintScheduleSeed — §11.7 (migration 110): the seed is minted from the create\'s action_id, deterministically', () => {
+  it('is deterministic per action_id, lands in the 31-bit seed space, and differs across ids', () => {
+    const a = mintScheduleSeed('7f3e2a10-9b4c-4d5e-8f60-000000000001')
+    expect(a).toBe(mintScheduleSeed('7f3e2a10-9b4c-4d5e-8f60-000000000001'))
+    expect(a).toBe(0x7f3e2a10) // the first 32 bits, masked (stored literal)
+    expect(mintScheduleSeed('ffffffff-0000-4000-8000-000000000000')).toBe(0x7fffffff) // the sign bit is masked off
+    expect(mintScheduleSeed('00000000-0000-4000-8000-000000000000')).toBe(0)
+    expect(mintScheduleSeed('7f3e2a11-9b4c-4d5e-8f60-000000000001')).not.toBe(a)
+    expect(() => mintScheduleSeed('not-a-uuid')).toThrow(/expected a UUID/)
+  })
+  it('the minted value parses under the catalog\'s schedule_seed range', () => {
+    expect(leagueSettingsSchema.safeParse({ schedule_seed: mintScheduleSeed('ffffffff-0000-4000-8000-000000000000') }).success).toBe(true)
   })
 })

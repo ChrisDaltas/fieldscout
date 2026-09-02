@@ -102,6 +102,11 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
   if (ids.length > 0) {
     const { error: draftsError } = await service.from('drafts').delete().in('league_id', ids)
     throwIfError(draftsError, 'cleanup: drafts delete')
+    // 110/L.D1.2: completion now writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the league graph releases them FIRST (a fixture change forced by 110, not a drive-by).
+    const { error: matchupsError } = await service.from('matchups').delete().in('league_id', ids)
+    throwIfError(matchupsError, 'cleanup: matchups delete')
+    const { error: weeksError } = await service.from('league_weeks').delete().in('league_id', ids)
+    throwIfError(weeksError, 'cleanup: league_weeks delete')
     const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
     throwIfError(teamsError, 'cleanup: teams delete')
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)

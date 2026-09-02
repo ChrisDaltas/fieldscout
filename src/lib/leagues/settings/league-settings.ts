@@ -303,6 +303,47 @@ export type DraftConfig = z.infer<typeof draftConfigSchema>
 /** The §7.3.1 "D" column team count — the anchor for derived defaults. */
 const DEFAULT_TEAM_COUNT = 12
 
+// ---------------------------------------------------------------------------
+// §7.3.1 / §11.7 Mid-season entry (v2.16.12, Q31) — the two ranges of the
+// regular season, said once
+// ---------------------------------------------------------------------------
+
+/**
+ * §11.7 Mid-season entry's FLOOR: a league entering the season late may have
+ * its stored `regular_season_weeks` engine-shrunk down to this many weeks
+ * (then playoff rounds drop; then the engine refuses — migration 110's
+ * `schedule_fit_internal`). The Zod PARSE range starts here so a shrunk row
+ * still merges (Q31 rider (3)).
+ */
+export const MID_SEASON_REGULAR_SEASON_FLOOR = 4
+
+/** §7.3.1 R column: `regular_season_weeks` at CREATION and settings edit. */
+export const CREATION_REGULAR_SEASON_WEEKS = { min: 12, max: 15 } as const
+
+/** §7.3.1 R column: `playoff_start_week` at CREATION and settings edit (13–16 = 12–15 + 1). */
+export const CREATION_PLAYOFF_START_WEEK = { min: 13, max: 16 } as const
+
+/** The schedule engine's seed space: 31-bit non-negative (Park–Miller state, migration 110). */
+export const SCHEDULE_SEED_MAX = 2_147_483_647
+
+/**
+ * Mint a `schedule_seed` (§11.7 — "a seeded PRNG permutes the team order")
+ * from the create's idempotency key: the first 32 bits of the `action_id`
+ * UUID, masked to the 31-bit seed space. DETERMINISTIC on purpose — no clock,
+ * no random source (the M0 time fence and the L.A0.3/R22 determinism guard
+ * both stand): the same submit, replayed, mints the same seed (D68's
+ * idempotency extends to the schedule), and a UUID v4's leading bits are as
+ * unpredictable as a seed needs to be. Remix (L.D1.3) re-mints from its own
+ * action id the same way.
+ */
+export function mintScheduleSeed(actionId: string): number {
+  const hex = actionId.replace(/-/g, '').slice(0, 8)
+  if (!/^[0-9a-f]{8}$/i.test(hex)) {
+    throw new TypeError(`mintScheduleSeed: expected a UUID, got ${JSON.stringify(actionId)}`)
+  }
+  return Number.parseInt(hex, 16) & SCHEDULE_SEED_MAX
+}
+
 /**
  * §7.3.5 "D" column: `trade_veto_votes` defaults to **⌈team_count/2⌉** — a
  * DERIVED default, not a constant. This function is the single home of that
@@ -324,10 +365,15 @@ export const leagueSettingsSchema = z.strictObject({
   // §7.3.1 — format & structure
   format: z.literal('redraft').default('redraft'), // keeper/dynasty/best_ball reserved (v1)
   team_count: z.literal([8, 10, 12, 14, 16]).default(DEFAULT_TEAM_COUNT), // even only in v1 (OQ 12)
-  divisions: z.number().int().min(1).max(2).default(1),
-  regular_season_weeks: z.number().int().min(12).max(15).default(14),
+  divisions: z.number().int().min(1).max(2).default(1), // v2.16.12 (Q30 (d)): PINNED AT 1 for v1 — the select renders one option (settings-panel-ops DIVISION_OPTIONS) and the engine ignores the value; the 1–2 parse range is KEPT so stored rows stay valid and F221's return path is additive
+  // v2.16.12 (Q31 rider (3)): the PARSE range is the EFFECTIVE range — a
+  // mid-season league's stored plan may be engine-shrunk to ≥ 4 regular-season
+  // weeks (§11.7 Mid-season entry), and `mergeSettings` must not throw on that
+  // row. The 12–15 / 13–16 CREATION-and-edit ranges (§7.3.1 R column) live in
+  // `validateLeagueSettings` — the validator every create/PATCH runs.
+  regular_season_weeks: z.number().int().min(MID_SEASON_REGULAR_SEASON_FLOOR).max(15).default(14),
   playoff_teams: z.literal([0, 2, 4, 6, 8, 10, 12]).default(6), // ≤ team_count → validator
-  playoff_start_week: z.number().int().min(13).max(16).default(15), // R 13–16 (v2.8.6 erratum, Q10): = regular_season_weeks + 1 → validator seam check; 13 reachable only at a 12-week season, 16 only at 15
+  playoff_start_week: z.number().int().min(MID_SEASON_REGULAR_SEASON_FLOOR + 1).max(16).default(15), // = regular_season_weeks + 1 → validator seam check (Q10, v2.8.6); creation 13–16 → validator; effective ≥ 5 when engine-shrunk (Q31)
   playoff_weeks_per_round: z.union([z.literal(1), z.literal(2)]).default(1),
   playoff_byes: z.literal('auto').default('auto'), // derived from bracket size (§7.3.1)
   playoff_reseed: z.boolean().default(true),
@@ -336,6 +382,13 @@ export const leagueSettingsSchema = z.strictObject({
   schedule_mode: z.enum(['h2h', 'total_points']).default('h2h'),
   median_game: z.boolean().default(false),
   second_opponent: z.boolean().default(false),
+  // §11.7 (v2.0) — the seed the schedule engine permutes the team order
+  // with (D289; migration 110). Minted at league creation (`createLeague`
+  // via `mintScheduleSeed`), re-minted by Remix (L.D1.3); `null` = not yet
+  // minted (a pre-110 row) — the engine mints one at generation and writes
+  // it back so every schedule stays reproducible. 31-bit non-negative: the
+  // engine's Park–Miller LCG state range.
+  schedule_seed: z.number().int().min(0).max(SCHEDULE_SEED_MAX).nullable().default(null),
 
   // §7.3.2 — roster (own typed column; part of the settings object so the
   // defaults/round-trip cover the WHOLE catalog)
@@ -463,6 +516,28 @@ export function validateLeagueSettings(s: LeagueSettings, ctx: { draftablePoolSi
     errors.push({
       field: 'playoff_teams',
       message: `Playoff teams (${s.playoff_teams}) cannot exceed the number of teams (${s.team_count}).`,
+    })
+  }
+
+  // §7.3.1 R column (v2.16.12, Q31 rider (3)): the CREATION-and-edit ranges —
+  // 12–15 / 13–16 — are enforced HERE, not at parse: the Zod schema's parse
+  // range is the EFFECTIVE range (≥ 4 / ≥ 5) so an engine-shrunk mid-season
+  // row still merges. This validator runs on every create and settings PATCH
+  // (leagues-service), so creation keeps the catalog ranges exactly.
+  if (s.regular_season_weeks < CREATION_REGULAR_SEASON_WEEKS.min || s.regular_season_weeks > CREATION_REGULAR_SEASON_WEEKS.max) {
+    errors.push({
+      field: 'regular_season_weeks',
+      message:
+        `Regular season must be between ${CREATION_REGULAR_SEASON_WEEKS.min} and ${CREATION_REGULAR_SEASON_WEEKS.max} weeks ` +
+        `(currently ${s.regular_season_weeks}). A league that enters the season late is shortened automatically when its draft completes.`,
+    })
+  }
+  if (s.playoff_start_week < CREATION_PLAYOFF_START_WEEK.min || s.playoff_start_week > CREATION_PLAYOFF_START_WEEK.max) {
+    errors.push({
+      field: 'playoff_start_week',
+      message:
+        `Playoffs must start between week ${CREATION_PLAYOFF_START_WEEK.min} and week ${CREATION_PLAYOFF_START_WEEK.max} ` +
+        `(currently week ${s.playoff_start_week}).`,
     })
   }
 

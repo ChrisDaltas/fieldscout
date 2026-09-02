@@ -10,8 +10,9 @@ import { createLeague, patchLeague } from '@/lib/leagues/api/leagues-service'
 import { addPlaceholderSeat } from '@/lib/leagues/api/members-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { rosterForRounds } from '@/lib/leagues/sim/runner'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '@/lib/leagues/sim/synthetic-season'
 
-import { anonClient } from './harness'
+import { anonClient, serviceClient } from './harness'
 import { DEV_PRO_USER, DEV_USER, E2E_LEAGUE_PREFIX } from './local-env'
 
 type Supabase = SupabaseClient<Database>
@@ -180,9 +181,15 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
     },
   }
 
+  // F215 / migration 110: draft completion maps the league onto the NFL
+  // calendar at the completing pick's instant — the league is created on a
+  // SYNTHETIC season (seeded here, idempotently) so the journey never depends
+  // on the wall clock.
+  await seedSyntheticSeason(serviceClient())
+
   const created = await createLeague(commish.client, {
     name,
-    season: 2026,
+    season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     scoring_system_id: template!.id,
     team_name: `${input.nameSuffix} commish`,
     action_id: randomUUID(),

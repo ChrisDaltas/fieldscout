@@ -82,10 +82,11 @@ select '00000000-0000-0000-0000-000000000000',
 from generate_series(1, 2) i;
 -- user 1 = the commissioner; user 2 = a non-member (the SELECT-scope probe).
 
+-- 110/L.D1.2 (F143): a drafting+ league must REFERENCE a scoring system (§7.3.8's other half — the guard now refuses a NULL scoring_system_id in drafting+); this fixture's reference is a template. A fixture change forced by 110, not a drive-by.
 insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 values ('b8a60000-0000-4000-8000-0000000000aa', '8ea60000-0000-4000-8000-000000000001',
-        'pgtap-ap6-LA', 2026, 'drafting', 8, null,
+        'pgtap-ap6-LA', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
         '{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": false,
            "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
            "auction_anti_snipe_seconds": 10, "pick_timer_seconds": 90}}'::jsonb,

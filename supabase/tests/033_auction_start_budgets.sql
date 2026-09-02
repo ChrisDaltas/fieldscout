@@ -147,8 +147,8 @@ select ok(
    where n.nspname = 'public' and p.proname = 'draft_start_internal'),
   'draft_start_internal keeps 066''s plain-function + search_path='''' posture after the CREATE OR REPLACE');
 select ok(
-  not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE'),
   '…and 066''s triple REVOKE on the internal survives the replace');
 
 -- ---------------------------------------------------------------------------

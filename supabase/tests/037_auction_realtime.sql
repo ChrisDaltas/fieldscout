@@ -202,11 +202,12 @@ from generate_series(1, 14) i;
 
 -- Three auction leagues (8 seats — the smallest legal team_count), 3
 -- draftable slots each (1 starter + 2 bench — D91), $200 / min $1.
+-- 110/L.D1.2 (F143): a drafting+ league must REFERENCE a scoring system (§7.3.8's other half — the guard now refuses a NULL scoring_system_id in drafting+); this fixture's reference is a template. A fixture change forced by 110, not a drive-by.
 insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot, roster_settings)
 select ('b6000000-0000-4000-8000-0000000000' || w.sfx)::uuid,
        '96000000-0000-4000-8000-000000000001',
-       'pgtap-rt6-' || w.nm, 2026, 'drafting', 8, null,
+       'pgtap-rt6-' || w.nm, 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'),
        ('{"draft": {"auction_budget": 200, "auction_zero_dollar_nominations": false,
           "auction_nomination_seconds": 45, "auction_bid_seconds": 30,
           "auction_anti_snipe_seconds": 10, "disconnect_grace_seconds": 30,

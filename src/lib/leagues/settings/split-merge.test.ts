@@ -211,9 +211,9 @@ function randomSettings(rng: () => number): LeagueSettings {
     format: 'redraft',
     team_count: pick(rng, [8, 10, 12, 14, 16] as const),
     divisions: int(rng, 1, 2),
-    regular_season_weeks: int(rng, 12, 15),
+    regular_season_weeks: int(rng, 4, 15), // the EFFECTIVE parse range (engine-shrunk rows included — Q31 rider (3))
     playoff_teams: pick(rng, [0, 2, 4, 6, 8, 10, 12] as const),
-    playoff_start_week: int(rng, 13, 16), // schema range per the v2.8.6/Q10 erratum (generator targets SCHEMA validity; seam consistency is validateLeagueSettings' concern)
+    playoff_start_week: int(rng, 5, 16), // the EFFECTIVE parse range (generator targets SCHEMA validity; seam consistency + the 13–16 creation range are validateLeagueSettings' concern)
     playoff_weeks_per_round: pick(rng, [1, 2] as const),
     playoff_byes: 'auto',
     playoff_reseed: bool(rng),
@@ -222,6 +222,7 @@ function randomSettings(rng: () => number): LeagueSettings {
     schedule_mode: pick(rng, ['h2h', 'total_points'] as const),
     median_game: bool(rng),
     second_opponent: bool(rng),
+    schedule_seed: bool(rng) ? null : int(rng, 0, 2147483647), // §11.7 seed (migration 110): null = not yet minted
     roster_settings: {
       starting_slots: slotPool.slice(0, slotCount).map((s) => ({ ...s, eligible: [...s.eligible], count: int(rng, 0, 10) })),
       bench: int(rng, 0, 20),

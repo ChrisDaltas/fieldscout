@@ -279,6 +279,15 @@ insert into players (id, full_name, position, adp) values
   ('is-p02', 'IS RB 02', 'RB', 0.002),
   ('is-p03', 'IS QB 03', 'QB', 0.003);
 
+-- 110/L.D1.2 (F213): matchups + team_week_results now carry a composite FK
+-- to league_weeks(league_id, season, week) — every fixture week below (L1
+-- weeks 1–6, L2 week 1) needs its league_weeks row first. A fixture change
+-- forced by 110, not a drive-by (the rows are inert `upcoming` weeks).
+insert into league_weeks (league_id, season, week)
+select 'a4000000-0000-4000-8000-00000000000a', 2026, g from generate_series(1, 6) g;
+insert into league_weeks (league_id, season, week)
+select 'a4000000-0000-4000-8000-00000000000b', 2026, g from generate_series(1, 6) g;
+
 -- L1 week 1: two primary pairings + two SECONDARY pairings (the §11.7
 -- second_opponent shape — t1 and t2 are home in BOTH round types).
 insert into matchups (league_id, season, week, round_type, home_team_id, away_team_id) values

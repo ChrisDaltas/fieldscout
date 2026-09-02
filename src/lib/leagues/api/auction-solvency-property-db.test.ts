@@ -73,6 +73,7 @@ import { auctionKnobsOf, readLiveNomination, teamBudget } from '@/components/dra
 import type { Database, Json } from '@/types/database'
 
 import { defaultsForTeamCount } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import {
   adjustBudget,
   createDraft,
@@ -214,6 +215,9 @@ async function cleanup(): Promise<void> {
   const ids = (leagues ?? []).map((l) => l.id as string)
   if (ids.length > 0) {
     await service.from('drafts').delete().in('league_id', ids)
+    // 110/L.D1.2: completion writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the league graph releases them FIRST (forced by 110, not a drive-by).
+    await service.from('matchups').delete().in('league_id', ids)
+    await service.from('league_weeks').delete().in('league_id', ids)
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
   }
@@ -412,7 +416,7 @@ async function provisionLeagueWorld(zeroDollar: boolean, budget: number): Promis
   const [commish, mgr2, mgr3] = clients
   const created = await createLeague(commish!, {
     name,
-    season: 2026,
+    season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     scoring_system_id: scoringSystemId,
     team_name: `${name} T1`,
     action_id: mintActionId(),
@@ -876,6 +880,9 @@ describe('THE solvency property — DB layer (L.C4.1 item 3b; exit criterion 2)'
       clients.push(client)
     }
     await cleanup()
+    // F215 / migration 110: the real auctions this suite completes map onto the
+    // NFL calendar at completion — a SYNTHETIC season keeps that off the wall clock.
+    await seedSyntheticSeason(service)
     const { error: seedError } = await service.from('players').upsert([...POOL_PLAYERS])
     expect(seedError, `seeded-pool upsert failed: ${seedError?.message}`).toBeNull()
     const { data: template, error: templateError } = await clients[0]!
@@ -1186,7 +1193,7 @@ async function provisionMockHostLeague(): Promise<{ leagueId: string; commishTea
   const settings = defaultsForTeamCount(TEAM_COUNT)
   const created = await createLeague(clients[0]!, {
     name,
-    season: 2026,
+    season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     scoring_system_id: scoringSystemId,
     team_name: `${name} T1`,
     action_id: mintActionId(),
