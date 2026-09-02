@@ -94,6 +94,8 @@ league_generate_schedule(p_league_id uuid)              -- reads settings/schedu
 schedule_preview(p_league_id uuid, p_seed bigint)       -- pure: proposed matchups + diff vs current, jsonb; no writes  [lands with 111/L.D1.3 over 110's schedule_build_internal — D306]
 -- L.D1.3 remix + edit (commish; D290 interim audit; D97 system post in-txn)
 schedule_remix_confirm(p_league_id uuid, p_seed bigint, p_reason text DEFAULT NULL, p_action_id uuid)
+  -- [LANDED 2026-09-02, migration 111: this ORDER is kept verbatim with p_action_id DEFAULT NULL in the signature and REQUIRED in-body
+  --  (Postgres forbids a default before a non-default); schedule_preview(p_league_id, p_seed) landed alongside (F222(b)) — D307]
 schedule_edit_matchup(p_league_id uuid, p_matchup_id uuid, p_home uuid, p_away uuid, p_reason text, p_action_id uuid)
   -- free until the league's first kickoff (E41, evaluated from nfl_games at call time);
   -- after: reason REQUIRED; scheduled future weeks only; live/final never regenerate
@@ -412,7 +414,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 |---|---|---|---|
 | 109 | `109_inseason_tables.sql` | `matchups` + `team_week_results` + `transactions` + `league_player_pool` + `score_fanout` + `player_stats.advanced` (C59) + `idx_league_rosters_player` | L.D1.1 |
 | 110 | `110_schedule_engine.sql` | `league_generate_schedule` + ~~`schedule_preview`~~ **[AMENDED 2026-09-02 — L.D1.2 LANDED: `schedule_preview` moves to 111 with the Remix diff it serves (D289's "the same generator run WITHOUT writing" IS 110's pure `schedule_build_internal`, which 111 wraps — PROGRESS D306/F222)]** + the `league_weeks` writer/F4 guard + completion wiring (DROP+CREATE `draft_complete_internal` from **086** + p_now, and `draft_start_internal` from **098** + the pre-flight, per D137/D291) + F130 + F143 + **F213's composite week FKs** | L.D1.2 |
-| 111 | `111_schedule_remix.sql` | `schedule_remix_confirm` + `schedule_edit_matchup` (E41; D290 interim audit; D97 posts) | L.D1.3 |
+| 111 | `111_schedule_remix.sql` | `schedule_remix_confirm` + `schedule_edit_matchup` (E41; D290 interim audit; D97 posts) **[LANDED 2026-09-02 — also `schedule_preview` (from row 110's amendment), the two plain helpers `schedule_window_internal` / `schedule_remix_plan_internal`, and the `schedule_actions` idempotency ledger (D307(2); M6 folds it into `commissioner_actions` — F223(a))]** | L.D1.3 |
 | 112 | `112_lineups.sql` | `team_lineups` §12.13 ALTER + the F18 RLS swap + `set_lineup` (E16 bipartite; locks; IR) | L.D1.4 |
 | 113 | `113_pool_add_drop.sql` | `roster_add_drop` + pool writers (E32; caps; fa_hold; waiver-entry) | L.D1.5 |
 | 114 | `114_week_workers.sql` | `lineup_lock_tick` + `league_week_advance` + `finalize_matchups` + pg_cron entries (D291) | L.D1.6 |
