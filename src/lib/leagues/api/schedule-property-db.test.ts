@@ -52,6 +52,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Database, Json } from '@/types/database'
 
 import { derivePlayoffRounds } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_SERVICE_ROLE_KEY =
@@ -224,6 +225,7 @@ let templateRules: Json = {}
 
 beforeAll(async () => {
   await cleanup()
+  await seedSyntheticSeason(service)
   const { data: created, error } = await service.auth.admin.createUser({
     email: OWNER.email,
     password: OWNER.password,
@@ -274,10 +276,20 @@ async function rpcBuild(ids: string[], seed: number, first: number, rsw: number,
   return data as unknown as Row[]
 }
 
-/** 039's 2026 seed: week W starts Wednesday 00:00 ET; "enter at week W" = noon on the Thursday of week W−1 (W ≥ 2), or the day before week 1. */
+/**
+ * The synthetic season's calendar (synthetic-season.ts — the 039 shape: week W
+ * starts Wednesday 00:00 ET, no kickoffs, no games), so the datum resolves
+ * through its THIRD arm, `starts_at`. Under THAT arm "enter at week W" is any
+ * instant in [starts_at(W−1), starts_at(W)) — noon on the Thursday of week
+ * W−1 here (or the day before week 1). With `first_kickoff_at` populated (the
+ * production shape after L.D2.1's ingest) the window is [kickoff(W−1),
+ * kickoff(W)) instead; pgTAP 058 §E pins each arm with its twins (R725).
+ * Layer 2 runs on the synthetic season so a shifted or spent real calendar can
+ * never move these goldens (R724).
+ */
 function entryInstant(week: number): string {
-  // Week 1 starts 2026-09-09 00:00 -04; week n starts 7 × (n − 1) days later.
-  const week1 = Date.UTC(2026, 8, 9, 4, 0, 0) // 00:00 -04 = 04:00Z
+  // Week 1 starts <season>-09-09 00:00 -04; week n starts 7 × (n − 1) days later.
+  const week1 = Date.UTC(SYNTHETIC_SEASON, 8, 9, 4, 0, 0) // 00:00 -04 = 04:00Z
   const startOfWeek = week1 + (week - 1) * 7 * 86_400_000
   // Inside [start(W−1), start(W)): 12h after start(W−1) (or 12h before start(1)).
   const inside = week === 1 ? startOfWeek - 12 * 3_600_000 : startOfWeek - 7 * 86_400_000 + 12 * 3_600_000
@@ -365,7 +377,7 @@ async function createLeague(draw: LeagueDraw, index: number): Promise<{ leagueId
     id: leagueId,
     owner_id: ownerId,
     name: `${NAME_PREFIX}${index}`,
-    season: 2026,
+    season: SYNTHETIC_SEASON,
     status: 'in_season',
     team_count: draw.n as 8,
     regular_season_weeks: draw.rsw,

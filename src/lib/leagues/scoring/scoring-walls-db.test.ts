@@ -70,6 +70,7 @@ import type { Database } from '@/types/database'
 import { patchLeague } from '../api/leagues-service'
 import { addPlaceholderSeat } from '../api/members-service'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import { forkTemplateDoc, type FlatScoringRules } from './rules-doc'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -190,6 +191,10 @@ async function rulesOf(id: string): Promise<unknown> {
 
 beforeAll(async () => {
   await cleanup()
+  // F215 / R724 / migration 110: starting a real draft pre-flights the §11.7
+  // fit against the NFL calendar at now() — this suite creates its league on
+  // a SYNTHETIC season so the start never depends on the wall clock.
+  await seedSyntheticSeason(service)
 
   const { error: userError } = await service.auth.admin.createUser({
     email: COMMISH.email,
@@ -223,7 +228,7 @@ beforeAll(async () => {
   )
   const { data: created, error: createError } = await commishClient.rpc('create_league', {
     p_name: LEAGUE_NAME,
-    p_season: 2026,
+    p_season: SYNTHETIC_SEASON, // F215/R724: the fixture owns its calendar (migration 110 pre-flights every draft START against nfl_weeks)
     p_scoring_system_id: template.id,
     p_team_name: 'Wall Commish Team',
     p_action_id: ACTION.create,

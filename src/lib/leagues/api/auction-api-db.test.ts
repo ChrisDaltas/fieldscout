@@ -76,6 +76,7 @@ import { budgetEditPreview } from '@/components/draft/commish-auction-ops'
 import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import {
   ACTION_ID_REUSED_MESSAGE,
   deleteMockDraft,
@@ -318,6 +319,10 @@ const errorText = (body: unknown): string => JSON.stringify(body)
 
 beforeAll(async () => {
   await cleanup()
+  // F215 / R724 / migration 110: starting a real draft pre-flights the §11.7
+  // fit against the NFL calendar at now() — this suite creates its league on
+  // a SYNTHETIC season so the start never depends on the wall clock.
+  await seedSyntheticSeason(service)
   commishId = await createUser(COMMISH)
   mgr2Id = await createUser(MGR2)
   mgr3Id = await createUser(MGR3)
@@ -342,7 +347,7 @@ beforeAll(async () => {
     .single()
   const { data: created, error: createError } = await commishClient.rpc('create_league', {
     p_name: LEAGUE_NAME,
-    p_season: 2026,
+    p_season: SYNTHETIC_SEASON, // F215/R724: the fixture owns its calendar (migration 110 pre-flights every draft START against nfl_weeks)
     p_scoring_system_id: template?.id,
     p_team_name: 'Auction API Commish',
     p_action_id: ACTION.create,

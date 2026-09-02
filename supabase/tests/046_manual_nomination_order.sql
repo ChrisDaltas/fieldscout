@@ -74,6 +74,17 @@ select ok(
 --    ME MA's shape again, practiced in via create_mock_draft (the second
 --       call site of D201(2))
 -- ---------------------------------------------------------------------------
+-- 110/L.D1.2 (F215 / R724): THE CALENDAR THIS FIXTURE STARTS ON. Starting a
+-- real draft now pre-flights the §11.7 fit against nfl_weeks at now() (Q31
+-- rider (1)) — a season-2026 fixture is refused from 2026-12-16 00:00 ET and
+-- dead from 2027-01-06 unless it owns its calendar. Pinning season 2026
+-- far-future inside this rolled-back txn makes every start below fit at ANY
+-- wall clock. A fixture change forced by 110, not a drive-by.
+update nfl_weeks
+set starts_at = starts_at + interval '73 years',
+    correction_window_ends_at = correction_window_ends_at + interval '73 years'
+where season = 2026;
+
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at)

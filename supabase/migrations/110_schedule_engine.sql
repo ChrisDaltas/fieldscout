@@ -205,15 +205,20 @@
 -- PR to `min(4)` / `min(5)`, with the 12–15 / 13–16 creation-and-edit ranges
 -- moved to `validateLeagueSettings` (the validator every create/PATCH runs).
 --
--- F215 — DISCHARGED across this PR: `draft_complete_internal` gains `p_now`
--- (above); every pgTAP fixture that completes a REAL draft pins the calendar
--- it lands on inside its own rolled-back transaction (one UPDATE moving
--- `nfl_weeks` season 2026 far-future — banner-noted per file: 020/026/035/
--- 036/041); the stack suites that reach `in_season` create their leagues on
--- a SYNTHETIC season seeded into `nfl_weeks` by a shared helper; the sim
--- runner and the e2e harness do the same. No fixture depends on the wall
--- clock. The measurement (which of F215's 18 files actually REACH
--- completion) is recorded in PROGRESS D306.
+-- F215 — DISCHARGED across this PR: `draft_complete_internal` and
+-- `draft_start_internal` gain `p_now` (above). BOTH ends are calendar-bound
+-- now — completion maps the first week, and the pre-flight (item 6) refuses
+-- a start whose season cannot fit (R724) — so every pgTAP fixture that
+-- COMPLETES or STARTS a real draft pins the calendar it lands on inside its
+-- own rolled-back transaction (one UPDATE moving `nfl_weeks` season 2026
+-- far-future — banner-noted per file: completion 020/026/035/036/041; start
+-- 022/023/033/034/040/046), every stack suite that completes or starts one
+-- creates its leagues on a SYNTHETIC season seeded into `nfl_weeks` by a
+-- shared helper (seven completing + eleven starting suites + the property
+-- sweep), the sim runner and the e2e provisioner do the same, and 058
+-- re-asserts 039's 2026 literals in-txn. No fixture depends on the wall
+-- clock — measured both ways in PROGRESS D306(6), incl. the one-year-shift
+-- probe that reds only 003 afterwards.
 --
 -- R694/F202 guard-arm note: n/a — nothing here copies 107's column-DEFAULT
 -- drift guard; every replaced function is authored against its head FILE
@@ -419,7 +424,11 @@ BEGIN
     IF v_rsw > 4 THEN
       v_rsw := v_rsw - 1;                       -- (1) the regular season, down to the floor
     ELSIF v_pt > 0 THEN
-      v_pt := public.schedule_playoff_drop(v_pt); -- (2) one playoff round at a time
+      v_pt := public.schedule_playoff_drop(v_pt); -- (2) one playoff round at a time — rsw is
+                                                --     NEVER re-grown afterwards: with 2-week
+                                                --     rounds a drop frees two weeks and the
+                                                --     plan may end at 17 (the ruling's letter;
+                                                --     R726; pinned in 058)
     ELSE
       v_fits := FALSE;                          -- (3) 4 + 0 cannot fit: refuse
       EXIT;
@@ -541,8 +550,14 @@ BEGIN
 
   v_m := v_n - 1;
 
-  -- Seed → LCG state in [1, 2^31−2] (negative seeds fold in; 0 maps to 1).
-  v_state := ((p_seed % 2147483646) + 2147483646) % 2147483646 + 1;
+  -- Seed → LCG state in [1, 2^31−2]: fold mod 2^31−1 (so every seed in the
+  -- catalog's 0..2^31−1 space lands on a DISTINCT state except the one
+  -- unavoidable collision, seed 0 ≡ seed 1 via the 0 → 1 map; negative seeds
+  -- fold in — R727). Pinned in 058: seed 0 ≠ seed 2147483646.
+  v_state := ((p_seed % 2147483647) + 2147483647) % 2147483647;
+  IF v_state = 0 THEN
+    v_state := 1;
+  END IF;
 
   -- The seeded permutation: Fisher–Yates over the LCG stream (D289).
   FOR v_i IN REVERSE v_n..2 LOOP

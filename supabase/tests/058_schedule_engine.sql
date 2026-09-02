@@ -81,7 +81,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(175);
+select plan(177);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the seven engine functions, the two DROP+CREATEs, the two
@@ -270,6 +270,21 @@ select is(public.schedule_lcg_next(48271), 182605794::bigint,
   'schedule_lcg_next(48271) = 182605794 — the published second value (48271² mod 2^31−1)');
 select is(public.schedule_lcg_next(2147483646), 2147435376::bigint,
   'schedule_lcg_next at the top of the state range stays in range (2^31−2 → 2147435376)');
+-- R727: the seed fold. Seeds 0 and 1 share a state (the one unavoidable
+-- collision of a 2^31-seed space onto 2^31−2 states, said out loud); every
+-- other pair of catalog seeds is distinct — pinned at the top of the space.
+select is(
+  (select string_agg(b::text, ',' order by b.week, b.round_type, b.home_team_id)
+   from public.schedule_build_internal((select array_agg(('d0000000-0000-4000-8000-0008' || lpad(i::text, 8, '0'))::uuid) from generate_series(1, 8) i), 0, 1, 14, false) b),
+  (select string_agg(b::text, ',' order by b.week, b.round_type, b.home_team_id)
+   from public.schedule_build_internal((select array_agg(('d0000000-0000-4000-8000-0008' || lpad(i::text, 8, '0'))::uuid) from generate_series(1, 8) i), 1, 1, 14, false) b),
+  'seed 0 ≡ seed 1 (the 0 → 1 map — the one stated collision)');
+select isnt(
+  (select string_agg(b::text, ',' order by b.week, b.round_type, b.home_team_id)
+   from public.schedule_build_internal((select array_agg(('d0000000-0000-4000-8000-0008' || lpad(i::text, 8, '0'))::uuid) from generate_series(1, 8) i), 0, 1, 14, false) b),
+  (select string_agg(b::text, ',' order by b.week, b.round_type, b.home_team_id)
+   from public.schedule_build_internal((select array_agg(('d0000000-0000-4000-8000-0008' || lpad(i::text, 8, '0'))::uuid) from generate_series(1, 8) i), 2147483646, 1, 14, false) b),
+  'seed 0 ≠ seed 2147483646 (the fold is mod 2^31−1, not 2^31−2 — R727)');
 
 -- The fit chain at EVERY first week, defaults (14 + 6 teams, 1-week rounds):
 -- the ruling's worked examples as an 18-row literal (spec §11.7 Mid-season entry).
@@ -306,7 +321,7 @@ select results_eq(
 select results_eq(
   $$ select f.regular_season_weeks, f.playoff_teams, f.playoff_rounds, f.last_week from public.schedule_fit_internal(10, 14, 6, 2) f $$,
   $$ values (4, 4, 2, 17) $$,
-  'two-week rounds at week 10: 14 + 6 → 4 + (2 rounds × 2 weeks) ends at 17 — a chain step can undershoot 18');
+  'two-week rounds at week 10: 14 + 6 → 4 + (2 rounds × 2 weeks) ends at 17 — rsw is NEVER re-grown after a drop (5 + 2 rounds would also fit at 18; the ruling''s letter, R726)');
 select results_eq(
   $$ select f.regular_season_weeks, f.playoff_teams, f.fits, f.shrunk from public.schedule_fit_internal(1, 12, 0, 1) f $$,
   $$ values (12, 0, true, false) $$,
@@ -454,6 +469,24 @@ select
 from generate_series(1, 11) i;
 -- u01 = commissioner/owner of every fixture league; u02 = manager in L8;
 -- u03 = an OUTSIDER (member of nothing); u04..u11 = the eight LC managers.
+
+-- R724: THE 2026 CALENDAR THIS FILE'S GOLDENS ARE WRITTEN AGAINST, re-asserted
+-- inside this rolled-back txn from 039's literals — so the goldens below are a
+-- function of this FILE, never of whatever the running stack's nfl_weeks rows
+-- happen to hold (a shifted or spent seed cannot move them; 003 pins the seed
+-- itself). first_kickoff_at/last_game_ends_at NULL: the starts_at arm decides.
+update nfl_weeks w
+set starts_at = v.starts_at, first_kickoff_at = null, last_game_ends_at = null
+from (values
+  (1, '2026-09-09 00:00:00-04'::timestamptz), (2, '2026-09-16 00:00:00-04'), (3, '2026-09-23 00:00:00-04'),
+  (4, '2026-09-30 00:00:00-04'), (5, '2026-10-07 00:00:00-04'), (6, '2026-10-14 00:00:00-04'),
+  (7, '2026-10-21 00:00:00-04'), (8, '2026-10-28 00:00:00-04'), (9, '2026-11-04 00:00:00-05'),
+  (10, '2026-11-11 00:00:00-05'), (11, '2026-11-18 00:00:00-05'), (12, '2026-11-25 00:00:00-05'),
+  (13, '2026-12-02 00:00:00-05'), (14, '2026-12-09 00:00:00-05'), (15, '2026-12-16 00:00:00-05'),
+  (16, '2026-12-23 00:00:00-05'), (17, '2026-12-30 00:00:00-05'), (18, '2027-01-06 00:00:00-05')
+) as v(week, starts_at)
+where w.season = 2026 and w.week = v.week;
+delete from nfl_games where season = 2026;
 
 -- The synthetic 2077 season for the datum arms (never the real 2026 rows).
 insert into nfl_weeks (season, week, starts_at, first_kickoff_at, last_game_ends_at, correction_window_ends_at) values
@@ -1004,10 +1037,16 @@ select throws_like(
   'a season with no calendar refuses to start by name');
 rollback to savepoint i_nocal;
 savepoint i_default;
+-- R724: the default-p_now call reads the WALL CLOCK — so this cell pins the
+-- calendar first (the F215 shape), never trusting the date it runs on.
+update nfl_weeks
+set starts_at = starts_at + interval '73 years',
+    correction_window_ends_at = correction_window_ends_at + interval '73 years'
+where season = 2026;
 select is(
   (select r ->> 'started' from public.draft_start_internal('b1000000-0000-4000-8000-0000000000e0', false) r),
   'true',
-  'the 2-argument call still binds (p_now defaults to now(); at any wall clock before the 2026 season is spent this starts)');
+  'the 2-argument call still binds (p_now defaults to now()) — on a calendar this cell pins far-future, so the wall clock never decides');
 rollback to savepoint i_default;
 
 -- ---------------------------------------------------------------------------
