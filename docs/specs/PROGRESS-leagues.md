@@ -3674,6 +3674,13 @@ The reviewer's fix-verification pass confirmed R339–R344 green by its own hand
 
 **Proof after the round:** recorded in D306(8) and the §7 fix-round row — fresh `db reset` 001–110, `test:db`, the sweep, full `npm run test`, gate, type-check, lint, and the R724 shift probe shown green (003 excepted) then the seed restored by md5.
 
+
+**Re-review of the fix commit `4ae0156` (fresh Reviewer in its own worktree, one pass). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** R724 reproduced and verified FIXED without weakening (the one-year `nfl_weeks` shift: `test:db` reds only 003's seed literals, 022/023/033/034/040/046/058 ok; six stack suites + the sweep green under the shift; seed md5 identical after restore; every touched test diff pure additions, each pgTAP pin inside its own txn); R725/R726/R727 verified against the code; spec v2.16.14 surgical; fresh reset 001–110, `test:db` 59 / 4,031 (058 = 177), `npm run test` 167 / 3,150, gate 24, type-check + lint clean; D137 bodies untouched by the round; census 0/0/0/0 with the 2099 rows by design. Two NITs recorded, neither blocking:
+- **R728 · nit · `110_schedule_engine.sql:550-553` + D306(1)** — "the one unavoidable collision … seed 0 ≡ seed 1" is false for the catalog's own seed space: `SCHEDULE_SEED_MAX = 2^31−1` folds to 0 → 1, so THREE catalog seeds (0, 1, 2147483647) share state 1 (pigeonhole: 2^31 seeds onto 2^31−2 states needs two aliases); 058 pins 2147483646 (not a collider) while the real second collider is unpinned. Measured build signatures: −1 → `12bb90bff3e8` · 0 → `3ad9919a454b` · 1 → `3ad9919a454b` · 2 → `9221845a9be6` · 2147483646 → `12bb90bff3e8` · 2147483647 → `3ad9919a454b`. Behaviourally harmless. **The next task touching 110's family (L.D1.3, the Remix re-mint) rewords the comment/D306(1) to "seeds 0 and 2^31−1 both alias to seed 1" and adds `build(2147483647) = build(1)` to 058 — or caps `SCHEDULE_SEED_MAX` at 2^31−2.**
+- **R729 · nit · `src/lib/leagues/sim/synthetic-season.ts:16-19`** — the "WHO" paragraph still lists the five original completing suites; after the fix round eighteen stack suites plus the property sweep and the e2e provisioner create on `SYNTHETIC_SEASON` (`grep -l` → 20 files). **One-line update of the WHO list (or point it at the F215 row) at the next touch.**
+
+---
+
 ## 7. Session log
 
 *One line per session: date, session type, what shipped, what's next. Newest on top. Keep entries short — this is a changelog, not a diary; detail belongs in commit messages and PRs.*
