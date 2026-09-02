@@ -7,19 +7,37 @@
  *
  *   1. `getSchedule(season)` → `nfl_games` (idempotent, diff-aware — the
  *      table's FIRST writer, C58) → `nfl_weeks.first_kickoff_at` /
- *      `last_game_ends_at` for every week the schedule touches (F9's
- *      columns, live-updated at last — NULL ×18 since 039 until now).
- *   2. `getWeekStats(season, week)` → `player_stats` (box columns via the
- *      registry map + the §23.5 `advanced` JSONB for registry-canonical
- *      advanced keys — the D15 placeholders today), `source = provider.name`
- *      (F13: honest provenance, the synthetic gate's zero-real-data
- *      instrument), `updated_at` from the INJECTED clock (D12).
- *   3. Only REAL deltas — a new row, or a row whose scoring inputs (box
- *      columns or `advanced`) moved — enqueue `(season, week, player_id)`
- *      into `score_fanout` (§23.2 "the fan-out queue only sees real
- *      deltas"; the PK dedupes a hot player within a drain window, D292).
- *      A row whose only change is metadata (`is_live`, `game_id`, `source`)
- *      is written but NOT enqueued — nothing a scorer reads moved.
+ *      `last_game_ends_at` for every week the schedule touches AND the
+ *      calendar knows (F9's columns, live-updated at last — NULL ×18 since
+ *      039 until now). A schedule week with no `nfl_weeks` row is skipped
+ *      and counted (`weeks.outsideCalendar` — postseason weeks 19–22 once
+ *      L.D3.1's feed carries them; 039 seeds 1–18) UNLESS it is the week
+ *      being ingested, which throws before any write (R707).
+ *   2. `getWeekStats(season, week)` is diffed against the stored rows: only
+ *      REAL deltas — a new row, or a row whose scoring inputs (box columns
+ *      or `advanced`) moved — enqueue `(season, week, player_id)` into
+ *      `score_fanout` (§23.2 "the fan-out queue only sees real deltas"; the
+ *      PK dedupes a hot player within a drain window, D292). A row whose
+ *      only change is metadata (`is_live`, `game_id`, `source`) is written
+ *      but NOT enqueued — nothing a scorer reads moved.
+ *   3. THEN `player_stats` (box columns via the registry map + the §23.5
+ *      `advanced` JSONB for registry-canonical advanced keys — the D15
+ *      placeholders today), `source = provider.name` (F13: honest
+ *      provenance, the synthetic gate's zero-real-data instrument),
+ *      `updated_at` from the INJECTED clock (D12).
+ *
+ * Why the queue is written BEFORE the stats (R706 — at-least-once): the two
+ * are separate PostgREST calls, not one transaction (no RPC in this task —
+ * the single-transaction door is F218). If the invocation dies between them,
+ * the stored stat row is still stale, so the NEXT poll re-detects the same
+ * delta and re-enqueues it (the PK dedupes an undrained row). Stats-first
+ * would lose that delta forever: the stored row would already equal the
+ * incoming one, the diff would read `unchanged`, and §23.2's reconciliation
+ * only ALERTS on drift — it never re-enqueues. Both stamps come from the one
+ * injected instant, so `player_stats.updated_at >= score_fanout.enqueued_at`
+ * is the worker's readiness predicate (L.D2.2, F218): a queued player whose
+ * stat row is older than its queue row (or absent) is a delta whose stats
+ * have not landed yet — leave it queued, never score it stale.
  *
  * Never partial data (§23.2): every provider read happens BEFORE the first
  * DB write, and a failed read writes nothing and records ONE failed poll on
@@ -79,10 +97,15 @@ export interface IngestGamesReport {
 }
 
 export interface IngestWeeksReport {
-  /** Distinct (season, week) keys among the writable games. */
+  /** Distinct (season, week) keys among the writable games
+   *  (= updated + unchanged + outsideCalendar). */
   touched: number
   updated: number
   unchanged: number
+  /** Touched weeks with no `nfl_weeks` row (039 seeds 1–18; a postseason
+   *  week from a fuller feed lands here) — their bounds are skipped, never
+   *  invented. The week being ingested is never counted here: it throws. */
+  outsideCalendar: number
 }
 
 export interface IngestStatsReport {
@@ -148,6 +171,18 @@ const IN_WEEK_STATUSES: ReadonlySet<ProviderGame['status']> = new Set([
   'live',
   'final',
 ])
+
+/** An in-week game whose stats can still move: `scheduled` or `live`. A
+ *  `final` game is closed; a `postponed` game has left the week (E43) and is
+ *  NOT open — its players are never `is_live` (R710). */
+function isOpenStatus(status: ProviderGame['status']): boolean {
+  return IN_WEEK_STATUSES.has(status) && status !== 'final'
+}
+
+/** PostgREST's per-response row cap (supabase/config.toml `max_rows`). A
+ *  single-shot read that comes back AT the cap may have been truncated —
+ *  the reader refuses rather than trusts it (tasks-M4 §4 rule 10). */
+const POSTGREST_ROW_CAP = 1000
 
 // ── Row shapes (what the tables hold; what the diff compares) ──────────────
 
@@ -233,8 +268,14 @@ export function diffGames(incoming: GameRow[], existing: ReadonlyMap<string, Gam
  *                       postponed-out game never bounds it, E43);
  *   last_game_ends_at = "updated as games finish" — set to the injected
  *                       poll instant on the FIRST poll that observes every
- *                       in-week game `final` (kept once set), NULL while
- *                       any in-week game is still ahead or live.
+ *                       in-week game `final`, kept while they all STAY
+ *                       final, NULL while any in-week game is still ahead
+ *                       or live.
+ * The stamp is DERIVED from the games on every poll, never sticky (R709,
+ * D303(4)): a later non-final in-week game — one moved INTO the week, or a
+ * provider status regression — re-opens the week (NULL) and the stamp is
+ * re-taken at the next all-final observation. A week that is genuinely
+ * still playing must not read as ended.
  * A week with no in-week games bounds nothing (both NULL).
  */
 export function weekBounds(games: readonly GameRow[], prior: WeekBounds | null, now: Date): WeekBounds {
@@ -269,8 +310,9 @@ export interface ToStatRowResult {
 /**
  * Provider stat line → table row over the whole column surface. Returns a
  * null row when the line carries nothing storable (no mapped box key, no
- * canonical advanced key). `is_live` = the player's game is not `final`
- * (falls back to the week when the tier carries no game id).
+ * canonical advanced key). `is_live` = the player's game is OPEN (scheduled
+ * or live — not `final`, and not `postponed`, R710); falls back to the week
+ * when the tier carries no game id.
  */
 export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext): ToStatRowResult {
   const mapped = toStatColumns(stats.stats)
@@ -289,7 +331,7 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
 
   const gameId = stats.gameId ?? null
   const status = gameId === null ? undefined : ctx.gameStatus.get(gameId)
-  const isLive = status === undefined ? ctx.anyGameOpen : status !== 'final'
+  const isLive = status === undefined ? ctx.anyGameOpen : isOpenStatus(status)
 
   return {
     row: {
@@ -409,8 +451,14 @@ async function readWeeks(db: SyncClient, season: number): Promise<Map<string, We
     .select('season, week, first_kickoff_at, last_game_ends_at')
     .eq('season', season)
   if (error) throw new Error(`nfl_weeks read failed (${season}): ${error.message}`)
+  const rows = (data ?? []) as DbWeekRow[]
+  // 18 rows per season today — vacuous, but no reader trusts a result set at
+  // the cap boundary (rule 10, R712); the other readers page via pageAll.
+  if (rows.length >= POSTGREST_ROW_CAP) {
+    throw new Error(`nfl_weeks read for ${season} returned ${rows.length} rows — at the PostgREST cap, refusing to trust it`)
+  }
   const out = new Map<string, WeekBounds>()
-  for (const row of (data ?? []) as DbWeekRow[]) {
+  for (const row of rows) {
     out.set(weekKey(row.season, row.week), {
       first_kickoff_at: row.first_kickoff_at === null ? null : isoOf(row.first_kickoff_at),
       last_game_ends_at: row.last_game_ends_at === null ? null : isoOf(row.last_game_ends_at),
@@ -496,7 +544,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
     ok: true,
     degraded,
     games: { seen: 0, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 0 },
-    weeks: { touched: 0, updated: 0, unchanged: 0 },
+    weeks: { touched: 0, updated: 0, unchanged: 0, outsideCalendar: 0 },
     stats: {
       seen: 0,
       unknownPlayer: 0,
@@ -580,23 +628,33 @@ export async function ingestWeek(
     if (bucket) bucket.push(row)
   }
   const weekWrites: Array<{ season: number; week: number; bounds: WeekBounds }> = []
+  const outsideCalendar: string[] = []
   for (const [key, games] of byWeek) {
     const prior = existingWeeks.get(key)
     if (prior === undefined) {
-      // The calendar is seeded reference data (039); a week with games but
-      // no calendar row is an integrity problem, not a quiet skip.
-      throw new Error(`nfl_weeks has no row for ${key.replace(':', ' week ')} — the calendar seed is missing`)
+      if (key === weekKey(season, week)) {
+        // The calendar is seeded reference data (039); the week being
+        // INGESTED with no calendar row is an integrity problem, not a quiet
+        // skip — and it throws here, before the first write (§23.2).
+        throw new Error(`nfl_weeks has no row for ${season} week ${week} — the calendar seed is missing`)
+      }
+      // Any OTHER schedule week the calendar does not know (postseason 19–22
+      // from a fuller feed) is skipped and counted, never a poll-wide throw
+      // that would leave the live week stale with no banner (R707/E45).
+      outsideCalendar.push(key.replace(':', ' week '))
+      continue
     }
     const bounds = weekBounds(games, prior, polledAt)
     if (sameBounds(prior, bounds)) report.weeks.unchanged += 1
     else weekWrites.push({ season: games[0].season, week: games[0].week, bounds })
   }
   report.weeks.touched = byWeek.size
+  report.weeks.outsideCalendar = outsideCalendar.length
 
   const gameStatus = new Map<string, ProviderGame['status']>()
   for (const row of merged.values()) gameStatus.set(row.id, row.status)
   const anyGameOpen = [...merged.values()].some(
-    (g) => g.season === season && g.week === week && IN_WEEK_STATUSES.has(g.status) && g.status !== 'final',
+    (g) => g.season === season && g.week === week && isOpenStatus(g.status),
   )
   const ctx: ToStatRowContext = { providerName: provider.name, gameStatus, anyGameOpen }
 
@@ -644,6 +702,29 @@ export async function ingestWeek(
     report.weeks.updated += 1
   }
 
+  // ── Queue BEFORE stats (R706 — see the banner): a crash between the two
+  // calls leaves the stored row stale, so the next poll re-detects and
+  // re-enqueues the delta. The reverse order loses it permanently.
+  const deltas = [...statDiff.inserts, ...statDiff.updates]
+  report.stats.deltas = deltas.length
+  if (deltas.length > 0) {
+    for (let i = 0; i < deltas.length; i += BATCH) {
+      const batch = deltas.slice(i, i + BATCH).map((row) => ({
+        season,
+        week,
+        player_id: row.player_id,
+        enqueued_at: stamp, // the SAME instant as the stat row's updated_at below
+      }))
+      // ON CONFLICT DO NOTHING — the PK is the dedupe (D292/109's banner).
+      const { data, error } = await db
+        .from('score_fanout')
+        .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: true })
+        .select('player_id')
+      if (error) throw new Error(`score_fanout enqueue failed: ${error.message}`)
+      report.stats.enqueued += (data ?? []).length
+    }
+  }
+
   const statWrites = [...statDiff.inserts, ...statDiff.updates, ...statDiff.metaOnly]
   if (statWrites.length > 0) {
     await upsertCounted(
@@ -671,26 +752,6 @@ export async function ingestWeek(
   report.stats.metaOnly = statDiff.metaOnly.length
   report.stats.unchanged = statDiff.unchanged
 
-  const deltas = [...statDiff.inserts, ...statDiff.updates]
-  report.stats.deltas = deltas.length
-  if (deltas.length > 0) {
-    for (let i = 0; i < deltas.length; i += BATCH) {
-      const batch = deltas.slice(i, i + BATCH).map((row) => ({
-        season,
-        week,
-        player_id: row.player_id,
-        enqueued_at: stamp,
-      }))
-      // ON CONFLICT DO NOTHING — the PK is the dedupe (D292/109's banner).
-      const { data, error } = await db
-        .from('score_fanout')
-        .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: true })
-        .select('player_id')
-      if (error) throw new Error(`score_fanout enqueue failed: ${error.message}`)
-      report.stats.enqueued += (data ?? []).length
-    }
-  }
-
   // ── Reasons: an empty section says why ──
   if (report.games.seen === 0) report.reasons.push(`provider returned zero games for ${season}`)
   else if (gameRows.length === 0) {
@@ -699,6 +760,11 @@ export async function ingestWeek(
     )
   } else if (gameWrites.length === 0) {
     report.reasons.push(`nfl_games unchanged: ${gameDiff.unchanged} games identical to stored`)
+  }
+  if (outsideCalendar.length > 0) {
+    report.reasons.push(
+      `nfl_weeks: ${outsideCalendar.length} schedule week(s) outside the calendar skipped — ${outsideCalendar.join(', ')} (no nfl_weeks row; 039 seeds 1–18)`,
+    )
   }
   if (report.stats.seen === 0) report.reasons.push(`provider returned zero stat rows for ${season} week ${week}`)
   else if (statRows.length === 0) {

@@ -7,12 +7,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { ProviderGame, ProviderPlayerWeekStats } from '@/lib/leagues/stats/stats-provider'
+import { DegradationTracker } from '@/lib/leagues/stats/degradation'
+import type { ProviderGame, ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
+import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 
 import {
   ADVANCED_KEYS,
   diffGames,
   diffStats,
+  ingestWeek,
   sameBounds,
   STAT_COLUMN_SURFACE,
   toGameRow,
@@ -22,6 +25,7 @@ import {
   type StatRow,
   type ToStatRowContext,
 } from './ingest-week'
+import type { SyncClient } from './types'
 
 const G1: ProviderGame = {
   gameId: '2026-wk02-DAL@PHI',
@@ -155,6 +159,21 @@ describe('weekBounds (§12.20 first_kickoff_at / last_game_ends_at; E43)', () =>
     })
   })
 
+  it('the stamp is derived, not sticky (R709): a later non-final in-week game re-opens the week, and the next all-final observation re-stamps at ITS instant', () => {
+    const ended = weekBounds([g1Final, g3Final], null, now)
+    expect(ended.last_game_ends_at).toBe('2026-09-21T04:00:00.000Z')
+    // A game moved INTO the week (or a provider status regression) while the
+    // stored stamp exists: the week is genuinely playing again → NULL.
+    const movedIn: GameRow = { ...G1_ROW, id: '2026-wk02-NYG@WAS', home_team: 'WAS', away_team: 'NYG', status: 'live' }
+    const reopened = weekBounds([g1Final, g3Final, movedIn], ended, new Date('2026-09-22T01:00:00Z'))
+    expect(reopened).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: null })
+    // Then all final again: re-stamped at the NEW observation, not the old one.
+    const reclosed = weekBounds([g1Final, g3Final, { ...movedIn, status: 'final' }], reopened, new Date('2026-09-22T04:00:00Z'))
+    expect(reclosed.last_game_ends_at).toBe('2026-09-22T04:00:00.000Z')
+    // The one-unit sibling: the same set STILL all-final keeps the stamp.
+    expect(weekBounds([g1Final, g3Final], ended, new Date('2026-09-22T01:00:00Z')).last_game_ends_at).toBe('2026-09-21T04:00:00.000Z')
+  })
+
   it('a week with no in-week games bounds nothing', () => {
     expect(weekBounds([], null, now)).toEqual({ first_kickoff_at: null, last_game_ends_at: null })
     expect(weekBounds([{ ...G1_ROW, status: 'postponed' }], null, now)).toEqual({
@@ -202,6 +221,20 @@ describe('toStatRow (§23.5 advanced; F13 provenance; the whole column surface)'
 
   it('is_live is false once the player’s game is final; falls back to the week when the tier has no game id', () => {
     expect(toStatRow({ ...QB_LINE, gameId: '2026-wk02-BUF@KC' }, CTX).row!.is_live).toBe(false)
+    // R710: a POSTPONED game has left the week — its players are never live,
+    // even when a real provider emits a line for them. The open siblings:
+    // `scheduled` and `live` both read true.
+    const ctx: ToStatRowContext = {
+      ...CTX,
+      gameStatus: new Map([
+        ['g-postponed', 'postponed'],
+        ['g-scheduled', 'scheduled'],
+        ['g-live', 'live'],
+      ]),
+    }
+    expect(toStatRow({ ...QB_LINE, gameId: 'g-postponed' }, ctx).row!.is_live).toBe(false)
+    expect(toStatRow({ ...QB_LINE, gameId: 'g-scheduled' }, ctx).row!.is_live).toBe(true)
+    expect(toStatRow({ ...QB_LINE, gameId: 'g-live' }, ctx).row!.is_live).toBe(true)
     expect(toStatRow({ ...QB_LINE, gameId: undefined }, CTX).row!.is_live).toBe(true)
     expect(toStatRow({ ...QB_LINE, gameId: undefined }, { ...CTX, anyGameOpen: false }).row!.is_live).toBe(false)
     expect(toStatRow({ ...QB_LINE, gameId: undefined }, CTX).row!.game_id).toBeNull()
@@ -285,5 +318,60 @@ describe('diffStats (§23.2: only real deltas enqueue)', () => {
     const existing = new Map([['syn-g1-qb', statRow()]])
     const both = statRow({ is_live: false, columns: { ...statRow().columns, pass_tds: 1 } })
     expect(diffStats([both], existing)).toEqual({ inserts: [], updates: [both], metaOnly: [], unchanged: 0 })
+  })
+})
+
+/**
+ * A chainable in-memory stand-in for the service client: every table read
+ * resolves to its canned rows (with `count` = their length, so pageAll
+ * finishes in one page). Enough to drive `ingestWeek` through its reads
+ * against an empty provider — the R712 cap pin needs nothing more.
+ */
+function fakeDb(rowsByTable: Record<string, Array<Record<string, unknown>>>): SyncClient {
+  return {
+    from(table: string) {
+      const rows = rowsByTable[table] ?? []
+      const builder: Record<string, unknown> = {}
+      for (const method of ['select', 'eq', 'in', 'like', 'order', 'range', 'update', 'upsert']) {
+        builder[method] = () => builder
+      }
+      builder.then = (
+        resolve: (v: { data: unknown[]; error: null; count: number }) => unknown,
+        reject: (e: unknown) => unknown,
+      ) => Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve, reject)
+      return builder
+    },
+  } as unknown as SyncClient
+}
+
+const EMPTY_PROVIDER: StatsProvider = {
+  name: 'stub',
+  capabilities: new Set(),
+  getSchedule: async () => [],
+  getGameStates: async () => [],
+  getWeekStats: async () => [],
+  getInjuries: async () => [],
+  getInactives: async () => [],
+}
+
+function weekRows(n: number): Array<Record<string, unknown>> {
+  return Array.from({ length: n }, (_, i) => ({ season: 2026, week: i + 1, first_kickoff_at: null, last_game_ends_at: null }))
+}
+
+describe('readWeeks refuses a result set AT the PostgREST cap (rule 10, R712)', () => {
+  const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+  const deps = (db: SyncClient) => ({ db, degradation: new DegradationTracker(), season: 2026, week: 2 })
+
+  it('1000 nfl_weeks rows (the cap) → throws; 999 (one under) → the poll completes', async () => {
+    await expect(ingestWeek(EMPTY_PROVIDER, clock, deps(fakeDb({ nfl_weeks: weekRows(1000) })))).rejects.toThrow(
+      'nfl_weeks read for 2026 returned 1000 rows — at the PostgREST cap, refusing to trust it',
+    )
+    const report = await ingestWeek(EMPTY_PROVIDER, clock, deps(fakeDb({ nfl_weeks: weekRows(999) })))
+    expect(report.ok).toBe(true)
+    expect(report.reasons).toEqual([
+      'provider returned zero games for 2026',
+      'provider returned zero stat rows for 2026 week 2',
+      'score_fanout: no scoring delta — nothing enqueued',
+    ])
   })
 })
