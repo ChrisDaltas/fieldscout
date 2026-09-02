@@ -28,7 +28,9 @@
 --      idempotency key, NOT an audit"). One row per (league, action_id) with
 --      the verb's stored `result` jsonb so a replay returns it
 --      BYTE-IDENTICALLY with no second regeneration and no second post
---      (tasks-M4 §4 rule 10). Why a table and not a stamp on the rows it
+--      (tasks-M4 §4 rule 10); a replay by the OTHER verb (an edit's
+--      action_id handed to confirm, or vice versa) refuses 22023 by name
+--      (R732 — an action_id belongs to one verb). Why a table and not a stamp on the rows it
 --      writes: a Remix replaces every `scheduled` row, so a later Remix
 --      erases an earlier one's stamps and the earlier action_id would
 --      re-execute on a stale retry — a ledger row cannot be erased by a
@@ -61,13 +63,20 @@
 --      = min(`league_weeks.week`)), the current regular-season `matchups`,
 --      and the window. Regenerates the WHOLE regular season through the
 --      pure builder with `seed`, then classifies every regular-season week:
---      REGENERABLE iff its `league_weeks` row is `upcoming` AND every
---      matchup row in it is `scheduled` (both — a `live`/`correction_
---      window`/`final` week, or a week holding any non-`scheduled` row,
---      is FROZEN whole, with the reason named per week; a mixed week is
---      frozen entirely because replacing only its `scheduled` rows with a
---      generated week's rows would double-book the teams of the kept rows
---      — §11.7's own uniqueness invariants). Returns jsonb: the window, the
+--      REGENERABLE iff its `league_weeks` row is `upcoming` AND the week's
+--      OWN first kickoff is still ahead at call time (the same datum as
+--      E41's, per week — R730: a status column has no writer on this chain
+--      and, after L.D1.6, lags the kickoff by up to an hour; E42/§23.3/
+--      D291 say kickoff-derived gates read `nfl_games` at evaluation time)
+--      AND every matchup row in it is `scheduled`, un-overridden and
+--      unscored (R733 — rule 9's "an is_overridden cell is never auto-
+--      recomputed"; scores DEFAULT 0, so non-zero is the tell). Anything
+--      else FREEZES the week whole, with the reason named per week
+--      (`week_<status>` / `week_kicked_off` / `matchup_not_scheduled` /
+--      `matchup_overridden_or_scored`); a mixed week is frozen entirely
+--      because replacing only its `scheduled` rows with a generated week's
+--      rows would double-book the teams of the kept rows — §11.7's own
+--      uniqueness invariants. Returns jsonb: the window, the
 --      regenerable/frozen weeks, the FULL proposed set (kept rows for
 --      frozen weeks, generated rows for regenerable ones, each tagged
 --      `regenerated`), and the HUMAN DIFF — one row per (week, game type,
@@ -94,7 +103,10 @@
 --      commish → REPLAY (the ledger; returns the stored result) →
 --      `in_season` → the plan (which refuses `total_points`, and is refused
 --      here BY NAME when it holds zero regenerable weeks — a confirm that
---      would replace nothing is a refusal, never a silent success) → E41:
+--      would replace nothing is a refusal, never a silent success — and
+--      BY NAME when the plan is `no_changes` (R731: the current seed with
+--      no hand edits since would churn every row id and post "0 pairings
+--      changed"; the same seed AFTER an edit has changes and passes) → E41:
 --      free window needs no reason; after it, `p_reason` is REQUIRED
 --      (non-blank — D290) → DELETE the regenerable weeks' rows (count
 --      asserted = the rows the plan counted) → INSERT the generated rows
@@ -373,10 +385,23 @@ BEGIN
     SELECT w.week, w.status AS week_status,
            CASE
              WHEN w.status <> 'upcoming' THEN 'week_' || w.status
+             -- R730: the week's OWN first kickoff, from nfl_games at call time
+             -- (E42/§23.3/D291) — never a status column's opinion of the future.
+             WHEN NOT (SELECT k.free FROM public.schedule_window_internal(v_league.season, w.week, p_at) k)
+               THEN 'week_kicked_off'
              WHEN EXISTS (SELECT 1 FROM public.matchups m
                           WHERE m.league_id = p_league_id AND m.season = v_league.season
                             AND m.week = w.week AND m.status <> 'scheduled')
                THEN 'matchup_not_scheduled'
+             -- R733: an overridden or scored cell is never regenerated (rule 9),
+             -- whatever its status says. Scores DEFAULT 0 (109) — non-zero, not
+             -- non-NULL, is the tell.
+             WHEN EXISTS (SELECT 1 FROM public.matchups m
+                          WHERE m.league_id = p_league_id AND m.season = v_league.season
+                            AND m.week = w.week
+                            AND (m.is_overridden OR m.result IS NOT NULL
+                                 OR COALESCE(m.home_score, 0) <> 0 OR COALESCE(m.away_score, 0) <> 0))
+               THEN 'matchup_overridden_or_scored'
              ELSE NULL
            END AS reason
     FROM public.league_weeks w
@@ -566,6 +591,7 @@ DECLARE
   v_inserted INTEGER;
   v_cnt      INTEGER;
   v_result   JSONB;
+  v_kind     TEXT;
   v_settings JSONB;
   v_message  TEXT;
 BEGIN
@@ -595,10 +621,16 @@ BEGIN
 
   -- REPLAY (099/E2): the same action_id returns the stored result, byte-
   -- identically — no second regeneration, no second post.
-  SELECT a.result INTO v_result
+  SELECT a.result, a.kind INTO v_result, v_kind
   FROM public.schedule_actions a
   WHERE a.league_id = p_league_id AND a.action_id = p_action_id;
   IF FOUND THEN
+    IF v_kind <> 'remix' THEN
+      RAISE EXCEPTION
+        'schedule_remix_confirm: action_id % was used by a % on this league — an action_id belongs to one verb (R732)',
+        p_action_id, v_kind
+        USING ERRCODE = '22023';
+    END IF;
     RETURN v_result;
   END IF;
 
@@ -618,6 +650,17 @@ BEGIN
     RAISE EXCEPTION
       'schedule_remix_confirm: league % has no regenerable week — every regular-season week is live, final or holds a non-scheduled matchup (weeks frozen: %); nothing to remix (§11.7: live/final weeks never regenerate)',
       p_league_id, v_plan -> 'weeks_frozen'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- R731 (rule 10): a confirm that would change nothing — the current seed
+  -- with no hand edits since — is refused by name, never a silent churn of
+  -- every row id plus a "0 pairings changed" post. (The same seed AFTER an
+  -- edit has change_count > 0 and is a legitimate undo — it passes.)
+  IF (v_plan ->> 'no_changes')::boolean THEN
+    RAISE EXCEPTION
+      'schedule_remix_confirm: seed % reproduces league %''s current schedule exactly — no changes to confirm (§11.7 "regenerates with a fresh seed"; preview said no_changes)',
+      p_seed, p_league_id
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -651,7 +694,9 @@ BEGIN
   WHERE m.league_id = p_league_id AND m.season = v_league.season
     AND m.round_type IN ('regular', 'secondary')
     AND m.week = ANY (v_regen)
-    AND m.status = 'scheduled';
+    AND m.status = 'scheduled'
+    AND NOT m.is_overridden AND m.result IS NULL
+    AND COALESCE(m.home_score, 0) = 0 AND COALESCE(m.away_score, 0) = 0;
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   IF v_deleted <> v_expected THEN
     RAISE EXCEPTION
@@ -772,6 +817,8 @@ DECLARE
   v_n         INTEGER;
   v_message   TEXT;
   v_names     JSONB;
+  v_kind      TEXT;
+  v_wk        RECORD;
 BEGIN
   IF p_matchup_id IS NULL THEN
     RAISE EXCEPTION 'schedule_edit_matchup: matchup_id is required' USING ERRCODE = '22023';
@@ -804,10 +851,16 @@ BEGIN
   END IF;
 
   -- REPLAY (099/E2).
-  SELECT a.result INTO v_result
+  SELECT a.result, a.kind INTO v_result, v_kind
   FROM public.schedule_actions a
   WHERE a.league_id = p_league_id AND a.action_id = p_action_id;
   IF FOUND THEN
+    IF v_kind <> 'edit_matchup' THEN
+      RAISE EXCEPTION
+        'schedule_edit_matchup: action_id % was used by a % on this league — an action_id belongs to one verb (R732)',
+        p_action_id, v_kind
+        USING ERRCODE = '22023';
+    END IF;
     RETURN v_result;
   END IF;
 
@@ -837,6 +890,14 @@ BEGIN
       p_matchup_id, v_m.week, v_m.status
       USING ERRCODE = 'P0001';
   END IF;
+  -- R733: an overridden or scored cell is never touched (rule 9).
+  IF v_m.is_overridden OR v_m.result IS NOT NULL
+     OR COALESCE(v_m.home_score, 0) <> 0 OR COALESCE(v_m.away_score, 0) <> 0 THEN
+    RAISE EXCEPTION
+      'schedule_edit_matchup: matchup % (week %) carries a result or score (overridden: %) — a scored or overridden cell is never rewritten (§22.2/rule 9)',
+      p_matchup_id, v_m.week, v_m.is_overridden
+      USING ERRCODE = 'P0001';
+  END IF;
   SELECT w.status INTO v_week_status
   FROM public.league_weeks w
   WHERE w.league_id = p_league_id AND w.season = v_m.season AND w.week = v_m.week;
@@ -844,6 +905,15 @@ BEGIN
     RAISE EXCEPTION
       'schedule_edit_matchup: week % of league % is % — only an upcoming week''s matchups may change (§11.7/§12.17)',
       v_m.week, p_league_id, COALESCE(v_week_status, 'missing')
+      USING ERRCODE = 'P0001';
+  END IF;
+  -- R730: the week's OWN first kickoff, from nfl_games at call time — a
+  -- week under way is not a future week whatever its status row says.
+  SELECT * INTO v_wk FROM public.schedule_window_internal(v_m.season, v_m.week, now());
+  IF NOT v_wk.free THEN
+    RAISE EXCEPTION
+      'schedule_edit_matchup: week % of league % kicked off at % (%) — only future weeks may change (§11.7/E41/E42)',
+      v_m.week, p_league_id, v_wk.first_kickoff_at, v_wk.datum_arm
       USING ERRCODE = 'P0001';
   END IF;
   IF v_m.away_team_id IS NULL THEN
@@ -924,6 +994,13 @@ BEGIN
       RAISE EXCEPTION
         'schedule_edit_matchup: matchup % (week %, %''s current game) is % — the edit would have to re-seat a team into it; only scheduled matchups may change (§11.7/E41)',
         v_sib.id, v_sib.week, v_t, v_sib.status
+        USING ERRCODE = 'P0001';
+    END IF;
+    IF v_sib.is_overridden OR v_sib.result IS NOT NULL
+       OR COALESCE(v_sib.home_score, 0) <> 0 OR COALESCE(v_sib.away_score, 0) <> 0 THEN
+      RAISE EXCEPTION
+        'schedule_edit_matchup: matchup % (week %, %''s current game) carries a result or score — a scored or overridden cell is never rewritten (§22.2/rule 9)',
+        v_sib.id, v_sib.week, v_t
         USING ERRCODE = 'P0001';
     END IF;
     v_side := CASE WHEN v_sib.home_team_id = v_t THEN 'home' ELSE 'away' END;

@@ -77,7 +77,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(132);
+select plan(149);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the ledger, the five functions, grants (§4.1)
@@ -181,19 +181,15 @@ from generate_series(1, 4) i;
 -- u01 = commissioner/owner of L8, L8b, LT, LS; u02 = manager in L8; u03 = an
 -- OUTSIDER (member of nothing); u04 = commissioner of L2 only.
 
--- The 2026 calendar this file's goldens are written against (058's R724
--- shape): re-asserted from 039's literals inside this rolled-back txn.
+-- The 2026 calendar this file runs against, RELATIVE to now() (the R724
+-- shape, R730): week w starts w weeks from the transaction instant, so no
+-- week is ever "under way" by the wall clock — only by a kickoff this file
+-- places itself. Every 2026 row is re-asserted inside this rolled-back txn;
+-- first_kickoff_at/last_game_ends_at NULL: the starts_at arm decides unless
+-- a game row is placed.
 update nfl_weeks w
-set starts_at = v.starts_at, first_kickoff_at = null, last_game_ends_at = null
-from (values
-  (1, '2026-09-09 00:00:00-04'::timestamptz), (2, '2026-09-16 00:00:00-04'), (3, '2026-09-23 00:00:00-04'),
-  (4, '2026-09-30 00:00:00-04'), (5, '2026-10-07 00:00:00-04'), (6, '2026-10-14 00:00:00-04'),
-  (7, '2026-10-21 00:00:00-04'), (8, '2026-10-28 00:00:00-04'), (9, '2026-11-04 00:00:00-05'),
-  (10, '2026-11-11 00:00:00-05'), (11, '2026-11-18 00:00:00-05'), (12, '2026-11-25 00:00:00-05'),
-  (13, '2026-12-02 00:00:00-05'), (14, '2026-12-09 00:00:00-05'), (15, '2026-12-16 00:00:00-05'),
-  (16, '2026-12-23 00:00:00-05'), (17, '2026-12-30 00:00:00-05'), (18, '2027-01-06 00:00:00-05')
-) as v(week, starts_at)
-where w.season = 2026 and w.week = v.week;
+set starts_at = now() + (w.week * interval '7 days'), first_kickoff_at = null, last_game_ends_at = null
+where w.season = 2026;
 delete from nfl_games where season = 2026;
 
 -- L8 (b2…08): 8 teams, second_opponent ON, stored seed — the literal goldens.
@@ -228,19 +224,21 @@ insert into league_members (league_id, user_id, team_id, role) values
   ('b2000000-0000-4000-8000-000000000011', '92000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-001100000001', 'commissioner'),
   ('b2000000-0000-4000-8000-000000000012', '92000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-001200000001', 'commissioner');
 
--- Generate: L8/L8b/LT pre-season (week 1); L2 at a week-10 instant
--- (D306(3): [starts_at(9), starts_at(10)) under the starts_at arm).
+-- Generate: L8/L8b/LT pre-season (now() — every week is ahead ⇒ week 1);
+-- L2 at a week-10 instant (D306(3): [starts_at(9), starts_at(10)) under the
+-- starts_at arm — one day into week 9's window).
 select results_eq(
   $$ select n, (r ->> 'first_week')::int, (r ->> 'matchups')::int, r ->> 'matchups_reason'
      from unnest(array[8, 9, 11]) n,
      lateral public.league_generate_schedule(('b2000000-0000-4000-8000-0000000000' || lpad(n::text, 2, '0'))::uuid,
-                                             '2026-09-08 12:00:00-04') r
+                                             now()) r
      order by n $$,
   $$ values (8, 1, 112, null), (9, 1, 56, null), (11, 1, 0, 'total_points') $$,
   'fixtures generated: L8 112 rows (second on), L8b 56, LT zero BY NAME');
 select results_eq(
   $$ select (r ->> 'first_week')::int, (r ->> 'regular_season_weeks')::int, (r ->> 'matchups')::int
-     from public.league_generate_schedule('b2000000-0000-4000-8000-000000000010', '2026-11-05 12:00:00-05') r $$,
+     from public.league_generate_schedule('b2000000-0000-4000-8000-000000000010',
+            (select w.starts_at from nfl_weeks w where w.season = 2026 and w.week = 9) + interval '1 day') r $$,
   $$ values (10, 6, 24) $$,
   'L2 generated mid-season: first week 10, 6 regular weeks, 24 rows (its league Week 1 is NFL week 10)');
 
@@ -442,6 +440,25 @@ select is((select count(*)::int from league_chat where league_id = 'b2000000-000
   '…and the post count is still exactly 1 (counted, not only digested)');
 select is((select count(*)::int from schedule_actions), 1, '…and the ledger still holds exactly 1 row');
 
+-- R731: the current seed with no hand edits ⇒ no_changes ⇒ confirm REFUSES.
+-- R732: an action_id belongs to one verb.
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_like(
+  $$ select public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 777, null, 'a0000000-0000-4000-8000-0000000000e9') $$,
+  '%no changes to confirm%', 'R731: confirming the CURRENT seed (preview says no_changes) refuses by name — no row-id churn, no "0 pairings changed" post');
+select throws_like(
+  $$ select public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-0000000000aa',
+       'c2000000-0000-4000-8000-000800000001', 'c2000000-0000-4000-8000-000800000002', null, 'a0000000-0000-4000-8000-000000000001') $$,
+  '%belongs to one verb%', 'R732: the EDIT verb handed a REMIX''s action_id refuses 22023 by name (never the remix''s stored jsonb as a 200)');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is(pg_temp.sr_digest(), current_setting('pgtap.sr_after_c1'),
+  '…neither refusal wrote anything (digest unchanged)');
+select is((select count(*)::int from league_chat where league_id = 'b2000000-0000-4000-8000-000000000008'), 1,
+  '…and the post count is still 1 after the R731 refusal');
+
 -- ---------------------------------------------------------------------------
 -- F. E41 at the boundary — every arm, both sides (D146 on the datum)
 -- ---------------------------------------------------------------------------
@@ -485,7 +502,7 @@ select throws_ok(
   $$ select * from public.schedule_window_internal(2026, 99, now()) $$,
   'P0001', null, 'a week with no nfl_weeks row refuses by name (never a NULL window)');
 -- Restore week 1's calendar row; the game row returns at kickoff+1s (post-kickoff from here).
-update nfl_weeks set starts_at = '2026-09-09 00:00:00-04', first_kickoff_at = null where season = 2026 and week = 1;
+update nfl_weeks set starts_at = now() + interval '7 days', first_kickoff_at = null where season = 2026 and week = 1;
 insert into nfl_games (id, season, week, home_team, away_team, kickoff_at) values
   ('sr-w1-a', 2026, 1, 'KC', 'BUF', now() - interval '1 second');
 
@@ -510,6 +527,9 @@ select is(
   (select (p -> 'window' ->> 'free')::boolean from public.schedule_preview('b2000000-0000-4000-8000-000000000010', 42) p),
   false, 'MID-SEASON: one second after NFL week 10''s first kickoff the window is closed');
 reset role;
+-- Week 10's game back AHEAD: L8 shares the 2026 calendar, and with R730 a
+-- kicked-off week 10 would (correctly) freeze in every L8 plan below.
+update nfl_games set kickoff_at = now() + interval '1 second' where id = 'sr-w10-a';
 
 -- F3. The reason law through the RPC (L8, post-kickoff on the nfl_games arm).
 set local role authenticated;
@@ -529,16 +549,105 @@ select results_eq(
             r ->> 'system_post' like '%— after Week 1 kickoff (commissioner override) — reason: Bye-week fix%'
      from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 555, '  Bye-week fix  ',
                                         'a0000000-0000-4000-8000-000000000002') r $$,
-  $$ values (true, false, 112, true) $$,
-  'post-kickoff confirm WITH a reason succeeds (the one-unit positive): override clause + the trimmed reason in the post');
+  $$ values (true, false, 104, true) $$,
+  'post-kickoff confirm WITH a reason succeeds (the one-unit positive): override clause + the trimmed reason in the post; 104 rows — week 1 itself is under way and frozen (R730)');
 select is((select count(*)::int from league_chat where league_id = 'b2000000-0000-4000-8000-000000000008'
            and message like '%commissioner override) — reason: Bye-week fix'), 1,
   'the override post landed in league chat with the reason (the one place it lives until M6 — D290)');
 reset role;
 
+-- F4. R730 — a LATER week whose OWN first kickoff has passed is frozen by
+-- name (`week_kicked_off`) whatever league_weeks.status says, for BOTH verbs,
+-- at kickoff ±1s (the status column has no writer on this chain; the datum
+-- is nfl_games at call time — E42/§23.3/D291).
+insert into nfl_games (id, season, week, home_team, away_team, kickoff_at) values
+  ('sr-w3-a', 2026, 3, 'KC', 'BUF', now() - interval '1 second');
+select results_eq(
+  $$ select w.datum_arm, w.free from public.schedule_window_internal(2026, 3, now()) w $$,
+  $$ values ('nfl_games', false) $$,
+  'R730 datum: week 3''s own game at kickoff+1s ⇒ not free (the per-week check reads the same function)');
+select is((select status from league_weeks where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 3), 'upcoming',
+  'PREMISE: league_weeks week 3 still says upcoming — the status column has not moved');
+create temp table sr_l8w3 on commit drop as
+select id, home_team_id as h, away_team_id as a
+from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 3 and round_type = 'regular' order by home_team_id limit 1;
+grant select on sr_l8w3 to authenticated;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select results_eq(
+  $$ select p -> 'weeks_regenerable', p -> 'weeks_frozen', (p ->> 'matchups_regenerable')::int
+     from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 4242) p $$,
+  $$ values ('[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb,
+             '[{"week": 1, "reason": "week_kicked_off", "week_status": "upcoming"}, {"week": 3, "reason": "week_kicked_off", "week_status": "upcoming"}]'::jsonb,
+             96) $$,
+  'R730 plan: week 3 (kickoff+1s, status upcoming) is FROZEN BY NAME as week_kicked_off beside week 1; 96 of 112 rows regenerable');
+select throws_like(
+  $$ select public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008', (select id from sr_l8w3),
+       (select a from sr_l8w3), (select h from sr_l8w3), 'week 3 under way', 'a0000000-0000-4000-8000-000000000061') $$,
+  '%kicked off at%only future weeks may change%', 'R730 edit: a week-3 row refuses by name one second after week 3''s own kickoff (status still upcoming)');
+select results_eq(
+  $$ select (r ->> 'matchups_replaced')::int, r -> 'weeks_regenerated'
+     from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 4242, 'week 3 is under way', 'a0000000-0000-4000-8000-000000000062') r $$,
+  $$ values (96, '[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb) $$,
+  'R730 confirm: replaces 96 rows — weeks 1 and 3 untouched');
+reset role;
+select is(
+  (select string_agg((m.week, m.round_type, m.home_team_id, m.away_team_id)::text, ',' order by m.round_type, m.home_team_id)
+   from matchups m where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week = 3),
+  (select string_agg((b.week, b.round_type, b.home_team_id, b.away_team_id)::text, ',' order by b.round_type, b.home_team_id)
+   from public.schedule_build_internal(
+          (select array_agg(t.id) from teams t where t.league_id = 'b2000000-0000-4000-8000-000000000008'), 555, 1, 14, true) b
+   where b.week = 3),
+  '…week 3 still holds the PREVIOUS seed''s (555) rows — the kicked-off week was not regenerated');
+update nfl_games set kickoff_at = now() + interval '1 second' where id = 'sr-w3-a';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select is(
+  (select p -> 'weeks_regenerable' from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 4243) p),
+  '[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb,
+  'R730 one-unit sibling: week 3''s game moved to kickoff−1s ⇒ week 3 regenerable again (the datum, not a column, decides)');
+select results_eq(
+  $$ select (r ->> 'rows_changed')::int
+     from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008', (select id from sr_l8w3),
+            (select a from sr_l8w3), (select h from sr_l8w3), 'week 3 still ahead', 'a0000000-0000-4000-8000-000000000061') r $$,
+  $$ values (1) $$,
+  'R730 edit sibling: the same week-3 flip lives one second BEFORE week 3''s kickoff');
+reset role;
+delete from nfl_games where id = 'sr-w3-a';
+
+-- F5. R733 — an overridden or scored cell freezes its week (and refuses the
+-- edit) even while `scheduled` (savepoint-scoped; scores DEFAULT 0 — the
+-- reviewer's IS NOT NULL would freeze every week, measured).
+savepoint f_r733;
+select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and home_score = 0 and away_score = 0), 8,
+  'PREMISE (R733): engine-written rows carry scores 0, not NULL (109''s DEFAULT) — the freeze keys on non-zero');
+update matchups set is_overridden = true
+where id = (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and round_type = 'regular' order by home_team_id limit 1);
+update matchups set home_score = 12.5
+where id = (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 6 and round_type = 'regular' order by home_team_id limit 1);
+create temp table sr_l8w5 on commit drop as
+select id, home_team_id as h, away_team_id as a from matchups
+where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and round_type = 'regular' and is_overridden;
+grant select on sr_l8w5 to authenticated;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select is(
+  (select p -> 'weeks_frozen' from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 4244) p),
+  '[{"week": 1, "reason": "week_kicked_off", "week_status": "upcoming"}, {"week": 5, "reason": "matchup_overridden_or_scored", "week_status": "upcoming"}, {"week": 6, "reason": "matchup_overridden_or_scored", "week_status": "upcoming"}]'::jsonb,
+  'R733 plan: a scheduled-but-overridden row (week 5) and a scheduled-but-scored row (week 6) freeze their weeks BY NAME');
+select throws_like(
+  $$ select public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008', (select id from sr_l8w5),
+       (select a from sr_l8w5), (select h from sr_l8w5), 'x', 'a0000000-0000-4000-8000-000000000063') $$,
+  '%carries a result or score%', 'R733 edit: the overridden row refuses by name');
+reset role;
+rollback to savepoint f_r733;
+
 -- ---------------------------------------------------------------------------
--- G. Scheduled-only — a final week, a live week and a mixed week survive a
---    post-kickoff Remix BYTE-IDENTICAL (raw row text, R601)
+-- G. Scheduled-only — a kicked-off week, a final week, a live week and a
+--    mixed week survive a post-kickoff Remix BYTE-IDENTICAL (raw row text, R601)
 -- ---------------------------------------------------------------------------
 -- Week 2 → final (legal F4 steps), its rows final with scores; week 3 → live,
 -- its rows live; week 4 MIXED — one final row among scheduled ones.
@@ -552,9 +661,9 @@ update matchups set status = 'final', home_score = 70, away_score = 71, result =
 where id = (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 4 and round_type = 'regular' order by home_team_id limit 1);
 select set_config('pgtap.sr_frozen',
   (select md5(string_agg(m::text, ',' order by m.id)) from matchups m
-   where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week in (2, 3, 4)), true);
-select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week in (2, 3, 4)), 24,
-  'PREMISE: the three frozen weeks hold 24 rows (3 × 4 pairings × 2 game types)');
+   where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week in (1, 2, 3, 4)), true);
+select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week in (1, 2, 3, 4)), 32,
+  'PREMISE: the four frozen weeks (1 kicked off, 2 final, 3 live, 4 mixed) hold 32 rows (4 × 4 pairings × 2 game types)');
 
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -562,35 +671,35 @@ select set_config('request.jwt.claims',
 select results_eq(
   $$ select p -> 'weeks_regenerable', p -> 'weeks_frozen', (p ->> 'matchups_regenerable')::int, (p ->> 'matchups_current')::int
      from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 999) p $$,
-  $$ values ('[1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb,
-             '[{"week": 2, "reason": "week_final", "week_status": "final"}, {"week": 3, "reason": "week_live", "week_status": "live"}, {"week": 4, "reason": "matchup_not_scheduled", "week_status": "upcoming"}]'::jsonb,
-             88, 112) $$,
-  'the plan freezes the final week, the live week AND the mixed week BY NAME (reason per week); 88 of 112 rows regenerable');
+  $$ values ('[5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb,
+             '[{"week": 1, "reason": "week_kicked_off", "week_status": "upcoming"}, {"week": 2, "reason": "week_final", "week_status": "final"}, {"week": 3, "reason": "week_live", "week_status": "live"}, {"week": 4, "reason": "matchup_not_scheduled", "week_status": "upcoming"}]'::jsonb,
+             80, 112) $$,
+  'the plan freezes the kicked-off week, the final week, the live week AND the mixed week BY NAME (reason per week); 80 of 112 rows regenerable');
 select is(
   (select count(*)::int from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 999) p, jsonb_array_elements(p -> 'proposed') e
-   where (e ->> 'week')::int in (2, 3, 4) and (e ->> 'regenerated')::boolean),
+   where (e ->> 'week')::int in (1, 2, 3, 4) and (e ->> 'regenerated')::boolean),
   0, 'no proposed row of a frozen week is tagged regenerated (kept rows are the current rows)');
 select results_eq(
   $$ select (r ->> 'matchups_replaced')::int, r -> 'weeks_regenerated', jsonb_array_length(r -> 'weeks_frozen')
      from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 999, 'a mid-season reshuffle',
                                         'a0000000-0000-4000-8000-000000000003') r $$,
-  $$ values (88, '[1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb, 3) $$,
-  'CONFIRM post-kickoff replaces exactly the 88 regenerable rows; 3 weeks frozen');
+  $$ values (80, '[5, 6, 7, 8, 9, 10, 11, 12, 13, 14]'::jsonb, 4) $$,
+  'CONFIRM post-kickoff replaces exactly the 80 regenerable rows; 4 weeks frozen');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
   (select md5(string_agg(m::text, ',' order by m.id)) from matchups m
-   where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week in (2, 3, 4)),
+   where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week in (1, 2, 3, 4)),
   current_setting('pgtap.sr_frozen'),
-  'THE FINAL, LIVE AND MIXED WEEKS SURVIVE THE REMIX BYTE-IDENTICAL — raw row text incl. id/scores/updated_at (R601) — the DoD break probe reds THIS cell');
+  'THE KICKED-OFF, FINAL, LIVE AND MIXED WEEKS SURVIVE THE REMIX BYTE-IDENTICAL — raw row text incl. id/scores/updated_at (R601) — the DoD break probe reds THIS cell');
 select is(
   (select string_agg((m.week, m.round_type, m.home_team_id, m.away_team_id)::text, ',' order by m.week, m.round_type, m.home_team_id)
-   from matchups m where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week not in (2, 3, 4)),
+   from matchups m where m.league_id = 'b2000000-0000-4000-8000-000000000008' and m.week not in (1, 2, 3, 4)),
   (select string_agg((b.week, b.round_type, b.home_team_id, b.away_team_id)::text, ',' order by b.week, b.round_type, b.home_team_id)
    from public.schedule_build_internal(
           (select array_agg(t.id) from teams t where t.league_id = 'b2000000-0000-4000-8000-000000000008'),
           999, 1, 14, true) b
-   where b.week not in (2, 3, 4)),
+   where b.week not in (1, 2, 3, 4)),
   'the regenerated weeks ≡ the pure builder with 999 restricted to those weeks (the season is ONE generation; frozen weeks are carved out, not re-numbered)');
 select is((select (settings ->> 'schedule_seed')::bigint from leagues where id = 'b2000000-0000-4000-8000-000000000008'),
   999::bigint, 'the seed re-minted to 999');
@@ -814,8 +923,22 @@ select lives_ok(
 reset role;
 delete from matchups where league_id = 'b2000000-0000-4000-8000-000000000009' and round_type in ('playoff', 'third_place');
 
--- H8. E40 on L8 (second_opponent ON, week 9 upcoming, post-kickoff reason law).
+-- H8. E40 on L8 (second_opponent ON, week 9 upcoming, post-kickoff reason law)
+--     + R731's legitimate twin + R732's other direction (L8b, post-kickoff).
 update nfl_games set kickoff_at = now() - interval '1 second' where id = 'sr-w1-a';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_like(
+  $$ select public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000009', 4242, 'x', 'a0000000-0000-4000-8000-000000000011') $$,
+  '%belongs to one verb%', 'R732 the other way: CONFIRM handed an EDIT''s action_id refuses 22023 by name');
+select results_eq(
+  $$ select (r ->> 'change_count')::int > 0, (r ->> 'no_changes')::boolean, (r ->> 'schedule_seed')::bigint
+     from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000009', 20260902, 'undo the hand edits',
+                                        'a0000000-0000-4000-8000-000000000044') r $$,
+  $$ values (true, false, 20260902::bigint) $$,
+  'R731''s legitimate twin: the SAME stored seed after hand edits has changes (it undoes them) and confirms — nothing legitimate is refused');
+reset role;
 create temp table sr_l8w9 on commit drop as
 select round_type, id, home_team_id as h, away_team_id as a
 from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 9;
@@ -895,8 +1018,8 @@ reset role;
 -- ---------------------------------------------------------------------------
 -- I. The ledger has no client path for any role (§4.2) + its CHECK/UNIQUE
 -- ---------------------------------------------------------------------------
-select is((select count(*)::int from schedule_actions), 10,
-  'PREMISE (postgres): the ledger holds 10 rows — 3 L8 remixes (…01/…02/…03) + 5 L8b edits (…11/…13/…14/…15/…36) + 2 L8 edits (…42/…43); every refused or rolled-back action left NO row');
+select is((select count(*)::int from schedule_actions), 13,
+  'PREMISE (postgres): the ledger holds 13 rows — 4 L8 remixes (…01/…02/…62/…03) + 1 L8b remix (…44) + 6 L8b edits (…11/…13/…14/…15/…36) + 3 L8 edits (…61/…42/…43); every refused or rolled-back action left NO row');
 select throws_ok(
   $$ insert into schedule_actions (league_id, action_id, kind, actor_id, result)
      values ('b2000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-0000000000ff', 'banana', '92000000-0000-4000-8000-000000000001', '{}') $$,
