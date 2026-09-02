@@ -1448,6 +1448,58 @@ export type Database = {
           },
         ]
       }
+      lineup_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lineup_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lineup_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lineup_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       list_comments: {
         Row: {
           author_id: string
@@ -3154,9 +3206,12 @@ export type Database = {
       team_lineups: {
         Row: {
           bench: Json
+          edited_by_commish: boolean
           id: string
+          locked_at: string | null
           season: number
           set_at: string | null
+          slot_map: Json | null
           starters: Json
           team_id: string
           total_points: number | null
@@ -3164,9 +3219,12 @@ export type Database = {
         }
         Insert: {
           bench: Json
+          edited_by_commish?: boolean
           id?: string
+          locked_at?: string | null
           season: number
           set_at?: string | null
+          slot_map?: Json | null
           starters: Json
           team_id: string
           total_points?: number | null
@@ -3174,9 +3232,12 @@ export type Database = {
         }
         Update: {
           bench?: Json
+          edited_by_commish?: boolean
           id?: string
+          locked_at?: string | null
           season?: number
           set_at?: string | null
+          slot_map?: Json | null
           starters?: Json
           team_id?: string
           total_points?: number | null
@@ -4066,6 +4127,31 @@ export type Database = {
         Returns: Json
       }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
+      lineup_current_week_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: number
+      }
+      lineup_designation_internal: {
+        Args: { p_status: string }
+        Returns: string
+      }
+      lineup_fit_internal: {
+        Args: { p_players: Json; p_slots: Json }
+        Returns: Json
+      }
+      lineup_kickoff_internal: {
+        Args: {
+          p_at: string
+          p_nfl_team: string
+          p_season: number
+          p_week: number
+        }
+        Returns: {
+          datum_arm: string
+          kickoff_at: string
+          on_bye: boolean
+        }[]
+      }
       mock_draft_expire: { Args: never; Returns: Json }
       notify_league_invite_internal: {
         Args: {
@@ -4225,6 +4311,27 @@ export type Database = {
         Args: { p_league_id: string; p_status: string }
         Returns: undefined
       }
+      set_lineup: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_slot_map: Json
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
+      set_lineup_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_slot_map: Json
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
       set_member_role: {
         Args: { p_league_id: string; p_member_id: string; p_role: string }
         Returns: Json
@@ -4248,6 +4355,7 @@ export type Database = {
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
       team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
+      team_league_id: { Args: { p_team_id: string }; Returns: string }
       update_league_profile: {
         Args: {
           p_avatar_url?: string
@@ -4438,6 +4546,7 @@ export type LeaguePlayerPoolRow =
 export type LeagueRoster = Database['public']['Tables']['league_rosters']['Row']
 export type LeagueTransaction = Database['public']['Tables']['transactions']['Row']
 export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
+export type LineupAction = Database['public']['Tables']['lineup_actions']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']
@@ -4457,6 +4566,7 @@ export type ScheduleAction = Database['public']['Tables']['schedule_actions']['R
 export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
+export type TeamLineup = Database['public']['Tables']['team_lineups']['Row']
 export type TeamManager = Database['public']['Tables']['team_managers']['Row']
 export type TeamWeekResult =
   Database['public']['Tables']['team_week_results']['Row']
