@@ -15,6 +15,7 @@
     "sync:splits": "npx tsx scripts/sync-splits.ts",
     "sync:auction": "npx tsx scripts/sync-auction.ts",
     "sync:sos": "npx tsx scripts/sync-sos.ts",
+    "sync:nflverse": "npx tsx scripts/sync-nflverse.ts",
     "record:fixtures": "npx tsx scripts/record-fixtures.ts",
     "record:synthetic-fixture": "npx tsx scripts/record-synthetic-fixture.ts",
     "sync:history": "python3 scripts/load-historical-stats.py",
