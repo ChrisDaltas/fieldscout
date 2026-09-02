@@ -13,10 +13,13 @@
  * at any wall clock before the year 2099: the calendar belongs to the
  * fixture, not the clock.
  *
- * WHO. The stack suites that reach `in_season` (auction-tick, draft-tick,
- * auction-commish(-api), auction-uncontestable, draft-board-autopick), the
- * League Simulator (runner.ts) and the e2e provisioner (e2e/helpers/
- * provision.ts) all create their leagues on this season after seeding it.
+ * WHO. Every stack suite that STARTS or completes a real draft — eighteen
+ * `*-db.test.ts` files after the #251 fix round (R724: draft START is
+ * calendar-bound too), the schedule property sweep, the League Simulator
+ * (runner.ts) and the e2e provisioner (e2e/helpers/provision.ts) — creates
+ * its leagues on this season after seeding it. The authoritative list is
+ * `grep -l SYNTHETIC_SEASON src e2e scripts`; PROGRESS F215 records the
+ * two measurements that produced it (R729).
  *
  * SEEDING IS IDEMPOTENT AND IS NOT CLEANED. `upsert … ignoreDuplicates`
  * makes a second seed a no-op, and the 18 rows are left in place on

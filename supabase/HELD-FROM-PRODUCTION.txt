@@ -75,4 +75,13 @@
 # touched: every object is on the leagues chain (`leagues`, `league_weeks`,
 # `matchups`, `team_week_results`, `drafts`-family functions); the only
 # reads of `nfl_weeks`/`nfl_games` are SELECTs inside the engine.
-082-110
+#
+# 111 added 2026-09-02 with L.D1.3 (Remix + manual matchup edit — the
+# `schedule_actions` idempotency ledger, `schedule_preview`,
+# `schedule_remix_confirm`, `schedule_edit_matchup` + two plain helpers; spec
+# v2.16.14 §11.7 Remix / E41; D290 interim audit posture). Same mechanism,
+# same explicit act. No launch-surface table is touched: the new table
+# references `leagues`/`profiles` by FK only (no ALTER on profiles), every
+# function is on the leagues chain, and the only reads outside it are SELECTs
+# on `nfl_games`/`nfl_weeks`/`teams`.
+082-111

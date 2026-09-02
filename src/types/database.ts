@@ -2867,6 +2867,51 @@ export type Database = {
           },
         ]
       }
+      schedule_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          kind: string
+          league_id: string
+          result: Json
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          kind: string
+          league_id: string
+          result: Json
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          league_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       score_fanout: {
         Row: {
           enqueued_at: string
@@ -4084,6 +4129,17 @@ export type Database = {
           week: number
         }[]
       }
+      schedule_edit_matchup: {
+        Args: {
+          p_action_id: string
+          p_away: string
+          p_home: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       schedule_first_week_internal: {
         Args: { p_now: string; p_season: number }
         Returns: number
@@ -4112,6 +4168,31 @@ export type Database = {
       schedule_playoff_rounds: {
         Args: { p_playoff_teams: number }
         Returns: number
+      }
+      schedule_preview: {
+        Args: { p_league_id: string; p_seed: number }
+        Returns: Json
+      }
+      schedule_remix_confirm: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_reason?: string
+          p_seed: number
+        }
+        Returns: Json
+      }
+      schedule_remix_plan_internal: {
+        Args: { p_at: string; p_league_id: string; p_seed: number }
+        Returns: Json
+      }
+      schedule_window_internal: {
+        Args: { p_at: string; p_first_week: number; p_season: number }
+        Returns: {
+          datum_arm: string
+          first_kickoff_at: string
+          free: boolean
+        }[]
       }
       scoring_detect_tier_cuts: { Args: { p_rules: Json }; Returns: Json }
       scoring_fork_template: {
@@ -4372,6 +4453,7 @@ export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']
 export type Player = Database['public']['Tables']['players']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
+export type ScheduleAction = Database['public']['Tables']['schedule_actions']['Row']
 export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
