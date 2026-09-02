@@ -1183,6 +1183,48 @@ export type Database = {
           },
         ]
       }
+      league_player_pool: {
+        Row: {
+          league_id: string
+          locked_until: string | null
+          player_id: string
+          state: string
+          updated_at: string | null
+          waivers_until: string | null
+        }
+        Insert: {
+          league_id: string
+          locked_until?: string | null
+          player_id: string
+          state?: string
+          updated_at?: string | null
+          waivers_until?: string | null
+        }
+        Update: {
+          league_id?: string
+          locked_until?: string | null
+          player_id?: string
+          state?: string
+          updated_at?: string | null
+          waivers_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_player_pool_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_player_pool_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_rosters: {
         Row: {
           acquired_at: string | null
@@ -1851,6 +1893,82 @@ export type Database = {
           },
         ]
       }
+      matchups: {
+        Row: {
+          away_score: number | null
+          away_team_id: string | null
+          created_at: string | null
+          home_score: number | null
+          home_team_id: string
+          id: string
+          is_overridden: boolean
+          league_id: string
+          override_action_id: string | null
+          result: string | null
+          round_type: string
+          season: number
+          status: string
+          updated_at: string | null
+          week: number
+        }
+        Insert: {
+          away_score?: number | null
+          away_team_id?: string | null
+          created_at?: string | null
+          home_score?: number | null
+          home_team_id: string
+          id?: string
+          is_overridden?: boolean
+          league_id: string
+          override_action_id?: string | null
+          result?: string | null
+          round_type?: string
+          season: number
+          status?: string
+          updated_at?: string | null
+          week: number
+        }
+        Update: {
+          away_score?: number | null
+          away_team_id?: string | null
+          created_at?: string | null
+          home_score?: number | null
+          home_team_id?: string
+          id?: string
+          is_overridden?: boolean
+          league_id?: string
+          override_action_id?: string | null
+          result?: string | null
+          round_type?: string
+          season?: number
+          status?: string
+          updated_at?: string | null
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matchups_away_team_id_fkey"
+            columns: ["away_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matchups_home_team_id_fkey"
+            columns: ["home_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matchups_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nfl_games: {
         Row: {
           away_score: number | null
@@ -2259,6 +2377,7 @@ export type Database = {
       }
       player_stats: {
         Row: {
+          advanced: Json
           def_block: number | null
           def_fumble_recoveries: number | null
           def_interceptions: number | null
@@ -2311,6 +2430,7 @@ export type Database = {
           xp_made: number | null
         }
         Insert: {
+          advanced?: Json
           def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
@@ -2363,6 +2483,7 @@ export type Database = {
           xp_made?: number | null
         }
         Update: {
+          advanced?: Json
           def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
@@ -2739,6 +2860,35 @@ export type Database = {
           },
         ]
       }
+      score_fanout: {
+        Row: {
+          enqueued_at: string
+          player_id: string
+          season: number
+          week: number
+        }
+        Insert: {
+          enqueued_at?: string
+          player_id: string
+          season: number
+          week: number
+        }
+        Update: {
+          enqueued_at?: string
+          player_id?: string
+          season?: number
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "score_fanout_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scoring_systems: {
         Row: {
           created_at: string | null
@@ -3061,6 +3211,80 @@ export type Database = {
           },
         ]
       }
+      team_week_results: {
+        Row: {
+          h2h_result: string | null
+          id: string
+          is_final: boolean
+          league_id: string
+          median_result: string | null
+          opponent_team_id: string | null
+          points: number
+          season: number
+          second_opponent_team_id: string | null
+          second_result: string | null
+          team_id: string
+          week: number
+        }
+        Insert: {
+          h2h_result?: string | null
+          id?: string
+          is_final?: boolean
+          league_id: string
+          median_result?: string | null
+          opponent_team_id?: string | null
+          points?: number
+          season: number
+          second_opponent_team_id?: string | null
+          second_result?: string | null
+          team_id: string
+          week: number
+        }
+        Update: {
+          h2h_result?: string | null
+          id?: string
+          is_final?: boolean
+          league_id?: string
+          median_result?: string | null
+          opponent_team_id?: string | null
+          points?: number
+          season?: number
+          second_opponent_team_id?: string | null
+          second_result?: string | null
+          team_id?: string
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_week_results_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_week_results_opponent_team_id_fkey"
+            columns: ["opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_week_results_second_opponent_team_id_fkey"
+            columns: ["second_opponent_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_week_results_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       teams: {
         Row: {
           created_at: string | null
@@ -3144,6 +3368,67 @@ export type Database = {
             columns: ["successor_team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          created_at: string | null
+          id: string
+          initiated_by: string | null
+          initiator_team_id: string | null
+          league_id: string
+          payload: Json
+          related_action_id: string | null
+          status: string
+          type: string
+          week: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          initiated_by?: string | null
+          initiator_team_id?: string | null
+          league_id: string
+          payload: Json
+          related_action_id?: string | null
+          status?: string
+          type: string
+          week?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          initiated_by?: string | null
+          initiator_team_id?: string | null
+          league_id?: string
+          payload?: Json
+          related_action_id?: string | null
+          status?: string
+          type?: string
+          week?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_initiated_by_fkey"
+            columns: ["initiated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_initiator_team_id_fkey"
+            columns: ["initiator_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
             referencedColumns: ["id"]
           },
         ]
@@ -3981,7 +4266,6 @@ export const Constants = {
 } as const
 
 
-
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -4002,12 +4286,16 @@ export type League = Database['public']['Tables']['leagues']['Row']
 export type LeagueInvite = Database['public']['Tables']['league_invites']['Row']
 export type LeagueList = Database['public']['Tables']['league_lists']['Row']
 export type LeagueMember = Database['public']['Tables']['league_members']['Row']
+export type LeaguePlayerPoolRow =
+  Database['public']['Tables']['league_player_pool']['Row']
 export type LeagueRoster = Database['public']['Tables']['league_rosters']['Row']
+export type LeagueTransaction = Database['public']['Tables']['transactions']['Row']
 export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
 export type ListFolder = Database['public']['Tables']['list_folders']['Row']
 export type ListPlayer = Database['public']['Tables']['list_players']['Row']
+export type Matchup = Database['public']['Tables']['matchups']['Row']
 export type PersonaContentItem =
   Database['public']['Tables']['persona_content_items']['Row']
 export type PersonaContextRow =
@@ -4022,6 +4310,8 @@ export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row
 export type Tag = Database['public']['Tables']['tags']['Row']
 export type Team = Database['public']['Tables']['teams']['Row']
 export type TeamManager = Database['public']['Tables']['team_managers']['Row']
+export type TeamWeekResult =
+  Database['public']['Tables']['team_week_results']['Row']
 
 /** Tier grade a player can be assigned within a ranked list. */
 export type ListTier = 'S' | 'A' | 'B' | 'C' | 'D' | 'F'

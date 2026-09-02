@@ -54,8 +54,10 @@ select columns_are('public', 'player_stats',
         -- 057's 11 (names = canonical registry keys, D56(4)):
         'pass_2pt', 'rush_2pt', 'rec_2pt', 'fg_0_39', 'fg_missed',
         'pat_missed', 'def_block', 'def_return_td', 'fumble_recovery_td',
-        'return_td', 'def_yards_allowed'],
-  'exact player_stats column set (pre-057 surface + 057''s 11)');
+        'return_td', 'def_yards_allowed',
+        -- 109's 1 (C59 — §23.5's advanced-stat map; pinned in 057):
+        'advanced'],
+  'exact player_stats column set (pre-057 surface + 057''s 11 + 109''s advanced)');
 
 -- ---------------------------------------------------------------------------
 -- B. Per-column pins for 057's 11: INTEGER DEFAULT 0 (001's convention,

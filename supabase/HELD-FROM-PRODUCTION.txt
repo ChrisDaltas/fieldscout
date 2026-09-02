@@ -53,4 +53,16 @@
 # v2.16.11 App B.5.1 as marked up). Same mechanism, same explicit act: a
 # seed/rename-only migration, no schema change, held with the rest of the
 # leagues chain until the invite-only test cohort starts.
-082-108
+#
+# 109 added 2026-09-02 with L.D1.1 (the M4 in-season tables — `matchups`,
+# `team_week_results`, `transactions`, `league_player_pool`, the
+# `score_fanout` queue, `player_stats.advanced` (C59) and
+# `idx_league_rosters_player`; spec v2.16.11 §12.8/§12.9/§12.18/§12.19/
+# §22.4/§23.5). Same mechanism, same explicit act. One qualification in the
+# R659 shape: 109 ADDS a DEFAULTed JSONB column + a CHECK to `player_stats`
+# (launch-surface, sync-script-owned — additive, every existing row reads
+# '{}'), an index on `league_rosters(player_id)`, and two more FK references
+# to players(id) (`league_player_pool`, `score_fanout` — the latter ON
+# DELETE CASCADE, the former RESTRICT like 083's), so once pushed they
+# further constrain DELETEs on players. Nothing else on a launch table.
+082-109

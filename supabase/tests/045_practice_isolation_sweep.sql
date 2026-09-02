@@ -9,7 +9,7 @@
 -- has one human and eleven bots, and there is no adversary. The assertion is
 -- the delta: across a standalone mock's ENTIRE lifecycle — launch, ticks,
 -- the human's own verbs, pause/resume, completion, delete — every one of the
--- 57 `public` tables comes back byte-identical, measured as a whole-row
+-- 62 `public` tables comes back byte-identical, measured as a whole-row
 -- digest per table (count + md5 over sorted `to_jsonb` rows), because R499
 -- proved a row COUNT cannot see an in-place UPDATE and `leagues.status` /
 -- `.settings` / `.updated_at` are exactly the writes §8.8 forbids and
@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 57-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 62-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -54,7 +54,7 @@
 --      EMPTY. §D's post-delete state is §E's baseline, which §D has just
 --      proven equal to 'before'.
 --   §D ZERO DELTA AFTER DELETE — THE HEADLINE. The launcher deletes their
---      practice; every one of the 57 tables' count AND whole-row digest
+--      practice; every one of the 62 tables' count AND whole-row digest
 --      equals the baseline. Reddens on: a leaked bot seat (R473/D227(6)'s
 --      cleanup), an orphaned chat post (the NULL-safe sweep), an in-place
 --      UPDATE anywhere (R499), a new FK child of `drafts` that does not
@@ -129,15 +129,28 @@ select is(
         'draft_dnd_marks', 'draft_liveness', 'draft_picks', 'draft_queues', 'drafts',
         'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
         'league_chat', 'league_invites', 'league_lists', 'league_members',
+        'league_player_pool',  -- 109/L.D1.1 (§12.19)
         'league_rosters', 'league_weeks', 'leagues', 'list_comments', 'list_favorites',
         'list_folders', 'list_likes', 'list_links', 'list_player_drafted',
-        'list_players', 'list_tags', 'lists', 'nfl_games', 'nfl_weeks', 'notifications',
+        'list_players', 'list_tags', 'lists',
+        'matchups',  -- 109/L.D1.1 (§12.8)
+        'nfl_games', 'nfl_weeks', 'notifications',
         'persona_content_items', 'persona_context', 'persona_context_versions',
         'persona_posts', 'persona_source_rankings', 'persona_sources', 'player_stats',
         'player_usage', 'players', 'profiles', 'ranking_history', 'research_configs',
+        'score_fanout',  -- 109/L.D1.1 (D292 — the delta queue, service-role only)
         'scoring_systems', 'start_sit_questions', 'start_sit_votes', 'tags',
-        'team_lineups', 'team_managers', 'teams', 'weekly_rankings'],
-  'THE CENSUS, as a stored literal: the 57 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+        'team_lineups', 'team_managers',
+        'team_week_results',  -- 109/L.D1.1 (§12.18)
+        'teams',
+        'transactions',  -- 109/L.D1.1 (§12.9)
+        'weekly_rankings'],
+        -- 109's five in-season tables (L.D1.1) join the census: every one is
+        -- UNREACHABLE from a mock (no RPC writes them until 110+, and the
+        -- mock engine never will — §8.8's zero-side-effect contract), so §C's
+        -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
+        -- PR — the delta cells below are the proof, not this comment.
+  'THE CENSUS, as a stored literal: the 62 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -182,8 +195,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 57 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 57::bigint,
+  'BASELINE: all 62 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 62::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
@@ -301,14 +314,14 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('after') $$,
-  'FINAL: all 57 tables snapshotted again');
+  'FINAL: all 62 tables snapshotted again');
 
 select is(
   (select coalesce(array_agg(b.tbl order by b.tbl), '{}'::text[])
      from mp11_snap b join mp11_snap a on a.tbl = b.tbl and a.phase = 'after'
     where b.phase = 'before' and (b.n, b.digest) is distinct from (a.n, a.digest)),
   '{}'::text[],
-  'ZERO DELTA OVER THE WHOLE SCHEMA: after launch → ticks → touch → pick → pause → resume → complete → delete, all 57 public tables are byte-identical to the baseline — count AND whole-row digest, so a leaked bot seat, an orphaned NULL-league chat post, a non-cascading FK child of drafts, or an in-place UPDATE anywhere (R499) all name their table here. Nothing leaks into the league product — or anywhere else (§4 rule 10; §8.8)');
+  'ZERO DELTA OVER THE WHOLE SCHEMA: after launch → ticks → touch → pick → pause → resume → complete → delete, all 62 public tables are byte-identical to the baseline — count AND whole-row digest, so a leaked bot seat, an orphaned NULL-league chat post, a non-cascading FK child of drafts, or an in-place UPDATE anywhere (R499) all name their table here. Nothing leaks into the league product — or anywhere else (§4 rule 10; §8.8)');
 
 -- The count-vs-digest decomposition, so a future red diagnoses itself: which
 -- kind of leak was it?
@@ -442,13 +455,13 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('a_final') $$,
-  '§E FINAL: all 57 tables snapshotted a fourth time');
+  '§E FINAL: all 62 tables snapshotted a fourth time');
 select is(
   (select coalesce(array_agg(a.tbl order by a.tbl), '{}'::text[])
      from mp11_snap a join mp11_snap f on f.tbl = a.tbl and f.phase = 'a_final'
     where a.phase = 'after' and (a.n, a.digest) is distinct from (f.n, f.digest)),
   '{}'::text[],
-  '§E ZERO DELTA AFTER THE AUCTION LIFECYCLE TOO: launch → nominate → bot ladder → human raise → queue → delete-mid-market, and all 57 tables are byte-identical to the proven-clean baseline — bids, queue rows and seats all swept by the one delete (the FK cascade + D227(6) cleanup, exercised on the auction path)');
+  '§E ZERO DELTA AFTER THE AUCTION LIFECYCLE TOO: launch → nominate → bot ladder → human raise → queue → delete-mid-market, and all 62 tables are byte-identical to the proven-clean baseline — bids, queue rows and seats all swept by the one delete (the FK cascade + D227(6) cleanup, exercised on the auction path)');
 
 select * from finish();
 rollback;
