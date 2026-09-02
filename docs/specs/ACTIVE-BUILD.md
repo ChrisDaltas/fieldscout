@@ -9,7 +9,26 @@
 
 ---
 
-## Active: **NONE — awaiting Chris's direction** *(SE completed 2026-09-01; every candidate next build runs through a Chris gate)*
+## Active: **Redraft Leagues M4 — In-season core** *(approved by Chris 2026-09-01, PR #244 merged; Q29 ruled at approval)*
+
+**The breakdown is LAW — Chris approved and merged PR #244 (2026-09-01).**
+`docs/specs/tasks-M4-inseason.md` sequences the milestone (24 tasks, 6 lanes;
+spec at **v2.16.11**; Q29 ruled — a mid-season league starts at the next NFL
+week, shrink-or-refuse ≤ 18). **The loop builds `L.D*` tasks in lane order,
+starting L.D1.1** (migration 109 — schema lane opener; numbers 109–118 /
+pgTAP 057–066 are reservations confirmed at task time; every migration extends
+`HELD-FROM-PRODUCTION.txt` same-PR). PROGRESS §2 carries the M4 checklist;
+§4 carries D287–D301; §3's Q28 is re-framed LIVE and needs Chris **before the
+cohort's first scored week**. The L.D6.4 real-replay gate is calendar-blocked
+on the first recorded 2026 week (~Sept 10+) — the loop runs everything ahead
+of it and holds there if it arrives first.
+
+*(The F210 merge-time duties — this lane clause + the D288–D301 transcription
+into PROGRESS §4 — were executed by the same PR that carries this edit.)*
+
+---
+
+## Previous: **NONE — awaiting Chris's direction** *(SE completed 2026-09-01; every candidate next build runs through a Chris gate)*
 
 > **[corrected 2026-09-01]** ~~the remaining lane is SE~~ — **the SE track is COMPLETE.**
 > The gate statement on the record: *"the editor's own quality gate (spec §7.3.3.1,
