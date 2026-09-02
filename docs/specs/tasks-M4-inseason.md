@@ -91,7 +91,7 @@ Rules 1–8 carry forward from tasks-M2 §4 and tasks-M3 §4 **verbatim and in f
 ```sql
 -- L.D1.2 schedule engine (D289)
 league_generate_schedule(p_league_id uuid)              -- reads settings/schedule_seed; writes matchups + league_weeks
-schedule_preview(p_league_id uuid, p_seed bigint)       -- pure: proposed matchups + diff vs current, jsonb; no writes
+schedule_preview(p_league_id uuid, p_seed bigint)       -- pure: proposed matchups + diff vs current, jsonb; no writes  [lands with 111/L.D1.3 over 110's schedule_build_internal — D306]
 -- L.D1.3 remix + edit (commish; D290 interim audit; D97 system post in-txn)
 schedule_remix_confirm(p_league_id uuid, p_seed bigint, p_reason text DEFAULT NULL, p_action_id uuid)
 schedule_edit_matchup(p_league_id uuid, p_matchup_id uuid, p_home uuid, p_away uuid, p_reason text, p_action_id uuid)
@@ -411,7 +411,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 | # | File | Contents | Task |
 |---|---|---|---|
 | 109 | `109_inseason_tables.sql` | `matchups` + `team_week_results` + `transactions` + `league_player_pool` + `score_fanout` + `player_stats.advanced` (C59) + `idx_league_rosters_player` | L.D1.1 |
-| 110 | `110_schedule_engine.sql` | `league_generate_schedule` + `schedule_preview` + the `league_weeks` writer/F4 guard + completion wiring (CREATE OR REPLACE `draft_complete_internal` from **086** per D137) + F130 + F143 | L.D1.2 |
+| 110 | `110_schedule_engine.sql` | `league_generate_schedule` + ~~`schedule_preview`~~ **[AMENDED 2026-09-02 — L.D1.2 LANDED: `schedule_preview` moves to 111 with the Remix diff it serves (D289's "the same generator run WITHOUT writing" IS 110's pure `schedule_build_internal`, which 111 wraps — PROGRESS D306/F222)]** + the `league_weeks` writer/F4 guard + completion wiring (DROP+CREATE `draft_complete_internal` from **086** + p_now, and `draft_start_internal` from **098** + the pre-flight, per D137/D291) + F130 + F143 + **F213's composite week FKs** | L.D1.2 |
 | 111 | `111_schedule_remix.sql` | `schedule_remix_confirm` + `schedule_edit_matchup` (E41; D290 interim audit; D97 posts) | L.D1.3 |
 | 112 | `112_lineups.sql` | `team_lineups` §12.13 ALTER + the F18 RLS swap + `set_lineup` (E16 bipartite; locks; IR) | L.D1.4 |
 | 113 | `113_pool_add_drop.sql` | `roster_add_drop` + pool writers (E32; caps; fa_hold; waiver-entry) | L.D1.5 |

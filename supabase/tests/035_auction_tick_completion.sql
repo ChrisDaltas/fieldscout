@@ -125,16 +125,18 @@ select plan(117);
 -- ---------------------------------------------------------------------------
 -- A. Function form + grants (§4.1 grants doctrine; plan §8.3; D137)
 -- ---------------------------------------------------------------------------
-select has_function('public', 'draft_complete_internal', array['uuid'],
-  'draft_complete_internal(uuid) exists — THE ONE completion writer (086, extracted from 066)');
+-- 110/L.D1.2 (D291/F215): the signature gained p_now timestamptz DEFAULT now()
+-- (DROP + CREATE); the pin follows the function it pins.
+select has_function('public', 'draft_complete_internal', array['uuid', 'timestamp with time zone'],
+  'draft_complete_internal(uuid, timestamptz) exists — THE ONE completion writer (086, extracted from 066; + p_now in 110)');
 select ok(
   (select not p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_complete_internal'),
   'draft_complete_internal is SECURITY INVOKER with search_path='''' — the draft_apply_pick_internal posture (its callers are the DEFINER RPCs)');
 select ok(
-  not has_function_privilege('anon', 'public.draft_complete_internal(uuid)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.draft_complete_internal(uuid)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.draft_complete_internal(uuid,timestamptz)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.draft_complete_internal(uuid,timestamptz)', 'EXECUTE'),
   '…and it is TRIPLE revoked (no client consumer exists or will — §4.1)');
 select ok(
   (select p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
@@ -202,6 +204,17 @@ select ok(
 --    against a board some earlier section already moved. Each is made due
 --    inside its own section, immediately before its own tick.
 -- ---------------------------------------------------------------------------
+-- 110/L.D1.2 (F215): THE CALENDAR THIS FIXTURE LANDS ON. Completing a real
+-- draft now maps the league onto nfl_weeks at now() and shrinks-or-refuses
+-- the season to end by week 18 (§11.7 Mid-season entry). Pinning season 2026
+-- far-future inside this rolled-back txn makes every completion below map to
+-- NFL week 1 at ANY wall clock — the fixture owns its calendar, never the
+-- clock. A fixture change forced by 110, not a drive-by.
+update nfl_weeks
+set starts_at = starts_at + interval '73 years',
+    correction_window_ends_at = correction_window_ends_at + interval '73 years'
+where season = 2026;
+
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -223,6 +236,7 @@ select 'tk26-rb' || lpad(i::text, 2, '0'), 'TK26 RB ' || lpad(i::text, 2, '0'),
        'RB', i / 1000.0
 from generate_series(1, 60) i;
 
+-- 110/L.D1.2 (F143): a drafting+ league must REFERENCE a scoring system (§7.3.8's other half — the guard now refuses a NULL scoring_system_id in drafting+); this fixture's reference is a template. A fixture change forced by 110, not a drive-by.
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, settings)
 values
   ('a7000000-0000-4000-8000-0000000000aa', '8e000000-0000-4000-8000-000000000001',
@@ -283,9 +297,9 @@ insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, scoring_rules_snapshot)
 values
   ('a7000000-0000-4000-8000-0000000000ff', '8e000000-0000-4000-8000-000000000001',
-   'pgtap-tk26-LP-partial', 2026, 'drafting', 8, null, '{}', '{}'::jsonb),
+   'pgtap-tk26-LP-partial', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'), '{}', '{}'::jsonb),
   ('a7000000-0000-4000-8000-0000000000a2', '8e000000-0000-4000-8000-000000000001',
-   'pgtap-tk26-LT-snake-complete', 2026, 'drafting', 8, null, '{}', '{}'::jsonb);
+   'pgtap-tk26-LT-snake-complete', 2026, 'drafting', 8, (select id from scoring_systems where is_template and name = 'ESPN Standard'), '{}', '{}'::jsonb);
 
 -- Roster shapes (D91: rounds = Σ starting-slot counts + bench; IR excluded).
 update leagues
@@ -353,6 +367,20 @@ insert into teams (id, owner_id, name, league_id) values
    'pgtap-tk26-LV-t1', 'a7000000-0000-4000-8000-0000000000a6'),
   ('c7000000-0000-4000-8000-00a600000002', '8e000000-0000-4000-8000-000000000001',
    'pgtap-tk26-LV-t2', 'a7000000-0000-4000-8000-0000000000a6');
+-- 110/L.D1.2: completion now generates the schedule (C60), whose precondition
+-- is draft_start's own capacity gate — every seat exists. LP (3 picking teams)
+-- and LT (1) keep their picking seats; the remaining seats are filled with
+-- non-picking placeholders so the fixture satisfies the same precondition a
+-- real draft always does. A fixture change forced by 110, not a drive-by —
+-- every roster/price pin below counts PICKS, not seats.
+insert into teams (id, owner_id, name, league_id)
+select ('c7000000-0000-4000-8000-00ff000000' || lpad(i::text, 2, '0'))::uuid,
+       '8e000000-0000-4000-8000-000000000001', 'pgtap-tk26-LP-t' || i, 'a7000000-0000-4000-8000-0000000000ff'
+from generate_series(4, 8) i;
+insert into teams (id, owner_id, name, league_id)
+select ('c7000000-0000-4000-8000-00a2000000' || lpad(i::text, 2, '0'))::uuid,
+       '8e000000-0000-4000-8000-000000000001', 'pgtap-tk26-LT-t' || i, 'a7000000-0000-4000-8000-0000000000a2'
+from generate_series(2, 8) i;
 
 -- LN memberships. u1 commissions (t1); u2/u3/u4/u6 manage t2/t3/t4/t6.
 -- t5/t7/t8 deliberately have NO member row — E48's no-user seats.

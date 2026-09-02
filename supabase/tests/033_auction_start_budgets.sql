@@ -147,8 +147,8 @@ select ok(
    where n.nspname = 'public' and p.proname = 'draft_start_internal'),
   'draft_start_internal keeps 066''s plain-function + search_path='''' posture after the CREATE OR REPLACE');
 select ok(
-  not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.draft_start_internal(uuid,boolean,timestamptz)', 'EXECUTE'),
   '…and 066''s triple REVOKE on the internal survives the replace');
 
 -- ---------------------------------------------------------------------------
@@ -171,6 +171,17 @@ select ok(
 --        carries a −$185 budget_adjustment on t1 — the ONE-SLOT-SHORT
 --        start refusal and the R318 second message (M3 batch-2 review)
 -- ---------------------------------------------------------------------------
+-- 110/L.D1.2 (F215 / R724): THE CALENDAR THIS FIXTURE STARTS ON. Starting a
+-- real draft now pre-flights the §11.7 fit against nfl_weeks at now() (Q31
+-- rider (1)) — a season-2026 fixture is refused from 2026-12-16 00:00 ET and
+-- dead from 2027-01-06 unless it owns its calendar. Pinning season 2026
+-- far-future inside this rolled-back txn makes every start below fit at ANY
+-- wall clock. A fixture change forced by 110, not a drive-by.
+update nfl_weeks
+set starts_at = starts_at + interval '73 years',
+    correction_window_ends_at = correction_window_ends_at + interval '73 years'
+where season = 2026;
+
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at)

@@ -422,3 +422,36 @@ describe('§7.3.8 bullet: roster_size × team_count ≤ draftable pool — WARNS
     expect(validateLeagueSettings(LEAGUE_SETTINGS_DEFAULTS).warnings).toStrictEqual([])
   })
 })
+
+describe('§7.3.1 R column (v2.16.12, Q31 rider (3)): the 12–15 / 13–16 CREATION ranges live in the validator, the ≥ 4 / ≥ 5 EFFECTIVE ranges at parse', () => {
+  // The parse layer admits an engine-shrunk mid-season row (§11.7 Mid-season
+  // entry — migration 110 writes rsw ≥ 4 / psw ≥ 5 back to `leagues`), so
+  // `mergeSettings` never throws on one; the CREATION range is this
+  // validator's, which every create/PATCH runs (leagues-service).
+  it('an engine-written effective row (4 + 5) PARSES — mergeSettings must not throw on a shrunk league', () => {
+    expect(leagueSettingsSchema.safeParse(settings({ regular_season_weeks: 4, playoff_start_week: 5 })).success).toBe(true)
+    expect(leagueSettingsSchema.safeParse(settings({ regular_season_weeks: 6, playoff_start_week: 7, playoff_teams: 4 })).success).toBe(true)
+  })
+  it('…but is REFUSED at creation/edit, by field: 11 and 4 red regular_season_weeks; 12 and 5 red playoff_start_week', () => {
+    expect(errorFields(settings({ regular_season_weeks: 11, playoff_start_week: 12 }))).toStrictEqual(['regular_season_weeks', 'playoff_start_week'])
+    // trade_deadline_week: null isolates the two range arms (the default 11 would also trip the ≤ regular_season_weeks rule at 4)
+    expect(errorFields(settings({ regular_season_weeks: 4, playoff_start_week: 5, trade_deadline_week: null }))).toStrictEqual(['regular_season_weeks', 'playoff_start_week'])
+  })
+  it('one-unit twins at every boundary: 12/13 and 15/16 pass; 11/12 and 16/17 fail (16 + 17 cannot even parse — the old gap pair)', () => {
+    expect(errorFields(settings({ regular_season_weeks: 12, playoff_start_week: 13 }))).toStrictEqual([])
+    expect(errorFields(settings({ regular_season_weeks: 15, playoff_start_week: 16 }))).toStrictEqual([])
+    expect(errorFields(settings({ regular_season_weeks: 11, playoff_start_week: 12 }))).toContain('regular_season_weeks')
+    // 16 regular-season weeks is out of the parse range itself (max 15); the
+    // validator's upper bound is therefore pinned through the seam: rsw 15 with
+    // psw 17 cannot parse, so 15/16 is the reachable edge and it passes above.
+    expect(leagueSettingsSchema.safeParse(settings({ regular_season_weeks: 16, playoff_start_week: 17 })).success).toBe(false)
+  })
+  it('the range message names the range and the mid-season shortening (UX copy)', () => {
+    const result = validateLeagueSettings(settings({ regular_season_weeks: 8, playoff_start_week: 9 }))
+    const rsw = result.errors.find((e) => e.field === 'regular_season_weeks')
+    expect(rsw?.message).toMatch(/between 12 and 15 weeks/)
+    expect(rsw?.message).toMatch(/shortened automatically/)
+    const psw = result.errors.find((e) => e.field === 'playoff_start_week')
+    expect(psw?.message).toMatch(/between week 13 and week 16/)
+  })
+})

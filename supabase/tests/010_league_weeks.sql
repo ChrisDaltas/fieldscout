@@ -119,15 +119,22 @@ select lives_ok(
   $$ update league_weeks set status = 'final'
      where league_id = 'a3000000-0000-4000-8000-00000000000a' and week = 1 $$,
   $$status = 'final' accepted$$);
-select lives_ok(
+-- 110/L.D1.2 (F4): the three UPDATEs above are ALSO the legal forward chain
+-- (upcoming → live → correction_window → final); "back to upcoming" is now an
+-- ILLEGAL jump refused by trg_league_weeks_transition (pinned in full in 058)
+-- — this cell moved from lives_ok to a by-name refusal on 110, and the
+-- vocabulary CHECK is pinned on INSERT below (the guard fires on UPDATE OF
+-- status only, and a BEFORE trigger precedes the CHECK on an UPDATE).
+select throws_like(
   $$ update league_weeks set status = 'upcoming'
      where league_id = 'a3000000-0000-4000-8000-00000000000a' and week = 1 $$,
-  $$status = 'upcoming' accepted (back to default)$$);
+  '%illegal status transition final → upcoming%',
+  $$status = 'upcoming' after final REFUSED by name (F4 — the transition guard, migration 110; was "back to default" before 110)$$);
 select throws_ok(
-  $$ update league_weeks set status = 'banana'
-     where league_id = 'a3000000-0000-4000-8000-00000000000a' and week = 1 $$,
+  $$ insert into league_weeks (league_id, season, week, status)
+     values ('a3000000-0000-4000-8000-00000000000b', 2026, 2, 'banana') $$,
   '23514', null,
-  $$status = 'banana' rejected (R43 counter-example — the comment-only enum in §12.17's printed DDL would accept this)$$);
+  $$status = 'banana' rejected on INSERT (R43 counter-example — the comment-only enum in §12.17's printed DDL would accept this)$$);
 
 -- (season, week) → nfl_weeks FK: real pair succeeds, bogus pair 23503s.
 select lives_ok(

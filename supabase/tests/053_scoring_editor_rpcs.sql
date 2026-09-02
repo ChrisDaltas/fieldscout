@@ -302,13 +302,17 @@ from generate_series(1, 5) i;
 
 -- The two window statuses get a league each; the four out-of-window statuses
 -- get one each, so §C4/§C5 can enumerate the gate instead of sampling it.
-insert into leagues (id, owner_id, name, season, status, team_count, settings, scoring_rules_snapshot)
+insert into leagues (id, owner_id, name, season, status, team_count, settings, scoring_rules_snapshot, scoring_system_id)
 select ('b0530000-0000-4000-8000-0000000000' || v.sfx)::uuid,
        '90530000-0000-4000-8000-000000000001', v.nm, 2026, v.st, 8, '{}'::jsonb,
        -- 059's trg_leagues_snapshot_guard demands a non-NULL snapshot in
        -- drafting+, and 104's wall 2 demands it be VALID: a real template doc.
        case when v.st in ('setup','scheduled') then null
-            else (select rules from scoring_systems where name = 'ESPN Full PPR') end
+            else (select rules from scoring_systems where name = 'ESPN Full PPR') end,
+       -- 110/L.D1.2 (F143): drafting+ must also REFERENCE a scoring system —
+       -- the same template. A fixture change forced by 110, not a drive-by.
+       case when v.st in ('setup','scheduled') then null
+            else (select id from scoring_systems where name = 'ESPN Full PPR') end
 from (values ('a1','pgtap-se5-setup','setup'),
              ('a2','pgtap-se5-scheduled','scheduled'),
              ('a3','pgtap-se5-drafting','drafting'),

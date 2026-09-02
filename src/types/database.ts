@@ -1967,6 +1967,13 @@ export type Database = {
             referencedRelation: "leagues"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "matchups_league_week_fkey"
+            columns: ["league_id", "season", "week"]
+            isOneToOne: false
+            referencedRelation: "league_weeks"
+            referencedColumns: ["league_id", "season", "week"]
+          },
         ]
       }
       nfl_games: {
@@ -3263,6 +3270,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "team_week_results_league_week_fkey"
+            columns: ["league_id", "season", "week"]
+            isOneToOne: false
+            referencedRelation: "league_weeks"
+            referencedColumns: ["league_id", "season", "week"]
+          },
+          {
             foreignKeyName: "team_week_results_opponent_team_id_fkey"
             columns: ["opponent_team_id"]
             isOneToOne: false
@@ -3640,7 +3654,7 @@ export type Database = {
         Returns: Json
       }
       draft_complete_internal: {
-        Args: { p_draft_id: string }
+        Args: { p_draft_id: string; p_now?: string }
         Returns: {
           budget_adjustments: Json
           completed_at: string | null
@@ -3897,7 +3911,11 @@ export type Database = {
       }
       draft_start: { Args: { p_league_id: string }; Returns: Json }
       draft_start_internal: {
-        Args: { p_league_id: string; p_require_commish: boolean }
+        Args: {
+          p_league_id: string
+          p_now?: string
+          p_require_commish: boolean
+        }
         Returns: Json
       }
       draft_system_nominate_internal: {
@@ -3994,6 +4012,10 @@ export type Database = {
         Args: { c: Database["public"]["Tables"]["league_chat"]["Row"] }
         Returns: Json
       }
+      league_generate_schedule: {
+        Args: { p_league_id: string; p_now?: string }
+        Returns: Json
+      }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
         Returns: Json
@@ -4047,6 +4069,50 @@ export type Database = {
         Returns: undefined
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
+      schedule_build_internal: {
+        Args: {
+          p_first_week: number
+          p_regular_season_weeks: number
+          p_second_opponent: boolean
+          p_seed: number
+          p_team_ids: string[]
+        }
+        Returns: {
+          away_team_id: string
+          home_team_id: string
+          round_type: string
+          week: number
+        }[]
+      }
+      schedule_first_week_internal: {
+        Args: { p_now: string; p_season: number }
+        Returns: number
+      }
+      schedule_fit_internal: {
+        Args: {
+          p_first_week: number
+          p_playoff_teams: number
+          p_playoff_weeks_per_round: number
+          p_regular_season_weeks: number
+        }
+        Returns: {
+          fits: boolean
+          last_week: number
+          playoff_rounds: number
+          playoff_teams: number
+          regular_season_weeks: number
+          shrunk: boolean
+        }[]
+      }
+      schedule_lcg_next: { Args: { p_state: number }; Returns: number }
+      schedule_playoff_drop: {
+        Args: { p_playoff_teams: number }
+        Returns: number
+      }
+      schedule_playoff_rounds: {
+        Args: { p_playoff_teams: number }
+        Returns: number
+      }
       scoring_detect_tier_cuts: { Args: { p_rules: Json }; Returns: Json }
       scoring_fork_template: {
         Args: { p_league_id: string; p_template_id: string }

@@ -56,6 +56,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import { patchLeague } from './leagues-service'
 import { addPlaceholderSeat } from './members-service'
 
@@ -137,6 +138,9 @@ async function cleanup(): Promise<void> {
     // teams/players. league_rosters FK-pins players too.
     await service.from('league_rosters').delete().in('league_id', ids)
     await service.from('drafts').delete().in('league_id', ids)
+    // 110/L.D1.2: completion now writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the league graph releases them FIRST (a fixture change forced by 110, not a drive-by).
+    await service.from('matchups').delete().in('league_id', ids)
+    await service.from('league_weeks').delete().in('league_id', ids)
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
   }
@@ -191,6 +195,10 @@ async function rewindAndTick(): Promise<void> {
 
 beforeAll(async () => {
   await cleanup()
+  // F215 / migration 110: draft completion maps the league onto the NFL
+  // calendar at the call instant — this suite creates its league on a
+  // SYNTHETIC season so the mapping never depends on the wall clock.
+  await seedSyntheticSeason(service)
   const { error: userError } = await service.auth.admin.createUser({
     email: COMMISH.email,
     password: COMMISH.password,
@@ -215,7 +223,7 @@ beforeAll(async () => {
     .single()
   const { data: created, error: createError } = await commishClient.rpc('create_league', {
     p_name: LEAGUE_NAME,
-    p_season: 2026,
+    p_season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     p_scoring_system_id: template?.id,
     p_team_name: 'Auction Tick Commish',
     p_action_id: ACTION.create,

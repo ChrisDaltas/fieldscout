@@ -60,6 +60,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   schedule_mode: 'total_points',
   median_game: true,
   second_opponent: true,
+  schedule_seed: 20260909, // §11.7 (migration 110): non-null, non-default — the round trip must carry a MINTED seed through the blob
 
   // §7.3.2 — roster (exercises multi-flex, custom IDP flex, a 0-count slot,
   // both IR types, the DL preset shape, and Hot Swap on)

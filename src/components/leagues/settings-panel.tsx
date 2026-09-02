@@ -54,6 +54,7 @@ import {
   SectionLabel,
   ToggleRow,
 } from './settings-form-controls'
+import { divisionSelectOptions } from './settings-panel-ops'
 
 /**
  * League settings panel (M1 task L.A2.4; spec §16.2 settings-panel, §7.3
@@ -698,7 +699,7 @@ function FormatGroup({
           id="set-divisions"
           ariaLabel="Divisions"
           value={String(s.divisions)}
-          options={numOptions([1, 2])}
+          options={divisionSelectOptions()} // v2.16.12 (Q30 (d)): ONE option — divisions are cut from v1; settings-panel-ops is the pin's home
           onValueChange={(v) => onSettings({ divisions: Number(v) })}
           width="w-28"
         />

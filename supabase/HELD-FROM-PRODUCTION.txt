@@ -65,4 +65,14 @@
 # to players(id) (`league_player_pool`, `score_fanout` — the latter ON
 # DELETE CASCADE, the former RESTRICT like 083's), so once pushed they
 # further constrain DELETEs on players. Nothing else on a launch table.
-082-109
+#
+# 110 added 2026-09-02 with L.D1.2 (the schedule engine — `league_generate_
+# schedule` + its pure core, the `league_weeks` transition guard (F4), the
+# composite week FKs on `matchups`/`team_week_results` (F213), and the
+# DROP+CREATE of `draft_complete_internal` / `draft_start_internal` (+ p_now)
+# plus the F130/F143 one-hunk replacements; spec v2.16.12 §11.7 Mid-season
+# entry). Same mechanism, same explicit act. No launch-surface table is
+# touched: every object is on the leagues chain (`leagues`, `league_weeks`,
+# `matchups`, `team_week_results`, `drafts`-family functions); the only
+# reads of `nfl_weeks`/`nfl_games` are SELECTs inside the engine.
+082-110

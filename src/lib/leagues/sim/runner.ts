@@ -84,6 +84,7 @@ import {
   upsertQueue,
 } from '../api/draft-service'
 import { defaultsForTeamCount } from '../settings/league-settings'
+import { SYNTHETIC_SEASON, seedSyntheticSeason } from './synthetic-season'
 import type { RosterSettings } from '../settings/league-settings'
 
 import { decidePick, desiredQueue, type PickContext } from './personas'
@@ -288,6 +289,10 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
 
   // ---- Stale sweep (a crashed prior run must never poison this one) ------
   await cleanupSweep(service, log)
+  // F215 / migration 110: completion maps each league onto the NFL calendar
+  // at the completing pick's instant; the sim seeds a SYNTHETIC season so a
+  // run never depends on the wall clock (and never touches the real 2026 rows).
+  await seedSyntheticSeason(service)
 
   // ---- Bot pool ----------------------------------------------------------
   const bots: BotUser[] = []
@@ -435,7 +440,7 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
   const created = await limit(() =>
     createLeague(commish.client, {
       name: plan.name,
-      season: 2026,
+      season: SYNTHETIC_SEASON, // F215: the sim owns its calendar (migration 110 maps completion onto nfl_weeks)
       scoring_system_id: args.scoringSystemId,
       team_name: `${label} T1`,
       action_id: uuidFromRng(actionRng),
@@ -905,7 +910,7 @@ async function driveAuctionLeague(args: DriveLeagueArgs): Promise<LeagueResult> 
   const created = await limit(() =>
     createLeague(commish.client, {
       name: plan.name,
-      season: 2026,
+      season: SYNTHETIC_SEASON, // F215: the sim owns its calendar (migration 110 maps completion onto nfl_weeks)
       scoring_system_id: args.scoringSystemId,
       team_name: `${label} T1`,
       action_id: uuidFromRng(actionRng),
@@ -1979,6 +1984,11 @@ async function cleanupSweep(service: Supabase, log: (line: string) => void): Pro
   if (ids.length > 0) {
     const { error: draftsError } = await service.from('drafts').delete().in('league_id', ids)
     throwIfError(draftsError, 'cleanup: drafts delete')
+    // 110/L.D1.2: completion writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the sweep releases them FIRST (forced by 110, not a drive-by).
+    const { error: matchupsError } = await service.from('matchups').delete().in('league_id', ids)
+    throwIfError(matchupsError, 'cleanup: matchups delete')
+    const { error: weeksError } = await service.from('league_weeks').delete().in('league_id', ids)
+    throwIfError(weeksError, 'cleanup: league_weeks delete')
     const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
     throwIfError(teamsError, 'cleanup: teams delete')
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)

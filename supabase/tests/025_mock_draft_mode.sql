@@ -250,6 +250,8 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
 -- insert or a two-step flip refuses).
 update leagues
 set status = 'drafting',
+    -- 110/L.D1.2 (F143): drafting+ must reference a scoring system (a template here) — forced by 110, not a drive-by.
+    scoring_system_id = (select id from scoring_systems where is_template and name = 'ESPN Standard'),
     -- [104/SE.4b/D272] This literal used to be `{"rules": {}, "fixture": "mk-LD"}`
     -- and is changed here because the WALL refuses it by name, not because the
     -- test was weakened: `leagues.scoring_rules_snapshot` is now validated on

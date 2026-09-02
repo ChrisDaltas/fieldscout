@@ -29,6 +29,7 @@ import {
   splitSettings,
   validateLeagueSettings,
   type LeagueSettings,
+  mintScheduleSeed,
 } from '../settings/league-settings'
 
 type Supabase = SupabaseClient<Database>
@@ -77,7 +78,16 @@ export async function createLeague(supabase: Supabase, rawBody: unknown): Promis
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  const { name, season, scoring_system_id, team_name, action_id, settings } = parsed.data
+  const { name, season, scoring_system_id, team_name, action_id } = parsed.data
+  // §11.7 (migration 110): `schedule_seed` is MINTED at league creation —
+  // server-side, from the submit's own action_id (deterministic: a D68 replay
+  // mints the same seed), so the schedule engine's permutation is
+  // reproducible from the row from birth. A client-supplied seed is honored
+  // (a commissioner may choose one; Remix re-mints); `null` means mint here.
+  const settings = {
+    ...parsed.data.settings,
+    schedule_seed: parsed.data.settings.schedule_seed ?? mintScheduleSeed(action_id),
+  }
 
   // §7.3.8 API-side validation (per-field messages are UX — surfaced as-is).
   const validation = validateLeagueSettings(settings)
