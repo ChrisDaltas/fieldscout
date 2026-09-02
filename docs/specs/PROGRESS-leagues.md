@@ -3648,6 +3648,10 @@ The reviewer's fix-verification pass confirmed R339–R344 green by its own hand
 - **R721 · nit · PROGRESS §3 Q31 RULED — orchestrator-to-Builder second person ("you record the obligation") leaked into the permanent record — TAKEN: reworded to "this PR records the obligation (§2 L.D1.2 row)".** The sentence was the orchestrator's relay aside inside the ruling text, not Chris's product ruling; the substance (L.D1.2 carries the Zod/SQL changes; this PR records the obligation) is unchanged.
 
 **Proof after the round:** `git diff origin/main -- src/ supabase/` → empty (docs only, still); `npx vitest run src/lib/leagues/gate ci-drift` → 2 files / 41 green, unchanged; the three fix sites re-grepped (no "you record", no "= 1 only" in F221, both "renders one option" sentences carry "L.D1.2 carries").
+
+**Re-review of the fix commit `86bf85a` (fresh Reviewer, one pass). VERDICT: CLEAN — merged by the orchestrator per the (b) ruling.** R719 verified genuinely homed (tasks-M4 L.D1.2 item 1; Zod kept `1–2` contradicts no ruled sentence — Chris ruled the select, and `league-settings.test.ts:185` pins `ok: [1, 2]`); R720/R721 verified; second-person sweep clean; fidelity unchanged from the first review; `src/`+`supabase/` diff 0; gate + drift 41/41; CI green. Two NITs recorded for the resuming L.D1.2 Builder, neither blocking:
+- **R722 · nit · spec §7.3.1 `divisions` row (:206)** — the R column says "1 (v1 — pinned)" but never says the Zod range stays 1–2 for stored-row tolerance (the row below does say so for `regular_season_weeks`); a spec-only reader could narrow Zod to `max(1)` and red `league-settings.test.ts:185`. **L.D1.2 adds "(Zod keeps 1–2 so stored rows stay valid — F221)" to the row's annotation when it touches §7.3.1 for rider (3).**
+- **R723 · nit · tasks-M4 L.D1.2 item 1 (:184)** — calls the pin "the `*-ops.test.ts` pattern", but `settings-panel.tsx` has no ops module and `numOptions([1, 2])` is an inline JSX prop (`numOptions` lives in `settings-form-controls.tsx:136`). **Builder-side detail: extract `DIVISION_OPTIONS = [1] as const` to `settings-form-controls.tsx` (or a new `settings-panel-ops.ts`) and pin that.**
 ---
 
 
