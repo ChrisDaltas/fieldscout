@@ -84,4 +84,14 @@
 # references `leagues`/`profiles` by FK only (no ALTER on profiles), every
 # function is on the leagues chain, and the only reads outside it are SELECTs
 # on `nfl_games`/`nfl_weeks`/`teams`.
-082-111
+# 112 (L.D1.4, 2026-09-02): the lineup verb — `team_lineups` gains §12.13's
+# three columns and its two 001 policies are SWAPPED for one member-truth
+# SELECT (F18/C12: no client write policy); `lineup_actions` idempotency
+# ledger; `set_lineup` + five helpers; spec v2.16.16 §11.2 / §7.3.6 / §7.3.2 /
+# E16 / E42. Same mechanism, same explicit act. The ONE 001-era table touched
+# (`team_lineups`) has no launch-surface reader or writer (grep src/e2e/
+# scripts → only database.ts; 053: no app code writes teams), and its legacy
+# rows are explicitly orphaned by the swap (112 §2 banner; PROGRESS D308).
+# Reads outside the leagues chain are SELECTs on `players`, `nfl_games`,
+# `nfl_weeks`, `teams`.
+082-112

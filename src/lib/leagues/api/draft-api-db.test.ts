@@ -45,7 +45,16 @@ const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 const LEAGUE_NAME = 'vitest-draft-api-league'
-const DRAFT_INSTANT = '2026-09-02T17:00:00+00:00'
+/**
+ * FAR FUTURE (F49 / R724's calendar-fuse shape): the previous literal
+ * (2026-09-02T17:00Z) was passed by the wall clock on 2026-09-02 and pg_cron's
+ * 5-second `draft_tick` (068:1265; the D94 arm) auto-started the draft between
+ * the create and the pre-start assertions — CI red 3 of 4 runs. The lint fence
+ * (D3) bans `new Date()`/`Date.now()` under src/lib/leagues, so the house
+ * precedent is a fixed far-future literal (every sibling *-db suite: 2027/2028),
+ * not a relative instant. Echoed verbatim by the `scheduled_at` pin below.
+ */
+const DRAFT_INSTANT = '2028-09-02T17:00:00+00:00'
 
 const COMMISH = {
   email: 'draft-api-commish@fieldscout.test',

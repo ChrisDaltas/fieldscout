@@ -9,7 +9,7 @@
 -- has one human and eleven bots, and there is no adversary. The assertion is
 -- the delta: across a standalone mock's ENTIRE lifecycle — launch, ticks,
 -- the human's own verbs, pause/resume, completion, delete — every one of the
--- 63 `public` tables comes back byte-identical, measured as a whole-row
+-- 64 `public` tables comes back byte-identical, measured as a whole-row
 -- digest per table (count + md5 over sorted `to_jsonb` rows), because R499
 -- proved a row COUNT cannot see an in-place UPDATE and `leagues.status` /
 -- `.settings` / `.updated_at` are exactly the writes §8.8 forbids and
@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 63-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 64-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -54,7 +54,7 @@
 --      EMPTY. §D's post-delete state is §E's baseline, which §D has just
 --      proven equal to 'before'.
 --   §D ZERO DELTA AFTER DELETE — THE HEADLINE. The launcher deletes their
---      practice; every one of the 63 tables' count AND whole-row digest
+--      practice; every one of the 64 tables' count AND whole-row digest
 --      equals the baseline. Reddens on: a leaked bot seat (R473/D227(6)'s
 --      cleanup), an orphaned chat post (the NULL-safe sweep), an in-place
 --      UPDATE anywhere (R499), a new FK child of `drafts` that does not
@@ -130,7 +130,9 @@ select is(
         'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
         'league_chat', 'league_invites', 'league_lists', 'league_members',
         'league_player_pool',  -- 109/L.D1.1 (§12.19)
-        'league_rosters', 'league_weeks', 'leagues', 'list_comments', 'list_favorites',
+        'league_rosters', 'league_weeks', 'leagues',
+        'lineup_actions',  -- 112/L.D1.4 (the set_lineup idempotency ledger, DEFINER-RPC only — UNREACHABLE from a mock)
+        'list_comments', 'list_favorites',
         'list_folders', 'list_likes', 'list_links', 'list_player_drafted',
         'list_players', 'list_tags', 'lists',
         'matchups',  -- 109/L.D1.1 (§12.8)
@@ -151,7 +153,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 63 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 64 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -196,8 +198,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 63 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 63::bigint,
+  'BASELINE: all 64 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 64::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
@@ -315,7 +317,7 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('after') $$,
-  'FINAL: all 63 tables snapshotted again');
+  'FINAL: all 64 tables snapshotted again');
 
 select is(
   (select coalesce(array_agg(b.tbl order by b.tbl), '{}'::text[])
@@ -456,7 +458,7 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('a_final') $$,
-  '§E FINAL: all 63 tables snapshotted a fourth time');
+  '§E FINAL: all 64 tables snapshotted a fourth time');
 select is(
   (select coalesce(array_agg(a.tbl order by a.tbl), '{}'::text[])
      from mp11_snap a join mp11_snap f on f.tbl = a.tbl and f.phase = 'a_final'
