@@ -36,6 +36,8 @@ import { describe, expect, it } from 'vitest'
 const GUARD = 'src/components/draft/use-single-room-tab.ts'
 const ROOM = 'src/components/draft/draft-room.tsx'
 const SPINE = 'src/hooks/use-draft.ts'
+/** M4/L.D4.2: the second topic's spine — `league:<id>` (see the budget pin). */
+const LEAGUE_SPINE = 'src/hooks/use-league-channel.ts'
 
 function read(rel: string): string {
   return readFileSync(path.resolve(process.cwd(), rel), 'utf8')
@@ -88,8 +90,8 @@ describe('the guard adds no transport (D156 — per browser profile by construct
   })
 })
 
-describe("§9.3's channel budget — exactly ONE realtime channel in src/", () => {
-  it('the only .channel( call outside tests is use-draft.ts:the room spine', () => {
+describe("§9.3's channel budget — exactly ONE realtime channel PER TOPIC in src/", () => {
+  it('the only .channel( calls outside tests are the two spines, one each', () => {
     const hits: Array<[string, number]> = []
     for (const rel of sourceFiles()) {
       const count = (code(rel).match(/\.channel\(/g) ?? []).length
@@ -98,7 +100,18 @@ describe("§9.3's channel budget — exactly ONE realtime channel in src/", () =
     // The tasks-DR §1 survey line, now a pin: DR.6 releases a subscription
     // and opens none — a second hit here is a §9.3 budget event that needs
     // its own review, whoever adds it.
-    expect(hits).toEqual([[SPINE, 1]])
+    //
+    // **That review happened (M4/L.D4.2, PROGRESS D310(3)).** The in-season
+    // surfaces need live freshness (D298 chose the broadcast lane for
+    // matchups, standings, activity and lock state); the draft spine's topic
+    // is `draft:<id>` and cannot carry `league:<id>` events. So the budget
+    // becomes ONE CHANNEL PER TOPIC, which is what §9.3's "≤ 3 channels per
+    // socket" was always about — a league page holds one, a draft room holds
+    // one, and neither ever opens a second for the same topic. The rule that
+    // did NOT change: a consumer never opens its own channel. Both league
+    // spine and draft spine multiplex every event of their topic (D109(1)),
+    // and `use-league-channel-ops.test.ts` pins the league half.
+    expect(hits.sort()).toEqual([[LEAGUE_SPINE, 1], [SPINE, 1]].sort())
   })
 
   it("088/L.C1.6: the auction's draft_bids event rides the SAME channel — subscribed via `ch.on(...)` on the one channel the spine opens, never a second `.channel(`", () => {
