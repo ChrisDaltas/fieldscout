@@ -109,6 +109,9 @@ set_lineup(p_league_id uuid, p_team_id uuid, p_week int, p_slot_map jsonb, p_act
 roster_add_drop(p_league_id uuid, p_team_id uuid, p_add text, p_drop text, p_action_id uuid) RETURNS jsonb
   -- lock league row → exclusivity → capacity → E32 game-day locks (kickoff → window close, per D291 evaluation)
   -- → waiver state / caps / fa_hold → league_rosters + league_player_pool + transactions row, one txn
+  -- [LANDED 2026-09-02, migration 113: this signature verbatim (p_add / p_drop / p_action_id DEFAULT NULL — either side
+  --  may be null, never both; the key REQUIRED in-body); idempotent by transactions.action_id (a stamp on the append-only
+  --  row); the drop side validated before the add side; E32 via pool_game_lock_any_internal — D309]
 
 -- L.D1.6 week workers (in-database, pg_cron; D291 p_now injection; §22.3 SKIP LOCKED batches)
 lineup_lock_tick(p_now timestamptz DEFAULT now())       -- every 1 min game days: locks per lineup_lock;
@@ -416,7 +419,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 | 110 | `110_schedule_engine.sql` | `league_generate_schedule` + ~~`schedule_preview`~~ **[AMENDED 2026-09-02 — L.D1.2 LANDED: `schedule_preview` moves to 111 with the Remix diff it serves (D289's "the same generator run WITHOUT writing" IS 110's pure `schedule_build_internal`, which 111 wraps — PROGRESS D306/F222)]** + the `league_weeks` writer/F4 guard + completion wiring (DROP+CREATE `draft_complete_internal` from **086** + p_now, and `draft_start_internal` from **098** + the pre-flight, per D137/D291) + F130 + F143 + **F213's composite week FKs** | L.D1.2 |
 | 111 | `111_schedule_remix.sql` | `schedule_remix_confirm` + `schedule_edit_matchup` (E41; D290 interim audit; D97 posts) **[LANDED 2026-09-02 — also `schedule_preview` (from row 110's amendment), the two plain helpers `schedule_window_internal` / `schedule_remix_plan_internal`, and the `schedule_actions` idempotency ledger (D307(2); M6 folds it into `commissioner_actions` — F223(a))]** | L.D1.3 |
 | 112 | `112_lineups.sql` | `team_lineups` §12.13 ALTER + the F18 RLS swap + `set_lineup` (E16 bipartite; locks; IR) | L.D1.4 |
-| 113 | `113_pool_add_drop.sql` | `roster_add_drop` + pool writers (E32; caps; fa_hold; waiver-entry) | L.D1.5 |
+| 113 | `113_pool_add_drop.sql` | `roster_add_drop` + pool writers (E32; caps; fa_hold; waiver-entry) **[LANDED 2026-09-02 — also `roster_add_drop_internal` (the seam), `pool_game_lock_internal` / `pool_game_lock_any_internal`, `transactions.action_id` + its partial unique index, and the `league_player_pool` on_waivers ⇔ waivers_until CHECK (F222(a)); no ledger table — PROGRESS D309]** | L.D1.5 |
 | 114 | `114_week_workers.sql` | `lineup_lock_tick` + `league_week_advance` + `finalize_matchups` + pg_cron entries (D291) | L.D1.6 |
 | 115 | `115_standings.sql` | `league_standings` + `rebuild_team_week_results` (E38/E63/E64) | L.D1.7 |
 | 116 | `116_playoffs.sql` | bracket generation + reseed + `playoffs`/`complete` flips + champion | L.D1.8 |

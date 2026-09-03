@@ -3494,6 +3494,7 @@ export type Database = {
       }
       transactions: {
         Row: {
+          action_id: string | null
           created_at: string | null
           id: string
           initiated_by: string | null
@@ -3506,6 +3507,7 @@ export type Database = {
           week: number | null
         }
         Insert: {
+          action_id?: string | null
           created_at?: string | null
           id?: string
           initiated_by?: string | null
@@ -3518,6 +3520,7 @@ export type Database = {
           week?: number | null
         }
         Update: {
+          action_id?: string | null
           created_at?: string | null
           id?: string
           initiated_by?: string | null
@@ -4177,6 +4180,30 @@ export type Database = {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
       }
+      pool_game_lock_any_internal: {
+        Args: {
+          p_at: string
+          p_current_week: number
+          p_nfl_team: string
+          p_season: number
+        }
+        Returns: Json
+      }
+      pool_game_lock_internal: {
+        Args: {
+          p_at: string
+          p_nfl_team: string
+          p_season: number
+          p_week: number
+        }
+        Returns: {
+          datum_arm: string
+          kickoff_at: string
+          locked: boolean
+          on_bye: boolean
+          window_ends_at: string
+        }[]
+      }
       release_ai_generation: {
         Args: { p_feature: string; p_user_id: string }
         Returns: number
@@ -4198,6 +4225,27 @@ export type Database = {
       revoke_league_invite: {
         Args: { p_invite_id: string; p_league_id: string }
         Returns: undefined
+      }
+      roster_add_drop: {
+        Args: {
+          p_action_id?: string
+          p_add?: string
+          p_drop?: string
+          p_league_id: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      roster_add_drop_internal: {
+        Args: {
+          p_action_id: string
+          p_add: string
+          p_at: string
+          p_drop: string
+          p_league_id: string
+          p_team_id: string
+        }
+        Returns: Json
       }
       rotate_invite_code: { Args: { p_league_id: string }; Returns: Json }
       schedule_build_internal: {
