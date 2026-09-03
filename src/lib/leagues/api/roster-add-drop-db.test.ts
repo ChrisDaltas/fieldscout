@@ -319,9 +319,11 @@ describe('roster_add_drop over PostgREST — two managers race one FCFS add', ()
     expect(winnerResult.add?.slot_key).toBe('bn')
     expect(winnerResult.add?.game_lock.locked).toBe(false)
 
-    // The loser: the FRIENDLY refusal — the pre-check's wording when the
-    // league lock serialized him behind the winner, or the unique-index
-    // backstop's when the race reached the INSERT; never a raw 23505.
+    // The loser: the FRIENDLY refusal — the league-row lock serializes him
+    // behind the winner, so he reaches the exclusivity PRE-CHECK (the
+    // unique-index handler is an unpinnable backstop, R757); never a raw
+    // 23505. The regex admits both wordings so a weakened lock would still
+    // be caught by the `duplicate key` negative below.
     expect(loser.res.error?.code).toBe('P0001')
     expect(loser.res.error?.message).toMatch(/a player is on ONE roster per league \(player exclusivity/)
     expect(loser.res.error?.message).not.toMatch(/duplicate key/)

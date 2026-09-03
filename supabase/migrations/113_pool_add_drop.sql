@@ -53,7 +53,12 @@
 --      `lineup_kickoff_internal` (a week WITH game rows and none for the
 --      team = BYE, never locked; a week with NO game rows = the week datum
 --      chain for EVERY player — the conservative R740 posture, inherited
---      and pinned) and the week's `nfl_weeks.correction_window_ends_at`
+--      and pinned; ON THE REAL CALENDAR THIS IS A FREEZE: with zero 2026
+--      `nfl_games` rows every week's datum is its `starts_at`, so add/drop
+--      is FROZEN for the whole season until L.D2.1's ingestion (or L.D3.1's
+--      back-fill) writes game rows — the dated dependency is PROGRESS F228:
+--      rows must exist before 2026-09-09 04:00Z or the cohort cannot add or
+--      drop at all — R755) and the week's `nfl_weeks.correction_window_ends_at`
 --      (D294's letter: THE week's window, §23.4's Thursday 06:00 ET default;
 --      the per-league `stat_correction_window` setting is NOT read here —
 --      F227(c) routes the question of the per-league window to the task
@@ -110,8 +115,10 @@
 --       ≥ the hold ⇒ the normal waiver entry; hold 0 ⇒ never early.
 --   (6) THE ADD: the player must exist; EXCLUSIVITY (business rule 7 /
 --       §12.7): a player on ANY roster in the league refuses with a friendly
---       P0001 naming the team — never a raw 23505 (the unique index stays
---       the race backstop and is CAUGHT and re-raised friendly); pool state:
+--       P0001 naming the team — never a raw 23505 (the unique index is kept
+--       as an UNPINNABLE backstop: under the league-row lock in (1) a racing
+--       second manager always reaches this pre-check, so the handler below
+--       cannot be driven red — said per D276/R757); pool state:
 --       `on_waivers` with `waivers_until` ahead refuses (claims are M5's);
 --       a LAPSED `waivers_until` is FCFS-addable under `free_agency =
 --       immediate_after_waivers` and NOT under `continuous` (below); a
@@ -144,7 +151,14 @@
 --
 -- `free_agency`, as read (§7.3.4 prints `immediate_after_waivers` /
 --   `continuous` with the note "Unclaimed players become FCFS"; D294 says a
---   lapsed `waivers_until` is FCFS-addable PER the setting):
+--   lapsed `waivers_until` is FCFS-addable PER the setting).
+--   *** THE `continuous` ARM IS A READING PENDING CHRIS'S RULING — PROGRESS
+--   §3 Q33 / blocker B8 (R756, the #254 review): §7.3.4's only note is
+--   "Unclaimed players become FCFS" and no claim processor exists until M5,
+--   so as built a `continuous` league strands every dropped player for the
+--   rest of M4. Q33's recommendation: FCFS at the lapse under BOTH values
+--   until M5 lands claim processing (the never-strand direction). Unchanged
+--   until the ruling; the resume applies it. ***
 --   * `immediate_after_waivers` (default): the instant `waivers_until` passes
 --     the player is FCFS-addable — state evaluated at read, no sweeper (D294).
 --   * `continuous`: a lapsed player is NOT FCFS-addable here — the incumbent
@@ -156,8 +170,20 @@
 --     claim-only is M5's call (F227(a)); this reading never lets a lapsed
 --     player through under `continuous`, the never-weaken direction.
 --
--- THE LINEUP INTERPLAY (§11.2 × §13.1 — rule 9's named decision; F224(i)):
---   The lineup lock does NOT block a drop; only E32 does. Read from the text:
+-- THE LINEUP INTERPLAY (§11.2 × §13.1 — rule 9's named decision; F224(i)).
+--   *** READING PENDING CHRIS'S RULING — PROGRESS §3 Q32 / blocker B8 (R753,
+--   the #254 review): the reviewer measured that the KEPT phantom below is
+--   re-seatable by the very next `set_lineup` (112 skips a stored player who
+--   is no longer rostered — 112:894 "dropped since (113) — nothing to lock"),
+--   a §11.2 lineup-lock bypass by composition that also defeats the E34
+--   guarantee the keep exists for; and E34's own scenario names `bench_lock`
+--   (a WAIVER-CLAIM processing setting, §7.3.4), not the manager's direct
+--   drop. Q32 asks whether (i) the lineup lock blocks dropping a player who
+--   sits in a LOCKED slot of the current week (the reviewer's and this
+--   Builder's recommendation) or (ii) 112 treats the kept phantom's slot as
+--   read-only. The behaviour below is UNCHANGED until the ruling; the resume
+--   applies it (with a 061 composition cell and a 060 phantom cell). ***
+--   As built: the lineup lock does NOT block a drop; only E32 does. Read from the text:
 --   §7.3.4 makes `player_game_lock` the ONLY lock on drops ("a rostered
 --   player locks for drops at their kickoff … off reproduces lax incumbent
 --   behavior"), §13.1 repeats it ("cannot be added or dropped from their
@@ -173,7 +199,12 @@
 --   has kicked off; first_game_of_week: that week's first kickoff has
 --   passed), in which case the entry is KEPT — the locked slot is read-only
 --   and his stats count for the dropping team (E34) — and the result names
---   it (`kept_in_locked_lineup`). Under `player_game_lock = true` +
+--   it (`kept_in_locked_lineup`; a bench-only drop reports `slot: null`,
+--   R758). Known and SAID (R758): under `first_game_of_week` the kept
+--   phantom makes every later `set_lineup` of that week refuse with 112's
+--   "the whole lineup is locked" text — the correct outcome (the week IS
+--   locked) with a reason that does not name the phantom; Q32's ruling
+--   reshapes the kept case and the resume rewords or removes it. Under `player_game_lock = true` +
 --   `per_player_kickoff` the kept case is unreachable (E32 refused the drop
 --   first — same datum); it is reachable under the lax setting (E34's own
 --   config) and under `first_game_of_week` for a starter whose OWN kickoff
@@ -658,7 +689,10 @@ BEGIN
         (league_id, team_id, player_id, slot_key, acquisition_type, acquisition_cost, acquired_at)
       VALUES (p_league_id, p_team_id, p_add, 'bn', 'free_agent', 0, p_at);
     EXCEPTION WHEN unique_violation THEN
-      -- The race backstop (072's UNIQUE): friendly, never a raw 23505.
+      -- 072's UNIQUE, kept as an UNPINNABLE backstop (R757/D276): the league
+      -- row lock in (1) serializes every racer behind the exclusivity
+      -- pre-check, so this branch is unreachable in practice — it exists so
+      -- a raw 23505 can never reach the wire if that lock is ever weakened.
       RAISE EXCEPTION
         'roster_add_drop: % (%) was rostered by another team in this league a moment ago — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)',
         v_add_p.full_name, p_add
@@ -716,6 +750,11 @@ BEGIN
       IF v_bench ? p_drop THEN
         SELECT COALESCE(jsonb_agg(x ORDER BY x #>> '{}'), '[]'::jsonb) INTO v_bench
         FROM jsonb_array_elements(v_bench) x WHERE (x #>> '{}') <> p_drop;
+        -- R758: a bench-only drop reports its row too (slot NULL) — the
+        -- result never under-reports which lineup rows the move touched.
+        IF v_key IS NULL THEN
+          v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', NULL, 'kept_in_locked_lineup', FALSE);
+        END IF;
         v_changed := TRUE;
       END IF;
     END IF;

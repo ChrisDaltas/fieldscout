@@ -24,6 +24,10 @@
 --   * E42: the same kickoff moved ahead re-opens the add. BYE (game rows,
 --     none for the team): never locked. NO GAME ROWS: every player locked
 --     from the week datum, the arm NAMED (the R740 posture inherited).
+--   * R754 — TWO WINDOWS: a player who played in WEEK 2 and is a WEEK-3 bye
+--     is still bound while week 2's correction window is open — add AND drop
+--     refused naming week 2 at close−1s, both live AT the close and at +1s,
+--     the result then reporting the current week's (bye) datum.
 --   * EXCLUSIVITY from both sides (another team's player, your own) — the
 --     friendly P0001 naming the team, never 23505 — and the same-league
 --     re-add after a drop HONORING WAIVER STATE at `waivers_until` −1s
@@ -76,7 +80,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(130);
+select plan(139);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the stamp, the CHECK, the functions, grants (§4.1), F35
@@ -233,6 +237,8 @@ insert into players (id, full_name, position, team, status) values
  ('pd-wr2',   'PD WR2',   'WR', 'MIA', 'Active'),   -- T2 bench; MIA has no week-3 game: BYE
  ('pd-te1',   'PD TE1',   'TE', 'NYG', 'Active'),   -- T2 bench; NYG in three hours
  ('pd-t1a',   'PD T1A',   'RB', 'KC',  'Active'),   -- T1's player (exclusivity)
+ ('pd-ne1',   'PD NE1',   'WR', 'NE',  'Active'),   -- free agent; NE played in WEEK 2, bye in week 3 (R754)
+ ('pd-ne2',   'PD NE2',   'TE', 'NE',  'Active'),   -- T3's player; same (R754)
  ('pd-fa1',   'PD FA1',   'WR', 'KC',  'Active'),   -- free agent, KC: locked for adds now
  ('pd-fa2',   'PD FA2',   'WR', 'DAL', 'Active'),   -- free agent, DAL: one second ahead
  ('pd-fa3',   'PD FA3',   'RB', 'SF',  'Active'),   -- free agent, SF: three hours ahead
@@ -256,6 +262,7 @@ insert into league_rosters (league_id, team_id, player_id) values
  ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 'pd-wr2'),
  ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 'pd-te1'),
  ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000001', 'pd-t1a'),
+ ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne2'),
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-qb'),
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-rb'),
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-wr'),
@@ -583,6 +590,73 @@ select lives_ok(
        'ab000000-0000-4000-8000-000000000035', now()) $$,
   'F4 a restricted-IR player (lock week 7, current 3) is DROPPED: §7.3.2''s stint binds moving him OUT of the spot into the roster, not a release');
 select pg_temp.pd_undo_drop('pd-te1', 'ab000000-0000-4000-8000-000000000035');
+
+-- ---------------------------------------------------------------------------
+-- F5/E7. R754 — THE PREVIOUS WEEK'S WINDOW STILL BINDS (two windows early in
+--    a week): NE played in WEEK 2 (now−5d) and has NO week-3 game (a
+--    current-week BYE); week 2's correction window is moved to close at
+--    now+1s / AT now / now−1s. As u3 on T3 (NE2 rostered there; NE1 free).
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+insert into nfl_games (id, season, week, home_team, away_team, kickoff_at) values
+ ('pd-w2-a', 2026, 2, 'NE', 'NYJ', now() - interval '5 days');
+update nfl_weeks set correction_window_ends_at = now() + interval '1 second' where season = 2026 and week = 2;
+select is(
+  (select on_bye from public.pool_game_lock_internal(2026, 3, 'NE', now())), true,
+  'R754 premise: NE is a current-week (3) BYE — game rows exist for week 3, none for NE');
+select is(
+  (public.pool_game_lock_any_internal(2026, 3, 'NE', now())) - 'kickoff_at' - 'window_ends_at',
+  '{"locked": true, "week": 2, "datum_arm": "nfl_games", "on_bye": false}'::jsonb,
+  'R754: the across-weeks lock finds WEEK 2 binding a current-week bye player (his week-2 game kicked off, week 2''s window still open)');
+select throws_like(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne1', null,
+       'ab000000-0000-4000-8000-000000000036', now()) $$,
+  '%PD NE1 (pd-ne1) is locked for adds — kicked off at % (nfl_games) and week 2 clears at %',
+  'R754 ADD at week-2 close−1s: refused naming WEEK 2 — the previous week''s window binds the current-week bye player');
+select throws_like(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', null, 'pd-ne2',
+       'ab000000-0000-4000-8000-000000000037', now()) $$,
+  '%PD NE2 (pd-ne2) is locked for drops — kicked off at % (nfl_games) and week 2 clears at %',
+  'R754 DROP at week-2 close−1s: refused naming WEEK 2');
+update nfl_weeks set correction_window_ends_at = now() where season = 2026 and week = 2;
+select set_config('pgtap.pd_r_ne', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne1', null,
+  'ab000000-0000-4000-8000-000000000036', now())::text, true);
+select is((current_setting('pgtap.pd_r_ne')::jsonb -> 'add' -> 'game_lock') - 'kickoff_at' - 'window_ends_at',
+  '{"locked": false, "week": 3, "datum_arm": "bye", "on_bye": true}'::jsonb,
+  'R754 ADD AT week-2''s close: LIVES and the result reports the CURRENT week''s datum (week 3, bye)');
+select pg_temp.pd_undo_add('pd-ne1', 'ab000000-0000-4000-8000-000000000036');
+select lives_ok(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', null, 'pd-ne2',
+       'ab000000-0000-4000-8000-000000000037', now()) $$,
+  'R754 DROP AT week-2''s close: LIVES');
+delete from league_player_pool where league_id = 'bd000000-0000-4000-8000-000000000001' and player_id = 'pd-ne2';
+delete from transactions where action_id = 'ab000000-0000-4000-8000-000000000037';
+insert into league_rosters (league_id, team_id, player_id) values ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne2');
+update nfl_weeks set correction_window_ends_at = now() - interval '1 second' where season = 2026 and week = 2;
+select lives_ok(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne1', null,
+       'ab000000-0000-4000-8000-000000000038', now()) $$,
+  'R754 ADD at week-2 close+1s: LIVES');
+select pg_temp.pd_undo_add('pd-ne1', 'ab000000-0000-4000-8000-000000000038');
+select lives_ok(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', null, 'pd-ne2',
+       'ab000000-0000-4000-8000-000000000039', now()) $$,
+  'R754 DROP at week-2 close+1s: LIVES');
+delete from league_player_pool where league_id = 'bd000000-0000-4000-8000-000000000001' and player_id = 'pd-ne2';
+delete from transactions where action_id = 'ab000000-0000-4000-8000-000000000039';
+insert into league_rosters (league_id, team_id, player_id) values ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne2');
+update nfl_weeks set correction_window_ends_at = now() - interval '2 days' where season = 2026 and week = 2;   -- restore: week 2 closed
+delete from nfl_games where id = 'pd-w2-a';
+-- R758: a BENCH-only drop reports its lineup row with slot NULL (never under-reports).
+select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select set_config('pgtap.pd_r_bn', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-te1',
+  'ab000000-0000-4000-8000-000000000040', now())::text, true);
+select is(current_setting('pgtap.pd_r_bn')::jsonb -> 'drop' -> 'lineups',
+  '[{"week": 3, "slot": null, "kept_in_locked_lineup": false}, {"week": 4, "slot": null, "kept_in_locked_lineup": false}]'::jsonb,
+  'R758: a bench-only drop (TE1 on both benches) reports one entry per touched row with slot NULL');
+select pg_temp.pd_undo_drop('pd-te1', 'ab000000-0000-4000-8000-000000000040');
 
 -- ---------------------------------------------------------------------------
 -- G. Exclusivity + the same-league re-add honoring waiver state
