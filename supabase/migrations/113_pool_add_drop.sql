@@ -1,7 +1,8 @@
 -- ============================================================================
 -- The pool writers + `roster_add_drop` + game-day locks — migration 113 (task
--- L.D1.5, the L.D5 core; spec v2.16.16 → v2.16.18 by this PR's fold-back
--- (§13.1 / §12.9 / §12.19 annotations + the Q32/Q33 rulings); §13.1 add/drop &
+-- L.D1.5, the L.D5 core; spec v2.16.16 → v2.16.19 by this PR's fold-back
+-- (§13.1 / §12.9 / §12.19 annotations + the Q32/Q33 rulings + the R759
+-- re-seat disclosure); §13.1 add/drop &
 -- free agency / §7.3.4 the lock, cap and hold fields (`player_game_lock`,
 -- `acquisitions_per_week` / `_per_season`, `fa_hold_hours`,
 -- `waiver_period_hours`, `free_agency`, `waiver_type = none_fcfs`) / §12.19
@@ -48,7 +49,7 @@
 --      `free_agent`/`rostered` row carrying one is a stale instant the
 --      waiver index (`idx_pool_waivers` is partial on the state) would not
 --      even see. 061 pins both directions one unit apart.
---   3. `pool_game_lock_internal(season, week, nfl_team, at)` — E32's per-week
+--   3. `pool_game_lock_internal(season, week, nfl_team, at, enforced)` — E32's per-week
 --      evaluation: the player's kickoff for that week through 112's
 --      `lineup_kickoff_internal` (a week WITH game rows and none for the
 --      team = BYE, never locked; a week with NO game rows = the week datum
@@ -66,9 +67,16 @@
 --      read the same instant). Locked iff kickoff ≤ at < window end — closed
 --      AT the kickoff (the E41 convention), OPEN at the window close ("until
 --      the week clears" is strictly before). A week whose window end is NULL
---      after the kickoff refuses BY NAME (loud: the lock end is undefined
---      until ingestion writes it — never an unbounded lock read as free).
---   4. `pool_game_lock_any_internal(season, current_week, nfl_team, at)` —
+--      after the kickoff refuses BY NAME **when the caller ENFORCES the lock**
+--      (loud: the lock end is undefined until ingestion writes it — never an
+--      unbounded lock read as free). `p_enforced = FALSE` — the caller's
+--      `player_game_lock` is off, so nothing it returns can refuse anything —
+--      reports `locked = TRUE` with a NULL `window_ends_at` instead of
+--      raising (R765): a league that turned the lock OFF must never be
+--      refused by the lock's own plumbing, and the still-not-"free" reading
+--      is the loud one.
+--   4. `pool_game_lock_any_internal(season, current_week, nfl_team, at,
+--      enforced)` —
 --      the lock across EVERY NFL week that could still bind: weeks ≤ the
 --      league's current week whose correction window has not closed at
 --      `at` (typically the current week and the previous one — a week's
@@ -132,7 +140,11 @@
 --       carries `add_player_id` (an add-only or add+drop move; drop-only
 --       never counts; M5's claim rows carry the same key — F227(a)); the
 --       weekly count is scoped to `week = current`, the season count to the
---       league (a league is one season).
+--       league (a league is one season). BOTH counts are taken BEFORE step
+--       (5) (R763) because the result reports them on EVERY move — a
+--       drop-only call reported NULL to a capped league before the hoist,
+--       which L.D4.2 would have rendered as "null of 3"; only the ADD side
+--       enforces them.
 --   (7) WRITES, one transaction: `league_rosters` DELETE (count asserted) /
 --       INSERT (`slot_key = 'bn'`, `acquisition_type = 'free_agent'`,
 --       `acquired_at = at`); the pool rows (lazy — created on first
@@ -186,8 +198,21 @@
 --   claim-processing path. RESIDUAL, recorded not asked (D309(3), the D220
 --   shape for Chris's read): with `player_game_lock = OFF` §7.3.4/§13.1's
 --   letter is lax incumbent behaviour — a PLAYED player may be dropped and
---   his slot clears (061 §H1 pins it); the ruling was given for the
---   on-by-default case. An added player lands on the bench of every row
+--   his slot CLEARS, and what happens next depends on the lineup mode
+--   (R759, measured): under `first_game_of_week` the slot stays empty for
+--   the week (112's whole-week lock refuses any re-seat — 061 §H1), but
+--   under `per_player_kickoff` — the DEFAULT mode — the very next
+--   `set_lineup` MAY RE-SEAT the emptied slot with a player whose own
+--   kickoff is still ahead (112 has nothing to lock once the stored
+--   occupant is gone — 112:894), so the team loses the played player's
+--   points AND gets a fresh choice for that slot after seeing his result.
+--   That composition is pinned in 061 §H3 — it is the ACTUAL behaviour of
+--   `player_game_lock = false` × `per_player_kickoff`, not an empty slot.
+--   The ruling was given for the on-by-default case; whether the
+--   player-level lock should bind drops REGARDLESS of the toggle (one
+--   clause: `v_game_lock AND` → unconditional) is Chris's product call,
+--   filed as PROGRESS **F230** with `first_game_of_week`'s fate.
+--   An added player lands on the bench of every row
 --   from the current week on with `slot_key = 'bn'`; a bench-only drop
 --   reports its rows with `slot: null` (R758). A drop of a player on a
 --   RESTRICTED IR spot succeeds: §7.3.2's stint binds "moving a player OUT
@@ -209,14 +234,22 @@
 -- exclusivity from both teams' sides; the same-league re-add honoring
 -- waiver state at `waivers_until` −1s / AT (lapsed) under both `free_agency`
 -- values; `none_fcfs`; fa_hold at hold−1s (FA) / +0 (waivers); caps at cap−1
--- (lives) / at cap (refuses) for week and season; the `transactions` row as
+-- (lives) / at cap (refuses) for week and season AND the drop-only `caps`
+-- document as a literal (R763 — the counts a drop-only reports); the
+-- `transactions` row as
 -- a stored literal; replay byte-identity + kind/team scoping; the lineup
 -- consequences (a dropped starter always leaves the current-week map; the Q32
 -- example — Sunday midday, every starter kicked off, a bench player with a
 -- Monday game drops and refuses once his game kicks off, a kicked-off
 -- STARTER refuses by name; the composition cell — a drop followed by a
 -- set_lineup on the same row never re-seats a whole-week-locked slot and
--- leaves no phantom; the add lands on the bench with `bn`); every
+-- leaves no phantom; BOTH lax compositions — §H1 `first_game_of_week` (the
+-- emptied slot stays empty) and §H3 `per_player_kickoff` (R759: the baseline
+-- re-seat is refused, the played starter drops, the slot clears, and the
+-- next set_lineup DOES re-seat it); the add lands on the bench with `bn`);
+-- the NULL-window arm both ways (R765: the enforcing league refuses by name,
+-- the lock-off league adds and drops and reads `locked: true` with a NULL
+-- window end); every
 -- role; the CHECK both directions; F35 structurally; the held lock < 50 ms.
 -- Break probe (PR body): the drop-side E32 clause removed → the drop-lock
 -- cells red while the add-lock cells stay green.
@@ -269,7 +302,8 @@ CREATE OR REPLACE FUNCTION pool_game_lock_internal(
   p_season   INTEGER,
   p_week     INTEGER,
   p_nfl_team TEXT,
-  p_at       TIMESTAMPTZ
+  p_at       TIMESTAMPTZ,
+  p_enforced BOOLEAN DEFAULT TRUE   -- R765: FALSE = the caller does not enforce this lock (player_game_lock off), so an undefined window END is reported, never raised
 ) RETURNS TABLE (
   locked          BOOLEAN,
   kickoff_at      TIMESTAMPTZ,
@@ -295,17 +329,26 @@ BEGIN
   IF kickoff_at IS NULL OR kickoff_at > p_at THEN
     locked := FALSE;                     -- bye, or the kickoff is still ahead
   ELSIF window_ends_at IS NULL THEN
-    RAISE EXCEPTION
-      'pool_game_lock_internal: % kicked off for week % of season % at % (%) but nfl_weeks.correction_window_ends_at is NULL — the E32 lock end is undefined until ingestion writes it (§23.4/§12.20); refusing rather than reading an unbounded lock as free',
-      p_nfl_team, p_week, p_season, kickoff_at, datum_arm
-      USING ERRCODE = 'P0001';
+    -- R765: the raise belongs to the ENFORCING caller only. A league that has
+    -- turned `player_game_lock` off never refuses on this lock, so an
+    -- unwritten window must not turn into a refusal there; the document it
+    -- reads is informational, and `locked = TRUE` with `window_ends_at NULL`
+    -- IS the loud reading ("he has kicked off; the end is not written yet").
+    -- Never read as free in either arm.
+    IF p_enforced THEN
+      RAISE EXCEPTION
+        'pool_game_lock_internal: % kicked off for week % of season % at % (%) but nfl_weeks.correction_window_ends_at is NULL — the E32 lock end is undefined until ingestion writes it (§23.4/§12.20); refusing rather than reading an unbounded lock as free',
+        p_nfl_team, p_week, p_season, kickoff_at, datum_arm
+        USING ERRCODE = 'P0001';
+    END IF;
+    locked := TRUE;
   ELSE
     locked := p_at < window_ends_at;     -- closed AT the kickoff, OPEN at the window close
   END IF;
   RETURN NEXT;
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION pool_game_lock_internal(INTEGER, INTEGER, TEXT, TIMESTAMPTZ)
+REVOKE EXECUTE ON FUNCTION pool_game_lock_internal(INTEGER, INTEGER, TEXT, TIMESTAMPTZ, BOOLEAN)
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -315,7 +358,8 @@ CREATE OR REPLACE FUNCTION pool_game_lock_any_internal(
   p_season       INTEGER,
   p_current_week INTEGER,
   p_nfl_team     TEXT,
-  p_at           TIMESTAMPTZ
+  p_at           TIMESTAMPTZ,
+  p_enforced     BOOLEAN DEFAULT TRUE   -- R765: passed straight through to the per-week evaluation
 ) RETURNS JSONB
 LANGUAGE plpgsql
 STABLE
@@ -337,7 +381,7 @@ BEGIN
       AND (w.correction_window_ends_at IS NULL OR w.correction_window_ends_at > p_at)
     ORDER BY w.week DESC
   LOOP
-    SELECT * INTO v_lock FROM public.pool_game_lock_internal(p_season, v_w.week, p_nfl_team, p_at);
+    SELECT * INTO v_lock FROM public.pool_game_lock_internal(p_season, v_w.week, p_nfl_team, p_at, p_enforced);
     IF v_lock.locked THEN
       RETURN jsonb_build_object(
         'locked', TRUE, 'week', v_w.week, 'kickoff_at', v_lock.kickoff_at,
@@ -354,7 +398,7 @@ BEGIN
     'datum_arm', 'no_open_window', 'on_bye', FALSE));
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION pool_game_lock_any_internal(INTEGER, INTEGER, TEXT, TIMESTAMPTZ)
+REVOKE EXECUTE ON FUNCTION pool_game_lock_any_internal(INTEGER, INTEGER, TEXT, TIMESTAMPTZ, BOOLEAN)
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -513,6 +557,25 @@ BEGIN
   SELECT count(*)::int INTO v_roster_count
   FROM public.league_rosters r WHERE r.league_id = p_league_id AND r.team_id = p_team_id;
 
+  -- CAPS, COUNTED BEFORE EITHER SIDE (§7.3.4; R763): this team's `complete`
+  -- rows whose payload carries `add_player_id` (a drop-only move never counts
+  -- — it is not an acquisition). These run here rather than inside the add
+  -- branch because the RESULT reports `caps.used_week_after` /
+  -- `used_season_after` on EVERY move: a drop-only call read them unassigned
+  -- and reported NULL to a capped league, which L.D4.2 would render as
+  -- "null of 3" (F227(f)). The enforcement below is still the add side's
+  -- alone.
+  SELECT count(*)::int INTO v_used_week
+  FROM public.transactions t
+  WHERE t.league_id = p_league_id AND t.initiator_team_id = p_team_id
+    AND t.status = 'complete' AND t.week = v_current
+    AND (t.payload ->> 'add_player_id') IS NOT NULL;
+  SELECT count(*)::int INTO v_used_season
+  FROM public.transactions t
+  WHERE t.league_id = p_league_id AND t.initiator_team_id = p_team_id
+    AND t.status = 'complete'
+    AND (t.payload ->> 'add_player_id') IS NOT NULL;
+
   -- (5) THE DROP
   IF p_drop IS NOT NULL THEN
     SELECT p.* INTO v_drop_p FROM public.players p WHERE p.id = p_drop;
@@ -534,7 +597,7 @@ BEGIN
         USING ERRCODE = 'P0001';
     END IF;
     -- E32, the DROP side (independent of the add side — the DoD probe).
-    v_drop_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_drop_p.team, p_at);
+    v_drop_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_drop_p.team, p_at, v_game_lock);
     IF v_game_lock AND (v_drop_lock ->> 'locked')::boolean THEN
       RAISE EXCEPTION
         'roster_add_drop: % (%) is locked for drops — kicked off at % (%) and week % clears at % (the correction window, §13.1/E32; player_game_lock = true): no dropping a player mid-game',
@@ -604,7 +667,7 @@ BEGIN
       v_pool_add_from := v_pool.state;
     END IF;
     -- E32, the ADD side.
-    v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);
+    v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at, v_game_lock);
     IF v_game_lock AND (v_add_lock ->> 'locked')::boolean THEN
       RAISE EXCEPTION
         'roster_add_drop: % (%) is locked for adds — kicked off at % (%) and week % clears at % (the correction window, §13.1/E32; player_game_lock = true): no in-game pickups',
@@ -620,18 +683,8 @@ BEGIN
         v_team.name, v_roster_count, v_roster_size
         USING ERRCODE = 'P0001';
     END IF;
-    -- CAPS (§7.3.4), counted from transactions: this team's complete rows
-    -- whose payload carries add_player_id (drop-only never counts).
-    SELECT count(*)::int INTO v_used_week
-    FROM public.transactions t
-    WHERE t.league_id = p_league_id AND t.initiator_team_id = p_team_id
-      AND t.status = 'complete' AND t.week = v_current
-      AND (t.payload ->> 'add_player_id') IS NOT NULL;
-    SELECT count(*)::int INTO v_used_season
-    FROM public.transactions t
-    WHERE t.league_id = p_league_id AND t.initiator_team_id = p_team_id
-      AND t.status = 'complete'
-      AND (t.payload ->> 'add_player_id') IS NOT NULL;
+    -- CAPS (§7.3.4) — the counts were taken above (R763); only the ADD side
+    -- enforces them.
     IF v_cap_week IS NOT NULL AND v_used_week >= v_cap_week THEN
       RAISE EXCEPTION
         'roster_add_drop: % has used % of % acquisitions in week % (acquisitions_per_week, §7.3.4) — no more adds this week',
@@ -817,8 +870,10 @@ BEGIN
     'caps', jsonb_build_object(
       'acquisitions_per_week',   v_cap_week_txt,
       'acquisitions_per_season', v_cap_season_txt,
-      'used_week_after',   CASE WHEN p_add IS NULL THEN v_used_week   ELSE COALESCE(v_used_week, 0) + 1   END,
-      'used_season_after', CASE WHEN p_add IS NULL THEN v_used_season ELSE COALESCE(v_used_season, 0) + 1 END),
+      -- both counts are assigned for EVERY move (R763) — a drop-only reports
+      -- the unchanged totals, never NULL.
+      'used_week_after',   v_used_week   + CASE WHEN p_add IS NULL THEN 0 ELSE 1 END,
+      'used_season_after', v_used_season + CASE WHEN p_add IS NULL THEN 0 ELSE 1 END),
     'settings', jsonb_build_object(
       'player_game_lock',    v_game_lock,
       'lineup_lock',         v_mode,

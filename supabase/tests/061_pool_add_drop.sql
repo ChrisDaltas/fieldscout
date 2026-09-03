@@ -20,7 +20,13 @@
 --     close and at close+1s — the two sides are guarded INDEPENDENTLY: the
 --     DoD break probe removes the drop-side clause alone and §F reds while
 --     §E stays green. The lax control (`player_game_lock = false`): both a
---     kicked-off add and a kicked-off drop live inside the window.
+--     kicked-off add and a kicked-off drop live inside the window. R765 —
+--     THE UNWRITTEN WINDOW BOTH WAYS: with `nfl_weeks.correction_window_ends_
+--     at` NULL on an open week (what an un-ingested week looks like until
+--     L.D2.1 writes it) the ENFORCING league still refuses by name (§E6 add,
+--     §H4 drop) while the lock-off league adds AND drops and reads the lock
+--     as `locked: true` with a NULL window end — the raise belongs to the
+--     enforcing caller alone, and "not enforced" is never read as "free".
 --   * E42: the same kickoff moved ahead re-opens the add. BYE (game rows,
 --     none for the team): never locked. NO GAME ROWS: every player locked
 --     from the week datum, the arm NAMED (the R740 posture inherited).
@@ -38,7 +44,9 @@
 --   * fa_hold_hours at hold−1s (FA, `early`) / +0 (waivers); a DRAFTED
 --     player is never held (waivers regardless of the hold).
 --   * CAPS from `transactions`: weekly cap 2 — the 2nd add (cap−1 → cap)
---     lives, the 3rd refuses by name; a drop-only never counts; season cap 3
+--     lives, the 3rd refuses by name; a drop-only never counts AND reports
+--     the unchanged counts as a LITERAL (§J4 — R763: they read NULL before
+--     the counts were hoisted above the add branch); season cap 3
 --     across a moved calendar — the 3rd lives, the 4th refuses.
 --   * THE TRANSACTIONS ROW AS A STORED LITERAL (the payload minus the random
 --     id, built against now() so the instants are exact) + the row's
@@ -55,8 +63,15 @@
 --     row: under first_game_of_week the emptied slot cannot be re-seated
 --     while the week lock holds, under per_player_kickoff it can when the
 --     slot's own kickoff is ahead) and NO PHANTOM (no slot_map value names
---     an unrostered player). The Q32 residual (player_game_lock OFF: a
---     played starter drops and his slot clears) pinned in §H1. The add lands
+--     an unrostered player). THE Q32 RESIDUAL (`player_game_lock` OFF: a
+--     PLAYED starter drops and his slot clears) IS PINNED IN BOTH LOCK
+--     MODES — §H1 on L2 (first_game_of_week: the slot stays empty for the
+--     week) and §H3 on L5 (per_player_kickoff, the DEFAULT: R759 — the
+--     baseline re-seat is REFUSED while he is rostered, and the very same
+--     re-seat is ACCEPTED after the drop, so the slot does NOT stay empty
+--     and the team gets a do-over on it after seeing his result. Recorded,
+--     not fixed: whether the player-level lock should bind drops regardless
+--     of the toggle is Chris's call — PROGRESS F230). The add lands
 --     on the bench of every row from the current week on with `slot_key =
 --     'bn'`; a bench-only drop reports `slot: null` (R758).
 --   * The CHECK both directions (on_waivers without waivers_until 23514;
@@ -89,7 +104,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(150);
+select plan(160);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the stamp, the CHECK, the functions, grants (§4.1), F35
@@ -127,8 +142,8 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'public.roster_add_drop_internal(uuid,uuid,text,text,uuid,timestamptz)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.roster_add_drop_internal(uuid,uuid,text,text,uuid,timestamptz)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.pool_game_lock_internal(integer,integer,text,timestamptz)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.pool_game_lock_any_internal(integer,integer,text,timestamptz)', 'EXECUTE'),
+  and not has_function_privilege('authenticated', 'public.pool_game_lock_internal(integer,integer,text,timestamptz,boolean)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.pool_game_lock_any_internal(integer,integer,text,timestamptz,boolean)', 'EXECUTE'),
   'the three helpers are triple-REVOKEd — no client can supply the instant (rule 10: the seam is postgres-only)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -142,6 +157,11 @@ select is(
      and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'roster_add_drop_internal')
      and p.prosrc like '%locked_until%'),
   0, 'rule 9: NO 113 lock path reads league_player_pool.locked_until — E32 is evaluated from nfl_games at call time (114 maintains that column for the pool view)');
+select is(
+  (select pg_get_function_identity_arguments(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'pool_game_lock_any_internal'),
+  'p_season integer, p_current_week integer, p_nfl_team text, p_at timestamp with time zone, p_enforced boolean',
+  'R765: both lock helpers take the ENFORCED flag last (default TRUE) — the raise for an unwritten correction window is the ENFORCING caller''s alone (§H4 pins both arms)');
 select policies_are('public', 'league_player_pool', array['Pool viewable by members'],
   'league_player_pool still has exactly ONE policy — member SELECT; 113 adds no client write path');
 select policies_are('public', 'transactions', array['Transactions viewable by league members'],
@@ -157,7 +177,9 @@ select policies_are('public', 'league_rosters', array['Rosters viewable by leagu
 --    immediate_after_waivers, fa_hold 24h, caps unlimited, roster_size 8.
 --    L2 LAX: player_game_lock FALSE, first_game_of_week, none_fcfs,
 --    continuous, fa_hold 0. L3 CAPS: 2/week, 3/season, everyone on bye.
---    L4: scheduled.
+--    L4: scheduled. L5 (u6, team S2) LAX × the DEFAULT lock mode:
+--    player_game_lock FALSE, per_player_kickoff, none_fcfs — the composition
+--    R759 measured and §H3 pins.
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -218,7 +240,17 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff', 'faab', '{}',
-  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}');
+  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}'),
+ -- L5 (R759): the OTHER lax composition — player_game_lock FALSE with the
+ -- DEFAULT lineup_lock (`per_player_kickoff`). L2 is lax × first_game_of_week,
+ -- so this pair had no cell until the #254 re-review measured it.
+ ('bd000000-0000-4000-8000-000000000005', '9d000000-0000-4000-8000-000000000006', 'pgtap-pd-L5', 2026, 'in_season', 8,
+  (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+  (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
+  'per_player_kickoff', 'none_fcfs',
+  '{"player_game_lock": false, "waiver_period_hours": 48, "free_agency": "immediate_after_waivers", "fa_hold_hours": 0,
+    "acquisitions_per_week": "unlimited", "acquisitions_per_season": "unlimited", "allow_illegal_lineups": true}',
+  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 4, "ir_slots": [], "swap_spots": 0}');
 
 insert into teams (id, owner_id, name, league_id) values
  ('cd000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000001', 'PD T1', 'bd000000-0000-4000-8000-000000000001'),
@@ -226,7 +258,8 @@ insert into teams (id, owner_id, name, league_id) values
  ('cd000000-0000-4000-8000-000000000003', '9d000000-0000-4000-8000-000000000003', 'PD T3', 'bd000000-0000-4000-8000-000000000001'),
  ('cd000000-0000-4000-8000-000000000011', '9d000000-0000-4000-8000-000000000006', 'PD S1', 'bd000000-0000-4000-8000-000000000002'),
  ('cd000000-0000-4000-8000-000000000021', '9d000000-0000-4000-8000-000000000002', 'PD C1', 'bd000000-0000-4000-8000-000000000003'),
- ('cd000000-0000-4000-8000-000000000031', '9d000000-0000-4000-8000-000000000001', 'PD X1', 'bd000000-0000-4000-8000-000000000004');
+ ('cd000000-0000-4000-8000-000000000031', '9d000000-0000-4000-8000-000000000001', 'PD X1', 'bd000000-0000-4000-8000-000000000004'),
+ ('cd000000-0000-4000-8000-000000000012', '9d000000-0000-4000-8000-000000000006', 'PD S2', 'bd000000-0000-4000-8000-000000000005');
 insert into league_members (league_id, user_id, team_id, role) values
  ('bd000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000001', 'commissioner'),
  ('bd000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000002', 'manager'),
@@ -234,9 +267,11 @@ insert into league_members (league_id, user_id, team_id, role) values
  ('bd000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000005', null, 'manager'),
  ('bd000000-0000-4000-8000-000000000002', '9d000000-0000-4000-8000-000000000006', 'cd000000-0000-4000-8000-000000000011', 'commissioner'),
  ('bd000000-0000-4000-8000-000000000003', '9d000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000021', 'manager'),
- ('bd000000-0000-4000-8000-000000000004', '9d000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000031', 'commissioner');
+ ('bd000000-0000-4000-8000-000000000004', '9d000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000031', 'commissioner'),
+ ('bd000000-0000-4000-8000-000000000005', '9d000000-0000-4000-8000-000000000006', 'cd000000-0000-4000-8000-000000000012', 'commissioner');
 insert into league_weeks (league_id, season, week)
-select l, 2026, g from (values ('bd000000-0000-4000-8000-000000000001'::uuid), ('bd000000-0000-4000-8000-000000000002'), ('bd000000-0000-4000-8000-000000000003')) v(l),
+select l, 2026, g from (values ('bd000000-0000-4000-8000-000000000001'::uuid), ('bd000000-0000-4000-8000-000000000002'), ('bd000000-0000-4000-8000-000000000003'),
+                               ('bd000000-0000-4000-8000-000000000005')) v(l),
      generate_series(1, 8) g;
 
 insert into players (id, full_name, position, team, status) values
@@ -263,7 +298,9 @@ insert into players (id, full_name, position, team, status) values
  ('pd-c-f1',  'PD C F1',  'WR', 'MIA', 'Active'),
  ('pd-c-f2',  'PD C F2',  'WR', 'MIA', 'Active'),
  ('pd-c-f3',  'PD C F3',  'WR', 'MIA', 'Active'),
- ('pd-c-f4',  'PD C F4',  'WR', 'MIA', 'Active');
+ ('pd-c-f4',  'PD C F4',  'WR', 'MIA', 'Active'),
+ ('pd-x-qb',  'PD X QB',  'QB', 'KC',  'Active'),   -- L5 starter (lax × per_player_kickoff); KC kicked off one second ago
+ ('pd-x-fa',  'PD X FA',  'QB', 'SF',  'Active');   -- L5 bench; SF kicks off in three hours
 insert into league_rosters (league_id, team_id, player_id) values
  ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 'pd-qb1'),
  ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 'pd-rb1'),
@@ -275,7 +312,9 @@ insert into league_rosters (league_id, team_id, player_id) values
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-qb'),
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-rb'),
  ('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-wr'),
- ('bd000000-0000-4000-8000-000000000003', 'cd000000-0000-4000-8000-000000000021', 'pd-c-qb');
+ ('bd000000-0000-4000-8000-000000000003', 'cd000000-0000-4000-8000-000000000021', 'pd-c-qb'),
+ ('bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', 'pd-x-qb'),
+ ('bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', 'pd-x-fa');
 insert into league_player_pool (league_id, player_id, state, waivers_until) values
  ('bd000000-0000-4000-8000-000000000002', 'pd-s-w', 'on_waivers', now() - interval '1 second');
 
@@ -310,6 +349,10 @@ select lives_ok(
   $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 3,
        '{"qb:0": "pd-s-qb", "rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}', 'ab000000-0000-4000-8000-000000000003', now() - interval '2 seconds') $$,
   'fixture: S1''s week-3 lineup set (the lax league; the week is now locked — KC kicked off)');
+select lives_ok(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', 3,
+       '{"qb:0": "pd-x-qb"}', 'ab000000-0000-4000-8000-000000000004', now() - interval '2 seconds') $$,
+  'fixture: S2''s week-3 lineup set (L5 — lax × per_player_kickoff; X QB seated at qb:0 one second before KC''s kickoff, X FA on the bench)');
 select set_config('request.jwt.claims', '', true);
 
 -- The pristine T2 week-3 row, captured for the drop-side resets.
@@ -828,7 +871,66 @@ select lives_ok(
   $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-fa1', null,
        'ab000000-0000-4000-8000-000000000053', now()) $$,
   'H2 …and a FRESH free agent (no pool row) adds under continuous too');
+-- ---------------------------------------------------------------------------
+-- H3. R759 — THE OTHER LAX COMPOSITION, WHICH HAD NO CELL: `player_game_lock
+--    = false` × `lineup_lock = per_player_kickoff` (the DEFAULT mode), on L5
+--    as u6. H1 covers lax × first_game_of_week, where 112's whole-week lock
+--    happens to leave the emptied slot empty; under per_player_kickoff it
+--    does NOT. This pins the ACTUAL behaviour rather than the reading a
+--    reader would carry over from H1: the played starter drops, his slot
+--    clears, and the very next set_lineup RE-SEATS it with a player whose own
+--    kickoff is still ahead — so the team loses his points and gets a fresh
+--    choice for the slot after seeing his result. Whether the player-level
+--    lock should bind drops regardless of the toggle is Chris's call
+--    (PROGRESS F230); this cell is the disclosure, not the fix.
+-- ---------------------------------------------------------------------------
+select throws_like(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', 3,
+       '{"qb:0": "pd-x-fa"}', 'ab000000-0000-4000-8000-000000000055', now()) $$,
+  '%slot qb:0 is locked — PD X QB kicked off at %',
+  'H3 BASELINE (§11.2, per_player_kickoff): while the PLAYED starter is still rostered, set_lineup cannot re-seat qb:0');
+select set_config('pgtap.pd_r_h3', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', null, 'pd-x-qb',
+  'ab000000-0000-4000-8000-000000000056', now())::text, true);
+select is(current_setting('pgtap.pd_r_h3')::jsonb -> 'drop' -> 'lineups', '[{"week": 3, "slot": "qb:0"}]'::jsonb,
+  'H3 the PLAYED starter is DROPPED (player_game_lock off — the Q32 residual) and his slot is CLEARED');
+select is((select slot_map from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000012' and week = 3), '{}'::jsonb,
+  'H3 …the week-3 map is empty');
+select lives_ok(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000005', 'cd000000-0000-4000-8000-000000000012', 3,
+       '{"qb:0": "pd-x-fa"}', 'ab000000-0000-4000-8000-000000000057', now()) $$,
+  'H3 R759 — THE DISCLOSED CONSEQUENCE: under per_player_kickoff the emptied slot IS re-seatable (112 has nothing to lock once the stored occupant is gone, 112:894) — the slot does NOT stay empty');
+select is((select slot_map from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000012' and week = 3),
+  '{"qb:0": "pd-x-fa"}'::jsonb,
+  'H3 …qb:0 now carries a player whose own kickoff is still ahead — the team lost the played starter''s points AND got a do-over on the slot (recorded, not fixed: F230)');
+-- ---------------------------------------------------------------------------
+-- H4. R765 — the E32 plumbing never RAISES at a league that does not enforce
+--    the lock. Week 3's `correction_window_ends_at` is set NULL (what an
+--    un-ingested week looks like until L.D2.1 writes it) while KC has kicked
+--    off: on L2 (`player_game_lock` false) both sides live and read the lock
+--    as `locked: true` with a NULL window end — never a raise, never "free";
+--    on L1 (the ENFORCING league) the same NULL window still refuses by name.
+-- ---------------------------------------------------------------------------
+update nfl_weeks set correction_window_ends_at = null where season = 2026 and week = 3;
+select set_config('pgtap.pd_r_h4d', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', null, 'pd-s-fa2',
+  'ab000000-0000-4000-8000-000000000058', now())::text, true);
+select is((current_setting('pgtap.pd_r_h4d')::jsonb -> 'drop' -> 'game_lock') - 'kickoff_at',
+  '{"locked": true, "week": 3, "window_ends_at": null, "datum_arm": "nfl_games", "on_bye": false}'::jsonb,
+  'H4 R765 DROP: player_game_lock off + an UNWRITTEN correction window — the drop LIVES and reports locked: true with a NULL window end (the raise is the enforcing caller''s alone)');
+select set_config('pgtap.pd_r_h4a', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-fa2', null,
+  'ab000000-0000-4000-8000-000000000059', now())::text, true);
+select is((current_setting('pgtap.pd_r_h4a')::jsonb -> 'add' -> 'game_lock') - 'kickoff_at',
+  '{"locked": true, "week": 3, "window_ends_at": null, "datum_arm": "nfl_games", "on_bye": false}'::jsonb,
+  'H4 R765 ADD: the same on the add side (none_fcfs put him straight back to FA, so the pair restores the roster)');
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select throws_like(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-qb1',
+       'ab000000-0000-4000-8000-000000000060', now()) $$,
+  '%nfl_weeks.correction_window_ends_at is NULL — the E32 lock end is undefined until ingestion writes it%',
+  'H4 CONTROL (never-weaken): the ENFORCING league still refuses the DROP by name under the SAME NULL window — the flag suppresses the raise only where nothing is enforced (E6 pins the add side)');
+update nfl_weeks set correction_window_ends_at = now() + interval '5 days' where season = 2026 and week = 3;   -- restore
 
 -- ---------------------------------------------------------------------------
 -- I. fa_hold_hours (L1, 24h): hold−1s → FA (early); hold+0 → waivers
@@ -881,10 +983,12 @@ select throws_like(
        'ab000000-0000-4000-8000-000000000073', now()) $$,
   '%PD C1 has used 2 of 2 acquisitions in week 3 (acquisitions_per_week%',
   'J3 add #3 AT the weekly cap refuses by name');
-select lives_ok(
-  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000003', 'cd000000-0000-4000-8000-000000000021', null, 'pd-c-f1',
-       'ab000000-0000-4000-8000-000000000074', now()) $$,
-  'J4 a DROP-ONLY move at the cap lives (a drop is not an acquisition)');
+select set_config('pgtap.pd_r_j4', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000003', 'cd000000-0000-4000-8000-000000000021', null, 'pd-c-f1',
+  'ab000000-0000-4000-8000-000000000074', now())::text, true);
+select is(current_setting('pgtap.pd_r_j4')::jsonb -> 'caps',
+  '{"acquisitions_per_week": "2", "acquisitions_per_season": "3", "used_week_after": 2, "used_season_after": 2}'::jsonb,
+  'J4 a DROP-ONLY move at the cap LIVES (a drop is not an acquisition) and reports the UNCHANGED counts as numbers — R763: they were NULL before the hoist, which L.D4.2 would render as "null of 2"');
 select throws_like(
   $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000003', 'cd000000-0000-4000-8000-000000000021', 'pd-c-f3', 'pd-c-f2',
        'ab000000-0000-4000-8000-000000000075', now()) $$,

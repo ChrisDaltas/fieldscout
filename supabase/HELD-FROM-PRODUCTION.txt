@@ -98,7 +98,7 @@
 # helpers (E32 game-day locks evaluated from `nfl_games.kickoff_at` at call
 # time), `transactions.action_id` (the idempotency stamp + its partial unique
 # index) and the `league_player_pool` on_waivers ⇔ waivers_until CHECK
-# (F222(a) taken); spec v2.16.17 §13.1 / §7.3.4 / §12.9 / §12.19 / E32 / E34.
+# (F222(a) taken); spec v2.16.19 §13.1 / §7.3.4 / §12.9 / §12.19 / E32 / E34.
 # Same mechanism, same explicit act. No launch-surface table is touched: the
 # ALTERs are on 109's `transactions` / `league_player_pool`, the writes on
 # 072's `league_rosters` and 112's league-only `team_lineups`; reads outside

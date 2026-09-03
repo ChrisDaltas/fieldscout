@@ -4184,6 +4184,7 @@ export type Database = {
         Args: {
           p_at: string
           p_current_week: number
+          p_enforced?: boolean
           p_nfl_team: string
           p_season: number
         }
@@ -4192,6 +4193,7 @@ export type Database = {
       pool_game_lock_internal: {
         Args: {
           p_at: string
+          p_enforced?: boolean
           p_nfl_team: string
           p_season: number
           p_week: number
