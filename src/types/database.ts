@@ -4315,6 +4315,7 @@ export type Database = {
         Args: {
           p_action_id?: string
           p_league_id: string
+          p_reason?: string
           p_slot_map: Json
           p_team_id: string
           p_week: number
@@ -4326,6 +4327,7 @@ export type Database = {
           p_action_id: string
           p_at: string
           p_league_id: string
+          p_reason?: string
           p_slot_map: Json
           p_team_id: string
           p_week: number

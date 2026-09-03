@@ -93,7 +93,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(135);
+select plan(151);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — §12.13 columns, the policy swap, the ledger, the functions,
@@ -145,12 +145,12 @@ select ok(
                        'lineup_kickoff_internal', 'lineup_fit_internal', 'set_lineup_internal')),
   'the five helpers are PLAIN with search_path='''' — reachable only through the DEFINER verb (or as postgres)');
 select ok(
-  not has_function_privilege('anon', 'public.set_lineup(uuid,uuid,integer,jsonb,uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.set_lineup(uuid,uuid,integer,jsonb,uuid)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.set_lineup(uuid,uuid,integer,jsonb,uuid,text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.set_lineup(uuid,uuid,integer,jsonb,uuid,text)', 'EXECUTE'),
   'set_lineup: anon holds no EXECUTE (REVOKE FROM PUBLIC, anon); authenticated may call — the manager check is IN-BODY');
 select ok(
-  not has_function_privilege('authenticated', 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz)', 'EXECUTE')
+  not has_function_privilege('authenticated', 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.lineup_fit_internal(jsonb,jsonb)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.lineup_kickoff_internal(integer,integer,text,timestamptz)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.lineup_current_week_internal(uuid,timestamptz)', 'EXECUTE')
@@ -227,7 +227,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
       {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1},
       {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 1},
       {"key": "flex", "label": "W/R/T", "eligible": ["WR", "RB", "TE"], "count": 1}],
-    "bench": 3, "ir_slots": [], "swap_spots": 0}'),
+    "bench": 3, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0}'),
  ('b3000000-0000-4000-8000-000000000003', '93000000-0000-4000-8000-000000000001', 'pgtap-lu-L3', 2026, 'scheduled', 8,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -276,7 +276,8 @@ insert into players (id, full_name, position, team, status) values
  ('lu-s-rb', 'LU S RB', 'RB',  'DAL', 'Active'),
  ('lu-s-wr', 'LU S WR', 'WR',  'PHI', 'Active'),
  ('lu-s-bye','LU S BYE','WR',  'MIA', 'Active'),
- ('lu-s-out','LU S OUT','RB',  'DAL', 'Out');
+ ('lu-s-out','LU S OUT','RB',  'DAL', 'Out'),
+ ('lu-s-ir', 'LU S IR', 'RB',  'MIA', 'IR');          -- bye team: only the WEEK lock can bind him (R736)
 insert into league_rosters (league_id, team_id, player_id)
 select 'b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', id
 from players where id like 'lu-%' and id not like 'lu-s-%';
@@ -433,6 +434,12 @@ select is(
       {"player_id": "rb_new", "position": "RB", "wanted": "qb:0"}]') -> 'assignment',
   '{"qb:0": "qb_free", "superflex:0": "rb_new"}'::jsonb,
   '…and the same shape UNLOCKED re-seats the QB to QB and the RB into SUPERFLEX (the fixed flag is what changed)');
+select is(
+  public.lineup_fit_internal(
+    '[{"key": "te:0", "eligible": ["TE"]}, {"key": "wr:1", "eligible": ["WR"]}]',
+    '[{"player_id": "te_locked_relisted", "position": "WR", "wanted": "te:0", "fixed": true}]'),
+  '{"assignment": {"te:0": "te_locked_relisted"}, "unplaced": [], "rearranged": false, "moved": []}'::jsonb,
+  'R737: a FIXED (locked) player whose listed position no longer fits his slot (TE → WR mid-week) STAYS PUT — a locked placement is a fact, not a candidate; he is not re-seated into wr:1');
 
 -- ---------------------------------------------------------------------------
 -- E. set_lineup on L1 (per_player_kickoff, allow_illegal TRUE) — as u2 at
@@ -566,6 +573,18 @@ select lives_ok(
 select is((select (slot_map ->> 'wr:0') || '|' || (slot_map ->> 'qb:0') from team_lineups
            where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3),
   'lu-wr2|lu-qb1', 'E5 …stored: wr:0 = WR2, qb:0 = QB1 unchanged');
+-- R737 through the RPC: QB1 (locked at qb:0) is relisted QB → WR; an
+-- identical resubmit is no_changes and the stored map is byte-unchanged.
+update players set position = 'WR' where id = 'lu-qb1';
+select set_config('pgtap.lu_map_before', (select slot_map::text from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3), true);
+select is((public.set_lineup_internal(
+       'b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       current_setting('pgtap.lu_map_before')::jsonb,
+       'a3000000-0000-4000-8000-000000000028', now()) ->> 'no_changes')::boolean, true,
+  'R737 through the RPC: the locked QB1 relisted as WR — an identical resubmit is no_changes (he is not re-seated)');
+select is((select slot_map::text from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3),
+  current_setting('pgtap.lu_map_before'), 'R737 …and the stored map is byte-unchanged');
+update players set position = 'QB' where id = 'lu-qb1';
 
 -- E6. E42 — the kickoff MOVED BACK to the future re-opens the slot (the lock
 --     is evaluated from nfl_games at call time, never from locked_at): with
@@ -814,10 +833,26 @@ reset role;
 -- The league's commissioner MAY set T2's lineup (D293): edited_by_commish = TRUE.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000023') $$,
+  '22023', null, 'R738: the COMMISSIONER without a reason is refused 22023 (the D290 interim audit posture)');
+select throws_ok(
+  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000023', '   ') $$,
+  '22023', null, 'R738: a blank reason is no reason');
+select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 0,
+  'R738: nothing posted by the refusals');
 select set_config('pgtap.lu_rh', public.set_lineup(
   'b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
   '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-  'a3000000-0000-4000-8000-000000000023')::text, true);
+  'a3000000-0000-4000-8000-000000000023', 'manager on vacation')::text, true);
+select is((select string_agg(message, '|') from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system),
+  'Week 3 lineup for LU T2 set by lu_user1 (commissioner) — reason: manager on vacation',
+  'R738: the D97 in-txn system post carries the week, the team, the actor and the reason (pinned by content)');
+select is(current_setting('pgtap.lu_rh')::jsonb ->> 'reason', 'manager on vacation', 'R738: the result echoes the reason');
 select is((current_setting('pgtap.lu_rh')::jsonb ->> 'edited_by_commish')::boolean, true,
   'H the COMMISSIONER sets another team''s lineup under the same lock law — edited_by_commish = TRUE in the result');
 select is((select edited_by_commish from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3), true,
@@ -839,6 +874,8 @@ select throws_like(
   'H a league not in season (L3, scheduled) refuses by name');
 -- The manager's FUTURE-week set: the row is created, slot_key untouched.
 select set_config('request.jwt.claims', '{"sub": "93000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 1,
+  'R738: the manager''s own sets never post (one system row in L1 — the commissioner''s)');
 select set_config('pgtap.lu_roster_before', (select string_agg(player_id || ':' || coalesce(slot_key, '-'), ',' order by player_id)
                                             from league_rosters where team_id = 'c3000000-0000-4000-8000-000000000002'), true);
 select lives_ok(
@@ -895,7 +932,40 @@ select throws_like(
 select is((public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
        '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000033', now()) ->> 'no_changes')::boolean,
   true, 'I3 an IDENTICAL submit under the week lock is no_changes — never a refusal');
+-- R739: the same, with a starter ruled OUT after the lock under
+-- allow_illegal_lineups = FALSE — still no_changes (not the manager's to change).
+update players set status = 'Out' where id = 'lu-s-rb';
+select is((public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000036', now()) ->> 'no_changes')::boolean,
+  true, 'R739: under the week lock with allow_illegal FALSE, a starter ruled OUT after the lock still makes an identical resubmit no_changes');
+update players set status = 'Active' where id = 'lu-s-rb';
+-- R736: IR moves are judged against the CURRENT week under first_game_of_week
+-- too — a FUTURE-week (4) submit cannot stash/free a roster spot after week
+-- 3's first kickoff; one second before it, it can.
+select throws_like(
+  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 4,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr", "ir1:0": "lu-s-ir"}', 'a3000000-0000-4000-8000-000000000037', now()) $$,
+  '%LU S IR''s lock for week 3 has passed (kickoff %) — IR moves respect lineup-lock timing%',
+  'R736 (the blocker): a WEEK-4 submit placing a player on IR after week 3''s first kickoff is refused on the CURRENT week''s lock — kickoff+1s');
 update nfl_games set kickoff_at = now() + interval '1 second' where id = 'lu-w3-a';
+select lives_ok(
+  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 4,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr", "ir1:0": "lu-s-ir"}', 'a3000000-0000-4000-8000-000000000037', now()) $$,
+  'R736 …the same week-4 placement one second BEFORE week 3''s first kickoff lands (the one-unit positive)');
+select results_eq(
+  $$ select slot_key, ir_placed_week from league_rosters where player_id = 'lu-s-ir' $$,
+  $$ values ('ir1:0', 3) $$, 'R736 …placed in the CURRENT week (3), not the submitted week');
+update nfl_games set kickoff_at = now() - interval '1 second' where id = 'lu-w3-a';
+select throws_like(
+  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 4,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000038', now()) $$,
+  '%LU S IR''s lock for week 3 has passed (kickoff %) — IR moves respect lineup-lock timing%',
+  'R736: a week-4 submit REMOVING him from IR after week 3''s first kickoff is refused the same way');
+update nfl_games set kickoff_at = now() + interval '1 second' where id = 'lu-w3-a';
+select lives_ok(
+  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 4,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000038', now()) $$,
+  'R736 …and the removal one second before the kickoff lands');
 -- allow_illegal_lineups FALSE: bye / OUT starters are blocked at submit by name.
 select throws_like(
   $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
@@ -962,6 +1032,19 @@ end $$;
 select cmp_ok((select min(secs) from lu_rtt), '<', 0.05::double precision,
   'held-lock discipline (rule 8): the min RTT of three set_lineup calls (17-player roster, 11 slots) is under 50 ms');
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- L. R740 — no game rows AND no first_kickoff_at: the CURRENT week locks
+--    from its starts_at (conservative, said out loud)
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims', '{"sub": "93000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+delete from nfl_games where season = 2026 and week = 3;
+select throws_like(
+  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000050', now()) $$,
+  '%is locked — % kicked off at % (nfl_weeks.starts_at) and a locked slot''s player never moves%',
+  'R740: with NO game rows and NULL first_kickoff_at the CURRENT week is locked for every player from its starts_at — a stack with no ingested games cannot set a current-week lineup (conservative; L.D6.x seeds games)');
 
 select * from finish();
 rollback;

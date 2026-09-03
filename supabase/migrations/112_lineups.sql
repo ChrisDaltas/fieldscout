@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Lineups — migration 112 (task L.D1.4; spec v2.16.15 → v2.16.16 by this PR's
--- fold-back (§11.2/§12.13 annotations, no rule change); §11.2 lineups & lock /
+-- fold-back (§11.2/§12.13 annotations, no rule change); the #253 fix round
+-- (R736–R742) amended IN PLACE — unreleased chain; §11.2 lineups & lock /
 -- §12.13 `team_lineups` extension / §7.3.6 `lineup_lock` + `allow_illegal_
 -- lineups` / §7.3.2 slot config + IR slot rules / §11.1 roster legality
 -- (bipartite fit) / E16 / E42 / §23.3; tasks-M4 §4 standing rules 1–11;
@@ -118,10 +119,25 @@
 --   * `first_game_of_week`: the whole lineup locks at the week's first
 --     kickoff (the `schedule_window_internal` datum for that week); after it
 --     ANY change refuses (an identical submit is `no_changes`, never a
---     refusal).
+--     refusal — under BOTH `allow_illegal_lineups` settings: a starter ruled
+--     OUT after the lock is not the manager's to change, R739).
 --   * AT the kickoff instant the slot is locked (closed interval on the
 --     kickoff side, the E41 convention: "until" is strictly before).
---   * IR moves respect lock timing for the CURRENT week (below).
+--   * IR moves respect lock timing for the CURRENT week (below) — under BOTH
+--     modes: `first_game_of_week` judges an IR move against the CURRENT
+--     week's first kickoff (`v_week_locked_cur`), never p_week's, so a
+--     future-week submit cannot stash or free a roster spot after the live
+--     week has locked (R736 — the #253 fix round).
+--   * NO GAME ROWS AND NO `nfl_weeks.first_kickoff_at` ⇒ the CURRENT week is
+--     locked for every player from its `starts_at` (Wednesday 00:00 ET):
+--     on a stack with no ingested games (the local stack today: 0
+--     `nfl_games`, 18 NULL 2026 rows) a current-week lineup cannot be set
+--     at all — the conservative posture, said out loud (R740). L.D6.x's
+--     sim/gate must seed game rows (or `first_kickoff_at`) before it sets
+--     lineups; production has both once L.D2.1/L.D2.3 run.
+--   * A LOCKED placement is a FACT: `lineup_fit_internal` seeds a fixed
+--     player at his stored slot unconditionally, so a mid-week position
+--     relisting cannot make the matcher move him (R737).
 --
 -- THE CURRENT WEEK (for IR tenure and `slot_key` maintenance).
 --   `lineup_current_week_internal(league, at)` = the league's greatest
@@ -180,11 +196,19 @@
 --   and is only flagged.
 --
 -- COMMISSIONER ARM (D293 "membership/ownership (or commissioner)"; tasks-M4
---   §12). A commissioner may set ANY team's lineup through this verb under
---   the SAME lock law as the manager (no past-lock edit, no past-week edit);
---   the row then records `edited_by_commish = TRUE`. The AUDITED override
---   (past lock, retroactive — §11.2's last bullet / §10.2) is M6's path and
---   does not exist here; F224(c) names it.
+--   §12; the D290 interim audit posture — R738). A commissioner may set ANY
+--   team's lineup through this verb under the SAME lock law as the manager
+--   (no past-lock edit, no past-week edit). An actor who is not the team's
+--   manager MUST give `p_reason` (22023 by name otherwise), a real change
+--   posts the D97 in-txn `league_chat` system message carrying the reason
+--   ("Week N lineup for <team> set by <actor> (commissioner) — reason: …"),
+--   and the row records `edited_by_commish = TRUE`. F40's control list
+--   GROWS with `set_lineup` (commissioner arm) so M6 wires the audit row.
+--   A `no_changes` submit posts nothing (nothing changed); a replay posts
+--   nothing (the ledger answers first). The AUDITED override (past lock,
+--   retroactive — §11.2's last bullet / §10.2) is M6's path and does not
+--   exist here; F224(c) names it — and the commissioner inherits the
+--   manager's `allow_illegal_lineups = FALSE` and E16 refusals until then.
 --
 -- IDEMPOTENCY (rule 10; D68/E2). `p_action_id` REQUIRED (22023). A replay
 --   returns the ledger's stored result byte-identically and writes nothing.
@@ -460,11 +484,13 @@ BEGIN
   v_owner := array_fill(0, ARRAY[GREATEST(v_ns, 1)]);
   v_match := array_fill(0, ARRAY[GREATEST(v_np, 1)]);
 
-  -- SEED: every per-slot-valid placement is honored verbatim (fixed players
-  -- first, so a locked player can never lose his slot to a seed).
+  -- SEED: fixed (locked) players first, UNCONDITIONALLY — a locked placement
+  -- is a fact, not a candidate: even if the player's listed position no
+  -- longer fits the slot (a mid-week relisting), he stays where he is (R737;
+  -- "a locked slot's player never moves"). Then every per-slot-valid free
+  -- placement is honored verbatim.
   FOR v_i IN 1..v_np LOOP
-    IF v_pfixed[v_i] AND v_pwant[v_i] > 0 AND v_owner[v_pwant[v_i]] = 0
-       AND v_selig[v_pwant[v_i]] ? v_ppos[v_i] THEN
+    IF v_pfixed[v_i] AND v_pwant[v_i] > 0 AND v_owner[v_pwant[v_i]] = 0 THEN
       v_owner[v_pwant[v_i]] := v_i;
       v_match[v_i] := v_pwant[v_i];
     END IF;
@@ -552,7 +578,8 @@ CREATE OR REPLACE FUNCTION set_lineup_internal(
   p_week      INTEGER,
   p_slot_map  JSONB,
   p_action_id UUID,
-  p_at        TIMESTAMPTZ
+  p_at        TIMESTAMPTZ,
+  p_reason    TEXT DEFAULT NULL   -- REQUIRED (non-blank) when the actor is not the team's manager (R738 / D290)
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SET search_path = ''
@@ -583,8 +610,12 @@ DECLARE
   v_kick        JSONB := '{}'::jsonb;   -- player_id → {kickoff_at, datum_arm, on_bye} for p_week
   v_kick_cur    JSONB := '{}'::jsonb;   -- the same for the CURRENT week (IR moves)
   v_window      RECORD;
+  v_window_cur  RECORD;   -- the CURRENT week's datum (IR moves are judged against it — R736)
   v_k           RECORD;
   v_week_locked BOOLEAN;
+  v_week_locked_cur BOOLEAN;
+  v_reason      TEXT;
+  v_message     TEXT;
   v_fit_players JSONB := '[]'::jsonb;
   v_fit         JSONB;
   v_canon       JSONB := '{}'::jsonb;
@@ -701,6 +732,17 @@ BEGIN
   v_mode  := COALESCE(v_league.lineup_lock, 'per_player_kickoff');
   v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
 
+  -- The COMMISSIONER ARM carries the D290 interim audit posture (R738 / F40):
+  -- an actor who is not this team's manager must give a reason, and a real
+  -- change posts the in-txn system message below. The manager's own set
+  -- needs neither.
+  v_reason := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  IF NOT v_is_manager AND v_reason IS NULL THEN
+    RAISE EXCEPTION
+      'set_lineup: a commissioner setting another team''s lineup must give a reason (the D290 interim audit posture — the reason is posted to league chat; F40)'
+      USING ERRCODE = '22023';
+  END IF;
+
   -- (3) THE ROSTER (positions normalized to the roster vocabulary — DEF → DST,
   --     the 086 shape; designations bridged).
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -809,8 +851,14 @@ BEGIN
         'kickoff_at', v_k.kickoff_at, 'datum_arm', v_k.datum_arm, 'on_bye', v_k.on_bye));
     END IF;
   END LOOP;
-  IF v_current = p_week THEN v_kick_cur := v_kick; END IF;
-  v_week_locked := (v_mode = 'first_game_of_week') AND NOT v_window.free;
+  IF v_current = p_week THEN
+    v_kick_cur := v_kick;
+    v_window_cur := v_window;
+  ELSE
+    SELECT * INTO v_window_cur FROM public.schedule_window_internal(v_league.season, v_current, p_at);
+  END IF;
+  v_week_locked     := (v_mode = 'first_game_of_week') AND NOT v_window.free;       -- p_week's starters
+  v_week_locked_cur := (v_mode = 'first_game_of_week') AND NOT v_window_cur.free;   -- IR moves (R736)
 
   -- (7) LOCKED PLAYERS NEVER MOVE (per_player_kickoff). Evaluated BEFORE the
   --     fit so a locked stored starter is a FIXED vertex, and a played player
@@ -907,13 +955,13 @@ BEGIN
           (SELECT string_agg(x #>> '{}', ', ') FROM jsonb_array_elements(v_spot -> 'designations') x)
           USING ERRCODE = 'P0001';
       END IF;
-      IF v_week_locked OR (v_mode = 'per_player_kickoff'
+      IF v_week_locked_cur OR (v_mode = 'per_player_kickoff'
          AND (v_kick_cur -> v_pid ->> 'kickoff_at') IS NOT NULL
          AND (v_kick_cur -> v_pid ->> 'kickoff_at')::timestamptz <= p_at) THEN
         RAISE EXCEPTION
           'set_lineup: %''s lock for week % has passed (kickoff %) — IR moves respect lineup-lock timing (§7.3.2)',
           v_e ->> 'name', v_current,
-          CASE WHEN v_week_locked THEN v_window.first_kickoff_at::text ELSE v_kick_cur -> v_pid ->> 'kickoff_at' END
+          CASE WHEN v_week_locked_cur THEN v_window_cur.first_kickoff_at::text ELSE v_kick_cur -> v_pid ->> 'kickoff_at' END
           USING ERRCODE = 'P0001';
       END IF;
       v_ir_placed := v_ir_placed || jsonb_build_object(
@@ -944,13 +992,13 @@ BEGIN
         v_e ->> 'name', v_e ->> 'slot_key', v_e ->> 'ir_placed_week', v_e ->> 'ir_lock_until_week', v_current
         USING ERRCODE = 'P0001';
     END IF;
-    IF v_week_locked OR (v_mode = 'per_player_kickoff'
+    IF v_week_locked_cur OR (v_mode = 'per_player_kickoff'
        AND (v_kick_cur -> v_pid ->> 'kickoff_at') IS NOT NULL
        AND (v_kick_cur -> v_pid ->> 'kickoff_at')::timestamptz <= p_at) THEN
       RAISE EXCEPTION
         'set_lineup: %''s lock for week % has passed (kickoff %) — IR moves respect lineup-lock timing (§7.3.2)',
         v_e ->> 'name', v_current,
-        CASE WHEN v_week_locked THEN v_window.first_kickoff_at::text ELSE v_kick_cur -> v_pid ->> 'kickoff_at' END
+        CASE WHEN v_week_locked_cur THEN v_window_cur.first_kickoff_at::text ELSE v_kick_cur -> v_pid ->> 'kickoff_at' END
         USING ERRCODE = 'P0001';
     END IF;
     v_ir_removed := v_ir_removed || jsonb_build_object('player_id', v_pid, 'spot', v_e ->> 'slot_key');
@@ -980,7 +1028,12 @@ BEGIN
       END IF;
       -- §7.3.6 allow_illegal_lineups = FALSE: a bye/OUT starter in an
       -- UNLOCKED slot blocks the submit by name.
+      -- (a locked slot's bye/OUT player is not the manager's to change:
+      --  exempt under per_player_kickoff when the stored player's game has
+      --  kicked off, and under first_game_of_week once the week is locked —
+      --  the map already equals the stored map there, R739.)
       IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
+         AND NOT v_week_locked
          AND NOT (v_mode = 'per_player_kickoff'
                   AND (v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
                   AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
@@ -1050,6 +1103,15 @@ BEGIN
       END IF;
     END LOOP;
 
+    -- R738 / D290 / D97: a commissioner's change posts in-txn, reason in the
+    -- text (the interim audit until commissioner_actions exists — F40).
+    IF NOT v_is_manager THEN
+      v_message := 'Week ' || p_week || ' lineup for ' || v_team.name || ' set by '
+        || public.draft_actor_name() || ' (commissioner) — reason: ' || v_reason;
+      INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
+      VALUES (p_league_id, auth.uid(), v_message, 'league', TRUE);
+    END IF;
+
     IF p_week = v_current THEN
       -- slot_key describes the ACTIVE week: starters → instance key, the rest
       -- (not on IR) → 'bn'. Counts asserted against the roster.
@@ -1100,11 +1162,17 @@ BEGIN
       'ir_ineligible', v_flags_irin),
     'locked_at',              v_locked_at,
     'edited_by_commish',      NOT v_is_manager,
+    'reason',                 v_reason,
+    'system_post',            v_message,
     'evaluated_at',           p_at,
     'week_datum', jsonb_build_object(
       'first_kickoff_at', v_window.first_kickoff_at,
       'datum_arm',        v_window.datum_arm,
-      'kicked_off',       NOT v_window.free)
+      'kicked_off',       NOT v_window.free),
+    'current_week_datum', jsonb_build_object(
+      'first_kickoff_at', v_window_cur.first_kickoff_at,
+      'datum_arm',        v_window_cur.datum_arm,
+      'kicked_off',       NOT v_window_cur.free)
   );
 
   INSERT INTO public.lineup_actions (league_id, team_id, action_id, actor_id, result)
@@ -1113,7 +1181,7 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION set_lineup_internal(UUID, UUID, INTEGER, JSONB, UUID, TIMESTAMPTZ)
+REVOKE EXECUTE ON FUNCTION set_lineup_internal(UUID, UUID, INTEGER, JSONB, UUID, TIMESTAMPTZ, TEXT)
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1126,14 +1194,15 @@ CREATE OR REPLACE FUNCTION set_lineup(
   p_team_id   UUID,
   p_week      INTEGER,
   p_slot_map  JSONB,
-  p_action_id UUID DEFAULT NULL   -- REQUIRED in-body (22023); DEFAULT NULL only so the sketch's order is kept
+  p_action_id UUID DEFAULT NULL,  -- REQUIRED in-body (22023); DEFAULT NULL only so the sketch's order is kept
+  p_reason    TEXT DEFAULT NULL   -- REQUIRED in-body for a non-manager actor (the commissioner arm — R738/D290)
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  RETURN public.set_lineup_internal(p_league_id, p_team_id, p_week, p_slot_map, p_action_id, now());
+  RETURN public.set_lineup_internal(p_league_id, p_team_id, p_week, p_slot_map, p_action_id, now(), p_reason);
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION set_lineup(UUID, UUID, INTEGER, JSONB, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION set_lineup(UUID, UUID, INTEGER, JSONB, UUID, TEXT) FROM PUBLIC, anon;

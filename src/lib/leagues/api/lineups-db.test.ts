@@ -435,7 +435,17 @@ describe('set_lineup over PostgREST — the manager, the lock, the swap', () => 
     expect(outsiderError?.message).toBe('set_lineup: not a manager of this team')
 
     // The commissioner edits an unlocked slot (te:0 → empty is a change) under
-    // the same lock law; the row records edited_by_commish = TRUE.
+    // the same lock law; without a reason it is refused (R738), with one the
+    // row records edited_by_commish = TRUE.
+    const { error: noReason } = await commishClient.rpc('set_lineup', {
+      p_league_id: leagueId,
+      p_team_id: managerTeamId,
+      p_week: 1,
+      p_slot_map: omit(before, 'te:0'),
+      p_action_id: ACTION.commish,
+    })
+    expect(noReason?.code).toBe('22023')
+    expect(noReason?.message).toContain('must give a reason')
     const next = omit(before, 'te:0')
     const { data, error } = await commishClient.rpc('set_lineup', {
       p_league_id: leagueId,
@@ -443,9 +453,19 @@ describe('set_lineup over PostgREST — the manager, the lock, the swap', () => 
       p_week: 1,
       p_slot_map: next,
       p_action_id: ACTION.commish,
+      p_reason: 'manager on vacation',
     })
     expect(error).toBeNull()
     expect((data as unknown as SetLineupResult).edited_by_commish).toBe(true)
+    // R738: the D97 in-txn system post carries the reason.
+    const { data: posts } = await service
+      .from('league_chat')
+      .select('message')
+      .eq('league_id', leagueId)
+      .eq('is_system', true)
+    expect(posts?.map((row) => row.message)).toStrictEqual([
+      `Week 1 lineup for Manager Team set by ${COMMISH.username} (commissioner) — reason: manager on vacation`,
+    ])
     const { data: row } = await service
       .from('team_lineups')
       .select('edited_by_commish')
