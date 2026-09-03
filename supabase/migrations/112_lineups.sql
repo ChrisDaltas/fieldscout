@@ -120,7 +120,10 @@
 --     kickoff (the `schedule_window_internal` datum for that week); after it
 --     ANY change refuses (an identical submit is `no_changes`, never a
 --     refusal — under BOTH `allow_illegal_lineups` settings: a starter ruled
---     OUT after the lock is not the manager's to change, R739).
+--     OUT after the lock is not the manager's to change, R739 — and once the
+--     week is locked EVERY submitted player is a fixed vertex of the fit, so
+--     a mid-week position relisting neither re-seats nor unseats a locked
+--     starter, R744).
 --   * AT the kickoff instant the slot is locked (closed interval on the
 --     kickoff side, the E41 convention: "until" is strictly before).
 --   * IR moves respect lock timing for the CURRENT week (below) — under BOTH
@@ -137,7 +140,9 @@
 --     lineups; production has both once L.D2.1/L.D2.3 run.
 --   * A LOCKED placement is a FACT: `lineup_fit_internal` seeds a fixed
 --     player at his stored slot unconditionally, so a mid-week position
---     relisting cannot make the matcher move him (R737).
+--     relisting cannot make the matcher move him (R737) — in BOTH modes: a
+--     player is fixed when his own kickoff has passed (per_player_kickoff)
+--     or when the whole week is locked (first_game_of_week — R744).
 --
 -- THE CURRENT WEEK (for IR tenure and `slot_key` maintenance).
 --   `lineup_current_week_internal(league, at)` = the league's greatest
@@ -199,7 +204,10 @@
 --   §12; the D290 interim audit posture — R738). A commissioner may set ANY
 --   team's lineup through this verb under the SAME lock law as the manager
 --   (no past-lock edit, no past-week edit). An actor who is not the team's
---   manager MUST give `p_reason` (22023 by name otherwise), a real change
+--   manager MUST give `p_reason` — non-blank after trimming spaces, tabs,
+--   CR and LF (R745), at most 500 characters (the client chat policy's
+--   bound; the DEFINER post bypasses that policy and `league_chat.message`
+--   has no CHECK, R746) — 22023 by name otherwise; a real change
 --   posts the D97 in-txn `league_chat` system message carrying the reason
 --   ("Week N lineup for <team> set by <actor> (commissioner) — reason: …"),
 --   and the row records `edited_by_commish = TRUE`. F40's control list
@@ -572,6 +580,12 @@ REVOKE EXECUTE ON FUNCTION lineup_fit_internal(JSONB, JSONB) FROM PUBLIC, anon, 
 -- ---------------------------------------------------------------------------
 -- 8. set_lineup_internal — the body, at an injected instant (the test seam)
 -- ---------------------------------------------------------------------------
+-- R747: the #253 fix rounds amended the signatures IN PLACE (unreleased
+-- chain); a stack that applied e0518bd's shapes must not keep them as
+-- overloads (an ambiguous 5-arg call). The 110 DROP-then-CREATE shape.
+DROP FUNCTION IF EXISTS set_lineup_internal(UUID, UUID, INTEGER, JSONB, UUID, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS set_lineup(UUID, UUID, INTEGER, JSONB, UUID);
+
 CREATE OR REPLACE FUNCTION set_lineup_internal(
   p_league_id UUID,
   p_team_id   UUID,
@@ -736,10 +750,19 @@ BEGIN
   -- an actor who is not this team's manager must give a reason, and a real
   -- change posts the in-txn system message below. The manager's own set
   -- needs neither.
-  v_reason := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  -- Blank = nothing but whitespace INCLUDING tabs/newlines (R745 — btrim's
+  -- default strips spaces only); bounded at 500 characters, the client
+  -- chat policy's own bound, so the system post stays bounded (R746).
+  v_reason := NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), '');
   IF NOT v_is_manager AND v_reason IS NULL THEN
     RAISE EXCEPTION
       'set_lineup: a commissioner setting another team''s lineup must give a reason (the D290 interim audit posture — the reason is posted to league chat; F40)'
+      USING ERRCODE = '22023';
+  END IF;
+  IF char_length(v_reason) > 500 THEN
+    RAISE EXCEPTION
+      'set_lineup: the reason is % characters — at most 500 (the league_chat bound; §12.13)',
+      char_length(v_reason)
       USING ERRCODE = '22023';
   END IF;
 
@@ -905,9 +928,15 @@ BEGIN
   INTO v_fit_players
   FROM (
     SELECT e.key, e.value #>> '{}' AS pid, e.ord,
-           (v_mode = 'per_player_kickoff'
-            AND (v_kick -> (e.value #>> '{}') ->> 'kickoff_at') IS NOT NULL
-            AND (v_kick -> (e.value #>> '{}') ->> 'kickoff_at')::timestamptz <= p_at) AS fixed
+           -- fixed = locked: the player's own kickoff has passed (per_player_
+           -- kickoff) OR the whole week is locked (first_game_of_week — R744:
+           -- every submitted player is then a fixed vertex, so a mid-week
+           -- relisting cannot re-seat or unseat a locked starter; a changed
+           -- map is refused by the week lock right after the fit).
+           ((v_mode = 'per_player_kickoff'
+             AND (v_kick -> (e.value #>> '{}') ->> 'kickoff_at') IS NOT NULL
+             AND (v_kick -> (e.value #>> '{}') ->> 'kickoff_at')::timestamptz <= p_at)
+            OR v_week_locked) AS fixed
     FROM jsonb_each(p_slot_map) WITH ORDINALITY AS e(key, value, ord)
     WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_ir_spots) s WHERE s ->> 'key' = e.key)
   ) x;

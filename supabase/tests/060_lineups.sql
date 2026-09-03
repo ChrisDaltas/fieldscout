@@ -93,7 +93,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(151);
+select plan(158);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — §12.13 columns, the policy swap, the ledger, the functions,
@@ -132,6 +132,10 @@ select is(
      and p.proname in ('team_league_id', 'lineup_designation_internal', 'lineup_current_week_internal',
                        'lineup_kickoff_internal', 'lineup_fit_internal', 'set_lineup_internal', 'set_lineup')),
   7, 'the seven 112 functions exist');
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname in ('set_lineup', 'set_lineup_internal')),
+  2, 'R747: exactly ONE overload each of set_lineup / set_lineup_internal — the pre-fix-round shapes are DROPPED, not kept beside the new ones');
 select ok(
   (select p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -843,6 +847,17 @@ select throws_ok(
        '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
        'a3000000-0000-4000-8000-000000000023', '   ') $$,
   '22023', null, 'R738: a blank reason is no reason');
+select throws_ok(
+  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000023', E' \t\n ') $$,
+  '22023', null, 'R745: a tab/newline-only reason is blank too (btrim strips spaces only by default)');
+select throws_like(
+  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000023', repeat('x', 501)) $$,
+  '%the reason is 501 characters — at most 500%',
+  'R746: a 501-character reason is refused by name (the DEFINER post bypasses the 500-char client policy)');
 select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 0,
   'R738: nothing posted by the refusals');
 select set_config('pgtap.lu_rh', public.set_lineup(
@@ -853,6 +868,11 @@ select is((select string_agg(message, '|') from league_chat where league_id = 'b
   'Week 3 lineup for LU T2 set by lu_user1 (commissioner) — reason: manager on vacation',
   'R738: the D97 in-txn system post carries the week, the team, the actor and the reason (pinned by content)');
 select is(current_setting('pgtap.lu_rh')::jsonb ->> 'reason', 'manager on vacation', 'R738: the result echoes the reason');
+select lives_ok(
+  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+       'a3000000-0000-4000-8000-000000000029', repeat('x', 500)) $$,
+  'R746: exactly 500 characters is accepted (the one-unit positive; an identical map ⇒ no_changes, nothing posted)');
 select is((current_setting('pgtap.lu_rh')::jsonb ->> 'edited_by_commish')::boolean, true,
   'H the COMMISSIONER sets another team''s lineup under the same lock law — edited_by_commish = TRUE in the result');
 select is((select edited_by_commish from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3), true,
@@ -939,6 +959,22 @@ select is((public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c
        '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000036', now()) ->> 'no_changes')::boolean,
   true, 'R739: under the week lock with allow_illegal FALSE, a starter ruled OUT after the lock still makes an identical resubmit no_changes');
 update players set status = 'Active' where id = 'lu-s-rb';
+-- R744: under the week lock EVERY submitted player is a fixed vertex — a
+-- locked starter relisted mid-week (QB → RB, then → K: no eligible slot at
+-- all) is neither re-seated nor unplaceable; an identical resubmit is
+-- no_changes and the stored map is byte-unchanged.
+select set_config('pgtap.lu_s_map', (select slot_map::text from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000011' and week = 3), true);
+update players set position = 'RB' where id = 'lu-s-qb';
+select is((public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
+       current_setting('pgtap.lu_s_map')::jsonb, 'a3000000-0000-4000-8000-000000000039', now()) ->> 'no_changes')::boolean,
+  true, 'R744: first_game_of_week, week locked — the QB relisted RB: an identical resubmit is no_changes (a locked placement is a fact in this mode too)');
+update players set position = 'K' where id = 'lu-s-qb';
+select is((public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
+       current_setting('pgtap.lu_s_map')::jsonb, 'a3000000-0000-4000-8000-000000000040', now()) ->> 'no_changes')::boolean,
+  true, 'R744: …relisted K (no eligible slot anywhere): still no_changes, never "cannot be placed"');
+select is((select slot_map::text from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000011' and week = 3),
+  current_setting('pgtap.lu_s_map'), 'R744: …and the stored map is byte-unchanged');
+update players set position = 'QB' where id = 'lu-s-qb';
 -- R736: IR moves are judged against the CURRENT week under first_game_of_week
 -- too — a FUTURE-week (4) submit cannot stash/free a roster spot after week
 -- 3's first kickoff; one second before it, it can.
