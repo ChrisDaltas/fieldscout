@@ -44,6 +44,19 @@
  * outright. `kind`/`type`/`context` ride on every item so the UI can label
  * today and link later.
  *
+ * **The cursor is COMPOSITE — `(created_at, id)`, never the instant alone
+ * (R770).** The feed orders by `(created_at DESC, id DESC)`, so an instant
+ * alone does not identify a position in it: a `.lt('created_at', T)` next
+ * page drops EVERY item that shares the page-boundary instant T — served on
+ * no page, in either direction, silently. No M4 writer produces such a tie
+ * (each of 111:749, 111:1124 and 112:1141 writes one post per transaction,
+ * and `roster_add_drop` writes one `transactions` row), but the next ones
+ * do: §13.2/§14's waiver processor resolves pending claims ATOMICALLY — N
+ * `transactions` rows on one `now()` — and M6's `commissioner_move` writes a
+ * transactions row and a system post in the same transaction. So the page
+ * boundary is `created_at.lt.T OR (created_at.eq.T AND id.lt.ID)`, the exact
+ * inverse of the sort, and the feed hands back both halves.
+ *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**` ESLint
  * fences): the cursor is the caller's, the ordering is the database's.
  */
@@ -94,9 +107,22 @@ export const activityQuerySchema = z.strictObject({
   week: z.coerce.number().int().min(1).max(18).optional(),
   team_id: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(ACTIVITY_MAX_LIMIT).default(ACTIVITY_DEFAULT_LIMIT),
-  /** Cursor: return only items strictly OLDER than this instant. */
+  /** Cursor, half 1: the boundary instant. Alone it means "strictly older
+   *  than this instant" — a well-defined filter, but NOT a page boundary. */
   before: z.iso.datetime({ offset: true }).optional(),
+  /** Cursor, half 2: the boundary item's id (R770). With `before` it means
+   *  "older than the instant, OR at the instant with a smaller id" — the
+   *  exact inverse of the `(created_at DESC, id DESC)` sort, so an item
+   *  sharing the boundary instant is served exactly once instead of never. */
+  before_id: z.uuid().optional(),
 })
+  .refine((query) => query.before !== undefined || query.before_id === undefined, {
+    // A `before_id` with no `before` is not a narrower cursor, it is a
+    // MEANINGLESS one — and silently ignoring it would page as if the caller
+    // had asked for the whole feed. Refuse it by name.
+    message: 'before_id needs the before instant it belongs to.',
+    path: ['before_id'],
+  })
 export type ActivityQuery = z.input<typeof activityQuerySchema>
 
 export interface TransactionActivityItem {
@@ -129,6 +155,9 @@ export interface ActivityFeed {
   has_more: boolean
   /** Pass back as `before` for the next page; null when the feed is done. */
   next_before: string | null
+  /** Pass back as `before_id` ALONGSIDE `next_before` (R770). Both halves or
+   *  neither: the instant alone drops every item that shares it. */
+  next_before_id: string | null
 }
 
 /** Sort key: newest first, id as the deterministic tie-break. A NULL
@@ -162,12 +191,34 @@ export function mergeActivity(
   })
   const items = merged.slice(0, limit)
   const last = items[items.length - 1]
+  const hasMore = merged.length > limit
   return {
     items,
     limit,
-    has_more: merged.length > limit,
-    next_before: merged.length > limit ? (last?.created_at ?? null) : null,
+    has_more: hasMore,
+    next_before: hasMore ? (last?.created_at ?? null) : null,
+    // The id half travels WITH the instant — a next page built from
+    // `next_before` alone would drop every item sharing that instant (R770).
+    next_before_id: hasMore ? (last?.id ?? null) : null,
   }
+}
+
+/**
+ * The page-boundary filter, as PostgREST spells it (R770) — exported so the
+ * string itself is pinnable rather than inferred from a green page.
+ *
+ * `created_at.lt.T OR (created_at.eq.T AND id.lt.ID)` is the exact inverse of
+ * the `(created_at DESC, id DESC)` sort, so the item AT the boundary is
+ * excluded (it was the last item of the previous page) and every OTHER item
+ * sharing its instant is included. Values are double-quoted because a
+ * timestamptz carries `.`, `:` and `+`, all of which are structural in a
+ * PostgREST filter string.
+ *
+ * Both source queries carry it identically — the two streams must cut at the
+ * SAME boundary or the merge would page one of them out of step.
+ */
+export function activityCursorFilter(before: string, beforeId: string): string {
+  return `created_at.lt."${before}",and(created_at.eq."${before}",id.lt."${beforeId}")`
 }
 
 /**
@@ -182,7 +233,7 @@ export async function readActivity(
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  const { kind, type, week, team_id, limit, before } = parsed.data
+  const { kind, type, week, team_id, limit, before, before_id } = parsed.data
   // Over-fetch by one PER SOURCE — that extra row is what makes `has_more`
   // a measurement instead of a guess.
   const fetchLimit = limit + 1
@@ -199,7 +250,14 @@ export async function readActivity(
     if (type) query = query.in('type', type)
     if (week !== undefined) query = query.eq('week', week)
     if (team_id) query = query.eq('initiator_team_id', team_id)
-    if (before) query = query.lt('created_at', before)
+    if (before) {
+      // Both halves = a page boundary; the instant alone = a plain "older
+      // than T" filter, which is well defined but never what a next page
+      // should send (R770).
+      query = before_id
+        ? query.or(activityCursorFilter(before, before_id))
+        : query.lt('created_at', before)
+    }
 
     const { data, error } = await query
     if (error) {
@@ -235,7 +293,11 @@ export async function readActivity(
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(fetchLimit)
-    if (before) query = query.lt('created_at', before)
+    if (before) {
+      query = before_id
+        ? query.or(activityCursorFilter(before, before_id))
+        : query.lt('created_at', before)
+    }
 
     const { data, error } = await query
     if (error) {

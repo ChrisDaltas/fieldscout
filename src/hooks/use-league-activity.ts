@@ -5,8 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { ActivityFeed } from '@/lib/leagues/api/activity-service'
 
-import { useLeagueChannel } from './use-league-channel'
-import { activityEventInvalidates } from './use-league-channel-ops'
+import { useLeagueChannel, type LeagueChannelHandlers } from './use-league-channel'
+import { LEAGUE_CHANNEL_EVENTS, activityEventInvalidates } from './use-league-channel-ops'
 
 /**
  * The league Activity feed — M4 task L.D4.2 (spec §15.3/§13.4; PROGRESS
@@ -27,8 +27,13 @@ import { activityEventInvalidates } from './use-league-channel-ops'
  * `transactions` (117/L.D1.9) and `league_chat` (070, LIVE TODAY — the D97
  * in-transaction system posts that 111's Remix confirm and 112's
  * commissioner lineup edit write) are the two invalidating events; a score
- * tick (`matchups`) deliberately does NOT re-fetch this list. The decision
- * is the pure `activityEventInvalidates` so it is pinned, not implied.
+ * tick (`matchups`) deliberately does NOT re-fetch this list. **The handler
+ * map is DERIVED from that decision, not hand-listed beside it (R773):**
+ * the map is `LEAGUE_CHANNEL_EVENTS` filtered through the pure
+ * `activityEventInvalidates`, so the predicate SELECTS which events the feed
+ * listens to instead of decorating handlers that only exist for the events
+ * it would have admitted anyway. Widen the predicate and the feed really
+ * does start refetching on score ticks; narrow it and it really does stop.
  *
  * Every confirmed (re)join refetches (§9.3's missed-broadcast recovery), so
  * an open feed heals itself across a reconnect without depending on the
@@ -44,8 +49,12 @@ export interface ActivityFilters {
   week?: number
   teamId?: string
   limit?: number
-  /** ISO cursor — items strictly older than this instant. */
+  /** Cursor half 1 — the boundary instant (`next_before`). */
   before?: string
+  /** Cursor half 2 — the boundary item's id (`next_before_id`). Send BOTH
+   *  halves for a next page: the instant alone drops every item that shares
+   *  it (R770). */
+  beforeId?: string
 }
 
 export const leagueActivityKeys = {
@@ -65,6 +74,9 @@ export function activitySearchParams(filters: ActivityFilters): string {
   if (filters.teamId) params.set('team_id', filters.teamId)
   if (filters.limit !== undefined) params.set('limit', String(filters.limit))
   if (filters.before) params.set('before', filters.before)
+  // The id half only travels with its instant — the service refuses a lone
+  // `before_id` by name rather than paging as if no cursor were sent.
+  if (filters.before && filters.beforeId) params.set('before_id', filters.beforeId)
   const query = params.toString()
   return query ? `?${query}` : ''
 }
@@ -102,18 +114,19 @@ export function useLeagueActivityFeed(
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
   }
 
+  // R773: the map is DERIVED from the pure decision, so the predicate is
+  // load-bearing — an event it rejects gets no handler at all, and the spine
+  // dispatches nothing for it. (Previously the two handlers were hand-listed
+  // and each called the predicate on its own literal, a guard that could not
+  // fail — D272(20)'s rule against a probe that cannot fail.)
+  const handlers: LeagueChannelHandlers = {}
+  for (const event of LEAGUE_CHANNEL_EVENTS.filter(activityEventInvalidates)) {
+    handlers[event] = invalidate
+  }
+
   const { connection } = useLeagueChannel(
     leagueId,
-    {
-      // The two invalidating events, gated on the PURE decision so the
-      // "unknown/uninteresting events are inert" rule is pinnable.
-      transactions: () => {
-        if (activityEventInvalidates('transactions')) invalidate()
-      },
-      league_chat: () => {
-        if (activityEventInvalidates('league_chat')) invalidate()
-      },
-    },
+    handlers,
     {
       // §9.3: never depend on missed broadcasts — reconcile on every
       // confirmed (re)join, and refetch FIRST when a join fails.

@@ -47,6 +47,7 @@ const ROUTES = [
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
 const TRANSACTIONS_SERVICE = 'src/lib/leagues/api/transactions-service.ts'
 const ERRORS = 'src/lib/leagues/api/inseason-errors.ts'
+const IDS = 'src/lib/leagues/api/inseason-ids.ts'
 
 /** File text with block comments and `//` lines removed, so a docblock that
  *  merely MENTIONS a guard cannot satisfy a pin about the code. */
@@ -192,5 +193,40 @@ describe('the in-season SQLSTATE mapping is one shared helper (F224(e)/F227(f))'
       expect(source, rel).toContain("import { mapInSeasonRpcError } from './inseason-errors'")
       expect(source, rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R768 — the family's wire uuids are normalised where an IDENTITY GUARD reads
+// them back. L.D4.1's lineup route inherits this with the SQLSTATE mapper.
+// ---------------------------------------------------------------------------
+
+describe('the F65(b) guards compare against what Postgres wrote (R768)', () => {
+  it('the shared schema lower-cases, because `z.uuid()` does not', () => {
+    const ids = code(IDS)
+    expect(ids).toContain('z.uuid().transform((value) => value.toLowerCase())')
+  })
+
+  it('BOTH verbs take their guarded ids through it — never a bare z.uuid()', () => {
+    // The failure this prevents: an UPPERCASE uuid (which `z.uuid()` accepts)
+    // reaches the RPC, the move COMMITS, and the byte-for-byte guard then
+    // answers 409 "that didn't go through" — with the action_id spent.
+    const transactions = code(TRANSACTIONS_SERVICE)
+    expect(transactions).toContain('team_id: normalizedUuid,')
+    expect(transactions).toContain('action_id: normalizedUuid,')
+    expect(transactions).not.toMatch(/(team_id|action_id): z\.uuid\(\)/)
+
+    const schedule = code(SCHEDULE_SERVICE)
+    expect(schedule).toContain('action_id: normalizedUuid,')
+    expect(schedule).not.toMatch(/action_id: z\.uuid\(\)/)
+  })
+
+  it('the guards still compare identity — normalising is not a way past them', () => {
+    // Each verb must still refuse a reused id that names a different
+    // move/seed; the stack suites walk both live.
+    expect(code(TRANSACTIONS_SERVICE)).toContain('result.action_id !== action_id ||')
+    expect(code(SCHEDULE_SERVICE)).toContain(
+      'if (result.action_id !== action_id || Number(result.schedule_seed) !== seed) {',
+    )
   })
 })

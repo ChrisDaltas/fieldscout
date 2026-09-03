@@ -24,7 +24,6 @@ import {
   LEAGUE_CHANNEL_EVENTS,
   LEAGUE_CHANNEL_MAX_REOPEN_MS,
   activityEventInvalidates,
-  isLeagueChannelEvent,
   leagueChannelRegistryTopic,
   leagueChannelTopic,
   reopenDelayMs,
@@ -70,10 +69,14 @@ describe('the event set is CLOSED and unknown events are inert (M2 forward-compa
     ])
   })
 
-  it('never claims an event it does not know', () => {
-    for (const event of LEAGUE_CHANNEL_EVENTS) expect(isLeagueChannelEvent(event)).toBe(true)
+  it('never claims an event it does not know — including a case variant', () => {
+    // R773 deleted the `isLeagueChannelEvent` type guard (the spine called it
+    // on a value drawn from this very constant — a check that could not
+    // fail). The claim it carried lives here instead, on the constant: the
+    // set is exactly the six above, and the names are the WIRE names 070
+    // sends, case included.
     for (const stranger of ['waiver_claims', 'draft_bids', 'player_stats', '', 'TRANSACTIONS']) {
-      expect(isLeagueChannelEvent(stranger), stranger).toBe(false)
+      expect([...LEAGUE_CHANNEL_EVENTS] as string[], stranger).not.toContain(stranger)
     }
   })
 
@@ -85,6 +88,19 @@ describe('the event set is CLOSED and unknown events are inert (M2 forward-compa
 })
 
 describe('which events make the ACTIVITY feed stale (D298)', () => {
+  it('SELECTS the handler map the feed installs — the derivation, not a description', () => {
+    // R773: `use-league-activity` builds its map as
+    // LEAGUE_CHANNEL_EVENTS.filter(activityEventInvalidates), so this is the
+    // exact set of events that gets a handler. Reproduced here so the
+    // derivation itself is asserted, not just its two inputs.
+    // In LEAGUE_CHANNEL_EVENTS' own order, which is the order the handlers
+    // are installed in.
+    expect(LEAGUE_CHANNEL_EVENTS.filter(activityEventInvalidates)).toEqual([
+      'league_chat',
+      'transactions',
+    ])
+  })
+
   it('the feed refetches on its two carriers and NOTHING else', () => {
     expect([...ACTIVITY_INVALIDATING_EVENTS]).toEqual(['transactions', 'league_chat'])
     expect(activityEventInvalidates('transactions')).toBe(true)
@@ -124,25 +140,42 @@ describe('the spine keeps §9.3 doctrine', () => {
 
   it('opens exactly ONE channel, private, on the ops topic', () => {
     expect((source.match(/\.channel\(/g) ?? []).length).toBe(1)
-    expect(source).toContain('supabase.channel(leagueChannelTopic(leagueId), {')
+    expect(source).toContain('supabase.channel(leagueChannelTopic(room.leagueId), {')
     expect(source).toContain('config: { private: true }')
+  })
+
+  it('holds that channel in a MODULE-LEVEL refcounted room, not per hook instance (R769)', () => {
+    // The behavioural proof is `use-league-channel-room.test.ts`; this pins
+    // that the state lives outside the effect, which is what makes it true.
+    expect(source).toContain('const leagueRooms = new Map<string, LeagueRoom>()')
+    expect(source).toContain('room.subscribers.add(subscriber)')
+    expect(source).toContain('held.subscribers.delete(subscriber)')
+    expect(source).toContain('if (held.subscribers.size > 0) return')
+    // …and the hook itself owns no channel: it joins and releases.
+    const hook = source.slice(source.indexOf('export function useLeagueChannel'))
+    expect(hook).not.toContain('.channel(')
+    expect(hook).toContain('return joinLeagueRoom(leagueId, {')
   })
 
   it('registers every known event on that one channel — never a second channel per consumer', () => {
     expect(source).toContain('for (const event of LEAGUE_CHANNEL_EVENTS) {')
     expect(source).toContain("ch.on('broadcast', { event }, ({ payload }) => {")
-    // Dispatch through the ref, so an event with no handler is inert.
-    expect(source).toContain('handlersRef.current[event]?.(')
+    // Dispatch through each subscriber's ref, so an event with no handler is
+    // inert — and every subscriber of the room sees it (R769).
+    expect(source).toContain('for (const subscriber of [...room.subscribers]) {')
+    expect(source).toContain('subscriber.handlers.current[event]?.(envelope)')
   })
 
   it('refetches on EVERY confirmed (re)join (the boot-window + reconnect recovery)', () => {
     expect(source).toContain("if (status === 'SUBSCRIBED') {")
-    expect(source).toContain('onJoinRef.current?.()')
+    expect(source).toContain('for (const subscriber of [...room.subscribers]) subscriber.onJoin?.()')
+    // A late joiner gets the same reconcile: its cache may predate the room.
+    expect(source).toContain("if (room.connection === 'live') subscriber.onJoin?.()")
   })
 
   it('refetches FIRST, then resubscribes, on a failed join (§8.7 reconnect order)', () => {
     const dropArm = source.slice(source.indexOf("status === 'CHANNEL_ERROR'"))
-    expect(dropArm.indexOf('onDropRef.current?.()')).toBeLessThan(dropArm.indexOf('scheduleReopen()'))
+    expect(dropArm.indexOf('subscriber.onDrop?.()')).toBeLessThan(dropArm.indexOf('scheduleReopen(room)'))
   })
 
   it('sweeps a stale registry instance for the topic BEFORE subscribing (D109(9))', () => {
@@ -157,10 +190,11 @@ describe('the spine keeps §9.3 doctrine', () => {
     expect(source).toContain('await supabase.realtime.setAuth(')
   })
 
-  it('unsubscribes on unmount — a leaked league channel is a quota killer', () => {
-    expect(source).toContain('disposed = true')
-    expect(source).toContain('void held.unsubscribe()')
-    expect(source).toContain('void supabase.removeChannel(held)')
+  it('unsubscribes when the LAST subscriber leaves — a leaked league channel is a quota killer', () => {
+    expect(source).toContain('held.disposed = true')
+    expect(source).toContain('void channel.unsubscribe()')
+    expect(source).toContain('void supabase.removeChannel(channel)')
+    expect(source).toContain('leagueRooms.delete(leagueChannelTopic(held.leagueId))')
   })
 
   it('depends only on the league id, so an inline handler map cannot churn the socket', () => {
@@ -177,13 +211,27 @@ describe('the activity feed is the F42 transactions trigger\'s consumer (D296/D2
     expect(source).toContain('useLeagueChannel(')
   })
 
+  it('DERIVES its handler map from the pure decision — no hand-listed events (R773)', () => {
+    expect(source).toContain(
+      'for (const event of LEAGUE_CHANNEL_EVENTS.filter(activityEventInvalidates)) {',
+    )
+    expect(source).toContain('handlers[event] = invalidate')
+    // The shape R773 removed: a handler written out per event, each calling
+    // the predicate on its own literal (a guard that could not fail).
+    expect(source).not.toContain('transactions: () => {')
+    expect(source).not.toContain('league_chat: () => {')
+  })
+
   it('refetches on event rather than patching a column-selected payload', () => {
-    expect(source).toContain('transactions: () => {')
-    expect(source).toContain('league_chat: () => {')
-    expect(source).toContain('activityEventInvalidates(')
     expect(source).toContain('queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })')
     expect(source).toContain('onJoin: invalidate')
     expect(source).toContain('onDrop: invalidate')
+  })
+
+  it('sends BOTH cursor halves or neither (R770)', () => {
+    expect(source).toContain(
+      "if (filters.before && filters.beforeId) params.set('before_id', filters.beforeId)",
+    )
   })
 
   it('sends only the filters the caller SET — an absent filter stays absent', () => {

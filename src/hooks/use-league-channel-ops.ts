@@ -46,18 +46,32 @@ export function leagueChannelRegistryTopic(leagueId: string): string {
   return `realtime:${leagueChannelTopic(leagueId)}`
 }
 
-/**
- * Forward compatibility (the M2 pattern): an event this build does not know
- * is INERT — never a refetch storm, never a thrown handler. A future
- * migration can add a trigger to this topic and an old client simply
- * ignores it.
+/*
+ * Forward compatibility (the M2 pattern) has no runtime helper here, on
+ * purpose. An event this build does not know is INERT **by construction**:
+ * the spine binds only `LEAGUE_CHANNEL_EVENTS` members and every dispatch is
+ * an optional call into a caller's handler map, so an unbound event reaches
+ * nothing and a bound one with no handler does nothing.
+ *
+ * There WAS an `isLeagueChannelEvent(name)` type guard, and the spine called
+ * it on a value it had just drawn from `LEAGUE_CHANNEL_EVENTS` — a check
+ * that could not fail, reading like enforcement. **R773 removed it** under
+ * D272(20) ("a probe that cannot fail is replaced and said"). The constant's
+ * own pins (the exact list, its case-sensitivity, and that no sensitive
+ * table is on it) are what carry the claim now. Re-add a guard only where a
+ * genuinely unknown string can arrive — a wildcard binding, say — and pin it
+ * there.
  */
-export function isLeagueChannelEvent(name: string): name is LeagueChannelEvent {
-  return (LEAGUE_CHANNEL_EVENTS as readonly string[]).includes(name)
-}
 
 /**
  * Which events make the ACTIVITY feed stale (§13.4's M4 slice, D298).
+ *
+ * **Load-bearing, not documentation (R773):** `use-league-activity` BUILDS
+ * its handler map by filtering `LEAGUE_CHANNEL_EVENTS` through
+ * `activityEventInvalidates`, so an event this predicate rejects gets no
+ * handler at all. Add `matchups` here and the feed really does start
+ * refetching on every score tick; remove `transactions` and a completed move
+ * really does stop refreshing the feed.
  *
  * `transactions` is the feed's own carrier (D296 — the F42 trigger's
  * consumer). `league_chat` is the other half of the feed: the D97

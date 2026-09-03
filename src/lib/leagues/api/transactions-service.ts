@@ -41,6 +41,14 @@
  * `draft-service.ts` uses for nominate/bid, minus the seat lookup (113
  * already proved the seat in-body).
  *
+ * **R768 — the guard compares against what POSTGRES wrote.** `team_id` and
+ * `action_id` are lower-cased by the schema before the RPC or the guard sees
+ * them (`inseason-ids.ts`), because `z.uuid()` accepts an UPPERCASE uuid and
+ * Postgres always returns lowercase: without the normalisation an uppercase
+ * submit COMMITTED the move and was then reported to the caller as a 409,
+ * with its `action_id` consumed so the retry could not succeed either. The
+ * guard's strength is untouched — two genuinely different ids still differ.
+ *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**` ESLint
  * fences): the `action_id` is minted per submit by the HOOK
  * (`use-transactions.ts`), the D114(5)/D68(1) precedent.
@@ -51,6 +59,7 @@ import { z } from 'zod'
 import type { Database, Json } from '@/types/database'
 
 import { mapInSeasonRpcError } from './inseason-errors'
+import { normalizedUuid } from './inseason-ids'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -78,10 +87,13 @@ const playerId = z.string().trim().min(1).max(64)
 
 export const addDropInputSchema = z
   .strictObject({
-    team_id: z.uuid(),
+    // Normalised at the schema (R768): the F65(b) guard below compares these
+    // strings against values POSTGRES wrote, and Postgres renders uuids
+    // lowercase while `z.uuid()` accepts either case. See `inseason-ids.ts`.
+    team_id: normalizedUuid,
     add_player_id: playerId.nullish(),
     drop_player_id: playerId.nullish(),
-    action_id: z.uuid(),
+    action_id: normalizedUuid,
   })
   .refine((body) => Boolean(body.add_player_id) || Boolean(body.drop_player_id), {
     message: 'Name a player to add, a player to drop, or both.',

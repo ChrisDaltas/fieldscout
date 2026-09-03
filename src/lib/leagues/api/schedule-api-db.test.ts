@@ -20,7 +20,9 @@
  * Plus: the auth matrix (a member who is not the commissioner, and an
  * outsider, share one no-leak 403), the `action_id` round trip (a replay of
  * the same submit is byte-identical; a REUSE for a different seed is refused
- * rather than answered 200 with someone else's schedule), the P0001 → 409
+ * rather than answered 200 with someone else's schedule — **and both of
+ * those hold when the caller sends the uuid UPPERCASE**, which `z.uuid()`
+ * accepts and Postgres never returns, R768), the P0001 → 409
  * mapping with the RPC's copy verbatim, and the D97 system post the confirm
  * writes showing up in the activity feed (§13.4's other half).
  *
@@ -93,7 +95,12 @@ const ACTION = {
   member: 'af800000-0000-4000-8000-000000000013',
   outsider: 'af800000-0000-4000-8000-000000000014',
   forged: 'af800000-0000-4000-8000-000000000015',
+  /** R768's fixture: sent UPPERCASE on the wire. */
+  upperConfirm: 'af800000-0000-4000-8000-000000000016',
 } as const
+
+/** A third seed, for the uppercase FRESH confirm at the end of the file. */
+const UPPER_SEED = 20990331
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -545,5 +552,81 @@ describe('the Remix shows up in the activity feed', () => {
   it('an OUTSIDER reads nothing', async () => {
     const result = await readActivity(outsiderClient, leagueId, {})
     expect((result.body as unknown as { items: unknown[] }).items).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6. R768 — an UPPERCASE action_id is the SAME confirm, not a spent one.
+//    (Last in the file on purpose: the fresh confirm rewrites the season and
+//    writes a second system post.)
+// ---------------------------------------------------------------------------
+
+describe('the confirm\'s replay guard compares against what POSTGRES wrote (R768)', () => {
+  it('an uppercase REPLAY answers 200 with the stored result, not 409 for a remix already applied', async () => {
+    // `z.uuid()` is case-insensitive, so this body is valid; 111 accepts it
+    // (Postgres parses either case) and replays; and the guard then compared
+    // 'AF80…' to the stored 'af80…' and answered 409 "That didn't go
+    // through — preview it again" for a remix that HAD been applied, with
+    // the action_id spent so the retry the copy asks for could not work.
+    const { data: stored } = await service
+      .from('schedule_actions')
+      .select('result')
+      .eq('league_id', leagueId)
+      .eq('action_id', ACTION.confirm)
+      .single()
+
+    const upper = await confirmRemix(commishClient, leagueId, {
+      seed: REMIX_SEED,
+      action_id: ACTION.confirm.toUpperCase(),
+    })
+    expect(upper.status).toBe(200)
+    expect(JSON.stringify(upper.body)).toBe(JSON.stringify(stored!.result))
+
+    const { count } = await service
+      .from('schedule_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+    expect(count).toBe(1) // the replay wrote nothing
+  })
+
+  it('and the guard KEEPS its teeth: the uppercase id at a DIFFERENT seed is still 409', async () => {
+    const result = await confirmRemix(commishClient, leagueId, {
+      seed: OTHER_SEED,
+      action_id: ACTION.confirm.toUpperCase(),
+    })
+    expect(result.status).toBe(409)
+    expect((result.body as unknown as Refusal).error).toBe(SCHEDULE_ACTION_ID_REUSED_MESSAGE)
+    const { data: league } = await service
+      .from('leagues')
+      .select('settings')
+      .eq('id', leagueId)
+      .single()
+    expect((league!.settings as Record<string, unknown>).schedule_seed).toBe(REMIX_SEED)
+  })
+
+  it('an uppercase FRESH confirm APPLIES and is reported as the remix it was', async () => {
+    const result = await confirmRemix(commishClient, leagueId, {
+      seed: UPPER_SEED,
+      action_id: ACTION.upperConfirm.toUpperCase(),
+    })
+    expect(result.status).toBe(200)
+    const body = result.body as Record<string, unknown>
+    expect(Number(body.schedule_seed)).toBe(UPPER_SEED)
+    expect(body.action_id).toBe(ACTION.upperConfirm) // normalised on the way in
+
+    // 111 stored it under the LOWERCASE id, so a lowercase retry of the same
+    // gesture replays rather than remixing the season a second time.
+    const { count } = await service
+      .from('schedule_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_id', ACTION.upperConfirm)
+    expect(count).toBe(1)
+    const { data: league } = await service
+      .from('leagues')
+      .select('settings')
+      .eq('id', leagueId)
+      .single()
+    expect((league!.settings as Record<string, unknown>).schedule_seed).toBe(UPPER_SEED)
   })
 })

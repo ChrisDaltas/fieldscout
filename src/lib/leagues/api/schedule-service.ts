@@ -14,7 +14,10 @@
  * bodies are `strictObject`s for that reason: an unrecognized key is a 400,
  * not something quietly dropped on the way to an RPC that would have ignored
  * it anyway. (This is the L.D4.2 DoD's break probe: relax the strictness and
- * the pins in `schedule-routes.test.ts` + `schedule-api-db.test.ts` go red.)
+ * the pins in `inseason-routes.test.ts` + `schedule-api-db.test.ts` go red.
+ * R771: this line named `schedule-routes.test.ts`, which does not exist —
+ * the handler pins live in `inseason-routes.test.ts` with the other three
+ * routes'.)
  *
  * Preview → confirm is a two-call round trip over the SAME seed, held by the
  * client between the calls: the commissioner sees `diff`/`weeks_frozen`/
@@ -26,6 +29,12 @@
  * `reason` is required only outside it — so this layer accepts `reason`
  * optionally and lets the RPC decide, rather than mirroring a rule it cannot
  * evaluate correctly (D307). The refusal names what is needed.
+ *
+ * The `action_id` is lower-cased at the schema (R768, `inseason-ids.ts`):
+ * the replay guard below compares it against the value 111 STORED, which
+ * Postgres renders lowercase, while `z.uuid()` accepts either case. Without
+ * the normalisation an uppercase confirm applied the remix and was then
+ * reported to the commissioner as a 409, its `action_id` spent.
  *
  * `action_id` is REQUIRED on the wire even though 111's signature defaults it
  * (Postgres forbids a default before a non-default — D307): the RPC requires
@@ -44,6 +53,7 @@ import type { Database, Json } from '@/types/database'
 
 import { SCHEDULE_SEED_MAX } from '../settings/league-settings'
 import { mapInSeasonRpcError } from './inseason-errors'
+import { normalizedUuid } from './inseason-ids'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -81,7 +91,7 @@ export type PreviewRemixInput = z.infer<typeof previewRemixInputSchema>
 export const confirmRemixInputSchema = z.strictObject({
   seed: scheduleSeed,
   reason: z.string().trim().max(500).nullish(),
-  action_id: z.uuid(),
+  action_id: normalizedUuid,
 })
 export type ConfirmRemixInput = z.infer<typeof confirmRemixInputSchema>
 

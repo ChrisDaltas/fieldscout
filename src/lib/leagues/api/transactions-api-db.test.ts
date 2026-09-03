@@ -18,7 +18,9 @@
  *   - the SQLSTATE → HTTP contract (42501 → 403 · P0001 → 409 · 22023 → 400);
  *   - the `action_id` round trip: a replay of the SAME submit is
  *     byte-identical, and a REUSE of the id for a different move is refused
- *     rather than answered 200 with a move the caller never made (F65(b));
+ *     rather than answered 200 with a move the caller never made (F65(b)) —
+ *     **including when the caller sends the uuids UPPERCASE**, which
+ *     `z.uuid()` accepts and Postgres never returns (R768);
  *   - **the F227(f) render duties**: `drop.lineups[]` entries are `{week,
  *     slot}` and only that, with `slot: null` for a bench-only touch (R758),
  *     no `kept_in_locked_lineup` key anywhere (R760), and
@@ -110,7 +112,21 @@ const ACTION = {
   commish: 'af700000-0000-4000-8000-000000000018',
   fellow: 'af700000-0000-4000-8000-000000000019',
   addP3: 'af700000-0000-4000-8000-00000000001a',
+  /** R768's fixture: sent UPPERCASE on the wire. */
+  upperReuse: 'af700000-0000-4000-8000-00000000001c',
 } as const
+
+/** Two system posts written at ONE instant — R770's paging fixture. The
+ *  literal is the form Postgres RENDERS (trailing zeros trimmed from the
+ *  fractional second), because the cursor the feed hands back is the value it
+ *  read, not the value this file wrote. The fraction is deliberate: `.` is
+ *  structural in a PostgREST filter string, so a timestamp carrying one is
+ *  the case the quoting has to survive. */
+const TIE_INSTANT = '2098-06-01T12:00:00.5+00:00'
+const TIE_POSTS = [
+  { id: 'af700000-0000-4000-8000-0000000000a1', message: 'Tie post A (older id)' },
+  { id: 'af700000-0000-4000-8000-0000000000a2', message: 'Tie post B (newer id)' },
+] as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -584,5 +600,166 @@ describe('GET …/activity — §13.4\'s M4 slice', () => {
   it('refuses a malformed filter instead of quietly widening the feed', async () => {
     const result = await readActivity(managerAClient, leagueId, { type: 'promotion' })
     expect(result.status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6. R768 — an UPPERCASE uuid is the SAME move, never a committed move
+//    reported to the caller as a failure.
+// ---------------------------------------------------------------------------
+
+describe('the F65(b) guard compares against what POSTGRES wrote (R768)', () => {
+  it('an uppercase REPLAY of a committed move answers 200, not 409 with the move already made', async () => {
+    // The bug, exactly: `z.uuid()` is case-insensitive, so this body is
+    // valid; the RPC accepts it (Postgres parses either case) and replays;
+    // and the guard then compared 'AF70…' to the returned 'af70…', found
+    // them different, and answered 409 "That didn't go through" for a move
+    // that HAD gone through — with the action_id spent, so the retry the
+    // copy asks for cannot succeed either. That is CLAUDE.md's "never let
+    // 'nothing happened' mean 'it worked'" run in reverse.
+    const upper = await submitAddDrop(managerAClient, leagueId, {
+      team_id: teamAId.toUpperCase(),
+      add_player_id: P1,
+      action_id: ACTION.addP1.toUpperCase(),
+    })
+    expect(upper.status).toBe(200)
+    const body = upper.body as Record<string, unknown>
+    expect(body.action_id).toBe(ACTION.addP1) // normalised on the way in
+    expect(body.team_id).toBe(teamAId)
+    expect(body.add_player_id).toBe(P1)
+
+    // Still ONE row for that action_id — the replay wrote nothing.
+    const { count, error } = await service
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_id', ACTION.addP1)
+    if (error) throw new Error(`transactions count: ${error.message}`)
+    expect(count).toBe(1)
+  })
+
+  it('an uppercase FRESH move commits and is REPORTED as the move it was', async () => {
+    const result = await submitAddDrop(managerAClient, leagueId, {
+      team_id: teamAId.toUpperCase(),
+      add_player_id: P3,
+      action_id: ACTION.addP3.toUpperCase(),
+    })
+    expect(result.status).toBe(200)
+    const body = result.body as Record<string, unknown>
+    expect(body.add_player_id).toBe(P3)
+    expect(body.action_id).toBe(ACTION.addP3)
+
+    // The normalised id is what 113 stored — so a lowercase retry of the
+    // same gesture still replays rather than making a second move.
+    const { count } = await service
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_id', ACTION.addP3)
+    expect(count).toBe(1)
+    const { data: roster } = await service
+      .from('league_rosters')
+      .select('player_id')
+      .eq('league_id', leagueId)
+      .eq('player_id', P3)
+    expect(roster ?? []).toHaveLength(1)
+  })
+
+  it('and the guard KEEPS its teeth: an uppercase id reused for a DIFFERENT move is still 409', async () => {
+    // The normalisation must not become a way past the guard. Consume a
+    // fresh id on one move…
+    const first = await submitAddDrop(managerAClient, leagueId, {
+      team_id: teamAId,
+      drop_player_id: P3,
+      action_id: ACTION.upperReuse.toUpperCase(),
+    })
+    expect(first.status).toBe(200)
+
+    // …then reuse it, uppercase, for a different one.
+    const reused = await submitAddDrop(managerAClient, leagueId, {
+      team_id: teamAId.toUpperCase(),
+      drop_player_id: P2,
+      action_id: ACTION.upperReuse.toUpperCase(),
+    })
+    expect(reused.status).toBe(409)
+    expect((reused.body as unknown as Refusal).error).toBe(ADD_DROP_ACTION_ID_REUSED_MESSAGE)
+    // …and P2 really is still rostered.
+    const { data: roster } = await service
+      .from('league_rosters')
+      .select('player_id')
+      .eq('league_id', leagueId)
+      .eq('player_id', P2)
+    expect(roster ?? []).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7. R770 — the composite cursor over a SAME-INSTANT pair, on the real wire.
+// ---------------------------------------------------------------------------
+
+describe('paging across a same-instant tie serves every item exactly once (R770)', () => {
+  beforeAll(async () => {
+    // Two league-room system posts at ONE instant — what §13.2/§14's waiver
+    // processor (N claims resolved atomically) and M6's commissioner_move (a
+    // transactions row + a system post in one txn) will produce for real.
+    // Written with an explicit shared `created_at` so the tie is the
+    // fixture, not a race.
+    const { error } = await service.from('league_chat').insert(
+      TIE_POSTS.map((post) => ({
+        id: post.id,
+        league_id: leagueId,
+        message: post.message,
+        context: 'league',
+        is_system: true,
+        created_at: TIE_INSTANT,
+      })),
+    )
+    if (error) throw new Error(`tie posts insert: ${error.message}`)
+  })
+
+  it('page 1 hands back BOTH cursor halves and page 2 serves the tied row', async () => {
+    const page1 = await readActivity(managerAClient, leagueId, { kind: 'system', limit: '1' })
+    expect(page1.status).toBe(200)
+    const first = page1.body as unknown as {
+      items: Array<{ id: string; created_at: string }>
+      has_more: boolean
+      next_before: string | null
+      next_before_id: string | null
+    }
+    expect(first.items.map((i) => i.id)).toEqual([TIE_POSTS[1].id]) // id DESC
+    expect(first.has_more).toBe(true)
+    expect(first.next_before).toBe(TIE_INSTANT)
+    expect(first.next_before_id).toBe(TIE_POSTS[1].id)
+    // The cursor is the returned item's own position, not a re-derivation.
+    expect(first.next_before).toBe(first.items[0].created_at)
+
+    const page2 = await readActivity(managerAClient, leagueId, {
+      kind: 'system',
+      limit: '1',
+      before: first.next_before!,
+      before_id: first.next_before_id!,
+    })
+    const second = page2.body as unknown as { items: Array<{ id: string }>; has_more: boolean }
+    // THE FINDING: with the instant-only cursor this page was EMPTY and the
+    // row was served on no page at all, in either direction, forever.
+    expect(second.items.map((i) => i.id)).toEqual([TIE_POSTS[0].id])
+    expect(second.has_more).toBe(false)
+  })
+
+  it('the NEGATIVE control: the instant alone still drops the tie — which is why both halves travel', async () => {
+    const instantOnly = await readActivity(managerAClient, leagueId, {
+      kind: 'system',
+      before: TIE_INSTANT,
+    })
+    expect((instantOnly.body as unknown as { items: unknown[] }).items).toHaveLength(0)
+  })
+
+  it('refuses a cursor id with no instant rather than paging as if none were sent', async () => {
+    const result = await readActivity(managerAClient, leagueId, {
+      kind: 'system',
+      before_id: TIE_POSTS[1].id,
+    })
+    expect(result.status).toBe(400)
+    expect(JSON.stringify(result.body)).toContain('before_id')
   })
 })
