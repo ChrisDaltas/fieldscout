@@ -161,8 +161,9 @@ select policy_cmd_is('public', 'team_week_results', 'Results viewable by members
 select has_table('public', 'transactions', 'transactions exists');
 select columns_are('public', 'transactions',
   array['id', 'league_id', 'type', 'status', 'initiator_team_id',
-        'initiated_by', 'payload', 'related_action_id', 'week', 'created_at'],
-  'exact §12.9 column set');
+        'initiated_by', 'payload', 'related_action_id', 'week', 'created_at',
+        'action_id'],   -- action_id: 113's idempotency stamp (L.D1.5, D309) — the pin's purpose (an exact set) moved with it
+  'exact §12.9 column set (+ 113''s action_id)');
 select col_not_null('public', 'transactions', 'type', 'type NOT NULL');
 select col_not_null('public', 'transactions', 'status', 'status NOT NULL');
 select col_default_is('public', 'transactions', 'status', 'complete', $$status defaults to 'complete'$$);
