@@ -1,7 +1,7 @@
 -- ============================================================================
 -- The pool writers + `roster_add_drop` + game-day locks — migration 113 (task
--- L.D1.5, the L.D5 core; spec v2.16.16 → v2.16.17 by this PR's fold-back
--- (§13.1 / §12.9 / §12.19 annotations, no rule change); §13.1 add/drop &
+-- L.D1.5, the L.D5 core; spec v2.16.16 → v2.16.18 by this PR's fold-back
+-- (§13.1 / §12.9 / §12.19 annotations + the Q32/Q33 rulings); §13.1 add/drop &
 -- free agency / §7.3.4 the lock, cap and hold fields (`player_game_lock`,
 -- `acquisitions_per_week` / `_per_season`, `fa_hold_hours`,
 -- `waiver_period_hours`, `free_agency`, `waiver_type = none_fcfs`) / §12.19
@@ -120,8 +120,8 @@
 --       second manager always reaches this pre-check, so the handler below
 --       cannot be driven red — said per D276/R757); pool state:
 --       `on_waivers` with `waivers_until` ahead refuses (claims are M5's);
---       a LAPSED `waivers_until` is FCFS-addable under `free_agency =
---       immediate_after_waivers` and NOT under `continuous` (below); a
+--       a LAPSED `waivers_until` is FCFS-addable under BOTH `free_agency`
+--       values (Q33's M4 interim, below); a
 --       `rostered` pool row with NO roster row is a broken mirror and refuses
 --       loudly naming reconciliation (D294: asserted, not trusted — never
 --       silently healed); E32 ADD LOCK when `player_game_lock` is on;
@@ -140,7 +140,7 @@
 --       `waivers_until = at + waiver_period_hours` (`waiver_type =
 --       none_fcfs` ⇒ `free_agent`, and the fa_hold early drop ⇒
 --       `free_agent`), the added player → `rostered`; the lineup consequences
---       (below); the `transactions` row (`type = 'add_drop'` — §13.1's
+--       (below — the dropped player's slot always cleared, Q32); the `transactions` row (`type = 'add_drop'` — §13.1's
 --       letter for this verb, whatever the shape; `payload` = the result
 --       document; `week` = the current week; `action_id` = the stamp).
 --   (8) POST-WRITE ASSERTIONS (R703-class, in-body): the added player has
@@ -149,73 +149,50 @@
 --       pool MIRROR for both touched players matches the roster truth
 --       (`rostered` ⇔ a roster row exists) — D294's "asserted, not trusted".
 --
--- `free_agency`, as read (§7.3.4 prints `immediate_after_waivers` /
---   `continuous` with the note "Unclaimed players become FCFS"; D294 says a
---   lapsed `waivers_until` is FCFS-addable PER the setting).
---   *** THE `continuous` ARM IS A READING PENDING CHRIS'S RULING — PROGRESS
---   §3 Q33 / blocker B8 (R756, the #254 review): §7.3.4's only note is
---   "Unclaimed players become FCFS" and no claim processor exists until M5,
---   so as built a `continuous` league strands every dropped player for the
---   rest of M4. Q33's recommendation: FCFS at the lapse under BOTH values
---   until M5 lands claim processing (the never-strand direction). Unchanged
---   until the ruling; the resume applies it. ***
---   * `immediate_after_waivers` (default): the instant `waivers_until` passes
---     the player is FCFS-addable — state evaluated at read, no sweeper (D294).
---   * `continuous`: a lapsed player is NOT FCFS-addable here — the incumbent
---     meaning (Yahoo's continuous waivers) keeps unclaimed players on waivers
---     for the PROCESSOR to clear, and the processor is M5's; the refusal
---     names that. A player with NO pool row (or a `free_agent` row) is
---     FCFS-addable under BOTH values — §13.1's "add an unowned player" is
---     unconditional. Whether `continuous` should also make FRESH free agents
---     claim-only is M5's call (F227(a)); this reading never lets a lapsed
---     player through under `continuous`, the never-weaken direction.
+-- `free_agency` — RULED, Q33 (Chris, 2026-09-03; PROGRESS §3 Q33, F229).
+--   Chris described two real leagues neither `free_agency` nor
+--   `waiver_period_hours` can express (daily waivers at a fixed local clock
+--   with a Sunday-06:00-PT → Monday-night FA window; weekly Tuesday-midnight
+--   waivers then FA all week; "re-waiver if no valid claim") and asked for a
+--   separate waiver-settings investigation — F229, an Architect docs task
+--   before M5's waivers build. THE M4 INTERIM (ruled by the orchestrator
+--   under his direction): a lapsed `waivers_until` is FCFS-addable under
+--   BOTH values (the §7.3.4 note's letter, "Unclaimed players become FCFS" —
+--   the never-strand direction); `on_waivers` with `waivers_until` ahead
+--   refuses (claims are M5's); a player with NO pool row is addable under
+--   both values; the pool vocabulary is unchanged. 061 pins lapse −1s
+--   refuses / AT adds under BOTH values.
 --
--- THE LINEUP INTERPLAY (§11.2 × §13.1 — rule 9's named decision; F224(i)).
---   *** READING PENDING CHRIS'S RULING — PROGRESS §3 Q32 / blocker B8 (R753,
---   the #254 review): the reviewer measured that the KEPT phantom below is
---   re-seatable by the very next `set_lineup` (112 skips a stored player who
---   is no longer rostered — 112:894 "dropped since (113) — nothing to lock"),
---   a §11.2 lineup-lock bypass by composition that also defeats the E34
---   guarantee the keep exists for; and E34's own scenario names `bench_lock`
---   (a WAIVER-CLAIM processing setting, §7.3.4), not the manager's direct
---   drop. Q32 asks whether (i) the lineup lock blocks dropping a player who
---   sits in a LOCKED slot of the current week (the reviewer's and this
---   Builder's recommendation) or (ii) 112 treats the kept phantom's slot as
---   read-only. The behaviour below is UNCHANGED until the ruling; the resume
---   applies it (with a 061 composition cell and a 060 phantom cell). ***
---   As built: the lineup lock does NOT block a drop; only E32 does. Read from the text:
---   §7.3.4 makes `player_game_lock` the ONLY lock on drops ("a rostered
---   player locks for drops at their kickoff … off reproduces lax incumbent
---   behavior"), §13.1 repeats it ("cannot be added or dropped from their
---   kickoff … both settings off reproduce incumbent-lax behavior"), §11.2's
---   "locked slots are read-only to managers" governs LINEUP edits, and E34
---   states the consequence of a locked starter being dropped: "the locked
---   starter's stats still count for the dropping team's matchup that week;
---   the player enters waivers". So, on a drop, for every `team_lineups` row
---   of the team from the current week on: the player's `slot_map` entry is
---   CLEARED (the slot reads empty, `starters[]` element emptied, `bench`
---   trimmed — F224(i)'s "the row should not carry a ghost") UNLESS that slot
---   is LOCKED at the instant (per_player_kickoff: his game for that week
---   has kicked off; first_game_of_week: that week's first kickoff has
---   passed), in which case the entry is KEPT — the locked slot is read-only
---   and his stats count for the dropping team (E34) — and the result names
---   it (`kept_in_locked_lineup`; a bench-only drop reports `slot: null`,
---   R758). Known and SAID (R758): under `first_game_of_week` the kept
---   phantom makes every later `set_lineup` of that week refuse with 112's
---   "the whole lineup is locked" text — the correct outcome (the week IS
---   locked) with a reason that does not name the phantom; Q32's ruling
---   reshapes the kept case and the resume rewords or removes it. Under `player_game_lock = true` +
---   `per_player_kickoff` the kept case is unreachable (E32 refused the drop
---   first — same datum); it is reachable under the lax setting (E34's own
---   config) and under `first_game_of_week` for a starter whose OWN kickoff
---   is still ahead after the week's first. L.D2.2's fan-out must therefore
---   map a locked week's stored starters as well as `league_rosters`
---   (F227(b)); the double-count edge E34 accepts ("edge documented in UI
---   copy") is the spec's, said out loud in D309 for Chris's read. An added
---   player lands on the bench of every row from the current week on and his
---   roster row carries `slot_key = 'bn'`. A drop of a player on a RESTRICTED
---   IR spot succeeds: §7.3.2's stint binds "moving a player OUT of" the spot
---   into the active roster, and a release is not a move (pinned).
+-- THE LINEUP INTERPLAY (§11.2 × §13.1; F224(i)) — RULED, Q32 (Chris,
+--   2026-09-03, verbatim): "a user can drop a player as long as that player
+--   hasn't locked. for example, if its mid day sunday and all the users
+--   starters are locked due to games starting but they have a player on
+--   their Bench that doesn't play until Monday night, that player can be
+--   dropped." Applied: droppability keys on the PLAYER's OWN kickoff (E32's
+--   window), never on his lineup slot's lock state or the lineup-lock mode —
+--   a player whose game has kicked off cannot be dropped until the week
+--   clears; a player whose game has not started can be dropped even when
+--   the rest of the lineup is locked (both `per_player_kickoff` and
+--   `first_game_of_week`). Consequences: there is NO kept-phantom branch (a
+--   droppable player has not played, so nothing to keep — the #254
+--   reviewer's R753 bypass-by-composition cannot arise); a dropped player's
+--   `slot_map` entry is ALWAYS cleared from every `team_lineups` row of the
+--   team from the current week on (the slot reads empty, `starters[]`
+--   emptied, bench trimmed); under `first_game_of_week` an emptied slot of a
+--   locked lineup stays empty for the week (112's whole-week lock refuses a
+--   re-seat — pinned in 061 as the composition cell), under
+--   `per_player_kickoff` 112's existing rule lets a player whose own kickoff
+--   is ahead take the empty slot; E34 stays M5's `bench_lock`-off
+--   claim-processing path. RESIDUAL, recorded not asked (D309(3), the D220
+--   shape for Chris's read): with `player_game_lock = OFF` §7.3.4/§13.1's
+--   letter is lax incumbent behaviour — a PLAYED player may be dropped and
+--   his slot clears (061 §H1 pins it); the ruling was given for the
+--   on-by-default case. An added player lands on the bench of every row
+--   from the current week on with `slot_key = 'bn'`; a bench-only drop
+--   reports its rows with `slot: null` (R758). A drop of a player on a
+--   RESTRICTED IR spot succeeds: §7.3.2's stint binds "moving a player OUT
+--   of" the spot into the active roster, and a release is not a move
+--   (pinned).
 --
 -- IDEMPOTENCY / LOUD EMPTINESS (rule 10): `p_action_id` REQUIRED; replay
 --   byte-identical with zero writes; every DELETE/INSERT/UPDATE row count
@@ -234,8 +211,12 @@
 -- values; `none_fcfs`; fa_hold at hold−1s (FA) / +0 (waivers); caps at cap−1
 -- (lives) / at cap (refuses) for week and season; the `transactions` row as
 -- a stored literal; replay byte-identity + kind/team scoping; the lineup
--- consequences (an unlocked starter leaves the current-week map, a locked
--- starter under lax is KEPT, the add lands on the bench with `bn`); every
+-- consequences (a dropped starter always leaves the current-week map; the Q32
+-- example — Sunday midday, every starter kicked off, a bench player with a
+-- Monday game drops and refuses once his game kicks off, a kicked-off
+-- STARTER refuses by name; the composition cell — a drop followed by a
+-- set_lineup on the same row never re-seats a whole-week-locked slot and
+-- leaves no phantom; the add lands on the bench with `bn`); every
 -- role; the CHECK both directions; F35 structurally; the held lock < 50 ms.
 -- Break probe (PR body): the drop-side E32 clause removed → the drop-lock
 -- cells red while the add-lock cells stay green.
@@ -604,12 +585,11 @@ BEGIN
           v_add_p.full_name, p_add, v_pool.waivers_until, v_free_agency
           USING ERRCODE = 'P0001';
       END IF;
-      IF v_free_agency <> 'immediate_after_waivers' THEN
-        RAISE EXCEPTION
-          'roster_add_drop: % (%) cleared waivers at % but free_agency = % keeps unclaimed players on waivers until the processor clears them (M5, §7.3.4) — not FCFS-addable',
-          v_add_p.full_name, p_add, v_pool.waivers_until, v_free_agency
-          USING ERRCODE = 'P0001';
-      END IF;
+      -- Q33 (Chris, 2026-09-03; the M4 interim ruled under his direction —
+      -- PROGRESS §3 Q33, F229): a lapsed waivers_until is FCFS-addable under
+      -- BOTH free_agency values (the §7.3.4 note's letter — "Unclaimed players
+      -- become FCFS"), until the waiver-scheduling investigation redesigns
+      -- the settings. No claim-only arm exists here.
       v_pool_add_from := 'on_waivers_lapsed';
     ELSIF v_pool.state = 'rostered' THEN
       -- No roster row (checked above) but a rostered pool row: the mirror is
@@ -719,33 +699,23 @@ BEGIN
     IF p_drop IS NOT NULL THEN
       SELECT e.key INTO v_key FROM jsonb_each_text(v_map) e WHERE e.value = p_drop LIMIT 1;
       IF v_key IS NOT NULL THEN
-        -- Locked slot? (per_player_kickoff: his game for THAT week kicked off;
-        -- first_game_of_week: that week's first kickoff passed.) IR keys are
-        -- roster-level spots, not locked slots — always cleared.
-        v_locked := FALSE;
-        IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(v_league.roster_settings -> 'ir_slots', '[]'::jsonb)) s
-                       WHERE (s ->> 'key') || ':0' = v_key) THEN
-          IF v_mode = 'first_game_of_week' THEN
-            SELECT * INTO v_window FROM public.schedule_window_internal(v_league.season, v_row.week, p_at);
-            v_locked := NOT v_window.free;
-          ELSE
-            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_drop_p.team, p_at);
-            v_locked := v_k.kickoff_at IS NOT NULL AND v_k.kickoff_at <= p_at;
-          END IF;
-        END IF;
-        IF v_locked THEN
-          v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', v_key, 'kept_in_locked_lineup', TRUE);
-        ELSE
-          v_map := v_map - v_key;
-          SELECT COALESCE(jsonb_agg(
-                   CASE WHEN s ->> 'slot' = v_key
-                        THEN s || jsonb_build_object('player_id', NULL, 'position', NULL, 'kickoff_at', NULL, 'flags', '["empty"]'::jsonb)
-                        ELSE s END ORDER BY ord), '[]'::jsonb)
-          INTO v_starters
-          FROM jsonb_array_elements(v_starters) WITH ORDINALITY AS t(s, ord);
-          v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', v_key, 'kept_in_locked_lineup', FALSE);
-          v_changed := TRUE;
-        END IF;
+        -- Q32 (Chris, 2026-09-03): droppability keys on the PLAYER's own
+        -- kickoff (E32), never on his slot's lock state — so a droppable
+        -- player has not played and there is nothing to keep: the entry is
+        -- ALWAYS cleared (the slot reads empty; under first_game_of_week an
+        -- emptied slot of a locked lineup stays empty for the week because
+        -- 112's whole-week lock refuses any re-seat; under per_player_kickoff
+        -- 112 lets a player whose own kickoff is ahead take the empty slot).
+        -- IR keys are roster-level spots — cleared the same way.
+        v_map := v_map - v_key;
+        SELECT COALESCE(jsonb_agg(
+                 CASE WHEN s ->> 'slot' = v_key
+                      THEN s || jsonb_build_object('player_id', NULL, 'position', NULL, 'kickoff_at', NULL, 'flags', '["empty"]'::jsonb)
+                      ELSE s END ORDER BY ord), '[]'::jsonb)
+        INTO v_starters
+        FROM jsonb_array_elements(v_starters) WITH ORDINALITY AS t(s, ord);
+        v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', v_key);
+        v_changed := TRUE;
       END IF;
       IF v_bench ? p_drop THEN
         SELECT COALESCE(jsonb_agg(x ORDER BY x #>> '{}'), '[]'::jsonb) INTO v_bench
@@ -753,7 +723,7 @@ BEGIN
         -- R758: a bench-only drop reports its row too (slot NULL) — the
         -- result never under-reports which lineup rows the move touched.
         IF v_key IS NULL THEN
-          v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', NULL, 'kept_in_locked_lineup', FALSE);
+          v_lineups := v_lineups || jsonb_build_object('week', v_row.week, 'slot', NULL);
         END IF;
         v_changed := TRUE;
       END IF;

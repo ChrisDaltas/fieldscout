@@ -32,8 +32,9 @@
 --     friendly P0001 naming the team, never 23505 — and the same-league
 --     re-add after a drop HONORING WAIVER STATE at `waivers_until` −1s
 --     (refused) / AT (lapsed — lives) under `immediate_after_waivers`;
---     under `continuous` a lapsed player refuses by name while a fresh free
---     agent still adds; `none_fcfs` drops straight to FA.
+--     under `continuous` the SAME (Q33's M4 interim — FCFS at the lapse
+--     under both values, −1s refused / AT adds); `none_fcfs` drops straight
+--     to FA.
 --   * fa_hold_hours at hold−1s (FA, `early`) / +0 (waivers); a DRAFTED
 --     player is never held (waivers regardless of the hold).
 --   * CAPS from `transactions`: weekly cap 2 — the 2nd add (cap−1 → cap)
@@ -44,12 +45,20 @@
 --     columns; REPLAY byte-identical with a four-table digest unchanged;
 --     kind-scoped (a `trade` row with the same action_id refuses by name)
 --     and team-scoped (another team's action_id refuses by name).
---   * THE LINEUP CONSEQUENCES (F224(i)): an UNLOCKED dropped starter leaves
---     the current-week `slot_map` (the slot reads empty, bench trimmed); a
---     LOCKED dropped starter is KEPT (`kept_in_locked_lineup`, E34 — under
---     the lax league AND under the strict league once the window has
---     closed); the add lands on the bench of every row from the current
---     week on with `slot_key = 'bn'`.
+--   * THE LINEUP CONSEQUENCES (F224(i); Q32 RULED 2026-09-03): a dropped
+--     player ALWAYS leaves every `slot_map` from the current week on (the
+--     slot reads empty, bench trimmed) — droppability is his OWN kickoff,
+--     never his slot's lock: the ruling's example (Sunday midday, every
+--     starter locked, a bench player with a Monday game drops; refuses once
+--     his game kicks off; a kicked-off starter refuses by name) under both
+--     lock modes; the COMPOSITION cells (a drop then a set_lineup on the same
+--     row: under first_game_of_week the emptied slot cannot be re-seated
+--     while the week lock holds, under per_player_kickoff it can when the
+--     slot's own kickoff is ahead) and NO PHANTOM (no slot_map value names
+--     an unrostered player). The Q32 residual (player_game_lock OFF: a
+--     played starter drops and his slot clears) pinned in §H1. The add lands
+--     on the bench of every row from the current week on with `slot_key =
+--     'bn'`; a bench-only drop reports `slot: null` (R758).
 --   * The CHECK both directions (on_waivers without waivers_until 23514;
 --     free_agent with one 23514; on_waivers with one lives).
 --   * LOUD EMPTINESS (rule 10): both sides empty, add = drop, a missing
@@ -80,7 +89,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(139);
+select plan(150);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the stamp, the CHECK, the functions, grants (§4.1), F35
@@ -540,8 +549,8 @@ select results_eq(
   $$ values ('on_waivers', now() - interval '2 seconds' + interval '48 hours') $$,
   'F1 …QB1 enters waivers: on_waivers with waivers_until = the instant + waiver_period_hours (48h) — a DRAFTED player is never fa_hold-early');
 select is(current_setting('pgtap.pd_r_f1')::jsonb -> 'drop' -> 'lineups',
-  '[{"week": 3, "slot": "qb:0", "kept_in_locked_lineup": false}, {"week": 4, "slot": "qb:0", "kept_in_locked_lineup": false}]'::jsonb,
-  'F1 F224(i): the dropped starter LEAVES the current-week and the future-week slot_map (his kickoff was still ahead at the instant — the slot was unlocked)');
+  '[{"week": 3, "slot": "qb:0"}, {"week": 4, "slot": "qb:0"}]'::jsonb,
+  'F1 F224(i): the dropped starter LEAVES the current-week and the future-week slot_map');
 select is((select slot_map from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000002' and week = 3),
   '{"rb:0": "pd-rb1", "wr:0": "pd-wr1"}'::jsonb, 'F1 …the week-3 map no longer carries the ghost');
 select is((select s -> 'flags' from team_lineups t, jsonb_array_elements(t.starters) s
@@ -564,10 +573,10 @@ select set_config('pgtap.pd_r_f2', public.roster_add_drop_internal(
 select is((select count(*)::int from league_rosters where player_id = 'pd-qb1'), 0,
   'F2 DROP AT the window close: LIVES (open at the close)');
 select is(current_setting('pgtap.pd_r_f2')::jsonb -> 'drop' -> 'lineups',
-  '[{"week": 3, "slot": "qb:0", "kept_in_locked_lineup": true}, {"week": 4, "slot": "qb:0", "kept_in_locked_lineup": false}]'::jsonb,
-  'F2 E34 in the STRICT league: his week-3 slot is LOCKED (kickoff passed) so the entry is KEPT — the locked slot is read-only and his stats count for the dropping team; the week-4 entry is cleared');
+  '[{"week": 3, "slot": "qb:0"}, {"week": 4, "slot": "qb:0"}]'::jsonb,
+  'F2 Q32: once the week has cleared the played starter drops and his slot is CLEARED in both rows — no kept phantom exists');
 select is((select slot_map ->> 'qb:0' from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000002' and week = 3),
-  'pd-qb1', 'F2 …the week-3 map still carries him');
+  null, 'F2 …the week-3 map no longer carries him');
 select pg_temp.pd_undo_drop('pd-qb1', 'ab000000-0000-4000-8000-000000000032');
 update nfl_weeks set correction_window_ends_at = now() - interval '1 second' where season = 2026 and week = 3;
 select lives_ok(
@@ -654,9 +663,71 @@ select set_config('pgtap.pd_r_bn', public.roster_add_drop_internal(
   'bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-te1',
   'ab000000-0000-4000-8000-000000000040', now())::text, true);
 select is(current_setting('pgtap.pd_r_bn')::jsonb -> 'drop' -> 'lineups',
-  '[{"week": 3, "slot": null, "kept_in_locked_lineup": false}, {"week": 4, "slot": null, "kept_in_locked_lineup": false}]'::jsonb,
+  '[{"week": 3, "slot": null}, {"week": 4, "slot": null}]'::jsonb,
   'R758: a bench-only drop (TE1 on both benches) reports one entry per touched row with slot NULL');
 select pg_temp.pd_undo_drop('pd-te1', 'ab000000-0000-4000-8000-000000000040');
+
+-- ---------------------------------------------------------------------------
+-- F6. Q32 — THE RULING'S OWN EXAMPLE (Chris, 2026-09-03): "mid day sunday",
+--    every T2 starter has kicked off (KC/DAL/PHI at now−1h), TE1 sits on the
+--    bench with a "Monday night" game (NYG at now+3h) → TE1 drops; once his
+--    game kicks off he refuses; a kicked-off STARTER refuses by name.
+--    Then the per-player COMPOSITION: an emptied slot whose own kickoff is
+--    ahead may be re-seated by set_lineup (112's rule), and no phantom exists.
+-- ---------------------------------------------------------------------------
+update nfl_games set kickoff_at = now() - interval '1 hour' where id in ('pd-w3-a', 'pd-w3-b');
+select set_config('pgtap.pd_r_f6', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-te1',
+  'ab000000-0000-4000-8000-000000000041', now())::text, true);
+select is((select count(*)::int from league_rosters where player_id = 'pd-te1'), 0,
+  'F6 Q32: every starter locked (KC/DAL/PHI kicked off an hour ago) — the BENCH player whose game is Monday night (NYG, +3h) DROPS');
+select is(current_setting('pgtap.pd_r_f6')::jsonb -> 'drop' -> 'lineups', '[{"week": 3, "slot": null}, {"week": 4, "slot": null}]'::jsonb,
+  'F6 …he leaves both benches (slot null)');
+select pg_temp.pd_undo_drop('pd-te1', 'ab000000-0000-4000-8000-000000000041');
+update nfl_games set kickoff_at = now() - interval '1 second' where id = 'pd-w3-c';
+select throws_like(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-te1',
+       'ab000000-0000-4000-8000-000000000042', now()) $$,
+  '%PD TE1 (pd-te1) is locked for drops — kicked off at %',
+  'F6 …the same bench player REFUSES once his own game kicks off (the lock is his kickoff, not his slot)');
+select throws_like(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-rb1',
+       'ab000000-0000-4000-8000-000000000042', now()) $$,
+  '%PD RB1 (pd-rb1) is locked for drops — kicked off at %',
+  'F6 …a kicked-off STARTER refuses by name');
+update nfl_games set kickoff_at = now() + interval '3 hours' where id = 'pd-w3-c';
+update nfl_games set kickoff_at = now() - interval '1 second' where id = 'pd-w3-a';
+update nfl_games set kickoff_at = now() + interval '1 second' where id = 'pd-w3-b';   -- restore the base calendar
+-- Per-player composition: RB1 (DAL, +1s — his slot's kickoff is AHEAD) drops, rb:0 empties; set_lineup re-seats rb:0 with FA3 (SF, +3h) — allowed by 112 — and no slot_map value references an unrostered player.
+select lives_ok(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-rb1',
+       'ab000000-0000-4000-8000-000000000043', now()) $$,
+  'F6 COMPOSITION (per_player_kickoff): RB1 (kickoff one second ahead) drops while KC is live');
+select is((select count(*)::int from team_lineups t, jsonb_each_text(t.slot_map) e
+           where t.team_id = 'cd000000-0000-4000-8000-000000000002'
+             and not exists (select 1 from league_rosters r where r.team_id = t.team_id and r.player_id = e.value)), 0,
+  'F6 NO PHANTOM: after the drop no slot_map value of T2 references an unrostered player');
+select lives_ok(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "pd-qb1", "rb:0": "pd-fa3", "wr:0": "pd-wr1"}', 'ab000000-0000-4000-8000-000000000044', now()) $$,
+  'F6 …set_lineup re-seats the emptied rb:0 with FA3 (his kickoff is ahead) — 112''s per-player rule, the slot''s own kickoff was ahead');
+select pg_temp.pd_undo_drop('pd-rb1', 'ab000000-0000-4000-8000-000000000043');
+-- Q32 AMENDMENT (player-level lock: a locked BENCH player is stuck on the
+-- bench): RB1 drops again (rb:0 empties); FA3's game (SF) kicks off; a
+-- set_lineup moving FA3 INTO the empty rb:0 is refused by 112 — pinned here
+-- as the composition, and in 060 E4 as 112's own rule.
+select lives_ok(
+  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', null, 'pd-rb1',
+       'ab000000-0000-4000-8000-000000000045', now()) $$,
+  'F6 (amendment) RB1 drops again — rb:0 empties');
+update nfl_games set kickoff_at = now() - interval '1 second' where id = 'pd-w3-c';
+select throws_like(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "pd-qb1", "rb:0": "pd-fa3", "wr:0": "pd-wr1"}', 'ab000000-0000-4000-8000-000000000046', now()) $$,
+  '%PD FA3''s game kicked off at % — a player whose game has started cannot enter or move slots%',
+  'F6 (amendment) a LOCKED BENCH player is stuck on the bench: FA3 (kicked off) cannot be moved INTO the emptied rb:0 (112''s rule, 060 E4 — the player-level lock)');
+update nfl_games set kickoff_at = now() + interval '3 hours' where id = 'pd-w3-c';
+select pg_temp.pd_undo_drop('pd-rb1', 'ab000000-0000-4000-8000-000000000045');
 
 -- ---------------------------------------------------------------------------
 -- G. Exclusivity + the same-league re-add honoring waiver state
@@ -728,23 +799,35 @@ select results_eq(
   $$ values ('free_agent', null::timestamptz) $$,
   'H1 none_fcfs: the dropped player goes STRAIGHT to free agency (no waivers_until)');
 select is(current_setting('pgtap.pd_r_h1')::jsonb -> 'drop' -> 'lineups',
-  '[{"week": 3, "slot": "qb:0", "kept_in_locked_lineup": true}]'::jsonb,
-  'H1 E34: the dropped starter''s slot is week-locked (first_game_of_week; KC kicked off) so the entry is KEPT — his stats still count for the dropping team; the player entered the pool');
+  '[{"week": 3, "slot": "qb:0"}]'::jsonb,
+  'H1 the Q32 RESIDUAL (player_game_lock OFF = lax incumbent behaviour, D309(3)): a PLAYED starter drops and his week-locked slot is CLEARED — no phantom');
 select is((select slot_map from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000011' and week = 3),
-  '{"qb:0": "pd-s-qb", "rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}'::jsonb,
-  'H1 …the locked lineup is byte-unchanged (read-only, §11.2) while the roster row is gone');
+  '{"rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}'::jsonb,
+  'H1 …the locked lineup lost qb:0 (empty for the week — 112''s whole-week lock refuses any re-seat)');
+select throws_like(
+  $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 3,
+       '{"qb:0": "pd-s-fa2", "rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}', 'ab000000-0000-4000-8000-000000000054', now()) $$,
+  '%the whole lineup is locked (§11.2, lineup_lock = first_game_of_week)%',
+  'H1 COMPOSITION: a set_lineup re-seating the emptied qb:0 under the whole-week lock is refused by 112 — the slot stays empty for the week');
 select is((select count(*)::int from league_rosters where league_id = 'bd000000-0000-4000-8000-000000000002' and player_id = 'pd-s-qb'), 0,
   'H1 …S QB is off the roster');
 -- H2. continuous: a LAPSED on_waivers player refuses by name; a fresh free agent still adds.
+update league_player_pool set waivers_until = now() + interval '1 second' where league_id = 'bd000000-0000-4000-8000-000000000002' and player_id = 'pd-s-w';
 select throws_like(
   $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-w', null,
        'ab000000-0000-4000-8000-000000000052', now()) $$,
-  '%PD S W (pd-s-w) cleared waivers at % but free_agency = continuous keeps unclaimed players on waivers until the processor clears them (M5%',
-  'H2 free_agency = continuous: a LAPSED on_waivers player is NOT FCFS-addable — refused by name (the processor is M5''s)');
+  '%PD S W (pd-s-w) is on waivers until %',
+  'H2 free_agency = continuous, waivers_until − 1s: still refused (claims are M5''s)');
+update league_player_pool set waivers_until = now() where league_id = 'bd000000-0000-4000-8000-000000000002' and player_id = 'pd-s-w';
+select set_config('pgtap.pd_r_h2', public.roster_add_drop_internal(
+  'bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-w', null,
+  'ab000000-0000-4000-8000-000000000052', now())::text, true);
+select is(current_setting('pgtap.pd_r_h2')::jsonb -> 'add' ->> 'from_state', 'on_waivers_lapsed',
+  'H2 Q33 (the M4 interim): under free_agency = continuous a LAPSED player is FCFS-addable AT the lapse — from_state on_waivers_lapsed, the never-strand direction');
 select lives_ok(
   $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 'pd-s-fa1', null,
        'ab000000-0000-4000-8000-000000000053', now()) $$,
-  'H2 …while a FRESH free agent (no pool row) adds under continuous — §13.1''s "add an unowned player" is unconditional');
+  'H2 …and a FRESH free agent (no pool row) adds under continuous too');
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 
 -- ---------------------------------------------------------------------------
