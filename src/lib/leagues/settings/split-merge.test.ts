@@ -259,7 +259,7 @@ function randomSettings(rng: () => number): LeagueSettings {
     allow_faab_in_trades: bool(rng),
     allow_future_considerations: bool(rng),
     trade_lock_behavior: pick(rng, ['defer', 'reject'] as const),
-    lineup_lock: pick(rng, ['per_player_kickoff', 'first_game_of_week'] as const),
+    lineup_lock: 'per_player_kickoff' as const, // v2.16.20: the only value (114)
     allow_illegal_lineups: bool(rng),
     auto_sub_inactives: bool(rng),
     stat_correction_window: bool(rng) ? ('thu_06_00_et' as const) : int(rng, 0, 168),

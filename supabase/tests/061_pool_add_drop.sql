@@ -58,20 +58,21 @@
 --     slot reads empty, bench trimmed) — droppability is his OWN kickoff,
 --     never his slot's lock: the ruling's example (Sunday midday, every
 --     starter locked, a bench player with a Monday game drops; refuses once
---     his game kicks off; a kicked-off starter refuses by name) under both
---     lock modes; the COMPOSITION cells (a drop then a set_lineup on the same
---     row: under first_game_of_week the emptied slot cannot be re-seated
---     while the week lock holds, under per_player_kickoff it can when the
---     slot's own kickoff is ahead) and NO PHANTOM (no slot_map value names
---     an unrostered player). THE Q32 RESIDUAL (`player_game_lock` OFF: a
---     PLAYED starter drops and his slot clears) IS PINNED IN BOTH LOCK
---     MODES — §H1 on L2 (first_game_of_week: the slot stays empty for the
---     week) and §H3 on L5 (per_player_kickoff, the DEFAULT: R759 — the
+--     his game kicks off; a kicked-off starter refuses by name) under the
+--     ONLY lineup lock (114 / Q34(A) retired `first_game_of_week` — L2 is
+--     re-cut to `per_player_kickoff`); the COMPOSITION cells (a drop then a
+--     set_lineup on the same row: the emptied slot re-seats only with a
+--     player whose OWN kickoff is ahead — a kicked-off add cannot enter it)
+--     and NO PHANTOM (no slot_map value names an unrostered player). THE
+--     Q32 RESIDUAL (`player_game_lock` OFF: a PLAYED starter drops and his
+--     slot clears) IS PINNED on two lax leagues — §H1 on L2 (the kicked-off
+--     add cannot re-seat the emptied slot) and §H3 on L5 (R759 — the
 --     baseline re-seat is REFUSED while he is rostered, and the very same
 --     re-seat is ACCEPTED after the drop, so the slot does NOT stay empty
 --     and the team gets a do-over on it after seeing his result. Recorded,
---     not fixed: whether the player-level lock should bind drops regardless
---     of the toggle is Chris's call — PROGRESS F230). The add lands
+--     not fixed HERE: Chris RULED it 2026-09-05 — Q34(B), the drop lock
+--     binds on the player's own kickoff regardless of the toggle — and
+--     L.D1.5c builds it; §H3 flips to refusing there). The add lands
 --     on the bench of every row from the current week on with `slot_key =
 --     'bn'`; a bench-only drop reports `slot: null` (R758).
 --   * The CHECK both directions (on_waivers without waivers_until 23514;
@@ -175,7 +176,8 @@ select policies_are('public', 'league_rosters', array['Rosters viewable by leagu
 --    L1 (T3) · u4 outsider · u5 member of L1 with NO team · u6 commish L2 (S1).
 --    L1 STRICT: player_game_lock TRUE, per_player_kickoff, faab, 48h waivers,
 --    immediate_after_waivers, fa_hold 24h, caps unlimited, roster_size 8.
---    L2 LAX: player_game_lock FALSE, first_game_of_week, none_fcfs,
+--    L2 LAX: player_game_lock FALSE, per_player_kickoff (114: the only
+--    mode — L2 was the `first_game_of_week` league), none_fcfs,
 --    continuous, fa_hold 0. L3 CAPS: 2/week, 3/season, everyone on bye.
 --    L4: scheduled. L5 (u6, team S2) LAX × the DEFAULT lock mode:
 --    player_game_lock FALSE, per_player_kickoff, none_fcfs — the composition
@@ -221,7 +223,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
  ('bd000000-0000-4000-8000-000000000002', '9d000000-0000-4000-8000-000000000006', 'pgtap-pd-L2', 2026, 'in_season', 8,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
-  'first_game_of_week', 'none_fcfs',
+  'per_player_kickoff', 'none_fcfs',   -- 114: the only legal value (CHECK)
   '{"player_game_lock": false, "waiver_period_hours": 48, "free_agency": "continuous", "fa_hold_hours": 0,
     "acquisitions_per_week": "unlimited", "acquisitions_per_season": "unlimited", "allow_illegal_lineups": true}',
   '{"starting_slots": [
@@ -242,8 +244,9 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   'per_player_kickoff', 'faab', '{}',
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}'),
  -- L5 (R759): the OTHER lax composition — player_game_lock FALSE with the
- -- DEFAULT lineup_lock (`per_player_kickoff`). L2 is lax × first_game_of_week,
- -- so this pair had no cell until the #254 re-review measured it.
+ -- DEFAULT lineup_lock (`per_player_kickoff`). L2 was lax × the retired
+ -- whole-week mode, so this pair had no cell until the #254 re-review
+ -- measured it (114 re-cut L2 to the same mode; the two differ by fixture).
  ('bd000000-0000-4000-8000-000000000005', '9d000000-0000-4000-8000-000000000006', 'pgtap-pd-L5', 2026, 'in_season', 8,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
@@ -826,8 +829,9 @@ select results_eq(
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 
 -- ---------------------------------------------------------------------------
--- H. The LAX league (L2, as u6): player_game_lock FALSE, first_game_of_week,
---    none_fcfs, continuous — E34 and the lax controls
+-- H. The LAX league (L2, as u6): player_game_lock FALSE, per_player_kickoff
+--    (the only mode since 114), none_fcfs, continuous — E34 and the lax
+--    controls
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
 select set_config('pgtap.pd_r_h1', public.roster_add_drop_internal(
@@ -846,12 +850,12 @@ select is(current_setting('pgtap.pd_r_h1')::jsonb -> 'drop' -> 'lineups',
   'H1 the Q32 RESIDUAL (player_game_lock OFF = lax incumbent behaviour, D309(3)): a PLAYED starter drops and his week-locked slot is CLEARED — no phantom');
 select is((select slot_map from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000011' and week = 3),
   '{"rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}'::jsonb,
-  'H1 …the locked lineup lost qb:0 (empty for the week — 112''s whole-week lock refuses any re-seat)');
+  'H1 …the lineup lost qb:0 (empty; 114: only a player whose OWN kickoff is ahead may take it)');
 select throws_like(
   $$ select public.set_lineup_internal('bd000000-0000-4000-8000-000000000002', 'cd000000-0000-4000-8000-000000000011', 3,
        '{"qb:0": "pd-s-fa2", "rb:0": "pd-s-rb", "wr:0": "pd-s-wr"}', 'ab000000-0000-4000-8000-000000000054', now()) $$,
-  '%the whole lineup is locked (§11.2, lineup_lock = first_game_of_week)%',
-  'H1 COMPOSITION: a set_lineup re-seating the emptied qb:0 under the whole-week lock is refused by 112 — the slot stays empty for the week');
+  '%PD S FA2''s game kicked off at % (nfl_games) — a player whose game has started cannot enter or move slots%',
+  'H1 COMPOSITION (114, the only mode): re-seating the emptied qb:0 with the KICKED-OFF add is refused by name — a player whose game has started never enters a slot (§H3 pins the unstarted-player half on L5)');
 select is((select count(*)::int from league_rosters where league_id = 'bd000000-0000-4000-8000-000000000002' and player_id = 'pd-s-qb'), 0,
   'H1 …S QB is off the roster');
 -- H2. continuous: a LAPSED on_waivers player refuses by name; a fresh free agent still adds.
@@ -873,11 +877,10 @@ select lives_ok(
   'H2 …and a FRESH free agent (no pool row) adds under continuous too');
 -- ---------------------------------------------------------------------------
 -- H3. R759 — THE OTHER LAX COMPOSITION, WHICH HAD NO CELL: `player_game_lock
---    = false` × `lineup_lock = per_player_kickoff` (the DEFAULT mode), on L5
---    as u6. H1 covers lax × first_game_of_week, where 112's whole-week lock
---    happens to leave the emptied slot empty; under per_player_kickoff it
---    does NOT. This pins the ACTUAL behaviour rather than the reading a
---    reader would carry over from H1: the played starter drops, his slot
+--    = false` × `lineup_lock = per_player_kickoff` (the DEFAULT — and since
+--    114 the ONLY — mode), on L5 as u6. H1's re-seat candidate is a
+--    kicked-off player (refused on his own kickoff); here the candidate has
+--    not kicked off. This pins the ACTUAL behaviour: the played starter drops, his slot
 --    clears, and the very next set_lineup RE-SEATS it with a player whose own
 --    kickoff is still ahead — so the team loses his points and gets a fresh
 --    choice for the slot after seeing his result. Whether the player-level

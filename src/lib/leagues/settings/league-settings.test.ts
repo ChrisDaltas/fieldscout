@@ -215,7 +215,7 @@ const RANGE_CASES: RangeCase[] = [
   { path: 'trade_review_period_hours', ok: [0, 96], bad: [-1, 97] },
   { path: 'trade_deadline_week', ok: [null, 1, 15], bad: [0, 16, 'none'] },
   // §7.3.6
-  { path: 'lineup_lock', ok: ['per_player_kickoff', 'first_game_of_week'], bad: ['kickoff'] },
+  { path: 'lineup_lock', ok: ['per_player_kickoff'], bad: ['first_game_of_week', 'kickoff'] }, // v2.16.20: the whole-week mode is retired (114)
   { path: 'stat_correction_window', ok: ['thu_06_00_et', 0, 168], bad: [-1, 169, 'friday'] },
   // §7.3.8 draft block
   { path: 'draft.draft_type', ok: ['snake', 'auction', 'linear'], bad: ['serpentine'] },

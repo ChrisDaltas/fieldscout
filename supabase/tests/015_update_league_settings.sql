@@ -123,13 +123,16 @@ select public.create_league(
 
 -- 1. Happy full update: EVERY typed column changed to a distinctive literal;
 --    p_scoring_system_id NULL (keep current); faab_budget 100 → 250.
+--    (114 / L.D1.5b: `lineup_lock` has ONE legal value — `per_player_kickoff`,
+--    CHECK-enforced — so it is the one typed column that cannot change; the
+--    retired value's 23514 through this RPC is pinned in 062.)
 select lives_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{"divisions": 2, "second_opponent": true, "draft": {"draft_type": "auction"}}'::jsonb,
        '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 3}], "bench": 5, "ir_slots": [], "swap_spots": 1}'::jsonb,
        null,
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'the commissioner updates settings (full column + blob write)');
 
 select results_eq(
@@ -138,7 +141,7 @@ select results_eq(
             trade_deadline_week, lineup_lock, status
      from leagues where creation_action_id = 'ad100000-0000-4000-8000-000000000001' $$,
   $$ values (14, 14, 'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote',
-             10, 'first_game_of_week', 'setup') $$,
+             10, 'per_player_kickoff', 'setup') $$,
   'every §12.1 typed column stored as passed; max_teams = team_count in the SAME statement (the sync''s second writer, §12.1 NOTE)');
 select is(
   (select settings from leagues where creation_action_id = 'ad100000-0000-4000-8000-000000000001'),
@@ -172,7 +175,7 @@ select lives_ok(
        '{"divisions": 2, "second_opponent": true, "draft": {"draft_type": "auction"}}'::jsonb,
        '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 3}], "bench": 5, "ir_slots": [], "swap_spots": 1}'::jsonb,
        (select id from public.scoring_systems where is_template and name = 'Yahoo Standard'),
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'the commissioner switches the scoring template (§7.3.3 template choice)');
 select is(
   (select scoring_system_id from leagues where creation_action_id = 'ad100000-0000-4000-8000-000000000001'),
@@ -198,7 +201,7 @@ select lives_ok(
        '{"divisions": 2, "second_opponent": true, "draft": {"draft_type": "auction"}}'::jsonb,
        '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "wr", "label": "WR", "eligible": ["WR"], "count": 3}], "bench": 5, "ir_slots": [], "swap_spots": 1}'::jsonb,
        (select id from public.scoring_systems where is_template and name = 'Sleeper Standard'),
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'scoring changes again WITH an existing snapshot');
 select is(
   (select scoring_rules_snapshot from leagues where creation_action_id = 'ad100000-0000-4000-8000-000000000001'),
@@ -220,7 +223,7 @@ select throws_ok(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{}'::jsonb, '{"bench": 5}'::jsonb,
        '5d000000-0000-4000-8000-000000000001',
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'P0001',
   'update_league_settings: scoring_system_id must reference one of the scoring templates, or the league''s own forked custom scoring system — personal scoring systems and other leagues'' systems cannot be attached (§7.3.8 v2.11, §7.3.3.1)',
   'a personal (owner-scoped, non-template) scoring_systems id is rejected with the friendly field-named message (§7.3.8 v2.11 wording after D169)');
@@ -234,7 +237,7 @@ select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{}'::jsonb, '{"bench": 5}'::jsonb, null,
-       'redraft', 15, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 15, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'P0001',
   'update_league_settings: playoff_start_week must be the week after the regular season ends — week 16 for a 15-week regular season (currently week 14) (§7.3.8, Q10/v2.8.6)',
   'direct-RPC overlap pair (15+14 — the R75 bypass class) is refused in-body');
@@ -246,7 +249,7 @@ select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{}'::jsonb, '{"bench": 5}'::jsonb, null,
-       'redraft', 11, 4, 12, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 11, 4, 12, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'P0001',
   'update_league_settings: playoff_start_week must be between 13 and 16 (currently week 12) (§7.3.1, Q10/v2.8.6)',
   'playoff_start_week 12 (one past the low edge, seam-consistent 11+12) hits the range backstop');
@@ -254,7 +257,7 @@ select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{}'::jsonb, '{"bench": 5}'::jsonb, null,
-       'redraft', 16, 4, 17, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 16, 4, 17, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'P0001',
   'update_league_settings: playoff_start_week must be between 13 and 16 (currently week 17) (§7.3.1, Q10/v2.8.6)',
   'playoff_start_week 17 (one past the high edge, seam-consistent 16+17) hits the range backstop');
@@ -264,7 +267,7 @@ select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 9,
        '{}'::jsonb, '{"bench": 5}'::jsonb, null,
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   '23514', null,
   'team_count 9 violates the v1 {8,10,12,14,16} CHECK (23514) through the RPC');
 
@@ -282,7 +285,7 @@ select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 14,
        '{}'::jsonb, '{"bench": 5}'::jsonb, null,
-       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'first_game_of_week') $$,
+       'redraft', 13, 4, 14, 'rolling_priority', 250, 'league_vote', 10, 'per_player_kickoff') $$,
   'P0001',
   'update_league_settings: league ' ||
     (select (r->>'league_id') from _cl) ||
