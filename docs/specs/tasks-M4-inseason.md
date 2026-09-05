@@ -157,9 +157,10 @@ Dependency order — **schema lane serialized** (plan §2.2); the worker, data, 
 
 ```
 SCHEMA  L.D1.1(109: tables) → L.D1.2(110: schedule engine — Q29 RULED; Q30 (d) + Q31 (b) RULED 2026-09-02, PR #248) → L.D1.3(111: remix/edit)
-        → L.D1.4(112: lineups) → L.D1.5(113: pool + add/drop) → L.D1.6(114: week workers)
-        → L.D1.7(115: standings + rebuild) → L.D1.8(116: playoffs) → L.D1.9(117: realtime + write door)
-        → L.D1.10(118: retire-and-succeed — F31/F1)
+        → L.D1.4(112: lineups) → L.D1.5(113: pool + add/drop)
+        → L.D1.5b(114: the Q34(A) erratum — retire first_game_of_week; ADDED 2026-09-05) → L.D1.5c(the Q34(B) application — drop lock unconditional, release at last_game_ends_at; ADDED 2026-09-05, next free migration)
+        → L.D1.6(week workers — reservation 114 → 115+, confirm with ls) → L.D1.7(standings + rebuild) → L.D1.8(playoffs) → L.D1.9(realtime + write door)
+        → L.D1.10(retire-and-succeed — F31/F1)   [the 114–118 / 062–066 reservations SHIFT by one or two after L.D1.5b/L.D1.5c — D161/D166; D311]
 WORKER  L.D1.1 → L.D2.1 (ingestion/enqueue) · {L.D2.1, L.D1.9} → L.D2.2 (score worker) → L.D2.3 (wiring + reconciliation)
 DATA    L.D3.1 (nflverse adapter — F11; PARALLEL standalone PR, the C43 precedent; feeds L.D6.4 only)
 API     {L.D1.4, L.D1.7} → L.D4.1 (lineup/rosters/matchups/standings) · {L.D1.3, L.D1.5} → L.D4.2 (transactions/schedule/activity)
@@ -210,7 +211,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 >
 > 1. `ALTER TABLE team_lineups` per §12.13 (`slot_map`, `locked_at`, `edited_by_commish`).
 > 2. **The F18 swap:** DROP 001's world-readable SELECT + owner-keyed `FOR ALL`; replace with member-truth SELECT (via the team's league) and **no client write policy** — writes via `set_lineup` only. Legacy `team_lineups` rows from the pre-league teams feature: the Builder measures that population and records its disposition (owner-readable or explicitly orphaned) rather than silently stranding it.
-> 3. `set_lineup` per D293: bipartite slot-fit (E16 — a lone WR cannot satisfy both W/T and W/R/T; unfillable slots named in the refusal), per-slot eligibility, lock refusals per `lineup_lock` (both modes; instants from `nfl_games.kickoff_at` at evaluation time), `allow_illegal_lineups` both settings, IR placement/removal law (Restricted stint refusal until `ir_lock_until_week`), `slot_key` maintenance on `league_rosters`.
+> 3. `set_lineup` per D293: bipartite slot-fit (E16 — a lone WR cannot satisfy both W/T and W/R/T; unfillable slots named in the refusal), per-slot eligibility, lock refusals per `lineup_lock` (~~both modes~~ **[AMENDED 2026-09-05 — Q34(A) RULED (a), L.D1.5b/114: `per_player_kickoff` is the ONLY mode; the whole-week mode is retired]**; instants from `nfl_games.kickoff_at` at evaluation time), `allow_illegal_lineups` both settings, IR placement/removal law (Restricted stint refusal until `ir_lock_until_week`), `slot_key` maintenance on `league_rosters`.
 > 4. pgTAP **060**: the F18 swap pinned from BOTH directions (the 052/019 pattern — a member with no teams row reads, a teams-owner non-member reads nothing and writes raise); E16 goldens incl. the two-flex trap + a superflex config; lock boundary at kickoff±1s per mode (D146); IR fixtures (placement, early-removal refusal, eligible-designation gate); illegal-lineup both settings.
 > 5. Stack vitest: a manager sets a lineup over PostgREST as a real user; a locked-slot edit refuses with the friendly message; an unlocked-slot edit on the same lineup succeeds post-lock.
 >
@@ -226,55 +227,73 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 >
 > DoD: §4 rules; break probe: drop the E32 drop-side clause → the drop-lock pins fail while add-locks stay green, proving the two sides are independently guarded (shown, reverted).
 
-### L.D1.6 — Migration 114: the week workers — `lineup_lock_tick`, `league_week_advance`, `finalize_matchups`
-> Read spec §14 (the three job rows), §11.4 (finalization), §11.7 (median/second results math), §23.3, E38/E39/E42/E43, this doc D291/D293/D295/D297, §22.3 (one cron per job; SKIP LOCKED). Depends L.D1.5.
+### L.D1.5b — Migration 114: the Q34(A) erratum — retire `lineup_lock = first_game_of_week` *(added 2026-09-05 — a ruling-driven erratum, not in the 2026-09-01 breakdown; the Q30/Q31 (PR #248) and Q32/Q33 (PR #254) precedent for a ruling landing on the branch that applies it)*
+> Read PROGRESS §3 **Q34(A)** (RULED (a) by Chris 2026-09-05 — verbatim there), spec v2.16.20 §7.3.6 / §11.2 / §13.1 / App A.1, migration 112 (the file text the replacement is authored against — D137), PROGRESS F230. Depends L.D1.5. **Sequenced BEFORE L.D1.6** in the schema lane (114 is taken here; the 114–118 / 062–066 reservations shift by one — D161/D166).
+>
+> 1. Spec v2.16.19 → v2.16.20: §7.3.6's row → the single mode; §11.2's lock bullet and its IR bullet (R736's current-week rule restated WITHOUT the mode as its reason); §13.1's annotation; App A.1's parity cell. Zero live references left.
+> 2. Migration **114**: a CHECK on `leagues.lineup_lock` (the column had none; neither `create_league` (077) nor `update_league_settings` (105) validates the value — the CHECK is the backstop) + `CREATE OR REPLACE set_lineup_internal` against **112's file text** with the 12 mode sites collapsed to per-player-only (`lineup_kickoff_internal` / `schedule_window_internal` untouched — the no-game-rows fallback is not in the ruling). 113's six mode-naming COMMENT lines corrected (no behaviour change — that is L.D1.5c's). HELD range → 082-114.
+> 3. pgTAP **062** (the CHECK both ways and through both RPCs; the live-reference sweep over every public function body; per-player-only behaviour on an independent fixture) + 060 §I re-cut on L2 (the suite's only `allow_illegal_lineups = FALSE` league — kept, mode flipped; R736's IR cells re-cut on a fixture whose IR player HAS kicked off; 060:995/998's IR-removal raise kept) + 061 (L2 flipped; the H1 composition pattern → the per-player entering-refusal) + 015 (ten literals).
+> 4. TS: the catalog enum → the single literal; the settings panel's select → a static line; the round-trip fixture joins `SINGLE_OPTION_FIELD_PATHS`; tests. `settings-panel.tsx`'s "Lock players at kickoff" hint is NOT touched (L.D1.5c's surface).
+> 5. PROGRESS: Q34(A) RULED + applied, Q34(B) RULED + task filed (L.D1.5c), ~~**Q35** + **Q36** OPEN~~ **Q36** OPEN, **Q35** RULED (a) at `5b6b55f`; F230 discharged; D311; this row + L.D1.5c's.
+>
+> DoD: §4 rules; break probes: the whole-week refusal re-introduced → the post-first-kickoff success cells red (060 §I1/I2, 062 §D); the CHECK dropped → the 23514 cells red (shown, reverted).
+
+### L.D1.5c — Q34(B) application: the drop lock binds on the player's own kickoff regardless of settings; release at `last_game_ends_at` *(added 2026-09-05 — RULED by Chris the same day, PROGRESS §3 Q34(B) verbatim; filed by L.D1.5b, NOT built there)*
+> Read PROGRESS §3 **Q34(B)** and **Q35** (the add-half question — RULED (a): the setting is retired entirely), spec §7.3.4 / §13.1 / E32 / E34, migration 113 (`pool_game_lock_internal` / `pool_game_lock_any_internal` / `roster_add_drop_internal:600-604`), migration 039 (`nfl_weeks.last_game_ends_at` — written by L.D2.1's ingestion at the all-final instant, read by NOTHING today), PROGRESS F231 + F232. Depends **L.D1.5b** (schema lane serial). **Sequenced BEFORE L.D1.6.**
+>
+> Migration (next free — confirm with `ls`), pgTAP (next free). `pool_game_lock_internal` / `pool_game_lock_any_internal`: read `nfl_weeks.last_game_ends_at` (NOT `correction_window_ends_at`, which stays for scoring); NULL = the week is not over = LOCKED, no raise (the R765 NULL-window raise was designed for a scheduled datum and is wrong for an event datum); `roster_add_drop_internal:600-604`'s `IF v_game_lock AND …` drop gate becomes unconditional; the ADD gate becomes unconditional too and `player_game_lock` is RETIRED — column, Zod, and the `settings-panel.tsx:958-960` row — with `p_enforced` (Q35 RULED (a), Chris 2026-09-05). `061` re-cut (§E/§H/§H4 — note §H3 pins the Q34(B) do-over hazard and should flip to refusing); spec §7.3.4 / §13.1 / E32 / E34; the `settings-panel.tsx:958-960` hint (currently states only the add half). Folds **F231** (061 §A's unpinned default) and, with L.D1.6, **F232**. Depends: L.D1.5b (schema lane serial). Q35 is RULED — nothing open.
+>
+> DoD: §4 rules; break probe: the drop gate's `v_game_lock AND` restored → the lax-league drop-refusal cells red (shown, reverted).
+
+### L.D1.6 — Migration ~~114~~ *(reservation shifted by L.D1.5b/L.D1.5c — confirm with `ls`; D311)*: the week workers — `lineup_lock_tick`, `league_week_advance`, `finalize_matchups`
+> Read spec §14 (the three job rows), §11.4 (finalization), §11.7 (median/second results math), §23.3, E38/E39/E42/E43, this doc D291/D293/D295/D297, §22.3 (one cron per job; SKIP LOCKED). Depends L.D1.5c (schema lane serial).
 >
 > 1. `lineup_lock_tick(p_now)` — every 1 min in game windows: stamps `locked_at`/per-slot lock state per `lineup_lock`; maintains `league_player_pool.locked_until` for `player_game_lock` (kickoff → week clear); everything evaluated from `nfl_games.kickoff_at` at run time (E42 — a moved kickoff moves the lock with **no stored instant to go stale**); postponement releases locks (E43's lock half).
 > 2. `league_week_advance(p_now)` — hourly: flips `league_weeks` on `nfl_weeks` boundaries (F4 transitions via L.D1.2's guard); opens the next week **materializing auto-carry lineups** (D293 — invalid/bye players carried and flagged); no code anywhere infers "current week" from wall-clock math (§23.3).
 > 3. `finalize_matchups(p_now)` — runs only when `p_now ≥ correction_window_ends_at` AND all the week's games are `final` (§23.2's no-partial-data law; a postponed-out game is excluded per E43 with the system note): writes H2H results (two-decimal ties are ties, E38), computes `median_score` (average of the two middle scores; exact-median = tie, E39) and `second_opponent` results into `team_week_results`, PF counted once; flips `league_weeks → final`; never touches an overridden cell.
 > 4. pg_cron entries (one per job, idempotent unschedule-first, the 068:1263 pattern); all three claim due leagues with `FOR UPDATE SKIP LOCKED` batches (F50's known ceiling inherited, noted in the banner).
-> 5. pgTAP **062**: window boundary at close±1s with all-games-final true/false crossed (four cells — D146); median goldens (stored literals for a 10-team week incl. the exact-median tie); second-result attribution; E43 finalize-without-the-postponed-game; auto-carry golden (unset lineup carries; a bye starter carries FLAGGED); idempotence (each job re-run ⇒ zero new writes, asserted with counts — rule 10's loud emptiness).
+> 5. pgTAP **~~062~~ (next free after L.D1.5b's 062 / L.D1.5c's)**: window boundary at close±1s with all-games-final true/false crossed (four cells — D146); median goldens (stored literals for a 10-team week incl. the exact-median tie); second-result attribution; E43 finalize-without-the-postponed-game; auto-carry golden (unset lineup carries; a bye starter carries FLAGGED); idempotence (each job re-run ⇒ zero new writes, asserted with counts — rule 10's loud emptiness).
 > 6. Stack vitest: a full virtual week driven by `p_now` injection — open → lock → finalize — over the real stack.
 >
 > **Pre-authorized fallback split (sizing):** if fix-cycle 3 is reached, land `lineup_lock_tick` + `league_week_advance` as this task and open "L.D1.6b — finalize_matchups" immediately.
 >
 > DoD: §4 rules; break probe: let finalize run with one game non-final → the no-partial-data pin fails (shown, reverted).
 
-### L.D1.7 — Migration 115: standings + `rebuild_team_week_results`
+### L.D1.7 — Migration ~~115~~ *(shifted — confirm with `ls`)*: standings + `rebuild_team_week_results`
 > Read spec §7.3.7 (the chain + both skip rules), §11.5, §12.18's precedence note, E38/E63/E64, this doc D297. Depends L.D1.6.
 >
 > 1. `league_standings(league_id)` — single indexed scan over `team_week_results`, ordered by the stored `tiebreakers` chain; H2H resolves clean two-team ties only (3+ groups skip to PA — E63); `total_points` leagues skip H2H entirely (E64); PA-higher-wins direction preserved (it is deliberate — §7.3.7); ~~division grouping +~~ **[AMENDED 2026-09-02 — Q30 (d): NO division grouping — one standings table; chain entry (5) is inert but stays in the stored array]** seeded deterministic coin flip.
 > 2. `rebuild_team_week_results(league_id, week)` — re-derives from `matchups` + lineups, honoring overridden cells (never recomputed) — the §12.18 rebuildability guarantee and the correction path's rebuild arm.
-> 3. pgTAP **063**: chain goldens as stored literals (a fixtured 6-team season with a 3-way tie exercising E63; a 2-way tie resolved by H2H; the E64 total_points skip; a PA-direction discriminating pair); `standings ≡ rebuild-from-scratch` equivalence on the fixture; coin-flip determinism (same seed, same order, twice).
+> 3. pgTAP **~~063~~ (shifted)**: chain goldens as stored literals (a fixtured 6-team season with a 3-way tie exercising E63; a 2-way tie resolved by H2H; the E64 total_points skip; a PA-direction discriminating pair); `standings ≡ rebuild-from-scratch` equivalence on the fixture; coin-flip determinism (same seed, same order, twice).
 >
 > DoD: §4 rules; break probe: let H2H attempt a 3-way group → the E63 golden fails (shown, reverted).
 
-### L.D1.8 — Migration 116: playoffs — bracket generation + status flips
+### L.D1.8 — Migration ~~116~~ *(shifted — confirm with `ls`)*: playoffs — bracket generation + status flips
 > Read spec §11.5 (playoffs), §7.3.1 (`playoff_teams`/`playoff_start_week`/`playoff_reseed`), §7.1 (in_season → playoffs → complete), §11.7 (round_type vocabulary + the total_points playoff rule), this doc D288/D297. Depends L.D1.7.
 >
 > 1. When `league_week_advance` opens `playoff_start_week` (Q29's mapping applied): seed the bracket from `league_standings`; byes for top seeds per `playoff_teams ∈ {2,4,6,8,10,12}` (Builder pins the exact bye arithmetic per size); write `round_type='playoff'` matchups; flip league → `playoffs`; `playoff_reseed` honored between rounds; multi-week rounds per `derivePlayoffRounds`.
 > 2. Champion recorded at the final round's finalization; league → `complete`. **Consolation + third-place brackets: DEFERRED** (off-by-default; the plan's own cut line) — **F212** files the deferral (R51).
 > 3. `total_points` leagues: §11.7's rule (no playoffs unless `playoff_teams > 0` explicitly; then an H2H bracket from points-seeding).
-> 4. pgTAP **064**: bracket goldens per `playoff_teams` size (stored literals); reseed on/off divergence pinned; status flips ride the F4 guard; champion/complete golden; the `playoff_teams = 0` total-points race.
+> 4. pgTAP **~~064~~ (shifted)**: bracket goldens per `playoff_teams` size (stored literals); reseed on/off divergence pinned; status flips ride the F4 guard; champion/complete golden; the `playoff_teams = 0` total-points race.
 >
 > DoD: §4 rules; break probe: seed the bracket from raw Win% instead of `league_standings` → the tie-fixture bracket golden fails (shown, reverted).
 
-### L.D1.9 — Migration 117: in-season realtime + the scoring write door
+### L.D1.9 — Migration ~~117~~ *(shifted — confirm with `ls`)*: in-season realtime + the scoring write door
 > Read spec §9.2, §12.14 (the "M4+" row), §22.2, this doc D292/D295/D296, PROGRESS F42 + F9, tests/024:215–222 (the pin this task edits). Depends L.D1.6; unblocks L.D2.2.
 >
 > 1. Broadcast-from-DB triggers per D296: `matchups` (UPDATE — the `scores_updated` carrier), `team_week_results`, `transactions` (INSERT), `league_weeks` (UPDATE OF status) — payloads column-selected on `league:<league_id>`; channel-auth already covers the topic family (070).
 > 2. **F42 dispositioned per table in this PR:** `league_weeks` + `transactions` gain their subscribers (flip those halves with pointers); `league_members`/`team_managers`/`teams`/`league_invites`/`league_lists` re-waived per table (still no subscriber), the 024 pin updated to the shrunken set with the same message discipline. **F9 decided per D296**: `nfl_weeks` stays trigger-less with its reason, pinned.
 > 3. `score_write_week_batch` per D292/§5 — the ONE door; refuses final weeks, final matchups, overridden cells; one coalesced UPDATE per matchup.
-> 4. pgTAP **065**: trigger inventory both directions (the new four present with events/columns; the re-waived five + `nfl_weeks` absent); door refusals each with a one-unit-away success twin (D272(20)/D146); payload column-selection (no snapshot, no per-player lines).
+> 4. pgTAP **~~065~~ (shifted)**: trigger inventory both directions (the new four present with events/columns; the re-waived five + `nfl_weeks` absent); door refusals each with a one-unit-away success twin (D272(20)/D146); payload column-selection (no snapshot, no per-player lines).
 > 5. Stack vitest: a driven batch write reaches a subscribed member client as ONE event; a non-member client hears nothing (the 024 wire pattern).
 >
 > DoD: §4 rules; break probe: let the door update an `is_overridden` cell → the override-preservation pin fails (shown, reverted).
 
-### L.D1.10 — Migration 118: retire-and-succeed (F31 + F1)
+### L.D1.10 — Migration ~~118~~ *(shifted — confirm with `ls`)*: retire-and-succeed (F31 + F1)
 > Read spec §7.2.1(b), §12.22, PROGRESS F31/F1 rows + D42/D53/D74, this doc D301. Depends L.D1.7 (standings inheritance needs `team_week_results`). Last in the schema lane — nothing else depends on it.
 >
 > 1. `remove_manager(retire)`'s refusal becomes the real outcome per D301 (seal, succeed, link, inherit roster + record-for-seeding, `end_reason='seat_retired'`); in-body succession-cycle rejection (A→B→A and longer — **F1**, same PR).
-> 2. pgTAP **066**: the full §7.2.1(b) golden (stint history integrity, roster re-point counts, seeding-only record inheritance pinned from both sides — the successor's H2H history does NOT inherit); cycle refusals at length 2 and 3; the vacate/takeover modes unchanged (regression pins).
+> 2. pgTAP **~~066~~ (shifted)**: the full §7.2.1(b) golden (stint history integrity, roster re-point counts, seeding-only record inheritance pinned from both sides — the successor's H2H history does NOT inherit); cycle refusals at length 2 and 3; the vacate/takeover modes unchanged (regression pins).
 > 3. **F31 + F1 flip in this PR**, the FAAB clause recorded as vacuously complete (D301) with M5's one-line transfer named in the flip.
 >
 > DoD: §4 rules; break probe: drop the cycle check → the length-2 refusal pin fails (shown, reverted).
@@ -403,7 +422,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 ### L.D6.4 — THE REAL-2026 REPLAY GATE (exit criterion 2)
 > Read this doc D299 + C55, delivery plan §3 M4 row (the second gate run), PROGRESS F10 (the recording-season ops — **this task is CALENDAR-BLOCKED until the first 2026 week is recorded**, ~Sept 10+; F10's own re-confirms ride the same window), F24 (Sleeper values verification shares the window — not this task's, cited so the sessions coordinate). Depends L.D6.3 + L.D3.1 + the recorded week.
 >
-> 1. Replay the recorded week through `FixtureReplayProvider` across 100 seeded leagues at 1×/4×/64× (the M0 determinism reading, D11): **team scores match hand-computed fixtures to the cent** (D299's fixture discipline — ≥ 2 leagues × all teams × the full week on paper into literals); lock instants asserted against recorded kickoffs (lineup + pool, both `lineup_lock` modes); the flexed-game clause per C55 (the first recorded week containing a kickoff move); Remix walked with the D290 posture and its system post shown.
+> 1. Replay the recorded week through `FixtureReplayProvider` across 100 seeded leagues at 1×/4×/64× (the M0 determinism reading, D11): **team scores match hand-computed fixtures to the cent** (D299's fixture discipline — ≥ 2 leagues × all teams × the full week on paper into literals); lock instants asserted against recorded kickoffs (lineup + pool, ~~both `lineup_lock` modes~~ **[AMENDED 2026-09-05 — Q34(A): the one mode, per player]**); the flexed-game clause per C55 (the first recorded week containing a kickoff move); Remix walked with the D290 posture and its system post shown.
 > 2. Reconciliation clean over the replayed population; the M0 gate's own F10 re-run is that row's, coordinated not absorbed.
 > 3. PROGRESS: §1 M4 row → 🟢 both halves; the M4 boxes complete.
 >
@@ -420,13 +439,15 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 | 111 | `111_schedule_remix.sql` | `schedule_remix_confirm` + `schedule_edit_matchup` (E41; D290 interim audit; D97 posts) **[LANDED 2026-09-02 — also `schedule_preview` (from row 110's amendment), the two plain helpers `schedule_window_internal` / `schedule_remix_plan_internal`, and the `schedule_actions` idempotency ledger (D307(2); M6 folds it into `commissioner_actions` — F223(a))]** | L.D1.3 |
 | 112 | `112_lineups.sql` | `team_lineups` §12.13 ALTER + the F18 RLS swap + `set_lineup` (E16 bipartite; locks; IR) | L.D1.4 |
 | 113 | `113_pool_add_drop.sql` | `roster_add_drop` + pool writers (E32; caps; fa_hold; waiver-entry) **[LANDED 2026-09-02 — also `roster_add_drop_internal` (the seam), `pool_game_lock_internal` / `pool_game_lock_any_internal`, `transactions.action_id` + its partial unique index, and the `league_player_pool` on_waivers ⇔ waivers_until CHECK (F222(a)); no ledger table — PROGRESS D309]** | L.D1.5 |
-| 114 | `114_week_workers.sql` | `lineup_lock_tick` + `league_week_advance` + `finalize_matchups` + pg_cron entries (D291) | L.D1.6 |
-| 115 | `115_standings.sql` | `league_standings` + `rebuild_team_week_results` (E38/E63/E64) | L.D1.7 |
-| 116 | `116_playoffs.sql` | bracket generation + reseed + `playoffs`/`complete` flips + champion | L.D1.8 |
-| 117 | `117_inseason_realtime.sql` | the four D296 triggers + F42/F9 dispositions + `score_write_week_batch` | L.D1.9 |
-| 118 | `118_retire_succeed.sql` | `remove_manager(retire)` real outcome + F1 cycle rejection | L.D1.10 |
+| 114 | `114_retire_first_game_of_week.sql` | **[ADDED 2026-09-05 — LANDED: the Q34(A) erratum: the `leagues.lineup_lock` CHECK (one value) + `set_lineup_internal` CREATE OR REPLACE'd against 112's file text, the whole-week arm removed; pgTAP 062]** | L.D1.5b |
+| (next) | L.D1.5c's | the Q34(B) application — `pool_game_lock_*` read `last_game_ends_at`, the drop gate unconditional (F231; with L.D1.6, F232) | L.D1.5c |
+| ~~114~~ → 115+ | `week_workers.sql` | `lineup_lock_tick` + `league_week_advance` + `finalize_matchups` + pg_cron entries (D291) — **number confirmed with `ls` at task time (shifted by L.D1.5b/L.D1.5c — D311)** | L.D1.6 |
+| ~~115~~ → +1 | `standings.sql` | `league_standings` + `rebuild_team_week_results` (E38/E63/E64) | L.D1.7 |
+| ~~116~~ → +1 | `playoffs.sql` | bracket generation + reseed + `playoffs`/`complete` flips + champion | L.D1.8 |
+| ~~117~~ → +1 | `inseason_realtime.sql` | the four D296 triggers + F42/F9 dispositions + `score_write_week_batch` | L.D1.9 |
+| ~~118~~ → +1 | `retire_succeed.sql` | `remove_manager(retire)` real outcome + F1 cycle rejection | L.D1.10 |
 
-Numbers 109–118 (pgTAP **057–066**) are **reservations under the standing confirm-at-task-time policy** (D161/D166 — review-fix migrations may interleave; the SE lane's whole §0 is the warning). Every migration: banner citing spec §§ + the D137 provenance of every replaced function; pgTAP in the same PR; typegen + alias-block re-append; **`supabase/HELD-FROM-PRODUCTION.txt`'s closed range extended in the same PR** (the drift check reds otherwise); the R694/F202 guard-pattern note honored. **Not in M4:** `waiver_claims`/`trades`/`trade_items`/`lineup_swaps` (M5) · `stat_correction_events` + corrections view (M6/L.E2) · `commissioner_actions` (M6) · `player_stats` partitioning (C52 → M7 evaluation).
+Numbers 109–118 (pgTAP **057–066**) are **reservations under the standing confirm-at-task-time policy** — **and the first shift happened 2026-09-05: 114/062 went to the ruling-driven L.D1.5b, L.D1.5c takes the next free pair, and L.D1.6 → L.D1.10 confirm theirs with `ls` (D311)** (D161/D166 — review-fix migrations may interleave; the SE lane's whole §0 is the warning). Every migration: banner citing spec §§ + the D137 provenance of every replaced function; pgTAP in the same PR; typegen + alias-block re-append; **`supabase/HELD-FROM-PRODUCTION.txt`'s closed range extended in the same PR** (the drift check reds otherwise); the R694/F202 guard-pattern note honored. **Not in M4:** `waiver_claims`/`trades`/`trade_items`/`lineup_swaps` (M5) · `stat_correction_events` + corrections view (M6/L.E2) · `commissioner_actions` (M6) · `player_stats` partitioning (C52 → M7 evaluation).
 
 ---
 

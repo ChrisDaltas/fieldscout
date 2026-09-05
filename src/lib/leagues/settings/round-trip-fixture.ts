@@ -110,7 +110,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   trade_lock_behavior: 'reject',
 
   // §7.3.6 — lineups & lock
-  lineup_lock: 'first_game_of_week',
+  lineup_lock: 'per_player_kickoff', // single-option since v2.16.20 (Q34(A)/114 — the DB CHECK refuses anything else)
   allow_illegal_lineups: false,
   auto_sub_inactives: true,
   stat_correction_window: 24,
@@ -143,4 +143,4 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
  * Fields whose only legal value equals the default — the documented
  * exceptions to the "every leaf differs from the default" rule.
  */
-export const SINGLE_OPTION_FIELD_PATHS = ['format', 'playoff_byes', 'draft.autopick_default'] as const
+export const SINGLE_OPTION_FIELD_PATHS = ['format', 'playoff_byes', 'lineup_lock', 'draft.autopick_default'] as const

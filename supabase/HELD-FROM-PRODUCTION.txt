@@ -103,4 +103,12 @@
 # ALTERs are on 109's `transactions` / `league_player_pool`, the writes on
 # 072's `league_rosters` and 112's league-only `team_lineups`; reads outside
 # the leagues chain are SELECTs on `players`, `nfl_games`, `nfl_weeks`, `teams`.
-082-113
+# 114 (L.D1.5b, 2026-09-05): the Q34(A) erratum — `lineup_lock =
+# first_game_of_week` retired (Chris, 2026-09-05; spec v2.16.20 §7.3.6/§11.2):
+# a CHECK on `leagues.lineup_lock` (the only value is `per_player_kickoff`) and
+# `set_lineup_internal` CREATE OR REPLACE'd against 112's file text with the
+# whole-week arm removed. Same mechanism, same explicit act. No launch-surface
+# table is touched: the CHECK is on `leagues`, the function is 112's league-only
+# seam; reads outside the chain are 112's SELECTs on `players`, `nfl_games`,
+# `nfl_weeks`, `teams`.
+082-114

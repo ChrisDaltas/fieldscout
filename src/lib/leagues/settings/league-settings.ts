@@ -422,7 +422,9 @@ export const leagueSettingsSchema = z.strictObject({
   trade_lock_behavior: z.enum(['defer', 'reject']).default('defer'),
 
   // §7.3.6 — lineups & lock
-  lineup_lock: z.enum(['per_player_kickoff', 'first_game_of_week']).default('per_player_kickoff'),
+  // v2.16.20 (Q34(A), Chris 2026-09-05; migration 114): `first_game_of_week` is RETIRED — a player's
+  // slot locks at his own kickoff and nothing else; this is the only value and the DB CHECK agrees.
+  lineup_lock: z.enum(['per_player_kickoff']).default('per_player_kickoff'),
   allow_illegal_lineups: z.boolean().default(true),
   auto_sub_inactives: z.boolean().default(false),
   stat_correction_window: z

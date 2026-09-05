@@ -184,24 +184,21 @@
 --   window), never on his lineup slot's lock state or the lineup-lock mode —
 --   a player whose game has kicked off cannot be dropped until the week
 --   clears; a player whose game has not started can be dropped even when
---   the rest of the lineup is locked (both `per_player_kickoff` and
---   `first_game_of_week`). Consequences: there is NO kept-phantom branch (a
+--   the rest of the lineup is locked (114 / Q34(A): `per_player_kickoff` is
+--   the ONLY lineup lock — the whole-week mode is retired). Consequences:
+--   there is NO kept-phantom branch (a
 --   droppable player has not played, so nothing to keep — the #254
 --   reviewer's R753 bypass-by-composition cannot arise); a dropped player's
 --   `slot_map` entry is ALWAYS cleared from every `team_lineups` row of the
 --   team from the current week on (the slot reads empty, `starters[]`
---   emptied, bench trimmed); under `first_game_of_week` an emptied slot of a
---   locked lineup stays empty for the week (112's whole-week lock refuses a
---   re-seat — pinned in 061 as the composition cell), under
---   `per_player_kickoff` 112's existing rule lets a player whose own kickoff
---   is ahead take the empty slot; E34 stays M5's `bench_lock`-off
+--   emptied, bench trimmed); 112's rule lets a player whose own kickoff
+--   is ahead take the empty slot (114 retired the whole-week arm under
+--   which an emptied slot stayed empty — 061 §H1 is re-cut to the
+--   per-player composition); E34 stays M5's `bench_lock`-off
 --   claim-processing path. RESIDUAL, recorded not asked (D309(3), the D220
 --   shape for Chris's read): with `player_game_lock = OFF` §7.3.4/§13.1's
 --   letter is lax incumbent behaviour — a PLAYED player may be dropped and
---   his slot CLEARS, and what happens next depends on the lineup mode
---   (R759, measured): under `first_game_of_week` the slot stays empty for
---   the week (112's whole-week lock refuses any re-seat — 061 §H1), but
---   under `per_player_kickoff` — the DEFAULT mode — the very next
+--   his slot CLEARS, and (R759, measured; 114: the only mode now) the very next
 --   `set_lineup` MAY RE-SEAT the emptied slot with a player whose own
 --   kickoff is still ahead (112 has nothing to lock once the stored
 --   occupant is gone — 112:894), so the team loses the played player's
@@ -210,8 +207,11 @@
 --   `player_game_lock = false` × `per_player_kickoff`, not an empty slot.
 --   The ruling was given for the on-by-default case; whether the
 --   player-level lock should bind drops REGARDLESS of the toggle (one
---   clause: `v_game_lock AND` → unconditional) is Chris's product call,
---   filed as PROGRESS **F230** with `first_game_of_week`'s fate.
+--   clause: `v_game_lock AND` → unconditional) was Chris's product call —
+--   RULED 2026-09-05 (PROGRESS §3 Q34(B): the drop lock binds on the
+--   player's own kickoff regardless of the toggle; release at the week's
+--   `last_game_ends_at`) and to be BUILT by L.D1.5c, not here (Q35 RULED (a)
+--   2026-09-05: the setting retires entirely — both halves unconditional). Q34(A) (the mode) is APPLIED by migration 114.
 --   An added player lands on the bench of every row
 --   from the current week on with `slot_key = 'bn'`; a bench-only drop
 --   reports its rows with `slot: null` (R758). A drop of a player on a
@@ -243,8 +243,8 @@
 -- Monday game drops and refuses once his game kicks off, a kicked-off
 -- STARTER refuses by name; the composition cell — a drop followed by a
 -- set_lineup on the same row never re-seats a whole-week-locked slot and
--- leaves no phantom; BOTH lax compositions — §H1 `first_game_of_week` (the
--- emptied slot stays empty) and §H3 `per_player_kickoff` (R759: the baseline
+-- leaves no phantom; BOTH lax compositions — §H1 (L2, re-cut by 114 to the
+-- only mode: the emptied slot re-seats only with an unstarted player) and §H3 (L5; R759: the baseline
 -- re-seat is refused, the played starter drops, the slot clears, and the
 -- next set_lineup DOES re-seat it); the add lands on the bench with `bn`);
 -- the NULL-window arm both ways (R765: the enforcing league refuses by name,
@@ -755,10 +755,9 @@ BEGIN
         -- Q32 (Chris, 2026-09-03): droppability keys on the PLAYER's own
         -- kickoff (E32), never on his slot's lock state — so a droppable
         -- player has not played and there is nothing to keep: the entry is
-        -- ALWAYS cleared (the slot reads empty; under first_game_of_week an
-        -- emptied slot of a locked lineup stays empty for the week because
-        -- 112's whole-week lock refuses any re-seat; under per_player_kickoff
-        -- 112 lets a player whose own kickoff is ahead take the empty slot).
+        -- ALWAYS cleared (the slot reads empty; 112 lets a player whose own
+        -- kickoff is ahead take the empty slot — 114 retired the whole-week
+        -- lock, so that is the only rule).
         -- IR keys are roster-level spots — cleared the same way.
         v_map := v_map - v_key;
         SELECT COALESCE(jsonb_agg(

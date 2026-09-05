@@ -1145,18 +1145,12 @@ function LineupsGroup({
   const windowIsHours = typeof s.stat_correction_window === 'number'
   return (
     <GroupCard title="Lineups & lock">
-      <FieldRow label="Lineup lock" htmlFor="set-lineup-lock">
-        <ChoiceSelect
-          id="set-lineup-lock"
-          ariaLabel="Lineup lock"
-          value={s.lineup_lock}
-          width="w-44"
-          options={[
-            { value: 'per_player_kickoff', label: 'Per-player kickoff' },
-            { value: 'first_game_of_week', label: 'First game of week' },
-          ]}
-          onValueChange={(v) => onSettings({ lineup_lock: v as LeagueSettings['lineup_lock'] })}
-        />
+      {/* v2.16.20 (Q34(A), Chris 2026-09-05; migration 114): the lineup lock has ONE value —
+          `per_player_kickoff` — so there is nothing to choose and the select is gone. The rule
+          itself stays visible as a static line (redesign: clarity over density — a commissioner
+          reading this group should still learn WHEN lineups lock). */}
+      <FieldRow label="Lineup lock" hint="Each player locks at his own kickoff. There is no league-wide lock.">
+        <span className="text-[12px] font-semibold text-n-3">Per-player kickoff</span>
       </FieldRow>
 
       <ToggleRow
