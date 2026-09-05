@@ -210,8 +210,8 @@
 --   clause: `v_game_lock AND` → unconditional) was Chris's product call —
 --   RULED 2026-09-05 (PROGRESS §3 Q34(B): the drop lock binds on the
 --   player's own kickoff regardless of the toggle; release at the week's
---   `last_game_ends_at`) and BUILT by L.D1.5c, not here (Q35 holds the
---   add-half question). Q34(A) (the mode) is APPLIED by migration 114.
+--   `last_game_ends_at`) and to be BUILT by L.D1.5c, not here (Q35 RULED (a)
+--   2026-09-05: the setting retires entirely — both halves unconditional). Q34(A) (the mode) is APPLIED by migration 114.
 --   An added player lands on the bench of every row
 --   from the current week on with `slot_key = 'bn'`; a bench-only drop
 --   reports its rows with `slot: null` (R758). A drop of a player on a

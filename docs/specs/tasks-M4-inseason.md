@@ -234,7 +234,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 > 2. Migration **114**: a CHECK on `leagues.lineup_lock` (the column had none; neither `create_league` (077) nor `update_league_settings` (105) validates the value — the CHECK is the backstop) + `CREATE OR REPLACE set_lineup_internal` against **112's file text** with the 12 mode sites collapsed to per-player-only (`lineup_kickoff_internal` / `schedule_window_internal` untouched — the no-game-rows fallback is not in the ruling). 113's six mode-naming COMMENT lines corrected (no behaviour change — that is L.D1.5c's). HELD range → 082-114.
 > 3. pgTAP **062** (the CHECK both ways and through both RPCs; the live-reference sweep over every public function body; per-player-only behaviour on an independent fixture) + 060 §I re-cut on L2 (the suite's only `allow_illegal_lineups = FALSE` league — kept, mode flipped; R736's IR cells re-cut on a fixture whose IR player HAS kicked off; 060:995/998's IR-removal raise kept) + 061 (L2 flipped; the H1 composition pattern → the per-player entering-refusal) + 015 (ten literals).
 > 4. TS: the catalog enum → the single literal; the settings panel's select → a static line; the round-trip fixture joins `SINGLE_OPTION_FIELD_PATHS`; tests. `settings-panel.tsx`'s "Lock players at kickoff" hint is NOT touched (L.D1.5c's surface).
-> 5. PROGRESS: Q34(A) RULED + applied, Q34(B) RULED + task filed (L.D1.5c), **Q35** + **Q36** OPEN; F230 discharged; D311; this row + L.D1.5c's.
+> 5. PROGRESS: Q34(A) RULED + applied, Q34(B) RULED + task filed (L.D1.5c), ~~**Q35** + **Q36** OPEN~~ **Q36** OPEN, **Q35** RULED (a) at `5b6b55f`; F230 discharged; D311; this row + L.D1.5c's.
 >
 > DoD: §4 rules; break probes: the whole-week refusal re-introduced → the post-first-kickoff success cells red (060 §I1/I2, 062 §D); the CHECK dropped → the 23514 cells red (shown, reverted).
 
@@ -246,7 +246,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 > DoD: §4 rules; break probe: the drop gate's `v_game_lock AND` restored → the lax-league drop-refusal cells red (shown, reverted).
 
 ### L.D1.6 — Migration ~~114~~ *(reservation shifted by L.D1.5b/L.D1.5c — confirm with `ls`; D311)*: the week workers — `lineup_lock_tick`, `league_week_advance`, `finalize_matchups`
-> Read spec §14 (the three job rows), §11.4 (finalization), §11.7 (median/second results math), §23.3, E38/E39/E42/E43, this doc D291/D293/D295/D297, §22.3 (one cron per job; SKIP LOCKED). Depends L.D1.5.
+> Read spec §14 (the three job rows), §11.4 (finalization), §11.7 (median/second results math), §23.3, E38/E39/E42/E43, this doc D291/D293/D295/D297, §22.3 (one cron per job; SKIP LOCKED). Depends L.D1.5c (schema lane serial).
 >
 > 1. `lineup_lock_tick(p_now)` — every 1 min in game windows: stamps `locked_at`/per-slot lock state per `lineup_lock`; maintains `league_player_pool.locked_until` for `player_game_lock` (kickoff → week clear); everything evaluated from `nfl_games.kickoff_at` at run time (E42 — a moved kickoff moves the lock with **no stored instant to go stale**); postponement releases locks (E43's lock half).
 > 2. `league_week_advance(p_now)` — hourly: flips `league_weeks` on `nfl_weeks` boundaries (F4 transitions via L.D1.2's guard); opens the next week **materializing auto-carry lineups** (D293 — invalid/bye players carried and flagged); no code anywhere infers "current week" from wall-clock math (§23.3).
