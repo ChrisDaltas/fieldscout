@@ -18,7 +18,9 @@
 -- / `locked_in_game`), F232 (column half — DISCHARGED here), F238 (the tick
 -- AGREES with `last_game_ends_at`, never decides), F240 (NOT taken — the
 -- seam is not replaced here); tasks-M4 §4 standing rules 1–11; D313 (build
--- mechanics).
+-- mechanics); R788–R795 (the PR #258 fix round, D313(13) — this UNMERGED,
+-- HELD file was edited IN PLACE: no 117, no CREATE OR REPLACE of a merged
+-- body; the D137 rule is for merged text).
 --
 -- Numbering: migration head measured 115 at task time (ls supabase/
 -- migrations/ | tail -1) ⇒ 116, pgTAP head 063 ⇒ 064 — the reservation
@@ -144,14 +146,24 @@
 --          `final`, and there must be at least one such game; otherwise the
 --          week is SKIPPED BY NAME (`games_not_final`, with the counts) and
 --          stays `correction_window` for the next run. A `postponed` game
---          is EXCLUDED (E43 — it left the week) and the finalization posts
---          the D97 system note to league chat (`user_id NULL` — the 069
---          tick-actor precedent; `is_system = TRUE`) naming the game(s).
---      (b) h2h leagues: a `home_score`/`away_score` that is NULL on a
---          non-overridden matchup is the write door's word for "not yet
---          scored" (109's nullable columns are E61's room; the door — L.D1.9
---          — owns the representation) and the week is SKIPPED BY NAME
---          (`pending_scores`) — never coerced to 0.00. Every matchup of the
+--          is EXCLUDED only when it has LEFT the week (E43) — its kickoff
+--          now lies at or beyond the next calendar week's `nfl_weeks.
+--          starts_at` (R791: a game marked postponed whose kickoff is still
+--          inside the week — rescheduled within it, or not yet rescheduled
+--          — is an OPEN game and HOLDS the week by name; ingestion's
+--          `IN_WEEK_STATUSES` (`ingest-week.ts:169`) drops every postponed
+--          game from the week's bounds regardless of kickoff, and this
+--          gate deliberately does NOT inherit that reading — §23.2 wins) —
+--          and the finalization posts the D97 system note to league chat
+--          (`user_id NULL` — the 069 tick-actor precedent; `is_system =
+--          TRUE`) naming the game(s).
+--      (b) h2h leagues: a `home_score`/`away_score` that is NULL on ANY
+--          matchup — overridden or not; an override is not a score (R792)
+--          — is the write door's word for "not yet scored" (109's nullable
+--          columns are E61's room; the door — L.D1.9 — owns the
+--          representation) and the week is SKIPPED BY NAME
+--          (`pending_scores`) — never coerced to 0.00, never a raw 23502
+--          from the results INSERT. Every matchup of the
 --          week (all round types) flips to `final`; a NON-overridden row's
 --          `result` is computed from its own scores ROUNDED TO TWO DECIMALS
 --          — a two-decimal tie is a tie (E38; no hidden precision) — and an
@@ -167,11 +179,18 @@
 --          A team in a `secondary` row but no primary row is a schedule
 --          defect and refuses loudly.
 --      (c) total_points leagues (no matchups, §11.7): the week's provisional
---          `team_week_results` rows (the worker's, §12.18) go `is_final`; a
---          SEATED team with NO row finalizes at 0.00 and is NAMED
---          (`zero_filled`) — absence is the natural state of a team no
---          delta touched after every game is final, not a written word, so
---          it is filled LOUDLY rather than blocking the week forever.
+--          `team_week_results` rows (the worker's, §12.18) go `is_final`. A
+--          SEATED team with NO row is the worker's ABSENCE, not a score
+--          (R788 — the first cut zero-filled and finalized; the identical
+--          outage on the h2h side blocks by name, and §23.2 does not vary
+--          by schedule_mode): the week is SKIPPED BY NAME
+--          (`pending_results`, the missing teams listed — the mirror of
+--          `pending_scores`) and stays `correction_window`. ANY missing
+--          row holds the week, not only all of them: F241(b) has the worker
+--          write an explicit provisional row per seated team at its first
+--          batch, so one missing row means the worker never observed that
+--          team, and a partial absence is the silent shape (seven rows
+--          present, an eighth team scored 0 by omission).
 --      (d) `median_game` (§11.7, REGULAR SEASON ONLY — `week < first week +
 --          regular_season_weeks` in NFL-week terms, D288): the median is the
 --          AVERAGE OF THE TWO MIDDLE team scores (even counts — v1's sizes;
@@ -179,7 +198,9 @@
 --          above = win, below = loss, EXACTLY the median = tie (E39).
 --          `league_weeks.median_score` stores it in NUMERIC(8,2) — the
 --          assignment rounds half away from zero (D57(2)); the comparison
---          is against the exact value, never the stored one.
+--          is against the exact value, never the stored one (pinned where
+--          the two differ: middle scores 95.01 / 95.02 ⇒ exact 95.015,
+--          stored 95.02, and the 95.02 team WINS — R789).
 --      (e) the week → `final` (`finalized_at = p_now`) — the F4 chain's last
 --          legal step. A week that is `live` past its window (the F238
 --          unstamped state) is NOT finalizable and is NAMED in the report
@@ -189,11 +210,20 @@
 --      L.D1.8's; results for `playoff` rows are written here generically.
 --   4. pg_cron: three entries, one per job (§22.3), unschedule-first (the
 --      068:1263 idempotent pattern): `lineup-lock` every minute
---      (`* * * * *` — self-gating: an idle minute costs one indexed scan of
---      in-season leagues and touches nothing), `league-week-advance` hourly
---      at :00, `finalize-matchups` hourly at :05 (after the advance — a
---      soft ordering; both are idempotent, so the next hour corrects any
---      overlap).
+--      (`* * * * *` — self-gating by COST, not by calendar inference: an
+--      idle minute WRITES nothing, but it scans every `league_player_pool`
+--      row and every current-week lineup row of every in-season league
+--      with a helper call each — the 064 fixture's idle tick reports
+--      `pool_rows: 3, lineups: 18, pool_updates: 0` — and every claimed
+--      league row stays `FOR UPDATE` until the function RETURNS (one
+--      transaction across every batch, not §22.3's per-league
+--      transaction), so `set_lineup` / `roster_add_drop` on a claimed
+--      league wait for the whole tick. Cohort-scale trivial and the
+--      draft_tick shape; the per-tick scan cost and the held-lock duration
+--      are §22.6 (M7) MEASUREMENTS, not a claim made here — R793),
+--      `league-week-advance` hourly at :00, `finalize-matchups` hourly at
+--      :05 (after the advance — a soft ordering; both are idempotent, so
+--      the next hour corrects any overlap).
 --   5. F232's COLUMN HALF: `COMMENT ON COLUMN league_player_pool.
 --      locked_until` — 109:274's inline comment ("game-day add lock
 --      (player_game_lock=on)") is a merged file and is NOT edited; the live
@@ -226,15 +256,25 @@
 -- cells (close −1s / AT × all-final / one-open, D146); the 10-team median
 -- golden with the exact-median tie (stored literals), E38's two-decimal
 -- tie, second-result attribution, the overridden cell preserved, the
--- `pending_scores` refusal, E43's exclusion + system note, the
--- total_points arm with a zero-filled team named; idempotence for all three
--- (re-run ⇒ zero writes, asserted by counts and by digests). Stack vitest
--- `week-workers-db.test.ts` drives a full virtual week open → lock →
--- finalize over the real stack by `p_now` injection. Break probes (PR
--- body): (1) the all-final gate removed → the no-partial-data cells red;
--- (2) the tick computing its own release (`correction_window_ends_at`) →
--- the agreement cells red; (3) the pool `IS DISTINCT FROM` guard removed →
--- the zero-writes cells red.
+-- `pending_scores` refusal (a NULL under an OVERRIDE too — R792),
+-- E43's exclusion + system note AND the in-week postponed game that
+-- HOLDS the week with −1s / AT twins on the bound (R791), the
+-- total_points arm HELD BY NAME (`pending_results`) for a partial
+-- (7 of 8) and an all-absent (0 of 8) week and finalized only once
+-- the row exists (R788), the 0.01-apart median — exact 95.015
+-- compared, 95.02 stored, the 95.02 team wins, not ties (R789) — the
+-- E42 flex at the flexed kickoff +1s (locked again — R790);
+-- idempotence for all three (re-run ⇒ zero writes, asserted by counts
+-- and by digests). Stack vitest `week-workers-db.test.ts` drives a full
+-- virtual week open → lock → finalize over the real stack by `p_now`
+-- injection. Break probes (PR body): (1) the all-final gate removed →
+-- the no-partial-data cells red; (2) the tick computing its own release
+-- (`correction_window_ends_at`) → the agreement cells red; (3) the pool
+-- `IS DISTINCT FROM` guard removed → the zero-writes cells red; (4) the
+-- `pending_results` skip removed (with the row-count guard) → the
+-- all-absent cells red and the week FLIPS final; (5) the median
+-- compared as `round(v_median, 2)` → the 0.01 cell red (the 95.02 team
+-- ties).
 --
 -- Migration checklist (plan §8.1): five new functions, zero replaced (D137
 -- n/a — every function is NEW; L.D1.8 replaces `league_week_advance`
@@ -268,7 +308,11 @@ COMMENT ON COLUMN league_player_pool.locked_until IS
 
 -- ---------------------------------------------------------------------------
 -- 1. week_games_state_internal — §23.2's gate, read from the games table at
---    run time (a `postponed` game has left the week — E43)
+--    run time. A `postponed` game has LEFT the week (E43) only when its
+--    kickoff now lies at or beyond the next calendar week's
+--    `nfl_weeks.starts_at` (R791); a postponed game whose kickoff is still
+--    inside the week is an OPEN game — never excluded. With no later
+--    calendar row nothing can leave the week (the loud reading).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION week_games_state_internal(
   p_season INTEGER,
@@ -285,19 +329,33 @@ LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $$
+  WITH bound AS (
+    -- The week ends where the next calendar week starts (§23.3's datum).
+    SELECT min(w.starts_at) AS next_starts_at
+    FROM public.nfl_weeks w
+    WHERE w.season = p_season AND w.week > p_week
+  ),
+  g AS (
+    SELECT g.id, g.status, g.kickoff_at, g.home_team, g.away_team,
+           (g.status = 'postponed'
+              AND b.next_starts_at IS NOT NULL
+              AND g.kickoff_at >= b.next_starts_at) AS left_week
+    FROM public.nfl_games g
+    CROSS JOIN bound b
+    WHERE g.season = p_season AND g.week = p_week
+  )
   SELECT
     count(*)::int,
     count(*) FILTER (WHERE g.status = 'final')::int,
-    count(*) FILTER (WHERE g.status = 'postponed')::int,
-    count(*) FILTER (WHERE g.status NOT IN ('final', 'postponed'))::int,
+    count(*) FILTER (WHERE g.left_week)::int,
+    count(*) FILTER (WHERE NOT g.left_week AND g.status <> 'final')::int,
     -- At least one in-week game, and every in-week game final. Zero rows is
     -- the emptiest partial data there is (§23.2) — never finalizable.
-    (count(*) FILTER (WHERE g.status <> 'postponed')) > 0
-      AND (count(*) FILTER (WHERE g.status NOT IN ('final', 'postponed'))) = 0,
+    (count(*) FILTER (WHERE NOT g.left_week)) > 0
+      AND (count(*) FILTER (WHERE NOT g.left_week AND g.status <> 'final')) = 0,
     string_agg(g.away_team || ' @ ' || g.home_team, ', ' ORDER BY g.kickoff_at, g.id)
-      FILTER (WHERE g.status = 'postponed')
-  FROM public.nfl_games g
-  WHERE g.season = p_season AND g.week = p_week;
+      FILTER (WHERE g.left_week)
+  FROM g;
 $$;
 REVOKE EXECUTE ON FUNCTION week_games_state_internal(INTEGER, INTEGER)
   FROM PUBLIC, anon, authenticated;
@@ -920,7 +978,7 @@ DECLARE
   v_cnt          INTEGER;
   v_teams        INTEGER;
   v_twr          INTEGER;
-  v_zero         JSONB;
+  v_missing      JSONB;
   v_arr          NUMERIC[];
   v_n            INTEGER;
   v_median       NUMERIC;
@@ -1009,15 +1067,16 @@ BEGIN
             CONTINUE;
           END IF;
 
-          v_zero := '[]'::jsonb;
           v_matchups := 0;
 
           IF v_mode = 'h2h' THEN
-            -- (b) pending scores (the door's NULL) block the week by name.
+            -- (b) pending scores (the door's NULL) block the week by name —
+            --     on EVERY row, overridden or not: an override is not a
+            --     score, and a NULL under one would otherwise reach the
+            --     results INSERT as a raw 23502 every hour (R792).
             SELECT count(*) INTO v_pending
             FROM public.matchups m
             WHERE m.league_id = v_lg.id AND m.season = v_league.season AND m.week = v_lw.week
-              AND NOT m.is_overridden
               AND (m.home_score IS NULL OR (m.away_team_id IS NOT NULL AND m.away_score IS NULL));
             IF v_pending > 0 THEN
               v_skipped := v_skipped || jsonb_build_object(
@@ -1148,21 +1207,30 @@ BEGIN
                 USING ERRCODE = 'P0001';
             END IF;
           ELSE
-            -- (c) total_points: the worker's provisional rows go final; a
-            --     seated team with no row is NAMED first, then filled at 0.00.
-            SELECT COALESCE(jsonb_agg(t.id ORDER BY t.id), '[]'::jsonb) INTO v_zero
+            -- (c) total_points: the worker's provisional rows go final. A
+            --     SEATED team with NO row is the worker's absence, not a
+            --     score (R788): the week is SKIPPED BY NAME
+            --     (`pending_results`, the missing teams listed — the mirror
+            --     of `pending_scores`) and stays `correction_window`. ANY
+            --     missing row holds the week (F241(b): the worker writes a
+            --     row per seated team at its first batch, so a missing row
+            --     is a team the worker never observed; a partial absence is
+            --     the silent shape — seven rows present, an eighth team
+            --     scored 0 by omission).
+            SELECT COALESCE(jsonb_agg(t.id ORDER BY t.id), '[]'::jsonb) INTO v_missing
             FROM public.teams t
             WHERE t.league_id = v_lg.id AND t.status <> 'retired'
               AND NOT EXISTS (
                 SELECT 1 FROM public.team_week_results r
                 WHERE r.league_id = v_lg.id AND r.team_id = t.id AND r.season = v_league.season AND r.week = v_lw.week);
-            IF jsonb_array_length(v_zero) > 0 THEN
-              RAISE NOTICE 'finalize_matchups: league % week % (total_points) — % seated team(s) had no provisional result row and finalize at 0.00: %',
-                v_lg.id, v_lw.week, jsonb_array_length(v_zero), v_zero;
+            IF jsonb_array_length(v_missing) > 0 THEN
+              v_skipped := v_skipped || jsonb_build_object(
+                'league_id', v_lg.id, 'week', v_lw.week, 'reason', 'pending_results',
+                'pending', jsonb_array_length(v_missing), 'missing', v_missing);
+              RAISE NOTICE 'finalize_matchups: league % week % (total_points) not finalized — % seated team(s) have no result row (pending; absence is not a score, §23.2): %',
+                v_lg.id, v_lw.week, jsonb_array_length(v_missing), v_missing;
+              CONTINUE;
             END IF;
-            INSERT INTO public.team_week_results (league_id, team_id, season, week, points, is_final)
-            SELECT v_lg.id, (x #>> '{}')::uuid, v_league.season, v_lw.week, 0, TRUE
-            FROM jsonb_array_elements(v_zero) x;
             UPDATE public.team_week_results r
             SET is_final = TRUE, median_result = NULL
             WHERE r.league_id = v_lg.id AND r.season = v_league.season AND r.week = v_lw.week;
@@ -1226,7 +1294,7 @@ BEGIN
           v_report := v_report || jsonb_build_object(
             'league_id', v_lg.id, 'week', v_lw.week, 'schedule_mode', v_mode,
             'matchups_final', v_matchups, 'results', v_twr,
-            'median_score', v_median, 'zero_filled', v_zero,
+            'median_score', v_median,
             'postponed_excluded', v_g.postponed_games);
         END LOOP;
       EXCEPTION WHEN OTHERS THEN

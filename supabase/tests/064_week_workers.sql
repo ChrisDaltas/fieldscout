@@ -24,15 +24,25 @@
 --     week is skipped BY NAME at the window instant and stays
 --     `correction_window`; with zero game rows likewise; the PR's probe 1
 --     removes the gate and these cells red. A `postponed` game is EXCLUDED
---     (E43) and the system note is pinned (user_id NULL, is_system).
+--     (E43) ONLY when its kickoff lies at or beyond the next calendar
+--     week's `starts_at` — a postponed game still inside the week is OPEN
+--     and holds the week, with −1s / AT twins on the bound (R791) — and
+--     the system note is pinned (user_id NULL, is_system). A NULL score
+--     under an OVERRIDE is pending too (`pending_scores`; R792). A
+--     total_points week with ANY seated team lacking a result row is held
+--     BY NAME (`pending_results`) — partial (7 of 8) and all-absent (0 of
+--     8) — and finalizes only once the row exists; nothing is zero-filled
+--     (R788; probe 4 reds the all-absent cells and the week flips final).
 --   * GOLDENS AS STORED LITERALS (D62): a 10-team week with the exact-median
 --     tie (E39 — the two middle scores are both 95.00), a two-decimal H2H
 --     tie (E38), second-opponent attribution from the `secondary` rows, an
 --     OVERRIDDEN cell preserved (result 'away' though the home side scored
---     more), PF counted ONCE (10 rows, Σ 950.85); a second week with a
---     non-tie median ((94.90 + 95.10) / 2 = 95.00, nobody at it); a
---     total_points week with a zero-filled team NAMED; a playoff week with
---     NO median (regular season only).
+--     more), PF counted ONCE (10 rows, Σ 949.85); a second week whose two
+--     middle scores are 0.01 APART (95.01 / 95.02: the EXACT 95.015 is
+--     compared, 95.02 is STORED, and the 95.02 team WINS though he equals
+--     the stored value — R789; probe 5 compares `round(v_median, 2)` and
+--     reds it); a total_points week held by name until its eighth row
+--     arrives (R788); a playoff week with NO median (regular season only).
 --   * AUTO-CARRY GOLDEN (D293): the first open writes an EXPLICIT empty row
 --     per seated team; a hand-set week-3 lineup carries to week 4 with the
 --     BYE starter flagged `bye`, the OUT starter flagged `out`, the
@@ -51,7 +61,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(124);
+select plan(140);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — shape, REVOKE, cron rows, the column comment, the sweep
@@ -258,10 +268,11 @@ insert into matchups (id, league_id, season, week, round_type, home_team_id, awa
  ('d6000000-0000-4000-8000-000000000043', 'b6000000-0000-4000-8000-000000000001', 2026, 3, 'secondary', 'c6000000-0000-4000-8000-000000000005', 'c6000000-0000-4000-8000-000000000007',  95.00, 90.00, 'scheduled', null, false),
  ('d6000000-0000-4000-8000-000000000044', 'b6000000-0000-4000-8000-000000000001', 2026, 3, 'secondary', 'c6000000-0000-4000-8000-000000000006', 'c6000000-0000-4000-8000-000000000008',  95.00, 88.10, 'scheduled', null, false),
  ('d6000000-0000-4000-8000-000000000045', 'b6000000-0000-4000-8000-000000000001', 2026, 3, 'secondary', 'c6000000-0000-4000-8000-000000000009', 'c6000000-0000-4000-8000-000000000010',  80.50, 70.00, 'scheduled', null, false);
--- Week 4 (L1): primary rows only; median (94.90 + 95.10) / 2 = 95.00, nobody at it.
+-- Week 4 (L1): primary rows only; the two middle scores are 0.01 apart —
+-- median = (95.01 + 95.02) / 2 = 95.015 EXACT, stored 95.02 (R789).
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_score, away_score, status) values
  ('d6000000-0000-4000-8000-000000000051', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000002',  50.00,  60.00, 'scheduled'),
- ('d6000000-0000-4000-8000-000000000052', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004',  94.90,  95.10, 'scheduled'),
+ ('d6000000-0000-4000-8000-000000000052', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004',  95.01,  95.02, 'scheduled'),
  ('d6000000-0000-4000-8000-000000000053', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000005', 'c6000000-0000-4000-8000-000000000006', 130.00, 120.00, 'scheduled'),
  ('d6000000-0000-4000-8000-000000000054', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000007', 'c6000000-0000-4000-8000-000000000008', 110.00, 100.00, 'scheduled'),
  ('d6000000-0000-4000-8000-000000000055', 'b6000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'c6000000-0000-4000-8000-000000000009', 'c6000000-0000-4000-8000-000000000010',  65.00,  70.00, 'scheduled');
@@ -397,7 +408,9 @@ select is((select status from league_weeks where league_id = 'b6000000-0000-4000
 -- ---------------------------------------------------------------------------
 -- D. lineup_lock_tick — the pool VIEW agrees with 115's helper at every
 --    instant; the lineup RECORD is stamped, moves with a kickoff (E42), and
---    releases on a postponement (E43); on_waivers/rostered keep their state
+--    releases on a postponement (E43) — and at the FLEXED kickoff +1s the
+--    lock is back (a flex moves the lock, it never releases it — R790);
+--    on_waivers/rostered keep their state
 -- ---------------------------------------------------------------------------
 -- The agreement function: TRUE iff every L1 pool row's stamped locked_until
 -- equals what the helper says at the instant (locked ⇒ COALESCE(window,
@@ -475,6 +488,10 @@ select is((select (s ->> 'kickoff_at')::timestamptz from team_lineups tl, jsonb_
            where tl.team_id = 'c6000000-0000-4000-8000-000000000001' and tl.week = 3 and s ->> 'slot' = 'qb:0'),
   '2026-09-25 02:15:00+00'::timestamptz, 'D7c …the QB''s per-slot record too');
 select ok(pg_temp.ww_agrees('2026-09-25 00:15:01+00'), 'D7d AGREEMENT after the flex');
+select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 02:15:01+00')::text, true);
+select is((select state || ':' || locked_until::text from league_player_pool where player_id = 'ww-fa-kc'), 'locked_in_game:2026-09-29 04:00:00+00',
+  'D7e E42 at the FLEXED kickoff +1s: the free agent is locked AGAIN until the week''s last game end — a flex MOVES the lock, it does not release it as if the game had left the week (R790)');
+select ok(pg_temp.ww_agrees('2026-09-25 02:15:01+00'), 'D7f AGREEMENT at the flexed kickoff +1s');
 update nfl_games set kickoff_at = '2026-09-25 00:15:00+00' where id = 'ww-w3-a';
 
 -- E43: the KC game is postponed out of the week (status + kickoff moved).
@@ -513,8 +530,22 @@ select set_config('pgtap.r', public.finalize_matchups('2026-10-01 09:59:59+00'):
 select is((current_setting('pgtap.r')::jsonb ->> 'finalized')::int + (current_setting('pgtap.r')::jsonb ->> 'leagues')::int, 0,
   'E3 window −1s, one game open: nothing claimed, nothing finalized (the fourth cell)');
 update nfl_games set status = 'final' where id = 'ww-w3-c';
+
+-- R792: a NULL score under an OVERRIDE is pending too — an override is not a
+-- score. m33 is the overridden cell; blank its home side.
+update matchups set home_score = null where id = 'd6000000-0000-4000-8000-000000000033';
 select set_config('pgtap.r', public.finalize_matchups('2026-10-01 10:00:00+00')::text, true);
-select is((current_setting('pgtap.r')::jsonb ->> 'finalized')::int, 2, 'E4 window AT, all final: week 3 finalizes for L1 (h2h) and L2 (total_points)');
+select is((select x ->> 'reason' || ':' || (x ->> 'pending') from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
+           where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000001' and (x ->> 'week')::int = 3),
+  'pending_scores:1', 'E3b a NULL score on an OVERRIDDEN matchup holds the week BY NAME too (an override is not a score — R792), never a raw 23502 from the results INSERT');
+select is((select status || ':' || (select count(*)::text from matchups where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 3 and status = 'final')
+           from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 3),
+  'correction_window:0', 'E3c …the week stays correction_window and no matchup flipped');
+select is(current_setting('pgtap.r')::jsonb -> 'failures', '[]'::jsonb, 'E3d …and the run recorded NO failure row (the skip is named, not caught)');
+update matchups set home_score = 101.00 where id = 'd6000000-0000-4000-8000-000000000033';
+
+select set_config('pgtap.r', public.finalize_matchups('2026-10-01 10:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'finalized')::int, 1, 'E4 window AT, all final: week 3 finalizes for L1 (h2h); L2 (total_points) is HELD — a seated team has no result row (E8, R788)');
 
 -- L1 week 3 goldens.
 select is((select status || ':' || coalesce(median_score::text, 'null') || ':' || finalized_at::text from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 3),
@@ -535,14 +566,27 @@ select is((select string_agg('T' || ltrim(right(team_id::text, 2), '0') || '>' |
   'E7b opponent / second-opponent attribution for all ten');
 select is((select count(*)::text || ':' || sum(points)::text || ':' || bool_and(is_final)::text from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 3),
   '10:949.85:true', 'E7c PF counted ONCE: one row per team, Σ 949.85 (not doubled by the secondary/median games), all final');
--- L2 (total_points) week 3.
-select is((select x -> 'zero_filled' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'weeks') x where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000002'),
-  '["c6000000-0000-4000-8000-000000000028"]'::jsonb, 'E8 total_points: the seated team with NO provisional row is NAMED as zero-filled');
+-- L2 (total_points) week 3 — R788: U8 has NO provisional row. Absence is
+-- not a score: the week is held BY NAME and nothing is written for U8.
+select is((select x - 'league_id' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
+           where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000002' and (x ->> 'week')::int = 3),
+  '{"week": 3, "reason": "pending_results", "pending": 1, "missing": ["c6000000-0000-4000-8000-000000000028"]}'::jsonb,
+  'E8 total_points, PARTIAL absence (7 of 8 rows): the week is skipped BY NAME (pending_results) and the seated team with no row is LISTED (R788)');
+select is((select status from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 3), 'correction_window',
+  'E8b …L2 week 3 stays correction_window (the outage the h2h side names pending_scores — no league state advances on partial data, §23.2)');
+select is((select count(*)::text || ':' || (count(*) filter (where is_final))::text || ':' || sum(points)::text from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 3),
+  '7:0:280.00', 'E8c …the seven provisional rows are untouched and NO 0.00 row was written for the eighth (absence is not a score)');
+-- The worker's row for U8 arrives (a real observation, not a zero); the next
+-- run finalizes.
+insert into team_week_results (league_id, team_id, season, week, points, is_final)
+values ('b6000000-0000-4000-8000-000000000002', 'c6000000-0000-4000-8000-000000000028', 2026, 3, 5.50, false);
+select set_config('pgtap.r', public.finalize_matchups('2026-10-01 10:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'finalized')::int, 1, 'E8d with every seated team''s row present the next run finalizes L2 week 3 (and only it — L1 is final)');
 select is((select string_agg(points::text, ',' order by team_id) || ':' || bool_and(is_final)::text from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 3),
-  '10.00,20.00,30.00,40.00,50.00,60.00,70.00,0.00:true', 'E8b …the seven provisional rows go final with their points, the eighth at 0.00');
+  '10.00,20.00,30.00,40.00,50.00,60.00,70.00,5.50:true', 'E8e …the eight provisional rows go final with THEIR points (the late row at 5.50, not 0.00)');
 select is((select status || ':' || coalesce(median_score::text, 'null') from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 3), 'final:null',
-  'E8c L2 week 3 final, no median (median_game off)');
-select is((select count(*)::int from matchups where league_id = 'b6000000-0000-4000-8000-000000000002'), 0, 'E8d …and total_points wrote no matchup rows');
+  'E8f L2 week 3 final, no median (median_game off)');
+select is((select count(*)::int from matchups where league_id = 'b6000000-0000-4000-8000-000000000002'), 0, 'E8g …and total_points wrote no matchup rows');
 
 -- Idempotence.
 select set_config('pgtap.d4', (select md5(string_agg(r::text, '|' order by r.league_id, r.week, r.team_id)) from team_week_results r), true);
@@ -553,15 +597,47 @@ select is(current_setting('pgtap.r')::jsonb ->> 'reason', 'nothing_due', 'E9b �
 select is((select md5(string_agg(r::text, '|' order by r.league_id, r.week, r.team_id)) from team_week_results r), current_setting('pgtap.d4'), 'E9c team_week_results digest unchanged');
 select is((select md5(string_agg(m::text, '|' order by m.id)) from matchups m), current_setting('pgtap.d5'), 'E9d matchups digest unchanged');
 
--- Week 4: pending scores refuse; E43's exclusion + system note; the
--- non-tie median; no secondary rows.
+-- Week 4: pending scores refuse; L2's ALL-absent week held; the in-week
+-- postponed game holds; E43's exclusion + system note; the 0.01-apart
+-- median; no secondary rows.
 update matchups set home_score = null where id = 'd6000000-0000-4000-8000-000000000051';
 select set_config('pgtap.r', public.finalize_matchups('2026-10-08 10:00:00+00')::text, true);
 select is((select x ->> 'reason' || ':' || (x ->> 'pending') from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
            where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000001' and (x ->> 'week')::int = 4),
   'pending_scores:1', 'E10 a NULL score (the door''s "pending", E61) blocks the week BY NAME — never coerced to 0.00');
 select is((select status from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4), 'correction_window', 'E10b …L1 week 4 stays correction_window');
+-- R788, ALL-absent: L2 week 4 has NO team_week_results row at all (the
+-- worker never ran). The same run holds it by name; the first cut
+-- zero-filled all eight and flipped the week final in passing.
+select is((select x ->> 'reason' || ':' || (x ->> 'pending') || ':' || jsonb_array_length(x -> 'missing')::text from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
+           where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000002' and (x ->> 'week')::int = 4),
+  'pending_results:8:8', 'E10c total_points, ALL-absent (0 of 8 rows): skipped BY NAME with all eight seated teams listed (R788 — a worker that never ran is an outage, not eight zeros)');
+select is((select status from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 4), 'correction_window',
+  'E10d …L2 week 4 stays correction_window (probe 4 reds this: the week flips final)');
+select is((select count(*)::int from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000002' and week = 4), 0,
+  'E10e …and not one result row was written (no zero-fill)');
 update matchups set home_score = 50.00 where id = 'd6000000-0000-4000-8000-000000000051';
+
+-- R791: a game marked `postponed` whose kickoff is STILL INSIDE the week
+-- (before week 5's starts_at, 2026-10-07 04:00Z) has not left it — it is an
+-- OPEN game and holds the week; only a kickoff at or beyond the next
+-- calendar week's start is E43's "postponed out of the week".
+update nfl_games set kickoff_at = '2026-10-05 00:15:00+00' where id = 'ww-w4-p';
+select set_config('pgtap.r', public.finalize_matchups('2026-10-08 10:00:00+00')::text, true);
+select is((select x - 'league_id' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
+           where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000001' and (x ->> 'week')::int = 4),
+  '{"open": 1, "week": 4, "final": 3, "total": 4, "reason": "games_not_final", "postponed": 0}'::jsonb,
+  'E10f a postponed game whose kickoff is still inside the week is OPEN, not excluded: the week is held by name (postponed 0, open 1 — R791)');
+select is((select status from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4), 'correction_window', 'E10g …L1 week 4 stays correction_window');
+-- The bound −1s / AT (D146): a kickoff one second before week 5 starts is
+-- still inside week 4; AT week 5's start it has left.
+update nfl_games set kickoff_at = '2026-10-07 03:59:59+00' where id = 'ww-w4-p';
+select is((select open_games || ':' || postponed_games || ':' || all_final::text from public.week_games_state_internal(2026, 4)), '1:0:false',
+  'E10h the bound −1s (kickoff 2026-10-07 03:59:59Z; week 5 starts 04:00Z): still in the week — open, not finalizable');
+update nfl_games set kickoff_at = '2026-10-07 04:00:00+00' where id = 'ww-w4-p';
+select is((select open_games || ':' || postponed_games || ':' || all_final::text from public.week_games_state_internal(2026, 4)), '0:1:true',
+  'E10i the bound AT: the postponed game has LEFT the week — excluded, the three in-week games final');
+update nfl_games set kickoff_at = '2026-10-13 00:15:00+00' where id = 'ww-w4-p';
 select set_config('pgtap.r', public.finalize_matchups('2026-10-08 10:00:00+00')::text, true);
 select is((select x ->> 'postponed_excluded' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'weeks') x
            where x ->> 'league_id' = 'b6000000-0000-4000-8000-000000000001' and (x ->> 'week')::int = 4), '1',
@@ -572,10 +648,13 @@ select is((select count(*)::text || ':' || bool_and(is_system)::text || ':' || b
 select alike((select message from league_chat where league_id = 'b6000000-0000-4000-8000-000000000001'),
   'Week 4 was finalized without the postponed game MIA @ NYJ — players in a game postponed out of the week score 0 for the week (§23.3/E43)%',
   'E11c …naming the game');
-select is((select median_score from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4), 95.00,
-  'E12 the non-tie median: (94.90 + 95.10) / 2 = 95.00');
+select is((select median_score from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4), 95.02,
+  'E12 the 0.01-apart median: (95.01 + 95.02) / 2 = 95.015 EXACT, STORED rounded half away from zero as 95.02 (D57(2))');
 select is((select string_agg('T' || ltrim(right(team_id::text, 2), '0') || ':' || median_result, ',' order by team_id) from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4),
-  'T1:loss,T2:loss,T3:loss,T4:win,T5:win,T6:win,T7:win,T8:win,T9:loss,T10:loss', 'E12b …T3 (94.90) loses to it, T4 (95.10) beats it; nobody ties');
+  'T1:loss,T2:loss,T3:loss,T4:win,T5:win,T6:win,T7:win,T8:win,T9:loss,T10:loss', 'E12b …T3 (95.01) loses to it, T4 (95.02) beats it; nobody ties');
+select is((select points::text || ':' || median_result || ':' || (points = (select median_score from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4))::text
+           from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4 and team_id = 'c6000000-0000-4000-8000-000000000004'),
+  '95.02:win:true', 'E12d THE COMPARE-EXACT / STORE-ROUNDED PIN (R789): T4''s 95.02 EQUALS the stored median_score yet his result is WIN — the comparison was against the exact 95.015, never the stored value (a round(v_median, 2) comparison makes this a tie — probe 5)');
 select is((select count(*)::int from team_week_results where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4 and second_opponent_team_id is null and second_result is null), 10,
   'E12c no secondary rows this week ⇒ second_* NULL for all ten');
 
