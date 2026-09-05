@@ -111,4 +111,15 @@
 # table is touched: the CHECK is on `leagues`, the function is 112's league-only
 # seam; reads outside the chain are 112's SELECTs on `players`, `nfl_games`,
 # `nfl_weeks`, `teams`.
-082-114
+# 115 (L.D1.5c, 2026-09-05): the Q34(B) + Q35 application — the game-day
+# lock binds on the player's OWN kickoff for adds AND drops, unconditionally,
+# and releases at `nfl_weeks.last_game_ends_at` (Chris, 2026-09-05; spec
+# v2.16.21 §7.3.4/§13.1/E32/E34). `player_game_lock` retired: the settings
+# JSONB key stripped (0 rows local and hosted) + a CHECK that it cannot
+# return; both `pool_game_lock_*` helpers DROPPED at 5 args and re-created at
+# 4 (`p_enforced` gone), `roster_add_drop_internal` CREATE OR REPLACE'd
+# against 113's file text. Same mechanism, same explicit act. No launch-surface
+# table is touched: the CHECK is on `leagues`, the functions are 113's
+# league-only seams; reads outside the chain are SELECTs on `nfl_games`,
+# `nfl_weeks`, `players`, `teams`.
+082-115

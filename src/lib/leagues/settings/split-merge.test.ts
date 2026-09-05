@@ -249,7 +249,6 @@ function randomSettings(rng: () => number): LeagueSettings {
     free_agency: pick(rng, ['immediate_after_waivers', 'continuous'] as const),
     acquisitions_per_week: bool(rng) ? ('unlimited' as const) : int(rng, 0, 50),
     acquisitions_per_season: bool(rng) ? ('unlimited' as const) : int(rng, 0, 500),
-    player_game_lock: bool(rng),
     bench_lock: bool(rng),
     fa_hold_hours: int(rng, 0, 48),
     trade_review: pick(rng, ['none', 'commissioner', 'league_vote'] as const),

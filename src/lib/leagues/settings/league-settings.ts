@@ -408,7 +408,10 @@ export const leagueSettingsSchema = z.strictObject({
   free_agency: z.enum(['immediate_after_waivers', 'continuous']).default('immediate_after_waivers'),
   acquisitions_per_week: z.union([z.literal('unlimited'), z.number().int().min(0).max(50)]).default('unlimited'),
   acquisitions_per_season: z.union([z.literal('unlimited'), z.number().int().min(0).max(500)]).default('unlimited'),
-  player_game_lock: z.boolean().default(true),
+  // v2.16.21 (Q34(B) + Q35 (a), Chris 2026-09-05; migration 115): `player_game_lock` is RETIRED — the
+  // game-day add/drop lock is a RULE (a player locks for adds and drops at his own kickoff, releases at
+  // the week's `last_game_ends_at`), not a setting. The key is unstorable at the table (a CHECK) and
+  // refused here by the strict object (`league-settings.test.ts` pins it).
   bench_lock: z.boolean().default(true),
   fa_hold_hours: z.number().int().min(0).max(48).default(0),
 
