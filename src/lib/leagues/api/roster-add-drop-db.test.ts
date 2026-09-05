@@ -228,7 +228,7 @@ beforeAll(async () => {
   outsiderClient = await signIn(OUTSIDER)
 
   // The league, created by the commissioner through the real verb on the
-  // synthetic season with the catalog defaults (player_game_lock TRUE, 48h
+  // synthetic season with the catalog defaults (the game-day lock is a rule since 115, 48h
   // waivers, immediate_after_waivers, unlimited caps, no fa_hold).
   const settings = defaultsForTeamCount(8)
   const { columns, blob } = splitSettings(settings)

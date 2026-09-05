@@ -954,13 +954,9 @@ function WaiversGroup({
         />
       </FieldRow>
 
-      <ToggleRow
-        id="set-player-lock"
-        label="Lock players at kickoff"
-        hint="Unowned players lock for adds when their game starts."
-        checked={s.player_game_lock}
-        onCheckedChange={(player_game_lock) => onSettings({ player_game_lock })}
-      />
+      {/* v2.16.21 (Q34(B) + Q35 (a), Chris 2026-09-05; migration 115): the "Lock players at kickoff"
+          toggle is GONE — the game-day lock is a rule, not a setting (a player locks for adds AND drops at
+          his own kickoff, until the week's last game ends). Its hint stated only the add half anyway. */}
       <ToggleRow
         id="set-bench-lock"
         label="Bench lock"

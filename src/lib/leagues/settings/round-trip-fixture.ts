@@ -96,7 +96,6 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   free_agency: 'continuous',
   acquisitions_per_week: 7,
   acquisitions_per_season: 100,
-  player_game_lock: false,
   bench_lock: false,
   fa_hold_hours: 24,
 
