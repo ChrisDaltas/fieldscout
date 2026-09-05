@@ -4105,6 +4105,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      finalize_matchups: {
+        Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
+      }
       get_join_preview: { Args: { p_value: string }; Returns: Json }
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
@@ -4129,7 +4133,21 @@ export type Database = {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
         Returns: Json
       }
+      league_week_advance: {
+        Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
+      }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
+      lineup_carry_internal: {
+        Args: {
+          p_at: string
+          p_league_id: string
+          p_season: number
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
       lineup_current_week_internal: {
         Args: { p_at: string; p_league_id: string }
         Returns: number
@@ -4154,6 +4172,10 @@ export type Database = {
           kickoff_at: string
           on_bye: boolean
         }[]
+      }
+      lineup_lock_tick: {
+        Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
       }
       mock_draft_expire: { Args: never; Returns: Json }
       notify_league_invite_internal: {
@@ -4434,6 +4456,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      week_games_state_internal: {
+        Args: { p_season: number; p_week: number }
+        Returns: {
+          all_final: boolean
+          final_games: number
+          open_games: number
+          postponed_games: number
+          postponed_list: string
+          total_games: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -4569,6 +4602,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 // ============================================================================

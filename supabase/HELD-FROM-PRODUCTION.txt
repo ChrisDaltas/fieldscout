@@ -122,4 +122,15 @@
 # table is touched: the CHECK is on `leagues`, the functions are 113's
 # league-only seams; reads outside the chain are SELECTs on `nfl_games`,
 # `nfl_weeks`, `players`, `teams`.
-082-115
+# 116 (L.D1.6, 2026-09-05): the week workers — `lineup_lock_tick`,
+# `league_week_advance`, `finalize_matchups` (three SECURITY DEFINER job RPCs
+# on pg_cron with `p_now` injection — D291) + the plain helpers
+# `lineup_carry_internal` / `week_games_state_internal`, three cron rows,
+# and F232's column comment on `league_player_pool.locked_until`; spec
+# v2.16.21 §14 / §11.2 / §11.4 / §11.7 / §23.2 / §23.3 / E38 / E39 / E42 /
+# E43. Same mechanism, same explicit act. No launch-surface table is touched:
+# every write is on the leagues chain (`league_weeks`, `matchups`,
+# `team_week_results`, `team_lineups` league rows, `league_player_pool`,
+# `league_chat`); reads outside it are SELECTs on `nfl_games`, `nfl_weeks`,
+# `players`, `teams`. pg_cron gains three rows (the 068/071 mechanism).
+082-116
