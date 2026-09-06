@@ -32,6 +32,20 @@ import { invalidatingHandlers, rostersEventInvalidates } from './use-league-chan
  * broadcast). The handler map is derived from `rostersEventInvalidates`
  * (R773). Every confirmed (re)join refetches (§9.3's missed-broadcast
  * recovery).
+ *
+ * **What NOTHING carries: the lock (R822(ii)).** `game_lock` is read from
+ * `league_player_pool`, which the `lineup_lock_tick` rewrites every minute
+ * from `nfl_games` (116) — and no trigger broadcasts that table (072's is on
+ * `league_rosters`; D296's four are L.D1.9's and do not name the pool). With
+ * the provider's `refetchOnWindowFocus: false` and no interval, a mounted
+ * page would show the 🔒 it fetched at open until something else
+ * invalidated the key (the `use-league.ts` measurement: no timer bounds
+ * this). So a surface that renders the lock for the CURRENT week passes
+ * `refetchInterval` — the tick's own cadence — and a surface that does not
+ * (a past/future week, a roster list) passes nothing. The poll is the M4
+ * interim (ledger **F252**); a pool broadcast is L.D1.9's to decide. React
+ * Query's `refetchIntervalInBackground` default (false) keeps a hidden tab
+ * quiet.
  */
 
 export const leagueRosterKeys = {
@@ -39,12 +53,19 @@ export const leagueRosterKeys = {
   all: (leagueId: string) => ['league-rosters', leagueId] as const,
 }
 
+export interface RostersReadOptions {
+  /** Poll the route on this cadence while mounted and visible (ms), or
+   *  `false`/absent for no poll — see the header (R822(ii)/F252). */
+  refetchInterval?: number | false
+}
+
 /** The fetch half. */
-export function useRosters(leagueId: string | undefined) {
+export function useRosters(leagueId: string | undefined, options: RostersReadOptions = {}) {
   return useQuery({
     queryKey: leagueRosterKeys.all(leagueId ?? 'none'),
     enabled: Boolean(leagueId),
     queryFn: () => sendLeagueAction<LeagueRosters>(`/api/leagues/${leagueId!}/rosters`),
+    refetchInterval: options.refetchInterval ?? false,
   })
 }
 
@@ -53,8 +74,8 @@ export function useRosters(leagueId: string | undefined) {
  * the query plus the spine's `connection` for the §16.5.4 reconnecting
  * banner.
  */
-export function useRostersLive(leagueId: string | undefined) {
-  const query = useRosters(leagueId)
+export function useRostersLive(leagueId: string | undefined, options: RostersReadOptions = {}) {
+  const query = useRosters(leagueId, options)
   const queryClient = useQueryClient()
 
   const invalidate = () => {

@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { Input } from '@/components/ui/input'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
@@ -62,7 +63,11 @@ import {
  * is the server's canonical map (`rearranged` + `moved[]` named), a
  * refusal renders the RPC's own words (the lock refusal names the player
  * and his kickoff — verbatim, never re-worded), and `no_changes` is its
- * own state (R779).
+ * own state (R779). A refusal also RE-READS the roster and the row
+ * (`useSetLineup`'s `onError`, R822(i)): the view this client evaluated was
+ * the stale one, so the 🔒 the server just enforced reaches the screen
+ * without a reload — the draft is kept (it is the manager's), the seat it
+ * put him in now reads locked, and Discard is the way back.
  *
  * **The 🔒 is the fetched evaluation.** `game_lock` (the pool VIEW the tick
  * refreshes from `nfl_games` — D315(5)) decides which rows are read-only;
@@ -148,7 +153,10 @@ export function LineupEditor({
 
   const mutation = useSetLineup(leagueId, teamId)
   const model = useMemo(() => buildEditorModel(draft, roster, settings), [draft, roster, settings])
-  const dirty = !placementsEqual(draft, storedPlacement)
+  // Dirty against the BASELINE, not the stored prop: after a successful save
+  // the baseline is the server's canonical map while `storedPlacement` is
+  // still the pre-save row until the refetch lands (R826).
+  const dirty = !placementsEqual(draft, baseline.current)
   const readOnly = !canEdit || editability.state !== 'open'
 
   const ctx = useMemo(() => ({ slots, players, locked, currentWeek }), [slots, players, locked, currentWeek])
@@ -195,7 +203,7 @@ export function LineupEditor({
     })
   }
   function discard() {
-    setDraft(storedPlacement)
+    setDraft(baseline.current)
     setSelected(null)
     setNotice(null)
     mutation.reset()
@@ -337,11 +345,11 @@ export function LineupEditor({
             {isCommissionerArm && (
               <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-[11px] font-bold text-ink">
                 Reason (required — you are setting another team’s lineup; it posts to league chat)
-                <input
+                <Input
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   maxLength={500}
-                  className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink"
+                  className="h-btn-md px-2 text-[12px]"
                   placeholder="e.g. manager away — set per his message"
                 />
               </label>

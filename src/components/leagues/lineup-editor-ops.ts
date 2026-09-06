@@ -195,6 +195,19 @@ export function lockedPlayerIds(roster: readonly RosterPlayer[], weekIsCurrent: 
   return out
 }
 
+/**
+ * How the tick's re-evaluation reaches an OPEN page (R822(ii) / F252).
+ * Nothing broadcasts `league_player_pool` (see `use-rosters.ts`'s header), so
+ * the page showing the CURRENT week's 🔒 polls the rosters route at the
+ * tick's cadence (116: every minute); any other week reads no lock from the
+ * view (`lockedPlayerIds` above) and polls nothing. The M4 interim — a pool
+ * broadcast is L.D1.9's to decide.
+ */
+export const LOCK_POLL_MS = 60_000
+export function lockPollInterval(week: number, currentWeek: number | null): number | false {
+  return currentWeek !== null && week === currentWeek ? LOCK_POLL_MS : false
+}
+
 // ---------------------------------------------------------------------------
 // Week ladder → current week + editability
 // ---------------------------------------------------------------------------

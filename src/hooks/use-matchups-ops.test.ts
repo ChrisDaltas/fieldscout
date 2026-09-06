@@ -362,9 +362,14 @@ describe('the lineup hook: one action_id per submit, never optimistic, reads the
     expect(source).not.toContain('cancelQueries')
   })
 
-  it('on success it RE-READS the row and the rosters (the set wrote league_rosters.slot_key)', () => {
-    expect(source).toContain('queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, variables.week) })')
+  it('on success AND on a refusal it RE-READS the row and the rosters (the set wrote league_rosters.slot_key; a refusal means the view was stale — R822(i))', () => {
+    // The behavioural pin (a REAL client driven through MutationObserver,
+    // negative controls, the probe of the round) is `use-lineup-
+    // invalidation.test.ts`; this keeps the shape visible at the source.
+    expect(source).toContain('queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, week) })')
     expect(source).toContain('queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })')
+    expect(source).toContain('onSuccess: (_result, variables) => reread(variables.week)')
+    expect(source).toContain('onError: (_error, variables) => reread(variables.week)')
   })
 
   it('sends the map WHOLE — slot_map is forwarded, never filtered, filled or reordered', () => {

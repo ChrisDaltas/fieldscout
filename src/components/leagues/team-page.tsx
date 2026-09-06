@@ -20,7 +20,7 @@ import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@
 
 import { Crest } from './league-cells'
 import { LineupEditor, formatKickoff } from './lineup-editor'
-import { currentWeekOf, defaultLineupWeek, locksAtCopy, weekEditability } from './lineup-editor-ops'
+import { currentWeekOf, defaultLineupWeek, lockPollInterval, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 
 /**
@@ -36,8 +36,10 @@ import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status
  * member path (D315(12)'s reasoning; D316). `useRostersLive` is the
  * roster + the FETCHED lock evaluation (`game_lock`, D315(5)) and the
  * `league:<id>` room's `connection` (F233(a) — one refcounted room, never a
- * second `.channel(`); `useSchedule` is the week ladder the current week
- * is read from (no clock — §23.3; `lineup-editor-ops.ts` header).
+ * second `.channel(`) — polled at the tick's cadence for the CURRENT week
+ * only, because nothing broadcasts the pool view (R822(ii); F252);
+ * `useSchedule` is the week ladder the current week is read from (no clock
+ * — §23.3; `lineup-editor-ops.ts` header).
  *
  * **One 404 copy (F250(a)).** A member of a soft-deleted league meets two
  * bodies in the in-season family (the family's `INSEASON_LEAGUE_GONE_MESSAGE`
@@ -111,12 +113,15 @@ function TeamPageContent({
   teamName: string
 }) {
   const { user } = useAuth()
-  const rosters = useRostersLive(leagueId)
   const schedule = useSchedule(leagueId)
   const weeks = useMemo(() => schedule.data?.weeks ?? [], [schedule.data])
   const currentWeek = useMemo(() => currentWeekOf(weeks), [weeks])
   const [pickedWeek, setPickedWeek] = useState<number | null>(null)
   const week = pickedWeek ?? defaultLineupWeek(weeks)
+  // R822(ii): the current week's 🔒 is the tick-refreshed pool view and
+  // nothing broadcasts it — poll the rosters at the tick's cadence for THAT
+  // week only (F252; `lineup-editor-ops.ts`).
+  const rosters = useRostersLive(leagueId, { refetchInterval: lockPollInterval(week, currentWeek) })
   const lineup = useLineup(teamId, week)
 
   const rosterTeam = rosters.data?.teams.find((t) => t.team_id === teamId) ?? null
@@ -182,7 +187,7 @@ function TeamPageContent({
           title={lockedAtView?.title ?? undefined}
         >
           {lineup.isPending ? 'Reading the week…' : locksAtCopy(lockedAtView?.local ?? null)}
-          {lineup.data?.locked_at ? ' · countdown: pending Q40' : ''}
+          {lineup.data?.locked_at ? ' · countdown coming' : ''}
         </p>
       </div>
 

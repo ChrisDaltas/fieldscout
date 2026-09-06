@@ -25,21 +25,33 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { leaguesKeys } from '@/hooks/use-leagues'
-import { teamLineupKeys, type TeamLineupRow } from '@/hooks/use-lineup'
-import { leagueRosterKeys } from '@/hooks/use-rosters'
+import { teamLineupKeys, useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
+import { leagueRosterKeys, useRostersLive } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import { LineupEditor } from './lineup-editor'
-import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY } from './lineup-editor-ops'
+import { LOCK_POLL_MS, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { TeamPage } from './team-page'
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-manager' } }),
 }))
+// Two REAL hooks wrapped in spies (never replaced): the roster read, so the
+// page's poll argument is observable at the call site (R822(ii)); the set,
+// so ONE cell can hand the editor a refusal exactly as the mutation reports
+// it (R825). Every other render goes through the originals.
+vi.mock('@/hooks/use-rosters', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/hooks/use-rosters')>()
+  return { ...orig, useRostersLive: vi.fn(orig.useRostersLive) }
+})
+vi.mock('@/hooks/use-lineup', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/hooks/use-lineup')>()
+  return { ...orig, useSetLineup: vi.fn(orig.useSetLineup) }
+})
 
 // ---------------------------------------------------------------------------
 // Rig
@@ -257,9 +269,77 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(lockedRow).toContain(LOCK_RELEASE_UNRECORDED_COPY)
     expect(lockedRow).toContain('aria-disabled="true"')
     // locked_at rendered as the record ("locks from"), never as a lock, and
-    // the countdown is the named placeholder (Q40).
+    // the countdown is the named placeholder (Q40) — the attribute names the
+    // ledger, the copy on screen does not (R829).
     expect(html).toContain('Locks from')
     expect(html).toContain('data-lock-countdown="placeholder-q40"')
+    expect(html).toContain('countdown coming')
+    expect(html).not.toContain('Q40</')
+  })
+
+  it('R822(ii): the page polls the rosters at the tick’s cadence for the CURRENT week, and not for another', () => {
+    vi.mocked(useRostersLive).mockClear()
+    renderTeamPage()
+    // Week 1 is current (the ladder: 1 live, 2 upcoming) and the default.
+    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { refetchInterval: LOCK_POLL_MS }])
+
+    // A ladder whose current week is 2, with the lineup for week 2 seeded and
+    // the page opening there: polls. Then week 1 — a PAST week, closed by
+    // name — cannot be picked in a static render, so the argument is pinned
+    // through the pure function the page calls (`lockPollInterval`,
+    // lineup-editor-ops.test.ts) for the non-current arm.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    client.setQueryData(leaguesKeys.detail(LEAGUE), detail)
+    client.setQueryData(leagueRosterKeys.all(LEAGUE), rosters)
+    client.setQueryData(scheduleKeys.all(LEAGUE), { ...schedule, weeks: [] } satisfies LeagueSchedule)
+    client.setQueryData(teamLineupKeys.week(TEAM, 1), null)
+    vi.mocked(useRostersLive).mockClear()
+    renderToStaticMarkup(
+      createElement(QueryClientProvider, { client }, createElement(TeamPage, { leagueId: LEAGUE, teamId: TEAM })),
+    )
+    // No ladder → no current week → nothing is the current week → no poll.
+    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { refetchInterval: false }])
+  })
+
+  it('R825: a refusal renders the RPC’s sentence VERBATIM — the player and his kickoff named, nothing re-worded', () => {
+    // The 409 the browser pass rendered (F224(e)). Handed to the editor
+    // exactly as `useSetLineup` reports a failed mutation.
+    const refusal =
+      "Dev RB Locked's game kicked off at 2001-09-09T17:00:00+00:00 (nfl_games) — a player whose game has started cannot enter or move slots (§11.2, lineup_lock = per_player_kickoff); wanted \"rb:1\""
+    vi.mocked(useSetLineup).mockReturnValueOnce({
+      data: undefined,
+      error: new Error(refusal),
+      isPending: false,
+      reset: () => {},
+      submit: () => {},
+    } as unknown as ReturnType<typeof useSetLineup>)
+    const client = new QueryClient()
+    const html = unescapeHtml(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LineupEditor, {
+            leagueId: LEAGUE,
+            teamId: TEAM,
+            week: 1,
+            settings: settings.roster_settings,
+            allowIllegal: true,
+            roster,
+            stored: lineupRow,
+            currentWeek: 1,
+            editability: { state: 'open' },
+            canEdit: true,
+            isCommissionerArm: false,
+            leagueTimeZone: null,
+          }),
+        ),
+      ),
+    )
+    expect(html).toContain(refusal)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('Dismiss')
+    expect(html).not.toContain('Something went wrong')
   })
 
   it('bye starter: the server flag chip under allow_illegal_lineups = true is caution copy', () => {

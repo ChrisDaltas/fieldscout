@@ -17,6 +17,7 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import {
+  LOCK_POLL_MS,
   LOCK_RELEASE_UNRECORDED_COPY,
   LOCK_UNTIL_COPY,
   NO_LOCK_RECORD_COPY,
@@ -28,6 +29,7 @@ import {
   designationOf,
   irStintChip,
   lockBadgeFor,
+  lockPollInterval,
   lockedPlayerIds,
   locksAtCopy,
   placementFromStored,
@@ -115,10 +117,23 @@ describe('the lock is the FETCHED evaluation (D315(5)/F241(d)) — never a store
   const rosterAfterMove = [qb, { ...rbA, game_lock: { state: 'unlocked', until: null } as const }, rbB]
 
   it('the moved-kickoff fixture shows NO lock — the pool view rules, the stored instant does not', () => {
-    // The record still says "kicked off"; the evaluation says unlocked.
-    expect(movedKickoffLineup.locked_at).not.toBeNull()
-    expect(startersByKey(movedKickoffLineup.starters).get('rb:0')?.kickoff_at).toBe('2001-09-09T17:00:00.000Z')
+    // Only the DECISION is pinned here: `lockedPlayerIds` never receives the
+    // lineup row, so an assertion on the fixture's `locked_at` /
+    // `kickoff_at` cannot fail for the reason this cell names (R828/D267).
+    // The DoD probe's carrier is the RENDER pin — `team-page.render.test.ts`
+    // "the moved-kickoff fixture…" — where the record DOES enter the editor
+    // and must not lock the row. The record's shape is kept in the fixture
+    // above as documentation of what the render pin feeds.
     expect(lockedPlayerIds(rosterAfterMove, true).has('rbA')).toBe(false)
+    expect(startersByKey(movedKickoffLineup.starters).size).toBe(1)
+  })
+
+  it('R822(ii): the CURRENT week polls the rosters at the tick’s cadence; any other week polls nothing', () => {
+    expect(LOCK_POLL_MS).toBe(60_000)
+    expect(lockPollInterval(3, 3)).toBe(60_000)
+    expect(lockPollInterval(2, 3)).toBe(false)
+    expect(lockPollInterval(4, 3)).toBe(false)
+    expect(lockPollInterval(1, null)).toBe(false)
   })
 
   it('a locked pool view locks the player — both locked shapes, the copy from the STATE', () => {
