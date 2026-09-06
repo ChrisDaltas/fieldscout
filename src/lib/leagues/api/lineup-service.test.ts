@@ -47,7 +47,8 @@ describe('setLineupInputSchema — the FULL canonical map, one action_id, an opt
   })
 
   it('action_id is REQUIRED and a uuid', () => {
-    const { action_id: _dropped, ...without } = ok
+    const without: Partial<typeof ok> = { ...ok }
+    delete without.action_id
     expect(setLineupInputSchema.safeParse(without).success).toBe(false)
     expect(setLineupInputSchema.safeParse({ ...ok, action_id: 'not-a-uuid' }).success).toBe(false)
   })
