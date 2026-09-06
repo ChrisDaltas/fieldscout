@@ -123,6 +123,9 @@ finalize_matchups(p_now timestamptz DEFAULT now())      -- after window close AN
 -- L.D1.7 standings + rebuild (D297)
 league_standings(p_league_id uuid) RETURNS jsonb        -- §7.3.7 chain incl. E63/E64; division entry inert (Q30 (d), 2026-09-02 — no grouping)
 rebuild_team_week_results(p_league_id uuid, p_week int) -- derived-table rebuild honoring overrides
+  -- [LANDED 2026-09-05, migration 117: both signatures verbatim; `rebuild_team_week_results` RETURNS jsonb (the digest
+  --  before/after, `changed`, `reason`), FINAL weeks only, refuses by name; the results math lives in
+  --  week_results_write_internal, called by finalize_matchups AND the rebuild — D314]
 -- L.D1.9 the ONE scoring write door (D292)
 score_write_week_batch(p_league_id uuid, p_week int, p_scores jsonb) RETURNS jsonb
   -- revalidates: in-season/playoffs; week not final; never a final matchup, never an overridden cell;
@@ -261,7 +264,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 >
 > DoD: §4 rules; break probe: let finalize run with one game non-final → the no-partial-data pin fails (shown, reverted).
 
-### L.D1.7 — Migration ~~115~~ *(shifted — confirm with `ls`)*: standings + `rebuild_team_week_results`
+### L.D1.7 — Migration ~~115~~ → **117** *(shifted by L.D1.5b/L.D1.5c — confirmed with `ls`; D314)*: standings + `rebuild_team_week_results` *(**LANDED 2026-09-05 — migration 117 + pgTAP 065 (108); spec v2.16.23; D314; F244 ✅ TAKEN (finalize's report after a rollback — the D137 replacement of `finalize_matchups` against 116's file text made it this task's); F245 + F246 filed. The results math was FACTORED OUT of 116's `finalize_matchups` into three plain helpers both finalization and the rebuild call by name — `standings ≡ rebuild-from-scratch` is pinned as a byte-identical digest, not two copies compared. `rebuild_team_week_results` works on FINAL weeks only (an open week is the door's — D295) and refuses by name (`week_not_final` / `pending_scores` / `pending_results` / `matchup_not_final` / `result_drift`); `league_standings` is a member READ over ONE materialized scan; Points Against = the primary opponent's points once (the PF mirror — spec fold-back v2.16.23); the coin flip is seeded on `schedule_seed`.**)*
 > Read spec §7.3.7 (the chain + both skip rules), §11.5, §12.18's precedence note, E38/E63/E64, this doc D297. Depends L.D1.6.
 >
 > 1. `league_standings(league_id)` — single indexed scan over `team_week_results`, ordered by the stored `tiebreakers` chain; H2H resolves clean two-team ties only (3+ groups skip to PA — E63); `total_points` leagues skip H2H entirely (E64); PA-higher-wins direction preserved (it is deliberate — §7.3.7); ~~division grouping +~~ **[AMENDED 2026-09-02 — Q30 (d): NO division grouping — one standings table; chain entry (5) is inert but stays in the stored array]** seeded deterministic coin flip.
@@ -444,7 +447,7 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 | 114 | `114_retire_first_game_of_week.sql` | **[ADDED 2026-09-05 — LANDED: the Q34(A) erratum: the `leagues.lineup_lock` CHECK (one value) + `set_lineup_internal` CREATE OR REPLACE'd against 112's file text, the whole-week arm removed; pgTAP 062]** | L.D1.5b |
 | 115 | `115_game_day_lock_unconditional.sql` | **[ADDED 2026-09-05 — LANDED: the Q34(B) + Q35 application: the settings key stripped + `leagues_settings_no_player_game_lock` CHECK; `pool_game_lock_internal` / `pool_game_lock_any_internal` narrowed to 4 args (5-arg overloads dropped) reading `last_game_ends_at`, NULL = locked; `roster_add_drop_internal` both gates unconditional; pgTAP 063 + 061 re-cut (F231 folded; F232 spec half)]** | L.D1.5c |
 | ~~114~~ → **116** | `116_week_workers.sql` | `lineup_lock_tick` + `league_week_advance` + `finalize_matchups` + pg_cron entries (D291) — **number confirmed with `ls` at task time (shifted by L.D1.5b/L.D1.5c — D311)** **[LANDED 2026-09-05 — also the plain helpers `lineup_carry_internal` (D293's auto-carry) / `week_games_state_internal` (§23.2's gate), the `(p_now, p_league_id)` scope seam, and F232's column comment; pgTAP 064; D313]** | L.D1.6 |
-| ~~115~~ → +1 | `standings.sql` | `league_standings` + `rebuild_team_week_results` (E38/E63/E64) | L.D1.7 |
+| ~~115~~ → **117** | `117_standings_rebuild.sql` | `league_standings` + `rebuild_team_week_results` (E38/E63/E64) **[LANDED 2026-09-05 — also the three plain helpers `matchup_result_internal` / `week_results_pending_internal` / `week_results_write_internal` (116's results math factored out, D137) and the CREATE OR REPLACE of `finalize_matchups` against 116's file text to call them by name (F244 taken); no cron row; PROGRESS D314]** | L.D1.7 |
 | ~~116~~ → +1 | `playoffs.sql` | bracket generation + reseed + `playoffs`/`complete` flips + champion | L.D1.8 |
 | ~~117~~ → +1 | `inseason_realtime.sql` | the four D296 triggers + F42/F9 dispositions + `score_write_week_batch` | L.D1.9 |
 | ~~118~~ → +1 | `retire_succeed.sql` | `remove_manager(retire)` real outcome + F1 cycle rejection | L.D1.10 |

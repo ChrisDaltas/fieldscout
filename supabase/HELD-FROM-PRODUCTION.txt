@@ -133,4 +133,18 @@
 # `team_week_results`, `team_lineups` league rows, `league_player_pool`,
 # `league_chat`); reads outside it are SELECTs on `nfl_games`, `nfl_weeks`,
 # `players`, `teams`. pg_cron gains three rows (the 068/071 mechanism).
-082-116
+# 117 (L.D1.7, 2026-09-05): standings + the derived-results rebuild —
+# `league_standings` (the §7.3.7 chain as a member READ over
+# `team_week_results`; E63/E64; divisions inert per Q30 (d); the seeded
+# coin flip) + `rebuild_team_week_results` (§12.18's rebuild RPC over a
+# FINAL week, overrides honoured) + three plain helpers
+# (`matchup_result_internal`, `week_results_pending_internal`,
+# `week_results_write_internal` — the results math factored OUT of 116's
+# `finalize_matchups`, which is CREATE OR REPLACE'd against 116's file text
+# to call them by name; D137; F244 taken); spec v2.16.23 §7.3.7 / §11.5 /
+# §12.18 / E38 / E63 / E64. Same mechanism, same explicit act. No
+# launch-surface table is touched: every write is on the leagues chain
+# (`team_week_results`, `league_weeks`, and through the replaced finalize
+# `matchups` / `league_chat`); reads outside it are 116's SELECTs on
+# `nfl_games` / `nfl_weeks` and this file's on `teams`. No cron row added.
+082-117
