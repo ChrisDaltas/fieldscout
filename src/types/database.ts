@@ -4133,6 +4133,7 @@ export type Database = {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
         Returns: Json
       }
+      league_standings: { Args: { p_league_id: string }; Returns: Json }
       league_week_advance: {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
@@ -4176,6 +4177,10 @@ export type Database = {
       lineup_lock_tick: {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
+      }
+      matchup_result_internal: {
+        Args: { p_away: number; p_away_team_id: string; p_home: number }
+        Returns: string
       }
       mock_draft_expire: { Args: never; Returns: Json }
       notify_league_invite_internal: {
@@ -4225,6 +4230,10 @@ export type Database = {
           on_bye: boolean
           window_ends_at: string
         }[]
+      }
+      rebuild_team_week_results: {
+        Args: { p_league_id: string; p_week: number }
+        Returns: Json
       }
       release_ai_generation: {
         Args: { p_feature: string; p_user_id: string }
@@ -4465,6 +4474,18 @@ export type Database = {
           postponed_games: number
           postponed_list: string
           total_games: number
+        }[]
+      }
+      week_results_pending_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
+        Returns: Json
+      }
+      week_results_write_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
+        Returns: {
+          median: number
+          results: number
+          teams: number
         }[]
       }
     }
