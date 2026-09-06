@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { mintScheduleSeed } from '@/lib/leagues/settings/league-settings'
 
@@ -51,19 +52,10 @@ export interface ScheduleWeek {
   median_score: number | null
 }
 
-export interface ScheduleMatchup {
-  id: string
-  season: number
-  week: number
-  round_type: string
-  status: string
-  home_team_id: string
-  away_team_id: string | null
-  home_score: number | null
-  away_score: number | null
-  result: string | null
-  is_overridden: boolean
-}
+/** The `matchups` columns this hook selects — `matchups-service.ts`'s row
+ *  type minus `updated_at`, which the schedule grid does not read (R813:
+ *  one hand-typed row for the table, not two). */
+export type ScheduleMatchup = Omit<MatchupRow, 'updated_at'>
 
 export interface LeagueSchedule {
   weeks: ScheduleWeek[]
@@ -71,9 +63,13 @@ export interface LeagueSchedule {
 }
 
 /** The league's whole season: the week ladder + every pairing, member-RLS.
- *  A non-member reads nothing and gets two empty arrays — the no-leak
- *  posture for league reads (D114(5)); a transport error THROWS rather than
- *  rendering as an empty season (CLAUDE.md's loud-emptiness rule). */
+ *  A non-member reads nothing and gets two empty arrays — unreachable in
+ *  the UI, because the `leagues` SELECT policy (052:126) is member/owner-
+ *  only and the league page never renders for a non-member; still the
+ *  empty-for-a-non-member shape the in-season family refuses at its routes
+ *  (R807/R808 — PROGRESS F249 names this hook and `useLineup`, owner
+ *  L.D5.3). A transport error THROWS rather than rendering as an empty
+ *  season (CLAUDE.md's loud-emptiness rule). */
 export function useSchedule(leagueId: string | undefined) {
   return useQuery({
     queryKey: scheduleKeys.all(leagueId ?? 'none'),

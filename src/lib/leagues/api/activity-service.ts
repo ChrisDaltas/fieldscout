@@ -26,10 +26,19 @@
  * no-leak choice; the draft room and the recap render their own posts.
  * Non-system chat is never included (chat is its own surface, §16.2).
  *
- * **Reads are RLS-scoped** (D92): `transactions` is member-SELECTable
- * (109:259) and `league_chat` is member-SELECTable (095:604), so a
- * non-member's request reads nothing and answers an EMPTY feed rather than a
- * 404 — the established no-leak posture for league reads (D114(5)).
+ * **Membership is asserted FIRST, and a non-member gets the family's no-leak
+ * 403 (R807 — F248(d) ruled at PR #261's review).** `transactions` is
+ * member-SELECTable (109:259) and `league_chat` is member-SELECTable
+ * (095:604), so a non-member's RLS read returns nothing — and this feed
+ * first shipped serving that as an EMPTY feed under the D114(5) league-read
+ * posture. The in-season family's posture is refuse-by-name (§11.5
+ * v2.16.23: "never handed an empty table"; 112/113/117's single 42501;
+ * CLAUDE.md's "assert the reason for emptiness rather than inferring it"),
+ * so `assertLeagueMember` (`inseason-reads.ts`) now precedes the first
+ * `.from(` here exactly as it does in `rosters-service.ts` /
+ * `matchups-service.ts`: one 403 for a non-member and a nonexistent league
+ * alike, a 404 by name for a member whose league was soft-deleted (R812),
+ * and an empty feed only ever means a member's league has no activity yet.
  *
  * **Loud emptiness (tasks-M4 §4 rule 10 / CLAUDE.md).** A PostgREST error is
  * never served as an empty list: both reads propagate as a 500 with the
@@ -65,6 +74,7 @@ import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import { assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -234,6 +244,12 @@ export async function readActivity(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
   const { kind, type, week, team_id, limit, before, before_id } = parsed.data
+
+  // The family's gate BEFORE the first `.from(` (R807): a non-member is
+  // refused by name, never handed an empty feed.
+  const refused = await assertLeagueMember(supabase, leagueId)
+  if (refused) return refused
+
   // Over-fetch by one PER SOURCE — that extra row is what makes `has_more`
   // a measurement instead of a guess.
   const fetchLimit = limit + 1

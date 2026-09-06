@@ -52,6 +52,7 @@ import type { Database } from '@/types/database'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import { readActivity } from './activity-service'
+import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import {
   ADD_DROP_ACTION_ID_REUSED_MESSAGE,
   ADD_DROP_FORBIDDEN_MESSAGE,
@@ -591,10 +592,12 @@ describe('GET …/activity — §13.4\'s M4 slice', () => {
     expect(ids.size).toBe(3)
   })
 
-  it('a non-member reads NOTHING — the no-leak posture for league reads', async () => {
+  it('a NON-MEMBER is refused with the in-season family\'s one no-leak 403 — never an empty feed (R807, F248(d))', async () => {
+    // L.D4.2 shipped this as 200 + `items: []` (the D114(5) league-read
+    // posture); the #261 review ruled refuse-by-name the family's posture,
+    // so the feed now answers what rosters / matchups / standings answer.
     const result = await readActivity(outsiderClient, leagueId, {})
-    expect(result.status).toBe(200)
-    expect((result.body as unknown as { items: unknown[] }).items).toHaveLength(0)
+    expect(result).toStrictEqual({ status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE } })
   })
 
   it('refuses a malformed filter instead of quietly widening the feed', async () => {

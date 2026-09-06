@@ -138,6 +138,8 @@ export async function readMatchups(
     .is('deleted_at', null)
     .maybeSingle()
   if (leagueError) return { status: 500, body: { error: `leagues: ${leagueError.message}` } }
+  // The gate saw a live row (a soft-deleted league is its 404 by name —
+  // R812); empty here means deleted between the two reads: a fault.
   if (!league) {
     return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
   }

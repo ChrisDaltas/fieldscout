@@ -77,6 +77,7 @@ const ROSTERS_SERVICE = 'src/lib/leagues/api/rosters-service.ts'
 const MATCHUPS_SERVICE = 'src/lib/leagues/api/matchups-service.ts'
 const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
 const READS = 'src/lib/leagues/api/inseason-reads.ts'
+const ACTIVITY_SERVICE = 'src/lib/leagues/api/activity-service.ts'
 
 /** File text with block comments and `//` lines removed, so a docblock that
  *  merely MENTIONS a guard cannot satisfy a pin about the code. */
@@ -156,17 +157,23 @@ describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
 // RLS-empty result for a non-member must not render as an empty list).
 // ---------------------------------------------------------------------------
 
-describe('the two direct-read services assert membership BEFORE any table read (D92 + rule 10)', () => {
-  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+describe('the direct-read services assert membership BEFORE any table read (D92 + rule 10; the activity feed since R807)', () => {
+  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, ACTIVITY_SERVICE]) {
     it(`${rel} calls assertLeagueMember before its first .from(`, () => {
       const source = code(rel)
-      expect(source).toContain("import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'")
+      expect(source).toMatch(/import \{ [^}]*assertLeagueMember[^}]* \} from '\.\/inseason-reads'/)
       const gate = source.indexOf('await assertLeagueMember(supabase, leagueId)')
       expect(gate).toBeGreaterThan(-1)
       expect(source).toContain('if (refused) return refused')
       expect(gate).toBeLessThan(source.indexOf(".from("))
     })
   }
+
+  it('the activity feed no longer serves a non-member an EMPTY feed (R807 — F248(d) ruled: one posture for the family)', () => {
+    const source = code(ACTIVITY_SERVICE)
+    expect(source).not.toContain('answers an EMPTY feed')
+    expect(source).not.toContain('D114(5)')
+  })
 
   it('the gate is the database\'s own predicate, answering one no-leak 403 (never an empty body)', () => {
     const source = code(READS)
@@ -177,6 +184,14 @@ describe('the two direct-read services assert membership BEFORE any table read (
     expect(source.indexOf('status: 500')).toBeLessThan(source.indexOf('status: 403'))
   })
 
+  it('a SOFT-DELETED league is the gate\'s 404 by name, checked AFTER membership so a non-member never learns it existed (R812)', () => {
+    const source = code(READS)
+    expect(source).toContain(".is('deleted_at', null)")
+    expect(source).toContain('status: 404, body: { error: INSEASON_LEAGUE_GONE_MESSAGE }')
+    expect(source.indexOf('status: 403')).toBeLessThan(source.indexOf(".is('deleted_at', null)"))
+    expect(source.indexOf(".is('deleted_at', null)")).toBeLessThan(source.indexOf('status: 404'))
+  })
+
   it('the standings service needs no gate of its own — 117 raises 42501 in-body and the mapper answers 403', () => {
     const source = code(STANDINGS_SERVICE)
     expect(source).toContain("supabase.rpc('league_standings', { p_league_id: leagueId })")
@@ -184,10 +199,11 @@ describe('the two direct-read services assert membership BEFORE any table read (
     expect(source).not.toContain('assertLeagueMember')
   })
 
-  it('every direct read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule)', () => {
-    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, STANDINGS_SERVICE]) {
+  it('every direct TABLE read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule) — and the standings RPC\'s jsonb is NOT (R810: a probe that cannot fail)', () => {
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
       expect(code(rel), rel).toContain('assertBelowPostgrestCap(')
     }
+    expect(code(STANDINGS_SERVICE)).not.toContain('assertBelowPostgrestCap')
   })
 
   it('matchups: `week` is REQUIRED and the route infers no current week (§23.3)', () => {

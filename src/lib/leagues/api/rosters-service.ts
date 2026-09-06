@@ -162,8 +162,9 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
   ] as const) {
     if (res.error) return { status: 500, body: { error: `${what}: ${res.error.message}` } }
   }
-  // Membership passed, so a missing league row is a fault (soft-deleted
-  // between the two reads), not a non-member — say so.
+  // Membership passed AND the gate saw a live league row (a soft-deleted
+  // league is the gate's 404 by name — R812), so a row that reads empty
+  // HERE was deleted between the two reads: a fault, named as one.
   if (!leagueRes.data) {
     return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
   }

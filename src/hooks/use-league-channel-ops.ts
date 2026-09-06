@@ -15,13 +15,14 @@
  * (INSERT — a post whose `context` is not `draft:<id>` broadcasts to
  * `league:<league_id>`, 070:289).
  *
- * Arriving with migration 117 / L.D1.9 (D296): `transactions` (INSERT — the
- * activity feed's carrier), `matchups` (UPDATE — the coalesced
- * `scores_updated`), `team_week_results` (finalization) and `league_weeks`
- * (status flips). They are listed here BEFORE their triggers exist on
- * purpose: registering the listener now costs nothing, and it means the
- * feed starts moving the moment 117 lands rather than needing this file
- * edited again.
+ * Arriving with L.D1.9's triggers (D296; migration 117 landed as the
+ * standings, L.D1.7 — the triggers' number is the next free at L.D1.9):
+ * `transactions` (INSERT — the activity feed's carrier), `matchups` (UPDATE
+ * — the coalesced `scores_updated`), `team_week_results` (finalization) and
+ * `league_weeks` (status flips). They are listed here BEFORE their triggers
+ * exist on purpose: registering the listener now costs nothing, and it
+ * means the feed starts moving the moment the triggers land rather than
+ * needing this file edited again.
  */
 export const LEAGUE_CHANNEL_EVENTS = [
   'leagues',

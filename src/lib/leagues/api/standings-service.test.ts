@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { normalizeStandingsRow } from './standings-service'
+import { DECIMAL_FIGURE, normalizeStandingsRow } from './standings-service'
 
 const base = {
   rank: 1,
@@ -43,6 +43,28 @@ describe('normalizeStandingsRow — the F247(b) scale, not trusted', () => {
     expect(row.win_pct).toBe(0.5)
     expect(row.points_for).toBe(35)
     expect(row.points_against).toBe(0)
+  })
+
+  it('the string arm is DECIMAL-ONLY (R811): empty / blank / hex / exponent / padded strings REFUSE, even though Number() would read them', () => {
+    // The boundary the first cut left unpinned: `""` and `"  "` were refused
+    // only by `trim()`, and `"0x10"` / `"1e3"` / `" 5 "` passed `Number()` as
+    // 16 / 1000 / 5 — looser than "a numeric string". Postgres renders a
+    // `numeric` as a plain decimal, so that is the only string shape allowed.
+    for (const bad of ['', '  ', '0x10', '1e3', ' 5 ', '5.', '.5', '+5', 'NaN', 'Infinity']) {
+      expect(() => normalizeStandingsRow({ ...base, win_pct: 1, points_for: bad, points_against: 0 }), JSON.stringify(bad)).toThrow(
+        /points_for for team t1 is not a finite number/,
+      )
+      expect(DECIMAL_FIGURE.test(bad), JSON.stringify(bad)).toBe(false)
+    }
+    for (const [good, value] of [
+      ['71.50', 71.5],
+      ['-3.25', -3.25],
+      ['0', 0],
+      ['0.0000', 0],
+      ['12345', 12345],
+    ] as const) {
+      expect(normalizeStandingsRow({ ...base, win_pct: 1, points_for: good, points_against: 0 }).points_for).toBe(value)
+    }
   })
 
   it('a figure that is not a finite number REFUSES the document by name (rule 10)', () => {

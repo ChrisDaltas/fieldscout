@@ -28,11 +28,15 @@
  * rows (`COALESCE(sum(...), 0)`) and as `35.00` otherwise (a `numeric(8,2)`
  * sum), and `win_pct` as `round(…, 4)`. Through `JSON.parse` both scales
  * already collapse to a JS number, but "already" is not a contract: this
- * layer coerces the three per-row figures through `Number()` and REFUSES
- * the document (a 500 by name) if any is not finite, so a renderer can
- * format `toFixed(2)` without a guard and a future scale change on the SQL
- * side cannot reach the UI as a string. The row count is asserted against
- * the seated-team arithmetic's ceiling too (rule 10).
+ * layer coerces the three per-row figures — a JSON number, or a DECIMAL
+ * string (`/^-?\d+(\.\d+)?$/` — the only string shape a `numeric` can
+ * arrive as; R811) — and REFUSES the document (a 500 by name) if any is
+ * anything else, so a renderer can format `toFixed(2)` without a guard and
+ * a future scale change on the SQL side cannot reach the UI as a string.
+ * No row-cap assertion here (R810): `standings` is ONE jsonb document an
+ * RPC returned, which PostgREST's row cap never touches — a probe on it
+ * could not fail (D272(20)); the count's ceiling is 117's own seated-team
+ * scan.
  *
  * No Date/random read here (the `src/lib/leagues/**` ESLint fences).
  */
@@ -41,7 +45,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/database'
 
 import { mapInSeasonRpcError } from './inseason-errors'
-import { INSEASON_READ_FORBIDDEN_MESSAGE, assertBelowPostgrestCap } from './inseason-reads'
+import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -84,12 +88,20 @@ export interface LeagueStandings {
   reason: string | null
 }
 
-/** A JSON number or a numeric string, and NOTHING else: `Number(null)` is
+/** The one string shape a `numeric` figure can arrive as — plain decimal,
+ *  optional sign, no exponent, no radix prefix, no padding (R811). Exported
+ *  for its pins. */
+export const DECIMAL_FIGURE = /^-?\d+(\.\d+)?$/
+
+/** A JSON number or a DECIMAL string, and NOTHING else: `Number(null)` is
  *  `0` and `Number(undefined)` is `NaN`, so a bare `Number()` would let a
- *  NULL figure render as a plausible `0.00` — the CLAUDE.md shape exactly. */
+ *  NULL figure render as a plausible `0.00` — the CLAUDE.md shape exactly;
+ *  and `Number("0x10")` / `Number("1e3")` / `Number(" 5 ")` are 16 / 1000 /
+ *  5, looser than "a numeric string" (R811), so the string arm is the
+ *  regex, not `Number()`'s grammar. */
 function figure(raw: unknown): number {
   if (typeof raw === 'number') return raw
-  if (typeof raw === 'string' && raw.trim() !== '') return Number(raw)
+  if (typeof raw === 'string' && DECIMAL_FIGURE.test(raw)) return Number(raw)
   return Number.NaN
 }
 
@@ -123,9 +135,6 @@ export async function readStandings(supabase: Supabase, leagueId: string): Promi
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.standings)) {
     return { status: 500, body: { error: 'league_standings: the RPC returned no standings document' } }
   }
-  const capped = assertBelowPostgrestCap(doc.standings, 'league_standings.standings')
-  if (capped) return capped
-
   let rows: StandingsRow[]
   try {
     rows = (doc.standings as Record<string, unknown>[]).map(normalizeStandingsRow)

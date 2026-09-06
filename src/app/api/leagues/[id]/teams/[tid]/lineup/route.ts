@@ -17,8 +17,9 @@ const idSchema = z.uuid()
  *  `lineup-service.ts`, which the stack suite drives directly.
  *
  *  Body: { week, slot_map, action_id, reason? } — the FULL canonical map
- *  incl. IR keys (an absent IR key is a removal), one UUID per submit
- *  reused on retry, and a reason only for the commissioner arm (F224(e)). */
+ *  incl. IR keys (an absent IR key is a removal), one UUID per submit —
+ *  re-sending the same body replays it (R815) — and a reason only for the
+ *  commissioner arm (F224(e)). */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const { id, tid } = await params
   if (!idSchema.safeParse(id).success) {

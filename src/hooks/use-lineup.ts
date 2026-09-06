@@ -26,12 +26,18 @@ import { leagueRosterKeys } from './use-rosters'
  * WRITE: `PATCH /api/leagues/[id]/teams/[tid]/lineup` (§15.3 →
  * `set_lineup`). The client sends the FULL canonical `slot_map` including
  * IR keys (an absent IR key is a removal from IR; an empty slot is an
- * absent key — F224(e)), and **one `action_id` per submit, reused on
- * retry** (E2/D68(1), the `useAddDrop` shape): the exposed callbacks mint
- * the UUID and the mutation VARIABLES carry it, so a React Query retry
- * replays the same id and 112's `lineup_actions` ledger returns the stored
- * document byte-identically instead of writing twice. A second tap mints a
- * fresh id and is a genuinely new submit.
+ * absent key — F224(e)), and **one `action_id` per submit** (E2/D68(1), the
+ * `useAddDrop` shape): `submit`/`submitAsync` mint the UUID and the mutation
+ * VARIABLES carry it, so a caller re-invoking `mutate` with the SAME
+ * variables replays — 112's `lineup_actions` ledger returns the stored
+ * document byte-identically instead of writing twice. Precisely (R815): no
+ * code path here re-sends an id on its own — `useMutation` sets no `retry`
+ * (React Query's mutation default is 0; the provider's `retry: 1` is under
+ * `queries`, `query-provider.tsx:16`), and each `submit` call mints afresh,
+ * so a second tap is a genuinely new submit (content-idempotent: the same
+ * map is a `no_changes` set). Automatic replay would be one `retry` option
+ * here; it is deliberately not set, so a failed submit surfaces its refusal
+ * rather than being re-sent behind the manager's back.
  *
  * **NEVER OPTIMISTIC — the UI shows the server's answer, not a guess.**
  * §15.6 lists "lineup set" among the optimistic updates and §11.2's lock law
@@ -143,7 +149,8 @@ export function useSetLineup(leagueId: string, teamId: string) {
     week: input.week,
     slot_map: input.slotMap,
     ...(input.reason ? { reason: input.reason } : {}),
-    // One action_id per submit (D68(1)); a retry of THIS submit replays.
+    // One action_id per submit (D68(1)); re-invoking `mutate` with THESE
+    // variables replays; a new `submit` call is a new id (R815).
     action_id: crypto.randomUUID(),
   })
 

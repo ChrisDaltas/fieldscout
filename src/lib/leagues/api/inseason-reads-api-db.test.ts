@@ -10,10 +10,12 @@
  * What THIS suite proves is the layer they do not touch:
  *
  *   - the auth matrix (member · commissioner · NON-MEMBER · a nonexistent
- *     league) — and the load-bearing half: a non-member gets the family's
- *     no-leak 403, **never an empty league** (CLAUDE.md's "never let 'nothing
- *     happened' mean 'it worked'"; the membership gate precedes the RLS
- *     reads);
+ *     league · a SOFT-DELETED league) — and the load-bearing half: a
+ *     non-member gets the family's no-leak 403, **never an empty league**
+ *     (CLAUDE.md's "never let 'nothing happened' mean 'it worked'"; the
+ *     membership gate precedes the RLS reads), and a member of a deleted
+ *     league gets a 404 BY NAME after the membership check (R812) — on
+ *     every direct read, the activity feed included (R807);
  *   - **F241(d)**: a planted `locked_until = 'infinity'` pool row reaches the
  *     client as the string `"infinity"` and is rendered as
  *     `locked_release_unrecorded`, beside an instant and a NULL;
@@ -43,7 +45,8 @@ import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
-import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
+import { readActivity } from './activity-service'
+import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import { readMatchups, type WeekMatchups } from './matchups-service'
 import { readRosters, type LeagueRosters } from './rosters-service'
 import { readStandings, type LeagueStandings } from './standings-service'
@@ -397,6 +400,11 @@ describe('GET …/matchups?week=', () => {
     expect(result).toStrictEqual({ status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE } })
   })
 
+  it('a nonexistent league answers a MEMBER the same 403 (R814 — the cell rosters and standings already had)', async () => {
+    const result = await readMatchups(managerClient, NO_SUCH_LEAGUE, { week: '1' })
+    expect(result).toStrictEqual({ status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE } })
+  })
+
   it('a week OFF the calendar is a 404 by name with the ladder\'s bounds', async () => {
     const result = await readMatchups(managerClient, leagueId, { week: '9' })
     expect(result.status).toBe(404)
@@ -512,5 +520,51 @@ describe('GET …/standings', () => {
     expect(raw).toMatch(/"points_for":\s*71\.50\b/)
     expect(raw).toMatch(/"points_for":\s*0[,}]/)
     expect(raw).not.toMatch(/"points_for":\s*0\.00/)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// R812 — a SOFT-DELETED league. Last in the file on purpose: the league row
+// is mutated and restored around the cells.
+// ---------------------------------------------------------------------------
+
+describe('a SOFT-DELETED league answers a MEMBER a 404 by name after the membership check, and a NON-MEMBER the same 403 (R812)', () => {
+  it('rosters / matchups / activity: 404 by name for a member; standings: 117\'s own P0002 → 404; the outsider still 403', async () => {
+    const { error: deleteError } = await service
+      .from('leagues')
+      .update({ deleted_at: '2099-01-01T00:00:00+00:00' })
+      .eq('id', leagueId)
+    expect(deleteError).toBeNull()
+    try {
+      // `is_league_member` ignores `deleted_at` (052:86-94), so without the
+      // fold the member would pass the gate and the services would answer
+      // "the league row read empty after membership passed" — a 500.
+      const { data: stillMember } = await managerClient.rpc('is_league_member', { p_league_id: leagueId })
+      expect(stillMember).toBe(true)
+
+      const gone = { status: 404, body: { error: INSEASON_LEAGUE_GONE_MESSAGE } }
+      expect(await readRosters(managerClient, leagueId)).toStrictEqual(gone)
+      expect(await readMatchups(managerClient, leagueId, { week: '1' })).toStrictEqual(gone)
+      expect(await readActivity(managerClient, leagueId, {})).toStrictEqual(gone)
+      // 117 looks the league up `deleted_at IS NULL` in-body and raises P0002
+      // (117:1001-1004); the family mapper answers 404 with its words.
+      const standings = await readStandings(managerClient, leagueId)
+      expect(standings.status).toBe(404)
+      expect(errorText(standings)).toContain(`league ${leagueId} not found`)
+
+      // Order is load-bearing: the outsider is refused BEFORE the deleted
+      // check runs, so a non-member never learns the league existed.
+      const forbidden = { status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE } }
+      expect(await readRosters(outsiderClient, leagueId)).toStrictEqual(forbidden)
+      expect(await readMatchups(outsiderClient, leagueId, { week: '1' })).toStrictEqual(forbidden)
+      expect(await readActivity(outsiderClient, leagueId, {})).toStrictEqual(forbidden)
+      expect(await readStandings(outsiderClient, leagueId)).toStrictEqual(forbidden)
+    } finally {
+      const { error: restoreError } = await service.from('leagues').update({ deleted_at: null }).eq('id', leagueId)
+      expect(restoreError).toBeNull()
+    }
+    // Restored: the member reads again (the fold did not break the live path).
+    expect((await readRosters(managerClient, leagueId)).status).toBe(200)
   })
 })

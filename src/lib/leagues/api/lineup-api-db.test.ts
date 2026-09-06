@@ -23,7 +23,16 @@
  *     (F65(b)) — including sent UPPERCASE (R768); an E16 re-seat of the
  *     SAME submit passes the guard through `moved[]`;
  *   - the render duties: `flags`, `rearranged` + `moved[]`, `no_changes`,
- *     `locked_at`, and the canonical `slot_map` all reach the body whole.
+ *     `locked_at`, and the canonical `slot_map` all reach the body whole;
+ *   - **an IR PLACEMENT and an IR REMOVAL through the route (R809)** — the
+ *     FULL canonical map incl. the IR key places a designated player on
+ *     `ir1:0` (200, `ir_moves.placed`, the key in the canonical map and in
+ *     the stored row, `league_rosters.slot_key` = the spot) and the same map
+ *     WITHOUT the key removes him (`ir_moves.removed`) — each replay
+ *     byte-identical, so the F65(b) placement guard's behaviour on an IR key
+ *     is MEASURED, not inferred (the R768 class: a committed set reported as
+ *     a 409 with its action_id spent). Probe 4 of the PR reds the placement
+ *     cell by dropping the IR entry from the canonical map the guard sees.
  *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5) precedent; FAILS loudly when the stack is down, never skips (§4.3).
@@ -105,6 +114,11 @@ const PLAYERS = [
   { id: 'vitest-la-te', full_name: 'Vitest LA TE', position: 'TE', team: 'LAG', status: 'Active' },
   { id: 'vitest-la-k', full_name: 'Vitest LA K', position: 'K', team: 'LAH', status: 'Active' },
   { id: 'vitest-la-dst', full_name: 'Vitest LA DST', position: 'DEF', team: 'LAI', status: 'Active' },
+  /** R809: the one player who can go on IR — designation `IR` (the feed's
+   *  own spelling, which 112's bridge maps to the catalog's `IR`); his team
+   *  has NO game row this week, so the current-week IR timing gate (a NULL
+   *  kickoff) cannot bind, and he stays on the BENCH in `baseMap()`. */
+  { id: 'vitest-la-ir', full_name: 'Vitest LA IR', position: 'RB', team: 'LAJ', status: 'IR' },
 ] as const
 const qb = 'vitest-la-qb'
 const rbLocked = 'vitest-la-rb-locked'
@@ -115,6 +129,11 @@ const wrC = 'vitest-la-wr-c'
 const te = 'vitest-la-te'
 const k = 'vitest-la-k'
 const dst = 'vitest-la-dst'
+const ir = 'vitest-la-ir'
+/** The league's one IR spot — `defaultsForTeamCount(8)`'s `ir_slots` is
+ *  `[{ key: 'ir1', type: 'unrestricted', eligible_designations: ['OUT', 'IR'] }]`
+ *  (league-settings.ts:181), so its instance key is `ir1:0` (112 §7.3.2). */
+const IR_KEY = 'ir1:0'
 const TEAM_OF_RB_LOCKED = 'LAB'
 const TEAM_OF_WR_A = 'LAD'
 
@@ -132,6 +151,9 @@ const ACTION = {
   /** R768's fixture: sent UPPERCASE on the wire. */
   upper: 'afa00000-0000-4000-8000-00000000001a',
   restore: 'afa00000-0000-4000-8000-00000000001b',
+  /** R809's fixtures: the IR placement and the IR removal. */
+  irPlace: 'afa00000-0000-4000-8000-00000000001c',
+  irRemove: 'afa00000-0000-4000-8000-00000000001d',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -214,8 +236,21 @@ async function storedSlotMap(): Promise<SlotMap> {
   return (data.slot_map ?? {}) as SlotMap
 }
 
+/** The IR player's `league_rosters` row — the roster-level IR truth 112
+ *  maintains on every set (D308). */
+async function irRosterRow(): Promise<{ slot_key: string | null; ir_placed_week: number | null; ir_lock_until_week: number | null }> {
+  const { data, error } = await service
+    .from('league_rosters')
+    .select('slot_key, ir_placed_week, ir_lock_until_week')
+    .eq('team_id', managerTeamId)
+    .eq('player_id', ir)
+    .single()
+  if (error) throw new Error(`irRosterRow: ${error.message}`)
+  return data
+}
+
 /** The legal week-1 map: rbLocked's game kicked off in 2001, so he cannot
- *  ENTER a slot — he stays on the bench. */
+ *  ENTER a slot — he stays on the bench (and so does the IR player). */
 function baseMap(): SlotMap {
   return {
     'qb:0': qb,
@@ -602,5 +637,110 @@ describe('the action_id round trip (E2/D68(1) + the F65(b) guard + R768)', () =>
       .eq('team_id', managerTeamId)
       .select('id')
     expect(directWrite).toHaveLength(0)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// R809 — IR keys THROUGH THE ROUTE: the full canonical map incl. an IR key is
+// a PLACEMENT, the same map without it a REMOVAL (F224(e)); the F65(b) guard
+// must accept both, and their replays. Last in the file: the placement
+// changes the stored map and the roster row, and the removal puts them back.
+// ---------------------------------------------------------------------------
+
+describe('IR placement + removal through the route (F224(e) — an absent IR key is a REMOVAL; R809)', () => {
+  it('a submit carrying the IR key PLACES the designated player: 200, ir_moves.placed, the key in the canonical map, the roster row on the spot', async () => {
+    const current = await storedSlotMap()
+    expect(current[IR_KEY]).toBeUndefined()
+    const rowBefore = await irRosterRow()
+    expect(rowBefore.slot_key).toBe('bn')
+    expect(rowBefore.ir_placed_week).toBeNull()
+
+    const submitted: SlotMap = { ...current, [IR_KEY]: ir }
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(submitted, ACTION.irPlace))
+    // PROBE 4's TARGET: with the IR entry missing from the canonical map the
+    // guard sees, this is a 409 for a placement that COMMITTED (R768's shape).
+    expect(result.status, errorText(result)).toBe(200)
+    const doc = result.body as unknown as SetLineupResult
+    expect(doc.action_id).toBe(ACTION.irPlace)
+    expect(doc.no_changes).toBe(false)
+    expect(doc.rearranged).toBe(false)
+    expect(doc.moved).toStrictEqual([])
+    // THE canonical map holds the IR key — 112 copies an IR entry into
+    // v_canon under the submitted key (112:856-858) — and nothing else moved.
+    expect(doc.slot_map[IR_KEY]).toBe(ir)
+    expect(doc.slot_map).toStrictEqual(submitted)
+    expect(doc.ir_moves.removed).toStrictEqual([])
+    expect(doc.ir_moves.placed).toHaveLength(1)
+    const placed = doc.ir_moves.placed[0] as Record<string, unknown>
+    expect(placed.player_id).toBe(ir)
+    expect(placed.spot).toBe(IR_KEY)
+    expect(placed.type).toBe('unrestricted')
+    expect(placed.ir_placed_week).toBe(doc.current_week)
+    expect(placed.ir_lock_until_week).toBeNull() // unrestricted: no stint
+    // The IR block the UI renders: on the spot, designation IR, no flag.
+    expect(doc.ir).toHaveLength(1)
+    const irEntry = doc.ir[0] as Record<string, unknown>
+    expect(irEntry.slot).toBe(IR_KEY)
+    expect(irEntry.player_id).toBe(ir)
+    expect(irEntry.designation).toBe('IR')
+    expect(irEntry.flags).toStrictEqual([])
+    expect(doc.flags.ir_ineligible).toStrictEqual([])
+    // IR'd players never count toward the lineup: off the bench, not a starter.
+    expect(doc.bench).not.toContain(ir)
+    expect(doc.starters.map((st) => st.player_id)).not.toContain(ir)
+    // Stored: the row's map carries the key; the roster row is ON the spot.
+    expect(await storedSlotMap()).toStrictEqual(submitted)
+    const rowAfter = await irRosterRow()
+    expect(rowAfter.slot_key).toBe(IR_KEY)
+    expect(rowAfter.ir_placed_week).toBe(doc.current_week)
+    expect(rowAfter.ir_lock_until_week).toBeNull()
+
+    // The replay of the SAME submit is byte-identical and writes nothing.
+    const again = await setLineup(managerClient, leagueId, managerTeamId, body(submitted, ACTION.irPlace))
+    expect(JSON.stringify(again)).toBe(JSON.stringify(result))
+    expect(await storedSlotMap()).toStrictEqual(submitted)
+  })
+
+  it('the placement\'s action_id reused WITHOUT the IR key is refused (409) — the guard reads the IR key as part of the placement', async () => {
+    const current = await storedSlotMap()
+    const without: SlotMap = { ...current }
+    delete without[IR_KEY]
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(without, ACTION.irPlace))
+    expect(result).toStrictEqual({ status: 409, body: { error: LINEUP_ACTION_ID_REUSED_MESSAGE } })
+    // Nothing moved: he is still on IR.
+    expect(await storedSlotMap()).toStrictEqual(current)
+    expect((await irRosterRow()).slot_key).toBe(IR_KEY)
+  })
+
+  it('the same map WITHOUT the IR key REMOVES him (a fresh id): 200, ir_moves.removed, the key gone, the roster row back on the bench', async () => {
+    const current = await storedSlotMap()
+    expect(current[IR_KEY]).toBe(ir)
+    const submitted: SlotMap = { ...current }
+    delete submitted[IR_KEY]
+
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(submitted, ACTION.irRemove))
+    expect(result.status, errorText(result)).toBe(200)
+    const doc = result.body as unknown as SetLineupResult
+    expect(doc.action_id).toBe(ACTION.irRemove)
+    expect(doc.no_changes).toBe(false)
+    expect(doc.rearranged).toBe(false)
+    expect(doc.slot_map[IR_KEY]).toBeUndefined()
+    expect(doc.slot_map).toStrictEqual(submitted)
+    expect(doc.ir_moves.placed).toStrictEqual([])
+    expect(doc.ir_moves.removed).toStrictEqual([{ player_id: ir, spot: IR_KEY }])
+    expect(doc.ir).toStrictEqual([])
+    // Back on the bench (bench = roster − starters − IR), designation and all.
+    expect(doc.bench).toContain(ir)
+    expect(await storedSlotMap()).toStrictEqual(submitted)
+    const row = await irRosterRow()
+    expect(row.slot_key).toBe('bn')
+    expect(row.ir_placed_week).toBeNull()
+    expect(row.ir_lock_until_week).toBeNull()
+
+    // The replay of the removal is byte-identical too.
+    const again = await setLineup(managerClient, leagueId, managerTeamId, body(submitted, ACTION.irRemove))
+    expect(JSON.stringify(again)).toBe(JSON.stringify(result))
+    expect(await storedSlotMap()).toStrictEqual(submitted)
   })
 })
