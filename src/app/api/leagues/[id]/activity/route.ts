@@ -18,8 +18,9 @@ const idSchema = z.uuid()
  *  is absent rather than a defaulted one — the service refuses an
  *  unrecognized key with a field error.
  *
- *  Reads are RLS-scoped (D92): a non-member reads nothing and gets an empty
- *  feed, the no-leak posture for league reads. */
+ *  Membership is asserted in the service before any read (R807): a
+ *  non-member gets the in-season family's one no-leak 403, never an empty
+ *  feed. */
 export async function GET(request: Request, { params }: RouteParams) {
   const { id } = await params
   if (!idSchema.safeParse(id).success) {

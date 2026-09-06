@@ -49,6 +49,7 @@ import type { Database } from '@/types/database'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import { readActivity } from './activity-service'
+import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import {
   SCHEDULE_ACTION_ID_REUSED_MESSAGE,
   SCHEDULE_FORBIDDEN_MESSAGE,
@@ -549,9 +550,9 @@ describe('the Remix shows up in the activity feed', () => {
     expect((result.body as unknown as { items: unknown[] }).items).toHaveLength(1)
   })
 
-  it('an OUTSIDER reads nothing', async () => {
+  it('an OUTSIDER is refused with the family\'s one no-leak 403 — never an empty feed (R807, F248(d))', async () => {
     const result = await readActivity(outsiderClient, leagueId, {})
-    expect((result.body as unknown as { items: unknown[] }).items).toHaveLength(0)
+    expect(result).toStrictEqual({ status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE } })
   })
 })
 

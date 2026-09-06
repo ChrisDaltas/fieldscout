@@ -15,13 +15,14 @@
  * (INSERT — a post whose `context` is not `draft:<id>` broadcasts to
  * `league:<league_id>`, 070:289).
  *
- * Arriving with migration 117 / L.D1.9 (D296): `transactions` (INSERT — the
- * activity feed's carrier), `matchups` (UPDATE — the coalesced
- * `scores_updated`), `team_week_results` (finalization) and `league_weeks`
- * (status flips). They are listed here BEFORE their triggers exist on
- * purpose: registering the listener now costs nothing, and it means the
- * feed starts moving the moment 117 lands rather than needing this file
- * edited again.
+ * Arriving with L.D1.9's triggers (D296; migration 117 landed as the
+ * standings, L.D1.7 — the triggers' number is the next free at L.D1.9):
+ * `transactions` (INSERT — the activity feed's carrier), `matchups` (UPDATE
+ * — the coalesced `scores_updated`), `team_week_results` (finalization) and
+ * `league_weeks` (status flips). They are listed here BEFORE their triggers
+ * exist on purpose: registering the listener now costs nothing, and it
+ * means the feed starts moving the moment the triggers land rather than
+ * needing this file edited again.
  */
 export const LEAGUE_CHANNEL_EVENTS = [
   'leagues',
@@ -30,6 +31,13 @@ export const LEAGUE_CHANNEL_EVENTS = [
   'matchups',
   'team_week_results',
   'league_weeks',
+  // Landed since 072 (M2, L.B1.7(3b)): `league_rosters` INSERT/UPDATE
+  // broadcasts `{operation, record: {id, team_id, player_id, slot_key,
+  // acquisition_type, acquired_at}}` on `league:<league_id>` — column-
+  // selected, no cost/bid data. Its FIRST subscriber is L.D4.1's
+  // `use-rosters` (M4), which is why the name joins the closed set here and
+  // not earlier.
+  'league_rosters',
 ] as const
 
 export type LeagueChannelEvent = (typeof LEAGUE_CHANNEL_EVENTS)[number]
@@ -90,6 +98,101 @@ export const ACTIVITY_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
 
 export function activityEventInvalidates(name: string): boolean {
   return (ACTIVITY_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/*
+ * L.D4.1's three read surfaces, each with its OWN pure predicate in the
+ * R773 shape — the hook DERIVES its handler map by filtering
+ * `LEAGUE_CHANNEL_EVENTS` through the predicate, so the predicate SELECTS
+ * the events and dropping a name here really does stop the refetch (the
+ * task's DoD probe). Freshness is D298's mechanism throughout: broadcast +
+ * refetch-on-event, never a cache patch (D296's payloads are column-selected
+ * and cannot reconstruct a row).
+ */
+
+/**
+ * Which events make a WEEK'S MATCHUPS stale (§11.4/D296/D298).
+ *
+ * `matchups` (UPDATE — the coalesced `scores_updated` carrier, L.D1.9's
+ * trigger: ONE event per league per worker batch) is the live-score tick;
+ * `team_week_results` is finalization writing the week's results; and
+ * `league_weeks` is the status flip (`live` → `correction_window` → `final`)
+ * that moves the `final (pending corrections)` badge (§16.5.4). The
+ * matchups HOOK narrows further by week through `matchupsEventEffect`
+ * (`use-matchups-ops.ts`) — an event that names another week is inert.
+ * `league_rosters` / `transactions` / `league_chat` / `leagues` do not touch
+ * a week's scores and are not here.
+ */
+export const MATCHUPS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'matchups',
+  'team_week_results',
+  'league_weeks',
+]
+
+export function matchupsEventInvalidates(name: string): boolean {
+  return (MATCHUPS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * Which events make the STANDINGS stale (§11.5/D297/D314).
+ *
+ * `league_standings` (117) reads FINAL `team_week_results` rows only — the
+ * live projection is the UI's (L.D5.3) over the write door's provisional
+ * cells, and the RPC never reads a provisional row. So the standings CHANGE
+ * exactly when a week finalizes: `team_week_results` (the results written
+ * final) and `league_weeks` (the `final` flip). **`matchups` is deliberately
+ * NOT here**: a score tick every few seconds cannot change a table that
+ * reads only final rows, and refetching a SECURITY DEFINER scan for every
+ * member on every tick is the exact waste D310(4) refused for the activity
+ * feed. Widen this and standings really do start refetching on every tick.
+ */
+export const STANDINGS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'team_week_results',
+  'league_weeks',
+]
+
+export function standingsEventInvalidates(name: string): boolean {
+  return (STANDINGS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * Which events make the ROSTERS stale (§12.7/§13.1).
+ *
+ * `league_rosters` (072 — LIVE TODAY, INSERT/UPDATE: a set_lineup's
+ * `slot_key` write, a move's add row, an IR placement) is the roster's own
+ * carrier; `transactions` (L.D1.9) is the move itself — a DROP is a DELETE
+ * on `league_rosters`, which 072's trigger does not broadcast, so without
+ * `transactions` a dropped player would stay on the rendered roster until a
+ * rejoin. Both are needed; a score tick is not.
+ */
+export const ROSTERS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'league_rosters',
+  'transactions',
+]
+
+export function rostersEventInvalidates(name: string): boolean {
+  return (ROSTERS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * The R773 shape as ONE function: a handler map DERIVED from a predicate
+ * over the closed event set, every admitted event bound to the same
+ * `invalidate`. A consumer passes the result to `useLeagueChannel`, so the
+ * predicate is load-bearing — an event it rejects gets no handler, and the
+ * spine dispatches nothing for it (unknown events inert by construction).
+ * Exported as a plain function so the wiring is EXECUTABLE in node through
+ * `joinLeagueRoom` with the client mocked (`use-matchups-ops.test.ts`), not
+ * only source-pinned.
+ */
+export function invalidatingHandlers(
+  invalidates: (name: string) => boolean,
+  invalidate: () => void,
+): Partial<Record<LeagueChannelEvent, () => void>> {
+  const handlers: Partial<Record<LeagueChannelEvent, () => void>> = {}
+  for (const event of LEAGUE_CHANNEL_EVENTS.filter(invalidates)) {
+    handlers[event] = invalidate
+  }
+  return handlers
 }
 
 /** Reconnect backoff, capped — the `use-draft.ts:297` curve, extracted so it
