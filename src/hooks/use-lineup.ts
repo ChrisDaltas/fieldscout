@@ -23,6 +23,15 @@ import { leagueRosterKeys } from './use-rosters'
  * `.maybeSingle()` also throws if two rows ever answer — a UNIQUE the
  * schema holds, asserted rather than assumed.
  *
+ * MEMBERSHIP (F249(a), decided by L.D5.1 — D316(4)): this read carries no
+ * assertion of its own; a non-member's RLS read is `null`. The SURFACE is
+ * the gate — `team-page.tsx` mounts nothing below `useLeague`'s 403/404, so
+ * this hook cannot mount for a non-member from the one page that uses it
+ * (the `leagues` SELECT policy is member/owner-only, 052:126). A future
+ * consumer mounting it outside a league page inherits the hazard: add a
+ * `supabase.rpc('is_league_member', …)` before the read there, or gate at
+ * its own page — never render `null` as "nothing set yet" to a stranger.
+ *
  * WRITE: `PATCH /api/leagues/[id]/teams/[tid]/lineup` (§15.3 →
  * `set_lineup`). The client sends the FULL canonical `slot_map` including
  * IR keys (an absent IR key is a removal from IR; an empty slot is an
