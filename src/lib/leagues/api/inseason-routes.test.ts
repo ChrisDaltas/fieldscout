@@ -45,6 +45,12 @@ const ROUTES = [
     verb: 'GET',
     service: 'readActivity',
   },
+  // L.D5.3 — F233(e): 111's manual matchup edit gets its route.
+  {
+    file: 'src/app/api/leagues/[id]/schedule/matchup/route.ts',
+    verb: 'POST',
+    service: 'editMatchup',
+  },
   // L.D4.1
   {
     file: 'src/app/api/leagues/[id]/teams/[tid]/lineup/route.ts',
@@ -126,6 +132,7 @@ describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
           'roster_add_drop',
           'schedule_remix_confirm',
           'schedule_preview',
+          'schedule_edit_matchup',
           'set_lineup',
           'league_standings',
           '.rpc(',
@@ -222,7 +229,14 @@ describe('the direct-read services assert membership BEFORE any table read (D92 
 // ---------------------------------------------------------------------------
 
 describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () => {
-  const service = code(SCHEDULE_SERVICE)
+  const whole = code(SCHEDULE_SERVICE)
+  // L.D5.3 (F233(e)) grew the file with the manual matchup EDIT below a
+  // marker: that verb names ONE matchup's two teams by design (§11.7's other
+  // door), so the "no matchup-shaped payload" pin is scoped to the REMIX
+  // half — everything above `editMatchupInputSchema` — and the edit half
+  // carries its own pins in the describe after this one.
+  const editMarker = whole.indexOf('export const editMatchupInputSchema')
+  const service = editMarker === -1 ? whole : whole.slice(0, editMarker)
 
   it('both bodies are strictObject, so a `matchups`/`proposed`/`weeks` key is REFUSED, not ignored', () => {
     // THE BREAK PROBE'S TARGET. Relaxing either to `z.object(` accepts a
@@ -251,8 +265,9 @@ describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () =
     expect(new Set(args)).toEqual(new Set(['p_league_id', 'p_seed', 'p_action_id', 'p_reason']))
   })
 
-  it('neither service file names a matchup-shaped payload anywhere', () => {
+  it('the REMIX half names no matchup-shaped payload anywhere', () => {
     // A regeneration that took client rows would have to name them.
+    expect(editMarker).toBeGreaterThan(-1) // the marker exists, so the slice is real
     for (const name of ['home_team_id', 'away_team_id', 'round_type', 'matchups:']) {
       expect(service, name).not.toContain(name)
     }
@@ -261,6 +276,53 @@ describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () =
   it('the seed range is the settings catalog constant, not a re-typed literal', () => {
     expect(service).toContain("import { SCHEDULE_SEED_MAX } from '../settings/league-settings'")
     expect(service).toContain('z.number().int().min(0).max(SCHEDULE_SEED_MAX)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D5.3 / F233(e): the manual matchup EDIT — one matchup, two teams, never
+// a schedule; the E41 reason law is the RPC's.
+// ---------------------------------------------------------------------------
+
+describe('§11.7 — the matchup edit names ONE pairing and mirrors no window rule', () => {
+  const whole = code(SCHEDULE_SERVICE)
+  const edit = whole.slice(whole.indexOf('export const editMatchupInputSchema'))
+
+  it('the body is strictObject with exactly five fields — matchup_id, home_team_id, away_team_id, reason, action_id', () => {
+    expect(edit).toMatch(/export const editMatchupInputSchema = z\.strictObject\(\{/)
+    const body = edit.slice(edit.indexOf('export const editMatchupInputSchema'), edit.indexOf('export type EditMatchupInput'))
+    const fields = [...body.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1])
+    expect(fields).toEqual(['matchup_id', 'home_team_id', 'away_team_id', 'reason', 'action_id'])
+    // No array of anything: a `matchups`/`proposed`/`weeks` key is refused.
+    expect(body).not.toMatch(/z\.array\(/)
+  })
+
+  it('EXACTLY six arguments reach `schedule_edit_matchup` — there is no seventh', () => {
+    const call = edit.slice(
+      edit.indexOf("supabase.rpc('schedule_edit_matchup'"),
+      edit.indexOf('if (error) {', edit.indexOf("supabase.rpc('schedule_edit_matchup'")),
+    )
+    const args = [...call.matchAll(/p_(\w+):/g)].map((m) => `p_${m[1]}`)
+    expect(new Set(args)).toEqual(
+      new Set(['p_league_id', 'p_matchup_id', 'p_home', 'p_away', 'p_reason', 'p_action_id']),
+    )
+  })
+
+  it('the three guarded ids go through normalizedUuid (R768) and the F65(b) guard compares the matchup AND the pairing', () => {
+    expect(edit).toContain('matchup_id: normalizedUuid,')
+    expect(edit).toContain('home_team_id: normalizedUuid,')
+    expect(edit).toContain('away_team_id: normalizedUuid,')
+    expect(edit).toContain('action_id: normalizedUuid,')
+    expect(edit).not.toMatch(/: z\.uuid\(\)/)
+    expect(edit).toContain('result.action_id !== action_id ||')
+    expect(edit).toContain('result.matchup?.matchup_id !== matchup_id ||')
+    expect(edit).toContain('result.matchup?.after?.home_team_id !== home_team_id ||')
+    expect(edit).toContain('result.matchup?.after?.away_team_id !== away_team_id')
+  })
+
+  it('E41 is the RPC\'s: the service reads no clock and no kickoff, and sends a blank reason as the empty string 111 reads as NULL', () => {
+    expect(edit).not.toMatch(/kickoff|now\(\)|Date\b|reason_required/)
+    expect(edit).toContain("p_reason: reason ?? '',")
   })
 })
 

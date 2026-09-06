@@ -167,3 +167,103 @@ export async function confirmRemix(
 
   return { status: 200, body: data as unknown as Json }
 }
+
+// ---------------------------------------------------------------------------
+// The manual matchup edit — §11.7 "Manual per-matchup editing (drag Team A ↔
+// Team C for Week 7) stays available in the same tool, same audit rules"
+// (M4 task L.D5.3; PROGRESS F233(e) — 111 shipped the verb with no route;
+// D290's interim audit posture; the R768 normalisation inherited).
+//
+// THIS VERB NAMES ONE MATCHUP'S TWO TEAMS, AND THAT IS NOT A SCHEDULE. The
+// law at the top of this file is that a Remix carries a SEED and the server
+// generates the season; an edit is the spec's other door — the commissioner
+// names a pairing, and 111 re-seats the displaced teams itself (the parked
+// permutation, D307(6)) and re-validates the week in-body (every team once,
+// E40). The body is still a `strictObject`: exactly one matchup, its two
+// teams, an optional reason and the key — a `matchups`/`proposed`/`weeks`
+// array is REFUSED here too, and `inseason-routes.test.ts` scopes its
+// "no matchup-shaped payload" pin to the REMIX half above this marker.
+//
+// E41 is evaluated at transaction time inside 111 (D307(3)): free until the
+// league's Week 1 kickoff, a `reason` REQUIRED after it (22023 → 400, the
+// refusal verbatim — the modal renders it and marks the field). This layer
+// mirrors no window rule it cannot evaluate; a blank reason is sent as ''
+// (111 reads '' and NULL identically — `NULLIF(btrim(...), '')`) because the
+// generated signature has no default for `p_reason`.
+// ---------------------------------------------------------------------------
+
+/** The 409 for a reused `action_id` naming a different edit (F65(b)). */
+export const SCHEDULE_EDIT_ACTION_ID_REUSED_MESSAGE =
+  'That didn’t go through — we couldn’t confirm it as the edit you made. Check the schedule and try the edit again.'
+
+/**
+ * The edit body. **`strictObject` is load-bearing** — see the section note.
+ * `matchup_id` and the two team ids go through `normalizedUuid` because the
+ * result guard compares them against what 111 STORED (R768).
+ */
+export const editMatchupInputSchema = z.strictObject({
+  matchup_id: normalizedUuid,
+  home_team_id: normalizedUuid,
+  away_team_id: normalizedUuid,
+  reason: z.string().trim().max(500).nullish(),
+  action_id: normalizedUuid,
+})
+export type EditMatchupInput = z.infer<typeof editMatchupInputSchema>
+
+/**
+ * POST …/schedule/matchup — re-pair ONE scheduled regular-season matchup
+ * (§11.7 → `schedule_edit_matchup`, migration 111; atomic, with the D97
+ * system chat post written in the same transaction).
+ *
+ * EXACTLY six arguments reach the RPC: the league (from the URL), the
+ * matchup, the two teams, the reason and the idempotency key. Every rule —
+ * commissioner-only, `in_season`, the matchup's own week `upcoming` and not
+ * yet kicked off, `scheduled` / unscored / un-overridden, both teams seated
+ * franchises of this league, E41's reason — is 111's, in-body, and its
+ * refusal is passed through verbatim by the family mapper.
+ *
+ * 200 for both a fresh edit and a replay of the same submit.
+ */
+export async function editMatchup(
+  supabase: Supabase,
+  leagueId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  const parsed = editMatchupInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { matchup_id, home_team_id, away_team_id, reason, action_id } = parsed.data
+
+  const { data, error } = await supabase.rpc('schedule_edit_matchup', {
+    p_league_id: leagueId,
+    p_matchup_id: matchup_id,
+    p_home: home_team_id,
+    p_away: away_team_id,
+    p_reason: reason ?? '',
+    p_action_id: action_id,
+  })
+  if (error) {
+    return mapInSeasonRpcError(error, SCHEDULE_FORBIDDEN_MESSAGE)
+  }
+
+  // The F65(b) identity guard, the confirm's sibling: 111's ledger is keyed
+  // `(league_id, action_id)` and checks `kind` only, so an id reused for a
+  // DIFFERENT matchup or pairing returns the first edit's stored result with
+  // no error. The stored result carries the matchup and its `after` pairing,
+  // so the check costs no extra query.
+  const result = (data ?? {}) as {
+    action_id?: unknown
+    matchup?: { matchup_id?: unknown; after?: { home_team_id?: unknown; away_team_id?: unknown } }
+  }
+  if (
+    result.action_id !== action_id ||
+    result.matchup?.matchup_id !== matchup_id ||
+    result.matchup?.after?.home_team_id !== home_team_id ||
+    result.matchup?.after?.away_team_id !== away_team_id
+  ) {
+    return { status: 409, body: { error: SCHEDULE_EDIT_ACTION_ID_REUSED_MESSAGE } }
+  }
+
+  return { status: 200, body: data as unknown as Json }
+}

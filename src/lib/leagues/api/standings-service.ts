@@ -45,7 +45,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/database'
 
 import { mapInSeasonRpcError } from './inseason-errors'
-import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
+import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -129,7 +129,18 @@ export function normalizeStandingsRow(raw: Record<string, unknown>): StandingsRo
 export async function readStandings(supabase: Supabase, leagueId: string): Promise<ServiceResult> {
   const { data, error } = await supabase.rpc('league_standings', { p_league_id: leagueId })
   if (error) {
-    return mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)
+    const mapped = mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)
+    // F250(a), the SQL-side twin (L.D5.3): 117 raises exactly ONE P0002 —
+    // `league_standings: league <id> not found` (117:1001, a missing or
+    // soft-deleted league) — and the rest of the read family answers that
+    // condition with `INSEASON_LEAGUE_GONE_MESSAGE` (R812's gate). One
+    // condition, one copy: the 404 is re-worded HERE, by status, so this
+    // file still names no SQLSTATE and the mapper keeps its verbatim arm for
+    // the matchup verbs' own P0002 ("not a matchup of this league").
+    if (mapped.status === 404) {
+      return { status: 404, body: { error: INSEASON_LEAGUE_GONE_MESSAGE } }
+    }
+    return mapped
   }
   const doc = (data ?? null) as Record<string, unknown> | null
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.standings)) {

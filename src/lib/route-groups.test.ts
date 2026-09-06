@@ -161,6 +161,14 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // editing page. Gated on `featureFlags.leagues` by
   // `(shell)/leagues/layout.tsx` (asserted below). Permanent.
   '/app/leagues/[leagueId]/team/[teamId]',
+  // L.D5.3 — STANDINGS and SCHEDULE (spec §16.1 `…/leagues/[id]/standings`
+  // "Standings + playoff bracket" — the bracket is L.D1.8's, Q39 — and
+  // `…/leagues/[id]/schedule` "Season schedule (member view; commish: edit
+  // + Remix §11.7)"; PROGRESS D317). Both in `(shell)` for Q12's reason:
+  // reading pages, the app's own navigation is the way out. Gated on
+  // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
+  '/app/leagues/[leagueId]/standings',
+  '/app/leagues/[leagueId]/schedule',
 ]
 
 describe('route groups are invisible to the URL space', () => {

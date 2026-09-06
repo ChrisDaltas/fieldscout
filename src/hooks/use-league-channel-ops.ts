@@ -175,6 +175,33 @@ export function rostersEventInvalidates(name: string): boolean {
 }
 
 /**
+ * Which events make the SCHEDULE stale (§11.7/D298 — M4 task L.D5.3).
+ *
+ * `matchups` (a score tick or a status flip on a pairing row — L.D1.9's
+ * trigger) and `league_weeks` (the status ladder the grid renders beside
+ * every week) are the schedule's own carriers once the triggers land;
+ * `league_chat` is the ONE carrier a Remix or a matchup edit has TODAY: 111
+ * writes its D97 system post in the same transaction as the rows it
+ * replaces, and a non-draft post broadcasts to `league:<id>` now (070), so
+ * a confirm in one browser reaches another member's open schedule without
+ * L.D1.9. The cost is named: a chat line re-reads two member tables
+ * (`league_weeks` + `matchups`) for every open schedule page — accepted for
+ * the schedule (a page the league opens rarely) where D310(4) refused it for
+ * the feed's score tick. When L.D1.9's `matchups` trigger lands, the chat
+ * arm can go. `team_week_results` (finalization — standings' business),
+ * `transactions`, `league_rosters` and `leagues` do not move a pairing.
+ */
+export const SCHEDULE_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'matchups',
+  'league_weeks',
+  'league_chat',
+]
+
+export function scheduleEventInvalidates(name: string): boolean {
+  return (SCHEDULE_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
  * The R773 shape as ONE function: a handler map DERIVED from a predicate
  * over the closed event set, every admitted event bound to the same
  * `invalidate`. A consumer passes the result to `useLeagueChannel`, so the
