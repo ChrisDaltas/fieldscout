@@ -154,6 +154,13 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // a draft surface, so it keeps the app chrome. Gated on
   // `featureFlags.mockDrafts` by `(shell)/mocks/layout.tsx`. Permanent.
   '/app/mocks/[mockId]/report',
+  // L.D5.1 — the TEAM PAGE (spec §16.1 `…/leagues/[id]/team/[teamId]`:
+  // team/roster + weekly lineup; PROGRESS D316). In `(shell)` for Q12's
+  // reason, the same one the recap applies: the chrome-free treatment is
+  // the live draft surface's alone, and a lineup page is a reading-and-
+  // editing page. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx` (asserted below). Permanent.
+  '/app/leagues/[leagueId]/team/[teamId]',
 ]
 
 describe('route groups are invisible to the URL space', () => {

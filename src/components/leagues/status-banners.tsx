@@ -93,6 +93,10 @@ export function ReconnectingBanner({
  *  forms exist because its host is the 54px command bar (D176(5)). */
 export const STALE_ROOM_COPY = "Draft data isn't refreshing — showing the last state we read."
 export const STALE_ROOM_COPY_COMPACT = 'Not refreshing'
+/** The in-season twin (L.D5.1 — the team page's degraded state, §16.5.4:
+ *  "banner + last-good data, never wrong numbers"): a roster/lineup read
+ *  failed while the last-good rows are still on screen. */
+export const STALE_LEAGUE_COPY = "Team data isn't refreshing — showing the last state we read."
 
 /**
  * The §16.5.4 DEGRADED banner — the FETCH-path twin of `ReconnectingBanner`

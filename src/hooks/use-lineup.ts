@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient, type UseMutationOptions } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { LineupStarter, SetLineupResult } from '@/lib/leagues/api/lineup-service'
@@ -22,6 +22,15 @@ import { leagueRosterKeys } from './use-rosters'
  * `null`, while a transport error THROWS (CLAUDE.md's loud-emptiness rule).
  * `.maybeSingle()` also throws if two rows ever answer — a UNIQUE the
  * schema holds, asserted rather than assumed.
+ *
+ * MEMBERSHIP (F249(a), decided by L.D5.1 — D316(4)): this read carries no
+ * assertion of its own; a non-member's RLS read is `null`. The SURFACE is
+ * the gate — `team-page.tsx` mounts nothing below `useLeague`'s 403/404, so
+ * this hook cannot mount for a non-member from the one page that uses it
+ * (the `leagues` SELECT policy is member/owner-only, 052:126). A future
+ * consumer mounting it outside a league page inherits the hazard: add a
+ * `supabase.rpc('is_league_member', …)` before the read there, or gate at
+ * its own page — never render `null` as "nothing set yet" to a stranger.
  *
  * WRITE: `PATCH /api/leagues/[id]/teams/[tid]/lineup` (§15.3 →
  * `set_lineup`). The client sends the FULL canonical `slot_map` including
@@ -60,6 +69,19 @@ import { leagueRosterKeys } from './use-rosters'
  *
  * A set also writes `league_rosters.slot_key`, so the rosters key (F233(b)'s
  * `leagueRosterKeys`) is invalidated with the lineup's.
+ *
+ * **A REFUSAL re-reads too (R822(i)).** The scoring family invalidates
+ * nothing on a refused save because nothing changed on the server
+ * (`use-league-scoring-invalidation.test.ts`); a refused SET is the other
+ * case — every refusal it can meet is about state this client evaluated from
+ * a view that was WRONG: the server read the lock from `nfl_games` at
+ * transaction `now()` while the page held the pool view as the tick last
+ * refreshed it (or as a lagging tick left it — the browser pass measured
+ * exactly this: a cleared pool row let a kicked-off player be seated, the
+ * server refused him by name, and nothing on the page moved until a reload).
+ * Nothing was written, but the ROSTERS (the 🔒) and the row are re-read so
+ * the server's answer reaches the screen — never optimistic in either
+ * direction. The invalidation is keyed to the same two entries as success.
  *
  * Entropy (the `action_id`) is minted HERE, in the hook, outside the
  * `src/lib/leagues/**` determinism fence (the D112(3)/D114(5) precedent).
@@ -122,28 +144,45 @@ export interface SetLineupInput {
   reason?: string | null
 }
 
-interface SetLineupVariables {
+export interface SetLineupVariables {
   week: number
   slot_map: Record<string, string>
   action_id: string
   reason?: string
 }
 
-export function useSetLineup(leagueId: string, teamId: string) {
-  const queryClient = useQueryClient()
-  const mutation = useMutation({
+/**
+ * The set's mutation options, built for a client so the invalidation
+ * contract is drivable through `MutationObserver` with no React (the
+ * `use-league-scoring-invalidation.test.ts` posture — `use-lineup-
+ * invalidation.test.ts`). `useSetLineup` is this over the provider's client.
+ */
+export function setLineupMutationOptions(
+  queryClient: QueryClient,
+  leagueId: string,
+  teamId: string,
+): UseMutationOptions<SetLineupResult, Error, SetLineupVariables> {
+  // The server's answer, re-read — never the submitted map (see the header).
+  // A set also wrote `league_rosters.slot_key`; a refusal means the VIEW the
+  // client evaluated was stale (R822(i)) — the same two entries either way.
+  const reread = (week: number) => {
+    void queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, week) })
+    void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
+  }
+  return {
     mutationFn: (variables: SetLineupVariables) =>
       sendLeagueAction<SetLineupResult>(
         `/api/leagues/${leagueId}/teams/${teamId}/lineup`,
         jsonInit('PATCH', variables),
       ),
-    onSuccess: (_result, variables) => {
-      // The server's answer, re-read — never the submitted map (see the
-      // header). The set also wrote `league_rosters.slot_key`.
-      void queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, variables.week) })
-      void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
-    },
-  })
+    onSuccess: (_result, variables) => reread(variables.week),
+    onError: (_error, variables) => reread(variables.week),
+  }
+}
+
+export function useSetLineup(leagueId: string, teamId: string) {
+  const queryClient = useQueryClient()
+  const mutation = useMutation(setLineupMutationOptions(queryClient, leagueId, teamId))
 
   const variables = (input: SetLineupInput): SetLineupVariables => ({
     week: input.week,
