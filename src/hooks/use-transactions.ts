@@ -6,6 +6,7 @@ import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguesKeys } from './use-leagues'
+import { leagueRosterKeys } from './use-rosters'
 
 /**
  * The add/drop verb — M4 task L.D4.2 (spec §15.3/§13.1; migration 113's
@@ -122,11 +123,12 @@ export function useAddDrop(leagueId: string) {
       ),
     onSuccess: () => {
       // The move is in the feed and it changed the league's rosters. The
-      // ROSTERS query key is L.D4.1's (`use-rosters.ts`) and does not exist
-      // yet — PROGRESS **F233(b)** carries the duty to add it here rather
-      // than inventing a key now that L.D4.1 would then have to match.
+      // ROSTERS query key is L.D4.1's (`use-rosters.ts`) — PROGRESS
+      // **F233(b)**: added here by L.D4.1 rather than invented by L.D4.2, so
+      // a completed move refreshes the roster it changed.
       void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
     },
   })
 

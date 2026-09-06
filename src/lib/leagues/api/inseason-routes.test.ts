@@ -1,7 +1,10 @@
 /**
- * inseason-routes.test.ts — the four L.D4.2 Route Handlers' SHAPE, plus the
- * ONE pin the task's DoD names: **the confirm route cannot be pointed at a
- * client-supplied schedule.**
+ * inseason-routes.test.ts — the in-season Route Handlers' SHAPE (L.D4.2's
+ * four + L.D4.1's four — lineup PATCH, rosters / matchups / standings GET),
+ * plus the ONE pin L.D4.2's DoD names: **the confirm route cannot be pointed
+ * at a client-supplied schedule** — and L.D4.1's family pins: the membership
+ * gate precedes every direct read, and the lineup verb inherits the SQLSTATE
+ * mapper and the R768 normalisation (F224(e)).
  *
  * Source-level for the reason `scoring-routes.test.ts` is (its header, in
  * full): the stack suites drive the SERVICE layer, which is the D68
@@ -42,12 +45,38 @@ const ROUTES = [
     verb: 'GET',
     service: 'readActivity',
   },
+  // L.D4.1
+  {
+    file: 'src/app/api/leagues/[id]/teams/[tid]/lineup/route.ts',
+    verb: 'PATCH',
+    service: 'setLineup',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/rosters/route.ts',
+    verb: 'GET',
+    service: 'readRosters',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/matchups/route.ts',
+    verb: 'GET',
+    service: 'readMatchups',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/standings/route.ts',
+    verb: 'GET',
+    service: 'readStandings',
+  },
 ] as const
 
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
 const TRANSACTIONS_SERVICE = 'src/lib/leagues/api/transactions-service.ts'
 const ERRORS = 'src/lib/leagues/api/inseason-errors.ts'
 const IDS = 'src/lib/leagues/api/inseason-ids.ts'
+const LINEUP_SERVICE = 'src/lib/leagues/api/lineup-service.ts'
+const ROSTERS_SERVICE = 'src/lib/leagues/api/rosters-service.ts'
+const MATCHUPS_SERVICE = 'src/lib/leagues/api/matchups-service.ts'
+const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
+const READS = 'src/lib/leagues/api/inseason-reads.ts'
 
 /** File text with block comments and `//` lines removed, so a docblock that
  *  merely MENTIONS a guard cannot satisfy a pin about the code. */
@@ -59,7 +88,7 @@ function code(rel: string): string {
     .join('\n')
 }
 
-describe('the four in-season Route Handlers keep the house shape (§15.3)', () => {
+describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
   for (const route of ROUTES) {
     describe(route.file, () => {
       const source = code(route.file)
@@ -86,7 +115,7 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
       })
 
       it('delegates to the service and passes its status through unchanged', () => {
-        expect(source).toMatch(new RegExp(`${route.service}\\(supabase, id, `))
+        expect(source).toMatch(new RegExp(`${route.service}\\(supabase, id[,)]`))
         expect(source).toContain('NextResponse.json(result.body, { status: result.status })')
       })
 
@@ -96,6 +125,9 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
           'roster_add_drop',
           'schedule_remix_confirm',
           'schedule_preview',
+          'set_lineup',
+          'league_standings',
+          '.rpc(',
           'from(',
           'is_league_member',
         ]) {
@@ -105,10 +137,66 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
     })
   }
 
-  it('the three POST routes turn an unparseable body into null, never a 500', () => {
-    for (const route of ROUTES.filter((r) => r.verb === 'POST')) {
+  it('every body-taking route turns an unparseable body into null, never a 500', () => {
+    for (const route of ROUTES.filter((r) => r.verb !== 'GET')) {
       expect(code(route.file), route.file).toContain('await request.json().catch(() => null)')
     }
+  })
+
+  it('the lineup route shape-checks the TEAM segment too — a malformed tid is a 404, not a 22P02 echoed as 500', () => {
+    const source = code('src/app/api/leagues/[id]/teams/[tid]/lineup/route.ts')
+    expect(source).toContain('idSchema.safeParse(tid).success')
+    expect(source).toContain("{ error: 'Team not found' }, { status: 404 }")
+    expect(source.indexOf('safeParse(tid)')).toBeLessThan(source.indexOf('createServerClient()'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D4.1: the membership gate precedes every direct read (CLAUDE.md — an
+// RLS-empty result for a non-member must not render as an empty list).
+// ---------------------------------------------------------------------------
+
+describe('the two direct-read services assert membership BEFORE any table read (D92 + rule 10)', () => {
+  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+    it(`${rel} calls assertLeagueMember before its first .from(`, () => {
+      const source = code(rel)
+      expect(source).toContain("import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'")
+      const gate = source.indexOf('await assertLeagueMember(supabase, leagueId)')
+      expect(gate).toBeGreaterThan(-1)
+      expect(source).toContain('if (refused) return refused')
+      expect(gate).toBeLessThan(source.indexOf(".from("))
+    })
+  }
+
+  it('the gate is the database\'s own predicate, answering one no-leak 403 (never an empty body)', () => {
+    const source = code(READS)
+    expect(source).toContain("supabase.rpc('is_league_member', { p_league_id: leagueId })")
+    expect(source).toContain('if (data !== true) {')
+    expect(source).toContain('status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE }')
+    // A transport error is a 500, never a `false`.
+    expect(source.indexOf('status: 500')).toBeLessThan(source.indexOf('status: 403'))
+  })
+
+  it('the standings service needs no gate of its own — 117 raises 42501 in-body and the mapper answers 403', () => {
+    const source = code(STANDINGS_SERVICE)
+    expect(source).toContain("supabase.rpc('league_standings', { p_league_id: leagueId })")
+    expect(source).toContain('mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)')
+    expect(source).not.toContain('assertLeagueMember')
+  })
+
+  it('every direct read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule)', () => {
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, STANDINGS_SERVICE]) {
+      expect(code(rel), rel).toContain('assertBelowPostgrestCap(')
+    }
+  })
+
+  it('matchups: `week` is REQUIRED and the route infers no current week (§23.3)', () => {
+    const service = code(MATCHUPS_SERVICE)
+    expect(service).toContain('week: z.coerce.number().int().min(1).max(18),')
+    expect(service).not.toMatch(/current_week|now\(\)|starts_at/)
+    // An absent calendar row is a 404 BY NAME, never an empty week.
+    expect(service).toContain('if (!weekRes.data) {')
+    expect(service).toContain('status: 404')
   })
 })
 
@@ -187,11 +275,15 @@ describe('the in-season SQLSTATE mapping is one shared helper (F224(e)/F227(f))'
     expect(arms).toHaveLength(3)
   })
 
-  it('both in-season services use it — neither maps SQLSTATEs of its own', () => {
-    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE]) {
+  it('every RPC-calling in-season service uses it — none maps SQLSTATEs of its own', () => {
+    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE, LINEUP_SERVICE, STANDINGS_SERVICE]) {
       const source = code(rel)
       expect(source, rel).toContain("import { mapInSeasonRpcError } from './inseason-errors'")
       expect(source, rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)
+    }
+    // The two direct-read services raise nothing to map and map nothing.
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+      expect(code(rel), rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)
     }
   })
 })
@@ -228,5 +320,19 @@ describe('the F65(b) guards compare against what Postgres wrote (R768)', () => {
     expect(code(SCHEDULE_SERVICE)).toContain(
       'if (result.action_id !== action_id || Number(result.schedule_seed) !== seed) {',
     )
+  })
+
+  it('L.D4.1: the lineup verb inherits it — action_id AND the path team id, and the guard covers the placement', () => {
+    const lineup = code(LINEUP_SERVICE)
+    expect(lineup).toContain('action_id: normalizedUuid,')
+    expect(lineup).toContain('normalizedUuid.safeParse(rawTeamId)')
+    expect(lineup).not.toMatch(/action_id: z\.uuid\(\)/)
+    expect(lineup).toContain('result.team_id !== teamId ||')
+    expect(lineup).toContain('result.week !== week ||')
+    expect(lineup).toContain('result.action_id !== action_id ||')
+    expect(lineup).toContain('!placementMatches(slot_map, result.slot_map, result.moved)')
+    // F224(e): the map goes to the RPC WHOLE — no filter, no fill.
+    expect(lineup).toContain('p_slot_map: slot_map,')
+    expect(lineup).not.toMatch(/Object\.(entries|keys|fromEntries)\(slot_map\)/)
   })
 })
