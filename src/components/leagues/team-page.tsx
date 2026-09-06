@@ -87,7 +87,10 @@ export function TeamPage({ leagueId, teamId }: { leagueId: string; teamId: strin
   return <TeamPageContent leagueId={leagueId} teamId={teamId} detail={league.data} teamName={team.name} />
 }
 
-function problemCopy(error: unknown): string {
+/** The in-season family's problem copy for a failed league/family read —
+ *  ONE 404 copy (F250(a)), one 403 copy; shared by the standings and
+ *  schedule pages (L.D5.3), which is why it is exported. */
+export function problemCopy(error: unknown): string {
   if (error instanceof LeagueActionError) {
     if (error.status === 404) return INSEASON_LEAGUE_GONE_MESSAGE
     if (error.status === 403) return INSEASON_READ_FORBIDDEN_MESSAGE
@@ -270,15 +273,19 @@ export function ProblemCard({
   detail,
   onRetry,
   leagueId,
+  heading = 'Team',
 }: {
   title: string
   detail: string
   onRetry: (() => void) | null
   leagueId: string | null
+  /** The page header while the problem shows — the host page's own title
+   *  (L.D5.3's standings/schedule pages pass theirs). */
+  heading?: string
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Team" />
+      <PageHeader title={heading} />
       <Card className="border-negative bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
           <p className="text-[13px] font-bold" role="alert">

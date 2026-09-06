@@ -530,7 +530,7 @@ describe('GET …/standings', () => {
 // ---------------------------------------------------------------------------
 
 describe('a SOFT-DELETED league answers a MEMBER a 404 by name after the membership check, and a NON-MEMBER the same 403 (R812)', () => {
-  it('rosters / matchups / activity: 404 by name for a member; standings: 117\'s own P0002 → 404; the outsider still 403', async () => {
+  it('rosters / matchups / activity / standings: ONE 404 copy for a member (F250(a) SQL twin, L.D5.3); the outsider still 403', async () => {
     const { error: deleteError } = await service
       .from('leagues')
       .update({ deleted_at: '2099-01-01T00:00:00+00:00' })
@@ -547,11 +547,14 @@ describe('a SOFT-DELETED league answers a MEMBER a 404 by name after the members
       expect(await readRosters(managerClient, leagueId)).toStrictEqual(gone)
       expect(await readMatchups(managerClient, leagueId, { week: '1' })).toStrictEqual(gone)
       expect(await readActivity(managerClient, leagueId, {})).toStrictEqual(gone)
-      // 117 looks the league up `deleted_at IS NULL` in-body and raises P0002
-      // (117:1001-1004); the family mapper answers 404 with its words.
+      // 117 looks the league up `deleted_at IS NULL` in-body and raises its
+      // ONE P0002 (117:1001-1004); since L.D5.3 (F250(a)'s SQL-side twin)
+      // `readStandings` answers that 404 with the FAMILY's copy, so a member
+      // of a deleted league meets one sentence across all four reads — the
+      // verbatim `league <id> not found` is no longer on the wire.
       const standings = await readStandings(managerClient, leagueId)
-      expect(standings.status).toBe(404)
-      expect(errorText(standings)).toContain(`league ${leagueId} not found`)
+      expect(standings).toStrictEqual(gone)
+      expect(errorText(standings)).not.toContain('not found')
 
       // Order is load-bearing: the outsider is refused BEFORE the deleted
       // check runs, so a non-member never learns the league existed.

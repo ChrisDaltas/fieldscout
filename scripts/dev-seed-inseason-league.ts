@@ -1,7 +1,8 @@
 /**
  * dev-seed-inseason-league.ts — a deliberate LOCAL fixture for the in-season
- * UI (M4 task L.D5.1's browser pass; PROGRESS D316; the ACTIVE-BUILD "LV
- * fixture" precedent — a documented local fixture, re-creatable after a
+ * UI (M4 task L.D5.1's browser pass; PROGRESS D316; extended by L.D5.3 for
+ * the standings / schedule / Remix pass, D317; the ACTIVE-BUILD "LV fixture"
+ * precedent — a documented local fixture, re-creatable after a
  * `supabase db reset`).
  *
  *   npx tsx scripts/dev-seed-inseason-league.ts            # seed (cleanup-first)
@@ -11,22 +12,46 @@
  * F215: the calendar belongs to the fixture, not the clock) commissioned
  * and managed by `dev@fieldscout.local`, a second franchise seated by
  * `dev-pro@fieldscout.local` (so the commissioner arm — reason required —
- * is reachable from the dev account), `league_weeks` 1–3, ten synthetic
- * players (`dev-ld51-*`, each on its own made-up NFL team so a game row
- * locks exactly one of them) rostered to the dev team with pool rows, and
- * TWO `nfl_games` rows on 2099 week 1: one that kicked off on a fixed PAST
- * literal (2001-09-09 — `dev-ld51-rb-locked` is LOCKED by §11.2) and one on
- * a fixed FUTURE literal (2099-09-13 — `dev-ld51-wr-a` is open). Then
- * `lineup_lock_tick` is run once for the league so the pool VIEW
+ * is reachable from the dev account) plus six more franchises owned by
+ * `dev-pro@` with no member seated (the engine refuses a half-seated
+ * league — 110), the REAL generated season (`league_generate_schedule`,
+ * service-driven exactly as `schedule-api-db.test.ts` drives it: 14 regular
+ * + 3 playoff `league_weeks` rows and 56 regular matchups — L.D5.3), ten
+ * synthetic players (`dev-ld51-*`, each on its own made-up NFL team so a
+ * game row locks exactly one of them) rostered to the dev team with pool
+ * rows, and TWO `nfl_games` rows on 2099 week 1: one that kicked off on a
+ * fixed PAST literal (2001-09-09 — `dev-ld51-rb-locked` is LOCKED by §11.2)
+ * and one on a fixed FUTURE literal (2099-09-13 — `dev-ld51-wr-a` is open).
+ * Then `lineup_lock_tick` is run once for the league so the pool VIEW
  * (`league_player_pool.locked_until`, F241(d)'s `'infinity'` for the
  * locked player — the week's last game end is unrecorded) is populated
  * before the page is opened; pg_cron's `lineup-lock` job keeps it fresh
  * every minute after that.
  *
+ * E41 ON THIS FIXTURE (L.D5.3). The PAST game row means the league's Week 1
+ * has kicked off, so a Remix or a matchup edit is a commissioner OVERRIDE
+ * (reason required) by default, and week 1 itself is frozen
+ * (`week_kicked_off`) while weeks 2–14 regenerate. To walk the FREE window
+ * first, move that kickoff ahead and back with psql:
+ *   update nfl_games set kickoff_at = '2099-09-09T17:00:00Z' where id = 'dev-ld51-game-locked';
+ *   update nfl_games set kickoff_at = '2001-09-09T17:00:00Z' where id = 'dev-ld51-game-locked';
+ * (`lineup_lock_tick` re-evaluates the pool lock on its next minute either way.)
+ *
  * LOCAL ONLY. Refuses any URL that is not the local stack — every sync
  * script loads `.env.local` (the hosted project) and the restore-dev
  * header records why that is a hazard. F199's census catches the ids by
  * their `dev-ld51-` prefix and the league by its name.
+ *
+ * TEAR IT DOWN BEFORE `npm run test` (F199, measured 2026-09-05 by L.D5.3).
+ * While resident it poisons the stack lane by TWO vectors: the players
+ * carry a null ADP the lowest-ADP cells can pick (L.D5.1's finding), and
+ * the two `nfl_games` rows sit on the SHARED synthetic season (2099, week
+ * 1) — `schedule_window_internal` / the Q29 first-week mapping read that
+ * week's earliest kickoff by (season, week), not by league, so with the
+ * 2001 row present EVERY 2099 league in `schedule-api-db`,
+ * `schedule-edit-api-db`, `schedule-property-db` and `week-workers-db`
+ * sees its Week 1 already kicked off (8 cells red, all four green again
+ * after `--teardown`). Re-seed after the run.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
@@ -88,7 +113,7 @@ async function cleanup(): Promise<void> {
         if (error) throw new Error(`cleanup ${table}: ${error.message}`)
       }
     }
-    for (const table of ['league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members'] as const) {
+    for (const table of ['league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members', 'league_chat', 'schedule_actions'] as const) {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
@@ -147,6 +172,12 @@ async function seed(): Promise<void> {
     .select('id')
     .single()
   if (proTeamError) throw new Error(`teams insert: ${proTeamError.message}`)
+  // L.D5.3: the remaining six seats, so the engine's "every seat must exist"
+  // check (110) passes and a real season can be generated. Unmanaged.
+  const { error: seatsError } = await service
+    .from('teams')
+    .insert(Array.from({ length: 6 }, (_, i) => ({ owner_id: proId, name: `Dev Seat ${i + 3}`, league_id: leagueId })))
+  if (seatsError) throw new Error(`teams insert (seats): ${seatsError.message}`)
   const { error: memberError } = await service.from('league_members').insert([{ league_id: leagueId, user_id: proId, team_id: proTeam.id, role: 'manager' }])
   if (memberError) throw new Error(`league_members: ${memberError.message}`)
 
@@ -155,10 +186,13 @@ async function seed(): Promise<void> {
     .update({ status: 'in_season', scoring_rules_snapshot: template?.rules ?? null })
     .eq('id', leagueId)
   if (seasonError) throw new Error(`leagues → in_season: ${seasonError.message}`)
-  const { error: weeksError } = await service
-    .from('league_weeks')
-    .insert([1, 2, 3].map((week) => ({ league_id: leagueId, season: SYNTHETIC_SEASON, week })))
-  if (weeksError) throw new Error(`league_weeks: ${weeksError.message}`)
+  // L.D5.3: the REAL season — `league_generate_schedule` writes the
+  // `league_weeks` ladder (14 regular + 3 playoff weeks at the 8-team
+  // defaults) and every regular matchup, seeded on `schedule_seed`. It is
+  // REVOKEd from `authenticated` (110:812 — the completion path's), so the
+  // service client drives it, as the stack suites do.
+  const { data: generated, error: genError } = await service.rpc('league_generate_schedule', { p_league_id: leagueId })
+  if (genError) throw new Error(`league_generate_schedule: ${genError.message}`)
 
   const { error: playersError } = await service.from('players').upsert([...PLAYERS])
   if (playersError) throw new Error(`players: ${playersError.message}`)
@@ -186,8 +220,10 @@ async function seed(): Promise<void> {
   })
   if (tickError) throw new Error(`lineup_lock_tick: ${tickError.message}`)
 
-  console.log(JSON.stringify({ leagueId, devTeamId: devTeam.id, proTeamId: proTeam.id, tick }, null, 2))
+  console.log(JSON.stringify({ leagueId, devTeamId: devTeam.id, proTeamId: proTeam.id, generated, tick }, null, 2))
   console.log(`\nopen: http://localhost:3123/app/leagues/${leagueId}/team/${devTeam.id}`)
+  console.log(`      http://localhost:3123/app/leagues/${leagueId}/schedule`)
+  console.log(`      http://localhost:3123/app/leagues/${leagueId}/standings`)
 }
 
 const teardown = process.argv.includes('--teardown')
