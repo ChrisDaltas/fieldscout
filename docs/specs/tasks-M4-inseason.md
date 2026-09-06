@@ -274,6 +274,8 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 > DoD: §4 rules; break probe: let H2H attempt a 3-way group → the E63 golden fails (shown, reverted).
 
 ### L.D1.8 — Migration ~~116~~ *(shifted — confirm with `ls`)*: playoffs — bracket generation + status flips
+> **HALTED 2026-09-05 (`halt/M4-L.D1.8-playoffs-Q39`; PROGRESS §3 Q39, blocker B9 — no code; 118 / 066 reserved).** Item 1's trigger ("when `league_week_advance` OPENS `playoff_start_week`: seed from `league_standings`") is unsatisfiable as written — the previous week finalizes ~30 hours AFTER the next opens (measured; Q39(E)) — and items 1–3 each rest on a definition §11.5 / §7.3.1 / §11.7 do not supply (Q39(A)–(D)); item 3's `total_points` bracket cannot be finalized or scored by 110 / 117 / F241 as built (Q39(C)). Amended here at the ruling's application.
+>
 > Read spec §11.5 (playoffs), §7.3.1 (`playoff_teams`/`playoff_start_week`/`playoff_reseed`), §7.1 (in_season → playoffs → complete), §11.7 (round_type vocabulary + the total_points playoff rule), this doc D288/D297. Depends L.D1.7.
 >
 > 1. When `league_week_advance` opens `playoff_start_week` (Q29's mapping applied): seed the bracket from `league_standings`; byes for top seeds per `playoff_teams ∈ {2,4,6,8,10,12}` (Builder pins the exact bye arithmetic per size); write `round_type='playoff'` matchups; flip league → `playoffs`; `playoff_reseed` honored between rounds; multi-week rounds per `derivePlayoffRounds`.
