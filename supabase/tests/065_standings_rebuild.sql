@@ -7,6 +7,16 @@
 -- Numbering: pgTAP head measured 064 at task time (ls supabase/tests/ |
 -- tail -1) ⇒ 065.
 --
+-- AMENDED IN PLACE 2026-09-07 (L.D1.9 / migration 119 — tests are tests,
+-- the D137 note): A11b's "…and in no other function" NARROWS. §12.18's own
+-- text names TWO writers of team_week_results — `score-league-week` (live,
+-- PROVISIONAL) and finalization (FINAL) — and 119 landed the first: the
+-- write door's `total_points` arm INSERTs provisional rows (`is_final`
+-- FALSE, points only; F241(b)). The FINAL results INSERT still exists
+-- exactly once (A11, unchanged); A11b now asserts the door is the ONLY other
+-- function carrying the INSERT text. Shown RED against 119 before the edit:
+-- exactly 1 of 108 (cell 13).
+--
 -- Falsifiability notes (tasks-M1 §4.3, carried by tasks-M4 §4 rule 9):
 --   * GOLDENS AS STORED LITERALS (D62), hand-built on paper: L1 is a
 --     6-team season over four regular-season weeks (3–6) whose records,
@@ -139,9 +149,10 @@ select is(
    where n.nspname = 'public' and p.proname = 'week_results_write_internal'),
   1, 'A11 the results INSERT exists exactly ONCE on the whole chain — in week_results_write_internal');
 select is(
-  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select array_agg(p.proname::text order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname <> 'week_results_write_internal' and p.prosrc like '%INSERT INTO public.team_week_results%'),
-  0, 'A11b …and in no other function');
+  array['score_write_week_batch'],
+  'A11b …and the ONLY other function carrying it is the write door''s PROVISIONAL arm (119, L.D1.9 — §12.18''s live writer; is_final FALSE, never a final row)');
 -- E38 on the lifted derivation.
 select is(public.matchup_result_internal(98.24, 98.24, '00000000-0000-4000-8000-000000000001'), 'tie',
   'A12 E38: a two-decimal tie (98.24 vs 98.24) is a tie');
