@@ -113,14 +113,13 @@ export function useSchedule(leagueId: string | undefined) {
  * The fetch + subscribe half — what the mounted schedule page uses (M4 task
  * L.D5.3; D298: freshness is broadcast + refetch-on-event). Joins the ONE
  * `league:<id>` room (F233(a) — a handler map, never a `.channel(`) and
- * refetches on the events `scheduleEventInvalidates` admits: `matchups` and
- * `league_weeks` (L.D1.9's triggers, registered ahead of them — the D310(4)
- * precedent) and `league_chat`, which broadcasts TODAY (070) and is the one
- * carrier a Remix or a matchup edit has until then — 111 writes its D97
- * system post in the same transaction as the rows, so a commissioner's
- * confirm in one browser reaches another member's open schedule now. Every
- * confirmed (re)join refetches (§9.3). Returns the spine's `connection` for
- * the §16.5.4 reconnecting banner.
+ * refetches on the events `scheduleEventInvalidates` admits: `matchups` (119's
+ * per-statement trigger — a score tick, a status flip, and a Remix's or a
+ * bracket (re)build's DELETE + INSERT, one event each) and `league_weeks`.
+ * The `league_chat` stand-in (the one carrier a Remix had before 119 — 111's
+ * D97 post in the same transaction) retired with the trigger (F254(a)).
+ * Every confirmed (re)join refetches (§9.3). Returns the spine's
+ * `connection` for the §16.5.4 reconnecting banner.
  */
 export function useScheduleLive(leagueId: string | undefined) {
   const query = useSchedule(leagueId)

@@ -9,6 +9,14 @@
 -- tail -1) ⇒ 058, the tasks-M4 §7 reservation confirmed, not inherited
 -- (D161/D166).
 --
+-- AMENDED IN PLACE 2026-09-07 (L.D1.9 / migration 119 — tests are tests,
+-- the D137 note): the forward-looking "league_weeks still carries NO
+-- broadcast trigger — D296 lands it" pin FLIPS — 119 landed
+-- `tr_broadcast_league_weeks` (row, UPDATE OF status) with its first
+-- subscriber (L.D4.1 / L.D5.3); the cell now asserts the trigger is present
+-- (its shape is pgTAP 067's). Shown RED against 119 before the edit: exactly
+-- 1 of 177 (cell 27).
+--
 -- Falsifiability notes (tasks-M1 §4.3, carried by tasks-M4 §4 rule 9):
 --   * EVERY GOLDEN IS A STORED LITERAL AT A BOUNDARY INSTANT. The mid-season
 --     goldens run the REAL writer (`league_generate_schedule`) at injected
@@ -248,8 +256,8 @@ select ok(
 select is(
   (select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid
    where t.tgrelid = 'public.league_weeks'::regclass and p.proname like 'broadcast%'),
-  0::bigint,
-  'league_weeks still carries NO broadcast trigger — D296 lands it in 117 with the write door it serves (024''s F42 pin holds)');
+  1::bigint,
+  'league_weeks carries EXACTLY ONE broadcast trigger since 119 (L.D1.9 / D296 — tr_broadcast_league_weeks, UPDATE OF status; the transition guard above is not a broadcast; 067 pins its shape)');
 
 -- ---------------------------------------------------------------------------
 -- B. The pure core — stored-literal goldens

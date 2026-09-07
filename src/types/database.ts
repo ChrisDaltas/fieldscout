@@ -4163,6 +4163,10 @@ export type Database = {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
       }
+      league_week_broadcast_payload: {
+        Args: { w: Database["public"]["Tables"]["league_weeks"]["Row"] }
+        Returns: Json
+      }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
       lineup_carry_internal: {
         Args: {
@@ -4201,6 +4205,10 @@ export type Database = {
       }
       lineup_lock_tick: {
         Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
+      }
+      matchup_broadcast_payload: {
+        Args: { m: Database["public"]["Tables"]["matchups"]["Row"] }
         Returns: Json
       }
       matchup_result_internal: {
@@ -4400,6 +4408,10 @@ export type Database = {
           free: boolean
         }[]
       }
+      score_write_week_batch: {
+        Args: { p_league_id: string; p_scores: Json; p_week: number }
+        Returns: Json
+      }
       scoring_detect_tier_cuts: { Args: { p_rules: Json }; Returns: Json }
       scoring_fork_template: {
         Args: { p_league_id: string; p_template_id: string }
@@ -4478,6 +4490,14 @@ export type Database = {
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
       team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
       team_league_id: { Args: { p_team_id: string }; Returns: string }
+      team_week_result_broadcast_payload: {
+        Args: { r: Database["public"]["Tables"]["team_week_results"]["Row"] }
+        Returns: Json
+      }
+      transaction_broadcast_payload: {
+        Args: { t: Database["public"]["Tables"]["transactions"]["Row"] }
+        Returns: Json
+      }
       update_league_profile: {
         Args: {
           p_avatar_url?: string

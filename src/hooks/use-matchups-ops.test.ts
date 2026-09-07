@@ -33,10 +33,12 @@ import {
   LEAGUE_CHANNEL_EVENTS,
   MATCHUPS_INVALIDATING_EVENTS,
   ROSTERS_INVALIDATING_EVENTS,
+  SCHEDULE_INVALIDATING_EVENTS,
   STANDINGS_INVALIDATING_EVENTS,
   invalidatingHandlers,
   matchupsEventInvalidates,
   rostersEventInvalidates,
+  scheduleEventInvalidates,
   standingsEventInvalidates,
   type LeagueBroadcastEnvelope,
 } from './use-league-channel-ops'
@@ -193,10 +195,21 @@ describe('the three predicates SELECT each surface\'s handler map (R773 — deri
     expect(LEAGUE_CHANNEL_EVENTS.filter(standingsEventInvalidates)).toEqual(['team_week_results', 'league_weeks'])
   })
 
-  it('rosters: 072\'s league_rosters carrier + transactions (the drop is a DELETE 072 does not broadcast)', () => {
-    expect([...ROSTERS_INVALIDATING_EVENTS]).toEqual(['league_rosters', 'transactions'])
+  it('rosters: 072\'s league_rosters carrier + transactions (the drop is a DELETE 072 does not broadcast) + the pool lock summary (119)', () => {
+    expect([...ROSTERS_INVALIDATING_EVENTS]).toEqual(['league_rosters', 'transactions', 'league_player_pool'])
     expect(rostersEventInvalidates('matchups')).toBe(false)
-    expect(LEAGUE_CHANNEL_EVENTS.filter(rostersEventInvalidates)).toEqual(['transactions', 'league_rosters'])
+    expect(LEAGUE_CHANNEL_EVENTS.filter(rostersEventInvalidates)).toEqual([
+      'transactions',
+      'league_rosters',
+      'league_player_pool',
+    ])
+  })
+
+  it('schedule: the pairing carriers only — matchups + league_weeks; the league_chat stand-in is GONE (F254(a)/F253(e), 119)', () => {
+    expect([...SCHEDULE_INVALIDATING_EVENTS]).toEqual(['matchups', 'league_weeks'])
+    expect(scheduleEventInvalidates('league_chat')).toBe(false)
+    expect(scheduleEventInvalidates('league_player_pool')).toBe(false)
+    expect(LEAGUE_CHANNEL_EVENTS.filter(scheduleEventInvalidates)).toEqual(['matchups', 'league_weeks'])
   })
 
   it('every predicate is inert for a stranger', () => {
@@ -204,6 +217,7 @@ describe('the three predicates SELECT each surface\'s handler map (R773 — deri
       expect(matchupsEventInvalidates(stranger), stranger).toBe(false)
       expect(standingsEventInvalidates(stranger), stranger).toBe(false)
       expect(rostersEventInvalidates(stranger), stranger).toBe(false)
+      expect(scheduleEventInvalidates(stranger), stranger).toBe(false)
     }
   })
 

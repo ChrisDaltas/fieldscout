@@ -13,6 +13,14 @@
 -- 28, 29, 30, 35, 36). pgTAP 037 owns the auction-era inventory pins; this
 -- file keeps the M2 surface + the amended key sets.
 --
+-- AMENDED IN PLACE 2026-09-07 (L.D1.9 / migration 119 — tests are tests,
+-- the D137 note): the F42 trigger-less pin SHRINKS to the five tables still
+-- re-waived (league_members / team_managers / teams / league_invites /
+-- league_lists) — `league_weeks` gained its subscriber (L.D4.1 / L.D5.3)
+-- and its trigger (`tr_broadcast_league_weeks`, 119). Shown RED against
+-- 119 before the edit: exactly 1 of 63 (the F42 cell). pgTAP 067 pins the
+-- shrunken set again beside the new inventory (both directions).
+--
 -- Falsifiability notes (§4.3):
 --   * PAYLOAD-SHAPE UNIT PINS (task item 4): each column-select function's
 --     EXACT jsonb key set is pinned against a stored-literal array, plus
@@ -216,10 +224,10 @@ select is(
    join pg_proc p on p.oid = t.tgfoid
    where t.tgrelid = any (array['public.league_members'::regclass, 'public.team_managers'::regclass,
                                 'public.teams'::regclass, 'public.league_invites'::regclass,
-                                'public.league_weeks'::regclass, 'public.league_lists'::regclass])
+                                'public.league_lists'::regclass])
      and p.proname like 'broadcast%'),
   0::bigint,
-  'the F42 set (league_members/team_managers/teams/league_invites/league_weeks/league_lists) stays trigger-less — re-waived per table to M4 (D38 rationale; F8 flips WITHOUT them)');
+  'the F42 set (league_members/team_managers/teams/league_invites/league_lists) stays trigger-less — re-waived per table (D38 rationale; F8 flips WITHOUT them; league_weeks LEFT the set at 119/L.D1.9 with its first subscriber — D296)');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).

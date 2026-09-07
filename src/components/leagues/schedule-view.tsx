@@ -46,8 +46,8 @@ import { ProblemCard, problemCopy } from './team-page'
  * half F249(a) routed here). `useScheduleLive` is the week ladder + every
  * pairing (member-RLS, D92) plus the `league:<id>` room's `connection`
  * (F233(a) — one refcounted room, never a second `.channel(`), refetching
- * on `matchups` / `league_weeks` (L.D1.9's triggers, registered ahead) and
- * on `league_chat`, the one carrier a Remix or an edit has today.
+ * on `matchups` / `league_weeks` (119's triggers — a Remix's or an edit's
+ * rows reach the grid directly; the `league_chat` stand-in retired, F254(a)).
  *
  * **The commissioner's two doors (§11.7), both audited per D290.** REMIX
  * opens `ScheduleRemixModal` (seed → preview → confirm; E41's two copies).
