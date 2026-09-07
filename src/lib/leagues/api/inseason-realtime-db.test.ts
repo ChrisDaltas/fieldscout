@@ -20,15 +20,31 @@
  *       (F248(a)'s finalization-badge arm);
  *   (d) a NON-MEMBER client gets nothing: the private-channel subscribe is
  *       REFUSED by 070's realtime.messages policy (never SUBSCRIBED) and
- *       zero events are delivered — while the member's channel receives a
- *       driven door write in the same window (the positive control; probe
- *       3 — a public topic — reds this cell).
+ *       zero events are delivered — while the member's channel on the same
+ *       topic receives BOTH driven door writes, the second one across a
+ *       deliberate 3 s idle gap and during the outsider's refused rejoin
+ *       loop (the positive controls; probe 3 — a public topic — reds this
+ *       cell; R847's probe — the second write commented out — reds it too).
  *
  * HARNESS (the draft-realtime-db pattern): the readiness gate proves
  * DELIVERY end-to-end before any assertion (the post-reset boot-window
  * races — a join that times out, a `realtime.send` that silently drops
  * until the day partitions exist); a dead service FAILS loudly, never
- * skips (§4.3). Deliveries are awaited by attempt-counted polls (no
+ * skips (§4.3). ONE SOCKET PER CELL (MEASURED in the R847 fix round —
+ * PROGRESS D319(9) / F259(c)): each cell signs the member in afresh, so
+ * the cell's channel is its socket's FIRST channel — the one shape that
+ * delivered in every probe (3 s / 6 s / 15 s gaps here, 104 s in the
+ * reviewer's Node run). On the local stack (realtime v2.124.4,
+ * realtime-js 2.101.1 in Node) a LATER channel on the same socket — one
+ * joined after an earlier channel on the topic left — sometimes stops
+ * receiving Broadcast-from-DB about a second after its last delivery
+ * (deterministic in the gate → cell shape this file first had: 3/3 red on
+ * the second write; a second socket's channel received every message the
+ * deaf one missed — the loss is per socket, the rows are in
+ * `realtime.messages`, the service logs nothing). Cause unknown; the
+ * determinant was NOT isolated (not gap length alone, not the outsider,
+ * not the event name or its trigger, not time since connect); recorded,
+ * not doctrine. Deliveries are awaited by attempt-counted polls (no
  * wall-clock read — the D3/D17 ESLint fence covers this file).
  *
  * CALENDAR (F215 / F226): the league lives on `SYNTHETIC_SEASON` (2099);
@@ -128,6 +144,7 @@ let commishId: string
 let leagueId: string
 let teamIds: string[] = []
 const openChannels: RealtimeChannel[] = []
+const openClients: SupabaseClient<Database>[] = []
 
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
@@ -230,10 +247,18 @@ async function door(week: number, scores: Array<{ team_id: string; points: numbe
   return data as unknown as DoorReport
 }
 
+/** A fresh member socket for ONE cell (the header's one-socket-per-cell rule). */
+async function memberSocket(): Promise<SupabaseClient<Database>> {
+  const client = await signIn(MANAGER)
+  openClients.push(client)
+  return client
+}
+
 function memberChannel(
+  client: SupabaseClient<Database>,
   handlers: Partial<Record<'matchups' | 'transactions' | 'league_weeks' | 'team_week_results', (payload: BroadcastEnvelope) => void>>,
 ): RealtimeChannel {
-  let ch = managerClient.channel(`league:${leagueId}`, { config: { private: true } })
+  let ch = client.channel(`league:${leagueId}`, { config: { private: true } })
   for (const [event, handler] of Object.entries(handlers)) {
     ch = ch.on('broadcast', { event }, (msg) => handler?.(msg.payload as BroadcastEnvelope))
   }
@@ -358,11 +383,15 @@ beforeAll(async () => {
   if (!delivered) {
     throw new Error('realtime service never delivered a Broadcast-from-DB message (join or delivery pipeline still down)')
   }
+
 }, 300_000)
 
 afterAll(async () => {
   for (const channel of openChannels) {
     await channel.unsubscribe().catch(() => undefined)
+  }
+  for (const client of openClients) {
+    client.realtime.disconnect()
   }
   managerClient?.realtime.disconnect()
   outsiderClient?.realtime.disconnect()
@@ -372,7 +401,8 @@ afterAll(async () => {
 describe('in-season Broadcast-from-DB over the real Realtime service (migration 119)', () => {
   it('a driven door batch reaches a subscribed MEMBER as EXACTLY ONE `matchups` event, column-selected; the identical re-send delivers nothing', async () => {
     const events: BroadcastEnvelope[] = []
-    const channel = memberChannel({ matchups: (p) => events.push(p) })
+    const member = await memberSocket()
+    const channel = memberChannel(member, { matchups: (p) => events.push(p) })
     expect(await subscribeAndWait(channel, 15_000)).toBe('SUBSCRIBED')
 
     const report = await door(
@@ -423,13 +453,15 @@ describe('in-season Broadcast-from-DB over the real Realtime service (migration 
     expect(events).toHaveLength(1)
 
     await channel.unsubscribe().catch(() => undefined)
-    managerClient.removeChannel(channel)
+    member.removeChannel(channel)
+    member.realtime.disconnect()
   }, 90_000)
 
   it('a transactions INSERT and a league_weeks status flip each arrive as one column-selected event (F233(c) / F248(a))', async () => {
     const txnEvents: BroadcastEnvelope[] = []
     const weekEvents: BroadcastEnvelope[] = []
-    const channel = memberChannel({
+    const member = await memberSocket()
+    const channel = memberChannel(member, {
       transactions: (p) => txnEvents.push(p),
       league_weeks: (p) => weekEvents.push(p),
     })
@@ -497,17 +529,19 @@ describe('in-season Broadcast-from-DB over the real Realtime service (migration 
     expect(txnEvents).toHaveLength(1)
 
     await channel.unsubscribe().catch(() => undefined)
-    managerClient.removeChannel(channel)
+    member.removeChannel(channel)
+    member.realtime.disconnect()
   }, 90_000)
 
   it('a NON-MEMBER client gets nothing: the private channel refuses the subscribe and delivers zero events while a member on the same topic receives the door', async () => {
     const memberReceived: BroadcastEnvelope[] = []
     const outsiderReceived: BroadcastEnvelope[] = []
 
-    // Positive control FIRST, inside the warm window (F259(c), below): a
-    // fresh member subscription on the topic receives a real door write —
-    // "gets nothing" is proven against a delivering topic, not a dead room.
-    const memberProbe = memberChannel({ matchups: (p) => memberReceived.push(p) })
+    // Positive control FIRST: a fresh member subscription on the topic
+    // receives a real door write — "gets nothing" is proven against a
+    // delivering topic, not a dead room.
+    const member = await memberSocket()
+    const memberProbe = memberChannel(member, { matchups: (p) => memberReceived.push(p) })
     expect(await subscribeAndWait(memberProbe, 15_000)).toBe('SUBSCRIBED')
     const control = await door(1, [{ team_id: teamIds[0], points: 55.5 }])
     expect(control.written).toBe(1)
@@ -520,26 +554,31 @@ describe('in-season Broadcast-from-DB over the real Realtime service (migration 
     const status = await subscribeAndWait(outsiderChannel, 15_000)
     expect(status).not.toBe('SUBSCRIBED')
 
+    // A deliberate IDLE gap on the member's channel before the second write
+    // (≈ 3 s of no traffic on the topic) — the standing measurement behind
+    // PROGRESS F259(c) / D319(9): the first Builder's scratch probes read a
+    // private channel as deaf after a ≥ 1 s lull; on a socket's FIRST
+    // channel (this one) it is not — the reviewer's 11/11 to 104 s (R847)
+    // and this cell every run. The SECOND write below is asserted, across
+    // the gap. If this cell ever misses here, that is a measurement —
+    // record the count in PROGRESS, do not weaken the assertion.
+    await settle(15)
+
     // A real write lands while the refused channel is live (and re-joining
-    // on realtime-js's backoff): nothing reaches its handler.
+    // on realtime-js's backoff): the member receives it as ONE more event;
+    // nothing reaches the outsider's handler.
     const during = await door(1, [{ team_id: teamIds[0], points: 56.5 }])
     expect(during.written).toBe(1)
+    await waitFor(() => memberReceived[1], 20_000, 'the member second write (across the idle gap)')
     await settle(10)
 
-    expect(memberReceived.length).toBeGreaterThanOrEqual(1)
+    expect(memberReceived).toHaveLength(2)
+    const secondRow = (memberReceived[1].record as { matchups: Array<Record<string, unknown>> }).matchups[0]
+    expect(secondRow.home_team_id === teamIds[0] ? secondRow.home_score : secondRow.away_score).toBe(56.5)
     expect(outsiderReceived).toHaveLength(0)
 
-    // MEASURED 2026-09-07 on the local stack (realtime v2.124.4, realtime-js
-    // 2.101.1 in Node — PROGRESS F259(c)): a private-channel subscriber
-    // receives Broadcast-from-DB messages only within ~1 s of a join or
-    // under continuous traffic; after a ≥ 1 s lull the channel is deaf —
-    // 070's own `leagues` trigger included (gap 0 ms ok, 1 s / 3 s / 6 s
-    // MISS; 15 back-to-back writes 15/15 ok) — until a NEW join on the same
-    // socket revives it. Not 119's: the sibling draft-realtime-db passes
-    // because its direct tick lands inside that window (its recorded
-    // 10–20% flake, R163/F52, is the same edge). Every driven write in this
-    // file therefore follows its subscribe immediately, and the member's
-    // receipt of the SECOND write above is deliberately not asserted.
-    // Whether a browser client sees the same is L.D6.2's walk.
+    await memberProbe.unsubscribe().catch(() => undefined)
+    member.removeChannel(memberProbe)
+    member.realtime.disconnect()
   }, 150_000)
 })
