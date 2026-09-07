@@ -198,7 +198,7 @@
 # trigger `tr_broadcast_teams` (per-statement, diff-aware Broadcast-from-DB
 # on the private `league:<id>` topic via `realtime.send` — 070's policies,
 # no publication change) with its payload function.]
-# Same mechanism, same explicit act. No launch-surface table is touched:
+# Same mechanism, same explicit act. No launch-surface WRITE PATH changes (R865: the new `tr_broadcast_teams` trigger DOES run on every `teams` UPDATE statement, league or legacy — a `league_id NULL` row's update runs the function and emits nothing, no error):
 # every write is on the leagues chain (`teams` league rows, `team_managers`,
 # `league_members`, `league_rosters`, `team_lineups` league rows,
 # `matchups`, `team_week_results`, `transactions`, `league_chat`); the only

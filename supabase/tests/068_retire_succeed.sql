@@ -909,7 +909,9 @@ select is(
   'commissioner_move:9e000000-0000-4000-8000-000000000001:true',
   'J2e the ledger row is written as for a managed seat (payload = the return value)');
 select is(
-  (select c.message from league_chat c where c.league_id = 'be000000-0000-4000-8000-000000000001' and c.is_system order by c.created_at desc, c.id desc limit 1),
+  -- R863 (#266 final re-review): both L1 system posts carry the transaction's one now(), so
+  -- "latest by created_at" was a coin flip (red 4 of 5 runs). Select J2's post by its own text.
+  (select c.message from league_chat c where c.league_id = 'be000000-0000-4000-8000-000000000001' and c.is_system and c.message like 'RS Y was retired%' order by c.id limit 1),
   'RS Y was retired by rs_user1 — the vacant franchise is sealed under its last manager (§7.2.1(c)); Team 6 takes its slot from Week 5 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b)) — reason: the seat stayed empty',
   'J2f the post says the seat was vacant and cites §7.2.1(c)');
 select is(
