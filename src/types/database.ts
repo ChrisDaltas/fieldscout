@@ -4290,6 +4290,7 @@ export type Database = {
       }
       remove_manager: {
         Args: {
+          p_action_id?: string
           p_league_id: string
           p_member_id: string
           p_mode: string

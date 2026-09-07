@@ -96,6 +96,13 @@
 --   * All auth.users fixtures run BEFORE any claims are set (D49(7));
 --     mid-test privileged forcing uses `reset role` (the 013/014 pattern).
 -- ============================================================================
+-- AMENDED IN PLACE 2026-09-07 (L.D1.10 / migration 120 — tests are tests,
+-- the D137 note): `remove_manager` gained a sixth argument, `p_action_id
+-- UUID DEFAULT NULL` (the retire arm's idempotency stamp), by DROP + CREATE;
+-- the six signature/ACL pins below name the six-argument identity. Every
+-- CALL in this file is unchanged (the defaults resolve them). Shown RED
+-- against 120 before the edit: tests 4 and 11, then the transaction aborted
+-- at the first five-argument regprocedure cast.
 begin;
 
 create extension if not exists pgtap with schema extensions;
@@ -113,8 +120,8 @@ select has_function('public', 'set_member_role', array['uuid','uuid','text'],
   'set_member_role exists');
 select has_function('public', 'assign_manager', array['uuid','uuid','uuid'],
   'assign_manager exists');
-select has_function('public', 'remove_manager', array['uuid','uuid','text','uuid','text'],
-  'remove_manager exists (the full three-outcome §15.1 signature)');
+select has_function('public', 'remove_manager', array['uuid','uuid','text','uuid','text','uuid'],
+  'remove_manager exists (the full three-outcome §15.1 signature — 120 added p_action_id, the retire arm''s stamp; DEFAULT NULL, so every call in this file resolves unchanged)');
 select has_function('public', 'leave_league', array['uuid'],
   'leave_league exists (no p_user_id — it can only act on auth.uid())');
 select has_function('public', 'notify_league_member_internal',
@@ -130,7 +137,7 @@ select is_definer('public', 'set_member_role', array['uuid','uuid','text'],
   'set_member_role is SECURITY DEFINER');
 select is_definer('public', 'assign_manager', array['uuid','uuid','uuid'],
   'assign_manager is SECURITY DEFINER');
-select is_definer('public', 'remove_manager', array['uuid','uuid','text','uuid','text'],
+select is_definer('public', 'remove_manager', array['uuid','uuid','text','uuid','text','uuid'],
   'remove_manager is SECURITY DEFINER');
 select is_definer('public', 'leave_league', array['uuid'],
   'leave_league is SECURITY DEFINER');
@@ -146,7 +153,7 @@ select ok(
        'public.add_placeholder_seat(uuid,text)'::regprocedure,
        'public.set_member_role(uuid,uuid,text)'::regprocedure,
        'public.assign_manager(uuid,uuid,uuid)'::regprocedure,
-       'public.remove_manager(uuid,uuid,text,uuid,text)'::regprocedure,
+       'public.remove_manager(uuid,uuid,text,uuid,text,uuid)'::regprocedure,
        'public.leave_league(uuid)'::regprocedure,
        'public.notify_league_member_internal(uuid,text,text,text,jsonb)'::regprocedure])),
   'all six functions pin search_path='''' exactly (§12.0/D45; R70 exact-value form)');
@@ -155,14 +162,14 @@ select ok(
   not has_function_privilege('anon', 'public.add_placeholder_seat(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.set_member_role(uuid,uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.assign_manager(uuid,uuid,uuid)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.remove_manager(uuid,uuid,text,uuid,text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.remove_manager(uuid,uuid,text,uuid,text,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.leave_league(uuid)', 'EXECUTE'),
   'anon holds NO EXECUTE on any member-management RPC (037''s default ACLs make the REVOKE load-bearing)');
 select ok(
   has_function_privilege('authenticated', 'public.add_placeholder_seat(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.set_member_role(uuid,uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.assign_manager(uuid,uuid,uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.remove_manager(uuid,uuid,text,uuid,text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.remove_manager(uuid,uuid,text,uuid,text,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.leave_league(uuid)', 'EXECUTE'),
   'authenticated keeps EXECUTE on all five (the in-body checks are the gate, not the ACL)');
 select ok(
@@ -1355,7 +1362,7 @@ select ok(
       and strpos(substr(p.prosrc, strpos(p.prosrc, 'v_actor_role NOT IN'),
                         strpos(substr(p.prosrc, strpos(p.prosrc, 'v_actor_role NOT IN')), 'END IF')),
                  '42501') > 0
-     from pg_proc p where p.oid = 'public.remove_manager(uuid,uuid,text,uuid,text)'::regprocedure),
+     from pg_proc p where p.oid = 'public.remove_manager(uuid,uuid,text,uuid,text,uuid)'::regprocedure),
   'remove_manager re-gates AFTER the lock and ABOVE its first write (UPDATE public.team_managers) with a 42501 RAISE (R93/R101)');
 select ok(
   (select strpos(substr(p.prosrc, strpos(p.prosrc, 'FOR UPDATE')), 'INTO v_self') > 0
