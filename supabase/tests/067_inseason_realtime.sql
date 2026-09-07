@@ -171,8 +171,13 @@ select is((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid 
   'B5 league_members: NO broadcast trigger — re-waived per table (F42/D296: no M4 subscriber; a trigger ships with its first subscriber)');
 select is((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.team_managers'::regclass and p.proname like 'broadcast%'), 0::bigint,
   'B5b team_managers: NO broadcast trigger — re-waived (F42/D296)');
-select is((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.teams'::regclass and p.proname like 'broadcast%'), 0::bigint,
-  'B5c teams: NO broadcast trigger — re-waived (F42/D296)');
+-- [amended 2026-09-07, L.D1.10's #266 fix round (migration 120 §4, R856):
+-- teams LEFT the F42 set — the first in-season WRITER with a subscriber (a
+-- retirement; the standings page + the league detail refetch on it). Shown
+-- RED against 120 before this edit (1/148).]
+select is((select string_agg(t.tgname::text, ',') from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.teams'::regclass and p.proname like 'broadcast%'),
+  'tr_broadcast_teams',
+  'B5c teams: ONE broadcast trigger — LEFT the F42 set at 120/L.D1.10 (R856): per-statement, diff-aware; the pins are 068 A11/C14');
 select is((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.league_invites'::regclass and p.proname like 'broadcast%'), 0::bigint,
   'B5d league_invites: NO broadcast trigger — re-waived (F42/D296)');
 select is((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.league_lists'::regclass and p.proname like 'broadcast%'), 0::bigint,

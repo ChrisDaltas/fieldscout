@@ -192,9 +192,17 @@
 # file text with the lineage fold (seeding only) and
 # `week_results_pending_internal` against 117's (the lineage read); two
 # column comments on `teams`; spec v2.16.28 §7.2.1(b) / §12.22 / §15.1.
+# [#266 fix round, same day (PROGRESS R855–R862; spec v2.16.29): 120 edited
+# IN PLACE while unmerged and held — an unmanaged (vacated) seat is
+# retirable, a co-commissioner cannot retire his own seat, and ONE new
+# trigger `tr_broadcast_teams` (per-statement, diff-aware Broadcast-from-DB
+# on the private `league:<id>` topic via `realtime.send` — 070's policies,
+# no publication change) with its payload function.]
 # Same mechanism, same explicit act. No launch-surface table is touched:
 # every write is on the leagues chain (`teams` league rows, `team_managers`,
 # `league_members`, `league_rosters`, `team_lineups` league rows,
 # `matchups`, `team_week_results`, `transactions`, `league_chat`); the only
-# read outside it is 063's on `profiles`. No trigger, no cron row.
+# read outside it is 063's on `profiles`. One trigger (`teams` — its function
+# runs on any UPDATE statement of the table and sends nothing for a
+# non-league row), no cron row.
 082-120

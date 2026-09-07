@@ -48,6 +48,22 @@
 --     his own seat / anon / no action_id / blank reason / already sealed.
 --   * GOLDENS AS STORED LITERALS (D62): every count and rendering below is
 --     a literal written before the first run.
+--   * THE #266 FIX ROUND (R855–R862; 120 edited in place, its md5 moved):
+--     (§J) R855 — a VACATED franchise (orphaned, a closed stint) retires:
+--     sealed under its last manager, the closed stint untouched, no
+--     notification, removed_user_id NULL, the successor + ledger + post
+--     written; a franchise that NEVER had a manager (C13: 120's own
+--     successor; J3: an autopick-drafted placeholder, active) refuses BY
+--     NAME. The PR's probe (1) restores 063's early "no manager" refusal
+--     and J2–J2h go RED. R858 — a co-commissioner retiring HIS OWN seat is
+--     refused 42501 by name (J1); probe (3) drops the guard and J1/J1b go
+--     RED. (§A/§C/§G/§J) R856 — the `teams` broadcast trigger: per
+--     statement, diff-aware (OLD/NEW), ONE event per retirement carrying
+--     the sealed row (C14–C14d), the h2h and total_points event censuses
+--     as stored literals (C14 / G1c — R859), the other writers' shape (J0:
+--     a takeover of a MANAGED franchise and an updated_at touch emit
+--     nothing; a claim / vacate one each); probe (2) drops the trigger and
+--     A11 / A11b / C14 / C14b–d / G1c / J0 / J2h go RED.
 --
 -- Fixture calendar: RELATIVE to now() (061's shape) — current week 5.
 -- ============================================================================
@@ -56,7 +72,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(86);
+select plan(108);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: the signature moved (DROP + CREATE, D137), ACLs, the wrappers
@@ -102,8 +118,24 @@ select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosrc like '%CYCLE id SET is_cycle USING path%'),
   1, 'A10 exactly ONE function carries the F1 cycle walk (remove_manager)');
-select hasnt_trigger('public', 'teams', 'tr_broadcast_teams',
-  'A11 teams: still NO broadcast trigger — F42 stays re-waived (no teams subscriber; the roster/standings surfaces refetch on their own events)');
+-- R856 (the #266 fix round): the `teams` trigger ships — F42 DISCHARGED for
+-- teams (a trigger ships with its first subscriber: the standings page and
+-- the league detail, whose first in-season writer is this retirement).
+select has_trigger('public', 'teams', 'tr_broadcast_teams',
+  'A11 teams: the broadcast trigger EXISTS (120 §4 / R856 — F42 discharged for teams; 067 B5c and 024 amended in place)');
+select is(
+  (select pg_get_triggerdef(t.oid) from pg_trigger t where t.tgrelid = 'public.teams'::regclass and t.tgname = 'tr_broadcast_teams'),
+  'CREATE TRIGGER tr_broadcast_teams AFTER UPDATE ON public.teams REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION broadcast_teams_statement()',
+  'A11b …per STATEMENT with BOTH transition tables (the diff-aware shape: a row counts only when name / status / retired_at_week / successor_team_id CHANGED — PG 17 refuses UPDATE OF <cols> with a transition table); no INSERT / DELETE trigger');
+select ok(
+  (select p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
+          and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE')
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'broadcast_teams_statement')
+  and
+  (select not p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'
+          and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE')
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'team_broadcast_payload'),
+  'A11d the trigger function is DEFINER + search_path='''' + REVOKEd from every client role; the payload function plain + REVOKEd (119''s shape)');
 select has_trigger('public', 'league_rosters', 'tr_broadcast_league_rosters',
   'A12 league_rosters keeps 072''s per-row trigger — the roster re-point rides it');
 
@@ -344,6 +376,53 @@ create or replace function pg_temp.rs_order(p_league uuid, p_projected boolean d
   from jsonb_array_elements(
     case when p_projected then public.league_standings_projected(p_league) else public.league_standings(p_league) end -> 'standings') x
 $$;
+-- The realtime harness (067's, R856): today's + tomorrow's realtime.messages
+-- partitions (024's post-reset race guard), THIS transaction's messages
+-- only (`inserted_at >= now()`), ordered by command id within the
+-- transaction; a per-topic census as `event:count` from a baseline taken
+-- right before the subject statement (the fixtures' own INSERTs on
+-- matchups / results and the league_weeks flips are events too).
+do $part$
+declare
+  d date;
+  part_name text;
+begin
+  foreach d in array array[current_date, current_date + 1] loop
+    part_name := 'messages_' || to_char(d, 'YYYY_MM_DD');
+    if not exists (
+      select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'realtime' and c.relname = part_name
+    ) then
+      execute format(
+        'create table realtime.%I partition of realtime.messages for values from (%L) to (%L)',
+        part_name, d::timestamp, (d + 1)::timestamp);
+    end if;
+  end loop;
+end
+$part$;
+create temp view rs_msgs as
+  select m.cmin::text::bigint as cmd, m.ctid as tid, m.id, m.topic, m.event, m.payload, m.private
+  from realtime.messages m
+  where m.topic like 'league:be000000-0000-4000-8000-00000000000%'
+    and m.inserted_at >= now();
+create function pg_temp.rs_census(p_league text) returns jsonb language sql as $$
+  select coalesce(jsonb_object_agg(x.event, x.n), '{}'::jsonb)
+  from (select event, count(*) as n from rs_msgs where topic = 'league:' || p_league group by 1) x
+$$;
+-- The delta since a baseline census, rendered `event:count,…` (events with a zero delta omitted).
+create function pg_temp.rs_delta(p_league text, p_base jsonb) returns text language sql as $$
+  select coalesce(string_agg(x.event || ':' || x.d::text, ',' order by x.event), '')
+  from (select c.key as event, (c.value)::bigint - coalesce((p_base ->> c.key)::bigint, 0) as d
+        from jsonb_each_text(pg_temp.rs_census(p_league)) c) x
+  where x.d > 0
+$$;
+create function pg_temp.rs_last(p_league text, p_event text) returns jsonb language sql as $$
+  select payload from rs_msgs where topic = 'league:' || p_league and event = p_event order by cmd desc, tid desc limit 1
+$$;
+create function pg_temp.rs_teams_events(p_league text) returns bigint language sql as $$
+  select count(*) from rs_msgs where topic = 'league:' || p_league and event = 'teams'
+$$;
+
 -- The BEFORE literals (118's chain, no lineage): A first by head-to-head.
 select is(pg_temp.rs_order('be000000-0000-4000-8000-000000000001'),
   'RS A:2-1-0:300.00:280.00:-,RS X:2-1-0:300.00:285.00:head_to_head,RS Y:2-1-0:280.00:280.00:points_for,RS Z:0-3-0:245.00:280.00:win_pct',
@@ -377,7 +456,9 @@ reset role;
 select is((select count(*)::int from teams where league_id = 'be000000-0000-4000-8000-000000000001'), 4,
   'C0e the four refusals wrote NOTHING (no successor minted)');
 
--- The retirement (u1, the commissioner; action_id …01).
+-- The retirement (u1, the commissioner; action_id …01). The realtime
+-- baseline is taken HERE (the four refusals above wrote nothing).
+select set_config('pgtap.rs_c0', pg_temp.rs_census('be000000-0000-4000-8000-000000000001')::text, true);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 create temp table _r1 as
@@ -468,6 +549,29 @@ select is(
 select is(
   (select n.data ->> 'event' from notifications n where n.user_id = '9e000000-0000-4000-8000-000000000002' and n.data ->> 'league_id' = 'be000000-0000-4000-8000-000000000001' order by n.created_at desc limit 1),
   'retired', 'C10d the retiree is notified with the "franchise retired" category (§7.2.1:190)');
+-- The realtime census of ONE h2h retirement (R856 / R859 — a stored literal;
+-- measured 2026-09-07 on this fixture): the roster's three per-row events
+-- (072), the two matchup re-point statements (119), the ledger row, the
+-- post, and — new — exactly ONE `teams` event: the seal statement. The
+-- successor's INSERT emits nothing (no INSERT trigger), the R90 owner
+-- sweep changes none of the four rendered columns, and the three results
+-- statements matched no row (h2h writes no result before final).
+select is(pg_temp.rs_delta('be000000-0000-4000-8000-000000000001', current_setting('pgtap.rs_c0')::jsonb),
+  'league_chat:1,league_rosters:3,matchups:2,teams:1,transactions:1',
+  'C14 THE h2h RETIREMENT''S EVENT CENSUS (stored literal): rosters ×3, matchups ×2, transactions ×1, chat ×1, teams ×1 — probe (2) drops the trigger and the teams term disappears');
+select is(pg_temp.rs_last('be000000-0000-4000-8000-000000000001', 'teams') - 'id',
+  jsonb_build_object('operation', 'UPDATE', 'table', 'teams', 'schema', 'public',
+    'record', jsonb_build_object('count', 1, 'teams', jsonb_build_array(jsonb_build_object(
+      'id', 'ce000000-0000-4000-8000-000000000001', 'name', 'RS A', 'status', 'retired', 'retired_at_week', 5, 'successor_team_id', (select id from _s))))),
+  'C14b the teams event is 070''s envelope carrying the SEALED row exactly — status retired, retired_at_week 5, successor_team_id = S (a client can follow the lineage from the wire)');
+select is(
+  (select array_agg(k order by k) from jsonb_object_keys(pg_temp.rs_last('be000000-0000-4000-8000-000000000001', 'teams') -> 'record' -> 'teams' -> 0) k),
+  array['id', 'name', 'retired_at_week', 'status', 'successor_team_id'],
+  'C14c …exactly the five rendered columns — no owner_id (manager identity stays off this wire), no list_id / scoring_system_id / legacy cells');
+select is(
+  (select m.private::text || ':' || m.topic from rs_msgs m where m.event = 'teams' and m.topic = 'league:be000000-0000-4000-8000-000000000001' order by m.cmd desc, m.tid desc limit 1),
+  'true:league:be000000-0000-4000-8000-000000000001',
+  'C14d …on the PRIVATE league topic (070''s policies gate it — no publication change)');
 -- Replay (113's contract).
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -486,10 +590,17 @@ select is((select count(*)::int from transactions where league_id = 'be000000-00
 -- Already sealed.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+-- R855: the retire arm now ADMITS an unmanaged seat — but only one with a
+-- manager to seal it under (a closed stint: vacated / left, §J). S has
+-- NEVER had a manager: refused BY NAME, nothing written.
 select throws_ok(
   $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000001', 'retire', null, 'again', 'ae000000-0000-4000-8000-000000000002') $$,
+  'P0001', 'remove_manager: Team 5 has never had a manager — there is no one to seal it under; use assign-manager to seat someone on it first (§7.2.1(b))',
+  'C13 a fresh stamp on the now-open seat: S has NEVER had a manager — refused BY NAME (R855 admits a VACATED franchise, §J; a seal names a manager)');
+select throws_ok(
+  $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000001', 'takeover', '9e000000-0000-4000-8000-000000000005', 'x') $$,
   'P0001', 'remove_manager: that seat has no manager — use assign-manager to seat someone on it',
-  'C13 a fresh stamp on the now-open seat is 063''s "no manager" refusal (the seat fronts S, unmanaged)');
+  'C13b …and a TAKEOVER of the open seat keeps 063''s "no manager" refusal byte for byte (only retire passes the early check)');
 reset role;
 
 -- ---------------------------------------------------------------------------
@@ -615,6 +726,7 @@ select is(
 -- ---------------------------------------------------------------------------
 select is(public.week_results_pending_internal('be000000-0000-4000-8000-000000000002', 2026, 2), null,
   'G0 BEFORE: week 2 holds a row for every seated team — not pending');
+select set_config('pgtap.rs_g0', pg_temp.rs_census('be000000-0000-4000-8000-000000000002')::text, true);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 create temp table _r2 as
@@ -623,6 +735,13 @@ reset role;
 select is((select r -> 'repointed' from _r2), '{"rosters": 1, "lineups": 0, "matchups": 0, "results": 1}'::jsonb,
   'G1 total_points: retired_at_week 3 (week 2 is correction_window) — the ONE re-pointed result row is P''s week-3 provisional row; week 2''s stays P''s');
 select is((select r ->> 'retired_at_week' from _r2), '3', 'G1b retired_at_week 3');
+-- R859: the total_points arm's event set differs from the h2h one — no
+-- matchups; the ONE re-pointed provisional result row rides 119's
+-- per-statement results trigger (which, incidentally, is a standings
+-- invalidator on its own); the teams event is the seal, as in C14.
+select is(pg_temp.rs_delta('be000000-0000-4000-8000-000000000002', current_setting('pgtap.rs_g0')::jsonb),
+  'league_chat:1,league_rosters:1,team_week_results:1,teams:1,transactions:1',
+  'G1c THE total_points RETIREMENT''S EVENT CENSUS (stored literal): rosters ×1, team_week_results ×1 (the week-3 re-point), transactions ×1, chat ×1, teams ×1 — no matchups');
 select is(public.week_results_pending_internal('be000000-0000-4000-8000-000000000002', 2026, 2), null,
   'G2 AFTER: week 2 is NOT pending — the successor is covered by P''s own row through the lineage (117''s read alone would hold the week forever; probe 5)');
 delete from team_week_results where league_id = 'be000000-0000-4000-8000-000000000002' and team_id = 'ce000000-0000-4000-8000-000000000013' and week = 2;
@@ -720,6 +839,105 @@ select is(
 select is(
   (select count(*) filter (where type = 'commissioner_move')::text || ':' || count(*)::text from transactions where league_id = 'be000000-0000-4000-8000-000000000001'),
   '1:2', 'I4b takeover wrote NO ledger row either');
+
+-- ---------------------------------------------------------------------------
+-- J. The #266 fix round on L1 as §I left it: Y ORPHANED (I1 — u3's stint
+--    closed 'kicked'), Z managed by u3 (I3), S managed by u5 (E0).
+--    R856's other writers (J0), R858 (J1), R855 (J2 / J3).
+-- ---------------------------------------------------------------------------
+-- J0: the teams census so far — the diff-aware trigger. C's seal (1), E0's
+-- claim of the orphaned S (orphaned → active: 1), I1's vacate (1); I3's
+-- takeover of the MANAGED Z listed `status` but changed nothing rendered
+-- — SILENT (the F260(b) shape closed, not said).
+select is(pg_temp.rs_teams_events('be000000-0000-4000-8000-000000000001'), 3::bigint,
+  'J0 three teams events on L1 so far: the seal (C), the claim of the orphaned S (E0), the vacate (I1) — the takeover of a MANAGED franchise (I3) emitted NOTHING (its CASE left status unchanged)');
+update teams set updated_at = now() where league_id = 'be000000-0000-4000-8000-000000000001';
+select is(pg_temp.rs_teams_events('be000000-0000-4000-8000-000000000001'), 3::bigint,
+  'J0b an updated_at-only statement over every L1 franchise emits NOTHING (none of the four rendered columns changed)');
+
+-- J1 (R858): a co-commissioner retiring HIS OWN seat — the leaver has no
+-- choice of outcome (§7.2.1; leave_league is the voluntary path).
+update league_members set role = 'co_commissioner' where id = 'de000000-0000-4000-8000-000000000004';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000004', 'retire', null, 'I quit', 'ae000000-0000-4000-8000-000000000062') $$,
+  '42501', 'remove_manager: you cannot retire your own franchise — a leaver has no choice of outcome (§7.2.1); leave the league, or have the commissioner act on your seat',
+  'J1 a CO-COMMISSIONER retiring his own seat is refused 42501 BY NAME (the route''s self-DELETE dispatches to leave_league; the direct RPC must not hand the choice back — R858; probe (3) drops the guard)');
+reset role;
+select is(
+  (select count(*)::text from teams where league_id = 'be000000-0000-4000-8000-000000000001') || ':' ||
+  (select t.status from teams t where t.id = 'ce000000-0000-4000-8000-000000000004') || ':' ||
+  (select count(*)::text from team_managers tm where tm.team_id = 'ce000000-0000-4000-8000-000000000004' and tm.ended_at is null),
+  '5:active:1', 'J1b nothing written: five franchises, Z active with u3''s stint open');
+
+-- J2 (R855): Y — vacated in I1 (orphaned; u3's stint closed 'kicked') —
+-- is retired by the commissioner: §7.2.1(c) "Orphaned is a holding state
+-- that resolves into (a) or (b)". The seal names the last manager
+-- (History Mode reads the stints); no stint closes; no one is notified;
+-- removed_user_id NULL; successor, ledger row and post as for a managed
+-- seat. Probe (1) restores 063's early "no manager" refusal here.
+select set_config('pgtap.rs_j0', (select count(*) from notifications n where n.user_id = '9e000000-0000-4000-8000-000000000003' and n.data ->> 'league_id' = 'be000000-0000-4000-8000-000000000001')::text, true);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+create temp table _rj as
+select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000003', 'retire', null,
+  'the seat stayed empty', 'ae000000-0000-4000-8000-000000000061') as r;
+reset role;
+select is((select r - 'successor_team_id' - 'member_id' - 'team_id' - 'retired_team_id' from _rj),
+  '{"ok": true, "mode": "retire", "verb": "retire_franchise", "action_id": "ae000000-0000-4000-8000-000000000061",
+    "removed_user_id": null, "successor_user_id": null, "already_vacant": false, "retired_team_name": "RS Y", "successor_team_name": "Team 6",
+    "season": 2026, "retired_at_week": 5, "reason": "the seat stayed empty",
+    "repointed": {"rosters": 0, "lineups": 0, "matchups": 2, "results": 0},
+    "inherits": {"roster": true, "record": "seeding_only", "h2h_history": false, "faab": "seat_balance_kept"}}'::jsonb,
+  'J2 A VACATED FRANCHISE RETIRES (stored literal): removed_user_id NULL (no one was removed), "Team 6" (the series over six franchises), retired_at_week 5, Y''s two matchup rows (week 5 away, week 6 home) re-pointed, no roster / lineups / results');
+select is(
+  (select t.status || ':' || t.retired_at_week::text || ':' || (t.successor_team_id = ((select r from _rj) ->> 'successor_team_id')::uuid)::text || ':' || t.owner_id::text
+   from teams t where t.id = 'ce000000-0000-4000-8000-000000000003'),
+  'retired:5:true:9e000000-0000-4000-8000-000000000001',
+  'J2b Y is SEALED (retired, week 5, → Team 6, owned by the commissioner) — the same seal as a managed retirement');
+select is(
+  (select count(*)::text || ':' || min(tm.end_reason) || ':' || min(tm.user_id::text) from team_managers tm where tm.team_id = 'ce000000-0000-4000-8000-000000000003'),
+  '1:kicked:9e000000-0000-4000-8000-000000000003',
+  'J2c the ONE stint Y ever had stays CLOSED AS VACATE LEFT IT (kicked, u3) — nothing to close, nothing rewritten to seat_retired: History seals Y under u3');
+select is(
+  (select count(*)::text from notifications n where n.user_id = '9e000000-0000-4000-8000-000000000003' and n.data ->> 'league_id' = 'be000000-0000-4000-8000-000000000001')
+    || ':' || current_setting('pgtap.rs_j0'),
+  '1:1', 'J2d NO notification: u3''s one L1 notification is the vacate''s ("removed"); the retirement of his former seat sends nothing');
+select is(
+  (select t.type || ':' || t.initiated_by::text || ':' || (t.payload = (select r from _rj))::text from transactions t where t.action_id = 'ae000000-0000-4000-8000-000000000061'),
+  'commissioner_move:9e000000-0000-4000-8000-000000000001:true',
+  'J2e the ledger row is written as for a managed seat (payload = the return value)');
+select is(
+  (select c.message from league_chat c where c.league_id = 'be000000-0000-4000-8000-000000000001' and c.is_system order by c.created_at desc, c.id desc limit 1),
+  'RS Y was retired by rs_user1 — the vacant franchise is sealed under its last manager (§7.2.1(c)); Team 6 takes its slot from Week 5 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b)) — reason: the seat stayed empty',
+  'J2f the post says the seat was vacant and cites §7.2.1(c)');
+select is(
+  (select (lm.user_id is null)::text || ':' || lm.is_placeholder::text || ':' || (lm.team_id = ((select r from _rj) ->> 'successor_team_id')::uuid)::text
+   from league_members lm where lm.id = 'de000000-0000-4000-8000-000000000003'),
+  'true:true:true', 'J2g the seat fronts Team 6 as an open placeholder (the same one league_members row)');
+select is(pg_temp.rs_teams_events('be000000-0000-4000-8000-000000000001'), 4::bigint,
+  'J2h ONE more teams event — the seal (probe (2) reds this with C14)');
+
+-- J3 (R855's other edge): a placeholder seat that reached in_season
+-- WITHOUT ever being claimed (draft_start admits placeholders — 084; the
+-- draft autopicks for it) is `active` and unmanaged — no manager to seal
+-- it under: refused BY NAME.
+insert into teams (id, owner_id, name, league_id) values
+ ('ce000000-0000-4000-8000-000000000005', '9e000000-0000-4000-8000-000000000001', 'RS PH', 'be000000-0000-4000-8000-000000000001');
+insert into league_members (id, league_id, user_id, team_id, role, is_placeholder, faab_balance) values
+ ('de000000-0000-4000-8000-000000000005', 'be000000-0000-4000-8000-000000000001', null, 'ce000000-0000-4000-8000-000000000005', 'manager', true, 100);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000005', 'retire', null, 'tidy', 'ae000000-0000-4000-8000-000000000063') $$,
+  'P0001', 'remove_manager: RS PH has never had a manager — there is no one to seal it under; use assign-manager to seat someone on it first (§7.2.1(b))',
+  'J3 a never-claimed placeholder (active, unmanaged, no stint ever) refuses BY NAME — the admission key is a CLOSED STINT, not the status word');
+reset role;
+select is(
+  (select count(*)::text from teams where league_id = 'be000000-0000-4000-8000-000000000001') || ':' ||
+  (select count(*) filter (where type = 'commissioner_move')::text from transactions where league_id = 'be000000-0000-4000-8000-000000000001'),
+  '7:2', 'J3b nothing minted: seven franchises (A, X, Y, Z, S, Team 6, PH), still two commissioner_move rows (C and J2)');
 
 select * from finish();
 rollback;

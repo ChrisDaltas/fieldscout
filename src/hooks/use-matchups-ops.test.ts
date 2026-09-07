@@ -31,12 +31,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   LEAGUE_CHANNEL_EVENTS,
+  LEAGUE_DETAIL_INVALIDATING_EVENTS,
   MATCHUPS_INVALIDATING_EVENTS,
   ROSTERS_INVALIDATING_EVENTS,
   SCHEDULE_INVALIDATING_EVENTS,
   STANDINGS_INVALIDATING_EVENTS,
   invalidatingHandlers,
+  leagueDetailEventInvalidates,
   matchupsEventInvalidates,
+  mergeHandlers,
   rostersEventInvalidates,
   scheduleEventInvalidates,
   standingsEventInvalidates,
@@ -189,10 +192,33 @@ describe('the three predicates SELECT each surface\'s handler map (R773 — deri
     ])
   })
 
-  it('standings: finalization + the status flip, and NOT the scores tick (117 reads final rows only)', () => {
-    expect([...STANDINGS_INVALIDATING_EVENTS]).toEqual(['team_week_results', 'league_weeks'])
+  it('standings: finalization + the status flip + a franchise retirement (120 teams), and NOT the scores tick (117 reads final rows only)', () => {
+    expect([...STANDINGS_INVALIDATING_EVENTS]).toEqual(['team_week_results', 'league_weeks', 'teams'])
     expect(standingsEventInvalidates('matchups')).toBe(false)
-    expect(LEAGUE_CHANNEL_EVENTS.filter(standingsEventInvalidates)).toEqual(['team_week_results', 'league_weeks'])
+    expect(LEAGUE_CHANNEL_EVENTS.filter(standingsEventInvalidates)).toEqual(['team_week_results', 'league_weeks', 'teams'])
+  })
+
+  it('league detail: the teams list refetches on `teams` ONLY (120 / R856) — not on a finalization, a tick or the league row', () => {
+    expect([...LEAGUE_DETAIL_INVALIDATING_EVENTS]).toEqual(['teams'])
+    expect(LEAGUE_CHANNEL_EVENTS.filter(leagueDetailEventInvalidates)).toEqual(['teams'])
+    for (const quiet of ['team_week_results', 'league_weeks', 'matchups', 'leagues', 'league_rosters', 'transactions']) {
+      expect(leagueDetailEventInvalidates(quiet), quiet).toBe(false)
+    }
+  })
+
+  it('mergeHandlers: an event in both maps runs both handlers, in map order; an event in one runs one; an event in none has no handler', () => {
+    const calls: string[] = []
+    const merged = mergeHandlers(
+      invalidatingHandlers(standingsEventInvalidates, () => calls.push('standings')),
+      invalidatingHandlers(leagueDetailEventInvalidates, () => calls.push('detail')),
+    )
+    expect(Object.keys(merged).sort()).toEqual(['league_weeks', 'team_week_results', 'teams'])
+    merged.teams?.()
+    expect(calls).toEqual(['standings', 'detail'])
+    merged.team_week_results?.()
+    expect(calls).toEqual(['standings', 'detail', 'standings'])
+    expect(merged.matchups).toBeUndefined()
+    expect(merged.leagues).toBeUndefined()
   })
 
   it('rosters: 072\'s league_rosters carrier + transactions (the drop is a DELETE 072 does not broadcast) + the pool lock summary (119)', () => {
@@ -224,10 +250,11 @@ describe('the three predicates SELECT each surface\'s handler map (R773 — deri
   it('invalidatingHandlers binds exactly the admitted events, all to the one invalidate', () => {
     const invalidate = vi.fn()
     const handlers = invalidatingHandlers(standingsEventInvalidates, invalidate)
-    expect(Object.keys(handlers)).toEqual(['team_week_results', 'league_weeks'])
+    expect(Object.keys(handlers)).toEqual(['team_week_results', 'league_weeks', 'teams'])
     handlers.team_week_results?.()
     handlers.league_weeks?.()
-    expect(invalidate).toHaveBeenCalledTimes(2)
+    handlers.teams?.()
+    expect(invalidate).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -277,6 +304,38 @@ describe('event-driven freshness (D298): a synthetic scores_updated through the 
     fire('team_week_results', { operation: 'INSERT', record: { team_id: 't1', week: 3, is_final: true } })
     fire('league_weeks', { operation: 'UPDATE', record: { week: 3, status: 'final' } })
     expect(invalidate).toHaveBeenCalledTimes(2)
+
+    release()
+  })
+
+  it('a franchise retirement (120 teams) reaches BOTH the standings and the league-detail maps through the merged subscription; a finalization reaches standings only', async () => {
+    const standings = vi.fn()
+    const detail = vi.fn()
+    const release = joinLeagueRoom(LEAGUE, {
+      handlers: {
+        current: mergeHandlers(
+          invalidatingHandlers(standingsEventInvalidates, standings),
+          invalidatingHandlers(leagueDetailEventInvalidates, detail),
+        ),
+      },
+    })
+    await settle()
+    registry[0].statusCallback?.('SUBSCRIBED')
+    expect(registry[0].bindings.has('teams')).toBe(true)
+
+    // 120 §4's envelope: the seal statement, one event, the sealed row.
+    fire('teams', {
+      operation: 'UPDATE',
+      record: { count: 1, teams: [{ id: 't1', name: 'RS A', status: 'retired', retired_at_week: 5, successor_team_id: 't5' }] },
+    })
+    expect(standings).toHaveBeenCalledTimes(1)
+    expect(detail).toHaveBeenCalledTimes(1)
+    fire('team_week_results', { operation: 'INSERT', record: { team_id: 't1', week: 3, is_final: true } })
+    expect(standings).toHaveBeenCalledTimes(2)
+    expect(detail).toHaveBeenCalledTimes(1)
+    fire('matchups', { operation: 'UPDATE', record: { id: 'm1', week: 3 } })
+    expect(standings).toHaveBeenCalledTimes(2)
+    expect(detail).toHaveBeenCalledTimes(1)
 
     release()
   })
@@ -334,11 +393,14 @@ describe('the three subscriber hooks JOIN the spine with a DERIVED map and open 
     expect(source).not.toContain('.channel(')
   })
 
-  it('use-standings and use-rosters hand invalidatingHandlers(<predicate>, invalidate) to useLeagueChannel', () => {
+  it('use-standings hands the MERGED standings + league-detail maps, use-rosters invalidatingHandlers(<predicate>, invalidate), to useLeagueChannel', () => {
     const standings = code(STANDINGS)
+    // 120 / R856: one subscription, two derived maps — standings on its
+    // predicate, the league detail (`leaguesKeys.detail`) on `teams` only.
     expect(standings).toMatch(
-      /useLeagueChannel\(\s*leagueId,\s*invalidatingHandlers\(standingsEventInvalidates, invalidate\),/,
+      /useLeagueChannel\(\s*leagueId,\s*mergeHandlers\(\s*invalidatingHandlers\(standingsEventInvalidates, invalidate\),\s*invalidatingHandlers\(leagueDetailEventInvalidates, invalidateDetail\),\s*\),/,
     )
+    expect(standings).toContain('queryKey: leaguesKeys.detail(leagueId)')
     expect(standings).not.toContain('.channel(')
     const rosters = code(ROSTERS)
     expect(rosters).toMatch(

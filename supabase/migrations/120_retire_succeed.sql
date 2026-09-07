@@ -10,6 +10,14 @@
 -- COMPLETES with this migration — nothing else in tasks-M4 §7 depends on it.
 --
 -- WHAT THIS DOES
+--   0. #266 FIX ROUND (PROGRESS R855–R862, 2026-09-07 — 120 edited IN PLACE,
+--      unmerged and HELD; its md5 moved, said): (R855) an UNMANAGED seat
+--      whose franchise has a CLOSED stint (vacated / left — 'orphaned',
+--      §7.2.1(c) "resolves into (a) or (b)") is retirable — see 1(d′);
+--      (R858) a co-commissioner cannot retire HIS OWN seat — 1(a′); (R856)
+--      the `teams` broadcast trigger ships — §4 below; (R860) the retire
+--      control is `src/components/leagues/invite-panel.tsx:731-737`, not a
+--      `remove-manager-modal` (no such file).
 --   1. `remove_manager` is DROPPED at its 063 five-argument signature and
 --      RE-CREATED with a sixth, `p_action_id UUID DEFAULT NULL` (the D137
 --      vehicle for a signature change is DROP + CREATE — 110's
@@ -27,6 +35,11 @@
 --            bracket line and 118's sync derives later rounds from the
 --            played rows' team ids, so the arm is a question (PROGRESS Q41),
 --            never a fold (R801; F256(e) routed there);
+--        (a′) R858: the ACTOR's own seat refuses 42501 by name — §7.2.1
+--            gives the leaver no choice of outcome (`leave_league` is the
+--            voluntary path); a plain manager was already refused as no
+--            commissioner, this closes the co-commissioner's direct-RPC
+--            route around the route's self-DELETE dispatch;
 --        (b) `p_action_id` REQUIRED (22023) + a non-blank `p_reason`
 --            (22023 — E49 "audited override", D290's interim posture);
 --        (c) REPLAY by (league_id, action_id): the stored `transactions`
@@ -39,6 +52,20 @@
 --            successor minted here is a NEW row and cannot close a cycle
 --            (D267: said, and the fixtures are privileged corruption); then
 --            "already sealed" (retired / successor set) refuses;
+--        (d′) R855: an UNMANAGED seat (`league_members.user_id` NULL) is
+--            admitted when its franchise has a CLOSED stint — vacate and
+--            leave_league both close one and set 'orphaned' (063), and
+--            §7.2.1(c) says orphaned "resolves into (a) or (b)". The seal
+--            names the LAST CLOSED stint's manager (History Mode reads the
+--            stints — nothing else is written under a name); no stint is
+--            open to close; no one is notified; `removed_user_id` is NULL
+--            in the payload; the successor, the ledger row and the post
+--            are written as for a managed seat. A franchise that has NEVER
+--            had a manager — 120's own successor until it is claimed, or a
+--            placeholder seat autopick-drafted and never claimed (draft_start
+--            admits placeholders, 084) — has no name to seal under and
+--            refuses BY NAME (assign-manager first); before the draft the
+--            status gate's D42 refusal runs first, unchanged;
 --        (e) the FOUNDING WEEK of the successor's book = 1 + the league's
 --            last correction_window/final week (a reopened earlier week
 --            stays the predecessor's), else the first league week; NULL
@@ -77,7 +104,7 @@
 --            stamp — 119's trigger carries it to the activity feed;
 --        (l) the D97 in-transaction `league_chat` system post; the removed
 --            user's notification names the "franchise retired" category
---            (§7.2.1:190).
+--            (§7.2.1:190) — not sent for an unmanaged seat (d′).
 --   2. `league_standings_internal(uuid, boolean)` CREATE OR REPLACE'd against
 --      118's CURRENT FILE TEXT (md5 `811535c21fda6f66f3ac9a311ad6ec3b`;
 --      three hunks): a `lineage` CTE (every seated franchise + the retired
@@ -101,17 +128,55 @@
 --      week (the retirement's) forever: the successor is seated and has no
 --      row for a week it never played (068 G; probe 5). The h2h arm is
 --      byte-identical.
+--   4. THE `teams` BROADCAST TRIGGER (R856 — F42 discharged for `teams`):
+--      `tr_broadcast_teams`, AFTER UPDATE — per STATEMENT with BOTH
+--      transition tables (OLD + NEW, joined by id): a row is broadcast only
+--      when one of the four rendered columns CHANGED (`name`, `status`,
+--      `retired_at_week`, `successor_team_id` — IS DISTINCT FROM), so ONE
+--      event per league per statement that changed something, nothing for
+--      an empty or no-change statement, a non-league row skipped. (PG 17
+--      refuses `UPDATE OF <cols>` together with a transition table —
+--      measured, the 119 species — and the diff-aware read is the better
+--      shape anyway: it CLOSES F260(b)'s "column listed but unchanged"
+--      case rather than saying it.) Payload column-selected `{count,
+--      teams: [{id, name, status, retired_at_week, successor_team_id}]}` —
+--      no owner_id, no manager identity. Why now: F42's rule is "a trigger ships with its
+--      first subscriber", and this migration is the first in-season WRITER
+--      whose effect a live surface must see — an h2h retirement emits
+--      nothing the standings query invalidates on (`league_rosters` /
+--      `matchups` / `transactions` are not in STANDINGS_INVALIDATING_EVENTS,
+--      R773), so a member's standings page kept the retired row and the
+--      pre-flip order until reload, and the league detail (its teams list)
+--      had no channel invalidation at all. NOT on INSERT: the successor's
+--      INSERT is always followed in the same transaction by the seal UPDATE
+--      (the one writer of successor_team_id), and a pre-draft placeholder
+--      INSERT has no live subscriber (league_members' F42 posture). An
+--      owner_id / updated_at-only write — the R90 owner sweep, any touch —
+--      changes none of the four and emits nothing. So a retirement is
+--      exactly ONE `teams` event (068 C14 — the seal statement); the other
+--      writers that now emit one: vacate / leave_league (status →
+--      orphaned), a claim / assign_manager / takeover ONLY when the status
+--      flips orphaned → active (a takeover of a managed franchise changes
+--      nothing rendered and is silent), a rename. Client:
+--      `LEAGUE_CHANNEL_EVENTS` 8 → 9, `STANDINGS_INVALIDATING_EVENTS` + the
+--      league-detail predicate.
 --
 -- WHAT THIS DELIBERATELY DOES NOT DO
 --   * No retirement during `playoffs` (Q41 — the successor's bracket line).
---   * No `teams` broadcast trigger: no `teams` subscriber exists in the app
---     (the standings / roster surfaces refetch on their own events —
---     matchups / team_week_results / league_rosters / transactions), so
---     F42 stays RE-WAIVED for `teams` (067 B5c / 024 pin it trigger-less).
+--   * No `teams` INSERT / DELETE trigger, no per-row `teams` trigger (§4).
 --   * No FK on `transactions.related_action_id` (M6's `commissioner_actions`).
 --   * No route / hook / UI change: the retire control stays DISABLED in
---     `remove-manager-modal` (L.A2.5's "after the draft" note) until F262's
---     UI-lane task wires `action_id` + E49's confirm copy.
+--     `src/components/leagues/invite-panel.tsx:731-737` (the "Retire the
+--     franchise" ModeOption; its "not available before the draft" copy is
+--     now stale — F262(a)) until F262's UI-lane task wires `action_id` +
+--     E49's confirm copy.
+--   * No guard in 119's door for a past-week correction handed the
+--     SUCCESSOR's id (the worker maps deltas through the CURRENT roster —
+--     D292; a (successor, past week) provisional row would sit beside the
+--     predecessor's and the lineage fold would count that week twice):
+--     the h2h arm is already safe by pairing (F257(a′) — the successor is
+--     on no past-week matchup row: `no_matchup_row`); the total_points arm
+--     is the exposed one, and the rule is L.D2.2's — F262(d).
 --   * No re-target of a pending seat invite that names the retired
 --     franchise: claiming it refuses by name ("that franchise is retired",
 --     062/063) — loud, not silent (D320(7)).
@@ -119,22 +184,32 @@
 -- Grants doctrine (D18→D23): `remove_manager` SECURITY DEFINER +
 -- search_path='' + REVOKE FROM PUBLIC, anon (authenticated keeps EXECUTE —
 -- the in-body commissioner check is the gate; a manager retiring himself is
--- refused 42501 by name); the two internals stay plain / REVOKEd from every
--- client role exactly as 117/118 left them (re-asserted below).
+-- refused 42501 by name, and so is a co-commissioner — R858); the two
+-- internals stay plain / REVOKEd from every client role exactly as 117/118
+-- left them (re-asserted below); the trigger function is DEFINER +
+-- search_path='' + triple-REVOKEd, the payload function plain + triple-
+-- REVOKEd (119's shape).
 -- Lock order (063 banner, R98): leagues → the target league_members row →
 -- teams; the successor is a fresh INSERT (no lock); 113's roster writer takes
 -- the league row FOR UPDATE first, so a concurrent add/drop serializes behind
 -- the retirement and then fails its manager check (the seat has no user).
 -- Migration checklist (tasks-M* §4.4): additive — no table/column/policy
--- change; the DROP is of a function signature re-created in the same file.
--- R6 staging-rehearsal waiver: fresh local `db reset` over 001–120 + pgTAP
--- 068 (and 017 / 065 / 066 / 067 unchanged in count) is the rehearsal
--- evidence. D38 realtime waiver: no new trigger (F42 re-waived per table).
+-- change; the DROP is of a function signature re-created in the same file;
+-- one new trigger (`teams`, §4). R6 staging-rehearsal waiver: fresh local
+-- `db reset` over 001–120 + pgTAP 068 (and 017 / 065 / 066 unchanged in
+-- count; 067 B5c and 024's F42 cell edited in place for the trigger) is the
+-- rehearsal evidence. D38 realtime waiver: the ONE new trigger is
+-- Broadcast-from-DB on a private topic (070's policies, no publication
+-- change — D89), per statement, column-selected — §12.14 (v2.16.29) lists
+-- it; F42 is discharged for `teams` and stays re-waived for the other four.
 -- HELD from production: `supabase/HELD-FROM-PRODUCTION.txt` closes `082-120`
 -- in this PR. No launch-surface table is touched: every write is on the
 -- leagues chain (teams' league rows, team_managers, league_members,
 -- league_rosters, team_lineups league rows, matchups, team_week_results,
--- transactions, league_chat); reads outside it are 063's on profiles.
+-- transactions, league_chat); reads outside it are 063's on profiles. The
+-- `teams` trigger function runs once per UPDATE statement on the table —
+-- a non-league team's write runs it and sends nothing (the league_id
+-- guard); realtime.send traps its own errors (070).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -246,6 +321,15 @@ BEGIN
       RAISE EXCEPTION 'remove_manager: league status % admits no retirement (§7.1)', v_league.status
         USING ERRCODE = 'P0001';
     END IF;
+    -- (a′) R858: the actor's OWN seat. §7.2.1 gives the leaver no choice of
+    --      outcome — leave_league is the voluntary path — and the route's
+    --      self-DELETE dispatches there; a co-commissioner calling the RPC
+    --      directly must not get the choice back. (A plain manager never
+    --      reaches here: not a commissioner, 42501 above.)
+    IF v_target.user_id = v_uid THEN
+      RAISE EXCEPTION 'remove_manager: you cannot retire your own franchise — a leaver has no choice of outcome (§7.2.1); leave the league, or have the commissioner act on your seat'
+        USING ERRCODE = '42501';
+    END IF;
     -- (b) The audit stamp and the reason (E49 "audited override"; D290's
     --     interim posture: reason REQUIRED, stored on the ledger row).
     IF p_action_id IS NULL THEN
@@ -290,7 +374,12 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  IF v_target.user_id IS NULL THEN
+  -- 120 (R855): an UNMANAGED seat refuses takeover here as 063 wrote it and
+  -- vacate stays idempotent; RETIRE passes through — §7.2.1(c) is LAW
+  -- ("Orphaned is a holding state that resolves into (a) or (b)") and the
+  -- retire arm's (d′) decides, by the franchise's stint history, whether
+  -- there is a manager to seal it under.
+  IF v_target.user_id IS NULL AND p_mode <> 'retire' THEN
     IF p_mode = 'vacate' THEN
       -- Idempotent (D63): the seat is already an open placeholder.
       RETURN jsonb_build_object(
@@ -392,6 +481,23 @@ BEGIN
     IF v_team.status = 'retired' OR v_team.successor_team_id IS NOT NULL THEN
       RAISE EXCEPTION 'remove_manager: % is already sealed (status %, successor %) — a retired franchise cannot be retired again (§7.2.1(b))', v_team_name, v_team.status, v_team.successor_team_id
         USING ERRCODE = 'P0001';
+    END IF;
+    -- (d′) R855: an UNMANAGED seat (vacated / left — 'orphaned', §7.2.1(c))
+    --      is admitted when the franchise has a CLOSED stint: the seal
+    --      names the LAST manager (History Mode reads the stints; nothing
+    --      else is written under a name), no stint is open to close (the
+    --      (h) UPDATE matches nothing — D63), no one is notified,
+    --      removed_user_id is NULL in the payload. A franchise that has
+    --      NEVER had a manager — 120's own successor until it is claimed,
+    --      or a placeholder seat autopick-drafted and never claimed — has
+    --      no name to seal under and refuses BY NAME.
+    IF v_removed_user IS NULL THEN
+      PERFORM 1 FROM public.team_managers tm
+      WHERE tm.team_id = v_team.id AND tm.ended_at IS NOT NULL;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'remove_manager: % has never had a manager — there is no one to seal it under; use assign-manager to seat someone on it first (§7.2.1(b))', v_team_name
+          USING ERRCODE = 'P0001';
+      END IF;
     END IF;
 
     -- (e) The founding week of the successor's book — the first week the
@@ -519,7 +625,10 @@ BEGIN
     VALUES (p_league_id, 'commissioner_move', 'complete', NULL, v_uid, v_result, v_week, p_action_id);
     -- (m) The D97 in-transaction system post (111/113's shape).
     v_message := v_team_name || ' was retired by ' || public.draft_actor_name()
-      || ' — the franchise is sealed under its final manager; ' || v_successor_name
+      || CASE WHEN v_removed_user IS NULL
+           THEN ' — the vacant franchise is sealed under its last manager (§7.2.1(c)); '
+           ELSE ' — the franchise is sealed under its final manager; ' END
+      || v_successor_name
       || ' takes its slot' || CASE WHEN v_week IS NULL THEN ' after the season' ELSE ' from Week ' || v_week::text END
       || ' (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b)) — reason: ' || v_reason;
     INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
@@ -571,6 +680,10 @@ BEGIN
     AND id <> v_team.id;
 
   -- §7.2.1:190 — the removed user is notified with the outcome category.
+  -- 120 (R855): an unmanaged seat's retirement has no one to notify (its
+  -- last manager was notified when the seat closed — vacate / leave);
+  -- takeover and vacate always carry a user here (refused above otherwise).
+  IF v_removed_user IS NOT NULL THEN
   PERFORM public.notify_league_member_internal(
     v_removed_user,
     'league_member',
@@ -585,6 +698,7 @@ BEGIN
       'league_id', p_league_id,
       'team_id', v_team.id,
       'event', CASE WHEN p_mode = 'takeover' THEN 'replaced' WHEN p_mode = 'retire' THEN 'retired' ELSE 'removed' END));
+  END IF;
 
   IF p_mode = 'retire' THEN
     RETURN v_result;
@@ -973,6 +1087,79 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION week_results_pending_internal(UUID, INTEGER, INTEGER)
   FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 4. teams — the broadcast trigger (R856; F42 discharged for `teams`).
+--    119's per-STATEMENT transition-table shape, diff-aware: OLD and NEW
+--    joined by id, a row counts only when one of the four columns a live
+--    surface renders CHANGED — one event per league per statement, nothing
+--    for an empty or no-change statement, non-league rows skipped. NOT
+--    owner_id (manager identity stays off this wire), NOT updated_at, NOT
+--    INSERT (the successor rides the seal UPDATE in the same transaction).
+--    (`UPDATE OF <cols>` + a transition table is refused by PG 17 — the
+--    diff below is what that column list would have approximated.)
+-- ----------------------------------------------------------------------------
+-- teams → what the standings page and the league detail render: identity,
+-- status, the lineage. NOT: owner_id, list_id, scoring_system_id, the
+-- legacy wins/losses/total_points cells, league_id (the topic).
+CREATE OR REPLACE FUNCTION team_broadcast_payload(t teams)
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'id',                t.id,
+    'name',              t.name,
+    'status',            t.status,
+    'retired_at_week',   t.retired_at_week,
+    'successor_team_id', t.successor_team_id);
+$$;
+
+REVOKE EXECUTE ON FUNCTION team_broadcast_payload(teams)
+  FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION broadcast_teams_statement() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+  v_lg RECORD;
+BEGIN
+  FOR v_lg IN
+    SELECT c.league_id,
+           count(*)::int                                                     AS n,
+           jsonb_agg(public.team_broadcast_payload(c) ORDER BY c.name, c.id) AS rows_
+    FROM new_rows c
+    JOIN old_rows o ON o.id = c.id
+    WHERE c.league_id IS NOT NULL
+      AND (c.name              IS DISTINCT FROM o.name
+        OR c.status            IS DISTINCT FROM o.status
+        OR c.retired_at_week   IS DISTINCT FROM o.retired_at_week
+        OR c.successor_team_id IS DISTINCT FROM o.successor_team_id)
+    GROUP BY c.league_id
+    ORDER BY c.league_id
+  LOOP
+    PERFORM realtime.send(
+      jsonb_build_object(
+        'operation', TG_OP,
+        'table',     TG_TABLE_NAME,
+        'schema',    TG_TABLE_SCHEMA,
+        'record',    jsonb_build_object(
+          'count', v_lg.n,
+          'teams', v_lg.rows_)),
+      'teams',
+      'league:' || v_lg.league_id::text,
+      true);
+  END LOOP;
+  RETURN NULL;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION broadcast_teams_statement()
+  FROM PUBLIC, anon, authenticated;
+
+CREATE TRIGGER tr_broadcast_teams
+  AFTER UPDATE ON teams
+  REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION broadcast_teams_statement();
 
 COMMENT ON COLUMN teams.successor_team_id IS
   'Set on the RETIRED franchise → its successor (§7.2.1(b)). ONE writer: remove_manager(mode=''retire'') — migration 120 (the spec''s "retire_franchise" is that arm, D42); self-succession is the 053 CHECK, longer cycles are refused in-body by name (F1).';

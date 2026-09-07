@@ -223,11 +223,10 @@ select is(
   (select count(*) from pg_trigger t
    join pg_proc p on p.oid = t.tgfoid
    where t.tgrelid = any (array['public.league_members'::regclass, 'public.team_managers'::regclass,
-                                'public.teams'::regclass, 'public.league_invites'::regclass,
-                                'public.league_lists'::regclass])
+                                'public.league_invites'::regclass, 'public.league_lists'::regclass])
      and p.proname like 'broadcast%'),
   0::bigint,
-  'the F42 set (league_members/team_managers/teams/league_invites/league_lists) stays trigger-less — re-waived per table (D38 rationale; F8 flips WITHOUT them; league_weeks LEFT the set at 119/L.D1.9 with its first subscriber — D296)');
+  'the F42 set (league_members/team_managers/league_invites/league_lists) stays trigger-less — re-waived per table (D38 rationale; F8 flips WITHOUT them; league_weeks LEFT the set at 119/L.D1.9 with its first subscriber — D296; teams LEFT it at 120/L.D1.10 — R856, pinned in 068 A11)');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — BEFORE any JWT claims; D49(7)).
