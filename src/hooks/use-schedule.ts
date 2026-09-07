@@ -3,10 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { mintScheduleSeed } from '@/lib/leagues/settings/league-settings'
 
 import { leagueActivityKeys } from './use-league-activity'
+import { useLeagueChannel } from './use-league-channel'
+import { invalidatingHandlers, scheduleEventInvalidates } from './use-league-channel-ops'
 import { leaguesKeys } from './use-leagues'
 
 /**
@@ -51,19 +54,10 @@ export interface ScheduleWeek {
   median_score: number | null
 }
 
-export interface ScheduleMatchup {
-  id: string
-  season: number
-  week: number
-  round_type: string
-  status: string
-  home_team_id: string
-  away_team_id: string | null
-  home_score: number | null
-  away_score: number | null
-  result: string | null
-  is_overridden: boolean
-}
+/** The `matchups` columns this hook selects — `matchups-service.ts`'s row
+ *  type minus `updated_at`, which the schedule grid does not read (R813:
+ *  one hand-typed row for the table, not two). */
+export type ScheduleMatchup = Omit<MatchupRow, 'updated_at'>
 
 export interface LeagueSchedule {
   weeks: ScheduleWeek[]
@@ -71,9 +65,17 @@ export interface LeagueSchedule {
 }
 
 /** The league's whole season: the week ladder + every pairing, member-RLS.
- *  A non-member reads nothing and gets two empty arrays — the no-leak
- *  posture for league reads (D114(5)); a transport error THROWS rather than
- *  rendering as an empty season (CLAUDE.md's loud-emptiness rule). */
+ *  A non-member reads nothing and gets two empty arrays — the
+ *  empty-for-a-non-member shape the in-season family refuses at its routes
+ *  (R807/R808; PROGRESS F249(a)). **The SURFACE is the gate, by decision
+ *  (L.D5.3, the D316(4) posture `useLineup` took):** every page that mounts
+ *  this hook (`schedule-view.tsx`, `team-page.tsx`) sits below `useLeague`'s
+ *  403/404, and the `leagues` SELECT policy (052:126) is member/owner-only,
+ *  so the hook cannot mount for a non-member in the UI at no extra round
+ *  trip on the member path; a future consumer mounting it outside a league
+ *  page inherits the hazard and F249's one-line cure (a browser-side
+ *  `is_league_member` RPC before the read). A transport error THROWS rather
+ *  than rendering as an empty season (CLAUDE.md's loud-emptiness rule). */
 export function useSchedule(leagueId: string | undefined) {
   return useQuery({
     queryKey: scheduleKeys.all(leagueId ?? 'none'),
@@ -107,6 +109,72 @@ export function useSchedule(leagueId: string | undefined) {
   })
 }
 
+/**
+ * The fetch + subscribe half — what the mounted schedule page uses (M4 task
+ * L.D5.3; D298: freshness is broadcast + refetch-on-event). Joins the ONE
+ * `league:<id>` room (F233(a) — a handler map, never a `.channel(`) and
+ * refetches on the events `scheduleEventInvalidates` admits: `matchups` and
+ * `league_weeks` (L.D1.9's triggers, registered ahead of them — the D310(4)
+ * precedent) and `league_chat`, which broadcasts TODAY (070) and is the one
+ * carrier a Remix or a matchup edit has until then — 111 writes its D97
+ * system post in the same transaction as the rows, so a commissioner's
+ * confirm in one browser reaches another member's open schedule now. Every
+ * confirmed (re)join refetches (§9.3). Returns the spine's `connection` for
+ * the §16.5.4 reconnecting banner.
+ */
+export function useScheduleLive(leagueId: string | undefined) {
+  const query = useSchedule(leagueId)
+  const queryClient = useQueryClient()
+
+  const invalidate = () => {
+    if (!leagueId) return
+    void queryClient.invalidateQueries({ queryKey: scheduleKeys.all(leagueId) })
+  }
+
+  const { connection } = useLeagueChannel(
+    leagueId,
+    invalidatingHandlers(scheduleEventInvalidates, invalidate),
+    { onJoin: invalidate, onDrop: invalidate },
+  )
+
+  return { ...query, connection }
+}
+
+/** One row of 111's `proposed` set — the WHOLE regular season for the seed,
+ *  `regenerated` marking the rows a confirm would actually write. */
+export interface RemixProposedRow {
+  week: number
+  round_type: string
+  home_team_id: string
+  away_team_id: string | null
+  regenerated: boolean
+}
+
+/** One line of 111's human diff — one row per (week, game type, team) whose
+ *  opponent or side changed; `text` is the server's sentence. */
+export interface RemixDiffLine {
+  week: number
+  round_type: string
+  team_id: string
+  team_name: string
+  old_opponent_id: string
+  old_opponent_name: string
+  new_opponent_id: string
+  new_opponent_name: string
+  old_side: string
+  new_side: string
+  text: string
+}
+
+/** A week 111 froze, with the reason it names (`week_live` / `week_final` /
+ *  `week_correction_window` / `week_kicked_off` / `matchup_not_scheduled` /
+ *  `matchup_overridden_or_scored` — D307(1)). */
+export interface RemixFrozenWeek {
+  week: number
+  week_status: string
+  reason: string
+}
+
 /** 111's plan document, as the Remix modal renders it. */
 export interface RemixPreview {
   league_id: string
@@ -129,12 +197,12 @@ export interface RemixPreview {
   }
   weeks_regenerable: number[]
   /** Frozen weeks come back with the REASON each is frozen — render it. */
-  weeks_frozen: unknown
+  weeks_frozen: RemixFrozenWeek[]
   matchups_current: number
   matchups_regenerable: number
-  proposed: unknown
+  proposed: RemixProposedRow[]
   /** The human diff ("Week 1: T1 now plays T6 instead of T3"). */
-  diff: unknown
+  diff: RemixDiffLine[]
   change_count: number
   no_changes: boolean
 }
@@ -150,11 +218,11 @@ export interface RemixConfirmResult {
   window: RemixPreview['window']
   reason_required: boolean
   weeks_regenerated: number[]
-  weeks_frozen: unknown
+  weeks_frozen: RemixFrozenWeek[]
   matchups_replaced: number
   change_count: number
   no_changes: boolean
-  diff: unknown
+  diff: RemixDiffLine[]
   /** The D97 system post's text, exactly as it was written to league chat. */
   system_post: string
 }
@@ -194,10 +262,14 @@ export interface ConfirmRemixInput {
 /**
  * POST …/schedule/confirm — apply the previewed remix.
  *
- * One `action_id` per submit, reused on retry (E2/D68(1)): 111's
- * `schedule_actions` ledger replays it and returns the stored result
- * byte-identically, even after a later Remix has replaced every row the
- * first one wrote. A second Remix is a second gesture and mints a new id.
+ * One `action_id` per submit (E2/D68(1)): 111's `schedule_actions` ledger
+ * replays it and returns the stored result byte-identically, even after a
+ * later Remix has replaced every row the first one wrote. No code path
+ * re-sends an id on its own — `useMutation` sets no `retry` (the provider's
+ * `retry: 1` is under `queries`) and `confirm`/`confirmAsync` mint per call;
+ * a caller re-invoking `mutate` with the same variables replays (F249(b),
+ * R815's correction read into this file). A second Remix is a second
+ * gesture and mints a new id.
  */
 export function useConfirmRemix(leagueId: string) {
   const queryClient = useQueryClient()
@@ -230,5 +302,80 @@ export function useConfirmRemix(leagueId: string) {
         ...(input.reason ? { reason: input.reason } : {}),
         action_id: crypto.randomUUID(),
       }),
+  }
+}
+
+/** 111's edit result, as the schedule view renders it. */
+export interface EditMatchupResult {
+  league_id: string
+  season: number
+  action_id: string
+  week: number
+  round_type: string
+  matchup: {
+    matchup_id: string
+    before: { home_team_id: string; away_team_id: string }
+    after: { home_team_id: string; away_team_id: string }
+  }
+  /** The sibling rows 111 re-seated to keep every team once per week. */
+  siblings: Array<{
+    matchup_id: string
+    vacated_sides: string[]
+    before: { home_team_id: string; away_team_id: string }
+    after: { home_team_id: string; away_team_id: string }
+  }>
+  rows_changed: number
+  reason_required: boolean
+  window: RemixPreview['window']
+  /** The D97 system post's text, exactly as it was written to league chat. */
+  system_post: string
+}
+
+export interface EditMatchupInput {
+  matchup_id: string
+  home_team_id: string
+  away_team_id: string
+  /** Required by 111 outside E41's free window; the refusal names it. */
+  reason?: string | null
+}
+
+/**
+ * POST …/schedule/matchup — re-pair one scheduled matchup (§11.7's manual
+ * edit; M4 task L.D5.3, F233(e)).
+ *
+ * One `action_id` per submit, minted here at the gesture (outside the
+ * `src/lib/leagues/**` fence — the D112(3)/D114(5) precedent); a caller
+ * re-invoking `mutate` with the same variables replays, and nothing re-sends
+ * an id on its own (F249(b)). NEVER OPTIMISTIC: 111 re-seats the displaced
+ * teams itself, so the rows on screen after an edit are the server's — the
+ * hook invalidates the schedule and re-reads. The confirm wrote a D97 system
+ * post, so the feed is invalidated too.
+ */
+export function useEditMatchup(leagueId: string) {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (variables: EditMatchupInput & { action_id: string }) =>
+      sendLeagueAction<EditMatchupResult>(
+        `/api/leagues/${leagueId}/schedule/matchup`,
+        jsonInit('POST', variables),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: scheduleKeys.all(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+    },
+  })
+
+  const variables = (input: EditMatchupInput) => ({
+    matchup_id: input.matchup_id,
+    home_team_id: input.home_team_id,
+    away_team_id: input.away_team_id,
+    ...(input.reason ? { reason: input.reason } : {}),
+    action_id: crypto.randomUUID(),
+  })
+
+  return {
+    ...mutation,
+    edit: (input: EditMatchupInput) => mutation.mutate(variables(input)),
+    editAsync: (input: EditMatchupInput) => mutation.mutateAsync(variables(input)),
   }
 }

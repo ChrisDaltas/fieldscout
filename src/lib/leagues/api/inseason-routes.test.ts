@@ -1,7 +1,10 @@
 /**
- * inseason-routes.test.ts — the four L.D4.2 Route Handlers' SHAPE, plus the
- * ONE pin the task's DoD names: **the confirm route cannot be pointed at a
- * client-supplied schedule.**
+ * inseason-routes.test.ts — the in-season Route Handlers' SHAPE (L.D4.2's
+ * four + L.D4.1's four — lineup PATCH, rosters / matchups / standings GET),
+ * plus the ONE pin L.D4.2's DoD names: **the confirm route cannot be pointed
+ * at a client-supplied schedule** — and L.D4.1's family pins: the membership
+ * gate precedes every direct read, and the lineup verb inherits the SQLSTATE
+ * mapper and the R768 normalisation (F224(e)).
  *
  * Source-level for the reason `scoring-routes.test.ts` is (its header, in
  * full): the stack suites drive the SERVICE layer, which is the D68
@@ -42,12 +45,45 @@ const ROUTES = [
     verb: 'GET',
     service: 'readActivity',
   },
+  // L.D5.3 — F233(e): 111's manual matchup edit gets its route.
+  {
+    file: 'src/app/api/leagues/[id]/schedule/matchup/route.ts',
+    verb: 'POST',
+    service: 'editMatchup',
+  },
+  // L.D4.1
+  {
+    file: 'src/app/api/leagues/[id]/teams/[tid]/lineup/route.ts',
+    verb: 'PATCH',
+    service: 'setLineup',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/rosters/route.ts',
+    verb: 'GET',
+    service: 'readRosters',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/matchups/route.ts',
+    verb: 'GET',
+    service: 'readMatchups',
+  },
+  {
+    file: 'src/app/api/leagues/[id]/standings/route.ts',
+    verb: 'GET',
+    service: 'readStandings',
+  },
 ] as const
 
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
 const TRANSACTIONS_SERVICE = 'src/lib/leagues/api/transactions-service.ts'
 const ERRORS = 'src/lib/leagues/api/inseason-errors.ts'
 const IDS = 'src/lib/leagues/api/inseason-ids.ts'
+const LINEUP_SERVICE = 'src/lib/leagues/api/lineup-service.ts'
+const ROSTERS_SERVICE = 'src/lib/leagues/api/rosters-service.ts'
+const MATCHUPS_SERVICE = 'src/lib/leagues/api/matchups-service.ts'
+const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
+const READS = 'src/lib/leagues/api/inseason-reads.ts'
+const ACTIVITY_SERVICE = 'src/lib/leagues/api/activity-service.ts'
 
 /** File text with block comments and `//` lines removed, so a docblock that
  *  merely MENTIONS a guard cannot satisfy a pin about the code. */
@@ -59,7 +95,7 @@ function code(rel: string): string {
     .join('\n')
 }
 
-describe('the four in-season Route Handlers keep the house shape (§15.3)', () => {
+describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
   for (const route of ROUTES) {
     describe(route.file, () => {
       const source = code(route.file)
@@ -86,7 +122,7 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
       })
 
       it('delegates to the service and passes its status through unchanged', () => {
-        expect(source).toMatch(new RegExp(`${route.service}\\(supabase, id, `))
+        expect(source).toMatch(new RegExp(`${route.service}\\(supabase, id[,)]`))
         expect(source).toContain('NextResponse.json(result.body, { status: result.status })')
       })
 
@@ -96,6 +132,10 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
           'roster_add_drop',
           'schedule_remix_confirm',
           'schedule_preview',
+          'schedule_edit_matchup',
+          'set_lineup',
+          'league_standings',
+          '.rpc(',
           'from(',
           'is_league_member',
         ]) {
@@ -105,10 +145,81 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
     })
   }
 
-  it('the three POST routes turn an unparseable body into null, never a 500', () => {
-    for (const route of ROUTES.filter((r) => r.verb === 'POST')) {
+  it('every body-taking route turns an unparseable body into null, never a 500', () => {
+    for (const route of ROUTES.filter((r) => r.verb !== 'GET')) {
       expect(code(route.file), route.file).toContain('await request.json().catch(() => null)')
     }
+  })
+
+  it('the lineup route shape-checks the TEAM segment too — a malformed tid is a 404, not a 22P02 echoed as 500', () => {
+    const source = code('src/app/api/leagues/[id]/teams/[tid]/lineup/route.ts')
+    expect(source).toContain('idSchema.safeParse(tid).success')
+    expect(source).toContain("{ error: 'Team not found' }, { status: 404 }")
+    expect(source.indexOf('safeParse(tid)')).toBeLessThan(source.indexOf('createServerClient()'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D4.1: the membership gate precedes every direct read (CLAUDE.md — an
+// RLS-empty result for a non-member must not render as an empty list).
+// ---------------------------------------------------------------------------
+
+describe('the direct-read services assert membership BEFORE any table read (D92 + rule 10; the activity feed since R807)', () => {
+  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, ACTIVITY_SERVICE]) {
+    it(`${rel} calls assertLeagueMember before its first .from(`, () => {
+      const source = code(rel)
+      expect(source).toMatch(/import \{ [^}]*assertLeagueMember[^}]* \} from '\.\/inseason-reads'/)
+      const gate = source.indexOf('await assertLeagueMember(supabase, leagueId)')
+      expect(gate).toBeGreaterThan(-1)
+      expect(source).toContain('if (refused) return refused')
+      expect(gate).toBeLessThan(source.indexOf(".from("))
+    })
+  }
+
+  it('the activity feed no longer serves a non-member an EMPTY feed (R807 — F248(d) ruled: one posture for the family)', () => {
+    const source = code(ACTIVITY_SERVICE)
+    expect(source).not.toContain('answers an EMPTY feed')
+    expect(source).not.toContain('D114(5)')
+  })
+
+  it('the gate is the database\'s own predicate, answering one no-leak 403 (never an empty body)', () => {
+    const source = code(READS)
+    expect(source).toContain("supabase.rpc('is_league_member', { p_league_id: leagueId })")
+    expect(source).toContain('if (data !== true) {')
+    expect(source).toContain('status: 403, body: { error: INSEASON_READ_FORBIDDEN_MESSAGE }')
+    // A transport error is a 500, never a `false`.
+    expect(source.indexOf('status: 500')).toBeLessThan(source.indexOf('status: 403'))
+  })
+
+  it('a SOFT-DELETED league is the gate\'s 404 by name, checked AFTER membership so a non-member never learns it existed (R812)', () => {
+    const source = code(READS)
+    expect(source).toContain(".is('deleted_at', null)")
+    expect(source).toContain('status: 404, body: { error: INSEASON_LEAGUE_GONE_MESSAGE }')
+    expect(source.indexOf('status: 403')).toBeLessThan(source.indexOf(".is('deleted_at', null)"))
+    expect(source.indexOf(".is('deleted_at', null)")).toBeLessThan(source.indexOf('status: 404'))
+  })
+
+  it('the standings service needs no gate of its own — 117 raises 42501 in-body and the mapper answers 403', () => {
+    const source = code(STANDINGS_SERVICE)
+    expect(source).toContain("supabase.rpc('league_standings', { p_league_id: leagueId })")
+    expect(source).toContain('mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)')
+    expect(source).not.toContain('assertLeagueMember')
+  })
+
+  it('every direct TABLE read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule) — and the standings RPC\'s jsonb is NOT (R810: a probe that cannot fail)', () => {
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+      expect(code(rel), rel).toContain('assertBelowPostgrestCap(')
+    }
+    expect(code(STANDINGS_SERVICE)).not.toContain('assertBelowPostgrestCap')
+  })
+
+  it('matchups: `week` is REQUIRED and the route infers no current week (§23.3)', () => {
+    const service = code(MATCHUPS_SERVICE)
+    expect(service).toContain('week: z.coerce.number().int().min(1).max(18),')
+    expect(service).not.toMatch(/current_week|now\(\)|starts_at/)
+    // An absent calendar row is a 404 BY NAME, never an empty week.
+    expect(service).toContain('if (!weekRes.data) {')
+    expect(service).toContain('status: 404')
   })
 })
 
@@ -118,7 +229,14 @@ describe('the four in-season Route Handlers keep the house shape (§15.3)', () =
 // ---------------------------------------------------------------------------
 
 describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () => {
-  const service = code(SCHEDULE_SERVICE)
+  const whole = code(SCHEDULE_SERVICE)
+  // L.D5.3 (F233(e)) grew the file with the manual matchup EDIT below a
+  // marker: that verb names ONE matchup's two teams by design (§11.7's other
+  // door), so the "no matchup-shaped payload" pin is scoped to the REMIX
+  // half — everything above `editMatchupInputSchema` — and the edit half
+  // carries its own pins in the describe after this one.
+  const editMarker = whole.indexOf('export const editMatchupInputSchema')
+  const service = editMarker === -1 ? whole : whole.slice(0, editMarker)
 
   it('both bodies are strictObject, so a `matchups`/`proposed`/`weeks` key is REFUSED, not ignored', () => {
     // THE BREAK PROBE'S TARGET. Relaxing either to `z.object(` accepts a
@@ -147,8 +265,9 @@ describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () =
     expect(new Set(args)).toEqual(new Set(['p_league_id', 'p_seed', 'p_action_id', 'p_reason']))
   })
 
-  it('neither service file names a matchup-shaped payload anywhere', () => {
+  it('the REMIX half names no matchup-shaped payload anywhere', () => {
     // A regeneration that took client rows would have to name them.
+    expect(editMarker).toBeGreaterThan(-1) // the marker exists, so the slice is real
     for (const name of ['home_team_id', 'away_team_id', 'round_type', 'matchups:']) {
       expect(service, name).not.toContain(name)
     }
@@ -157,6 +276,53 @@ describe('§11.7/D289 — the Remix client sends a SEED, never a SCHEDULE', () =
   it('the seed range is the settings catalog constant, not a re-typed literal', () => {
     expect(service).toContain("import { SCHEDULE_SEED_MAX } from '../settings/league-settings'")
     expect(service).toContain('z.number().int().min(0).max(SCHEDULE_SEED_MAX)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D5.3 / F233(e): the manual matchup EDIT — one matchup, two teams, never
+// a schedule; the E41 reason law is the RPC's.
+// ---------------------------------------------------------------------------
+
+describe('§11.7 — the matchup edit names ONE pairing and mirrors no window rule', () => {
+  const whole = code(SCHEDULE_SERVICE)
+  const edit = whole.slice(whole.indexOf('export const editMatchupInputSchema'))
+
+  it('the body is strictObject with exactly five fields — matchup_id, home_team_id, away_team_id, reason, action_id', () => {
+    expect(edit).toMatch(/export const editMatchupInputSchema = z\.strictObject\(\{/)
+    const body = edit.slice(edit.indexOf('export const editMatchupInputSchema'), edit.indexOf('export type EditMatchupInput'))
+    const fields = [...body.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1])
+    expect(fields).toEqual(['matchup_id', 'home_team_id', 'away_team_id', 'reason', 'action_id'])
+    // No array of anything: a `matchups`/`proposed`/`weeks` key is refused.
+    expect(body).not.toMatch(/z\.array\(/)
+  })
+
+  it('EXACTLY six arguments reach `schedule_edit_matchup` — there is no seventh', () => {
+    const call = edit.slice(
+      edit.indexOf("supabase.rpc('schedule_edit_matchup'"),
+      edit.indexOf('if (error) {', edit.indexOf("supabase.rpc('schedule_edit_matchup'")),
+    )
+    const args = [...call.matchAll(/p_(\w+):/g)].map((m) => `p_${m[1]}`)
+    expect(new Set(args)).toEqual(
+      new Set(['p_league_id', 'p_matchup_id', 'p_home', 'p_away', 'p_reason', 'p_action_id']),
+    )
+  })
+
+  it('the three guarded ids go through normalizedUuid (R768) and the F65(b) guard compares the matchup AND the pairing', () => {
+    expect(edit).toContain('matchup_id: normalizedUuid,')
+    expect(edit).toContain('home_team_id: normalizedUuid,')
+    expect(edit).toContain('away_team_id: normalizedUuid,')
+    expect(edit).toContain('action_id: normalizedUuid,')
+    expect(edit).not.toMatch(/: z\.uuid\(\)/)
+    expect(edit).toContain('result.action_id !== action_id ||')
+    expect(edit).toContain('result.matchup?.matchup_id !== matchup_id ||')
+    expect(edit).toContain('result.matchup?.after?.home_team_id !== home_team_id ||')
+    expect(edit).toContain('result.matchup?.after?.away_team_id !== away_team_id')
+  })
+
+  it('E41 is the RPC\'s: the service reads no clock and no kickoff, and sends a blank reason as the empty string 111 reads as NULL', () => {
+    expect(edit).not.toMatch(/kickoff|now\(\)|Date\b|reason_required/)
+    expect(edit).toContain("p_reason: reason ?? '',")
   })
 })
 
@@ -187,11 +353,15 @@ describe('the in-season SQLSTATE mapping is one shared helper (F224(e)/F227(f))'
     expect(arms).toHaveLength(3)
   })
 
-  it('both in-season services use it — neither maps SQLSTATEs of its own', () => {
-    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE]) {
+  it('every RPC-calling in-season service uses it — none maps SQLSTATEs of its own', () => {
+    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE, LINEUP_SERVICE, STANDINGS_SERVICE]) {
       const source = code(rel)
       expect(source, rel).toContain("import { mapInSeasonRpcError } from './inseason-errors'")
       expect(source, rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)
+    }
+    // The two direct-read services raise nothing to map and map nothing.
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+      expect(code(rel), rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)
     }
   })
 })
@@ -228,5 +398,19 @@ describe('the F65(b) guards compare against what Postgres wrote (R768)', () => {
     expect(code(SCHEDULE_SERVICE)).toContain(
       'if (result.action_id !== action_id || Number(result.schedule_seed) !== seed) {',
     )
+  })
+
+  it('L.D4.1: the lineup verb inherits it — action_id AND the path team id, and the guard covers the placement', () => {
+    const lineup = code(LINEUP_SERVICE)
+    expect(lineup).toContain('action_id: normalizedUuid,')
+    expect(lineup).toContain('normalizedUuid.safeParse(rawTeamId)')
+    expect(lineup).not.toMatch(/action_id: z\.uuid\(\)/)
+    expect(lineup).toContain('result.team_id !== teamId ||')
+    expect(lineup).toContain('result.week !== week ||')
+    expect(lineup).toContain('result.action_id !== action_id ||')
+    expect(lineup).toContain('!placementMatches(slot_map, result.slot_map, result.moved)')
+    // F224(e): the map goes to the RPC WHOLE — no filter, no fill.
+    expect(lineup).toContain('p_slot_map: slot_map,')
+    expect(lineup).not.toMatch(/Object\.(entries|keys|fromEntries)\(slot_map\)/)
   })
 })
