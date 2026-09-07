@@ -296,7 +296,8 @@ GATE    everything but L.D3.1/L.D6.4 → L.D6.3 (SYNTHETIC gate) · {L.D6.3, L.D
 >
 > DoD: §4 rules; break probe: let the door update an `is_overridden` cell → the override-preservation pin fails (shown, reverted).
 
-### L.D1.10 — Migration ~~118~~ *(shifted — confirm with `ls`)*: retire-and-succeed (F31 + F1)
+### L.D1.10 — Migration ~~118~~ *(shifted — confirm with `ls`)* **→ 120**: retire-and-succeed (F31 + F1)
+> **LANDED 2026-09-07 (migration 120 / pgTAP 068; PROGRESS D320) — the schema lane's last task.** Items 1–3 as written for `in_season` and `complete` leagues; a retirement during `playoffs` is REFUSED BY NAME pending **PROGRESS Q41** (the LAW is silent on a retired franchise's bracket line; F256(e) routed there; F262(b) carries the application). The DoD probe (drop the cycle check → 068 F1 red) shown and reverted in the PR. One seam beyond the text: 117's total_points pending read would have held the retirement's correction_window week forever — closed in the same migration (D320(7)). **The #266 fix round (same day, R855–R862; 120 edited in place, unmerged): a VACATED (orphaned) franchise is retirable — §7.2.1(c) "resolves into (a) or (b)" — sealed under its last manager; a co-commissioner cannot retire his own seat; the `teams` broadcast trigger ships (per-statement, diff-aware — F42 discharged for `teams`; the standings page and league detail refetch on it); F262(d) files the past-week correction rule for L.D2.2.**
 > Read spec §7.2.1(b), §12.22, PROGRESS F31/F1 rows + D42/D53/D74, this doc D301. Depends L.D1.7 (standings inheritance needs `team_week_results`). Last in the schema lane — nothing else depends on it.
 >
 > 1. `remove_manager(retire)`'s refusal becomes the real outcome per D301 (seal, succeed, link, inherit roster + record-for-seeding, `end_reason='seat_retired'`); in-body succession-cycle rejection (A→B→A and longer — **F1**, same PR).

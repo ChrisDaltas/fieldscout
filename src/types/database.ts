@@ -4290,6 +4290,7 @@ export type Database = {
       }
       remove_manager: {
         Args: {
+          p_action_id?: string
           p_league_id: string
           p_member_id: string
           p_mode: string
@@ -4488,6 +4489,10 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      team_broadcast_payload: {
+        Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
+        Returns: Json
+      }
       team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
       team_league_id: { Args: { p_team_id: string }; Returns: string }
       team_week_result_broadcast_payload: {

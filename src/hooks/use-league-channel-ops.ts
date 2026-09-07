@@ -48,6 +48,16 @@ export const LEAGUE_CHANNEL_EVENTS = [
   // not earlier.
   'league_rosters',
   'league_player_pool',
+  // Landed with 120 (L.D1.10's #266 fix round, R856; F42 discharged for
+  // teams): `teams` UPDATE — a per-STATEMENT, diff-aware summary
+  // (`{count, teams: [{id, name, status, retired_at_week,
+  // successor_team_id}]}`; one event per league per statement that changed
+  // one of those four columns — a retirement's seal, a vacate, a claim of an
+  // orphaned seat, a rename; never owner_id / manager identity). Its first
+  // subscribers are `use-standings` (a retirement flips the standings order
+  // and the row set, and nothing else on this wire invalidates them) and,
+  // through the same hook, the league detail's teams list.
+  'teams',
 ] as const
 
 export type LeagueChannelEvent = (typeof LEAGUE_CHANNEL_EVENTS)[number]
@@ -155,14 +165,43 @@ export function matchupsEventInvalidates(name: string): boolean {
  * reads only final rows, and refetching a SECURITY DEFINER scan for every
  * member on every tick is the exact waste D310(4) refused for the activity
  * feed. Widen this and standings really do start refetching on every tick.
+ *
+ * `teams` (120 — R856) is the third carrier: a franchise RETIREMENT changes
+ * the standings without touching a final row — the retired franchise's
+ * row disappears (117's seated CTE) and its record folds into the
+ * successor's line for seeding, which can flip the order (068 D1). An h2h
+ * retirement emits nothing else this list names (`league_rosters` /
+ * `matchups` / `transactions` are not standings carriers), so without
+ * `teams` a member's open standings page kept the retired row and the
+ * pre-flip order until a reload — measured (R856). A `teams` event fires
+ * once per statement that changed a rendered column (a seal, a vacate, a
+ * claim, a rename) — rare, and never on a score tick.
  */
 export const STANDINGS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
   'team_week_results',
   'league_weeks',
+  'teams',
 ]
 
 export function standingsEventInvalidates(name: string): boolean {
   return (STANDINGS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * Which events make the LEAGUE DETAIL (`useLeague` — §15.1's GET, the
+ * `teams` list the standings page names rows from and the members list)
+ * stale. Only `teams` (120 — R856): a retirement seals one franchise and
+ * mints its successor, and the detail's teams list carried NO channel
+ * invalidation at all before this (measured). `leagues` (070 — the
+ * league's own status / name / avatar) is deliberately NOT here yet: no
+ * consumer subscribes the detail to it today, and adding it belongs to
+ * whichever surface first needs a live league header (a note, not a
+ * silent widening — R773's rule that the predicate SELECTS the events).
+ */
+export const LEAGUE_DETAIL_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = ['teams']
+
+export function leagueDetailEventInvalidates(name: string): boolean {
+  return (LEAGUE_DETAIL_INVALIDATING_EVENTS as readonly string[]).includes(name)
 }
 
 /**
@@ -232,6 +271,29 @@ export function invalidatingHandlers(
     handlers[event] = invalidate
   }
   return handlers
+}
+
+/**
+ * Two (or more) derived handler maps joined for ONE subscriber — an event
+ * that appears in several maps runs each of its handlers, in map order;
+ * an event in none gets no handler (still inert by construction). The
+ * standings hook uses it (120 / R856): its standings map and the league-
+ * detail map both name `teams`, so one event refetches both queries, while
+ * `team_week_results` / `league_weeks` stay standings-only. Kept as a plain
+ * function so the composition is executable in node (`use-matchups-ops.test.ts`).
+ */
+export function mergeHandlers(
+  ...maps: ReadonlyArray<Partial<Record<LeagueChannelEvent, () => void>>>
+): Partial<Record<LeagueChannelEvent, () => void>> {
+  const merged: Partial<Record<LeagueChannelEvent, () => void>> = {}
+  for (const event of LEAGUE_CHANNEL_EVENTS) {
+    const fns = maps.map((m) => m[event]).filter((fn): fn is () => void => typeof fn === 'function')
+    if (fns.length === 0) continue
+    merged[event] = () => {
+      for (const fn of fns) fn()
+    }
+  }
+  return merged
 }
 
 /** Reconnect backoff, capped — the `use-draft.ts:297` curve, extracted so it

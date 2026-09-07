@@ -182,4 +182,27 @@
 # through `realtime.send` (the 070 mechanism; no policy change); reads
 # outside the chain are 116's SELECTs on `nfl_games` / `nfl_weeks` /
 # `players` / `teams`. No publication change (D89), no cron row.
-082-119
+# 120 (L.D1.10, 2026-09-07): retire-and-succeed — `remove_manager` DROPPED at
+# 063's five-argument signature and re-created with `p_action_id` (the
+# retire arm's idempotency stamp), its retire arm now §7.2.1(b)'s real
+# outcome (seal, the successor franchise, the stint's `seat_retired`, the
+# roster / current-and-future-week re-points, the `commissioner_move` ledger
+# row, the D97 post; F1's in-body cycle refusal; `playoffs` refused by name
+# pending Q41); `league_standings_internal` CREATE OR REPLACE'd against 118's
+# file text with the lineage fold (seeding only) and
+# `week_results_pending_internal` against 117's (the lineage read); two
+# column comments on `teams`; spec v2.16.28 §7.2.1(b) / §12.22 / §15.1.
+# [#266 fix round, same day (PROGRESS R855–R862; spec v2.16.29): 120 edited
+# IN PLACE while unmerged and held — an unmanaged (vacated) seat is
+# retirable, a co-commissioner cannot retire his own seat, and ONE new
+# trigger `tr_broadcast_teams` (per-statement, diff-aware Broadcast-from-DB
+# on the private `league:<id>` topic via `realtime.send` — 070's policies,
+# no publication change) with its payload function.]
+# Same mechanism, same explicit act. No launch-surface WRITE PATH changes (R865: the new `tr_broadcast_teams` trigger DOES run on every `teams` UPDATE statement, league or legacy — a `league_id NULL` row's update runs the function and emits nothing, no error):
+# every write is on the leagues chain (`teams` league rows, `team_managers`,
+# `league_members`, `league_rosters`, `team_lineups` league rows,
+# `matchups`, `team_week_results`, `transactions`, `league_chat`); the only
+# read outside it is 063's on `profiles`. One trigger (`teams` — its function
+# runs on any UPDATE statement of the table and sends nothing for a
+# non-league row), no cron row.
+082-120

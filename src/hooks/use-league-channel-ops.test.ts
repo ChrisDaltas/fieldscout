@@ -58,7 +58,7 @@ describe('the topic string (§9.2)', () => {
 })
 
 describe('the event set is CLOSED and unknown events are inert (M2 forward-compat)', () => {
-  it('carries the three M2 events, the four D296 adds and the tick\'s pool summary — eight, exactly', () => {
+  it('carries the three M2 events, the four D296 adds, the tick\'s pool summary and 120\'s teams — nine, exactly', () => {
     expect([...LEAGUE_CHANNEL_EVENTS]).toEqual([
       'leagues', // 070
       'league_chat', // 070 — a non-draft context broadcasts to league:<id>
@@ -68,6 +68,7 @@ describe('the event set is CLOSED and unknown events are inert (M2 forward-compa
       'league_weeks', // 119 / D296 — status flips
       'league_rosters', // 072 — first subscriber: L.D4.1's use-rosters
       'league_player_pool', // 119 / D319(6) — the tick's ONE coalesced lock summary per league per pass (F252(a))
+      'teams', // 120 / R856 — per-statement diff-aware summary; first subscriber use-standings (+ the league detail)
     ])
   })
 
@@ -75,8 +76,8 @@ describe('the event set is CLOSED and unknown events are inert (M2 forward-compa
     // R773 deleted the `isLeagueChannelEvent` type guard (the spine called it
     // on a value drawn from this very constant — a check that could not
     // fail). The claim it carried lives here instead, on the constant: the
-    // set is exactly the eight above, and the names are the WIRE names
-    // 070/072/119 send, case included.
+    // set is exactly the nine above, and the names are the WIRE names
+    // 070/072/119/120 send, case included.
     for (const stranger of ['waiver_claims', 'draft_bids', 'player_stats', '', 'TRANSACTIONS']) {
       expect([...LEAGUE_CHANNEL_EVENTS] as string[], stranger).not.toContain(stranger)
     }

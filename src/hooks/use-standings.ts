@@ -6,7 +6,13 @@ import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 
 import { useLeagueChannel } from './use-league-channel'
-import { invalidatingHandlers, standingsEventInvalidates } from './use-league-channel-ops'
+import {
+  invalidatingHandlers,
+  leagueDetailEventInvalidates,
+  mergeHandlers,
+  standingsEventInvalidates,
+} from './use-league-channel-ops'
+import { leaguesKeys } from './use-leagues'
 
 /**
  * The tiebreaker-ordered standings — M4 task L.D4.1 (spec §15.3/§15.6/§11.5;
@@ -27,6 +33,16 @@ import { invalidatingHandlers, standingsEventInvalidates } from './use-league-ch
  * the live projection is L.D5.3's over the provisional cells. The handler
  * map is derived from `standingsEventInvalidates` (R773). Every confirmed
  * (re)join refetches (§9.3).
+ *
+ * Since 120 (L.D1.10's #266 fix round, R856) a franchise RETIREMENT is the
+ * third carrier — the `teams` event: the retired row leaves the table and
+ * its record folds into the successor's for seeding (the order can flip,
+ * 068 D1), and the standings PAGE names rows from the league detail's
+ * `teams` list (`standings-page.tsx`), which had no channel invalidation
+ * at all. So the one subscription carries TWO derived maps merged
+ * (`mergeHandlers`): the standings map, and the league-detail map
+ * (`leagueDetailEventInvalidates` — `teams` only) refetching
+ * `leaguesKeys.detail`. A finalization still refetches standings alone.
  *
  * The finalization trigger is L.D1.9's (behind B9); the wiring is pinned in
  * node against a synthetic event, the delivery proof deferred with the
@@ -59,10 +75,19 @@ export function useStandingsLive(leagueId: string | undefined) {
     if (!leagueId) return
     void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.all(leagueId) })
   }
+  // 120 / R856: the detail's teams list (names, status, the lineage) —
+  // refetched on `teams` only, never on a finalization.
+  const invalidateDetail = () => {
+    if (!leagueId) return
+    void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+  }
 
   const { connection } = useLeagueChannel(
     leagueId,
-    invalidatingHandlers(standingsEventInvalidates, invalidate),
+    mergeHandlers(
+      invalidatingHandlers(standingsEventInvalidates, invalidate),
+      invalidatingHandlers(leagueDetailEventInvalidates, invalidateDetail),
+    ),
     { onJoin: invalidate, onDrop: invalidate },
   )
 
