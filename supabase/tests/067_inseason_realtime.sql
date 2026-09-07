@@ -326,18 +326,23 @@ $part$;
 -- a baseline, never from zero.
 -- Ordering: every message this transaction writes shares ONE inserted_at
 -- (transaction now()) and ids are random uuids, so "the last event" is
--- ordered by physical append position (tableoid, ctid) — the partition is
--- append-only inside this transaction.
+-- ordered by the transaction's COMMAND id (`cmin` — monotone per statement
+-- inside one transaction; physical position is not, once vacuum has freed
+-- earlier pages), ties within a statement by ctid. SCOPE: only THIS transaction's rows
+-- (`inserted_at >= now()`) — realtime.messages is never cleaned, so a
+-- committed message on these topics from an earlier run (the F199 species:
+-- a hand repro, an aborted suite) must not move an absolute count here.
 create temp view rt19_msgs as
-  select m.tableoid as tblid, m.ctid as tid, m.id, m.topic, m.event, m.payload, m.private, m.extension
+  select m.cmin::text::bigint as cmd, m.ctid as tid, m.id, m.topic, m.event, m.payload, m.private, m.extension
   from realtime.messages m
-  where m.topic like 'league:b7000000-0000-4000-8000-00000000000%';
+  where m.topic like 'league:b7000000-0000-4000-8000-00000000000%'
+    and m.inserted_at >= now();
 select set_config('pgtap.m0', (select count(*) from rt19_msgs)::text, true);
 create function pg_temp.rt19_events(p_league text, p_event text) returns bigint language sql as $$
   select count(*) from rt19_msgs where topic = 'league:' || p_league and event = p_event
 $$;
 create function pg_temp.rt19_last(p_league text, p_event text) returns jsonb language sql as $$
-  select payload from rt19_msgs where topic = 'league:' || p_league and event = p_event order by tblid desc, tid desc limit 1
+  select payload from rt19_msgs where topic = 'league:' || p_league and event = p_event order by cmd desc, tid desc limit 1
 $$;
 create function pg_temp.rt19_digest_m(p_league text) returns text language sql as $$
   select md5(string_agg(m.id::text || ':' || coalesce(m.home_score::text, 'null') || ':' || coalesce(m.away_score::text, 'null')
@@ -581,7 +586,7 @@ select is((select home_score::text || '/' || away_score::text from matchups wher
   'G2b …the NEW row (found by (league, season, week, side team) in the write statement — never a cached id, F257(a′))');
 select is(pg_temp.rt19_last('b7000000-0000-4000-8000-000000000004', 'matchups') ->> 'operation', 'UPDATE', 'G2c …and the last L4 matchups event is the door''s UPDATE');
 select is(
-  (select array_agg(payload ->> 'operation' order by tblid, tid) from rt19_msgs where topic = 'league:b7000000-0000-4000-8000-000000000004' and event = 'matchups'),
+  (select array_agg(payload ->> 'operation' order by cmd, tid) from rt19_msgs where topic = 'league:b7000000-0000-4000-8000-000000000004' and event = 'matchups'),
   array['INSERT', 'INSERT', 'UPDATE', 'UPDATE', 'DELETE', 'INSERT', 'UPDATE'],
   'G2d the L4 event history: two fixture INSERT statements, E1b''s + G1''s door UPDATEs, the rebuild''s DELETE + INSERT (one event each — a Remix/bracket reaches an open schedule page), G2''s UPDATE');
 
@@ -736,12 +741,14 @@ select set_config('request.jwt.claims', '{"sub": "97000000-0000-4000-8000-000000
 select set_config('realtime.topic', 'league:b7000000-0000-4000-8000-000000000001', true);
 select is(
   (select count(*) from realtime.messages where topic = 'league:b7000000-0000-4000-8000-000000000001'
-     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')),
+     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')
+     and inserted_at >= now()),
   current_setting('pgtap.n')::bigint, 'L1 the MEMBER reads every in-season event on their league topic (070''s policy covers the family)');
 select set_config('request.jwt.claims', '{"sub": "97000000-0000-4000-8000-000000000099", "role": "authenticated"}', true);
 select is(
   (select count(*) from realtime.messages where topic = 'league:b7000000-0000-4000-8000-000000000001'
-     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')),
+     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')
+     and inserted_at >= now()),
   0::bigint, 'L2 the NON-MEMBER reads ZERO (probe 3 — a public topic — reds this and the vitest''s non-member cell)');
 reset role;
 set local role anon;
@@ -749,7 +756,8 @@ select set_config('request.jwt.claims', '{"role": "anon"}', true);
 select set_config('realtime.topic', 'league:b7000000-0000-4000-8000-000000000001', true);
 select is(
   (select count(*) from realtime.messages where topic = 'league:b7000000-0000-4000-8000-000000000001'
-     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')),
+     and event in ('matchups', 'team_week_results', 'transactions', 'league_weeks', 'league_player_pool')
+     and inserted_at >= now()),
   0::bigint, 'L3 ANON reads ZERO');
 reset role;
 
