@@ -528,9 +528,11 @@ export function validateLeagueSettings(s: LeagueSettings, ctx: { draftablePoolSi
   // league has NO playoff bracket — the season-long points race IS its
   // playoff — so `playoff_teams` must be 0 under `schedule_mode =
   // 'total_points'`. Migration 118 refuses the pair in `create_league` /
-  // `update_league_settings` (P0001; the message names `playoff_teams`) and
-  // backstops it with a CHECK; this is the API-side enforcement point every
-  // create/PATCH runs first, so the DB refusal is the direct-caller's.
+  // `update_league_settings` (P0001; the message names `playoff_teams`); this
+  // is the API-side enforcement point every create/PATCH runs first, so the
+  // DB refusal is the direct-caller's. (A stored pair reads as a points race
+  // — the engine reads the MODE — so no table CHECK: 058/059's fixtures keep
+  // their rows.)
   if (s.schedule_mode === 'total_points' && s.playoff_teams > 0) {
     errors.push({
       field: 'playoff_teams',

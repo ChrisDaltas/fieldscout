@@ -37,9 +37,11 @@
 --       the playoff. `playoff_teams > 0` + total_points is REFUSED at
 --       settings time (`create_league` 077 / `update_league_settings` 105,
 --       a plain message naming `playoff_teams`; the Zod validator and the
---       settings panel on the TS side) and backstopped by the
---       `leagues_total_points_no_bracket` CHECK (the 115 shape). The engine
---       never enters the bracket path for the mode (pinned).
+--       settings panel on the TS side). The engine never enters the bracket
+--       path for the mode WHATEVER `playoff_teams` stores (pinned) — a
+--       table CHECK on the pair was authored and WITHDRAWN: pgTAP 058 L8 and
+--       059 LT (merged fixtures) store total_points on a playoff_teams-6 row
+--       to pin the engine's mode arm, and the mode is what the engine reads.
 --   (D) `playoff_teams = 0` (and, by (C), every total_points league): the
 --       champion is standings RANK 1 THROUGH THE FULL CHAIN (117's
 --       `league_standings`, final arm) and the league flips in_season →
@@ -144,8 +146,7 @@
 --      stand).
 --
 -- WHAT THIS MIGRATION DOES
---   1. Columns: `leagues.champion_team_id` (iv), the
---      `leagues_total_points_no_bracket` CHECK (C), `matchups.home_seed` /
+--   1. Columns: `leagues.champion_team_id` (iv), `matchups.home_seed` /
 --      `away_seed` + their CHECKs (iii).
 --   2. `week_median_internal(numeric[])` — the ONE median arithmetic (117's
 --      block lifted; a SORTED array in; NULL under two scores). IMMUTABLE.
@@ -233,7 +234,8 @@
 -- through the rewrite path, the (B) two-week sum (the week-1 loser wins the
 -- aggregate; the equal-sum arm), the (D) champion where rank 1 and the PF
 -- leader DIFFER, the total_points league that never enters the bracket
--- path, the (C) refusals with their one-unit twins + the CHECK, the frozen
+-- path, the (C) refusals with their one-unit twins + the stored pair read
+-- as a points race, the frozen
 -- round under a corrupted regular season, forward-only (a complete league
 -- untouched), and F242's no-later-row cell. Break probes (PR body): (1) the
 -- DoD's — seed from raw Win % instead of the standings → the tie-fixture
@@ -242,9 +244,10 @@
 -- red; (5) the bracket built at `starts_at` → the rollover cell red; (6)
 -- the (C) refusal dropped → red.
 --
--- Migration checklist (plan §8.1): two columns + two CHECKs on `leagues` /
--- `matchups` (additive; nullable; no backfill — no row carries a bracket or
--- a champion on any chain); SEVEN new functions (two IMMUTABLE/STABLE
+-- Migration checklist (plan §8.1): three columns (`leagues.champion_team_id`,
+-- `matchups.home_seed` / `away_seed`) + the seed CHECKs on `matchups`
+-- (additive; nullable; no backfill — no row carries a bracket or a champion
+-- on any chain); SEVEN new functions (two IMMUTABLE/STABLE
 -- helpers, two pure playoff helpers, the state reader, the sync, the read
 -- RPC) + SIX replaced (D137 provenance above); no policy, no index (the
 -- bracket reads ride 109's `idx_matchups_league_week`), no trigger, no cron
@@ -273,13 +276,6 @@ ALTER TABLE leagues
   ADD COLUMN champion_team_id UUID REFERENCES teams(id);
 COMMENT ON COLUMN leagues.champion_team_id IS
   'Spec §11.5 "Champion recorded on complete" (v2.16.25, Q39 (D) — migration 118). Written ONLY in the transaction that flips status → complete (`playoff_bracket_sync_internal`): the winner of the last playoff round, or — with playoff_teams = 0 and for every total_points league — standings rank 1 through the FULL tiebreaker chain at the last regular-season week''s finalization. NULL until then.';
-
--- Q39 (C): a total-points league has no bracket — structural twin of the
--- create/update refusals (the 115 `leagues_settings_no_player_game_lock`
--- shape). NULL settings pass (no mode ⇒ h2h).
-ALTER TABLE leagues
-  ADD CONSTRAINT leagues_total_points_no_bracket
-  CHECK (NOT (playoff_teams > 0 AND (settings ->> 'schedule_mode') = 'total_points'));
 
 ALTER TABLE matchups
   ADD COLUMN home_seed SMALLINT CHECK (home_seed BETWEEN 1 AND 16),

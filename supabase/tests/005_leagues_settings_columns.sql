@@ -48,11 +48,12 @@ select columns_are('public', 'leagues',
         'playoff_teams', 'playoff_start_week', 'waiver_type', 'faab_budget',
         'trade_review', 'trade_deadline_week', 'lineup_lock', 'settings',
         'scoring_rules_snapshot', 'deleted_at', 'invite_slug',
-        'creation_action_id', 'avatar_url'],
+        'creation_action_id', 'avatar_url', 'champion_team_id'],
   -- updated by 055/L.A1.4: +invite_slug (§7.2 custom share slug)
   -- updated by 060/L.A1.12: +creation_action_id (create_league idempotency key, D68)
   -- updated by 064: +avatar_url (league profile — commissioner crest upload)
-  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug + 060''s creation_action_id + 064''s avatar_url, exactly');
+  -- updated by 118: +champion_team_id (§11.5 "Champion recorded on complete" — Q39 (D), L.D1.8)
+  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug + 060''s creation_action_id + 064''s avatar_url + 118''s champion_team_id, exactly');
 
 select col_default_is('public', 'leagues', 'status', 'setup', 'status defaults to setup');
 select col_default_is('public', 'leagues', 'format', 'redraft', 'format defaults to redraft');

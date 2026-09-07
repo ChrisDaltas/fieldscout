@@ -49,7 +49,9 @@
 --   F. (C) — `create_league` / `update_league_settings` refuse
 --      `playoff_teams > 0` + total_points BY NAME (`playoff_teams` in the
 --      message; P0001), each with its one-unit twin (0 + total_points ok;
---      > 0 + h2h ok); the CHECK (23514).
+--      > 0 + h2h ok); a STORED pair (a pre-118 row, or a fixture's) reads
+--      as a points race — the mode is what the engine reads, never
+--      `playoff_teams`.
 --
 --   P1 regular season (home/away; H retired after the fixture):
 --     W3: A–B 100/90 · C–D 100/80 · E–F 95/85 · G–H 70/110
@@ -663,11 +665,14 @@ select is((select string_agg((r ->> 'round') || ':' || (r ->> 'source') || ':' |
 select set_config('request.jwt.claims', '', true);
 
 -- ---------------------------------------------------------------------------
--- K. (C) — the settings-time refusals + the CHECK
+-- K. (C) — the settings-time refusals; a stored pair is a points race
 -- ---------------------------------------------------------------------------
-select throws_ok($$ update leagues set playoff_teams = 2 where id = 'b8000000-0000-4000-8000-000000000003' $$, '23514', null,
-  'K1 the CHECK: a total_points league cannot store playoff_teams > 0 (23514 — the structural twin of the refusals)');
-select lives_ok($$ update leagues set playoff_teams = 0 where id = 'b8000000-0000-4000-8000-000000000003' $$, 'K1b …0 stores (one unit away)');
+update leagues set playoff_teams = 2 where id = 'b8000000-0000-4000-8000-000000000003';
+select is((public.playoff_bracket_state_internal('b8000000-0000-4000-8000-000000000003') ->> 'kind') || ':' || (public.playoff_bracket_state_internal('b8000000-0000-4000-8000-000000000003') ->> 'playoff_teams'),
+  'points_race:2', 'K1 a STORED total_points + playoff_teams 2 pair (a pre-118 row; 058 L8 / 059 LT model it) reads as a points race — the MODE is what the engine reads, never playoff_teams');
+select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000003', '2026-11-12 10:00:00+00'), '{"reason": "not_in_play", "status": "complete"}'::jsonb,
+  'K1b …and the sync on it is the no-bracket path (here: the completed league, refused by name — never a bracket write)');
+update leagues set playoff_teams = 0 where id = 'b8000000-0000-4000-8000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_like(

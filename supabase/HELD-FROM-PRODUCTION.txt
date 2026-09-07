@@ -148,8 +148,7 @@
 # `matchups` / `league_chat`); reads outside it are 116's SELECTs on
 # `nfl_games` / `nfl_weeks` and this file's on `teams`. No cron row added.
 # 118 (L.D1.8, 2026-09-07): playoffs — `leagues.champion_team_id` +
-# `matchups.home_seed` / `away_seed` (rider (iii)/(iv)), the
-# `leagues_total_points_no_bracket` CHECK (Q39 (C)), the pure helpers
+# `matchups.home_seed` / `away_seed` (rider (iii)/(iv)), the pure helpers
 # `week_median_internal` / `week_results_derive_internal` /
 # `playoff_bracket_size_internal` / `playoff_round_pairs_internal`, the
 # reader `playoff_bracket_state_internal`, the ONE writer
