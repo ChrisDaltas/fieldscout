@@ -147,4 +147,24 @@
 # (`team_week_results`, `league_weeks`, and through the replaced finalize
 # `matchups` / `league_chat`); reads outside it are 116's SELECTs on
 # `nfl_games` / `nfl_weeks` and this file's on `teams`. No cron row added.
-082-117
+# 118 (L.D1.8, 2026-09-07): playoffs — `leagues.champion_team_id` +
+# `matchups.home_seed` / `away_seed` (rider (iii)/(iv)), the
+# `leagues_total_points_no_bracket` CHECK (Q39 (C)), the pure helpers
+# `week_median_internal` / `week_results_derive_internal` /
+# `playoff_bracket_size_internal` / `playoff_round_pairs_internal`, the
+# reader `playoff_bracket_state_internal`, the ONE writer
+# `playoff_bracket_sync_internal` (the rollover-built / correction-close-
+# rebuilt bracket, the forward-only flips, the champion — Q39 (A)–(E)),
+# the member reads `league_standings_projected` (F253(a)) +
+# `league_playoff_bracket` (the season-long projection), and SIX functions
+# CREATE OR REPLACE'd against their FILE text (D137): 117's
+# `week_results_write_internal` / `league_standings` (→ the internal +
+# wrappers) / `finalize_matchups`, 116's `league_week_advance`, 077's
+# `create_league`, 105's `update_league_settings`; spec v2.16.25 §11.5 /
+# §11.7 / §7.3.1 / §16.2. Same mechanism, same explicit act. No launch-
+# surface table is touched: every write is on the leagues chain (`leagues`,
+# `matchups`, and through the replaced jobs `league_weeks` /
+# `team_week_results` / `team_lineups` / `league_chat`); reads outside it
+# are 116/117's SELECTs on `nfl_games` / `nfl_weeks` / `teams`. No cron row
+# added (the sync rides the two existing jobs).
+082-118

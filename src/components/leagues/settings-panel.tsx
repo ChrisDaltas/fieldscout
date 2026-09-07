@@ -54,7 +54,7 @@ import {
   SectionLabel,
   ToggleRow,
 } from './settings-form-controls'
-import { divisionSelectOptions } from './settings-panel-ops'
+import { divisionSelectOptions, playoffTeamsControl, scheduleModePatch } from './settings-panel-ops'
 
 /**
  * League settings panel (M1 task L.A2.4; spec §16.2 settings-panel, §7.3
@@ -726,7 +726,7 @@ function FormatGroup({
         </Badge>
       </FieldRow>
 
-      <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint="0 = points-only champion.">
+      <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint={playoffTeamsControl(s.schedule_mode).hint}>
         <ChoiceSelect
           id="set-playoff-teams"
           ariaLabel="Playoff teams"
@@ -734,6 +734,7 @@ function FormatGroup({
           options={numOptions(playoffTeamOptions)}
           onValueChange={(v) => onSettings({ playoff_teams: Number(v) as LeagueSettings['playoff_teams'] })}
           width="w-28"
+          disabled={playoffTeamsControl(s.schedule_mode).disabled} // Q39 (C): no bracket in a total-points league — settings-panel-ops is the pin's home
         />
       </FieldRow>
 
@@ -767,7 +768,7 @@ function FormatGroup({
             { value: 'h2h', label: 'Head-to-head' },
             { value: 'total_points', label: 'Total points' },
           ]}
-          onValueChange={(v) => onSettings({ schedule_mode: v as LeagueSettings['schedule_mode'] })}
+          onValueChange={(v) => onSettings(scheduleModePatch(v as LeagueSettings['schedule_mode']))} // Q39 (C): total-points carries playoff_teams 0
         />
       </FieldRow>
 

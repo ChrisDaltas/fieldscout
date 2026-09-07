@@ -1340,6 +1340,7 @@ export type Database = {
       leagues: {
         Row: {
           avatar_url: string | null
+          champion_team_id: string | null
           created_at: string | null
           creation_action_id: string | null
           deleted_at: string | null
@@ -1371,6 +1372,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          champion_team_id?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -1402,6 +1404,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          champion_team_id?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -1432,6 +1435,13 @@ export type Database = {
           waiver_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leagues_champion_team_id_fkey"
+            columns: ["champion_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leagues_owner_id_fkey"
             columns: ["owner_id"]
@@ -1948,9 +1958,11 @@ export type Database = {
       matchups: {
         Row: {
           away_score: number | null
+          away_seed: number | null
           away_team_id: string | null
           created_at: string | null
           home_score: number | null
+          home_seed: number | null
           home_team_id: string
           id: string
           is_overridden: boolean
@@ -1965,9 +1977,11 @@ export type Database = {
         }
         Insert: {
           away_score?: number | null
+          away_seed?: number | null
           away_team_id?: string | null
           created_at?: string | null
           home_score?: number | null
+          home_seed?: number | null
           home_team_id: string
           id?: string
           is_overridden?: boolean
@@ -1982,9 +1996,11 @@ export type Database = {
         }
         Update: {
           away_score?: number | null
+          away_seed?: number | null
           away_team_id?: string | null
           created_at?: string | null
           home_score?: number | null
+          home_seed?: number | null
           home_team_id?: string
           id?: string
           is_overridden?: boolean
@@ -4129,11 +4145,20 @@ export type Database = {
         Args: { p_league_id: string; p_now?: string }
         Returns: Json
       }
+      league_playoff_bracket: { Args: { p_league_id: string }; Returns: Json }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
         Returns: Json
       }
       league_standings: { Args: { p_league_id: string }; Returns: Json }
+      league_standings_internal: {
+        Args: { p_league_id: string; p_projected: boolean }
+        Returns: Json
+      }
+      league_standings_projected: {
+        Args: { p_league_id: string }
+        Returns: Json
+      }
       league_week_advance: {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
@@ -4206,6 +4231,22 @@ export type Database = {
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
+      }
+      playoff_bracket_size_internal: {
+        Args: { p_playoff_teams: number }
+        Returns: number
+      }
+      playoff_bracket_state_internal: {
+        Args: { p_league_id: string }
+        Returns: Json
+      }
+      playoff_bracket_sync_internal: {
+        Args: { p_league_id: string; p_now: string }
+        Returns: Json
+      }
+      playoff_round_pairs_internal: {
+        Args: { p_bracket: number; p_entrants: Json; p_key: string }
+        Returns: Json
       }
       pool_game_lock_any_internal: {
         Args: {
@@ -4474,6 +4515,23 @@ export type Database = {
           postponed_games: number
           postponed_list: string
           total_games: number
+        }[]
+      }
+      week_median_internal: { Args: { p_points: number[] }; Returns: number }
+      week_results_derive_internal: {
+        Args: {
+          p_league_id: string
+          p_projected: boolean
+          p_season: number
+          p_week: number
+        }
+        Returns: {
+          h2h_result: string
+          opponent_team_id: string
+          points: number
+          second_opponent_team_id: string
+          second_result: string
+          team_id: string
         }[]
       }
       week_results_pending_internal: {

@@ -407,3 +407,28 @@ describe('mintScheduleSeed — §11.7 (migration 110): the seed is minted from t
     expect(leagueSettingsSchema.safeParse({ schedule_seed: mintScheduleSeed('ffffffff-0000-4000-8000-000000000000') }).success).toBe(true)
   })
 })
+
+describe('validateLeagueSettings — Q39 (C): playoff_teams × schedule_mode (spec §7.3.1 / §11.7 v2.16.25; migration 118)', () => {
+  it('total_points + playoff_teams > 0 → ONE per-field error on playoff_teams, the message naming the rule', () => {
+    const s = { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), schedule_mode: 'total_points' as const, playoff_teams: 6 as const }
+    const result = validateLeagueSettings(s)
+    expect(result.valid).toBe(false)
+    expect(result.errors).toStrictEqual([
+      {
+        field: 'playoff_teams',
+        message:
+          'A total-points league has no playoff bracket — the season-long points race is the playoff. Set playoff teams to 0 (currently 6) or switch to head-to-head.',
+      },
+    ])
+  })
+
+  it('total_points + playoff_teams 0 validates clean (one unit away)', () => {
+    const s = { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), schedule_mode: 'total_points' as const, playoff_teams: 0 as const }
+    expect(validateLeagueSettings(s).errors).toStrictEqual([])
+  })
+
+  it('h2h + playoff_teams 6 validates clean (the other unit — the refusal is the PAIR)', () => {
+    const s = { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), schedule_mode: 'h2h' as const, playoff_teams: 6 as const }
+    expect(validateLeagueSettings(s).errors).toStrictEqual([])
+  })
+})

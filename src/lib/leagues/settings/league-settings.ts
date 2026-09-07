@@ -524,6 +524,22 @@ export function validateLeagueSettings(s: LeagueSettings, ctx: { draftablePoolSi
     })
   }
 
+  // §7.3.1 / §11.7 (v2.16.25 — Q39 (C), Chris 2026-09-07): a total-points
+  // league has NO playoff bracket — the season-long points race IS its
+  // playoff — so `playoff_teams` must be 0 under `schedule_mode =
+  // 'total_points'`. Migration 118 refuses the pair in `create_league` /
+  // `update_league_settings` (P0001; the message names `playoff_teams`) and
+  // backstops it with a CHECK; this is the API-side enforcement point every
+  // create/PATCH runs first, so the DB refusal is the direct-caller's.
+  if (s.schedule_mode === 'total_points' && s.playoff_teams > 0) {
+    errors.push({
+      field: 'playoff_teams',
+      message:
+        `A total-points league has no playoff bracket — the season-long points race is the playoff. ` +
+        `Set playoff teams to 0 (currently ${s.playoff_teams}) or switch to head-to-head.`,
+    })
+  }
+
   // §7.3.1 R column (v2.16.12, Q31 rider (3)): the CREATION-and-edit ranges —
   // 12–15 / 13–16 — are enforced HERE, not at parse: the Zod schema's parse
   // range is the EFFECTIVE range (≥ 4 / ≥ 5) so an engine-shrunk mid-season
