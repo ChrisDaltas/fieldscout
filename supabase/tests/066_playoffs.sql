@@ -88,7 +88,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(157);
+select plan(187);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -468,6 +468,9 @@ select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-00000000
 select is((select status from leagues where id = 'b8000000-0000-4000-8000-000000000001') || ':' || (select count(*)::int from matchups where league_id = 'b8000000-0000-4000-8000-000000000001' and week = 7)::text, 'in_season:1',
   'G2d …P1 stays in_season with the one foreign row only');
 select is(current_setting('pgtap.r')::jsonb -> 'bracket_failures', '[]'::jsonb, 'G2e …a named skip is not a failure');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_blocked',
+  '[{"league_id": "b8000000-0000-4000-8000-000000000001", "reason": "bracket_foreign_rows", "round": 1, "rows": 1, "weeks": [7, 7]}]'::jsonb,
+  'G2f …but the advance payload NAMES the blocked bracket (R841: `bracket_blocked` — a human must act; a direct sync call is no longer the only way to see it)');
 -- P5 (no foreign row) built at the same instant — the DoD tie fixture.
 select is((pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000005') ->> 'action') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000005') ->> 'round') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000005') ->> 'source') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000005') ->> 'status_flipped'),
   'built:1:provisional:true', 'G3 P5: round 1 BUILT at the rollover, source provisional (week 6 in its correction window), status flipped');
@@ -483,8 +486,25 @@ select is((pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000002') || pg_tem
 select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000002', '2026-10-20 04:00:00+00') - 'open_weeks',
   '{"kind": "no_playoffs", "reason": "waiting_regular_season"}'::jsonb, 'G3g …P2 says so by name');
 select is(current_setting('pgtap.r')::jsonb ->> 'reason', null, 'G3h …the advance payload''s reason is NULL (something happened)');
--- The foreign row removed: the very next run builds P1 (the retry).
+-- The foreign row removed — but the held week's A–E row is now UNSCORED
+-- (NULL: the worker marked it pending, E61). R840 (§23.2 "no league state
+-- is ever advanced on partial data"): a provisional bracket is never seeded
+-- from an ABSENT score — "provisional" means every score WRITTEN, none yet
+-- final. The bracket WAITS by name; nothing is written; in_season stays.
 delete from matchups where id = 'd8000000-0000-4000-8000-000000000171';
+update matchups set away_score = null where id = 'd8000000-0000-4000-8000-000000000161';   -- A–E week 6: E's score pending
+select is(public.week_results_pending_internal('b8000000-0000-4000-8000-000000000001', 2026, 6), '{"reason": "pending_scores", "pending": 1}'::jsonb,
+  'G3i the premise: week 6 is PENDING by finalization''s own reading (one NULL score — the ONE pending question, D137)');
+select set_config('pgtap.r', public.league_week_advance('2026-10-20 04:00:00+00')::text, true);
+select is(pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000001'), '{}'::jsonb, 'G3j R840: NO bracket action at the rollover — an absent score is not a 0.00 seed');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_waiting',
+  '[{"league_id": "b8000000-0000-4000-8000-000000000001", "reason": "bracket_waiting", "round": 1, "source": "provisional", "weeks": [7, 7], "pending": [{"week": 6, "reason": "pending_scores", "pending": 1}]}]'::jsonb,
+  'G3k …the advance payload NAMES the waiting bracket with the pending week (R841: `bracket_waiting`)');
+select is((select status from leagues where id = 'b8000000-0000-4000-8000-000000000001') || ':' || (select count(*)::int from matchups where league_id = 'b8000000-0000-4000-8000-000000000001' and round_type = 'playoff'), 'in_season:0',
+  'G3l …in_season, no playoff row — never a status flip on partial data (§23.2)');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_failures' || (current_setting('pgtap.r')::jsonb -> 'bracket_blocked'), '[]'::jsonb, 'G3m …neither a failure nor a block — waiting is its own named state, retried next run');
+-- The score lands (scored ⇒ built): the very next run builds P1 (the retry).
+update matchups set away_score = 90.00 where id = 'd8000000-0000-4000-8000-000000000161';
 select set_config('pgtap.r', public.league_week_advance('2026-10-20 04:00:00+00')::text, true);
 select is((current_setting('pgtap.r')::jsonb ->> 'closed')::int || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000001') ->> 'action') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000001') ->> 'source'),
   '0:built:provisional', 'G4 the retry: nothing new closes, P1 round 1 is BUILT provisional');
@@ -546,6 +566,7 @@ select is((pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000003') ->> 'acti
 select is((select status || ':' || right(champion_team_id::text, 2) from leagues where id = 'b8000000-0000-4000-8000-000000000003'), 'complete:31', 'H6b …P3 complete, champion K');
 select is((select count(*)::int from matchups where league_id = 'b8000000-0000-4000-8000-000000000003'), 0, 'H6c …P3 has no matchup row of any kind');
 select is(current_setting('pgtap.r')::jsonb -> 'bracket_failures', '[]'::jsonb, 'H7 no bracket failure across the four');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_blocked' || (current_setting('pgtap.r')::jsonb -> 'bracket_waiting'), '[]'::jsonb, 'H7b …and finalize''s payload carries the R841 keys, empty (nothing blocked, nothing waiting)');
 select is(pg_temp.pb_rec('b8000000-0000-4000-8000-000000000005', false), '51:8-0-0:400.00,53:4-4-0:340.00,52:4-4-0:340.00,54:0-8-0:310.00',
   'H8 P5 FINAL ≡ its projection at E6 — the projected median arm derives what finalization writes');
 select is((select x ->> 'separated_by' from jsonb_array_elements(public.league_standings('b8000000-0000-4000-8000-000000000005') -> 'standings') x where (x ->> 'rank')::int = 3), 'head_to_head',
@@ -670,9 +691,39 @@ select set_config('request.jwt.claims', '', true);
 update leagues set playoff_teams = 2 where id = 'b8000000-0000-4000-8000-000000000003';
 select is((public.playoff_bracket_state_internal('b8000000-0000-4000-8000-000000000003') ->> 'kind') || ':' || (public.playoff_bracket_state_internal('b8000000-0000-4000-8000-000000000003') ->> 'playoff_teams'),
   'points_race:2', 'K1 a STORED total_points + playoff_teams 2 pair (a pre-118 row; 058 L8 / 059 LT model it) reads as a points race — the MODE is what the engine reads, never playoff_teams');
-select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000003', '2026-11-12 10:00:00+00'), '{"reason": "not_in_play", "status": "complete"}'::jsonb,
-  'K1b …and the sync on it is the no-bracket path (here: the completed league, refused by name — never a bracket write)');
 update leagues set playoff_teams = 0 where id = 'b8000000-0000-4000-8000-000000000003';
+-- R842: the SYNC on an IN-SEASON league storing the pair — P4 (total_points +
+-- playoff_teams 2, the pre-118 row shape): the no-bracket arm waits for the
+-- regular season AS A POINTS RACE, then (D) completes it through the same
+-- arm — never a bracket write, whatever playoff_teams stores.
+insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
+                     scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings) values
+ ('b8000000-0000-4000-8000-000000000004', '98000000-0000-4000-8000-000000000001', 'pgtap-pb-P4', 2026, 'in_season', 8, 4, 2, 5,
+  (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+  (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
+  'per_player_kickoff',
+  '{"schedule_mode": "total_points", "median_game": false, "second_opponent": false, "schedule_seed": 4}',
+  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}');
+insert into teams (id, owner_id, name, league_id) values
+ ('c8000000-0000-4000-8000-000000000041', '98000000-0000-4000-8000-000000000001', 'PB U', 'b8000000-0000-4000-8000-000000000004'),
+ ('c8000000-0000-4000-8000-000000000042', '98000000-0000-4000-8000-000000000001', 'PB V', 'b8000000-0000-4000-8000-000000000004');
+insert into league_weeks (league_id, season, week) select 'b8000000-0000-4000-8000-000000000004', 2026, g from generate_series(3, 6) g;
+select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000004', '2026-10-20 04:00:00+00') - 'open_weeks', '{"kind": "points_race", "reason": "waiting_regular_season"}'::jsonb,
+  'K1b the sync on an IN-SEASON stored pair: `waiting_regular_season` as a POINTS RACE (playoff_teams 2 notwithstanding) — the no-bracket arm');
+select is((select string_agg((w ->> 'week') || ':' || (w ->> 'status'), ',') from jsonb_array_elements(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000004', '2026-10-20 04:00:00+00') -> 'open_weeks') w), '3:upcoming,4:upcoming,5:upcoming,6:upcoming',
+  'K1c …the open weeks named');
+-- The season played out: the worker''s rows final, weeks 3–6 final along the F4 chain.
+insert into team_week_results (league_id, team_id, season, week, points, is_final)
+select 'b8000000-0000-4000-8000-000000000004', ('c8000000-0000-4000-8000-0000000000' || (40 + t)::text)::uuid, 2026, w, 110 - 10 * t, true
+from generate_series(1, 2) t, generate_series(3, 6) w;
+update league_weeks set status = 'live'              where league_id = 'b8000000-0000-4000-8000-000000000004';
+update league_weeks set status = 'correction_window' where league_id = 'b8000000-0000-4000-8000-000000000004';
+update league_weeks set status = 'final'             where league_id = 'b8000000-0000-4000-8000-000000000004';
+select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000004', '2026-11-12 10:00:00+00') - 'separated_by',
+  '{"kind": "points_race", "action": "complete", "basis": "standings_rank_1", "champion_team_id": "c8000000-0000-4000-8000-000000000041", "from_status": "in_season"}'::jsonb,
+  'K1d …(D) through the no-bracket arm: COMPLETE, champion U (the points leader, 400 over 360) — the stored playoff_teams 2 wrote nothing');
+select is((select status || ':' || right(champion_team_id::text, 2) from leagues where id = 'b8000000-0000-4000-8000-000000000004') || ':' || (select count(*)::int from matchups where league_id = 'b8000000-0000-4000-8000-000000000004'), 'complete:41:0',
+  'K1e …the column says so; no matchup row of any kind');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_like(
@@ -710,6 +761,107 @@ select lives_ok(
 select is((select playoff_teams || ':' || (settings ->> 'schedule_mode') from public.leagues where creation_action_id = 'ad118000-0000-4000-8000-000000000002'), '4:h2h', 'K3c …and landed');
 reset role;
 select set_config('request.jwt.claims', '', true);
+
+-- ---------------------------------------------------------------------------
+-- L. R839 — a PLAYED round is HISTORY. The last regular week is HELD past
+--    round 1's games (an open in-week NFL game — the F238/Q37 family: no
+--    finalize of week 6 while it stands, §23.2); round 1 is built
+--    provisional, played, rolled; round 2 built; THEN the week-6 correction
+--    moves the verdict. The rewrite is REFUSED BY NAME, both rounds
+--    byte-identical, and the block LIFTS when the played round finalizes
+--    (117's loop skips the held week by name and finalizes week 7 on its
+--    own). P6 alone on the calendar — the four leagues are `complete`,
+--    never claimed. P6 (h2h, 4 teams T1–T4 = 61–64, rsw 4 = weeks 3–6,
+--    playoff_teams 4 ⇒ rounds 2 = weeks 7–8, reseed on):
+--      W3: T1–T2 100/80 · T3–T4 90/85   W4: T1–T3 100/80 · T2–T4 90/70
+--      W5: T1–T4 100/70 · T2–T3 90/80   W6: T1–T2 100/80 · T3–T4 85/90 (the CORRECTION → 95/90)
+--      provisional: T1 4-0/400 · T2 2-2/340 · T3 1-3/335 · T4 1-3/315 ⇒ 1v4 T1–T4, 2v3 T2–T3
+--      corrected:   T1 4-0/400 · T3 2-2/345 · T2 2-2/340 · T4 0-4/315 ⇒ 1v4 T1–T4, 2v3 T3–T2 (the pair flips)
+--      round 1 played: T1 100 / T4 90 · T2 80 / T3 95 ⇒ T1, T3 ⇒ round 2 T1 v T3
+-- ---------------------------------------------------------------------------
+insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
+                     scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings) values
+ ('b8000000-0000-4000-8000-000000000006', '98000000-0000-4000-8000-000000000001', 'pgtap-pb-P6', 2026, 'in_season', 8, 4, 4, 5,
+  (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+  (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
+  'per_player_kickoff',
+  '{"schedule_mode": "h2h", "median_game": false, "second_opponent": false, "schedule_seed": 6, "playoff_weeks_per_round": 1, "playoff_reseed": true}',
+  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}');
+insert into teams (id, owner_id, name, league_id)
+select ('c8000000-0000-4000-8000-0000000000' || (60 + i)::text)::uuid, '98000000-0000-4000-8000-000000000001', 'PB T' || i, 'b8000000-0000-4000-8000-000000000006'
+from generate_series(1, 4) i;
+insert into league_weeks (league_id, season, week) select 'b8000000-0000-4000-8000-000000000006', 2026, g from generate_series(3, 8) g;
+update league_weeks set status = 'live'              where league_id = 'b8000000-0000-4000-8000-000000000006' and week between 3 and 5;
+update league_weeks set status = 'correction_window' where league_id = 'b8000000-0000-4000-8000-000000000006' and week between 3 and 5;
+insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_score, away_score, status) values
+ ('d8000000-0000-4000-8000-000000000631', 'b8000000-0000-4000-8000-000000000006', 2026, 3, 'regular', 'c8000000-0000-4000-8000-000000000061', 'c8000000-0000-4000-8000-000000000062', 100.00, 80.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000632', 'b8000000-0000-4000-8000-000000000006', 2026, 3, 'regular', 'c8000000-0000-4000-8000-000000000063', 'c8000000-0000-4000-8000-000000000064',  90.00, 85.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000641', 'b8000000-0000-4000-8000-000000000006', 2026, 4, 'regular', 'c8000000-0000-4000-8000-000000000061', 'c8000000-0000-4000-8000-000000000063', 100.00, 80.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000642', 'b8000000-0000-4000-8000-000000000006', 2026, 4, 'regular', 'c8000000-0000-4000-8000-000000000062', 'c8000000-0000-4000-8000-000000000064',  90.00, 70.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000651', 'b8000000-0000-4000-8000-000000000006', 2026, 5, 'regular', 'c8000000-0000-4000-8000-000000000061', 'c8000000-0000-4000-8000-000000000064', 100.00, 70.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000652', 'b8000000-0000-4000-8000-000000000006', 2026, 5, 'regular', 'c8000000-0000-4000-8000-000000000062', 'c8000000-0000-4000-8000-000000000063',  90.00, 80.00, 'live'),
+ ('d8000000-0000-4000-8000-000000000661', 'b8000000-0000-4000-8000-000000000006', 2026, 6, 'regular', 'c8000000-0000-4000-8000-000000000061', 'c8000000-0000-4000-8000-000000000062', 100.00, 80.00, 'scheduled'),
+ ('d8000000-0000-4000-8000-000000000662', 'b8000000-0000-4000-8000-000000000006', 2026, 6, 'regular', 'c8000000-0000-4000-8000-000000000063', 'c8000000-0000-4000-8000-000000000064',  85.00, 90.00, 'scheduled');
+-- The hold: a week-6 game that never goes final and never leaves the week
+-- (its kickoff stays before week 7's starts_at — E43's "left the week" does
+-- not apply; the games gate reads it as OPEN).
+insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status)
+values ('pb-w6-held', 2026, 6, 'DAL', 'PHI', '2026-10-18 17:00:00+00', 'postponed');
+select is((select open_games || ':' || postponed_games || ':' || all_final::text from public.week_games_state_internal(2026, 6)), '1:0:false',
+  'L0 the premise: week 6 holds ONE open in-week game — no finalize of week 6 while it stands (§23.2; the F238/Q37 family)');
+select set_config('pgtap.r', public.finalize_matchups('2026-10-15 10:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'leagues')::int || ':' || (current_setting('pgtap.r')::jsonb ->> 'finalized'), '1:3',
+  'L1 P6 weeks 3–5 finalize — the ONLY league claimed (the four are complete)');
+select set_config('pgtap.r', public.league_week_advance('2026-10-14 04:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'opened')::int, 1, 'L1b P6 week 6 opens at its starts_at');
+select set_config('pgtap.r', public.league_week_advance('2026-10-20 04:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'closed')::int || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000006') ->> 'action') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000006') ->> 'source') || ':' || pg_temp.pb_round('b8000000-0000-4000-8000-000000000006', 7, 7),
+  '1:built:provisional:1:61v4:64,2:62v3:63',
+  'L2 the rollover: round 1 built PROVISIONAL from the projected table — T1 v T4, T2 v T3 (every score WRITTEN; an open game is not a score hold — R840 passes)');
+select is((select status from leagues where id = 'b8000000-0000-4000-8000-000000000006'), 'playoffs', 'L2b …in_season → playoffs');
+-- Week 7 opens; week 6's close is HELD by the open game; the worker marks a
+-- week-6 score pending for one run (R841 on the close job: the WAIT is named
+-- on finalize's payload too); then the score lands and round 1 is played.
+select set_config('pgtap.r', public.league_week_advance('2026-10-21 04:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'opened')::int || ':' || (current_setting('pgtap.r')::jsonb ->> 'matchups_live'), '1:2', 'L3 week 7 opens; the two bracket rows go live');
+update matchups set away_score = null where id = 'd8000000-0000-4000-8000-000000000662';
+select set_config('pgtap.r', public.finalize_matchups('2026-10-22 10:00:00+00')::text, true);
+select is((select string_agg((s ->> 'week') || ':' || (s ->> 'reason'), ',') from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') s where s ->> 'league_id' = 'b8000000-0000-4000-8000-000000000006') || '|' || (current_setting('pgtap.r')::jsonb ->> 'finalized'),
+  '6:games_not_final|0', 'L4 the close: week 6 SKIPPED by name (the open game) — held');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_waiting',
+  '[{"league_id": "b8000000-0000-4000-8000-000000000006", "reason": "bracket_waiting", "round": 1, "source": "provisional", "weeks": [7, 7], "pending": [{"week": 6, "reason": "pending_scores", "pending": 1}]}]'::jsonb,
+  'L4b …and finalize''s payload NAMES the waiting bracket (R841 on the close job; R840: a score gone pending behind a BUILT round holds its rewrite too — the stored round stands)');
+select is(pg_temp.pb_round('b8000000-0000-4000-8000-000000000006', 7, 7), '1:61v4:64,2:62v3:63', 'L4c …round 1 untouched by the wait');
+update matchups set away_score = 90.00 where id = 'd8000000-0000-4000-8000-000000000662';
+update matchups set home_score = 100.00, away_score = 90.00 where league_id = 'b8000000-0000-4000-8000-000000000006' and week = 7 and home_seed = 1;   -- T1 100 / T4 90
+update matchups set home_score =  80.00, away_score = 95.00 where league_id = 'b8000000-0000-4000-8000-000000000006' and week = 7 and home_seed = 2;   -- T2 80 / T3 95
+select set_config('pgtap.r', public.league_week_advance('2026-10-27 04:00:00+00')::text, true);
+select is((current_setting('pgtap.r')::jsonb ->> 'closed')::int || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000006') ->> 'action') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000006') ->> 'round') || ':' || (pg_temp.pb_brackets('b8000000-0000-4000-8000-000000000006') ->> 'source') || ':' || pg_temp.pb_round('b8000000-0000-4000-8000-000000000006', 8, 8),
+  '1:built:2:provisional:1:61v3:63',
+  'L5 week 7 rolls: round 2 built PROVISIONAL from round 1''s provisional verdict — T1 v T3 (the regular season still held; round 1 is now rolled AND scored)');
+-- THE MOVED VERDICT: the week-6 correction lands with round 1 PLAYED and round 2 built.
+update matchups set home_score = 95.00 where id = 'd8000000-0000-4000-8000-000000000662';   -- T3–T4 85/90 → 95/90: T3 2-2/345 passes T2 2-2/340 ⇒ seed 2
+select set_config('pgtap.d', pg_temp.pb_digest('b8000000-0000-4000-8000-000000000006', 7, 8), true);
+select set_config('pgtap.r', public.league_week_advance('2026-10-27 05:00:00+00')::text, true);
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_blocked',
+  '[{"league_id": "b8000000-0000-4000-8000-000000000006", "reason": "rebuild_refused_round_played", "round": 1, "source": "provisional", "weeks": [7, 7], "rolled": true, "scored_rows": 2, "stored": "1:c8000000-0000-4000-8000-000000000061v4:c8000000-0000-4000-8000-000000000064,2:c8000000-0000-4000-8000-000000000062v3:c8000000-0000-4000-8000-000000000063", "desired": "1:c8000000-0000-4000-8000-000000000061v4:c8000000-0000-4000-8000-000000000064,2:c8000000-0000-4000-8000-000000000063v3:c8000000-0000-4000-8000-000000000062"}]'::jsonb,
+  'L6 R839: the next tick REFUSES the rewrite BY NAME — the prior stage now says T3 v T2, the stored round is T2 v T3 and PLAYED (rolled, two scored rows); the job payload names it BLOCKED (R841)');
+select is(pg_temp.pb_digest('b8000000-0000-4000-8000-000000000006', 7, 8), current_setting('pgtap.d'), 'L6b THE R839 GOLDEN: rounds 1 AND 2 byte-identical — the played rows are not wiped, round 2 is not re-paired (the cascade stops at the refusal)');
+select is(current_setting('pgtap.r')::jsonb -> 'brackets' || (current_setting('pgtap.r')::jsonb -> 'bracket_failures'), '[]'::jsonb, 'L6c …no action, no failure');
+select is((select status from leagues where id = 'b8000000-0000-4000-8000-000000000006'), 'playoffs', 'L6d …still playoffs (nothing goes back — rider (vi))');
+select is((select count(*)::int from matchups where league_id = 'b8000000-0000-4000-8000-000000000006' and week = 7 and home_seed = 2 and home_score = 80.00 and away_score = 95.00), 1, 'L6e …the played T2–T3 row stands with its scores');
+select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000006', '2026-10-27 05:00:00+00') ->> 'reason', 'rebuild_refused_round_played', 'L6f …idempotent: the next call refuses again by the same name');
+-- The block LIFTS without a commissioner: the played round FINALIZES (week 7's
+-- own close — finalize skips the held week 6 by name and finalizes week 7);
+-- round 1 is then DECIDED — never compared — and its survivors feed round 2.
+select set_config('pgtap.r', public.league_week_advance('2026-10-28 04:00:00+00')::text, true);
+select set_config('pgtap.r', public.finalize_matchups('2026-10-29 10:00:00+00')::text, true);
+select is((select string_agg((s ->> 'week') || ':' || (s ->> 'reason'), ',') from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') s where s ->> 'league_id' = 'b8000000-0000-4000-8000-000000000006') || '|' || (current_setting('pgtap.r')::jsonb ->> 'finalized'),
+  '6:games_not_final|1', 'L7 week 7 finalizes BEHIND the held week 6 (each due week on its own — 117''s loop skips by name and moves on)');
+select is(current_setting('pgtap.r')::jsonb -> 'bracket_blocked', '[]'::jsonb, 'L7b …the block LIFTS: round 1 is decided (final rows) and never compared again');
+select is(public.playoff_bracket_sync_internal('b8000000-0000-4000-8000-000000000006', '2026-10-29 10:00:00+00'), '{"round": 2, "reason": "round_in_progress", "source": "final"}'::jsonb,
+  'L7c …the sync moves on to round 2 — in progress, its prior stage (round 1) final');
+select is(pg_temp.pb_round('b8000000-0000-4000-8000-000000000006', 8, 8) || '|' || pg_temp.pb_round('b8000000-0000-4000-8000-000000000006', 7, 7), '1:61v3:63|1:61v4:64,2:62v3:63', 'L7d …round 2 as built from the PLAYED round 1 (T1 v T3); round 1 as played');
 
 select * from finish();
 rollback;

@@ -19,7 +19,11 @@
 -- retired-team seam — D314(6)/R806), F212 (consolation + third-place
 -- DEFERRED — cited, not built), F241, F242 (DISCHARGED — pinned in 066),
 -- F253(a) (DISCHARGED — the projected standings arm lands here); tasks-M4 §4
--- standing rules 1–11; D318 (build mechanics).
+-- standing rules 1–11; D318 (build mechanics); the PR #264 fix round —
+-- R839 (a PLAYED round is history: a moved prior verdict is REFUSED by
+-- name, never a wipe), R840 (§23.2 / E61: a provisional build waits on a
+-- pending score — never a 0.00 seed, never a status flip), R841 (the jobs'
+-- `bracket_blocked` / `bracket_waiting` payload keys + WARNING).
 --
 -- Numbering: migration head measured 117 at task time (ls supabase/
 -- migrations/ | tail -1) ⇒ 118, pgTAP head 065 ⇒ 066 — confirmed with `ls`,
@@ -89,9 +93,15 @@
 --         NULL` with `home_seed` — 109's bye shape, so the bye team's seed
 --         is stored too). A round holding a `final` / overridden / decided
 --         row is HISTORY: the sync never recomputes it (a later reopen of the
---         regular season never reseeds a written round — pinned); a round
---         that is still open is rewritten when the prior stage's verdict
---         moved (that is (E)'s rebuild).
+--         regular season never reseeds a written round — pinned); so is a
+--         round that has ROLLED (every week correction_window / final) or
+--         carries a WRITTEN score (non-NULL, not 109's DEFAULT 0) — its
+--         games have been played: a prior verdict that moves after that is
+--         REFUSED BY NAME (`rebuild_refused_round_played` + WARNING; the
+--         commissioner's M6 edit or the round's own finalization lifts it —
+--         R839, 066 L); a round that is still open with the default scores
+--         is rewritten when the prior stage's verdict moved (that is (E)'s
+--         rebuild — the correction close precedes any playoff kickoff).
 --   (iv)  `leagues.champion_team_id UUID REFERENCES teams(id)` — a typed
 --         column, not a settings key: §11.5 "Champion recorded on
 --         `complete`" is a lifecycle fact the `complete` hero (§16.5.1) and
@@ -132,12 +142,14 @@
 --      (uuid)` (its 117 signature and output for the default arm, so 065's
 --      A3/A6 and every consumer hold) and `league_standings_projected(uuid)`.
 --   3. `league_week_advance` (116): the sync after the F238 block — inside
---      the league's subtransaction, in its OWN guarded block; two payload
---      keys (`brackets`, `bracket_failures`); `nothing_due` counts a bracket
+--      the league's subtransaction, in its OWN guarded block; four payload
+--      keys (`brackets`, `bracket_failures`, and — R841 — `bracket_blocked`
+--      for a seedless row / a refused rewrite, `bracket_waiting` for a
+--      pending prior stage, each + WARNING); `nothing_due` counts a bracket
 --      action. The claim loop, (a)/(b), the auto-carry, F238: 116's bytes.
 --   4. `finalize_matchups` (117): the sync after the league's weeks loop
---      (same guard shape); two payload keys; `nothing_finalized` counts a
---      bracket action. Gates, claims, skips, the F4 flip, the E43 note, the
+--      (same guard shape); the same four payload keys; `nothing_finalized`
+--      counts a bracket action. Gates, claims, skips, the F4 flip, the E43 note, the
 --      F244 locals: 117's bytes (the F244 fix is NOT regressed — the merge
 --      after the subtransaction is byte-identical; 065 C1–C1d green).
 --   5. `create_league` (077): ONE hunk after the Q10 backstops — the (C)
@@ -179,8 +191,14 @@
 --      into an open one — the advance job's (a) flips the former at open)
 --      or, when open and different from what the prior stage's verdict now
 --      says, REWRITTEN (delete + insert, seeds re-frozen); a decided round is
---      history; the champion + `complete` when the last round is `final`.
---      Every no-op says why (`reason`), every write says what (`action`).
+--      history, and so is a rolled or scored one — a moved verdict under it
+--      is REFUSED by name (R839); a PROVISIONAL build/rebuild first asks the
+--      prior stage's non-final weeks finalization's ONE pending question
+--      (`week_results_pending_internal`) and WAITS by name on any pending
+--      score — never a 0.00 seed, never a status flip (R840; "provisional"
+--      = every score written, none yet final); the champion + `complete`
+--      when the last round is `final`. Every no-op says why (`reason`),
+--      every write says what (`action`).
 --   9. `league_playoff_bracket(league)` — the member READ (DEFINER, in-body
 --      `is_league_member` — a non-member is refused by name; REVOKE FROM
 --      PUBLIC, anon): the state (7) plus, while the league is `in_season`,
@@ -235,14 +253,23 @@
 -- aggregate; the equal-sum arm), the (D) champion where rank 1 and the PF
 -- leader DIFFER, the total_points league that never enters the bracket
 -- path, the (C) refusals with their one-unit twins + the stored pair read
--- as a points race, the frozen
+-- as a points race (and the sync's no-bracket arm on an IN-SEASON stored
+-- pair — waiting as a points race, then (D)'s completion), the frozen
 -- round under a corrupted regular season, forward-only (a complete league
--- untouched), and F242's no-later-row cell. Break probes (PR body): (1) the
+-- untouched), F242's no-later-row cell; the fix round's cells — a NULL
+-- score at the rollover ⇒ no build, in_season, `bracket_waiting` on both
+-- jobs' payloads (R840/R841), a seedless row ⇒ `bracket_blocked` (R841),
+-- and the PLAYED round under a moved prior verdict (a held last regular
+-- week outliving round 1's games) ⇒ REFUSED by name, rounds 1 and 2
+-- byte-identical, the block lifting at the played round's own finalize
+-- (R839, 066 L). Break probes (PR body): (1) the
 -- DoD's — seed from raw Win % instead of the standings → the tie-fixture
 -- golden red; (2) reseed ignored → the divergence cell red; (3) F242's
 -- clause deleted → the new cell red; (4) the lower seed advances a tie →
 -- red; (5) the bracket built at `starts_at` → the rollover cell red; (6)
--- the (C) refusal dropped → red.
+-- the (C) refusal dropped → red; (7) the R839 history guard removed → the
+-- byte-identical cell red and the played rows wiped; (8) the R840 pending
+-- gate removed → a 0.00 seed and a status flip (red).
 --
 -- Migration checklist (plan §8.1): three columns (`leagues.champion_team_id`,
 -- `matchups.home_seed` / `away_seed`) + the seed CHECKs on `matchups`
@@ -1285,6 +1312,12 @@ DECLARE
   v_champion  UUID;
   v_n         INTEGER;
   v_open      JSONB;
+  v_played    INTEGER;
+  v_pending   JSONB;
+  v_pend      JSONB;
+  v_w         RECORD;
+  v_prev_wk_first INTEGER;
+  v_prev_wk_last  INTEGER;
 BEGIN
   -- Rule 8: the league row first (the jobs hold it already — free).
   SELECT l.* INTO v_league FROM public.leagues l
@@ -1413,6 +1446,45 @@ BEGIN
       CONTINUE;
     END IF;
 
+    -- R840 (§23.2 / E61): a PROVISIONAL build or rebuild is never seeded
+    -- from an ABSENT score. "Provisional" means every score of the prior
+    -- stage is WRITTEN and none is yet final — so before either write the
+    -- prior stage's non-final weeks are asked the ONE pending question
+    -- finalization asks (`week_results_pending_internal`, D137: a NULL
+    -- score on any matchup / a seated team without a result row); any
+    -- pending ⇒ the bracket WAITS by name — nothing written, no status
+    -- flip, retried next run. (The projected READ still shows 0.00 so far —
+    -- a view, never a write.) A FINAL prior stage passed this gate when it
+    -- finalized.
+    IF NOT v_prev_final THEN
+      IF v_r = 1 THEN
+        v_prev_wk_first := (v_state -> 'regular_season' ->> 'first_week')::int;
+        v_prev_wk_last  := (v_state -> 'regular_season' ->> 'last_week')::int;
+      ELSE
+        v_prev_wk_first := v_wk_first - v_wpr;
+        v_prev_wk_last  := v_wk_first - 1;
+      END IF;
+      v_pending := '[]'::jsonb;
+      FOR v_w IN
+        SELECT lw.week
+        FROM public.league_weeks lw
+        WHERE lw.league_id = p_league_id AND lw.season = v_league.season
+          AND lw.week >= v_prev_wk_first AND lw.week <= v_prev_wk_last
+          AND lw.status <> 'final'
+        ORDER BY lw.week
+      LOOP
+        v_pend := public.week_results_pending_internal(p_league_id, v_league.season, v_w.week);
+        IF v_pend IS NOT NULL THEN
+          v_pending := v_pending || (jsonb_build_object('week', v_w.week) || v_pend);
+        END IF;
+      END LOOP;
+      IF jsonb_array_length(v_pending) > 0 THEN
+        RETURN jsonb_build_object('reason', 'bracket_waiting', 'round', v_r, 'source', 'provisional',
+                                  'weeks', jsonb_build_array(v_wk_first, v_wk_last),
+                                  'pending', v_pending);
+      END IF;
+    END IF;
+
     -- The entrants: round 1 from the standings (the FINAL arm once the
     -- regular season is final, the PROJECTED arm while it is in its
     -- correction window — (E)); a later round from the prior round's
@@ -1457,6 +1529,41 @@ BEGIN
       v_prev_final  := (v_round ->> 'final')::boolean;
       v_prev_roll_at := (v_round ->> 'rollover_at')::timestamptz;
       CONTINUE;
+    END IF;
+
+    -- R839: a round is HISTORY once it has ROLLED (every week of it
+    -- `correction_window` / `final`) OR any of its rows carries a WRITTEN
+    -- score (non-NULL and not 109's untouched DEFAULT 0) — its games have
+    -- been played. A prior verdict that moves AFTER that (the F238 / Q37
+    -- family: a held finalization on the last regular week outliving the
+    -- round's kickoff) is REFUSED BY NAME: nothing deleted, nothing
+    -- re-paired, later rounds not revisited — the bracket stands as played
+    -- until a commissioner acts (M6 §10: a row written with seeds is the
+    -- engine's) or the round finalizes (then it is decided, above, and its
+    -- survivors feed the next). The ruled rebuild ((E): the correction
+    -- close, Thursday 06:00 ET, before any playoff kickoff) meets neither
+    -- arm — an open week with the default scores is rewritable.
+    IF v_stored_txt IS NOT NULL THEN
+      SELECT count(*)::int INTO v_played
+      FROM public.matchups m
+      WHERE m.league_id = p_league_id AND m.season = v_league.season
+        AND m.week >= v_wk_first AND m.week <= v_wk_last
+        AND m.round_type = 'playoff' AND m.home_seed IS NOT NULL
+        AND (   (m.home_score IS NOT NULL AND m.home_score <> 0)
+             OR (m.away_score IS NOT NULL AND m.away_score <> 0));
+      IF (v_round ->> 'rolled')::boolean OR v_played > 0 THEN
+        RAISE WARNING 'playoff_bracket_sync_internal: league % round % is HISTORY (rolled %, % scored rows) but the prior stage''s verdict now says % (stored %) — the rewrite is REFUSED; the bracket stands as played until a commissioner acts (M6 §10) or the round finalizes',
+          p_league_id, v_r, (v_round ->> 'rolled')::boolean, v_played, v_desired_txt, v_stored_txt;
+        RETURN jsonb_build_object(
+          'reason',      'rebuild_refused_round_played',
+          'round',       v_r,
+          'source',      CASE WHEN v_prev_final THEN 'final' ELSE 'provisional' END,
+          'weeks',       jsonb_build_array(v_wk_first, v_wk_last),
+          'rolled',      (v_round ->> 'rolled')::boolean,
+          'scored_rows', v_played,
+          'stored',      v_stored_txt,
+          'desired',     v_desired_txt);
+      END IF;
     END IF;
 
     -- Write (round empty) or REWRITE (open round, the verdict moved): the
@@ -1647,6 +1754,8 @@ DECLARE
   v_bracket     JSONB;
   v_brackets    JSONB := '[]'::jsonb;
   v_bracket_failures JSONB := '[]'::jsonb;
+  v_bracket_blocked  JSONB := '[]'::jsonb;
+  v_bracket_waiting  JSONB := '[]'::jsonb;
 BEGIN
   IF auth.uid() IS NOT NULL THEN
     RAISE EXCEPTION 'league_week_advance: a job RPC is run by pg_cron or the service role, never by a signed-in user'
@@ -1775,6 +1884,18 @@ BEGIN
           v_bracket := public.playoff_bracket_sync_internal(v_lg.id, p_now);
           IF v_bracket ? 'action' THEN
             v_brackets := v_brackets || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+          -- R841: a bracket a HUMAN must unblock (a seedless playoff row; a
+          -- played round the prior verdict moved under — R839) is named on
+          -- the hourly payload + WARNING; one WAITING on pending scores
+          -- (R840, §23.2/E61) likewise — retried next run. The calendar
+          -- `waiting_*` states (the prior stage not yet rolled) are the
+          -- every-hour normal and stay out of the payload.
+          ELSIF v_bracket ->> 'reason' IN ('bracket_foreign_rows', 'rebuild_refused_round_played') THEN
+            v_bracket_blocked := v_bracket_blocked || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'league_week_advance: league % playoff bracket BLOCKED at round % — % (a commissioner must act — M6 §10; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket ->> 'reason';
+          ELSIF v_bracket ->> 'reason' = 'bracket_waiting' THEN
+            v_bracket_waiting := v_bracket_waiting || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'league_week_advance: league % playoff bracket round % WAITING — the prior stage holds pending scores % (§23.2/E61: never seeded from an absent score; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket -> 'pending';
           END IF;
         EXCEPTION WHEN OTHERS THEN
           v_bracket_failures := v_bracket_failures || jsonb_build_object(
@@ -1803,6 +1924,8 @@ BEGIN
     'unstamped_weeks', v_unstamped,
     'brackets',        v_brackets,
     'bracket_failures', v_bracket_failures,
+    'bracket_blocked', v_bracket_blocked,
+    'bracket_waiting', v_bracket_waiting,
     'failures',        v_failures,
     'loops',           v_loops,
     'reason', CASE
@@ -1859,6 +1982,8 @@ DECLARE
   v_bracket      JSONB;
   v_brackets     JSONB := '[]'::jsonb;
   v_bracket_failures JSONB := '[]'::jsonb;
+  v_bracket_blocked  JSONB := '[]'::jsonb;
+  v_bracket_waiting  JSONB := '[]'::jsonb;
 BEGIN
   IF auth.uid() IS NOT NULL THEN
     RAISE EXCEPTION 'finalize_matchups: a job RPC is run by pg_cron or the service role, never by a signed-in user'
@@ -2034,6 +2159,18 @@ BEGIN
           v_bracket := public.playoff_bracket_sync_internal(v_lg.id, p_now);
           IF v_bracket ? 'action' THEN
             v_brackets := v_brackets || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+          -- R841: a bracket a HUMAN must unblock (a seedless playoff row; a
+          -- played round the prior verdict moved under — R839) is named on
+          -- the hourly payload + WARNING; one WAITING on pending scores
+          -- (R840, §23.2/E61) likewise — retried next run. The calendar
+          -- `waiting_*` states (the prior stage not yet rolled) are the
+          -- every-hour normal and stay out of the payload.
+          ELSIF v_bracket ->> 'reason' IN ('bracket_foreign_rows', 'rebuild_refused_round_played') THEN
+            v_bracket_blocked := v_bracket_blocked || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'finalize_matchups: league % playoff bracket BLOCKED at round % — % (a commissioner must act — M6 §10; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket ->> 'reason';
+          ELSIF v_bracket ->> 'reason' = 'bracket_waiting' THEN
+            v_bracket_waiting := v_bracket_waiting || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'finalize_matchups: league % playoff bracket round % WAITING — the prior stage holds pending scores % (§23.2/E61: never seeded from an absent score; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket -> 'pending';
           END IF;
         EXCEPTION WHEN OTHERS THEN
           v_bracket_failures := v_bracket_failures || jsonb_build_object(
@@ -2066,6 +2203,8 @@ BEGIN
     'live_past_window', v_live_past,
     'brackets',         v_brackets,
     'bracket_failures', v_bracket_failures,
+    'bracket_blocked',  v_bracket_blocked,
+    'bracket_waiting',  v_bracket_waiting,
     'failures',         v_failures,
     'loops',            v_loops,
     'reason', CASE
