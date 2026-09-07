@@ -60,8 +60,9 @@ select has_table('public', 'matchups', 'matchups exists');
 select columns_are('public', 'matchups',
   array['id', 'league_id', 'season', 'week', 'round_type', 'home_team_id',
         'away_team_id', 'home_score', 'away_score', 'status', 'result',
-        'is_overridden', 'override_action_id', 'created_at', 'updated_at'],
-  'exact §12.8 column set');
+        'is_overridden', 'override_action_id', 'created_at', 'updated_at',
+        'home_seed', 'away_seed'],   -- +118: the frozen playoff seeds (Q39 rider (iii), L.D1.8)
+  'exact §12.8 column set (+ 118''s home_seed / away_seed)');
 select col_is_pk('public', 'matchups', 'id', 'matchups PK id');
 select fk_ok('public', 'matchups', 'league_id', 'public', 'leagues', 'id', 'matchups.league_id → leagues');
 select fk_ok('public', 'matchups', 'home_team_id', 'public', 'teams', 'id', 'matchups.home_team_id → teams');

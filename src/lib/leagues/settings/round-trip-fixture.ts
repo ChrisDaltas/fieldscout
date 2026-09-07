@@ -50,9 +50,9 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   team_count: 10,
   divisions: 2,
   regular_season_weeks: 13,
-  playoff_teams: 4,
+  playoff_teams: 0, // non-default (6); 0 because `schedule_mode` below is total_points — Q39 (C), v2.16.25: a total-points league has no bracket (migration 118 refuses > 0)
   playoff_start_week: 14, // = regular_season_weeks + 1 (the Q10/v2.8.6 seam) while both stay non-default — validity pinned in split-merge.test.ts
-  playoff_weeks_per_round: 2, // 4 teams → 2 rounds × 2 weeks → weeks 14–17 ≤ 18 ✓
+  playoff_weeks_per_round: 2, // non-default; with 0 playoff teams no round is scheduled (the ≤ 18 arithmetic is skipped, D60(5))
   playoff_byes: 'auto', // single-option field (derived)
   playoff_reseed: false,
   consolation_bracket: true,

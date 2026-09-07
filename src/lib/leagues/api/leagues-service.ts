@@ -71,6 +71,10 @@ const RPC_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
   // these first on THIS path, but if the DB refusal ever surfaces (validator
   // drift) it still maps to the same per-field 400 shape.
   { marker: 'playoff_start_week', field: 'playoff_start_week' },
+  // Q39 (C) / migration 118: `playoff_teams > 0` + total_points — the
+  // validator catches it first on this path; the DB refusal names
+  // `playoff_teams` and no other marker.
+  { marker: 'playoff_teams', field: 'playoff_teams' },
 ]
 
 export async function createLeague(supabase: Supabase, rawBody: unknown): Promise<ServiceResult> {
@@ -218,6 +222,9 @@ const PATCH_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
   { marker: 'playoff_start_week', field: 'playoff_start_week' },
   { marker: 'draft_scheduled_at', field: 'draft.draft_scheduled_at' },
   { marker: 'team_count', field: 'team_count' },
+  // Q39 (C) / migration 118 — `playoff_teams` (the message contains no other
+  // marker; `settings-round-trip-db.test.ts` pins the exact text).
+  { marker: 'playoff_teams', field: 'playoff_teams' },
 ]
 
 /** Shared error mapping for the two PATCH-path RPCs (D70). */

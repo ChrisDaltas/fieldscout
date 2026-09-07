@@ -12,10 +12,17 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { LEAGUE_SETTINGS_DEFAULTS, mergeSettings, splitSettings } from '@/lib/leagues/settings/league-settings'
+import { LEAGUE_SETTINGS_DEFAULTS, mergeSettings, splitSettings, validateLeagueSettings } from '@/lib/leagues/settings/league-settings'
 import type { LeagueRow } from '@/lib/leagues/settings/league-settings'
 
-import { DIVISION_OPTIONS, divisionSelectOptions } from './settings-panel-ops'
+import {
+  DIVISION_OPTIONS,
+  PLAYOFF_TEAMS_DEFAULT_HINT,
+  PLAYOFF_TEAMS_TOTAL_POINTS_HINT,
+  divisionSelectOptions,
+  playoffTeamsControl,
+  scheduleModePatch,
+} from './settings-panel-ops'
 
 describe('DIVISION_OPTIONS — divisions pinned at 1 for v1 (Q30 (d))', () => {
   it('the option list is exactly [1] — a stored literal', () => {
@@ -37,5 +44,26 @@ describe('DIVISION_OPTIONS — divisions pinned at 1 for v1 (Q30 (d))', () => {
     const { columns, blob } = splitSettings({ ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), divisions: 2 })
     expect('divisions' in columns).toBe(false)
     expect((blob as { divisions?: number }).divisions).toBe(2)
+  })
+})
+
+describe('playoffTeamsControl / scheduleModePatch — Q39 (C): a total-points league has no bracket (spec §7.3.1 / §11.7 v2.16.25; migration 118)', () => {
+  it('under total_points the Playoff-teams select is DISABLED and the hint says why', () => {
+    expect(playoffTeamsControl('total_points')).toStrictEqual({ disabled: true, hint: PLAYOFF_TEAMS_TOTAL_POINTS_HINT })
+    expect(PLAYOFF_TEAMS_TOTAL_POINTS_HINT).toBe('Total-points leagues have no bracket — the season-long points race is the playoff.')
+  })
+
+  it('under h2h it is enabled with the catalog hint', () => {
+    expect(playoffTeamsControl('h2h')).toStrictEqual({ disabled: false, hint: PLAYOFF_TEAMS_DEFAULT_HINT })
+  })
+
+  it('switching the schedule to total-points writes playoff_teams 0 in the SAME patch — the form never holds a value the validator refuses', () => {
+    expect(scheduleModePatch('total_points')).toStrictEqual({ schedule_mode: 'total_points', playoff_teams: 0 })
+    const patched = { ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), ...scheduleModePatch('total_points') }
+    expect(validateLeagueSettings(patched).errors.filter((e) => e.field === 'playoff_teams')).toStrictEqual([])
+  })
+
+  it('switching back to h2h touches only the mode (playoff_teams is the user\'s to set)', () => {
+    expect(scheduleModePatch('h2h')).toStrictEqual({ schedule_mode: 'h2h' })
   })
 })

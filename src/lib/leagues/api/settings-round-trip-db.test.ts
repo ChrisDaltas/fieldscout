@@ -63,6 +63,7 @@ import type { Database } from '@/types/database'
 import {
   DEFAULT_ROSTER_SETTINGS,
   defaultsForTeamCount,
+  splitSettings,
   validateLeagueSettings,
   type LeagueSettings,
 } from '../settings/league-settings'
@@ -99,6 +100,8 @@ const ACTION = {
   /** Batch-14 R84: the F28 shrink-floor mapping fixture (seats real
    *  franchises, so the floor is reachable). */
   floor: 'ad200000-0000-4000-8000-000000000005',
+  /** Q39 (C) / migration 118: the total_points × playoff_teams refusal. */
+  totalPoints: 'ad200000-0000-4000-8000-000000000006',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -1038,5 +1041,61 @@ describe('settings PATCH round-trip + lifecycle (061 — local stack, PostgREST 
     expect(await res.text()).toBe(
       '[{"roster_settings":{"bench": 6, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0, "starting_slots": [{"key": "qb", "count": 1, "label": "QB", "eligible": ["QB"]}, {"key": "rb", "count": 2, "label": "RB", "eligible": ["RB"]}, {"key": "wr", "count": 3, "label": "WR", "eligible": ["WR"]}, {"key": "te", "count": 1, "label": "TE", "eligible": ["TE"]}, {"key": "flex", "count": 1, "label": "FLEX (W/R/T)", "eligible": ["WR", "RB", "TE"]}, {"key": "k", "count": 1, "label": "K", "eligible": ["K"]}, {"key": "dst", "count": 1, "label": "D/ST", "eligible": ["DST"]}]}}]',
     )
+  })
+
+  // -------------------------------------------------------------------------
+  // C1c. Q39 (C) — migration 118: `playoff_teams > 0` + total_points is
+  //      refused at settings time. The ROUTE path meets validateLeagueSettings
+  //      first (per-field 400, no RPC); a DIRECT caller meets the RPC's own
+  //      refusal, whose message names `playoff_teams` and NO other
+  //      PATCH_FIELD_ERRORS marker (the disjointness the mapper relies on).
+  // -------------------------------------------------------------------------
+  describe('Q39 (C): total_points × playoff_teams (migration 118)', () => {
+    let tpLeagueId: string
+
+    beforeAll(async () => {
+      tpLeagueId = await createFixtureLeague(ACTION.totalPoints, 'tp')
+    }, 30_000)
+
+    it('the PATCH surface refuses per-field on playoff_teams BEFORE the RPC (validateLeagueSettings), no write', async () => {
+      const before = await getSettings(tpLeagueId)
+      const result = await patchLeague(creatorClient, tpLeagueId, {
+        settings: { ...defaultsForTeamCount(12), schedule_mode: 'total_points', playoff_teams: 6 },
+      })
+      expect(result.status).toBe(400)
+      const body = result.body as { error: { fieldErrors?: Record<string, string[]> } }
+      expect(body.error.fieldErrors?.playoff_teams).toStrictEqual([
+        'A total-points league has no playoff bracket — the season-long points race is the playoff. Set playoff teams to 0 (currently 6) or switch to head-to-head.',
+      ])
+      expect(await getSettings(tpLeagueId)).toStrictEqual(before)
+    })
+
+    it('total_points + playoff_teams 0 applies through the same path (one unit away)', async () => {
+      const result = await patchLeague(creatorClient, tpLeagueId, {
+        settings: { ...defaultsForTeamCount(12), schedule_mode: 'total_points', playoff_teams: 0 },
+      })
+      expect(result.status).toBe(200)
+      expect((await getSettings(tpLeagueId)).playoff_teams).toBe(0)
+    })
+
+    it('a DIRECT RPC caller meets the DB refusal — P0001, the message names playoff_teams and no other marker', async () => {
+      const { columns, blob } = splitSettings({ ...defaultsForTeamCount(12), schedule_mode: 'total_points', playoff_teams: 4 })
+      const args = Object.fromEntries(Object.entries(columns).map(([k, v]) => [`p_${k}`, v]))
+      const { error } = await creatorClient.rpc('update_league_settings', {
+        p_league_id: tpLeagueId,
+        p_settings: blob,
+        p_roster_settings: columns.roster_settings,
+        p_scoring_system_id: null,
+        ...args,
+      } as never)
+      expect(error?.code).toBe('P0001')
+      expect(error?.message).toBe(
+        'update_league_settings: playoff_teams must be 0 for a total-points league — the season-long points race is its playoff and there is no bracket; set playoff teams to 0 or switch to head-to-head (§11.7, Q39 (C))',
+      )
+      for (const other of ['scoring_system_id', 'playoff_start_week', 'draft_scheduled_at', 'team_count']) {
+        expect(error?.message.includes(other)).toBe(false)
+      }
+      expect((await getSettings(tpLeagueId)).playoff_teams).toBe(0)
+    })
   })
 })
