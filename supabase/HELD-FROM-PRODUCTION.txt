@@ -166,4 +166,20 @@
 # `team_week_results` / `team_lineups` / `league_chat`); reads outside it
 # are 116/117's SELECTs on `nfl_games` / `nfl_weeks` / `teams`. No cron row
 # added (the sync rides the two existing jobs).
-082-118
+# 119 (L.D1.9, 2026-09-07): in-season realtime + the scoring write door —
+# the four D296 Broadcast-from-DB triggers on `league:<league_id>`
+# (`matchups` × 3 single-event STATEMENT triggers, `team_week_results` × 2,
+# `transactions` row INSERT, `league_weeks` row UPDATE OF status) with
+# their column-select payload functions; `score_write_week_batch` (the
+# worker's ONE door — SECURITY DEFINER, service-role only; skips overridden /
+# final rows by name; NULL = pending, E61); `lineup_lock_tick` CREATE OR
+# REPLACE'd against 116's file text to send ONE coalesced
+# `league_player_pool` summary per league per pass (F252(a)); spec v2.16.27
+# §9.1 / §9.2 / §12.14 / §22.2 / §23.4. Same mechanism, same explicit act.
+# No launch-surface table is touched: every trigger and write is on the
+# leagues chain (`matchups`, `team_week_results`, `transactions`,
+# `league_weeks`, `league_player_pool`) plus `realtime.messages` inserts
+# through `realtime.send` (the 070 mechanism; no policy change); reads
+# outside the chain are 116's SELECTs on `nfl_games` / `nfl_weeks` /
+# `players` / `teams`. No publication change (D89), no cron row.
+082-119

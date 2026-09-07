@@ -15,14 +15,23 @@
  * (INSERT — a post whose `context` is not `draft:<id>` broadcasts to
  * `league:<league_id>`, 070:289).
  *
- * Arriving with L.D1.9's triggers (D296; migration 117 landed as the
- * standings, L.D1.7 — the triggers' number is the next free at L.D1.9):
- * `transactions` (INSERT — the activity feed's carrier), `matchups` (UPDATE
- * — the coalesced `scores_updated`), `team_week_results` (finalization) and
- * `league_weeks` (status flips). They are listed here BEFORE their triggers
- * exist on purpose: registering the listener now costs nothing, and it
- * means the feed starts moving the moment the triggers land rather than
- * needing this file edited again.
+ * Landed with L.D1.9's triggers (D296; migration 119): `transactions`
+ * (INSERT — the activity feed's carrier), `matchups` (a per-STATEMENT
+ * summary on INSERT / UPDATE / DELETE — the UPDATE is the coalesced
+ * `scores_updated`: ONE event per league per worker batch; INSERT/DELETE
+ * carry a Remix or a bracket (re)build), `team_week_results` (a per-
+ * statement summary — finalization, the rebuild, the door's provisional
+ * rows) and `league_weeks` (row UPDATE OF status). They were listed here
+ * BEFORE their triggers existed (L.D4.2) so the feed started moving the
+ * moment the triggers landed.
+ *
+ * Also landed with 119 (D319(6), F252(a)): `league_player_pool` — NOT a
+ * table trigger but ONE coalesced per-league summary `lineup_lock_tick`
+ * sends per pass that changed ≥ 1 pool row (a kickoff or a release
+ * instant): `{operation: 'UPDATE', record: {season, week, changed, at}}`.
+ * Its first subscriber is `use-rosters` (the 🔒 the lineup editor renders),
+ * which is why the name joins the closed set; L.D5.1's 60 s poll can retire
+ * (F259(a)).
  */
 export const LEAGUE_CHANNEL_EVENTS = [
   'leagues',
@@ -38,6 +47,7 @@ export const LEAGUE_CHANNEL_EVENTS = [
   // `use-rosters` (M4), which is why the name joins the closed set here and
   // not earlier.
   'league_rosters',
+  'league_player_pool',
 ] as const
 
 export type LeagueChannelEvent = (typeof LEAGUE_CHANNEL_EVENTS)[number]
@@ -160,14 +170,19 @@ export function standingsEventInvalidates(name: string): boolean {
  *
  * `league_rosters` (072 — LIVE TODAY, INSERT/UPDATE: a set_lineup's
  * `slot_key` write, a move's add row, an IR placement) is the roster's own
- * carrier; `transactions` (L.D1.9) is the move itself — a DROP is a DELETE
+ * carrier; `transactions` (119) is the move itself — a DROP is a DELETE
  * on `league_rosters`, which 072's trigger does not broadcast, so without
  * `transactions` a dropped player would stay on the rendered roster until a
- * rejoin. Both are needed; a score tick is not.
+ * rejoin; `league_player_pool` (119 — the tick's ONE coalesced summary per
+ * league per pass that changed a lock, D319(6)) is the 🔒 itself — the
+ * `game_lock` the rosters route derives from `league_player_pool.locked_until`
+ * — so a kickoff reaches an open lineup editor without the F252 poll. All
+ * three are needed; a score tick is not.
  */
 export const ROSTERS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
   'league_rosters',
   'transactions',
+  'league_player_pool',
 ]
 
 export function rostersEventInvalidates(name: string): boolean {
@@ -177,24 +192,21 @@ export function rostersEventInvalidates(name: string): boolean {
 /**
  * Which events make the SCHEDULE stale (§11.7/D298 — M4 task L.D5.3).
  *
- * `matchups` (a score tick or a status flip on a pairing row — L.D1.9's
- * trigger) and `league_weeks` (the status ladder the grid renders beside
- * every week) are the schedule's own carriers once the triggers land;
- * `league_chat` is the ONE carrier a Remix or a matchup edit has TODAY: 111
- * writes its D97 system post in the same transaction as the rows it
- * replaces, and a non-draft post broadcasts to `league:<id>` now (070), so
- * a confirm in one browser reaches another member's open schedule without
- * L.D1.9. The cost is named: a chat line re-reads two member tables
- * (`league_weeks` + `matchups`) for every open schedule page — accepted for
- * the schedule (a page the league opens rarely) where D310(4) refused it for
- * the feed's score tick. When L.D1.9's `matchups` trigger lands, the chat
- * arm can go. `team_week_results` (finalization — standings' business),
- * `transactions`, `league_rosters` and `leagues` do not move a pairing.
+ * `matchups` (119's per-statement trigger: a score tick, a status flip, AND
+ * a Remix's or a bracket (re)build's DELETE + INSERT — one event per
+ * statement) and `league_weeks` (the status ladder the grid renders beside
+ * every week) are the schedule's own carriers. `league_chat` WAS the
+ * stand-in a Remix or a matchup edit had before 119 (111's D97 system post
+ * broadcast in the same transaction — D317(4), F253(e)/F254(a)); the
+ * `matchups` trigger now carries the rows themselves, so the chat arm is
+ * gone: a chat line no longer re-reads two member tables for every open
+ * schedule page. `team_week_results` (finalization — standings' business),
+ * `transactions`, `league_rosters`, `league_player_pool` and `leagues` do
+ * not move a pairing.
  */
 export const SCHEDULE_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
   'matchups',
   'league_weeks',
-  'league_chat',
 ]
 
 export function scheduleEventInvalidates(name: string): boolean {

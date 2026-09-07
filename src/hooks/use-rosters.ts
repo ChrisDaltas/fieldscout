@@ -27,25 +27,22 @@ import { invalidatingHandlers, rostersEventInvalidates } from './use-league-chan
  *
  * LIVE: subscribed to `league:<id>` through the ONE spine (F233(a) — this
  * hook passes handlers, never opens a `.channel(`), refetching on
- * `league_rosters` (072's trigger, live today) and `transactions` (the drop
- * carrier once L.D1.9 lands — a DELETE on `league_rosters` does not
- * broadcast). The handler map is derived from `rostersEventInvalidates`
- * (R773). Every confirmed (re)join refetches (§9.3's missed-broadcast
- * recovery).
+ * `league_rosters` (072's trigger), `transactions` (119 — the drop carrier:
+ * a DELETE on `league_rosters` does not broadcast) and `league_player_pool`
+ * (119 — the lock carrier, below). The handler map is derived from
+ * `rostersEventInvalidates` (R773). Every confirmed (re)join refetches
+ * (§9.3's missed-broadcast recovery).
  *
- * **What NOTHING carries: the lock (R822(ii)).** `game_lock` is read from
- * `league_player_pool`, which the `lineup_lock_tick` rewrites every minute
- * from `nfl_games` (116) — and no trigger broadcasts that table (072's is on
- * `league_rosters`; D296's four are L.D1.9's and do not name the pool). With
- * the provider's `refetchOnWindowFocus: false` and no interval, a mounted
- * page would show the 🔒 it fetched at open until something else
- * invalidated the key (the `use-league.ts` measurement: no timer bounds
- * this). So a surface that renders the lock for the CURRENT week passes
- * `refetchInterval` — the tick's own cadence — and a surface that does not
- * (a past/future week, a roster list) passes nothing. The poll is the M4
- * interim (ledger **F252**); a pool broadcast is L.D1.9's to decide. React
- * Query's `refetchIntervalInBackground` default (false) keeps a hidden tab
- * quiet.
+ * **The lock IS carried now (R822(ii) → F252(a), decided at L.D1.9).**
+ * `game_lock` is read from `league_player_pool`, which `lineup_lock_tick`
+ * refreshes from `nfl_games` every minute (116); since 119 the tick sends
+ * ONE coalesced `league_player_pool` summary per league per pass that
+ * changed at least one lock (a kickoff or a release instant — never a quiet
+ * minute, never per row; D319(6)), and this hook refetches on it. The
+ * `refetchInterval` option remains for a surface that still wants a poll
+ * (L.D5.1's `lockPollInterval` — its retirement is F259(a), L.D5.4's);
+ * React Query's `refetchIntervalInBackground` default (false) keeps a hidden
+ * tab quiet.
  */
 
 export const leagueRosterKeys = {
