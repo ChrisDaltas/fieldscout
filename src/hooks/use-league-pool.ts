@@ -66,8 +66,15 @@ export interface PoolRow {
 }
 
 /** PostgREST's default cap; the pool is bounded by the players a league has
- *  touched (≤ rosters + drops) and is asserted below it rather than assumed. */
+ *  touched (≤ rosters + drops) and is asserted below it rather than assumed.
+ *  The guard THROWS (CLAUDE.md's exactly-1000 lesson: a capped read is not
+ *  the whole pool) in user-facing words, since `ProblemCard` renders the
+ *  message. The closer, when this read is next touched, is paging with
+ *  `.range()` over the same `player_id` order until a short page — R899 /
+ *  PROGRESS F278(h). Unreachable for the 2026 cohort (≤ 16 × 17 rostered +
+ *  the season's drops). */
 const POSTGREST_CAP = 1000
+export const POOL_TOO_LARGE_COPY = 'This league’s player pool is larger than one read can carry, so the list would be incomplete — try again later.'
 
 export function useLeaguePool(leagueId: string | undefined) {
   return useQuery({
@@ -83,7 +90,7 @@ export function useLeaguePool(leagueId: string | undefined) {
       if (error) throw error
       const rows = data ?? []
       if (rows.length >= POSTGREST_CAP) {
-        throw new Error(`league_player_pool: ${rows.length} rows reached PostgREST’s cap — the pool read is not whole`)
+        throw new Error(POOL_TOO_LARGE_COPY)
       }
       return rows.map((row) => ({
         player_id: row.player_id,
