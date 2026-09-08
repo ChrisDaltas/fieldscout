@@ -44,21 +44,27 @@ const SEGMENT_CONFIG_EXPORTS = [
   'runtime',
   'preferredRegion',
   'maxDuration',
+  'experimental_ppr', // R905: the eighth key of Next 15's AppSegmentConfigSchemaKeys — R885's class too
 ] as const
 
 /** The files Next.js applies segment config to. */
 const SEGMENT_FILES = new Set(['route.ts', 'page.tsx', 'layout.tsx'])
 
-/** A literal right-hand side: a number, a quoted string, or a boolean —
- *  optionally `as const`. Nothing else (an identifier, a member expression, a
- *  call, a template literal, an array) is accepted, because Next's parser
- *  accepts none of them. */
-const LITERAL_RHS = /^(?:-?\d+(?:\.\d+)?|'[^'\n]*'|"[^"\n]*"|true|false)(?:\s+as\s+const)?$/
+/** A literal right-hand side, optionally `as const`: a number, a quoted
+ *  string, a boolean, an expression-free template literal, or an array of
+ *  those (Next's `extract-const-value` accepts exactly these — R904;
+ *  `preferredRegion` is typed `string | string[]`). An identifier, a member
+ *  expression, a call, a template literal WITH `${}`, or arithmetic is
+ *  refused, because Next's static extractor cannot evaluate them (R885). */
+const SCALAR_RHS = String.raw`(?:-?\d+(?:\.\d+)?|'[^'\n]*'|"[^"\n]*"|` + '`[^`$\\n]*`' + String.raw`|true|false)`
+const LITERAL_RHS = new RegExp(
+  `^(?:${SCALAR_RHS}|\\[\\s*(?:${SCALAR_RHS}(?:\\s*,\\s*${SCALAR_RHS})*\\s*,?)?\\s*\\])(?:\\s+as\\s+const)?$`,
+)
 
 /** `export const <key>[: type] = <rhs>` at the start of a line, one per
  *  match; group 1 = the key, group 2 = the raw right-hand side. */
 const SEGMENT_EXPORT =
-  /^[ \t]*export[ \t]+const[ \t]+(dynamic|dynamicParams|revalidate|fetchCache|runtime|preferredRegion|maxDuration)\b[ \t]*(?::[^=\n]+)?=[ \t]*([^;\n]+?)[ \t]*;?[ \t]*$/gm
+  /^[ \t]*export[ \t]+const[ \t]+(dynamic|dynamicParams|revalidate|fetchCache|runtime|preferredRegion|maxDuration|experimental_ppr)\b[ \t]*(?::[^=\n]+)?=[ \t]*([^;\n]+?)[ \t]*;?[ \t]*$/gm
 
 /** Drop comments so a commented-out identifier export (score-week's own R885
  *  note, for one) is not reported. Crude by design — only the segment-config
@@ -123,15 +129,18 @@ describe('Next.js segment-config exports are literals (R885 / F271)', () => {
   })
 
   it('2. the matcher accepts exactly the literal shapes and rejects the R885 shape', () => {
-    for (const ok of ['60', '300', '0', '-1', "'force-dynamic'", '"edge"', 'true', 'false', "'iad1' as const"]) {
+    for (const ok of [
+      '60', '300', '0', '-1', "'force-dynamic'", '"edge"', 'true', 'false', "'iad1' as const",
+      '`nodejs`', "['iad1']", "['iad1', 'sfo1'] as const", '[]', // R904: Next's extractor accepts these
+    ]) {
       expect(LITERAL_RHS.test(ok), `should accept ${ok}`).toBe(true)
     }
     for (const bad of [
       'SCORE_WEEK_MAX_DURATION_SECONDS', // R885 verbatim
       'config.maxDuration',
       'Number(process.env.X)',
-      '`edge`',
-      "['iad1']",
+      '`${REGION}`', // a template literal WITH an expression is not static
+      '[REGION]', // an array of identifiers is not static either
       '60 * 5',
     ]) {
       expect(LITERAL_RHS.test(bad), `should reject ${bad}`).toBe(false)
@@ -153,7 +162,7 @@ describe('Next.js segment-config exports are literals (R885 / F271)', () => {
 
   it('3. the key list is Next.js’s segment-config surface (a new key is a deliberate edit here)', () => {
     expect([...SEGMENT_CONFIG_EXPORTS].sort()).toEqual(
-      ['dynamic', 'dynamicParams', 'fetchCache', 'maxDuration', 'preferredRegion', 'revalidate', 'runtime'],
+      ['dynamic', 'dynamicParams', 'experimental_ppr', 'fetchCache', 'maxDuration', 'preferredRegion', 'revalidate', 'runtime'],
     )
     // The line matcher's alternation must carry the same keys — a key added
     // to one list and not the other would silently drop coverage.
