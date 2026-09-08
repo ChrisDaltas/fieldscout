@@ -52,7 +52,10 @@ type Supabase = SupabaseClient<Database>
  *      in-season reads — the NFL week's stored instants, a team's roster
  *      and stored lineup, a week's matchups and results — because R297
  *      forbids a spec inlining a service query and these are the same
- *      read-only class, not a new job);
+ *      read-only class, not a new job; **F292's fix adds one more of the
+ *      same class — the league's stored scoring reference resolved to the
+ *      template NAME, so the journey spec can assert the wizard's card
+ *      click is what the league was born on**);
  *   5. the journey spec's F49 season-year bump (L.B7.1): the settings UI's
  *      schedule picker pins year = the league's SEASON, so a UI-set instant
  *      on a 2026-season league is live-cron auto-start bait from its own
