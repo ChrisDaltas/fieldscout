@@ -318,7 +318,7 @@ async function main(): Promise<void> {
     console.log('')
     console.log('BRIDGE (§23.6 slot → real player):')
     for (const line of seasonReport.bridgeLines) console.log(`  ${line}`)
-    for (const line of seasonReportLines(seasonReport, seasonReport.planLines)) console.log(line)
+    for (const line of seasonReportLines(seasonReport)) console.log(line)
     if (reportPath !== undefined) {
       writeFileSync(reportPath, `${JSON.stringify(seasonReport, null, 2)}\n`, 'utf8')
       console.log(`REPORT: ${reportPath}`)

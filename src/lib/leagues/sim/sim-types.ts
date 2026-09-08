@@ -207,6 +207,10 @@ export interface RunReport {
   green: boolean
   /** Auction-mode counters (absent on a snake run). */
   auction?: AuctionRunCounters
+  /** The D299 in-season axes each league was CREATED with (season runs only)
+   *  — the plan's own echo, printed beside the read-back `matrixLine` so a
+   *  reviewer can compare what was planned with what the row actually holds. */
+  seasonPlanLines?: string[]
 }
 
 /** What the auction gate run reports beyond the invariant sweep — every

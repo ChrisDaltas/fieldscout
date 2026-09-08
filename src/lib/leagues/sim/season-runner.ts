@@ -91,7 +91,7 @@ import { SyntheticStatsProvider } from '../stats/synthetic/synthetic-stats-provi
 import { VirtualClock } from '../time/virtual-clock'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
 
-import { BOT_POOL_SIZE, seasonPlanLines } from './plan'
+import { BOT_POOL_SIZE } from './plan'
 import {
   censusLine,
   cleanupSweep,
@@ -271,7 +271,7 @@ export async function runSeasonSim(
       },
       deps,
     )
-    report.planLines = draft.planLines
+    report.planLines = [...draft.planLines, ...(draft.seasonPlanLines ?? [])]
     report.workerErrors.push(...draft.workerErrors)
     for (const f of draft.invariantFailures) {
       report.invariantFailures.push({
@@ -287,9 +287,6 @@ export async function runSeasonSim(
       report.problems.push('the draft phase provisioned no leagues — nothing to drive')
       return finish(report, deps)
     }
-
-    // ---- The D299 matrix, echoed from the plan the leagues were built on --
-    const planForLines = { leagues: draft.leagues, seed: cfg.seed } // placeholder; replaced below
 
     // ---- Phase 2: the bridge -------------------------------------------
     const clubs = scenarioClubs(base.games)
@@ -320,7 +317,6 @@ export async function runSeasonSim(
       leagueStates.push(await readLeagueState(service, l.leagueLabel, l.leagueId, l.teamCount, deps.clock.nowMs()))
     }
     report.leagues = [] // filled at the end
-    void planForLines
 
     // ---- Phase 3b: sign the SAME bots back in ---------------------------
     // `set_lineup` refuses a service-role caller in-body (112:684 — it reads
@@ -376,7 +372,6 @@ export async function runSeasonSim(
         reconcile,
         driven.workerErrorsByLeague.get(state.leagueId) ?? [],
         driven.noStatRowByLeague.get(state.leagueId) ?? 0,
-        bridgedIds,
       )
       const failures = sweepSeasonAudit(audit)
       report.invariantFailures.push(...failures)
@@ -1156,9 +1151,7 @@ export async function collectSeasonAudit(
   reconcile: ReconcileReport,
   workerErrors: readonly string[],
   noStatRowStarters: number,
-  bridgedIds: ReadonlySet<string>,
 ): Promise<SeasonAudit> {
-  void bridgedIds
   const { data: rosters, error: rosterError } = await service
     .from('league_rosters')
     .select('team_id, player_id')
@@ -1530,7 +1523,7 @@ async function buildScenarioEvidence(
 }
 
 /** The season command's own report lines (the CLI prints these verbatim). */
-export function seasonReportLines(report: SeasonRunReport, planLines: string[]): string[] {
+export function seasonReportLines(report: SeasonRunReport): string[] {
   const lines: string[] = []
   lines.push('')
   lines.push('================ SIM SEASON RESULT ================')
@@ -1586,10 +1579,9 @@ export function seasonReportLines(report: SeasonRunReport, planLines: string[]):
     }
   }
   lines.push(report.green ? 'RESULT: GREEN' : 'RESULT: RED')
-  void planLines
   return lines
 }
 
 /** The nine library ids, re-exported for the CLI's `--scenario` validation. */
-export { SCENARIO_IDS, seasonPlanLines }
+export { SCENARIO_IDS }
 export type { ScenarioId, SeasonInvariantFailure }

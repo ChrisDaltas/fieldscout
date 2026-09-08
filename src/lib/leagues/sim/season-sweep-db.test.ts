@@ -193,7 +193,7 @@ const EMPTY_RECONCILE = {
 } satisfies ReconcileReport
 
 async function audit(): Promise<SeasonAudit> {
-  return collectSeasonAudit(service, state, [WEEK], EMPTY_RECONCILE, [], 0, new Set<string>())
+  return collectSeasonAudit(service, state, [WEEK], EMPTY_RECONCILE, [], 0)
 }
 
 async function sweep(): Promise<SeasonInvariantFailure[]> {
@@ -835,7 +835,6 @@ describe('7 — zero unhandled worker errors (§23.2)', () => {
       EMPTY_RECONCILE,
       [`score batch: league ${failed[0]!.league_id} week ${failed[0]!.week} FAILED — ${failed[0]!.error ?? ''}`],
       0,
-      new Set<string>(),
     )
     const failures = sweepSeasonAudit(withError).filter((f) => f.invariant === 'zero-worker-errors')
     expect(failures).toHaveLength(1)

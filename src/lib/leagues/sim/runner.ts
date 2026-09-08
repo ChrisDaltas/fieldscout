@@ -107,7 +107,7 @@ import {
   type AuditPick,
   type DraftAudit,
 } from './invariants'
-import { buildRunPlan, planLines, SEASON_ROSTER, SIM_LEAGUE_PREFIX } from './plan'
+import { buildRunPlan, planLines, SEASON_ROSTER, seasonPlanLines, SIM_LEAGUE_PREFIX } from './plan'
 import type { BuildPlanInput } from './plan'
 import { deriveStream, uuidFromRng } from './sim-rng'
 import type {
@@ -304,6 +304,11 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
   )
   log(`MATRIX (${plan.leagues.length} leagues):`)
   for (const line of report.planLines) log(`  ${line}`)
+  if (cfg.season === true) {
+    report.seasonPlanLines = seasonPlanLines(plan)
+    log(`SEASON MATRIX (D299 axes as planned; the run also prints each league's READ-BACK row):`)
+    for (const line of report.seasonPlanLines) log(`  ${line}`)
+  }
 
   // ---- Stale sweep (a crashed prior run must never poison this one) ------
   await cleanupSweep(service, log)
