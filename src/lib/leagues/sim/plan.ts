@@ -17,8 +17,10 @@
  * (3RR) is mixed in seeded — it is a snake variant and the board-order
  * invariant handles it through the parity-pinned TS mirror (D90).
  */
+import type { RosterSettings } from '../settings/league-settings'
 import { mulberry32 } from '../stats/synthetic/prng'
 
+import { deriveStream } from './sim-rng'
 import {
   LEGAL_TEAM_COUNTS,
   type AuctionPersonaKind,
@@ -26,6 +28,7 @@ import {
   type LegalTeamCount,
   type PersonaKind,
   type RunPlan,
+  type SeasonLeaguePlan,
   type SeatPlan,
   type SimDraftType,
 } from './sim-types'
@@ -88,7 +91,49 @@ export interface BuildPlanInput {
   seed: number
   /** 'snake' (the M2 matrix, unchanged default) or 'auction' (L.C4.1). */
   draftType?: SimDraftType
+  /**
+   * L.D6.1: draw the D299 in-season settings matrix as well. The axes come
+   * from a SEPARATE seeded stream (`deriveStream(seed, SEASON_MATRIX_LABEL)`)
+   * and never from `rng`, so a snake plan's rng consumption stays
+   * BYTE-IDENTICAL to M2's — `plan.test.ts`'s stored-literal golden matrix at
+   * seed 42 must not move, and it does not.
+   */
+  season?: boolean
 }
+
+/** The season matrix's own entropy label — never shared with `rng`. */
+export const SEASON_MATRIX_LABEL = 'season:matrix'
+
+/**
+ * L.D6.1's season roster preset: ONE starting slot per scoring position, so
+ * every one of the §23.6 library's six positions can actually reach a
+ * starting lineup. `rosterForRounds` (the M2 draft preset) starts QB/RB/WR
+ * only, which would make a bridged TE/K/D-ST line unreachable by
+ * construction — a scenario the sim cannot observe is a decorative one.
+ */
+export const SEASON_ROSTER: RosterSettings = {
+  starting_slots: [
+    { key: 'qb', label: 'QB', eligible: ['QB'], count: 1 },
+    { key: 'rb', label: 'RB', eligible: ['RB'], count: 1 },
+    { key: 'wr', label: 'WR', eligible: ['WR'], count: 1 },
+    { key: 'te', label: 'TE', eligible: ['TE'], count: 1 },
+    { key: 'k', label: 'K', eligible: ['K'], count: 1 },
+    { key: 'dst', label: 'D/ST', eligible: ['DST'], count: 1 },
+  ],
+  bench: 1,
+  ir_slots: [],
+  swap_spots: 0,
+}
+
+/** Draftable rounds in season mode: the six starters plus one bench seat. */
+export const SEASON_ROUNDS = 7
+
+/**
+ * The §7.3.1 CREATION range for `regular_season_weeks` is 12–15
+ * (`validateLeagueSettings`), so a season league's PLAN is always at least
+ * twelve weeks long; `--weeks N` decides how many of them the run DRIVES.
+ */
+const SEASON_WEEK_CHOICES = [12, 13, 14] as const
 
 export function buildRunPlan(input: BuildPlanInput): RunPlan {
   const rng = mulberry32(input.seed >>> 0)
@@ -123,9 +168,18 @@ export function buildRunPlan(input: BuildPlanInput): RunPlan {
     const snakeReversal = rng() < 0.5
     const allAfk = i === allAfkIndex
     const personaSetSize = draftType === 'auction' ? AUCTION_PERSONA_SET.length : PERSONA_SET.length
+    // Season mode seats every pool bot it can: each human seat is one the
+    // sim can SET a lineup for, and the more lineups it sets the more of the
+    // eighteen bridged §23.6 players actually reach a starting slot. (Only
+    // the `input.season` arm changes — a draft-only plan's humanCount, and
+    // therefore its rng consumption, is byte-identical to M2's.)
     const humanCount = Math.min(
       teamCount,
-      teamCount === 16 ? HUMANS_SIXTEEN : Math.max(HUMANS_DEFAULT, draftType === 'auction' ? personaSetSize : 0),
+      input.season === true
+        ? BOT_POOL_SIZE
+        : teamCount === 16
+          ? HUMANS_SIXTEEN
+          : Math.max(HUMANS_DEFAULT, draftType === 'auction' ? personaSetSize : 0),
     )
 
     // Distinct pool bots per league (a user holds at most one seat per
@@ -192,6 +246,8 @@ export function buildRunPlan(input: BuildPlanInput): RunPlan {
     })
   }
 
+  if (input.season === true) applySeasonMatrix(leagues, input.seed)
+
   return {
     seed: input.seed,
     draftType,
@@ -199,6 +255,91 @@ export function buildRunPlan(input: BuildPlanInput): RunPlan {
     leagues,
     botCount: BOT_POOL_SIZE,
   }
+}
+
+/**
+ * The D299 in-season matrix, applied to an already-built plan — L.D6.1.
+ *
+ * Coverage is BY CONSTRUCTION, not by seed luck (the `plan.ts:96-112`
+ * discipline): with ≥2 leagues the run carries at least one of each
+ * `schedule_mode`; with ≥3 at least one `median_game` on; with ≥4 at least
+ * one `second_opponent` on; with ≥5 at least one `allow_illegal_lineups` OFF.
+ * Everything else is seeded.
+ *
+ * The two coupled facts the schema enforces and this respects:
+ *   - `total_points` ⇒ `playoff_teams = 0` (v2.16.25 / Q39 (C)).
+ *   - `playoff_start_week = regular_season_weeks + 1` (Q10, §7.3.8's seam).
+ *
+ * Season mode also fixes `rounds` to `SEASON_ROUNDS` and seats as many human
+ * bots as the pool allows: the more seats a real manager holds, the more of
+ * the eighteen bridged §23.6 players reach a lineup the sim can set.
+ *
+ * R918 (PR #273 review): `median_game` and `second_opponent` are MODE-GATED —
+ * a points race carries neither (§11.7) — so guaranteeing the index alone was
+ * not a guarantee at all. The free-league coin below could flip the very
+ * league that carried the arm to `total_points` and drop it: measured over
+ * seeds 1-300 at 6 leagues, 19 seeds lost the median arm and 21 lost the
+ * second-opponent arm, and the unseeded default (`scripts/sim.ts` falls back
+ * to a wall-clock seed) made ~6-7 % of runs certify a thinner matrix than
+ * D327(2) claims and exit 0. The guarantee indices are therefore FORCED to
+ * `h2h` before the coin is tossed, and `plan.test.ts` asserts the guarantee
+ * over a seed RANGE rather than sampling one seed.
+ */
+export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
+  const rng = deriveStream(seed, SEASON_MATRIX_LABEL)
+  const n = leagues.length
+  // Guaranteed columns, placed deterministically from the season stream.
+  const totalPointsIndex = n >= 2 ? Math.floor(rng() * n) : -1
+  const h2hIndex = n >= 2 ? (totalPointsIndex + 1 + Math.floor(rng() * (n - 1))) % n : 0
+  const medianIndex = n >= 3 ? pickOther(rng, n, [totalPointsIndex]) : -1
+  const secondIndex = n >= 4 ? pickOther(rng, n, [totalPointsIndex, medianIndex]) : -1
+  const illegalOffIndex = n >= 5 ? pickOther(rng, n, [totalPointsIndex]) : -1
+  // The mode-gated arms only exist on an h2h league, so the leagues carrying
+  // them are h2h BY CONSTRUCTION — never by the coin below (R918).
+  const forcedH2h = new Set([h2hIndex, medianIndex, secondIndex].filter((i) => i >= 0))
+
+  for (const league of leagues) {
+    const i = league.index
+    const scheduleMode: 'h2h' | 'total_points' =
+      i === totalPointsIndex ? 'total_points' : forcedH2h.has(i) ? 'h2h' : rng() < 0.25 ? 'total_points' : 'h2h'
+    const regularSeasonWeeks = pick(rng, SEASON_WEEK_CHOICES)
+    // playoff_teams ≤ team_count, an even bracket size from the catalog.
+    const playoffTeams =
+      scheduleMode === 'total_points' ? 0 : Math.min(league.teamCount, pick(rng, [4, 6, 8] as const))
+    league.rounds = SEASON_ROUNDS
+    const seasonPlan: SeasonLeaguePlan = {
+      scheduleMode,
+      // A median game is meaningless in a points race — the mode already
+      // scores every team against the field (§11.7); keep it off there.
+      medianGame: scheduleMode === 'h2h' && (i === medianIndex || rng() < 0.4),
+      secondOpponent: scheduleMode === 'h2h' && (i === secondIndex || rng() < 0.3),
+      allowIllegalLineups: i !== illegalOffIndex,
+      regularSeasonWeeks,
+      playoffTeams,
+      playoffStartWeek: regularSeasonWeeks + 1,
+    }
+    league.season = seasonPlan
+  }
+}
+
+function pickOther(rng: () => number, n: number, avoid: readonly number[]): number {
+  const candidates = Array.from({ length: n }, (_, i) => i).filter((i) => !avoid.includes(i))
+  if (candidates.length === 0) return -1
+  return candidates[Math.floor(rng() * candidates.length)]!
+}
+
+/** One line per league for the SEASON matrix — the D299 axes actually set. */
+export function seasonPlanLines(plan: RunPlan): string[] {
+  return plan.leagues.map((l) => {
+    const s = l.season
+    if (s === undefined) return `${l.name}: (no season plan)`
+    return (
+      `${l.name}: ${l.teamCount} teams · ${s.scheduleMode} · median ${s.medianGame ? 'on' : 'off'} · ` +
+      `second ${s.secondOpponent ? 'on' : 'off'} · illegal-lineups ${s.allowIllegalLineups ? 'on' : 'off'} · ` +
+      `${s.regularSeasonWeeks} regular weeks · playoff_teams ${s.playoffTeams} · ` +
+      `${l.rounds} rounds · humans ${l.humanSeats.length}/${l.teamCount}`
+    )
+  })
 }
 
 /** One line per league for the printed matrix (the report's plan echo). */

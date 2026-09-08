@@ -29,6 +29,7 @@
     "ingest:personas": "npx tsx scripts/ingest-persona-content.ts",
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "sim": "npx tsx scripts/sim.ts",
+    "sim:census": "npx tsx scripts/sim-census.ts",
     "reconcile": "npx tsx scripts/reconcile.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",

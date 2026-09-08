@@ -2,8 +2,9 @@
  * League Simulator CLI — M2 task L.B6.1 (delivery plan §4.2; tasks-M2 §6
  * L.B6.1 item 2: "scenarios as code").
  *
- *   npm run sim -- draft --leagues 25 --clock 30 --seed 42
- *   npm run sim -- draft --leagues 2 --teams 8 --clock 30
+ *   npm run sim -- draft  --leagues 25 --clock 30 --seed 42
+ *   npm run sim -- draft  --leagues 2 --teams 8 --clock 30
+ *   npm run sim -- season --leagues 6 --scenario happy_path --weeks 2 --seed 42
  *
  * THIS FILE IS THE INJECTION BOUNDARY (deliberately outside the
  * `src/lib/leagues/**` determinism guard): wall time, timers, and the
@@ -24,12 +25,71 @@
  *                      pacing choice, the D118(9) polite-neighbor rule)
  *   --verbose          per-league progress lines
  *
+ * SEASON MODE (M4 task L.D6.1 — tasks-M4-inseason.md §6; delivery plan §4.2):
+ * `season` drafts the same matrix, then drives weeks at machine speed through
+ * one named §23.6 scenario — the synthetic provider on a step-driven
+ * `VirtualClock`, `p_now` injected into all three job RPCs and the scoring
+ * worker — and runs the seven in-season invariants. Extra flags:
+ *
+ *   --scenario ID      one of the nine §23.6 ids (validated against
+ *                      `SCENARIO_IDS`, never a hand-listed copy). Default
+ *                      happy_path. ONE SCENARIO PER RUN — `nfl_games` has no
+ *                      league column, so a slate belongs to the whole run
+ *                      (season-runner.ts's SCOPE note); L.D6.3 runs the
+ *                      library as nine stages.
+ *   --weeks N          how many of each league's planned regular-season weeks
+ *                      to drive (1..18; default 2).
+ *   --report PATH      also write the whole typed `SeasonRunReport` there as
+ *                      pretty JSON, so a gate transcribes evidence from a
+ *                      file rather than from scrollback (F135's lesson).
+ *                      OPTIONAL: the gate contract is the exit code plus the
+ *                      stdout tokens below, exactly as m1/m2/m3 consume.
+ *
+ * THERE IS NO `--speed` ON THE SEASON COMMAND, deliberately (recorded —
+ * PROGRESS D327). Every instant on this path is INJECTED: `p_now` on the
+ * jobs, `deps.time` on the worker and ingestion, `time` on the provider. A
+ * wall-paced `VirtualClock` (speed > 0) would make the driver WAIT for
+ * virtual time it can simply jump to, which contradicts the task row's own
+ * words ("drives weeks at machine speed"), and printing a flag the mechanism
+ * ignores is worse than not having one. The same `VirtualClock` supports
+ * 1×/4×/64× through `setSpeed`, and every instant here already comes from
+ * `clock.now()`, so binding it is ADDITIVE when L.D6.4's real-replay gate
+ * needs pacing (tasks-M4 §6 L.D6.4).
+ *
+ * REPLAY, AND EXACTLY WHAT IT REPRODUCES. `RUN ID` is a pure function of the
+ * printed inputs (command, scenario, leagues, teams, clock, weeks, seed,
+ * season, scenario-library version) — same inputs, same id — and the printed
+ * `REPLAY:` line is the command that reproduces the run. What replays: the
+ * plan and every persona DECISION, from `--seed` (plan principle 4). What
+ * does NOT: per-submit `action_id` nonces, which `sim-rng.ts:14-20` records
+ * as per-run BY DESIGN (they are salted with the run tag exactly so a
+ * same-seed re-run cannot replay into a previous run's E2 dedupe rows), and
+ * race RESOLUTION, which `runner.ts:34-42` already carves out because it is
+ * the system under test. The invariant sweep — not a transcript — is the
+ * assertion surface, and that is why. The run also prints its BRIDGE MAP
+ * (eighteen §23.6 slots → real player ids), because a replay against a
+ * different `players` pool is then visible line by line instead of silently
+ * different.
+ *
  * Requires the LOCAL Supabase stack (`npx supabase start`, migrations
- * applied). Exits non-zero on ANY invariant failure, provisioning failure,
- * or cleanup failure (loud — the R285 class).
+ * applied) and REFUSES any other URL — the dev scripts' guard, verbatim
+ * (`dev-seed-inseason-league.ts:84-87`). `.env.local` points at hosted
+ * PRODUCTION; a sim run writes leagues, stat rows and queue rows, so the
+ * guard is not a nicety. Exits non-zero on ANY invariant failure,
+ * provisioning failure, or cleanup failure (loud — the R285 class).
  */
+import { writeFileSync } from 'node:fs'
+
 import { PICK_TIMER_SECONDS } from '../src/lib/leagues/settings/league-settings'
 import { runDraftSim } from '../src/lib/leagues/sim/runner'
+import { runSeasonSim, seasonReportLines } from '../src/lib/leagues/sim/season-runner'
+import {
+  SCENARIO_IDS,
+  type ScenarioId,
+} from '../src/lib/leagues/stats/synthetic/scenario'
+import { SCENARIO_LIBRARY_VERSION } from '../src/lib/leagues/stats/synthetic/scenarios'
+import { hashString } from '../src/lib/leagues/stats/synthetic/prng'
+import { SYNTHETIC_SEASON } from '../src/lib/leagues/sim/synthetic-season'
 import {
   LEGAL_TEAM_COUNTS,
   type LegalTeamCount,
@@ -39,7 +99,7 @@ import {
 /** Every flag the CLI understands. Anything else `--*` is REFUSED — the
  *  silent-ignore gap tasks-M3 §2 recorded closes here (L.C4.1 item 1): a
  *  typo'd flag must never quietly run the default matrix. */
-const KNOWN_FLAGS = new Set([
+const DRAFT_FLAGS = new Set([
   'type',
   'leagues',
   'teams',
@@ -48,9 +108,41 @@ const KNOWN_FLAGS = new Set([
   'concurrency',
   'verbose',
 ])
-const VALUE_FLAGS = new Set(['type', 'leagues', 'teams', 'clock', 'seed', 'concurrency'])
+/** The season command's own set — the `draft` path is NOT loosened by it. */
+const SEASON_FLAGS = new Set([
+  'leagues',
+  'teams',
+  'clock',
+  'seed',
+  'concurrency',
+  'verbose',
+  'scenario',
+  'weeks',
+  'report',
+])
+const KNOWN_FLAGS = new Set([...DRAFT_FLAGS, ...SEASON_FLAGS])
+const VALUE_FLAGS = new Set([
+  'type',
+  'leagues',
+  'teams',
+  'clock',
+  'seed',
+  'concurrency',
+  'scenario',
+  'weeks',
+  'report',
+])
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
+// LOCAL ONLY — the dev drivers' guard, verbatim
+// (`dev-seed-inseason-league.ts:84-87` / `dev-drive-inseason-week.ts:60-63`).
+// A sim run creates leagues and writes `player_stats` / `score_fanout` /
+// `nfl_games`; pointed at the hosted project (which is what `.env.local`
+// holds) that is production data. This file had no guard before L.D6.1.
+if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(LOCAL_URL)) {
+  console.error(`refusing: ${LOCAL_URL} is not the local stack (the simulator is LOCAL ONLY)`)
+  process.exit(2)
+}
 const LOCAL_ANON_KEY =
   process.env.SUPABASE_LOCAL_ANON_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
@@ -69,10 +161,12 @@ async function main(): Promise<void> {
   // Also refuses stray positionals beyond the one command word — a value
   // that lost its `--flag` would otherwise vanish the same silent way.
   const positionals: string[] = []
+  const usedFlags: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg.startsWith('--')) {
       const name = arg.slice(2)
+      usedFlags.push(name)
       if (!KNOWN_FLAGS.has(name)) {
         console.error(`Unknown flag --${name} — known flags: ${[...KNOWN_FLAGS].map((f) => `--${f}`).join(' ')}`)
         process.exit(2)
@@ -90,15 +184,29 @@ async function main(): Promise<void> {
     }
   }
   const command = positionals[0]
-  if (command !== 'draft' || positionals.length > 1) {
-    console.error(`Unknown sim command '${positionals.join(' ')}' — the scenario is: sim draft`)
+  if ((command !== 'draft' && command !== 'season') || positionals.length > 1) {
+    console.error(`Unknown sim command '${positionals.join(' ')}' — the commands are: sim draft | sim season`)
     console.error(
       'Usage: npm run sim -- draft [--type snake|auction] --leagues 25 --clock 30 [--teams mixed|8..16] [--seed K]',
+    )
+    console.error(
+      '       npm run sim -- season --leagues 6 --scenario happy_path [--weeks 2] [--teams mixed|8..16] [--seed K] [--report PATH]',
+    )
+    process.exit(2)
+  }
+  // Per-command flag hygiene: a flag that belongs to the OTHER command is
+  // refused here rather than silently ignored (the L.C4.1 rule, applied per
+  // command so the `draft` path is not loosened by the season additions).
+  const allowed = command === 'draft' ? DRAFT_FLAGS : SEASON_FLAGS
+  for (const name of usedFlags) {
+    if (allowed.has(name)) continue
+    console.error(
+      `--${name} is not a flag of 'sim ${command}' — its flags are: ${[...allowed].map((f) => `--${f}`).join(' ')}`,
     )
     process.exit(2)
   }
 
-  const typeRaw = flagValue(argv, 'type') ?? 'snake'
+  const typeRaw = command === 'season' ? 'snake' : (flagValue(argv, 'type') ?? 'snake')
   if (typeRaw !== 'snake' && typeRaw !== 'auction') {
     console.error(`--type must be 'snake' or 'auction' (got ${typeRaw})`)
     process.exit(2)
@@ -145,6 +253,79 @@ async function main(): Promise<void> {
   const concurrency = Number(flagValue(argv, 'concurrency') ?? 16)
   const verbose = argv.includes('--verbose')
   const runTag = Date.now().toString(36)
+
+  if (command === 'season') {
+    const scenarioRaw = flagValue(argv, 'scenario') ?? 'happy_path'
+    if (!(SCENARIO_IDS as readonly string[]).includes(scenarioRaw)) {
+      console.error(`--scenario must be one of ${SCENARIO_IDS.join('|')} (got ${scenarioRaw})`)
+      process.exit(2)
+    }
+    const scenario = scenarioRaw as ScenarioId
+    const weeks = Number(flagValue(argv, 'weeks') ?? 2)
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 18) {
+      console.error(`--weeks must be an integer 1..18 (got ${flagValue(argv, 'weeks')})`)
+      process.exit(2)
+    }
+    const reportPath = flagValue(argv, 'report')
+
+    // The run id: a pure function of the PRINTED inputs. See the banner for
+    // exactly what a replay reproduces (decision streams) and what it does
+    // not (per-submit action-id nonces, race resolution).
+    const runIdSource =
+      `v1|season|scenario=${scenario}|leagues=${leagues}|teams=${teamsRaw}|clock=${clockSeconds}` +
+      `|weeks=${weeks}|seed=${seed}|season=${SYNTHETIC_SEASON}|lib=${SCENARIO_LIBRARY_VERSION}`
+    const runId = (hashString(runIdSource) >>> 0).toString(16).padStart(8, '0')
+
+    // EXTERNAL CALLS: measured, not stubbed. Every `fetch` this process makes
+    // is counted, and any host other than the local stack is a violation
+    // (§23.6 "zero external calls"). A stub would also break supabase-js,
+    // which is how the sim reaches the stack at all.
+    let external = 0
+    const realFetch = globalThis.fetch.bind(globalThis)
+    globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (!url.startsWith(LOCAL_URL)) external += 1
+      return realFetch(input, init)
+    }) as typeof globalThis.fetch
+
+    console.log(`SIM SEED: ${seed}`)
+    console.log(`RUN ID: ${runId}  (a pure function of: ${runIdSource})`)
+    console.log(
+      `REPLAY: npm run sim -- season --leagues ${leagues}` +
+        `${teams === 'mixed' ? '' : ` --teams ${teams}`} --clock ${clockSeconds} --scenario ${scenario} --weeks ${weeks} --seed ${seed}`,
+    )
+    console.log(
+      '        (replays the plan and every persona DECISION; per-submit action_id nonces and race resolution are ' +
+        'per-run BY DESIGN — sim-rng.ts:14-20, runner.ts:34-42)',
+    )
+
+    const seasonReport = await runSeasonSim(
+      { leagues, teams, clockSeconds, seed, scenario, weeks, concurrency, verbose },
+      {
+        clock: {
+          nowMs: () => Date.now(),
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        },
+        runTag,
+        runId,
+        log: (line) => console.log(line),
+        url: LOCAL_URL,
+        anonKey: LOCAL_ANON_KEY,
+        serviceRoleKey: LOCAL_SERVICE_ROLE_KEY,
+        externalCalls: () => external,
+      },
+    )
+    console.log('')
+    console.log('BRIDGE (§23.6 slot → real player):')
+    for (const line of seasonReport.bridgeLines) console.log(`  ${line}`)
+    for (const line of seasonReportLines(seasonReport)) console.log(line)
+    if (reportPath !== undefined) {
+      writeFileSync(reportPath, `${JSON.stringify(seasonReport, null, 2)}\n`, 'utf8')
+      console.log(`REPORT: ${reportPath}`)
+    }
+    if (!seasonReport.green) process.exit(1)
+    return
+  }
 
   const report = await runDraftSim(
     { leagues, teams, clockSeconds, seed, concurrency, verbose, draftType },

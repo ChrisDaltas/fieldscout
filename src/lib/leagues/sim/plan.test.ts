@@ -6,8 +6,16 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { defaultsForTeamCount, leagueSettingsSchema } from '../settings/league-settings'
 import { mulberry32 } from '../stats/synthetic/prng'
-import { buildRunPlan, planLines } from './plan'
+import {
+  BOT_POOL_SIZE,
+  buildRunPlan,
+  planLines,
+  SEASON_ROSTER,
+  SEASON_ROUNDS,
+  seasonPlanLines,
+} from './plan'
 import { deriveStream, uuidFromRng } from './sim-rng'
 
 describe('buildRunPlan — seeded, replayable, guaranteed', () => {
@@ -159,5 +167,161 @@ describe('buildRunPlan — the auction matrix (L.C4.1)', () => {
     const a = buildRunPlan({ leagues: 6, teams: 'mixed', clockSeconds: 30, seed: 99, draftType: 'auction' })
     const b = buildRunPlan({ leagues: 6, teams: 'mixed', clockSeconds: 30, seed: 99, draftType: 'auction' })
     expect(a).toEqual(b)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The D299 in-season matrix — L.D6.1
+// ---------------------------------------------------------------------------
+
+describe('the season matrix (D299) — drawn on its own stream, guaranteed by construction', () => {
+  const cfg = { leagues: 6, teams: 'mixed' as const, clockSeconds: 30, seed: 42 }
+
+  it("season: true does NOT move a DRAFT plan — the M2 stored-literal golden is re-asserted here", () => {
+    // The axes come from `deriveStream(seed, SEASON_MATRIX_LABEL)`, never
+    // from `rng`, and every season-only branch is guarded on `input.season`.
+    // This re-asserts the SAME frozen literals the first test in this file
+    // pins, so a future season edit that leaked into the shared stream fails
+    // in the section that made the edit rather than only at the top.
+    const draft = buildRunPlan({ leagues: 4, teams: 'mixed', clockSeconds: 30, seed: 42 })
+    expect(draft.leagues.map((l) => l.teamCount)).toEqual([16, 16, 16, 8])
+    expect(draft.leagues.map((l) => l.rounds)).toEqual([4, 4, 4, 4])
+    expect(draft.leagues.map((l) => l.snakeReversal)).toEqual([false, false, true, false])
+    expect(draft.leagues.map((l) => l.allAfk)).toEqual([false, true, false, false])
+    expect(draft.leagues.map((l) => l.placeholderCount)).toEqual([10, 10, 10, 4])
+    expect(draft.leagues.every((l) => l.season === undefined)).toBe(true)
+  })
+
+  it('a SEASON plan legitimately draws a different draft matrix, and that is stated, not accidental', () => {
+    // Season mode seats every pool bot (`humanCount`), which changes how many
+    // persona draws the shared `rng` makes per league — so the sizes AFTER
+    // the first league differ from a draft-only run at the same seed. That is
+    // a different input, not a moved golden: the draft-only literals above
+    // are untouched, and the season plan is itself replayable (below).
+    const season = buildRunPlan({ leagues: 4, teams: 'mixed', clockSeconds: 30, seed: 42, season: true })
+    expect(season.leagues.map((l) => l.teamCount)).toEqual([16, 12, 16, 8])
+    expect(season.leagues.every((l) => l.season !== undefined)).toBe(true)
+  })
+
+  it('season mode fixes the roster preset and its round count', () => {
+    const plan = buildRunPlan({ ...cfg, season: true })
+    expect(plan.leagues.every((l) => l.rounds === SEASON_ROUNDS)).toBe(true)
+    expect(SEASON_ROSTER.starting_slots.map((s) => s.key)).toEqual(['qb', 'rb', 'wr', 'te', 'k', 'dst'])
+    // One starting slot per scoring position, so every §23.6 position can
+    // reach a lineup (the coverage argument in the module's docblock).
+    expect(SEASON_ROSTER.starting_slots.every((s) => s.count === 1)).toBe(true)
+    expect(SEASON_ROSTER.starting_slots.length + SEASON_ROSTER.bench).toBe(SEASON_ROUNDS)
+  })
+
+  it('season mode seats every pool bot it can (more managers ⇒ more lineups the sim can set)', () => {
+    const plan = buildRunPlan({ ...cfg, season: true })
+    for (const league of plan.leagues) {
+      expect(league.humanSeats.length).toBe(Math.min(league.teamCount, BOT_POOL_SIZE))
+    }
+  })
+
+  // R918: "by construction" is a claim about EVERY seed, so it is asserted
+  // over a seed RANGE. The single-seed form these two replaced could not fail
+  // on the class the review found — the free-league coin dropping a
+  // mode-gated arm — and at 3 leagues the pinned seed 42 already violated the
+  // stated ≥3 median threshold (measured: 19/300 seeds lost median and 21/300
+  // lost second at 6 leagues, 0/300 after the fix).
+  const SEED_RANGE = Array.from({ length: 200 }, (_, i) => i + 1)
+
+  it('BOTH schedule modes appear by construction at ≥2 leagues — over seeds 1..200', () => {
+    for (const leagues of [2, 3, 6, 25]) {
+      for (const seed of SEED_RANGE) {
+        const plan = buildRunPlan({ ...cfg, leagues, seed, season: true })
+        const modes = new Set(plan.leagues.map((l) => l.season!.scheduleMode))
+        expect([...modes].sort(), `leagues=${leagues} seed=${seed}`).toEqual(['h2h', 'total_points'])
+      }
+    }
+  })
+
+  it('median on / second on / illegal-lineups off each appear at their thresholds — over seeds 1..200', () => {
+    for (const seed of SEED_RANGE) {
+      const at3 = buildRunPlan({ ...cfg, leagues: 3, seed, season: true })
+      expect(at3.leagues.some((l) => l.season!.medianGame), `median at 3 leagues, seed=${seed}`).toBe(true)
+      const at4 = buildRunPlan({ ...cfg, leagues: 4, seed, season: true })
+      expect(at4.leagues.some((l) => l.season!.medianGame), `median at 4 leagues, seed=${seed}`).toBe(true)
+      expect(at4.leagues.some((l) => l.season!.secondOpponent), `second at 4 leagues, seed=${seed}`).toBe(true)
+      const at6 = buildRunPlan({ ...cfg, leagues: 6, seed, season: true })
+      expect(at6.leagues.some((l) => l.season!.medianGame), `median at 6 leagues, seed=${seed}`).toBe(true)
+      expect(at6.leagues.some((l) => l.season!.secondOpponent), `second at 6 leagues, seed=${seed}`).toBe(true)
+      expect(at6.leagues.some((l) => !l.season!.allowIllegalLineups), `illegal-off at 6 leagues, seed=${seed}`).toBe(
+        true,
+      )
+    }
+  })
+
+  it('a mode-gated guarantee index is FORCED to h2h — the coin can never drop the arm (R918)', () => {
+    // The failing seeds the review measured, pinned by name so a regression
+    // to "draw the index, then toss the coin" fails here first.
+    for (const [leagues, seed] of [[6, 38], [6, 13], [3, 42], [4, 15]] as const) {
+      const plan = buildRunPlan({ ...cfg, leagues, seed, season: true })
+      expect(plan.leagues.some((l) => l.season!.medianGame), `median leagues=${leagues} seed=${seed}`).toBe(true)
+      if (leagues >= 4) {
+        expect(plan.leagues.some((l) => l.season!.secondOpponent), `second leagues=${leagues} seed=${seed}`).toBe(true)
+      }
+    }
+  })
+
+  it('total_points forces playoff_teams = 0 (the v2.16.25 / Q39 (C) coupling the schema refuses to break)', () => {
+    const plan = buildRunPlan({ ...cfg, leagues: 25, season: true })
+    for (const league of plan.leagues) {
+      if (league.season!.scheduleMode !== 'total_points') continue
+      expect(league.season!.playoffTeams).toBe(0)
+      // …and a points race carries no median game either (§11.7: the mode
+      // already scores every team against the field).
+      expect(league.season!.medianGame).toBe(false)
+      expect(league.season!.secondOpponent).toBe(false)
+    }
+  })
+
+  it('playoff_start_week = regular_season_weeks + 1 (Q10 / §7.3.8 seam) and playoff_teams ≤ team_count', () => {
+    const plan = buildRunPlan({ ...cfg, leagues: 25, season: true })
+    for (const league of plan.leagues) {
+      const s = league.season!
+      expect(s.playoffStartWeek).toBe(s.regularSeasonWeeks + 1)
+      expect(s.regularSeasonWeeks).toBeGreaterThanOrEqual(12)
+      expect(s.regularSeasonWeeks).toBeLessThanOrEqual(15)
+      expect(s.playoffTeams).toBeLessThanOrEqual(league.teamCount)
+    }
+  })
+
+  it('the LOCK AXIS is `allow_illegal_lineups` alone — Q34(A)/114 and Q35/115 retired the other two', () => {
+    // A pin, not a comment: the schema's `lineup_lock` enum is single-valued
+    // and `player_game_lock` is refused by the strict object. If either
+    // returns, this test is where the matrix gains an arm.
+    expect(leagueSettingsSchema.shape.lineup_lock.parse('per_player_kickoff')).toBe('per_player_kickoff')
+    expect(() => leagueSettingsSchema.shape.lineup_lock.parse('first_game_of_week')).toThrow()
+    expect(() =>
+      leagueSettingsSchema.parse({ ...defaultsForTeamCount(10), player_game_lock: true }),
+    ).toThrow()
+    // And DIVISIONS was cut to 1 by Q30 (d): the matrix does not draw it.
+    const plan = buildRunPlan({ ...cfg, leagues: 6, season: true })
+    expect(plan.leagues.every((l) => !('divisions' in (l.season ?? {})))).toBe(true)
+  })
+
+  it('--seed replays the season matrix EXACTLY', () => {
+    expect(buildRunPlan({ ...cfg, season: true })).toEqual(buildRunPlan({ ...cfg, season: true }))
+  })
+
+  it('a different seed draws a different matrix (negative control)', () => {
+    expect(buildRunPlan({ ...cfg, seed: 43, season: true })).not.toEqual(
+      buildRunPlan({ ...cfg, season: true }),
+    )
+  })
+
+  it('the printed season line names every axis actually set', () => {
+    const plan = buildRunPlan({ leagues: 2, teams: 8, clockSeconds: 30, seed: 42, season: true })
+    const line = seasonPlanLines(plan)[0]!
+    expect(line).toContain('8 teams')
+    expect(line).toMatch(/h2h|total_points/)
+    expect(line).toContain('median ')
+    expect(line).toContain('second ')
+    expect(line).toContain('illegal-lineups ')
+    expect(line).toContain('regular weeks')
+    expect(line).toContain('playoff_teams')
   })
 })

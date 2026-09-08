@@ -84,6 +84,7 @@ import {
   upsertQueue,
 } from '../api/draft-service'
 import { defaultsForTeamCount } from '../settings/league-settings'
+import { SIM_SEASON_GAME_PREFIX } from './season-scenario'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from './synthetic-season'
 import type { RosterSettings } from '../settings/league-settings'
 
@@ -106,7 +107,7 @@ import {
   type AuditPick,
   type DraftAudit,
 } from './invariants'
-import { buildRunPlan, planLines, SIM_LEAGUE_PREFIX } from './plan'
+import { buildRunPlan, planLines, SEASON_ROSTER, seasonPlanLines, SIM_LEAGUE_PREFIX } from './plan'
 import type { BuildPlanInput } from './plan'
 import { deriveStream, uuidFromRng } from './sim-rng'
 import type {
@@ -130,6 +131,15 @@ export interface SimRunConfig extends BuildPlanInput {
   /** Global HTTP semaphore width (recorded pacing choice). */
   concurrency?: number
   verbose?: boolean
+  /**
+   * L.D6.1: leave the drafted leagues STANDING for a season phase to drive.
+   * The start-of-run stale sweep still runs (a crashed prior run must never
+   * poison this one); only the `finally` sweep is deferred, to the SEASON
+   * runner's own `finally`, so the run is still swept exactly once and
+   * cleanup failure is still an invariant failure. Absent/false ⇒ M2/M3
+   * behaviour byte-for-byte (`gate-m2.sh:78` / `gate-m3.sh` are unchanged).
+   */
+  keepLeagues?: boolean
 }
 
 export interface SimRunDeps {
@@ -148,6 +158,14 @@ export interface SimRunDeps {
 export const SIM_USERNAME_PREFIX = 'sim_b6_bot_'
 const SIM_EMAIL_DOMAIN = 'fieldscout.test'
 const SIM_PASSWORD = 'sim-b6-pass-1234'
+
+/** The bot pool's credentials, exported so the L.D6.1 season phase can sign
+ *  the SAME users in again and drive lineups through each manager's own JWT
+ *  (D100) — `set_lineup` refuses a service-role caller in-body (112:684). */
+export const SIM_BOT_PASSWORD = SIM_PASSWORD
+export function simBotEmail(index: number): string {
+  return `sim-b6-bot-${String(index + 1).padStart(2, '0')}@${SIM_EMAIL_DOMAIN}`
+}
 
 /** Far-future schedule instant — the D94 auto-start arm must never race the
  *  manual start path (the F49 fixture-instant discipline: 2028, not 2026). */
@@ -286,6 +304,11 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
   )
   log(`MATRIX (${plan.leagues.length} leagues):`)
   for (const line of report.planLines) log(`  ${line}`)
+  if (cfg.season === true) {
+    report.seasonPlanLines = seasonPlanLines(plan)
+    log(`SEASON MATRIX (D299 axes as planned; the run also prints each league's READ-BACK row):`)
+    for (const line of report.seasonPlanLines) log(`  ${line}`)
+  }
 
   // ---- Stale sweep (a crashed prior run must never poison this one) ------
   await cleanupSweep(service, log)
@@ -373,8 +396,13 @@ export async function runDraftSim(cfg: SimRunConfig, deps: SimRunDeps): Promise<
     })
   } finally {
     // ---- Loud cleanup + byte-clean verification --------------------------
+    // L.D6.1: with `keepLeagues` the SEASON runner owns the final sweep (it
+    // still runs, in its own `finally`) — the leagues must survive this
+    // block so a season can be driven on them.
     try {
-      report.cleanupSummary = await cleanupSweep(service, log)
+      report.cleanupSummary = cfg.keepLeagues === true
+        ? 'CLEANUP: deferred to the season phase (keepLeagues)'
+        : await cleanupSweep(service, log)
     } catch (cleanupError) {
       report.cleanupSummary = `CLEANUP FAILED: ${(cleanupError as Error).message}`
       report.invariantFailures.push({
@@ -424,9 +452,27 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
 
   // ---- Provision (real create → invite/claim → schedule → start) ---------
   const settings = defaultsForTeamCount(plan.teamCount)
+  // L.D6.1: a SEASON league carries the D299 matrix row and the season
+  // roster preset (one starting slot per scoring position, so every §23.6
+  // position can reach a lineup). A draft-only plan carries neither and is
+  // byte-identical to M2's.
+  const season = plan.season
   const configured = {
     ...settings,
-    roster_settings: rosterForRounds(plan.rounds),
+    ...(season === undefined
+      ? {}
+      : {
+          schedule_mode: season.scheduleMode,
+          median_game: season.medianGame,
+          second_opponent: season.secondOpponent,
+          allow_illegal_lineups: season.allowIllegalLineups,
+          regular_season_weeks: season.regularSeasonWeeks,
+          playoff_teams: season.playoffTeams as (typeof settings)['playoff_teams'],
+          playoff_start_week: season.playoffStartWeek,
+          // §7.3.5 R column: trade_deadline_week ≤ regular_season_weeks.
+          trade_deadline_week: Math.min(settings.trade_deadline_week ?? 11, season.regularSeasonWeeks),
+        }),
+    roster_settings: season === undefined ? rosterForRounds(plan.rounds) : SEASON_ROSTER,
     draft: {
       ...settings.draft,
       draft_type: 'snake' as const,
@@ -1974,7 +2020,21 @@ async function collectAudit(
 // Cleanup (loud — R285; byte-clean verification)
 // ---------------------------------------------------------------------------
 
-async function cleanupSweep(service: Supabase, log: (line: string) => void): Promise<string> {
+/**
+ * PostgREST puts an `in.(…)` list in the URI, and Kong refuses a long one
+ * ("URI too long" — measured 2026-09-08 on a 25-league season run whose
+ * `team_lineups` delete carried ~330 team uuids). Every id list the sweep
+ * sends is chunked; 100 uuids is ~4 KB, comfortably inside the limit.
+ */
+const ID_CHUNK = 100
+
+function chunked<T>(items: readonly T[]): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += ID_CHUNK) out.push(items.slice(i, i + ID_CHUNK))
+  return out
+}
+
+export async function cleanupSweep(service: Supabase, log: (line: string) => void): Promise<string> {
   const { data: stale, error: staleError } = await service
     .from('leagues')
     .select('id')
@@ -1982,18 +2042,91 @@ async function cleanupSweep(service: Supabase, log: (line: string) => void): Pro
   throwIfError(staleError, 'cleanup: sim-league lookup')
   const ids = (stale ?? []).map((row) => row.id)
   if (ids.length > 0) {
-    const { error: draftsError } = await service.from('drafts').delete().in('league_id', ids)
-    throwIfError(draftsError, 'cleanup: drafts delete')
-    // 110/L.D1.2: completion writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the sweep releases them FIRST (forced by 110, not a drive-by).
-    const { error: matchupsError } = await service.from('matchups').delete().in('league_id', ids)
-    throwIfError(matchupsError, 'cleanup: matchups delete')
-    const { error: weeksError } = await service.from('league_weeks').delete().in('league_id', ids)
-    throwIfError(weeksError, 'cleanup: league_weeks delete')
-    const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
-    throwIfError(teamsError, 'cleanup: teams delete')
-    const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
-    throwIfError(leaguesError, 'cleanup: leagues delete')
+    for (const part of chunked(ids)) {
+      const { error: draftsError } = await service.from('drafts').delete().in('league_id', part)
+      throwIfError(draftsError, 'cleanup: drafts delete')
+    }
+    // L.D6.1 — the IN-SEASON tables, in the ONE recorded-correct FK order
+    // (`dev-seed-inseason-league.ts:128-182`; D326(11)). A season run writes
+    // every one of these, and none of them was swept before this task: F199's
+    // whole species is a fixture row that outlives its run.
+    // `team_lineups` is keyed by TEAM, not league — resolve the teams first.
+    const teamIds: string[] = []
+    for (const part of chunked(ids)) {
+      const { data: teamRows, error: teamReadError } = await service
+        .from('teams')
+        .select('id')
+        .in('league_id', part)
+      throwIfError(teamReadError, 'cleanup: sim-team lookup')
+      teamIds.push(...(teamRows ?? []).map((t) => t.id))
+    }
+    for (const part of chunked(teamIds)) {
+      const { error: lineupsError } = await service.from('team_lineups').delete().in('team_id', part)
+      throwIfError(lineupsError, 'cleanup: team_lineups delete')
+    }
+    for (const table of [
+      'lineup_actions',
+      'team_week_results',
+      'league_player_pool',
+      'league_rosters',
+      'transactions',
+      'league_chat',
+      'schedule_actions',
+      // 110/L.D1.2: completion writes matchups + league_weeks (the schedule) — both reference teams/leagues, so the sweep releases them FIRST (forced by 110, not a drive-by).
+      'matchups',
+      'league_weeks',
+    ] as const) {
+      for (const part of chunked(ids)) {
+        const { error } = await service.from(table).delete().in('league_id', part)
+        throwIfError(error, `cleanup: ${table} delete`)
+      }
+    }
+    // 118's `leagues.champion_team_id` FK: a COMPLETE league points at its
+    // champion, and the teams delete fails on it (measured 2026-09-08 on the
+    // first driven season — D326(11)).
+    for (const part of chunked(ids)) {
+      const { error: championError } = await service
+        .from('leagues')
+        .update({ champion_team_id: null })
+        .in('id', part)
+      throwIfError(championError, 'cleanup: champion clear')
+      const { error: teamsError } = await service.from('teams').delete().in('league_id', part)
+      throwIfError(teamsError, 'cleanup: teams delete')
+      const { error: leaguesError } = await service.from('leagues').delete().in('id', part)
+      throwIfError(leaguesError, 'cleanup: leagues delete')
+    }
   }
+  // ---- The SEASON-WIDE surfaces no league delete cascades to (F199) -------
+  // `score_fanout`'s PK is (season, week, player_id) with an FK only to
+  // `players` and RLS with zero policies (109:294-308): deleting a league
+  // leaves its queue rows behind, and the next run's worker claims them.
+  // `player_stats` / `nfl_games` are keyed by the SEASON, not the league —
+  // this is F199's second vector at run scale (one resident 2099 game row
+  // reddened 8 cells across 4 files; D317(7)).
+  const { error: queueError } = await service
+    .from('score_fanout')
+    .delete()
+    .eq('season', SYNTHETIC_SEASON)
+  throwIfError(queueError, 'cleanup: score_fanout delete')
+  const { error: statsError } = await service
+    .from('player_stats')
+    .delete()
+    .eq('season', SYNTHETIC_SEASON)
+  throwIfError(statsError, 'cleanup: player_stats delete')
+  const { error: gamesError } = await service
+    .from('nfl_games')
+    .delete()
+    .like('id', `${SIM_SEASON_GAME_PREFIX}%`)
+  throwIfError(gamesError, 'cleanup: nfl_games delete')
+  // The bounds the season's ingestion stamped. The 18 seeded `nfl_weeks`
+  // rows are NEVER deleted (`synthetic-season.ts:24-29` — reference data a
+  // parallel suite's league_weeks FK depends on); only the two live-updated
+  // columns are returned to the seed's NULLs.
+  const { error: boundsError } = await service
+    .from('nfl_weeks')
+    .update({ first_kickoff_at: null, last_game_ends_at: null })
+    .eq('season', SYNTHETIC_SEASON)
+  throwIfError(boundsError, 'cleanup: nfl_weeks bounds reset')
   const { data: profiles, error: profilesError } = await service
     .from('profiles')
     .select('id, username')
@@ -2017,12 +2150,93 @@ async function cleanupSweep(service: Supabase, log: (line: string) => void): Pro
     .select('id', { count: 'exact', head: true })
     .like('username', `${SIM_USERNAME_PREFIX}%`)
   throwIfError(verifyProfiles, 'cleanup: profile verification')
-  if ((leagueCount ?? -1) !== 0 || (profileCount ?? -1) !== 0) {
+  const census = await simCensus(service)
+  const dirty = census.filter((c) => c.count !== 0)
+  if ((leagueCount ?? -1) !== 0 || (profileCount ?? -1) !== 0 || dirty.length > 0) {
     throw new Error(
-      `cleanup: stack NOT clean — ${leagueCount} sim leagues, ${profileCount} sim profiles remain`,
+      `cleanup: stack NOT clean — ${leagueCount} sim leagues, ${profileCount} sim profiles remain` +
+        (dirty.length > 0 ? `; ${dirty.map((c) => `${c.what}=${c.count}`).join(' ')}` : ''),
     )
   }
-  const summary = `CLEANUP: swept ${ids.length} leagues + ${(profiles ?? []).length} bot users — 0 sim leagues / 0 sim profiles remain (players untouched — none seeded)`
+  const summary =
+    `CLEANUP: swept ${ids.length} leagues + ${(profiles ?? []).length} bot users — 0 sim leagues / 0 sim profiles remain ` +
+    `(players untouched — none seeded); ${censusLine(census)}`
   log(summary)
   return summary
+}
+
+/**
+ * The census of what a SIM RUN can leave behind, counted by the SAME service
+ * client, cleanup-first and cleanup-last. NINE cells (R924 — the docblock
+ * said eight and mis-split them): two matched by the sim's own name prefixes
+ * (`leagues`, `profiles`), three league-scoped surfaces reached through those
+ * league ids (`teams`, `matchups`, `team_week_results`), and four
+ * SEASON-scoped ones no league delete cascades to (`nfl_games` by the
+ * `simseason-` id prefix, `player_stats`, `score_fanout`, and the two
+ * live-updated `nfl_weeks` bound columns). The recorded canonical form is
+ * "0 × 9".
+ *
+ * WHAT THIS DOES **NOT** COVER, said plainly (R922 — F199 is only half
+ * discharged): F199's ORIGINAL vector is the `*-wire-*` player fixtures the
+ * db-backed vitest files upsert and delete by exact id, and its second vector
+ * includes the RESIDENT dev fixture's `nfl_games` rows (`dev-ld5*`), which
+ * carry neither the sim's `simseason-` id prefix nor the sim's leagues. Both
+ * survive a sim run, and this census counts NEITHER: there is no `players`
+ * cell at all, and the `nfl_games` cell is prefix-filtered. A CLEAN line here
+ * means "this sim run left nothing behind", never "the stack is clean" —
+ * `dev-seed-inseason-league.ts --teardown` and a hand-sweep of the wire
+ * fixtures are still the remedies for the other half.
+ */
+export interface CensusCell {
+  what: string
+  count: number
+}
+
+export async function simCensus(service: Supabase): Promise<CensusCell[]> {
+  const count = async (what: string, run: () => PromiseLike<{ count: number | null; error: { message: string } | null }>): Promise<CensusCell> => {
+    const { count: n, error } = await run()
+    throwIfError(error, `census: ${what}`)
+    if (n === null) throw new Error(`census: ${what} returned no count — refusing to read that as zero`)
+    return { what, count: n }
+  }
+  const leagueIds = await (async (): Promise<string[]> => {
+    const { data, error } = await service.from('leagues').select('id').like('name', `${SIM_LEAGUE_PREFIX}%`)
+    throwIfError(error, 'census: sim-league lookup')
+    return (data ?? []).map((r) => r.id)
+  })()
+  const scoped = leagueIds.length > 0 ? leagueIds : ['00000000-0000-0000-0000-000000000000']
+  const scopedCount = async (
+    what: string,
+    run: (part: string[]) => PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  ): Promise<CensusCell> => {
+    let total = 0
+    for (const part of chunked(scoped)) {
+      const cell = await count(what, () => run(part))
+      total += cell.count
+    }
+    return { what, count: total }
+  }
+  return [
+    await count('leagues', () => service.from('leagues').select('id', { count: 'exact', head: true }).like('name', `${SIM_LEAGUE_PREFIX}%`)),
+    await count('profiles', () => service.from('profiles').select('id', { count: 'exact', head: true }).like('username', `${SIM_USERNAME_PREFIX}%`)),
+    await scopedCount('teams', (part) => service.from('teams').select('id', { count: 'exact', head: true }).in('league_id', part)),
+    await scopedCount('matchups', (part) => service.from('matchups').select('id', { count: 'exact', head: true }).in('league_id', part)),
+    await scopedCount('team_week_results', (part) => service.from('team_week_results').select('team_id', { count: 'exact', head: true }).in('league_id', part)),
+    await count(`nfl_games(${SIM_SEASON_GAME_PREFIX}*)`, () => service.from('nfl_games').select('id', { count: 'exact', head: true }).like('id', `${SIM_SEASON_GAME_PREFIX}%`)),
+    await count(`player_stats(${SYNTHETIC_SEASON})`, () => service.from('player_stats').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
+    await count(`score_fanout(${SYNTHETIC_SEASON})`, () => service.from('score_fanout').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
+    // BOTH columns cleanup resets, not just one (R923): an abort between
+    // the `nfl_games` delete and the bounds reset, on a run whose only
+    // ingested week never reached all-final, leaves `first_kickoff_at`
+    // stamped with `last_game_ends_at` still NULL — which silently changes
+    // the week's lock DATUM (`nfl_weeks.starts_at` → `first_kickoff_at`,
+    // 111:271-275) and its entry-week window for the next run. Cleanup
+    // verifies itself with this same cell, so a one-column filter let that
+    // residue pass verification.
+    await count(`nfl_weeks(${SYNTHETIC_SEASON}) stamped`, () => service.from('nfl_weeks').select('week', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON).or('first_kickoff_at.not.is.null,last_game_ends_at.not.is.null')),
+  ]
+}
+
+export function censusLine(census: readonly CensusCell[]): string {
+  return `CENSUS: ${census.map((c) => `${c.what}=${c.count}`).join(' · ')}`
 }
