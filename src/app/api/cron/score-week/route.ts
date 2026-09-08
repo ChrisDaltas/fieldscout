@@ -4,7 +4,6 @@ import {
   runScoreWeekInvocation,
   SCORE_WEEK_BUDGET_MS,
   SCORE_WEEK_LEASE_SECONDS,
-  SCORE_WEEK_MAX_DURATION_SECONDS,
 } from '@/lib/leagues/scoring/score-week-invoker'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
@@ -36,7 +35,12 @@ import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
  * after one claim RPC. `maxDuration` must exceed the budget (pinned).
  */
 
-export const maxDuration = SCORE_WEEK_MAX_DURATION_SECONDS
+// R885 (#268, orchestrator): Next.js's segment-config parser accepts only a LITERAL here —
+// `export const maxDuration = SCORE_WEEK_MAX_DURATION_SECONDS` failed `next build` ("Unknown
+// identifier … at maxDuration") and therefore the Vercel deploy, while type-check, lint and
+// vitest all passed (F271: CI runs no `next build`). The constant stays the single source of
+// truth: route.test.ts pins this literal equal to it.
+export const maxDuration = 60
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 

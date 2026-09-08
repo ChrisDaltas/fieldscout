@@ -16,7 +16,12 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }))
 
-import { CLOCK_SKEW_SECONDS, SCORE_WEEK_BUDGET_MS, SCORE_WEEK_LEASE_SECONDS } from '@/lib/leagues/scoring/score-week-invoker'
+import {
+  CLOCK_SKEW_SECONDS,
+  SCORE_WEEK_BUDGET_MS,
+  SCORE_WEEK_LEASE_SECONDS,
+  SCORE_WEEK_MAX_DURATION_SECONDS,
+} from '@/lib/leagues/scoring/score-week-invoker'
 
 import { GET, maxDuration } from './route'
 
@@ -38,6 +43,9 @@ describe('GET /api/cron/score-week', () => {
   it('the lease outlives the invoker: leaseSeconds ≥ maxDuration + clock skew (F263(f)/R874); the budget sits below maxDuration', () => {
     expect(SCORE_WEEK_LEASE_SECONDS).toBeGreaterThanOrEqual(maxDuration + CLOCK_SKEW_SECONDS)
     expect(SCORE_WEEK_BUDGET_MS).toBeLessThan(maxDuration * 1000)
+    // R885: the route's export must be a literal (Next.js segment config), so the pin ties the
+    // literal to the invoker's constant — the two cannot drift apart silently.
+    expect(maxDuration).toBe(SCORE_WEEK_MAX_DURATION_SECONDS)
     expect(maxDuration).toBe(60)
   })
 })
