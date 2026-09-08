@@ -42,6 +42,11 @@
  * header records why that is a hazard. F199's census catches the ids by
  * their `dev-ld51-` prefix and the league by its name.
  *
+ * L.D5.4 (the league-home heroes + the players page, D324) ADDS three
+ * UNOWNED players (`dev-ld54-fa-*`: one with no pool row, one the tick locks
+ * off a 2001 kickoff on his own team, one on waivers until a stored instant)
+ * and the fourth game row that locks the second; all cleaned here.
+ *
  * L.D5.2 (the matchup view's browser pass) DRIVES this fixture through a
  * live week with `scripts/dev-drive-inseason-week.ts` (--open → --lineup →
  * --games → --score → --window → --finalize); its stat lines, queue rows,
@@ -85,6 +90,17 @@ const GAME_OPEN_ID = 'dev-ld51-game-open'
  *  QB's team, `final`, so the box shows Now playing / Done / Up next at
  *  once. Owned here for cleanup; created by the driver. */
 const GAME_FINAL_ID = 'dev-ld52-game-final'
+/** L.D5.4's free agents for the players page (D324): three UNOWNED players
+ *  — one with no pool row (lazy — §12.19), one whose pool row the tick flips
+ *  to `locked_in_game` off a 2001 kickoff on his own team, one `on_waivers`
+ *  with a clearing instant — and the game row that locks the second. */
+const FREE_AGENTS = [
+  { id: 'dev-ld54-fa-wr', full_name: 'Dev FA Wideout', position: 'WR', team: 'LDK', status: 'Active' },
+  { id: 'dev-ld54-fa-rb-locked', full_name: 'Dev FA Back Locked', position: 'RB', team: 'LDL', status: 'Active' },
+  { id: 'dev-ld54-fa-te-waivers', full_name: 'Dev FA Tight End', position: 'TE', team: 'LDM', status: 'Active' },
+] as const
+const GAME_FA_LOCKED_ID = 'dev-ld54-game-fa-locked'
+const WAIVERS_UNTIL = '2099-09-12T17:00:00.000Z'
 const KICKOFF_PAST = '2001-09-09T17:00:00.000Z'
 const KICKOFF_FUTURE = '2099-09-13T17:00:00.000Z'
 const ACTION_LEAGUE = 'd5100000-0000-4000-8000-000000000001'
@@ -122,7 +138,9 @@ async function cleanup(): Promise<void> {
         if (error) throw new Error(`cleanup ${table}: ${error.message}`)
       }
     }
-    for (const table of ['team_week_results', 'league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members', 'league_chat', 'schedule_actions'] as const) {
+    // L.D5.4: `transactions` too — an add/drop made through the players page
+    // writes a row whose `initiator_team_id` FK blocks the teams delete.
+    for (const table of ['team_week_results', 'league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members', 'league_chat', 'schedule_actions', 'transactions'] as const) {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
@@ -131,7 +149,7 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
-  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_FINAL_ID])
+  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_FINAL_ID, GAME_FA_LOCKED_ID])
   if (gamesError) throw new Error(`cleanup nfl_games: ${gamesError.message}`)
   // L.D5.2: the driver's stat lines + queue rows for the fixture players
   // (F199's census counts 2099 stamps to zero after a teardown).
@@ -143,7 +161,7 @@ async function cleanup(): Promise<void> {
   // seed leaves nfl_weeks 2099 as seedSyntheticSeason wrote it: NULL ends).
   const { error: weekError } = await service.from('nfl_weeks').update({ last_game_ends_at: null, first_kickoff_at: null }).eq('season', SYNTHETIC_SEASON).eq('week', 1)
   if (weekError) throw new Error(`cleanup nfl_weeks: ${weekError.message}`)
-  const { error: playersError } = await service.from('players').delete().in('id', PLAYERS.map((p) => p.id))
+  const { error: playersError } = await service.from('players').delete().in('id', [...PLAYERS.map((p) => p.id), ...FREE_AGENTS.map((p) => p.id)])
   if (playersError) throw new Error(`cleanup players: ${playersError.message}`)
   console.log(`cleanup: ${ids.length} league(s) removed`)
 }
@@ -227,8 +245,23 @@ async function seed(): Promise<void> {
   const { error: gamesError } = await service.from('nfl_games').insert([
     { id: GAME_LOCKED_ID, season: SYNTHETIC_SEASON, week: 1, home_team: 'LDB', away_team: 'ZZZ', kickoff_at: KICKOFF_PAST },
     { id: GAME_OPEN_ID, season: SYNTHETIC_SEASON, week: 1, home_team: 'LDD', away_team: 'ZZY', kickoff_at: KICKOFF_FUTURE },
+    // L.D5.4: the free agent's own kickoff (2001) — the tick locks his pool row.
+    { id: GAME_FA_LOCKED_ID, season: SYNTHETIC_SEASON, week: 1, home_team: 'LDL', away_team: 'ZZW', kickoff_at: KICKOFF_PAST },
   ])
   if (gamesError) throw new Error(`nfl_games: ${gamesError.message}`)
+
+  // L.D5.4: the free agents (players page). The WR has NO pool row on
+  // purpose (lazy — a free agent with no row IS a free agent, §12.19); the
+  // RB's row is `free_agent` until the tick below reads his 2001 kickoff
+  // and flips it to `locked_in_game`; the TE is on waivers until a stored
+  // instant (113's CHECK ties the pair).
+  const { error: faError } = await service.from('players').upsert([...FREE_AGENTS])
+  if (faError) throw new Error(`players (free agents): ${faError.message}`)
+  const { error: faPoolError } = await service.from('league_player_pool').insert([
+    { league_id: leagueId, player_id: 'dev-ld54-fa-rb-locked', state: 'free_agent' },
+    { league_id: leagueId, player_id: 'dev-ld54-fa-te-waivers', state: 'on_waivers', waivers_until: WAIVERS_UNTIL },
+  ])
+  if (faPoolError) throw new Error(`league_player_pool (free agents): ${faPoolError.message}`)
 
   // The pool VIEW, populated once now (the cron job refreshes it every
   // minute after this). Service role: no auth.uid(), which is the job's
