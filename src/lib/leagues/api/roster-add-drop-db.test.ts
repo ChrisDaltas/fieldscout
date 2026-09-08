@@ -92,6 +92,7 @@ const ACTION = {
   outsider: 'af600000-0000-4000-8000-000000000016',
   commish: 'af600000-0000-4000-8000-000000000017',
   second: 'af600000-0000-4000-8000-000000000018',
+  lapsedB: 'af600000-0000-4000-8000-000000000019',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -414,6 +415,34 @@ describe('roster_add_drop over PostgREST — two managers race one FCFS add', ()
     // …while members READ the pool and the activity (109's member SELECT).
     const { data: memberPool } = await loserClient.from('league_player_pool').select('player_id').eq('league_id', leagueId)
     expect(memberPool).toHaveLength(1)
+  })
+
+  it('once waivers_until has LAPSED the same add LANDS first come, first served (Q33; 115 `on_waivers_lapsed`) — the row still said on_waivers, so the client must never gate on it (R894)', async () => {
+    // Fixture (service role): the period ends in the past; the STATE stays
+    // `on_waivers` exactly as the tick leaves it — nothing flips the row.
+    const { data: lapsed, error: lapseError } = await service
+      .from('league_player_pool')
+      .update({ waivers_until: '2000-01-01T00:00:00Z' })
+      .eq('league_id', leagueId)
+      .eq('player_id', CONTESTED)
+      .select('state, waivers_until')
+    expect(lapseError).toBeNull()
+    expect(lapsed).toStrictEqual([{ state: 'on_waivers', waivers_until: '2000-01-01T00:00:00+00:00' }])
+
+    const loserTeamId = winnerTeamId === teamAId ? teamBId : teamAId
+    const { data, error } = await loserClient.rpc('roster_add_drop', {
+      p_league_id: leagueId,
+      p_team_id: loserTeamId,
+      p_add: CONTESTED,
+      p_action_id: ACTION.lapsedB,
+    })
+    expect(error).toBeNull()
+    const result = data as unknown as AddDropResult
+    expect(result.add_player_id).toBe(CONTESTED)
+    expect(result.add?.from_state).toBe('on_waivers_lapsed')
+    expect(result.add?.slot_key).toBe('bn')
+    expect(await rosterRowsFor(CONTESTED)).toStrictEqual([{ team_id: loserTeamId, slot_key: 'bn' }])
+    expect(await poolRowFor(CONTESTED)).toStrictEqual({ state: 'rostered', waivers_until: null })
   })
 
   it('an outsider and the commissioner-on-another-team are refused with the one no-leak 42501; a plain add by a manager lands', async () => {

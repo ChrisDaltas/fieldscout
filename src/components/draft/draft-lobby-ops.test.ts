@@ -59,6 +59,7 @@ function detailWith(over: {
       max_teams: over.maxTeams ?? 2,
       created_at: null,
       updated_at: null,
+      champion_team_id: null,
     },
     settings,
     members: over.members ?? [member({}), member({ id: 'm2', user_id: 'u2', team_id: 't2' })],

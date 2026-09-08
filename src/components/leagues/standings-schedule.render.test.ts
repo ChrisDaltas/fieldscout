@@ -100,6 +100,7 @@ const detail: LeagueDetail = {
     max_teams: 8,
     created_at: null,
     updated_at: null,
+    champion_team_id: null,
   },
   settings,
   members: [

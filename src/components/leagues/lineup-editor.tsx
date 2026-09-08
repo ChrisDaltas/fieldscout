@@ -25,9 +25,9 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
-import { formatInstantInZone } from './league-home-states-ops'
 import {
   buildEditorModel,
+  formatKickoff,
   irStintChip,
   lockBadgeFor,
   lockedPlayerIds,
@@ -630,12 +630,7 @@ function BenchZone({ bench, locked, weekIsCurrent, currentWeek, readOnly, select
   )
 }
 
-/** §16.4: viewer-local, league zone on hover. Formatting a STORED instant —
- *  no clock is read. */
-export function formatKickoff(iso: string, leagueTimeZone: string | null): { local: string; title: string | null } {
-  const ms = Date.parse(iso)
-  if (Number.isNaN(ms)) return { local: iso, title: null }
-  const local = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(ms))
-  const zoned = leagueTimeZone ? formatInstantInZone(ms, leagueTimeZone) : null
-  return { local, title: zoned ? `${zoned.text}${zoned.zoneAbbrev ? ` ${zoned.zoneAbbrev}` : ''} (league time)` : null }
-}
+/** `formatKickoff` lives in `lineup-editor-ops.ts` since L.D5.4 (F275(d)) —
+ *  re-exported so an existing import path keeps working; new callers import
+ *  the ops module and leave the drag stack out of their bundle. */
+export { formatKickoff }

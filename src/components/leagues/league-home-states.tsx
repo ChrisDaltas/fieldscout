@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { AddDraftListCta } from './attach-list-modal'
 import { InvitePanel } from './invite-panel'
 import { Crest } from './league-cells'
+import { SeasonHero } from './league-home-season'
 import {
   autoStartPollMs,
   deriveSetupChecklist,
@@ -58,9 +59,14 @@ import {
  *                   D98 named zone when set) with the REAL Enter-draft-lobby
  *                   CTA (F38 discharged) and Practice-this-draft behind the
  *                   L.B3.5 ready-flag, plus the invite panel
- *   - `drafting`  → the LIVE hero (§16.5.1: LIVE badge + Join draft)
- *   - later       → in_season/playoffs/complete stay the clearly-marked
- *                   "not yet" placeholder until M4 (F46), never mock data
+ *   - `drafting`  → the LIVE hero (§16.5.1: LIVE badge + Join draft; the
+ *                   presence peek §16.5.1 printed is CUT — C57 / D120(5):
+ *                   §9.3's channel budget, the room is one tap away)
+ *   - `in_season` / `playoffs` / `complete` → the REAL season heroes
+ *                   (`league-home-season.tsx`, M4 L.D5.4 — the F46
+ *                   discharge incl. the R281 post-draft doors)
+ *   - later       → a status OUTSIDE the six-state enum: the honest "not
+ *                   yet" card, never mock data
  *
  * The separate Manage-league page folded into this one: the invite panel
  * renders here directly, and read-only settings summaries were dropped — the
@@ -142,6 +148,9 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
         <ScheduledHero leagueId={leagueId} data={data} settingsHref={settingsHref} />
       )}
       {state === 'drafting' && <DraftingHero leagueId={leagueId} data={data} />}
+      {(state === 'in_season' || state === 'playoffs' || state === 'complete') && (
+        <SeasonHero leagueId={leagueId} data={data} state={state} />
+      )}
       {state === 'later' && <LaterPlaceholder status={league.status} />}
 
       {/* §16.5.2 mock-workflow row (L.B3.5): the resumable-paused card —
@@ -680,7 +689,11 @@ function CountUnit({ value, label }: { value: number; label: string }) {
  * render here: presence is channel state, and opening the draft channel from
  * the home would spend a second subscription on a page whose one CTA leads
  * to the room that already owns it (§9.3's ≤ 3-channel budget; recorded in
- * D120). The room is one tap away.
+ * D120). The room is one tap away. **DECIDED at L.D5.4 (tasks-M4 C57, the
+ * F46/R275 extension): the peek is CUT, no second channel, and §16.5.1's
+ * drafting row is amended (spec v2.16.34) — a spec erratum rather than a
+ * cheaper presence source, because the ONLY presence datum is the draft
+ * channel's and any cheaper one would be a stale copy of it.**
  */
 function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const startedAt = data.active_draft?.started_at ?? null
@@ -710,17 +723,19 @@ function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail
 }
 
 // ---------------------------------------------------------------------------
-// Later statuses — clearly-marked "not yet", never mock data (§16.5.1)
+// An UNKNOWN status — clearly-marked "not yet", never mock data (§16.5.1)
 // ---------------------------------------------------------------------------
 
+/** Since L.D5.4 every member of §7.1's six-state enum has a real hero; this
+ *  card is reached only by a status outside it (a future enum member, a
+ *  corrupt row) and says so honestly rather than rendering a wrong hero. */
 function LaterPlaceholder({ status }: { status: string }) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       <Icon name="rocket" size={18} className="text-n-3" />
       <p className="text-h5 text-ink">{laterStatusLabel(status)}</p>
-      {/* Post-draft statuses only from here (F46): drafting has its real hero. */}
       <p className="max-w-md text-[13px] font-medium text-n-3">
-        The in-season experience lands in a later update. Your league is safe — this
+        This league is in a state this screen doesn’t know yet. Your league is safe — this
         screen fills in as those features ship.
       </p>
       <Button variant="stroke" size="sm" asChild>

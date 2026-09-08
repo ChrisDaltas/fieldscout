@@ -25,7 +25,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { leaguesKeys } from '@/hooks/use-leagues'
-import { teamLineupKeys, useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
+import { teamLineupKeys, useLineup, useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import { leagueRosterKeys, useRostersLive } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -33,7 +33,7 @@ import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-serv
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import { LineupEditor } from './lineup-editor'
-import { LOCK_POLL_MS, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY } from './lineup-editor-ops'
+import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { TeamPage } from './team-page'
 
@@ -50,7 +50,7 @@ vi.mock('@/hooks/use-rosters', async (importOriginal) => {
 })
 vi.mock('@/hooks/use-lineup', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/hooks/use-lineup')>()
-  return { ...orig, useSetLineup: vi.fn(orig.useSetLineup) }
+  return { ...orig, useLineup: vi.fn(orig.useLineup), useSetLineup: vi.fn(orig.useSetLineup) }
 })
 
 // ---------------------------------------------------------------------------
@@ -94,6 +94,7 @@ const detail: LeagueDetail = {
     max_teams: 8,
     created_at: null,
     updated_at: null,
+    champion_team_id: null,
   },
   settings,
   members: [
@@ -274,31 +275,27 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(html).toContain('Locks from')
     expect(html).toContain('data-lock-countdown="placeholder-q40"')
     expect(html).toContain('countdown coming')
-    expect(html).not.toContain('Q40</')
+    // F252(d): the honest pin — strip the lowercase attribute, then no 'Q40'
+    // anywhere in the text (a mid-sentence mention would have passed the
+    // narrower `Q40</` check).
+    expect(html.replace(/data-lock-countdown="[^"]*"/g, '')).not.toMatch(/Q40/)
   })
 
-  it('R822(ii): the page polls the rosters at the tick’s cadence for the CURRENT week, and not for another', () => {
+  it('F259(a): the page passes NO poll — the room’s `league_player_pool` event (119) refetches the lock view', () => {
     vi.mocked(useRostersLive).mockClear()
     renderTeamPage()
-    // Week 1 is current (the ladder: 1 live, 2 upcoming) and the default.
-    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { refetchInterval: LOCK_POLL_MS }])
+    // One argument: the league id. No `{ refetchInterval }` — the 60 s poll
+    // L.D5.1 added (R822(ii)) retired at L.D5.4 with the tick's broadcast.
+    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE])
+  })
 
-    // A ladder whose current week is 2, with the lineup for week 2 seeded and
-    // the page opening there: polls. Then week 1 — a PAST week, closed by
-    // name — cannot be picked in a static render, so the argument is pinned
-    // through the pure function the page calls (`lockPollInterval`,
-    // lineup-editor-ops.test.ts) for the non-current arm.
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
-    client.setQueryData(leaguesKeys.detail(LEAGUE), detail)
-    client.setQueryData(leagueRosterKeys.all(LEAGUE), rosters)
-    client.setQueryData(scheduleKeys.all(LEAGUE), { ...schedule, weeks: [] } satisfies LeagueSchedule)
-    client.setQueryData(teamLineupKeys.week(TEAM, 1), null)
-    vi.mocked(useRostersLive).mockClear()
-    renderToStaticMarkup(
-      createElement(QueryClientProvider, { client }, createElement(TeamPage, { leagueId: LEAGUE, teamId: TEAM })),
-    )
-    // No ladder → no current week → nothing is the current week → no poll.
-    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { refetchInterval: false }])
+  it('F252(c): no lineup read for week 1 while the ladder is still pending', () => {
+    vi.mocked(useLineup).mockClear()
+    renderTeamPage({ schedule: 'missing' })
+    // The ladder is unknown → the week argument is undefined (the query is
+    // disabled), not the `defaultLineupWeek([]) === 1` fetch that was wasted
+    // per open before.
+    expect(vi.mocked(useLineup).mock.calls.at(-1)).toEqual([TEAM, undefined])
   })
 
   it('R825: a refusal renders the RPC’s sentence VERBATIM — the player and his kickoff named, nothing re-worded', () => {

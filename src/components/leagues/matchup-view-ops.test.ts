@@ -220,12 +220,18 @@ describe('starterCell — PENDING is the word, never a number (E61)', () => {
 describe('starterCell — NO STAT LINE is the worker’s 0 by name (Q42), said in the title', () => {
   it('in a DONE game: 0.00 with the Q42 reason', () => {
     expect(starterCell(starter({ reason: 'no_stat_row', phase: 'done' }))).toEqual({ text: '0.00', title: ZERO_BY_NAME_TITLE, tone: 'zero_by_name' })
-    expect(ZERO_BY_NAME_TITLE).toContain('Q42')
+    // F277(a): the REASON is in the title, no ledger code is (a Q/E/F number
+    // is a builder's pointer, not a user's).
+    expect(ZERO_BY_NAME_TITLE).toContain('0 by name')
+    expect(ZERO_BY_NAME_TITLE).not.toMatch(/\b[QEF]\d+\b/)
   })
   it('before or during his game: a dash that says it counts as 0 — the same reading, not a different score', () => {
     expect(starterCell(starter({ reason: 'no_stat_row', phase: 'up_next' }))).toEqual({ text: '—', title: YET_TO_PLAY_TITLE, tone: 'yet_to_play' })
     expect(starterCell(starter({ reason: 'no_stat_row', phase: 'now_playing' }))).toEqual({ text: '—', title: PLAYING_NO_LINE_TITLE, tone: 'yet_to_play' })
-    for (const title of [YET_TO_PLAY_TITLE, PLAYING_NO_LINE_TITLE]) expect(title).toMatch(/counts as 0.*Q42/)
+    for (const title of [YET_TO_PLAY_TITLE, PLAYING_NO_LINE_TITLE]) {
+      expect(title).toMatch(/counts as 0/)
+      expect(title).not.toMatch(/\b[QEF]\d+\b/)
+    }
   })
   it('a bye scores 0 by §11.2’s own reading', () => {
     expect(starterCell(starter({ reason: 'no_stat_row', phase: 'bye' }))).toEqual({ text: '0.00', title: BYE_TITLE, tone: 'bye' })

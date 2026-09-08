@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
 import { leagueActivityKeys } from './use-league-activity'
+import { leaguePoolKeys } from './use-league-pool'
 import { leaguesKeys } from './use-leagues'
 import { leagueRosterKeys } from './use-rosters'
 
@@ -125,10 +126,22 @@ export function useAddDrop(leagueId: string) {
       // The move is in the feed and it changed the league's rosters. The
       // ROSTERS query key is L.D4.1's (`use-rosters.ts`) — PROGRESS
       // **F233(b)**: added here by L.D4.1 rather than invented by L.D4.2, so
-      // a completed move refreshes the roster it changed.
+      // a completed move refreshes the roster it changed. The POOL key is
+      // L.D5.4's (`use-league-pool.ts`): the same move flipped a pool row
+      // (rostered ↔ free_agent / on_waivers — D294's mirror).
       void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: leaguePoolKeys.all(leagueId) })
+    },
+    onError: () => {
+      // A refusal re-reads (the D316(10a) posture, L.D5.4): every refusal a
+      // move can meet is about state this client rendered from a VIEW —
+      // the tick's lock, a pool row, a roster — that the server just judged
+      // stale or wrong. Re-reading is how the server's answer reaches the
+      // screen; the refusal text itself stays on screen verbatim.
+      void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
+      void queryClient.invalidateQueries({ queryKey: leaguePoolKeys.all(leagueId) })
     },
   })
 
