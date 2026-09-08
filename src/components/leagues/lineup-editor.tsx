@@ -354,16 +354,21 @@ export function LineupEditor({
                 />
               </label>
             )}
+            {/* L.D6.2: the two commit controls carry stable hooks. Their only
+                other handle is their own label, and the label changes while
+                submitting ("Saving…"), so a browser spec would have to select
+                on prose that moves — the R399 vacuity lesson. */}
             <Button
               variant="blue"
               size="md"
               disabled={!dirty || mutation.isPending || (isCommissionerArm && reason.trim().length === 0)}
               onClick={save}
+              data-save-lineup
             >
               <Icon name="save" size={13} />
               {mutation.isPending ? 'Saving…' : 'Save lineup'}
             </Button>
-            <Button variant="stroke" size="md" disabled={!dirty || mutation.isPending} onClick={discard}>
+            <Button variant="stroke" size="md" disabled={!dirty || mutation.isPending} onClick={discard} data-discard-lineup>
               Discard changes
             </Button>
             {dirty && !mutation.isPending && (
