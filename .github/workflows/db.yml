@@ -31,6 +31,37 @@ name: Database
 # now pins the mirror in both directions and runs in the fast lane, so the
 # two lists cannot drift apart again without a red.
 #
+# THE THIRD DIRECTION — THE SOURCE THOSE SUITES IMPORT (2026-09-08, F290):
+# mirroring `stackInclude` connected this job to the FILES IT RUNS, but not to
+# the modules those files IMPORT, and a source-only change walked straight
+# past. MEASURED on PR #274: `season-sweep-db.test.ts` imports
+# `./season-runner`; #274 changed `season-runner.ts`, `season-scenario.ts` and
+# `sim-types.ts` and touched no `*-db.test.ts`, so `gh run list --branch
+# fix/M4-F286-sim-full-slate` shows only the `CI` workflow — this job never
+# fired. (PR #273 was masked because it CREATED that suite file; every sim PR
+# after it was exposed.) The `src/`-facing source block below is therefore the
+# measured TRANSITIVE IMPORT CLOSURE of the stack suites, not a guess — which
+# is why it reaches strays outside `src/lib/leagues/**`: `src/lib/sports-data`
+# (via `sync/projections.ts`), `src/types/database.ts` (via `stat-keys.ts`),
+# `src/utils` (via `commish-auction-ops.ts`), and three pure-logic helpers that
+# happen to live under `src/components/draft/`.
+#
+# The broad `src/**` is STILL deliberately excluded, for the unchanged reason:
+# a React-only PR cannot break a migration replay and must stay out of the
+# expensive lane. Those three `src/components/draft` modules are named FILE BY
+# FILE rather than by directory glob for exactly that reason — that directory
+# holds 26 React components and 36 unit-test files beside them, and watching
+# the lot would be the R608 shape again (a pattern that looks like coverage
+# while most of what it matches this job never runs). Naming files is not
+# brittle here: `ci-stack-lane-trigger.test.ts` walks the closure and REDS in
+# the fast lane the moment a fourth becomes reachable.
+#
+# THE COST, ACCEPTED KNOWINGLY: every `src/lib/leagues/**` PR now boots the
+# stack, which is most league PRs. It is affordable because F264's flake class
+# was root-caused in PR #271 (D325) and every `Database` run since has been
+# green on the first attempt. If that stops being true, fix the flake — do not
+# narrow this filter back to a list that cannot see its own inputs.
+#
 # THE CLI IS THE REPO'S OWN PINNED `supabase` DEVDEPENDENCY, RUN VIA `npx`
 # (2026-09-08, F280 / D325): `supabase/setup-cli@v1` with `version: latest`
 # resolved "latest" through the unauthenticated GitHub API and rate-limited
@@ -43,6 +74,19 @@ name: Database
 # call, no version drift between CI and `npx supabase db reset` locally.
 # The stack-backed step runs only if the stack STARTED (pgTAP may still red
 # it), so a stack that never came up reds ONE step with its own message.
+#
+# ...WHICH IS WHY `package.json` AND `package-lock.json` ARE IN THE FILTER
+# (2026-09-08, R934). The four lines above declare the pinned devDependency an
+# INPUT to this replay, and nothing watched it: a CLI bump is a manifest-and-
+# lockfile-only diff (`a7a76c3`, "exact-pin supabase CLI", is exactly that file
+# set) matching neither block, so it would merge with this job never running
+# and the red would land on the next unrelated `supabase/**` PR — verbatim the
+# F94 shape this banner already records one act up. `package.json` is a lane-
+# DEFINITION file besides: `test:stack` ("vitest run 'db.test' 'm1-gate'") is
+# the third list describing what this step runs, beside `stackInclude` and the
+# filter below. The cost is knowingly taken: every dependency bump now boots
+# the stack. That is the correct direction — a bump is precisely the change
+# that can break a replay without touching a line of our own code.
 
 on:
   pull_request:
@@ -54,6 +98,23 @@ on:
       - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
+      # the pinned CLI this replay RUNS, and `test:stack` itself (R934)
+      - 'package.json'
+      - 'package-lock.json'
+      # the SOURCE those suites import — the measured transitive closure
+      # (F290). NOT `src/**`: see the banner.
+      - 'src/lib/leagues/**'
+      - 'src/lib/sync/**'
+      - 'src/lib/supabase/**'
+      - 'src/lib/lists/**'
+      - 'src/lib/sports-data/**'
+      - 'src/lib/email/**'
+      - 'src/lib/nfl-teams.ts'
+      - 'src/utils/**'
+      - 'src/types/database.ts'
+      - 'src/components/draft/auction-budget.ts'
+      - 'src/components/draft/commish-auction-ops.ts'
+      - 'src/components/draft/draft-order.ts'
   push:
     branches: [main]
     paths:
@@ -64,6 +125,23 @@ on:
       - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
+      # the pinned CLI this replay RUNS, and `test:stack` itself (R934)
+      - 'package.json'
+      - 'package-lock.json'
+      # the SOURCE those suites import — the measured transitive closure
+      # (F290). NOT `src/**`: see the banner.
+      - 'src/lib/leagues/**'
+      - 'src/lib/sync/**'
+      - 'src/lib/supabase/**'
+      - 'src/lib/lists/**'
+      - 'src/lib/sports-data/**'
+      - 'src/lib/email/**'
+      - 'src/lib/nfl-teams.ts'
+      - 'src/utils/**'
+      - 'src/types/database.ts'
+      - 'src/components/draft/auction-budget.ts'
+      - 'src/components/draft/commish-auction-ops.ts'
+      - 'src/components/draft/draft-order.ts'
 
 concurrency:
   group: db-${{ github.workflow }}-${{ github.ref }}
