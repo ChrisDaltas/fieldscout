@@ -167,6 +167,8 @@ const FEED: ActivityFeed = {
   items: [
     { kind: 'transaction', id: 'tx1', created_at: '2099-09-10T12:00:00Z', type: 'add_drop', status: 'complete', week: 2, team_id: T1, actor_id: 'user-commish', action_id: 'a1', payload: { add: { name: 'Nine', player_id: 'p9', position: 'WR', nfl_team: 'AAA' }, drop: null } },
     { kind: 'system', id: 'c1', created_at: '2099-09-11T12:00:00Z', context: 'league', message: 'Schedule remixed by the commissioner.', actor_id: 'user-commish' },
+    // R895: a week worker's notice — `user_id NULL` (116→118 `finalize_matchups`).
+    { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 2 finalized with a postponed game.', actor_id: null },
   ],
   limit: 8,
   has_more: false,
@@ -305,13 +307,19 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect(html).not.toMatch(/>Claim<|>Propose trade</)
   })
 
-  it('the activity feed renders L.D4.2’s items: a move with its team and week, a system post with the ✸ commissioner label', () => {
+  it('the activity feed renders L.D4.2’s items: a move with its team and week, an actor’s system post with the ✸ commissioner label, a NULL-actor notice with the plain system chip (R895)', () => {
     const html = renderHome()
     expect(html).toContain('data-feed-item="transaction"')
     expect(html).toContain('added Nine (WR · AAA)')
     expect(html).toContain('data-feed-item="system"')
-    expect(html).toContain('Schedule remixed by the commissioner.')
-    expect(html).toContain('✸ commissioner')
+    const c1 = html.slice(html.indexOf('Schedule remixed by the commissioner.') - 600, html.indexOf('Schedule remixed by the commissioner.'))
+    expect(c1).toContain('data-commissioner')
+    expect(c1).toContain('✸ commissioner')
+    const c2 = html.slice(html.indexOf('Week 2 finalized with a postponed game.') - 600, html.indexOf('Week 2 finalized with a postponed game.'))
+    expect(c2).toContain('data-system')
+    expect(c2).toContain('>system<')
+    expect(c2).not.toContain('data-commissioner')
+    expect((html.match(/data-commissioner/g) ?? []).length).toBe(1)
   })
 
   it('the league nav carries the five in-season pages; both post-draft doors are present (F46 / R281)', () => {
@@ -384,7 +392,7 @@ describe('playoffs — the hero shows the playoff week’s row for the viewer, o
     expect(html).toContain('Week 4 · Playoff matchup')
     expect(html).toContain('data-matchup="p1"')
   })
-  it('no row for the viewer in a playoff week → "a bye or an early exit", never "eliminated"', () => {
+  it('no row for the viewer in a playoff week → the honest no-record copy (no bracket pointer at an unbuilt tab, no bye hedge — R896), never "eliminated"', () => {
     const html = renderHome({
       detail: detailWith({ status: 'playoffs' }),
       schedule: playoffLadder,
@@ -392,6 +400,7 @@ describe('playoffs — the hero shows the playoff week’s row for the viewer, o
     })
     expect(html).toContain(PLAYOFF_NONE_FOR_TEAM_COPY)
     expect(html).not.toMatch(/eliminated/i)
+    expect(html).not.toMatch(/standings page carries the bracket|a bye or/)
   })
   it('no rows yet → the round-pending copy', () => {
     const html = renderHome({ detail: detailWith({ status: 'playoffs' }), schedule: playoffLadder, weeks: { 4: weekDoc(4) } })

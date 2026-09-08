@@ -7,7 +7,9 @@
  * rows + the league room's D97 system posts). A transaction's sentence is
  * read from its STORED payload (113 writes the names into it) and the team
  * from the league detail's list; nothing is computed. The "✸ commissioner"
- * treatment §13.4 names is a LABEL today — the link to the audit entry needs
+ * treatment §13.4 names is a LABEL today, worn by a system post ONLY when
+ * an actor wrote it (a NULL actor is a worker's notice and wears a plain
+ * "system" chip — R895) — the link to the audit entry needs
  * `commissioner_actions`, which is a later milestone's (F233(d)); the feed
  * carries `kind`/`context` so the label renders now and the link lands
  * without a shape change.
@@ -23,8 +25,11 @@ export interface FeedLine {
   team: string | null
   week: number | null
   createdAt: string | null
-  /** §13.4's commissioner treatment: a system post from the league room is
-   *  a commissioner's act (111/112 write them in-transaction). */
+  /** §13.4's commissioner treatment. A system post is a commissioner's act
+   *  when it carries an ACTOR (111/112/114/120 write `auth.uid()` in-
+   *  transaction); the week workers' notices (116→118 `finalize_matchups`'s
+   *  postponed-game post) carry `user_id NULL` — the engine's, labelled as
+   *  such, never as a person's (R895). */
   commissioner: boolean
 }
 
@@ -76,7 +81,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
         team: null,
         week: null,
         createdAt: item.created_at,
-        commissioner: true,
+        commissioner: item.actor_id !== null,
       }
     }
     const team = item.team_id ? (teamNames.get(item.team_id) ?? null) : null
@@ -95,3 +100,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
 export const FEED_EMPTY_COPY = 'Nothing has happened yet — roster moves and commissioner notices land here.'
 export const FEED_TITLE = 'Activity'
 export const COMMISSIONER_LABEL = '✸ commissioner'
+/** The chip on a system post NOBODY posted (`actor_id` NULL — a week
+ *  worker's notice). Plain, so a postponed-week argument is not pointed at
+ *  the commissioner (R895). */
+export const SYSTEM_LABEL = 'system'

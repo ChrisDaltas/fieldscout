@@ -60,8 +60,9 @@ export type HeroMatchup =
  * first row because a page must show something; a hero card must not
  * pretend). `no_seat` = the viewer manages no franchise here (a commissioner
  * without a team); `none_for_team` = the week has rows but none carries the
- * team (a playoff week after an exit, or a bye the engine wrote no row for);
- * `no_rows` = the week has no pairings on record yet.
+ * team (a playoff week after an exit — NOT a bye: 118 writes a bye as a row
+ * with `away_team_id NULL`, which lands in `mine`; R896); `no_rows` = the
+ * week has no pairings on record yet.
  */
 export function heroMatchup(matchups: readonly MatchupRow[], myTeamId: string | null): HeroMatchup {
   if (!myTeamId) return { kind: 'no_seat' }
@@ -74,8 +75,10 @@ export function heroMatchup(matchups: readonly MatchupRow[], myTeamId: string | 
 export const NO_SEAT_COPY = 'You don’t manage a team in this league — the matchups page shows the whole week.'
 export const NO_ROWS_COPY = 'No pairings on record for this week yet.'
 export const NONE_FOR_TEAM_COPY = 'No matchup on record for your team this week.'
-export const PLAYOFF_NONE_FOR_TEAM_COPY =
-  'No playoff game on record for your team this week — a bye or an early exit; the standings page carries the bracket.'
+/** R896: no bracket pointer (L.D5.5's tab is unbuilt) and no "bye" hedge —
+ *  under 118 a bye is a ROW (`away_team_id NULL`) that reaches the `mine`
+ *  branch and the Scoreboard's own bye copy; this branch is an early exit. */
+export const PLAYOFF_NONE_FOR_TEAM_COPY = 'No playoff game on record for your team this week — the bracket view arrives in a later update.'
 export const PLAYOFF_NO_ROWS_COPY = 'Playoff week — the pairings appear when the previous round rolls over.'
 export const NO_LADDER_COPY = 'No schedule yet — it is generated the moment the draft completes.'
 

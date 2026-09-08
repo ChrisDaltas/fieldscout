@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 
-import { COMMISSIONER_LABEL, FEED_EMPTY_COPY, FEED_TITLE, feedLines } from './activity-feed-ops'
+import { COMMISSIONER_LABEL, FEED_EMPTY_COPY, FEED_TITLE, SYSTEM_LABEL, feedLines } from './activity-feed-ops'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { problemCopy } from './team-page'
@@ -19,7 +19,9 @@ import { problemCopy } from './team-page'
  * read (`useLeagueActivityFeed` — L.D4.2's route + the ONE `league:<id>`
  * room, refetch-on-event) and hands the items in; this renders L.D4.2's
  * M4 slice — `transactions` rows and the league room's D97 system posts —
- * as one list. The "✸ commissioner" label is §13.4's treatment; the link to
+ * as one list. The "✸ commissioner" label is §13.4's treatment — worn by a
+ * system post only when an actor wrote it; a NULL-actor post (a week
+ * worker's notice) wears a plain "system" chip (R895); the link to
  * the audit entry waits for `commissioner_actions` (a later milestone's).
  *
  * States (§16.5.4): skeleton · empty (designed copy) · error-with-retry ·
@@ -77,6 +79,11 @@ export function ActivityFeed({
                     {line.commissioner && (
                       <Badge variant="stroke-purple" className="shrink-0" data-commissioner>
                         {COMMISSIONER_LABEL}
+                      </Badge>
+                    )}
+                    {line.kind === 'system' && !line.commissioner && (
+                      <Badge variant="stroke" className="shrink-0" data-system>
+                        {SYSTEM_LABEL}
                       </Badge>
                     )}
                     {line.team && <span className="shrink-0 text-[12px] font-bold text-ink">{line.team}</span>}
