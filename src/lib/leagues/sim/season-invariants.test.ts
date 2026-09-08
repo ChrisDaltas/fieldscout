@@ -495,9 +495,13 @@ describe('7 — the door\'s no_matchup_row skip is a NOTE in a bracket week and 
 // The full slate removes §7.3.6's `on_bye` arm outright. What survives is the
 // DESIGNATION arm (114:596): an OUT/IR/PUP/NFI/Suspended starter is refused in
 // a league with `allow_illegal_lineups = false`. These pins are the
-// falsifiability for that arm — the local pool holds five such players inside
-// the top 400 (measured 2026-09-08: IR 4, PUP 1), so a run can seat one at any
-// time, and the arm must not be discovered as a 409 at the 100-league gate.
+// falsifiability for that arm. R927 (#274 review) corrects the number that
+// used to sit here: the 400-ROW pool window holds FOURTEEN blocking-status
+// players (IR 10, PUP 4); the "five" were those whose ADP VALUE is under 400.
+// The load-bearing fact is structural, not probabilistic: the earliest
+// blocking-status player sits at ADP rank ~120 while the OFF league drafts at
+// most 112 picks (16 x 7), so the designation arm is out of reach by ~8 ranks
+// at every configuration the sim runs — see F289, whose discharge is L.D6.3's.
 // ---------------------------------------------------------------------------
 describe('chooseStarterSlots — the seating a league that POLICES legality will accept', () => {
   const SLOTS = [

@@ -332,7 +332,11 @@ export function anchoredGameId(
  * slate has to be a pure function of the run's inputs for `--seed` to replay
  * it, and a pool that ever grew a club this list does not know must make the
  * run REFUSE rather than quietly leave that club on a bye. `uncoveredClubs`
- * is that refusal, and `runSeasonSim` calls it against the real pool.
+ * is that refusal, and `seedLineups` (`season-runner.ts`) calls it against
+ * every club each league ACTUALLY rosters — NOT against the pool. R926
+ * (#274 review): a club this list does not know is therefore caught only
+ * once some league drafts a member of it; a club whose players all sit
+ * outside draft reach would slip past until F288 deepens the draft.
  */
 export const NFL_CLUBS: readonly string[] = [
   'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE',
@@ -392,7 +396,20 @@ export function uncoveredClubs(
 
 /**
  * The filler window must sit INSIDE the core scenario's own, or the fillers
- * would move a beat the scenario declares. Two facts, both from
+ * would move a beat the scenario declares.
+ *
+ * R928 (#274 review): the fillers `withFullSlate` builds sit ON both
+ * boundaries BY CONSTRUCTION, so neither throw arm below can fire from the
+ * sole production caller — this is a REGRESSION GUARD on the twelve lines
+ * that compute those bounds, not a live enforcement barrier. The falsifiable
+ * protection of the same property is the `weekBounds` composition pin, which
+ * runs the real bounds over the real provider at every instant of all nine
+ * scenarios and reads REPORTED kickoffs, the dimension this formula misses.
+ * (Latent, no scenario exercises it: a future scenario flexing the EARLIEST
+ * game EARLIER would move `first_kickoff_at` with this guard still passing;
+ * the composition pin iterates SCENARIO_IDS and would red.)
+ *
+ * Two facts, both from
  * `weekBounds` (`ingest-week.ts:308-317`):
  *
  *   - `first_kickoff_at` is the MINIMUM kickoff over the week's in-week
