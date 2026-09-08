@@ -525,6 +525,12 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.4 fi
     const src = code(read('src/components/leagues/league-home-season.tsx')) + code(read('src/components/leagues/league-home-season-ops.ts'))
     expect(src).not.toMatch(/home_score\s*[<>]|away_score\s*[<>]|setInterval|eliminated/)
   })
+  it('R900: every arbitrary column grid in the heroes uses minmax(0, …fr) — a bare fr floors at min-content and one long feed line pushed the R281 doors off-screen', () => {
+    const src = code(read('src/components/leagues/league-home-season.tsx'))
+    const grids = [...src.matchAll(/grid-cols-\[([^\]]+)\]/g)].map((m) => m[1])
+    expect(grids.length).toBeGreaterThanOrEqual(2)
+    for (const g of grids) for (const track of g.split('_')) expect(track, g).toMatch(/^minmax\(0,[\d.]+fr\)$/)
+  })
   it('no ledger code reaches the screen in any state (F277(a))', () => {
     for (const html of [renderHome(), renderHome({ detail: detailWith({ status: 'complete' }) }), renderHome({ lineup: null })]) {
       expect(html.replace(/data-[a-z-]+="[^"]*"/g, '')).not.toMatch(/\b[QEF]\d+\b/)

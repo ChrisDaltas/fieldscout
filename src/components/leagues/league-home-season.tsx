@@ -134,8 +134,12 @@ export function SeasonHero({
         />
       )}
 
+      {/* R900 (#270): both column grids below use minmax(0, …fr) — a bare `fr` track floors at
+          min-content, so one long feed line (E43 / a remix / a lineup reason) grew the column to
+          its nowrap width and pushed the R281 doors off-screen; minmax(0) keeps the share and lets
+          `truncate` do its job. Pinned in league-home-season.render.test.ts. */}
       {inPlay ? (
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_1.2fr]">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <SetLineupCard
             leagueId={leagueId}
             data={data}
@@ -165,7 +169,7 @@ export function SeasonHero({
         />
       )}
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.2fr_1fr]">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <ActivityFeedCard leagueId={leagueId} data={data} />
         <DraftDoorsCard leagueId={leagueId} complete={state === 'complete'} />
       </div>
