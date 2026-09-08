@@ -1,15 +1,22 @@
 /**
  * score-week-worker — the `score-league-week` worker (spec §22.2 worker
  * half, §7.3.3 snapshot + precision law, §23.5/E61 pending semantics, §11.4
- * live scoring; tasks-M4-inseason.md §5/§6 L.D2.2; PROGRESS D292 / D295 /
- * D321; discharges F22 + F23; honours F218 / F241(b) / F257(a′) / F259(d)(e)
- * / F262(d)).
+ * live scoring; §22.3 job architecture; tasks-M4-inseason.md §5/§6 L.D2.2;
+ * PROGRESS D292 / D295 / D321 (+ (10), the #267 fix round: R866–R869);
+ * discharges F22 + F23; honours F218 / F241(b) / F257(a′) / F259(d)(e) /
+ * F262(d); F263(d) built — the claim RPC, migration 121).
  *
  * ONE drain, in this order (`runScoreWeekBatch`):
  *
- *   1. CLAIM — read up to `batchSize` `score_fanout` rows (oldest first).
- *      Each row is `(season, week, player_id, enqueued_at)`; the stamp is
- *      the claim ticket (step 7).
+ *   1. CLAIM — `score_fanout_claim(batchSize, leaseSeconds, time.now())`
+ *      (121): the oldest unleased rows (or rows whose lease has expired)
+ *      are LEASED to this drain under one token — `FOR UPDATE SKIP LOCKED`
+ *      in-database (§22.3's idiom), `claimed_at = the injected instant`
+ *      (D291: the lease decision reads no clock the worker does not). Each
+ *      row is `(season, week, player_id, enqueued_at)`; the stamp is kept
+ *      VERBATIM as PostgREST rendered it — it is the ack's key (step 8;
+ *      R867). A leased row is invisible to every other drain until this one
+ *      acks or releases it, or the lease expires (the crash backstop).
  *   2. READINESS (F218) — a queued player whose `player_stats` row is older
  *      than its queue row, or absent, is a delta whose stats have not landed
  *      (ingestion writes the queue BEFORE the stats — R706); it stays
@@ -57,13 +64,43 @@
  *      door's REPORT is read (F259(e)): `nothing_writable` on a week the
  *      worker expected to score is a PROBLEM, never success; `no_change` is
  *      the idempotency count; every `skipped[]` entry is named.
- *   8. ACK — the claimed rows are deleted BY STAMP (`enqueued_at` equal to
- *      the value read at step 1). Ingestion re-stamps an existing queue row
- *      on every real delta (D321(2) — the enqueue is `ON CONFLICT DO UPDATE`
- *      on the stamp), so a delta that lands while a drain is in flight
- *      moves the stamp, the conditional delete misses, and the row survives
- *      for the next drain — a delta is never lost between "scored from the
- *      old row" and "deleted". Rows held at steps 2/4 are not touched.
+ *   8. ACK — ONE `score_fanout_ack(token, consumed)` call (121): every
+ *      consumed row still carrying THIS token at the stamp the claim
+ *      returned is deleted; everything else under the token is RELEASED
+ *      (the not-ready of step 2, the held of step 4, the out-of-scope, and
+ *      the re-stamped). Ingestion re-stamps an existing queue row on every
+ *      real delta (D321(2) — the enqueue is `ON CONFLICT DO UPDATE` on the
+ *      stamp; the lease columns are not in its payload, so the lease
+ *      SURVIVES the re-stamp), so a delta that lands while a drain is in
+ *      flight moves the stamp, the delete misses, the row is released, and
+ *      the next drain scores the newer line — a delta is never lost between
+ *      "scored from the old row" and "deleted". The ack reports what it
+ *      MEASURED for every miss (R869): `restamped` (our token, a newer
+ *      stamp), `lease_lost` (another drain re-claimed it after our lease
+ *      expired — the one window a stale write can land in, bounded and
+ *      named), `gone` (consumed by that drain). A drain that throws
+ *      mid-way releases its lease in `finally` (an empty ack) so a transient
+ *      error costs no lease wait; if that release fails too, the lease
+ *      expiry is the backstop.
+ *
+ * TWO DRAINS AT ONCE (§22.3 "concurrent invocations are safe by
+ * construction" — R866, the reviewer's interleaving, a permanent stack
+ * cell): before 121 the drain was read-then-ack and nothing stopped a
+ * second drain from reading the same player mid-flight — A read K at S1
+ * and the OLD line; a poll re-stamped K to S2 and landed the NEW line; B
+ * read K at S2, scored, wrote, deleted K@S2; A then wrote its OLD score
+ * over B's (the door is last-writer-wins — idempotence for identical
+ * re-sends, not ordering) and its ack missed: a STALE score and an EMPTY
+ * queue, and nothing re-enqueues it. With the lease, B's claim SKIPS K
+ * (A holds it; the re-stamp kept the lease), B reports `all_leased`, A
+ * writes the old line's score (a transient the next drain corrects), A's
+ * ack misses by stamp and RELEASES K@S2, and the next drain scores the
+ * newer line. Per-row, in-flight processing is serialized by the lease;
+ * deltas are serialized by the stamp. The residual is the lease expiry: a
+ * drain SLOWER than `leaseSeconds` can be re-claimed while alive and its
+ * late write is stale for that row — measured (`lease_lost`), reported,
+ * and closed by L.D2.3 setting the lease ≥ the invoker's hard timeout
+ * (F263(f), a precondition on the wiring task).
  *
  * PENDING, NEVER ZERO (E61; D295) — the three states a starter can be in,
  * kept apart on purpose:
@@ -107,6 +144,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database, Json } from '@/types/database'
+
+import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
 
 import { STAT_KEYS } from '../stats/stat-keys'
 import type { TimeProvider } from '../time/time-provider'
@@ -174,6 +213,31 @@ function isScoringPosition(position: string): position is ScoringPosition {
 export function applicableKeys(position: string): ReadonlySet<string> {
   const scoped = isScoringPosition(position) ? POSITION_SCORABLE_KEYS[position] : []
   return new Set([...scoped, ...ADVANCED_KEYS])
+}
+
+// ── Instants (R867) ────────────────────────────────────────────────────────
+
+const INSTANT = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?\s*(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+
+/**
+ * An ISO-8601 / PostgREST-rendered instant → microseconds since the epoch.
+ * Postgres stamps carry up to SIX fractional digits (`DEFAULT now()`, any
+ * SQL-side enqueue) and PostgREST renders them verbatim (trailing zeros
+ * trimmed, `+00:00` or `Z`); a millisecond `Date` round-trip would collapse
+ * `…00.123456` and `…00.123789` onto one instant and read a line 333 µs
+ * OLDER than its queue row as landed. Every readiness comparison (F218)
+ * goes through this; the ack never compares a rendering at all (121 casts
+ * the claim's own string back to `timestamptz`, exact).
+ */
+export function instantMicros(raw: string): number {
+  const m = INSTANT.exec(raw.trim())
+  if (!m) throw new Error(`instantMicros: unparseable instant "${raw}"`)
+  const [, date, hms, frac, tz] = m
+  const offset = tz === undefined ? 'Z' : tz.replace(/^([+-]\d{2})(\d{2})$/, '$1:$2').replace(/^([+-]\d{2})$/, '$1:00')
+  const baseMs = Date.parse(`${date}T${hms}${offset}`)
+  if (!Number.isFinite(baseMs)) throw new Error(`instantMicros: unparseable instant "${raw}"`)
+  const micros = frac === undefined ? 0 : Number(`${frac}000000`.slice(0, 6))
+  return baseMs * 1000 + micros
 }
 
 // ── Stat lines ─────────────────────────────────────────────────────────────
@@ -409,6 +473,15 @@ export interface ScoreWorkerOptions {
    *  so a claim can never be silently truncated (rule 10). Default 500. */
   batchSize?: number
   /**
+   * The claim's visibility timeout (121): a row this drain leases and never
+   * acks (a crash) returns to the queue after this many seconds. MUST be
+   * ≥ the invoker's own hard timeout — a drain that outlives its lease can
+   * be re-claimed while alive and its late write is then stale for that row
+   * (`lease_lost` on the report; F263(f), L.D2.3's precondition). Default
+   * 120.
+   */
+  leaseSeconds?: number
+  /**
    * The stack-lane scope seam (D313(2)'s shape): when set, only these
    * leagues are scored and a queue row is consumed only if it maps to one
    * of them — other suites' rows on the shared stack are left untouched.
@@ -472,9 +545,14 @@ export interface LeagueWeekReport {
   problems: string[]
 }
 
+/** Why a consumed row's ack could not delete it — what 121's ack MEASURED (R869). */
+export type AckMissReason = 'restamped' | 'lease_lost' | 'gone'
+
 export interface BatchReport {
   ran_at: string
-  /** Queue rows read this drain. */
+  /** The lease this drain held (121) — null when nothing was claimable. */
+  claim_token: string | null
+  /** Queue rows LEASED to this drain. */
   claimed: number
   /** The claim came back full — more rows are waiting. */
   more: boolean
@@ -486,8 +564,17 @@ export interface BatchReport {
   out_of_scope: number
   /** Rows held for a `week_not_open` league — left queued. */
   held: number
-  /** Queue rows deleted (by stamp). */
+  /** Queue rows DELETED by the ack — (token, stamp) matched. */
   drained: number
+  /** Claimed rows handed back unconsumed: not-ready, held, out-of-scope,
+   *  and the re-stamped (each counted elsewhere on this report). */
+  released: number
+  /** Consumed rows the ack could NOT delete, by measured cause (R869):
+   *  `restamped` — a newer delta moved the stamp mid-drain (the row is
+   *  released; the next drain scores the newer line); `lease_lost` — our
+   *  lease expired and another drain re-claimed it (the ONE window a stale
+   *  write can land in — a problem line); `gone` — that drain consumed it. */
+  ack_missed: Record<AckMissReason, number>
   leagues: LeagueWeekReport[]
   written: number
   no_change: number
@@ -496,11 +583,14 @@ export interface BatchReport {
   failed: number
   /** Every loud thing, one line each — a clean drain has none. */
   problems: string[]
-  /** Why nothing was scored — never an empty success by default. */
-  reason: 'queue_empty' | 'nothing_ready' | 'nothing_mapped' | 'nothing_in_scope' | null
+  /** Why nothing was scored — never an empty success by default.
+   *  `all_leased`: rows exist but every one is held by another drain in
+   *  flight (the R866 shape — named, not "empty"). */
+  reason: 'queue_empty' | 'all_leased' | 'nothing_ready' | 'nothing_mapped' | 'nothing_in_scope' | null
 }
 
 const DEFAULT_BATCH = 500
+const DEFAULT_LEASE_SECONDS = 120
 const POSTGREST_ROW_CAP = 1000
 const IN_CHUNK = 150
 
@@ -508,7 +598,10 @@ interface QueueRow {
   season: number
   week: number
   player_id: string
+  /** The stamp VERBATIM as PostgREST rendered it — the ack's key (R867). */
   enqueued_at: string
+  /** The same instant at microsecond precision — the readiness comparand. */
+  enqueued_micros: number
 }
 
 interface LeagueRow {
@@ -549,19 +642,55 @@ class LeagueWeekFailure extends Error {
 
 const SQLSTATE = /^[0-9A-Z]{5}$/
 
-async function readQueue(db: ScoreWorkerClient, limit: number): Promise<QueueRow[]> {
-  const rows = must(
-    await db
-      .from('score_fanout')
-      .select('season, week, player_id, enqueued_at')
-      .order('enqueued_at', { ascending: true })
-      .order('season', { ascending: true })
-      .order('week', { ascending: true })
-      .order('player_id', { ascending: true })
-      .limit(limit),
-    'score_fanout read',
-  )
-  return rows.map((r) => ({ ...r, enqueued_at: new Date(r.enqueued_at).toISOString() }))
+interface Claim {
+  token: string | null
+  rows: QueueRow[]
+}
+
+/** Step 1 — `score_fanout_claim` (121): lease up to `limit` rows under one token. */
+async function claimQueue(db: ScoreWorkerClient, limit: number, leaseSeconds: number, now: Date): Promise<Claim> {
+  const { data, error } = await db.rpc('score_fanout_claim', {
+    p_batch: limit,
+    p_lease_seconds: leaseSeconds,
+    p_now: now.toISOString(),
+  })
+  if (error) throw new Error(`score_fanout_claim: ${error.message}`)
+  const rows = (data ?? []).map((r) => ({
+    season: r.season,
+    week: r.week,
+    player_id: r.player_id,
+    enqueued_at: r.enqueued_at, // verbatim — never re-rendered (R867)
+    enqueued_micros: instantMicros(r.enqueued_at),
+  }))
+  return { token: rows.length > 0 ? (data![0].claim_token as string) : null, rows }
+}
+
+interface AckResult {
+  deleted: number
+  released: number
+  missed: Array<{ season: number; week: number; player_id: string; reason: AckMissReason }>
+}
+
+/** Step 8 — `score_fanout_ack` (121): delete the consumed rows by (token, stamp); release the rest. */
+async function ackQueue(db: ScoreWorkerClient, token: string, consumed: readonly QueueRow[]): Promise<AckResult> {
+  const { data, error } = await db.rpc('score_fanout_ack', {
+    p_claim_token: token,
+    p_consumed: consumed.map((r) => ({
+      season: r.season,
+      week: r.week,
+      player_id: r.player_id,
+      enqueued_at: r.enqueued_at,
+    })) as unknown as Json,
+  })
+  if (error) throw new Error(`score_fanout_ack: ${error.message}`)
+  return data as unknown as AckResult
+}
+
+/** An empty claim is named: nothing queued, or everything leased to another drain (R866). */
+async function queueDepth(db: ScoreWorkerClient): Promise<number> {
+  const { count, error } = await db.from('score_fanout').select('player_id', { count: 'exact', head: true })
+  if (error) throw new Error(`score_fanout depth: ${error.message}`)
+  return count ?? 0
 }
 
 async function readStatLines(
@@ -586,25 +715,49 @@ async function readStatLines(
       throw new Error(`player_stats read returned ${rows.length} rows for a ${ids.length}-id chunk — at the PostgREST cap, refusing to trust it`)
     }
     for (const row of rows) {
-      out.set(row.player_id, { ...row, updated_at: new Date(row.updated_at).toISOString() })
+      out.set(row.player_id, row) // updated_at verbatim — compared at microsecond precision (R867)
     }
   }
   return out
 }
 
+interface RosterHit {
+  league_id: string
+  player_id: string
+}
+
+/**
+ * Step 3's index read — `idx_league_rosters_player` ∩ the season's
+ * `in_season | playoffs` leagues, SCOPED IN THE QUERY (an `!inner` embed
+ * filter on `leagues`, so a player's past-season roster rows never come
+ * back) and PAGED with `pageAll` (R868: a 150-player chunk over ≥ 7
+ * in-season leagues each is ≥ 1,050 rows — past the PostgREST cap, which
+ * the old single read refused loudly and permanently, aborting every
+ * drain). `count: 'exact'` is the loud backstop: pageAll finishes on the
+ * server's own count, so a page capped below its size can never truncate
+ * silently (a short page without a count would). The stable order ends in
+ * the UNIQUE (league_id, player_id) pair (109).
+ */
 async function readRosterLeagues(
   db: ScoreWorkerClient,
+  season: number,
   playerIds: readonly string[],
 ): Promise<Map<string, Set<string>>> {
   const byPlayer = new Map<string, Set<string>>()
   for (const ids of chunk(playerIds, IN_CHUNK)) {
-    const rows = must(
-      await db.from('league_rosters').select('league_id, player_id').in('player_id', ids),
-      'league_rosters read',
+    const rows = await pageAll<RosterHit>(
+      (from, to) =>
+        db
+          .from('league_rosters')
+          .select('league_id, player_id, leagues!inner(id)', { count: 'exact' })
+          .eq('leagues.season', season)
+          .in('leagues.status', ['in_season', 'playoffs'])
+          .is('leagues.deleted_at', null)
+          .in('player_id', ids)
+          .order('league_id', { ascending: true })
+          .order('player_id', { ascending: true })
+          .range(from, to) as unknown as PageResponse<RosterHit>,
     )
-    if (rows.length >= POSTGREST_ROW_CAP) {
-      throw new Error(`league_rosters read returned ${rows.length} rows for a ${ids.length}-id chunk — at the PostgREST cap, refusing to trust it`)
-    }
     for (const row of rows) {
       let set = byPlayer.get(row.player_id)
       if (!set) {
@@ -845,15 +998,19 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
 
 /**
  * One drain of `score_fanout`. See the file banner for the eight steps.
- * Returns a report; throws only on a transport/DB failure (the queue is
- * then intact — at-least-once).
+ * Returns a report; throws only on a transport/DB failure — the lease is
+ * released on the way out (an empty ack) so the queue is intact and
+ * immediately re-claimable (at-least-once); if even that fails, the lease
+ * expiry (121) returns the rows.
  */
 export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorkerOptions = {}): Promise<BatchReport> {
   const { db } = deps
   const batchSize = Math.min(opts.batchSize ?? DEFAULT_BATCH, POSTGREST_ROW_CAP)
+  const leaseSeconds = opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS
   const scope = opts.leagueIds ? new Set(opts.leagueIds) : null
   const report: BatchReport = {
     ran_at: deps.time.now().toISOString(),
+    claim_token: null,
     claimed: 0,
     more: false,
     not_ready: 0,
@@ -861,6 +1018,8 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     out_of_scope: 0,
     held: 0,
     drained: 0,
+    released: 0,
+    ack_missed: { restamped: 0, lease_lost: 0, gone: 0 },
     leagues: [],
     written: 0,
     no_change: 0,
@@ -871,183 +1030,197 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     reason: null,
   }
 
-  // (1) CLAIM
-  const queue = await readQueue(db, batchSize)
+  // (1) CLAIM — the lease (121). `time.now()` is the claim's instant: the
+  //     lease decision reads no clock the worker does not (D291).
+  const claim = await claimQueue(db, batchSize, leaseSeconds, deps.time.now())
+  const queue = claim.rows
+  report.claim_token = claim.token
   report.claimed = queue.length
   report.more = queue.length >= batchSize
-  if (queue.length === 0) {
-    report.reason = 'queue_empty'
+  if (queue.length === 0 || claim.token === null) {
+    // Loud emptiness (rule 10): nothing queued, or every row is another
+    // drain's lease right now (the R866 shape) — said by name.
+    report.reason = (await queueDepth(db)) > 0 ? 'all_leased' : 'queue_empty'
+    report.problems.push(`drain scored nothing: ${report.reason}`)
     return report
   }
+  const token = claim.token
 
-  // Group by (season, week) — the map and the lines are per week.
-  const groups = new Map<string, QueueRow[]>()
-  for (const row of queue) {
-    const key = `${row.season}:${row.week}`
-    const bucket = groups.get(key)
-    if (bucket) bucket.push(row)
-    else groups.set(key, [row])
-  }
-
-  const toDelete: QueueRow[] = []
-  let anyReady = false
-  let anyMapped = false
-  let anyInScope = false
-
-  for (const rows of groups.values()) {
-    const { season, week } = rows[0]
-
-    // (2) READINESS (F218) — plus R714's orphan escape through the seam.
-    const lines = await readStatLines(db, season, week, rows.map((r) => r.player_id))
-    let lastPoll: string | null = null
-    if (deps.lastPollCompletedAt) {
-      const at = await deps.lastPollCompletedAt(season, week)
-      lastPoll = at === null ? null : new Date(at).toISOString()
+  let acked = false
+  try {
+    // Group by (season, week) — the map and the lines are per week.
+    const groups = new Map<string, QueueRow[]>()
+    for (const row of queue) {
+      const key = `${row.season}:${row.week}`
+      const bucket = groups.get(key)
+      if (bucket) bucket.push(row)
+      else groups.set(key, [row])
     }
-    const ready: QueueRow[] = []
-    for (const row of rows) {
-      const line = lines.get(row.player_id)
-      const landed = line !== undefined && line.updated_at >= row.enqueued_at
-      const orphanReleased = line !== undefined && lastPoll !== null && lastPoll >= row.enqueued_at
-      if (landed || orphanReleased) ready.push(row)
-      else report.not_ready += 1
-    }
-    if (ready.length === 0) continue
-    anyReady = true
 
-    // (3) MAP — roster index ∩ in-season leagues of the season.
-    const rosterLeagues = await readRosterLeagues(db, ready.map((r) => r.player_id))
-    const candidateIds = new Set<string>()
-    for (const set of rosterLeagues.values()) for (const id of set) candidateIds.add(id)
-    const leagues = await readLeagues(db, [...candidateIds])
-    const playersByLeague = new Map<string, string[]>()
-    const heldPlayers = new Set<string>()
-    for (const row of ready) {
-      const inSeason: string[] = []
-      let inScopeHit = false
-      for (const leagueId of rosterLeagues.get(row.player_id) ?? []) {
-        const league = leagues.get(leagueId)
-        if (!league || league.deleted_at !== null) continue
-        if (league.season !== season) continue
-        if (league.status !== 'in_season' && league.status !== 'playoffs') continue
-        if (scope && !scope.has(leagueId)) continue
-        inScopeHit = true
-        inSeason.push(leagueId)
+    const toDelete: QueueRow[] = []
+    let anyReady = false
+    let anyMapped = false
+    let anyInScope = false
+
+    for (const rows of groups.values()) {
+      const { season, week } = rows[0]
+
+      // (2) READINESS (F218) — plus R714's orphan escape through the seam.
+      //     Both comparands at microsecond precision (R867).
+      const lines = await readStatLines(db, season, week, rows.map((r) => r.player_id))
+      let lastPollMicros: number | null = null
+      if (deps.lastPollCompletedAt) {
+        const at = await deps.lastPollCompletedAt(season, week)
+        lastPollMicros = at === null ? null : instantMicros(at)
       }
-      if (inSeason.length === 0) {
-        if (scope) {
-          report.out_of_scope += 1
-          continue // a scoped drain consumes only what it scores — the row is the unscoped drain's
+      const ready: QueueRow[] = []
+      for (const row of rows) {
+        const line = lines.get(row.player_id)
+        const landed = line !== undefined && instantMicros(line.updated_at) >= row.enqueued_micros
+        const orphanReleased = line !== undefined && lastPollMicros !== null && lastPollMicros >= row.enqueued_micros
+        if (landed || orphanReleased) ready.push(row)
+        else report.not_ready += 1
+      }
+      if (ready.length === 0) continue
+      anyReady = true
+
+      // (3) MAP — roster index ∩ in-season leagues of the season (scoped
+      //     and paged in the read — R868).
+      const rosterLeagues = await readRosterLeagues(db, season, ready.map((r) => r.player_id))
+      const candidateIds = new Set<string>()
+      for (const set of rosterLeagues.values()) for (const id of set) candidateIds.add(id)
+      const leagues = await readLeagues(db, [...candidateIds])
+      const playersByLeague = new Map<string, string[]>()
+      const heldPlayers = new Set<string>()
+      for (const row of ready) {
+        const inSeason: string[] = []
+        let inScopeHit = false
+        for (const leagueId of rosterLeagues.get(row.player_id) ?? []) {
+          const league = leagues.get(leagueId)
+          if (!league || league.deleted_at !== null) continue
+          if (league.season !== season) continue
+          if (league.status !== 'in_season' && league.status !== 'playoffs') continue
+          if (scope && !scope.has(leagueId)) continue
+          inScopeHit = true
+          inSeason.push(leagueId)
         }
-        report.unmapped += 1
-        toDelete.push(row) // consumed: no in-season league rosters him
-        continue
-      }
-      if (inScopeHit) anyInScope = true
-      anyMapped = true
-      for (const leagueId of inSeason) {
-        const bucket = playersByLeague.get(leagueId)
-        if (bucket) bucket.push(row.player_id)
-        else playersByLeague.set(leagueId, [row.player_id])
-      }
-    }
-
-    // (4)–(7) per league-week, quarantined individually.
-    for (const [leagueId, players] of [...playersByLeague.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
-      const league = leagues.get(leagueId)!
-      let entry: LeagueWeekReport
-      try {
-        entry = await scoreLeagueWeek(db, { league, season, week, players, statsByPlayer: lines })
-      } catch (err) {
-        if (!(err instanceof LeagueWeekFailure)) throw err
-        entry = {
-          league_id: leagueId,
-          season,
-          week,
-          mode: modeOf(league.settings),
-          outcome: 'failed',
-          error: err.message,
-          mapped_player_ids: [...players].sort(),
-          affected_team_ids: [],
-          provisional_team_ids: [],
-          bench_player_ids: [],
-          teams: [],
-          pending_kept_provisional: [],
-          problems: [`QUARANTINED league ${leagueId} week ${week}: ${err.message} — nothing written for it; siblings scored`],
+        if (inSeason.length === 0) {
+          if (scope) {
+            report.out_of_scope += 1
+            continue // a scoped drain consumes only what it scores — the row is the unscoped drain's (released by the ack)
+          }
+          report.unmapped += 1
+          toDelete.push(row) // consumed: no in-season league rosters him
+          continue
+        }
+        if (inScopeHit) anyInScope = true
+        anyMapped = true
+        for (const leagueId of inSeason) {
+          const bucket = playersByLeague.get(leagueId)
+          if (bucket) bucket.push(row.player_id)
+          else playersByLeague.set(leagueId, [row.player_id])
         }
       }
-      report.leagues.push(entry)
-      switch (entry.outcome) {
-        case 'written':
-          report.written += 1
-          break
-        case 'no_change':
-          report.no_change += 1
-          break
-        case 'nothing_writable':
-          report.nothing_writable += 1
-          break
-        case 'skipped':
-          report.skipped += 1
-          if (entry.skip_reason) entry.problems.push(`league ${leagueId} week ${week} skipped: ${entry.skip_reason}`)
-          break
-        case 'held':
-          for (const pid of players) heldPlayers.add(pid)
-          entry.problems.push(`league ${leagueId} week ${week} HELD: week_not_open — the delta stays queued until league_week_advance opens the week`)
-          break
-        case 'failed':
-          report.failed += 1
-          break
+
+      // (4)–(7) per league-week, quarantined individually.
+      for (const [leagueId, players] of [...playersByLeague.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const league = leagues.get(leagueId)!
+        let entry: LeagueWeekReport
+        try {
+          entry = await scoreLeagueWeek(db, { league, season, week, players, statsByPlayer: lines })
+        } catch (err) {
+          if (!(err instanceof LeagueWeekFailure)) throw err
+          entry = {
+            league_id: leagueId,
+            season,
+            week,
+            mode: modeOf(league.settings),
+            outcome: 'failed',
+            error: err.message,
+            mapped_player_ids: [...players].sort(),
+            affected_team_ids: [],
+            provisional_team_ids: [],
+            bench_player_ids: [],
+            teams: [],
+            pending_kept_provisional: [],
+            problems: [`QUARANTINED league ${leagueId} week ${week}: ${err.message} — nothing written for it; siblings scored`],
+          }
+        }
+        report.leagues.push(entry)
+        switch (entry.outcome) {
+          case 'written':
+            report.written += 1
+            break
+          case 'no_change':
+            report.no_change += 1
+            break
+          case 'nothing_writable':
+            report.nothing_writable += 1
+            break
+          case 'skipped':
+            report.skipped += 1
+            if (entry.skip_reason) entry.problems.push(`league ${leagueId} week ${week} skipped: ${entry.skip_reason}`)
+            break
+          case 'held':
+            for (const pid of players) heldPlayers.add(pid)
+            entry.problems.push(`league ${leagueId} week ${week} HELD: week_not_open — the delta stays queued until league_week_advance opens the week`)
+            break
+          case 'failed':
+            report.failed += 1
+            break
+        }
+        for (const problem of entry.problems) report.problems.push(`[${leagueId} wk ${week}] ${problem}`)
       }
-      for (const problem of entry.problems) report.problems.push(`[${leagueId} wk ${week}] ${problem}`)
+
+      // (8a) The consumed set — every ready row that mapped, unless a league holds it.
+      for (const row of ready) {
+        if (!playersByLeague.size) break
+        const mappedHere = [...playersByLeague.values()].some((ids) => ids.includes(row.player_id))
+        if (!mappedHere) continue
+        if (heldPlayers.has(row.player_id)) {
+          report.held += 1
+          continue
+        }
+        toDelete.push(row)
+      }
     }
 
-    // (8) ACK — every ready row that mapped, unless a league holds it.
-    for (const row of ready) {
-      if (!playersByLeague.size) break
-      const mappedHere = [...playersByLeague.values()].some((ids) => ids.includes(row.player_id))
-      if (!mappedHere) continue
-      if (heldPlayers.has(row.player_id)) {
-        report.held += 1
-        continue
-      }
-      toDelete.push(row)
-    }
-  }
-
-  // Delete BY STAMP: grouped by (season, week, enqueued_at).
-  const byStamp = new Map<string, QueueRow[]>()
-  for (const row of toDelete) {
-    const key = `${row.season}:${row.week}:${row.enqueued_at}`
-    const bucket = byStamp.get(key)
-    if (bucket) bucket.push(row)
-    else byStamp.set(key, [row])
-  }
-  for (const rows of byStamp.values()) {
-    const { season, week, enqueued_at } = rows[0]
-    for (const part of chunk(rows.map((r) => r.player_id), IN_CHUNK)) {
-      const deleted = must(
-        await db
-          .from('score_fanout')
-          .delete()
-          .eq('season', season)
-          .eq('week', week)
-          .eq('enqueued_at', enqueued_at)
-          .in('player_id', part)
-          .select('player_id'),
-        'score_fanout delete',
+    // (8b) ONE ack: delete the consumed rows by (token, stamp); release
+    //      everything else this drain leased. Every miss is named by what
+    //      the ack measured (R869) and counted.
+    const ack = await ackQueue(db, token, toDelete)
+    acked = true
+    report.drained = ack.deleted
+    report.released = ack.released
+    for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
+    if (ack.missed.length > 0) {
+      const by = (reason: AckMissReason) => ack.missed.filter((m) => m.reason === reason).map((m) => `${m.season}/${m.week}/${m.player_id}`)
+      const restamped = by('restamped')
+      const leaseLost = by('lease_lost')
+      const gone = by('gone')
+      report.problems.push(
+        `queue ack: ${ack.deleted} of ${toDelete.length} consumed rows matched by (token, stamp) — ` +
+          `${restamped.length} re-stamped by a newer delta mid-drain (released; the next drain scores the newer line: ${restamped.join(', ') || '—'}); ` +
+          `${leaseLost.length} lease_lost (this drain outlived its ${leaseSeconds}s lease and another drain re-claimed the row — its door write for that row may be STALE, F263(f): ${leaseLost.join(', ') || '—'}); ` +
+          `${gone.length} gone (consumed by that drain: ${gone.join(', ') || '—'})`,
       )
-      report.drained += deleted.length
-      if (deleted.length !== part.length) {
-        report.problems.push(
-          `queue ack for ${season} week ${week} @ ${enqueued_at}: ${deleted.length} of ${part.length} rows deleted — the rest were re-stamped by a newer delta mid-drain and stay queued (D321(2))`,
-        )
+    }
+
+    if (!anyReady) report.reason = 'nothing_ready'
+    else if (!anyMapped) report.reason = scope && !anyInScope ? 'nothing_in_scope' : 'nothing_mapped'
+    if (report.reason) report.problems.push(`drain scored nothing: ${report.reason} (claimed ${report.claimed}, not_ready ${report.not_ready}, unmapped ${report.unmapped}, out_of_scope ${report.out_of_scope})`)
+    return report
+  } finally {
+    if (!acked) {
+      // A transport/DB error mid-drain: hand the lease back now (an empty
+      // ack releases every row under the token) rather than waiting out
+      // the lease; a failure here is swallowed on purpose — the original
+      // error propagates, and the lease expiry returns the rows.
+      try {
+        await ackQueue(db, token, [])
+      } catch {
+        /* the lease expiry is the backstop */
       }
     }
   }
-
-  if (!anyReady) report.reason = 'nothing_ready'
-  else if (!anyMapped) report.reason = scope && !anyInScope ? 'nothing_in_scope' : 'nothing_mapped'
-  if (report.reason) report.problems.push(`drain scored nothing: ${report.reason} (claimed ${report.claimed}, not_ready ${report.not_ready}, unmapped ${report.unmapped}, out_of_scope ${report.out_of_scope})`)
-  return report
 }

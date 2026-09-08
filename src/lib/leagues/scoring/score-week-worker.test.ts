@@ -21,7 +21,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { scorePlayerWeek } from './calculator'
-import { deliveredLine, type StatLineRow } from './score-week-worker'
+import { deliveredLine, instantMicros, type StatLineRow } from './score-week-worker'
 import {
   ADVANCED_KEYS,
   applicableKeys,
@@ -304,5 +304,38 @@ describe('position vocabulary', () => {
   })
   it('a D/ST starter stored as DEF scores through the DST override path', () => {
     expect(scoreStarter(ESPN, 'sw-dst1', normalizePosition('DEF'), DST1).points).toBe(15.0)
+  })
+})
+
+describe('R867 — instants at MICROSECOND precision (the readiness comparand; the ack never re-renders)', () => {
+  // 2099-09-13T20:00:00Z on paper: 1970-01-01 → 2099-01-01 is 129 years with
+  // 32 leap days (1972…2096) = 129 × 365 + 32 = 47,117 days; Jan–Aug of 2099
+  // = 243 days, + 12 → 47,372 days; × 86,400 = 4,092,940,800 s; + 20 h
+  // (72,000 s) = 4,093,012,800 s.
+  const T = 4_093_012_800
+  it('a millisecond ISO string and PostgREST’s +00:00 rendering are the same instant', () => {
+    expect(instantMicros('2099-09-13T20:00:00.000Z')).toBe(T * 1_000_000)
+    expect(instantMicros('2099-09-13T20:00:00+00:00')).toBe(T * 1_000_000)
+    expect(instantMicros('2099-09-13 20:00:00+00')).toBe(T * 1_000_000) // Postgres text form
+  })
+  it('six fractional digits survive — and two stamps 1 µs apart are DIFFERENT instants (a Date round-trip made them equal)', () => {
+    const a = instantMicros('2099-09-13T20:00:00.123456+00:00')
+    const b = instantMicros('2099-09-13T20:00:00.123455Z')
+    expect(a).toBe(T * 1_000_000 + 123_456)
+    expect(a - b).toBe(1)
+    // the millisecond round-trip the old readiness compare used:
+    expect(new Date('2099-09-13T20:00:00.123456Z').toISOString()).toBe(new Date('2099-09-13T20:00:00.123455Z').toISOString())
+  })
+  it('trailing zeros trimmed by Postgres pad, not shift: .1 is 100,000 µs; .12 is 120,000', () => {
+    expect(instantMicros('2099-09-13T20:00:00.1+00:00')).toBe(T * 1_000_000 + 100_000)
+    expect(instantMicros('2099-09-13T20:00:00.12+00:00')).toBe(T * 1_000_000 + 120_000)
+  })
+  it('a non-UTC offset is honoured: 22:00+02:00 is 20:00Z', () => {
+    expect(instantMicros('2099-09-13T22:00:00+02:00')).toBe(T * 1_000_000)
+    expect(instantMicros('2099-09-13T22:00:00.5+0200')).toBe(T * 1_000_000 + 500_000)
+  })
+  it('garbage is refused loudly, never read as the epoch', () => {
+    expect(() => instantMicros('nope')).toThrow(/unparseable instant/)
+    expect(() => instantMicros('')).toThrow(/unparseable instant/)
   })
 })

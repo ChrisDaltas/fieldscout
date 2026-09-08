@@ -3,7 +3,9 @@
  * the map, the week's lineups, the door, the ack, and the wire (spec §22.2
  * / §7.3.3 / §23.5 / E61 / §23.3 / §9.1; PROGRESS D292 / D295 / D321; F22 +
  * F23 discharged here at the production writer; F218 / F241(b) / F259(d)(e)
- * / F262(d) honoured, each pinned).
+ * / F262(d) honoured, each pinned; the #267 fix round — R866 the two-drain
+ * interleaving over 121's lease, R867 the microsecond stamp, R868 the paged
+ * roster read — each a permanent cell, each shown RED on the pre-fix worker).
  *
  * Four leagues on `SYNTHETIC_SEASON` (2099 — F215/F226: no wall clock
  * anywhere in this file; every instant is a literal), every stat line and
@@ -34,14 +36,22 @@
  * the D319(9) shape). One door call per league per drain is counted
  * through a Proxy over the service client.
  *
- * Requires the local stack (`npx supabase start` + migrations applied) —
- * D59(5); FAILS loudly when the stack is down, never skips (§4.3).
+ * The queue is CLAIMED through `score_fanout_claim` (121 — a lease under
+ * one token per drain, `p_now` = the virtual clock) and ACKED through
+ * `score_fanout_ack`; a race is injected by intercepting the claim's RPC
+ * result (the D321(2) cell) or the first `player_stats` read (the R866
+ * cell — drain B runs to completion INSIDE drain A's window).
+ *
+ * Requires the local stack (`npx supabase start` + migrations applied,
+ * 001–121) — D59(5); FAILS loudly when the stack is down, never skips
+ * (§4.3).
  *
  * Fixture hygiene (F199): everything this suite writes carries the
  * `vitest-sw` prefix (leagues by name, players by id) or hangs off those
  * leagues; cleanup-first and after, by prefix. Action-id prefix `afe` —
  * this suite owns it (the D108(14) registry: af0–af4, af6–afd taken; af5
- * roster-add-drop; afe measured free 2026-09-07).
+ * roster-add-drop; afe measured free 2026-09-07); …11–…17 are the R868
+ * page fixture's seven leagues.
  */
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -67,11 +77,16 @@ const SEASON = SYNTHETIC_SEASON
 const COMMISH = { email: 'score-worker-commish@fieldscout.test', password: 'pgtap-sw-pass-1', username: 'sw_commish_one' }
 const MANAGER = { email: 'score-worker-manager@fieldscout.test', password: 'pgtap-sw-pass-2', username: 'sw_manager_two' }
 
+/** R868: 150 players × 7 in-season leagues = 1,050 `league_rosters` rows in ONE 150-id chunk. */
+const PAGE_PLAYERS = 150
+const PAGE_LEAGUES = 7
+
 const ACTION = {
   l1: 'afe00000-0000-4000-8000-000000000001',
   l2: 'afe00000-0000-4000-8000-000000000002',
   l3: 'afe00000-0000-4000-8000-000000000003',
   l4: 'afe00000-0000-4000-8000-000000000004',
+  page: Array.from({ length: PAGE_LEAGUES }, (_, i) => `afe00000-0000-4000-8000-0000000000${11 + i}`),
 } as const
 
 /** The poll instant every planted stat row and queue row carries. */
@@ -79,6 +94,14 @@ const STAMP = '2099-09-13T20:00:00.000Z'
 /** A LATER poll: the F218 crash-gap fixture and the settle re-queue. */
 const STAMP_LATER = '2099-09-13T20:20:00.000Z'
 const STAMP_LATER_2 = '2099-09-13T20:40:00.000Z'
+/** The #267 fix-round cells' instants (R866 / R867 / the lease / R868). */
+const STAMP_3 = '2099-09-13T21:00:00.000Z'
+const STAMP_4 = '2099-09-13T21:20:00.000Z'
+/** Six fractional digits — a `DEFAULT now()` / SQL-side enqueue's precision (R867). */
+const STAMP_MICRO = '2099-09-13T22:00:00.123456Z'
+const STAMP_MICRO_MINUS_1 = '2099-09-13T22:00:00.123455Z'
+const STAMP_5 = '2099-09-13T22:20:00.000Z'
+const STAMP_6 = '2099-09-13T22:40:00.000Z'
 
 const P = {
   qb1: `${PREFIX}-qb1`,
@@ -211,10 +234,43 @@ function interceptSelect(base: ScoreWorkerClient, table: string, onResult: (res:
   }) as unknown as ScoreWorkerClient
 }
 
-/** The FIRST `score_fanout` read (the claim) is followed by `after()`. */
+/**
+ * A client whose `.rpc(fn, …)` result passes through `onResult` before it
+ * reaches the worker — the claim is an RPC now (121), so the D321(2) race
+ * is injected on the claim's RESULT (the rows are leased, the worker has
+ * not read a line yet).
+ */
+function interceptRpc(base: ScoreWorkerClient, fn: string, onResult: (res: SelectResult) => Promise<SelectResult>): ScoreWorkerClient {
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (prop !== 'rpc') return Reflect.get(target, prop, receiver)
+      return (name: string, args: unknown) => {
+        const call = (target as unknown as { rpc: (n: string, a: unknown) => PromiseLike<SelectResult> }).rpc(name, args)
+        if (name !== fn) return call
+        return {
+          then: (onFulfilled: AnyFn, onRejected: AnyFn) => call.then((res) => onResult(res)).then(onFulfilled as never, onRejected as never),
+        }
+      }
+    },
+  }) as unknown as ScoreWorkerClient
+}
+
+/** The claim (`score_fanout_claim`) is followed by `after()` — once. */
 function raceAfterClaim(base: ScoreWorkerClient, after: () => Promise<void>): ScoreWorkerClient {
   let armed = true
-  return interceptSelect(base, 'score_fanout', async (res) => {
+  return interceptRpc(base, 'score_fanout_claim', async (res) => {
+    if (armed) {
+      armed = false
+      await after()
+    }
+    return res
+  })
+}
+
+/** The FIRST `player_stats` read (the readiness read, right after the claim) is followed by `after()` — the R866 window. */
+function raceAfterFirstStatsRead(base: ScoreWorkerClient, after: () => Promise<void>): ScoreWorkerClient {
+  let armed = true
+  return interceptSelect(base, 'player_stats', async (res) => {
     if (armed) {
       armed = false
       await after()
@@ -263,6 +319,7 @@ interface Fixture {
 let fx: Fixture
 let POISONED: Json
 let CHARTED: Json
+let ESPN: Json
 let managerId: string
 let commishId: string
 let commishClient: SupabaseClient<Database>
@@ -345,13 +402,16 @@ async function createLeague(
   if (error) throw new Error(`create_league(${name}) failed: ${error.message}`)
   const id = (created as { league_id: string }).league_id
   const commishTeam = await must(service.from('teams').select('id').eq('league_id', id).single(), 'commish team')
-  const extra = await must(
-    service
-      .from('teams')
-      .insert(Array.from({ length: seats - 1 }, (_, i) => ({ owner_id: commishId, name: `Seat ${i + 2}`, league_id: id })))
-      .select('id'),
-    'extra seats',
-  )
+  const extra =
+    seats > 1
+      ? await must(
+          service
+            .from('teams')
+            .insert(Array.from({ length: seats - 1 }, (_, i) => ({ owner_id: commishId, name: `Seat ${i + 2}`, league_id: id })))
+            .select('id'),
+          'extra seats',
+        )
+      : []
   await must(service.from('leagues').update({ status: 'in_season', scoring_rules_snapshot: snapshot }).eq('id', id), 'league → in_season')
   return { id, teams: [commishTeam!.id, ...(extra ?? []).map((t) => t.id)] }
 }
@@ -410,6 +470,12 @@ async function queued(): Promise<Array<{ player_id: string; week: number; enqueu
     'queue read',
   )
   return (rows ?? []).map((r) => ({ ...r, enqueued_at: new Date(r.enqueued_at).toISOString() }))
+}
+
+/** The stamp as PostgREST renders it — no re-rendering (R867). */
+async function queuedRaw(playerId: string, week: number): Promise<string | null> {
+  const rows = await must(service.from('score_fanout').select('enqueued_at').eq('player_id', playerId).eq('week', week), 'queue raw read')
+  return rows?.[0]?.enqueued_at ?? null
 }
 
 async function matchupScores(leagueId: string, week: number): Promise<Array<{ home: string; away: string | null; hs: number | null; as: number | null }>> {
@@ -491,12 +557,12 @@ beforeAll(async () => {
   await must(service.from('players').upsert(PLAYERS).select('id'), 'players')
 
   const { data: espn } = await service.from('scoring_systems').select('rules').eq('is_template', true).eq('name', 'ESPN Standard').single()
-  const ESPN = espn?.rules as Record<string, number>
-  POISONED = { ...ESPN, pass_yards: 'corrupt' } as unknown as Json
-  CHARTED = { ...ESPN, example_charted_yards: 0.1 } as unknown as Json
+  ESPN = espn?.rules as Json
+  POISONED = { ...(ESPN as Record<string, number>), pass_yards: 'corrupt' } as unknown as Json
+  CHARTED = { ...(ESPN as Record<string, number>), example_charted_yards: 0.1 } as unknown as Json
 
   // ── L1: h2h, four seats, the manager on T2 ──
-  const l1 = await createLeague(`${PREFIX}-h2h`, ACTION.l1, ESPN as unknown as Json, 'h2h', 4)
+  const l1 = await createLeague(`${PREFIX}-h2h`, ACTION.l1, ESPN, 'h2h', 4)
   const [t1, t2, t3, t4] = l1.teams
   await must(service.from('teams').update({ owner_id: managerId, name: 'Manager Team' }).eq('id', t2), 'T2 → manager')
   await must(service.from('league_members').insert({ league_id: l1.id, user_id: managerId, team_id: t2, role: 'manager' }), 'L1 member')
@@ -519,7 +585,7 @@ beforeAll(async () => {
   await lineup(t4, 1, { 'rb:0': P.rb4 })
 
   // ── L2: total_points — P retired at week 2 → S; Q; R ──
-  const l2 = await createLeague(`${PREFIX}-tp`, ACTION.l2, ESPN as unknown as Json, 'total_points', 4)
+  const l2 = await createLeague(`${PREFIX}-tp`, ACTION.l2, ESPN, 'total_points', 4)
   const [p, q, r, s] = l2.teams
   await must(service.from('teams').update({ name: 'RS P', status: 'retired', retired_at_week: 2, successor_team_id: s }).eq('id', p), 'P retired')
   await must(service.from('teams').update({ name: 'Team 4', status: 'orphaned' }).eq('id', s), 'S orphaned')
@@ -544,7 +610,7 @@ beforeAll(async () => {
   )
 
   // ── L3: the poisoned snapshot; U1 starts L1's QB ──
-  const l3 = await createLeague(`${PREFIX}-quarantine`, ACTION.l3, ESPN as unknown as Json, 'h2h', 2)
+  const l3 = await createLeague(`${PREFIX}-quarantine`, ACTION.l3, ESPN, 'h2h', 2)
   snapshotOverlay.set(l3.id, POISONED) // what the worker READS — the DB refuses the write (measured below)
   const [u1, u2] = l3.teams
   await setWeek(l3.id, 1, 'live')
@@ -556,7 +622,7 @@ beforeAll(async () => {
   await lineup(u1, 1, { 'qb:0': P.qb1 })
 
   // ── L4: the charted snapshot; V1 starts L1's WR; week 2 final ──
-  const l4 = await createLeague(`${PREFIX}-charted`, ACTION.l4, ESPN as unknown as Json, 'h2h', 2)
+  const l4 = await createLeague(`${PREFIX}-charted`, ACTION.l4, ESPN, 'h2h', 2)
   snapshotOverlay.set(l4.id, CHARTED)
   const [v1, v2] = l4.teams
   await setWeek(l4.id, 1, 'live')
@@ -726,7 +792,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(await queued()).toEqual([])
   })
 
-  it('D321(2) — the ack is BY STAMP: a newer poll landing between the worker’s claim and its ack re-stamps the row, the claimed-stamp delete misses it, and the next drain scores the newer line', async () => {
+  it('D321(2) — the ack is BY STAMP: a newer poll landing between the worker’s claim and its ack re-stamps the row (the lease survives the re-stamp), the (token, stamp) delete misses it and RELEASES it, and the next drain scores the newer line', async () => {
     await enqueue([P.rb1], 1, STAMP_LATER) // the row the worker will claim
     // The race, injected deterministically: right after the worker's claim
     // read resolves, "ingestion" re-stamps the row and lands the newer line
@@ -742,7 +808,9 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     // under the newer stamp. Nothing was lost.
     expect(raced.claimed).toBe(1)
     expect(raced.drained).toBe(0)
-    expect(raced.problems.some((p) => p.includes('re-stamped by a newer delta mid-drain'))).toBe(true)
+    expect(raced.ack_missed).toEqual({ restamped: 1, lease_lost: 0, gone: 0 }) // MEASURED by the ack (R869)
+    expect(raced.released).toBe(1) // the re-stamped row handed back for the next drain
+    expect(raced.problems.some((p) => p.includes('0 of 1 consumed rows matched by (token, stamp)') && p.includes('1 re-stamped by a newer delta mid-drain'))).toBe(true)
     expect((await queued()).map((q) => [q.player_id, q.enqueued_at])).toEqual([[P.rb1, STAMP_LATER_2]])
     // The next drain scores the newer line and acks it.
     const next = await drain()
@@ -910,4 +978,193 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
       ].sort((a, b) => (a.home < b.home ? -1 : 1)),
     )
   }, 60_000)
+
+  // ── The #267 fix round: R866 / R867 / the lease / R868 (each red on the pre-fix worker) ──
+
+  const K_FG3 = { fg_0_39: 3, fg_made_40_plus: 1, fg_made_50_plus: 1, xp_made: 3, fg_missed: 1 } // 20.00
+  const K_FG4 = { fg_0_39: 4, fg_made_40_plus: 1, fg_made_50_plus: 1, xp_made: 3, fg_missed: 1 } // 23.00
+  const RB_107 = { rush_yards: 107, rush_tds: 1, receptions: 4, receiving_yards: 33, fumbles_lost: 1 } // 18.00
+
+  it('R866 — TWO OVERLAPPING DRAINS: A claims the K and reads his line; a poll re-stamps him and lands a NEWER line while A is in flight; B runs to completion INSIDE that window and claims NOTHING (`all_leased`); A finishes, its ack misses by stamp and RELEASES the row; the next drain scores the newer line — the stored score is the TRUE line, the queue never empties under a stale one', async () => {
+    // Baseline (self-contained for a filtered run): rb1 at 107 yds and k1 at
+    // three short FGs ⇒ T1 = 24.58 + 18.00 + 19.50 + 20.00 + 15.00 + 0 = 97.08.
+    await plantLine(P.rb1, 1, RB_107, STAMP_3)
+    await plantLine(P.k1, 1, K_FG3, STAMP_3)
+    await enqueue([P.rb1, P.k1], 1, STAMP_3)
+    const settled = await drain()
+    expect(settled.drained).toBe(2)
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: 0 })
+
+    // Drain A claims the K at STAMP_3 and reads the FG-3 line. Right there —
+    // after its first player_stats read resolves with the OLD line — the
+    // world moves: ingestion re-stamps the K to STAMP_4 and lands the FG-4
+    // line (23.00 ⇒ T1 100.08), and drain B runs start to finish.
+    await enqueue([P.k1], 1, STAMP_3)
+    let b: BatchReport | undefined
+    const overlapping = raceAfterFirstStatsRead(workerDb, async () => {
+      await enqueue([P.k1], 1, STAMP_4)
+      await plantLine(P.k1, 1, K_FG4, STAMP_4)
+      b = await drain()
+    })
+    const a = await runScoreWeekBatch({ time: clock, db: overlapping }, { batchSize: 1000, leagueIds: [fx.l1, fx.l2, fx.l3, fx.l4] })
+
+    // B: the K is A's lease (the re-stamp moved the stamp and KEPT the lease
+    // — the PostgREST upsert touches only its payload's columns), so B
+    // claims nothing and names why. It wrote nothing, it deleted nothing.
+    expect(b).toBeDefined()
+    expect(b!.claimed).toBe(0)
+    expect(b!.reason).toBe('all_leased')
+    expect(b!.leagues).toEqual([])
+    expect(b!.drained).toBe(0)
+
+    // A: scored the OLD line it read (97.08 — a no_change against the cell),
+    // its ack MISSED by stamp (measured: re-stamped, not guessed), the row
+    // was RELEASED under the newer stamp. Nothing consumed the newer delta.
+    expect(a.claimed).toBe(1)
+    expect(league(a, fx.l1, 1).teams.find((t) => t.team_id === fx.t1)?.points).toBe(97.08)
+    expect(a.drained).toBe(0)
+    expect(a.ack_missed).toEqual({ restamped: 1, lease_lost: 0, gone: 0 })
+    expect(a.released).toBe(1)
+    expect(await queued()).toEqual([{ player_id: P.k1, week: 1, enqueued_at: STAMP_4 }])
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: 0 })
+
+    // The next drain scores the TRUE line and the queue empties on it —
+    // the pre-fix worker left 97.08 stored and the queue EMPTY here.
+    const next = await drain()
+    expect(league(next, fx.l1, 1).teams.find((t) => t.team_id === fx.t1)?.points).toBe(100.08)
+    expect(next.drained).toBe(1)
+    expect(await queued()).toEqual([])
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 100.08, as: 0 })
+  })
+
+  it('R867 — a MICROSECOND-stamped queue row (a `DEFAULT now()` / SQL-side enqueue’s precision) drains ONCE — the ack carries the claim’s own rendering back, never a millisecond re-rendering; readiness compares at the same precision', async () => {
+    await plantLine(P.k1, 1, K_FG4, STAMP_MICRO)
+    await enqueue([P.k1], 1, STAMP_MICRO)
+    expect(await queuedRaw(P.k1, 1)).toMatch(/22:00:00\.123456/) // six digits stored and rendered
+    const report = await drain()
+    expect(report.claimed).toBe(1)
+    expect(report.not_ready).toBe(0)
+    expect(['written', 'no_change']).toContain(league(report, fx.l1, 1).outcome) // 100.08 (already stored in the full run)
+    expect(report.drained).toBe(1) // the pre-fix `.eq('enqueued_at', <ms string>)` deleted 0 of 1 here, forever
+    expect(report.ack_missed).toEqual({ restamped: 0, lease_lost: 0, gone: 0 })
+    expect(await queued()).toEqual([])
+
+    // A line ONE MICROSECOND older than its queue row has NOT landed (F218):
+    // the millisecond round-trip read these two instants as equal.
+    await plantLine(P.k1, 1, K_FG4, STAMP_MICRO_MINUS_1)
+    await enqueue([P.k1], 1, STAMP_MICRO)
+    const held = await drain()
+    expect(held.not_ready).toBe(1)
+    expect(held.drained).toBe(0)
+    expect(held.released).toBe(1) // handed back, not leased away
+    expect(await queuedRaw(P.k1, 1)).toMatch(/\.123456/)
+    await plantLine(P.k1, 1, K_FG4, STAMP_MICRO)
+    const landed = await drain()
+    expect(landed.not_ready).toBe(0)
+    expect(landed.drained).toBe(1)
+    expect(await queued()).toEqual([])
+  })
+
+  it('THE LEASE (121) — two REAL sessions claim DISJOINT sets; a claim that never acks (a crashed drain) hides its rows from every drain until the lease expires on the injected clock; a drain that THROWS mid-way hands its lease back at once', async () => {
+    await plantLine(P.k1, 1, K_FG4, STAMP_5)
+    await plantLine(P.wr3, 1, { receptions: 5, receiving_yards: 70 }, STAMP_5)
+    await enqueue([P.k1, P.wr3], 1, STAMP_5)
+
+    // Two concurrent PostgREST transactions, one row each: disjoint, the
+    // union is the queue, two tokens. (SKIP LOCKED means neither waits on
+    // the other; the row lock + UPDATE make the sets disjoint either way —
+    // 069 pins the lease half in one session, this is the two-session half.)
+    const args = { p_batch: 1, p_lease_seconds: 120, p_now: clock.now().toISOString() }
+    const [c1, c2] = await Promise.all([service.rpc('score_fanout_claim', args), service.rpc('score_fanout_claim', args)])
+    if (c1.error || c2.error) throw new Error(`claim: ${c1.error?.message ?? c2.error?.message}`)
+    expect(c1.data).toHaveLength(1)
+    expect(c2.data).toHaveLength(1)
+    expect([c1.data![0].player_id, c2.data![0].player_id].sort()).toEqual([P.k1, P.wr3].sort())
+    expect(c1.data![0].claim_token).not.toBe(c2.data![0].claim_token)
+
+    // Both leased ⇒ a drain claims nothing and SAYS so (never "queue empty").
+    const leased = await drain()
+    expect(leased.claimed).toBe(0)
+    expect(leased.reason).toBe('all_leased')
+    expect(leased.problems).toContain('drain scored nothing: all_leased')
+
+    // Session 1 releases (an empty ack — the worker's crash-path call);
+    // session 2 "crashed" and never acks.
+    const rel = await service.rpc('score_fanout_ack', { p_claim_token: c1.data![0].claim_token, p_consumed: [] })
+    expect(rel.data).toMatchObject({ deleted: 0, released: 1, missed: [] })
+    const partial = await drain()
+    expect(partial.claimed).toBe(1)
+    expect(partial.drained).toBe(1)
+    expect(await queued()).toHaveLength(1) // the crashed lease's row
+
+    // The crashed lease is invisible for its 120 s — at +60 s still
+    // `all_leased`; at +121 s the row is claimable again and scores.
+    clock.advanceBy(60_000)
+    expect((await drain()).reason).toBe('all_leased')
+    clock.advanceBy(61_000)
+    const recovered = await drain()
+    expect(recovered.claimed).toBe(1)
+    expect(recovered.drained).toBe(1)
+    expect(recovered.ack_missed).toEqual({ restamped: 0, lease_lost: 0, gone: 0 })
+    expect(await queued()).toEqual([])
+
+    // A drain that throws (a transport error on its first stats read)
+    // releases its lease in `finally`: the very next drain claims the row —
+    // no 120 s wait, the queue intact (at-least-once).
+    await enqueue([P.k1], 1, STAMP_5)
+    const failing = interceptSelect(workerDb, 'player_stats', async () => {
+      throw new Error('transport down (injected)')
+    })
+    await expect(runScoreWeekBatch({ time: clock, db: failing }, { batchSize: 1000, leagueIds: [fx.l1, fx.l2, fx.l3, fx.l4] })).rejects.toThrow('transport down (injected)')
+    expect(await queued()).toHaveLength(1)
+    const after = await drain()
+    expect(after.claimed).toBe(1)
+    expect(after.drained).toBe(1)
+    expect(await queued()).toEqual([])
+  })
+
+  it('R868 — the roster read is league-SCOPED and PAGED: 150 queued players rostered by 7 in-season leagues each (1,050 index rows in one 150-id chunk — past the PostgREST cap) map in ONE drain; the pre-fix single read threw at the cap and aborted every drain', async () => {
+    const ids = Array.from({ length: PAGE_PLAYERS }, (_, i) => `${PREFIX}-pg-${String(i).padStart(3, '0')}`)
+    await must(
+      service.from('players').upsert(ids.map((id) => ({ id, full_name: `SW ${id}`, position: 'WR', team: 'SWD', status: 'Active' }))).select('id'),
+      'page players',
+    )
+    const pageLeagues: string[] = []
+    for (let i = 0; i < PAGE_LEAGUES; i++) {
+      const l = await createLeague(`${PREFIX}-pg-${i}`, ACTION.page[i], ESPN, 'h2h', 1)
+      pageLeagues.push(l.id)
+      await roster(l.id, l.teams[0], ids)
+    }
+    // The fixture exceeds a page — asserted, so the cell cannot pass by accident.
+    const { count, error } = await service.from('league_rosters').select('league_id', { count: 'exact', head: true }).in('league_id', pageLeagues)
+    if (error) throw new Error(error.message)
+    expect(count).toBe(PAGE_PLAYERS * PAGE_LEAGUES)
+    expect(count).toBeGreaterThan(1000)
+
+    await must(
+      service
+        .from('player_stats')
+        .upsert(
+          ids.map((player_id) => ({ player_id, season: SEASON, week: 1, stat_type: 'weekly', updated_at: STAMP_6, advanced: {}, receiving_yards: 10 })),
+          { onConflict: 'player_id,season,week' },
+        )
+        .select('player_id'),
+      'page lines',
+    )
+    await enqueue(ids, 1, STAMP_6)
+
+    const report = await drain(pageLeagues)
+    expect(report.claimed).toBe(PAGE_PLAYERS)
+    expect(report.not_ready).toBe(0)
+    // Seven leagues, every one of the 150 players mapped to each; no
+    // league_weeks row ⇒ `week_not_scheduled`, consumed by name.
+    expect(report.leagues.map((l) => l.league_id).sort()).toEqual([...pageLeagues].sort())
+    for (const entry of report.leagues) {
+      expect(entry).toMatchObject({ outcome: 'skipped', skip_reason: 'week_not_scheduled' })
+      expect(entry.mapped_player_ids).toEqual([...ids].sort())
+    }
+    expect(report.skipped).toBe(PAGE_LEAGUES)
+    expect(report.drained).toBe(PAGE_PLAYERS)
+    expect(await queued()).toEqual([])
+  }, 120_000)
 })
