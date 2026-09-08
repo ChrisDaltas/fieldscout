@@ -43,6 +43,22 @@ import {
 
 export type MatchupsEventEffect = 'refetch' | 'ignore'
 
+/**
+ * The query keys ONE week's refetch names (L.D5.2): the week's matchups
+ * (`use-matchups.ts`) AND every box score of the week (`use-box-score.ts`)
+ * — §11.4's sentence, "the matchup view refetches box-score lines on
+ * `scores_updated`", as a list the hook iterates rather than a second
+ * handler map. Pure so the pairing is pinned in node: drop the box key here
+ * and a driven batch really does stop refreshing the starters' lines while
+ * the team score still moves.
+ */
+export function matchupsInvalidationKeys(leagueId: string, week: number): ReadonlyArray<readonly unknown[]> {
+  return [
+    ['league-matchups', leagueId, week],
+    ['league-box', leagueId, week],
+  ]
+}
+
 /** The week named by a broadcast record, or `null` when it names none (or
  *  names something that is not a week). */
 export function eventWeek(envelope: LeagueBroadcastEnvelope | null | undefined): number | null {

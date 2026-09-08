@@ -72,6 +72,12 @@ const ROUTES = [
     verb: 'GET',
     service: 'readStandings',
   },
+  // L.D5.2: the box-score read (§11.4's "box-score lines").
+  {
+    file: 'src/app/api/leagues/[id]/matchups/box/route.ts',
+    verb: 'GET',
+    service: 'readBoxScore',
+  },
 ] as const
 
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
@@ -81,6 +87,7 @@ const IDS = 'src/lib/leagues/api/inseason-ids.ts'
 const LINEUP_SERVICE = 'src/lib/leagues/api/lineup-service.ts'
 const ROSTERS_SERVICE = 'src/lib/leagues/api/rosters-service.ts'
 const MATCHUPS_SERVICE = 'src/lib/leagues/api/matchups-service.ts'
+const BOX_SERVICE = 'src/lib/leagues/api/box-score-service.ts'
 const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
 const READS = 'src/lib/leagues/api/inseason-reads.ts'
 const ACTIVITY_SERVICE = 'src/lib/leagues/api/activity-service.ts'
@@ -207,10 +214,26 @@ describe('the direct-read services assert membership BEFORE any table read (D92 
   })
 
   it('every direct TABLE read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule) — and the standings RPC\'s jsonb is NOT (R810: a probe that cannot fail)', () => {
-    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE]) {
+    for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, BOX_SERVICE]) {
       expect(code(rel), rel).toContain('assertBelowPostgrestCap(')
     }
     expect(code(STANDINGS_SERVICE)).not.toContain('assertBelowPostgrestCap')
+  })
+
+  it('box score (L.D5.2): `week` AND `team` are REQUIRED, the read infers no current week, and the points come from the WORKER’S function — never a second dot product (D33/D57/F23)', () => {
+    const service = code(BOX_SERVICE)
+    expect(service).toContain('week: z.coerce.number().int().min(1).max(18),')
+    expect(service).toContain('team: z.uuid(),')
+    expect(service).not.toMatch(/current_week|now\(\)|starts_at|kickoff_at <=|Date\.now|new Date\(\)/)
+    expect(service).toContain('computeTeamWeek(snapshot, teamId, refs, statsByPlayer)')
+    expect(service).not.toMatch(/scorePlayerWeek\(|resolveRules\(|deriveTierIndicators\(/)
+    // The snapshot is proven scorable BEFORE any starter is computed (D292).
+    expect(service.indexOf('assertSnapshotScorable(')).toBeLessThan(service.indexOf('computeTeamWeek('))
+    // Membership FIRST (the family gate), then the reads.
+    expect(service.indexOf('assertLeagueMember(')).toBeLessThan(service.indexOf(".from('team_lineups')"))
+    // The starters are the canonical slot_map, never the derived JSONB.
+    expect(service).toContain('startersOf(slotMap, irKeys)')
+    expect(service).not.toContain("select('starters")
   })
 
   it('matchups: `week` is REQUIRED and the route infers no current week (§23.3)', () => {

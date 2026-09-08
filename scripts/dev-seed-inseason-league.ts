@@ -42,6 +42,11 @@
  * header records why that is a hazard. F199's census catches the ids by
  * their `dev-ld51-` prefix and the league by its name.
  *
+ * L.D5.2 (the matchup view's browser pass) DRIVES this fixture through a
+ * live week with `scripts/dev-drive-inseason-week.ts` (--open → --lineup →
+ * --games → --score → --window → --finalize); its stat lines, queue rows,
+ * third game row and the `nfl_weeks` end instants are cleaned here too.
+ *
  * TEAR IT DOWN BEFORE `npm run test` (F199, measured 2026-09-05 by L.D5.3).
  * While resident it poisons the stack lane by TWO vectors: the players
  * carry a null ADP the lowest-ADP cells can pick (L.D5.1's finding), and
@@ -76,6 +81,10 @@ const DEV = { email: 'dev@fieldscout.local', password: 'dev-password-1234' }
 const DEV_PRO_EMAIL = 'dev-pro@fieldscout.local'
 const GAME_LOCKED_ID = 'dev-ld51-game-locked'
 const GAME_OPEN_ID = 'dev-ld51-game-open'
+/** L.D5.2's third game row (`dev-drive-inseason-week.ts --games`): the
+ *  QB's team, `final`, so the box shows Now playing / Done / Up next at
+ *  once. Owned here for cleanup; created by the driver. */
+const GAME_FINAL_ID = 'dev-ld52-game-final'
 const KICKOFF_PAST = '2001-09-09T17:00:00.000Z'
 const KICKOFF_FUTURE = '2099-09-13T17:00:00.000Z'
 const ACTION_LEAGUE = 'd5100000-0000-4000-8000-000000000001'
@@ -113,7 +122,7 @@ async function cleanup(): Promise<void> {
         if (error) throw new Error(`cleanup ${table}: ${error.message}`)
       }
     }
-    for (const table of ['league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members', 'league_chat', 'schedule_actions'] as const) {
+    for (const table of ['team_week_results', 'league_player_pool', 'matchups', 'league_weeks', 'league_rosters', 'league_members', 'league_chat', 'schedule_actions'] as const) {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
@@ -122,8 +131,18 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
-  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID])
+  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_FINAL_ID])
   if (gamesError) throw new Error(`cleanup nfl_games: ${gamesError.message}`)
+  // L.D5.2: the driver's stat lines + queue rows for the fixture players
+  // (F199's census counts 2099 stamps to zero after a teardown).
+  const { error: statsError } = await service.from('player_stats').delete().in('player_id', PLAYERS.map((p) => p.id))
+  if (statsError) throw new Error(`cleanup player_stats: ${statsError.message}`)
+  const { error: queueError } = await service.from('score_fanout').delete().in('player_id', PLAYERS.map((p) => p.id))
+  if (queueError) throw new Error(`cleanup score_fanout: ${queueError.message}`)
+  // The synthetic week-1 end instants the driver's --window wrote (the
+  // seed leaves nfl_weeks 2099 as seedSyntheticSeason wrote it: NULL ends).
+  const { error: weekError } = await service.from('nfl_weeks').update({ last_game_ends_at: null, first_kickoff_at: null }).eq('season', SYNTHETIC_SEASON).eq('week', 1)
+  if (weekError) throw new Error(`cleanup nfl_weeks: ${weekError.message}`)
   const { error: playersError } = await service.from('players').delete().in('id', PLAYERS.map((p) => p.id))
   if (playersError) throw new Error(`cleanup players: ${playersError.message}`)
   console.log(`cleanup: ${ids.length} league(s) removed`)
@@ -224,6 +243,7 @@ async function seed(): Promise<void> {
   console.log(`\nopen: http://localhost:3123/app/leagues/${leagueId}/team/${devTeam.id}`)
   console.log(`      http://localhost:3123/app/leagues/${leagueId}/schedule`)
   console.log(`      http://localhost:3123/app/leagues/${leagueId}/standings`)
+  console.log(`      http://localhost:3123/app/leagues/${leagueId}/matchup`)
 }
 
 const teardown = process.argv.includes('--teardown')

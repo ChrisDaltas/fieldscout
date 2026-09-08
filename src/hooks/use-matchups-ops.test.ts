@@ -45,7 +45,7 @@ import {
   standingsEventInvalidates,
   type LeagueBroadcastEnvelope,
 } from './use-league-channel-ops'
-import { eventWeek, matchupsEventEffect, matchupsHandlers } from './use-matchups-ops'
+import { eventWeek, matchupsEventEffect, matchupsHandlers, matchupsInvalidationKeys } from './use-matchups-ops'
 
 // ---------------------------------------------------------------------------
 // The fake supabase browser client — the room test's, reproduced: a
@@ -179,6 +179,28 @@ describe('matchupsEventEffect — the per-event refetch/ignore decision (§9.3: 
     for (const other of ['league_rosters', 'transactions', 'league_chat', 'leagues']) {
       expect(matchupsEventEffect(other, { record: { week: 3 } }, 3), other).toBe('ignore')
     }
+  })
+})
+
+describe('one week’s refetch names BOTH the matchups key and the week’s box keys (L.D5.2 — §11.4 "refetches box-score lines on scores_updated")', () => {
+  it('matchupsInvalidationKeys pairs the two keys for the week, and nothing else', () => {
+    expect(matchupsInvalidationKeys('league-1', 4)).toEqual([
+      ['league-matchups', 'league-1', 4],
+      ['league-box', 'league-1', 4],
+    ])
+  })
+  it('the box hook keys under the SAME prefix the invalidation names, so a per-team query is covered by the week key', () => {
+    const src = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-box-score.ts'), 'utf8')
+    expect(src).toContain("week: (leagueId: string, week: number) => ['league-box', leagueId, week] as const")
+    expect(src).toContain("team: (leagueId: string, week: number, teamId: string) => ['league-box', leagueId, week, teamId] as const")
+    // …and opens no channel of its own (F233(a)).
+    expect(src).not.toContain('.channel(')
+    expect(src).not.toContain('useLeagueChannel')
+  })
+  it('use-matchups iterates the pair on every invalidation', () => {
+    const src = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-matchups.ts'), 'utf8')
+    expect(src).toContain('for (const queryKey of matchupsInvalidationKeys(leagueId, week)) {')
+    expect(src).toContain('void queryClient.invalidateQueries({ queryKey })')
   })
 })
 
@@ -388,7 +410,7 @@ describe('the three subscriber hooks JOIN the spine with a DERIVED map and open 
   it('use-matchups hands matchupsHandlers(week, invalidate) to useLeagueChannel', () => {
     const source = code(MATCHUPS)
     expect(source).toContain("import { useLeagueChannel } from './use-league-channel'")
-    expect(source).toContain("import { matchupsHandlers } from './use-matchups-ops'")
+    expect(source).toContain("import { matchupsHandlers, matchupsInvalidationKeys } from './use-matchups-ops'")
     expect(source).toMatch(/useLeagueChannel\(\s*leagueId,\s*matchupsHandlers\(week \?\? 0, invalidate\),/)
     expect(source).not.toContain('.channel(')
   })

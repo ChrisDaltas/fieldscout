@@ -97,6 +97,9 @@ export const STALE_ROOM_COPY_COMPACT = 'Not refreshing'
  *  "banner + last-good data, never wrong numbers"): a roster/lineup read
  *  failed while the last-good rows are still on screen. */
 export const STALE_LEAGUE_COPY = "Team data isn't refreshing — showing the last state we read."
+/** The matchup view's (L.D5.2): a matchups / box read failed while the
+ *  last-good scores are still on screen — they stay, behind this. */
+export const STALE_SCORES_COPY = "Scores aren't refreshing — showing the last state we read."
 
 /**
  * The §16.5.4 DEGRADED banner — the FETCH-path twin of `ReconnectingBanner`
@@ -119,6 +122,30 @@ export function StaleDataBanner({
   return (
     <StatusBanner tone="caution" className={className} truncate={truncate}>
       {children}
+    </StatusBanner>
+  )
+}
+
+/** The §23.2 / §16.5.4 "Live stats delayed" copy — single-sourced here
+ *  (the catalog's one-spelling rule). The state is the `stats_degraded`
+ *  incident flag (migration 122 `system_flags`; `use-stats-degraded.ts`):
+ *  the provider has failed three polls in a row, so every number on screen
+ *  is the last one the pipeline wrote — honest staleness, never a wrong
+ *  number (E45). Non-alarming by the spec's own word. */
+export const LIVE_STATS_DELAYED_COPY = 'Live stats delayed — scores show the last update we received.'
+
+/**
+ * The §16.5.4 "Live stats delayed" banner (L.D5.2). Mounted by the in-season
+ * scoring surfaces when the flag is raised; the scores beneath it keep
+ * rendering as stored (the worker resumes and back-fills on recovery —
+ * §23.2). `since` is the flag's own `last_success_at`, a STORED instant the
+ * host formats (§16.4) — this component reads no clock.
+ */
+export function LiveStatsDelayedBanner({ since, className }: { since?: string | null; className?: string }) {
+  return (
+    <StatusBanner tone="caution" className={className}>
+      {LIVE_STATS_DELAYED_COPY}
+      {since && <span className="ml-1 font-medium text-n-3">Last update {since}.</span>}
     </StatusBanner>
   )
 }

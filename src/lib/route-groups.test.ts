@@ -169,6 +169,14 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/standings',
   '/app/leagues/[leagueId]/schedule',
+  // L.D5.2 — MATCHUPS (spec §16.1 `…/leagues/[id]/matchup/[mid]` "Matchup
+  // detail (live, Live Mode style)" + the week view at `…/matchup?week=`,
+  // which a `total_points` league renders as the week leaderboard —
+  // §16.5.3; PROGRESS D323). Both in `(shell)` for Q12's reason: reading
+  // pages. Gated on `featureFlags.leagues` by `(shell)/leagues/layout.tsx`.
+  // Permanent.
+  '/app/leagues/[leagueId]/matchup',
+  '/app/leagues/[leagueId]/matchup/[mid]',
 ]
 
 describe('route groups are invisible to the URL space', () => {

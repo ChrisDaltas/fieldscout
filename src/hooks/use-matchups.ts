@@ -6,7 +6,7 @@ import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 
 import { useLeagueChannel } from './use-league-channel'
-import { matchupsHandlers } from './use-matchups-ops'
+import { matchupsHandlers, matchupsInvalidationKeys } from './use-matchups-ops'
 
 /**
  * One week's matchups, live scores and results — M4 task L.D4.1 (spec
@@ -67,9 +67,13 @@ export function useMatchupsLive(leagueId: string | undefined, week: number | und
   const query = useMatchups(leagueId, week)
   const queryClient = useQueryClient()
 
+  // The week's matchups AND its box scores (L.D5.2 — §11.4's "refetches
+  // box-score lines on `scores_updated`"): one event, every key of the week.
   const invalidate = () => {
     if (!leagueId || week === undefined) return
-    void queryClient.invalidateQueries({ queryKey: leagueMatchupKeys.week(leagueId, week) })
+    for (const queryKey of matchupsInvalidationKeys(leagueId, week)) {
+      void queryClient.invalidateQueries({ queryKey })
+    }
   }
 
   const { connection } = useLeagueChannel(
