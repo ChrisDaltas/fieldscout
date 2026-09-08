@@ -188,6 +188,71 @@ export function standingsEventInvalidates(name: string): boolean {
 }
 
 /**
+ * Which events make the PROJECTED standings stale (§11.5 v2.16.25 —
+ * `league_standings_projected`, migration 118; M4 task L.D5.5).
+ *
+ * The projected table is, by definition, the LIVE picture: the open weeks
+ * derived "as if they ended now" from the write door's provisional scores
+ * (D318(3)). So — unlike the FINAL table above — `matchups` IS a carrier:
+ * 119's coalesced `scores_updated` (ONE event per league per worker batch,
+ * never per player) moves the projection every time the door writes. The
+ * cost is one member-gated scan per open PROJECTED view per batch — the
+ * matchup page's own cadence (D323), and only while a viewer has the
+ * projected view selected (the hook's query is `enabled` by the control).
+ * `team_week_results` / `league_weeks` (a finalization folds a week from
+ * the projected set into the final set) and `teams` (a retirement — R856)
+ * are the final table's carriers and are carriers here for the same
+ * reasons. Widen this to `league_chat` / `transactions` and the projection
+ * really does refetch on every chat line.
+ */
+export const PROJECTED_STANDINGS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'matchups',
+  'team_week_results',
+  'league_weeks',
+  'teams',
+]
+
+export function projectedStandingsEventInvalidates(name: string): boolean {
+  return (PROJECTED_STANDINGS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * Which events make the PLAYOFF BRACKET stale (§11.5's Playoffs bullet
+ * v2.16.25 / Q39 (E); `league_playoff_bracket`, migration 118; M4 task
+ * L.D5.5).
+ *
+ * 118/119 emit NO bracket event of their own (D318(8) — checked at L.D5.5:
+ * the sync writes `matchups` rows and flips `leagues.status`, and both of
+ * those tables already broadcast). So the bracket refetches on the events
+ * the rollover and its consequences already emit:
+ *   - `league_weeks` — the rollover ITSELF: 116's (b) flips `live →
+ *     correction_window` at `nfl_weeks.last_game_ends_at`, the instant the
+ *     sync (re)builds a round;
+ *   - `matchups` — the (re)build's DELETE + INSERT (119's per-statement
+ *     trigger; F256(h) ✅ by 119) AND the coalesced score tick, which moves
+ *     the PROJECTED round 1 (it is seeded from the projected table) and a
+ *     built round's two-week totals;
+ *   - `team_week_results` — a finalization (the correction close, where a
+ *     moved seed REBUILDS the round and `source` flips to `final`);
+ *   - `leagues` — 070's status broadcast: `in_season → playoffs` with the
+ *     first bracket write, `playoffs → complete` with the champion;
+ *   - `teams` — a retirement changes the projected seeding (R856).
+ * The same one-per-batch cadence as the projected table; `league_chat` /
+ * `transactions` / `league_rosters` / `league_player_pool` move no pairing.
+ */
+export const PLAYOFF_BRACKET_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
+  'matchups',
+  'team_week_results',
+  'league_weeks',
+  'leagues',
+  'teams',
+]
+
+export function playoffBracketEventInvalidates(name: string): boolean {
+  return (PLAYOFF_BRACKET_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
  * Which events make the LEAGUE DETAIL (`useLeague` — §15.1's GET, the
  * `teams` list the standings page names rows from and the members list)
  * stale. Only `teams` (120 — R856): a retirement seals one franchise and

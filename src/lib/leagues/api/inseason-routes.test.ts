@@ -78,6 +78,13 @@ const ROUTES = [
     verb: 'GET',
     service: 'readBoxScore',
   },
+  // L.D5.5: the playoff bracket read (§11.5's Playoffs bullet, v2.16.25 /
+  // Q39 — `league_playoff_bracket`, migration 118).
+  {
+    file: 'src/app/api/leagues/[id]/playoffs/route.ts',
+    verb: 'GET',
+    service: 'readPlayoffBracket',
+  },
 ] as const
 
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
@@ -89,6 +96,7 @@ const ROSTERS_SERVICE = 'src/lib/leagues/api/rosters-service.ts'
 const MATCHUPS_SERVICE = 'src/lib/leagues/api/matchups-service.ts'
 const BOX_SERVICE = 'src/lib/leagues/api/box-score-service.ts'
 const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
+const PLAYOFFS_SERVICE = 'src/lib/leagues/api/playoffs-service.ts'
 const READS = 'src/lib/leagues/api/inseason-reads.ts'
 const ACTIVITY_SERVICE = 'src/lib/leagues/api/activity-service.ts'
 
@@ -142,6 +150,7 @@ describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
           'schedule_edit_matchup',
           'set_lineup',
           'league_standings',
+          'league_playoff_bracket',
           '.rpc(',
           'from(',
           'is_league_member',
@@ -206,11 +215,23 @@ describe('the direct-read services assert membership BEFORE any table read (D92 
     expect(source.indexOf(".is('deleted_at', null)")).toBeLessThan(source.indexOf('status: 404'))
   })
 
-  it('the standings service needs no gate of its own — 117 raises 42501 in-body and the mapper answers 403', () => {
+  it('the standings service needs no gate of its own — 117 raises 42501 in-body and the mapper answers 403; the projected sibling (118) the same way, selected by `view`', () => {
     const source = code(STANDINGS_SERVICE)
     expect(source).toContain("supabase.rpc('league_standings', { p_league_id: leagueId })")
+    expect(source).toContain("supabase.rpc('league_standings_projected', { p_league_id: leagueId })")
+    expect(source).toContain("view: z.enum(['final', 'projected']).default('final')")
     expect(source).toContain('mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)')
     expect(source).not.toContain('assertLeagueMember')
+  })
+
+  it('the playoffs service (L.D5.5) the same: 118’s member read is the gate, no seed/total/instant is computed here, and a NULL score stays NULL (E61)', () => {
+    const source = code(PLAYOFFS_SERVICE)
+    expect(source).toContain("supabase.rpc('league_playoff_bracket', { p_league_id: leagueId })")
+    expect(source).toContain('mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)')
+    expect(source).toContain('status: 404, body: { error: INSEASON_LEAGUE_GONE_MESSAGE }')
+    expect(source).not.toContain('assertLeagueMember')
+    expect(source).not.toMatch(/Date\.now|new Date\(|kickoff_at|starts_at|\.sort\(|home_total\s*[<>+]|Math\.max/)
+    expect(source).toContain('if (raw === null || raw === undefined) return null')
   })
 
   it('every direct TABLE read is asserted below the PostgREST cap (CLAUDE.md\'s 1000-row rule) — and the standings RPC\'s jsonb is NOT (R810: a probe that cannot fail)', () => {
@@ -377,7 +398,7 @@ describe('the in-season SQLSTATE mapping is one shared helper (F224(e)/F227(f))'
   })
 
   it('every RPC-calling in-season service uses it — none maps SQLSTATEs of its own', () => {
-    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE, LINEUP_SERVICE, STANDINGS_SERVICE]) {
+    for (const rel of [SCHEDULE_SERVICE, TRANSACTIONS_SERVICE, LINEUP_SERVICE, STANDINGS_SERVICE, PLAYOFFS_SERVICE]) {
       const source = code(rel)
       expect(source, rel).toContain("import { mapInSeasonRpcError } from './inseason-errors'")
       expect(source, rel).not.toMatch(/'42501'|'P0001'|'P0002'|'22023'/)

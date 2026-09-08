@@ -53,6 +53,8 @@ export const GOLDEN_STANDINGS: LeagueStandings = {
   coin_flip_seed_source: 'schedule_seed',
   skipped: [],
   pa_gaps: [],
+  projected: false,
+  weeks_projected: 0,
   standings: [
     standingsRow({
       rank: 1,

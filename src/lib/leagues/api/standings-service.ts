@@ -38,9 +38,22 @@
  * could not fail (D272(20)); the count's ceiling is 117's own seated-team
  * scan.
  *
+ * **The projected arm (L.D5.5; spec §11.5's standings bullet v2.16.25;
+ * migration 118's `league_standings_projected` — D318(3), F253(a)
+ * discharged).** `?view=projected` reads the SIBLING wrapper over the SAME
+ * chain (`league_standings_internal(…, TRUE)`): the final rows PLUS every
+ * OPEN regular-season week (`live` / `correction_window`) derived "as if it
+ * ended now" through the derivation finalization itself writes from. The
+ * document is byte-for-byte the final one's shape plus `projected: true`
+ * and `weeks_projected`; `league_standings` answers `projected: false` /
+ * `weeks_projected: 0`. The UI's `Final | Projected` control switches the
+ * read; nothing is projected client-side. The query is parsed HERE (the
+ * matchups service's shape) so the route holds no rule.
+ *
  * No Date/random read here (the `src/lib/leagues/**` ESLint fences).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
@@ -86,7 +99,20 @@ export interface LeagueStandings {
   standings: StandingsRow[]
   /** `'no_final_weeks'` when nothing is final yet — the RPC's own reason. */
   reason: string | null
+  /** 118 (D318(3)): `true` from `league_standings_projected` — the open
+   *  weeks counted "as if they ended now"; `false` from `league_standings`. */
+  projected: boolean
+  /** How many OPEN regular-season weeks the projected arm counted (0 on
+   *  the final read). */
+  weeks_projected: number
 }
+
+/** The query string: `view` selects the RPC. Absent = final (the L.D4.1
+ *  contract unchanged). Exported for its pins. */
+export const standingsQuerySchema = z.strictObject({
+  view: z.enum(['final', 'projected']).default('final'),
+})
+export type StandingsQuery = z.infer<typeof standingsQuerySchema>
 
 /** The one string shape a `numeric` figure can arrive as — plain decimal,
  *  optional sign, no exponent, no radix prefix, no padding (R811). Exported
@@ -126,13 +152,24 @@ export function normalizeStandingsRow(raw: Record<string, unknown>): StandingsRo
  * GET /api/leagues/[id]/standings — the tiebreaker-ordered table (§15.3 →
  * `league_standings`).
  */
-export async function readStandings(supabase: Supabase, leagueId: string): Promise<ServiceResult> {
-  const { data, error } = await supabase.rpc('league_standings', { p_league_id: leagueId })
+export async function readStandings(
+  supabase: Supabase,
+  leagueId: string,
+  query: Record<string, string> = {},
+): Promise<ServiceResult> {
+  const parsed = standingsQuerySchema.safeParse(query)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { data, error } =
+    parsed.data.view === 'projected'
+      ? await supabase.rpc('league_standings_projected', { p_league_id: leagueId })
+      : await supabase.rpc('league_standings', { p_league_id: leagueId })
   if (error) {
     const mapped = mapInSeasonRpcError(error, INSEASON_READ_FORBIDDEN_MESSAGE)
     // F250(a), the SQL-side twin (L.D5.3): 117 raises exactly ONE P0002 —
     // `league_standings: league <id> not found` (117:1001, a missing or
-    // soft-deleted league) — and the rest of the read family answers that
+    // soft-deleted league; 118's projected wrapper raises the same one) — and the rest of the read family answers that
     // condition with `INSEASON_LEAGUE_GONE_MESSAGE` (R812's gate). One
     // condition, one copy: the 404 is re-worded HERE, by status, so this
     // file still names no SQLSTATE and the mapper keeps its verbatim arm for
