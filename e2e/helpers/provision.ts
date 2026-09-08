@@ -9,6 +9,7 @@ import { createDraft, patchDraftOrder, startDraft } from '@/lib/leagues/api/draf
 import { createLeague, patchLeague } from '@/lib/leagues/api/leagues-service'
 import { addPlaceholderSeat } from '@/lib/leagues/api/members-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
+import { SEASON_ROSTER, SEASON_ROUNDS } from '@/lib/leagues/sim/plan'
 import { rosterForRounds } from '@/lib/leagues/sim/runner'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '@/lib/leagues/sim/synthetic-season'
 
@@ -118,6 +119,14 @@ export interface ProvisionInput {
    *  that will never store one (the mock spec) needs 'random', or
    *  `create_mock_draft` correctly refuses the incomplete manual order. */
   orderMode?: 'manual' | 'random'
+  /**
+   * L.D6.2 — a SCORABLE roster shape. `rosterForRounds(n)` gives at most
+   * QB/RB/WR and no K or D/ST, so a realistic box score is impossible on it;
+   * `season: true` uses the sim's own `SEASON_ROSTER` (QB·RB·WR·TE·K·D/ST +
+   * one bench = 7 seats) and therefore expects `rounds: SEASON_ROUNDS`.
+   * Default unchanged — the M2/M3 specs' provisioning is byte-identical.
+   */
+  season?: true
   /** Create + order the draft row (league `scheduled`). */
   createDraftRow?: boolean
   /** Also start it (skips the lobby — the reconnect spec's shape). */
@@ -152,9 +161,15 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   if (input.draftType === 'auction' && !input.auction) {
     throw new Error('provisionLeague: draftType "auction" requires the auction knobs (loud, not defaulted)')
   }
+  if (input.season && input.rounds !== SEASON_ROUNDS) {
+    throw new Error(
+      `provisionLeague: season mode seats ${SEASON_ROUNDS} roster spots (SEASON_ROSTER) but rounds is ` +
+        `${input.rounds} — a mismatch drafts a board that cannot fill the starting slots (loud, not coerced)`,
+    )
+  }
   const configured = {
     ...settings,
-    roster_settings: rosterForRounds(input.rounds),
+    roster_settings: input.season ? SEASON_ROSTER : rosterForRounds(input.rounds),
     draft: {
       ...settings.draft,
       draft_type: (input.draftType ?? 'snake') as 'snake',

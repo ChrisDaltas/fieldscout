@@ -70,3 +70,17 @@ export const E2E_LEAGUE_PREFIX = 'E2E L.B5.1'
 export const E2E_BOT_USERNAME_PREFIX = 'e2e_c5_bot_'
 export const E2E_BOT_EMAIL_DOMAIN = 'fieldscout.test'
 export const E2E_BOT_PASSWORD = 'e2e-c5-pass-1234'
+
+/**
+ * L.D6.2 in-season fixture identity (D108(14) prefix registration). The
+ * synthetic season (2099) is SHARED reference ground: the sim owns
+ * `simseason-`, the dev seeder `dev-ld51-*` / `dev-ld52-*` / `dev-ld55-*`,
+ * and this suite owns THIS prefix. Every `nfl_games` row an in-season spec
+ * plants carries it, and harness job 10 deletes by it — a season-wide
+ * delete would clobber a concurrently-running sim (D330(3)).
+ *
+ * `nfl_games.id` is TEXT (001), so the prefix is the whole identity; there
+ * is no season column to scope a delete by that would not also catch
+ * another suite's rows.
+ */
+export const E2E_SEASON_GAME_PREFIX = 'e2e-d62-game-'
