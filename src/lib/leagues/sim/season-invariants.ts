@@ -183,6 +183,15 @@ export interface SeasonAudit {
   leagueId: string
   season: number
   scheduleMode: 'h2h' | 'total_points'
+  /**
+   * `leagues.regular_season_weeks` as STORED — the oracle's own window, read
+   * from the database, never derived from the plan (R920). Invariant 5's
+   * oracle (`league_standings_internal`, 118:641-643/684-690) counts only
+   * `[min(league_weeks.week) … + regular_season_weeks − 1]`, so the sweep has
+   * to know where the regular season ends or it sums a wider window than the
+   * value it compares against.
+   */
+  regularSeasonWeeks: number
   weeksDriven: readonly number[]
   rosters: readonly AuditRosterRow[]
   pool: readonly AuditPoolRow[]
@@ -454,14 +463,30 @@ function sameCents(a: number, b: number): boolean {
  * 109's DEFAULT, and "nothing happened" must never be read as "it worked".
  * A NULL `points` (E61 pending) contributes nothing and is NAMED, not summed
  * as zero.
+ *
+ * THE WINDOW IS THE ORACLE'S OWN (R920 — PR #273 review). `points_for` is
+ * summed by `league_standings_internal` over `r.week BETWEEN v_first AND
+ * v_first + regular_season_weeks − 1 AND r.is_final` (118:641-643, 684-690).
+ * This check previously summed every week whose `league_weeks.status` was
+ * `final`, which is a WIDER window: a run driven past the regular season
+ * (`--weeks ≥ 13` on a 12-week league) finalizes bracket weeks too, and every
+ * bracket participant's PF then failed deterministically on a chain behaving
+ * exactly to §11.7. So the window is bounded here to the oracle's, and the
+ * row-level predicate is `team_week_results.is_final` — the same column the
+ * oracle reads — rather than the week's status.
  */
 export function checkPointsForOnce(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
-  const finalWeeks = new Set(a.weeks.filter((w) => w.status === 'final').map((w) => w.week))
+  // v_first: the league's own first week (110 maps completion onto week 1),
+  // read from the SAME table the oracle reads it from.
+  const first = a.weeks.length === 0 ? null : Math.min(...a.weeks.map((w) => w.week))
+  if (first === null) return out
+  const last = first + a.regularSeasonWeeks - 1
+  const inWindow = (week: number): boolean => week >= first && week <= last
   const sums = new Map<string, number>()
   const pendings = new Map<string, number[]>()
   for (const r of a.results) {
-    if (!finalWeeks.has(r.week)) continue
+    if (!inWindow(r.week) || !r.is_final) continue
     if (r.points === null) {
       const list = pendings.get(r.team_id) ?? []
       list.push(r.week)
@@ -478,8 +503,9 @@ export function checkPointsForOnce(a: SeasonAudit): SeasonInvariantFailure[] {
           a,
           'pf-once-per-week',
           pendingWeeks[0]!,
-          `team ${standing.team_id} has a FINAL week with a NULL team_week_results.points (weeks ${pendingWeeks.join(', ')}) — ` +
-            `a finalized week must carry a score, and PF cannot be checked against a pending cell (E61/§23.2)`,
+          `team ${standing.team_id} has an is_final regular-season week with a NULL team_week_results.points ` +
+            `(weeks ${pendingWeeks.join(', ')}; window ${first}-${last}) — a finalized week must carry a score, ` +
+            `and PF cannot be checked against a pending cell (E61/§23.2)`,
         ),
       )
       continue
@@ -492,7 +518,8 @@ export function checkPointsForOnce(a: SeasonAudit): SeasonInvariantFailure[] {
           'pf-once-per-week',
           null,
           `team ${standing.team_id}: standings points_for = ${standing.points_for}, but Σ team_week_results.points over ` +
-            `final weeks = ${expected.toFixed(2)} — points are counted once per week regardless of median/second games (§11.7)`,
+            `is_final regular-season weeks ${first}-${last} = ${expected.toFixed(2)} — points are counted once per week ` +
+            `regardless of median/second games (§11.7)`,
         ),
       )
     }

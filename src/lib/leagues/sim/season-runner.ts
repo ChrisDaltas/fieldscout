@@ -90,6 +90,7 @@ import { SCENARIO_IDS, type ScenarioId } from '../stats/synthetic/scenario'
 import { SyntheticStatsProvider } from '../stats/synthetic/synthetic-stats-provider'
 import { VirtualClock } from '../time/virtual-clock'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
+import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
 import { BOT_POOL_SIZE } from './plan'
 import {
@@ -157,6 +158,8 @@ export interface LeagueState {
   leagueId: string
   teamCount: number
   scheduleMode: 'h2h' | 'total_points'
+  /** `leagues.regular_season_weeks` AS STORED — invariant 5's window (R920). */
+  regularSeasonWeeks: number
   matrixLine: string
   ownerId: string | null
   teams: Array<{ id: string; ownerId: string | null }>
@@ -169,6 +172,55 @@ export interface LeagueState {
 
 function throwIfError(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`${what} failed: ${error.message}`)
+}
+
+/** PostgREST puts an `in.(…)` list in the URI and Kong refuses a long one
+ *  (D327(13): ~330 uuids was "URI too long"), so every id list is chunked. */
+const LEAGUE_ID_CHUNK = 100
+
+/**
+ * Read a whole result set across the run's leagues — CHUNKED by league id and
+ * PAGED past PostgREST's `max_rows` (1000, `supabase/config.toml:18`).
+ *
+ * R919 (PR #273 review). An unpaged read that crosses the cap comes back with
+ * `error === null` and a silently truncated body, and BOTH callers here feed
+ * consumers that infer lawfulness from ABSENCE — the `stuck_queue` exemption
+ * set (a missing player id EXCUSES the alert) and the run's first-week floor.
+ * Truncation there can only ever SILENCE a finding, which is exactly the
+ * "never let 'nothing happened' mean 'it worked'" class CLAUDE.md records as
+ * learned the hard way, and `readProvenance` in this same file already
+ * refuses to read a null count as zero. So this pages with an exact count and
+ * REFUSES the run loudly unless the pages add up to what the server counted.
+ */
+async function pageByLeague<T>(
+  leagueIds: readonly string[],
+  what: string,
+  build: (part: string[], from: number, to: number) => PageResponse<T>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let i = 0; i < leagueIds.length; i += LEAGUE_ID_CHUNK) {
+    const part = leagueIds.slice(i, i + LEAGUE_ID_CHUNK)
+    const seen: { count: number | null } = { count: null }
+    const rows = await pageAll<T>(async (from, to) => {
+      const res = await build(part, from, to)
+      if (res.count !== null && res.count !== undefined) seen.count = res.count
+      return res
+    })
+    if (seen.count === null) {
+      throw new Error(
+        `${what}: PostgREST returned no count — refusing to read a possibly-truncated set as complete ` +
+          `(${rows.length} rows over ${part.length} leagues)`,
+      )
+    }
+    if (rows.length !== seen.count) {
+      throw new Error(
+        `${what}: paged ${rows.length} rows but the server counts ${seen.count} — refusing to read a ` +
+          `truncated set as complete (PostgREST max_rows = 1000)`,
+      )
+    }
+    out.push(...rows)
+  }
+  return out
 }
 
 /** Every `players.team` a scenario game names — the bridge's candidate scope. */
@@ -346,11 +398,20 @@ export async function runSeasonSim(
       { time: driven.clock, db: service },
       { season: SYNTHETIC_SEASON, leagueIds: leagueStates.map((s) => s.leagueId) },
     )
-    const { data: rosteredRows, error: rosteredError } = await service
-      .from('league_rosters')
-      .select('player_id')
-      .in('league_id', leagueStates.map((s) => s.leagueId))
-    throwIfError(rosteredError, 'sweep: rostered-player set')
+    // PAGED + CHUNKED (R919): this set's only consumer EXCUSES a `stuck_queue`
+    // alert for a player it does not contain, so a truncated read could only
+    // ever silence a §22.3 drain failure. See `pageByLeague`'s banner.
+    const rosteredRows = await pageByLeague<{ player_id: string }>(
+      leagueStates.map((s) => s.leagueId),
+      'sweep: rostered-player set',
+      (part, from, to) =>
+        service
+          .from('league_rosters')
+          .select('player_id, id', { count: 'exact' })
+          .in('league_id', part)
+          .order('id')
+          .range(from, to),
+    )
     const { data: postponedRows, error: postponedError } = await service
       .from('nfl_games')
       .select('id')
@@ -359,7 +420,7 @@ export async function runSeasonSim(
     throwIfError(postponedError, 'sweep: postponed games')
     applyReconcileSummary(report, reconcile, {
       drivenWeeks: new Set(driven.weeksDriven),
-      rosteredPlayers: new Set((rosteredRows ?? []).map((r) => r.player_id)),
+      rosteredPlayers: new Set(rosteredRows.map((r) => r.player_id)),
       postponedGameIds: new Set((postponedRows ?? []).map((r) => r.id)),
     })
     report.workerNotes = driven.workerNotes
@@ -568,10 +629,19 @@ export async function readLeagueState(
 ): Promise<LeagueState> {
   const { data: league, error: leagueError } = await service
     .from('leagues')
-    .select('roster_settings, settings, owner_id')
+    .select('roster_settings, settings, owner_id, regular_season_weeks')
     .eq('id', leagueId)
     .single()
   throwIfError(leagueError, `${label}: league shape`)
+  // R920: the oracle's window comes from the STORED column, and a missing one
+  // is refused rather than defaulted — a wrong window silently changes what
+  // invariant 5 compares.
+  const regularSeasonWeeks = league!.regular_season_weeks
+  if (typeof regularSeasonWeeks !== 'number' || !Number.isInteger(regularSeasonWeeks) || regularSeasonWeeks < 1) {
+    throw new Error(
+      `${label}: leagues.regular_season_weeks is ${String(regularSeasonWeeks)} — invariant 5's window cannot be derived`,
+    )
+  }
   const roster = (league!.roster_settings ?? {}) as {
     starting_slots?: Array<{ key: string; eligible: string[]; count: number }>
     ir_slots?: Array<{ key: string }>
@@ -594,6 +664,7 @@ export async function readLeagueState(
     ownerId: league!.owner_id,
     teamCount,
     scheduleMode,
+    regularSeasonWeeks,
     matrixLine:
       `${teamCount} teams · ${scheduleMode} · median ${settings.median_game === true ? 'on' : 'off'} · ` +
       `second ${settings.second_opponent === true ? 'on' : 'off'} · ` +
@@ -660,17 +731,31 @@ async function driveSeason(
   const weekRows = new Map((calendar ?? []).map((w) => [w.week, w]))
 
   // Which weeks each league actually holds (110 maps completion onto week 1).
-  const { data: leagueWeekRows, error: lwError } = await service
-    .from('league_weeks')
-    .select('league_id, week')
-    .in('league_id', leagueIds)
-  throwIfError(lwError, 'season: league_weeks read')
-  const firstWeek = Math.min(...(leagueWeekRows ?? []).map((r) => r.week))
+  // PAGED + CHUNKED (R919): a season league holds 12-18 `league_weeks` rows,
+  // so the §22.6 100-league gate crosses the 1000-row cap on its own — and a
+  // truncated read here would silently move the run's first week.
+  const leagueWeekRows = await pageByLeague<{ league_id: string; week: number }>(
+    leagueIds,
+    'season: league_weeks read',
+    (part, from, to) =>
+      service
+        .from('league_weeks')
+        .select('league_id, week, id', { count: 'exact' })
+        .in('league_id', part)
+        .order('id')
+        .range(from, to),
+  )
+  const firstWeek = Math.min(...leagueWeekRows.map((r) => r.week))
   if (!Number.isFinite(firstWeek)) throw new Error('season: no league_weeks rows — the drafts did not complete')
   const weeksDriven: number[] = []
   for (let w = firstWeek; w < firstWeek + cfg.weeks; w++) {
     if (weekRows.has(w)) weeksDriven.push(w)
   }
+  // R920: the oracle's boundary, per league — `v_first + regular_season_weeks
+  // − 1` (118:641-643). A week past it is a BRACKET week, which is the only
+  // place the door's `no_matchup_row` skip is a lawful note rather than a
+  // finding.
+  const lastRegularWeek = new Map(leagues.map((l) => [l.leagueId, firstWeek + l.regularSeasonWeeks - 1]))
 
   // ---- One anchored scenario + one provider per driven week --------------
   const anchored = new Map<number, ReturnType<typeof makeScenario>>()
@@ -754,6 +839,11 @@ async function driveSeason(
     inWindowWrites: 0,
     revisionWrites: 0,
     flaggedNoStatRow: 0,
+    // R921: WHICH players the worker named, not just how many. The run-wide
+    // COUNT is > 0 in every scenario by construction (18 bridged players, a
+    // full real draft pool), so it cannot discriminate `mass_inactives` from
+    // `happy_path`; the ids can.
+    flaggedNoStatRowIds: new Set<string>(),
     lineupsSet: 0,
     workerNotes: new Map<string, number>(),
   }
@@ -829,7 +919,7 @@ async function driveSeason(
       { batchSize: 1000, leagueIds },
     )
     jobs.scoreBatches += 1
-    absorbBatch(batch, pNow, workerErrors, workerErrorsByLeague, noStatRowByLeague, measured)
+    absorbBatch(batch, pNow, workerErrors, workerErrorsByLeague, noStatRowByLeague, measured, lastRegularWeek)
     measureCorrectionArms(batch, entry, windowEndsAt, measured)
 
     for (const league of leagues) {
@@ -928,9 +1018,57 @@ function collectJobFailures(
  * loud — the worker's own step 5 ("a rostered player no lineup starts is
  * bench — no recompute"). It fires whenever a delta lands for a benched
  * player, which in a sim (and in production) is routine.
+ *
+ * `door skipped <team>: no_matchup_row` IN A BRACKET WEEK is on the list for
+ * the same reason and NO OTHER (R920, measured on the `--weeks 15` run that
+ * proved invariant 5's window fix): migration 119's own doctrine states it —
+ * "a team with no row this week (an eliminated playoff seat, a bye-less week
+ * — `no_matchup_row`) is NAMED, not an error" (`119:110-112`, D319(3)). A
+ * 16-team league with a 6-seat bracket leaves ten teams without a row in
+ * every bracket week, so counting those as worker errors made a run driven
+ * past the regular season RED on a chain behaving exactly to §7.3.8. It is
+ * classified ONLY for weeks past the league's own regular season — the same
+ * `v_first + regular_season_weeks − 1` boundary invariant 5 uses — so a
+ * missing matchup row inside the regular season is still a real finding.
  */
 const LAWFUL_WORKER_NOTE =
   /^(drain scored nothing:|no team starts a mapped player this week|\[[^\]]+\] (no team starts a mapped player this week|league .* (skipped: (week_final|week_not_open|week_not_scheduled)|HELD: week_not_open)))/
+
+/** The door's bracket skip, exactly (119:612 writes the `reason` verbatim). */
+const NO_MATCHUP_ROW = /^door skipped [0-9a-f-]{36}: no_matchup_row$/
+/** …and its batch-level twin, which carries the league id and week inline. */
+const NO_MATCHUP_ROW_PREFIXED = /^\[([0-9a-f-]{36}) wk (\d+)\] door skipped [0-9a-f-]{36}: no_matchup_row$/
+const NO_MATCHUP_ROW_NOTE =
+  'door skipped <team>: no_matchup_row (a bracket week — an eliminated seat has no row; 119:110-112)'
+
+/**
+ * The door's `no_matchup_row` skip, classified — the note when the week is
+ * PAST the league's regular season, `null` otherwise (which keeps it a
+ * finding). Exported so the classification is falsifiable on its own, with
+ * its negative control, rather than only through a 15-week run.
+ *
+ * `problem` is either the batch-level form (`[<league> wk <n>] door skipped
+ * …`), which carries its own league and week, or the per-league form (`door
+ * skipped …`), which needs `ctx`.
+ */
+export function lawfulBracketSkip(
+  problem: string,
+  lastRegularWeek: ReadonlyMap<string, number>,
+  ctx?: { leagueId: string; week: number },
+): string | null {
+  const past = (leagueId: string, week: number): boolean => {
+    const last = lastRegularWeek.get(leagueId)
+    return last !== undefined && week > last
+  }
+  const prefixed = NO_MATCHUP_ROW_PREFIXED.exec(problem)
+  if (prefixed !== null) {
+    return past(prefixed[1]!, Number(prefixed[2])) ? NO_MATCHUP_ROW_NOTE : null
+  }
+  if (ctx !== undefined && NO_MATCHUP_ROW.test(problem)) {
+    return past(ctx.leagueId, ctx.week) ? NO_MATCHUP_ROW_NOTE : null
+  }
+  return null
+}
 
 function absorbBatch(
   batch: BatchReport,
@@ -938,9 +1076,16 @@ function absorbBatch(
   workerErrors: string[],
   byLeague: Map<string, string[]>,
   noStatRowByLeague: Map<string, number>,
-  measured: { flaggedNoStatRow: number; workerNotes: Map<string, number> },
+  measured: { flaggedNoStatRow: number; flaggedNoStatRowIds: Set<string>; workerNotes: Map<string, number> },
+  /** league id → the LAST regular-season week (R920's boundary). */
+  lastRegularWeek: ReadonlyMap<string, number>,
 ): void {
   for (const line of batch.problems) {
+    const bracket = lawfulBracketSkip(line, lastRegularWeek)
+    if (bracket !== null) {
+      measured.workerNotes.set(bracket, (measured.workerNotes.get(bracket) ?? 0) + 1)
+      continue
+    }
     if (LAWFUL_WORKER_NOTE.test(line)) {
       const key = line.replace(/^\[[^\]]+\] /, '').replace(/league [0-9a-f-]{36} week \d+/g, 'league <id> week <n>').split(' (')[0]!
       measured.workerNotes.set(key, (measured.workerNotes.get(key) ?? 0) + 1)
@@ -960,6 +1105,14 @@ function absorbBatch(
       byLeague.set(league.league_id, [...(byLeague.get(league.league_id) ?? []), line])
     }
     for (const problem of league.problems) {
+      const bracketSkip = lawfulBracketSkip(problem, lastRegularWeek, {
+        leagueId: league.league_id,
+        week: league.week,
+      })
+      if (bracketSkip !== null) {
+        measured.workerNotes.set(bracketSkip, (measured.workerNotes.get(bracketSkip) ?? 0) + 1)
+        continue
+      }
       if (LAWFUL_WORKER_NOTE.test(`[x] ${problem}`) || /skipped: (week_final|week_not_open|week_not_scheduled)|HELD: week_not_open/.test(problem)) {
         const key = problem.replace(/league [0-9a-f-]{36} week \d+/g, 'league <id> week <n>')
         measured.workerNotes.set(key, (measured.workerNotes.get(key) ?? 0) + 1)
@@ -970,7 +1123,11 @@ function absorbBatch(
       byLeague.set(league.league_id, [...(byLeague.get(league.league_id) ?? []), line])
     }
     let noStatRows = 0
-    for (const team of league.teams) noStatRows += team.no_stat_row.length
+    for (const team of league.teams) {
+      noStatRows += team.no_stat_row.length
+      // R921: keep the ids, so a scenario can assert on ITS OWN scratches.
+      for (const playerId of team.no_stat_row) measured.flaggedNoStatRowIds.add(playerId)
+    }
     if (noStatRows > 0) {
       measured.flaggedNoStatRow += noStatRows
       noStatRowByLeague.set(league.league_id, (noStatRowByLeague.get(league.league_id) ?? 0) + noStatRows)
@@ -1291,6 +1448,7 @@ export async function collectSeasonAudit(
     leagueId: state.leagueId,
     season: SYNTHETIC_SEASON,
     scheduleMode: state.scheduleMode,
+    regularSeasonWeeks: state.regularSeasonWeeks,
     weeksDriven: [...weeksDriven],
     rosters: (rosters ?? []).map((r) => ({ team_id: r.team_id, player_id: r.player_id })),
     pool: (pool ?? []).map((p) => ({ player_id: p.player_id, state: String(p.state) })),
@@ -1333,6 +1491,7 @@ async function buildScenarioEvidence(
     inWindowWrites: number
     revisionWrites: number
     flaggedNoStatRow: number
+    flaggedNoStatRowIds: ReadonlySet<string>
   },
   postponedGame: { gameId: string } | undefined,
 ): Promise<ScenarioAssertion[]> {
@@ -1444,12 +1603,57 @@ async function buildScenarioEvidence(
       break
     }
     case 'mass_inactives': {
-      push(
-        'zeros_flagged',
-        measured.flaggedNoStatRow > 0,
-        `${measured.flaggedNoStatRow} starters reported no_stat_row by the worker`,
-        'a scratched starter is NAMED by the worker (auto-sub is off by default — §11.3 is M5, F211)',
+      // R921: SCOPED to this scenario's own scratches, the way the
+      // `postponement` arm two cases above scopes to `bridge.map`. The
+      // run-wide `flaggedNoStatRow` count is > 0 in `happy_path` too — the
+      // leagues draft the real pool while only the 18 bridged players ever
+      // receive lines — so deleting every `inactive` mark from `scenarios.ts`
+      // still printed [PASS]. It carried no information about inactive
+      // handling and was presented as if it did.
+      const scenario = anchored.get(firstWeek)
+      // The anchored scenario speaks REAL player ids (the bridge renames
+      // them), so these are directly comparable to the worker's report.
+      const scratched = new Set(
+        (scenario?.players ?? []).filter((p) => p.inactive === true).map((p) => p.playerId),
       )
+      // Independent of the worker: which scratched players a run league
+      // actually STARTED in the week, read from the stored lineups.
+      const startedScratched = new Set<string>()
+      for (const league of leagues) {
+        const { data: rows, error } = await service
+          .from('team_lineups')
+          .select('slot_map')
+          .in('team_id', league.teams.map((t) => t.id))
+          .eq('season', SYNTHETIC_SEASON)
+          .eq('week', firstWeek)
+        throwIfError(error, `${league.label}: mass_inactives lineups`)
+        for (const row of rows ?? []) {
+          const slotMap = (row.slot_map ?? null) as Record<string, string> | null
+          for (const playerId of startersOfMap(slotMap, league.irKeys)) {
+            if (scratched.has(playerId)) startedScratched.add(playerId)
+          }
+        }
+      }
+      const named = [...startedScratched].filter((id) => measured.flaggedNoStatRowIds.has(id))
+      if (startedScratched.size === 0) {
+        // The charted arms' posture: say what could not be observed and why,
+        // never a silent green.
+        push(
+          'zeros_flagged',
+          false,
+          `not observable: no run league started any of the ${scratched.size} scratched players in week ${firstWeek} ` +
+            `(${measured.flaggedNoStatRow} no_stat_row starters run-wide, none of them a scratch this scenario declared)`,
+          'at least one league starting a scratched bridged player, so the worker\'s naming of it can be observed',
+        )
+      } else {
+        push(
+          'zeros_flagged',
+          named.length === startedScratched.size,
+          `${named.length}/${startedScratched.size} STARTED scratched players were named no_stat_row by the worker ` +
+            `(of ${scratched.size} scratched; ${measured.flaggedNoStatRow} no_stat_row starters run-wide)`,
+          'every scratched starter is NAMED by the worker (auto-sub is off by default — §11.3 is M5, F211)',
+        )
+      }
       break
     }
     case 'provider_outage': {

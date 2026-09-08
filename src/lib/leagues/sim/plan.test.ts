@@ -220,19 +220,50 @@ describe('the season matrix (D299) — drawn on its own stream, guaranteed by co
     }
   })
 
-  it('BOTH schedule modes appear by construction at ≥2 leagues', () => {
+  // R918: "by construction" is a claim about EVERY seed, so it is asserted
+  // over a seed RANGE. The single-seed form these two replaced could not fail
+  // on the class the review found — the free-league coin dropping a
+  // mode-gated arm — and at 3 leagues the pinned seed 42 already violated the
+  // stated ≥3 median threshold (measured: 19/300 seeds lost median and 21/300
+  // lost second at 6 leagues, 0/300 after the fix).
+  const SEED_RANGE = Array.from({ length: 200 }, (_, i) => i + 1)
+
+  it('BOTH schedule modes appear by construction at ≥2 leagues — over seeds 1..200', () => {
     for (const leagues of [2, 3, 6, 25]) {
-      const plan = buildRunPlan({ ...cfg, leagues, season: true })
-      const modes = new Set(plan.leagues.map((l) => l.season!.scheduleMode))
-      expect([...modes].sort()).toEqual(['h2h', 'total_points'])
+      for (const seed of SEED_RANGE) {
+        const plan = buildRunPlan({ ...cfg, leagues, seed, season: true })
+        const modes = new Set(plan.leagues.map((l) => l.season!.scheduleMode))
+        expect([...modes].sort(), `leagues=${leagues} seed=${seed}`).toEqual(['h2h', 'total_points'])
+      }
     }
   })
 
-  it('median on / second on / illegal-lineups off each appear by construction at their thresholds', () => {
-    const plan = buildRunPlan({ ...cfg, leagues: 6, season: true })
-    expect(plan.leagues.some((l) => l.season!.medianGame)).toBe(true)
-    expect(plan.leagues.some((l) => l.season!.secondOpponent)).toBe(true)
-    expect(plan.leagues.some((l) => !l.season!.allowIllegalLineups)).toBe(true)
+  it('median on / second on / illegal-lineups off each appear at their thresholds — over seeds 1..200', () => {
+    for (const seed of SEED_RANGE) {
+      const at3 = buildRunPlan({ ...cfg, leagues: 3, seed, season: true })
+      expect(at3.leagues.some((l) => l.season!.medianGame), `median at 3 leagues, seed=${seed}`).toBe(true)
+      const at4 = buildRunPlan({ ...cfg, leagues: 4, seed, season: true })
+      expect(at4.leagues.some((l) => l.season!.medianGame), `median at 4 leagues, seed=${seed}`).toBe(true)
+      expect(at4.leagues.some((l) => l.season!.secondOpponent), `second at 4 leagues, seed=${seed}`).toBe(true)
+      const at6 = buildRunPlan({ ...cfg, leagues: 6, seed, season: true })
+      expect(at6.leagues.some((l) => l.season!.medianGame), `median at 6 leagues, seed=${seed}`).toBe(true)
+      expect(at6.leagues.some((l) => l.season!.secondOpponent), `second at 6 leagues, seed=${seed}`).toBe(true)
+      expect(at6.leagues.some((l) => !l.season!.allowIllegalLineups), `illegal-off at 6 leagues, seed=${seed}`).toBe(
+        true,
+      )
+    }
+  })
+
+  it('a mode-gated guarantee index is FORCED to h2h — the coin can never drop the arm (R918)', () => {
+    // The failing seeds the review measured, pinned by name so a regression
+    // to "draw the index, then toss the coin" fails here first.
+    for (const [leagues, seed] of [[6, 38], [6, 13], [3, 42], [4, 15]] as const) {
+      const plan = buildRunPlan({ ...cfg, leagues, seed, season: true })
+      expect(plan.leagues.some((l) => l.season!.medianGame), `median leagues=${leagues} seed=${seed}`).toBe(true)
+      if (leagues >= 4) {
+        expect(plan.leagues.some((l) => l.season!.secondOpponent), `second leagues=${leagues} seed=${seed}`).toBe(true)
+      }
+    }
   })
 
   it('total_points forces playoff_teams = 0 (the v2.16.25 / Q39 (C) coupling the schema refuses to break)', () => {

@@ -273,6 +273,17 @@ export function buildRunPlan(input: BuildPlanInput): RunPlan {
  * Season mode also fixes `rounds` to `SEASON_ROUNDS` and seats as many human
  * bots as the pool allows: the more seats a real manager holds, the more of
  * the eighteen bridged §23.6 players reach a lineup the sim can set.
+ *
+ * R918 (PR #273 review): `median_game` and `second_opponent` are MODE-GATED —
+ * a points race carries neither (§11.7) — so guaranteeing the index alone was
+ * not a guarantee at all. The free-league coin below could flip the very
+ * league that carried the arm to `total_points` and drop it: measured over
+ * seeds 1-300 at 6 leagues, 19 seeds lost the median arm and 21 lost the
+ * second-opponent arm, and the unseeded default (`scripts/sim.ts` falls back
+ * to a wall-clock seed) made ~6-7 % of runs certify a thinner matrix than
+ * D327(2) claims and exit 0. The guarantee indices are therefore FORCED to
+ * `h2h` before the coin is tossed, and `plan.test.ts` asserts the guarantee
+ * over a seed RANGE rather than sampling one seed.
  */
 export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
   const rng = deriveStream(seed, SEASON_MATRIX_LABEL)
@@ -283,11 +294,14 @@ export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
   const medianIndex = n >= 3 ? pickOther(rng, n, [totalPointsIndex]) : -1
   const secondIndex = n >= 4 ? pickOther(rng, n, [totalPointsIndex, medianIndex]) : -1
   const illegalOffIndex = n >= 5 ? pickOther(rng, n, [totalPointsIndex]) : -1
+  // The mode-gated arms only exist on an h2h league, so the leagues carrying
+  // them are h2h BY CONSTRUCTION — never by the coin below (R918).
+  const forcedH2h = new Set([h2hIndex, medianIndex, secondIndex].filter((i) => i >= 0))
 
   for (const league of leagues) {
     const i = league.index
     const scheduleMode: 'h2h' | 'total_points' =
-      i === totalPointsIndex ? 'total_points' : i === h2hIndex ? 'h2h' : rng() < 0.25 ? 'total_points' : 'h2h'
+      i === totalPointsIndex ? 'total_points' : forcedH2h.has(i) ? 'h2h' : rng() < 0.25 ? 'total_points' : 'h2h'
     const regularSeasonWeeks = pick(rng, SEASON_WEEK_CHOICES)
     // playoff_teams ≤ team_count, an even bracket size from the catalog.
     const playoffTeams =

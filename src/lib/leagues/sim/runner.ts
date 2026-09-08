@@ -2166,10 +2166,26 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
 }
 
 /**
- * F199's census — the eight cells a sim run can leave behind, counted by the
- * SAME service client, cleanup-first and cleanup-last. The recorded canonical
- * form is "0 × 8": four league-scoped surfaces and four season-scoped ones
- * that no league delete cascades to.
+ * The census of what a SIM RUN can leave behind, counted by the SAME service
+ * client, cleanup-first and cleanup-last. NINE cells (R924 — the docblock
+ * said eight and mis-split them): two matched by the sim's own name prefixes
+ * (`leagues`, `profiles`), three league-scoped surfaces reached through those
+ * league ids (`teams`, `matchups`, `team_week_results`), and four
+ * SEASON-scoped ones no league delete cascades to (`nfl_games` by the
+ * `simseason-` id prefix, `player_stats`, `score_fanout`, and the two
+ * live-updated `nfl_weeks` bound columns). The recorded canonical form is
+ * "0 × 9".
+ *
+ * WHAT THIS DOES **NOT** COVER, said plainly (R922 — F199 is only half
+ * discharged): F199's ORIGINAL vector is the `*-wire-*` player fixtures the
+ * db-backed vitest files upsert and delete by exact id, and its second vector
+ * includes the RESIDENT dev fixture's `nfl_games` rows (`dev-ld5*`), which
+ * carry neither the sim's `simseason-` id prefix nor the sim's leagues. Both
+ * survive a sim run, and this census counts NEITHER: there is no `players`
+ * cell at all, and the `nfl_games` cell is prefix-filtered. A CLEAN line here
+ * means "this sim run left nothing behind", never "the stack is clean" —
+ * `dev-seed-inseason-league.ts --teardown` and a hand-sweep of the wire
+ * fixtures are still the remedies for the other half.
  */
 export interface CensusCell {
   what: string
@@ -2209,7 +2225,15 @@ export async function simCensus(service: Supabase): Promise<CensusCell[]> {
     await count(`nfl_games(${SIM_SEASON_GAME_PREFIX}*)`, () => service.from('nfl_games').select('id', { count: 'exact', head: true }).like('id', `${SIM_SEASON_GAME_PREFIX}%`)),
     await count(`player_stats(${SYNTHETIC_SEASON})`, () => service.from('player_stats').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     await count(`score_fanout(${SYNTHETIC_SEASON})`, () => service.from('score_fanout').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
-    await count(`nfl_weeks(${SYNTHETIC_SEASON}) stamped`, () => service.from('nfl_weeks').select('week', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON).not('last_game_ends_at', 'is', null)),
+    // BOTH columns cleanup resets, not just one (R923): an abort between
+    // the `nfl_games` delete and the bounds reset, on a run whose only
+    // ingested week never reached all-final, leaves `first_kickoff_at`
+    // stamped with `last_game_ends_at` still NULL — which silently changes
+    // the week's lock DATUM (`nfl_weeks.starts_at` → `first_kickoff_at`,
+    // 111:271-275) and its entry-week window for the next run. Cleanup
+    // verifies itself with this same cell, so a one-column filter let that
+    // residue pass verification.
+    await count(`nfl_weeks(${SYNTHETIC_SEASON}) stamped`, () => service.from('nfl_weeks').select('week', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON).or('first_kickoff_at.not.is.null,last_game_ends_at.not.is.null')),
   ]
 }
 

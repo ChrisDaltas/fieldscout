@@ -27,6 +27,7 @@ import {
   toInvariantFailure,
   type SeasonAudit,
 } from './season-invariants'
+import { lawfulBracketSkip } from './season-runner'
 
 /**
  * A compact, fully-consistent two-team league that drove ONE week to `final`:
@@ -40,6 +41,8 @@ function greenAudit(): SeasonAudit {
     leagueId: 'league-1',
     season: 2099,
     scheduleMode: 'h2h',
+    // The §7.3.1 minimum — the oracle's window is weeks 1-12 here (R920).
+    regularSeasonWeeks: 12,
     weeksDriven: [1],
     rosters: [
       { team_id: 'A', player_id: 'p1' },
@@ -319,6 +322,50 @@ describe('5 — PF counted once per week (§11.7; D297)', () => {
     a.standings[0]!.points_for = 21.51
     expect(checkPointsForOnce(a)).toHaveLength(1)
   })
+
+  // R920 — the window boundary, both sides of it. The oracle
+  // (`league_standings_internal`, 118:641-643/684-690) sums
+  // `[v_first … v_first + regular_season_weeks − 1]` and nothing else, so a
+  // FINAL bracket week must contribute NOTHING here. Before the fix this
+  // check summed every `final` week and emitted a deterministic FALSE FAILURE
+  // for every bracket participant on a `--weeks ≥ 13` run.
+  it('a FINAL PLAYOFF week contributes nothing — the sweep sums the ORACLE\'s window, not every final week', () => {
+    const a = greenAudit()
+    a.regularSeasonWeeks = 2
+    a.weeks = [
+      { week: 1, status: 'final' },
+      { week: 2, status: 'final' },
+      { week: 3, status: 'final' }, // the bracket's first week
+    ]
+    a.results = [
+      ...a.results,
+      { team_id: 'A', week: 3, points: 99, is_final: true },
+      { team_id: 'B', week: 3, points: 77, is_final: true },
+    ]
+    expect(checkPointsForOnce(a)).toEqual([])
+  })
+
+  it('the LAST regular-season week still counts (the inclusive upper bound)', () => {
+    const a = greenAudit()
+    a.regularSeasonWeeks = 2
+    a.weeks = [
+      { week: 1, status: 'final' },
+      { week: 2, status: 'final' },
+    ]
+    a.results = [...a.results, { team_id: 'A', week: 2, points: 10, is_final: true }]
+    const failures = checkPointsForOnce(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('31.50')
+  })
+
+  it('is_final — not the WEEK\'s status — is the row-level predicate the oracle uses', () => {
+    const a = greenAudit()
+    // The week says final; the row does not. The oracle would skip it.
+    a.results = [{ team_id: 'A', week: 1, points: 21.5, is_final: false }, ...a.results.slice(1)]
+    const failures = checkPointsForOnce(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('= 0.00')
+  })
 })
 
 describe('6 — zero final-cell rewrites (§23.4; D295(b))', () => {
@@ -392,5 +439,46 @@ describe('the adapter onto the draft sweep\'s printer', () => {
         detail: 'd',
       }).draftId,
     ).toBe('league-1 week 3')
+  })
+})
+
+/**
+ * R920 — what invariant 7 counts, at the bracket boundary. Migration 119's
+ * own doctrine: "a team with no row this week (an eliminated playoff seat, a
+ * bye-less week — `no_matchup_row`) is NAMED, not an error" (119:110-112,
+ * D319(3)). Measured live: a `--weeks 15` run over a 14-week-regular-season
+ * 16-team league with a 6-seat bracket produced 26 of these and reddened the
+ * run on a chain behaving exactly to §7.3.8.
+ */
+describe('7 — the door\'s no_matchup_row skip is a NOTE in a bracket week and a FINDING inside the regular season', () => {
+  const LAST_REGULAR = new Map([['807d95c6-ccd4-4d48-a65b-cc746a50504c', 14]])
+  const TEAM = '24fe23e6-981d-482e-8a86-234056340c72'
+  const LEAGUE = '807d95c6-ccd4-4d48-a65b-cc746a50504c'
+
+  it('the batch-level form, past the regular season, is a named lawful note', () => {
+    const note = lawfulBracketSkip(`[${LEAGUE} wk 15] door skipped ${TEAM}: no_matchup_row`, LAST_REGULAR)
+    expect(note).toContain('bracket week')
+    expect(note).toContain('119:110-112')
+  })
+
+  it('the per-league form, past the regular season, is the same note', () => {
+    expect(lawfulBracketSkip(`door skipped ${TEAM}: no_matchup_row`, LAST_REGULAR, { leagueId: LEAGUE, week: 15 })).toContain(
+      'bracket week',
+    )
+  })
+
+  // THE NEGATIVE CONTROL — the detection this classification must not cost.
+  it('the LAST regular-season week is NOT a bracket week — a missing matchup row there stays a finding', () => {
+    expect(lawfulBracketSkip(`[${LEAGUE} wk 14] door skipped ${TEAM}: no_matchup_row`, LAST_REGULAR)).toBeNull()
+    expect(lawfulBracketSkip(`door skipped ${TEAM}: no_matchup_row`, LAST_REGULAR, { leagueId: LEAGUE, week: 14 })).toBeNull()
+  })
+
+  it('a league the run does not know is never excused (an unknown id cannot be past anything)', () => {
+    expect(lawfulBracketSkip(`[${TEAM} wk 15] door skipped ${TEAM}: no_matchup_row`, LAST_REGULAR)).toBeNull()
+  })
+
+  it('no other worker problem is swallowed by this arm', () => {
+    expect(lawfulBracketSkip(`door skipped ${TEAM}: overridden`, LAST_REGULAR, { leagueId: LEAGUE, week: 15 })).toBeNull()
+    expect(lawfulBracketSkip(`[${LEAGUE} wk 15] unreadable slot_map`, LAST_REGULAR)).toBeNull()
   })
 })
