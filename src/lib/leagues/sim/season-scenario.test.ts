@@ -18,7 +18,8 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { finalLine } from '../stats/synthetic/synthetic-stats-provider'
+import { weekBounds } from '@/lib/sync/ingest-week'
+import { finalLine, SyntheticStatsProvider } from '../stats/synthetic/synthetic-stats-provider'
 import { makeScenario, SCENARIO_LIBRARY_VERSION } from '../stats/synthetic/scenarios'
 import { SCENARIO_IDS } from '../stats/synthetic/scenario'
 
@@ -32,8 +33,13 @@ import {
   LIBRARY_WEEK,
   LIBRARY_WEEK_STARTS_AT,
   LIBRARY_WEEK_WINDOW_ENDS_AT,
+  assertSlateInsideCore,
+  NFL_CLUBS,
   scenarioInstants,
   SIM_SEASON_GAME_PREFIX,
+  slateClubs,
+  uncoveredClubs,
+  withFullSlate,
   type BridgeCandidate,
 } from './season-scenario'
 import { syntheticNflWeeks, SYNTHETIC_SEASON } from './synthetic-season'
@@ -300,5 +306,277 @@ describe('scenarioInstants — the timeline the driver walks', () => {
       const anchored = anchorScenario(s, target, buildPlayerBridge(s, pool()))
       expect(scenarioInstants(anchored).length).toBeGreaterThan(0)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The FULL SLATE (F286 / D328) — the fix for "the world is too small for a
+// legal lineup", pinned as fixture construction that cannot move a beat.
+// ---------------------------------------------------------------------------
+
+/** A clock the provider can be pointed at any instant. */
+class FixedClock {
+  constructor(private at: Date) {}
+  now(): Date {
+    return this.at
+  }
+  nowMs(): number {
+    return this.at.getTime()
+  }
+  set(at: Date): void {
+    this.at = at
+  }
+}
+
+/** `getSchedule`'s rows in the shape `weekBounds` reads them. */
+function gameRowsAt(scenario: ReturnType<typeof makeScenario>, at: Date) {
+  const clock = new FixedClock(at)
+  const provider = new SyntheticStatsProvider(scenario, clock as never)
+  return provider.getSchedule(scenario.season).then((games) =>
+    games.map((g) => ({
+      id: g.gameId,
+      season: g.season,
+      week: g.week,
+      home_team: g.homeTeam,
+      away_team: g.awayTeam,
+      kickoff_at: (g.kickoffAt ?? new Date(0)).toISOString(),
+      status: g.status,
+    })),
+  )
+}
+
+/** The anchored `happy_path` — the slate tests' core scenario. */
+const slateCore = anchorScenario(
+  makeScenario('happy_path'),
+  target,
+  buildPlayerBridge(makeScenario('happy_path'), pool()),
+)
+
+describe('withFullSlate — a COMPLETE week, built around an unchanged §23.6 library', () => {
+  const core = slateCore
+
+  it('publishes a game for every one of the 32 clubs — which is the whole point (F286)', () => {
+    const full = withFullSlate(core)
+    expect(slateClubs(full.scenario).length).toBe(32)
+    expect(slateClubs(full.scenario)).toEqual([...NFL_CLUBS].sort())
+    // 3 library games + 13 fillers = 16 games, 32 clubs, each club once.
+    expect(full.scenario.games.length).toBe(16)
+    expect(full.fillerGameIds.length).toBe(13)
+  })
+
+  it("carries the §23.6 games through BYTE-FOR-BYTE — same ids, same beats, same order", () => {
+    const full = withFullSlate(core)
+    expect(full.scenario.games.slice(0, core.games.length)).toEqual(core.games)
+    // and the scenario's own declarations are the same objects' values
+    expect(full.scenario.players).toEqual(core.players)
+    expect(full.scenario.corrections).toEqual(core.corrections)
+    expect(full.scenario.chartedRevisions).toEqual(core.chartedRevisions)
+    expect(full.scenario.outages).toEqual(core.outages)
+    expect(full.scenario.correctionWindowEndsAt).toEqual(core.correctionWindowEndsAt)
+    expect(full.scenario.id).toBe(core.id)
+    expect(full.scenario.version).toBe(core.version)
+    expect(full.scenario.seed).toBe(core.seed)
+  })
+
+  it('does not mutate the core scenario (pure)', () => {
+    const before = core.games.length
+    withFullSlate(core)
+    expect(core.games.length).toBe(before)
+  })
+
+  it('every filler carries NO players — §23.6\'s eighteen stay the library\'s law', () => {
+    const full = withFullSlate(core)
+    const fillerIds = new Set(full.fillerGameIds)
+    expect(full.scenario.players.filter((p) => fillerIds.has(p.gameId))).toEqual([])
+  })
+
+  it('every filler id carries the F199 sweep prefix and is week-unique', () => {
+    const full = withFullSlate(core)
+    for (const id of full.fillerGameIds) {
+      expect(id.startsWith(SIM_SEASON_GAME_PREFIX)).toBe(true)
+      expect(id).toContain(`-w${String(TARGET_WEEK).padStart(2, '0')}-`)
+    }
+    const other = withFullSlate({ ...core, week: TARGET_WEEK + 1 })
+    expect(other.fillerGameIds.some((id) => full.fillerGameIds.includes(id))).toBe(false)
+  })
+
+  it('is DETERMINISTIC — the same core yields the same slate, pinned as stored literals', () => {
+    const a = withFullSlate(core)
+    const b = withFullSlate(core)
+    expect(a.fillerGameIds).toEqual(b.fillerGameIds)
+    expect(a.fillerGameIds).toEqual([
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-ARI@ATL`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-BAL@CAR`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-CHI@CIN`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-CLE@DEN`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-DET@GB`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-HOU@IND`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-JAX@LAC`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-LAR@LV`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-MIA@MIN`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-NE@NO`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-NYG@NYJ`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-PIT@TB`,
+      `${SIM_SEASON_GAME_PREFIX}${SYNTHETIC_SEASON}-w03-TEN@WAS`,
+    ])
+  })
+
+  it('all nine library scenarios anchor into a complete 32-club slate', () => {
+    for (const id of SCENARIO_IDS) {
+      const raw = makeScenario(id)
+      const anchored = anchorScenario(raw, target, buildPlayerBridge(raw, pool()))
+      const full = withFullSlate(anchored)
+      expect(slateClubs(full.scenario).length, id).toBe(32)
+    }
+  })
+
+  it('a club roll that does not contain the scenario\'s own clubs is REFUSED', () => {
+    expect(() => withFullSlate(core, ['ARI', 'ATL'])).toThrow(/NFL_CLUBS does not list/)
+  })
+
+  it('an ODD number of leftover clubs is REFUSED rather than leaving one on bye', () => {
+    const roll = [...slateClubs(core), 'ARI', 'ATL', 'BAL']
+    expect(() => withFullSlate(core, roll)).toThrow(/cannot be paired into games/)
+  })
+})
+
+describe('the filler window sits INSIDE the scenario\'s own — hazard 2, structurally', () => {
+  const core = slateCore
+  for (const id of SCENARIO_IDS) {
+    it(`${id}: no filler kicks off before, or ends after, the §23.6 games`, () => {
+      const raw = makeScenario(id)
+      const anchored = anchorScenario(raw, target, buildPlayerBridge(raw, pool()))
+      const full = withFullSlate(anchored)
+      const fillerIds = new Set(full.fillerGameIds)
+      const fillers = full.scenario.games.filter((g) => fillerIds.has(g.gameId))
+      // The guard the transform runs on itself, re-run here against the core.
+      expect(() => assertSlateInsideCore(anchored, fillers)).not.toThrow()
+    })
+  }
+
+  it('the KICKOFF boundary is EXACT: the earliest core kickoff passes, one ms before it throws', () => {
+    const full = withFullSlate(core)
+    const fillerIds = new Set(full.fillerGameIds)
+    const fillers = full.scenario.games.filter((g) => fillerIds.has(g.gameId))
+    // The shipped fillers already SIT on the boundary — that is the pin.
+    expect(() => assertSlateInsideCore(core, fillers)).not.toThrow()
+    const early = fillers.map((g) => ({ ...g, kickoffAt: new Date(g.kickoffAt.getTime() - 1) }))
+    expect(() => assertSlateInsideCore(core, early)).toThrow(/first_kickoff_at/)
+  })
+
+  it('the END boundary is EXACT: on the last in-week end it passes, one ms past it throws', () => {
+    const full = withFullSlate(core)
+    const fillerIds = new Set(full.fillerGameIds)
+    const fillers = full.scenario.games.filter((g) => fillerIds.has(g.gameId))
+    const latestCoreEnd = Math.max(
+      ...core.games
+        .filter((g) => g.postponement === undefined)
+        .map((g) => (g.flexMove ? g.flexMove.newKickoffAt : g.kickoffAt).getTime() + g.durationMs),
+    )
+    const stretched = (extra: number) =>
+      fillers.map((g) => ({ ...g, durationMs: latestCoreEnd - g.kickoffAt.getTime() + extra }))
+    expect(() => assertSlateInsideCore(core, stretched(0))).not.toThrow()
+    expect(() => assertSlateInsideCore(core, stretched(1))).toThrow(/last_game_ends_at/)
+  })
+})
+
+describe('weekBounds cannot tell the slates apart — the beats the scenario declares do not move', () => {
+  /** Every instant the driver visits for this week, plus the week's own. */
+  function instantsOf(scenario: ReturnType<typeof makeScenario>): Date[] {
+    const out = scenarioInstants(scenario).map((i) => i.at)
+    const staying = scenario.games.filter((g) => g.postponement === undefined)
+    const lastEnd = Math.max(
+      ...staying.map((g) => (g.flexMove ? g.flexMove.newKickoffAt : g.kickoffAt).getTime() + g.durationMs),
+    )
+    out.push(new Date(lastEnd + 60_000))
+    out.push(scenario.correctionWindowEndsAt)
+    return out
+  }
+
+  for (const id of SCENARIO_IDS) {
+    it(`${id}: first_kickoff_at and last_game_ends_at are identical at EVERY instant`, async () => {
+      const raw = makeScenario(id)
+      const anchored = anchorScenario(raw, target, buildPlayerBridge(raw, pool()))
+      const full = withFullSlate(anchored).scenario
+      const stamp = new Date('2099-01-01T00:00:00.000Z')
+      // The prior carries the sticky stamp exactly as ingestion does; a
+      // divergence in EITHER column at ANY instant fails here.
+      let priorCore: { first_kickoff_at: string | null; last_game_ends_at: string | null } | null = null
+      let priorFull: { first_kickoff_at: string | null; last_game_ends_at: string | null } | null = null
+      for (const at of instantsOf(anchored).sort((a, b) => a.getTime() - b.getTime())) {
+        // §23.2: inside an outage EVERY provider method throws, for either
+        // slate — `ingestWeek` reports it and writes nothing, so there is no
+        // bound to compare. The outage must behave IDENTICALLY, which is the
+        // assertion here.
+        const inOutage = anchored.outages.some(
+          (o) => at.getTime() >= o.startAt.getTime() && at.getTime() < o.endAt.getTime(),
+        )
+        if (inOutage) {
+          await expect(gameRowsAt(anchored, at)).rejects.toThrow(/outage/)
+          await expect(gameRowsAt(full, at)).rejects.toThrow(/outage/)
+          continue
+        }
+        const coreRows = await gameRowsAt(anchored, at)
+        const fullRows = await gameRowsAt(full, at)
+        const a = weekBounds(
+          coreRows.filter((g) => g.week === anchored.week),
+          priorCore,
+          stamp,
+        )
+        const b = weekBounds(
+          fullRows.filter((g) => g.week === anchored.week),
+          priorFull,
+          stamp,
+        )
+        expect(b, `${id} @ ${at.toISOString()}`).toEqual(a)
+        priorCore = a
+        priorFull = b
+      }
+    })
+  }
+
+  it('EVERY published game reads final once the last §23.6 game ends — 116 can finalize the week', async () => {
+    for (const id of SCENARIO_IDS) {
+      const raw = makeScenario(id)
+      const anchored = anchorScenario(raw, target, buildPlayerBridge(raw, pool()))
+      const full = withFullSlate(anchored).scenario
+      const staying = anchored.games.filter((g) => g.postponement === undefined)
+      const lastEnd = Math.max(
+        ...staying.map((g) => (g.flexMove ? g.flexMove.newKickoffAt : g.kickoffAt).getTime() + g.durationMs),
+      )
+      const rows = await gameRowsAt(full, new Date(lastEnd))
+      const open = rows.filter((g) => g.status !== 'final' && g.status !== 'postponed')
+      expect(open.map((g) => g.id), id).toEqual([])
+    }
+  })
+})
+
+describe('uncoveredClubs — the refusal that keeps the slate honest', () => {
+  it('names a rostered club the slate does not play', () => {
+    expect(uncoveredClubs(['PHI', 'DAL', 'XYZ'], slateClubs(makeScenario('happy_path')))).toEqual(['XYZ'])
+  })
+
+  it('a NULL (or blank) club is named too — 112:417-422 makes him permanently on bye', () => {
+    expect(uncoveredClubs([null, '  ', 'PHI'], ['PHI'])).toEqual(['(null)'])
+  })
+
+  it('is EMPTY when the full slate covers the pool — the state a run must be in', () => {
+    const full = withFullSlate(slateCore)
+    expect(uncoveredClubs([...NFL_CLUBS], full.clubs)).toEqual([])
+  })
+
+  // The coverage claim is read off what was PUBLISHED, never off the club
+  // roll that was asked for: a slate that silently shrank must be visible to
+  // the very check whose job is to notice an uncovered club.
+  it("`clubs` is DERIVED from the published games — a slate with no fillers reports six, not thirty-two", () => {
+    const noFillers = withFullSlate(slateCore, slateClubs(slateCore))
+    expect(noFillers.fillerGameIds).toEqual([])
+    expect(noFillers.clubs).toEqual(slateClubs(slateCore))
+    expect(noFillers.clubs.length).toBe(6)
+    expect(uncoveredClubs([...NFL_CLUBS], noFillers.clubs).length).toBe(26)
+  })
+
+  it('de-duplicates and sorts (one line per club, not one per player)', () => {
+    expect(uncoveredClubs(['ZZZ', 'AAA', 'ZZZ'], [])).toEqual(['AAA', 'ZZZ'])
   })
 })

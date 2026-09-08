@@ -27,7 +27,13 @@ import {
   toInvariantFailure,
   type SeasonAudit,
 } from './season-invariants'
-import { lawfulBracketSkip } from './season-runner'
+import {
+  BLOCKING_DESIGNATIONS,
+  chooseStarterSlots,
+  classifyReconcileAlert,
+  lawfulBracketSkip,
+  simDesignation,
+} from './season-runner'
 
 /**
  * A compact, fully-consistent two-team league that drove ONE week to `final`:
@@ -480,5 +486,146 @@ describe('7 — the door\'s no_matchup_row skip is a NOTE in a bracket week and 
   it('no other worker problem is swallowed by this arm', () => {
     expect(lawfulBracketSkip(`door skipped ${TEAM}: overridden`, LAST_REGULAR, { leagueId: LEAGUE, week: 15 })).toBeNull()
     expect(lawfulBracketSkip(`[${LEAGUE} wk 15] unreadable slot_map`, LAST_REGULAR)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// chooseStarterSlots — F286's residual necessary condition (D328).
+//
+// The full slate removes §7.3.6's `on_bye` arm outright. What survives is the
+// DESIGNATION arm (114:596): an OUT/IR/PUP/NFI/Suspended starter is refused in
+// a league with `allow_illegal_lineups = false`. These pins are the
+// falsifiability for that arm. R927 (#274 review) corrects the number that
+// used to sit here: the 400-ROW pool window holds FOURTEEN blocking-status
+// players (IR 10, PUP 4); the "five" were those whose ADP VALUE is under 400.
+// The load-bearing fact is structural, not probabilistic: the earliest
+// blocking-status player sits at ADP rank ~120 while the OFF league drafts at
+// most 112 picks (16 x 7), so the designation arm is out of reach by ~8 ranks
+// at every configuration the sim runs — see F289, whose discharge is L.D6.3's.
+// ---------------------------------------------------------------------------
+describe('chooseStarterSlots — the seating a league that POLICES legality will accept', () => {
+  const SLOTS = [
+    { key: 'qb:0', eligible: ['QB'] },
+    { key: 'rb:0', eligible: ['RB'] },
+    { key: 'wr:0', eligible: ['WR'] },
+  ]
+  const active = (id: string, position: string) => ({ id, position, status: 'Active' })
+
+  it('greedy first fit by eligibility, in the caller\'s order (best ADP first)', () => {
+    const seat = chooseStarterSlots([active('q1', 'QB'), active('r1', 'RB'), active('w1', 'WR')], SLOTS, {
+      allowIllegalLineups: true,
+    })
+    expect(seat.slotMap).toEqual({ 'qb:0': 'q1', 'rb:0': 'r1', 'wr:0': 'w1' })
+    expect(seat.emptySlots).toEqual([])
+    expect(seat.benchedForLegality).toEqual([])
+  })
+
+  it('an OUT-designated player is PASSED OVER where §7.3.6 is enforced, and the next man takes the slot', () => {
+    const roster = [{ id: 'r1', position: 'RB', status: 'IR' }, active('r2', 'RB')]
+    const seat = chooseStarterSlots(roster, SLOTS, { allowIllegalLineups: false })
+    expect(seat.slotMap['rb:0']).toBe('r2')
+    expect(seat.benchedForLegality).toEqual(['r1 (IR)'])
+  })
+
+  it('with NO legal alternative the slot is left EMPTY and NAMED — lawful (114:585-588), never a 409', () => {
+    const seat = chooseStarterSlots([{ id: 'r1', position: 'RB', status: 'PUP' }], SLOTS, {
+      allowIllegalLineups: false,
+    })
+    expect(seat.slotMap).toEqual({})
+    expect(seat.emptySlots).toEqual(['qb:0', 'rb:0', 'wr:0'])
+    expect(seat.benchedForLegality).toEqual(['r1 (PUP)'])
+  })
+
+  // THE NEGATIVE CONTROL — the coverage this skip must not cost. A league that
+  // ALLOWS illegal lineups exercises that arm by seating the OUT player.
+  it('where illegal lineups are ALLOWED nothing is passed over — that arm is coverage, not a bug', () => {
+    const roster = [{ id: 'r1', position: 'RB', status: 'IR' }, active('r2', 'RB')]
+    const seat = chooseStarterSlots(roster, SLOTS, { allowIllegalLineups: true })
+    expect(seat.slotMap['rb:0']).toBe('r1')
+    expect(seat.benchedForLegality).toEqual([])
+  })
+
+  it('every blocking designation is passed over, and ONLY those five', () => {
+    for (const status of ['out', 'IR', 'pup', 'NFI', 'Sus', 'suspended']) {
+      const seat = chooseStarterSlots([{ id: 'x', position: 'QB', status }], SLOTS, { allowIllegalLineups: false })
+      expect(seat.slotMap, status).toEqual({})
+    }
+    // Doubtful and Questionable are NOT blocked by 114:596 — starting them is
+    // lawful even where legality is enforced.
+    for (const status of ['Doubtful', 'Questionable', 'Active', null]) {
+      const seat = chooseStarterSlots([{ id: 'x', position: 'QB', status }], SLOTS, { allowIllegalLineups: false })
+      expect(seat.slotMap, String(status)).toEqual({ 'qb:0': 'x' })
+    }
+  })
+
+  it('simDesignation is 112:337-353\'s bridge, case- and space-insensitive', () => {
+    expect(simDesignation('  OuT ')).toBe('OUT')
+    expect(simDesignation('sus')).toBe('Suspended')
+    expect(simDesignation('doubtful')).toBe('Doubtful')
+    expect(simDesignation('Active')).toBeNull()
+    expect(simDesignation(null)).toBeNull()
+    expect([...BLOCKING_DESIGNATIONS].sort()).toEqual(['IR', 'NFI', 'OUT', 'PUP', 'Suspended'])
+  })
+
+  it('a player with no eligible slot is simply unseated (not an error, not a legality skip)', () => {
+    const seat = chooseStarterSlots([active('k1', 'K')], SLOTS, { allowIllegalLineups: false })
+    expect(seat.slotMap).toEqual({})
+    expect(seat.benchedForLegality).toEqual([])
+    expect(seat.emptySlots).toEqual(['qb:0', 'rb:0', 'wr:0'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// classifyReconcileAlert — the four lawful-classification arms that keep a
+// reconcile ALERT out of `report.problems`. Pinned here (F287(d) named the
+// gap; the `starter_final_game_no_line` wording moved with D328's full slate,
+// so the arms are pinned rather than left falsifiable only through a run).
+// ---------------------------------------------------------------------------
+describe('classifyReconcileAlert — what a run may lawfully NOT count as a problem', () => {
+  const ctx = {
+    drivenWeeks: new Set([1, 2]),
+    rosteredPlayers: new Set(['p-rostered']),
+    postponedGameIds: new Set(['simseason-2099-w01-BUF@KC']),
+  }
+
+  it('starter_final_game_no_line is Q42 territory and is always classified — counted, never asserted on', () => {
+    const note = classifyReconcileAlert({ kind: 'starter_final_game_no_line', message: 'x' }, ctx)
+    expect(note).toContain('18 players')
+    expect(note).toContain('Q42 OPEN')
+  })
+
+  it('no_game_rows is lawful ONLY for a week the run never drove', () => {
+    expect(classifyReconcileAlert({ kind: 'no_game_rows', week: 5, message: 'x' }, ctx)).toContain('not driven')
+    // THE NEGATIVE CONTROL: a DRIVEN week with no games is a real finding.
+    expect(classifyReconcileAlert({ kind: 'no_game_rows', week: 2, message: 'x' }, ctx)).toBeNull()
+    expect(classifyReconcileAlert({ kind: 'no_game_rows', week: null, message: 'x' }, ctx)).toBeNull()
+  })
+
+  it('stuck_queue is lawful ONLY for a player no run league rosters (D313(2)\'s scope seam)', () => {
+    expect(classifyReconcileAlert({ kind: 'stuck_queue', player_id: 'p-other', message: 'x' }, ctx)).toContain(
+      'no run league rosters',
+    )
+    // THE NEGATIVE CONTROL: a stuck row for a ROSTERED player is real.
+    expect(classifyReconcileAlert({ kind: 'stuck_queue', player_id: 'p-rostered', message: 'x' }, ctx)).toBeNull()
+    expect(classifyReconcileAlert({ kind: 'stuck_queue', player_id: null, message: 'x' }, ctx)).toBeNull()
+  })
+
+  it('game_not_final_late is lawful ONLY for a game the scenario declared postponed (E43)', () => {
+    expect(
+      classifyReconcileAlert(
+        { kind: 'game_not_final_late', message: 'simseason-2099-w01-BUF@KC never went final' },
+        ctx,
+      ),
+    ).toContain('postponed out of the week')
+    // THE NEGATIVE CONTROL: any OTHER game that never went final is real.
+    expect(
+      classifyReconcileAlert({ kind: 'game_not_final_late', message: 'simseason-2099-w01-DAL@PHI stalled' }, ctx),
+    ).toBeNull()
+  })
+
+  it('every other kind is UNCLASSIFIED — the default must stay a finding', () => {
+    for (const kind of ['drift', 'twr_mirror_drift', 'pool_mirror_broken', 'something_new']) {
+      expect(classifyReconcileAlert({ kind, message: 'x' }, ctx), kind).toBeNull()
+    }
   })
 })

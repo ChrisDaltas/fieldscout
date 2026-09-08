@@ -295,6 +295,24 @@ export interface SeasonLeagueResult {
   leagueId: string
   teamCount: number
   scheduleMode: 'h2h' | 'total_points'
+  /** `settings.allow_illegal_lineups` as stored — FALSE is D299's legality
+   *  arm, the league §7.3.6 actually polices (F286 / D328). */
+  allowIllegalLineups: boolean
+  /** Week-1 lineups the SERVER accepted for this league. The number that
+   *  matters in an `allow_illegal_lineups = false` league: a green run whose
+   *  OFF league seats nothing is decorative coverage (D267), so the count is
+   *  reported per league rather than as one run-wide total. */
+  lineupsSeated: number
+  /** Week-1 lineups the server REFUSED (each is also a run `problem`). */
+  lineupsRefused: number
+  /** Starting slots filled across this league's accepted week-1 lineups. */
+  lineupSlotsFilled: number
+  /** Starting slots left EMPTY across them — lawful (114:585-588 flags an
+   *  empty slot and never blocks on it), counted rather than hidden. */
+  lineupSlotsLeftEmpty: number
+  /** Players passed over because §7.3.6 would refuse the DESIGNATION
+   *  (OUT/IR/PUP/NFI/Suspended). Only ever non-zero in an OFF league. */
+  benchedForLegality: number
   /** The league's D299 axes, as actually set (the printed matrix row). */
   matrixLine: string
   weeksDriven: number[]
