@@ -335,7 +335,8 @@ const stackFiles = allTestFiles(path.join(REPO_ROOT, 'src')).filter((file) =>
 
 /** THE SEED ROOT IS LOAD-BEARING, SO IT IS ASSERTED RATHER THAN INFERRED
  *  (R932). `stackFiles` above is seeded from `src/` only — but `stackInclude`'s
- *  first pattern is the repo-wide `**` + `/*-db.test.ts`, and `test:stack` is a
+ *  first pattern is a REPO-WIDE glob for `*-db.test.ts` (not spelled out here:
+ *  its leading double star would close this comment), and `test:stack` is a
  *  SUBSTRING filter over every project, so the LANE's file set is repo-wide
  *  while this pin's is `src/`-scoped. Measured, before this assert existed: a
  *  probe suite at `scripts/f290-probe-db.test.ts` importing
