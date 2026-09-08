@@ -187,8 +187,16 @@ function escapeRegExp(literal: string): string {
  * invisible to a textual scan. Nothing in today's closure does that; if that
  * changes, the module it loads must be added to `SOURCE_PATHS` by hand.
  */
+const SPECIFIER_PREFIXES = [
+  '\\.{1,2}/', // './' and '../'
+  ...ALIASES.map((alias) => escapeRegExp(alias.prefix)),
+]
+// Built from a non-empty list on purpose: interpolating an EMPTY alias list
+// straight into an alternation would leave an empty branch, and an empty
+// branch matches every quoted string in the repo. Arm 6 reds on a missing
+// alias anyway; this makes the red honest instead of a 200k-match sweep.
 const REPO_SPECIFIER = new RegExp(
-  `['"\`]((?:\\.{1,2}/|${ALIASES.map((alias) => escapeRegExp(alias.prefix)).join('|')})[^'"\`\\n]*)['"\`]`,
+  `['"\`]((?:${SPECIFIER_PREFIXES.join('|')})[^'"\`\\n]*)['"\`]`,
   'g',
 )
 
