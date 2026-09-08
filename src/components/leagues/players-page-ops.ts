@@ -69,7 +69,10 @@ export function holdersOf(rosters: Pick<LeagueRosters, 'teams'> | undefined): Ma
  * record; D294's reconciliation owns a broken mirror). `on_waivers` needs
  * its instant (113's CHECK ties them); a row that claims it without one is
  * rendered as a free agent rather than invented a date — the server's add
- * refusal, if any, says the rest. `locked_in_game` is a free agent whose
+ * refusal, if any, says the rest. The instant is carried, NEVER compared:
+ * a lapsed `waivers_until` still maps to `on_waivers` (the tick keeps the
+ * state and no processor flips it), and the Add stays live because 113
+ * admits the lapsed add (R894). `locked_in_game` is a free agent whose
  * lock the tick recorded (116) — the availability is `free_agent`, the 🔒
  * comes from `game_lock`.
  */
@@ -116,7 +119,16 @@ export const NO_ROSTERED_COPY = 'No rostered players match.'
 export const NO_SEAT_COPY = 'You don’t manage a team in this league, so you can browse the pool but not make moves.'
 export const LOCKED_ADD_TITLE = 'Locked — this player’s game has started; he can be added once the week’s last game ends.'
 export const LOCKED_DROP_TITLE = 'Locked — this player’s game has started; he can be dropped once the week’s last game ends.'
-export const WAIVERS_ADD_TITLE = 'On waivers — he can be added once he clears. Waiver claims arrive in a later update.'
+/** The Add button's title on an `on_waivers` row. The button stays LIVE
+ *  (R894): the client has no clock and never compares `waivers_until` to
+ *  now — the server refuses an add while the period is open (113's
+ *  sentence names the instant, rendered verbatim) and ADMITS it once it
+ *  has lapsed (FCFS — Q33; nothing flips the row afterwards, so a lapsed
+ *  row still reads `on_waivers`). A disabled button here would have made
+ *  every dropped player un-addable for the season under the default 48 h. */
+export function waiversAddTitle(untilLocal: string): string {
+  return `On waivers until ${untilLocal} — an add before then is refused; once it lapses he can be added first come, first served. Waiver claims arrive in a later update.`
+}
 export const ROSTERED_ELSEWHERE_TITLE = 'On another roster — trades arrive in a later update.'
 
 export function emptyCopy(scope: PoolScope, hadSearch: boolean): string {

@@ -38,8 +38,8 @@ import {
   NO_FREE_AGENTS_COPY,
   NO_MATCH_COPY,
   NO_SEAT_COPY,
-  WAIVERS_ADD_TITLE,
   poolRows,
+  waiversAddTitle,
 } from './players-page-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
@@ -119,11 +119,15 @@ const pool: PoolRow[] = [
   // player would tempt a clock comparison — there is none to make.
   { player_id: 'fa-locked', state: 'locked_in_game', waivers_until: null, game_lock: { state: 'locked_until', until: '2099-09-15T04:00:00.000Z' } },
   { player_id: 'fa-waivers', state: 'on_waivers', waivers_until: '2099-09-12T17:00:00.000Z', game_lock: { state: 'unlocked', until: null } },
+  // R894: a LAPSED waivers instant. The tick keeps `on_waivers` and no
+  // processor flips the row, yet 115 admits the add (FCFS) — the page must
+  // render the same live Add it renders for the open one: no clock here.
+  { player_id: 'fa-waivers-lapsed', state: 'on_waivers', waivers_until: '2000-06-15T12:00:00.000Z', game_lock: { state: 'unlocked', until: null } },
 ]
 function pp(id: string, name: string, position = 'WR'): PoolPlayer {
   return { id, full_name: name, position, team: 'AAA', adp: null, headshot_url: null, status: 'Active' }
 }
-const players: PoolPlayer[] = [pp('fa-open', 'Free Open'), pp('fa-locked', 'Free Locked', 'RB'), pp('fa-waivers', 'Free Waivers'), pp('fa-norow', 'Free NoRow', 'TE'), pp('mine-open', 'Mine Open'), pp('mine-locked', 'Mine Locked'), pp('theirs', 'Theirs')]
+const players: PoolPlayer[] = [pp('fa-open', 'Free Open'), pp('fa-locked', 'Free Locked', 'RB'), pp('fa-waivers', 'Free Waivers'), pp('fa-waivers-lapsed', 'Free Lapsed', 'RB'), pp('fa-norow', 'Free NoRow', 'TE'), pp('mine-open', 'Mine Open'), pp('mine-locked', 'Mine Locked'), pp('theirs', 'Theirs')]
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
   const query = client.getQueryCache().build(client, { queryKey })
@@ -195,15 +199,29 @@ describe('the page opens on the free agents: §12.19’s states per row, the �
     expect(row).toMatch(/disabled=""[^>]*title="[^"]*game has started/)
     expect(row).toContain(LOCKED_ADD_TITLE)
   })
-  it('a player on waivers says until WHEN he clears and that claims arrive in a later update — no claim button', () => {
+  it('a player on waivers says until WHEN the period lapses and that claims arrive later — the Add stays LIVE with the instant in its title (R894: the server decides), no claim button', () => {
     const html = renderPage()
     const row = html.slice(html.indexOf('data-pool-row="fa-waivers"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-waivers"')))
     expect(row).toContain('data-availability="on_waivers"')
     expect(row).toContain('On waivers')
     expect(row).toMatch(/until /)
-    expect(row).toContain(WAIVERS_ADD_TITLE)
-    expect(row).toMatch(/disabled=""/)
+    expect(row).toContain('data-action="add"')
+    expect(row).not.toMatch(/disabled=""/)
+    expect(row).toMatch(/title="On waivers until [^"]*Sep 12[^"]*first come, first served[^"]*"[^>]*data-action="add"/)
     expect(html).not.toMatch(/>Claim</)
+  })
+  it('a LAPSED waivers row (the instant behind us; the tick never flips the state) renders exactly the same live Add — the client compares nothing, 115 admits the add (R894)', () => {
+    const html = renderPage()
+    const row = html.slice(html.indexOf('data-pool-row="fa-waivers-lapsed"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-waivers-lapsed"')))
+    expect(row).toContain('data-availability="on_waivers"')
+    expect(row).toContain('data-action="add"')
+    expect(row).not.toMatch(/disabled=""/)
+    expect(row).toMatch(/title="On waivers until [^"]*Jun 15[^"]*first come, first served[^"]*"[^>]*data-action="add"/)
+  })
+  it('the waivers title carries no promise the server does not keep: it names the instant, the refusal before it and the FCFS add after', () => {
+    expect(waiversAddTitle('Sat, Sep 12, 10:00 AM')).toBe(
+      'On waivers until Sat, Sep 12, 10:00 AM — an add before then is refused; once it lapses he can be added first come, first served. Waiver claims arrive in a later update.',
+    )
   })
   it('the roster-move panel is idle with the STORED fill ("2 of 17" — the 8-team default roster), and no ledger code reaches the screen', () => {
     const html = renderPage()

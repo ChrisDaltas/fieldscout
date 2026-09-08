@@ -35,7 +35,7 @@ import {
   POSITIONS,
   ROSTERED_ELSEWHERE_TITLE,
   SCOPE_LABELS,
-  WAIVERS_ADD_TITLE,
+  waiversAddTitle,
   emptyCopy,
   moveProblem,
   moveReadout,
@@ -76,6 +76,10 @@ import { ProblemCard, problemCopy } from './team-page'
  * `waivers_until`; the cap message names used/cap/week). A locked row's
  * button is disabled with the state's copy because the view says so, not
  * because the client decided anything; the server's answer still governs.
+ * An `on_waivers` row's Add is NOT disabled (R894): the client cannot know
+ * whether `waivers_until` has lapsed (no clock, and nothing flips the row
+ * when it does — F229), and 113 ADMITS the lapsed add (FCFS, Q33) while
+ * refusing the open one by name — so the button stays the server's call.
  *
  * **Never optimistic (§15.6 / F224 / F227).** A move is `useAddDrop`'s —
  * one `action_id` per submit — and the list re-reads on the answer either
@@ -85,8 +89,9 @@ import { ProblemCard, problemCopy } from './team-page'
  * drop touched, where the dropped player went, the caps after.
  *
  * **Waivers and trades are HONEST absences:** an `on_waivers` row says when
- * he clears and that claims arrive in a later update; a player on another
- * roster says trades do. No button posts nowhere.
+ * the period lapses and that claims arrive in a later update (its Add is
+ * live — the server answers); a player on another roster says trades do.
+ * No button posts nowhere.
  *
  * **§16.5.4:** skeleton · empty by reason (per scope, per search) · error-
  * with-retry (`ProblemCard`) · degraded (stale banner + last-good rows; the
@@ -468,7 +473,7 @@ export function PoolTable({
                 </TableCell>
                 {canAct && (
                   <TableCell className="text-right">
-                    <MoveButton row={row} onAdd={onAdd} onDrop={onDrop} />
+                    <MoveButton row={row} leagueTimeZone={leagueTimeZone} onAdd={onAdd} onDrop={onDrop} />
                   </TableCell>
                 )}
               </TableRow>
@@ -487,7 +492,7 @@ function AvailabilityCell({ row, leagueTimeZone }: { row: PoolPlayerRow; leagueT
     const until = formatInstantWithDate(a.until, leagueTimeZone)
     return (
       <span className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="yellow" title={WAIVERS_ADD_TITLE}>
+        <Badge variant="yellow" title={waiversAddTitle(until.local)}>
           {ON_WAIVERS_LABEL}
         </Badge>
         <span className="fs-num text-[10px] font-medium text-n-3" title={until.title ?? undefined}>
@@ -503,11 +508,13 @@ function AvailabilityCell({ row, leagueTimeZone }: { row: PoolPlayerRow; leagueT
   )
 }
 
-/** The action per row: Add for a free agent (disabled by the VIEW's lock or
- *  a waiver state, with the reason), Drop for the viewer's own player
- *  (disabled by the view's lock), nothing for another roster's — each an
- *  honest absence, never a button that posts nowhere. */
-function MoveButton({ row, onAdd, onDrop }: { row: PoolPlayerRow; onAdd: (row: PoolPlayerRow) => void; onDrop: (player: RosterPlayer) => void }) {
+/** The action per row: Add for a free agent (disabled ONLY by the VIEW's
+ *  lock, with the reason — an `on_waivers` row keeps a live Add whose title
+ *  names the instant, because the server decides whether the period has
+ *  lapsed (R894)), Drop for the viewer's own player (disabled by the view's
+ *  lock), nothing for another roster's — each an honest absence, never a
+ *  button that posts nowhere. */
+function MoveButton({ row, leagueTimeZone, onAdd, onDrop }: { row: PoolPlayerRow; leagueTimeZone: string | null; onAdd: (row: PoolPlayerRow) => void; onDrop: (player: RosterPlayer) => void }) {
   const a = row.availability
   if (a.kind === 'rostered') {
     if (!a.mine) return <span className="text-[11px] text-n-3">—</span>
@@ -517,13 +524,13 @@ function MoveButton({ row, onAdd, onDrop }: { row: PoolPlayerRow; onAdd: (row: P
       </Button>
     )
   }
-  const waivers = a.kind === 'on_waivers'
+  const waiversTitle = a.kind === 'on_waivers' ? waiversAddTitle(formatInstantWithDate(a.until, leagueTimeZone).local) : undefined
   return (
     <Button
       variant="stroke"
       size="sm"
-      disabled={row.lock.locked || waivers}
-      title={row.lock.locked ? LOCKED_ADD_TITLE : waivers ? WAIVERS_ADD_TITLE : undefined}
+      disabled={row.lock.locked}
+      title={row.lock.locked ? LOCKED_ADD_TITLE : waiversTitle}
       onClick={() => onAdd(row)}
       data-action="add"
     >

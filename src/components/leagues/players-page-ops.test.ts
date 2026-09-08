@@ -91,6 +91,12 @@ describe('poolRows — §12.19’s derived truth per player: the rosters are the
     expect(by('fa-waivers').availability).toEqual({ kind: 'on_waivers', until: '2099-09-12T17:00:00Z' })
     expect(by('fa-waivers-no-instant').availability).toEqual({ kind: 'free_agent' })
   })
+  it('a LAPSED waivers instant is carried, never compared: the row stays on_waivers (the tick keeps the state, no processor flips it) and the page leaves the add to 115 (R894)', () => {
+    const lapsed: PoolRow[] = [{ player_id: 'fa-lapsed', state: 'on_waivers', waivers_until: '2000-01-01T00:00:00Z', game_lock: { state: 'unlocked', until: null } }]
+    const [row] = poolRows([player('fa-lapsed')], rosters, lapsed, MINE, 'free_agents')
+    expect(row.availability).toEqual({ kind: 'on_waivers', until: '2000-01-01T00:00:00Z' })
+    expect(row.lock.locked).toBe(false)
+  })
   it('a rostered player is rostered whatever a lagging pool row says; mine is marked; the lock rides the rosters route', () => {
     expect(by('r1').availability).toEqual({ kind: 'rostered', teamId: MINE, teamName: 'My Team', mine: true })
     expect(by('r2').availability).toEqual({ kind: 'rostered', teamId: OTHER, teamName: 'Their Team', mine: false })
