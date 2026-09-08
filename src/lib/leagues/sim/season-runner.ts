@@ -769,6 +769,7 @@ async function driveSeason(
   )
 
   const actionRng = deriveStream(cfg.seed, `season:lineups:${deps.runTag}`)
+  let seedLineupsAfterPoll = false
 
   for (const entry of timeline) {
     clock.advanceTo(entry.at)
@@ -786,14 +787,12 @@ async function driveSeason(
           collectJobFailures(data, `${league.label} league_week_advance@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
         }
       }
-      if (entry.kind === 'open') {
-        // Week 1 only — every later week comes from `lineup_carry_internal`
-        // at the advance (D293's auto-carry, which is the path a real league
-        // takes and therefore the one worth driving).
-        if (entry.week === weeksDriven[0]) {
-          measured.lineupsSet += await seedLineups(service, botClients, leagues, entry.week, actionRng, problems)
-        }
-      }
+      // Lineups are seeded AFTER this instant's ingestion poll, never before
+      // it — F224(a)/R740: with no `nfl_games` row for the week,
+      // `lineup_kickoff_internal` falls back to the week datum and every
+      // player reads as locked from `starts_at`. The sim must seed the games
+      // first, and the poll below is what writes them.
+      seedLineupsAfterPoll = entry.kind === 'open' && entry.week === weeksDriven[0]
     }
 
     if (entry.kind === 'finalize') {
@@ -855,6 +854,13 @@ async function driveSeason(
       } else if (entry.at.getTime() >= announce) {
         measured.kickoffAfter = await readKickoff(service, flexGame.gameId)
       }
+    }
+    if (seedLineupsAfterPoll) {
+      // Week 1 only — every later week comes from `lineup_carry_internal` at
+      // the advance (D293's auto-carry, which is the path a real league takes
+      // and therefore the one worth driving).
+      measured.lineupsSet += await seedLineups(service, botClients, leagues, entry.week, actionRng, problems)
+      seedLineupsAfterPoll = false
     }
     if (cfg.verbose === true) log(`  ${pNow} w${entry.week} ${entry.kind}: ${entry.label}`)
   }
