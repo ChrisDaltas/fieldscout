@@ -107,6 +107,8 @@ import {
   bridgeLines,
   buildPlayerBridge,
   scenarioInstants,
+  uncoveredClubs,
+  withFullSlate,
   type BridgeCandidate,
   type PlayerBridge,
 } from './season-scenario'
@@ -158,6 +160,10 @@ export interface LeagueState {
   leagueId: string
   teamCount: number
   scheduleMode: 'h2h' | 'total_points'
+  /** `settings.allow_illegal_lineups` AS STORED. FALSE is the D299 legality
+   *  arm: §7.3.6 refuses a bye/OUT starter at the door, so `seedLineups` has
+   *  to seat a lineup the server will actually accept (F286 / D328). */
+  allowIllegalLineups: boolean
   /** `leagues.regular_season_weeks` AS STORED — invariant 5's window (R920). */
   regularSeasonWeeks: number
   matrixLine: string
@@ -443,11 +449,24 @@ export async function runSeasonSim(
           if (bridgedIds.has(p)) startedBridged.add(`${lineup.team_id}:${lineup.week}:${p}`)
         }
       }
+      const seating = driven.seatingByLeague.get(state.leagueId) ?? {
+        seated: 0,
+        refused: 0,
+        emptySlots: 0,
+        benchedForLegality: 0,
+        slotsFilled: 0,
+      }
       const result: SeasonLeagueResult = {
         leagueLabel: state.label,
         leagueId: state.leagueId,
         teamCount: state.teamCount,
         scheduleMode: state.scheduleMode,
+        allowIllegalLineups: state.allowIllegalLineups,
+        lineupsSeated: seating.seated,
+        lineupsRefused: seating.refused,
+        lineupSlotsFilled: seating.slotsFilled,
+        lineupSlotsLeftEmpty: seating.emptySlots,
+        benchedForLegality: seating.benchedForLegality,
         matrixLine: state.matrixLine,
         weeksDriven: [...driven.weeksDriven],
         weeksFinal: [...state.weeksFinal].sort((a, b) => a - b),
@@ -539,10 +558,14 @@ export function classifyReconcileAlert(
 ): string | null {
   switch (finding.kind) {
     case 'starter_final_game_no_line':
-      // Q42 is OPEN and the §23.6 world publishes lines for EIGHTEEN players
-      // across three games: every other starter on a scenario club has a
-      // final game and no line, by construction. Counted, never asserted on.
-      return 'the §23.6 world publishes lines for 18 players — every other starter on a scenario club is a lawful no_stat_row (Q42 OPEN)'
+      // Q42 is OPEN and the §23.6 world publishes lines for EIGHTEEN players.
+      // Since D328 the week's slate is COMPLETE (three §23.6 games + filler
+      // games for every other club), so every starter has a final game and
+      // all but the eighteen have no line, by construction. Counted, never
+      // asserted on — this classification must not harden into a reading of
+      // Q42, which is why the sweep asserts the worker's REPORT and never the
+      // arithmetic consequence of either reading (D327(9)).
+      return 'the §23.6 world publishes lines for 18 players — every other starter has a final game and no line, a lawful no_stat_row (Q42 OPEN)'
     case 'no_game_rows':
       // The run drives N weeks; a week it never drove has no slate. Only a
       // week the run DID drive without games is a real finding.
@@ -652,6 +675,9 @@ export async function readLeagueState(
   }
   const settings = (league!.settings ?? {}) as Record<string, unknown>
   const scheduleMode = settings.schedule_mode === 'total_points' ? 'total_points' : 'h2h'
+  // The column's DEFAULT is TRUE (§7.3.6), so only an explicit `false` turns
+  // legality enforcement ON — read exactly the way `matrixLine` renders it.
+  const allowIllegalLineups = settings.allow_illegal_lineups !== false
   const { data: teams, error: teamsError } = await service
     .from('teams')
     .select('id, owner_id')
@@ -664,6 +690,7 @@ export async function readLeagueState(
     ownerId: league!.owner_id,
     teamCount,
     scheduleMode,
+    allowIllegalLineups,
     regularSeasonWeeks,
     matrixLine:
       `${teamCount} teams · ${scheduleMode} · median ${settings.median_game === true ? 'on' : 'off'} · ` +
@@ -698,6 +725,10 @@ interface DriveOutcome {
   workerErrors: string[]
   workerErrorsByLeague: Map<string, string[]>
   noStatRowByLeague: Map<string, number>
+  seatingByLeague: Map<string, LeagueSeating>
+  /** The published slate: the scenario's own games plus the filler slate the
+   *  week is completed with (F286/D328), for the run banner. */
+  slate: { coreGames: number; fillerGames: number; clubs: readonly string[] }
   evidence: SeasonRunReport['scenarioEvidence']
   workerNotes: string[]
   problems: string[]
@@ -717,6 +748,7 @@ async function driveSeason(
   const workerErrors: string[] = []
   const workerErrorsByLeague = new Map<string, string[]>()
   const noStatRowByLeague = new Map<string, number>()
+  const seatingByLeague = new Map<string, LeagueSeating>()
   const assertions: ScenarioAssertion[] = []
   const problems: string[] = []
   const leagueIds = leagues.map((l) => l.leagueId)
@@ -758,7 +790,16 @@ async function driveSeason(
   const lastRegularWeek = new Map(leagues.map((l) => [l.leagueId, firstWeek + l.regularSeasonWeeks - 1]))
 
   // ---- One anchored scenario + one provider per driven week --------------
+  // TWO objects, deliberately kept apart (F286 / D328). `anchored` is the
+  // CORE §23.6 scenario, re-anchored and bridged: it is what every beat, every
+  // timeline instant, every assertion and the week's `close` are computed
+  // from, so the filler slate cannot move any of them by construction rather
+  // than by convention. `published` is that same scenario plus one filler game
+  // for every club the library does not play, and it reaches ONE consumer —
+  // the `SyntheticStatsProvider`, i.e. `getSchedule`, i.e. `nfl_games`.
   const anchored = new Map<number, ReturnType<typeof makeScenario>>()
+  const published = new Map<number, ReturnType<typeof makeScenario>>()
+  let slate = { coreGames: 0, fillerGames: 0, clubs: [] as readonly string[] }
   const timeline: TimelineEntry[] = []
   for (const week of weeksDriven) {
     const row = weekRows.get(week)!
@@ -776,6 +817,9 @@ async function driveSeason(
       bridge,
     )
     anchored.set(week, scenario)
+    const full = withFullSlate(scenario)
+    published.set(week, full.scenario)
+    slate = { coreGames: scenario.games.length, fillerGames: full.fillerGameIds.length, clubs: full.clubs }
     timeline.push({ at: new Date(Date.parse(row.starts_at) + MINUTE_MS), week, kind: 'open', label: 'week opens' })
     for (const instant of scenarioInstants(scenario)) {
       timeline.push({ at: instant.at, week, kind: 'poll', label: instant.label })
@@ -809,6 +853,8 @@ async function driveSeason(
       workerErrors,
       workerErrorsByLeague,
       noStatRowByLeague,
+      seatingByLeague: new Map(),
+      slate,
       evidence: { scenario: cfg.scenario, leagues: 0, assertions },
       workerNotes: [],
       problems,
@@ -816,12 +862,19 @@ async function driveSeason(
   }
 
   log(`SCENARIO LIBRARY: v${base.version} · season ${SYNTHETIC_SEASON} · weeks ${weeksDriven[0]}..${weeksDriven[weeksDriven.length - 1]} · ${timeline.length} instants`)
+  log(
+    `PUBLISHED SLATE: ${slate.coreGames} §23.6 game(s) + ${slate.fillerGames} filler game(s) per week — ` +
+      `${slate.clubs.length} club(s) play (a club with NO game reads on_bye at §7.3.6 — F286/D328, and ` +
+      `seedLineups refuses the run if a league rosters one); the driver's timeline is built from the ` +
+      `§23.6 games ALONE`,
+  )
 
   // ---- ONE clock for the whole season (step-driven, monotonic) ----------
   const clock = new VirtualClock(timeline[0]!.at)
   const degradation = new DegradationTracker()
   const providers = new Map<number, SyntheticStatsProvider>()
-  for (const [week, scenario] of anchored) providers.set(week, new SyntheticStatsProvider(scenario, clock))
+  // The PUBLISHED scenario — the only place the filler slate is used.
+  for (const [week, scenario] of published) providers.set(week, new SyntheticStatsProvider(scenario, clock))
   const lastPollByWeek = new Map<number, string>()
   const lastPollCompletedAt = async (season: number, week: number): Promise<string | null> =>
     season === SYNTHETIC_SEASON ? (lastPollByWeek.get(week) ?? null) : null
@@ -844,6 +897,9 @@ async function driveSeason(
     // full real draft pool), so it cannot discriminate `mass_inactives` from
     // `happy_path`; the ids can.
     flaggedNoStatRowIds: new Set<string>(),
+    // week → the teams the worker RECOMPUTED that week (D328). The
+    // observability precondition for the `mass_inactives` arm.
+    recomputedTeamsByWeek: new Map<number, Set<string>>(),
     lineupsSet: 0,
     workerNotes: new Map<string, number>(),
   }
@@ -944,7 +1000,11 @@ async function driveSeason(
       // Week 1 only — every later week comes from `lineup_carry_internal` at
       // the advance (D293's auto-carry, which is the path a real league takes
       // and therefore the one worth driving).
-      measured.lineupsSet += await seedLineups(service, botClients, leagues, entry.week, actionRng, problems)
+      const seated = await seedLineups(service, botClients, leagues, entry.week, actionRng, problems, slate.clubs)
+      for (const [leagueId, s] of seated) {
+        seatingByLeague.set(leagueId, s)
+        measured.lineupsSet += s.seated
+      }
       seedLineupsAfterPoll = false
     }
     if (cfg.verbose === true) log(`  ${pNow} w${entry.week} ${entry.kind}: ${entry.label}`)
@@ -962,6 +1022,8 @@ async function driveSeason(
     workerErrors,
     workerErrorsByLeague,
     noStatRowByLeague,
+    seatingByLeague,
+    slate,
     evidence: { scenario: cfg.scenario, leagues: leagues.length, assertions },
     workerNotes: [...measured.workerNotes.entries()].map(([reason, count]) => `${count}× ${reason}`).sort(),
     problems,
@@ -1076,7 +1138,12 @@ function absorbBatch(
   workerErrors: string[],
   byLeague: Map<string, string[]>,
   noStatRowByLeague: Map<string, number>,
-  measured: { flaggedNoStatRow: number; flaggedNoStatRowIds: Set<string>; workerNotes: Map<string, number> },
+  measured: {
+    flaggedNoStatRow: number
+    flaggedNoStatRowIds: Set<string>
+    recomputedTeamsByWeek: Map<number, Set<string>>
+    workerNotes: Map<string, number>
+  },
   /** league id → the LAST regular-season week (R920's boundary). */
   lastRegularWeek: ReadonlyMap<string, number>,
 ): void {
@@ -1123,7 +1190,17 @@ function absorbBatch(
       byLeague.set(league.league_id, [...(byLeague.get(league.league_id) ?? []), line])
     }
     let noStatRows = 0
+    // WHICH team-weeks the worker actually recomputed. §22.2 is INCREMENTAL:
+    // a team is rescored only when a delta lands for a player it STARTS, and
+    // a scratched player emits no line and therefore no delta — so a team
+    // whose only bridged starter is scratched is never rescored, and the
+    // worker never files a per-starter report that could name him. An
+    // assertion over the worker's naming is observable EXACTLY on these
+    // teams; see the `mass_inactives` arm (D328 — it corrected R921 here).
+    const recomputed = measured.recomputedTeamsByWeek.get(league.week) ?? new Set<string>()
+    measured.recomputedTeamsByWeek.set(league.week, recomputed)
     for (const team of league.teams) {
+      recomputed.add(team.team_id)
       noStatRows += team.no_stat_row.length
       // R921: keep the ids, so a scenario can assert on ITS OWN scratches.
       for (const playerId of team.no_stat_row) measured.flaggedNoStatRowIds.add(playerId)
@@ -1172,6 +1249,125 @@ function measureCorrectionArms(
  * audit posture, which posts the system message to league chat. That is the
  * real door a commissioner uses, not a harness back-channel.
  */
+/**
+ * §7.3.6's blocking designations, exactly as `lineup_designation_internal`
+ * (112:337-353) spells them after bridging `players.status`. `Doubtful` is
+ * NOT here: 114:596 blocks only these five.
+ */
+export const BLOCKING_DESIGNATIONS: ReadonlySet<string> = new Set([
+  'OUT',
+  'IR',
+  'PUP',
+  'NFI',
+  'Suspended',
+])
+
+/**
+ * `players.status` → the §7.3.2 designation, the TS side of 112:337-353.
+ *
+ * This is a CLIENT's preference, not an oracle. The sim is choosing what to
+ * SUBMIT, exactly as a manager's UI does; the SERVER still decides, and if
+ * this function is wrong the run goes RED on a `set_lineup` 409 rather than
+ * quietly passing — which is what keeps it falsifiable (the same posture
+ * D327(5) records for the greedy slot fit, which is not a mirror of
+ * `lineup_fit_internal` either).
+ */
+export function simDesignation(status: string | null | undefined): string | null {
+  switch ((status ?? '').trim().toLowerCase()) {
+    case 'out':
+      return 'OUT'
+    case 'ir':
+      return 'IR'
+    case 'doubtful':
+      return 'Doubtful'
+    case 'pup':
+      return 'PUP'
+    case 'nfi':
+      return 'NFI'
+    case 'sus':
+    case 'suspended':
+      return 'Suspended'
+    default:
+      return null
+  }
+}
+
+/** A roster player as the seating chooser reads him. */
+export interface SeatCandidate {
+  id: string
+  /** The roster vocabulary (DEF is normalised to DST by the caller). */
+  position: string
+  /** `players.status`, verbatim. */
+  status: string | null
+}
+
+export interface Seating {
+  slotMap: Record<string, string>
+  /** Players passed over because §7.3.6 would refuse them by DESIGNATION. */
+  benchedForLegality: string[]
+  /** Starting slots left EMPTY — lawful (114:585-588 flags an empty slot and
+   *  never blocks on it), and named rather than silently absent. */
+  emptySlots: string[]
+}
+
+/**
+ * Choose which rostered players take which starting slots — greedy first fit
+ * by eligibility over the roster in the caller's order (best ADP first).
+ *
+ * NOT a mirror of `lineup_fit_internal`: the SERVER decides the canonical
+ * placement and the sim keeps what came back (D327(5)/D289/D33). The one
+ * thing this does encode is F286's residual necessary condition: in a league
+ * with `allow_illegal_lineups = false`, §7.3.6 refuses a starter carrying an
+ * OUT/IR/PUP/NFI/Suspended designation, so those players are passed over and
+ * the slot goes to the next eligible man — or stays EMPTY, which is lawful.
+ * The OTHER §7.3.6 arm — `on_bye` — is not encoded here on purpose: the run
+ * publishes a FULL SLATE (`withFullSlate`), so no club is on bye, and
+ * `uncoveredClubs` REFUSES the run loudly if that ever stops being true.
+ * Encoding a bye skip here as well would hide exactly that gap.
+ *
+ * In a league where illegal lineups are ALLOWED nothing is passed over: an
+ * OUT starter there is lawful, and seating him is coverage of that arm.
+ */
+export function chooseStarterSlots(
+  roster: readonly SeatCandidate[],
+  slots: readonly { key: string; eligible: string[] }[],
+  opts: { allowIllegalLineups: boolean },
+): Seating {
+  const slotMap: Record<string, string> = {}
+  const benchedForLegality: string[] = []
+  const taken = new Set<string>()
+  for (const player of roster) {
+    const designation = simDesignation(player.status)
+    if (!opts.allowIllegalLineups && designation !== null && BLOCKING_DESIGNATIONS.has(designation)) {
+      benchedForLegality.push(`${player.id} (${designation})`)
+      continue
+    }
+    const slot = slots.find((sl) => !taken.has(sl.key) && sl.eligible.includes(player.position))
+    if (slot === undefined) continue
+    taken.add(slot.key)
+    slotMap[slot.key] = player.id
+  }
+  return {
+    slotMap,
+    benchedForLegality,
+    emptySlots: slots.filter((sl) => !taken.has(sl.key)).map((sl) => sl.key),
+  }
+}
+
+/** What `seedLineups` measured for ONE league — the honest seating count. */
+export interface LeagueSeating {
+  /** Teams whose week-1 lineup the server ACCEPTED. */
+  seated: number
+  /** Teams the server refused (each refusal is also a run `problem`). */
+  refused: number
+  /** Starting slots left empty across the league's accepted lineups. */
+  emptySlots: number
+  /** Players passed over for a blocking designation (OFF leagues only). */
+  benchedForLegality: number
+  /** Slots actually filled across the league's accepted lineups. */
+  slotsFilled: number
+}
+
 async function seedLineups(
   service: Supabase,
   bots: ReadonlyMap<string, Supabase>,
@@ -1179,9 +1375,12 @@ async function seedLineups(
   week: number,
   actionRng: () => number,
   problems: string[],
-): Promise<number> {
-  let set = 0
+  coveredClubs: readonly string[],
+): Promise<Map<string, LeagueSeating>> {
+  const out = new Map<string, LeagueSeating>()
   for (const league of leagues) {
+    const seating: LeagueSeating = { seated: 0, refused: 0, emptySlots: 0, benchedForLegality: 0, slotsFilled: 0 }
+    out.set(league.leagueId, seating)
     const commishClient = league.ownerId === null ? undefined : bots.get(league.ownerId)
     if (commishClient === undefined) {
       problems.push(`${league.label}: no signed-in bot client for the commissioner (owner ${league.ownerId ?? 'null'}) — lineups unset`)
@@ -1208,29 +1407,55 @@ async function seedLineups(
 
     const { data: rosterRows, error } = await service
       .from('league_rosters')
-      .select('team_id, player_id, players!inner(position, adp)')
+      .select('team_id, player_id, players!inner(position, adp, status, team)')
       .eq('league_id', league.leagueId)
     throwIfError(error, `${league.label}: roster read for lineups`)
-    const byTeam = new Map<string, Array<{ id: string; position: string; adp: number | null }>>()
+    const byTeam = new Map<string, Array<{ id: string; position: string; adp: number | null; status: string | null }>>()
+    const rosteredClubs: Array<string | null> = []
     for (const row of rosterRows ?? []) {
-      const player = row.players as unknown as { position: string; adp: number | null }
+      const player = row.players as unknown as {
+        position: string
+        adp: number | null
+        status: string | null
+        team: string | null
+      }
+      rosteredClubs.push(player.team)
       const list = byTeam.get(row.team_id) ?? []
-      list.push({ id: row.player_id, position: String(player.position), adp: player.adp })
+      list.push({
+        id: row.player_id,
+        position: String(player.position),
+        adp: player.adp,
+        status: player.status,
+      })
       byTeam.set(row.team_id, list)
+    }
+    // F286's own precondition, checked against what the league ACTUALLY
+    // rosters rather than assumed from `NFL_CLUBS`. A rostered player whose
+    // club has no game this week is `on_bye = TRUE` at 112:417-422 and is
+    // refused by §7.3.6 — the exact failure this task exists to remove — so an
+    // uncovered club is a LOUD problem, never a quiet 409 storm.
+    const uncovered = uncoveredClubs(rosteredClubs, coveredClubs)
+    if (uncovered.length > 0) {
+      problems.push(
+        `${league.label}: ${uncovered.length} rostered club(s) have no game in the published slate — ` +
+          `${uncovered.join(', ')}. §7.3.6 reads every one of their players as on bye (112:417-422). ` +
+          `Add the club to NFL_CLUBS (season-scenario.ts) so the week's slate covers it.`,
+      )
     }
     for (const team of league.teams) {
       const roster = (byTeam.get(team.id) ?? []).sort(
         (a, b) => (a.adp ?? Number.POSITIVE_INFINITY) - (b.adp ?? Number.POSITIVE_INFINITY) || (a.id < b.id ? -1 : 1),
       )
-      const slotMap: Record<string, string> = {}
-      const taken = new Set<string>()
-      for (const player of roster) {
-        const pos = player.position.toUpperCase() === 'DEF' ? 'DST' : player.position.toUpperCase()
-        const slot = league.slots.find((s) => !taken.has(s.key) && s.eligible.includes(pos))
-        if (slot === undefined) continue
-        taken.add(slot.key)
-        slotMap[slot.key] = player.id
-      }
+      const seat = chooseStarterSlots(
+        roster.map((p) => ({
+          id: p.id,
+          position: p.position.toUpperCase() === 'DEF' ? 'DST' : p.position.toUpperCase(),
+          status: p.status,
+        })),
+        league.slots,
+        { allowIllegalLineups: league.allowIllegalLineups },
+      )
+      const slotMap = seat.slotMap
       if (Object.keys(slotMap).length === 0) continue
       // The team's OWN manager where there is one; otherwise the league's
       // commissioner with a reason — the D290/R738 arm of the same door
@@ -1248,15 +1473,19 @@ async function seedLineups(
           : {}),
       })
       if (result.status !== 200) {
+        seating.refused += 1
         problems.push(
           `${league.label}: set_lineup(team ${team.id}, week ${week}) answered ${result.status}: ${JSON.stringify(result.body).slice(0, 300)}`,
         )
         continue
       }
-      set += 1
+      seating.seated += 1
+      seating.slotsFilled += Object.keys(slotMap).length
+      seating.emptySlots += seat.emptySlots.length
+      seating.benchedForLegality += seat.benchedForLegality.length
     }
   }
-  return set
+  return out
 }
 
 /** Snapshot every week that has just reached `final` (invariant 6's t₀). */
@@ -1492,6 +1721,8 @@ async function buildScenarioEvidence(
     revisionWrites: number
     flaggedNoStatRow: number
     flaggedNoStatRowIds: ReadonlySet<string>
+    /** week → the teams the worker RECOMPUTED (§22.2's incremental rule). */
+    recomputedTeamsByWeek: ReadonlyMap<number, Set<string>>
   },
   postponedGame: { gameId: string } | undefined,
 ): Promise<ScenarioAssertion[]> {
@@ -1618,11 +1849,28 @@ async function buildScenarioEvidence(
       )
       // Independent of the worker: which scratched players a run league
       // actually STARTED in the week, read from the stored lineups.
+      //
+      // SCOPED TO THE TEAMS THE WORKER RECOMPUTED (D328 — this corrects
+      // R921). §22.2 is incremental: a team is rescored only when a delta
+      // lands for a player it starts, and a scratched player emits no line
+      // and so no delta. A team whose only bridged starter is scratched is
+      // therefore NEVER rescored, no per-starter report exists for it, and
+      // the worker cannot have named anybody on it — asserting over it is
+      // asserting over a report that does not exist. Left unscoped the arm
+      // was FLAKY, not strict: measured on `main` @ a5b0358 at FOUR leagues
+      // (its own largest green configuration) seeds 7 and 13 fail it
+      // (`6/7`, `5/6`) while 21, 38 and 101 pass, purely on which team the
+      // draft's race resolution put a scratched player on. Scoping restores
+      // the arm's teeth where it can see: a scratched starter on a
+      // RECOMPUTED team that the worker did NOT name is still a failure, and
+      // that is exactly what a provider ignoring `inactive` would produce.
+      const recomputed = measured.recomputedTeamsByWeek.get(firstWeek) ?? new Set<string>()
       const startedScratched = new Set<string>()
+      const unobservable = new Set<string>()
       for (const league of leagues) {
         const { data: rows, error } = await service
           .from('team_lineups')
-          .select('slot_map')
+          .select('team_id, slot_map')
           .in('team_id', league.teams.map((t) => t.id))
           .eq('season', SYNTHETIC_SEASON)
           .eq('week', firstWeek)
@@ -1630,28 +1878,39 @@ async function buildScenarioEvidence(
         for (const row of rows ?? []) {
           const slotMap = (row.slot_map ?? null) as Record<string, string> | null
           for (const playerId of startersOfMap(slotMap, league.irKeys)) {
-            if (scratched.has(playerId)) startedScratched.add(playerId)
+            if (!scratched.has(playerId)) continue
+            if (recomputed.has(row.team_id)) startedScratched.add(playerId)
+            else unobservable.add(`${playerId}@${row.team_id}`)
           }
         }
       }
       const named = [...startedScratched].filter((id) => measured.flaggedNoStatRowIds.has(id))
+      const notRecomputed =
+        unobservable.size === 0
+          ? ''
+          : `; ${unobservable.size} scratched starter-seat(s) sit on teams the worker never recomputed ` +
+            `(§22.2 incremental — no delta landed for any starter of theirs, so no report exists to name them)`
       if (startedScratched.size === 0) {
         // The charted arms' posture: say what could not be observed and why,
         // never a silent green.
         push(
           'zeros_flagged',
           false,
-          `not observable: no run league started any of the ${scratched.size} scratched players in week ${firstWeek} ` +
-            `(${measured.flaggedNoStatRow} no_stat_row starters run-wide, none of them a scratch this scenario declared)`,
-          'at least one league starting a scratched bridged player, so the worker\'s naming of it can be observed',
+          `not observable: no RECOMPUTED team started any of the ${scratched.size} scratched players in week ${firstWeek} ` +
+            `(${measured.flaggedNoStatRow} no_stat_row starters run-wide, none of them a scratch this scenario declared)${notRecomputed}`,
+          'at least one RECOMPUTED team starting a scratched bridged player, so the worker\'s naming of it can be observed',
         )
       } else {
         push(
           'zeros_flagged',
           named.length === startedScratched.size,
-          `${named.length}/${startedScratched.size} STARTED scratched players were named no_stat_row by the worker ` +
-            `(of ${scratched.size} scratched; ${measured.flaggedNoStatRow} no_stat_row starters run-wide)`,
-          'every scratched starter is NAMED by the worker (auto-sub is off by default — §11.3 is M5, F211)',
+          `${named.length}/${startedScratched.size} STARTED scratched players on RECOMPUTED teams were named ` +
+            `no_stat_row by the worker (of ${scratched.size} scratched; ${measured.flaggedNoStatRow} no_stat_row ` +
+            `starters run-wide)${notRecomputed}` +
+            (named.length === startedScratched.size
+              ? ''
+              : ` — UNNAMED: ${[...startedScratched].filter((id) => !measured.flaggedNoStatRowIds.has(id)).join(', ')}`),
+          'every scratched starter the worker RECOMPUTED is NAMED by it (auto-sub is off by default — §11.3 is M5, F211)',
         )
       }
       break
@@ -1755,6 +2014,23 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
     lines.push(
       `  ${league.leagueLabel}: ${league.matrixLine} · bridged ${league.bridgeRostered} rostered / ${league.bridgeStarted} started · ` +
         `no_stat_row starters ${league.noStatRowStarters} · held [${league.heldWeeks.map((h) => `w${h.week} ${h.status}`).join(', ')}]`,
+    )
+    // The seating line is printed for EVERY league and named for the OFF one:
+    // a green run whose `allow_illegal_lineups = false` league seated nothing
+    // is the decorative outcome F286/D328 exists to prevent, so the number is
+    // on the transcript, not inferred from the absence of a 409.
+    lines.push(
+      `      lineups week 1: ${league.lineupsSeated}/${league.teamCount} seated · ${league.lineupsRefused} refused · ` +
+        `${league.lineupSlotsFilled} slots filled / ${league.lineupSlotsLeftEmpty} left empty · ` +
+        `benched for legality ${league.benchedForLegality}` +
+        (league.allowIllegalLineups ? '' : '   <- §7.3.6 ENFORCED (D299 legality arm)'),
+    )
+  }
+  const off = report.leagues.filter((l) => !l.allowIllegalLineups)
+  if (off.length > 0) {
+    lines.push(
+      `LEGALITY ARM (allow_illegal_lineups = false): ${off.length} league(s) — ` +
+        off.map((l) => `${l.leagueLabel} ${l.lineupsSeated}/${l.teamCount} lineups seated, ${l.lineupsRefused} refused`).join(' · '),
     )
   }
   lines.push(`WORKER ERRORS: ${report.workerErrors.length}`)

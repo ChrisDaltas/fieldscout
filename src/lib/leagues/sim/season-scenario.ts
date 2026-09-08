@@ -90,6 +90,68 @@
  * (the worker's Q42 reading — OPEN; the sweep asserts the worker's REPORT,
  * never the arithmetic consequence). The runner measures and prints the real
  * numbers (`bridge.rostered` / `bridge.started`) rather than implying more.
+ *
+ * ── 3. THE FULL SLATE (fixture construction — F286 / PROGRESS D328) ────────
+ * §23.6's world publishes THREE games over SIX clubs. `SEASON_ROSTER` starts
+ * six positions off a seven-player roster drafted from the real pool across
+ * all thirty-two clubs, and §7.3.6 (114:605-615) refuses a submit that starts
+ * a player whose club has NO GAME that week (`lineup_kickoff_internal`
+ * returns `on_bye = TRUE` when no `nfl_games` row for the week carries the
+ * club — 112:417-422). The D299 matrix guarantees one
+ * `allow_illegal_lineups = false` league at n >= 5 leagues, and in that
+ * league a team would have to fill all six starting slots from six clubs out
+ * of seven players drafted from thirty-two — which essentially never happens.
+ * Measured: every run at n >= 5 ended RED on `set_lineup` 409s (F286).
+ *
+ * THE FIX IS TO MAKE THE SIM'S WORLD COMPLETE, not to soften the assertion.
+ * The three options F286 recorded were (a) seat only players whose club has a
+ * game — necessary but NOT sufficient, it picks the best of an impossible
+ * set; (b) declare `no legal lineup available` a lawful named state — which
+ * makes the run green while the guaranteed legality league exercises NOTHING
+ * (decorative coverage, D267); (c) drop the OFF arm — deleting the coverage.
+ * `withFullSlate` takes none of them: the anchoring layer already owns the
+ * week's `nfl_games` rows under the F199 sweep prefix, so it PUBLISHES A FULL
+ * SLATE — the scenario's own three games with their exact ids, beats, timings
+ * and assertions, plus one ordinary FILLER game for every other club — and
+ * §7.3.6 becomes satisfiable for a real lineup. (a) survives as the residual
+ * necessary condition it always was: with every club playing, the only
+ * §7.3.6 blocker left is an OUT/IR/PUP/NFI/Suspended DESIGNATION, and
+ * `chooseStarterSlots` (season-runner.ts) passes those over in an OFF league.
+ *
+ * THIS IS FIXTURE CONSTRUCTION IN THE SIM LAYER, NOT A LIBRARY CHANGE
+ * (R801's line). `makeScenario`'s published output is untouched — the filler
+ * games are appended to the ANCHORED copy, downstream of the transform, and
+ * only ever reach the `SyntheticStatsProvider` the sim constructs. The M0
+ * gate's byte-compare against `fixtures/nfl/2026/wk02/synthetic.jsonl.gz`
+ * therefore cannot move, `SCENARIO_LIBRARY_VERSION` does not bump, and the
+ * library's declared games / beats / determinism split are exactly what they
+ * were. Pinned in `season-scenario.test.ts`.
+ *
+ * WHAT A FILLER GAME IS, AND WHAT IT DELIBERATELY IS NOT:
+ *   - It carries NO players. §23.6's eighteen are the library's law; a filler
+ *     club's starter has a final game and no stat line, which is the same
+ *     lawful `no_stat_row` (Q42, OPEN) he already was as a bye — the run
+ *     still only COUNTS it and never asserts an arithmetic consequence.
+ *   - Its window sits INSIDE the scenario's own: it kicks off at the earliest
+ *     kickoff of a game the scenario never postpones and runs for that same
+ *     game's duration. So `weekBounds` (ingest-week.ts:308-317) cannot move
+ *     `nfl_weeks.first_kickoff_at` (the filler kickoff is never earlier than
+ *     the in-week minimum) and cannot move the instant every in-week game
+ *     first reads `final` (the filler ends no later than the last core game).
+ *     `assertSlateInsideCore` re-checks both, and THROWS rather than publish
+ *     a slate that would move a beat the scenario declares.
+ *   - Its charted times are its own game end, never borrowed from a scenario
+ *     game whose charted timing is itself the observable under test
+ *     (`charted_late`). Nothing reads them: `ingestWeek` calls `getSchedule`
+ *     and `getWeekStats` only.
+ *   - Its id comes from `anchoredGameId`, so it carries
+ *     `SIM_SEASON_GAME_PREFIX` and is counted by `sim-census.ts` and deleted
+ *     by `cleanupSweep`'s prefix sweep exactly like a scenario game (F199 is
+ *     OPEN; this must not widen its blast radius, and it does not).
+ *   - The DRIVER's timeline is built from the CORE anchored scenario, never
+ *     from the published one, so the fillers contribute no instants and no
+ *     beat. That is structural, not a convention: `driveSeason` keeps the two
+ *     objects apart.
  */
 import type {
   ScenarioId,
@@ -255,8 +317,204 @@ function shifted(d: Date, shiftMs: number): Date {
 /** Anchored game ids are week-unique: `nfl_games.id` is the PK, and a second
  *  week re-using week one's id would MOVE that row out of week one (and out
  *  of `week_games_state_internal`'s count for a week already final). */
-export function anchoredGameId(season: number, week: number, game: SyntheticGameDef): string {
+export function anchoredGameId(
+  season: number,
+  week: number,
+  game: { homeTeam: string; awayTeam: string },
+): string {
   return `${SIM_SEASON_GAME_PREFIX}${season}-w${String(week).padStart(2, '0')}-${game.awayTeam}@${game.homeTeam}`
+}
+
+/**
+ * The thirty-two NFL club abbreviations, as `players.team` and
+ * `nfl_games.home_team` / `away_team` spell them. A STORED LITERAL (the §4.3
+ * golden-pin discipline) rather than a `SELECT DISTINCT team` — the published
+ * slate has to be a pure function of the run's inputs for `--seed` to replay
+ * it, and a pool that ever grew a club this list does not know must make the
+ * run REFUSE rather than quietly leave that club on a bye. `uncoveredClubs`
+ * is that refusal, and `runSeasonSim` calls it against the real pool.
+ */
+export const NFL_CLUBS: readonly string[] = [
+  'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE',
+  'DAL', 'DEN', 'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC',
+  'LAC', 'LAR', 'LV', 'MIA', 'MIN', 'NE', 'NO', 'NYG',
+  'NYJ', 'PHI', 'PIT', 'SEA', 'SF', 'TB', 'TEN', 'WAS',
+]
+
+/** The published week: the scenario's own games plus the filler slate. */
+export interface FullSlate {
+  /** The scenario the `SyntheticStatsProvider` publishes. The core scenario's
+   *  games, players, events and window are carried through UNCHANGED. */
+  scenario: SyntheticScenario
+  /** The filler `nfl_games.id`s — every one carries the F199 sweep prefix. */
+  fillerGameIds: readonly string[]
+  /** Every club the PUBLISHED slate actually gives a game this week —
+   *  derived from the produced games, never from the club roll that was
+   *  asked for. (A break probe that emptied the filler list still printed
+   *  "32 clubs play" while publishing three games; a coverage claim read off
+   *  the INPUT cannot notice that the output is smaller.) */
+  clubs: readonly string[]
+}
+
+/** Both clubs of every game in a scenario, sorted and de-duplicated. */
+export function slateClubs(scenario: SyntheticScenario): string[] {
+  const out = new Set<string>()
+  for (const g of scenario.games) {
+    out.add(g.homeTeam)
+    out.add(g.awayTeam)
+  }
+  return [...out].sort()
+}
+
+/**
+ * Which clubs the run's real player pool holds that the published slate does
+ * NOT give a game. Loud by design: a player whose club has no game reads
+ * `on_bye = TRUE` at 112:417-422 and is refused by §7.3.6, so an uncovered
+ * club is the exact shape of the bug F286 recorded. A NULL `players.team` is
+ * reported as `(null)` for the same reason — `lineup_kickoff_internal`'s
+ * `p_nfl_team IS NOT NULL` guard makes a team-less player permanently on bye.
+ */
+export function uncoveredClubs(
+  poolClubs: readonly (string | null)[],
+  covered: readonly string[],
+): string[] {
+  const have = new Set(covered)
+  const out = new Set<string>()
+  for (const club of poolClubs) {
+    if (club === null || club.trim() === '') {
+      out.add('(null)')
+      continue
+    }
+    if (!have.has(club)) out.add(club)
+  }
+  return [...out].sort()
+}
+
+/**
+ * The filler window must sit INSIDE the core scenario's own, or the fillers
+ * would move a beat the scenario declares. Two facts, both from
+ * `weekBounds` (`ingest-week.ts:308-317`):
+ *
+ *   - `first_kickoff_at` is the MINIMUM kickoff over the week's in-week
+ *     games. Before a postponement is announced the to-be-postponed game is
+ *     still in-week, so the safe lower bound is the minimum over ALL core
+ *     games (flexed kickoffs included, since a flex can move a game earlier).
+ *     A filler that kicked off before it would move the week's first kickoff
+ *     — and with it 111's fallback lock datum.
+ *   - `last_game_ends_at` is stamped at the FIRST poll that sees every
+ *     in-week game `final`. That instant is the maximum end over the games
+ *     that stay in the week, i.e. the ones the scenario never postpones —
+ *     the same set `driveSeason` uses for its `close` instant. A filler
+ *     ending later would push the week's close past the scenario's own.
+ *
+ * Throws rather than publishes. A slate that quietly moved a correction
+ * window would be exactly the "plausible result" CLAUDE.md forbids.
+ */
+export function assertSlateInsideCore(
+  core: SyntheticScenario,
+  fillers: readonly SyntheticGameDef[],
+): void {
+  const kickoffs = core.games.flatMap((g) => [
+    g.kickoffAt.getTime(),
+    ...(g.flexMove ? [g.flexMove.newKickoffAt.getTime()] : []),
+  ])
+  const earliestCoreKickoff = Math.min(...kickoffs)
+  const stayingEnds = core.games
+    .filter((g) => g.postponement === undefined)
+    .map((g) => (g.flexMove ? g.flexMove.newKickoffAt.getTime() : g.kickoffAt.getTime()) + g.durationMs)
+  const latestCoreEnd = Math.max(...stayingEnds)
+  for (const f of fillers) {
+    const start = f.kickoffAt.getTime()
+    const end = start + f.durationMs
+    if (start < earliestCoreKickoff) {
+      throw new Error(
+        `withFullSlate: filler ${f.gameId} kicks off at ${f.kickoffAt.toISOString()}, before the scenario's ` +
+          `earliest kickoff ${new Date(earliestCoreKickoff).toISOString()} — that would move ` +
+          `nfl_weeks.first_kickoff_at, which the scenario's beats are measured against`,
+      )
+    }
+    if (end > latestCoreEnd) {
+      throw new Error(
+        `withFullSlate: filler ${f.gameId} ends at ${new Date(end).toISOString()}, after the scenario's ` +
+          `last in-week game ends ${new Date(latestCoreEnd).toISOString()} — that would move the instant ` +
+          `every in-week game first reads final, and with it nfl_weeks.last_game_ends_at`,
+      )
+    }
+  }
+}
+
+/**
+ * The ANCHORED scenario, published over a COMPLETE league slate (F286).
+ *
+ * Every club in `clubs` that the scenario does not already play gets one
+ * ordinary game, paired in sorted order (away first), kicking off with the
+ * earliest game the scenario never postpones and running for that game's
+ * duration. The core scenario is carried through byte-for-byte: same id,
+ * version, seed, season, week, window, players, outages, corrections,
+ * revisions, and the same three game objects at their same ids.
+ *
+ * Pure. `core` is never mutated, and the result is a function of `core` and
+ * `clubs` alone.
+ */
+export function withFullSlate(
+  core: SyntheticScenario,
+  clubs: readonly string[] = NFL_CLUBS,
+): FullSlate {
+  const playing = new Set(slateClubs(core))
+  const strangers = [...playing].filter((c) => !clubs.includes(c)).sort()
+  if (strangers.length > 0) {
+    throw new Error(
+      `withFullSlate: scenario ${core.id} plays ${strangers.join('/')}, which NFL_CLUBS does not list — ` +
+        `the club roll must contain every club the §23.6 library names, or the slate it builds is not complete`,
+    )
+  }
+  const remaining = [...clubs].filter((c) => !playing.has(c)).sort()
+  if (remaining.length % 2 !== 0) {
+    throw new Error(
+      `withFullSlate: ${remaining.length} clubs are left over after ${core.id}'s own games (${remaining.join(', ')}) — ` +
+        `an odd number cannot be paired into games, and a club with no game is on bye at §7.3.6 (F286). ` +
+        `Refusing rather than leaving one club uncovered.`,
+    )
+  }
+  const staying = core.games.filter((g) => g.postponement === undefined)
+  if (staying.length === 0) {
+    throw new Error(
+      `withFullSlate: scenario ${core.id} postpones every one of its games — there is no in-week game to ` +
+        `hang the filler slate's kickoff on`,
+    )
+  }
+  const startOf = (g: SyntheticGameDef): number =>
+    Math.min(g.kickoffAt.getTime(), g.flexMove?.newKickoffAt.getTime() ?? Number.POSITIVE_INFINITY)
+  let source = staying[0]!
+  for (const g of staying) if (startOf(g) < startOf(source)) source = g
+  const kickoffMs = startOf(source)
+  const endMs = kickoffMs + source.durationMs
+
+  const fillers: SyntheticGameDef[] = []
+  for (let i = 0; i < remaining.length; i += 2) {
+    const awayTeam = remaining[i]!
+    const homeTeam = remaining[i + 1]!
+    fillers.push({
+      gameId: anchoredGameId(core.season, core.week, { awayTeam, homeTeam }),
+      homeTeam,
+      awayTeam,
+      kickoffAt: new Date(kickoffMs),
+      durationMs: source.durationMs,
+      // No players ⇒ no charted value can exist for a filler. Its own game
+      // end, never a scenario game's charted timing (`charted_late`'s slip is
+      // G1's observable and stays G1's).
+      chartedPostAt: new Date(endMs),
+      chartedSlaAt: new Date(endMs),
+    })
+  }
+  assertSlateInsideCore(core, fillers)
+  const scenario: SyntheticScenario = { ...core, games: [...core.games, ...fillers] }
+  return {
+    scenario,
+    fillerGameIds: fillers.map((g) => g.gameId),
+    // DERIVED from what was published, not from `clubs` — see the field.
+    clubs: slateClubs(scenario),
+  }
 }
 
 /**
