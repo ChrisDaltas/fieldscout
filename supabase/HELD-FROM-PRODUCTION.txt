@@ -205,4 +205,15 @@
 # read outside it is 063's on `profiles`. One trigger (`teams` — its function
 # runs on any UPDATE statement of the table and sends nothing for a
 # non-league row), no cron row.
-082-120
+# 121 (L.D2.2 #267 fix round, 2026-09-07): the `score_fanout` CLAIM + ACK
+# pair (PROGRESS R866 — two overlapping drains could leave a stale score
+# and an empty queue; spec v2.16.31 §22.3 "concurrent invocations are safe
+# by construction" made true): 109's queue gains two nullable lease columns
+# (`claimed_at`, `claim_token`, a pair CHECK) and two SECURITY DEFINER
+# service-role RPCs (`score_fanout_claim` — FOR UPDATE SKIP LOCKED + a
+# visibility-timeout lease, `p_now` injected; `score_fanout_ack` — the
+# by-(token, stamp) delete + release). Same mechanism, same explicit act.
+# No launch-surface table is touched: the ALTER is on 109's service-role-
+# only queue, both functions read and write it alone; no policy, trigger,
+# index, publication or cron change.
+082-121

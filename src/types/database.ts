@@ -2982,18 +2982,24 @@ export type Database = {
       }
       score_fanout: {
         Row: {
+          claim_token: string | null
+          claimed_at: string | null
           enqueued_at: string
           player_id: string
           season: number
           week: number
         }
         Insert: {
+          claim_token?: string | null
+          claimed_at?: string | null
           enqueued_at?: string
           player_id: string
           season: number
           week: number
         }
         Update: {
+          claim_token?: string | null
+          claimed_at?: string | null
           enqueued_at?: string
           player_id?: string
           season?: number
@@ -4409,6 +4415,21 @@ export type Database = {
           free: boolean
         }[]
       }
+      score_fanout_ack: {
+        Args: { p_claim_token: string; p_consumed: Json }
+        Returns: Json
+      }
+      score_fanout_claim: {
+        Args: { p_batch: number; p_lease_seconds?: number; p_now?: string }
+        Returns: {
+          claim_token: string
+          claimed_at: string
+          enqueued_at: string
+          player_id: string
+          season: number
+          week: number
+        }[]
+      }
       score_write_week_batch: {
         Args: { p_league_id: string; p_scores: Json; p_week: number }
         Returns: Json
@@ -4706,6 +4727,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 
