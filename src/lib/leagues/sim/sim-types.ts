@@ -10,8 +10,12 @@
  * supplies both.
  */
 
-/** The four M2 personas (plan §4.2; tasks-M2 §5). The Ghost is M4's
- *  (in-season) — deliberately absent here. */
+/** The four M2 personas (plan §4.2; tasks-M2 §5). The Ghost — the persona
+ *  that "abandons the league mid-season" (delivery plan §4.2) — is **M5's**,
+ *  not M4's: F211 routes it out of M4 with swap spots and `auto_sub_inactives`
+ *  because it leans on FAAB/waivers machinery M5 builds. Deliberately absent
+ *  here; do NOT add a `'ghost'` member until M5's breakdown says so.
+ *  (Corrected 2026-09-08 by L.D6.1 — this line said "The Ghost is M4's".) */
 export type PersonaKind = 'queue-drafter' | 'adp-drafter' | 'afk' | 'chaos'
 
 /**
@@ -75,6 +79,37 @@ export interface LeaguePlan {
   allAfk: boolean
   /** Auction-only knobs (undefined on a snake plan). */
   auction?: AuctionLeaguePlan
+  /** Season-mode knobs (undefined on a draft-only run) — L.D6.1. */
+  season?: SeasonLeaguePlan
+}
+
+/**
+ * The D299 settings matrix, built from the CURRENT schema — L.D6.1.
+ *
+ * TWO AXES D299 NAMES NO LONGER EXIST, and their absence is a RETIREMENT,
+ * not a gap:
+ *   - "strict/lax locks" cannot be `lineup_lock`: Q34(A) / migration 114
+ *     retired `first_game_of_week` and the enum is now single-valued
+ *     (`league-settings.ts:430`), and Q35 / migration 115 retired
+ *     `player_game_lock` (the strict Zod object refuses the key). The only
+ *     surviving lock axis is `allow_illegal_lineups`.
+ *   - "divisions 1/2" was cut to 1 by Q30 (d): the select renders one option
+ *     and the engine ignores the value (`league-settings.ts:368`).
+ *
+ * `schedule_mode` and `playoff_teams` are COUPLED, not independent: a
+ * `total_points` league must carry `playoff_teams = 0` (v2.16.25 / Q39 (C);
+ * `league-settings.ts:536-541` and migration 118 both refuse the pair).
+ */
+export interface SeasonLeaguePlan {
+  scheduleMode: 'h2h' | 'total_points'
+  medianGame: boolean
+  secondOpponent: boolean
+  /** The surviving lock axis (§7.3.6; default true). */
+  allowIllegalLineups: boolean
+  regularSeasonWeeks: number
+  /** 0 in a `total_points` league — the coupling above. */
+  playoffTeams: number
+  playoffStartWeek: number
 }
 
 /** The auction matrix axes L.C4.1 must cover at head (the five-lane rule in
@@ -208,4 +243,123 @@ export interface AuctionRunCounters {
   staleBidRefusals: number
   /** Chaos over-max bids answered with the E5 friendly refusal. */
   overMaxRefusals: number
+}
+
+// ---------------------------------------------------------------------------
+// Season run report — L.D6.1 (the contract L.D6.3's gate consumes)
+// ---------------------------------------------------------------------------
+
+/** The scenario→assertion vocabulary of D295's map. L.D6.3 asserts on NAMES,
+ *  never on prose, so this union is the contract between the two tasks. */
+export type ScenarioAssertionName =
+  | 'scores_written'
+  | 'standings_ordered'
+  | 'lock_moved_with_kickoff'
+  | 'postponed_players_score_zero'
+  | 'locks_released'
+  | 'finalized_without_game'
+  | 'zeros_flagged'
+  | 'stats_degraded_raised'
+  | 'stats_degraded_cleared'
+  | 'backfilled'
+  | 'finalization_unaffected'
+  | 'non_final_cells_recomputed'
+  | 'no_league_cell_changed'
+  | 'pending_not_zero'
+  | 'recomputed_in_window'
+
+export interface ScenarioAssertion {
+  name: ScenarioAssertionName
+  leagueId: string
+  leagueLabel: string
+  week: number
+  passed: boolean
+  /** What the run MEASURED (a rendered value, never a verdict word). */
+  observed: string
+  /** What the scenario's §23.6 declaration requires. */
+  expected: string
+}
+
+export interface ScenarioEvidence {
+  scenario: string
+  leagues: number
+  assertions: ScenarioAssertion[]
+}
+
+export interface SeasonLeagueResult {
+  leagueLabel: string
+  leagueId: string
+  teamCount: number
+  scheduleMode: 'h2h' | 'total_points'
+  /** The league's D299 axes, as actually set (the printed matrix row). */
+  matrixLine: string
+  weeksDriven: number[]
+  weeksFinal: number[]
+  /** Weeks left short of `final`, CLASSIFIED with their lawful explanation
+   *  (Q37 is OPEN — a held week is named, never counted as a failure). */
+  heldWeeks: Array<{ week: number; status: string; explanation: string }>
+  /** Bridged §23.6 players this league rosters / actually starts (the honest
+   *  coverage number — the library's world has eighteen players). */
+  bridgeRostered: number
+  bridgeStarted: number
+  /** Starters the worker reported `no_stat_row` for — Q42's count, reported
+   *  and never asserted on. */
+  noStatRowStarters: number
+  durationMs: number
+  failures: SeasonFailureLine[]
+}
+
+/** The season sweep's failure line, flattened for the report (the typed
+ *  interface lives in season-invariants.ts — this is its wire shape). */
+export interface SeasonFailureLine {
+  invariant: string
+  leagueLabel: string
+  leagueId: string
+  week: number | null
+  detail: string
+}
+
+export interface SeasonRunReport {
+  seed: number
+  runTag: string
+  /** A pure function of the printed inputs — see `scripts/sim.ts` on exactly
+   *  what a replay reproduces and what it does not. */
+  runId: string
+  scenario: string
+  scenarioLibraryVersion: number
+  /** The clock is STEP-DRIVEN (VirtualClock speed 0): every instant is
+   *  jumped to and injected. There is no `--speed` on this command — see
+   *  `scripts/sim.ts`. */
+  clockMode: 'step'
+  season: number
+  weeksRequested: number
+  startedAt: string
+  finishedAt: string
+  planLines: string[]
+  /** scenario player id → real players.id, one line per bridged slot. */
+  bridgeLines: string[]
+  leagues: SeasonLeagueResult[]
+  scenarioEvidence: ScenarioEvidence
+  invariantFailures: SeasonFailureLine[]
+  jobs: { advance: number; lockTick: number; finalize: number; scoreBatches: number; polls: number }
+  provenance: { statRows: number; synthetic: number; foreign: number }
+  externalCalls: number
+  workerErrors: string[]
+  /** Reconcile findings that are NOT one of the seven invariants: counted by
+   *  kind, with every ALERT line surfaced into `problems[]` (loud, visible,
+   *  and never silently promoted into a gate condition). */
+  reconcileSummary: { leagues: number; cells: number; counts: Record<string, number>; alerts: number; warns: number; infos: number }
+  /** Reconcile ALERTS this run CLASSIFIED as lawful, one line per reason with
+   *  its count — never dropped, never silently promoted (Q37/Q42's posture). */
+  reconcileClassified: string[]
+  /** The worker's own NAMED lawful states (skips, holds, "nothing to score"),
+   *  counted by reason — the opposite of an unhandled error (§23.2). */
+  workerNotes: string[]
+  cleanupSummary: string
+  censusBefore: string
+  censusAfter: string
+  problems: string[]
+  /** Never an empty success (CLAUDE.md): a run that drove nothing says why. */
+  reason: 'no_leagues' | 'no_weeks_driven' | null
+  green: boolean
 }
