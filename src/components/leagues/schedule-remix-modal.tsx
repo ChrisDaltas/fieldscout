@@ -191,6 +191,11 @@ export function ScheduleRemixPanel({
                 preview.preview()
               }}
               disabled={preview.isPending || confirm.isPending}
+              // L.D6.2: a seed can reproduce the current season exactly
+              // (`no_changes` — Confirm is then gated shut by design), so a
+              // browser spec must be able to roll again without selecting on
+              // the label.
+              data-remix-roll
             >
               <Icon name="repeat" size={13} /> Roll again
             </Button>
@@ -276,7 +281,12 @@ function PreviewPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-n-3">
-        <Badge variant="stroke">
+        {/* L.D6.2: the seed IDENTIFIES which preview is on screen. Under dev
+            StrictMode the mount effect runs twice, so two previews are minted
+            and only the later one renders — a spec that assumed the first
+            response was the rendered one was intermittently wrong (measured).
+            The seed is already shown; this only makes it addressable. */}
+        <Badge variant="stroke" data-remix-seed={plan.seed}>
           seed <span className="fs-num">{plan.seed}</span>
         </Badge>
         <span>
