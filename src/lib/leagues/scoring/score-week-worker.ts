@@ -64,11 +64,14 @@
  *      door's REPORT is read (F259(e)): `nothing_writable` on a week the
  *      worker expected to score is a PROBLEM, never success; `no_change` is
  *      the idempotency count; every `skipped[]` entry is named.
- *   8. ACK — ONE `score_fanout_ack(token, consumed)` call (121): every
- *      consumed row still carrying THIS token at the stamp the claim
- *      returned is deleted; everything else under the token is RELEASED
- *      (the not-ready of step 2, the held of step 4, the out-of-scope, and
- *      the re-stamped). Ingestion re-stamps an existing queue row on every
+ *   8. ACK — ONE `score_fanout_ack(token, consumed, deferred, deferUntil)`
+ *      call (121; 122): every consumed row still carrying THIS token at the
+ *      stamp the claim returned is deleted; the HELD rows (the not-ready of
+ *      step 2, the held of step 4) are handed back DEFERRED to
+ *      `time.now() + deferSeconds` (122 — R872's starvation closer: the
+ *      claim skips them until then, and ingestion's re-stamp clears the
+ *      hold); everything else under the token is RELEASED (the out-of-scope
+ *      and the re-stamped). Ingestion re-stamps an existing queue row on every
  *      real delta (D321(2) — the enqueue is `ON CONFLICT DO UPDATE` on the
  *      stamp; the lease columns are not in its payload, so the lease
  *      SURVIVES the re-stamp), so a delta that lands while a drain is in
@@ -482,6 +485,15 @@ export interface ScoreWorkerOptions {
    */
   leaseSeconds?: number
   /**
+   * R872's starvation closer (122 / F263(e)): a HELD row — not ready (F218)
+   * or `week_not_open` — is handed back with `deferred_until = time.now() +
+   * deferSeconds`, and the claim skips it until then, so a permanently held
+   * row costs a slot once per window instead of once per drain. Ingestion's
+   * re-stamp clears the deferral (a fresh delta is claimable at once).
+   * Default 30.
+   */
+  deferSeconds?: number
+  /**
    * The stack-lane scope seam (D313(2)'s shape): when set, only these
    * leagues are scored and a queue row is consumed only if it maps to one
    * of them — other suites' rows on the shared stack are left untouched.
@@ -564,6 +576,10 @@ export interface BatchReport {
   out_of_scope: number
   /** Rows held for a `week_not_open` league — left queued. */
   held: number
+  /** Held rows (not_ready + held) the ack DEFERRED — stamped with
+   *  `deferred_until` so the next claims skip them for a beat (122, R872);
+   *  a row whose stamp moved mid-drain is released instead (it is ready). */
+  deferred: number
   /** Queue rows DELETED by the ack — (token, stamp) matched. */
   drained: number
   /** Claimed rows handed back unconsumed: not-ready, held, out-of-scope,
@@ -588,12 +604,15 @@ export interface BatchReport {
   problems: string[]
   /** Why nothing was scored — never an empty success by default.
    *  `all_leased`: rows exist but every one is held by another drain in
-   *  flight (the R866 shape — named, not "empty"). */
-  reason: 'queue_empty' | 'all_leased' | 'nothing_ready' | 'nothing_mapped' | 'nothing_in_scope' | null
+   *  flight (the R866 shape — named, not "empty"); `all_deferred`: rows
+   *  exist, none is leased, every one is inside its R872 hold (122). Both
+   *  informational (R875), never alerts. */
+  reason: 'queue_empty' | 'all_leased' | 'all_deferred' | 'nothing_ready' | 'nothing_mapped' | 'nothing_in_scope' | null
 }
 
 const DEFAULT_BATCH = 500
 const DEFAULT_LEASE_SECONDS = 120
+const DEFAULT_DEFER_SECONDS = 30
 const POSTGREST_ROW_CAP = 1000
 const IN_CHUNK = 150
 
@@ -670,30 +689,57 @@ async function claimQueue(db: ScoreWorkerClient, limit: number, leaseSeconds: nu
 
 interface AckResult {
   deleted: number
+  deferred: number
   released: number
   missed: Array<{ season: number; week: number; player_id: string; reason: AckMissReason }>
 }
 
-/** Step 8 — `score_fanout_ack` (121): delete the consumed rows by (token, stamp); release the rest. */
-async function ackQueue(db: ScoreWorkerClient, token: string, consumed: readonly QueueRow[]): Promise<AckResult> {
+function ackRows(rows: readonly QueueRow[]): Json {
+  return rows.map((r) => ({
+    season: r.season,
+    week: r.week,
+    player_id: r.player_id,
+    enqueued_at: r.enqueued_at,
+  })) as unknown as Json
+}
+
+/**
+ * Step 8 — `score_fanout_ack` (121 / 122): delete the consumed rows by
+ * (token, stamp); DEFER the held rows by (token, stamp) to `deferUntil`
+ * (R872 — 122); release the rest.
+ */
+async function ackQueue(
+  db: ScoreWorkerClient,
+  token: string,
+  consumed: readonly QueueRow[],
+  deferred: readonly QueueRow[] = [],
+  deferUntil: string | null = null,
+): Promise<AckResult> {
   const { data, error } = await db.rpc('score_fanout_ack', {
     p_claim_token: token,
-    p_consumed: consumed.map((r) => ({
-      season: r.season,
-      week: r.week,
-      player_id: r.player_id,
-      enqueued_at: r.enqueued_at,
-    })) as unknown as Json,
+    p_consumed: ackRows(consumed),
+    ...(deferred.length > 0 && deferUntil !== null ? { p_deferred: ackRows(deferred), p_defer_until: deferUntil } : {}),
   })
   if (error) throw new Error(`score_fanout_ack: ${error.message}`)
   return data as unknown as AckResult
 }
 
-/** An empty claim is named: nothing queued, or everything leased to another drain (R866). */
-async function queueDepth(db: ScoreWorkerClient): Promise<number> {
-  const { count, error } = await db.from('score_fanout').select('player_id', { count: 'exact', head: true })
-  if (error) throw new Error(`score_fanout depth: ${error.message}`)
-  return count ?? 0
+interface QueueState {
+  total: number
+  leased: number
+  /** Rows inside their R872 hold at `now` (122). */
+  deferred: number
+}
+
+/** An empty claim is named: nothing queued, everything leased to another drain (R866), or everything deferred (R872). */
+async function queueState(db: ScoreWorkerClient, now: Date): Promise<QueueState> {
+  const total = await db.from('score_fanout').select('player_id', { count: 'exact', head: true })
+  if (total.error) throw new Error(`score_fanout depth: ${total.error.message}`)
+  const leased = await db.from('score_fanout').select('player_id', { count: 'exact', head: true }).not('claim_token', 'is', null)
+  if (leased.error) throw new Error(`score_fanout leased: ${leased.error.message}`)
+  const deferred = await db.from('score_fanout').select('player_id', { count: 'exact', head: true }).gt('deferred_until', now.toISOString())
+  if (deferred.error) throw new Error(`score_fanout deferred: ${deferred.error.message}`)
+  return { total: total.count ?? 0, leased: leased.count ?? 0, deferred: deferred.count ?? 0 }
 }
 
 async function readStatLines(
@@ -1010,6 +1056,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
   const { db } = deps
   const batchSize = Math.min(opts.batchSize ?? DEFAULT_BATCH, POSTGREST_ROW_CAP)
   const leaseSeconds = opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS
+  const deferSeconds = opts.deferSeconds ?? DEFAULT_DEFER_SECONDS
   const scope = opts.leagueIds ? new Set(opts.leagueIds) : null
   const report: BatchReport = {
     ran_at: deps.time.now().toISOString(),
@@ -1020,6 +1067,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     unmapped: 0,
     out_of_scope: 0,
     held: 0,
+    deferred: 0,
     drained: 0,
     released: 0,
     ack_missed: { restamped: 0, lease_lost: 0, gone: 0 },
@@ -1035,16 +1083,25 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
 
   // (1) CLAIM — the lease (121). `time.now()` is the claim's instant: the
   //     lease decision reads no clock the worker does not (D291).
-  const claim = await claimQueue(db, batchSize, leaseSeconds, deps.time.now())
+  const claimAt = deps.time.now()
+  const claim = await claimQueue(db, batchSize, leaseSeconds, claimAt)
   const queue = claim.rows
   report.claim_token = claim.token
   report.claimed = queue.length
   report.more = queue.length >= batchSize
   if (queue.length === 0 || claim.token === null) {
-    // Loud emptiness (rule 10): nothing queued, or every row is another
-    // drain's lease right now (the R866 shape) — said by name.
-    report.reason = (await queueDepth(db)) > 0 ? 'all_leased' : 'queue_empty'
-    report.problems.push(`drain scored nothing: ${report.reason}`)
+    // Loud emptiness (rule 10): nothing queued, every row another drain's
+    // lease right now (the R866 shape), or every row inside its R872 hold
+    // (122) — said by name, with the counts.
+    const state = await queueState(db, claimAt)
+    if (state.total === 0) report.reason = 'queue_empty'
+    else if (state.leased === 0 && state.deferred > 0) report.reason = 'all_deferred'
+    else report.reason = 'all_leased'
+    report.problems.push(
+      state.total === 0
+        ? `drain scored nothing: ${report.reason}`
+        : `drain scored nothing: ${report.reason} (queued ${state.total}, leased by another drain ${state.leased}, deferred ${state.deferred})`,
+    )
     return report
   }
   const token = claim.token
@@ -1061,6 +1118,9 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     }
 
     const toDelete: QueueRow[] = []
+    // The HELD rows — not ready (step 2) or week_not_open (step 4) — go back
+    // deferred (122, R872) so the next claims skip them for `deferSeconds`.
+    const toDefer: QueueRow[] = []
     let anyReady = false
     let anyMapped = false
     let anyInScope = false
@@ -1082,7 +1142,10 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         const landed = line !== undefined && instantMicros(line.updated_at) >= row.enqueued_micros
         const orphanReleased = line !== undefined && lastPollMicros !== null && lastPollMicros >= row.enqueued_micros
         if (landed || orphanReleased) ready.push(row)
-        else report.not_ready += 1
+        else {
+          report.not_ready += 1
+          toDefer.push(row)
+        }
       }
       if (ready.length === 0) continue
       anyReady = true
@@ -1182,6 +1245,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         if (!mappedHere) continue
         if (heldPlayers.has(row.player_id)) {
           report.held += 1
+          toDefer.push(row)
           continue
         }
         toDelete.push(row)
@@ -1191,10 +1255,19 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     // (8b) ONE ack: delete the consumed rows by (token, stamp); release
     //      everything else this drain leased. Every miss is named by what
     //      the ack measured (R869) and counted.
-    const ack = await ackQueue(db, token, toDelete)
+    //      The held rows are DEFERRED to the injected instant + the window
+    //      (D291: the deferral reads no clock the worker does not).
+    const deferUntil = toDefer.length > 0 ? new Date(deps.time.now().getTime() + deferSeconds * 1000).toISOString() : null
+    const ack = await ackQueue(db, token, toDelete, toDefer, deferUntil)
     acked = true
     report.drained = ack.deleted
+    report.deferred = ack.deferred
     report.released = ack.released
+    if (toDefer.length > 0) {
+      report.problems.push(
+        `queue hold: ${ack.deferred} of ${toDefer.length} held rows deferred until ${deferUntil} (R872 — not_ready ${report.not_ready}, week_not_open ${report.held}; a row re-stamped mid-drain is released, not deferred)`,
+      )
+    }
     for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
     if (ack.missed.length > 0) {
       const by = (reason: AckMissReason) => ack.missed.filter((m) => m.reason === reason).map((m) => `${m.season}/${m.week}/${m.player_id}`)

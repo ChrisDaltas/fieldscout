@@ -29,6 +29,7 @@
     "ingest:personas": "npx tsx scripts/ingest-persona-content.ts",
     "generate:posts": "npx tsx scripts/generate-persona-content.ts",
     "sim": "npx tsx scripts/sim.ts",
+    "reconcile": "npx tsx scripts/reconcile.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:unit": "vitest run --exclude '**/node_modules/**' --exclude '**/*-db.test.ts' --exclude '**/m1-gate/**'",

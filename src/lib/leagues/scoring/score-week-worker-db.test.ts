@@ -456,7 +456,9 @@ async function enqueue(playerIds: string[], week: number, stamp: string): Promis
     service
       .from('score_fanout')
       .upsert(
-        playerIds.map((player_id) => ({ season: SEASON, week, player_id, enqueued_at: stamp })),
+        // Ingestion's payload exactly (ingest-week.ts): the stamp + the
+        // deferral cleared (122 — a fresh delta never waits out an R872 hold).
+        playerIds.map((player_id) => ({ season: SEASON, week, player_id, enqueued_at: stamp, deferred_until: null })),
         { onConflict: 'season,week,player_id', ignoreDuplicates: false },
       )
       .select('player_id'),
@@ -761,8 +763,23 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(held.drained).toBe(0)
     expect(held.leagues).toEqual([])
     expect((await queued()).map((q) => q.player_id)).toEqual([P.rb1])
+    // 122 / R872: the held row went back DEFERRED (the injected instant +
+    // 30 s) — a drain inside the hold claims nothing and SAYS so; the row
+    // is unleased the whole time (deferred, never leased-and-hidden).
+    expect(held.deferred).toBe(1)
+    expect(held.problems.some((p) => p.includes('1 of 1 held rows deferred until 2099-09-13T20:00:35.000Z'))).toBe(true)
+    const heldRow = (await service.from('score_fanout').select('deferred_until, claim_token').eq('player_id', P.rb1).eq('week', 1).single()).data
+    expect(new Date(heldRow!.deferred_until!).toISOString()).toBe('2099-09-13T20:00:35.000Z')
+    expect(heldRow!.claim_token).toBeNull()
+    const inHold = await drain()
+    expect(inHold.claimed).toBe(0)
+    expect(inHold.reason).toBe('all_deferred')
+    expect(inHold.problems).toEqual(['drain scored nothing: all_deferred (queued 1, leased by another drain 0, deferred 1)'])
 
-    // The stats land (the RB moved: 87 → 97 yds ⇒ 16.00 + 1.00 = 17.00; T1 92.08 + 1 = 93.08).
+    // The stats land — ingestion's order (R706): the queue row re-stamped
+    // (which CLEARS the hold, 122) and then the line (the RB moved: 87 → 97
+    // yds ⇒ 16.00 + 1.00 = 17.00; T1 92.08 + 1 = 93.08).
+    await enqueue([P.rb1], 1, STAMP_LATER)
     await plantLine(P.rb1, 1, { rush_yards: 97, rush_tds: 1, receptions: 4, receiving_yards: 33, fumbles_lost: 1 }, STAMP_LATER)
     const scored = await drain()
     expect(scored.not_ready).toBe(0)
@@ -782,6 +799,8 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     )
     expect(earlier.not_ready).toBe(1)
     expect(earlier.drained).toBe(0)
+    expect(earlier.deferred).toBe(1) // the orphan's hold (122): nothing re-stamps an orphan, so the hold must LAPSE
+    clock.advanceBy(31_000) // past the 30 s hold — the next claim sees the row again
     const released = await runScoreWeekBatch(
       { time: clock, db: workerDb, lastPollCompletedAt: async () => STAMP_LATER_2 },
       { batchSize: 1000, leagueIds: [fx.l1, fx.l2, fx.l3, fx.l4] },
@@ -907,11 +926,15 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(report.held).toBe(1)
     expect(report.skipped).toBe(1)
     expect(report.drained).toBe(1) // f1's row consumed; h1's held
+    expect(report.deferred).toBe(1) // …and DEFERRED (122, R872): a week_not_open row stops costing a slot per drain
     expect((await queued()).map((q) => q.player_id)).toEqual([P.h1])
     expect(rpcCalls).toEqual([])
-    // Open L1's week 2: the held row scores on the next drain — T1 has no
+    // Open L1's week 2: the held row scores once its hold lapses — T1 has no
     // week-2 lineup row, so the WR is unstarted there (named), the row consumed.
     await must(service.from('league_weeks').update({ status: 'live' }).eq('league_id', fx.l1).eq('week', 2), 'L1 week 2 → live')
+    const inHold = await drain()
+    expect(inHold.reason).toBe('all_deferred') // opened, but inside the 30 s hold — nothing claimed, said by name
+    clock.advanceBy(31_000)
     const next = await drain()
     expect(league(next, fx.l1, 2)).toMatchObject({ outcome: 'skipped', bench_player_ids: [P.h1], affected_team_ids: [] })
     expect(await queued()).toEqual([])
@@ -1057,7 +1080,9 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(held.not_ready).toBe(1)
     expect(held.drained).toBe(0)
     expect(held.released).toBe(1) // handed back, not leased away
+    expect(held.deferred).toBe(1) // …deferred (122): the next poll's re-stamp lifts the hold
     expect(await queuedRaw(P.k1, 1)).toMatch(/\.123456/)
+    await enqueue([P.k1], 1, STAMP_MICRO) // ingestion's order (R706): the re-stamp (clears the hold), then the line
     await plantLine(P.k1, 1, K_FG4, STAMP_MICRO)
     const landed = await drain()
     expect(landed.not_ready).toBe(0)
@@ -1086,7 +1111,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     const leased = await drain()
     expect(leased.claimed).toBe(0)
     expect(leased.reason).toBe('all_leased')
-    expect(leased.problems).toContain('drain scored nothing: all_leased')
+    expect(leased.problems).toContain('drain scored nothing: all_leased (queued 2, leased by another drain 2, deferred 0)')
 
     // Session 1 releases (an empty ack — the worker's crash-path call);
     // session 2 "crashed" and never acks.

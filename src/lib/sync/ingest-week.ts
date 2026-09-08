@@ -48,7 +48,18 @@
  * (the next poll's diff reads the stored row as current) — a silently stale
  * score. `ON CONFLICT DO UPDATE SET enqueued_at` closes that: the stamp
  * moves, the worker's conditional delete misses, the row is re-drained. One
- * row per (season, week, player) either way — the PK dedupe stands.
+ * row per (season, week, player) either way — the PK dedupe stands. Since
+ * 122 the same upsert also clears `deferred_until` (the worker's R872 hold
+ * on a not-ready / week-not-open row): a fresh delta never waits out a hold.
+ *
+ * The last-poll surface (F217 / F218 R714 / F263(e)): this module does NOT
+ * persist anything about the poll itself — the caller-owned tracker is the
+ * in-process flag, and the ROUTE (L.D2.3, `ingest-flags.ts`) writes
+ * `system_flags` after a poll returns: the degraded count across
+ * invocations and `ingest_poll:<season>:<week>.completed_at = polledAt`
+ * (the worker's orphan escape reads that key). Kept out of here so the
+ * harness / sim / gates run this function against nothing but the tables
+ * it owns.
  *
  * Never partial data (§23.2): every provider read happens BEFORE the first
  * DB write, and a failed read writes nothing and records ONE failed poll on
@@ -747,10 +758,15 @@ export async function ingestWeek(
         week,
         player_id: row.player_id,
         enqueued_at: stamp, // the SAME instant as the stat row's updated_at below
+        // 122 (R872 / F263(e)): a fresh delta CLEARS a deferral the worker
+        // put on a held row — it is claimable at once. PostgREST SETs only
+        // the payload's columns, so the lease pair is untouched (121).
+        deferred_until: null,
       }))
-      // ON CONFLICT DO UPDATE SET enqueued_at — one row per PK (D292's
-      // dedupe, 109's banner), the stamp moved to THIS delta's instant so
-      // the worker's by-stamp ack cannot consume a newer delta (D321(2)).
+      // ON CONFLICT DO UPDATE SET enqueued_at, deferred_until — one row per
+      // PK (D292's dedupe, 109's banner), the stamp moved to THIS delta's
+      // instant so the worker's by-stamp ack cannot consume a newer delta
+      // (D321(2)); the deferral cleared (122).
       const { data, error } = await db
         .from('score_fanout')
         .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: false })

@@ -54,7 +54,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 set local time zone 'UTC';   -- the stamps below are stored literals
 
-select plan(79);
+select plan(79);   -- the ack's return literals carry `deferred` since 122 (moved in place, R872 — 070 pins the deferral itself)
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -75,11 +75,11 @@ select ok(
    from pg_proc p where p.proname = 'score_fanout_ack'),
   'A2 score_fanout_ack is SECURITY DEFINER with search_path=''''');
 select ok(
-  not has_function_privilege('authenticated', 'public.score_fanout_ack(uuid, jsonb)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.score_fanout_ack(uuid, jsonb)', 'EXECUTE'),
+  not has_function_privilege('authenticated', 'public.score_fanout_ack(uuid, jsonb, jsonb, timestamptz)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.score_fanout_ack(uuid, jsonb, jsonb, timestamptz)', 'EXECUTE'),
   'A2b …REVOKEd from authenticated + anon');
 select ok(
-  has_function_privilege('service_role', 'public.score_fanout_ack(uuid, jsonb)', 'EXECUTE'),
+  has_function_privilege('service_role', 'public.score_fanout_ack(uuid, jsonb, jsonb, timestamptz)', 'EXECUTE'),   -- 122's signature (moved in place, R872 — the 2-arg form is dropped; 070 pins it GONE)
   'A2c …and service_role CAN execute it');
 select has_column('public', 'score_fanout', 'claimed_at', 'A3 score_fanout.claimed_at exists (121)');
 select col_type_is('public', 'score_fanout', 'claimed_at', 'timestamp with time zone', 'A3b …timestamptz');
@@ -246,7 +246,7 @@ select set_config('pgtap.ack', public.score_fanout_ack(
        jsonb_build_object('season', 2026, 'week', 1, 'player_id', 'q69-p2', 'enqueued_at', '2026-09-07T11:01:00+00:00'),
        jsonb_build_object('season', 2026, 'week', 1, 'player_id', 'q69-p9', 'enqueued_at', '2026-09-07T11:01:00+00:00'))
 )::text, true);
-select is((current_setting('pgtap.ack')::jsonb) - 'missed', '{"deleted": 2, "released": 2}'::jsonb,
+select is((current_setting('pgtap.ack')::jsonb) - 'missed', '{"deleted": 2, "deferred": 0, "released": 2}'::jsonb,
   'G1 deleted 2 (p1 at its six-digit stamp, p5 at now()''s six digits through jsonb text — exact), released 2 (p2 re-stamped, p4 unconsumed)');
 select is((current_setting('pgtap.ack')::jsonb) -> 'missed',
   '[{"week": 1, "reason": "restamped", "season": 2026, "player_id": "q69-p2"},
@@ -264,7 +264,7 @@ select is((select array_agg(player_id order by player_id) from public.score_fano
   'G3 the next claim (one second on) takes exactly the released p2 and p4 — p3 is leased elsewhere');
 -- Release those two again so the idempotence cell reads a clean state.
 select set_config('pgtap.tok2', (select claim_token::text from score_fanout where player_id = 'q69-p2'), true);
-select is(public.score_fanout_ack(current_setting('pgtap.tok2')::uuid, '[]'::jsonb), '{"missed": [], "deleted": 0, "released": 2}'::jsonb,
+select is(public.score_fanout_ack(current_setting('pgtap.tok2')::uuid, '[]'::jsonb), '{"missed": [], "deleted": 0, "deferred": 0, "released": 2}'::jsonb,
   'G4 an empty ack under a live token is a pure RELEASE (the worker''s crash-path `finally`): 0 deleted, 2 released');
 
 -- Idempotence (rule 10): the same ack again under the original token.
@@ -272,7 +272,7 @@ select is(public.score_fanout_ack(
   current_setting('pgtap.tok')::uuid,
   (select jsonb_agg(jsonb_build_object('season', season, 'week', week, 'player_id', player_id, 'enqueued_at', enqueued_at) order by player_id)
      from q69_cf where player_id in ('q69-p1', 'q69-p5'))) - 'missed',
-  '{"deleted": 0, "released": 0}'::jsonb,
+  '{"deleted": 0, "deferred": 0, "released": 0}'::jsonb,
   'G5 the SAME ack again: 0 deleted, 0 released (idempotent)');
 select is((public.score_fanout_ack(
   current_setting('pgtap.tok')::uuid,
@@ -280,7 +280,7 @@ select is((public.score_fanout_ack(
      from q69_cf where player_id in ('q69-p1', 'q69-p5'))) -> 'missed'),
   '[{"week": 1, "reason": "gone", "season": 2026, "player_id": "q69-p1"}, {"week": 1, "reason": "gone", "season": 2026, "player_id": "q69-p5"}]'::jsonb,
   'G5b …and names both consumed rows `gone`');
-select is(public.score_fanout_ack('dd000000-0000-4000-8000-000000000001', '[]'::jsonb), '{"missed": [], "deleted": 0, "released": 0}'::jsonb,
+select is(public.score_fanout_ack('dd000000-0000-4000-8000-000000000001', '[]'::jsonb), '{"missed": [], "deleted": 0, "deferred": 0, "released": 0}'::jsonb,
   'G6 an unknown token releases nothing (another drain''s rows are never touched)');
 select is((select count(*) from score_fanout where player_id like 'q69-%'), 3::bigint, 'G7 …and the queue is unchanged by G5/G6');
 
@@ -293,7 +293,7 @@ select is((select array_agg(player_id) from q69_c4), array['q69-p4'], 'G8 claim(
 select is(public.score_fanout_ack(
   (select claim_token from q69_c4),
   jsonb_build_array(jsonb_build_object('season', 2026, 'week', 1, 'player_id', 'q69-p4', 'enqueued_at', '2026-09-07T11:03:00.000001+00:00'))),
-  '{"missed": [{"week": 1, "reason": "restamped", "season": 2026, "player_id": "q69-p4"}], "deleted": 0, "released": 1}'::jsonb,
+  '{"missed": [{"week": 1, "reason": "restamped", "season": 2026, "player_id": "q69-p4"}], "deleted": 0, "deferred": 0, "released": 1}'::jsonb,
   'G8b an ack ONE MICROSECOND off the stamp deletes nothing — `restamped`, released (the stamp is the key at full precision)');
 select is((select (claim_token is null, claimed_at is null) from score_fanout where player_id = 'q69-p4'), (true, true),
   'G8c …and p4 is back in the queue, unleased');
