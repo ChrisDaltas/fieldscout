@@ -5,6 +5,7 @@ import {
   cleanupSweep,
   readLeague,
   readLeagueScheduledInstant,
+  readLeagueScoringTemplateName,
   serviceClient,
 } from './helpers/harness'
 import { E2E_LEAGUE_PREFIX, STORAGE_STATE } from './helpers/local-env'
@@ -72,10 +73,34 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
         'aria-pressed',
         'true',
       )
+      // Scoring style — the step OPENS on **No PPR**, and that is the
+      // RULING, not an accident: spec §7.3.3's system-default bullet
+      // (v2.16.11, Chris 2026-09-01, verbatim "Scout Standard should be the
+      // default selected template") ⇒ the style step opens on Scout
+      // Standard's own family so the preselected card is visible
+      // (`league-create-modal.tsx`'s `scoringStyle` initial state; SC.4).
+      // This spec used to assume the pre-SC.3 opening side was still PPR
+      // and walked straight past this step — which is exactly why step 3's
+      // PPR-only card never rendered (F292). Assert the ruled opening side,
+      // then flip to PPR deliberately: the flip IS coverage (it narrows
+      // step 3's list to the four PPR templates and moves the preselection
+      // to Scout PPR), and it keeps step 3 picking a NON-default card, so
+      // the pick itself is observable rather than indistinguishable from
+      // the preselection.
+      await expect(
+        commish.getByRole('button', { name: /^No PPR/ }),
+      ).toHaveAttribute('aria-pressed', 'true')
+      await commish.getByRole('button', { name: /^PPR/ }).click()
+      await expect(commish.getByRole('button', { name: /^PPR/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
       await commish.getByRole('button', { name: 'Next', exact: true }).click()
 
-      // Step 3 — Scoring template: the default style pick is PPR, which
-      // filters the card list to the PPR templates — pick ESPN Full PPR.
+      // Step 3 — Scoring template: the PPR style filters the card list to
+      // the PPR templates — pick ESPN Full PPR (deliberately NOT the
+      // preselected Scout PPR, so the click is what decides the league's
+      // scoring; the stored reference is asserted at the end of the test).
       await commish.getByRole('button', { name: /ESPN Full PPR/ }).click()
       await commish.getByRole('button', { name: 'Create league', exact: true }).click()
 
@@ -134,6 +159,19 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
       const leagueRow = await readLeague(serviceClient(), leagueId)
       expect(leagueRow.name).toBe(LEAGUE_NAME)
       expect(leagueRow.status).toBe('scheduled')
+
+      // The step-3 pick REACHED the server: the league's stored scoring
+      // reference is the card that was clicked, not the family's
+      // preselection. Without this line a click that silently missed the
+      // card would still be green — the wizard would submit the
+      // preselected Scout PPR and every later assertion would pass — which
+      // is the R936 class (a spec that passes against the break it claims
+      // to prove). Falsifiable: pick Scout PPR above and this reads
+      // "Scout PPR". (Named job-4 helper — R297.)
+      const templateName = await readLeagueScoringTemplateName(serviceClient(), leagueId)
+      expect(templateName, 'the league was born on the PICKED template').toBe(
+        'ESPN Full PPR',
+      )
 
       // The F49 arm held: the UI-set instant's year FOLLOWED the bumped
       // season (non-literal by construction — never cron bait). Falsifiable:

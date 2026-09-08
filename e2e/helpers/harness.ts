@@ -52,7 +52,10 @@ type Supabase = SupabaseClient<Database>
  *      in-season reads — the NFL week's stored instants, a team's roster
  *      and stored lineup, a week's matchups and results — because R297
  *      forbids a spec inlining a service query and these are the same
- *      read-only class, not a new job);
+ *      read-only class, not a new job; **F292's fix adds one more of the
+ *      same class — the league's stored scoring reference resolved to the
+ *      template NAME, so the journey spec can assert the wizard's card
+ *      click is what the league was born on**);
  *   5. the journey spec's F49 season-year bump (L.B7.1): the settings UI's
  *      schedule picker pins year = the league's SEASON, so a UI-set instant
  *      on a 2026-season league is live-cron auto-start bait from its own
@@ -715,6 +718,43 @@ export async function readLeague(
     .single()
   throwIfError(error, 'read league row')
   return { status: data!.status as string, name: data!.name }
+}
+
+/**
+ * The league's stored scoring reference, resolved to the template's NAME —
+ * the journey spec's proof that the wizard's step-3 card click is what the
+ * league was born on (§7.3.3; `create_league`'s template-only birth
+ * predicate, D170). Two explicit reads rather than a PostgREST embed so a
+ * missing reference is named loudly instead of arriving as an empty
+ * relation: a league with a NULL `scoring_system_id` throws here, because
+ * "no template" is a defect at this call site, never a passing read
+ * (CLAUDE.md — never let "nothing happened" mean "it worked").
+ */
+export async function readLeagueScoringTemplateName(
+  service: Supabase,
+  leagueId: string,
+): Promise<string> {
+  const { data: league, error: leagueError } = await service
+    .from('leagues')
+    .select('scoring_system_id')
+    .eq('id', leagueId)
+    .single()
+  throwIfError(leagueError, 'read league scoring reference')
+  const scoringSystemId = league?.scoring_system_id as string | null
+  if (!scoringSystemId) {
+    throw new Error(
+      `readLeagueScoringTemplateName: league ${leagueId} has no ` +
+        'scoring_system_id — a league is born on a template (§7.3.3/D170), ' +
+        'so a NULL here is a defect, not an empty answer.',
+    )
+  }
+  const { data: system, error: systemError } = await service
+    .from('scoring_systems')
+    .select('name')
+    .eq('id', scoringSystemId)
+    .single()
+  throwIfError(systemError, 'read scoring system name')
+  return system!.name as string
 }
 
 /** The stored §7.3 schedule instant (settings.draft.draft_scheduled_at) —
