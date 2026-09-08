@@ -34,6 +34,19 @@ import { stackInclude } from '../../vitest.shared'
  * pattern to be earning its place, so the widening cannot rot into the R608
  * shape (a pattern that looks like coverage over files this job never runs).
  *
+ * WHAT THE FIRST CUT OF ARM 6 STILL COULD NOT SEE (R932/R935, 2026-09-08). A
+ * review whose measurer was told to DEFEAT this pin defeated it twice, and both
+ * holes were in the pin's own PREMISES rather than in its sweeps. (i) The seeds
+ * came from `src/` while the LANE's file set is repo-wide, so a stack suite one
+ * directory over — `scripts/f290-probe-db.test.ts` — was collected by the stack
+ * project (53 files) with this pin 8/8 GREEN and its helper watched by nothing:
+ * F290 verbatim, beside its own guard. (ii) `pathsBlocks` ended a block at the
+ * first line it could not parse, so `- "src/**"` appended to a filter was
+ * invisible and the pin stayed green while the expensive lane fired on every
+ * PR. Both are now asserted: `strayStackFiles` (arms 5 and 6) and `unreadable`
+ * (arm 0). THE LESSON IS F94's, a third time: the sweep was never the weak
+ * part — what it swept OVER was.
+ *
  * This file runs in the UNIT lane (no stack, no database) so it fires on every
  * PR through `ci.yml`, including the ones that never reach `db.yml` — which is
  * the only place it could catch a filter that has stopped matching.
@@ -58,6 +71,13 @@ const INFRA_PATHS = [
   '.github/workflows/db.yml',
   'vitest.shared.ts',
   'vitest.config.ts',
+  // R934: the replay runs the repo's OWN pinned `supabase` devDependency via
+  // `npm ci` + `npx` (F280/D325), so a CLI bump — a manifest-and-lockfile-only
+  // diff, as `a7a76c3` literally is — was an input the banner declared and the
+  // filter did not watch. `package.json` also carries `test:stack`, the third
+  // list defining what this job runs.
+  'package.json',
+  'package-lock.json',
 ]
 
 /** The SOURCE half (F290): the modules the stack suites import. Enumerated
@@ -87,21 +107,36 @@ const SOURCE_PATHS = [
  *  the file is ours, its shape is fixed, and arm 0 asserts we found exactly
  *  the two blocks we expect — a restructure REDS here instead of silently
  *  matching nothing (the CLAUDE.md "nothing happened means it worked" trap
- *  is exactly what a YAML query returning `[]` would be). */
-function pathsBlocks(source: string): string[][] {
-  const blocks: string[][] = []
+ *  is exactly what a YAML query returning `[]` would be).
+ *
+ *  A LIST ENTRY THIS CANNOT READ IS A RED, NOT THE END OF THE LIST (R935).
+ *  The first cut ended the block on the first unparseable line, so an entry in
+ *  any other YAML quoting was simply invisible: appending `- "src/**"` left the
+ *  pin 8/8 GREEN while GitHub would then boot the expensive lane on every PR —
+ *  precisely the over-trigger arm 2 exists to prevent. The block now ends only
+ *  on a blank line or a dedent to a non-list key, and every `-` line the entry
+ *  regex cannot read is returned in `unreadable` for arm 0 to fail on by name.
+ *  It matters here because the 12-entry source half sits at the TAIL of both
+ *  blocks, which is where new entries land. */
+type PathsBlock = { entries: string[]; unreadable: string[] }
+
+function pathsBlocks(source: string): PathsBlock[] {
+  const blocks: PathsBlock[] = []
   const lines = source.split('\n')
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*paths:\s*$/.test(lines[i]!)) continue
     const entries: string[] = []
+    const unreadable: string[] = []
     for (let j = i + 1; j < lines.length; j++) {
       const line = lines[j]!
+      if (/^\s*$/.test(line)) break // a blank line ends the block
       if (/^\s*#/.test(line)) continue
+      if (!/^\s*-\s/.test(line)) break // a dedent to a sibling key ends it
       const match = /^\s*-\s*'([^']+)'\s*$/.exec(line)
-      if (match === null) break
-      entries.push(match[1]!)
+      if (match === null) unreadable.push(line.trim())
+      else entries.push(match[1]!)
     }
-    blocks.push(entries)
+    blocks.push({ entries, unreadable })
   }
   return blocks
 }
@@ -128,6 +163,29 @@ function allTestFiles(dir: string, acc: string[] = []): string[] {
     else if (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.tsx')) {
       acc.push(path.relative(REPO_ROOT, full))
     }
+  }
+  return acc
+}
+
+/** What this repo-wide walk skips, ANCHORED THE WAY `vitest.shared.ts`'s
+ *  `sharedExclude` anchors it — because the point of the walk is to see the
+ *  same tree the runner collects from. `.claude/**` (worktrees are FULL
+ *  CHECKOUTS of this repo — L.B1.1: 78 collected files = 2 x 39) and `e2e/**`
+ *  (Playwright's) are ROOT-anchored globs there, so a nested `scripts/e2e/`
+ *  would still be collected and must still be swept here; `node_modules` and
+ *  `.git` are skipped at any depth. This is the ONE walk that must not be
+ *  rooted at `src/` — see `strayStackFiles`. */
+const UNSWEPT_ANYWHERE = new Set(['node_modules', '.git'])
+const UNSWEPT_AT_ROOT = new Set(['.claude', '.next', 'e2e'])
+
+function allRepoFiles(dir: string, acc: string[] = []): string[] {
+  const atRoot = dir === REPO_ROOT
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (UNSWEPT_ANYWHERE.has(entry.name)) continue
+    if (atRoot && UNSWEPT_AT_ROOT.has(entry.name)) continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) allRepoFiles(full, acc)
+    else acc.push(path.relative(REPO_ROOT, full))
   }
   return acc
 }
@@ -267,17 +325,49 @@ function importClosure(seeds: string[]): Map<string, string> {
 }
 
 const source = readFileSync(WORKFLOW, 'utf8')
-const blocks = pathsBlocks(source)
+const parsedBlocks = pathsBlocks(source)
+const blocks = parsedBlocks.map((block) => block.entries)
 
 const stackRegexes = stackInclude.map(globToRegExp)
 const stackFiles = allTestFiles(path.join(REPO_ROOT, 'src')).filter((file) =>
   stackRegexes.some((re) => re.test(file)),
 )
 
+/** THE SEED ROOT IS LOAD-BEARING, SO IT IS ASSERTED RATHER THAN INFERRED
+ *  (R932). `stackFiles` above is seeded from `src/` only — but `stackInclude`'s
+ *  first pattern is the repo-wide `**` + `/*-db.test.ts`, and `test:stack` is a
+ *  SUBSTRING filter over every project, so the LANE's file set is repo-wide
+ *  while this pin's is `src/`-scoped. Measured, before this assert existed: a
+ *  probe suite at `scripts/f290-probe-db.test.ts` importing
+ *  `./f290-probe-helper.ts` was collected by the stack project (53 files, so
+ *  the Database job runs it) while this pin stayed 8/8 GREEN and the helper was
+ *  matched by no pattern in either block — F290 recurring verbatim, one
+ *  directory over, with the pin that guards it green. Arms 5 and 6 therefore
+ *  assert the convention holds before sweeping under it. */
+const strayStackFiles = allRepoFiles(REPO_ROOT).filter(
+  (file) => !file.startsWith(`src${path.sep}`) && stackRegexes.some((re) => re.test(file)),
+)
+
+const STRAY_SEED_MESSAGE =
+  'a file the stack lane RUNS lives outside `src/`, which is the only root this pin seeds from ' +
+  '(R932). Its imports are never swept, so a source-only change to them would merge with the ' +
+  'Database job never running — F290 one directory over. Move the suite under `src/`, or widen ' +
+  'the seed root here AND add the covering pattern to SOURCE_PATHS and to BOTH paths blocks'
+
 describe('db.yml triggers on the files its own step runs (R608)', () => {
-  it('0. the workflow still has exactly two `paths:` filters, both non-empty', () => {
+  it('0. the workflow still has exactly two `paths:` filters, both non-empty and fully readable', () => {
     expect(blocks, 'db.yml restructured — this pin cannot see its filters any more').toHaveLength(2)
     for (const block of blocks) expect(block.length).toBeGreaterThan(0)
+    for (const [index, block] of parsedBlocks.entries()) {
+      expect(
+        block.unreadable,
+        `paths filter #${index + 1} carries a list entry this pin cannot read (R935). Every arm ` +
+          'below reasons about the entries it CAN read, so an unreadable one is an unpinned ' +
+          'trigger — a `- "src/**"` appended here once left the pin 8/8 green while the ' +
+          'expensive lane fired on every PR. Quote it with single quotes, or teach the entry ' +
+          'regex the new shape',
+      ).toEqual([])
+    }
   })
 
   it('1. UNDER-TRIGGER: every `stackInclude` pattern appears VERBATIM in both filters', () => {
@@ -352,6 +442,7 @@ describe('db.yml triggers on the files its own step runs (R608)', () => {
       stackFiles,
       'the m1-gate journey is the file R608 caught unwatched — it must stay in the swept set',
     ).toContain(path.join('src', 'lib', 'leagues', 'm1-gate', 'm1-phase-a-journey.test.ts'))
+    expect(strayStackFiles, STRAY_SEED_MESSAGE).toEqual([])
     for (const [index, regexes] of filterRegexes.entries()) {
       const unwatched = stackFiles.filter((file) => !regexes.some((re) => re.test(file)))
       expect(unwatched, `files run by the job but unwatched by paths filter #${index + 1}`).toEqual(
@@ -366,6 +457,7 @@ describe('db.yml triggers on the files its own step runs (R608)', () => {
     expect(ALIASES.length, 'tsconfig.json exposed no `paths` alias — the @/ half of every ' +
       'specifier would resolve to nothing and the closure would be a fraction of itself').toBeGreaterThan(0)
     expect(stackFiles.length, 'no stack-lane seeds — the closure is vacuous').toBeGreaterThan(25)
+    expect(strayStackFiles, STRAY_SEED_MESSAGE).toEqual([])
 
     const closure = importClosure(stackFiles)
     expect(

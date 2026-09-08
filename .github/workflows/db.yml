@@ -74,6 +74,19 @@ name: Database
 # call, no version drift between CI and `npx supabase db reset` locally.
 # The stack-backed step runs only if the stack STARTED (pgTAP may still red
 # it), so a stack that never came up reds ONE step with its own message.
+#
+# ...WHICH IS WHY `package.json` AND `package-lock.json` ARE IN THE FILTER
+# (2026-09-08, R934). The four lines above declare the pinned devDependency an
+# INPUT to this replay, and nothing watched it: a CLI bump is a manifest-and-
+# lockfile-only diff (`a7a76c3`, "exact-pin supabase CLI", is exactly that file
+# set) matching neither block, so it would merge with this job never running
+# and the red would land on the next unrelated `supabase/**` PR — verbatim the
+# F94 shape this banner already records one act up. `package.json` is a lane-
+# DEFINITION file besides: `test:stack` ("vitest run 'db.test' 'm1-gate'") is
+# the third list describing what this step runs, beside `stackInclude` and the
+# filter below. The cost is knowingly taken: every dependency bump now boots
+# the stack. That is the correct direction — a bump is precisely the change
+# that can break a replay without touching a line of our own code.
 
 on:
   pull_request:
@@ -85,6 +98,9 @@ on:
       - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
+      # the pinned CLI this replay RUNS, and `test:stack` itself (R934)
+      - 'package.json'
+      - 'package-lock.json'
       # the SOURCE those suites import — the measured transitive closure
       # (F290). NOT `src/**`: see the banner.
       - 'src/lib/leagues/**'
@@ -109,6 +125,9 @@ on:
       - 'src/lib/leagues/m1-gate/**/*.test.ts'
       - 'vitest.shared.ts'
       - 'vitest.config.ts'
+      # the pinned CLI this replay RUNS, and `test:stack` itself (R934)
+      - 'package.json'
+      - 'package-lock.json'
       # the SOURCE those suites import — the measured transitive closure
       # (F290). NOT `src/**`: see the banner.
       - 'src/lib/leagues/**'
