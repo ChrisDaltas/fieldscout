@@ -39,7 +39,7 @@ export const NO_WEEK_COPY = 'No schedule yet — it is generated the moment the 
 export const PENDING_SCORE_COPY = 'pending'
 export const WEEK_NOT_STARTED_TITLE = 'No score yet — the week has not started.'
 export const PENDING_SCORE_TITLE =
-  'Pending — a starter has an undelivered stat, or no scoring batch has reached this team yet (E61: never shown as 0.00).'
+  'Pending — a starter has an undelivered stat, or no scoring batch has reached this team yet; never shown as 0.00.'
 export const BOX_SUM_LABEL = 'Box total'
 export const LEADERBOARD_TITLE = 'Week leaderboard'
 export const MEDIAN_ROW_LABEL = 'vs League Median'
@@ -127,7 +127,7 @@ export function resultChip(result: string | null | undefined): ResultChip {
     case 'loss':
       return { text: 'L', variant: 'pink', title: 'Loss', decided: true }
     case 'tie':
-      return { text: 'T', variant: 'stroke', title: 'Tie (two-decimal — E38)', decided: true }
+      return { text: 'T', variant: 'stroke', title: 'Tie — the two-decimal scores are equal.', decided: true }
     case 'bye':
       return { text: 'Bye', variant: 'stroke', title: 'Bye week — no opponent', decided: true }
     default:
@@ -148,9 +148,9 @@ export interface StarterCell {
 }
 
 export const PENDING_STARTER_TITLE_PREFIX = 'Pending — not delivered yet: '
-export const ZERO_BY_NAME_TITLE = 'No stat line on record for this game — scored 0 by name (Q42, open).'
-export const PLAYING_NO_LINE_TITLE = 'Playing — no stat line yet; counts as 0 until one lands (Q42, open).'
-export const YET_TO_PLAY_TITLE = 'Yet to play — counts as 0 until a stat line lands (Q42, open).'
+export const ZERO_BY_NAME_TITLE = 'No stat line on record for this game — scored 0 by name.'
+export const PLAYING_NO_LINE_TITLE = 'Playing — no stat line yet; counts as 0 until one lands.'
+export const YET_TO_PLAY_TITLE = 'Yet to play — counts as 0 until a stat line lands.'
 export const BYE_TITLE = 'Bye week — no game on record for this team; scores 0 (§11.2).'
 export const EMPTY_SEAT_TITLE = 'Empty slot.'
 export const UNKNOWN_PLAYER_TITLE = 'Player not found — not scored.'
@@ -169,7 +169,7 @@ export function starterCell(starter: Pick<BoxStarter, 'points' | 'pending' | 're
   if (starter.reason === 'empty') return { text: '—', title: EMPTY_SEAT_TITLE, tone: 'empty' }
   if (starter.reason === 'unknown_player') return { text: '—', title: UNKNOWN_PLAYER_TITLE, tone: 'unknown' }
   if (starter.pending.length > 0) {
-    return { text: PENDING_SCORE_COPY, title: `${PENDING_STARTER_TITLE_PREFIX}${starter.pending.join(', ')} (E61: never 0).`, tone: 'pending' }
+    return { text: PENDING_SCORE_COPY, title: `${PENDING_STARTER_TITLE_PREFIX}${starter.pending.join(', ')} — never shown as 0.`, tone: 'pending' }
   }
   if (starter.reason === 'no_stat_row') {
     if (starter.phase === 'bye') return { text: formatPoints(0), title: BYE_TITLE, tone: 'bye' }
@@ -186,7 +186,7 @@ export function boxSumCell(box: Pick<TeamBoxScore, 'points' | 'pending'>): Score
   if (box.points !== null) return { text: formatPoints(box.points), title: null, pending: false }
   return {
     text: PENDING_SCORE_COPY,
-    title: `${PENDING_STARTER_TITLE_PREFIX}${box.pending.map((p) => p.keys.join(', ')).join('; ')} (E61: never 0).`,
+    title: `${PENDING_STARTER_TITLE_PREFIX}${box.pending.map((p) => p.keys.join(', ')).join('; ')} — never shown as 0.`,
     pending: true,
   }
 }

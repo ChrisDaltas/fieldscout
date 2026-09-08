@@ -19,8 +19,8 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
 
 import { Crest } from './league-cells'
-import { LineupEditor, formatKickoff } from './lineup-editor'
-import { currentWeekOf, defaultLineupWeek, lockPollInterval, locksAtCopy, weekEditability } from './lineup-editor-ops'
+import { LineupEditor } from './lineup-editor'
+import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 
 /**
@@ -36,8 +36,8 @@ import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status
  * member path (D315(12)'s reasoning; D316). `useRostersLive` is the
  * roster + the FETCHED lock evaluation (`game_lock`, D315(5)) and the
  * `league:<id>` room's `connection` (F233(a) — one refcounted room, never a
- * second `.channel(`) — polled at the tick's cadence for the CURRENT week
- * only, because nothing broadcasts the pool view (R822(ii); F252);
+ * second `.channel(`) — refetched on the tick's own `league_player_pool`
+ * broadcast (119; the 60 s poll retired at L.D5.4, F259(a));
  * `useSchedule` is the week ladder the current week is read from (no clock
  * — §23.3; `lineup-editor-ops.ts` header).
  *
@@ -121,11 +121,12 @@ function TeamPageContent({
   const currentWeek = useMemo(() => currentWeekOf(weeks), [weeks])
   const [pickedWeek, setPickedWeek] = useState<number | null>(null)
   const week = pickedWeek ?? defaultLineupWeek(weeks)
-  // R822(ii): the current week's 🔒 is the tick-refreshed pool view and
-  // nothing broadcasts it — poll the rosters at the tick's cadence for THAT
-  // week only (F252; `lineup-editor-ops.ts`).
-  const rosters = useRostersLive(leagueId, { refetchInterval: lockPollInterval(week, currentWeek) })
-  const lineup = useLineup(teamId, week)
+  // The current week's 🔒 is the tick-refreshed pool view, and since
+  // migration 119 the tick BROADCASTS its pass (`league_player_pool` on the
+  // room — D319(6)); the room's refetch replaced the 60 s poll (F259(a),
+  // L.D5.4). F252(c): no lineup read for a week the ladder has not named yet.
+  const rosters = useRostersLive(leagueId)
+  const lineup = useLineup(teamId, schedule.data ? week : undefined)
 
   const rosterTeam = rosters.data?.teams.find((t) => t.team_id === teamId) ?? null
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'

@@ -39,10 +39,9 @@ import { invalidatingHandlers, rostersEventInvalidates } from './use-league-chan
  * ONE coalesced `league_player_pool` summary per league per pass that
  * changed at least one lock (a kickoff or a release instant — never a quiet
  * minute, never per row; D319(6)), and this hook refetches on it. The
- * `refetchInterval` option remains for a surface that still wants a poll
- * (L.D5.1's `lockPollInterval` — its retirement is F259(a), L.D5.4's);
- * React Query's `refetchIntervalInBackground` default (false) keeps a hidden
- * tab quiet.
+ * `refetchInterval` plumbing L.D5.1 added for its 60 s poll RETIRED with
+ * L.D5.4 (F259(a)): the room is the freshness mechanism (D298), and no
+ * consumer asks for a timer.
  */
 
 export const leagueRosterKeys = {
@@ -50,19 +49,12 @@ export const leagueRosterKeys = {
   all: (leagueId: string) => ['league-rosters', leagueId] as const,
 }
 
-export interface RostersReadOptions {
-  /** Poll the route on this cadence while mounted and visible (ms), or
-   *  `false`/absent for no poll — see the header (R822(ii)/F252). */
-  refetchInterval?: number | false
-}
-
 /** The fetch half. */
-export function useRosters(leagueId: string | undefined, options: RostersReadOptions = {}) {
+export function useRosters(leagueId: string | undefined) {
   return useQuery({
     queryKey: leagueRosterKeys.all(leagueId ?? 'none'),
     enabled: Boolean(leagueId),
     queryFn: () => sendLeagueAction<LeagueRosters>(`/api/leagues/${leagueId!}/rosters`),
-    refetchInterval: options.refetchInterval ?? false,
   })
 }
 
@@ -71,8 +63,8 @@ export function useRosters(leagueId: string | undefined, options: RostersReadOpt
  * the query plus the spine's `connection` for the §16.5.4 reconnecting
  * banner.
  */
-export function useRostersLive(leagueId: string | undefined, options: RostersReadOptions = {}) {
-  const query = useRosters(leagueId, options)
+export function useRostersLive(leagueId: string | undefined) {
+  const query = useRosters(leagueId)
   const queryClient = useQueryClient()
 
   const invalidate = () => {

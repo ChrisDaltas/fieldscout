@@ -52,6 +52,8 @@ import type { LineupStarter, SetLineupResult } from '@/lib/leagues/api/lineup-se
 import type { GameLockView, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 
+import { formatInstantInZone } from './league-home-states-ops'
+
 // ---------------------------------------------------------------------------
 // Slot instances (§12.13 — `"<slot_key>:<index>"`)
 // ---------------------------------------------------------------------------
@@ -195,17 +197,40 @@ export function lockedPlayerIds(roster: readonly RosterPlayer[], weekIsCurrent: 
   return out
 }
 
-/**
- * How the tick's re-evaluation reaches an OPEN page (R822(ii) / F252).
- * Nothing broadcasts `league_player_pool` (see `use-rosters.ts`'s header), so
- * the page showing the CURRENT week's 🔒 polls the rosters route at the
- * tick's cadence (116: every minute); any other week reads no lock from the
- * view (`lockedPlayerIds` above) and polls nothing. The M4 interim — a pool
- * broadcast is L.D1.9's to decide.
+/*
+ * The 60 s lock POLL that lived here (`LOCK_POLL_MS` / `lockPollInterval`,
+ * R822(ii)) RETIRED with L.D5.4 (F259(a) / F252(a)): since migration 119
+ * `lineup_lock_tick` broadcasts ONE coalesced `league_player_pool` summary
+ * per league per pass that changed a lock, and `useRostersLive` refetches on
+ * it (`ROSTERS_INVALIDATING_EVENTS`), so the tick's re-evaluation reaches an
+ * open page by the room, not by a timer.
  */
-export const LOCK_POLL_MS = 60_000
-export function lockPollInterval(week: number, currentWeek: number | null): number | false {
-  return currentWeek !== null && week === currentWeek ? LOCK_POLL_MS : false
+
+// ---------------------------------------------------------------------------
+// Instants — §16.4: viewer-local, the league zone on hover; STORED values
+// ---------------------------------------------------------------------------
+
+/** A stored instant as the viewer sees it (weekday + time — a kickoff, a
+ *  lock), the league zone's full rendering on hover. Formatting only — no
+ *  clock is read (hoisted from `lineup-editor.tsx` at L.D5.4, F275(d), so a
+ *  page needing a kickoff string does not pull the editor's drag stack). */
+export function formatKickoff(iso: string, leagueTimeZone: string | null): { local: string; title: string | null } {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return { local: iso, title: null }
+  const local = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(ms))
+  const zoned = leagueTimeZone ? formatInstantInZone(ms, leagueTimeZone) : null
+  return { local, title: zoned ? `${zoned.text}${zoned.zoneAbbrev ? ` ${zoned.zoneAbbrev}` : ''} (league time)` : null }
+}
+
+/** The same instant WITH its date — for a banner's "last update" or a
+ *  waiver clearing instant, where a bare weekday would be ambiguous
+ *  (F277(d)). */
+export function formatInstantWithDate(iso: string, leagueTimeZone: string | null): { local: string; title: string | null } {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return { local: iso, title: null }
+  const local = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(ms))
+  const zoned = leagueTimeZone ? formatInstantInZone(ms, leagueTimeZone) : null
+  return { local, title: zoned ? `${zoned.text}${zoned.zoneAbbrev ? ` ${zoned.zoneAbbrev}` : ''} (league time)` : null }
 }
 
 // ---------------------------------------------------------------------------

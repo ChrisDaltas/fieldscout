@@ -270,6 +270,10 @@ describe('GET …/matchups/box?week=&team= — the gate and the query', () => {
     const result = await readBoxScore(managerClient, leagueId, { week: '1', team: commishTeamId })
     expect(result.status).toBe(200)
     expect(box(result).team_id).toBe(commishTeamId)
+    // F277(b) / R891: the cell must not pass if RLS hid the lineup — the
+    // member really reads the other team's starters (112's F18 swap).
+    expect(box(result).lineup).not.toBeNull()
+    expect(box(result).starters).toHaveLength(10)
   })
 })
 

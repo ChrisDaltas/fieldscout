@@ -10,6 +10,9 @@
  * lock. The DoD probe (derive the lock from `locked_at`) reds exactly that
  * cell.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { LineupStarter } from '@/lib/leagues/api/lineup-service'
@@ -17,7 +20,7 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import {
-  LOCK_POLL_MS,
+  formatKickoff,
   LOCK_RELEASE_UNRECORDED_COPY,
   LOCK_UNTIL_COPY,
   NO_LOCK_RECORD_COPY,
@@ -29,7 +32,6 @@ import {
   designationOf,
   irStintChip,
   lockBadgeFor,
-  lockPollInterval,
   lockedPlayerIds,
   locksAtCopy,
   placementFromStored,
@@ -128,12 +130,29 @@ describe('the lock is the FETCHED evaluation (D315(5)/F241(d)) — never a store
     expect(startersByKey(movedKickoffLineup.starters).size).toBe(1)
   })
 
-  it('R822(ii): the CURRENT week polls the rosters at the tick’s cadence; any other week polls nothing', () => {
-    expect(LOCK_POLL_MS).toBe(60_000)
-    expect(lockPollInterval(3, 3)).toBe(60_000)
-    expect(lockPollInterval(2, 3)).toBe(false)
-    expect(lockPollInterval(4, 3)).toBe(false)
-    expect(lockPollInterval(1, null)).toBe(false)
+  it('F259(a): the 60 s lock poll is RETIRED — the tick’s `league_player_pool` broadcast (119) is the freshness path', () => {
+    // Source pin: no poll constant, no interval helper survives in the ops
+    // or the page; the room's `league_player_pool` event is what refetches.
+    const editorOps = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/lineup-editor-ops.ts'), 'utf8')
+    const page = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/team-page.tsx'), 'utf8')
+    const rosters = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-rosters.ts'), 'utf8')
+    for (const src of [editorOps, page, rosters]) {
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+      expect(code).not.toMatch(/LOCK_POLL_MS|lockPollInterval|refetchInterval/)
+    }
+    // …and the freshness path is real: the pool event is on the rosters'
+    // invalidating list, which `useRostersLive` derives its handlers from.
+    const ops = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-league-channel-ops.ts'), 'utf8')
+    expect(ops).toMatch(/ROSTERS_INVALIDATING_EVENTS[\s\S]{0,200}'league_player_pool'/)
+    expect(rosters).toContain('rostersEventInvalidates')
+  })
+
+  it('F275(d): formatKickoff lives in the ops (viewer-local text; the league zone on hover, pinned through the named zone)', () => {
+    const view = formatKickoff('2099-09-13T17:00:00.000Z', 'America/New_York')
+    expect(view.local).toMatch(/\S/)
+    expect(view.title).toBe('Sun, Sep 13, 2099 · 1:00 PM EDT (league time)')
+    expect(formatKickoff('not-an-instant', 'America/New_York')).toEqual({ local: 'not-an-instant', title: null })
+    expect(formatKickoff('2099-09-13T17:00:00.000Z', null).title).toBeNull()
   })
 
   it('a locked pool view locks the player — both locked shapes, the copy from the STATE', () => {
