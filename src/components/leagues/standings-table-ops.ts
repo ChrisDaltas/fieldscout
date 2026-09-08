@@ -157,9 +157,9 @@ export function skipNotes(skipped: unknown, teamNames: ReadonlyMap<string, strin
   return notes
 }
 
-/** The "live projected" view is PENDING BY NAME (R801): 117 reads final rows
- *  only, and the live scores that would project a week are L.D2.2's (behind
- *  B9). Filed as PROGRESS F253; the label on screen names the dependency
- *  without a task id. */
-export const PROJECTED_PENDING_COPY =
-  'Live projected standings arrive with live scoring — this table is the final results only.'
+/** The projected view's line (L.D5.5 — 118's `league_standings_projected`,
+ *  the SAME chain over every open regular-season week "as if it ended now";
+ *  D318(3)). The final table's dependency this once named (F253(a)) is
+ *  discharged: the control reads live data. */
+export const PROJECTED_COPY =
+  'Projected: every open week is counted as if it ended now — the same tiebreaker chain over provisional scores. Results go official when the week finalizes.'

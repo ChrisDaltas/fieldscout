@@ -6,6 +6,7 @@
  * `supabase db reset`).
  *
  *   npx tsx scripts/dev-seed-inseason-league.ts            # seed (cleanup-first)
+ *   npx tsx scripts/dev-seed-inseason-league.ts --two-week-rounds # L.D5.5: 12 regular weeks + 3 two-week rounds (Q39 (B) on screen)
  *   npx tsx scripts/dev-seed-inseason-league.ts --teardown # remove it
  *
  * WHAT IT MAKES. One `in_season` league on the SYNTHETIC season (2099 —
@@ -51,6 +52,10 @@
  * live week with `scripts/dev-drive-inseason-week.ts` (--open → --lineup →
  * --games → --score → --window → --finalize); its stat lines, queue rows,
  * third game row and the `nfl_weeks` end instants are cleaned here too.
+ * L.D5.5 (the bracket's browser pass) drives a WHOLE season through the
+ * same driver (--season 14 → --finalize-all → --round 1 …): its per-week
+ * game rows (`dev-ld55-game-w*`) and every 2099 week's end instant are
+ * cleaned here.
  *
  * TEAR IT DOWN BEFORE `npm run test` (F199, measured 2026-09-05 by L.D5.3).
  * While resident it poisons the stack lane by TWO vectors: the players
@@ -144,6 +149,12 @@ async function cleanup(): Promise<void> {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
+    // L.D5.5: a COMPLETE league points at its champion (118's
+    // `leagues.champion_team_id` FK) — clear it before the teams go, or the
+    // teardown fails on the FK and leaves the league resident (F199's class;
+    // measured 2026-09-08 on the first driven season).
+    const { error: championError } = await service.from('leagues').update({ champion_team_id: null }).in('id', ids)
+    if (championError) throw new Error(`cleanup champion: ${championError.message}`)
     const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
     if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
@@ -151,15 +162,19 @@ async function cleanup(): Promise<void> {
   }
   const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_FINAL_ID, GAME_FA_LOCKED_ID])
   if (gamesError) throw new Error(`cleanup nfl_games: ${gamesError.message}`)
+  // L.D5.5: the season driver's one-final-game-per-week rows (`--season` / `--round`).
+  const { error: seasonGamesError } = await service.from('nfl_games').delete().like('id', 'dev-ld55-game-w%')
+  if (seasonGamesError) throw new Error(`cleanup nfl_games (season): ${seasonGamesError.message}`)
   // L.D5.2: the driver's stat lines + queue rows for the fixture players
   // (F199's census counts 2099 stamps to zero after a teardown).
   const { error: statsError } = await service.from('player_stats').delete().in('player_id', PLAYERS.map((p) => p.id))
   if (statsError) throw new Error(`cleanup player_stats: ${statsError.message}`)
   const { error: queueError } = await service.from('score_fanout').delete().in('player_id', PLAYERS.map((p) => p.id))
   if (queueError) throw new Error(`cleanup score_fanout: ${queueError.message}`)
-  // The synthetic week-1 end instants the driver's --window wrote (the
-  // seed leaves nfl_weeks 2099 as seedSyntheticSeason wrote it: NULL ends).
-  const { error: weekError } = await service.from('nfl_weeks').update({ last_game_ends_at: null, first_kickoff_at: null }).eq('season', SYNTHETIC_SEASON).eq('week', 1)
+  // The synthetic end instants the driver's --window / --season / --round
+  // wrote (the seed leaves nfl_weeks 2099 as seedSyntheticSeason wrote it:
+  // NULL ends) — EVERY week since L.D5.5's driver rolls a whole season.
+  const { error: weekError } = await service.from('nfl_weeks').update({ last_game_ends_at: null, first_kickoff_at: null }).eq('season', SYNTHETIC_SEASON)
   if (weekError) throw new Error(`cleanup nfl_weeks: ${weekError.message}`)
   const { error: playersError } = await service.from('players').delete().in('id', [...PLAYERS.map((p) => p.id), ...FREE_AGENTS.map((p) => p.id)])
   if (playersError) throw new Error(`cleanup players: ${playersError.message}`)
@@ -185,7 +200,11 @@ async function seed(): Promise<void> {
   const dev: SupabaseClient<Database> = createClient<Database>(URL, ANON_KEY, { auth: { persistSession: false } })
   const { error: signInError } = await dev.auth.signInWithPassword(DEV)
   if (signInError) throw new Error(`sign-in as dev@: ${signInError.message}`)
-  const settings = defaultsForTeamCount(8)
+  // L.D5.5: the two-week-round shape — 12 + 3 × 2 = 18 weeks (§7.3.8's
+  // bound), so the bracket's two-week totals (Q39 (B)) are drivable.
+  const settings = process.argv.includes('--two-week-rounds')
+    ? { ...defaultsForTeamCount(8), regular_season_weeks: 12, playoff_start_week: 13, playoff_weeks_per_round: 2 as const }
+    : defaultsForTeamCount(8)
   const { columns, blob } = splitSettings(settings)
   const columnArgs = Object.fromEntries(Object.entries(columns).map(([k, v]) => [`p_${k}`, v]))
   const { data: template } = await dev.from('scoring_systems').select('id, rules').eq('is_template', true).eq('name', 'ESPN Standard').single()

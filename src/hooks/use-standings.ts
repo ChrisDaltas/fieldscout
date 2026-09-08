@@ -10,6 +10,7 @@ import {
   invalidatingHandlers,
   leagueDetailEventInvalidates,
   mergeHandlers,
+  projectedStandingsEventInvalidates,
   standingsEventInvalidates,
 } from './use-league-channel-ops'
 import { leaguesKeys } from './use-leagues'
@@ -51,6 +52,10 @@ import { leaguesKeys } from './use-leagues'
 
 export const leagueStandingsKeys = {
   all: (leagueId: string) => ['league-standings', leagueId] as const,
+  /** L.D5.5: the PROJECTED table (`?view=projected` → 118's
+   *  `league_standings_projected`). A child of `all`, so a finalization's
+   *  invalidation of the final table reaches the projection too. */
+  projected: (leagueId: string) => ['league-standings', leagueId, 'projected'] as const,
 }
 
 /** The fetch half. */
@@ -91,5 +96,45 @@ export function useStandingsLive(leagueId: string | undefined) {
     { onJoin: invalidate, onDrop: invalidate },
   )
 
+  return { ...query, connection }
+}
+
+/**
+ * The PROJECTED table — L.D5.5 (spec §11.5's standings bullet v2.16.25;
+ * migration 118's `league_standings_projected`; PROGRESS D318(3); the
+ * L.D5.3 "Projected" control's data source — D317(3)'s pending-by-name
+ * copy retires). The SAME chain over the final rows plus every open
+ * regular-season week "as if it ended now"; the document is the final
+ * one's shape with `projected: true` / `weeks_projected`. Fetched only
+ * while `enabled` (the control has it selected) — the scan is member-
+ * gated and refetches on every score batch, so an unselected view costs
+ * nothing.
+ */
+export function useProjectedStandings(leagueId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: leagueStandingsKeys.projected(leagueId ?? 'none'),
+    enabled: Boolean(leagueId) && enabled,
+    queryFn: () => sendLeagueAction<LeagueStandings>(`/api/leagues/${leagueId!}/standings?view=projected`),
+  })
+}
+
+/**
+ * Fetch + subscribe for the projected table: the ONE `league:<id>` room
+ * (F233(a)), the handler map DERIVED from `projectedStandingsEventInvalidates`
+ * (R773) — `matchups` included, because the projection IS the live picture
+ * (the predicate's docblock carries the cost). An invalidation while the
+ * query is disabled marks it stale and fetches nothing.
+ */
+export function useProjectedStandingsLive(leagueId: string | undefined, enabled = true) {
+  const query = useProjectedStandings(leagueId, enabled)
+  const queryClient = useQueryClient()
+  const invalidate = () => {
+    if (!leagueId) return
+    void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.projected(leagueId) })
+  }
+  const { connection } = useLeagueChannel(leagueId, invalidatingHandlers(projectedStandingsEventInvalidates, invalidate), {
+    onJoin: invalidate,
+    onDrop: invalidate,
+  })
   return { ...query, connection }
 }

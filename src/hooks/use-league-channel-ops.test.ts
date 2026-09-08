@@ -23,9 +23,14 @@ import {
   ACTIVITY_INVALIDATING_EVENTS,
   LEAGUE_CHANNEL_EVENTS,
   LEAGUE_CHANNEL_MAX_REOPEN_MS,
+  PLAYOFF_BRACKET_INVALIDATING_EVENTS,
+  PROJECTED_STANDINGS_INVALIDATING_EVENTS,
+  STANDINGS_INVALIDATING_EVENTS,
   activityEventInvalidates,
   leagueChannelRegistryTopic,
   leagueChannelTopic,
+  playoffBracketEventInvalidates,
+  projectedStandingsEventInvalidates,
   reopenDelayMs,
 } from './use-league-channel-ops'
 
@@ -118,6 +123,37 @@ describe('which events make the ACTIVITY feed stale (D298)', () => {
       expect(activityEventInvalidates(quiet), quiet).toBe(false)
     }
     expect(activityEventInvalidates('who_knows')).toBe(false)
+  })
+})
+
+describe('which events make the PROJECTED standings and the PLAYOFF BRACKET stale (L.D5.5)', () => {
+  it('the projected table refetches on the score tick — it IS the live picture — plus the final table’s own carriers', () => {
+    expect([...PROJECTED_STANDINGS_INVALIDATING_EVENTS]).toEqual(['matchups', 'team_week_results', 'league_weeks', 'teams'])
+    // The FINAL table deliberately excludes `matchups` (D310(4)); the
+    // projection is that set plus the tick, and nothing else.
+    expect([...PROJECTED_STANDINGS_INVALIDATING_EVENTS].filter((e) => e !== 'matchups')).toEqual([...STANDINGS_INVALIDATING_EVENTS])
+    expect(LEAGUE_CHANNEL_EVENTS.filter(projectedStandingsEventInvalidates)).toEqual(['matchups', 'team_week_results', 'league_weeks', 'teams'])
+    for (const quiet of ['league_chat', 'transactions', 'league_rosters', 'league_player_pool', 'leagues']) {
+      expect(projectedStandingsEventInvalidates(quiet), quiet).toBe(false)
+    }
+  })
+
+  it('the bracket refetches on the rollover’s own events — 118/119 emit no bracket event: league_weeks (the rollover), matchups (the (re)build + the tick), team_week_results (the close), leagues (the status flips), teams', () => {
+    expect([...PLAYOFF_BRACKET_INVALIDATING_EVENTS]).toEqual(['matchups', 'team_week_results', 'league_weeks', 'leagues', 'teams'])
+    expect(LEAGUE_CHANNEL_EVENTS.filter(playoffBracketEventInvalidates)).toEqual(['leagues', 'matchups', 'team_week_results', 'league_weeks', 'teams'])
+    for (const quiet of ['league_chat', 'transactions', 'league_rosters', 'league_player_pool', 'who_knows']) {
+      expect(playoffBracketEventInvalidates(quiet), quiet).toBe(false)
+    }
+  })
+
+  it('both hooks DERIVE their maps from the predicates (R773) and open no channel of their own', () => {
+    const standings = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-standings.ts'), 'utf8')
+    const bracket = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-playoff-bracket.ts'), 'utf8')
+    expect(standings).toContain('invalidatingHandlers(projectedStandingsEventInvalidates, invalidate)')
+    expect(bracket).toContain('invalidatingHandlers(playoffBracketEventInvalidates, invalidate)')
+    expect(bracket).not.toContain('.channel(')
+    expect(bracket).toContain("sendLeagueAction<PlayoffBracket>(`/api/leagues/${leagueId!}/playoffs`)")
+    expect(standings).toContain('/standings?view=projected')
   })
 })
 

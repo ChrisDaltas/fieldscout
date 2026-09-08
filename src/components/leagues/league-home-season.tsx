@@ -13,10 +13,13 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueActivityFeed } from '@/hooks/use-league-activity'
 import { useLineup } from '@/hooks/use-lineup'
 import { useMatchupsLive } from '@/hooks/use-matchups'
+import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
 import { useSchedule } from '@/hooks/use-schedule'
 import { useStandingsLive } from '@/hooks/use-standings'
 import { useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
+import type { PlayoffBracket as PlayoffBracketDoc } from '@/lib/leagues/api/playoffs-service'
+import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
 import { ActivityFeed } from './activity-feed'
@@ -43,9 +46,11 @@ import {
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import { Scoreboard } from './matchup-view'
 import { formatPoints, leaderboardRows, weekBadge } from './matchup-view-ops'
+import { PlayoffBracket } from './playoff-bracket'
+import { BracketSkeleton } from './standings-page'
 import { formatRecord, standingsEmptyCopy } from './standings-table-ops'
 import { StandingsTable } from './standings-table'
-import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
+import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_LEAGUE_COPY, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
 import { problemCopy } from './team-page'
 
 /**
@@ -102,8 +107,15 @@ export function SeasonHero({
   const standings = useStandingsLive(leagueId)
   const lineup = useLineup(myTeamId ?? undefined, inPlay && week !== null ? week : undefined)
   const degraded = useStatsDegraded({ enabled: inPlay && scoringLive(matchups.data?.league_week.status) })
+  // L.D5.5: the bracket card on the `playoffs` hero — the SAME component the
+  // standings page's "Playoffs" tab mounts (§16.5.1's playoffs row: "L.D5.5's
+  // tab carries the full bracket"); fetched only in that state.
+  const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs')
 
-  const connection = matchups.connection === 'reconnecting' || standings.connection === 'reconnecting' ? 'reconnecting' : 'live'
+  const connection =
+    matchups.connection === 'reconnecting' || standings.connection === 'reconnecting' || bracket.connection === 'reconnecting'
+      ? 'reconnecting'
+      : 'live'
   const matchupsProblem = matchups.isError ? (matchups.error instanceof Error ? matchups.error : new Error(String(matchups.error))) : null
 
   return (
@@ -169,11 +181,89 @@ export function SeasonHero({
         />
       )}
 
+      {state === 'playoffs' && (
+        <BracketCard
+          leagueId={leagueId}
+          data={data}
+          doc={bracket.data}
+          pending={bracket.isPending}
+          problem={bracket.isError ? bracket.error : null}
+          onRetry={() => bracket.refetch()}
+          myTeamId={myTeamId}
+          finalStandings={standings.data?.standings ?? null}
+        />
+      )}
+
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <ActivityFeedCard leagueId={leagueId} data={data} />
         <DraftDoorsCard leagueId={leagueId} complete={state === 'complete'} />
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The bracket card — L.D5.5's component on the playoffs hero (§16.5.1)
+// ---------------------------------------------------------------------------
+
+/** The bracket the reads expose, on the `playoffs` hero: 118's document
+ *  through `playoff-bracket.tsx` in its compact trim (no commissioner
+ *  doors here — the tab carries them), with the door to the full tab.
+ *  §16.5.4: skeleton · error-with-retry · degraded (the stale banner over
+ *  the last-good bracket). */
+function BracketCard({
+  leagueId,
+  data,
+  doc,
+  pending,
+  problem,
+  onRetry,
+  myTeamId,
+  finalStandings,
+}: {
+  leagueId: string
+  data: LeagueDetail
+  doc: PlayoffBracketDoc | undefined
+  pending: boolean
+  problem: unknown
+  onRetry: () => void
+  myTeamId: string | null
+  finalStandings: LeagueStandings['standings'] | null
+}) {
+  const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
+  return (
+    <Card data-bracket-card>
+      <CardHeader className="min-h-0 py-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+          Playoff bracket
+          <span className="ml-auto">
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}/standings?tab=playoffs`} data-open-bracket>
+                Full bracket
+              </Link>
+            </Button>
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+        {problem !== null && doc && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
+        {pending && !doc ? (
+          <BracketSkeleton />
+        ) : problem !== null && !doc ? (
+          <InlineProblem title="Couldn’t load the bracket." detail={problemCopy(problem)} onRetry={onRetry} />
+        ) : doc ? (
+          <PlayoffBracket
+            doc={doc}
+            teamNames={teamNames}
+            leagueTimeZone={data.settings.draft.time_zone ?? null}
+            myRole={data.my_role}
+            myTeamId={myTeamId}
+            finalStandings={finalStandings}
+            compact
+          />
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
 
