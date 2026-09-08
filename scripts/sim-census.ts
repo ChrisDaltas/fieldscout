@@ -1,29 +1,39 @@
 /**
- * sim-census.ts — F199's standing instrument: what a simulator run can leave
- * behind on the shared local stack, counted (M4 task L.D6.1; F199's owner
- * cell is this task).
+ * sim-census.ts — what a SIMULATOR RUN can leave behind on the shared local
+ * stack, counted (M4 task L.D6.1).
  *
  *   npx tsx scripts/sim-census.ts        # exit 0 = clean, exit 1 = residue
  *
- * F199's whole species is a fixture row that OUTLIVES its run and then reads
- * as another suite's data:
- *   * the original sighting — `ac-wire` / `at-wire` / `tk-wire` player rows
- *     surviving an aborted run and winning every later "lowest-ADP available"
- *     assertion in OTHER files, deterministically, until hand-deleted;
- *   * the second vector (D317(7)) — ONE resident `nfl_games` row on the
- *     shared synthetic season reddening 8 cells across 4 files, because
- *     `schedule_window_internal` and the Q29 first-week mapping read games by
- *     `(season, week)`, never by league.
+ * ── EXACTLY WHAT IT COUNTS (R922 — say the scope, don't imply a wider one) ──
+ * The nine cells of `simCensus` (`src/lib/leagues/sim/runner.ts`), all of them
+ * matched by the SIM's own name/id prefixes or by the synthetic season:
+ *   * `leagues` / `profiles` by the sim's name prefixes;
+ *   * `teams` / `matchups` / `team_week_results` under those league ids;
+ *   * `nfl_games` with the `simseason-` id prefix, `player_stats` and
+ *     `score_fanout` on season 2099, and the two live-updated `nfl_weeks`
+ *     bound columns on that season.
+ * `cleanupSweep` is the durable fix F199 names ("cleanup-FIRST sweeps by id
+ * prefix") applied to that set, and this script is the same census the run
+ * prints before AND after itself, runnable on its own.
  *
- * The durable fix F199 names is "cleanup-FIRST sweeps by id prefix". The
- * simulator has done that since L.B6.1 for leagues and bot users; L.D6.1
- * extended `cleanupSweep` to the in-season tables AND to the three
- * season-scoped surfaces no league delete cascades to — `score_fanout` (PK
- * `(season, week, player_id)`, FK only to `players`, RLS with zero policies:
- * deleting a league leaves its queue rows), `player_stats`, and `nfl_games`
- * by the `simseason-` prefix — plus the `nfl_weeks` bound reset. This script
- * is the same census the run prints before AND after itself, runnable on its
- * own so "is the stack clean?" is a question with an answer.
+ * ── WHAT IT DOES **NOT** COUNT, and therefore what CLEAN does not mean ──────
+ * F199's own two measured vectors are only PARTLY inside this scope, and the
+ * script would print CLEAN with either of them resident:
+ *   * the ORIGINAL sighting — `ac-wire` / `at-wire` / `tk-wire` `players`
+ *     rows surviving an aborted `npm run test` and winning every later
+ *     "lowest-ADP available" assertion in OTHER files until hand-deleted.
+ *     There is NO `players` cell here at all, and the sim seeds no players,
+ *     so a sim run neither creates nor clears these.
+ *   * the RESIDENT dev fixture's half of the second vector (D317(7)) — the
+ *     `dev-ld5*` `nfl_games` rows on season 2099 that reddened 8 cells across
+ *     4 files. `schedule_window_internal` and the Q29 first-week mapping read
+ *     games by `(season, week)`, never by league, so those rows poison other
+ *     suites exactly as before; the `nfl_games` cell here is filtered to the
+ *     `simseason-` prefix and does not see them.
+ * CLEAN therefore means "this sim run left nothing behind", NOT "the stack is
+ * clean". The remedies for the other half are `dev-seed-inseason-league.ts
+ * --teardown` and a hand-sweep of the wire fixtures; owning them durably is
+ * F199's still-open half — the row is re-opened for exactly these two (R922).
  *
  * READ-ONLY. It counts and prints; it deletes nothing. Cleaning is
  * `npm run sim -- season …`'s own `finally` (which sweeps first and last), or
