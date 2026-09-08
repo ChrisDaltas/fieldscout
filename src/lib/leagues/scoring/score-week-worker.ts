@@ -573,7 +573,10 @@ export interface BatchReport {
    *  `restamped` — a newer delta moved the stamp mid-drain (the row is
    *  released; the next drain scores the newer line); `lease_lost` — our
    *  lease expired and another drain re-claimed it (the ONE window a stale
-   *  write can land in — a problem line); `gone` — that drain consumed it. */
+   *  write can land in — a problem line); `gone` — that drain consumed it,
+   *  which is the SAME window seen from the other side (R873): our lease
+   *  lapsed, another drain took the row AND finished before our ack, so our
+   *  door write for it may be STALE too. Alert on `lease_lost + gone > 0`. */
   ack_missed: Record<AckMissReason, number>
   leagues: LeagueWeekReport[]
   written: number
@@ -1202,7 +1205,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         `queue ack: ${ack.deleted} of ${toDelete.length} consumed rows matched by (token, stamp) — ` +
           `${restamped.length} re-stamped by a newer delta mid-drain (released; the next drain scores the newer line: ${restamped.join(', ') || '—'}); ` +
           `${leaseLost.length} lease_lost (this drain outlived its ${leaseSeconds}s lease and another drain re-claimed the row — its door write for that row may be STALE, F263(f): ${leaseLost.join(', ') || '—'}); ` +
-          `${gone.length} gone (consumed by that drain: ${gone.join(', ') || '—'})`,
+          `${gone.length} gone (our lease lapsed and another drain re-claimed AND consumed the row before this ack — its door write for that row may be STALE too, F263(f)/R873: ${gone.join(', ') || '—'})`,
       )
     }
 

@@ -67,7 +67,9 @@
 --      none: our lease expired and another drain re-claimed it — the ONE
 --      window in which a stale write can land, bounded by the lease and
 --      REPORTED, never silent), `gone` (absent: consumed by the drain that
---      took our lease) — and then RELEASES every row still under this
+--      took our lease — R873: the SAME stale-write window seen after that
+--      drain finished; the alert is on `lease_lost + gone`, never `lease_lost`
+--      alone) — and then RELEASES every row still under this
 --      token (the re-stamped, the not-ready, the held, the out-of-scope:
 --      `claimed_at`/`claim_token` back to NULL). Returns
 --      {deleted, released, missed: [{season, week, player_id, reason}]}.
