@@ -2,7 +2,7 @@
   "extends": ["next/core-web-vitals", "next/typescript", "prettier"],
   "overrides": [
     {
-      "files": ["src/lib/leagues/**", "src/lib/sync/live-stats.ts", "src/lib/sync/ingest-week.ts"],
+      "files": ["src/lib/leagues/**", "src/lib/sync/live-stats.ts", "src/lib/sync/ingest-week.ts", "src/lib/sync/ingest-flags.ts", "src/lib/sync/live-poll.ts"],
       "rules": {
         "no-restricted-syntax": [
           "error",

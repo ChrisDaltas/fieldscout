@@ -134,6 +134,18 @@ async function lingeringLiveWeeks(
 }
 
 /**
+ * GATE-ONLY SINCE L.D2.3 (PROGRESS F216(c), D322 — 2026-09-07). Production's
+ * `/api/cron/sync-live` no longer binds this function: it runs
+ * `runLivePollInvocation` (`live-poll.ts`) over L.D2.1's `ingestWeek`, which
+ * writes `nfl_games`, the `nfl_weeks` bounds, `player_stats(+advanced)` and
+ * the `score_fanout` queue — none of which this pre-M4 writer touches.
+ * `syncLiveStats` stays byte-identical because the M0 gate golden-pins its
+ * upsert sequence (D30's SHA-256 literals over the FixtureReplayProvider
+ * replay, `m0-gate.test.ts`); retiring it means re-recording those hashes
+ * over `ingestWeek` (D30's own rule) — PROGRESS F266 carries that. Nothing
+ * else imports it (`toStatColumns` / `STAT_COLUMN_BY_KEY` above are the
+ * registry map `ingestWeek` reuses and stay production code).
+ *
  * In-season live/box-score sync, behind the §23.1 StatsProvider contract
  * (L.A0.2b seam). During a game window it upserts the current week's running
  * numbers flagged is_live. Once the window closes (or for any older week
