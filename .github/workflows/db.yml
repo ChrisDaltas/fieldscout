@@ -30,6 +30,19 @@ name: Database
 # — one of the 31 files it DOES run — unwatched. `ci-stack-lane-trigger.test.ts`
 # now pins the mirror in both directions and runs in the fast lane, so the
 # two lists cannot drift apart again without a red.
+#
+# THE CLI IS THE REPO'S OWN PINNED `supabase` DEVDEPENDENCY, RUN VIA `npx`
+# (2026-09-08, F280 / D325): `supabase/setup-cli@v1` with `version: latest`
+# resolved "latest" through the unauthenticated GitHub API and rate-limited
+# on shared runners ("Failed to resolve latest Supabase CLI release: rate
+# limit exceeded" — `main` runs 34011826441 and 34165252649), after which
+# the `!cancelled()` gate below ran 47 stack files against a stack that had
+# never started (ECONNREFUSED 127.0.0.1:54321 × 47 — a red that named the
+# wrong cause). `npm ci` already installs the exact CLI local development
+# uses (`package.json` → `supabase`), so the job now runs that one: no API
+# call, no version drift between CI and `npx supabase db reset` locally.
+# The stack-backed step runs only if the stack STARTED (pgTAP may still red
+# it), so a stack that never came up reds ONE step with its own message.
 
 on:
   pull_request:
@@ -71,23 +84,26 @@ jobs:
 
       - run: npm ci
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      # The CLI is the pinned devDependency `npm ci` just installed — see the
+      # banner (F280): no `setup-cli`, no GitHub API call, no "latest".
+      - run: npx supabase --version
 
       # Boots Postgres and applies supabase/migrations in order from nothing.
       # This is the check: production drift cannot hide a migration that only
       # works on top of an already-drifted database.
       - name: Start Supabase (replays all migrations from scratch)
-        run: supabase start
+        id: start
+        run: npx supabase start
 
       - name: pgTAP
-        run: supabase test db
+        run: npx supabase test db
 
       # The vitest suites that talk to a real database. They cannot run in the
-      # fast lane, and this job already has the stack up.
+      # fast lane, and this job already has the stack up. Runs after a pgTAP
+      # red (every problem in one pass) but NOT after a stack that never
+      # started — 47 ECONNREFUSED files would only hide the real cause (F280).
       - name: Database-backed tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: npm run test:stack
 
       - name: Migration hygiene

@@ -25,6 +25,14 @@
  * rule) — whichever caller ticks, the broadcast is the assertion target.
  * Rewinds SUBTRACT from the server-written deadline (no wall-clock).
  *
+ * SOCKET DISCIPLINE (F74 → F264 / D325, 2026-09-08): a channel is NEVER
+ * subscribed on a socket whose last channel was just removed. Every release
+ * awaits the socket's close (`releaseChannel` below), so each cell's channel
+ * is its socket's FIRST — the shape inseason-realtime-db.test.ts runs per
+ * cell (R847(iii)) and auction-realtime-db.test.ts runs on a dedicated gate
+ * client. The four CI reds of this file's positive control were this
+ * suite's own un-awaited `removeChannel`, not the Realtime service.
+ *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5); FAILS loudly when the stack is down, never skips (§4.3).
  */
@@ -177,6 +185,45 @@ async function waitFor<T>(
   throw new Error(`timed out waiting for ${label}`)
 }
 
+/**
+ * Release a channel AND settle its socket before the next cell subscribes —
+ * F74's race, closed (F264 / D325). realtime-js's last-channel
+ * `removeChannel()` calls `disconnect()` WITHOUT awaiting it
+ * (RealtimeClient.js:221-229), and its own redundant `phx_leave` push goes on
+ * the wire first (phoenix `Channel.leave` → `Push.send` → `Socket.push`, which
+ * sends whenever the socket is open), so at the instant phoenix's `teardown`
+ * runs `conn.bufferedAmount` is non-zero and `waitForBufferDone` DEFERS
+ * `close()` by 150/300/450/600 ms (phoenix.cjs.js:1568-1602). A channel
+ * created inside that window joins the DOOMED socket, reports `SUBSCRIBED`,
+ * and is orphaned at the clean close — no rejoin (phoenix rejoins only while
+ * `socket.isConnected()`; `closeWasClean` suppresses the socket's own
+ * reconnect). That is the member-side heartbeat's CI reds (`expected
+ * undefined to be truthy` after ~50.8 s of silence: #263 run 34011211671
+ * att. 1, #267 run 34177879274 att. 2) and R852's browser measurement.
+ *
+ * Awaiting `realtime.disconnect()` resolves only after the socket is CLOSED
+ * and released (`conn = null`), so the next `subscribe()` provably opens a
+ * fresh socket; a close that never settles is LOUD here (never a silent
+ * skip, §4.3). Reproduced 2026-09-08 with the runner's condition simulated
+ * (`bufferedAmount` pinned non-zero at both release sites): the old shape →
+ * `SUBSCRIBED`, then socket `closed` / channel `errored`, then the CI
+ * assertion verbatim (2 of 3 runs; the third heard one beat before the
+ * close); this shape under the same condition → `closed` after each
+ * release, the member on a live socket, 3/3 green.
+ */
+async function releaseChannel(
+  client: SupabaseClient<Database>,
+  channel: RealtimeChannel,
+): Promise<void> {
+  await channel.unsubscribe().catch(() => undefined)
+  channel.teardown()
+  const settled = await client.realtime.disconnect()
+  const state = client.realtime.connectionState()
+  if (settled !== 'ok' || state !== 'closed') {
+    throw new Error(`realtime socket did not settle after release: ${settled} / ${state}`)
+  }
+}
+
 beforeAll(async () => {
   await cleanup()
   // F215 / R724 / migration 110: starting a real draft pre-flights the §11.7
@@ -284,8 +331,11 @@ beforeAll(async () => {
       }
       delivered = readyEvents.length > 0
     }
-    await probe.unsubscribe().catch(() => undefined)
-    commishClient.removeChannel(probe)
+    // F74 / F264: settle the socket before the next channel exists (see
+    // releaseChannel). The un-awaited `removeChannel` that stood here doomed
+    // test (a)'s socket on every run — it stayed green only because its
+    // events land within ms of the join, before the deferred close.
+    await releaseChannel(commishClient, probe)
     if (!delivered) await new Promise((r) => setTimeout(r, 3_000))
   }
   if (!delivered) {
@@ -402,11 +452,12 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
       expect(tick).toHaveProperty('current_deadline')
 
     } finally {
-      // Release the topic even on failure (one channel per topic per
-      // client; §9.3's unsubscribe-on-route-change discipline) so test (b)
-      // can always subscribe its own fresh member channel.
-      await channel.unsubscribe().catch(() => undefined)
-      commishClient.removeChannel(channel)
+      // Release the topic AND settle the socket even on failure (one channel
+      // per topic per client; §9.3's unsubscribe-on-route-change discipline)
+      // so test (b) can always subscribe its own fresh member channel on a
+      // FRESH socket — the un-awaited `removeChannel` that stood here is
+      // what its positive control went deaf on in CI (F74 / F264).
+      await releaseChannel(commishClient, channel)
     }
   }, 90_000)
 
@@ -445,6 +496,11 @@ describe('Broadcast-from-DB over the real Realtime service (migration 070)', () 
     // way, and the outsider's silence is still measured against a DELIVERING
     // channel. Fire-then-poll (up to 6 rounds) instead of one fire + long
     // wait: delivery, not emission, is what contention delays.
+    // F264 (2026-09-08): the CI reds of THIS assertion were not delivery at
+    // all — the probe above sat on a socket test (a)'s un-awaited
+    // `removeChannel` had already doomed (F74's race; releaseChannel), so no
+    // budget could have helped; the fire-then-poll stays as the honest wait
+    // on a LIVE socket.
     for (let fire = 0; fire < 6 && memberReceived.length === 0; fire++) {
       const { error: tickError } = await service.rpc('draft_tick')
       expect(tickError).toBeNull()

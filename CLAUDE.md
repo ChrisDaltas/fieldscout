@@ -256,6 +256,7 @@ export function ListCard({ list }: ListCardProps) {
 # Development
 npm run dev              # Start Next.js dev server (port 3000)
 npm run build            # Production build
+NEXT_PUBLIC_DEV_AUTH=false npm run build   # Production build LOCALLY — .env.local carries dev auth on and the repo's guard refuses it; this is the deploy check Vercel runs per PR (CI runs no `next build`; F271)
 npm run lint             # ESLint check
 npm run type-check       # TypeScript check (tsc --noEmit)
 

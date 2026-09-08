@@ -550,11 +550,34 @@ describe('the mock path through the SAME verbs (089/D138 — the launcher drives
     expect(nomination.high_bidder_team_id).not.toBe(commishTeamId)
     expect(nomination.high_bid).toBeGreaterThanOrEqual(2)
 
-    // The launcher bids through the route FOR the human seat, +3 over the
-    // high bid read inside the frozen window (the margin predates the
-    // freeze and stays — changing it would change the in-RPC responder's
-    // odds, which is not this fix's mandate).
-    const amount = nomination.high_bid + 3
+    // The launcher bids through the route FOR the human seat — AT the seat's
+    // max bid, read from the ONE budget authority (084/D127). That is the
+    // one amount NO CPU can answer BY CONSTRUCTION: E5 caps every seat at
+    // its own max bid, every seat here holds the same untouched purse, and
+    // 091's responder runs INSIDE this bid's transaction (the same
+    // `draft_place_bid_internal` call, under the row lock — nothing
+    // concurrent can touch the nomination before the response is built, so
+    // the F113 freeze above cannot help here and a cron pass cannot hurt).
+    // The "+3 over the high bid" that stood here was a per-run SEED
+    // LOTTERY, not a race (F264 / D325): the nomination's ladder ends where
+    // every CPU's pass-k value folds, the launcher's bid draws pass k+1's
+    // ±15 % noise afresh (091's value model is seeded per pass), and in 149
+    // of 3,000 fresh draft uuids (4.97 %, simulated through the real 091
+    // functions) some CPU's new value reached X+4 and answered in the same
+    // RPC — the `expected <uuid> to be <uuid>` reds on this cell (R795,
+    // L.D2.2's full run, CI runs 34177879274 att. 1 and 34194666800). At
+    // max bid the answer would need max_bid + 1 ≤ LEAST(value, max_bid):
+    // impossible (0 of 3,000).
+    const { data: purse, error: purseError } = await service.rpc('draft_team_budget', {
+      p_draft_id: mockId,
+      p_team_id: commishTeamId,
+    })
+    expect(purseError).toBeNull()
+    const amount = (purse as unknown as { max_bid: number }[])[0].max_bid
+    // The mock's human seat carries the league's untouched purse ($200 over
+    // 16 open slots ⇒ $185) — and it must clear the CPUs' standing bid.
+    expect(amount).toBe(MAX_BID)
+    expect(amount).toBeGreaterThan(nomination.high_bid)
     const bid = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
       draft_id: mockId,
       nomination_seq: 1,

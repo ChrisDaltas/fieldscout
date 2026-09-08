@@ -52,7 +52,12 @@
  * assertion that could be disturbed by it — the tick-pass count — is written
  * as a MONOTONIC bound (`auction_awarded` never increases in the second half)
  * rather than an exact call count, because the cron can legitimately perform a
- * pass this suite did not ask for.
+ * pass this suite did not ask for. AND (F264 / D325, 2026-09-08) every
+ * per-pass state read is a bounded WAIT for the converged row, because the
+ * direct `draft_tick()` claims `FOR UPDATE SKIP LOCKED` and can therefore
+ * SKIP a draft the cron already holds and return before the cron's pass
+ * commits — see `waitForDraft`; the contested half's exact tally counts a
+ * cron-won close explicitly (`cronClosed`) rather than losing it.
  *
  * Seats: 1 real commissioner (STALE — never heartbeats) + 7 placeholder seats
  * (NO user — E48's autopilot, no grace).
@@ -333,6 +338,48 @@ async function pickCount(): Promise<number> {
   return count ?? 0
 }
 
+const POLL_MS = 200
+/** The convergence budget: generous against a cron pass in flight (a pass
+ *  commits in well under a second even on a 2-vCPU runner), and DELIBERATELY
+ *  below the 30 s bid clock, so a clock the engine wrongly armed can never
+ *  be closed by the cron inside the wait — a pass that did not happen still
+ *  reds the same assertion; it never passes. */
+const CONVERGE_MS = 10_000
+
+/**
+ * Bounded wait for the draft row to reach a state — attempt-counted, no wall
+ * clock (budget ≈ attempts × POLL_MS). F264 / D325: `rewindAndTickReport`'s
+ * direct `draft_tick()` claims `FOR UPDATE SKIP LOCKED` (091:1677 / 1842 /
+ * 1954), so when the live 5 s cron has ALREADY claimed this draft the direct
+ * call SKIPS it and returns before the cron's transaction commits; a read
+ * taken at that instant sees the PRE-pass row (READ COMMITTED) and the
+ * assertion reds one pass behind — "nomination 1 should be live: expected
+ * null not to be null" (CI run 34188213182, PR #269) and "picks after tail
+ * nomination 7: expected 14 to be 15" (F139, local). The cron is a LEGAL
+ * actor (harness note) running the same deterministic arm, so the fix is to
+ * wait for the CONVERGED state; the assertion after the wait is unchanged.
+ */
+async function waitForDraft(ok: (row: DraftRow) => boolean, budgetMs: number): Promise<DraftRow> {
+  const attempts = Math.ceil(budgetMs / POLL_MS)
+  let row = await readDraft()
+  for (let i = 1; i < attempts && !ok(row); i++) {
+    await new Promise((r) => setTimeout(r, POLL_MS))
+    row = await readDraft()
+  }
+  return row
+}
+
+/** The same bounded wait over the live pick count (the tail half's arithmetic). */
+async function waitForPickCount(expected: number, budgetMs: number): Promise<number> {
+  const attempts = Math.ceil(budgetMs / POLL_MS)
+  let count = await pickCount()
+  for (let i = 1; i < attempts && count !== expected; i++) {
+    await new Promise((r) => setTimeout(r, POLL_MS))
+    count = await pickCount()
+  }
+  return count
+}
+
 /** Rewind + tick, returning the sweep's own report so the counters can be
  *  read rather than inferred (§4 rule 9). */
 async function rewindAndTickReport(): Promise<{ nominated: number; awarded: number }> {
@@ -362,10 +409,11 @@ describe('§8.6.9 over the wire: the contested half costs two passes, the uncont
     expect(await maxBidOf(nominationOrder[0])).toBe(AUCTION_BUDGET - AUCTION_RESERVE)
 
     let awardedBySweep = 0
+    let cronClosed = 0
     for (let n = 0; n < TEAM_COUNT; n++) {
       const opened = await rewindAndTickReport()
       awardedBySweep += opened.awarded
-      const live = await readDraft()
+      const live = await waitForDraft((d) => d.current_nomination !== null, CONVERGE_MS)
       // The nomination OPENED and is waiting on a bid clock — §8.6.9 did not
       // fire, because it should not have.
       expect(live.current_nomination, `nomination ${n + 1} should be live`).not.toBeNull()
@@ -375,12 +423,17 @@ describe('§8.6.9 over the wire: the contested half costs two passes, the uncont
 
       const closed = await rewindAndTickReport()
       awardedBySweep += closed.awarded
-      const after = await readDraft()
+      const after = await waitForDraft((d) => d.current_nomination === null, CONVERGE_MS)
       expect(after.current_nomination, `nomination ${n + 1} should be closed`).toBeNull()
+      // A close our own call did not report, yet the board converged on: the
+      // cron's pass — the only other actor, running the same ARM 2.6(b) —
+      // counted explicitly so the exact tally below stays exact (F264/D325).
+      if (closed.awarded === 0) cronClosed += 1
     }
     expect(await pickCount()).toBe(TEAM_COUNT)
-    // The counter is the point: ARM 2.6(b) closed all eight.
-    expect(awardedBySweep).toBe(TEAM_COUNT)
+    // The counter is the point: ARM 2.6(b) closed all eight — through our
+    // direct passes or the cron's, never through anything else.
+    expect(awardedBySweep + cronClosed, `sweep closes (${awardedBySweep} ours + ${cronClosed} cron)`).toBe(TEAM_COUNT)
 
     // ---- THE COMMISSIONER TAKES THE ROOM DOWN TO ITS CEILING --------------
     // Through the REAL §8.7 verb, which re-validates E28 on every seat. Each
@@ -408,10 +461,13 @@ describe('§8.6.9 over the wire: the contested half costs two passes, the uncont
     for (let n = 0; n < TEAM_COUNT; n++) {
       const pass = await rewindAndTickReport()
       awardedBySweep += pass.awarded
-      const after = await readDraft()
       // ONE pass per nomination — the pick is on the board and there is no
-      // live nomination to come back for.
-      expect(await pickCount(), `picks after tail nomination ${n + 1}`).toBe(TEAM_COUNT + n + 1)
+      // live nomination to come back for. (Converged read — waitForDraft's
+      // note; the budget is far below the bid clock a wrongly-armed
+      // nomination would need, so a second pass cannot hide behind it.)
+      const picks = await waitForPickCount(TEAM_COUNT + n + 1, CONVERGE_MS)
+      const after = await readDraft()
+      expect(picks, `picks after tail nomination ${n + 1}`).toBe(TEAM_COUNT + n + 1)
       if (after.status === 'live') {
         expect(after.current_nomination, `tail nomination ${n + 1} left a live clock`).toBeNull()
       }
