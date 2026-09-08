@@ -62,7 +62,7 @@ import {
 } from './schedule-view-ops'
 import { GOLDEN_STANDINGS, NAMES, SCHEDULE } from './standings-schedule.fixtures'
 import { StandingsPage } from './standings-page'
-import { NO_FINAL_WEEKS_COPY, PROJECTED_PENDING_COPY } from './standings-table-ops'
+import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -195,7 +195,7 @@ describe('standings — the four required states (§16.5.4)', () => {
     expect(league).not.toContain('Alpha')
     const table = renderStandings({ standings: 'missing' })
     expect(table).toContain('data-skeleton="standings-table"')
-    expect(table).toContain('data-projected-copy') // the page chrome is up; only the table waits
+    expect(table).toContain('data-view="final"') // the page chrome is up; only the table waits
   })
 
   it('error-with-retry when the league or the standings read fails; ONE 404 copy (F250(a))', () => {
@@ -261,11 +261,12 @@ describe('standings — the table is the RPC’s order, the chain the stored ord
     expect(html).toContain('424242')
   })
 
-  it('the projected view is PENDING BY NAME (R801/F253): a disabled segment and the honest copy; no task id on screen', () => {
+  it('the Final | Projected control is LIVE (L.D5.5 — F253(a) discharged): both segments enabled, Final selected by default, no task id on screen', () => {
     const html = renderStandings()
-    // The ATTRIBUTE (`disabled=""`), not the `disabled:` class prefix.
-    expect(openTagOf(html, 'data-projected="pending"')).toMatch(/ disabled=""/)
-    expect(html).toContain(PROJECTED_PENDING_COPY)
+    expect(openTagOf(html, 'data-view="final"')).toContain('aria-pressed="true"')
+    expect(openTagOf(html, 'data-view="projected"')).toContain('aria-pressed="false"')
+    expect(openTagOf(html, 'data-view="projected"')).not.toMatch(/ disabled=""/)
+    expect(html).not.toContain('data-projected-copy') // the projected line shows only under the projected view
     expect(html).not.toMatch(/L\.D\d|F253|Q38|B9/)
   })
 
