@@ -216,4 +216,16 @@
 # No launch-surface table is touched: the ALTER is on 109's service-role-
 # only queue, both functions read and write it alone; no policy, trigger,
 # index, publication or cron change.
-082-121
+# 122 (L.D2.3, 2026-09-07): production wiring's two persisted surfaces —
+# `system_flags` (NEW: one row per key, world-SELECT, no client write
+# policy; the §23.2 `stats_degraded` flag persisted across serverless
+# invocations + the per-week last-poll instant the worker's orphan escape
+# reads — PROGRESS F217 / F263(e)) and `score_fanout.deferred_until` with
+# 121's claim + ack pair re-authored against 121's file text (the ack
+# DROPPED at 2 args and re-created at 4 — R872's starvation closer: a held
+# row is handed back deferred and the claim skips it). Same mechanism, same
+# explicit act. No launch-surface table is touched: `system_flags` is new
+# and references nothing; the ALTER is on 109's service-role-only queue;
+# both functions read and write the queue alone. No policy on a launch
+# table, no trigger, no index, no publication or cron change.
+082-122

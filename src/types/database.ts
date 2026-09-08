@@ -2984,6 +2984,7 @@ export type Database = {
         Row: {
           claim_token: string | null
           claimed_at: string | null
+          deferred_until: string | null
           enqueued_at: string
           player_id: string
           season: number
@@ -2992,6 +2993,7 @@ export type Database = {
         Insert: {
           claim_token?: string | null
           claimed_at?: string | null
+          deferred_until?: string | null
           enqueued_at?: string
           player_id: string
           season: number
@@ -3000,6 +3002,7 @@ export type Database = {
         Update: {
           claim_token?: string | null
           claimed_at?: string | null
+          deferred_until?: string | null
           enqueued_at?: string
           player_id?: string
           season?: number
@@ -3186,6 +3189,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_flags: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
       }
       tags: {
         Row: {
@@ -4416,7 +4437,12 @@ export type Database = {
         }[]
       }
       score_fanout_ack: {
-        Args: { p_claim_token: string; p_consumed: Json }
+        Args: {
+          p_claim_token: string
+          p_consumed: Json
+          p_defer_until?: string
+          p_deferred?: Json
+        }
         Returns: Json
       }
       score_fanout_claim: {

@@ -214,8 +214,8 @@ select policy_cmd_is('public', 'league_player_pool', 'Pool viewable by members',
 -- A5. score_fanout (the queue)
 select has_table('public', 'score_fanout', 'score_fanout exists');
 select columns_are('public', 'score_fanout',
-  array['season', 'week', 'player_id', 'enqueued_at', 'claimed_at', 'claim_token'],
-  'exact queue column set (season, week, player_id, enqueued_at — task item 5; + claimed_at / claim_token, the 121 lease — moved in place, R866)');
+  array['season', 'week', 'player_id', 'enqueued_at', 'claimed_at', 'claim_token', 'deferred_until'],
+  'exact queue column set (season, week, player_id, enqueued_at — task item 5; + claimed_at / claim_token, the 121 lease — moved in place, R866; + deferred_until, the 122 deferral — moved in place, R872)');
 select col_is_pk('public', 'score_fanout', array['season', 'week', 'player_id'],
   'queue PK (season, week, player_id) — the dedupe key (D292)');
 select fk_ok('public', 'score_fanout', 'player_id', 'public', 'players', 'id', 'queue.player_id → players');
