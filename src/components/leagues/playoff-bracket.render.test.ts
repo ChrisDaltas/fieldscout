@@ -325,9 +325,19 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(r2).toContain('Leads on points')
     expect(r2).toContain('✸ commissioner-adjusted')
     expect(between(html, 'data-round="3"', 'data-commish-doors')).toContain('data-game="tbd"')
+    // R911: BUILT_DOC's regular season is FINAL — the document-level close is the regular
+    // season's (a past instant) and must NOT render under a final bracket; each round's badge
+    // carries its own close.
+    expect(html).not.toContain('data-rollover-line="corrections-close"')
+  })
+
+  it('R911: while the seeds are PROVISIONAL (regular_season_final false) the regular season’s close renders as the seeds-final instant, viewer-local, league zone on hover', () => {
+    const html = renderTab({ bracket: { ...BUILT_DOC, regular_season_final: false } })
     const close = elementOf(html, 'data-rollover-line="corrections-close"', '</p>')
+    expect(close).toContain('Seeds final when corrections close')
     expect(close).toMatch(/Thu, Dec 1[67], \d{1,2}:\d\d [AP]M/)
     expect(close).toContain('(league time)')
+    expect(renderTab({ bracket: { ...BUILT_DOC, regular_season_final: true } })).not.toContain('data-rollover-line="corrections-close"')
   })
 
   it('a built round NOT YET PLAYED (rows `scheduled`, 109’s DEFAULT 0) renders dashes and "Not played yet" — no 0.00, no tie verdict, no winner fill', () => {
@@ -526,7 +536,10 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.5 fi
     }
     // The viewer's zone is the BROWSER's (undefined) in the component — a
     // named zone reaches `rolloverDisplay` only from a test fixture.
-    expect(code(read('src/components/leagues/playoff-bracket.tsx'))).not.toMatch(/America\/|Europe\/|Asia\/|'UTC'/)
+    // R913: the formatter lives in the ops file — the fixed-zone pin reads BOTH sources.
+    for (const f of ['src/components/leagues/playoff-bracket.tsx', 'src/components/leagues/playoff-bracket-ops.ts']) {
+      expect(code(read(f)), f).not.toMatch(/America\/|Europe\/|Asia\/|'UTC'/)
+    }
   })
 
   it('the component computes no seed, no total, no tiebreak — nothing is derived from a comparison of scores or seeds', () => {

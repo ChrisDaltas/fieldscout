@@ -145,8 +145,12 @@ export function PlayoffBracket({
       {(shape === 'projected' || shape === 'awaiting_build') && (
         <RolloverLine label={shape === 'projected' ? 'The real bracket is built' : 'The regular season rolled over'} display={rollover} />
       )}
-      {!compact && shape === 'bracket' && close && doc.status !== 'complete' && (
-        <RolloverLine label="Corrections close" display={close} marker="corrections-close" />
+      {/* R911 (#272): `corrections_close_at` is the LAST REGULAR-SEASON week's close — the
+          instant the SEEDS become final. Once `regular_season_final` it is a past instant, and
+          each round carries its own week's close in its badge; showing it here presented a
+          stale "pending" close under a final bracket. */}
+      {!compact && shape === 'bracket' && close && !doc.regular_season_final && doc.status !== 'complete' && (
+        <RolloverLine label="Seeds final when corrections close" display={close} marker="corrections-close" />
       )}
 
       <ChampionLine doc={doc} teamNames={teamNames} />
