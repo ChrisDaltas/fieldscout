@@ -39,6 +39,17 @@
  * stat row is older than its queue row (or absent) is a delta whose stats
  * have not landed yet — leave it queued, never score it stale.
  *
+ * Why a re-enqueue RE-STAMPS an existing queue row (L.D2.2, D321(2)): the
+ * worker claims a row by reading it, scores, and then deletes it BY STAMP
+ * (`enqueued_at` equal to what it read). With a pure `DO NOTHING` enqueue a
+ * delta landing between the worker's stats read and its delete would fold
+ * into the still-queued row WITHOUT moving anything, the worker would delete
+ * the row having scored the OLD line, and nothing would ever re-enqueue it
+ * (the next poll's diff reads the stored row as current) — a silently stale
+ * score. `ON CONFLICT DO UPDATE SET enqueued_at` closes that: the stamp
+ * moves, the worker's conditional delete misses, the row is re-drained. One
+ * row per (season, week, player) either way — the PK dedupe stands.
+ *
  * Never partial data (§23.2): every provider read happens BEFORE the first
  * DB write, and a failed read writes nothing and records ONE failed poll on
  * the caller-owned `DegradationTracker` — the `stats_degraded` flag surface
@@ -128,6 +139,11 @@ export interface IngestStatsReport {
   deltas: number
   /** NEW queue rows this poll created (deltas minus the PK dedupe). */
   enqueued: number
+  /** Deltas whose queue row ALREADY existed (undrained): one row still — the
+   *  PK dedupe (D292) — but its `enqueued_at` is RE-STAMPED to this poll's
+   *  instant (D321(2)): the worker acks a claimed row by stamp, so a delta
+   *  landing while a drain is in flight moves the stamp and survives it. */
+  restamped: number
 }
 
 export interface IngestReport {
@@ -556,9 +572,25 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       unchanged: 0,
       deltas: 0,
       enqueued: 0,
+      restamped: 0,
     },
     reasons: [],
   }
+}
+
+/** Player ids already queued for (season, week) — so the report can tell a
+ *  NEW queue row from a RE-STAMPED one (paged past the cap). */
+async function readQueuedPlayers(db: SyncClient, season: number, week: number): Promise<Set<string>> {
+  const rows = await pageAll<{ player_id: string }>((from, to) =>
+    db
+      .from('score_fanout')
+      .select('player_id', { count: 'exact' })
+      .eq('season', season)
+      .eq('week', week)
+      .order('player_id')
+      .range(from, to),
+  )
+  return new Set(rows.map((r) => r.player_id))
 }
 
 /**
@@ -708,6 +740,7 @@ export async function ingestWeek(
   const deltas = [...statDiff.inserts, ...statDiff.updates]
   report.stats.deltas = deltas.length
   if (deltas.length > 0) {
+    const alreadyQueued = await readQueuedPlayers(db, season, week)
     for (let i = 0; i < deltas.length; i += BATCH) {
       const batch = deltas.slice(i, i + BATCH).map((row) => ({
         season,
@@ -715,13 +748,22 @@ export async function ingestWeek(
         player_id: row.player_id,
         enqueued_at: stamp, // the SAME instant as the stat row's updated_at below
       }))
-      // ON CONFLICT DO NOTHING — the PK is the dedupe (D292/109's banner).
+      // ON CONFLICT DO UPDATE SET enqueued_at — one row per PK (D292's
+      // dedupe, 109's banner), the stamp moved to THIS delta's instant so
+      // the worker's by-stamp ack cannot consume a newer delta (D321(2)).
       const { data, error } = await db
         .from('score_fanout')
-        .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: true })
+        .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: false })
         .select('player_id')
       if (error) throw new Error(`score_fanout enqueue failed: ${error.message}`)
-      report.stats.enqueued += (data ?? []).length
+      const returned = data ?? []
+      if (returned.length !== batch.length) {
+        throw new Error(`score_fanout enqueue stamped ${returned.length} of ${batch.length} rows — refusing to call that success`)
+      }
+      for (const row of returned) {
+        if (alreadyQueued.has(row.player_id)) report.stats.restamped += 1
+        else report.stats.enqueued += 1
+      }
     }
   }
 
@@ -776,7 +818,9 @@ export async function ingestWeek(
   }
   if (deltas.length === 0) report.reasons.push('score_fanout: no scoring delta — nothing enqueued')
   else if (report.stats.enqueued === 0) {
-    report.reasons.push(`score_fanout: all ${deltas.length} deltas already queued (PK dedupe)`)
+    report.reasons.push(
+      `score_fanout: all ${deltas.length} deltas already queued (PK dedupe) — re-stamped to ${stamp} (D321(2))`,
+    )
   }
 
   return report

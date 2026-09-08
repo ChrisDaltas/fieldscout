@@ -278,6 +278,7 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
       unchanged: 0,
       deltas: 6,
       enqueued: 6,
+      restamped: 0,
     })
     expect(report.reasons).toEqual([])
 
@@ -356,13 +357,22 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
     const deps = io()
     await poll(provider, clock, '2026-09-20T18:00:00Z', deps)
 
-    // +20 min: every G1 line moved (measured), but the queue still holds all 6 → 0 NEW rows.
+    // +20 min: every G1 line moved (measured), but the queue still holds all 6
+    // → 0 NEW rows (the PK dedupe, D292) — RE-STAMPED to 18:20 (D321(2): the
+    // worker acks by stamp, so a delta landing mid-drain moves the stamp and
+    // survives the ack; the probe — `ignoreDuplicates: true` — leaves 18:00).
     const moved = await poll(provider, clock, '2026-09-20T18:20:00Z', deps)
     expect(moved.stats.updated).toBe(6)
     expect(moved.stats.unchanged).toBe(0)
     expect(moved.stats.deltas).toBe(6)
     expect(moved.stats.enqueued).toBe(0)
-    expect(moved.reasons).toContain('score_fanout: all 6 deltas already queued (PK dedupe)')
+    expect(moved.stats.restamped).toBe(6)
+    expect(moved.reasons).toContain(
+      'score_fanout: all 6 deltas already queued (PK dedupe) — re-stamped to 2026-09-20T18:20:00.000Z (D321(2))',
+    )
+    const restamped = await queuedRows()
+    expect(restamped).toHaveLength(6)
+    for (const q of restamped) expect(q.enqueued_at).toBe('2026-09-20T18:20:00.000Z')
     expect((await storedStats()).get('syn-g1-qb')).toMatchObject({
       pass_attempts: 14,
       pass_yards: 75,
