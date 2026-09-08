@@ -153,6 +153,7 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
       ['src/components/draft/mock-launcher-entry.ts', 3], // launcher entry + the league mock room's URL (R521) + mockRoomHref, all in place
       ['src/components/home/home-quick-actions.tsx', 1], // MP.7's Home chip — router.push after a POST, no anchor to split (R536)
       ['src/components/layout/draft-bar-ops.ts', 1], // SPLIT via draft-bar.tsx
+      ['src/components/leagues/league-home-season-ops.ts', 1], // L.D5.4's practice DOOR (F46/R281) — the launcher helper, in place: post-draft the launcher is the resume/recap LIST surface (071 refuses a launch), never the room
       ['src/components/leagues/league-home-states.tsx', 3], // 2 literals SPLIT + the practice CTA's helper call, in place
     ])
   })

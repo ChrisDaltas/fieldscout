@@ -20,22 +20,27 @@ import type { LeagueDetail } from '@/hooks/use-league'
 
 /**
  * Which home hero renders for a `leagues.status`. M1 built `setup` +
- * `scheduled`; M2 (L.B3.4 — the F38 discharge) adds the REAL `drafting` hero
- * (LIVE badge + Join draft, §16.5.1). Every LATER lifecycle status
- * (`in_season`/`playoffs`/`complete`) still renders a clearly-marked "not
- * yet" placeholder — never mock data — until M4's real heroes land (F46).
- * Unknown/invalid statuses fall through to `later` too.
+ * `scheduled`; M2 (L.B3.4 — the F38 discharge) added the REAL `drafting`
+ * hero (LIVE badge + Join draft, §16.5.1); M4 (L.D5.4 — the F46 discharge)
+ * the REAL `in_season` / `playoffs` / `complete` heroes
+ * (`league-home-season.tsx`). Only a status OUTSIDE §7.1's six-state enum
+ * falls through to `later` — the honest "not yet" card, never mock data.
  */
-export type HomeState = 'setup' | 'scheduled' | 'drafting' | 'later'
+export type HomeState = 'setup' | 'scheduled' | 'drafting' | 'in_season' | 'playoffs' | 'complete' | 'later'
 
 export function homeStateForStatus(status: string): HomeState {
   if (status === 'setup') return 'setup'
   if (status === 'scheduled') return 'scheduled'
   if (status === 'drafting') return 'drafting'
+  if (status === 'in_season') return 'in_season'
+  if (status === 'playoffs') return 'playoffs'
+  if (status === 'complete') return 'complete'
   return 'later'
 }
 
-/** Human label for a later-status "not yet" placeholder (§7.1 six-state enum). */
+/** Human label for the `later` placeholder — an UNKNOWN status since L.D5.4
+ *  (the six enum members each have a hero); the enum labels are kept so a
+ *  status that leaves the enum still reads as itself. */
 export function laterStatusLabel(status: string): string {
   switch (status) {
     case 'drafting':

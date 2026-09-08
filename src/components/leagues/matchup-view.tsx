@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
@@ -21,7 +21,8 @@ import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-servic
 import { cn } from '@/lib/utils'
 
 import { Crest } from './league-cells'
-import { formatKickoff } from './lineup-editor'
+import { scoringLive } from './league-home-season-ops'
+import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import {
   BOX_SUM_LABEL,
   LEADERBOARD_TITLE,
@@ -143,7 +144,10 @@ function MatchupContent({
     [matchupId, weekParam, schedule.data],
   )
   const matchups = useMatchupsLive(leagueId, week ?? undefined)
-  const degraded = useStatsDegraded()
+  // F277(d) / F274: the flag is POLLED (nothing broadcasts `system_flags`),
+  // so only a week that is scoring asks — an `upcoming` / `final` week
+  // cannot be delayed. The league home's hero applies the same gate.
+  const degraded = useStatsDegraded({ enabled: scoringLive(matchups.data?.league_week.status) })
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
 
@@ -193,7 +197,7 @@ function MatchupContent({
       {matchups.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {problem && doc && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
       {degraded.data?.degraded && (
-        <LiveStatsDelayedBanner since={degraded.data.last_success_at ? formatKickoff(degraded.data.last_success_at, leagueTimeZone).local : null} />
+        <LiveStatsDelayedBanner since={degraded.data.last_success_at ? formatInstantWithDate(degraded.data.last_success_at, leagueTimeZone).local : null} />
       )}
 
       <WeekStrip leagueId={leagueId} week={week} weeks={weeks} weekStatus={doc?.league_week.status ?? null} />
@@ -311,7 +315,7 @@ function HeadToHeadWeek({
 
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
-      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} />
+      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} badge={false} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <TeamBox leagueId={leagueId} week={doc.week} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />
@@ -344,31 +348,51 @@ function HeadToHeadWeek({
   )
 }
 
-function Scoreboard({
+/**
+ * The head-to-head scoreboard card — ONE component, two mounts: the matchup
+ * page (where the week strip already carries the week badge, so `badge` is
+ * off — F277(c)) and the league home's matchup-of-the-week hero (L.D5.4 /
+ * F46, where the card is the only badge site and `title` names the week).
+ * Exported for that second mount; never forked.
+ */
+export function Scoreboard({
   doc,
   row,
   settings,
   myTeamId,
+  badge: showBadge = true,
+  title,
+  children,
 }: {
   doc: WeekMatchups
   row: MatchupRow
   settings: { median_game: boolean; second_opponent: boolean }
   myTeamId: string | null
+  /** Render the §16.5.4 week badge in the card header (off where a week
+   *  strip already shows it — F277(c)). */
+  badge?: boolean
+  /** The card's title — defaults to "Matchup" / "Playoff matchup". */
+  title?: string
+  /** Trailing header content (the hero's "Open matchup" link). */
+  children?: ReactNode
 }) {
   const badge = weekBadge(doc.league_week.status)
   return (
     <Card className="min-w-0 overflow-hidden" data-matchup={row.id} data-matchup-status={row.status}>
       <CardHeader className="min-h-0 py-2">
         <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
-          <span>{row.round_type === 'playoff' ? 'Playoff matchup' : 'Matchup'}</span>
-          <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
-            {badge.label}
-          </Badge>
+          <span>{title ?? (row.round_type === 'playoff' ? 'Playoff matchup' : 'Matchup')}</span>
+          {showBadge && (
+            <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
+              {badge.label}
+            </Badge>
+          )}
           {row.is_overridden && (
             <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} data-overridden>
               {OVERRIDDEN_LABEL}
             </Badge>
           )}
+          {children && <span className="ml-auto">{children}</span>}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 px-card-pad py-3 sm:grid-cols-2">
@@ -540,16 +564,13 @@ function TotalPointsWeek({
   const rows = leaderboardRows(doc)
   const [picked, setPicked] = useState<string | null>(null)
   const selectedId = picked ?? myTeamId ?? rows[0]?.team_id ?? null
-  const badge = weekBadge(doc.league_week.status)
+  // F277(c): the week strip above carries the week badge — not a second one.
   return (
     <div className="flex flex-col gap-4" data-variant="total_points">
       <Card data-leaderboard>
         <CardHeader className="min-h-0 py-2">
           <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
             {LEADERBOARD_TITLE}
-            <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
-              {badge.label}
-            </Badge>
             <Badge variant="stroke">Total points</Badge>
           </CardTitle>
         </CardHeader>
@@ -574,7 +595,7 @@ function TotalPointsWeek({
               {row.points !== null ? (
                 <span className="fs-num shrink-0 text-[13px] font-bold text-ink">{formatPoints(row.points)}</span>
               ) : (
-                <span className="shrink-0 text-[12px] font-medium text-n-3" title="No scoring batch has reached this team yet — the worker’s absence is not a score (F241(b)).">
+                <span className="shrink-0 text-[12px] font-medium text-n-3" title="No scoring batch has reached this team yet — an absent row is not a score.">
                   pending
                 </span>
               )}

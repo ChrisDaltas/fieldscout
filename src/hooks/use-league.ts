@@ -44,6 +44,9 @@ export interface LeagueDetail {
     max_teams: number
     created_at: string | null
     updated_at: string | null
+    /** `leagues.champion_team_id` — written at the `complete` flip (migration
+     *  118, Q39 (D)); null until then. The complete hero's banner (L.D5.4). */
+    champion_team_id: string | null
   }
   settings: LeagueSettings
   members: Array<{

@@ -87,6 +87,7 @@ function detailWith(over: Partial<LeagueDetail['settings']> = {}): LeagueDetail 
       max_teams: 8,
       created_at: null,
       updated_at: null,
+      champion_team_id: null,
     },
     settings: { ...settings, ...over },
     members: [

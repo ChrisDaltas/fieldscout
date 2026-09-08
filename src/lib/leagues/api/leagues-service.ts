@@ -591,6 +591,9 @@ export async function getLeagueDetail(
         max_teams: league.max_teams,
         created_at: league.created_at,
         updated_at: league.updated_at,
+        // L.D5.4: the complete hero's champion banner reads the STORED id
+        // (118 writes it in the `complete` transaction — Q39 (D)).
+        champion_team_id: league.champion_team_id,
       },
       settings,
       members,

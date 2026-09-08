@@ -62,6 +62,7 @@ function detail(over: {
       max_teams: over.max_teams ?? 12,
       created_at: null,
       updated_at: null,
+      champion_team_id: null,
     },
     settings,
     members: over.members ?? [],
@@ -85,11 +86,10 @@ describe('homeStateForStatus', () => {
     expect(homeStateForStatus('drafting')).toBe('drafting')
   })
 
-  it('routes every M4-remainder status to the "not yet" placeholder (F46)', () => {
-    // in_season/playoffs/complete stay honest placeholders until M4 (F46).
-    for (const s of ['in_season', 'playoffs', 'complete']) {
-      expect(homeStateForStatus(s)).toBe('later')
-    }
+  it('routes the three season statuses to their REAL heroes (F46 discharged at L.D5.4) — never the placeholder', () => {
+    expect(homeStateForStatus('in_season')).toBe('in_season')
+    expect(homeStateForStatus('playoffs')).toBe('playoffs')
+    expect(homeStateForStatus('complete')).toBe('complete')
   })
 
   it('falls through unknown statuses to "later" (never crashes the home)', () => {
