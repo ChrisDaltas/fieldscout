@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { systemPostPreview } from '@/components/leagues/schedule-view-ops'
-import type { RemixPreview } from '@/hooks/use-schedule'
+import type { RemixConfirmResult, RemixPreview } from '@/hooks/use-schedule'
 
 import {
   assertNoForeignSeasonFixtures,
@@ -88,9 +88,10 @@ test.describe('remix preview and confirm, free window (real browser)', () => {
     // eslint-disable-next-line no-console -- the DoD evidence line
     console.log(`[inseason-remix] board complete in ${drive.steps} engine steps → ${drive.status}`)
 
-    // The pairings BEFORE, straight from the authoritative table — the
-    // "regenerated" claim is checked against these, not against the diff the
-    // modal drew (which is the thing under test).
+    // 110's completion wiring really did generate a season to remix. The
+    // per-week BEFORE snapshot the rewrite is judged against is taken later,
+    // over the previewed plan's own regenerable weeks (R936) — this is only
+    // the door check that week 1 exists at all.
     const before = await readWeekMatchups(service, league.leagueId, 1)
     expect(before.length).toBeGreaterThan(0)
 
@@ -179,17 +180,28 @@ test.describe('remix preview and confirm, free window (real browser)', () => {
       expect(expectedPreview.endsWith('.')).toBe(true)
       expect(expectedPreview).not.toContain('commissioner override')
 
+      // The pairings of every REGENERABLE week, taken from the authoritative
+      // table while the previewed plan is on screen and BEFORE Confirm. Not
+      // scoped to week 1: `no_changes === false` only guarantees that SOME
+      // regenerable week changed, so a week-1-only diff would be a flake
+      // (R936). Weeks 15+ are playoff/frozen and are never in this list.
+      const pairings = (
+        rows: ReadonlyArray<{ round_type: string; home_team_id: string; away_team_id: string | null }>,
+      ): string[] =>
+        rows.map((r) => `${r.round_type}|${r.home_team_id}|${r.away_team_id ?? 'BYE'}`).sort()
+      const beforeByWeek = new Map<number, string[]>()
+      for (const week of plan.weeks_regenerable) {
+        beforeByWeek.set(week, pairings(await readWeekMatchups(service, league.leagueId, week)))
+      }
+      expect(beforeByWeek.size).toBeGreaterThan(0)
+
       // ---- Confirm — never optimistic; the applied panel is the server's --
       const confirmResponse = page.waitForResponse(
         (res) => res.url().includes('/schedule/confirm') && res.request().method() === 'POST',
         { timeout: 60_000 },
       )
       await confirmButton.click()
-      const applied = (await (await confirmResponse).json()) as {
-        system_post: string
-        weeks_regenerated: number[]
-        matchups_replaced: number
-      }
+      const applied = (await (await confirmResponse).json()) as RemixConfirmResult
       await expect(page.locator('[data-remix-applied]')).toBeVisible({ timeout: 60_000 })
       const shownPost = await page.locator('[data-remix-applied] [data-system-post]').innerText()
       expect(shownPost).toBe(applied.system_post)
@@ -202,19 +214,65 @@ test.describe('remix preview and confirm, free window (real browser)', () => {
       expect(applied.system_post.endsWith('.')).toBe(true)
       expect(applied.system_post).toContain(`Schedule remixed by ${ACTOR_NAME}: `)
 
-      // …and the season really was rewritten (D289: confirm regenerates from
-      // the previewed seed IN-BODY; a client-sent schedule is never read).
-      const after = await readWeekMatchups(service, league.leagueId, 1)
-      const pairing = (rows: typeof after) =>
-        rows.map((r) => `${r.home_team_id}|${r.away_team_id}`).sort().join(' ')
+      // ---- WHAT WAS APPLIED IS WHAT WAS PREVIEWED (R938) -----------------
+      // The applied post round-trips four ways below, but until this line
+      // none of those four was ever compared to the sentence the
+      // commissioner actually read. A confirm that regenerated from a seed
+      // OTHER than the previewed one — a dropped `p_seed`, or the modal
+      // sending the first of the two seeds StrictMode mints — would hand the
+      // user plan B's season after showing plan A, and every other assertion
+      // here would stay green (the week list is identical across seeds in
+      // this fixture; the only datum that moves lives inside the post).
+      // The seed is asserted too, because two seeds can coincide on
+      // `change_count` and the post carries only the count.
+      expect(applied.system_post).toBe(expectedPreview)
+      expect(applied.schedule_seed).toBe(plan.seed)
+      expect(applied.weeks_regenerated).toEqual(plan.weeks_regenerable)
+
+      // ---- …AND THE SEASON REALLY WAS REWRITTEN (R936) -------------------
+      // D289: confirm regenerates from the previewed seed IN-BODY; a
+      // client-sent schedule is never read. Until this block that claim was
+      // carried by a `console.log`: every post-confirm assertion read the
+      // route's OWN self-report (`matchups_replaced`, `weeks_regenerated`) or
+      // a row count that a rewrite persisting the ORIGINAL pairings leaves
+      // untouched — and a `schedule_remix_confirm` patched to do exactly that
+      // ran the whole spec green. So: read the persisted rows for every
+      // regenerated week and assert they are the previewed plan's `proposed`
+      // rows, the same way `inseason-week.spec.ts:398` asserts the stored
+      // `league_weeks.status` instead of the job's report.
       expect(applied.matchups_replaced).toBeGreaterThan(0)
       expect(applied.weeks_regenerated.length).toBeGreaterThan(0)
-      expect(after.length).toBe(before.length)
+      let persistedRows = 0
+      const movedWeeks: number[] = []
+      for (const week of applied.weeks_regenerated) {
+        const proposed = plan.proposed.filter((row) => row.regenerated && row.week === week)
+        expect(
+          proposed.length,
+          `the previewed plan proposed no regenerated row for week ${week}`,
+        ).toBeGreaterThan(0)
+        const persisted = await readWeekMatchups(service, league.leagueId, week)
+        expect(
+          pairings(persisted),
+          `week ${week}'s STORED pairings are not the ones the preview proposed`,
+        ).toEqual(pairings(proposed))
+        persistedRows += persisted.length
+        if (pairings(persisted).join(' ') !== beforeByWeek.get(week)!.join(' ')) movedWeeks.push(week)
+      }
+      // The route's self-report, bound to the rows that actually exist.
+      expect(persistedRows).toBe(applied.matchups_replaced)
+      // The headline, in its most direct form: at least one regenerable week
+      // holds different pairings than it did before Confirm. Implied by the
+      // equality above plus `no_changes === false`, asserted anyway because
+      // it is the sentence the commissioner is being sold.
+      expect(
+        movedWeeks.length,
+        'confirm reported a full replacement but not one regenerated week changed',
+      ).toBeGreaterThan(0)
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(
         `[inseason-remix] weeks regenerated ${applied.weeks_regenerated.join(',')} · ` +
-          `${applied.matchups_replaced} pairings replaced · week-1 pairings changed: ` +
-          `${pairing(before) !== pairing(after)}`,
+          `${applied.matchups_replaced} pairings replaced, ${persistedRows} verified against the ` +
+          `previewed plan · weeks whose stored pairings changed: ${movedWeeks.join(',')}`,
       )
 
       // ---- The same post, in the league home's activity feed --------------
@@ -223,11 +281,16 @@ test.describe('remix preview and confirm, free window (real browser)', () => {
       const feed = page.locator('[data-activity-feed] [data-feed-items]')
       await expect(feed).toBeVisible({ timeout: 60_000 })
       // `feedLines` renders a system item's text as `item.message` verbatim
-      // (`activity-feed-ops.ts:80`), so this is an exact-equality assertion,
-      // not a substring one.
+      // (`activity-feed-ops.ts:80`). The assertion is on `[data-feed-text]`,
+      // the span that holds ONLY that text, so it can be exact equality —
+      // the <li> itself also renders the commissioner Badge and a formatted
+      // timestamp (`actor_id` is non-null because `111:749` inserts with
+      // `auth.uid()`), so an assertion on the item could only be containment,
+      // and containment passes against a regression that wraps or prefixes
+      // the message (R940).
       const systemItems = feed.locator('[data-feed-item="system"]')
       await expect(systemItems).toHaveCount(1)
-      await expect(systemItems.first()).toContainText(applied.system_post)
+      await expect(systemItems.first().locator('[data-feed-text]')).toHaveText(applied.system_post)
 
       test.info().annotations.push({
         type: 'remix-window',

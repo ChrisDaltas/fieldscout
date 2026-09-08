@@ -87,7 +87,13 @@ export function ActivityFeed({
                       </Badge>
                     )}
                     {line.team && <span className="shrink-0 text-[12px] font-bold text-ink">{line.team}</span>}
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{line.text}</span>
+                    {/* `data-feed-text` (R940): the line's TEXT alone, so a spec can assert exact
+                        equality. The <li> also renders a badge and a timestamp, so an assertion on
+                        the item could only ever be containment — and containment passes against a
+                        regression that wraps or prefixes the message. */}
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink" data-feed-text>
+                      {line.text}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
                     {line.week !== null && (

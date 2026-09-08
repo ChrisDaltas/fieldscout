@@ -97,8 +97,11 @@ type Supabase = SupabaseClient<Database>
  *      `E2E_SEASON_GAME_PREFIX`) and by LEDGER (the exact tuples/weeks this
  *      process planted), never season-wide as the sim does (D330(3): a
  *      season-wide delete from two suites is mutual clobbering), and
- *      `assertNoForeignSeasonFixtures` refuses to start a run beside
- *      another suite's resident 2099 game row rather than working around it.
+ *      `assertNoForeignSeasonFixtures` refuses to START beside ANY resident
+ *      2099 fixture this process did not plant — a foreign `nfl_games` row,
+ *      a `player_stats`/`score_fanout` row, or a live `nfl_weeks` bound
+ *      (R939: the door reads the same four surfaces the sweep touches, and
+ *      DELETES none of them) — rather than working around it.
  *
  * Everything the USER does in a spec rides the browser or a seed-user's own
  * authed anon-key client (provision.ts) — production RPCs never accept a
@@ -290,6 +293,14 @@ const tupleKey = (week: number, playerId: string): string =>
  * run planted, and the `nfl_weeks` bounds only for the weeks this run wrote.
  * Verified afterwards, loudly — a sweep that reports CLEAN while leaving
  * residue is precisely F199's shape.
+ *
+ * WHAT THIS CANNOT SEE, STATED RATHER THAN IMPLIED (R939): residue from a
+ * run that DIED before its `afterAll` — the ledger is module-level and goes
+ * down with the process, so the next run's sweep iterates an empty ledger,
+ * deletes nothing and verifies nothing. Its `0 game row(s) + 0 stat
+ * tuple(s)` then means "this process planted nothing", NOT "the season is
+ * clean". Catching that is `assertNoForeignSeasonFixtures`'s job — which is
+ * why the door counts the same four surfaces this sweep touches.
  */
 async function sweepSeasonFixtures(service: Supabase): Promise<string> {
   const { error: gamesError } = await service
@@ -372,6 +383,29 @@ async function sweepSeasonFixtures(service: Supabase): Promise<string> {
 
 /**
  * The DOOR CHECK (F199, whose discharge was reversed on 2026-09-08 — R922).
+ *
+ * IT CHECKS THE SAME FOUR SURFACES THE SWEEP TOUCHES — R937's sibling
+ * finding (R939). It used to check `nfl_games` by prefix and
+ * `nfl_weeks.first_kickoff_at`, **a column this suite never writes** (its
+ * only `nfl_weeks` write is `recordWeekEnd`'s `last_game_ends_at`), while
+ * the three surfaces the module-level ledger is the SOLE record of
+ * (`player_stats`, `score_fanout`, `nfl_weeks.last_game_ends_at`) were
+ * checked by nothing. A Ctrl-C or CI timeout after `plantStatLines` takes
+ * the ledger down with the process; the next run's sweep then iterates an
+ * EMPTY ledger, deletes nothing, verifies nothing and reports a reassuring
+ * `0 game row(s) + 0 stat tuple(s)` — while `npm run sim:census` reddens
+ * three of nine cells. F199's exact species, which is why this door now
+ * counts what the census counts (`runner.ts:2226-2235`, including its
+ * two-column `.or(...)` for the week bounds — the R923 comment above that
+ * cell records the same one-column mistake).
+ *
+ * THIS FUNCTION READS AND THROWS; IT DELETES NOTHING. That is what keeps
+ * D330(3) intact: the SWEEP stays by-prefix + by-ledger and never
+ * season-wide, so a concurrent sim run's fixtures cannot be clobbered by
+ * it — widening the DOOR does not widen the sweep. A resident sim fixture
+ * makes this suite refuse to start and name the remedy, which is the F199
+ * behaviour, not a workaround.
+ *
  * A resident foreign `nfl_games` row on the synthetic season is not a
  * nuisance, it silently changes three answers:
  *
@@ -413,19 +447,52 @@ export async function assertNoForeignSeasonFixtures(service: Supabase): Promise<
         'or re-run the sim so its own sweep clears simseason-* rows.',
     )
   }
+  // BOTH live-updated columns, the census's own two-column filter — this
+  // suite writes `last_game_ends_at` and NOT `first_kickoff_at`, so the
+  // one-column form could not see this suite's own crash residue (R939).
   const { data: bounds, error: boundsError } = await service
     .from('nfl_weeks')
-    .select('week, first_kickoff_at')
+    .select('week, first_kickoff_at, last_game_ends_at')
     .eq('season', SYNTHETIC_SEASON)
-    .not('first_kickoff_at', 'is', null)
+    .or('first_kickoff_at.not.is.null,last_game_ends_at.not.is.null')
+    .order('week')
   throwIfError(boundsError, 'season fixture door check: nfl_weeks bounds')
   if ((bounds ?? []).length > 0) {
     throw new Error(
-      `season ${SYNTHETIC_SEASON} has first_kickoff_at set on week(s) ` +
-        `${(bounds ?? []).map((b) => b.week).join(', ')} — the Remix window datum would come from ` +
-        'another run\'s ingestion, not this fixture (F199). Re-run that suite\'s teardown, or ' +
-        `NULL the column for season ${SYNTHETIC_SEASON}.`,
+      `season ${SYNTHETIC_SEASON} carries live week bounds on ` +
+        `${(bounds ?? [])
+          .map((b) => `wk ${b.week} (first_kickoff_at ${b.first_kickoff_at}, last_game_ends_at ${b.last_game_ends_at})`)
+          .join(', ')} — the Remix window datum and the week-close datum would come from another ` +
+        "run's ingestion, not this fixture (F199). Re-run that suite's teardown, or NULL both " +
+        `columns for season ${SYNTHETIC_SEASON}.`,
     )
+  }
+  // The two tables the LEDGER is the sole record of. A crashed run leaves
+  // them resident and the next sweep cannot know about them; the census
+  // counts them season-wide, so this door must too.
+  for (const table of ['player_stats', 'score_fanout'] as const) {
+    const { data: rows, error: rowsError } = await service
+      .from(table)
+      .select('week, player_id')
+      .eq('season', SYNTHETIC_SEASON)
+      .order('week')
+      .limit(5)
+    throwIfError(rowsError, `season fixture door check: ${table}`)
+    const { count, error: countError } = await service
+      .from(table)
+      .select('player_id', { count: 'exact', head: true })
+      .eq('season', SYNTHETIC_SEASON)
+    throwIfError(countError, `season fixture door check: ${table} count`)
+    if ((count ?? 0) > 0) {
+      throw new Error(
+        `season ${SYNTHETIC_SEASON} carries ${count} ${table} row(s) nobody in THIS process planted ` +
+          `(e.g. ${(rows ?? []).map((r) => `wk ${r.week} / ${r.player_id}`).join(', ')}) — the sweep is ` +
+          'by-ledger and a crashed run takes its ledger with it, so these would survive every future ' +
+          'sweep and redden `npm run sim:census` (F199). Remedy: `npx tsx ' +
+          'scripts/dev-seed-inseason-league.ts --teardown` for the dev seeder\'s rows, re-run the sim ' +
+          `so its own sweep clears them, or delete season ${SYNTHETIC_SEASON} rows from ${table} by hand.`,
+      )
+    }
   }
 }
 
@@ -1152,18 +1219,51 @@ export interface JobReport {
   at: string
   scope: string
   leagues: number
-  failures: number
+  /**
+   * A JSONB **ARRAY of `{league_id, sqlstate, error}` objects**, never a
+   * count — `lineup_lock_tick` (`119:734`/`:890`/`:909`),
+   * `league_week_advance` (`118:1752`/`:1906`/`:1929`) and `finalize_matchups`
+   * (`118:1979`/`:2181`/`:2208`) all build it the same way.
+   *
+   * R937: this was typed `number` and tested with `Number(report.failures) >
+   * 0`, which is `0 > 0` when empty and `NaN > 0` when NOT — false either
+   * way. The only failure check in the e2e lane could never fire, so a lock
+   * pass that raised inside its per-league `EXCEPTION WHEN OTHERS` block and
+   * returned `{leagues: 1, failures: [{…}]}` read to the spec as a clean
+   * pass (CLAUDE.md: "never let 'nothing happened' mean 'it worked'").
+   */
+  failures: unknown[]
   reason: string | null
   [key: string]: unknown
 }
 
+/**
+ * Normalize + REFUSE a week job's report. Mirrors `driveScoreBatch`'s own
+ * correct `report.problems.length > 0` (`:1481`) — an array is tested by its
+ * length, and a shape that is neither absent nor an array is loud rather
+ * than quietly permissive (a JSONB rename or a count-shaped rewrite must red
+ * this lane, not slip through it).
+ */
 function jobReport(data: unknown, what: string): JobReport {
   if (data === null || typeof data !== 'object') {
     throw new Error(`${what}: the job returned no report document (got ${JSON.stringify(data)})`)
   }
   const report = data as JobReport
-  if (report.failures !== undefined && Number(report.failures) > 0) {
-    throw new Error(`${what}: the job reported ${report.failures} failure(s) — ${JSON.stringify(report)}`)
+  if (report.failures !== undefined) {
+    if (!Array.isArray(report.failures)) {
+      throw new Error(
+        `${what}: the job's \`failures\` is ${typeof report.failures} ` +
+          `(${JSON.stringify(report.failures)}), not the JSONB array every week job builds — ` +
+          'the shape changed and this guard can no longer read it; report: ' +
+          JSON.stringify(report),
+      )
+    }
+    if (report.failures.length > 0) {
+      throw new Error(
+        `${what}: the job reported ${report.failures.length} per-league failure(s) — ` +
+          `${JSON.stringify(report.failures)} — full report: ${JSON.stringify(report)}`,
+      )
+    }
   }
   return report
 }

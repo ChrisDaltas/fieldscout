@@ -48,7 +48,13 @@ import { STORAGE_STATE } from './helpers/local-env'
  * `matchups.home_score` is `runScoreWeekBatch`, the production worker, over
  * a real `score_fanout` queue (`driveScoreBatch`). That is what makes step 5
  * below a NEGATIVE CONTROL rather than a decoration: with the queue full and
- * the worker NOT invoked, the score on screen is still the door's `pending`.
+ * the worker NOT invoked, BOTH sides still read the stored `0.00` the
+ * schedule engine's INSERT left them (`110:773-778` omits the score columns
+ * and `matchups.home_score` carries `DEFAULT 0`, `109:162`) — measured, and
+ * asserted at step 5. It is NOT the door's `pending`: that NULL-as-pending
+ * state (E61) belongs to a starter with an undelivered applicable key, never
+ * to a never-scored week. Recorded as F293; step 5's own comment carries the
+ * long form.
  *
  * THE Q42 SAFE CONSTRUCTION (the task's §6.4 rule, applied). Q42 — what a
  * starter with NO stat line contributes — is OPEN (F263(c)), so this spec
@@ -280,6 +286,22 @@ test.describe('a scored week end to end (real browser)', () => {
         new Date(Date.parse(week.starts_at) + MINUTE_MS).toISOString(),
       )
       expect(Number(tick.leagues)).toBe(1)
+      // R937's positive half. `leagues: 1` on its own was one line from
+      // vacuous: a pass that raises inside its per-league `EXCEPTION WHEN
+      // OTHERS` block still reports `leagues: 1`, because `v_leagues` is
+      // incremented BEFORE the block and PL/pgSQL does not roll that
+      // assignment back (`119:909`). `jobReport` now refuses a non-empty
+      // `failures` array — the guard that `Number([{…}]) > 0` made
+      // unreachable — and this asserts the pass actually reached this
+      // league's lineup records rather than dying on the way in. An EXACT
+      // count, not `> 0`: all eight clubs hold a week-1 lineup row by now
+      // (seven upserted, the commissioner's saved through the browser), so a
+      // pass that died part-way through the loop is caught too. Measured
+      // green: `{leagues: 1, lineups: 8, lineup_updates: 1, failures: []}`;
+      // measured under an injected per-league raise: `lineups: 0`.
+      // eslint-disable-next-line no-console -- the DoD evidence line
+      console.log(`[inseason-week] lock tick: ${JSON.stringify(tick)}`)
+      expect(Number(tick.lineups)).toBe(TEAM_COUNT)
 
       await page.goto(`/app/leagues/${league.leagueId}/matchup?week=${WEEK}`)
       await expect(page.locator('[data-week-badge="live"]').first()).toBeVisible({ timeout: 60_000 })
