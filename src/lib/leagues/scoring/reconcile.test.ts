@@ -14,8 +14,11 @@ import {
   type CalendarWeekRow,
   type CellContext,
   classifyCell,
+  FINAL_NO_LINE_GRACE_MS,
+  finalNoLineActionable,
   GAME_LATE_MS,
   inWeekGames,
+  queueFindings,
   renderFindings,
   sameScore,
   STALE_QUEUE_MS,
@@ -41,7 +44,6 @@ function ctx(over: Partial<CellContext> = {}): CellContext {
     windowEndsAt: '2026-09-17T10:00:00.000Z',
     starterUpdatedAt: new Map(),
     starterQueuedAt: new Map(),
-    now: NOW,
     ...over,
   }
 }
@@ -69,13 +71,26 @@ describe('classifyCell — the order of explanations', () => {
     expect(v!.explanation).toBe('stored 92.08 ≠ recomputed 93.08 from raw player_stats through the frozen snapshot (§23.2)')
   })
 
-  it('IN FLIGHT: a starter still queued explains a mismatch (info) — but a queue row older than an hour is STUCK (alert), even when the cell agrees', () => {
-    const fresh = new Map([['p1', new Date(NOW.getTime() - STALE_QUEUE_MS).toISOString()]]) // exactly one hour old — not yet stale
+  it('IN FLIGHT: a starter still queued explains a mismatch (info) whatever the row’s age; an agreeing cell is nothing — the queue’s AGE is not the cell’s finding (R881)', () => {
+    const fresh = new Map([['p1', new Date(NOW.getTime() - STALE_QUEUE_MS).toISOString()]])
     expect(classifyCell(92.08, team(93.08), ctx({ starterQueuedAt: fresh }))).toMatchObject({ kind: 'in_flight', severity: 'info' })
     expect(classifyCell(92.08, team(92.08), ctx({ starterQueuedAt: fresh }))).toBeNull()
-    const stale = new Map([['p1', new Date(NOW.getTime() - STALE_QUEUE_MS - 1).toISOString()]]) // one millisecond past the hour
-    expect(classifyCell(92.08, team(93.08), ctx({ starterQueuedAt: stale }))).toMatchObject({ kind: 'stuck_queue', severity: 'alert' })
-    expect(classifyCell(92.08, team(92.08), ctx({ starterQueuedAt: stale }))).toMatchObject({ kind: 'stuck_queue' })
+    const stale = new Map([['p1', new Date(NOW.getTime() - STALE_QUEUE_MS - 1).toISOString()]])
+    expect(classifyCell(92.08, team(93.08), ctx({ starterQueuedAt: stale }))).toMatchObject({ kind: 'in_flight', severity: 'info' })
+    expect(classifyCell(92.08, team(92.08), ctx({ starterQueuedAt: stale }))).toBeNull()
+  })
+
+  it('STUCK QUEUE (R881): one alert PER QUEUE ROW — exactly one hour old is in flight, one millisecond more is stuck; two cells starting the player share the one row’s alert', () => {
+    const atHour = { week: 1, player_id: 'p1', enqueued_at: new Date(NOW.getTime() - STALE_QUEUE_MS).toISOString() }
+    expect(queueFindings([atHour], 2026, NOW)).toEqual([])
+    const past = { week: 1, player_id: 'p1', enqueued_at: new Date(NOW.getTime() - STALE_QUEUE_MS - 1).toISOString() }
+    const out = queueFindings([past, atHour, { ...past, week: 2 }], 2026, NOW)
+    expect(out.map((f) => [f.kind, f.severity, f.week, f.player_id])).toEqual([
+      ['stuck_queue', 'alert', 1, 'p1'],
+      ['stuck_queue', 'alert', 2, 'p1'],
+    ])
+    expect(out[0].league_id).toBeUndefined() // season-wide, beside the calendar findings — never per cell
+    expect(out[0].message).toMatch(/is 60 min old \(> 60\) — the worker is not draining it/)
   })
 
   it('PENDING vs stored: alert on h2h, warn on total_points (F263(c))', () => {
@@ -86,10 +101,14 @@ describe('classifyCell — the order of explanations', () => {
     expect(tp!.explanation).toMatch(/F263\(c\)/)
   })
 
-  it('POST-WINDOW CORRECTION: a FINAL week whose starter moved after the window is info (§23.4); the same delta inside the window, or on a non-final week, is DRIFT', () => {
+  it('POST-WINDOW CORRECTION: a FINAL week whose starter moved after the window is a WARN naming the delta (§23.4; R876 — never info, never exit-1); the same delta inside the window, or on a non-final week, is DRIFT', () => {
     const afterWindow = new Map([['p1', '2026-09-17T10:00:00.001Z']]) // one millisecond past the close
     const atWindow = new Map([['p1', '2026-09-17T10:00:00.000Z']]) // exactly at the close — inside
-    expect(classifyCell(92.08, team(93.08), ctx({ weekStatus: 'final', starterUpdatedAt: afterWindow }))).toMatchObject({ kind: 'post_window_correction', severity: 'info' })
+    const pw = classifyCell(92.08, team(93.08), ctx({ weekStatus: 'final', starterUpdatedAt: afterWindow }))
+    expect(pw).toMatchObject({ kind: 'post_window_correction', severity: 'warn' })
+    expect(pw!.explanation).toContain('stored 92.08 ≠ recomputed 93.08, Δ 1.00')
+    expect(pw!.explanation).toMatch(/NOT EXACT \(R876\/F268\)/)
+    expect(classifyCell(93.08, team(92.08), ctx({ weekStatus: 'final', starterUpdatedAt: afterWindow }))!.explanation).toContain('Δ -1.00')
     expect(classifyCell(92.08, team(93.08), ctx({ weekStatus: 'final', starterUpdatedAt: atWindow }))).toMatchObject({ kind: 'drift' })
     expect(classifyCell(92.08, team(93.08), ctx({ weekStatus: 'correction_window', starterUpdatedAt: afterWindow }))).toMatchObject({ kind: 'drift' })
     expect(classifyCell(92.08, team(93.08), ctx({ weekStatus: 'final', windowEndsAt: null, starterUpdatedAt: afterWindow }))).toMatchObject({ kind: 'drift' })
@@ -152,6 +171,36 @@ describe('calendarFindings — F228 / F238 / Q37’s shape', () => {
     expect(late).toHaveLength(1)
     expect(late[0]).toMatchObject({ kind: 'game_not_final_late', severity: 'warn', week: 1 })
     expect(late[0].message).toMatch(/game x \(NE @ SEA\) kicked off 8 h ago and is still 'live'/)
+    expect(late[0].message).toMatch(/becomes an ALERT once the week is past its correction window \(2026-09-17T10:00:00.000Z\)/)
+  })
+
+  it('game_not_final_late (R878): a WARN at the correction window’s instant, an ALERT one millisecond past it — the week can no longer finalize; the message says what is stuck and the operator escape; a NULL window never alerts', () => {
+    const games = [g('x', 1, '2026-09-13T17:00:00.000Z', 'live')]
+    const windowEnd = new Date(WEEKS[0].correction_window_ends_at!)
+    const atWindow = calendarFindings(WEEKS.slice(0, 1), games, windowEnd)
+    expect(atWindow.map((f) => [f.kind, f.severity])).toEqual([['game_not_final_late', 'warn']])
+    const past = calendarFindings(WEEKS.slice(0, 1), games, new Date(windowEnd.getTime() + 1))
+    expect(past.map((f) => [f.kind, f.severity])).toEqual([['game_not_final_late', 'alert']])
+    expect(past[0].message).toMatch(/PAST ITS CORRECTION WINDOW \(2026-09-17T10:00:00.000Z\) AND CAN NO LONGER FINALIZE/)
+    expect(past[0].message).toMatch(/last_game_ends_at cannot be written/)
+    expect(past[0].message).toMatch(/held at 'live'/)
+    expect(past[0].message).toMatch(/Q37's nfl_games edit/)
+    expect(past[0].message).toMatch(/three times a minute/)
+    expect(past[0].detail).toMatchObject({ game_id: 'x', past_correction_window: true })
+    const noWindow = calendarFindings([{ ...WEEKS[0], correction_window_ends_at: null }], games, new Date('2026-12-01T00:00:00.000Z'))
+    expect(noWindow.map((f) => [f.kind, f.severity])).toEqual([['game_not_final_late', 'warn']])
+  })
+})
+
+describe('finalNoLineActionable — F263(g) is emitted only while actionable (R877)', () => {
+  it('the window ahead ⇒ actionable; closed exactly 24 h ago ⇒ still actionable (the Thursday run sees it once); one millisecond more ⇒ not; a NULL window reads as open', () => {
+    const windowEnd = '2026-09-17T10:00:00.000Z'
+    const graceEnd = new Date(windowEnd).getTime() + FINAL_NO_LINE_GRACE_MS
+    expect(finalNoLineActionable(windowEnd, new Date('2026-09-15T12:00:00.000Z'))).toBe(true)
+    expect(finalNoLineActionable(windowEnd, new Date(graceEnd - 1))).toBe(true)
+    expect(finalNoLineActionable(windowEnd, new Date(graceEnd))).toBe(true)
+    expect(finalNoLineActionable(windowEnd, new Date(graceEnd + 1))).toBe(false)
+    expect(finalNoLineActionable(null, new Date('2027-01-01T00:00:00.000Z'))).toBe(true)
   })
 })
 

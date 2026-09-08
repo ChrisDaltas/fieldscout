@@ -192,8 +192,8 @@ async function plantLine(playerId: string, columns: Record<string, number>, stam
   )
 }
 
-function run(leagueIds?: string[]): Promise<ReconcileReport> {
-  return reconcileSeason({ time: clock, db: service }, { season: SEASON, leagueIds: leagueIds ?? [fx.l1, fx.l2] })
+function run(leagueIds?: string[], time: VirtualClock = clock): Promise<ReconcileReport> {
+  return reconcileSeason({ time, db: service }, { season: SEASON, leagueIds: leagueIds ?? [fx.l1, fx.l2] })
 }
 
 function kinds(report: ReconcileReport, leagueId?: string): string[] {
@@ -331,21 +331,41 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     expect((await run()).cells).toBe(5)
   })
 
-  it('IN FLIGHT: a queued delta explains a mismatch (info, no drift); a queue row older than an hour is a STUCK QUEUE (alert)', async () => {
+  it('IN FLIGHT: a queued delta explains a mismatch (info, no drift); a queue row older than an hour is a STUCK QUEUE alert ONCE, at the row — not per cell (R881); the cell stays in_flight', async () => {
     await must(service.from('matchups').update({ home_score: 61.08 }).eq('id', fx.m12), 'mismatch')
     const fresh = new Date(NOW.getTime() - 60_000).toISOString()
     await must(service.from('score_fanout').insert({ season: SEASON, week: 1, player_id: P.rb1, enqueued_at: fresh }).select('player_id'), 'queue')
     const inFlight = await run()
     expect(find(inFlight, 'drift')).toEqual([])
+    expect(find(inFlight, 'stuck_queue')).toEqual([])
     expect(find(inFlight, 'in_flight')).toHaveLength(1)
     expect(find(inFlight, 'in_flight')[0]).toMatchObject({ severity: 'info', team_id: fx.t1 })
     const stale = new Date(NOW.getTime() - 2 * 3_600_000).toISOString()
     await must(service.from('score_fanout').update({ enqueued_at: stale }).eq('player_id', P.rb1).eq('week', 1).select('player_id'), 'age the row')
     const stuck = await run()
     expect(find(stuck, 'stuck_queue')).toHaveLength(1)
-    expect(find(stuck, 'stuck_queue')[0]).toMatchObject({ severity: 'alert', team_id: fx.t1 })
+    expect(find(stuck, 'stuck_queue')[0]).toMatchObject({ severity: 'alert', week: 1, player_id: P.rb1 })
+    expect(find(stuck, 'stuck_queue')[0].league_id).toBeUndefined() // the row's alert, season-wide — one line however many cells start him
+    expect(find(stuck, 'stuck_queue')[0].team_id).toBeUndefined()
+    expect(find(stuck, 'in_flight')).toHaveLength(1) // the mismatched cell still reads in flight
     await must(service.from('score_fanout').delete().eq('player_id', P.rb1), 'dequeue')
     await must(service.from('matchups').update({ home_score: 60.08 }).eq('id', fx.m12), 'revert')
+  })
+
+  it('F263(g) is TIME-BOUNDED (R877): WR2’s missing line alerts while the window is ahead and until 24 h after it closes; one millisecond past that it is no longer re-alerted', async () => {
+    const graceEnd = new Date(new Date(WINDOW_END).getTime() + 24 * 3_600_000)
+    // Exactly 24 h past the close — the Thursday run's last sight of it.
+    expect(find(await run(undefined, new VirtualClock(graceEnd)), 'starter_final_game_no_line').map((f) => f.player_id)).toEqual([P.wr2])
+    // One millisecond more — an older final week, not re-alerted every night for the season.
+    const later = await run(undefined, new VirtualClock(new Date(graceEnd.getTime() + 1)))
+    expect(find(later, 'starter_final_game_no_line')).toEqual([])
+    expect(find(later, 'drift')).toEqual([]) // the cells still agree (WR2 is 0 by name either way)
+    const back = find(await run(), 'starter_final_game_no_line')
+    expect(back.map((f) => f.player_id)).toEqual([P.wr2])
+    expect(back[0].message).toMatch(/players\.team, the player's CURRENT team/)
+    const detail = back[0].detail as { current_team: string; window_ends_at: string }
+    expect(detail.current_team).toBe('RCC')
+    expect(new Date(detail.window_ends_at).toISOString()).toBe(WINDOW_END) // PostgREST prints +00:00; the instant is the pin
   })
 
   it('POOL MIRROR (D294): a `rostered` pool row with no roster row, and a rostered player whose pool row says free_agent, each ALERT; the mirror repaired reads clean', async () => {
@@ -384,7 +404,7 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     expect(find(await run(), 'all_final_unstamped').map((f) => f.week)).toEqual([1])
   })
 
-  it('a FINAL week: a starter moved AFTER the correction window is a post-window correction (info — §23.4), the same delta INSIDE the window is drift; the derived results mirror is asserted (twr_mirror_drift)', async () => {
+  it('a FINAL week: a starter moved AFTER the correction window is a post-window correction (WARN naming the delta — §23.4/R876), the same delta INSIDE the window is drift; the derived results mirror is asserted (twr_mirror_drift)', async () => {
     await stepWeek(fx.l1, 1, 'correction_window')
     await stepWeek(fx.l1, 1, 'final')
     await must(
@@ -400,8 +420,9 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     expect(find(post, 'drift')).toEqual([])
     const pw = find(post, 'post_window_correction')
     expect(pw).toHaveLength(1)
-    expect(pw[0]).toMatchObject({ severity: 'info', team_id: fx.t1, stored: 60.08, recomputed: 61.08 })
-    expect(pw[0].message).toContain(`${P.rb1} moved after the correction window closed (${WINDOW_END})`)
+    expect(pw[0]).toMatchObject({ severity: 'warn', team_id: fx.t1, stored: 60.08, recomputed: 61.08 })
+    expect(pw[0].message).toContain(`${P.rb1} moved after the correction window closed (${WINDOW_END}): stored 60.08 ≠ recomputed 61.08, Δ 1.00`)
+    expect(post.alerts).toBe(find(post, 'twr_mirror_drift').length + find(post, 'starter_final_game_no_line').length + find(post, 'all_final_unstamped').length + find(post, 'no_game_rows').length) // the warn is not on the exit-1 path
     const mirror = find(post, 'twr_mirror_drift')
     expect(mirror).toHaveLength(1)
     expect(mirror[0]).toMatchObject({ severity: 'alert', team_id: fx.t2, stored: 1, recomputed: 0 })

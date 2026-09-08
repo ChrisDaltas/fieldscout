@@ -13,14 +13,6 @@
       "schedule": "0 10 * * 2"
     },
     {
-      "path": "/api/cron/sync-live",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/score-week",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/reconcile",
       "schedule": "15 11 * * *"
     }

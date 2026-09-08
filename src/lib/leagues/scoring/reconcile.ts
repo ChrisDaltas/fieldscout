@@ -35,10 +35,18 @@
  *     NULL: the release event was never observed (F238 — the sync-live
  *     poll is the only writer; the operator escape is a service-role
  *     stamp, said in the finding).
- *   * `game_not_final_late` [warn] — a game kicked off more than
- *     `GAME_LATE_MS` (8 h) ago and is still `scheduled`/`live`: the
- *     provider never flipped it (Q37's cancelled game; an outage); the
- *     sync-live plan keeps polling it, this names it.
+ *   * `game_not_final_late` [warn → ALERT past the window, R878] — a game
+ *     kicked off more than `GAME_LATE_MS` (8 h) ago and is still
+ *     `scheduled`/`live`: the provider never flipped it (Q37's cancelled
+ *     game; an outage). A warn while the week's `correction_window_ends_at`
+ *     is ahead (a Monday-morning provider lag is not an incident); an ALERT
+ *     once the week is past it, because that is the one calendar state that
+ *     stalls a league for good: `weekBounds` never stamps
+ *     `last_game_ends_at` (it needs EVERY in-week game final), 116 only
+ *     NAMES a `live` week past its window, 115 keeps every kicked-off
+ *     player locked — and the sync-live plan stays HOT on it (three polls
+ *     a minute, ~2 MB of nflverse CSV each) for the rest of the season. The
+ *     operator escape is Q37's `nfl_games` edit, said in the finding.
  *
  *   SCORES (per league in `in_season | playoffs`, per `league_weeks` row in
  *   `live | correction_window | final`; h2h cells are `matchups`
@@ -49,16 +57,26 @@
  *   * `drift` [alert] — stored ≠ recomputed (two-decimal equality) with no
  *     benign explanation below. Names league, week, team, stored,
  *     recomputed, and the per-starter breakdown.
- *   * `post_window_correction` [info] — the league week is `final`, stored
- *     ≠ recomputed, and a starter's `player_stats.updated_at` is AFTER the
- *     week's `correction_window_ends_at`: §23.4/D295(b) — a post-window
- *     delta lands in `player_stats` and changes NO league cell by law; it
- *     is the commissioner's flagged event (M6's L.E2 detection), not drift.
+ *   * `post_window_correction` [warn, the delta NAMED — R876] — the league
+ *     week is `final`, stored ≠ recomputed, and a starter's
+ *     `player_stats.updated_at` is AFTER the week's
+ *     `correction_window_ends_at`: §23.4/D295(b) — a post-window delta
+ *     lands in `player_stats` and changes NO league cell by law; it is the
+ *     commissioner's flagged event (M6's L.E2 detection), not drift. THIS
+ *     ARM IS NOT EXACT and is the one classification that can hide a real
+ *     drift: the pre-correction line is gone (no history exists until L.E2's
+ *     `stat_correction_events`), and `diffStats`'s `metaOnly` rewrite bumps
+ *     `updated_at` with no scoring delta — so from the first post-window
+ *     mover a final-week cell is checked no further, for the rest of the
+ *     season (PROGRESS F268). Hence a WARN with `stored X ≠ recomputed Y,
+ *     Δ Z` in the message — visible every night, never exit-1, never info.
  *   * `in_flight` [info] — a starter of the cell still has a `score_fanout`
  *     row for (season, week): the worker has not drained it; the mismatch
- *     is expected. Becomes `stuck_queue` [alert] when that row's
- *     `enqueued_at` is older than `STALE_QUEUE_MS` (1 h) — the worker is
- *     not draining.
+ *     is expected. The queue's AGE is not a cell property (R881): a row
+ *     older than `STALE_QUEUE_MS` (1 h) is `stuck_queue` [alert] emitted
+ *     ONCE per queue row (season, week, player_id) beside the calendar
+ *     findings — the worker is not draining — whether or not any cell
+ *     disagrees.
  *   * `pending_vs_stored` — recomputed PENDING (E61: an applicable rules
  *     key undelivered) while a number is stored: [alert] on h2h (the door
  *     writes NULL for pending); [warn] on `total_points` (F263(c): the door
@@ -73,11 +91,23 @@
  *   * `lineup_unreadable` [alert] — a `slot_map` that is not an object.
  *   * `snapshot_unscorable` [alert] — the league's frozen snapshot does not
  *     resolve/score (D292's quarantine, seen from here).
- *   * `starter_final_game_no_line` [alert] — F263(g): a starter whose NFL
- *     team played a `final` game this week has NO `player_stats` row. The
- *     worker's "0 by name" (Q42) cannot tell a DNP from a provider gap;
- *     this can (the game is over, the feed said nothing) — alerted, never
- *     zero-filled.
+ *   * `starter_final_game_no_line` [alert, TIME-BOUNDED — R877] — F263(g):
+ *     a starter whose NFL team played a `final` game this week has NO
+ *     `player_stats` row. The worker's "0 by name" (Q42) cannot tell a DNP
+ *     from a provider gap; neither can this (Sleeper emits no line for a
+ *     scratch — a started scratch reads exactly like a gap), so it is
+ *     emitted only while it is ACTIONABLE: the week's
+ *     `correction_window_ends_at` not yet passed, or passed within
+ *     `FINAL_NO_LINE_GRACE_MS` (24 h — the Thursday at-window-close run
+ *     still sees it once; a NULL window is treated as still open). An older
+ *     final week's missing line is NOT re-alerted every night for the rest
+ *     of the season (§24.1's anti-pattern: the CLI could never exit 0 for a
+ *     league that ever started a scratch). CAVEAT, said in the message: the
+ *     game is found through `players.team` — the player's CURRENT team — so
+ *     a traded player is attributed to his new team's game on a past week.
+ *     The honest DNP-vs-gap discriminator is the provider's official
+ *     inactives (`getInactives`), which nothing on the production path
+ *     consumes yet (PROGRESS F269; M5's auto-sub / M6 L.E2).
  *
  *   POOL MIRROR (per league; D294 "asserted, not trusted"):
  *   * `pool_mirror_broken` [alert] — a `league_player_pool` row in state
@@ -129,6 +159,8 @@ export const CALENDAR_LOOKAHEAD_MS = 7 * 24 * 60 * 60_000
 export const GAME_LATE_MS = 8 * 60 * 60_000
 /** A queue row older than this is not "in flight" — the worker is not draining. */
 export const STALE_QUEUE_MS = 60 * 60_000
+/** F263(g) is emitted this long past the week's correction window and no longer (R877): the Thursday run sees it once. */
+export const FINAL_NO_LINE_GRACE_MS = 24 * 60 * 60_000
 
 // ── The report ─────────────────────────────────────────────────────────────
 
@@ -189,9 +221,9 @@ export interface ReconcileReport {
 const SEVERITY: Record<FindingKind, Severity> = {
   no_game_rows: 'alert',
   all_final_unstamped: 'alert',
-  game_not_final_late: 'warn',
+  game_not_final_late: 'warn', // ALERT once the week is past its correction window (R878) — calendarFindings
   drift: 'alert',
-  post_window_correction: 'info',
+  post_window_correction: 'warn', // R876: not exact — the delta is named, the cell is unchecked thereafter (F268)
   in_flight: 'info',
   stuck_queue: 'alert',
   pending_vs_stored: 'alert', // h2h; total_points downgrades to warn (F263(c))
@@ -218,14 +250,14 @@ export interface CellContext {
   starterUpdatedAt: ReadonlyMap<string, string>
   /** ISO per starter — `score_fanout.enqueued_at` for starters still queued. */
   starterQueuedAt: ReadonlyMap<string, string>
-  now: Date
 }
 
 /**
  * Classify ONE cell: stored vs recomputed under the context. Returns null
  * when the cell agrees. The order is the law's: a benign explanation
  * (in flight; a post-window delta on a final week) is looked for BEFORE
- * drift is declared, and a stuck queue is never benign.
+ * drift is declared. A STUCK queue is not a cell's property — see
+ * `queueFindings` (R881): the age alert is emitted once per queue row.
  */
 export function classifyCell(stored: number | null, computed: TeamWeekScore, ctx: CellContext): { kind: FindingKind; severity: Severity; explanation: string } | null {
   const recomputed = computed.points
@@ -234,13 +266,8 @@ export function classifyCell(stored: number | null, computed: TeamWeekScore, ctx
   // A queued delta for any starter: the worker has not scored it yet.
   const queued = starters.filter((pid) => ctx.starterQueuedAt.has(pid))
   if (queued.length > 0) {
-    const nowMs = ctx.now.getTime()
-    const stale = queued.filter((pid) => nowMs - new Date(ctx.starterQueuedAt.get(pid)!).getTime() > STALE_QUEUE_MS)
-    if (stale.length > 0) {
-      return { kind: 'stuck_queue', severity: SEVERITY.stuck_queue, explanation: `queue rows for ${stale.join(', ')} older than ${STALE_QUEUE_MS / 60_000} min — the worker is not draining` }
-    }
     if (!sameScore(stored, recomputed)) {
-      return { kind: 'in_flight', severity: SEVERITY.in_flight, explanation: `deltas for ${queued.join(', ')} still queued — the worker has not drained them` }
+      return { kind: 'in_flight', severity: SEVERITY.in_flight, explanation: `deltas for ${queued.join(', ')} still queued — the worker has not drained them (a row older than ${STALE_QUEUE_MS / 60_000} min is alerted once as stuck_queue)` }
     }
     return null
   }
@@ -264,15 +291,47 @@ export function classifyCell(stored: number | null, computed: TeamWeekScore, ctx
       return at !== undefined && new Date(at).getTime() > windowMs
     })
     if (late.length > 0) {
+      const delta = stored === null ? 'n/a' : roundHalfUp(recomputed - stored).toFixed(2)
       return {
         kind: 'post_window_correction',
         severity: SEVERITY.post_window_correction,
-        explanation: `the week is final and ${late.join(', ')} moved after the correction window closed (${new Date(ctx.windowEndsAt).toISOString()}) — not auto-applied by law (§23.4/D295(b)); the commissioner's flagged event (M6 L.E2)`,
+        explanation: `the week is final and ${late.join(', ')} moved after the correction window closed (${new Date(ctx.windowEndsAt).toISOString()}): stored ${stored} ≠ recomputed ${recomputed}, Δ ${delta} — not auto-applied by law (§23.4/D295(b)); the commissioner's flagged event (M6 L.E2). NOT EXACT (R876/F268): the pre-correction line is gone and a metadata-only rewrite reads the same, so this cell is drift-checked no further until L.E2's stat_correction_events`,
       }
     }
   }
 
   return { kind: 'drift', severity: SEVERITY.drift, explanation: `stored ${stored} ≠ recomputed ${recomputed} from raw player_stats through the frozen snapshot (§23.2)` }
+}
+
+export interface QueueRow {
+  week: number
+  player_id: string
+  enqueued_at: string
+}
+
+/** The QUEUE findings (pure; R881): one `stuck_queue` alert per row older than `STALE_QUEUE_MS` — exactly one hour old is still in flight, one millisecond more is stuck. */
+export function queueFindings(queue: readonly QueueRow[], season: number, now: Date): Finding[] {
+  const nowMs = now.getTime()
+  const out: Finding[] = []
+  for (const q of queue) {
+    const ageMs = nowMs - new Date(q.enqueued_at).getTime()
+    if (ageMs <= STALE_QUEUE_MS) continue
+    out.push({
+      kind: 'stuck_queue',
+      severity: SEVERITY.stuck_queue,
+      season,
+      week: q.week,
+      player_id: q.player_id,
+      message: `${season} week ${q.week}: score_fanout row for ${q.player_id} enqueued ${q.enqueued_at} is ${Math.round(ageMs / 60_000)} min old (> ${STALE_QUEUE_MS / 60_000}) — the worker is not draining it; every cell starting him reads in_flight until it does`,
+    })
+  }
+  return out
+}
+
+/** F263(g) is actionable while the week's window is ahead or closed within `FINAL_NO_LINE_GRACE_MS` (inclusive at the instant; a NULL window reads as open) — R877. */
+export function finalNoLineActionable(windowEndsAt: string | null, now: Date): boolean {
+  if (windowEndsAt === null) return true
+  return now.getTime() - new Date(windowEndsAt).getTime() <= FINAL_NO_LINE_GRACE_MS
 }
 
 export interface CalendarWeekRow {
@@ -335,16 +394,23 @@ export function calendarFindings(weeks: readonly CalendarWeekRow[], games: reado
         message: `${w.season} week ${w.week}: every in-week game is final (${inWeek.length}) but nfl_weeks.last_game_ends_at is NULL — the release was never OBSERVED by a sync-live poll (F238); every player who kicked off stays locked until one runs (operator escape: a service-role stamp)`,
       })
     }
+    // R878: past the week's correction window the never-flipped game is the
+    // state that stalls the league for good — an ALERT; before it, a warn.
+    const windowMs = w.correction_window_ends_at === null ? null : new Date(w.correction_window_ends_at).getTime()
+    const pastWindow = windowMs !== null && nowMs > windowMs
     for (const g of inWeek) {
       const kickMs = new Date(g.kickoff_at).getTime()
       if ((gameStatus(g) === 'scheduled' || gameStatus(g) === 'live') && nowMs - kickMs > GAME_LATE_MS) {
+        const stuck = pastWindow
+          ? ` THE WEEK IS PAST ITS CORRECTION WINDOW (${w.correction_window_ends_at}) AND CAN NO LONGER FINALIZE: nfl_weeks.last_game_ends_at cannot be written (weekBounds needs every in-week game final), every league on the week is held at 'live' (116 names it, never finalizes it), every player who kicked off stays locked (115). Operator escape — Q37's nfl_games edit: move the row OUT of the week (status 'postponed' with kickoff_at at/after the next week's starts_at — E43's rule) and stamp last_game_ends_at by hand (F238); sync-live re-polls a 'scheduled'/'live' game three times a minute and the provider re-writes the status on any week it polls, so the edit holds only once nothing re-polls that week.`
+          : ` A provider lag on a fresh week is not an incident; it becomes an ALERT once the week is past its correction window${w.correction_window_ends_at === null ? ' (this week has no correction_window_ends_at — never)' : ` (${w.correction_window_ends_at})`}.`
         out.push({
           kind: 'game_not_final_late',
-          severity: SEVERITY.game_not_final_late,
+          severity: pastWindow ? 'alert' : SEVERITY.game_not_final_late,
           season: w.season,
           week: w.week,
-          message: `${w.season} week ${w.week}: game ${g.id} (${g.away_team} @ ${g.home_team}) kicked off ${Math.round((nowMs - kickMs) / 3_600_000)} h ago and is still '${gameStatus(g)}' — never observed final (Q37's shape: a cancelled game, or a provider that never flipped it); sync-live keeps polling it`,
-          detail: { game_id: g.id, status: g.status, kickoff_at: g.kickoff_at },
+          message: `${w.season} week ${w.week}: game ${g.id} (${g.away_team} @ ${g.home_team}) kicked off ${Math.round((nowMs - kickMs) / 3_600_000)} h ago and is still '${gameStatus(g)}' — never observed final (Q37's shape: a cancelled game, or a provider that never flipped it); sync-live keeps polling it.${stuck}`,
+          detail: { game_id: g.id, status: g.status, kickoff_at: g.kickoff_at, past_correction_window: pastWindow },
         })
       }
     }
@@ -398,12 +464,6 @@ interface PlayerRow {
   id: string
   position: string
   team: string | null
-}
-
-interface QueueRow {
-  week: number
-  player_id: string
-  enqueued_at: string
 }
 
 function must<T>(result: { data: T | null; error: { message: string } | null }, what: string): T {
@@ -538,8 +598,10 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
     set.add(g.away_team)
   }
 
-  // THE QUEUE (season-wide; per-week, per-player stamps).
+  // THE QUEUE (season-wide; per-week, per-player stamps). A stuck row is
+  // alerted ONCE here, per row (R881) — the cells only read `in_flight`.
   const queue = await readQueue(db, season)
+  findings.push(...queueFindings(queue, season, now))
   const queuedByWeek = new Map<number, Map<string, string>>()
   for (const q of queue) {
     let m = queuedByWeek.get(q.week)
@@ -690,9 +752,10 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
         windowEndsAt: calWeek?.correction_window_ends_at ?? null,
         starterUpdatedAt: updatedAt,
         starterQueuedAt: queuedAt,
-        now,
       }
       const finalTeams = finalGamesByTeam.get(week) ?? new Set<string>()
+      // R877: F263(g) only while actionable — the window ahead, or closed within 24 h.
+      const noLineActionable = finalNoLineActionable(calWeek?.correction_window_ends_at ?? null, now)
       const computedByTeam = new Map<string, TeamWeekScore>()
 
       for (const cell of cells) {
@@ -727,9 +790,9 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
           computed = computeTeamWeek(snapshot, cell.team_id, refs, stats)
           computedByTeam.set(cell.team_id, computed)
 
-          // F263(g): a starter of a FINAL game with no line.
+          // F263(g): a starter of a FINAL game with no line — while actionable (R877).
           for (const s of computed.starters) {
-            if (s.reason !== 'no_stat_row') continue
+            if (!noLineActionable || s.reason !== 'no_stat_row') continue
             const team = players.get(s.player_id)?.team ?? null
             if (team !== null && finalTeams.has(team)) {
               findings.push({
@@ -740,7 +803,8 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
                 league_id: league.id,
                 team_id: cell.team_id,
                 player_id: s.player_id,
-                message: `league_id=${league.id} week ${week}: starter ${s.player_id} (${team}) is in a FINAL game and has NO player_stats row — a DNP or a provider gap; the worker scored him 0 by name (Q42) and cannot tell which (F263(g)) — never zero-fill, check the feed`,
+                message: `league_id=${league.id} week ${week}: starter ${s.player_id} (${team}) is in a FINAL game and has NO player_stats row — a DNP or a provider gap; the worker scored him 0 by name (Q42) and cannot tell which (F263(g)) — never zero-fill, check the feed. CAVEATS (R877/F269): the game is found through players.team, the player's CURRENT team (a traded player is attributed to his new team's game on a past week); the provider's official inactives would settle DNP-vs-gap and nothing consumes them yet; this finding is emitted only until ${FINAL_NO_LINE_GRACE_MS / 3_600_000} h after the week's correction window closes`,
+                detail: { current_team: team, window_ends_at: calWeek?.correction_window_ends_at ?? null },
               })
             }
           }

@@ -6,9 +6,11 @@
  * persisted flag) and F238's release WRITER — the scheduled poll that
  * observes a week all-final and stamps `nfl_weeks.last_game_ends_at`).
  *
- * WHAT ONE INVOCATION DOES (a Vercel cron fires it every minute — the
- * finest cadence the platform offers; the 20–30 s cadence §23.2 asks for is
- * produced INSIDE the invocation by polling more than once per minute):
+ * WHAT ONE INVOCATION DOES (the scheduler fires it every minute — the
+ * finest cadence Vercel offers, and only on a paid plan: the route is BUILT
+ * and UNSCHEDULED until PROGRESS Q43 picks the scheduler, R884; the 20–30 s
+ * cadence §23.2 asks for is produced INSIDE the invocation by polling more
+ * than once per minute):
  *
  *   1. PLAN from the tables, never the clock alone (`planLivePoll`): read
  *      the season's `nfl_games` + `nfl_weeks` and decide —
@@ -22,8 +24,11 @@
  *                 until a poll sees it `final` — which is the poll that
  *                 stamps `last_game_ends_at` (F238's writer). The cost of
  *                 a game the provider never flips (Q37's cancelled game)
- *                 is one poll per minute, said in the plan; the
- *                 reconciliation names it (`game_not_final_late`).
+ *                 is THREE polls per hot minute (0 / 20 / 40 s, each a
+ *                 fresh ~2 MB nflverse CSV read — ≈ 8.6 GB/day, R878),
+ *                 said in the plan; the reconciliation names it
+ *                 (`game_not_final_late` — an ALERT once the week is past
+ *                 its correction window and can no longer finalize).
  *        * SWEEP — nothing due, but this is the top-of-hour invocation
  *                 (minute 0 of the injected instant) OR the season has NO
  *                 game rows at all (F228's shape — the calendar is empty
@@ -149,6 +154,12 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
     reasons.push(`sweep: the season has NO nfl_games rows — polling week ${currentWeek} so the provider's calendar can land (F228)`)
     return { mode: 'sweep', weeks: [currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
+  // R880 (recorded, PROGRESS F270): the sweep's target is the CURRENT week
+  // only, so a week is not re-polled between the next week's `starts_at`
+  // and its own `correction_window_ends_at` (~30 h) — an in-window Wed/Thu
+  // correction is §14's `sync-stat-corrections` (M6 L.E2), not this poll's.
+  // The sweep keys on the injected instant's minute: an invocation delayed
+  // past :00:59 skips that hour's refresh — a flex move then lands in ≤ 2 h.
   if (now.getUTCMinutes() === sweepMinute) {
     reasons.push(`sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)`)
     return { mode: 'sweep', weeks: [currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }

@@ -13,9 +13,13 @@ import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
 
 /**
  * The `score-league-week` invoker (spec §14 "every 5–10s in game windows" /
- * §22.2 / §22.3; vercel.json: EVERY MINUTE — the 5 s cadence is produced
- * INSIDE the invocation by `runScoreWeekInvocation`, L.D2.3 / PROGRESS
- * D322). Drives L.D2.2's `runScoreWeekBatch` with:
+ * §22.2 / §22.3). BUILT AND UNSCHEDULED: it expects to be fired EVERY MINUTE
+ * (the 5 s cadence is produced INSIDE the invocation by
+ * `runScoreWeekInvocation`, L.D2.3 / PROGRESS D322), but `vercel.json`
+ * carries no entry for it — Vercel Hobby refuses any cron finer than daily
+ * at deploy time (PROGRESS R884); the scheduler is Chris's ruling, PROGRESS
+ * Q43. Scheduler-agnostic: any caller with `CRON_SECRET` once a minute is
+ * the production cadence. Drives L.D2.2's `runScoreWeekBatch` with:
  *
  *   * `leaseSeconds = SCORE_WEEK_LEASE_SECONDS` (120) ≥ `maxDuration` (60)
  *     + the clock-skew margin (30) — F263(f)/R874, pinned in route.test.ts:
@@ -44,9 +48,11 @@ export async function GET(request: Request) {
   }
 
   const season = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
-  const db = createTypedAdminClient()
 
   try {
+    // Inside the try like the other two routes (R883): a missing service-role
+    // key surfaces as this route's own `[score-week] failed:` line.
+    const db = createTypedAdminClient()
     const report = await runScoreWeekInvocation({
       db,
       time: systemTime,

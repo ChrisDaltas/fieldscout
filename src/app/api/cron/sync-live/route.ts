@@ -8,9 +8,15 @@ import { LIVE_POLL_BUDGET_MS, runLivePollInvocation } from '@/lib/sync/live-poll
 
 /**
  * In-season live ingestion — the production `sync-live-stats` job (spec §14
- * / §23.2 / §23.3; vercel.json: EVERY MINUTE). Rebound by L.D2.3 (PROGRESS
- * F216) from the pre-M4 `syncLiveStats` to L.D2.1's `ingestWeek` through
- * `runLivePollInvocation` (`src/lib/sync/live-poll.ts`):
+ * / §23.2 / §23.3). BUILT AND UNSCHEDULED: it expects to be fired EVERY
+ * MINUTE, but `vercel.json` carries no entry for it — the project is on
+ * Vercel Hobby, which refuses any cron finer than daily at deploy time
+ * (PROGRESS R884), and the scheduler is Chris's ruling, PROGRESS Q43 (Vercel
+ * Pro / an external minute pinger / pg_cron + pg_net). The route is
+ * scheduler-agnostic: any caller with `CRON_SECRET` once a minute is the
+ * production cadence. Rebound by L.D2.3 (PROGRESS F216) from the pre-M4
+ * `syncLiveStats` to L.D2.1's `ingestWeek` through `runLivePollInvocation`
+ * (`src/lib/sync/live-poll.ts`):
  *
  *   * the provider is bound HERE and only here (D300): the composite
  *     `withNflverseCalendar(sleeper, nflverse)` — nflverse's kickoffs + ids

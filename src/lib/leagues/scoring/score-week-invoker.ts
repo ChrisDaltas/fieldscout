@@ -6,8 +6,10 @@
  * `lease_lost + gone > 0`, the lease ≥ `maxDuration` + a clock-skew
  * margin (pinned in the route's test), `all_leased` informational).
  *
- * WHAT ONE INVOCATION DOES (a Vercel cron fires it every minute; the 5–10 s
- * cadence §14 asks for is produced INSIDE the invocation):
+ * WHAT ONE INVOCATION DOES (the scheduler fires it every minute — BUILT and
+ * UNSCHEDULED until PROGRESS Q43 picks the scheduler, R884: Vercel Hobby
+ * refuses a per-minute cron at deploy time; the 5–10 s cadence §14 asks for
+ * is produced INSIDE the invocation):
  *
  *   1. DRAIN — `runScoreWeekBatch(deps, { batchSize, leaseSeconds,
  *      deferSeconds })` (L.D2.2's worker, untouched) with the last-poll
