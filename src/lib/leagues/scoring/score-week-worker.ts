@@ -13,7 +13,10 @@
  *   2. READINESS (F218) — a queued player whose `player_stats` row is older
  *      than its queue row, or absent, is a delta whose stats have not landed
  *      (ingestion writes the queue BEFORE the stats — R706); it stays
- *      queued and is NEVER scored from the stale row.
+ *      queued and is NEVER scored from the stale row. R714's orphan escape:
+ *      when the injected `lastPollCompletedAt(season, week)` says a later
+ *      poll completed after the stamp, an older line is the truth and the
+ *      row is ready (F217's surface — L.D2.3 binds it).
  *   3. MAP (§22.2 / D292) — ready players → leagues through
  *      `idx_league_rosters_player` ∩ leagues `in_season | playoffs` of the
  *      row's season. The LEAGUE comes from the roster index; the TEAM does
@@ -388,6 +391,17 @@ export interface ScoreWorkerDeps {
   /** Service-role client: the queue is service-role-only (109) and the
    *  door refuses a signed-in caller (119). */
   db: ScoreWorkerClient
+  /**
+   * F218/R714's orphan escape — the instant the LAST ingestion poll for
+   * (season, week) COMPLETED, or null when unknown. A queued row whose stat
+   * line is older than its stamp is normally held (the stats have not
+   * landed); but if a later poll completed after the stamp and left the
+   * line untouched, the stored line IS the truth (the delta was transient)
+   * and the row would otherwise sit `not_ready` forever. The surface that
+   * answers this is F217's persisted last-poll instant — L.D2.3 binds it;
+   * unbound, the escape is off and an orphan stays loud (`not_ready`).
+   */
+  lastPollCompletedAt?: (season: number, week: number) => Promise<string | null>
 }
 
 export interface ScoreWorkerOptions {
@@ -883,13 +897,20 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
   for (const rows of groups.values()) {
     const { season, week } = rows[0]
 
-    // (2) READINESS (F218)
+    // (2) READINESS (F218) — plus R714's orphan escape through the seam.
     const lines = await readStatLines(db, season, week, rows.map((r) => r.player_id))
+    let lastPoll: string | null = null
+    if (deps.lastPollCompletedAt) {
+      const at = await deps.lastPollCompletedAt(season, week)
+      lastPoll = at === null ? null : new Date(at).toISOString()
+    }
     const ready: QueueRow[] = []
     for (const row of rows) {
       const line = lines.get(row.player_id)
-      if (line === undefined || line.updated_at < row.enqueued_at) report.not_ready += 1
-      else ready.push(row)
+      const landed = line !== undefined && line.updated_at >= row.enqueued_at
+      const orphanReleased = line !== undefined && lastPoll !== null && lastPoll >= row.enqueued_at
+      if (landed || orphanReleased) ready.push(row)
+      else report.not_ready += 1
     }
     if (ready.length === 0) continue
     anyReady = true

@@ -636,6 +636,9 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
         [P.dst1, 15],
       ].sort(),
     )
+    // F22 at the writer: every value the worker holds or hands the door is a
+    // two-decimal JS literal (probe 2 — the unrounded 24.580000000000002 — reds here).
+    for (const s of t1.starters) expect(String(s.points)).toMatch(/^-?\d+(\.\d{1,2})?$/)
     expect(l1.door).toMatchObject({ written: 1, writable: 1, unchanged: 0, reason: null, skipped: [] })
     // The DB holds the JS literal — no re-rounding anywhere (F22): 92.08 read back as 92.08.
     expect(await matchupScores(fx.l1, 1)).toEqual([
@@ -700,6 +703,27 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(league(scored, fx.l1, 1).teams[0].points).toBe(93.08)
     expect(scored.drained).toBe(1)
     expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 93.08, as: 0 })
+  })
+
+  it('F218/R714 — the orphan escape: a held row is released when the injected last-poll seam says a later poll completed after its stamp (the stored line is then the truth); an earlier poll releases nothing', async () => {
+    // The RB's line is at STAMP_LATER (the previous cell landed it); the
+    // queue says a poll at STAMP_LATER_2 enqueued him and nothing moved —
+    // an orphan (a crash, then an identical re-poll).
+    await enqueue([P.rb1], 1, STAMP_LATER_2)
+    const earlier = await runScoreWeekBatch(
+      { time: clock, db: workerDb, lastPollCompletedAt: async () => STAMP_LATER },
+      { batchSize: 1000, leagueIds: [fx.l1, fx.l2, fx.l3, fx.l4] },
+    )
+    expect(earlier.not_ready).toBe(1)
+    expect(earlier.drained).toBe(0)
+    const released = await runScoreWeekBatch(
+      { time: clock, db: workerDb, lastPollCompletedAt: async () => STAMP_LATER_2 },
+      { batchSize: 1000, leagueIds: [fx.l1, fx.l2, fx.l3, fx.l4] },
+    )
+    expect(released.not_ready).toBe(0)
+    expect(league(released, fx.l1, 1).outcome).toBe('no_change') // scored from the stored (true) line: still 93.08
+    expect(released.drained).toBe(1)
+    expect(await queued()).toEqual([])
   })
 
   it('D321(2) — the ack is BY STAMP: a newer poll landing between the worker’s claim and its ack re-stamps the row, the claimed-stamp delete misses it, and the next drain scores the newer line', async () => {
