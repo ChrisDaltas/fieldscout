@@ -87,11 +87,12 @@ describe('the Home practice entry is released on the mockDrafts flag (MP.7 / D23
     )
   })
 
-  it('the leagues gate holds the two stub chips and NEITHER half of the mock entry', () => {
-    // The stub chips are asserted by name for two reasons: it makes the
-    // negative below meaningful (the block is non-empty and is the one we
-    // think it is), and it pins MP.7 item 5 — Join and League are noted and
-    // left exactly as they are, not "fixed" on the way past.
+  it('the leagues gate holds both league chips and NEITHER half of the mock entry', () => {
+    // Asserted by name so the negative below is meaningful — the block is
+    // non-empty and is the one we think it is. (Until 2026-09-09 these were
+    // stubs and this comment pinned MP.7 item 5: not "fixed" on the way past.
+    // They are real now, fixed deliberately rather than in passing, and the
+    // gate assertion is unchanged.)
     const block = gatedBlock(code(HOME_CHIPS), 'leagues')
     expect(chipLabels(block)).toEqual(['Join', 'League'])
     expect(block).not.toContain('MockLaunchDialog')

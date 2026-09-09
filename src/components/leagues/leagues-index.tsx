@@ -59,9 +59,20 @@ const ROLE_LABEL: Record<string, string> = {
  * the SAME pre-auth preview page (`/join/[token]`). Joining is free (Q6). A
  * pasted link is normalised to its bare code via `extractJoinCode` (R114).
  */
-export function JoinLeagueDialog() {
+export function JoinLeagueDialog({
+  open: openProp,
+  onOpenChange,
+}: {
+  /** Drive the dialog from elsewhere (Home's Join chip). When provided, the
+   *  built-in trigger button is not rendered — the caller owns the affordance. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+} = {}) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : uncontrolledOpen
+  const setOpen = isControlled ? (onOpenChange ?? (() => {})) : setUncontrolledOpen
   const [code, setCode] = useState('')
 
   const joinCode = extractJoinCode(code)
@@ -74,10 +85,12 @@ export function JoinLeagueDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="stroke" size="sm" onClick={() => setOpen(true)}>
-        <Icon name="plus" size={13} />
-        Join league
-      </Button>
+      {!isControlled && (
+        <Button variant="stroke" size="sm" onClick={() => setOpen(true)}>
+          <Icon name="plus" size={13} />
+          Join league
+        </Button>
+      )}
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Join a league</DialogTitle>
