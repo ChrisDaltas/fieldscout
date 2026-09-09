@@ -560,6 +560,30 @@ function finish(report: SeasonRunReport, deps: SeasonRunDeps): SeasonRunReport {
       `PROVENANCE: ${report.provenance.foreign} player_stats row(s) on season ${report.season} carry a source other than 'synthetic' (D300/F13)`,
     )
   }
+  // R949 TAKEN (#278 review). `report.workerErrors` was absent from the
+  // conjunction below and read by no other failure path: invariant 7
+  // (`checkNoWorkerErrors`) reads only `workerErrorsByLeague`, the PER-LEAGUE
+  // map, while `absorbBatch` pushes its two BATCH-LEVEL lines — any
+  // `batch.problems` line that is not a `LAWFUL_WORKER_NOTE`, and R869/R873's
+  // `ack_missed lease_lost=… gone=…`, "the ONE window a stale write can land
+  // in. Alert on both sides." — to the run-wide array and to NO league. Those
+  // reached scrollback as `WORKER ERRORS: n` and reached nothing that could
+  // fail. MEASURED before this change: a report carrying one still passed
+  // `gate-m4-evidence.ts` at exit 0 under "all 9 scenarios green".
+  //
+  // Everything left in this array is already unclassified by construction —
+  // `lawfulBracketSkip` and `LAWFUL_WORKER_NOTE` divert the lawful notes into
+  // `workerNotes` first. A per-league line therefore now alarms twice (invariant
+  // 7 AND here); that is two alarms for one real error, never a false one, and
+  // it is the same both-sides posture the `ack_missed` comment asks for.
+  // `gate-m4-evidence.ts` names them independently, so a refactor of this
+  // function cannot silently un-enforce the class.
+  if (report.workerErrors.length > 0) {
+    report.problems.push(
+      `WORKER ERRORS: ${report.workerErrors.length} unhandled worker error(s) — none of them a lawful ` +
+        `note (those are classified into report.workerNotes). First: ${report.workerErrors[0]}`,
+    )
+  }
   report.green =
     report.invariantFailures.length === 0 &&
     report.problems.length === 0 &&
@@ -2383,10 +2407,30 @@ async function buildScenarioEvidence(
         `${lines ?? 0} player_stats rows for the ${bridged.length} bridged players of ${gameId}`,
         'a postponed game emits no stat lines for the week (E43/§23.3)',
       )
-      const anyFinal = leagues.some((l) => l.weeksFinal.has(firstWeek))
+      // R948 TAKEN (#278 review). This read `leagues.some(...)` — the ONE
+      // existentially-quantified finalization predicate of the four in this
+      // file, while `finalization_unaffected` (provider_outage) and both
+      // charted arms are universal (`every` / `=== leagues.length`).
+      // `finalize_matchups`' SECOND guard (`week_results_pending_internal`,
+      // 118:2074) is PER-LEAGUE, unlike guard 1's global slate check — so a
+      // regression that holds 99 of 100 leagues at `correction_window` left one
+      // league final and this arm printed `[PASS] … 1/100 leagues finalized`.
+      // E43 is the ONE property this scenario exists to certify, and it was
+      // certified while broken in 99 leagues. Nothing downstream catches it:
+      // `classifyHeldWeeks` only LABELS, the finalize hold lands in a `skipped`
+      // array `collectJobFailures` does not read, invariant 5 filters non-final
+      // rows out of BOTH sides of its comparison, and `gate-m4-evidence.ts`'s
+      // `finals` total feeds a print line and no assertion. MEASURED both ways
+      // at the gate's own 100 × 2 × seed 42 before this line changed: with a
+      // constructed one-league-final state the old form printed [PASS] 1/100
+      // and the run and the evidence stage both exited 0; the form below prints
+      // [FAIL] on the same state. If a scenario is ever legitimately EXPECTED
+      // to hold some leagues here, state the threshold and the reason in
+      // `expected` — do not go back to accepting n >= 1.
+      const allFinal = leagues.every((l) => l.weeksFinal.has(firstWeek))
       push(
         'finalized_without_game',
-        anyFinal,
+        allFinal,
         `${leagues.filter((l) => l.weeksFinal.has(firstWeek)).length}/${leagues.length} leagues finalized week ${firstWeek}`,
         'the week finalizes with the postponed game excluded (116\'s left-the-week rule)',
       )
@@ -2739,9 +2783,12 @@ const POOL_MIRROR_GAP =
   'is VACUOUS, not evidence: `league_player_pool` is written ONLY by `roster_add_drop_internal` ' +
   '(113:713/734, 115:646/667), this harness performs no add/drops, so the table is EMPTY for every sim ' +
   'league (`report.poolRows` — asserted 0 by the evidence stage) and the mirror loop iterates nothing. ' +
-  'The only live half is the reconcile library\'s `pool_mirror_broken` finding. The `roster_add_drop` ' +
-  'door itself is covered by pgTAP and by L.D6.2\'s inseason-lock.spec.ts; real mirror coverage waits on ' +
-  'M5\'s transactions/waivers sim work. F300.'
+  'R950 CORRECTS an earlier clause here that called reconcile\'s `pool_mirror_broken` the one surviving ' +
+  'live half: it is DEAD FOR THE SAME REASON — reconcile builds its pool state from the SAME empty table ' +
+  'over the SAME seeded leagues (reconcile.ts:645-647), so its first loop iterates nothing and its second ' +
+  'never sees a defined state, and a season run cannot emit that finding either. REAL coverage lives ' +
+  'elsewhere: the `roster_add_drop` door is walked by pgTAP and by L.D6.2\'s inseason-lock.spec.ts, and ' +
+  'mirror coverage itself waits on M5\'s transactions/waivers sim work. F300.'
 
 function seasonCoverageGaps(scenario: ScenarioId): string[] {
   const gaps: string[] = [

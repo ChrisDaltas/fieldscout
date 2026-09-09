@@ -1,5 +1,5 @@
 /**
- * `gate-m4-evidence.ts` — the M4 gate's evidence stage (L.D6.3, stage [5/13]).
+ * `gate-m4-evidence.ts` — the M4 gate's evidence stage (L.D6.3, stage [5/10]).
  *
  * It reads the NINE `sim season --report` JSONs the gate's scenario stages
  * wrote and TRANSCRIBES them: the scenario→assertion map (tasks-M4 §6 L.D6.3
@@ -82,6 +82,36 @@ function main(): void {
   const problems: string[] = []
   const reports = new Map<string, SeasonRunReport>()
 
+  // R951 TAKEN (#278 review). The map used to be read as
+  // `REQUIRED_BY_SCENARIO[scenario] ?? []`, which made a MISSING or MISTYPED
+  // key mean "this scenario requires only the two universals" — the exact
+  // shape this file's own docblock forbids ("a missing name fails the gate by
+  // name"). MEASURED: renaming the `flex_move` key to `flex_movee` exited 0,
+  // with `lock_moved_with_kickoff` printed WITHOUT its [REQUIRED] tag and the
+  // banner still claiming every D295 assertion was present. The map is now
+  // checked against `SCENARIO_IDS` in BOTH directions before anything reads it
+  // — a typo produces both halves, so either sweep alone would catch it, and
+  // both are cheap — and the `??` is gone from the read below.
+  for (const scenario of SCENARIO_IDS) {
+    if (!(scenario in REQUIRED_BY_SCENARIO)) {
+      fail(
+        problems,
+        `THE D295 MAP has NO entry for scenario '${scenario}' — a scenario with no requirement row would ` +
+          `silently require only ${REQUIRED_EVERY.join(' + ')}. State its arms (an intentionally empty list is ` +
+          `written as \`[]\`, like happy_path)`,
+      )
+    }
+  }
+  for (const key of Object.keys(REQUIRED_BY_SCENARIO)) {
+    if (!(SCENARIO_IDS as readonly string[]).includes(key)) {
+      fail(
+        problems,
+        `THE D295 MAP carries key '${key}', which is not one of the ${SCENARIO_IDS.length} SCENARIO_IDS — ` +
+          `its requirements are enforced against nothing`,
+      )
+    }
+  }
+
   for (const scenario of SCENARIO_IDS) {
     const path = join(dir, `${scenario}.json`)
     if (!existsSync(path)) {
@@ -124,6 +154,22 @@ function main(): void {
       fail(problems, `${scenario}: ${report.invariantFailures.length} invariant failure(s)`)
     }
     if (report.problems.length > 0) fail(problems, `${scenario}: ${report.problems.length} problem(s)`)
+    // R949 TAKEN (#278 review). `report.workerErrors` was mentioned NOWHERE in
+    // this file, and the run's own `green` did not include it either, so a
+    // run-wide, league-UNATTRIBUTED worker error — `absorbBatch`'s two
+    // batch-level pushes, one of them R869/R873's `ack_missed lease_lost/gone`
+    // stale-write window — certified green. MEASURED: a report carrying
+    // `score batch @…: ack_missed lease_lost=1 gone=0` exited 0 here under "all
+    // 9 scenarios green, every D295 assertion present", with the line printed
+    // nowhere in the transcript. `season-runner.ts`'s `finish()` now folds them
+    // into `report.problems` at source; this is the independent half, so a
+    // refactor there cannot quietly un-enforce it.
+    if (report.workerErrors.length > 0) {
+      fail(
+        problems,
+        `${scenario}: ${report.workerErrors.length} worker error(s) — first: ${report.workerErrors[0]}`,
+      )
+    }
 
     // ---- The run-wide clauses of the task row ------------------------------
     console.log(
@@ -221,7 +267,16 @@ function main(): void {
     }
 
     // ---- THE SCENARIO→ASSERTION MAP (task item 4) --------------------------
-    const required = new Set([...REQUIRED_EVERY, ...(REQUIRED_BY_SCENARIO[scenario] ?? [])])
+    // R951: no `??`. A missing key is named by the both-directions sweep at the
+    // top of `main()`; this branch is the second alarm, and it fails rather
+    // than defaulting the requirement set to the universals.
+    const required = new Set<string>(REQUIRED_EVERY)
+    const byScenario: readonly string[] | undefined = REQUIRED_BY_SCENARIO[scenario]
+    if (byScenario === undefined) {
+      fail(problems, `${scenario}: the D295 requirement map has no entry — its arms are enforced against nothing`)
+    } else {
+      for (const name of byScenario) required.add(name)
+    }
     const byName = new Map<string, { pass: number; fail: number; sample: string }>()
     for (const a of report.scenarioEvidence.assertions) {
       const cell = byName.get(a.name) ?? { pass: 0, fail: 0, sample: '' }

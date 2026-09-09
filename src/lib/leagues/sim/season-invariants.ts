@@ -425,10 +425,24 @@ export function checkStandingsRecompute(a: SeasonAudit): SeasonInvariantFailure[
  * (F300's discharge); the `roster_add_drop` door itself is walked today by
  * pgTAP and by L.D6.2's `inseason-lock.spec.ts`, not from here.
  *
- * The `reconcileFindings` half at the bottom is NOT vacuous — `pool_mirror_
- * broken` comes from the reconcile library, which runs over the real
- * population — so it stays live and is the only part of this function that can
- * currently fail.
+ * R950 (#278 review) CORRECTS WHAT STOOD HERE. This paragraph used to say the
+ * `reconcileFindings` half at the bottom was "NOT vacuous … the only part of
+ * this function that can currently fail", because `pool_mirror_broken` comes
+ * from the reconcile library and that "runs over the real population". IT IS
+ * DEAD FOR THE SAME REASON: reconcile builds its `poolState` from
+ * `league_player_pool` (reconcile.ts:645-647) over the SAME leagues this run
+ * seeded (`season-runner.ts` scopes `reconcileSeason` to `leagueIds`), so with
+ * the table empty its first loop iterates nothing (:648) and its second fires
+ * only on `state !== undefined && state !== 'rostered'`, which an empty map
+ * never produces (:660-662). A season run cannot emit that finding at all, and
+ * that false clause sat inside the string `gate-m4-evidence.ts` machine-checks
+ * — restoring the very "silence reads as coverage" impression this withdrawal
+ * exists to destroy, and inviting F300 to be closed on coverage that does not
+ * exist. REAL coverage is where the paragraph above says it is: the
+ * `roster_add_drop` door is walked by pgTAP and by L.D6.2's
+ * `inseason-lock.spec.ts`; the mirror itself waits on M5's
+ * transactions/waivers sim work (F300's discharge). Nothing in THIS function
+ * can currently fail.
  */
 export function checkPoolMirror(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []

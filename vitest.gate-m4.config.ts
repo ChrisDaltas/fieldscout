@@ -79,7 +79,7 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  *   ci-stack-lane-trigger — F290/F291's home (db.yml's source globs)
  *
  * TOTAL: 71 files. Nothing here needs the RESTORED player pool, which is
- * why the whole config runs at stage [3/13], BEFORE [3.5]'s restore, on the
+ * why the whole config runs at stage [3/10], BEFORE [3.5]'s restore, on the
  * D144(5) side that wants the EMPTY post-reset pool. Any future M4 suite
  * that drafts the real pool must move OUT of this config into its own
  * post-restore stage, with the reason stated — the `[3.6]` precedent in
