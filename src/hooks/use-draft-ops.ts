@@ -436,6 +436,110 @@ export function heartbeatSilenceExceeded(
 }
 
 /**
+ * The room watchdog's cadence — the interval on which a mounted room asks
+ * itself whether it still believes what it is rendering. 5s, the same number
+ * `AUTO_START_POLL_MS` (D94) already chose for the pre-start flip, so there
+ * is one cadence for this transition and not two.
+ */
+export const ROOM_WATCHDOG_MS = 5_000
+
+/**
+ * Does THIS watchdog beat owe the room a refetch? (F56's gate half.)
+ *
+ * Two arms, and the second one is the fix:
+ *
+ * - **live** — the original rule. A live draft beats every tick pass, so
+ *   silence past `HEARTBEAT_SILENCE_MS` is doubt (the lost-pause-broadcast
+ *   recovery — a paused draft emits no beats, D109(6)).
+ *
+ * - **scheduled** — a scheduled draft emits NO beats at all, so silence
+ *   carries no information here and the only honest test is to ASK. Without
+ *   this arm the pre-start room is the ONE room state that MOUNTS THE ROOM
+ *   and has no reconciliation of any kind (**R946 narrowed this from "the
+ *   one room state", full stop**: the sibling pre-start surface — a
+ *   `scheduled` league with NO drafts row — renders `DraftLobby draft={null}`
+ *   and returns before `DraftRoomResolved`, so it has no draft id, no
+ *   channel, and this watchdog cannot arm there at all. That surface is
+ *   bounded rather than covered — `set_league_status` refuses `scheduled`
+ *   without `settings.draft.draft_scheduled_at` (`059:311-317`), so it always
+ *   has a stored instant and the D94 poll DOES rescue it from T-2min — and it
+ *   is filed as **F307**, not fixed here). Inside the with-row lobby: the
+ *   live arm above is gated on `status === 'live'`; the D94 lobby's own poll
+ *   (`draft-lobby.tsx`) is armed only while `autoStartPollMs` is non-null,
+ *   i.e. within `AUTO_START_WATCH_MS` (2 minutes) of a STORED instant — so a
+ *   commissioner who presses "Start draft now" earlier than that, or a league
+ *   with no stored instant at all (`draft_create` admits a `setup` league,
+ *   `066:483`, so a `scheduled` drafts row can precede any instant — the
+ *   lobby's own no-countdown sub-state), leaves every member's lobby that HAS
+ *   a drafts row with a single delivery path and no backstop; and the room's
+ *   own query has no interval and no focus refetch. A single lost `drafts`
+ *   broadcast —
+ *   a documented possibility, not a hypothetical (D109(9): `realtime.send()`
+ *   drops silently while the service boots; F74/D325: a join acked on a
+ *   socket that was already closing is SUBSCRIBED and then orphaned deaf,
+ *   with no error to react to) — therefore parked the room on the
+ *   settings-countdown while the draft ran without it, until a reload.
+ *
+ *   MEASURED 2026-09-08 (F56): with the manager's channel SUBSCRIBED and
+ *   then silently receiving nothing, the room sat on "Draft scheduled" for
+ *   the full 30s of `auction-live.spec.ts:206` and never issued one request —
+ *   this row's recorded signature, verbatim, including the surface.
+ *
+ *   This is the room's own stated doctrine applied to the one transition
+ *   that was exempt from it: *never depend on missed broadcasts*
+ *   (`use-draft.ts`, §9.3).
+ *
+ * Every other status is inert, and each for its own reason (unchanged from
+ * the pre-F56 rule): a `paused` room is not silent-by-accident but silent-by-
+ * design (D109(6)), and its missed-RESUME recovery is `heartbeatSignalsGap` —
+ * a beat arriving while we believe the draft paused mismatches by
+ * construction; a `complete` draft has nothing left to reconcile; and an
+ * absent draft row means the room is not rendering one.
+ */
+export function roomWatchdogWantsRefetch(input: {
+  status: string | null | undefined
+  lastBeatAtMs: number | null
+  nowMs: number
+}): boolean {
+  const { status, lastBeatAtMs, nowMs } = input
+  if (status === 'scheduled') return true
+  if (status !== 'live') return false
+  return lastBeatAtMs !== null && heartbeatSilenceExceeded(lastBeatAtMs, nowMs)
+}
+
+/**
+ * Has the room's draft row been FETCHED yet? — §9.3's *fetch-then-subscribe*
+ * precondition, and the ONE thing the channel effect is gated on.
+ *
+ * **R943 (PR #279 fix round): this used to be `query.isSuccess`, and that is
+ * a different question.** `isSuccess` asks *"did the LAST request succeed"*;
+ * fetch-then-subscribe asks *"do we HOLD the draft row"* — and React Query
+ * answers those differently the moment a background refetch fails. Its
+ * reducer's error case sets `status: 'error'` unconditionally while
+ * **retaining `data`**, so one failed refetch flipped `isSuccess` false over
+ * a cache that still held the row, re-ran the channel effect into its
+ * `if (!draftId || !fetched) return` guard, and let the cleanup
+ * `clearInterval` the watchdog **and** `removeChannel` the subscription —
+ * with nothing left alive to ask again. The new `scheduled` arm is the first
+ * thing in the pre-start room that issues fetches, so the backstop destroyed
+ * itself with its own request: **measured on the pre-fix tree, two aborted
+ * requests (one beat plus react-query's single `retry`) with connectivity
+ * then FULLY restored gave 0 room reads in the next 20 s and a room that
+ * never got in** — permanently, silently, and precisely outside the D94
+ * lobby poll's two-minute window, which is the domain the arm exists for.
+ *
+ * Asking the right question fixes it in one place: once the row is held the
+ * precondition is permanently satisfied, so a transient failure re-runs
+ * nothing — the interval survives to re-issue the read, and the channel is
+ * never torn down and rebuilt. That second half matters on its own: a
+ * rejoin raced against a closing socket is F74/D325's deaf-channel shape,
+ * i.e. the very fault this watchdog exists to back up.
+ */
+export function draftHasBeenFetched(input: { isSuccess: boolean; hasData: boolean }): boolean {
+  return input.isSuccess || input.hasData
+}
+
+/**
  * True when the heartbeat's deadline is not the one we hold — we missed a
  * drafts UPDATE (pause/resume/clock-edit/advance) ⇒ refetch. Both-null
  * (untimed) agrees. A heartbeat while we believe the draft is paused

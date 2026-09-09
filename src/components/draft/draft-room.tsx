@@ -366,7 +366,7 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       userId={user?.id ?? null}
       contextHealth={health}
       onRetryContext={() => void detail.refetch()}
-      renderScheduled={(draft, onlineTeamIds) => (
+      renderScheduled={(draft, onlineTeamIds, roomHealth) => (
         <DraftLobby
           leagueId={leagueId}
           detail={detail.data!}
@@ -374,7 +374,10 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
           onlineTeamIds={onlineTeamIds}
           myTeamId={myMemberTeamId}
           isCommish={canUseCommishPanel(detail.data!.my_role)}
-          stale={health === 'degraded'}
+          // R944: the RESOLVED room health, not `health` — this lobby has a
+          // room query behind it, and a failing one used to render here as a
+          // confident countdown with no §16.5.4 banner.
+          stale={roomHealth === 'degraded'}
         />
       )}
     />
@@ -486,8 +489,20 @@ interface DraftRoomResolvedProps {
   contextHealth: FetchHealth
   onRetryContext: () => void
   /** The pre-start state, which is a LEAGUE object (the D94 lobby) — so the
-   *  mount owns it. See each mount's renderer. */
-  renderScheduled: (draft: Draft, onlineTeamIds: ReadonlySet<string>) => ReactNode
+   *  mount owns it. See each mount's renderer.
+   *
+   *  **`roomHealth` is the RESOLVED health (R944)** — `contextHealth` merged
+   *  with the ROOM query's own, i.e. the same value the bar's §16.5.4 banner
+   *  and the no-draft gates read. It is passed because the mount cannot
+   *  compute it: the room query lives in here. Without it the scheduled
+   *  lobby read the mount's context health alone and rendered a confident
+   *  countdown while the room's own read was failing — the one surface
+   *  `room-health-ops.ts`'s F56 doctrine says must announce itself. */
+  renderScheduled: (
+    draft: Draft,
+    onlineTeamIds: ReadonlySet<string>,
+    roomHealth: FetchHealth,
+  ) => ReactNode
 }
 
 /**
@@ -622,7 +637,9 @@ function DraftRoomResolved({
     // fetch), so presence works here and the start flip arrives as the
     // drafts UPDATE broadcast — the lobby becomes the live room in place.
     // The surface itself is the MOUNT's (a lobby is a league object).
-    return <>{renderScheduled(draft, room.onlineTeamIds)}</>
+    // R944: the lobby gets the RESOLVED health, not the mount's context-only
+    // one — a failing ROOM query must reach this surface's banner too.
+    return <>{renderScheduled(draft, room.onlineTeamIds, health)}</>
   }
 
   if (draft.status === 'complete') {
