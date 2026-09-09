@@ -110,6 +110,18 @@ export interface SeasonLeaguePlan {
   /** 0 in a `total_points` league — the coupling above. */
   playoffTeams: number
   playoffStartWeek: number
+  /** D299's PARITY-TEMPLATE axis, added at L.D6.3 — until then every league
+   *  was hard-coded to `ESPN Standard` (runner.ts's one template lookup), so
+   *  seven of the eight shipped templates were never scored through by a
+   *  season run at all. Rotated by a seeded offset: at n >= 8 leagues every
+   *  shipped template appears BY CONSTRUCTION. */
+  scoringTemplate: string
+  /** D299's §7.3.3.1 CUSTOM-FORK arm: this league forks its template into its
+   *  own editable document (`scoring_fork_template`, 105:277) and applies one
+   *  legal coefficient edit (`scoring_update_rules`, 105:461) while it is
+   *  still in `setup` — the state a sim league sits in between creation and
+   *  draft start. Exactly one league per run (n >= 2). */
+  forkScoring: boolean
 }
 
 /** The auction matrix axes L.C4.1 must cover at head (the five-lane rule in

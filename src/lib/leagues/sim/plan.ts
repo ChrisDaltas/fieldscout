@@ -105,6 +105,29 @@ export interface BuildPlanInput {
 export const SEASON_MATRIX_LABEL = 'season:matrix'
 
 /**
+ * D299's PARITY-TEMPLATE axis, which the matrix did not have until L.D6.3:
+ * every league was hard-coded to `ESPN Standard` (`runner.ts`'s one template
+ * lookup), so seven of the eight shipped templates — and with them the §7.3.3
+ * parity surface the M1 gate certifies — were never scored through by a season
+ * run at all.
+ *
+ * The names are the SHIPPED eight in `templates.ts` order. They are listed
+ * here rather than imported so a template added upstream cannot silently
+ * change a season run's matrix; the runner REFUSES a name the database does
+ * not carry, which is what keeps this list falsifiable rather than decorative.
+ */
+export const SEASON_SCORING_TEMPLATES: readonly string[] = [
+  'Scout Standard',
+  'Scout PPR',
+  'ESPN Standard',
+  'ESPN Full PPR',
+  'Yahoo Standard',
+  'Yahoo Half PPR',
+  'Sleeper Standard',
+  'Sleeper Full PPR',
+]
+
+/**
  * L.D6.1's season roster preset: ONE starting slot per scoring position, so
  * every one of the §23.6 library's six positions can actually reach a
  * starting lineup. `rosterForRounds` (the M2 draft preset) starts QB/RB/WR
@@ -294,6 +317,11 @@ export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
   const medianIndex = n >= 3 ? pickOther(rng, n, [totalPointsIndex]) : -1
   const secondIndex = n >= 4 ? pickOther(rng, n, [totalPointsIndex, medianIndex]) : -1
   const illegalOffIndex = n >= 5 ? pickOther(rng, n, [totalPointsIndex]) : -1
+  // The parity-template axis: a seeded ROTATION, so at n >= 8 every shipped
+  // template appears by construction and below 8 the sample still moves with
+  // the seed. `forkIndex` carries D299's §7.3.3.1 custom-fork arm.
+  const templateOffset = Math.floor(rng() * SEASON_SCORING_TEMPLATES.length)
+  const forkIndex = n >= 2 ? Math.floor(rng() * n) : -1
   // The mode-gated arms only exist on an h2h league, so the leagues carrying
   // them are h2h BY CONSTRUCTION — never by the coin below (R918).
   const forcedH2h = new Set([h2hIndex, medianIndex, secondIndex].filter((i) => i >= 0))
@@ -317,6 +345,9 @@ export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
       regularSeasonWeeks,
       playoffTeams,
       playoffStartWeek: regularSeasonWeeks + 1,
+      scoringTemplate:
+        SEASON_SCORING_TEMPLATES[(i + templateOffset) % SEASON_SCORING_TEMPLATES.length]!,
+      forkScoring: i === forkIndex,
     }
     league.season = seasonPlan
   }
@@ -337,6 +368,7 @@ export function seasonPlanLines(plan: RunPlan): string[] {
       `${l.name}: ${l.teamCount} teams · ${s.scheduleMode} · median ${s.medianGame ? 'on' : 'off'} · ` +
       `second ${s.secondOpponent ? 'on' : 'off'} · illegal-lineups ${s.allowIllegalLineups ? 'on' : 'off'} · ` +
       `${s.regularSeasonWeeks} regular weeks · playoff_teams ${s.playoffTeams} · ` +
+      `scoring ${s.scoringTemplate}${s.forkScoring ? ' (FORKED + edited — §7.3.3.1)' : ''} · ` +
       `${l.rounds} rounds · humans ${l.humanSeats.length}/${l.teamCount}`
     )
   })

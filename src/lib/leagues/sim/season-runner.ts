@@ -934,6 +934,8 @@ async function driveSeason(
      *  rather than an oracle that answers `false` to everything. */
     postponedLockAt: null as string | null,
     postponedLockDetail: null as string | null,
+    /** F289: what §7.3.6 actually reads for the postponed clubs. */
+    postponedByeDetail: null as string | null,
     postponedLocked: 0,
     postponedClubs: 0,
     controlLocked: 0,
@@ -1172,6 +1174,7 @@ async function driveSeason(
         const on = await readClubLocks(service, entry.week, controlClubs, pNow)
         measured.postponedLockAt = pNow
         measured.postponedLockDetail = `postponed[${off.detail}] control[${on.detail}]`
+        measured.postponedByeDetail = await readByeState(service, entry.week, postponedClubs, pNow)
         measured.postponedLocked = off.locked
         measured.postponedClubs = off.clubs
         measured.controlLocked = on.locked
@@ -1479,6 +1482,43 @@ async function readLeagueCells(
   )
   for (const row of results) out.set(`r:${row.team_id}`, String(row.points ?? '(null)'))
   return out
+}
+
+/**
+ * §7.3.6's BYE arm, read from the server's own derivation
+ * (`lineup_kickoff_internal`, 112:395-427) rather than assumed — F289.
+ *
+ * The ledger imagined the `postponement` scenario would put its clubs on bye.
+ * It does not, and this measures it rather than arguing it: ingest keeps a
+ * postponed game's row at (season, week) with `status = 'postponed'` and the
+ * kickoff moved out (`IN_WEEK_STATUSES` excludes it from the week BOUNDS,
+ * ingest-week.ts:194-200, and 116:311-315 says the game "has LEFT the week"
+ * only in the week-state sense), while 112:413-417 resolves the club's kickoff
+ * from `nfl_games` by (season, week, club) with NO status filter. So the club
+ * still resolves a kickoff and reads `on_bye = FALSE`.
+ */
+async function readByeState(
+  service: Supabase,
+  week: number,
+  clubs: readonly string[],
+  at: string,
+): Promise<string> {
+  const parts: string[] = []
+  for (const club of clubs) {
+    const { data, error } = await service.rpc('lineup_kickoff_internal', {
+      p_season: SYNTHETIC_SEASON,
+      p_week: week,
+      p_nfl_team: club,
+      p_at: at,
+    })
+    throwIfError(error, `lineup_kickoff_internal(${club} @ ${at})`)
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { on_bye?: boolean; datum_arm?: string }
+      | null
+      | undefined
+    parts.push(`${club} on_bye=${row?.on_bye === true} datum=${row?.datum_arm ?? '(none)'}`)
+  }
+  return parts.join(' · ')
 }
 
 /** Cells present on BOTH sides whose value moved, and how many were compared.
@@ -2052,6 +2092,7 @@ async function buildScenarioEvidence(
     flexLockWindow: string | null
     postponedLockAt: string | null
     postponedLockDetail: string | null
+    postponedByeDetail: string | null
     postponedLocked: number
     postponedClubs: number
     controlLocked: number
@@ -2224,7 +2265,11 @@ async function buildScenarioEvidence(
         `at ${measured.postponedLockAt ?? '(unsampled)'} (the postponed game's ORIGINAL kickoff) ` +
           `${measured.postponedLockDetail ?? '(no sample)'} — ` +
           `${measured.postponedLocked}/${measured.postponedClubs} postponed clubs locked, ` +
-          `${measured.controlLocked}/${measured.controlClubs} control clubs locked`,
+          `${measured.controlLocked}/${measured.controlClubs} control clubs locked. ` +
+          `§7.3.6's BYE arm, read from lineup_kickoff_internal at the same instant (F289): ` +
+          `${measured.postponedByeDetail ?? '(unsampled)'} — a postponed game KEEPS its (season, week) row ` +
+          `(only its STATUS and kickoff move), and 112:413-417 resolves the club's kickoff with no status ` +
+          `filter, so these clubs are NOT on bye and this scenario does not exercise that arm`,
         'the postponed game does not lock its clubs at the kickoff it no longer has, while a game that DID ' +
           'kick off locks its own (E43; the lock is evaluated from nfl_games.kickoff_at at evaluation time)',
       )
