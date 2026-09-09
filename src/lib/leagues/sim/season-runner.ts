@@ -87,7 +87,10 @@ import { runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worke
 import { DegradationTracker } from '../stats/degradation'
 import { makeScenario } from '../stats/synthetic/scenarios'
 import { SCENARIO_IDS, type ScenarioId } from '../stats/synthetic/scenario'
-import { SyntheticStatsProvider } from '../stats/synthetic/synthetic-stats-provider'
+import {
+  CHARTED_PLACEHOLDER_KEY,
+  SyntheticStatsProvider,
+} from '../stats/synthetic/synthetic-stats-provider'
 import { VirtualClock } from '../time/virtual-clock'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
@@ -304,6 +307,7 @@ export async function runSeasonSim(
     censusBefore: '',
     censusAfter: '',
     problems: [],
+    coverageGaps: seasonCoverageGaps(cfg.scenario),
     reason: null,
     green: false,
   }
@@ -887,6 +891,62 @@ async function driveSeason(
     kickoffAfter: null as string | null,
     locksAtAnnounce: null as string | null,
     locksAfterAnnounce: null as string | null,
+    // ── E42, read as a LOCK and not as a schedule datum (Q5/F287-adjacent) ──
+    // `flex_move` moves G3 EARLIER. Between the NEW kickoff and the ORIGINAL
+    // one there is a window in which the flexed clubs' players are locked
+    // under the flexed schedule and would NOT be under the original — so
+    // sampling `league_player_pool.locked_until` there asserts the LOCK
+    // moved, not merely that `nfl_games.kickoff_at` did. Locks are evaluated
+    // from that column at evaluation time (§23.3/D291), never precomputed.
+    /** Sampled BEFORE the earlier of the two kickoffs (the discriminator:
+     *  a sampler that always says LOCKED would fail here). */
+    flexLockBefore: null as string | null,
+    /** Sampled INSIDE [new kickoff, original kickoff) — the span in which the
+     *  moved schedule locks and the original one would not. */
+    flexLockInside: null as string | null,
+    flexLockInsideLocked: 0,
+    flexLockInsideClubs: 0,
+    flexLockBeforeLocked: 0,
+    flexLockWindow: null as string | null,
+    /** E43: the POSTPONED clubs and a CONTROL club, read from the same oracle
+     *  at the same instant — the control is what makes "not locked" evidence
+     *  rather than an oracle that answers `false` to everything. */
+    postponedLockAt: null as string | null,
+    postponedLockDetail: null as string | null,
+    postponedLocked: 0,
+    postponedClubs: 0,
+    controlLocked: 0,
+    controlClubs: 0,
+    // ── The two charted arms, measured at league level (F283/Q44) ──────────
+    chartedPostInstant: null as string | null,
+    chartedSlaInstant: null as string | null,
+    /** `player_stats` rows on the week carrying the charted key AFTER the post. */
+    chartedAdvancedRows: 0,
+    /** The charted arrival's own diff: rows the poll wrote / rows it enqueued. */
+    chartedDeltas: 0,
+    chartedEnqueued: 0,
+    /** Leagues the drain WROTE at or after the charted arrival. A charted key
+     *  pays nothing in any shipped template, so this must stay 0. */
+    chartedDrainWrites: 0,
+    /** Leagues the drain RECOMPUTED at or after the arrival — `written` OR
+     *  `no_change`. `no_change` is the outcome a charted delta must produce
+     *  (score-week-worker.ts:1041): the worker really ran and the total really
+     *  did not move. Zero here would mean the delta never reached the worker,
+     *  which is a different (and worse) reading than "changed nothing". */
+    chartedDrainRecomputes: 0,
+    /** Queue rows the ack DELETED at or after the arrival (the delta drained). */
+    chartedDrained: 0,
+    /** team_week_results cells compared across the charted instant, and how
+     *  many changed VALUE. No rules key pays a charted key, so this must be 0. */
+    chartedCellsCompared: 0,
+    chartedCellsChanged: 0,
+    /** The revision arm: the charted value before and after the +9 revision. */
+    chartedValueBefore: null as number | null,
+    chartedValueAfter: null as number | null,
+    chartedRevisionInWindow: null as boolean | null,
+    /** The delta the scenario DECLARES for the revision (§23.6), so the arm
+     *  asserts the stored value moved by exactly it, never merely "moved". */
+    chartedRevisionDelta: null as number | null,
     postWindowSkips: 0,
     postWindowWrites: 0,
     inWindowWrites: 0,
@@ -905,12 +965,48 @@ async function driveSeason(
   }
   const flexGame = anchored.get(weeksDriven[0]!)!.games.find((g) => g.flexMove !== undefined)
   const postponedGame = anchored.get(weeksDriven[0]!)!.games.find((g) => g.postponement !== undefined)
+  // The SLIPPED charted feed, DERIVED (never a hard-coded game id): the one
+  // game whose charted post lands after its own SLA. That slip IS `charted_late`'s
+  // observable (scenarios.ts:193-198 — the SLA stays Monday, the post moves).
+  const chartedLateGame = anchored
+    .get(weeksDriven[0]!)!
+    .games.find((g) => g.chartedPostAt.getTime() > g.chartedSlaAt.getTime())
+  const chartedRevision = anchored.get(weeksDriven[0]!)!.chartedRevisions[0]
+  // Which real player ids carry a charted value for the watched arm. The
+  // scenario is already ANCHORED, so these are real `players.id`s.
+  const chartedWatchIds =
+    chartedRevision !== undefined
+      ? [chartedRevision.playerId]
+      : chartedLateGame === undefined
+        ? []
+        : anchored
+            .get(weeksDriven[0]!)!
+            .players.filter((pl) => pl.gameId === chartedLateGame.gameId)
+            .map((pl) => pl.playerId)
+  measured.chartedRevisionDelta = chartedRevision?.delta ?? null
+  const flexClubs = flexGame === undefined ? [] : [flexGame.awayTeam, flexGame.homeTeam]
+  const postponedClubs = postponedGame === undefined ? [] : [postponedGame.awayTeam, postponedGame.homeTeam]
+  // The CONTROL for E43: a club whose game the scenario does NOT postpone.
+  // Without it "the postponed clubs are not locked" is indistinguishable from
+  // "the oracle says nothing is ever locked" (CLAUDE.md's four-bug shape).
+  const controlGame =
+    postponedGame === undefined
+      ? undefined
+      : anchored.get(weeksDriven[0]!)!.games.find((g) => g.postponement === undefined && g.gameId !== postponedGame.gameId)
+  const controlClubs = controlGame === undefined ? [] : [controlGame.awayTeam, controlGame.homeTeam]
   const windowEndsAt = new Map(
     weeksDriven.map((w) => [w, Date.parse(weekRows.get(w)!.correction_window_ends_at!)]),
   )
 
   const actionRng = deriveStream(cfg.seed, `season:lineups:${deps.runTag}`)
   let seedLineupsAfterPoll = false
+  // Set at the charted arrival; every LATER drain of the same week is counted
+  // toward it. 122's ack DEFERS a held/not-ready row for a beat (R872), so the
+  // recompute a charted delta provokes lands at a LATER instant than the poll
+  // that enqueued it — counting only the arrival instant reported 0 writes and
+  // would have made the arm a false red (measured 2026-09-08).
+  let chartedArrivedAtMs: number | null = null
+  let chartedCellsBefore: Map<string, string> | null = null
 
   for (const entry of timeline) {
     clock.advanceTo(entry.at)
@@ -947,6 +1043,31 @@ async function driveSeason(
       // the report advances inside the subtransaction, so a later-week raise
       // leaves it claiming a rolled-back week finalized.
       await snapshotNewlyFinal(service, leagues)
+    }
+
+    // ---- The charted arms' BEFORE side (F283/Q44) ------------------------
+    // A charted arrival must move `player_stats.advanced` and NOT a league
+    // cell: `example_charted_yards` is the registry's only charted-tier key
+    // and it is `scoring_surface: 'reserved'` (stat-keys.ts:204), which spec
+    // §23.5 (spec:2200) forbids in a format-2 document and 103/104 refuse at
+    // the write wall. So the cells are read either side of the instant and
+    // the CHANGED count must be 0 — measured, never assumed.
+    const isChartedPost =
+      chartedLateGame !== undefined &&
+      entry.week === weeksDriven[0] &&
+      entry.label.includes(`charted posted ${chartedLateGame.gameId}`)
+    const isChartedRevision =
+      chartedRevision !== undefined &&
+      entry.week === weeksDriven[0] &&
+      entry.label.includes('charted revision ')
+    if (isChartedPost || isChartedRevision) {
+      chartedCellsBefore = await readLeagueCells(service, leagueIds, entry.week)
+      const before = await readChartedAdvanced(service, chartedWatchIds, entry.week)
+      measured.chartedValueBefore =
+        chartedRevision === undefined
+          ? null
+          : (before.valueByPlayer.get(chartedRevision.playerId) ?? null)
+      chartedArrivedAtMs = entry.at.getTime()
     }
 
     // ---- POLL: ingest → drain → lock tick, at EVERY instant --------------
@@ -994,6 +1115,85 @@ async function driveSeason(
         measured.kickoffBefore = await readKickoff(service, flexGame.gameId)
       } else if (entry.at.getTime() >= announce) {
         measured.kickoffAfter = await readKickoff(service, flexGame.gameId)
+      }
+      // E42 read as a LOCK, at evaluation time. Between the NEW kickoff and
+      // the ORIGINAL one the flexed clubs' players are locked under the moved
+      // schedule and would NOT be under the original one — so a sample here
+      // asserts the lock followed the kickoff, not merely that the schedule
+      // datum changed (§23.3/D291; the postponement arm's read shape).
+      const newKickoff = flexGame.flexMove!.newKickoffAt.getTime()
+      const originalKickoff = flexGame.kickoffAt.getTime()
+      const lo = Math.min(newKickoff, originalKickoff)
+      const hi = Math.max(newKickoff, originalKickoff)
+      measured.flexLockWindow = `${new Date(lo).toISOString()} .. ${new Date(hi).toISOString()}`
+      if (entry.at.getTime() < lo && entry.at.getTime() >= announce) {
+        // The LAST pre-window sample wins: nearest to the boundary, and still
+        // open under BOTH schedules.
+        const locks = await readClubLocks(service, entry.week, flexClubs, pNow)
+        measured.flexLockBefore = `${pNow} ${locks.detail}`
+        measured.flexLockBeforeLocked = locks.locked
+      } else if (entry.at.getTime() >= lo && entry.at.getTime() < hi && measured.flexLockInside === null) {
+        const locks = await readClubLocks(service, entry.week, flexClubs, pNow)
+        measured.flexLockInside = `${pNow} ${locks.detail}`
+        measured.flexLockInsideLocked = locks.locked
+        measured.flexLockInsideClubs = locks.clubs
+      }
+    }
+
+    // E43: the postponed clubs' lock, read from the same oracle as the flexed
+    // one, at the first instant at-or-after the ORIGINAL kickoff — the instant
+    // at which they WOULD have locked had the game stayed in the week. Read
+    // beside a CONTROL game's clubs, which must read LOCKED at that same
+    // instant, so "open" is evidence and not an oracle stuck at false.
+    if (postponedGame !== undefined && entry.week === weeksDriven[0] && measured.postponedLockAt === null) {
+      if (entry.at.getTime() >= postponedGame.kickoffAt.getTime()) {
+        const off = await readClubLocks(service, entry.week, postponedClubs, pNow)
+        const on = await readClubLocks(service, entry.week, controlClubs, pNow)
+        measured.postponedLockAt = pNow
+        measured.postponedLockDetail = `postponed[${off.detail}] control[${on.detail}]`
+        measured.postponedLocked = off.locked
+        measured.postponedClubs = off.clubs
+        measured.controlLocked = on.locked
+        measured.controlClubs = on.clubs
+      }
+    }
+
+    // ---- The charted arms' AFTER side (F283/Q44) -------------------------
+    // Every drain from the charted arrival onward, in the same week (see
+    // `chartedArrivedAtMs` — 122's deferral moves the write off the arrival
+    // instant). In both charted scenarios the arrival is the LAST stat event
+    // of the week, so a write counted here is the charted delta's.
+    if (chartedArrivedAtMs !== null && entry.week === weeksDriven[0] && chartedCellsBefore !== null) {
+      measured.chartedDrainWrites += batch.leagues.filter(
+        (l) => l.week === entry.week && l.outcome === 'written',
+      ).length
+      measured.chartedDrainRecomputes += batch.leagues.filter(
+        (l) => l.week === entry.week && (l.outcome === 'written' || l.outcome === 'no_change'),
+      ).length
+      measured.chartedDrained += batch.drained
+      // Re-compared at EVERY later instant of the same week, not only at the
+      // arrival: the recompute the arrival provokes is DEFERRED by a beat
+      // (122's ack, R872), so a cell it moved would land after the arrival's
+      // own read. The LATEST comparison is what the arm reports.
+      const after = await readLeagueCells(service, leagueIds, entry.week)
+      const delta = countCellChanges(chartedCellsBefore, after)
+      measured.chartedCellsCompared = delta.compared
+      measured.chartedCellsChanged = delta.changed
+      const advanced = await readChartedAdvanced(service, chartedWatchIds, entry.week)
+      measured.chartedAdvancedRows = advanced.rows
+      if (isChartedPost || isChartedRevision) {
+        measured.chartedDeltas += ingest.stats.deltas
+        measured.chartedEnqueued += ingest.stats.enqueued + ingest.stats.restamped
+      }
+      if (isChartedPost && chartedLateGame !== undefined) {
+        measured.chartedPostInstant = pNow
+        measured.chartedSlaInstant = chartedLateGame.chartedSlaAt.toISOString()
+      }
+      if (isChartedRevision && chartedRevision !== undefined) {
+        measured.chartedValueAfter = advanced.valueByPlayer.get(chartedRevision.playerId) ?? null
+        const closeAt = windowEndsAt.get(entry.week)
+        measured.chartedRevisionInWindow =
+          closeAt !== undefined && entry.at.getTime() <= closeAt
       }
     }
     if (seedLineupsAfterPoll) {
@@ -1210,6 +1410,138 @@ function absorbBatch(
       noStatRowByLeague.set(league.league_id, (noStatRowByLeague.get(league.league_id) ?? 0) + noStatRows)
     }
   }
+}
+
+/**
+ * Every seated team's stored week points, keyed `teamId`, across the whole run
+ * population. The CHARTED arms compare this either side of a charted arrival:
+ * no shipped template pays a charted key (F283/Q44), so a charted delta must
+ * move `player_stats.advanced` and NOT a single league cell. Paged and chunked
+ * (R919) — a truncated read here could only ever SILENCE a changed cell.
+ */
+async function readLeagueCells(
+  service: Supabase,
+  leagueIds: readonly string[],
+  week: number,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  // BOTH surfaces, because the two schedule modes score into different tables:
+  // `score_write_week_batch` writes `matchups.home_score/away_score` in h2h
+  // (119:636-642) and `team_week_results.points` in total_points (119:595-602).
+  // Reading only the latter compared EIGHT cells across a six-league run
+  // (measured 2026-09-08) — the h2h leagues' live scores were invisible.
+  const matchups = await pageByLeague<{
+    id: string
+    home_score: number | string | null
+    away_score: number | string | null
+  }>(leagueIds, `week-${week} matchup scores`, (part, from, to) =>
+    service
+      .from('matchups')
+      .select('id, home_score, away_score', { count: 'exact' })
+      .in('league_id', part)
+      .eq('week', week)
+      .range(from, to) as never,
+  )
+  for (const row of matchups) {
+    out.set(`m:${row.id}`, `${row.home_score ?? '(null)'}|${row.away_score ?? '(null)'}`)
+  }
+  const results = await pageByLeague<{ team_id: string; points: number | string | null }>(
+    leagueIds,
+    `week-${week} team_week_results points`,
+    (part, from, to) =>
+      service
+        .from('team_week_results')
+        .select('team_id, points', { count: 'exact' })
+        .in('league_id', part)
+        .eq('week', week)
+        .range(from, to) as never,
+  )
+  for (const row of results) out.set(`r:${row.team_id}`, String(row.points ?? '(null)'))
+  return out
+}
+
+/** Cells present on BOTH sides whose value moved, and how many were compared.
+ *  A cell that only exists on one side is NOT a change — the week is still
+ *  being written — and is reported as `compared`, never silently folded in. */
+function countCellChanges(
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): { compared: number; changed: number } {
+  let compared = 0
+  let changed = 0
+  for (const [teamId, value] of before) {
+    const now = after.get(teamId)
+    if (now === undefined) continue
+    compared += 1
+    if (now !== value) changed += 1
+  }
+  return { compared, changed }
+}
+
+/**
+ * The charted key as `player_stats.advanced` actually holds it for the watched
+ * players: how many rows carry it, and (for the single-player revision arm)
+ * its value. An ABSENT key is `null` and is distinct from a present 0 — §23.5's
+ * pending semantics, which is exactly the distinction the arms read.
+ */
+async function readChartedAdvanced(
+  service: Supabase,
+  playerIds: readonly string[],
+  week: number,
+): Promise<{ rows: number; valueByPlayer: Map<string, number> }> {
+  const valueByPlayer = new Map<string, number>()
+  if (playerIds.length === 0) return { rows: 0, valueByPlayer }
+  const { data, error } = await service
+    .from('player_stats')
+    .select('player_id, advanced')
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+    .in('player_id', [...playerIds])
+  throwIfError(error, `charted advanced read (week ${week})`)
+  for (const row of data ?? []) {
+    const advanced = (row.advanced ?? {}) as Record<string, unknown>
+    const value = advanced[CHARTED_PLACEHOLDER_KEY]
+    if (typeof value === 'number' && row.player_id !== null) valueByPlayer.set(row.player_id, value)
+  }
+  return { rows: valueByPlayer.size, valueByPlayer }
+}
+
+/**
+ * THE GAME-DAY LOCK, evaluated at an instant — `pool_game_lock_any_internal`
+ * (115:283), the very oracle `lineup_lock_tick` (119:780) and
+ * `roster_add_drop` both consult. It is read here rather than
+ * `league_player_pool.locked_until` on purpose, and the reason is a finding
+ * in its own right (F301): **`league_player_pool` is a SPARSE table** — the
+ * only writers are `roster_add_drop_internal`'s two INSERTs (113:713/734,
+ * 115:646/667), so a league that has never transacted a player has NO pool
+ * rows at all. The season sim does no add/drops, so every one of its pool
+ * reads returns the empty set, and an assertion of the shape "0 rows still
+ * carry a lock" is VACUOUS there — it passes on an empty table. This helper
+ * reads the RULE instead, which is what E42/E43 are actually about: locks are
+ * EVALUATED from `nfl_games.kickoff_at` at evaluation time, never precomputed
+ * (§23.3/D291).
+ */
+async function readClubLocks(
+  service: Supabase,
+  week: number,
+  clubs: readonly string[],
+  at: string,
+): Promise<{ clubs: number; locked: number; detail: string }> {
+  const results: string[] = []
+  let locked = 0
+  for (const club of clubs) {
+    const { data, error } = await service.rpc('pool_game_lock_any_internal', {
+      p_season: SYNTHETIC_SEASON,
+      p_current_week: week,
+      p_nfl_team: club,
+      p_at: at,
+    })
+    throwIfError(error, `pool_game_lock_any_internal(${club} @ ${at})`)
+    const isLocked = ((data ?? {}) as { locked?: boolean }).locked === true
+    if (isLocked) locked += 1
+    results.push(`${club}=${isLocked ? 'LOCKED' : 'open'}`)
+  }
+  return { clubs: clubs.length, locked, detail: results.join(' ') }
 }
 
 /** The two correction arms, measured from the worker's OWN report. */
@@ -1715,10 +2047,36 @@ async function buildScenarioEvidence(
     backfillDeltas: number
     kickoffBefore: string | null
     kickoffAfter: string | null
+    flexLockBefore: string | null
+    flexLockInside: string | null
+    flexLockInsideLocked: number
+    flexLockInsideClubs: number
+    flexLockBeforeLocked: number
+    flexLockWindow: string | null
+    postponedLockAt: string | null
+    postponedLockDetail: string | null
+    postponedLocked: number
+    postponedClubs: number
+    controlLocked: number
+    controlClubs: number
     postWindowSkips: number
     postWindowWrites: number
     inWindowWrites: number
     revisionWrites: number
+    chartedPostInstant: string | null
+    chartedSlaInstant: string | null
+    chartedAdvancedRows: number
+    chartedDeltas: number
+    chartedEnqueued: number
+    chartedDrainWrites: number
+    chartedDrainRecomputes: number
+    chartedDrained: number
+    chartedCellsCompared: number
+    chartedCellsChanged: number
+    chartedValueBefore: number | null
+    chartedValueAfter: number | null
+    chartedRevisionInWindow: boolean | null
+    chartedRevisionDelta: number | null
     flaggedNoStatRow: number
     flaggedNoStatRowIds: ReadonlySet<string>
     /** week → the teams the worker RECOMPUTED (§22.2's incremental rule). */
@@ -1750,17 +2108,29 @@ async function buildScenarioEvidence(
 
   // Every scenario: scores are WRITTEN and the standings come back ordered.
   for (const league of leagues) {
-    const { count: scored, error } = await service
+    // F287(a) TAKEN. The old form counted rows with `.not('points','is',null)`
+    // against a `NOT NULL DEFAULT 0` column — a dead filter — and reported
+    // "rows carry a score" for what was only "rows exist". A league whose
+    // pool never overlapped the §23.6 world would score every cell 0 and
+    // still pass. The predicate now reads the VALUES: enough cells for a
+    // seated week, AND at least one of them strictly positive, which cannot
+    // happen unless a bridged player actually played for that league.
+    const { data: cells, error } = await service
       .from('team_week_results')
-      .select('team_id', { count: 'exact', head: true })
+      .select('team_id, points')
       .eq('league_id', league.leagueId)
-      .not('points', 'is', null)
-    throwIfError(error, `${league.label}: scored-cell count`)
+    throwIfError(error, `${league.label}: scored-cell read`)
+    const cellRows = cells ?? []
+    const values = cellRows.map((r) => Number(r.points ?? 0))
+    const positive = values.filter((v) => v > 0).length
+    const highest = values.length === 0 ? 0 : Math.max(...values)
     push(
       'scores_written',
-      (scored ?? 0) > 0,
-      `${scored ?? 0} team_week_results rows carry a score`,
-      'at least one scored cell per league',
+      cellRows.length >= league.teamCount && positive > 0,
+      `${cellRows.length} team_week_results cells for ${league.teamCount} teams · ${positive} carry a score > 0 · ` +
+        `highest ${highest.toFixed(2)}`,
+      'at least one full week of cells per league, with at least one strictly positive score ' +
+        '(a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)',
       league,
     )
     const { data: doc, error: standingsError } = await service.rpc('league_standings_internal', {
@@ -1782,14 +2152,32 @@ async function buildScenarioEvidence(
     case 'flex_move': {
       const scenario = anchored.get(firstWeek)!
       const game = scenario.games.find((g) => g.flexMove !== undefined)!
+      // Q5 TAKEN. The old form compared `nfl_games.kickoff_at` either side of
+      // the announcement and read NO LOCK, while carrying a name that claims
+      // one. The task row says LOCKS. So the schedule datum is still read —
+      // and so is the lock, at an instant inside [new kickoff, original
+      // kickoff), where the flexed clubs' players are locked under the moved
+      // schedule and would NOT be under the original. The pool's `locked_until`
+      // is 116's maintained VIEW: NULL = not locked (116:306).
+      const movedEarlier = game.flexMove!.newKickoffAt.getTime() < game.kickoffAt.getTime()
       push(
         'lock_moved_with_kickoff',
         measured.kickoffBefore !== null &&
           measured.kickoffAfter !== null &&
-          measured.kickoffBefore !== measured.kickoffAfter,
-        `nfl_games.kickoff_at ${measured.kickoffBefore ?? '(unread)'} → ${measured.kickoffAfter ?? '(unread)'}`,
-        `the flexed game's kickoff moves to ${game.flexMove!.newKickoffAt.toISOString()} at the announcement; ` +
-          `locks are evaluated from that column at evaluation time (E42/§23.3/D291)`,
+          measured.kickoffBefore !== measured.kickoffAfter &&
+          measured.flexLockInsideClubs > 0 &&
+          measured.flexLockInsideLocked === measured.flexLockInsideClubs &&
+          measured.flexLockBefore !== null &&
+          measured.flexLockBeforeLocked === 0,
+        `nfl_games.kickoff_at ${measured.kickoffBefore ?? '(unread)'} → ${measured.kickoffAfter ?? '(unread)'} ` +
+          `(${movedEarlier ? 'earlier' : 'later'}); THE LOCK, read from pool_game_lock_any_internal at ` +
+          `evaluation time — before the window: ${measured.flexLockBefore ?? '(unsampled)'} · inside ` +
+          `${measured.flexLockWindow ?? '(no window)'}: ${measured.flexLockInside ?? '(unsampled)'} ` +
+          `(${measured.flexLockInsideLocked}/${measured.flexLockInsideClubs} clubs locked)`,
+        `the flexed game's kickoff moves to ${game.flexMove!.newKickoffAt.toISOString()} at the announcement AND ` +
+          `the lock FOLLOWS it: its clubs read OPEN before the earlier of the two kickoffs and LOCKED at an ` +
+          `instant between them — the span in which the ORIGINAL schedule would still have left them open. ` +
+          `Locks are EVALUATED from nfl_games.kickoff_at at evaluation time, never precomputed (E42/§23.3/D291)`,
       )
       break
     }
@@ -1818,18 +2206,30 @@ async function buildScenarioEvidence(
         `${leagues.filter((l) => l.weeksFinal.has(firstWeek)).length}/${leagues.length} leagues finalized week ${firstWeek}`,
         'the week finalizes with the postponed game excluded (116\'s left-the-week rule)',
       )
-      const { count: locked, error: lockError } = await service
-        .from('league_player_pool')
-        .select('player_id', { count: 'exact', head: true })
-        .in('league_id', leagues.map((l) => l.leagueId))
-        .in('player_id', bridged.length > 0 ? bridged : ['(none)'])
-        .not('locked_until', 'is', null)
-      throwIfError(lockError, 'postponement: pool locks')
+      // F301 TAKEN. This arm used to count `league_player_pool` rows carrying a
+      // `locked_until` and pass on 0 — but `league_player_pool` is a SPARSE
+      // table whose only writers are `roster_add_drop_internal` (113:713/734,
+      // 115:646/667), and the season sim does no add/drops, so it is EMPTY for
+      // every sim league and the count was 0 by construction. The assertion
+      // passed on an empty table and would have passed with the lock rule
+      // deleted: "nothing happened" read as "it worked". It now reads the RULE
+      // — `pool_game_lock_any_internal`, the oracle 119:780 and 113/115 both
+      // consult — at the instant the postponed game WOULD have kicked off, and
+      // beside it a CONTROL game's clubs, which must read LOCKED at the same
+      // instant so that "open" is evidence rather than an oracle stuck at false.
       push(
         'locks_released',
-        (locked ?? 0) === 0,
-        `${locked ?? 0} pool rows still carry a locked_until for the postponed game's bridged players`,
-        'the postponed game releases its players\' locks (E43)',
+        measured.postponedLockAt !== null &&
+          measured.postponedClubs > 0 &&
+          measured.postponedLocked === 0 &&
+          measured.controlClubs > 0 &&
+          measured.controlLocked === measured.controlClubs,
+        `at ${measured.postponedLockAt ?? '(unsampled)'} (the postponed game's ORIGINAL kickoff) ` +
+          `${measured.postponedLockDetail ?? '(no sample)'} — ` +
+          `${measured.postponedLocked}/${measured.postponedClubs} postponed clubs locked, ` +
+          `${measured.controlLocked}/${measured.controlClubs} control clubs locked`,
+        'the postponed game does not lock its clubs at the kickoff it no longer has, while a game that DID ' +
+          'kick off locks its own (E43; the lock is evaluated from nfl_games.kickoff_at at evaluation time)',
       )
       break
     }
@@ -1960,22 +2360,108 @@ async function buildScenarioEvidence(
       )
       break
     }
-    case 'charted_late':
-    case 'charted_revision': {
-      // E61's pending-not-zero needs a scoring snapshot that PAYS the D15
-      // charted placeholder key, and NO shipped template does (the precedent
-      // is a forked document — `score-week-worker.test.ts:185-243`). The sim
-      // drafts through the real `ESPN Standard` template, so the charted
-      // arrival is INGESTED (the `advanced` key lands) but reaches no rules
-      // key, and the assertion is not observable from this harness. Reported
-      // as such rather than silently green.
+    // ── The charted arms (F283 → the L.D6.3 ruling; PROGRESS §3 Q44) ───────
+    //
+    // WHAT IS NOT ASSERTED HERE, AND WHY. The tasks-M4 L.D6.3 row asks for
+    // `pending_not_zero` (E61) on the D15 placeholder key. That needs a
+    // scoring snapshot that PAYS `example_charted_yards` — and the spec
+    // FORBIDS one: the key is the registry's only `tier: 'charted'` entry and
+    // carries `scoring_surface: 'reserved'` (stat-keys.ts:204), which §23.5
+    // (spec:2200) defines as "never scorable in a format-2 doc,
+    // validation-rejected", §7.3.3.1 (spec:341) makes non-editable, and
+    // 103's `c_reserved` refuses behind 104's wall on
+    // `leagues.scoring_rules_snapshot`. MEASURED on this chain:
+    // `scoring_rules_validate({...ESPN Standard, example_charted_yards: 0.1})`
+    // answers `Scorable allowlist (§7.3.3.1 guardrail 1):
+    // "example_charted_yards" cannot be scored — it is a reserved key
+    // (§23.5)`. Its intended consumer, FieldScout Ultra, is a DEFERRED
+    // template (spec:2195-2199) and none of the eight shipped templates pays
+    // any charted key. F283's cited precedent is not a forked DOCUMENT
+    // either: `score-week-worker-db.test.ts:282-295` is `withSnapshotOverlay`,
+    // a test-only client interceptor that rewrites what the worker READS
+    // while the DB row stays valid (its own comment, :668-673).
+    //
+    // So a sim-level snapshot overlay would make the gate certify a
+    // configuration that cannot exist in production and the spec forbids —
+    // the exact thing a gate exists to prevent — while duplicating a proof
+    // that already exists at unit (`score-week-worker.test.ts:185-243`) and
+    // stack (`score-week-worker-db.test.ts:564,728`) level.
+    //
+    // WHAT IS ASSERTED is §23.5's OWN league-level promise for a charted
+    // arrival, all of it observable and none of it a fiction: the value is
+    // INGESTED into `player_stats.advanced`, ENQUEUES a `score_fanout`
+    // delta, DRAINS through the real worker, changes NO league cell, and
+    // **"finalization timing does not move"**. The hole this leaves is
+    // printed, non-failing, on EVERY run (`report.coverageGaps`) and recorded
+    // in PROGRESS — never folded into a green.
+    case 'charted_late': {
+      const finalized = leagues.filter((l) => l.weeksFinal.has(firstWeek)).length
+      const slaMs = measured.chartedSlaInstant === null ? null : Date.parse(measured.chartedSlaInstant)
+      const postMs = measured.chartedPostInstant === null ? null : Date.parse(measured.chartedPostInstant)
+      const slipHours =
+        slaMs === null || postMs === null ? null : (postMs - slaMs) / 3_600_000
       push(
-        cfg.scenario === 'charted_late' ? 'pending_not_zero' : 'recomputed_in_window',
-        false,
-        'not observable: every sim league scores through the shipped `ESPN Standard` template, which pays no ' +
-          '`example_charted_yards` rule — the charted value is ingested into `player_stats.advanced` but reaches no rules key',
-        'a scoring snapshot that PAYS the D15 charted placeholder key (a forked template — the precedent is ' +
-          'score-week-worker.test.ts:185-243). L.D6.3 must fork one for the two charted stages (E55/E56/E57/E61).',
+        'charted_ingested_no_cell_change',
+        postMs !== null &&
+          slaMs !== null &&
+          postMs > slaMs &&
+          measured.chartedAdvancedRows > 0 &&
+          measured.chartedDeltas > 0 &&
+          measured.chartedEnqueued > 0 &&
+          measured.chartedDrained > 0 &&
+          measured.chartedDrainRecomputes > 0 &&
+          measured.chartedDrainWrites === 0 &&
+          measured.chartedCellsCompared > 0 &&
+          measured.chartedCellsChanged === 0 &&
+          finalized === leagues.length,
+        `charted feed posted ${measured.chartedPostInstant ?? '(never)'}, ` +
+          `${slipHours === null ? '(unmeasured)' : `${slipHours.toFixed(1)} h`} past its SLA ` +
+          `${measured.chartedSlaInstant ?? '(unread)'}; ${measured.chartedAdvancedRows} player_stats row(s) ` +
+          `carry \`${CHARTED_PLACEHOLDER_KEY}\` in \`advanced\` after it; the poll saw ${measured.chartedDeltas} ` +
+          `delta(s) and enqueued ${measured.chartedEnqueued} score_fanout row(s); the worker DRAINED ` +
+          `${measured.chartedDrained} queue row(s) and RECOMPUTED ${measured.chartedDrainRecomputes} ` +
+          `league-week(s), of which ${measured.chartedDrainWrites} produced a write (a charted key pays ` +
+          `nothing in any shipped template, so the outcome is \`no_change\` — score-week-worker.ts:1041); ` +
+          `${measured.chartedCellsChanged} of ` +
+          `${measured.chartedCellsCompared} team_week_results cells changed VALUE across the instant; ` +
+          `${finalized}/${leagues.length} leagues finalized week ${firstWeek} on their own window`,
+        'a late charted arrival lands in player_stats.advanced, enqueues and drains through the real worker, ' +
+          'changes NO league cell (no shipped template pays a charted key — §23.5/spec:2200), and does not move ' +
+          'finalization timing (§23.5: "Finalization timing does not move"). E55/E57. ' +
+          'E61 pending-not-zero at league level is NOT covered here — see report.coverageGaps.',
+      )
+      break
+    }
+    case 'charted_revision': {
+      const finalized = leagues.filter((l) => l.weeksFinal.has(firstWeek)).length
+      const before = measured.chartedValueBefore
+      const after = measured.chartedValueAfter
+      const expectedDelta = measured.chartedRevisionDelta
+      const movedByDelta =
+        before !== null && after !== null && expectedDelta !== null && after - before === expectedDelta
+      push(
+        'charted_revision_recomputed_in_window',
+        movedByDelta &&
+          measured.chartedRevisionInWindow === true &&
+          measured.chartedEnqueued > 0 &&
+          measured.chartedDrained > 0 &&
+          measured.chartedDrainRecomputes > 0 &&
+          measured.chartedDrainWrites === 0 &&
+          measured.chartedCellsCompared > 0 &&
+          measured.chartedCellsChanged === 0 &&
+          finalized === leagues.length,
+        `\`${CHARTED_PLACEHOLDER_KEY}\` moved ${before ?? '(absent)'} → ${after ?? '(absent)'} ` +
+          `(scenario delta ${expectedDelta ?? '(none)'}) ` +
+          `${measured.chartedRevisionInWindow === true ? 'INSIDE' : 'OUTSIDE'} the correction window; ` +
+          `the poll enqueued ${measured.chartedEnqueued} score_fanout row(s); the worker DRAINED ` +
+          `${measured.chartedDrained} of them and RECOMPUTED ${measured.chartedDrainRecomputes} league-week(s) ` +
+          `at or after the revision instant (122 DEFERS a held row by a beat — R872 — so the recompute lands ` +
+          `later than the poll that enqueued it), producing ${measured.chartedDrainWrites} write(s); ` +
+          `${measured.chartedCellsChanged} of ${measured.chartedCellsCompared} team_week_results cells ` +
+          `changed VALUE; ${finalized}/${leagues.length} leagues finalized week ${firstWeek}`,
+        'an in-window charted revision moves the stored advanced value by exactly the declared delta, enqueues, ' +
+          'is RECOMPUTED by the real worker inside the §23.4 window, and changes no league cell (no shipped ' +
+          'template pays a charted key). E56. E61 pending-not-zero is NOT covered — see report.coverageGaps.',
       )
       break
     }
@@ -1983,6 +2469,61 @@ async function buildScenarioEvidence(
       break
   }
   return out
+}
+
+/**
+ * What a season run does NOT assert, and why — ALWAYS printed, NEVER failing,
+ * and consumed by L.D6.3's evidence stage so the gate's transcript carries its
+ * own holes. A gap that is loud on every run is not a silent fold; a gap that
+ * lives only in a PR description is (CLAUDE.md: never let "nothing happened"
+ * mean "it worked").
+ *
+ * Each line: WHAT is not asserted · WHY it cannot be here · WHERE it IS
+ * covered · WHAT CLOSES it.
+ */
+export function seasonCoverageGaps(scenario: ScenarioId): string[] {
+  const gaps: string[] = [
+    'E32 lineup-edit LOCK REFUSAL (set_lineup at the door) is NOT asserted: `set_lineup` takes no caller ' +
+      'clock, its DEFINER wrapper passes the transaction\'s now() (112:1233), and season 2099 lies before ' +
+      'every kickoff — so nothing this harness submits is ever locked at submit. Covered by pgTAP ' +
+      '(060/062/063) only; the roster_add_drop half is walked by L.D6.2\'s e2e (inseason-lock.spec.ts). ' +
+      'F284(a)/F296. Closes when a caller clock reaches the door, or a browser can reach a locked editor.',
+    'IN-SEASON TRANSACTIONS and the Remix flow are NOT driven by the season sim: it only ever sees a ' +
+      'post-draft pool. Covered by L.D6.2\'s Playwright specs (inseason-week / inseason-lock / ' +
+      'inseason-remix), which the gate runs as its own stage. F284(b).',
+    'Q42 (a STARTER with a final game and no stat line) is COUNTED and CLASSIFIED, never asserted on: the ' +
+      '§23.6 world publishes lines for eighteen players, so every other starter is a lawful no_stat_row by ' +
+      'construction. Asserting either reading would harden an OPEN question (D327(9)).',
+  ]
+  if (scenario === 'charted_late' || scenario === 'charted_revision') {
+    gaps.push(
+      'E61 PENDING-NOT-ZERO on the D15 charted placeholder key is NOT asserted at league level. ' +
+        '`example_charted_yards` is the registry\'s only `tier: \'charted\'` key and carries ' +
+        '`scoring_surface: \'reserved\'` (stat-keys.ts:204); spec §23.5 (spec:2200) makes a reserved key ' +
+        '"never scorable in a format-2 doc, validation-rejected" and §7.3.3.1 (spec:341) makes placeholders ' +
+        'non-editable; 103\'s `c_reserved` refuses it behind 104\'s wall on `leagues.scoring_rules_snapshot` ' +
+        '(MEASURED: scoring_rules_validate({...ESPN Standard, example_charted_yards: 0.1}) -> ' +
+        '\'"example_charted_yards" cannot be scored — it is a reserved key (§23.5)\'). None of the eight ' +
+        'shipped templates pays a charted key, and the tier\'s intended consumer (FieldScout Ultra) is a ' +
+        'DEFERRED template (spec:2195-2199). Covered at UNIT level ' +
+        '(score-week-worker.test.ts:185-243) and STACK level (score-week-worker-db.test.ts:564,728) through a ' +
+        'test-only snapshot OVERLAY, which is a fiction this gate deliberately refuses to certify. What IS ' +
+        'asserted here is §23.5\'s league-level promise — ingested, enqueued, drained, no league cell moved, ' +
+        'finalization timing unmoved. CLOSES when an Ultra-class template ships or a charted key is promoted ' +
+        'to `scorable` (spec §23.5, deferred). PROGRESS §3 Q44 / F283.',
+    )
+  }
+  if (scenario === 'postponement') {
+    gaps.push(
+      'A POSTPONED game does NOT put its clubs on bye on this chain, and the run does not pretend it does: ' +
+        'ingest keeps the row at (season, week) with status `postponed` and the kickoff moved out (E43), and ' +
+        '`lineup_kickoff_internal` (112:413-417) reads `nfl_games` by (season, week, club) with NO status ' +
+        'filter — so those players still resolve a kickoff and read `on_bye = FALSE`. The §7.3.6 BYE arm is ' +
+        'therefore not exercised by this scenario; it is pinned by pgTAP and by the sweep\'s unit fixtures. ' +
+        'F289.',
+    )
+  }
+  return gaps
 }
 
 /** The season command's own report lines (the CLI prints these verbatim). */
@@ -2039,6 +2580,8 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
   for (const line of report.workerNotes) lines.push(`  ${line}`)
   lines.push(`RECONCILE ALERTS CLASSIFIED AS LAWFUL: ${report.reconcileClassified.length} kinds`)
   for (const line of report.reconcileClassified) lines.push(`  ${line}`)
+  lines.push(`COVERAGE GAPS (printed every run, NEVER failing — what this run does NOT assert): ${report.coverageGaps.length}`)
+  for (const gap of report.coverageGaps) lines.push(`  - ${gap}`)
   lines.push('SCENARIO EVIDENCE:')
   for (const a of report.scenarioEvidence.assertions) {
     lines.push(`  [${a.passed ? 'PASS' : 'FAIL'}] ${a.name} (${a.leagueLabel}, week ${a.week}): ${a.observed}`)

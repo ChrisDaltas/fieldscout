@@ -1,0 +1,384 @@
+{
+  "seed": 42,
+  "runTag": "mttcjzdc",
+  "runId": "81628024",
+  "scenario": "correction_in_window",
+  "scenarioLibraryVersion": 2,
+  "clockMode": "step",
+  "season": 2099,
+  "weeksRequested": 2,
+  "startedAt": "2026-09-09T00:15:04.665Z",
+  "finishedAt": "2026-09-09T00:15:19.279Z",
+  "planLines": [
+    "SIM L.B6.1 #01: 16 teams × 7 rounds — humans [adp-drafter, adp-drafter, chaos, adp-drafter, chaos, queue-drafter, afk, queue-drafter] + 8 placeholders",
+    "SIM L.B6.1 #02: 12 teams × 7 rounds — humans [afk, queue-drafter, adp-drafter, chaos, afk, queue-drafter, chaos, chaos] + 4 placeholders",
+    "SIM L.B6.1 #03: 8 teams × 7 rounds — humans [all-afk ×8] + 0 placeholders",
+    "SIM L.B6.1 #04: 16 teams × 7 rounds — humans [queue-drafter, adp-drafter, chaos, chaos, queue-drafter, afk, chaos, adp-drafter] + 8 placeholders",
+    "SIM L.B6.1 #05: 14 teams × 7 rounds — humans [afk, adp-drafter, afk, queue-drafter, chaos, afk, chaos, queue-drafter] + 6 placeholders",
+    "SIM L.B6.1 #06: 16 teams × 7 rounds (3RR) — humans [afk, adp-drafter, adp-drafter, queue-drafter, chaos, adp-drafter, afk, queue-drafter] + 8 placeholders",
+    "SIM L.B6.1 #01: 16 teams · h2h · median on · second off · illegal-lineups off · 12 regular weeks · playoff_teams 4 · 7 rounds · humans 8/16",
+    "SIM L.B6.1 #02: 12 teams · h2h · median off · second on · illegal-lineups on · 14 regular weeks · playoff_teams 4 · 7 rounds · humans 8/12",
+    "SIM L.B6.1 #03: 8 teams · total_points · median off · second off · illegal-lineups on · 13 regular weeks · playoff_teams 0 · 7 rounds · humans 8/8",
+    "SIM L.B6.1 #04: 16 teams · h2h · median off · second off · illegal-lineups on · 12 regular weeks · playoff_teams 4 · 7 rounds · humans 8/16",
+    "SIM L.B6.1 #05: 14 teams · h2h · median off · second off · illegal-lineups on · 12 regular weeks · playoff_teams 6 · 7 rounds · humans 8/14",
+    "SIM L.B6.1 #06: 16 teams · h2h · median on · second off · illegal-lineups on · 14 regular weeks · playoff_teams 8 · 7 rounds · humans 8/16"
+  ],
+  "bridgeLines": [
+    "syn-g1-qb (QB DAL@PHI) -> 6904",
+    "syn-g1-rb (RB DAL@PHI) -> 4866",
+    "syn-g1-wr (WR DAL@PHI) -> 6786",
+    "syn-g1-te (TE DAL@PHI) -> 8110",
+    "syn-g1-k (K DAL@PHI) -> 11533",
+    "syn-g1-def (DEF DAL@PHI) -> PHI",
+    "syn-g2-qb (QB BUF@KC) -> 4984",
+    "syn-g2-rb (RB BUF@KC) -> 8138",
+    "syn-g2-wr (WR BUF@KC) -> 10229",
+    "syn-g2-te (TE BUF@KC) -> 10236",
+    "syn-g2-k (K BUF@KC) -> 4227",
+    "syn-g2-def (DEF BUF@KC) -> KC",
+    "syn-g3-qb (QB SEA@SF) -> 8183",
+    "syn-g3-rb (RB SEA@SF) -> 4034",
+    "syn-g3-wr (WR SEA@SF) -> 9488",
+    "syn-g3-te (TE SEA@SF) -> 4217",
+    "syn-g3-k (K SEA@SF) -> 2747",
+    "syn-g3-def (DEF SEA@SF) -> SEA"
+  ],
+  "leagues": [
+    {
+      "leagueLabel": "SIM L.B6.1 #01",
+      "leagueId": "c2d2328e-4ebc-431e-a454-e0b33dc9b02e",
+      "teamCount": 16,
+      "scheduleMode": "h2h",
+      "allowIllegalLineups": false,
+      "lineupsSeated": 16,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 70,
+      "lineupSlotsLeftEmpty": 26,
+      "benchedForLegality": 0,
+      "matrixLine": "16 teams · h2h · median on · second off · illegal-lineups off",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 14,
+      "bridgeStarted": 28,
+      "noStatRowStarters": 300,
+      "durationMs": 4321,
+      "failures": []
+    },
+    {
+      "leagueLabel": "SIM L.B6.1 #02",
+      "leagueId": "4cb67fcb-f7dc-4efe-a047-f3a033f0d7dc",
+      "teamCount": 12,
+      "scheduleMode": "h2h",
+      "allowIllegalLineups": true,
+      "lineupsSeated": 12,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 51,
+      "lineupSlotsLeftEmpty": 21,
+      "benchedForLegality": 0,
+      "matrixLine": "12 teams · h2h · median off · second on · illegal-lineups on",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 12,
+      "bridgeStarted": 22,
+      "noStatRowStarters": 208,
+      "durationMs": 4366,
+      "failures": []
+    },
+    {
+      "leagueLabel": "SIM L.B6.1 #03",
+      "leagueId": "91205b43-d0a6-4a88-8be7-687c6c971a76",
+      "teamCount": 8,
+      "scheduleMode": "total_points",
+      "allowIllegalLineups": true,
+      "lineupsSeated": 8,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 48,
+      "lineupSlotsLeftEmpty": 0,
+      "benchedForLegality": 0,
+      "matrixLine": "8 teams · total_points · median off · second off · illegal-lineups on",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 11,
+      "bridgeStarted": 22,
+      "noStatRowStarters": 326,
+      "durationMs": 4395,
+      "failures": []
+    },
+    {
+      "leagueLabel": "SIM L.B6.1 #04",
+      "leagueId": "7e68d782-fb72-4f51-8d7f-33d2fd878bc8",
+      "teamCount": 16,
+      "scheduleMode": "h2h",
+      "allowIllegalLineups": true,
+      "lineupsSeated": 16,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 71,
+      "lineupSlotsLeftEmpty": 25,
+      "benchedForLegality": 0,
+      "matrixLine": "16 teams · h2h · median off · second off · illegal-lineups on",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 14,
+      "bridgeStarted": 26,
+      "noStatRowStarters": 224,
+      "durationMs": 4444,
+      "failures": []
+    },
+    {
+      "leagueLabel": "SIM L.B6.1 #05",
+      "leagueId": "efcf1157-22e5-4d10-815e-740ba366d054",
+      "teamCount": 14,
+      "scheduleMode": "h2h",
+      "allowIllegalLineups": true,
+      "lineupsSeated": 14,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 66,
+      "lineupSlotsLeftEmpty": 18,
+      "benchedForLegality": 0,
+      "matrixLine": "14 teams · h2h · median off · second off · illegal-lineups on",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 13,
+      "bridgeStarted": 24,
+      "noStatRowStarters": 196,
+      "durationMs": 4493,
+      "failures": []
+    },
+    {
+      "leagueLabel": "SIM L.B6.1 #06",
+      "leagueId": "0cf43cf4-d7f4-4a05-ae08-806b18ffdfdc",
+      "teamCount": 16,
+      "scheduleMode": "h2h",
+      "allowIllegalLineups": true,
+      "lineupsSeated": 16,
+      "lineupsRefused": 0,
+      "lineupSlotsFilled": 74,
+      "lineupSlotsLeftEmpty": 22,
+      "benchedForLegality": 0,
+      "matrixLine": "16 teams · h2h · median on · second off · illegal-lineups on",
+      "weeksDriven": [
+        1,
+        2
+      ],
+      "weeksFinal": [
+        1,
+        2
+      ],
+      "heldWeeks": [],
+      "bridgeRostered": 14,
+      "bridgeStarted": 26,
+      "noStatRowStarters": 342,
+      "durationMs": 4546,
+      "failures": []
+    }
+  ],
+  "scenarioEvidence": {
+    "scenario": "correction_in_window",
+    "leagues": 6,
+    "assertions": [
+      {
+        "name": "scores_written",
+        "leagueId": "c2d2328e-4ebc-431e-a454-e0b33dc9b02e",
+        "leagueLabel": "SIM L.B6.1 #01",
+        "week": 1,
+        "passed": true,
+        "observed": "32 team_week_results cells for 16 teams · 22 carry a score > 0 · highest 24.68",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "c2d2328e-4ebc-431e-a454-e0b33dc9b02e",
+        "leagueLabel": "SIM L.B6.1 #01",
+        "week": 1,
+        "passed": true,
+        "observed": "16 standings rows for 16 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "scores_written",
+        "leagueId": "4cb67fcb-f7dc-4efe-a047-f3a033f0d7dc",
+        "leagueLabel": "SIM L.B6.1 #02",
+        "week": 1,
+        "passed": true,
+        "observed": "24 team_week_results cells for 12 teams · 20 carry a score > 0 · highest 26.86",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "4cb67fcb-f7dc-4efe-a047-f3a033f0d7dc",
+        "leagueLabel": "SIM L.B6.1 #02",
+        "week": 1,
+        "passed": true,
+        "observed": "12 standings rows for 12 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "scores_written",
+        "leagueId": "91205b43-d0a6-4a88-8be7-687c6c971a76",
+        "leagueLabel": "SIM L.B6.1 #03",
+        "week": 1,
+        "passed": true,
+        "observed": "16 team_week_results cells for 8 teams · 14 carry a score > 0 · highest 41.46",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "91205b43-d0a6-4a88-8be7-687c6c971a76",
+        "leagueLabel": "SIM L.B6.1 #03",
+        "week": 1,
+        "passed": true,
+        "observed": "8 standings rows for 8 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "scores_written",
+        "leagueId": "7e68d782-fb72-4f51-8d7f-33d2fd878bc8",
+        "leagueLabel": "SIM L.B6.1 #04",
+        "week": 1,
+        "passed": true,
+        "observed": "32 team_week_results cells for 16 teams · 18 carry a score > 0 · highest 51.18",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "7e68d782-fb72-4f51-8d7f-33d2fd878bc8",
+        "leagueLabel": "SIM L.B6.1 #04",
+        "week": 1,
+        "passed": true,
+        "observed": "16 standings rows for 16 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "scores_written",
+        "leagueId": "efcf1157-22e5-4d10-815e-740ba366d054",
+        "leagueLabel": "SIM L.B6.1 #05",
+        "week": 1,
+        "passed": true,
+        "observed": "28 team_week_results cells for 14 teams · 16 carry a score > 0 · highest 60.18",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "efcf1157-22e5-4d10-815e-740ba366d054",
+        "leagueLabel": "SIM L.B6.1 #05",
+        "week": 1,
+        "passed": true,
+        "observed": "14 standings rows for 14 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "scores_written",
+        "leagueId": "0cf43cf4-d7f4-4a05-ae08-806b18ffdfdc",
+        "leagueLabel": "SIM L.B6.1 #06",
+        "week": 1,
+        "passed": true,
+        "observed": "32 team_week_results cells for 16 teams · 18 carry a score > 0 · highest 47.26",
+        "expected": "at least one full week of cells per league, with at least one strictly positive score (a league that scored every cell 0 never overlapped the §23.6 world and is decorative coverage)"
+      },
+      {
+        "name": "standings_ordered",
+        "leagueId": "0cf43cf4-d7f4-4a05-ae08-806b18ffdfdc",
+        "leagueLabel": "SIM L.B6.1 #06",
+        "week": 1,
+        "passed": true,
+        "observed": "16 standings rows for 16 teams",
+        "expected": "one standings row per seated franchise, in the RPC-stored order"
+      },
+      {
+        "name": "non_final_cells_recomputed",
+        "leagueId": "c2d2328e-4ebc-431e-a454-e0b33dc9b02e",
+        "leagueLabel": "SIM L.B6.1 #01",
+        "week": 1,
+        "passed": true,
+        "observed": "12 league-weeks written at the correction instant",
+        "expected": "an in-window correction recomputes the non-final cell (E44/§23.4)"
+      }
+    ]
+  },
+  "invariantFailures": [],
+  "jobs": {
+    "advance": 48,
+    "lockTick": 240,
+    "finalize": 12,
+    "scoreBatches": 40,
+    "polls": 40
+  },
+  "provenance": {
+    "statRows": 36,
+    "synthetic": 36,
+    "foreign": 0
+  },
+  "externalCalls": 0,
+  "workerErrors": [],
+  "reconcileSummary": {
+    "leagues": 6,
+    "cells": 188,
+    "counts": {
+      "no_game_rows": 2,
+      "stuck_queue": 8,
+      "starter_final_game_no_line": 306
+    },
+    "alerts": 316,
+    "warns": 0,
+    "infos": 0
+  },
+  "reconcileClassified": [
+    "1× no_game_rows: week 3 was not driven by this run (--weeks bounds the slate)",
+    "1× no_game_rows: week 4 was not driven by this run (--weeks bounds the slate)",
+    "2× stuck_queue: no run league rosters 4227 — a scoped drain leaves the row for the unscoped one (D313(2))",
+    "2× stuck_queue: no run league rosters 8110 — a scoped drain leaves the row for the unscoped one (D313(2))",
+    "2× stuck_queue: no run league rosters 8183 — a scoped drain leaves the row for the unscoped one (D313(2))",
+    "2× stuck_queue: no run league rosters KC — a scoped drain leaves the row for the unscoped one (D313(2))",
+    "306× starter_final_game_no_line: the §23.6 world publishes lines for 18 players — every other starter has a final game and no line, a lawful no_stat_row (Q42 OPEN)"
+  ],
+  "workerNotes": [
+    "15× drain scored nothing: nothing_in_scope",
+    "3× drain scored nothing: queue_empty"
+  ],
+  "cleanupSummary": "CLEANUP: swept 6 leagues + 8 bot users — 0 sim leagues / 0 sim profiles remain (players untouched — none seeded); CENSUS: leagues=0 · profiles=0 · teams=0 · matchups=0 · team_week_results=0 · nfl_games(simseason-*)=0 · player_stats(2099)=0 · score_fanout(2099)=0 · nfl_weeks(2099) stamped=0",
+  "censusBefore": "CENSUS: leagues=0 · profiles=0 · teams=0 · matchups=0 · team_week_results=0 · nfl_games(simseason-*)=0 · player_stats(2099)=0 · score_fanout(2099)=0 · nfl_weeks(2099) stamped=0",
+  "censusAfter": "CENSUS: leagues=0 · profiles=0 · teams=0 · matchups=0 · team_week_results=0 · nfl_games(simseason-*)=0 · player_stats(2099)=0 · score_fanout(2099)=0 · nfl_weeks(2099) stamped=0",
+  "problems": [],
+  "coverageGaps": [
+    "E32 lineup-edit LOCK REFUSAL (set_lineup at the door) is NOT asserted: `set_lineup` takes no caller clock, its DEFINER wrapper passes the transaction's now() (112:1233), and season 2099 lies before every kickoff — so nothing this harness submits is ever locked at submit. Covered by pgTAP (060/062/063) only; the roster_add_drop half is walked by L.D6.2's e2e (inseason-lock.spec.ts). F284(a)/F296. Closes when a caller clock reaches the door, or a browser can reach a locked editor.",
+    "IN-SEASON TRANSACTIONS and the Remix flow are NOT driven by the season sim: it only ever sees a post-draft pool. Covered by L.D6.2's Playwright specs (inseason-week / inseason-lock / inseason-remix), which the gate runs as its own stage. F284(b).",
+    "Q42 (a STARTER with a final game and no stat line) is COUNTED and CLASSIFIED, never asserted on: the §23.6 world publishes lines for eighteen players, so every other starter is a lawful no_stat_row by construction. Asserting either reading would harden an OPEN question (D327(9))."
+  ],
+  "reason": null,
+  "green": true
+}

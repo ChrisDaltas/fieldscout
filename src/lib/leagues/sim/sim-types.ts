@@ -269,6 +269,33 @@ export type ScenarioAssertionName =
   | 'finalization_unaffected'
   | 'non_final_cells_recomputed'
   | 'no_league_cell_changed'
+  // ── The two charted arms, as they are LEGALLY observable today ───────────
+  // L.D6.3/F283/Q44. `example_charted_yards` is the registry's ONLY
+  // `tier: 'charted'` key and it carries `scoring_surface: 'reserved'`
+  // (stat-keys.ts:204). Spec §23.5 (spec:2200) makes a reserved key "never
+  // scorable in a format-2 doc, validation-rejected"; the chain enforces it
+  // (103's `c_reserved` behind 104's wall on `leagues.scoring_rules_snapshot`
+  // — MEASURED: `scoring_rules_validate({...ESPN, example_charted_yards:
+  // 0.1})` answers `"example_charted_yards" cannot be scored — it is a
+  // reserved key (§23.5)`), and none of the eight shipped templates pays any
+  // charted key. So a charted arrival cannot move a league cell on this
+  // chain, and E61's pending-not-zero cannot be asserted at league level
+  // WITHOUT certifying a configuration the spec forbids.
+  //
+  // What IS legally observable — and is what these two names measure — is
+  // §23.5's own league-level promise: the charted value is INGESTED into
+  // `player_stats.advanced`, ENQUEUES a `score_fanout` delta, DRAINS through
+  // the real worker, changes NO league cell, and **"finalization timing does
+  // not move"** (spec §23.5, the two-phase bullet).
+  | 'charted_ingested_no_cell_change'
+  | 'charted_revision_recomputed_in_window'
+  // ── The TARGET state, kept in the union and deliberately UNEMITTED ───────
+  // These are what the tasks-M4 L.D6.3 row asks for verbatim. They are not
+  // emitted by any arm today and MUST NOT be reused for a different
+  // measurement — a name that means E61 must keep meaning E61. They start
+  // being emitted when an Ultra-class template ships (spec §23.5, deferred)
+  // or a charted key is promoted to `scorable`. Until then the run prints a
+  // non-failing `coverageGaps` line naming exactly this hole (Q44).
   | 'pending_not_zero'
   | 'recomputed_in_window'
 
@@ -381,6 +408,11 @@ export interface SeasonRunReport {
   censusBefore: string
   censusAfter: string
   problems: string[]
+  /** What this run does NOT assert, and why — ALWAYS printed, NEVER failing.
+   *  A gap that is loud on every run is not a silent fold; a gap that lives
+   *  only in a PR description is. L.D6.3's evidence stage prints these and
+   *  PROGRESS records them (the task row's item 4). */
+  coverageGaps: string[]
   /** Never an empty success (CLAUDE.md): a run that drove nothing says why. */
   reason: 'no_leagues' | 'no_weeks_driven' | null
   green: boolean
