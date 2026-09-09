@@ -8,10 +8,17 @@ import {
   readAuctionMarket,
   readBidLedger,
   readLeague,
+  readPlayerFullName,
   rewindDeadline,
   serviceClient,
   tickOnce,
+  type Supabase,
 } from './helpers/harness'
+import {
+  attachSocketLedger,
+  captureDraftFailureEvidence,
+  createSocketLedger,
+} from './helpers/evidence'
 import { openDockPlayers } from './helpers/dock'
 import { provisionLeague, signInDev, signInDevPro } from './helpers/provision'
 import { STORAGE_STATE } from './helpers/local-env'
@@ -47,10 +54,72 @@ const TEAM_COUNT = 8
 const ROUNDS = 2
 const TOTAL_LOTS = TEAM_COUNT * ROUNDS
 
+/**
+ * How long the nomination READ-BACK waits for the server to hold the
+ * nomination it was just asked for. Generous relative to a local RPC and far
+ * short of the 60s nomination clock this spec provisions, so a lapse here is
+ * a failed submit and never an impatient reader.
+ */
+const NOMINATION_READBACK_MS = 15_000
+
+/**
+ * F308's separator. The commissioner's nomination and the manager's render of
+ * it are TWO facts, and before this they failed as ONE red: `:213` timing out
+ * meant either *the server never got a nomination* (a submit-path bug, whose
+ * correct manager render is exactly "Waiting on the nominating team") or *the
+ * server has it and this client never saw it* (a delivery/reconciliation bug).
+ * The gate's 2,644 s run could not tell them apart, and the sweep had removed
+ * the draft before anyone could ask.
+ *
+ * So the helper now ASKS, server-side, before the spec waits on any browser:
+ * the nomination must exist AND be for the player whose row was clicked. A
+ * submit that never landed now fails HERE, by name, one step from its cause —
+ * and a `:213` red past this point is, by construction, the OTHER bug.
+ */
+async function confirmNominationLanded(
+  server: { service: Supabase; draftId: string; actor: string },
+  playerName: string,
+): Promise<number> {
+  const startedAt = Date.now()
+  const deadline = startedAt + NOMINATION_READBACK_MS
+  for (;;) {
+    const market = await readAuctionMarket(server.service, server.draftId)
+    if (market.nomination !== null) {
+      const nominated = await readPlayerFullName(server.service, market.nomination.player_id)
+      if (nominated !== playerName) {
+        throw new Error(
+          `[nomination read-back] ${server.actor} nominated ${playerName}, but the server holds a ` +
+            `nomination for ${nominated ?? market.nomination.player_id} (lot ` +
+            `${market.currentPickNumber}). The click did not produce THIS nomination — a client ` +
+            'rendering the other player would be CORRECT, so do not read a later broadcast ' +
+            'timeout as a delivery fault.',
+        )
+      }
+      return Date.now() - startedAt
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `[nomination read-back] ${server.actor} clicked "Nominate at $1" for ${playerName}, and ` +
+          `drafts.current_nomination is STILL NULL ${NOMINATION_READBACK_MS}ms later ` +
+          `(status=${market.status}, current_pick_number=${market.currentPickNumber}, ` +
+          `on_clock_team_id=${market.onClockTeamId}, current_deadline=${market.currentDeadline}). ` +
+          'THE NOMINATION WAS NEVER ISSUED: this is a submit-path failure, not a missed ' +
+          'broadcast — no client can render a nomination the server does not hold. (F308)',
+      )
+    }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+}
+
 /** Open the dock's Players panel and nominate the first available row at
  *  the $1 floor through the block's composer. Returns the player's name
- *  (read from the row's Add-to-Targets aria-label before clicking). */
-async function nominateFirstAvailable(page: Page): Promise<string> {
+ *  (read from the row's Add-to-Targets aria-label before clicking). The
+ *  nomination is READ BACK from the server before this returns — see
+ *  `confirmNominationLanded`. */
+async function nominateFirstAvailable(
+  page: Page,
+  server: { service: Supabase; draftId: string; actor: string },
+): Promise<string> {
   await openDockPlayers(page)
   const label = await page
     .getByRole('button', { name: /^Add .+ to Targets$/ })
@@ -62,6 +131,13 @@ async function nominateFirstAvailable(page: Page): Promise<string> {
   // The row action selects the nominee and closes the dock; the composer
   // submits the opening bid (default = the §8.6.2 floor, $1 here).
   await page.getByRole('button', { name: /^Nominate at \$1$/ }).click()
+  const settledMs = await confirmNominationLanded(server, name)
+  // eslint-disable-next-line no-console -- the F308 evidence line: every run
+  // now states, in the gate's own log, that the nomination reached the server
+  // and how fast — so a later broadcast timeout is unambiguous.
+  console.log(
+    `[auction-live] ${server.actor} nomination for ${name} live server-side in ${settledMs}ms`,
+  )
   return name
 }
 
@@ -144,7 +220,7 @@ test.describe('full auction draft to completion (two live clients)', () => {
 
   test('lobby start → nominations/raises broadcast → reconnect mid-bidding → completion → recap with prices → in_season', async ({
     browser,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(420_000)
     const service = serviceClient()
 
@@ -167,12 +243,45 @@ test.describe('full auction draft to completion (two live clients)', () => {
     const draftId = league.draftId!
     const roomPath = `/app/leagues/${league.leagueId}/draft`
 
+    const commishServer = { service, draftId, actor: 'commissioner' }
+    const managerServer = { service, draftId, actor: 'manager' }
+
     const commishContext = await browser.newContext({ storageState: STORAGE_STATE.dev })
     const managerContext = await browser.newContext({ storageState: STORAGE_STATE.devPro })
-    try {
-      const commish = await commishContext.newPage()
-      const manager = await managerContext.newPage()
+    // NOTE (F308/D334, measured — the record said otherwise and was wrong):
+    // these hand-built contexts ARE traced. Playwright's `_setupArtifacts`
+    // auto-fixture hooks `didCreateBrowserContext` for every context created
+    // during a test, so `trace: 'retain-on-failure'` reaches them; an explicit
+    // `tracing.start()` here fails with "Tracing has been already started".
+    // What killed F308's evidence was DESTRUCTION — `test-results/` is emptied
+    // by the next playwright run and no gate script preserves it. The capture
+    // below therefore writes somewhere playwright does not own, and to stdout.
+    const commish = await commishContext.newPage()
+    const manager = await managerContext.newPage()
 
+    // F308: what each browser ACTUALLY received on the realtime socket.
+    // Passive (`page.on('websocket')` observes through CDP; it forwards
+    // nothing and delays nothing) and attached BEFORE either page navigates,
+    // so the room's own first join is on the record. This is the instrument
+    // that separates a DEAF CHANNEL (no frames at all after the join) from a
+    // LOST BROADCAST (beats arrive, the `drafts` frame does not) from a
+    // CLIENT-SIDE defect (the frame arrived and the page still rendered the
+    // old state).
+    // The commissioner's socket is unproxied, so one passive CDP observer is
+    // the whole story there. The MANAGER needs TWO ledgers, and the reason is
+    // measured rather than assumed: its socket sits behind the
+    // `routeWebSocket` passthrough below, and `page.on('websocket')` there
+    // observes the SERVER → HARNESS leg — a probe that dropped every frame
+    // inside the passthrough still saw all 15 of them on the CDP ledger. So
+    // `manager-upstream` says what the server sent and `manager-delivered`
+    // says what the browser actually got, and the pair is the only thing that
+    // can indict or exonerate the harness's own Node hop — which F56's cell
+    // keeps on the record as a live competing explanation for this family.
+    const commishLedger = attachSocketLedger(commish, 'commissioner')
+    const managerUpstream = attachSocketLedger(manager, 'manager-upstream')
+    const managerDelivered = createSocketLedger('manager-delivered')
+
+    try {
       // Realtime-socket proxy on the manager (registered BEFORE the room
       // opens its channel) — the draft-reconnect.spec pattern: passthrough
       // that can sever the live socket and refuse newborns while "offline".
@@ -184,10 +293,26 @@ test.describe('full auction draft to completion (two live clients)', () => {
           return
         }
         const server = ws.connectToServer()
-        ws.onMessage((message) => server.send(message))
-        server.onMessage((message) => ws.send(message))
-        ws.onClose(() => void server.close())
-        server.onClose(() => void ws.close())
+        managerDelivered.noteSocket('open', ws.url())
+        // Recorded one statement before each hop, never around it: `record`
+        // swallows its own errors by construction, so the instrument cannot
+        // change what the passthrough delivers.
+        ws.onMessage((message) => {
+          managerDelivered.record('out', message)
+          server.send(message)
+        })
+        server.onMessage((message) => {
+          managerDelivered.record('in', message)
+          ws.send(message)
+        })
+        ws.onClose(() => {
+          managerDelivered.noteSocket('close', 'browser side')
+          void server.close()
+        })
+        server.onClose(() => {
+          managerDelivered.noteSocket('close', 'server side')
+          void ws.close()
+        })
         liveSockets.push(ws)
       })
 
@@ -206,7 +331,7 @@ test.describe('full auction draft to completion (two live clients)', () => {
       ).toBeVisible({ timeout: 30_000 })
 
       // ---- Lot 1: commissioner nominates via the UI; manager raises ------
-      const lot1Name = await nominateFirstAvailable(commish)
+      const lot1Name = await nominateFirstAvailable(commish, commishServer)
       const lot1LastName = lot1Name.split(' ').slice(-1)[0]!
       // The nomination broadcast: the manager's block shows the player and
       // the bid composer with no reload.
@@ -231,7 +356,7 @@ test.describe('full auction draft to completion (two live clients)', () => {
       await expect(manager.getByText("You're on the clock").first()).toBeVisible({
         timeout: 30_000,
       })
-      const lot2Name = await nominateFirstAvailable(manager)
+      const lot2Name = await nominateFirstAvailable(manager, managerServer)
       const lot2LastName = lot2Name.split(' ').slice(-1)[0]!
       await expect(commish.getByText(new RegExp(lot2LastName)).first()).toBeVisible({
         timeout: 20_000,
@@ -299,7 +424,7 @@ test.describe('full auction draft to completion (two live clients)', () => {
       await expect(commish.getByText("You're on the clock").first()).toBeVisible({
         timeout: 60_000,
       })
-      await nominateFirstAvailable(commish)
+      await nominateFirstAvailable(commish, commishServer)
       await waitForBiddingPhase(service, draftId, 9)
       await rewindDeadline(service, draftId)
       await tickOnce(service)
@@ -314,7 +439,7 @@ test.describe('full auction draft to completion (two live clients)', () => {
       await expect(manager.getByText("You're on the clock").first()).toBeVisible({
         timeout: 60_000,
       })
-      await nominateFirstAvailable(manager)
+      await nominateFirstAvailable(manager, managerServer)
       await waitForBiddingPhase(service, draftId, 10)
       await rewindDeadline(service, draftId)
       await tickOnce(service)
@@ -378,6 +503,22 @@ test.describe('full auction draft to completion (two live clients)', () => {
         `[auction-live] ${TOTAL_LOTS} lots complete; sweepAuctionAudit clean (` +
           `${audit.bids.length} bids, budgets parity-checked for ${audit.sqlBudgets.length} teams)`,
       )
+    } catch (error) {
+      // BEFORE any teardown — `test.afterAll`'s `cleanupSweep` deletes the
+      // draft, which is exactly why F308 could not be diagnosed (`0 rows`).
+      await captureDraftFailureEvidence({
+        testInfo,
+        label: 'auction-live',
+        service,
+        draftId,
+        error,
+        pages: [
+          { label: 'commissioner', page: commish },
+          { label: 'manager', page: manager },
+        ],
+        ledgers: [commishLedger, managerUpstream, managerDelivered],
+      })
+      throw error
     } finally {
       await commishContext.close()
       await managerContext.close()

@@ -18,7 +18,11 @@ import {
   LOCAL_URL,
 } from './local-env'
 
-type Supabase = SupabaseClient<Database>
+/** The harness's service/anon client type. Exported for the evidence
+ *  helpers (`evidence.ts`), which take a client they never construct — the
+ *  job-list doctrine above is about who BUILDS the service client, and this
+ *  is a type, not a key. */
+export type Supabase = SupabaseClient<Database>
 
 /**
  * SERVICE-ROLE HARNESS CLIENT — M2 task L.B5.1 (the D100/L.B6.1 confinement
@@ -942,6 +946,26 @@ export async function findUndraftedClubmate(
     )
   }
   return { player_id: free.id, position: free.position, nfl_team: free.team, full_name: free.full_name }
+}
+
+/**
+ * One player's `full_name` (job-4 class — a small authoritative read a spec
+ * asserts on). Added for F308's nomination read-back: `drafts.current_nomination`
+ * holds a player ID, and an assertion that says "the nomination is for the
+ * player we clicked" has to resolve it to the NAME the DOM showed, or it can
+ * only say "some nomination exists".
+ */
+export async function readPlayerFullName(
+  service: Supabase,
+  playerId: string,
+): Promise<string | null> {
+  const { data, error } = await service
+    .from('players')
+    .select('full_name')
+    .eq('id', playerId)
+    .maybeSingle()
+  throwIfError(error, 'read player full name')
+  return data?.full_name ?? null
 }
 
 /** One player's pool row, or null — how the E32 spec proves the DISABLED
