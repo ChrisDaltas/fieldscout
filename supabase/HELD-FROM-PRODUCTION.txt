@@ -228,4 +228,6 @@
 # and references nothing; the ALTER is on 109's service-role-only queue;
 # both functions read and write the queue alone. No policy on a launch
 # table, no trigger, no index, no publication or cron change.
-082-122
+# 082-122 pushed to production 2026-09-09 for the invite-only 2026 test cohort.
+# The hold is removed rather than annotated: rule 2 says a hold naming an APPLIED
+# migration is stale and fails the check. Nothing is held today.
