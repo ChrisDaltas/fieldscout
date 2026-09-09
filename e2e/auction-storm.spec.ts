@@ -60,6 +60,11 @@ import { STORAGE_STATE } from './helpers/local-env'
 const TEAM_COUNT = 8
 const BOT_COUNT = 6
 const NOMINATION_SEQ = 1
+/** How long the storm's lot is held open for the post-storm assertions
+ *  (F297). Comfortably past the two 15s browser waits that follow it, and
+ *  irrelevant to every number the test asserts — the lot is closed
+ *  deliberately, by rewind + tick, at the convergence step. */
+const LOT_HOLD_MS = 120_000
 
 type BidOutcome =
   | {
@@ -287,6 +292,40 @@ test.describe('the bid storm (exit criterion 3)', () => {
       await managerReArmSeen
       await expect(commish.getByText(/^Anti-snipe/).first()).toBeVisible({ timeout: 15_000 })
       await expect(manager.getByText(/^Anti-snipe/).first()).toBeVisible({ timeout: 15_000 })
+
+      // ---- HOLD THE LOT OPEN for the assertions that still need it (F297) -
+      // MEASURED 2026-09-08, and this is F297's whole mechanism: everything
+      // from here to the $26 min-raise assertion below — two ledger reads,
+      // the E2 replay submit, and the browsers' own waits — has to finish
+      // inside what is LEFT of this lot's life. That is the 10s anti-snipe
+      // floor from the last storm bid, rounded up by the 5s `draft_tick`
+      // cron: ~10-15s. On a loaded machine it does not fit. In the
+      // reproduction the cron lawfully closed the nomination 13.2s after the
+      // storm, awarded the lot to the $25 winner (bot 6: budget $175, one
+      // buy), and the room moved to lot 2 — so the composer the assertion
+      // waits for no longer existed and `Bid $26` timed out at :347. The
+      // engine did nothing wrong; the test was asserting a state with a
+      // deadline and had never said so.
+      //
+      // Every anti-snipe number above is ALREADY CAPTURED (they are read
+      // from `afterStorm` / `wave2End`, taken before this line), so pushing
+      // the deadline out weakens nothing — it only stops a legal concurrent
+      // actor from ending the state under assertion. The lot is still closed
+      // through the REAL engine below (rewind + tick), which stays the ONLY
+      // thing that closes it. Never a retry, never a sleep (house rule): the
+      // harness's sanctioned virtual-time door is the same one that staged
+      // the clock into the anti-snipe window in the first place (D100).
+      await stageBidDeadline(service, draftId, LOT_HOLD_MS)
+      const held = await readAuctionMarket(service, draftId)
+      // ...and PROVE the hold held. A lot the cron closed first would leave
+      // every assertion below chasing a state that is gone, and the failure
+      // would read as a mystery locator timeout instead of what it is —
+      // "nothing happened" must never pass for "it worked" (CLAUDE.md).
+      expect(
+        held.nomination?.high_bid,
+        'the storm lot is STILL OPEN at $25 after the hold (the cron did not beat us to it)',
+      ).toBe(25)
+      expect(Date.parse(held.currentDeadline!) - Date.now()).toBeGreaterThan(30_000)
 
       // ---- THE LEDGER: serialized, none lost, none duplicated (E2) -------
       const ledger = await readBidLedger(service, draftId, NOMINATION_SEQ)
