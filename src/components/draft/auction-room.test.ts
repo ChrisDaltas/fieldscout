@@ -264,8 +264,37 @@ describe('F56 room half: an absent draft is only honest when the fetch is health
     expect(room).toContain('if (!detail.data) {')
     // …and the degraded state reaches the bar, the room's one banner surface,
     // from all THREE surfaces that mount it: the D94 lobby, the scheduled-row
-    // lobby, and the live room.
-    expect(occurrences(room, "health === 'degraded'")).toBe(3)
+    // lobby, and the live room. TWO read the mount's own health; the third —
+    // the scheduled-row lobby — reads the RESOLVED room health since R944
+    // (the pin below owns that wiring). Three surfaces, two sources, and the
+    // sum is what this line asserts.
+    expect(
+      occurrences(room, "health === 'degraded'") + occurrences(room, "roomHealth === 'degraded'"),
+    ).toBe(3)
+    expect(occurrences(room, "health === 'degraded'")).toBe(2)
+  })
+
+  it('the scheduled-row lobby reads the RESOLVED room health, not the mount’s (R944)', () => {
+    // R944: `renderScheduled`'s `stale` used to close over the MOUNT's
+    // league-detail health, while `DraftRoomResolved` computes the combined
+    // room health and wires it only to the bar and the no-draft gates. So
+    // the one pre-start surface whose own query can fail — the state R943
+    // produces — rendered a confident "Starts in …" and said nothing. A
+    // substring count cannot catch this (`roomHealth === 'degraded'` contains
+    // `health === 'degraded'`), so pin the wiring itself, end to end.
+    expect(room).toContain('renderScheduled(draft, room.onlineTeamIds, health)')
+    expect(room).toContain('renderScheduled={(draft, onlineTeamIds, roomHealth) => (')
+    expect(room).toContain("stale={roomHealth === 'degraded'}")
+    // The value passed is the COMBINED one — the same `health` the bar and
+    // the `absentDraftIsHonest` gates read, not `contextHealth`.
+    expect(room).toContain('const health = worstHealth(')
+    expect(room).not.toContain('renderScheduled(draft, room.onlineTeamIds, contextHealth)')
+    // The D94 no-row lobby keeps the mount's own health: there is no room
+    // query behind it (no drafts row ⇒ no draft id ⇒ no room). F307.
+    const noDraftArm = room.indexOf('if (!draftId) {')
+    const d94Lobby = room.indexOf("stale={health === 'degraded'}", noDraftArm)
+    expect(d94Lobby).toBeGreaterThan(noDraftArm)
+    expect(d94Lobby).toBeLessThan(room.indexOf('<DraftRoomResolved'))
   })
 
   it('the retry offered by the fetch-failure surface refetches BOTH queries', () => {

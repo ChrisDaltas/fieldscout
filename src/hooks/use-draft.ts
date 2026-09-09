@@ -14,6 +14,7 @@ import {
   bestClockOffsetMs,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
+  draftHasBeenFetched,
   heartbeatSignalsGap,
   OFFSET_SAMPLE_WINDOW,
   presenceTeamForDraft,
@@ -202,7 +203,14 @@ export function useDraftRoom(
   const offsetSamplesRef = useRef<number[]>([])
   const lastBeatAtRef = useRef<number | null>(null)
 
-  const fetched = query.isSuccess
+  // §9.3's fetch-then-subscribe gate — "do we HOLD the draft row", NOT "did
+  // the last request succeed" (R943; the rule and the measurement are in
+  // `draftHasBeenFetched`'s docblock). A failed beat must not be able to
+  // cancel the mechanism whose job is to retry it.
+  const fetched = draftHasBeenFetched({
+    isSuccess: query.isSuccess,
+    hasData: query.data !== undefined,
+  })
   const presenceUserId = opts?.presence?.user_id ?? null
   // R264 (M2 batch 12): the tracked seat is resolved the same way the room
   // resolves "You" — in a mock, the launcher tracks the HUMAN seat
@@ -463,9 +471,11 @@ export function useDraftRoom(
     //    drafts emit no beats, D109(6));
     //  - a SCHEDULED draft whose start we never heard (F56's gate half): a
     //    scheduled draft emits no beats at all, so silence proves nothing
-    //    here and the room must ASK. This is the ONE room state that had no
-    //    reconciliation of any kind, which is why a single lost `drafts`
-    //    broadcast parked the room on the countdown until a reload.
+    //    here and the room must ASK. This is the ONE room state that MOUNTS
+    //    THE ROOM and had no reconciliation of any kind (R946 — the no-row
+    //    scheduled lobby never mounts it, so this cannot arm there; F307),
+    //    which is why a single lost `drafts` broadcast parked the room on
+    //    the countdown until a reload.
     // Refetch, then re-arm — one refetch per window.
     const silenceTimer = setInterval(() => {
       const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))

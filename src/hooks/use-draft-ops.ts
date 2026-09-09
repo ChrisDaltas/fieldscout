@@ -454,15 +454,26 @@ export const ROOM_WATCHDOG_MS = 5_000
  *
  * - **scheduled** — a scheduled draft emits NO beats at all, so silence
  *   carries no information here and the only honest test is to ASK. Without
- *   this arm the pre-start room is the ONE room state with no reconciliation
- *   of any kind: the live arm above is gated on `status === 'live'`; the D94
- *   lobby's own poll (`draft-lobby.tsx`) is armed only while
- *   `autoStartPollMs` is non-null, i.e. within `AUTO_START_WATCH_MS` (2
- *   minutes) of a STORED instant — so a commissioner who presses "Start
- *   draft now" earlier than that, or a league with no stored instant at all
- *   (the lobby's own no-countdown sub-state), leaves every member's lobby
- *   with a single delivery path and no backstop; and the room's own query
- *   has no interval and no focus refetch. A single lost `drafts` broadcast —
+ *   this arm the pre-start room is the ONE room state that MOUNTS THE ROOM
+ *   and has no reconciliation of any kind (**R946 narrowed this from "the
+ *   one room state", full stop**: the sibling pre-start surface — a
+ *   `scheduled` league with NO drafts row — renders `DraftLobby draft={null}`
+ *   and returns before `DraftRoomResolved`, so it has no draft id, no
+ *   channel, and this watchdog cannot arm there at all. That surface is
+ *   bounded rather than covered — `set_league_status` refuses `scheduled`
+ *   without `settings.draft.draft_scheduled_at` (`059:311-317`), so it always
+ *   has a stored instant and the D94 poll DOES rescue it from T-2min — and it
+ *   is filed as **F307**, not fixed here). Inside the with-row lobby: the
+ *   live arm above is gated on `status === 'live'`; the D94 lobby's own poll
+ *   (`draft-lobby.tsx`) is armed only while `autoStartPollMs` is non-null,
+ *   i.e. within `AUTO_START_WATCH_MS` (2 minutes) of a STORED instant — so a
+ *   commissioner who presses "Start draft now" earlier than that, or a league
+ *   with no stored instant at all (`draft_create` admits a `setup` league,
+ *   `066:483`, so a `scheduled` drafts row can precede any instant — the
+ *   lobby's own no-countdown sub-state), leaves every member's lobby that HAS
+ *   a drafts row with a single delivery path and no backstop; and the room's
+ *   own query has no interval and no focus refetch. A single lost `drafts`
+ *   broadcast —
  *   a documented possibility, not a hypothetical (D109(9): `realtime.send()`
  *   drops silently while the service boots; F74/D325: a join acked on a
  *   socket that was already closing is SUBSCRIBED and then orphaned deaf,
@@ -494,6 +505,38 @@ export function roomWatchdogWantsRefetch(input: {
   if (status === 'scheduled') return true
   if (status !== 'live') return false
   return lastBeatAtMs !== null && heartbeatSilenceExceeded(lastBeatAtMs, nowMs)
+}
+
+/**
+ * Has the room's draft row been FETCHED yet? — §9.3's *fetch-then-subscribe*
+ * precondition, and the ONE thing the channel effect is gated on.
+ *
+ * **R943 (PR #279 fix round): this used to be `query.isSuccess`, and that is
+ * a different question.** `isSuccess` asks *"did the LAST request succeed"*;
+ * fetch-then-subscribe asks *"do we HOLD the draft row"* — and React Query
+ * answers those differently the moment a background refetch fails. Its
+ * reducer's error case sets `status: 'error'` unconditionally while
+ * **retaining `data`**, so one failed refetch flipped `isSuccess` false over
+ * a cache that still held the row, re-ran the channel effect into its
+ * `if (!draftId || !fetched) return` guard, and let the cleanup
+ * `clearInterval` the watchdog **and** `removeChannel` the subscription —
+ * with nothing left alive to ask again. The new `scheduled` arm is the first
+ * thing in the pre-start room that issues fetches, so the backstop destroyed
+ * itself with its own request: **measured on the pre-fix tree, two aborted
+ * requests (one beat plus react-query's single `retry`) with connectivity
+ * then FULLY restored gave 0 room reads in the next 20 s and a room that
+ * never got in** — permanently, silently, and precisely outside the D94
+ * lobby poll's two-minute window, which is the domain the arm exists for.
+ *
+ * Asking the right question fixes it in one place: once the row is held the
+ * precondition is permanently satisfied, so a transient failure re-runs
+ * nothing — the interval survives to re-issue the read, and the channel is
+ * never torn down and rebuilt. That second half matters on its own: a
+ * rejoin raced against a closing socket is F74/D325's deaf-channel shape,
+ * i.e. the very fault this watchdog exists to back up.
+ */
+export function draftHasBeenFetched(input: { isSuccess: boolean; hasData: boolean }): boolean {
+  return input.isSuccess || input.hasData
 }
 
 /**

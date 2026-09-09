@@ -20,6 +20,7 @@ import {
   chatEventInvalidatesLeagueDetail,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
+  draftHasBeenFetched,
   FIRST_JOIN_FAILURES_FOR_BANNER,
   HEARTBEAT_SILENCE_MS,
   heartbeatSignalsGap,
@@ -713,6 +714,132 @@ describe('use-draft.ts drives its watchdog from the rule — source pin (F56)', 
 
   it('the cadence is the named constant, not a re-typed literal', () => {
     expect(source).not.toContain('}, 5_000)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R943 — a failed beat must not disarm the NEXT beat (PR #279 fix round)
+// ---------------------------------------------------------------------------
+
+describe('draftHasBeenFetched — the §9.3 fetch-then-subscribe gate (R943)', () => {
+  it('a FAILED refetch over a cache that still holds the row keeps the gate OPEN', () => {
+    // The whole of R943 in one line. React Query's reducer sets
+    // `status: 'error'` unconditionally and RETAINS `data`, so this is
+    // exactly the state one failed beat produces. `query.isSuccess` alone
+    // answered `false` here — and that false re-ran the channel effect into
+    // its guard, whose cleanup cleared the watchdog interval AND removed the
+    // channel, with nothing left alive to ask again.
+    expect(draftHasBeenFetched({ isSuccess: false, hasData: true })).toBe(true)
+  })
+
+  it('a healthy query is open, and a room holding NOTHING is still closed', () => {
+    expect(draftHasBeenFetched({ isSuccess: true, hasData: true })).toBe(true)
+    // Fetch-then-subscribe is not weakened: with no row in hand the channel
+    // still must not open (§9.3). A mount whose FIRST fetch fails renders
+    // `DraftRoomProblem` with a retry — honest, and not this bug's shape.
+    expect(draftHasBeenFetched({ isSuccess: false, hasData: false })).toBe(false)
+    expect(draftHasBeenFetched({ isSuccess: true, hasData: false })).toBe(true)
+  })
+})
+
+describe('a failed beat does not disarm the next beat (R943 — effect lifecycle)', () => {
+  /**
+   * A minimal `useEffect` driver: shallow-compare the dep array, and on a
+   * change run the previous cleanup and then the effect. That is the ONLY
+   * React semantic this bug turns on, and it is modelled here rather than
+   * rendered because the repo carries no DOM test environment.
+   *
+   * What keeps this honest: the driver runs the REAL predicate for the arm
+   * that matters, and the second arm re-states the PRE-FIX expression
+   * (`query.isSuccess`) literally, so the file demonstrates both directions.
+   * The source pins below hold the driver to the shipped effect's shape, and
+   * the browser measurement is in D333(8).
+   */
+  function driveWatchdog(fetchedOf: (q: { isSuccess: boolean; hasData: boolean }) => boolean) {
+    let cleanup: (() => void) | null = null
+    let lastDeps: readonly unknown[] | null = null
+    let intervalAlive = false
+    let beatsIssued = 0
+    const events: string[] = []
+
+    const runEffect = (deps: readonly unknown[]) => {
+      if (lastDeps && lastDeps.length === deps.length && lastDeps.every((d, i) => d === deps[i])) {
+        return
+      }
+      if (cleanup) cleanup()
+      lastDeps = deps
+      const [draftId, fetched] = deps as [string | undefined, boolean]
+      if (!draftId || !fetched) {
+        cleanup = null
+        return
+      }
+      intervalAlive = true
+      events.push('armed')
+      cleanup = () => {
+        intervalAlive = false
+        events.push('clearInterval + removeChannel')
+      }
+    }
+    const beat = () => {
+      if (!intervalAlive) return
+      beatsIssued += 1
+      events.push(`beat#${beatsIssued}`)
+    }
+    const render = (q: { isSuccess: boolean; hasData: boolean }) =>
+      runEffect(['draft-1', fetchedOf(q)])
+
+    return { render, beat, events, beats: () => beatsIssued }
+  }
+
+  /** The exact render sequence the browser produces: first fetch lands, a
+   *  beat fires, that beat's fetch (and its single retry) fail, and then
+   *  connectivity is restored with the cache still holding the row. */
+  function outage(driver: ReturnType<typeof driveWatchdog>) {
+    driver.render({ isSuccess: true, hasData: true }) // first fetch landed
+    driver.beat() // beat #1 — issues the refetch that will fail
+    driver.render({ isSuccess: false, hasData: true }) // it failed; data retained
+    driver.beat() // beat #2 — 5s later, connectivity is back
+  }
+
+  it('the SHIPPED gate: the interval survives the failed beat and beat #2 fires', () => {
+    const driver = driveWatchdog(draftHasBeenFetched)
+    outage(driver)
+    expect(driver.beats()).toBe(2)
+    expect(driver.events).toEqual(['armed', 'beat#1', 'beat#2'])
+    expect(driver.events).not.toContain('clearInterval + removeChannel')
+  })
+
+  it('the PRE-FIX gate (`query.isSuccess`) disarms itself — beat #2 never fires', () => {
+    const driver = driveWatchdog((q) => q.isSuccess)
+    outage(driver)
+    expect(driver.beats()).toBe(1)
+    expect(driver.events).toEqual(['armed', 'beat#1', 'clearInterval + removeChannel'])
+  })
+})
+
+describe('use-draft.ts asks the right gate question — source pin (R943)', () => {
+  const source = readFileSync(path.resolve(__dirname, 'use-draft.ts'), 'utf8')
+
+  it('the gate is the pure predicate, and the bare `query.isSuccess` is GONE', () => {
+    expect(source).toContain('const fetched = draftHasBeenFetched({')
+    expect(source).not.toContain('const fetched = query.isSuccess')
+  })
+
+  it('the gate still reads BOTH halves — success OR a row already in hand', () => {
+    const start = source.indexOf('const fetched = draftHasBeenFetched({')
+    const gate = source.slice(start, source.indexOf('})', start))
+    expect(gate).toContain('isSuccess: query.isSuccess')
+    expect(gate).toContain('hasData: query.data !== undefined')
+  })
+
+  it('the effect the driver models is still the shape it models', () => {
+    // `fetched` gates the channel effect, whose cleanup clears the watchdog
+    // interval and removes the channel — the chain R943 broke. If any link
+    // moves, the driver above stops standing for anything and this reddens.
+    expect(source).toContain('if (!draftId || !fetched) return')
+    expect(source).toContain('clearInterval(silenceTimer)')
+    expect(source).toContain('if (channel) void supabase.removeChannel(channel)')
+    expect(source).toContain('}, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])')
   })
 })
 
