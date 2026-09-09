@@ -15,9 +15,12 @@ import {
   buildJoinLink,
   deriveSeats,
   extractJoinCode,
+  fillOutcome,
   formatManagerIdentity,
   inviteState,
+  isAlreadyFullRefusal,
   preferredShareCode,
+  readSeatCounts,
   validateSlug,
   type PendingInviteInput,
   type SeatMemberInput,
@@ -349,5 +352,102 @@ describe('extractJoinCode', () => {
   it('yields empty for a /join/ link with no code, so the dialog no-ops rather than pushing a dead segment', () => {
     expect(extractJoinCode('https://fieldscout.gg/join/')).toBe('')
     expect(extractJoinCode('/join/')).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Bulk seat fill — the OUTCOME classifier (R958/R964)
+//
+// The load-bearing pin is #3: a fill that COMPLETES the league must never be
+// reported as a failure, and a fill that does NOT must never be reported as
+// complete. Both directions of CLAUDE.md's "never let 'nothing happened' mean
+// 'it worked'" — the second one is the rule running in reverse (inferring
+// failure from a refusal without asserting its reason), which is the defect
+// the first cut of this button actually shipped with.
+// ---------------------------------------------------------------------------
+
+describe('readSeatCounts', () => {
+  it('reads the 063 postcondition off the RPC body', () => {
+    expect(readSeatCounts({ member_id: 'm', seats_filled: 12, team_count: 12 })).toEqual({
+      filled: 12,
+      total: 12,
+    })
+  })
+
+  it('refuses every shape that is not two usable numbers — never guesses', () => {
+    expect(readSeatCounts(null)).toBeNull()
+    expect(readSeatCounts(undefined)).toBeNull()
+    expect(readSeatCounts('12')).toBeNull()
+    expect(readSeatCounts({})).toBeNull()
+    expect(readSeatCounts({ seats_filled: 12 })).toBeNull()
+    expect(readSeatCounts({ seats_filled: '12', team_count: 12 })).toBeNull()
+    expect(readSeatCounts({ seats_filled: Number.NaN, team_count: 12 })).toBeNull()
+    // total <= 0 would make "filled >= total" true for an empty league.
+    expect(readSeatCounts({ seats_filled: 0, team_count: 0 })).toBeNull()
+  })
+})
+
+describe('isAlreadyFullRefusal', () => {
+  it('recognises 063:446 verbatim', () => {
+    expect(
+      isAlreadyFullRefusal('this league already has all 12 seats — raise team_count first'),
+    ).toBe(true)
+  })
+
+  it('does not swallow an unrelated refusal', () => {
+    expect(isAlreadyFullRefusal('not a commissioner of this league')).toBe(false)
+    expect(isAlreadyFullRefusal('seats can only be added before the draft starts (§7.2)')).toBe(
+      false,
+    )
+    expect(isAlreadyFullRefusal('Something went wrong. Please try again.')).toBe(false)
+  })
+})
+
+describe('fillOutcome', () => {
+  it('reports COMPLETE from the server counts, and names the share-link consequence', () => {
+    const out = fillOutcome({ filled: 12, total: 12 }, 11, 11)
+    expect(out.title).toBe('11 seats added')
+    // Load-bearing: both self-serve join paths count materialised franchises,
+    // so a full league answers "league is full" to its own invite link, and no
+    // verb removes a placeholder seat. The seat-targeted arm still works.
+    expect(out.description).toContain('All 12 franchises exist')
+    expect(out.description).toContain('league is full')
+    expect(out.description).toContain('specific seat')
+  })
+
+  it('reports a SHORTFALL honestly rather than claiming the league is seated', () => {
+    const out = fillOutcome({ filled: 8, total: 12 }, 3, 3)
+    expect(out.title).toBe('3 seats added')
+    expect(out.description).toContain('8 of 12 franchises exist')
+    expect(out.description).toContain('4 seats still')
+    expect(out.description).not.toContain('draft can start')
+  })
+
+  it('PIN: a stale-high openCount that completes the league is NOT a failure', () => {
+    // openCount said 11; only 8 were really needed. The loop breaks on the
+    // server's postcondition, and the outcome is completion — not the
+    // "Stopped after 8 of 11" the first cut of this button reported, whose
+    // own advice ("raise team_count first") would have made it a 13-team
+    // league on draft day.
+    const out = fillOutcome({ filled: 12, total: 12 }, 8, 11)
+    expect(out.title).toBe('8 seats added')
+    expect(out.description).toContain('All 12 franchises exist')
+    expect(out.title).not.toContain('Stopped')
+  })
+
+  it('PIN: never claims completeness with no server counts to prove it', () => {
+    const out = fillOutcome(null, 11, 11)
+    expect(out.description).not.toContain('All 12')
+    expect(out.description).toContain('Reload')
+  })
+
+  it('handles the concurrent case: someone else finished the job first', () => {
+    const out = fillOutcome({ filled: 12, total: 12 }, 0, 3)
+    expect(out.title).toBe('Every seat already exists')
+  })
+
+  it('gets the singular right at one seat', () => {
+    expect(fillOutcome({ filled: 12, total: 12 }, 1, 1).title).toBe('1 seat added')
+    expect(fillOutcome({ filled: 11, total: 12 }, 1, 1).description).toContain('1 seat still open')
   })
 })

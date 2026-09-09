@@ -45,11 +45,15 @@ import { Crest } from './league-cells'
 import {
   buildJoinLink,
   deriveSeats,
+  fillOutcome,
   inviteState,
+  isAlreadyFullRefusal,
   preferredShareCode,
+  readSeatCounts,
   validateSlug,
   type PendingInviteInput,
   type Seat,
+  type SeatCounts,
 } from './invite-panel-ops'
 
 /**
@@ -377,44 +381,54 @@ function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: n
 
   async function add() {
     try {
-      await addSeat.mutateAsync(undefined)
-      toast({ title: 'Open seat added', description: 'Invite a manager to it, or share the link.' })
+      const seats = readSeatCounts(await addSeat.mutateAsync(undefined))
+      toast(fillOutcome(seats, 1, 1))
     } catch (cause) {
       toast({ title: "Couldn't add a seat", description: messageOf(cause) })
     }
   }
 
-  // Fill every remaining slot in one press. §7.2/D96 requires every seat to
-  // EXIST before the draft can start, so a solo commissioner opening a 12-team
-  // league otherwise has to press "Add an open seat" eleven times before
-  // start_draft will accept — the failure Chris hit on 2026-09-09.
+  // Fill every remaining slot in one press. §7.2/D96 requires every franchise
+  // to EXIST before the draft can start, so a solo commissioner opening a
+  // 12-team league otherwise has to press "Add an open seat" eleven times
+  // before start_draft will accept — the failure Chris hit on 2026-09-09.
   //
-  // Sequential, never parallel: add_placeholder_seat re-reads capacity under a
-  // lock (063/R93) and raises once the league is full, so overlapping requests
-  // would race on the final seat and surface a spurious error. One at a time
-  // means a mid-flight failure stops cleanly with an accurate count, and the
-  // seats already created stay created (each call is its own transaction).
+  // Sequential, never parallel: add_placeholder_seat re-reads capacity under
+  // the league lock (063/R93) and raises once full, so overlapping requests
+  // would race on the final seat.
   async function fillAll() {
-    const target = openCount
-    setFill({ done: 0, target })
-    let done = 0
+    const requested = openCount
+    setFill({ done: 0, target: requested })
+    let added = 0
+    let seats: SeatCounts | null = null
     try {
-      for (let i = 0; i < target; i += 1) {
-        await addSeat.mutateAsync(undefined)
-        done += 1
-        setFill({ done, target })
+      for (let i = 0; i < requested; i += 1) {
+        seats = readSeatCounts(await addSeat.mutateAsync(undefined))
+        added += 1
+        setFill({ done: added, target: requested })
+        // THE SERVER'S POSTCONDITION ENDS THE LOOP, never the client's count
+        // (R958). `openCount` comes from a cached league document with no
+        // window-focus refetch and no realtime on members, so it can be stale
+        // HIGH — and one call past capacity turns 063:446's already-full
+        // refusal into a "failure" report on a league that is seated and
+        // draft-ready, whose own remediation text ("raise team_count first")
+        // would turn a correct 12-team league into a 13-team one.
+        if (seats && seats.filled >= seats.total) break
       }
-      toast({
-        title: `${done} seat${done === 1 ? '' : 's'} added`,
-        description: 'Every franchise exists now. Invite managers to them, or draft as they are.',
-      })
+      toast(fillOutcome(seats, added, requested))
     } catch (cause) {
-      // Never report a partial fill as success — say how far it got (the seats
-      // created before the failure are real and persist).
-      toast({
-        title: done > 0 ? `Stopped after ${done} of ${target}` : "Couldn't add the seats",
-        description: messageOf(cause),
-      })
+      const message = messageOf(cause)
+      // A refusal BECAUSE the league is already full is completion, not
+      // failure — reachable when someone claims the last seat mid-loop.
+      // Asserting the reason instead of inferring failure from the raise.
+      if (isAlreadyFullRefusal(message)) {
+        toast(fillOutcome(seats ? { ...seats, filled: seats.total } : null, added, requested))
+      } else {
+        toast({
+          title: added > 0 ? `Stopped after ${added} of ${requested}` : "Couldn't add the seats",
+          description: message,
+        })
+      }
     } finally {
       setFill(null)
     }
@@ -425,7 +439,12 @@ function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: n
       <Button type="button" variant="stroke" size="sm" disabled={busy} onClick={add}>
         <Icon name="plus" size={13} /> Add an open seat
       </Button>
-      {openCount > 1 && (
+      {/* `|| fill !== null` keeps the button — and its progress label —
+          mounted through the LAST iteration: the mid-loop refetches drive
+          `openCount` down to 1 while the fill is still running, so gating on
+          the live count alone unmounts the progress at exactly the moment the
+          commissioner starts wondering whether it hung (R961). */}
+      {(openCount > 1 || fill !== null) && (
         <Button type="button" variant="dark" size="sm" disabled={busy} onClick={fillAll}>
           <Icon name="plus" size={13} />{' '}
           {fill
