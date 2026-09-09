@@ -372,6 +372,9 @@ function SeatsCard({
 
 function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: number }) {
   const addSeat = useAddPlaceholderSeat(leagueId)
+  const [fill, setFill] = useState<{ done: number; target: number } | null>(null)
+  const busy = addSeat.isPending || fill !== null
+
   async function add() {
     try {
       await addSeat.mutateAsync(undefined)
@@ -380,11 +383,56 @@ function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: n
       toast({ title: "Couldn't add a seat", description: messageOf(cause) })
     }
   }
+
+  // Fill every remaining slot in one press. §7.2/D96 requires every seat to
+  // EXIST before the draft can start, so a solo commissioner opening a 12-team
+  // league otherwise has to press "Add an open seat" eleven times before
+  // start_draft will accept — the failure Chris hit on 2026-09-09.
+  //
+  // Sequential, never parallel: add_placeholder_seat re-reads capacity under a
+  // lock (063/R93) and raises once the league is full, so overlapping requests
+  // would race on the final seat and surface a spurious error. One at a time
+  // means a mid-flight failure stops cleanly with an accurate count, and the
+  // seats already created stay created (each call is its own transaction).
+  async function fillAll() {
+    const target = openCount
+    setFill({ done: 0, target })
+    let done = 0
+    try {
+      for (let i = 0; i < target; i += 1) {
+        await addSeat.mutateAsync(undefined)
+        done += 1
+        setFill({ done, target })
+      }
+      toast({
+        title: `${done} seat${done === 1 ? '' : 's'} added`,
+        description: 'Every franchise exists now. Invite managers to them, or draft as they are.',
+      })
+    } catch (cause) {
+      // Never report a partial fill as success — say how far it got (the seats
+      // created before the failure are real and persist).
+      toast({
+        title: done > 0 ? `Stopped after ${done} of ${target}` : "Couldn't add the seats",
+        description: messageOf(cause),
+      })
+    } finally {
+      setFill(null)
+    }
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <Button type="button" variant="stroke" size="sm" disabled={addSeat.isPending} onClick={add}>
+      <Button type="button" variant="stroke" size="sm" disabled={busy} onClick={add}>
         <Icon name="plus" size={13} /> Add an open seat
       </Button>
+      {openCount > 1 && (
+        <Button type="button" variant="dark" size="sm" disabled={busy} onClick={fillAll}>
+          <Icon name="plus" size={13} />{' '}
+          {fill
+            ? `Adding ${Math.min(fill.done + 1, fill.target)} of ${fill.target}\u2026`
+            : `Fill all ${openCount} seats`}
+        </Button>
+      )}
       <span className="text-[11px] font-semibold text-n-3">
         {openCount} seat{openCount === 1 ? '' : 's'} still open.
       </span>
