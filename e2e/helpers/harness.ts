@@ -968,6 +968,29 @@ export async function readPlayerFullName(
   return data?.full_name ?? null
 }
 
+/**
+ * The live (not-undone) pick count for a draft — the job-4 read the F308
+ * failure capture prints beside the market (`evidence.ts`).
+ *
+ * It lives HERE, in the house shape (`throwIfError` + a `-1` sentinel, as
+ * `countLeagueRosters` does), because the capture is the one place where a
+ * fabricated number is most expensive: at the failure instant nobody can
+ * re-query, and a `0` invented from a failed count would read as the
+ * positive fact "the draft made no picks" (R953 — CLAUDE.md's "never let
+ * 'nothing happened' mean 'it worked'"). A failed count now throws, and a
+ * null count with no error — reachable, because `head: true` carries the
+ * count in Content-Range — surfaces as `-1`, which is not a plausible count.
+ */
+export async function countLivePicks(service: Supabase, draftId: string): Promise<number> {
+  const { count, error } = await service
+    .from('draft_picks')
+    .select('id', { count: 'exact', head: true })
+    .eq('draft_id', draftId)
+    .eq('is_undone', false)
+  throwIfError(error, 'count draft_picks')
+  return count ?? -1
+}
+
 /** One player's pool row, or null — how the E32 spec proves the DISABLED
  *  arm is the tick's VIEW and the refusal arm is not. */
 export async function readPoolRow(

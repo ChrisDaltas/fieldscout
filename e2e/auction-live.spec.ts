@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type TestInfo } from '@playwright/test'
 
 import {
   assertPlayerPoolPresent,
@@ -18,6 +18,7 @@ import {
   attachSocketLedger,
   captureDraftFailureEvidence,
   createSocketLedger,
+  type SocketLedger,
 } from './helpers/evidence'
 import { openDockPlayers } from './helpers/dock'
 import { provisionLeague, signInDev, signInDevPro } from './helpers/provision'
@@ -208,10 +209,75 @@ async function readBudgetsRail(page: Page): Promise<string> {
 }
 
 test.describe('full auction draft to completion (two live clients)', () => {
+  /**
+   * F308/R952 — THE CAPTURE STATE LIVES AT DESCRIBE SCOPE, and the reason is
+   * measured rather than stylistic.
+   *
+   * Anchoring the capture to the test body's own `catch` covers the ASSERTION
+   * path and nothing else. A Playwright TEST-LEVEL timeout abandons the body
+   * (`workerProcessEntry.js:405` races the body against the timeout and never
+   * returns to it), so neither `catch` nor `finally` runs: a timeout probe on
+   * THIS spec produced zero `[evidence:` lines and no evidence directory,
+   * with a live room and a confirmed server-side nomination sitting there
+   * uncaptured — precisely everything this instrument adds, lost on the
+   * failure shape where the room hung longest. And it is reachable without
+   * any bug: the per-assertion budgets below already sum past the 420 s test
+   * budget, so a slow-but-not-stuck contended run times out rather than
+   * failing an assertion.
+   *
+   * `afterEach` runs on a timeout, on a fresh slot of
+   * `max(project.timeout, test.timeout)`, and STRICTLY BEFORE `afterAll`
+   * (`:1661` vs `:1674`) — so it is still ahead of `cleanupSweep`, which is
+   * the whole point. Nothing auto-closes a hand-built context before then.
+   */
+  let evidenceTarget:
+    | {
+        service: Supabase
+        draftId: string
+        pages: Array<{ label: string; page: Page }>
+        ledgers: SocketLedger[]
+      }
+    | null = null
+  /** Per-test once-flag. The assertion path captures from the body — ahead of
+   *  the `finally` that closes both contexts, so the screenshots have LIVE
+   *  pages; the timeout path captures from `afterEach`. Never both, and reset
+   *  per test because `--repeat-each` reuses this module. */
+  let evidenceCaptured = false
+
+  async function captureOnce(testInfo: TestInfo, error: unknown): Promise<void> {
+    if (evidenceCaptured || evidenceTarget === null) return
+    evidenceCaptured = true
+    await captureDraftFailureEvidence({
+      testInfo,
+      label: 'auction-live',
+      service: evidenceTarget.service,
+      draftId: evidenceTarget.draftId,
+      error,
+      pages: evidenceTarget.pages,
+      ledgers: evidenceTarget.ledgers,
+    })
+  }
+
   test.beforeAll(async () => {
     const service = serviceClient()
     await cleanupSweep(service)
     await assertPlayerPoolPresent(service)
+  })
+
+  test.beforeEach(() => {
+    evidenceTarget = null
+    evidenceCaptured = false
+  })
+
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status === testInfo.expectedStatus) return
+    // `testInfo.error` is a plain `{message, stack, value}` payload, not an
+    // Error — compose the message rather than stringifying an object.
+    const reason = testInfo.error?.message ?? testInfo.error?.value
+    await captureOnce(
+      testInfo,
+      new Error(`[${testInfo.status ?? 'unknown'}] ${reason ?? '(no error attached)'}`),
+    )
   })
 
   test.afterAll(async () => {
@@ -280,6 +346,19 @@ test.describe('full auction draft to completion (two live clients)', () => {
     const commishLedger = attachSocketLedger(commish, 'commissioner')
     const managerUpstream = attachSocketLedger(manager, 'manager-upstream')
     const managerDelivered = createSocketLedger('manager-delivered')
+    // From here on there is something worth capturing, so BOTH entry points
+    // (the body's `catch` and the `afterEach`) can see it. Before this point
+    // there are no pages and no ledgers — nothing to capture, and the
+    // `browser` fixture's own teardown reclaims what exists.
+    evidenceTarget = {
+      service,
+      draftId,
+      pages: [
+        { label: 'commissioner', page: commish },
+        { label: 'manager', page: manager },
+      ],
+      ledgers: [commishLedger, managerUpstream, managerDelivered],
+    }
 
     try {
       // Realtime-socket proxy on the manager (registered BEFORE the room
@@ -504,20 +583,13 @@ test.describe('full auction draft to completion (two live clients)', () => {
           `${audit.bids.length} bids, budgets parity-checked for ${audit.sqlBudgets.length} teams)`,
       )
     } catch (error) {
-      // BEFORE any teardown — `test.afterAll`'s `cleanupSweep` deletes the
-      // draft, which is exactly why F308 could not be diagnosed (`0 rows`).
-      await captureDraftFailureEvidence({
-        testInfo,
-        label: 'auction-live',
-        service,
-        draftId,
-        error,
-        pages: [
-          { label: 'commissioner', page: commish },
-          { label: 'manager', page: manager },
-        ],
-        ledgers: [commishLedger, managerUpstream, managerDelivered],
-      })
+      // The ASSERTION path, captured here rather than in `afterEach` for one
+      // reason: the `finally` below closes both contexts, so this is the last
+      // moment the screenshots and the rendered bodies come from LIVE pages.
+      // Still before any teardown — `test.afterAll`'s `cleanupSweep` deletes
+      // the draft, which is exactly why F308 could not be diagnosed
+      // (`0 rows`). The once-flag stops `afterEach` capturing it again.
+      await captureOnce(testInfo, error)
       throw error
     } finally {
       await commishContext.close()

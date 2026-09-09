@@ -3,7 +3,13 @@ import { join } from 'node:path'
 
 import type { Page, TestInfo } from '@playwright/test'
 
-import { readAuctionMarket, readBidLedger, readPlayerFullName, type Supabase } from './harness'
+import {
+  countLivePicks,
+  readAuctionMarket,
+  readBidLedger,
+  readPlayerFullName,
+  type Supabase,
+} from './harness'
 
 /**
  * FAILURE-EVIDENCE INSTRUMENTS FOR THE TWO-CONTEXT DRAFT SPECS — F308.
@@ -41,8 +47,11 @@ import { readAuctionMarket, readBidLedger, readPlayerFullName, type Supabase } f
  *     `confirmNominationLanded`.)
  *  3. **The harness sweep destroyed the server-side evidence.**
  *     `test.afterAll` runs `cleanupSweep`, so by the time anyone read server
- *     state the draft was gone (`0 rows`). Capture therefore happens inside
- *     the failing test's own `catch`, ahead of every teardown.
+ *     state the draft was gone (`0 rows`). Capture therefore happens ahead of
+ *     every teardown — see `captureDraftFailureEvidence`'s own docblock for
+ *     WHERE a spec must call it from, which is `afterEach` and not only the
+ *     test body (R952: a test-level timeout abandons the body, and that is
+ *     the failure shape in which the room hangs LONGEST).
  *
  * **The instruments, and what each one settles.**
  *
@@ -71,11 +80,21 @@ import { readAuctionMarket, readBidLedger, readPlayerFullName, type Supabase } f
 // Realtime frame ledger
 // ---------------------------------------------------------------------------
 
-/** Ring-buffer bound. A 16-lot auction beats every ~5s for ~7 minutes plus
- *  its broadcasts and phoenix heartbeats — a few hundred frames — so this
- *  holds a whole run in practice while refusing to grow without limit if a
- *  spec ever drives a burst. Overflow is COUNTED, never silently dropped:
- *  `droppedFrames` is reported beside the buffer. */
+/**
+ * Ring-buffer bound. **It does NOT hold a whole run, and the earlier claim
+ * that it did was wrong by ~4× — MEASURED (R955), on exactly the contended
+ * 16-lot failure this instrument exists for: 995–1,052 frames per ledger
+ * against this cap, 249–314 dropped.** A 16-lot auction beats every ~5s for
+ * minutes on end, so `tick` dominates the traffic and a plain FIFO evicts
+ * the HEAD — `socket:open` / `phx_join` / `phx_reply` / `presence_state` —
+ * which is the exact sequence this file's own reasoning uses to define
+ * "nothing after the join", i.e. to tell a DEAF CHANNEL from a LOST
+ * BROADCAST. So eviction is BIASED: the oldest `tick` goes first and the
+ * join preamble survives. Overflow is COUNTED, never silent — `droppedFrames`
+ * and `droppedTickFrames` are reported beside the buffer — and the lifetime
+ * `counts`, which the F308 diagnosis actually rests on, are unaffected by
+ * eviction either way.
+ */
 const MAX_FRAMES = 800
 
 /** How much of an unparseable frame to keep, so a shape change is visible
@@ -106,6 +125,9 @@ export interface LedgerSnapshot {
   /** Lifetime counts keyed `dir:event` / `dir:broadcast:<inner>`. */
   counts: Record<string, number>
   droppedFrames: number
+  /** How many of `droppedFrames` were `tick` beats — evicted first, on
+   *  purpose, so the join preamble outlives a long contended run. */
+  droppedTickFrames: number
   frames: LedgerFrame[]
 }
 
@@ -168,9 +190,17 @@ function decodeRealtimeFrame(payload: string | Buffer): DecodedFrame {
   if (typeof payload !== 'string') {
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
     const kind = view.byteLength > 0 ? view.getUint8(0) : -1
-    // 4 = userBroadcast (server → client). 3 = userBroadcastPush (client →
-    // server) and carries the same header shape.
-    if (kind !== 4 && kind !== 3) {
+    // 4 = userBroadcast (server → client) — the only binary kind this app
+    // puts on the wire, and the whole reason this decoder exists.
+    // Kind 3 (userBroadcastPush, client → server) is DELIBERATELY not
+    // decoded here: it does NOT carry the same header (R954, measured
+    // against the real serializer — `_encodeUserBroadcastPush` writes a
+    // 7-byte header with five length fields, not this 5-byte one), so
+    // reading it with the layout below produced `topic="\u0000"` and an
+    // `\u0001` event with nothing saying the decode was wrong. Nothing in
+    // `src/` sends one (presence `track` takes the JSON path), so the right
+    // behaviour for one appearing is LOUD: it records as `binary kind 3`.
+    if (kind !== 4) {
       return { topic: null, event: null, inner: null, payload: null, undecodable: `binary kind ${kind}` }
     }
     try {
@@ -285,10 +315,20 @@ export function createSocketLedger(label: string): SocketLedger {
   let socketsOpened = 0
   let socketsClosed = 0
   let droppedFrames = 0
+  let droppedTickFrames = 0
 
   const push = (frame: LedgerFrame): void => {
     if (frames.length >= MAX_FRAMES) {
-      frames.shift()
+      // Bias the eviction (R955): drop the oldest `tick` if the buffer holds
+      // one, so the join/presence head — the evidence that separates a deaf
+      // channel from a lost broadcast — is the last thing to go.
+      const oldestTick = frames.findIndex((f) => f.inner === 'tick')
+      if (oldestTick >= 0) {
+        frames.splice(oldestTick, 1)
+        droppedTickFrames += 1
+      } else {
+        frames.shift()
+      }
       droppedFrames += 1
     }
     frames.push(frame)
@@ -361,6 +401,7 @@ export function createSocketLedger(label: string): SocketLedger {
       socketErrors: [...socketErrors],
       counts: { ...counts },
       droppedFrames,
+      droppedTickFrames,
       frames: [...frames],
     }),
   }
@@ -452,11 +493,33 @@ async function safeText(
  * Capture everything F308 could not read, and print it where the gate's log
  * will keep it.
  *
- * MUST be called from the failing test's own `finally` (or `catch`) — ahead
- * of `test.afterAll`'s `cleanupSweep`, which deletes the draft and with it
- * every answer. Best-effort throughout: an evidence capture that throws
- * would replace the real failure with its own, which is the opposite of the
- * job.
+ * **WHERE A SPEC MUST CALL THIS FROM — `test.afterEach`, not only the test
+ * body (R952, measured).** An in-body `catch`/`finally` covers the assertion
+ * path and nothing else: a Playwright TEST-LEVEL timeout abandons the body
+ * at the worker's `Promise.race([cb(), timeoutPromise])`
+ * (`workerProcessEntry.js:405`), so neither runs — a timeout probe on
+ * `auction-live.spec.ts` produced ZERO `[evidence:` lines and no evidence
+ * directory, with a live room and a confirmed server-side nomination sitting
+ * there uncaptured. That is the failure shape in which the room hangs
+ * LONGEST and the evidence is richest, and it is reachable without any bug:
+ * that spec's own per-assertion budgets already sum past its test budget.
+ * `afterEach` DOES run on a timeout, on a fresh slot of
+ * `max(project.timeout, test.timeout)` (`:1650`), and it runs STRICTLY
+ * BEFORE `afterAll` (`:1661` vs `:1674`) — so it is still ahead of
+ * `cleanupSweep`, which deletes the draft and with it every answer. Nothing
+ * auto-closes a hand-built context before that point, so both pages are
+ * still readable.
+ *
+ * Keep an in-body `catch` as well if the spec closes its contexts in a
+ * `finally` (the assertion path then screenshots LIVE pages), and guard both
+ * entry points with a per-test once-flag so a failure cannot be captured
+ * twice.
+ *
+ * Best-effort throughout: an evidence capture that throws would replace the
+ * real failure with its own, which is the opposite of the job. The ONE thing
+ * that is deliberately loud is the server read — see `countLivePicks` and
+ * `readAuctionMarket`'s `.single()`: a draft that is already gone must read
+ * back as an error, never as a plausible empty market.
  */
 export async function captureDraftFailureEvidence(input: {
   testInfo: TestInfo
@@ -478,17 +541,20 @@ export async function captureDraftFailureEvidence(input: {
   try {
     const market = await readAuctionMarket(service, draftId)
     const bids = await readBidLedger(service, draftId)
-    const { count } = await service
-      .from('draft_picks')
-      .select('id', { count: 'exact', head: true })
-      .eq('draft_id', draftId)
-      .eq('is_undone', false)
+    // R953 — `countLivePicks` THROWS on a failed count and returns `-1` for
+    // a null one (reachable with no error at all: `head: true` carries the
+    // count in Content-Range). A failed count therefore lands in `readError`
+    // below, loudly, instead of printing `0` as a positive fact beside a
+    // healthy-looking market — at the one instant nobody can re-query. That
+    // is CLAUDE.md's "never let 'nothing happened' mean 'it worked'", inside
+    // the file whose entire job is to be believed.
+    const livePickCount = await countLivePicks(service, draftId)
     server = {
       market,
       nominatedPlayerName: market.nomination
         ? await readPlayerFullName(service, market.nomination.player_id)
         : null,
-      livePickCount: count ?? 0,
+      livePickCount,
       bids,
     }
   } catch (readError) {
@@ -554,7 +620,8 @@ export async function captureDraftFailureEvidence(input: {
   for (const snap of evidence.sockets) {
     lines.push(
       `[evidence:${label}] socket ${snap.label}: opened=${snap.socketsOpened} closed=${snap.socketsClosed} ` +
-        `dropped=${snap.droppedFrames} errors=${JSON.stringify(snap.socketErrors)} counts=${JSON.stringify(snap.counts)}`,
+        `dropped=${snap.droppedFrames} (ticks=${snap.droppedTickFrames}) ` +
+        `errors=${JSON.stringify(snap.socketErrors)} counts=${JSON.stringify(snap.counts)}`,
     )
     for (const frame of snap.frames.filter((f) => f.t >= windowFrom)) {
       lines.push(
