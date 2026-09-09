@@ -402,6 +402,10 @@ export interface SeasonRunReport {
   startedAt: string
   finishedAt: string
   planLines: string[]
+  /** The D299 in-season axes each league was CREATED with — the PLAN's own
+   *  echo, printed beside the read-back `matrixLine` so a reviewer can compare
+   *  what was planned with what the row actually holds. */
+  seasonPlanLines: string[]
   /** scenario player id → real players.id, one line per bridged slot. */
   bridgeLines: string[]
   leagues: SeasonLeagueResult[]

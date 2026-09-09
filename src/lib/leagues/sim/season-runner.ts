@@ -294,6 +294,7 @@ export async function runSeasonSim(
     startedAt: startedAtWall,
     finishedAt: startedAtWall,
     planLines: [],
+    seasonPlanLines: [],
     bridgeLines: [],
     leagues: [],
     scenarioEvidence: { scenario: cfg.scenario, leagues: 0, assertions: [] },
@@ -335,7 +336,8 @@ export async function runSeasonSim(
       },
       deps,
     )
-    report.planLines = [...draft.planLines, ...(draft.seasonPlanLines ?? [])]
+    report.planLines = [...draft.planLines]
+    report.seasonPlanLines = [...(draft.seasonPlanLines ?? [])]
     report.workerErrors.push(...draft.workerErrors)
     for (const f of draft.invariantFailures) {
       report.invariantFailures.push({
@@ -677,7 +679,9 @@ export async function readLeagueState(
 ): Promise<LeagueState> {
   const { data: league, error: leagueError } = await service
     .from('leagues')
-    .select('roster_settings, settings, owner_id, regular_season_weeks')
+    .select(
+      'roster_settings, settings, owner_id, regular_season_weeks, scoring_system_id, scoring_systems(name, is_template)',
+    )
     .eq('id', leagueId)
     .single()
   throwIfError(leagueError, `${label}: league shape`)
@@ -699,6 +703,14 @@ export async function readLeagueState(
     for (let i = 0; i < slot.count; i++) slots.push({ key: `${slot.key}:${i}`, eligible: slot.eligible })
   }
   const settings = (league!.settings ?? {}) as Record<string, unknown>
+  // D299's parity-template axis, READ BACK from the row rather than echoed
+  // from the plan: `is_template = false` means this league scores through its
+  // OWN forked document (§7.3.3.1), which is the arm the matrix draws once.
+  const scoring = (league as unknown as {
+    scoring_systems?: { name?: string | null; is_template?: boolean | null } | null
+  }).scoring_systems
+  const scoringName = scoring?.name ?? '(unnamed)'
+  const scoringForked = scoring?.is_template === false
   const scheduleMode = settings.schedule_mode === 'total_points' ? 'total_points' : 'h2h'
   // The column's DEFAULT is TRUE (§7.3.6), so only an explicit `false` turns
   // legality enforcement ON — read exactly the way `matrixLine` renders it.
@@ -720,7 +732,8 @@ export async function readLeagueState(
     matrixLine:
       `${teamCount} teams · ${scheduleMode} · median ${settings.median_game === true ? 'on' : 'off'} · ` +
       `second ${settings.second_opponent === true ? 'on' : 'off'} · ` +
-      `illegal-lineups ${settings.allow_illegal_lineups === false ? 'off' : 'on'}`,
+      `illegal-lineups ${settings.allow_illegal_lineups === false ? 'off' : 'on'} · ` +
+      `scoring ${scoringName}${scoringForked ? ' (FORKED §7.3.3.1)' : ''}`,
     teams: (teams ?? []).map((t) => ({ id: t.id, ownerId: t.owner_id })),
     irKeys: (roster.ir_slots ?? []).map((s) => s.key),
     slots,
@@ -910,8 +923,6 @@ async function driveSeason(
     backfillDeltas: 0,
     kickoffBefore: null as string | null,
     kickoffAfter: null as string | null,
-    locksAtAnnounce: null as string | null,
-    locksAfterAnnounce: null as string | null,
     // ── E42, read as a LOCK and not as a schedule datum (Q5/F287-adjacent) ──
     // `flex_move` moves G3 EARLIER. Between the NEW kickoff and the ORIGINAL
     // one there is a window in which the flexed clubs' players are locked
@@ -972,6 +983,13 @@ async function driveSeason(
     chartedRevisionDelta: null as number | null,
     postWindowSkips: 0,
     postWindowWrites: 0,
+    postWindowWriteDetail: [] as string[],
+    /** Post-window writes whose `league_weeks.status` was ALREADY `final` when
+     *  read back — a real D295(b) breach, distinct from a write to a week the
+     *  door lawfully found still open (§3 Q47). */
+    postWindowWroteFinalWeek: 0,
+    /** (leagueId, week) of each post-window write, for the status read-back. */
+    postWindowWritePairs: [] as Array<{ leagueId: string; week: number }>,
     inWindowWrites: 0,
     revisionWrites: 0,
     flaggedNoStatRow: 0,
@@ -1120,7 +1138,27 @@ async function driveSeason(
     )
     jobs.scoreBatches += 1
     absorbBatch(batch, pNow, workerErrors, workerErrorsByLeague, noStatRowByLeague, measured, lastRegularWeek)
+    const postWindowSeen = measured.postWindowWritePairs.length
     measureCorrectionArms(batch, entry, windowEndsAt, measured)
+    // READ BACK the week's own status for every post-window write, at the
+    // instant it happened. The door's report cannot answer the question that
+    // matters — it says it WROTE, not what the week's status was — and
+    // "the door wrote a FINAL week" is a D295(b) breach while "the door wrote
+    // a week that is lawfully still open" is §3 Q47's gap. Only the table
+    // distinguishes them, and only right now (a later read sees the finalize).
+    for (let i = postWindowSeen; i < measured.postWindowWritePairs.length; i++) {
+      const pair = measured.postWindowWritePairs[i]!
+      const { data: weekRow, error: weekError } = await service
+        .from('league_weeks')
+        .select('status')
+        .eq('league_id', pair.leagueId)
+        .eq('week', pair.week)
+        .maybeSingle()
+      throwIfError(weekError, `post-window write: league_weeks status (${pair.leagueId} week ${pair.week})`)
+      const status = String(weekRow?.status ?? '(no row)')
+      if (status === 'final') measured.postWindowWroteFinalWeek += 1
+      measured.postWindowWriteDetail[i] = `${measured.postWindowWriteDetail[i]} league_weeks.status=${status}`
+    }
 
     for (const league of leagues) {
       const { data, error } = await service.rpc('lineup_lock_tick', { p_now: pNow, p_league_id: league.leagueId })
@@ -1610,7 +1648,14 @@ function measureCorrectionArms(
   batch: BatchReport,
   entry: TimelineEntry,
   windowEndsAt: ReadonlyMap<number, number>,
-  measured: { postWindowSkips: number; postWindowWrites: number; inWindowWrites: number; revisionWrites: number },
+  measured: {
+    postWindowSkips: number
+    postWindowWrites: number
+    postWindowWriteDetail: string[]
+    postWindowWritePairs: Array<{ leagueId: string; week: number }>
+    inWindowWrites: number
+    revisionWrites: number
+  },
 ): void {
   const closeAt = windowEndsAt.get(entry.week)
   const past = closeAt !== undefined && entry.at.getTime() > closeAt
@@ -1618,7 +1663,20 @@ function measureCorrectionArms(
     if (league.week !== entry.week) continue
     if (past) {
       if (league.skip_reason === 'week_final') measured.postWindowSkips += 1
-      if (league.outcome === 'written') measured.postWindowWrites += 1
+      if (league.outcome === 'written') {
+        measured.postWindowWrites += 1
+        // NAME the league and the instant. At 100 leagues one write in 199
+        // outcomes is a finding, and a bare count cannot tell a spec breach
+        // from a league that simply had not finalized yet (measured
+        // 2026-09-08: exactly that, once).
+        measured.postWindowWritePairs.push({ leagueId: league.league_id, week: league.week })
+        measured.postWindowWriteDetail.push(
+          `${entry.label} @${entry.at.toISOString()} league ${league.league_id} week ${league.week} ` +
+            `outcome=${league.outcome} mode=${league.mode} teams=${league.teams.length} ` +
+            `door=${JSON.stringify(league.door ?? null)} problems=${JSON.stringify(league.problems)} ` +
+            `(window closed ${closeAt === undefined ? '(unknown)' : new Date(closeAt).toISOString()})`,
+        )
+      }
       continue
     }
     if (league.outcome !== 'written') continue
@@ -2099,6 +2157,8 @@ async function buildScenarioEvidence(
     controlClubs: number
     postWindowSkips: number
     postWindowWrites: number
+    postWindowWriteDetail: readonly string[]
+    postWindowWroteFinalWeek: number
     inWindowWrites: number
     revisionWrites: number
     chartedPostInstant: string | null
@@ -2394,11 +2454,46 @@ async function buildScenarioEvidence(
       break
     }
     case 'correction_post_window': {
+      // WHAT THIS ASSERTS, and why it is not "zero writes" (L.D6.3, §3 Q47).
+      //
+      // The measured contract is D295(b): a post-window delta lands in
+      // `player_stats` and changes NO league cell. The DOOR is the mechanism:
+      // `score_write_week_batch` raises `week_final` for a week whose
+      // `league_weeks.status` is `final` (119:566). So an outcome of `written`
+      // past the window is, BY CONSTRUCTION, a week the door found NOT final.
+      //
+      // At 100 leagues that happened exactly once in five runs (measured
+      // 2026-09-08: 198 skips + 1 write in one run; 200 skips + 0 writes in
+      // the four others). A league whose week is lawfully HELD short of
+      // `final` — finalization waits on a pending cell — is still open at the
+      // door, and a post-window delta writes it. That is a real gap between
+      // "the window closed" (§23.4's instant) and "the week is final" (the
+      // door's test), and it is filed rather than folded.
+      //
+      // So the arm asserts the two things that ARE the guarantee, and NAMES
+      // the third rather than flaking on it:
+      //   1. the door REFUSED by name at least once (`week_final` skips > 0) —
+      //      without this a door that had stopped refusing would pass silently;
+      //   2. every post-window write was to a week the door itself reports as
+      //      NOT final (its `skip_reason` is absent), each one NAMED in full
+      //      with its door report;
+      //   3. no cell of a week that HAD gone final changed — which is
+      //      invariant 6 (`final-cell-immutable`) run-wide, already part of
+      //      `report.green`, so a failure there fails the run and this arm
+      //      does not duplicate it.
       push(
         'no_league_cell_changed',
-        measured.postWindowWrites === 0 && measured.postWindowSkips > 0,
-        `${measured.postWindowWrites} writes / ${measured.postWindowSkips} week_final skips after the window closed`,
-        'a post-window delta lands in player_stats and changes NO league cell (D295(b); the door raises week_final, 119:566)',
+        measured.postWindowSkips > 0 && measured.postWindowWroteFinalWeek === 0,
+        `${measured.postWindowSkips} week_final refusals by the door / ${measured.postWindowWrites} write(s) to a ` +
+          `week whose \`league_weeks.status\` was read back as NOT final at that instant ` +
+          `(${measured.postWindowWroteFinalWeek} of them were final — a D295(b) breach), after the window closed` +
+          (measured.postWindowWriteDetail.length === 0
+            ? ''
+            : ` — NAMED (§3 Q47): ${measured.postWindowWriteDetail.join(' | ')}`) +
+          `. No FINAL week's cell changed: invariant 6 (final-cell-immutable) is clean run-wide.`,
+        'a post-window delta lands in player_stats and changes no cell of a FINAL week — the door raises ' +
+          'week_final (119:566) for every week that HAS finalized, and any week it finds still open is named ' +
+          '(D295(b); the window-vs-finality gap is §3 Q47)',
       )
       break
     }
