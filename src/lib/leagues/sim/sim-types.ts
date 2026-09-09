@@ -413,6 +413,17 @@ export interface SeasonRunReport {
   invariantFailures: SeasonFailureLine[]
   jobs: { advance: number; lockTick: number; finalize: number; scoreBatches: number; polls: number }
   provenance: { statRows: number; synthetic: number; foreign: number }
+  /**
+   * `league_player_pool` rows across every league of the run — F300. The season
+   * harness drives NO add/drop traffic, and that table's only writers are
+   * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667), so
+   * this is 0 by construction and invariant 4 (pool/roster mirror) asserts
+   * NOTHING. It is REPORTED as a number rather than left implicit so the
+   * vacuity is measured, not inferred, and so the evidence stage can fail if it
+   * ever stops being 0 — at which point the mirror is live and the coverage-gap
+   * declaration that stands in for it is stale.
+   */
+  poolRows: number
   externalCalls: number
   workerErrors: string[]
   /** Reconcile findings that are NOT one of the seven invariants: counted by

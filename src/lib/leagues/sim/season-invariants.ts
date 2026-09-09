@@ -405,6 +405,30 @@ export function checkStandingsRecompute(a: SeasonAudit): SeasonInvariantFailure[
  * a roster row with NO pool row is LEGAL (§12.19; rows are created on first
  * transition), so its absence is not a violation and a naive sweep
  * false-positives here.
+ *
+ * **F300 — READ THIS BEFORE TRUSTING A PASS FROM THIS FUNCTION IN A SEASON
+ * RUN.** `league_player_pool` is a SPARSE table whose only writers are
+ * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667). The
+ * season harness drives NO add/drop traffic, so `a.pool` is EMPTY for every
+ * sim league and the loop below iterates nothing: this function returns `[]`
+ * without having asserted a single thing, and it would return `[]` just the
+ * same with the mirror rule deleted. That is a vacuous pass, and the fix is
+ * NOT to dress it up here.
+ *
+ * The claim is withdrawn instead of faked, and the withdrawal is MACHINE-
+ * CHECKED rather than left as a comment: the run reports `poolRows` (0 by
+ * construction), `seasonCoverageGaps` declares the hole in words on every
+ * report, and `gate-m4-evidence.ts` FAILS the gate if either the number or the
+ * declaration goes missing — so nobody can read invariant 4's silence as
+ * coverage, and the day the pool stops being empty the gate reds and forces
+ * this arm to be re-reasoned. Real coverage is M5's transactions/waivers work
+ * (F300's discharge); the `roster_add_drop` door itself is walked today by
+ * pgTAP and by L.D6.2's `inseason-lock.spec.ts`, not from here.
+ *
+ * The `reconcileFindings` half at the bottom is NOT vacuous — `pool_mirror_
+ * broken` comes from the reconcile library, which runs over the real
+ * population — so it stays live and is the only part of this function that can
+ * currently fail.
  */
 export function checkPoolMirror(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []

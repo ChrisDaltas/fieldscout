@@ -301,6 +301,7 @@ export async function runSeasonSim(
     invariantFailures: [],
     jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 },
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
+    poolRows: 0,
     externalCalls: 0,
     workerErrors: [],
     reconcileSummary: { leagues: 0, cells: 0, counts: {}, alerts: 0, warns: 0, infos: 0 },
@@ -450,6 +451,9 @@ export async function runSeasonSim(
       )
       const failures = sweepSeasonAudit(audit)
       report.invariantFailures.push(...failures)
+      // F300: MEASURE what invariant 4 had to work with. 0 means the
+      // pool/roster mirror asserted nothing for this league.
+      report.poolRows += audit.pool.length
       const bridgeCounts = audit.rosters.filter((r) => bridgedIds.has(r.player_id)).length
       const startedBridged = new Set<string>()
       for (const lineup of audit.lineups) {
@@ -988,6 +992,14 @@ async function driveSeason(
      *  read back — a real D295(b) breach, distinct from a write to a week the
      *  door lawfully found still open (§3 Q47). */
     postWindowWroteFinalWeek: 0,
+    /**
+     * Post-window writes to a week that is NOT final and that the FINALIZE
+     * JOB'S OWN oracles cannot explain — no games-not-final hold, no pending
+     * cell. F302/§3 Q47: a lawful hold is classifiable BY THE JOB'S REASON;
+     * anything else is unexplained and fails the arm rather than being named
+     * and waved through.
+     */
+    postWindowWroteUnexplained: 0,
     /** (leagueId, week) of each post-window write, for the status read-back. */
     postWindowWritePairs: [] as Array<{ leagueId: string; week: number }>,
     inWindowWrites: 0,
@@ -1157,7 +1169,22 @@ async function driveSeason(
       throwIfError(weekError, `post-window write: league_weeks status (${pair.leagueId} week ${pair.week})`)
       const status = String(weekRow?.status ?? '(no row)')
       if (status === 'final') measured.postWindowWroteFinalWeek += 1
-      measured.postWindowWriteDetail[i] = `${measured.postWindowWriteDetail[i]} league_weeks.status=${status}`
+      // CLASSIFY the still-open week with the FINALIZE JOB'S OWN REASON, at the
+      // same instant, from the same two oracles `finalize_matchups` consults —
+      // `week_games_state_internal` (118:2054, guard 1) and
+      // `week_results_pending_internal` (118:2074, guard 2). F302's cause is
+      // ESTABLISHED and reproducible: both guards `CONTINUE` and leave the week
+      // `correction_window` (118:2073, in so many words), and 119:570 admits
+      // exactly that status. So a post-window write to a HELD week is the
+      // lawful-hold shape §3 Q47 asks Chris to rule on — and one to a week that
+      // is neither final nor held is UNEXPLAINED, and fails the arm.
+      const hold = status === 'final' ? null : await readFinalizeHold(service, pair.leagueId, pair.week)
+      if (status !== 'final' && hold !== null && hold.reason === null) {
+        measured.postWindowWroteUnexplained += 1
+      }
+      measured.postWindowWriteDetail[i] =
+        `${measured.postWindowWriteDetail[i]} league_weeks.status=${status}` +
+        (hold === null ? '' : ` finalize-hold=${hold.detail}`)
     }
 
     for (const league of leagues) {
@@ -1641,6 +1668,64 @@ async function readClubLocks(
     results.push(`${club}=${isLocked ? 'LOCKED' : 'open'}`)
   }
   return { clubs: clubs.length, locked, detail: results.join(' ') }
+}
+
+/**
+ * WHY A WEEK IS NOT FINAL, ASKED OF THE FINALIZE JOB'S OWN ORACLES (F302 /
+ * §3 Q47). `finalize_matchups` holds a week on exactly two guards, and both
+ * `CONTINUE` out of the loop leaving the row untouched at `correction_window`
+ * (118:2073 says so verbatim: "The week is SKIPPED BY NAME and stays
+ * `correction_window`"):
+ *   guard 1, 118:2054 — `week_games_state_internal(season, week).all_final`
+ *                       false => `games_not_final` (§23.2, partial data);
+ *   guard 2, 118:2074 — `week_results_pending_internal(league, season, week)`
+ *                       non-NULL => `pending_scores` / `pending_results`
+ *                       (E61 — absence is not a score, never coerced to 0.00).
+ * The write door tests FINALITY instead (119:566 refuses `final`, 119:570
+ * admits `live` or `correction_window`), so a week held on either guard past
+ * its own `correction_window_ends_at` is still open at the door. This reads
+ * the SAME two oracles rather than mirroring their logic in TS (D289/D33), so
+ * the gate reports the job's reason, not the harness's opinion of it.
+ */
+async function readFinalizeHold(
+  service: Supabase,
+  leagueId: string,
+  week: number,
+): Promise<{ reason: string | null; detail: string }> {
+  const { data: games, error: gamesError } = await service.rpc('week_games_state_internal', {
+    p_season: SYNTHETIC_SEASON,
+    p_week: week,
+  })
+  throwIfError(gamesError, `week_games_state_internal(${SYNTHETIC_SEASON}, ${week})`)
+  const g = (Array.isArray(games) ? games[0] : games) as {
+    total_games?: number
+    final_games?: number
+    postponed_games?: number
+    open_games?: number
+    all_final?: boolean
+  } | null
+  if (g?.all_final !== true) {
+    return {
+      reason: 'games_not_final',
+      detail:
+        `games_not_final (guard 1, 118:2054; ${g?.final_games ?? '?'}/${g?.total_games ?? '?'} final, ` +
+        `${g?.postponed_games ?? '?'} postponed, ${g?.open_games ?? '?'} open)`,
+    }
+  }
+  const { data: pending, error: pendingError } = await service.rpc('week_results_pending_internal', {
+    p_league_id: leagueId,
+    p_season: SYNTHETIC_SEASON,
+    p_week: week,
+  })
+  throwIfError(pendingError, `week_results_pending_internal(${leagueId}, ${week})`)
+  const p = (pending ?? null) as { reason?: string } | null
+  if (p !== null && typeof p.reason === 'string') {
+    return { reason: p.reason, detail: `${p.reason} (guard 2, 118:2074; ${JSON.stringify(p)})` }
+  }
+  return {
+    reason: null,
+    detail: 'UNEXPLAINED — neither finalize guard holds this week, yet it is not final',
+  }
 }
 
 /** The two correction arms, measured from the worker's OWN report. */
@@ -2159,6 +2244,7 @@ async function buildScenarioEvidence(
     postWindowWrites: number
     postWindowWriteDetail: readonly string[]
     postWindowWroteFinalWeek: number
+    postWindowWroteUnexplained: number
     inWindowWrites: number
     revisionWrites: number
     chartedPostInstant: string | null
@@ -2454,46 +2540,63 @@ async function buildScenarioEvidence(
       break
     }
     case 'correction_post_window': {
-      // WHAT THIS ASSERTS, and why it is not "zero writes" (L.D6.3, §3 Q47).
+      // WHAT THIS ASSERTS, and why it is not "zero writes" (§3 Q47 / F302).
       //
       // The measured contract is D295(b): a post-window delta lands in
       // `player_stats` and changes NO league cell. The DOOR is the mechanism:
       // `score_write_week_batch` raises `week_final` for a week whose
-      // `league_weeks.status` is `final` (119:566). So an outcome of `written`
+      // `league_weeks.status` is `final` (119:566) and ADMITS one that is
+      // `live` or `correction_window` (119:570). So an outcome of `written`
       // past the window is, BY CONSTRUCTION, a week the door found NOT final.
       //
-      // At 100 leagues that happened exactly once in five runs (measured
-      // 2026-09-08: 198 skips + 1 write in one run; 200 skips + 0 writes in
-      // the four others). A league whose week is lawfully HELD short of
-      // `final` — finalization waits on a pending cell — is still open at the
-      // door, and a post-window delta writes it. That is a real gap between
-      // "the window closed" (§23.4's instant) and "the week is final" (the
-      // door's test), and it is filed rather than folded.
+      // F302's CAUSE IS ESTABLISHED (L.D6.3 fix round, 2026-09-09) and it is
+      // reproducible on demand, not a 1-in-9 mystery. `finalize_matchups`
+      // lawfully HOLDS a week on either of two guards and both `CONTINUE`
+      // leaving the row at `correction_window` — which is the one status the
+      // door treats as open. Demonstrated end to end in a ROLLED-BACK
+      // transaction on the 122 chain: a week past its
+      // `correction_window_ends_at` with one pending cell was skipped by
+      // `finalize_matchups` with its own reason `pending_scores`, stayed
+      // `correction_window`, and the door then ACCEPTED a post-window batch
+      // that moved `matchups.home_score` NULL -> 123.45. The control (the same
+      // week flipped to `final`) was refused by name with `week_final`.
+      // §23.4's window is an INSTANT; the door's test is FINALITY; they
+      // diverge exactly while a hold is in force, and the spec supplies no
+      // rule for that state. That ruling is Chris's (§3 Q47), not this gate's.
       //
-      // So the arm asserts the two things that ARE the guarantee, and NAMES
-      // the third rather than flaking on it:
+      // So the arm asserts the three things that ARE unambiguous, and
+      // CLASSIFIES the fourth rather than failing or ignoring it:
       //   1. the door REFUSED by name at least once (`week_final` skips > 0) —
       //      without this a door that had stopped refusing would pass silently;
-      //   2. every post-window write was to a week the door itself reports as
-      //      NOT final (its `skip_reason` is absent), each one NAMED in full
-      //      with its door report;
-      //   3. no cell of a week that HAD gone final changed — which is
-      //      invariant 6 (`final-cell-immutable`) run-wide, already part of
-      //      `report.green`, so a failure there fails the run and this arm
-      //      does not duplicate it.
+      //   2. no post-window write landed on a week whose `league_weeks.status`
+      //      read back as `final` at that instant — that IS the D295(b) breach;
+      //   3. every post-window write to a still-open week is EXPLAINED by the
+      //      finalize job's own oracles — `games_not_final` (guard 1) or
+      //      `pending_scores`/`pending_results` (guard 2). A write to a week
+      //      that is neither final NOR held is unexplained and FAILS: that
+      //      would be a week the job should have finalized and did not, which
+      //      is a different bug from Q47's gap and must not hide behind it;
+      //   4. no cell of a week that HAD gone final changed — invariant 6
+      //      (`final-cell-immutable`) run-wide, already part of `report.green`,
+      //      so this arm does not duplicate it.
       push(
         'no_league_cell_changed',
-        measured.postWindowSkips > 0 && measured.postWindowWroteFinalWeek === 0,
+        measured.postWindowSkips > 0 &&
+          measured.postWindowWroteFinalWeek === 0 &&
+          measured.postWindowWroteUnexplained === 0,
         `${measured.postWindowSkips} week_final refusals by the door / ${measured.postWindowWrites} write(s) to a ` +
           `week whose \`league_weeks.status\` was read back as NOT final at that instant ` +
-          `(${measured.postWindowWroteFinalWeek} of them were final — a D295(b) breach), after the window closed` +
+          `(${measured.postWindowWroteFinalWeek} of them were final — a D295(b) breach; ` +
+          `${measured.postWindowWroteUnexplained} of them UNEXPLAINED by either finalize guard), ` +
+          `after the window closed` +
           (measured.postWindowWriteDetail.length === 0
             ? ''
-            : ` — NAMED (§3 Q47): ${measured.postWindowWriteDetail.join(' | ')}`) +
+            : ` — NAMED and CLASSIFIED (§3 Q47): ${measured.postWindowWriteDetail.join(' | ')}`) +
           `. No FINAL week's cell changed: invariant 6 (final-cell-immutable) is clean run-wide.`,
         'a post-window delta lands in player_stats and changes no cell of a FINAL week — the door raises ' +
-          'week_final (119:566) for every week that HAS finalized, and any week it finds still open is named ' +
-          '(D295(b); the window-vs-finality gap is §3 Q47)',
+          'week_final (119:566) for every week that HAS finalized, and any week it finds still open is ' +
+          "classified by the finalize job's own hold reason (games_not_final 118:2054 / pending_scores " +
+          '118:2074); an unclassifiable one fails (D295(b); the window-vs-finality gap is §3 Q47/F302)',
       )
       break
     }
@@ -2618,7 +2721,29 @@ async function buildScenarioEvidence(
  * Each line: WHAT is not asserted · WHY it cannot be here · WHERE it IS
  * covered · WHAT CLOSES it.
  */
-export function seasonCoverageGaps(scenario: ScenarioId): string[] {
+export /**
+ * F300 — invariant 4 (pool/roster mirror) ASSERTS NOTHING in a season run, and
+ * says so here rather than passing on an empty table. `league_player_pool`'s
+ * only writers are `roster_add_drop_internal`'s two INSERTs (113:713/734,
+ * 115:646/667); the season harness drives no add/drop traffic, so the table is
+ * empty for every sim league and `checkPoolMirror`'s loop iterates nothing —
+ * it would return clean with the mirror rule deleted.
+ *
+ * This string is the WITHDRAWAL OF THE CLAIM, and `gate-m4-evidence.ts`
+ * asserts BOTH that it is present on every report AND that `report.poolRows`
+ * is 0, so the withdrawal cannot be quietly dropped and the emptiness cannot
+ * be quietly converted back into an apparent pass.
+ */
+const POOL_MIRROR_GAP =
+  'INVARIANT 4 (pool/roster mirror, §12.19/D294) IS NOT EXERCISED by a season run and its clean result ' +
+  'is VACUOUS, not evidence: `league_player_pool` is written ONLY by `roster_add_drop_internal` ' +
+  '(113:713/734, 115:646/667), this harness performs no add/drops, so the table is EMPTY for every sim ' +
+  'league (`report.poolRows` — asserted 0 by the evidence stage) and the mirror loop iterates nothing. ' +
+  'The only live half is the reconcile library\'s `pool_mirror_broken` finding. The `roster_add_drop` ' +
+  'door itself is covered by pgTAP and by L.D6.2\'s inseason-lock.spec.ts; real mirror coverage waits on ' +
+  'M5\'s transactions/waivers sim work. F300.'
+
+function seasonCoverageGaps(scenario: ScenarioId): string[] {
   const gaps: string[] = [
     'E32 lineup-edit LOCK REFUSAL (set_lineup at the door) is NOT asserted: `set_lineup` takes no caller ' +
       'clock, its DEFINER wrapper passes the transaction\'s now() (112:1233), and season 2099 lies before ' +
@@ -2628,6 +2753,7 @@ export function seasonCoverageGaps(scenario: ScenarioId): string[] {
     'IN-SEASON TRANSACTIONS and the Remix flow are NOT driven by the season sim: it only ever sees a ' +
       'post-draft pool. Covered by L.D6.2\'s Playwright specs (inseason-week / inseason-lock / ' +
       'inseason-remix), which the gate runs as its own stage. F284(b).',
+    POOL_MIRROR_GAP,
     'Q42 (a STARTER with a final game and no stat line) is COUNTED and CLASSIFIED, never asserted on: the ' +
       '§23.6 world publishes lines for eighteen players, so every other starter is a lawful no_stat_row by ' +
       'construction. Asserting either reading would harden an OPEN question (D327(9)).',
