@@ -150,8 +150,48 @@
 #   - F297 (OPEN): `e2e/auction-storm.spec.ts:347` failed once in a full
 #     Playwright run and passed in isolation. Treat a red AT THAT EXACT LINE
 #     the same way, IF it isolates green (`npx playwright test
-#     e2e/auction-storm.spec.ts`).
+#     e2e/auction-storm.spec.ts`). OBSERVED HERE 2026-09-08 in the composed
+#     `[9/13]` M3 gate's own Playwright stage — at `:347` exactly — and it
+#     isolated green (3 passed / 19.0s, the failing case 7.9s).
+#   - F56 (REOPENED at L.D6.3 — the gate half): the lobby->live flip choking
+#     under gate composition, at the exact locator that row records:
+#     `e2e/auction-live.spec.ts:206`,
+#     `locator('header[aria-label="Draft command bar"]').getByText(/^Draft
+#     live$/)` not visible in 30s, while the same spec passes STANDALONE on
+#     the same tree. OBSERVED HERE 2026-09-08, also inside the composed
+#     `[9/13]` M3 gate, and it isolated green (3 passed / 55.7s, the failing
+#     case 43.3s). Treat a red AT THAT EXACT LINE as F56 IF it fires once and
+#     isolates green (`npx playwright test e2e/auction-live.spec.ts`).
+#     THIS ENTRY IS NOT A LICENCE. It is here because F56's OWN promised
+#     tripwire — the settle — was BLIND to it: it sampled PostgREST at
+#     6-17ms and printed "stack settled" immediately before the failure.
+#     L.D6.3 widened the settle to round-trip REALTIME as well (a fresh
+#     channel SUBSCRIBE + a broadcast echoed back — the lobby->live flip's
+#     own delivery path) so the next occurrence is either PREVENTED or NAMED
+#     at the stage boundary. It recurred anyway, WITH the widened settle
+#     green at 7-11ms — so the choke is NOT the stack, and the competing
+#     explanation is the one to chase: `auction-live.spec.ts:181` routes the
+#     MANAGER's WebSocket through Playwright's own `routeWebSocket` proxy, a
+#     Node-side hop no stack probe can see, on a process 35 minutes into a
+#     heavy gate.
 #   Anything else: the gate is RED. Investigate, do not re-run to green.
+#
+# THE COMPOSITION'S OWN EXPOSURE, stated because it is the honest reason this
+# gate is hard to green (PROGRESS §3 Q48 / blocker B10). `test:gate:m4`
+# performs FOUR full 16-spec Playwright runs in one script: `[8/13]`'s own,
+# `[9/13]`'s M3 gate, that gate's own composed M2 gate, and `[10/13]`'s
+# SECOND M2 gate. Two end-to-end attempts on 2026-09-08 both reached `[9/13]`
+# with every M4-owned stage green and identical, and both died in a COMPOSED
+# M2/M3 Playwright stage on a DIFFERENT pre-existing named intermittent
+# (run 1: F56 at auction-live:206; run 2: F297 at auction-storm:347), each
+# isolating green. At an observed per-run failure rate around 1 in 4, an
+# all-four-green end-to-end run is roughly a coin flip. `[10/13]` in
+# particular buys nothing: `[9/13]`'s M3 gate already composed `m2 -> m1 ->
+# m0` minutes earlier on the same tree, and unlike m1/m0 (cheap, which is why
+# gate-m3.sh keeps them redundantly) a second M2 gate costs its own reset, a
+# full pgTAP, a 25-league sim and a FOURTH Playwright run. Cutting it is
+# proposed, not taken: it changes what "continuity" means for the milestone,
+# which is a ruling and not a Builder's call.
 #   F292 IS DELIBERATELY NOT IN THIS BLOCK. It was a DETERMINISTIC red on
 #   `main` (journey.spec.ts:79), fixed and merged at PR #277 before this gate
 #   was built. This block names intermittent MECHANISMS; listing a
