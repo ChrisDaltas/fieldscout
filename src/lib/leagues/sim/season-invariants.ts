@@ -405,6 +405,44 @@ export function checkStandingsRecompute(a: SeasonAudit): SeasonInvariantFailure[
  * a roster row with NO pool row is LEGAL (§12.19; rows are created on first
  * transition), so its absence is not a violation and a naive sweep
  * false-positives here.
+ *
+ * **F300 — READ THIS BEFORE TRUSTING A PASS FROM THIS FUNCTION IN A SEASON
+ * RUN.** `league_player_pool` is a SPARSE table whose only writers are
+ * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667). The
+ * season harness drives NO add/drop traffic, so `a.pool` is EMPTY for every
+ * sim league and the loop below iterates nothing: this function returns `[]`
+ * without having asserted a single thing, and it would return `[]` just the
+ * same with the mirror rule deleted. That is a vacuous pass, and the fix is
+ * NOT to dress it up here.
+ *
+ * The claim is withdrawn instead of faked, and the withdrawal is MACHINE-
+ * CHECKED rather than left as a comment: the run reports `poolRows` (0 by
+ * construction), `seasonCoverageGaps` declares the hole in words on every
+ * report, and `gate-m4-evidence.ts` FAILS the gate if either the number or the
+ * declaration goes missing — so nobody can read invariant 4's silence as
+ * coverage, and the day the pool stops being empty the gate reds and forces
+ * this arm to be re-reasoned. Real coverage is M5's transactions/waivers work
+ * (F300's discharge); the `roster_add_drop` door itself is walked today by
+ * pgTAP and by L.D6.2's `inseason-lock.spec.ts`, not from here.
+ *
+ * R950 (#278 review) CORRECTS WHAT STOOD HERE. This paragraph used to say the
+ * `reconcileFindings` half at the bottom was "NOT vacuous … the only part of
+ * this function that can currently fail", because `pool_mirror_broken` comes
+ * from the reconcile library and that "runs over the real population". IT IS
+ * DEAD FOR THE SAME REASON: reconcile builds its `poolState` from
+ * `league_player_pool` (reconcile.ts:645-647) over the SAME leagues this run
+ * seeded (`season-runner.ts` scopes `reconcileSeason` to `leagueIds`), so with
+ * the table empty its first loop iterates nothing (:648) and its second fires
+ * only on `state !== undefined && state !== 'rostered'`, which an empty map
+ * never produces (:660-662). A season run cannot emit that finding at all, and
+ * that false clause sat inside the string `gate-m4-evidence.ts` machine-checks
+ * — restoring the very "silence reads as coverage" impression this withdrawal
+ * exists to destroy, and inviting F300 to be closed on coverage that does not
+ * exist. REAL coverage is where the paragraph above says it is: the
+ * `roster_add_drop` door is walked by pgTAP and by L.D6.2's
+ * `inseason-lock.spec.ts`; the mirror itself waits on M5's
+ * transactions/waivers sim work (F300's discharge). Nothing in THIS function
+ * can currently fail.
  */
 export function checkPoolMirror(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []

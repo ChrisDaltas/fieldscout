@@ -31,6 +31,8 @@
  * here reads .env.local.
  */
 
+import { createClient } from '@supabase/supabase-js'
+
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_SERVICE_ROLE_KEY =
   process.env.SUPABASE_LOCAL_SERVICE_ROLE_KEY ??
@@ -42,6 +44,16 @@ const CONSECUTIVE_OK_REQUIRED = 5
 const LATENCY_BUDGET_MS = 400
 /** Per-request abort bar (a hung response is a failed sample, not a hang). */
 const REQUEST_TIMEOUT_MS = 5_000
+/** Per-sample bar for a REALTIME round trip (fresh channel SUBSCRIBE + a
+ *  broadcast echoed back to the same client). An idle local stack does this
+ *  in ~5-30ms (measured on an idle stack 2026-09-08), so 1s is ~30x head-room
+ *  while still discriminating a stack that answers but slowly; the F56 shape
+ *  is a subscribe/delivery that never completes at all, which the ABORT
+ *  catches. Falsified against a closed port: `realtime subscribe status
+ *  CHANNEL_ERROR`. */
+const REALTIME_BUDGET_MS = 1_000
+/** Per-round-trip abort bar (a channel that never joins is a failed sample). */
+const REALTIME_TIMEOUT_MS = 8_000
 /** Sample cadence. */
 const SAMPLE_INTERVAL_MS = 1_000
 /** Total budget — bounded (F56: "a diagnosed wait, never a blind sleep"). */
@@ -80,10 +92,90 @@ async function sampleDraftState(): Promise<{ ok: boolean; detail: string }> {
   }
 }
 
+/**
+ * THE REALTIME HALF — added at L.D6.3 because F56's own tripwire was BLIND to
+ * the thing F56 is about.
+ *
+ * MEASURED 2026-09-08 in the first end-to-end `test:gate:m4` run: the settle
+ * sampled PostgREST at 17/6/13/13/10 ms — an idle stack by any reading — and
+ * reported "settled after 5 samples"; the very next stage then failed at
+ * `auction-live.spec.ts:206` on
+ * `locator('header[aria-label="Draft command bar"]').getByText(/^Draft live$/)`
+ * not visible in 30 s, which is F56's recorded post-R399 signature VERBATIM,
+ * and the same spec passed standalone in 43 s minutes later on the same tree.
+ *
+ * F56's row promised that "if it recurs, the settle is the tripwire that turns
+ * a 30 s Playwright timeout mystery into a named, sampled stack-health failure
+ * at the stage boundary". It did not, and it could not: the REST probe
+ * measures PostgREST, while the failure is a REALTIME subscribe/delivery that
+ * never completes. A gate that waits on the wrong protocol is a blind sleep
+ * wearing a diagnosis.
+ *
+ * So each sample now round-trips REALTIME too: a FRESH channel is subscribed
+ * (the manager page's own first act on entering a room) and a broadcast is
+ * echoed back to the same client (the lobby->live flip's own delivery path).
+ * Both halves must be OK for a sample to count, and the consecutive counter
+ * resets on either.
+ */
+async function sampleRealtime(): Promise<{ ok: boolean; detail: string }> {
+  const started = Date.now()
+  const client = createClient(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+    realtime: { params: { eventsPerSecond: 20 } },
+  })
+  const channel = client.channel(`gate-settle-${started}-${Math.floor(Math.random() * 1e6)}`, {
+    config: { broadcast: { self: true } },
+  })
+  try {
+    const outcome = await new Promise<{ ok: boolean; detail: string }>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve({
+          ok: false,
+          detail: `realtime round trip did not complete in ${REALTIME_TIMEOUT_MS}ms (subscribe or delivery never landed)`,
+        })
+      }, REALTIME_TIMEOUT_MS)
+      const done = (result: { ok: boolean; detail: string }): void => {
+        clearTimeout(timer)
+        resolve(result)
+      }
+      channel.on('broadcast', { event: 'settle' }, () => {
+        const latency = Date.now() - started
+        if (latency > REALTIME_BUDGET_MS) {
+          done({ ok: false, detail: `realtime echoed but in ${latency}ms > ${REALTIME_BUDGET_MS}ms budget` })
+          return
+        }
+        done({ ok: true, detail: `realtime subscribe+echo in ${latency}ms` })
+      })
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void channel.send({ type: 'broadcast', event: 'settle', payload: { at: started } })
+          return
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          done({ ok: false, detail: `realtime subscribe status ${status} after ${Date.now() - started}ms` })
+        }
+      })
+    })
+    return outcome
+  } finally {
+    try {
+      await client.removeChannel(channel)
+    } catch {
+      /* the sample already reported; teardown noise is not a signal */
+    }
+    try {
+      client.realtime.disconnect()
+    } catch {
+      /* idem */
+    }
+  }
+}
+
 async function main(): Promise<void> {
   console.log(
     `[gate-settle] F56 bounded stack-health settle: need ${CONSECUTIVE_OK_REQUIRED} consecutive ` +
-      `OK draft-state responses (200 + <${LATENCY_BUDGET_MS}ms), budget ${TOTAL_BUDGET_MS / 1000}s`,
+      `OK samples — REST draft-state (200 + <${LATENCY_BUDGET_MS}ms) AND a REALTIME subscribe+echo ` +
+      `(<${REALTIME_BUDGET_MS}ms) — budget ${TOTAL_BUDGET_MS / 1000}s`,
   )
   const deadline = Date.now() + TOTAL_BUDGET_MS
   const trail: string[] = []
@@ -91,9 +183,14 @@ async function main(): Promise<void> {
   let sampleNo = 0
   while (Date.now() < deadline) {
     sampleNo += 1
-    const { ok, detail } = await sampleDraftState()
+    const rest = await sampleDraftState()
+    // The REALTIME half is sampled even when REST already failed, so the trail
+    // says which protocol was unhealthy rather than only that something was.
+    const realtime = await sampleRealtime()
+    const ok = rest.ok && realtime.ok
     consecutive = ok ? consecutive + 1 : 0
-    const line = `[gate-settle] sample ${sampleNo}: ${detail} — consecutive OK: ${consecutive}`
+    const line =
+      `[gate-settle] sample ${sampleNo}: ${rest.detail} · ${realtime.detail} — consecutive OK: ${consecutive}`
     trail.push(line)
     console.log(line)
     if (consecutive >= CONSECUTIVE_OK_REQUIRED) {
@@ -104,8 +201,9 @@ async function main(): Promise<void> {
   }
   console.error(
     `[gate-settle] FAILED: the stack never produced ${CONSECUTIVE_OK_REQUIRED} consecutive OK ` +
-      `draft-state responses within ${TOTAL_BUDGET_MS / 1000}s of the sim stage ending. This is ` +
-      `the F56 post-load contention family presenting at the settle rather than inside a spec — ` +
+      `samples (REST draft-state AND a REALTIME subscribe+echo) within ${TOTAL_BUDGET_MS / 1000}s ` +
+      `of the previous stage ending. This is the F56 post-load contention family presenting at the ` +
+      `settle rather than inside a spec — read the trail below for WHICH protocol was unhealthy, ` +
       `investigate the stack (docker stats, supabase logs), do NOT retry the gate blind.`,
   )
   console.error(trail.join('\n'))

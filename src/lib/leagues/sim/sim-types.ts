@@ -110,6 +110,18 @@ export interface SeasonLeaguePlan {
   /** 0 in a `total_points` league — the coupling above. */
   playoffTeams: number
   playoffStartWeek: number
+  /** D299's PARITY-TEMPLATE axis, added at L.D6.3 — until then every league
+   *  was hard-coded to `ESPN Standard` (runner.ts's one template lookup), so
+   *  seven of the eight shipped templates were never scored through by a
+   *  season run at all. Rotated by a seeded offset: at n >= 8 leagues every
+   *  shipped template appears BY CONSTRUCTION. */
+  scoringTemplate: string
+  /** D299's §7.3.3.1 CUSTOM-FORK arm: this league forks its template into its
+   *  own editable document (`scoring_fork_template`, 105:277) and applies one
+   *  legal coefficient edit (`scoring_update_rules`, 105:461) while it is
+   *  still in `setup` — the state a sim league sits in between creation and
+   *  draft start. Exactly one league per run (n >= 2). */
+  forkScoring: boolean
 }
 
 /** The auction matrix axes L.C4.1 must cover at head (the five-lane rule in
@@ -269,6 +281,33 @@ export type ScenarioAssertionName =
   | 'finalization_unaffected'
   | 'non_final_cells_recomputed'
   | 'no_league_cell_changed'
+  // ── The two charted arms, as they are LEGALLY observable today ───────────
+  // L.D6.3/F283/Q44. `example_charted_yards` is the registry's ONLY
+  // `tier: 'charted'` key and it carries `scoring_surface: 'reserved'`
+  // (stat-keys.ts:204). Spec §23.5 (spec:2200) makes a reserved key "never
+  // scorable in a format-2 doc, validation-rejected"; the chain enforces it
+  // (103's `c_reserved` behind 104's wall on `leagues.scoring_rules_snapshot`
+  // — MEASURED: `scoring_rules_validate({...ESPN, example_charted_yards:
+  // 0.1})` answers `"example_charted_yards" cannot be scored — it is a
+  // reserved key (§23.5)`), and none of the eight shipped templates pays any
+  // charted key. So a charted arrival cannot move a league cell on this
+  // chain, and E61's pending-not-zero cannot be asserted at league level
+  // WITHOUT certifying a configuration the spec forbids.
+  //
+  // What IS legally observable — and is what these two names measure — is
+  // §23.5's own league-level promise: the charted value is INGESTED into
+  // `player_stats.advanced`, ENQUEUES a `score_fanout` delta, DRAINS through
+  // the real worker, changes NO league cell, and **"finalization timing does
+  // not move"** (spec §23.5, the two-phase bullet).
+  | 'charted_ingested_no_cell_change'
+  | 'charted_revision_recomputed_in_window'
+  // ── The TARGET state, kept in the union and deliberately UNEMITTED ───────
+  // These are what the tasks-M4 L.D6.3 row asks for verbatim. They are not
+  // emitted by any arm today and MUST NOT be reused for a different
+  // measurement — a name that means E61 must keep meaning E61. They start
+  // being emitted when an Ultra-class template ships (spec §23.5, deferred)
+  // or a charted key is promoted to `scorable`. Until then the run prints a
+  // non-failing `coverageGaps` line naming exactly this hole (Q44).
   | 'pending_not_zero'
   | 'recomputed_in_window'
 
@@ -310,6 +349,11 @@ export interface SeasonLeagueResult {
   /** Starting slots left EMPTY across them — lawful (114:585-588 flags an
    *  empty slot and never blocks on it), counted rather than hidden. */
   lineupSlotsLeftEmpty: number
+  /** WHICH slot keys were left empty, and how many times — F288. A count
+   *  alone cannot tell a structurally unreachable position (no kicker inside
+   *  the draft's ADP reach) from one team's odd board, and the difference is
+   *  the whole finding. */
+  lineupEmptySlotKeys: Record<string, number>
   /** Players passed over because §7.3.6 would refuse the DESIGNATION
    *  (OUT/IR/PUP/NFI/Suspended). Only ever non-zero in an OFF league. */
   benchedForLegality: number
@@ -358,6 +402,10 @@ export interface SeasonRunReport {
   startedAt: string
   finishedAt: string
   planLines: string[]
+  /** The D299 in-season axes each league was CREATED with — the PLAN's own
+   *  echo, printed beside the read-back `matrixLine` so a reviewer can compare
+   *  what was planned with what the row actually holds. */
+  seasonPlanLines: string[]
   /** scenario player id → real players.id, one line per bridged slot. */
   bridgeLines: string[]
   leagues: SeasonLeagueResult[]
@@ -365,6 +413,17 @@ export interface SeasonRunReport {
   invariantFailures: SeasonFailureLine[]
   jobs: { advance: number; lockTick: number; finalize: number; scoreBatches: number; polls: number }
   provenance: { statRows: number; synthetic: number; foreign: number }
+  /**
+   * `league_player_pool` rows across every league of the run — F300. The season
+   * harness drives NO add/drop traffic, and that table's only writers are
+   * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667), so
+   * this is 0 by construction and invariant 4 (pool/roster mirror) asserts
+   * NOTHING. It is REPORTED as a number rather than left implicit so the
+   * vacuity is measured, not inferred, and so the evidence stage can fail if it
+   * ever stops being 0 — at which point the mirror is live and the coverage-gap
+   * declaration that stands in for it is stale.
+   */
+  poolRows: number
   externalCalls: number
   workerErrors: string[]
   /** Reconcile findings that are NOT one of the seven invariants: counted by
@@ -381,6 +440,11 @@ export interface SeasonRunReport {
   censusBefore: string
   censusAfter: string
   problems: string[]
+  /** What this run does NOT assert, and why — ALWAYS printed, NEVER failing.
+   *  A gap that is loud on every run is not a silent fold; a gap that lives
+   *  only in a PR description is. L.D6.3's evidence stage prints these and
+   *  PROGRESS records them (the task row's item 4). */
+  coverageGaps: string[]
   /** Never an empty success (CLAUDE.md): a run that drove nothing says why. */
   reason: 'no_leagues' | 'no_weeks_driven' | null
   green: boolean

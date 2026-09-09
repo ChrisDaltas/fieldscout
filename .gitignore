@@ -46,3 +46,8 @@ redesign_pkg.zip
 /e2e/.auth/
 /playwright-report/
 /test-results/
+
+# M4 gate evidence (L.D6.3) — the nine `sim season --report` JSONs the gate
+# writes and its evidence stage reads. Regenerated on every run; the RECORD
+# lives in PROGRESS and the PR body, never in the tree.
+/.gate-m4/
