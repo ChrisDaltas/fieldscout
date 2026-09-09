@@ -6,6 +6,9 @@
  * without a socket. Golden values are stored literals (tasks-M1 §4.3).
  */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { Draft } from '@/types/database'
@@ -23,6 +26,8 @@ import {
   heartbeatSilenceExceeded,
   maxKnownPickNumber,
   presenceTeamForDraft,
+  ROOM_WATCHDOG_MS,
+  roomWatchdogWantsRefetch,
   type DraftsBroadcastRecord,
   type PickBroadcastRecord,
 } from './use-draft-ops'
@@ -630,6 +635,84 @@ describe('heartbeat', () => {
   it('both-null deadlines (untimed draft) agree — no gap', () => {
     const untimed = baseState({ draft: draftRow({ current_deadline: null }) })
     expect(heartbeatSignalsGap(untimed, { current_deadline: null })).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The room watchdog — F56's gate half (the pre-start reconcile)
+// ---------------------------------------------------------------------------
+
+describe('roomWatchdogWantsRefetch (F56)', () => {
+  const t0 = Date.parse('2026-08-13T00:00:00.000Z')
+
+  it('the cadence is the stored 5s literal — D94\u2019s own number for this flip', () => {
+    expect(ROOM_WATCHDOG_MS).toBe(5_000)
+  })
+
+  it('SCHEDULED asks on every beat — a scheduled draft emits NO beats, so silence proves nothing', () => {
+    // The F56 shape: the room believes the draft has not started, the only
+    // thing that can tell it otherwise is one broadcast, and that broadcast
+    // can be lost (D109(9)/F74). The room must ASK — including on the very
+    // first beat, with no beat ever received.
+    expect(roomWatchdogWantsRefetch({ status: 'scheduled', lastBeatAtMs: null, nowMs: t0 })).toBe(
+      true,
+    )
+    expect(
+      roomWatchdogWantsRefetch({ status: 'scheduled', lastBeatAtMs: t0, nowMs: t0 + 1 }),
+    ).toBe(true)
+  })
+
+  it('LIVE keeps the silence rule EXACTLY — boundary at the stored 45s literal', () => {
+    expect(
+      roomWatchdogWantsRefetch({ status: 'live', lastBeatAtMs: t0, nowMs: t0 + HEARTBEAT_SILENCE_MS }),
+    ).toBe(false)
+    expect(
+      roomWatchdogWantsRefetch({
+        status: 'live',
+        lastBeatAtMs: t0,
+        nowMs: t0 + HEARTBEAT_SILENCE_MS + 1,
+      }),
+    ).toBe(true)
+  })
+
+  it('LIVE with no beat yet never fires — the join has not had its first beat', () => {
+    expect(
+      roomWatchdogWantsRefetch({ status: 'live', lastBeatAtMs: null, nowMs: t0 + 600_000 }),
+    ).toBe(false)
+  })
+
+  it('every other status is inert — paused, complete, and no draft at all', () => {
+    for (const status of ['paused', 'complete', null, undefined]) {
+      expect(
+        roomWatchdogWantsRefetch({ status, lastBeatAtMs: t0, nowMs: t0 + 600_000 }),
+        `status ${String(status)}`,
+      ).toBe(false)
+    }
+  })
+})
+
+describe('use-draft.ts drives its watchdog from the rule — source pin (F56)', () => {
+  const source = readFileSync(path.resolve(__dirname, 'use-draft.ts'), 'utf8')
+  /** The watchdog interval body: from `const silenceTimer` to its cadence. */
+  const start = source.indexOf('const silenceTimer = setInterval(')
+  const body = source.slice(start, source.indexOf('}, ROOM_WATCHDOG_MS)', start))
+
+  it('the watchdog exists and asks the pure rule', () => {
+    expect(start).toBeGreaterThan(-1)
+    expect(body).toContain('roomWatchdogWantsRefetch({')
+    expect(source).toContain('}, ROOM_WATCHDOG_MS)')
+  })
+
+  it('the pre-fix inline condition is GONE — no re-declared status/silence test in the effect', () => {
+    // The bug this pin protects: the watchdog\u2019s condition was inline and
+    // gated on `status === 'live'`, which is why the SCHEDULED room had no
+    // reconciliation at all. If someone re-inlines it, this reddens.
+    expect(body).not.toContain("=== 'live'")
+    expect(body).not.toContain('heartbeatSilenceExceeded(')
+  })
+
+  it('the cadence is the named constant, not a re-typed literal', () => {
+    expect(source).not.toContain('}, 5_000)')
   })
 })
 

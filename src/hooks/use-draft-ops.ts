@@ -436,6 +436,67 @@ export function heartbeatSilenceExceeded(
 }
 
 /**
+ * The room watchdog's cadence — the interval on which a mounted room asks
+ * itself whether it still believes what it is rendering. 5s, the same number
+ * `AUTO_START_POLL_MS` (D94) already chose for the pre-start flip, so there
+ * is one cadence for this transition and not two.
+ */
+export const ROOM_WATCHDOG_MS = 5_000
+
+/**
+ * Does THIS watchdog beat owe the room a refetch? (F56's gate half.)
+ *
+ * Two arms, and the second one is the fix:
+ *
+ * - **live** — the original rule. A live draft beats every tick pass, so
+ *   silence past `HEARTBEAT_SILENCE_MS` is doubt (the lost-pause-broadcast
+ *   recovery — a paused draft emits no beats, D109(6)).
+ *
+ * - **scheduled** — a scheduled draft emits NO beats at all, so silence
+ *   carries no information here and the only honest test is to ASK. Without
+ *   this arm the pre-start room is the ONE room state with no reconciliation
+ *   of any kind: the live arm above is gated on `status === 'live'`; the D94
+ *   lobby's own poll (`draft-lobby.tsx`) is armed only while
+ *   `autoStartPollMs` is non-null, i.e. within `AUTO_START_WATCH_MS` (2
+ *   minutes) of a STORED instant — so a commissioner who presses "Start
+ *   draft now" earlier than that, or a league with no stored instant at all
+ *   (the lobby's own no-countdown sub-state), leaves every member's lobby
+ *   with a single delivery path and no backstop; and the room's own query
+ *   has no interval and no focus refetch. A single lost `drafts` broadcast —
+ *   a documented possibility, not a hypothetical (D109(9): `realtime.send()`
+ *   drops silently while the service boots; F74/D325: a join acked on a
+ *   socket that was already closing is SUBSCRIBED and then orphaned deaf,
+ *   with no error to react to) — therefore parked the room on the
+ *   settings-countdown while the draft ran without it, until a reload.
+ *
+ *   MEASURED 2026-09-08 (F56): with the manager's channel SUBSCRIBED and
+ *   then silently receiving nothing, the room sat on "Draft scheduled" for
+ *   the full 30s of `auction-live.spec.ts:206` and never issued one request —
+ *   this row's recorded signature, verbatim, including the surface.
+ *
+ *   This is the room's own stated doctrine applied to the one transition
+ *   that was exempt from it: *never depend on missed broadcasts*
+ *   (`use-draft.ts`, §9.3).
+ *
+ * Every other status is inert, and each for its own reason (unchanged from
+ * the pre-F56 rule): a `paused` room is not silent-by-accident but silent-by-
+ * design (D109(6)), and its missed-RESUME recovery is `heartbeatSignalsGap` —
+ * a beat arriving while we believe the draft paused mismatches by
+ * construction; a `complete` draft has nothing left to reconcile; and an
+ * absent draft row means the room is not rendering one.
+ */
+export function roomWatchdogWantsRefetch(input: {
+  status: string | null | undefined
+  lastBeatAtMs: number | null
+  nowMs: number
+}): boolean {
+  const { status, lastBeatAtMs, nowMs } = input
+  if (status === 'scheduled') return true
+  if (status !== 'live') return false
+  return lastBeatAtMs !== null && heartbeatSilenceExceeded(lastBeatAtMs, nowMs)
+}
+
+/**
  * True when the heartbeat's deadline is not the one we hold — we missed a
  * drafts UPDATE (pause/resume/clock-edit/advance) ⇒ refetch. Both-null
  * (untimed) agrees. A heartbeat while we believe the draft is paused
