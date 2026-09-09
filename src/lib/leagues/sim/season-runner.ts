@@ -92,6 +92,8 @@ import {
   SyntheticStatsProvider,
 } from '../stats/synthetic/synthetic-stats-provider'
 import { VirtualClock } from '../time/virtual-clock'
+
+import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
@@ -453,10 +455,11 @@ export async function runSeasonSim(
           if (bridgedIds.has(p)) startedBridged.add(`${lineup.team_id}:${lineup.week}:${p}`)
         }
       }
-      const seating = driven.seatingByLeague.get(state.leagueId) ?? {
+      const seating: LeagueSeating = driven.seatingByLeague.get(state.leagueId) ?? {
         seated: 0,
         refused: 0,
         emptySlots: 0,
+        emptySlotKeys: {},
         benchedForLegality: 0,
         slotsFilled: 0,
       }
@@ -470,6 +473,7 @@ export async function runSeasonSim(
         lineupsRefused: seating.refused,
         lineupSlotsFilled: seating.slotsFilled,
         lineupSlotsLeftEmpty: seating.emptySlots,
+        lineupEmptySlotKeys: { ...seating.emptySlotKeys },
         benchedForLegality: seating.benchedForLegality,
         matrixLine: state.matrixLine,
         weeksDriven: [...driven.weeksDriven],
@@ -480,6 +484,23 @@ export async function runSeasonSim(
         noStatRowStarters: audit.noStatRowStarters,
         durationMs: deps.clock.nowMs() - state.startedAt,
         failures,
+      }
+      // F288 / PROGRESS §3 Q45: an EMPTY starting slot is lawful (114:585-588
+      // flags it and never blocks), but a run that leaves one has NOT
+      // exercised that position's scoring rules for that team — and before
+      // L.D6.3 the count was printed and entered nothing, so 71 of 96 filled
+      // slots read as a fully seated league. It is a run PROBLEM now, named by
+      // slot key: the honest failure mode of a gate whose job is certifying
+      // that scoring works is a position it never scored.
+      if (result.lineupSlotsLeftEmpty > 0) {
+        report.problems.push(
+          `${state.label}: ${result.lineupSlotsLeftEmpty} starting slot(s) left EMPTY across the week-1 lineups ` +
+            `[${Object.entries(result.lineupEmptySlotKeys)
+              .map(([key, n]) => `${key}×${n}`)
+              .join(' ')}] — lawful at 114:585-588, but that position's scoring rules go unexercised for those ` +
+            `teams. Either the draft cannot reach the position inside its ADP window (personas.ts ` +
+            `\`bestForNeed\`/POOL_WINDOW) or a seat spent a pick it needed (F288).`,
+        )
       }
       report.leagues.push(result)
       log(
@@ -1581,48 +1602,11 @@ function measureCorrectionArms(
  * audit posture, which posts the system message to league chat. That is the
  * real door a commissioner uses, not a harness back-channel.
  */
-/**
- * §7.3.6's blocking designations, exactly as `lineup_designation_internal`
- * (112:337-353) spells them after bridging `players.status`. `Doubtful` is
- * NOT here: 114:596 blocks only these five.
- */
-export const BLOCKING_DESIGNATIONS: ReadonlySet<string> = new Set([
-  'OUT',
-  'IR',
-  'PUP',
-  'NFI',
-  'Suspended',
-])
-
-/**
- * `players.status` → the §7.3.2 designation, the TS side of 112:337-353.
- *
- * This is a CLIENT's preference, not an oracle. The sim is choosing what to
- * SUBMIT, exactly as a manager's UI does; the SERVER still decides, and if
- * this function is wrong the run goes RED on a `set_lineup` 409 rather than
- * quietly passing — which is what keeps it falsifiable (the same posture
- * D327(5) records for the greedy slot fit, which is not a mirror of
- * `lineup_fit_internal` either).
- */
-export function simDesignation(status: string | null | undefined): string | null {
-  switch ((status ?? '').trim().toLowerCase()) {
-    case 'out':
-      return 'OUT'
-    case 'ir':
-      return 'IR'
-    case 'doubtful':
-      return 'Doubtful'
-    case 'pup':
-      return 'PUP'
-    case 'nfi':
-      return 'NFI'
-    case 'sus':
-    case 'suspended':
-      return 'Suspended'
-    default:
-      return null
-  }
-}
+// §7.3.6's blocking designations and the `players.status` bridge moved to
+// `./designations` at L.D6.3 so the DRAFT runner's need-aware season personas
+// can import them without a module cycle (runner -> season-runner -> runner).
+// Re-exported here: every existing importer and every pin is unmoved.
+export { BLOCKING_DESIGNATIONS, simDesignation }
 
 /** A roster player as the seating chooser reads him. */
 export interface SeatCandidate {
@@ -1694,6 +1678,9 @@ export interface LeagueSeating {
   refused: number
   /** Starting slots left empty across the league's accepted lineups. */
   emptySlots: number
+  /** …named by slot key, so an unreachable POSITION is distinguishable from
+   *  one odd board (F288). */
+  emptySlotKeys: Record<string, number>
   /** Players passed over for a blocking designation (OFF leagues only). */
   benchedForLegality: number
   /** Slots actually filled across the league's accepted lineups. */
@@ -1711,7 +1698,14 @@ async function seedLineups(
 ): Promise<Map<string, LeagueSeating>> {
   const out = new Map<string, LeagueSeating>()
   for (const league of leagues) {
-    const seating: LeagueSeating = { seated: 0, refused: 0, emptySlots: 0, benchedForLegality: 0, slotsFilled: 0 }
+    const seating: LeagueSeating = {
+      seated: 0,
+      refused: 0,
+      emptySlots: 0,
+      emptySlotKeys: {},
+      benchedForLegality: 0,
+      slotsFilled: 0,
+    }
     out.set(league.leagueId, seating)
     const commishClient = league.ownerId === null ? undefined : bots.get(league.ownerId)
     if (commishClient === undefined) {
@@ -1814,6 +1808,9 @@ async function seedLineups(
       seating.seated += 1
       seating.slotsFilled += Object.keys(slotMap).length
       seating.emptySlots += seat.emptySlots.length
+      for (const key of seat.emptySlots) {
+        seating.emptySlotKeys[key] = (seating.emptySlotKeys[key] ?? 0) + 1
+      }
       seating.benchedForLegality += seat.benchedForLegality.length
     }
   }
@@ -2562,7 +2559,10 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
     // on the transcript, not inferred from the absence of a 409.
     lines.push(
       `      lineups week 1: ${league.lineupsSeated}/${league.teamCount} seated · ${league.lineupsRefused} refused · ` +
-        `${league.lineupSlotsFilled} slots filled / ${league.lineupSlotsLeftEmpty} left empty · ` +
+        `${league.lineupSlotsFilled} slots filled / ${league.lineupSlotsLeftEmpty} left empty` +
+        (league.lineupSlotsLeftEmpty === 0
+          ? ' · '
+          : ` [${Object.entries(league.lineupEmptySlotKeys).map(([k, n]) => `${k}×${n}`).join(' ')}] · `) +
         `benched for legality ${league.benchedForLegality}` +
         (league.allowIllegalLineups ? '' : '   <- §7.3.6 ENFORCED (D299 legality arm)'),
     )

@@ -88,6 +88,7 @@ import { SIM_SEASON_GAME_PREFIX } from './season-scenario'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from './synthetic-season'
 import type { RosterSettings } from '../settings/league-settings'
 
+import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
 import { decidePick, desiredQueue, type PickContext } from './personas'
 import {
   decideBid,
@@ -577,15 +578,42 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
   }
 
   // The league's pool view: real players, ADP ascending (068's walk head).
+  // `position`/`status` join the projection for season mode's need-aware
+  // personas (F288) — a draft-only run reads them and never consults them,
+  // so its decision stream is unchanged.
   const { data: poolRows, error: poolError } = await limit(() =>
     commish.client
       .from('players')
-      .select('id, adp')
+      .select('id, adp, position, status')
       .order('adp', { ascending: true, nullsFirst: false })
       .limit(POOL_WINDOW),
   )
   throwIfError(poolError, `${label}: pool read`)
   const poolByAdp = (poolRows ?? []).map((p) => p.id as string)
+  const positionById = new Map<string, string>()
+  const statusById = new Map<string, string | null>()
+  for (const row of poolRows ?? []) {
+    const raw = String(row.position ?? '').toUpperCase()
+    positionById.set(row.id as string, raw === 'DEF' ? 'DST' : raw)
+    statusById.set(row.id as string, (row.status ?? null) as string | null)
+  }
+  // §7.3.6 refuses a STARTER carrying a blocking designation only where the
+  // league polices legality; where it does not, an OUT starter is lawful and
+  // seating him is coverage of that arm (season-runner's `chooseStarterSlots`
+  // makes the same distinction, from the same list).
+  const blockedAsStarter = (playerId: string): boolean => {
+    if (season === undefined || season.allowIllegalLineups) return false
+    const designation = simDesignation(statusById.get(playerId) ?? null)
+    return designation !== null && BLOCKING_DESIGNATIONS.has(designation)
+  }
+  const seasonSlots = SEASON_ROSTER.starting_slots.flatMap((sl) =>
+    Array.from({ length: sl.count }, (_, i) => ({
+      key: sl.count === 1 ? sl.key : `${sl.key}${i + 1}`,
+      eligible: sl.eligible,
+    })),
+  )
+  /** Player ids each seat has drafted — season mode's need input (F288). */
+  const rosterByTeam = new Map<string, string[]>()
 
   if (args.verbose) log(`${label}: live — ${plan.teamCount} × ${totalRounds} = ${totalPicks} picks`)
 
@@ -617,7 +645,13 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
       const picks = await readPicks(args, reader, draftId)
       if (picks !== null) {
         drafted.clear()
-        for (const p of picks) drafted.add(p.player_id)
+        rosterByTeam.clear()
+        for (const p of picks) {
+          drafted.add(p.player_id)
+          const own = rosterByTeam.get(p.team_id) ?? []
+          own.push(p.player_id)
+          rosterByTeam.set(p.team_id, own)
+        }
       }
     }
 
@@ -685,6 +719,20 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
     const ctx: PickContext = {
       availableByAdp: available,
       queue: (ownQueue ?? []).map((q) => q.player_id).filter((id) => !drafted.has(id)),
+      // SEASON MODE ONLY (F288). `season === undefined` on a draft run leaves
+      // the field absent, so `decidePick` takes the identical branch it always
+      // did and the M2/M3 gates' stored-literal seed-42 runs do not move.
+      ...(season === undefined
+        ? {}
+        : {
+            seasonNeed: {
+              slots: seasonSlots,
+              rosterPlayerIds: rosterByTeam.get(seat.teamId) ?? [],
+              rounds: totalRounds,
+              positionOf: (id: string) => positionById.get(id) ?? null,
+              blockedAsStarter,
+            },
+          }),
     }
 
     // Queue maintenance first (real route; chaos double-taps it — F54).

@@ -337,6 +337,11 @@ export interface SeasonLeagueResult {
   /** Starting slots left EMPTY across them — lawful (114:585-588 flags an
    *  empty slot and never blocks on it), counted rather than hidden. */
   lineupSlotsLeftEmpty: number
+  /** WHICH slot keys were left empty, and how many times — F288. A count
+   *  alone cannot tell a structurally unreachable position (no kicker inside
+   *  the draft's ADP reach) from one team's odd board, and the difference is
+   *  the whole finding. */
+  lineupEmptySlotKeys: Record<string, number>
   /** Players passed over because §7.3.6 would refuse the DESIGNATION
    *  (OUT/IR/PUP/NFI/Suspended). Only ever non-zero in an OFF league. */
   benchedForLegality: number
