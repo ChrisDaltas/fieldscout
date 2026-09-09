@@ -131,9 +131,14 @@
 # ran once now runs zero times, the chain still reaches M0, and the evidence is
 # `[9/10]`'s own stage log, which prints each nested gate's banner as it
 # passes. The gate still proves continuity — it now proves it ONCE.
-# (Reviewer check: the paranoia argument still holds INSIDE gate-m3.sh, where
-# re-running m1/m0 costs a vitest lane measured in seconds. It does not hold at
-# THIS level, where the redundancy cost a browser suite and three resets.)
+# (Reviewer check, stated precisely rather than flatteringly: gate-m3.sh carries
+# redundancy of the SAME shape. Its `[8/9] test:gate` really is cheap — M0 is a
+# vitest lane — but its `[7/9] test:gate:m1` is NOT: gate-m1.sh:36,40 is a full
+# `db reset` plus a full pgTAP suite, already run by the gate-m2 that `[6/9]`
+# invoked. That redundancy is PRE-EXISTING and is deliberately left alone here —
+# editing gate-m3.sh from an M4 gate task would be scope creep, and it is named
+# rather than glossed. What made the cut clear-cut at THIS level is that the
+# redundancy cost a whole browser suite on top of the resets.)
 #
 # WHAT THIS GATE DOES NOT CLAIM (F284; the run prints the same list as
 # `coverageGaps` on every scenario stage, and [5/10] transcribes it):
@@ -255,7 +260,7 @@
 #   `db reset`             5  = [1/10] + gate-m3 + gate-m3's gate-m2 + that
 #                               gate-m2's gate-m1 + gate-m3's own gate-m1
 #   full pgTAP             5  = one `test:db` in each of those five
-#   Playwright            3  = [8/10] + gate-m3's [7/9] + gate-m2's [5/7]
+#   Playwright             3  = [8/10] + gate-m3's [5/9] + gate-m2's [5/7]
 #   25-league draft sim    2  = gate-m3's auction sim + gate-m2's snake sim
 #   100-league season run  9  = [4/10]..[4.8] (900 league-seasons)
 # (Before the cut those lines were 8 / 8 / 4 / 3 — and the header as SHIPPED
