@@ -76,14 +76,15 @@ select col_is_null('public', 'matchups', 'result', 'result nullable (NULL = unde
 select col_not_null('public', 'matchups', 'is_overridden', 'is_overridden NOT NULL (§22.2 — D302 tightening)');
 select col_default_is('public', 'matchups', 'is_overridden', 'false', 'is_overridden defaults FALSE');
 select col_is_null('public', 'matchups', 'home_score', 'home_score NULLABLE as printed — the column-level room for pending (E61/D295), deliberately NOT tightened');
-select col_is_null('public', 'matchups', 'override_action_id', 'override_action_id nullable, FK-less until M6''s commissioner_actions');
+select col_is_null('public', 'matchups', 'override_action_id', 'override_action_id nullable (a matchup is normally not overridden)');
 select ok(
-  not exists (
+  exists (
     select 1 from pg_constraint c join pg_class t on t.oid = c.conrelid
-    where t.relname = 'matchups' and c.contype = 'f'
+    join pg_class f on f.oid = c.confrelid
+    where t.relname = 'matchups' and c.contype = 'f' and f.relname = 'commissioner_actions'
       and c.conkey = (select array_agg(attnum) from pg_attribute
                       where attrelid = t.oid and attname = 'override_action_id')),
-  'override_action_id carries NO FK (commissioner_actions is M6''s table — the 056 reopened_by_action_id precedent)');
+  'override_action_id NOW carries its FK → commissioner_actions(id). 109:169 parked it with the comment "M6 adds the FK with the table"; migration 123 is that table, and this cell INVERTS the absence pin that stood here — the promise is discharged, not merely deferred again.');
 select has_index('public', 'matchups', 'uniq_matchup_home_per_week', 'uniq_matchup_home_per_week exists');
 select has_index('public', 'matchups', 'uniq_matchup_away_per_week', 'uniq_matchup_away_per_week exists');
 select ok(

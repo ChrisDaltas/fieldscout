@@ -9,7 +9,7 @@
 -- has one human and eleven bots, and there is no adversary. The assertion is
 -- the delta: across a standalone mock's ENTIRE lifecycle — launch, ticks,
 -- the human's own verbs, pause/resume, completion, delete — every one of the
--- 65 `public` tables comes back byte-identical, measured as a whole-row
+-- 67 `public` tables comes back byte-identical, measured as a whole-row
 -- digest per table (count + md5 over sorted `to_jsonb` rows), because R499
 -- proved a row COUNT cannot see an in-place UPDATE and `leagues.status` /
 -- `.settings` / `.updated_at` are exactly the writes §8.8 forbids and
@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 65-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 67-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -54,7 +54,7 @@
 --      EMPTY. §D's post-delete state is §E's baseline, which §D has just
 --      proven equal to 'before'.
 --   §D ZERO DELTA AFTER DELETE — THE HEADLINE. The launcher deletes their
---      practice; every one of the 65 tables' count AND whole-row digest
+--      practice; every one of the 67 tables' count AND whole-row digest
 --      equals the baseline. Reddens on: a leaked bot seat (R473/D227(6)'s
 --      cleanup), an orphaned chat post (the NULL-safe sweep), an in-place
 --      UPDATE anywhere (R499), a new FK child of `drafts` that does not
@@ -124,7 +124,13 @@ select tablename::text as tbl from pg_tables where schemaname = 'public';
 select is(
   (select array_agg(tbl order by tbl) from mp11_tables),
   array['ai_call_log', 'ai_generation_usage', 'ai_personas', 'big_board_snapshots',
-        'big_board_weekly', 'cred_scores', 'defense_position_splits', 'draft_bids',
+        'big_board_weekly',
+        -- 123 / M6A L.E1.1: the commissioner audit spine. Both are UNREACHABLE
+        -- from a mock (no mock RPC writes either, and the audit log's only
+        -- writer is a §15.4 override verb), so §C's and §E's mid-state
+        -- allowlists are re-derived UNCHANGED — the delta cells are the proof.
+        'commish_lineup_actions', 'commissioner_actions',
+        'cred_scores', 'defense_position_splits', 'draft_bids',
         'draft_budget_adjustments',  -- 099/AP.6: the E69 replay store — UNREACHABLE from a mock (draft_adjust_budget refuses every mock by name, D138/038:1402), so §C's and §E's mid-state allowlists are re-derived UNCHANGED in the same PR
         'draft_dnd_marks', 'draft_liveness', 'draft_picks', 'draft_queues', 'drafts',
         'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
@@ -155,7 +161,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 65 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 67 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -200,8 +206,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 65 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 65::bigint,
+  'BASELINE: all 67 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 67::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
@@ -319,7 +325,7 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('after') $$,
-  'FINAL: all 65 tables snapshotted again');
+  'FINAL: all 67 tables snapshotted again');
 
 select is(
   (select coalesce(array_agg(b.tbl order by b.tbl), '{}'::text[])
@@ -460,7 +466,7 @@ select lives_ok(
 reset role;
 
 select lives_ok($$ select pg_temp.mp11_take('a_final') $$,
-  '§E FINAL: all 65 tables snapshotted a fourth time');
+  '§E FINAL: all 67 tables snapshotted a fourth time');
 select is(
   (select coalesce(array_agg(a.tbl order by a.tbl), '{}'::text[])
      from mp11_snap a join mp11_snap f on f.tbl = a.tbl and f.phase = 'a_final'

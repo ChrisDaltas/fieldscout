@@ -237,6 +237,11 @@ function TeamPageContent({
             editability={editability}
             canEdit={canEdit}
             isCommissionerArm={canEdit && !isOwnTeam}
+            /* The ROLE, not the arm. `isCommissionerArm` only means "acting
+               for a team that is not mine"; the audited override is gated on
+               being a commissioner at all, so a commissioner fixing HIS OWN
+               team after kickoff is offered it too (PROGRESS §3(a)). */
+            isCommish={isCommish}
             leagueTimeZone={leagueTimeZone}
           />
         </>

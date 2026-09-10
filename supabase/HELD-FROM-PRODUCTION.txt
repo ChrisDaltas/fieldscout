@@ -228,6 +228,26 @@
 # and references nothing; the ALTER is on 109's service-role-only queue;
 # both functions read and write the queue alone. No policy on a launch
 # table, no trigger, no index, no publication or cron change.
-# 082-122 pushed to production 2026-09-09 for the invite-only 2026 test cohort.
-# The hold is removed rather than annotated: rule 2 says a hold naming an APPLIED
-# migration is stale and fails the check. Nothing is held today.
+# ---------------------------------------------------------------------------
+# THE HOLD IS OVER (2026-09-09, migration 123's PR).
+#
+# MEASURED against production: every version 082 through 122 IS applied. The
+# `082-122` line that stood here was therefore STALE by this file's own rule 2
+# ("A hold naming a migration that IS applied to production is STALE and fails
+# the check. Holds expire loudly, not silently.") and was failing
+# .github/scripts/drift_compare.py:89-92 — `stale = holds & remote` → "Declared
+# held, but production already HAS these — the hold is stale: ... remove them
+# from supabase/HELD-FROM-PRODUCTION.txt". It is removed here, which is the
+# action the check itself asks for.
+#
+# NOTHING IS HELD RIGHT NOW, AND 123 IS NOT ADDED. `docs/specs/
+# tasks-M4-inseason.md` §4 rule 11 ("every new migration extends this file's
+# closed range in the same PR") is SUPERSEDED as of this date: migration 123 is
+# the fix for a defect in the live 2026 test league, and holding it back would
+# keep the fix out of the exact league it exists to fix. It reaches production
+# the ordinary way — `npx supabase db push`.
+#
+# Rule 1 still governs and is unchanged: a new migration falls OUTSIDE every
+# hold by default and REDS the check until someone deliberately pushes it or
+# declares it here. That default is the whole point, and 123 is expected to red
+# the drift check in exactly that way between merge and push.

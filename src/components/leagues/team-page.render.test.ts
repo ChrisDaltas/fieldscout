@@ -33,7 +33,7 @@ import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-serv
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import { LineupEditor } from './lineup-editor'
-import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY } from './lineup-editor-ops'
+import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { TeamPage } from './team-page'
 
@@ -328,6 +328,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             editability: { state: 'open' },
             canEdit: true,
             isCommissionerArm: false,
+            isCommish: false,
             leagueTimeZone: null,
           }),
         ),
@@ -337,6 +338,66 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(html).toContain('role="alert"')
     expect(html).toContain('Dismiss')
     expect(html).not.toContain('Something went wrong')
+  })
+
+  it('THE DOOR (M6A blocker): on the CURRENT, LIVE, OPEN week — the exact case the ruling is about — a COMMISSIONER has a persistent entry into override mode, and a manager has none', () => {
+    const render = (isCommish: boolean, editability: WeekEditability) => {
+      const client = new QueryClient()
+      return unescapeHtml(
+        renderToStaticMarkup(
+          createElement(
+            QueryClientProvider,
+            { client },
+            createElement(LineupEditor, {
+              leagueId: LEAGUE,
+              teamId: TEAM,
+              week: 1,
+              settings: settings.roster_settings,
+              allowIllegal: true,
+              roster,
+              stored: lineupRow,
+              currentWeek: 1,
+              editability,
+              canEdit: true,
+              isCommissionerArm: false,
+              isCommish,
+              leagueTimeZone: null,
+            }),
+          ),
+        ),
+      )
+    }
+
+    // The week the ruling names: current, live, and therefore `open` —
+    // `weekEditability` returns {state:'open'} for it, so an entry hung off
+    // the CLOSED banner would never render here. That was the blocker: the
+    // commissioner could only reach the override after every game had ended.
+    const open = render(true, { state: 'open' })
+    expect(open).toContain('data-offer-override')
+    expect(open).toContain('data-commish-tools')
+
+    // And it does not depend on provoking a server refusal either — which the
+    // editor's own lock wall makes impossible: the locked RB is not
+    // draggable, has no onClick and no bench ×, so no lock-violating map can
+    // be built and no refusal can come back to hang an offer on.
+    expect(open).not.toContain('role="alert"')
+    const at = open.indexOf('data-player="rb-locked"')
+    const lockedRow = open.slice(Math.max(0, at - 300), at + 300)
+    expect(lockedRow).toContain('aria-disabled="true"')
+    expect(lockedRow).toContain('cursor-default')
+    expect(open).not.toContain('Bench Render RB Locked')
+
+    // A past/closed week keeps the entry (§11.2:730's retroactive edit)…
+    expect(render(true, { state: 'closed', reason: PAST_WEEK_COPY })).toContain('data-offer-override')
+    // …and so does a league with no ladder yet.
+    expect(render(true, { state: 'unknown' })).toContain('data-offer-override')
+
+    // THE MANAGER'S EDITOR IS UNCHANGED. No entry, in any state.
+    for (const editability of [{ state: 'open' } as const, { state: 'closed', reason: PAST_WEEK_COPY } as const]) {
+      const managerHtml = render(false, editability)
+      expect(managerHtml).not.toContain('data-offer-override')
+      expect(managerHtml).not.toContain('data-commish-tools')
+    }
   })
 
   it('bye starter: the server flag chip under allow_illegal_lineups = true is caution copy', () => {
@@ -387,6 +448,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             editability: { state: 'closed', reason: PAST_WEEK_COPY },
             canEdit: true,
             isCommissionerArm: false,
+            isCommish: false,
             leagueTimeZone: null,
           }),
         ),

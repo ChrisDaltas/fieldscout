@@ -287,6 +287,21 @@ export interface MoveContext {
   locked: ReadonlySet<string>
   /** Week ≥ current for IR-stint arithmetic (§7.3.2 Restricted IR). */
   currentWeek: number | null
+  /**
+   * COMMISSIONER OVERRIDE MODE (M6A, §15.4:1695 / PROGRESS §3(g)). When true,
+   * the lock stops being a wall in the editor so a commissioner can BUILD the
+   * map that `commish_edit_lineup` will accept — the server verb lifts the
+   * lock, and a client that refuses to construct a lock-violating map would
+   * leave that verb with no door.
+   *
+   * It relaxes ONLY the two lock arms below, and it must be relaxed together
+   * with `useDraggable`/`useDroppable`/the bench control in `lineup-editor.tsx`
+   * — relaxing three of the four makes a player draggable but undroppable.
+   * Everything else (position eligibility, the IR designation, the Restricted
+   * stint chip) still applies, because the override lifts TIMING rules, not
+   * LEGALITY rules. Default false: an ordinary manager never sees this.
+   */
+  lockExempt?: boolean
 }
 
 export type MovePlan =
@@ -341,7 +356,7 @@ export function planMove(
   const player = ctx.players.get(playerId)
   const name = shortName(player, playerId)
   const from = keyOf(placement, playerId)
-  if (ctx.locked.has(playerId)) {
+  if (ctx.locked.has(playerId) && !ctx.lockExempt) {
     return {
       ok: false,
       reason: 'locked',
@@ -382,7 +397,7 @@ export function planMove(
     if (stint) return stint
   }
   const occupant = placement[target.key] ?? null
-  if (occupant && ctx.locked.has(occupant)) {
+  if (occupant && ctx.locked.has(occupant) && !ctx.lockExempt) {
     const occ = ctx.players.get(occupant)
     return {
       ok: false,
@@ -476,12 +491,49 @@ export function startersByKey(starters: readonly LineupStarter[] | undefined): M
 // The save's outcome (R779: `no_changes`, `rearranged` + `moved[]`)
 // ---------------------------------------------------------------------------
 
+/**
+ * `commish_edit_lineup` (123) adds two keys to the settled document, and they
+ * are the only place the write's SCORE consequence is said out loud:
+ * `score_stale` is TRUE when the lineup moved and the score did not, and
+ * `score_stale_reason` names which. `set_lineup` cannot produce them (it
+ * cannot create the situation), so both are optional here.
+ */
+export interface ScoreConsequence {
+  score_stale?: boolean
+  score_stale_reason?: string | null
+}
+
+/** The reasons 123 can return, in the commissioner's words rather than the
+ *  verb's. An unknown reason is still SAID — a new reason must never fall
+ *  through into "Lineup saved." */
+export function scoreStaleCopy(reason: string | null | undefined): string {
+  if (reason === 'week_final')
+    return 'the week is already final, so the standings and the matchup keep their existing score. Ask for a score correction if this edit should change it.'
+  if (reason === 'stats_unstamped')
+    return 'this week’s stats for one of the players you changed are not timestamped, so the re-score could not be queued. It will follow the next stats update — check the score after it lands.'
+  return `the re-score could not be queued (${reason ?? 'reason not given'}). Check the score for this week.`
+}
+
 export function saveOutcomeCopy(
-  result: Pick<SetLineupResult, 'no_changes' | 'rearranged' | 'moved' | 'flags'>,
+  result: Pick<SetLineupResult, 'no_changes' | 'rearranged' | 'moved' | 'flags'> & ScoreConsequence,
   nameOf: (playerId: string) => string,
   slotLabelOf: (key: string) => string,
 ): string {
   if (result.no_changes) return 'Nothing changed — this lineup was already set.'
+  // THE SCORE ARM COMES FIRST among the "it saved" branches, and it is its own
+  // sentence rather than a suffix: the whole purpose of `score_stale` is to
+  // say that the write's consequence did NOT happen, and a client that renders
+  // "Lineup saved." over it is CLAUDE.md's "never let 'nothing happened' mean
+  // 'it worked'" committed in the UI (R971). `rebuild_team_week_results`
+  // cannot repair it either (117:838-880 re-derives from matchups, never from
+  // lineups), so nothing downstream will ever say it for us.
+  if (result.score_stale === true) {
+    const head =
+      result.rearranged && result.moved.length > 0
+        ? `Saved — we re-seated ${result.moved.length === 1 ? 'one placement' : `${result.moved.length} placements`} so every starter fits.`
+        : 'Lineup saved.'
+    return `${head} The SCORE did not follow: ${scoreStaleCopy(result.score_stale_reason)}`
+  }
   if (result.rearranged && result.moved.length > 0) {
     const moves = result.moved
       .map((m) => `${nameOf(m.player_id)} → ${slotLabelOf(m.to)}${m.from ? ` (from ${slotLabelOf(m.from)})` : ''}`)
@@ -500,3 +552,4 @@ export function locksAtCopy(formattedInstant: string | null): string {
   if (!formattedInstant) return NO_LOCK_RECORD_COPY
   return `Locks from ${formattedInstant}`
 }
+

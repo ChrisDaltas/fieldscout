@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
+import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
@@ -106,6 +107,11 @@ export interface LineupEditorProps {
    *  — who must give a reason, D290/R738). */
   canEdit: boolean
   isCommissionerArm: boolean
+  /** The viewer holds the commissioner role in THIS league. Distinct from
+   *  `isCommissionerArm`, which only means "acting for a team that is not
+   *  mine": a commissioner fixing HIS OWN team after kickoff needs the
+   *  audited override too (PROGRESS §3(a) — any action, on any team). */
+  isCommish: boolean
   /** The league's named zone (`settings.draft.time_zone`) for the §16.4
    *  hover; null renders viewer-local only. */
   leagueTimeZone: string | null
@@ -125,6 +131,7 @@ export function LineupEditor({
   editability,
   canEdit,
   isCommissionerArm,
+  isCommish,
   leagueTimeZone,
 }: LineupEditorProps) {
   const slots = useMemo(() => slotInstances(settings), [settings])
@@ -150,16 +157,35 @@ export function LineupEditor({
   const [dragging, setDragging] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [reason, setReason] = useState('')
+  // OVERRIDE MODE (M6A). LATCHED in its own state rather than derived from
+  // `mutation.error`, because `move()` calls `mutation.reset()` on every
+  // successful placement — a derived flag would vanish the instant the
+  // commissioner dragged anything, including the drag he makes to work
+  // around the refusal. Cleared only by Discard or a successful save.
+  const [overrideMode, setOverrideMode] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
 
   const mutation = useSetLineup(leagueId, teamId)
+  const override = useCommishEditLineup(leagueId)
+  const active = overrideMode ? override : mutation
   const model = useMemo(() => buildEditorModel(draft, roster, settings), [draft, roster, settings])
   // Dirty against the BASELINE, not the stored prop: after a successful save
   // the baseline is the server's canonical map while `storedPlacement` is
   // still the pre-save row until the refetch lands (R826).
   const dirty = !placementsEqual(draft, baseline.current)
-  const readOnly = !canEdit || editability.state !== 'open'
+  // In override mode the week gates do not apply — the audited verb lifts the
+  // past-week and closed-week refusals, so a commissioner who has entered
+  // override mode may still edit a week the manager's editor calls closed.
+  const readOnly = !canEdit || (editability.state !== 'open' && !overrideMode)
 
-  const ctx = useMemo(() => ({ slots, players, locked, currentWeek }), [slots, players, locked, currentWeek])
+  // `lockExempt` relaxes planMove's two lock arms. The FOUR sites move
+  // together — planMove (both arms), useDraggable, useDroppable and the
+  // bench control — or a player becomes draggable but undroppable.
+  const lockExempt = overrideMode
+  const ctx = useMemo(
+    () => ({ slots, players, locked, currentWeek, lockExempt }),
+    [slots, players, locked, currentWeek, lockExempt],
+  )
 
   function move(playerId: string, target: MoveTarget) {
     if (readOnly) return
@@ -173,6 +199,7 @@ export function LineupEditor({
     setDraft(plan.next)
     setSelected(null)
     mutation.reset()
+    override.reset()
   }
 
   const sensors = useSensors(
@@ -196,6 +223,12 @@ export function LineupEditor({
   function save() {
     if (readOnly || !dirty) return
     setNotice(null)
+    if (overrideMode) {
+      // The AUDITED path (§15.4:1695). Same draft map — the commissioner does
+      // not rebuild anything; the reason is what he adds.
+      override.submit({ teamId, week, slotMap: draft, reason: overrideReason.trim() })
+      return
+    }
     mutation.submit({
       week,
       slotMap: draft,
@@ -207,26 +240,46 @@ export function LineupEditor({
     setSelected(null)
     setNotice(null)
     mutation.reset()
+    override.reset()
+    setOverrideMode(false)
+    setOverrideReason('')
   }
 
   // After a SUCCESSFUL save, render the server's canonical map immediately
   // (the refetch then lands the same row and the baseline follows).
   const lastResultId = useRef<string | null>(null)
+  const settled = mutation.data ?? override.data ?? null
   useEffect(() => {
-    const result = mutation.data
-    if (!result || lastResultId.current === result.action_id) return
-    lastResultId.current = result.action_id
-    const canonical = placementFromStored(result.slot_map, roster)
+    if (!settled || lastResultId.current === settled.action_id) return
+    lastResultId.current = settled.action_id
+    const canonical = placementFromStored(settled.slot_map, roster)
     baseline.current = canonical
     setDraft(canonical)
-  }, [mutation.data, roster])
+    // The exception is spent: a landed override leaves the editor back under
+    // the ordinary rules, so the next save is a normal one unless the server
+    // refuses again.
+    setOverrideMode(false)
+    setOverrideReason('')
+  }, [settled, roster])
 
   const nameOf = (id: string) => players.get(id)?.full_name ?? id
   const labelOf = (key: string) => slots.find((s) => s.key === key)?.label ?? key
   const selectedPlayer = selected ? players.get(selected) ?? null : null
 
-  const outcome = mutation.data ? saveOutcomeCopy(mutation.data, nameOf, labelOf) : null
-  const refusal = mutation.error ? mutation.error.message : null
+  const outcome = settled ? saveOutcomeCopy(settled, nameOf, labelOf) : null
+  const refusal = (mutation.error ?? override.error)?.message ?? null
+  // The SECOND door, and only a convenience now that the persistent one above
+  // exists: a refusal is the one moment the intact draft and the server's
+  // reason are on screen together, so the same control is repeated there
+  // rather than making the commissioner scroll up and rebuild his placements.
+  // It is NOT filtered by the refusal's WORDS any more. The previous matcher
+  // read three substrings out of migration 114's refusal prose, which nothing
+  // pinned (071 §I pins the arms' TAILS, and neither tail contains "kicked off
+  // at") — so a reworded refusal would have removed the button with every
+  // suite green. Offering the override on a refusal it cannot lift costs a
+  // second identical refusal; hiding it on one it CAN lift costs Chris his ten
+  // placements, which is the bug this whole PR exists to fix.
+  const canOfferOverride = isCommish && !overrideMode
 
   const draggingPlayer = dragging ? players.get(dragging) ?? null : null
 
@@ -234,9 +287,40 @@ export function LineupEditor({
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex flex-col gap-4" data-lineup-editor={teamId}>
         {editability.state === 'closed' && (
-          <p role="status" className="rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
-            {editability.reason}
-          </p>
+          <div role="status" className="flex flex-col gap-2 rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
+            <span>{editability.reason}</span>
+          </div>
+        )}
+        {/* THE DOOR (M6A) — and it is deliberately NOT a consequence of
+            anything. Chris's ruling is about the CURRENT, LIVE week ("an LM
+            should be able to set the lineup even after the games have
+            started"), and on that week neither of the two conditional entries
+            this editor could offer exists:
+              * `weekEditability` calls the current week `open` unless its
+                status is correction_window/final (lineup-editor-ops.ts:258-271),
+                so a banner hung off `state === 'closed'` never renders on game
+                day — a commissioner would have to wait until every game ended;
+              * a refusal-driven offer needs a SERVER refusal, and this
+                editor's own lock wall makes one unconstructable: a locked
+                player is `useDraggable({disabled:true})`, his row has no
+                `onClick`, his seat is an inert `useDroppable` and his bench ×
+                is hidden — no drag, no select, no Save, no refusal.
+            So the entry is PERSISTENT and unconditional on state: one control,
+            commissioner only, in every week state. The manager's editor is
+            byte-identical to before — `isCommish` is false for him. */}
+        {isCommish && canEdit && !overrideMode && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-ink"
+            data-commish-tools
+          >
+            <span className="min-w-[200px] flex-1">
+              Commissioner — you can edit this lineup after kickoff, or for a past week, through the audited override.
+            </span>
+            <Button variant="stroke" size="sm" onClick={() => setOverrideMode(true)} data-offer-override>
+              Override as commissioner
+            </Button>
+          </div>
         )}
         {editability.state === 'unknown' && (
           <p role="status" className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[12px] font-semibold text-ink">
@@ -277,6 +361,7 @@ export function LineupEditor({
                   leagueTimeZone={leagueTimeZone}
                   readOnly={readOnly}
                   locked={row.player ? locked.has(row.player.player_id) : false}
+                  lockExempt={lockExempt}
                   selected={selected}
                   acceptsSelected={Boolean(selectedPlayer && positionMatches(selectedPlayer.position, row.slot.eligible))}
                   onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
@@ -299,6 +384,7 @@ export function LineupEditor({
                       leagueTimeZone={leagueTimeZone}
                       readOnly={readOnly}
                       locked={row.player ? locked.has(row.player.player_id) : false}
+                      lockExempt={lockExempt}
                       selected={selected}
                       acceptsSelected={Boolean(selectedPlayer)}
                       onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
@@ -317,6 +403,7 @@ export function LineupEditor({
             weekIsCurrent={weekIsCurrent}
             currentWeek={currentWeek}
             readOnly={readOnly}
+            lockExempt={lockExempt}
             selected={selected}
             onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
             onDropSelected={() => selected && move(selected, { kind: 'bench' })}
@@ -327,22 +414,81 @@ export function LineupEditor({
         {/* Notices — one at a time, the newest wins. The server's refusal is
             rendered VERBATIM (F224(e)); a client-side plan refusal is the
             editor's own copy, before any submit. */}
+        {/* The refusal is the ONE moment the intact draft and the server's
+            reason are on screen together, so the audited path is offered from
+            HERE — re-submitting the SAME placements rather than asking the
+            commissioner to rebuild them. */}
         {refusal && (
           <div role="alert" className="flex flex-col gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink">
             <span>{refusal}</span>
-            <div className="flex gap-2">
-              <Button variant="stroke" size="sm" onClick={() => mutation.reset()}>
+            <div className="flex flex-wrap gap-2">
+              {canOfferOverride && (
+                <Button
+                  variant="blue"
+                  size="sm"
+                  onClick={() => {
+                    setOverrideMode(true)
+                    mutation.reset()
+                  }}
+                  data-offer-override
+                >
+                  Override as commissioner
+                </Button>
+              )}
+              <Button
+                variant="stroke"
+                size="sm"
+                onClick={() => {
+                  mutation.reset()
+                  override.reset()
+                }}
+              >
                 Dismiss
               </Button>
             </div>
+            {canOfferOverride && (
+              <span className="text-[11px] font-medium text-ink">
+                Your placements are still here — nothing was lost. Overriding keeps them and records the change.
+              </span>
+            )}
           </div>
         )}
         {!refusal && notice && <NoticeLine tone={notice.tone} text={notice.text} />}
-        {!refusal && !notice && outcome && <NoticeLine tone="positive" text={outcome} />}
+        {/* A save whose SCORE did not follow is not a positive outcome — the
+            copy says so and the tone matches it (R971). */}
+        {!refusal && !notice && outcome && (
+          <NoticeLine tone={settled && 'score_stale' in settled && settled.score_stale === true ? 'caution' : 'positive'} text={outcome} />
+        )}
+
+        {overrideMode && (
+          <div
+            role="status"
+            className="flex flex-col gap-1 rounded-sm border border-accent bg-accent-soft px-3 py-2 text-[12px] font-semibold text-ink"
+            data-override-mode
+          >
+            <span>Commissioner override — locked players can be moved.</span>
+            <span className="text-[11px] font-medium">
+              This is recorded: the league sees who changed what, when, and why. Saving also posts to league chat.
+            </span>
+          </div>
+        )}
 
         {!readOnly && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {isCommissionerArm && (
+            {overrideMode && (
+              <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-[11px] font-bold text-ink">
+                Reason (required — this is an audited override, and the whole league can read it)
+                <Input
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  maxLength={500}
+                  className="h-btn-md px-2 text-[12px]"
+                  placeholder="e.g. manager unreachable — his game had already started"
+                  data-override-reason
+                />
+              </label>
+            )}
+            {!overrideMode && isCommissionerArm && (
               <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-[11px] font-bold text-ink">
                 Reason (required — you are setting another team’s lineup; it posts to league chat)
                 <Input
@@ -361,17 +507,23 @@ export function LineupEditor({
             <Button
               variant="blue"
               size="md"
-              disabled={!dirty || mutation.isPending || (isCommissionerArm && reason.trim().length === 0)}
+              disabled={
+                !dirty ||
+                active.isPending ||
+                (overrideMode
+                  ? overrideReason.trim().length === 0
+                  : isCommissionerArm && reason.trim().length === 0)
+              }
               onClick={save}
               data-save-lineup
             >
               <Icon name="save" size={13} />
-              {mutation.isPending ? 'Saving…' : 'Save lineup'}
+              {active.isPending ? 'Saving…' : overrideMode ? 'Save override' : 'Save lineup'}
             </Button>
-            <Button variant="stroke" size="md" disabled={!dirty || mutation.isPending} onClick={discard} data-discard-lineup>
+            <Button variant="stroke" size="md" disabled={!dirty || active.isPending} onClick={discard} data-discard-lineup>
               Discard changes
             </Button>
-            {dirty && !mutation.isPending && (
+            {dirty && !active.isPending && (
               <span className="text-[11px] font-medium text-n-3">Unsaved — the server confirms every placement.</span>
             )}
           </div>
@@ -422,6 +574,8 @@ interface SlotSeatProps {
   leagueTimeZone: string | null
   readOnly: boolean
   locked: boolean
+  /** Commissioner override mode: the 🔒 badge stays, the wall comes down. */
+  lockExempt?: boolean
   selected: string | null
   acceptsSelected: boolean
   onSeat: () => void
@@ -439,6 +593,7 @@ function SlotSeat({
   leagueTimeZone,
   readOnly,
   locked,
+  lockExempt,
   selected,
   acceptsSelected,
   onSeat,
@@ -446,8 +601,12 @@ function SlotSeat({
   onBench,
 }: SlotSeatProps) {
   const { slot, player } = row
-  const droppable = useDroppable({ id: `slot:${slot.key}`, disabled: readOnly || locked })
-  const target = Boolean(selected) && !readOnly && !locked && acceptsSelected && selected !== player?.player_id
+  // In override mode the 🔒 badge STAYS (it is the record of what is being
+  // overridden) but stops being a wall — this and the three other lock sites
+  // relax together, or a player becomes draggable but undroppable.
+  const frozen = locked && !lockExempt
+  const droppable = useDroppable({ id: `slot:${slot.key}`, disabled: readOnly || frozen })
+  const target = Boolean(selected) && !readOnly && !frozen && acceptsSelected && selected !== player?.player_id
   const hint = player && slot.kind === 'start' ? starterHint(player, week, allowIllegal) : null
   // The server's OWN flags for the stored occupant (only meaningful while
   // the seat still holds him).
@@ -464,7 +623,7 @@ function SlotSeat({
       className={cn(
         'flex min-h-[38px] items-center gap-2 rounded-sm border px-2 py-1',
         locked ? 'border-ink bg-n-4' : 'border-ink bg-white',
-        droppable.isOver && !locked && 'border-accent bg-accent-soft',
+        droppable.isOver && !frozen && 'border-accent bg-accent-soft',
         target && 'border-accent',
       )}
     >
@@ -473,6 +632,7 @@ function SlotSeat({
         <PlayerRow
           player={player}
           locked={locked}
+          lockExempt={lockExempt}
           weekIsCurrent={weekIsCurrent}
           currentWeek={currentWeek}
           readOnly={readOnly}
@@ -482,7 +642,7 @@ function SlotSeat({
           kickoff={kickoff}
           leagueTimeZone={leagueTimeZone}
           trailing={
-            !readOnly && !locked ? (
+            !readOnly && !frozen ? (
               <Button variant="ghost" size="icon-sm" aria-label={`Bench ${player.full_name}`} onClick={() => onBench(player.player_id)}>
                 <Icon name="close" size={12} />
               </Button>
@@ -514,6 +674,8 @@ function SlotSeat({
 interface PlayerRowProps {
   player: RosterPlayer
   locked: boolean
+  /** Commissioner override mode: the 🔒 badge stays, the wall comes down. */
+  lockExempt?: boolean
   weekIsCurrent: boolean
   currentWeek: number | null
   readOnly: boolean
@@ -525,8 +687,9 @@ interface PlayerRowProps {
   trailing?: React.ReactNode
 }
 
-function PlayerRow({ player, locked, weekIsCurrent, currentWeek, readOnly, selected, onSelect, hints, kickoff, leagueTimeZone, trailing }: PlayerRowProps) {
-  const draggable = useDraggable({ id: player.player_id, disabled: readOnly || locked })
+function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, hints, kickoff, leagueTimeZone, trailing }: PlayerRowProps) {
+  const frozen = locked && !lockExempt
+  const draggable = useDraggable({ id: player.player_id, disabled: readOnly || frozen })
   const lock = lockBadgeFor(player.game_lock, weekIsCurrent)
   const stint = irStintChip(player, currentWeek)
   const kickoffView = kickoff ? formatKickoff(kickoff, leagueTimeZone) : null
@@ -537,14 +700,14 @@ function PlayerRow({ player, locked, weekIsCurrent, currentWeek, readOnly, selec
         ref={draggable.setNodeRef}
         type="button"
         {...draggable.attributes}
-        {...(readOnly || locked ? {} : draggable.listeners)}
+        {...(readOnly || frozen ? {} : draggable.listeners)}
         data-player={player.player_id}
         aria-pressed={selected}
-        aria-disabled={readOnly || locked}
-        onClick={readOnly || locked ? undefined : onSelect}
+        aria-disabled={readOnly || frozen}
+        onClick={readOnly || frozen ? undefined : onSelect}
         className={cn(
           'flex min-w-[180px] flex-1 items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-left text-[11px] font-bold',
-          readOnly || locked ? 'cursor-default border-transparent' : 'cursor-grab border-transparent hover:border-ink hover:bg-n-4 active:cursor-grabbing',
+          readOnly || frozen ? 'cursor-default border-transparent' : 'cursor-grab border-transparent hover:border-ink hover:bg-n-4 active:cursor-grabbing',
           selected && 'border-accent bg-accent-soft',
           draggable.isDragging && 'opacity-40',
         )}
@@ -580,6 +743,7 @@ function PlayerRow({ player, locked, weekIsCurrent, currentWeek, readOnly, selec
 interface BenchZoneProps {
   bench: RosterPlayer[]
   locked: ReadonlySet<string>
+  lockExempt?: boolean
   weekIsCurrent: boolean
   currentWeek: number | null
   readOnly: boolean
@@ -589,7 +753,7 @@ interface BenchZoneProps {
   empty: boolean
 }
 
-function BenchZone({ bench, locked, weekIsCurrent, currentWeek, readOnly, selected, onSelect, onDropSelected, empty }: BenchZoneProps) {
+function BenchZone({ bench, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, onDropSelected, empty }: BenchZoneProps) {
   const droppable = useDroppable({ id: 'bench', disabled: readOnly })
   const selectedIsStarter = Boolean(selected) && !bench.some((p) => p.player_id === selected)
   return (
@@ -613,6 +777,7 @@ function BenchZone({ bench, locked, weekIsCurrent, currentWeek, readOnly, select
               <PlayerRow
                 player={player}
                 locked={locked.has(player.player_id)}
+                lockExempt={lockExempt}
                 weekIsCurrent={weekIsCurrent}
                 currentWeek={currentWeek}
                 readOnly={readOnly}

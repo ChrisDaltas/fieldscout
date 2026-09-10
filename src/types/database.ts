@@ -223,6 +223,141 @@ export type Database = {
           },
         ]
       }
+      commish_lineup_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_lineup_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_lineup_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_lineup_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commissioner_actions: {
+        Row: {
+          acting_as_team_id: string | null
+          action_type: string
+          actor_id: string
+          after: Json | null
+          before: Json | null
+          created_at: string
+          id: string
+          league_id: string
+          metadata: Json | null
+          prev_hash: string | null
+          reason: string
+          reverts_action_id: string | null
+          row_hash: string | null
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          acting_as_team_id?: string | null
+          action_type: string
+          actor_id: string
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          id?: string
+          league_id: string
+          metadata?: Json | null
+          prev_hash?: string | null
+          reason: string
+          reverts_action_id?: string | null
+          row_hash?: string | null
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          acting_as_team_id?: string | null
+          action_type?: string
+          actor_id?: string
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          id?: string
+          league_id?: string
+          metadata?: Json | null
+          prev_hash?: string | null
+          reason?: string
+          reverts_action_id?: string | null
+          row_hash?: string | null
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commissioner_actions_acting_as_team_id_fkey"
+            columns: ["acting_as_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissioner_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissioner_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissioner_actions_reverts_action_id_fkey"
+            columns: ["reverts_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cred_scores: {
         Row: {
           average_accuracy: number | null
@@ -1329,6 +1464,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "league_weeks_reopened_by_action_id_fkey"
+            columns: ["reopened_by_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "league_weeks_season_week_fkey"
             columns: ["season", "week"]
             isOneToOne: false
@@ -2041,6 +2183,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "league_weeks"
             referencedColumns: ["league_id", "season", "week"]
+          },
+          {
+            foreignKeyName: "matchups_override_action_id_fkey"
+            columns: ["override_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3597,6 +3746,13 @@ export type Database = {
             referencedRelation: "leagues"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "transactions_related_action_id_fkey"
+            columns: ["related_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
         ]
       }
       weekly_rankings: {
@@ -3697,6 +3853,29 @@ export type Database = {
         }[]
       }
       claim_league_invite: { Args: { p_token: string }; Returns: Json }
+      commish_edit_lineup: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_reason?: string
+          p_slot_map: Json
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
+      commish_edit_lineup_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_reason: string
+          p_slot_map: Json
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
       create_league: {
         Args: {
           p_action_id: string
@@ -4234,6 +4413,21 @@ export type Database = {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
       }
+      log_commissioner_action_internal: {
+        Args: {
+          p_acting_as_team_id?: string
+          p_action_type: string
+          p_actor_id: string
+          p_after: Json
+          p_before: Json
+          p_league_id: string
+          p_metadata: Json
+          p_reason: string
+          p_target_id: string
+          p_target_type: string
+        }
+        Returns: string
+      }
       matchup_broadcast_payload: {
         Args: { m: Database["public"]["Tables"]["matchups"]["Row"] }
         Returns: Json
@@ -4756,7 +4950,6 @@ export const Constants = {
 
 
 
-
 // ============================================================================
 // Hand-written convenience aliases.
 //
@@ -4782,6 +4975,10 @@ export type LeaguePlayerPoolRow =
 export type LeagueRoster = Database['public']['Tables']['league_rosters']['Row']
 export type LeagueTransaction = Database['public']['Tables']['transactions']['Row']
 export type LeagueWeek = Database['public']['Tables']['league_weeks']['Row']
+export type CommissionerAction =
+  Database['public']['Tables']['commissioner_actions']['Row']
+export type CommishLineupAction =
+  Database['public']['Tables']['commish_lineup_actions']['Row']
 export type LineupAction = Database['public']['Tables']['lineup_actions']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
