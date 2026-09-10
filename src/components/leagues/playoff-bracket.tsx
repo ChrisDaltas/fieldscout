@@ -8,7 +8,7 @@ import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { BracketGame, BracketRound, PlayoffBracket as PlayoffBracketDoc, ProjectedPair } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
 
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import { CHAMPION_UNRECORDED_COPY } from './league-home-season-ops'
 import {
   AWAITING_BUILD_COPY,
@@ -161,7 +161,7 @@ export function PlayoffBracket({
               <RoundColumn key={round.round} label={roundLabel(round.round, doc.rounds)} badge={null} note={null} correction={false}>
                 {round.pairs
                   ? round.pairs.map((pair, i) => (
-                      <ProjectedGame key={i} pair={pair} teamNames={teamNames} myTeamId={myTeamId} />
+                      <ProjectedGame key={i} leagueId={doc.league_id} pair={pair} teamNames={teamNames} myTeamId={myTeamId} />
                     ))
                   : Array.from({ length: round.slots }, (_, i) => <TbdGame key={i} />)}
               </RoundColumn>
@@ -179,7 +179,7 @@ export function PlayoffBracket({
                 >
                   {round.built
                     ? round.games.map((game, i) => (
-                        <BuiltGame key={i} game={game} teamNames={teamNames} myTeamId={myTeamId} />
+                        <BuiltGame key={i} leagueId={doc.league_id} game={game} teamNames={teamNames} myTeamId={myTeamId} />
                       ))
                     : Array.from({ length: tbdSlots(round) }, (_, i) => <TbdGame key={i} />)}
                 </RoundColumn>
@@ -246,6 +246,8 @@ function RoundColumn({
 function TeamLine({
   seed,
   name,
+  leagueId,
+  teamId,
   mine,
   winner,
   cells,
@@ -253,6 +255,10 @@ function TeamLine({
 }: {
   seed: number | null
   name: string
+  leagueId: string
+  /** The slot's franchise, or null for a TBD slot the projection cannot
+   *  name yet — a slot with no team gets no door. */
+  teamId: string | null
   mine: boolean
   winner: boolean
   cells?: string[]
@@ -262,7 +268,12 @@ function TeamLine({
     <div className={cn('flex items-center gap-2 px-2.5 py-1.5', winner && 'bg-accent-soft')} data-team-line data-winner={winner ? '' : undefined}>
       <span className="fs-num w-4 shrink-0 text-right text-[11px] font-bold text-n-3">{seed ?? '—'}</span>
       <Crest name={name} src={null} className="h-5 w-5" />
-      <span className={cn('min-w-0 flex-1 truncate text-[12px]', winner ? 'font-extrabold text-ink' : 'font-semibold text-ink')}>{name}</span>
+      <TeamNameLink
+        name={name}
+        leagueId={leagueId}
+        teamId={teamId}
+        className={cn('min-w-0 flex-1 truncate text-[12px]', winner ? 'font-extrabold text-ink' : 'font-semibold text-ink')}
+      />
       {mine && (
         <Badge variant="stroke" className="text-[9px]">
           You
@@ -282,12 +293,12 @@ function TeamLine({
   )
 }
 
-function ProjectedGame({ pair, teamNames, myTeamId }: { pair: ProjectedPair; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
+function ProjectedGame({ leagueId, pair, teamNames, myTeamId }: { leagueId: string; pair: ProjectedPair; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
   return (
     <div className="divide-y divide-n-4 rounded-sm border border-ink bg-white" data-game="projected">
-      <TeamLine seed={pair.home.seed} name={teamName(teamNames, pair.home.team_id)} mine={pair.home.team_id === myTeamId} winner={false} />
+      <TeamLine seed={pair.home.seed} name={teamName(teamNames, pair.home.team_id)} leagueId={leagueId} teamId={pair.home.team_id} mine={pair.home.team_id === myTeamId} winner={false} />
       {pair.away ? (
-        <TeamLine seed={pair.away.seed} name={teamName(teamNames, pair.away.team_id)} mine={pair.away.team_id === myTeamId} winner={false} />
+        <TeamLine seed={pair.away.seed} name={teamName(teamNames, pair.away.team_id)} leagueId={leagueId} teamId={pair.away.team_id} mine={pair.away.team_id === myTeamId} winner={false} />
       ) : (
         <p className="px-2.5 py-1.5 text-[11px] font-medium text-n-3" data-bye>
           Bye
@@ -297,7 +308,7 @@ function ProjectedGame({ pair, teamNames, myTeamId }: { pair: ProjectedPair; tea
   )
 }
 
-function BuiltGame({ game, teamNames, myTeamId }: { game: BracketGame; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
+function BuiltGame({ leagueId, game, teamNames, myTeamId }: { leagueId: string; game: BracketGame; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
   const verdict = verdictCopy(game)
   const played = gamePlayed(game)
   const homeCells = game.weeks.map((w) => formatBracketScore(w.home_score, w.status))
@@ -310,6 +321,8 @@ function BuiltGame({ game, teamNames, myTeamId }: { game: BracketGame; teamNames
         <TeamLine
           seed={game.home_seed}
           name={teamName(teamNames, game.home_team_id)}
+          leagueId={leagueId}
+          teamId={game.home_team_id}
           mine={game.home_team_id === myTeamId}
           winner={!bye && played && game.winner_team_id === game.home_team_id}
           cells={bye ? undefined : homeCells}
@@ -323,6 +336,8 @@ function BuiltGame({ game, teamNames, myTeamId }: { game: BracketGame; teamNames
           <TeamLine
             seed={game.away_seed}
             name={teamName(teamNames, game.away_team_id)}
+            leagueId={leagueId}
+            teamId={game.away_team_id}
             mine={game.away_team_id === myTeamId}
             winner={played && game.winner_team_id === game.away_team_id}
             cells={awayCells}
@@ -384,7 +399,11 @@ function ChampionLine({ doc, teamNames }: { doc: PlayoffBracketDoc; teamNames: R
       {id ? (
         <>
           <Crest name={teamName(teamNames, id)} src={null} />
-          Champion · {teamName(teamNames, id)}
+          {/* ONE flex item so the crest gap stays the only gap — the anchor
+              wraps the NAME, never the "Champion · " prefix. */}
+          <span>
+            Champion · <TeamNameLink name={teamName(teamNames, id)} leagueId={doc.league_id} teamId={id} />
+          </span>
         </>
       ) : (
         CHAMPION_UNRECORDED_COPY

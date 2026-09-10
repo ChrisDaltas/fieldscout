@@ -604,6 +604,38 @@ describe('the Remix panel', () => {
 })
 
 // ---------------------------------------------------------------------------
+// The DOOR pin — F322/C65's shape ("the server has the verb, the UI has no
+// door"). `set_lineup` has accepted a commissioner acting for another
+// franchise since migration 114, and for a while nothing in the app linked
+// to any team but the viewer's own. These assert the anchors exist.
+// ---------------------------------------------------------------------------
+
+describe('every franchise on screen is a door to its own team page (§16.1)', () => {
+  it('the standings table links all four rows, each to its OWN id', () => {
+    const html = renderStandings()
+    for (const id of ['t1', 't2', 't3', 't4']) {
+      expect(html, id).toContain(`data-team-link="${id}"`)
+      expect(html, id).toContain(`href="/app/leagues/${LEAGUE}/team/${id}"`)
+    }
+    // The link's accessible name is the FRANCHISE (the crest stays outside
+    // the anchor, so its initials are not announced as part of the name).
+    expect(html).toMatch(/<a[^>]*data-team-link="t3"[^>]*>Charlie<\/a>/)
+    // The door carries no resting elevation — hover paints the underline
+    // (CLAUDE.md), which matters most on the viewer's OWN row, where the
+    // table's row wash is deliberately suppressed.
+    const own = openTagOf(html, 'data-team-link="t1"')
+    expect(own).not.toContain('shadow-hard')
+    expect(own).toContain('hover:decoration-current')
+  })
+
+  it('the schedule links BOTH sides of a pairing', () => {
+    const html = renderSchedule()
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/t1"`)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/t2"`)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Elevation (CLAUDE.md) — the feature files, since ui/’s pin stops at ui/
 // ---------------------------------------------------------------------------
 

@@ -241,7 +241,7 @@ describe('the page opens on the free agents: §12.19’s states per row, the �
 describe('PoolTable — the rostered scope: Drop for mine (disabled by the view’s lock), nothing for theirs', () => {
   const rostered = poolRows(players, rosters, pool, MINE, 'rostered')
   const html = unescapeHtml(
-    renderToStaticMarkup(createElement(PoolTable, { rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
+    renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
   )
   it('mine, unlocked → Drop; mine, locked → Drop disabled with the reason; theirs → a dash that names trades as later', () => {
     const open = html.slice(html.indexOf('data-pool-row="mine-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-open"')))
@@ -259,7 +259,7 @@ describe('PoolTable — the rostered scope: Drop for mine (disabled by the view�
   })
   it('empty by reason: no free agents vs no match', () => {
     const none = (scope: 'free_agents' | 'rostered', hadSearch: boolean) =>
-      unescapeHtml(renderToStaticMarkup(createElement(PoolTable, { rows: [], scope, hadSearch, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })))
+      unescapeHtml(renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: [], scope, hadSearch, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })))
     expect(none('free_agents', false)).toContain(NO_FREE_AGENTS_COPY)
     expect(none('free_agents', true)).toContain(NO_MATCH_COPY)
   })

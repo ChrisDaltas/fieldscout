@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 
 import { COMMISSIONER_LABEL, FEED_EMPTY_COPY, FEED_TITLE, SYSTEM_LABEL, feedLines } from './activity-feed-ops'
+import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { problemCopy } from './team-page'
@@ -29,6 +30,7 @@ import { problemCopy } from './team-page'
  * values formatted viewer-local with the league zone on hover (§16.4).
  */
 export function ActivityFeed({
+  leagueId,
   items,
   pending,
   problem,
@@ -36,6 +38,7 @@ export function ActivityFeed({
   teamNames,
   leagueTimeZone,
 }: {
+  leagueId: string
   items: readonly ActivityItem[] | undefined
   pending: boolean
   problem: unknown
@@ -86,7 +89,13 @@ export function ActivityFeed({
                         {SYSTEM_LABEL}
                       </Badge>
                     )}
-                    {line.team && <span className="shrink-0 text-[12px] font-bold text-ink">{line.team}</span>}
+                    {/* Text-only door: the name stays `shrink-0` beside the
+                        truncating message, so the link adds no width. */}
+                    {line.team && (
+                      <span className="shrink-0 text-[12px] font-bold text-ink">
+                        <TeamNameLink name={line.team} leagueId={leagueId} teamId={line.teamId} />
+                      </span>
+                    )}
                     {/* `data-feed-text` (R940): the line's TEXT alone, so a spec can assert exact
                         equality. The <li> also renders a badge and a timestamp, so an assertion on
                         the item could only ever be containment — and containment passes against a

@@ -23,6 +23,13 @@ export interface FeedLine {
   text: string
   /** The team the move belongs to, by name (null for a system post). */
   team: string | null
+  /**
+   * That same team's id — carried so the rendered name can be a door to the
+   * team page (§16.1). NULL whenever `team` is null (a system post, or an
+   * id the league detail could not name): a name we could not resolve gets
+   * no link.
+   */
+  teamId: string | null
   week: number | null
   createdAt: string | null
   /** §13.4's commissioner treatment. A system post is a commissioner's act
@@ -79,6 +86,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
         kind: 'system',
         text: item.message,
         team: null,
+        teamId: null,
         week: null,
         createdAt: item.created_at,
         commissioner: item.actor_id !== null,
@@ -90,6 +98,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
       kind: 'transaction',
       text: transactionText(item),
       team,
+      teamId: team !== null ? item.team_id : null,
       week: item.week,
       createdAt: item.created_at,
       commissioner: item.type === 'commissioner_move',

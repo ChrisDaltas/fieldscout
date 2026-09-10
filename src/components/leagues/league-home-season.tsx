@@ -23,7 +23,7 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
 import { ActivityFeed } from './activity-feed'
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink, teamPageHref } from './league-cells'
 import {
   CHAMPION_UNRECORDED_COPY,
   NONE_FOR_TEAM_COPY,
@@ -404,7 +404,10 @@ function WeekSoFar({ leagueId, doc, myTeamId, title }: { leagueId: string; doc: 
           <div key={row.team_id} className={cn('flex items-center gap-2 px-card-pad py-2', row.team_id === myTeamId && 'bg-accent-soft')} data-leaderboard-row={row.team_id}>
             <span className="fs-num w-6 shrink-0 text-right text-[12px] font-bold">{row.rank ?? '—'}</span>
             <Crest name={row.name} src={null} />
-            <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{row.name}</span>
+            {/* A total-points league has no matchup rows at all (§16.5.3), so
+                this leaderboard is that league's only team list on the home
+                page — and a plain <div> row, so the name links cleanly. */}
+            <TeamNameLink name={row.name} leagueId={leagueId} teamId={row.team_id} className="min-w-0 flex-1 truncate text-[12px] font-bold" />
             {row.points !== null ? (
               <span className="fs-num shrink-0 text-[13px] font-bold text-ink">{formatPoints(row.points)}</span>
             ) : (
@@ -450,7 +453,7 @@ function SetLineupCard({
           <>
             <div className="flex flex-wrap items-center gap-2.5">
               <Button variant="blue" size="sm" shadow asChild>
-                <Link href={`/app/leagues/${leagueId}/team/${myTeamId}`} data-set-lineup-cta>
+                <Link href={teamPageHref(leagueId, myTeamId)} data-set-lineup-cta>
                   <Icon name="team" size={13} />
                   Set lineup
                 </Link>
@@ -565,7 +568,7 @@ function StandingsPeek({ doc, myTeamId }: { doc: NonNullable<ReturnType<typeof u
             <div className={cn('flex items-center gap-2 py-1.5', row.team_id === myTeamId && 'bg-accent-soft')} data-peek-row={row.team_id}>
               <span className="fs-num w-5 shrink-0 text-right text-[12px] font-bold">{row.rank}</span>
               <Crest name={row.name} src={null} />
-              <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{row.name}</span>
+              <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="min-w-0 flex-1 truncate text-[12px] font-bold" />
               <span className="fs-num shrink-0 text-[11px] font-medium">{formatRecord(row)}</span>
               <span className="fs-num w-14 shrink-0 text-right text-[11px] font-medium text-n-3">{formatPoints(row.points_for)}</span>
             </div>
@@ -593,7 +596,12 @@ function ChampionBanner({ data }: { data: LeagueDetail }) {
           <span className="fs-num">{data.league.season}</span> champion
         </p>
         {champion ? (
-          <p className="text-h3 text-ink">{champion}</p>
+          // `championName` is non-null only when the STORED id resolved to a
+          // team, so the door here can never point at a franchise we could
+          // not name.
+          <p className="text-h3 text-ink">
+            <TeamNameLink name={champion} leagueId={data.league.id} teamId={data.league.champion_team_id} />
+          </p>
         ) : (
           <p className="max-w-md text-[13px] font-medium text-n-3">{CHAMPION_UNRECORDED_COPY}</p>
         )}
@@ -664,6 +672,7 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   return (
     <ActivityFeed
+      leagueId={leagueId}
       items={feed.data?.items}
       pending={feed.isPending}
       problem={feed.isError ? feed.error : null}

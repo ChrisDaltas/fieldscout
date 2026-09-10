@@ -16,7 +16,7 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks/use-schedule'
 import { cn } from '@/lib/utils'
 
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import { ScheduleRemixModal } from './schedule-remix-modal'
 import {
@@ -263,12 +263,12 @@ function MatchupRowView({
       data-round-type={row.round_type}
     >
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
-        <TeamLabel team={row.home} winner={row.result === 'home'} />
+        <TeamLabel leagueId={leagueId} team={row.home} winner={row.result === 'home'} />
         <span className="fs-num text-[11px] text-n-3">{formatScore(row.home_score, row.status)}</span>
         <span className="text-[10px] font-bold text-n-3">vs</span>
         {row.away ? (
           <>
-            <TeamLabel team={row.away} winner={row.result === 'away'} />
+            <TeamLabel leagueId={leagueId} team={row.away} winner={row.result === 'away'} />
             <span className="fs-num text-[11px] text-n-3">{formatScore(row.away_score, row.status)}</span>
           </>
         ) : (
@@ -290,11 +290,13 @@ function MatchupRowView({
   )
 }
 
-function TeamLabel({ team, winner }: { team: TeamRef; winner: boolean }) {
+/** The winner's WEIGHT stays on the wrapper so the link owns only its
+ *  underline — the two treatments compose instead of competing. */
+function TeamLabel({ leagueId, team, winner }: { leagueId: string; team: TeamRef; winner: boolean }) {
   return (
     <span className={cn('flex items-center gap-1.5', winner && 'font-bold')}>
       <Crest name={team.name} src={null} className="h-5 w-5" fallbackClassName="text-[8px]" />
-      <span className="text-ink">{team.name}</span>
+      <TeamNameLink name={team.name} leagueId={leagueId} teamId={team.id} className="text-ink" />
     </span>
   )
 }

@@ -25,6 +25,7 @@ import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
+import { teamPageHref } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import { splitRows } from './matchup-view-ops'
 
@@ -230,7 +231,7 @@ export interface LeagueNavItem {
 export function leagueNav(leagueId: string, myTeamId: string | null): LeagueNavItem[] {
   const base = `/app/leagues/${leagueId}`
   const items: LeagueNavItem[] = []
-  if (myTeamId) items.push({ key: 'team', label: 'My team', href: `${base}/team/${myTeamId}` })
+  if (myTeamId) items.push({ key: 'team', label: 'My team', href: teamPageHref(leagueId, myTeamId) })
   items.push(
     { key: 'matchups', label: 'Matchups', href: `${base}/matchup` },
     { key: 'standings', label: 'Standings', href: `${base}/standings` },

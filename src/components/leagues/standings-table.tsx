@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import {
   formatPoints,
   formatRecord,
@@ -107,7 +107,13 @@ export function StandingsTable({
                 <TableCell>
                   <span className="flex items-center gap-2">
                     <Crest name={row.name} src={null} />
-                    <span className="font-bold text-ink">{row.name}</span>
+                    {/* The one list of every franchise with its id in hand —
+                        so it is the commissioner's index into the team pages
+                        (§16.1). `doc.league_id` is 117's own; no new prop.
+                        The link carries its OWN hover underline because the
+                        viewer's row deliberately suppresses the table's row
+                        wash (`hover:bg-accent-soft` above). */}
+                    <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="font-bold text-ink" />
                   </span>
                 </TableCell>
                 <TableCell className="fs-num text-right">{formatRecord(row)}</TableCell>

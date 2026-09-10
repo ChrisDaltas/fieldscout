@@ -483,6 +483,44 @@ describe('§16.5.4 — the required states', () => {
 })
 
 // ---------------------------------------------------------------------------
+// The DOOR pin — F322/C65 ("the server has the verb, the UI has no door")
+// ---------------------------------------------------------------------------
+
+describe('the league home is a door to every franchise, not just the viewer’s (§16.1)', () => {
+  it('the standings peek links each row to its OWN team page', () => {
+    const html = renderHome()
+    const ids = [...html.matchAll(/data-peek-row="([^"]+)"/g)].map((m) => m[1])
+    expect(ids.length).toBeGreaterThan(1)
+    for (const id of ids) expect(html, id).toContain(`href="/app/leagues/${LEAGUE}/team/${id}"`)
+    // Not just the viewer's own row — the whole point of the change.
+    expect(ids.some((id) => id !== T1)).toBe(true)
+  })
+
+  it('the "Set lineup" CTA still points at the viewer’s own team (no regression)', () => {
+    const html = renderHome()
+    expect(html).toContain('data-set-lineup-cta')
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${T1}"`)
+  })
+
+  it('the activity feed’s team attribution is a door — asserted INSIDE the feed', () => {
+    // R966: the first cut of this pin asserted `data-team-link` over the WHOLE
+    // page and was VACUOUS — the home also mounts the Scoreboard hero, whose
+    // `Side` renders a TeamNameLink for this same team, so it stayed green with
+    // the feed's own link reverted to a plain <span>. Slice the feed's own <ol>
+    // first. (CLAUDE.md: never let "nothing happened" mean "it worked" — a
+    // proof that cannot fail is the same defect one level up.)
+    const html = renderHome()
+    const start = html.indexOf('data-feed-items')
+    expect(start).toBeGreaterThan(-1)
+    const feed = html.slice(start, html.indexOf('</ol>', start))
+    expect(feed).toContain(`data-team-link="${T1}"`)
+    // Negative control: the slice must NOT be the whole page, or we are back
+    // where we started.
+    expect(feed.length).toBeLessThan(html.length / 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // House rules over the new files
 // ---------------------------------------------------------------------------
 
@@ -491,6 +529,9 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.4 fi
     'src/components/leagues/league-home-season.tsx',
     'src/components/leagues/league-home-season-ops.ts',
     'src/components/leagues/activity-feed.tsx',
+    // The shared team-name/crest cells — newly shared by every league
+    // surface, and NOT covered by ui/'s pin (it stops at ui/).
+    'src/components/leagues/league-cells.tsx',
     'src/components/leagues/activity-feed-ops.ts',
     'src/components/leagues/players-page.tsx',
     'src/components/leagues/players-page-ops.ts',

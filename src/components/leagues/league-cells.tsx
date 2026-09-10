@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -35,21 +37,88 @@ export function Crest({ name, src, className, fallbackClassName }: CrestProps) {
   )
 }
 
+/**
+ * Where a franchise's own page lives — §16.1 `…/leagues/[id]/team/[teamId]`.
+ * ONE copy of the URL (the `mock-launcher-entry.ts` seam idiom): every door to
+ * a team page is built here, so the app cannot grow a second spelling of it.
+ */
+export function teamPageHref(leagueId: string, teamId: string): string {
+  return `/app/leagues/${leagueId}/team/${teamId}`
+}
+
+interface TeamNameLinkProps {
+  /** The visible text AND the link's accessible name — the franchise. */
+  name: string
+  leagueId: string
+  /**
+   * `null` / `undefined` ⇒ plain, non-interactive text: an open seat, a bye,
+   * an unrecorded champion. A name that resolves to no franchise gets no
+   * door — a dead anchor that looks clickable is exactly the failure this
+   * primitive exists to avoid (CLAUDE.md: never let "nothing happened" mean
+   * "it worked"). Same shape as `lists/v2/list-row-parts.tsx`'s name, which
+   * is a plain `<span>` when it has nowhere to go.
+   */
+  teamId?: string | null
+  /**
+   * The call site's own typography and layout (`min-w-0 flex-1 truncate`,
+   * its size and weight, its own accent colour). The primitive contributes
+   * ONLY the link treatment — no colour, no weight — so it cannot fight the
+   * viewer's own-team `text-accent-strong` or a bracket winner's weight, and
+   * it drops into an existing name element without moving anything.
+   */
+  className?: string
+}
+
+/**
+ * A team name as a door to that team's page — the shared primitive for the
+ * F322/C65 shape ("the server has the verb, the UI has no door"): `set_lineup`
+ * has accepted a commissioner acting for another franchise since migration
+ * 114 (§16.1), and until this existed nothing in the app linked to any team
+ * but the viewer's own.
+ *
+ * The treatment is the house inline-link convention (`list-detail-hero.tsx`,
+ * `list-comments-tab.tsx`, `list-row-parts.tsx`): the underline is RESERVED at
+ * rest with `decoration-transparent` and painted on hover, so hovering is a
+ * paint-only change and can never reflow a narrow table cell or push a grid
+ * into horizontal scroll. No shadow — this is text in normal page flow, and
+ * elevation is a hover affordance for things that float (CLAUDE.md).
+ */
+export function TeamNameLink({ name, leagueId, teamId, className }: TeamNameLinkProps) {
+  if (!teamId) return <span className={className}>{name}</span>
+  return (
+    <Link
+      href={teamPageHref(leagueId, teamId)}
+      data-team-link={teamId}
+      className={cn(
+        'underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent',
+        className,
+      )}
+    >
+      {name}
+    </Link>
+  )
+}
+
 interface TeamCellProps {
   team: string
   sub?: React.ReactNode
   crestClassName?: string
   className?: string
+  /** With `teamId`, the name becomes a door to that team's page — the SAME
+   *  `TeamNameLink` the row-level call sites use, so the linked/unlinked
+   *  decision and its treatment live in one place. */
+  leagueId?: string
+  teamId?: string | null
 }
 
 /** Crest + bold team name (+ optional muted sub line). */
-export function TeamCell({ team, sub, crestClassName, className }: TeamCellProps) {
+export function TeamCell({ team, sub, crestClassName, className, leagueId, teamId }: TeamCellProps) {
   return (
     <div className={cn('flex min-w-0 items-center gap-2', className)}>
       <Crest name={team} className={crestClassName} />
       <div className="min-w-0">
         <div className="truncate text-[11px] font-extrabold leading-tight">
-          {team}
+          {leagueId ? <TeamNameLink name={team} leagueId={leagueId} teamId={teamId} /> : team}
         </div>
         {sub && (
           <div className="truncate text-[10px] font-semibold leading-tight text-n-3">
