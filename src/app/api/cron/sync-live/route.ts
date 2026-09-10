@@ -8,13 +8,21 @@ import { LIVE_POLL_BUDGET_MS, runLivePollInvocation } from '@/lib/sync/live-poll
 
 /**
  * In-season live ingestion — the production `sync-live-stats` job (spec §14
- * / §23.2 / §23.3). BUILT AND UNSCHEDULED: it expects to be fired EVERY
- * MINUTE, but `vercel.json` carries no entry for it — the project is on
- * Vercel Hobby, which refuses any cron finer than daily at deploy time
- * (PROGRESS R884), and the scheduler is Chris's ruling, PROGRESS Q43 (Vercel
- * Pro / an external minute pinger / pg_cron + pg_net). The route is
- * scheduler-agnostic: any caller with `CRON_SECRET` once a minute is the
- * production cadence. Rebound by L.D2.3 (PROGRESS F216) from the pre-M4
+ * / §23.2 / §23.3). SCHEDULED EVERY MINUTE BY pg_cron + pg_net, migration
+ * 124's `sync-live-ping` job (`SELECT public.cron_ping_route('/api/cron/
+ * sync-live')`) — Q43 ANSWERED with its option (c). Vercel Hobby refuses
+ * any cron finer than daily at deploy time (PROGRESS R884), and the daily
+ * stopgap that stood alone turned a 20-minute miss into a day of stale
+ * scores (the 2026-09-10 measurement in 124's banner). THE DAILY
+ * `vercel.json` ENTRY (`15 8 * * *`) STAYS FOR NOW, deliberately: it is the
+ * only cover between this PR's merge and the manual `db push` +
+ * `vault.create_secret` steps that bring the pg_cron path up, and running
+ * both costs one extra provider read a day — `ingestWeek` enqueues a DIFF,
+ * so a redundant poll finds nothing changed and writes nothing. It comes
+ * out in a follow-up once Chris confirms the pings are live (PROGRESS
+ * F331). The route stays scheduler-agnostic either way: any caller with
+ * `CRON_SECRET` once a minute is the production cadence — 124 supplies that
+ * caller by reading the secret from Supabase Vault at call time. Rebound by L.D2.3 (PROGRESS F216) from the pre-M4
  * `syncLiveStats` to L.D2.1's `ingestWeek` through `runLivePollInvocation`
  * (`src/lib/sync/live-poll.ts`):
  *

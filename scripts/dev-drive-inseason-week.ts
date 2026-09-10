@@ -190,6 +190,10 @@ async function score(scale: number): Promise<void> {
 
 async function window(): Promise<void> {
   const { leagueId, week } = await fixture()
+  // A SERVICE-ROLE stamp, deliberately bypassing `weekBounds` (the only real
+  // writer): this driver fabricates the release rather than observing it, so
+  // it is NOT bound by Q50's Tuesday 00:00 Pacific floor. `starts_at + 5 d` is
+  // a dev convenience instant, not the instant production would write.
   const lastEnd = new Date(Date.parse(week.starts_at) + 5 * DAY_MS).toISOString()
   must(await service.from('nfl_games').update({ status: 'final' }).eq('season', SYNTHETIC_SEASON).eq('week', WEEK).select('id'), 'games final')
   must(await service.from('nfl_weeks').update({ last_game_ends_at: lastEnd }).eq('season', SYNTHETIC_SEASON).eq('week', WEEK).select('week'), 'nfl_weeks last_game_ends_at')

@@ -162,6 +162,27 @@ describe('calendarFindings — F228 / F238 / Q37’s shape', () => {
     expect(week1(calendarFindings(WEEKS, stillOpen, now))).toEqual(['game_not_final_late']) // not unstamped — a game is open; but it is late
   })
 
+  it('Q50 the FLOOR: an all-final week holding a FUTURE release stamp is NOT unstamped — the alert keeps meaning F238', () => {
+    // The floor makes `weekBounds` stamp the Tuesday 00:00 PT instant at the
+    // observing poll, so between the last whistle (~Mon 20:40 PT) and the
+    // floor the column carries a FUTURE instant rather than NULL. If it held
+    // NULL instead, this alert would fire for every league every week and a
+    // real un-observed release (F238) would be indistinguishable from noise.
+    // R982: `now` must sit BEFORE the floor or this cell is vacuous — the first
+    // cut used 12:00Z, five hours PAST the 07:00Z stamp, which made it a
+    // duplicate of the "a stamp present ⇒ nothing" cell above and left it green
+    // through the very regression it pins (a `calendarFindings` refined to
+    // "the release has not happened yet", i.e. `> nowMs`, which would restore
+    // the F238 alert storm). 04:00Z is Mon 21:00 PDT — the real held window.
+    const now = new Date('2026-09-15T04:00:00.000Z')
+    const week1 = (rows: ReturnType<typeof calendarFindings>) => rows.filter((f) => f.week === 1).map((f) => f.kind)
+    const games = [g('a', 1, '2026-09-10T00:20:00.000Z', 'final')]
+    const floored = [{ ...WEEKS[0], last_game_ends_at: '2026-09-15T07:00:00.000Z' }, ...WEEKS.slice(1)] // 3 h AHEAD of `now`
+    expect(week1(calendarFindings(floored, games, now))).toEqual([])
+    // The one-unit sibling: the same week with NULL still alerts.
+    expect(week1(calendarFindings(WEEKS, games, now))).toEqual(['all_final_unstamped'])
+  })
+
   it('game_not_final_late: exactly 8 h past kickoff is not late; one millisecond more is (warn); a final game never is', () => {
     const kick = '2026-09-13T17:00:00.000Z'
     const at8h = new Date(new Date(kick).getTime() + GAME_LATE_MS)

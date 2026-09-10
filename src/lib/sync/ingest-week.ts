@@ -87,6 +87,7 @@ import type {
   ProviderPlayerWeekStats,
   StatsProvider,
 } from '@/lib/leagues/stats/stats-provider'
+import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
@@ -293,27 +294,57 @@ export function diffGames(incoming: GameRow[], existing: ReadonlyMap<string, Gam
  * `nfl_weeks` bounds for one week from its games (§12.20; F9's columns):
  *   first_kickoff_at  = min kickoff over the week's in-week games (a
  *                       postponed-out game never bounds it, E43);
- *   last_game_ends_at = "updated as games finish" — set to the injected
- *                       poll instant on the FIRST poll that observes every
- *                       in-week game `final`, kept while they all STAY
- *                       final, NULL while any in-week game is still ahead
- *                       or live.
+ *   last_game_ends_at = the week's RELEASE INSTANT (Q50) — the LATER of the
+ *                       poll that first observes every in-week game `final`
+ *                       and the week's Tuesday 00:00 Pacific FLOOR; NULL
+ *                       while any in-week game is still ahead or live.
+ *
+ * Q50 (Chris, 2026-09-09): *"players release when every game in the week has
+ * finished, never before Tuesday 00:00 Pacific"*. The TRIGGER is unchanged —
+ * every in-week game final — and the FLOOR only prevents that trigger landing
+ * early. Past the floor the max() yields the observation, so a Monday game
+ * postponed into Tuesday releases as soon as it ends (*"we would basically
+ * want it to be as soon as the game has ended since we are past the normal
+ * unlock time"*) rather than waiting a further week — which is why the floor
+ * is derived from `weekStartsAt` and never from a kickoff. The ceiling
+ * (Wednesday 00:00 Pacific) is Q50(c)'s and is NOT built here.
+ *
+ * Stamping the FLOOR — an instant that can sit in the FUTURE at write time —
+ * rather than holding NULL is deliberate. Every SQL reader compares this
+ * column to `p_at` (115:270/:309, 118:1846), so a future stamp keeps players
+ * locked and the week `live` with no migration; `lineup_lock_tick` writes
+ * that real instant instead of `'infinity'` (116:59-66); and, decisively,
+ * the all-final-and-NULL state stays what it has always meant — F238, the
+ * `all_final_unstamped` ALERT (`scoring/reconcile.ts:388`). Holding NULL for
+ * the ~3.3 h before the floor would page every league every week and let
+ * "nothing happened" read as "it worked".
+ *
  * The stamp is DERIVED from the games on every poll, never sticky (R709,
  * D303(4)): a later non-final in-week game — one moved INTO the week, or a
  * provider status regression — re-opens the week (NULL) and the stamp is
  * re-taken at the next all-final observation. A week that is genuinely
- * still playing must not read as ended.
+ * still playing must not read as ended. `prior` still wins outright, so the
+ * floor shapes only the FIRST stamp and the instant never moves once written.
  * A week with no in-week games bounds nothing (both NULL).
+ *
+ * `weekStartsAt` is the week's `nfl_weeks.starts_at` (Wednesday 00:00 ET,
+ * `NOT NULL` seeded reference data — 039:34-36/:45).
  */
-export function weekBounds(games: readonly GameRow[], prior: WeekBounds | null, now: Date): WeekBounds {
+export function weekBounds(
+  games: readonly GameRow[],
+  prior: WeekBounds | null,
+  now: Date,
+  weekStartsAt: string,
+): WeekBounds {
   const inWeek = games.filter((g) => IN_WEEK_STATUSES.has(g.status))
   if (inWeek.length === 0) return { first_kickoff_at: null, last_game_ends_at: null }
   const first = inWeek.map((g) => g.kickoff_at).sort()[0]
   const allFinal = inWeek.every((g) => g.status === 'final')
-  return {
-    first_kickoff_at: first,
-    last_game_ends_at: allFinal ? (prior?.last_game_ends_at ?? isoOf(now)) : null,
-  }
+  const release = allFinal
+    ? (prior?.last_game_ends_at ??
+      isoOf(new Date(Math.max(now.getTime(), weekReleaseFloor(weekStartsAt).getTime()))))
+    : null
+  return { first_kickoff_at: first, last_game_ends_at: release }
 }
 
 export function sameBounds(a: WeekBounds, b: WeekBounds): boolean {
@@ -464,18 +495,31 @@ async function readGames(db: SyncClient, season: number): Promise<Map<string, Ga
 interface DbWeekRow {
   season: number
   week: number
+  /** Q50's floor anchor — Wednesday 00:00 ET, `NOT NULL` (039:34-36/:45). */
+  starts_at: string
   first_kickoff_at: string | null
   last_game_ends_at: string | null
+}
+
+/** What the poll needs about a stored week: the bounds it DIFFS against, plus
+ *  the calendar datum the Q50 floor is derived from. `starts_at` is carried
+ *  BESIDE `WeekBounds` rather than inside it on purpose — `WeekBounds` is the
+ *  write payload as well as the read shape, and `sameBounds` drives the diff,
+ *  so a read-only calendar column added to it would be written back into
+ *  `nfl_weeks` and would poison the unchanged/changed comparison. */
+interface StoredWeek {
+  bounds: WeekBounds
+  startsAt: string
 }
 
 function weekKey(season: number, week: number): string {
   return `${season}:${week}`
 }
 
-async function readWeeks(db: SyncClient, season: number): Promise<Map<string, WeekBounds>> {
+async function readWeeks(db: SyncClient, season: number): Promise<Map<string, StoredWeek>> {
   const { data, error } = await db
     .from('nfl_weeks')
-    .select('season, week, first_kickoff_at, last_game_ends_at')
+    .select('season, week, starts_at, first_kickoff_at, last_game_ends_at')
     .eq('season', season)
   if (error) throw new Error(`nfl_weeks read failed (${season}): ${error.message}`)
   const rows = (data ?? []) as DbWeekRow[]
@@ -484,11 +528,14 @@ async function readWeeks(db: SyncClient, season: number): Promise<Map<string, We
   if (rows.length >= POSTGREST_ROW_CAP) {
     throw new Error(`nfl_weeks read for ${season} returned ${rows.length} rows — at the PostgREST cap, refusing to trust it`)
   }
-  const out = new Map<string, WeekBounds>()
+  const out = new Map<string, StoredWeek>()
   for (const row of rows) {
     out.set(weekKey(row.season, row.week), {
-      first_kickoff_at: row.first_kickoff_at === null ? null : isoOf(row.first_kickoff_at),
-      last_game_ends_at: row.last_game_ends_at === null ? null : isoOf(row.last_game_ends_at),
+      bounds: {
+        first_kickoff_at: row.first_kickoff_at === null ? null : isoOf(row.first_kickoff_at),
+        last_game_ends_at: row.last_game_ends_at === null ? null : isoOf(row.last_game_ends_at),
+      },
+      startsAt: isoOf(row.starts_at),
     })
   }
   return out
@@ -687,8 +734,8 @@ export async function ingestWeek(
       outsideCalendar.push(key.replace(':', ' week '))
       continue
     }
-    const bounds = weekBounds(games, prior, polledAt)
-    if (sameBounds(prior, bounds)) report.weeks.unchanged += 1
+    const bounds = weekBounds(games, prior.bounds, polledAt, prior.startsAt)
+    if (sameBounds(prior.bounds, bounds)) report.weeks.unchanged += 1
     else weekWrites.push({ season: games[0].season, week: games[0].week, bounds })
   }
   report.weeks.touched = byWeek.size

@@ -12,13 +12,25 @@ import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
 
 /**
  * The `score-league-week` invoker (spec §14 "every 5–10s in game windows" /
- * §22.2 / §22.3). BUILT AND UNSCHEDULED: it expects to be fired EVERY MINUTE
- * (the 5 s cadence is produced INSIDE the invocation by
- * `runScoreWeekInvocation`, L.D2.3 / PROGRESS D322), but `vercel.json`
- * carries no entry for it — Vercel Hobby refuses any cron finer than daily
- * at deploy time (PROGRESS R884); the scheduler is Chris's ruling, PROGRESS
- * Q43. Scheduler-agnostic: any caller with `CRON_SECRET` once a minute is
- * the production cadence. Drives L.D2.2's `runScoreWeekBatch` with:
+ * §22.2 / §22.3). SCHEDULED EVERY MINUTE BY pg_cron + pg_net, migration
+ * 124's `score-week-ping` job (the 5 s cadence is still produced INSIDE the
+ * invocation by `runScoreWeekInvocation`, L.D2.3 / PROGRESS D322) — Q43
+ * ANSWERED with its option (c). Vercel Hobby refuses any cron finer than
+ * daily at deploy time (PROGRESS R884), and the daily stopgap left 24
+ * enqueued rows undrained for six hours on 2026-09-10 (124's banner). THE
+ * DAILY `vercel.json` ENTRY (`30 8 * * *`) STAYS FOR NOW, deliberately: it
+ * is the only cover between merge and the manual `db push` +
+ * `vault.create_secret` steps, and running both is safe because
+ * `score_fanout_claim` leases 120 s >= `maxDuration` 60 + 30 s skew under
+ * `FOR UPDATE SKIP LOCKED`, so two concurrent drains claim disjoint sets
+ * (pinned in `score-week-worker-db.test.ts:1107`). It comes out in a
+ * follow-up once Chris confirms the pings are live (PROGRESS F331). When
+ * THIS drain stops, 124's `scoring-stall-check` job raises
+ * `system_flags.scoring_stalled` within ten minutes — and when the PING
+ * itself dies, its second arm notices that ingestion stopped, which an empty
+ * queue could not. The in-season banner says so either way.
+ * Scheduler-agnostic:
+ * any caller with `CRON_SECRET` once a minute is the production cadence. Drives L.D2.2's `runScoreWeekBatch` with:
  *
  *   * `leaseSeconds = SCORE_WEEK_LEASE_SECONDS` (120) ≥ `maxDuration` (60)
  *     + the clock-skew margin (30) — F263(f)/R874, pinned in route.test.ts:

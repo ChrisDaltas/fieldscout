@@ -22,7 +22,8 @@
  *     uninterrupted `happy_path` state at the same instant (same seed —
  *     the back-fill is the cumulative read, R26's reading);
  *   - E43: a postponed-out game is stored `postponed` and never bounds the
- *     week; `last_game_ends_at` stamps at the all-final instant (−1s NULL);
+ *     week; `last_game_ends_at` stamps at the LATER of the all-final instant
+ *     and Q50's Tuesday 00:00 Pacific floor (−1s from all-final: NULL);
  *   - F13: `source` follows `provider.name` per provider — a second
  *     provider over the same rows flips ONLY provenance (written, not
  *     enqueued);
@@ -496,7 +497,11 @@ describe('E45 — provider_outage raises stats_degraded on the 3rd failed poll, 
   })
 })
 
-describe('E43 / §12.20 — postponement and the last_game_ends_at rule', () => {
+describe('E43 / §12.20 / Q50 — postponement and the last_game_ends_at rule', () => {
+  /** 2026 week 2's floor: the first Tuesday 00:00 America/Los_Angeles after
+   *  the seeded `starts_at` 2026-09-16T04:00:00Z (039:66). PDT ⇒ 07:00Z. */
+  const WEEK2_FLOOR = '2026-09-22T07:00:00.000Z'
+
   it('a postponed-out game is stored postponed with its moved kickoff and never bounds the week; its players emit no lines', async () => {
     const clock = new VirtualClock(new Date('2026-09-21T04:00:00Z')) // Monday 04:00Z — G1/G3 final, G2 postponed
     const provider = synthetic('postponement', clock)
@@ -505,15 +510,16 @@ describe('E43 / §12.20 — postponement and the last_game_ends_at rule', () => 
     expect(games.get(G2)).toEqual({ kickoff_at: '2026-09-27T20:25:00.000Z', status: 'postponed', updated_at: '2026-09-21T04:00:00.000Z' })
     expect(games.get(G1)!.status).toBe('final')
     expect(games.get(G3)!.status).toBe('final')
-    // Both in-week games are final ⇒ the week ended at this observation (G2 excluded).
-    expect(await storedWeek()).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: '2026-09-21T04:00:00.000Z' })
+    // Both in-week games are final (G2 excluded) ⇒ the week RELEASES — held
+    // to Q50's floor, because this Monday observation is before it.
+    expect(await storedWeek()).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: WEEK2_FLOOR })
     expect(report.stats.inserted).toBe(12) // 18 players − G2's 6 (postponed: score 0, no line — §23.3)
     const stats = await storedStats()
     expect([...stats.keys()].some((id) => id.startsWith('syn-g2-'))).toBe(false)
     for (const row of stats.values()) expect(row.is_live).toBe(false) // both remaining games final
   })
 
-  it('last_game_ends_at is NULL one second before the last game ends and stamps at the ending instant (D146)', async () => {
+  it('last_game_ends_at is NULL one second before the last game ends and stamps at Q50’s FLOOR, not the ending instant (D146 + Q50)', async () => {
     const clock = new VirtualClock(new Date('2026-09-21T03:39:59Z'))
     const provider = synthetic('happy_path', clock)
     const deps = io()
@@ -522,16 +528,29 @@ describe('E43 / §12.20 — postponement and the last_game_ends_at rule', () => 
     const at = await poll(provider, clock, '2026-09-21T03:40:00Z', deps)
     expect(at.games.updated).toBe(1) // G3 live → final
     expect(at.weeks).toEqual({ touched: 1, updated: 1, unchanged: 0, outsideCalendar: 0 })
-    expect(await storedWeek()).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: '2026-09-21T03:40:00.000Z' })
+    // The games ended at 03:40:00Z (Sun 20:40 PDT); the RELEASE is the floor,
+    // ~27 h later. Before Q50 this cell read '2026-09-21T03:40:00.000Z'.
+    expect(await storedWeek()).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: WEEK2_FLOOR })
     // Kept on the next poll, not re-stamped.
     const later = await poll(provider, clock, '2026-09-21T04:00:00Z', deps)
     expect(later.weeks).toEqual({ touched: 1, updated: 0, unchanged: 1, outsideCalendar: 0 })
-    expect((await storedWeek()).last_game_ends_at).toBe('2026-09-21T03:40:00.000Z')
+    expect((await storedWeek()).last_game_ends_at).toBe(WEEK2_FLOOR)
     // One second before the end every nonzero G3 line reads floor(v × (1 − ε)) = v − 1,
     // so the ending instant is a scoring delta for all six G3 players (measured);
     // the 11 G1/G2 rows, final for hours, are unchanged.
     expect(at.stats).toMatchObject({ updated: 6, unchanged: 11, metaOnly: 0, deltas: 6 })
     expect(later.stats).toMatchObject({ updated: 0, unchanged: 17, metaOnly: 0, deltas: 0 })
+  })
+
+  it('Q50 past the floor: the FIRST all-final poll landing after Tuesday 00:00 PT stamps ITSELF — release is immediate, never the following Tuesday', async () => {
+    // The outage/late-poll shape of Chris's weather-delay case: the games are
+    // long over, nothing observed them until Tuesday afternoon. `max()` yields
+    // the observation, and the floor — anchored on the WEEK, not on a kickoff
+    // — cannot push this to 2026-09-29.
+    const clock = new VirtualClock(new Date('2026-09-22T21:00:00Z')) // Tue 14:00 PDT
+    const provider = synthetic('happy_path', clock)
+    await poll(provider, clock, '2026-09-22T21:00:00Z', io())
+    expect((await storedWeek()).last_game_ends_at).toBe('2026-09-22T21:00:00.000Z')
   })
 })
 

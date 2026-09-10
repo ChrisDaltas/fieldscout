@@ -34,7 +34,7 @@ import { statsDegradedKeys } from '@/hooks/use-stats-degraded'
 import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
-import type { StatsDegradedFlag } from '@/lib/sync/ingest-flags'
+import type { LiveScoringFlags, ScoringStalledFlag } from '@/lib/sync/ingest-flags'
 
 import { MatchupPage } from './matchup-view'
 import {
@@ -184,8 +184,13 @@ const SCORED_BOX = (teamId: string): TeamBoxScore => ({
   no_stat_row: [],
 })
 
-const FLAG_OK: StatsDegradedFlag = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: '2099-09-13T18:00:00Z', last_error: null, provider: 'sleeper+nflverse' }
-const FLAG_DEGRADED: StatsDegradedFlag = { ...FLAG_OK, degraded: true, consecutive_failures: 3, last_failure_at: '2099-09-13T18:03:00Z', last_error: 'timeout' }
+const NO_STALL: ScoringStalledFlag = { stalled: false, reasons: [], rows: 0, oldest_enqueued_at: null, threshold_minutes: 10, ingest_stale: false, last_ingest_at: '2099-09-13T18:04:00Z', ingest_threshold_minutes: 120, checked_at: '2099-09-13T18:05:00Z' }
+const FLAG_OK: LiveScoringFlags = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: '2099-09-13T18:00:00Z', last_error: null, provider: 'sleeper+nflverse', stall: NO_STALL }
+const FLAG_DEGRADED: LiveScoringFlags = { ...FLAG_OK, degraded: true, consecutive_failures: 3, last_failure_at: '2099-09-13T18:03:00Z', last_error: 'timeout' }
+/** 124: the drain stopped — provider fine, queue untouched (the 2026-09-10 shape). */
+const FLAG_STALLED: LiveScoringFlags = { ...FLAG_OK, stall: { ...NO_STALL, stalled: true, reasons: ['queue_undrained'], rows: 24, oldest_enqueued_at: '2099-09-13T17:50:35Z' } }
+/** 124 ARM 2: both pings dead — ingestion stopped, so the queue is EMPTY rather than backed up. */
+const FLAG_INGEST_STALE: LiveScoringFlags = { ...FLAG_OK, stall: { ...NO_STALL, stalled: true, reasons: ['ingest_stale'], ingest_stale: true, last_ingest_at: '2099-09-13T09:00:00Z' } }
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
   const query = client.getQueryCache().build(client, { queryKey })
@@ -210,7 +215,7 @@ interface Seed {
   schedule?: LeagueSchedule | 'error' | 'missing'
   week?: WeekMatchups | 'error' | 'degraded' | 'missing'
   boxes?: Record<string, TeamBoxScore | 'error' | 'missing'>
-  flag?: StatsDegradedFlag
+  flag?: LiveScoringFlags
   matchupId?: string | null
   weekParam?: number | null
   connection?: 'live' | 'reconnecting' | 'connecting'
@@ -555,6 +560,24 @@ describe('§16.5.4 — the required states', () => {
     expect(html).toContain('data-score="71.50"')
     expect(html).toContain('>18.34<')
     expect(renderMatchups({ flag: FLAG_OK })).not.toContain(LIVE_STATS_DELAYED_COPY)
+  })
+  it('"Live stats delayed" — a STALLED DRAIN raises the same banner with the provider healthy (124: `scoring_stalled`; the 2026-09-10 stall)', () => {
+    const html = renderMatchups({ flag: FLAG_STALLED })
+    expect(html).toContain(LIVE_STATS_DELAYED_COPY)
+    // The instant named is the oldest UNDRAINED queue row, not the last poll:
+    // the provider is fine here, so `last_success_at` would be the wrong number.
+    expect(html).toContain('Last update')
+    expect(html).toContain('data-score="71.50"')
+    // Falsifiable: the same seed with `stalled: false` is silent, so it is the
+    // flag raising the banner and not the fixture.
+    expect(renderMatchups({ flag: { ...FLAG_STALLED, stall: { ...FLAG_STALLED.stall, stalled: false } } })).not.toContain(LIVE_STATS_DELAYED_COPY)
+  })
+  it('"Live stats delayed" — BOTH PINGS DEAD raises it too, on an EMPTY queue (124 ARM 2: ingestion stopped, so there are no rows to age — the shape that read as healthy before)', () => {
+    const html = renderMatchups({ flag: FLAG_INGEST_STALE })
+    expect(html).toContain(LIVE_STATS_DELAYED_COPY)
+    // Zero queue rows: the banner is raised by the INGESTION arm alone.
+    expect(FLAG_INGEST_STALE.stall.rows).toBe(0)
+    expect(renderMatchups({ flag: { ...FLAG_INGEST_STALE, stall: { ...FLAG_INGEST_STALE.stall, stalled: false, ingest_stale: false } } })).not.toContain(LIVE_STATS_DELAYED_COPY)
   })
   it('empty by reason: a playoff week before its round exists', () => {
     const html = renderMatchups({

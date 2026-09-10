@@ -127,11 +127,15 @@ export function StaleDataBanner({
 }
 
 /** The §23.2 / §16.5.4 "Live stats delayed" copy — single-sourced here
- *  (the catalog's one-spelling rule). The state is the `stats_degraded`
- *  incident flag (migration 122 `system_flags`; `use-stats-degraded.ts`):
- *  the provider has failed three polls in a row, so every number on screen
- *  is the last one the pipeline wrote — honest staleness, never a wrong
- *  number (E45). Non-alarming by the spec's own word. */
+ *  (the catalog's one-spelling rule). TWO states raise it, and the sentence
+ *  is exactly true of both (`use-stats-degraded.ts`, `liveScoringDelay`):
+ *  `stats_degraded` (migration 122) — the provider has failed three polls in
+ *  a row; and `scoring_stalled` (migration 124) — the score-week drain is
+ *  not running, so stats landed but no score was recomputed from them. In
+ *  either case every number on screen is the last one the pipeline wrote —
+ *  honest staleness, never a wrong number (E45), and the manager's remedy is
+ *  the same, which is why there is one spelling and not two. Non-alarming by
+ *  the spec's own word. */
 export const LIVE_STATS_DELAYED_COPY = 'Live stats delayed — scores show the last update we received.'
 
 /**
