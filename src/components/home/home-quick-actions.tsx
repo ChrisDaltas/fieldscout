@@ -6,8 +6,9 @@ import { useState } from 'react'
 import { MockLaunchDialog } from '@/components/draft/mock-launch-dialog'
 import { mockRoomHref } from '@/components/draft/mock-launcher-entry'
 import { Button } from '@/components/ui/button'
+import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
+import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
 import { Icon, type IconName } from '@/components/ui/icon'
-import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
@@ -15,7 +16,9 @@ import { useUIStore } from '@/stores/ui-store'
 /**
  * Home header quick-create chips — Join / League / List / Mock (package
  * screen 01). The icon tile flips to a plus on hover, Figma-style. Join and
- * League are stub actions until the league backend exists; List opens the
+ * League open the real create and join flows (the backend shipped with M1–M4;
+ * they were stubs until 2026-09-09, when Chris hit the dead button on Home
+ * while standing up the first test league); List opens the
  * existing global create-list dialog; Mock opens the practice-draft launch
  * dialog and walks the launcher into the room.
  *
@@ -88,6 +91,8 @@ export function HomeQuickActions() {
   const setCreateListOpen = useUIStore((s) => s.setCreateListOpen)
   const router = useRouter()
   const [mockLaunchOpen, setMockLaunchOpen] = useState(false)
+  const [createLeagueOpen, setCreateLeagueOpen] = useState(false)
+  const [joinLeagueOpen, setJoinLeagueOpen] = useState(false)
 
   return (
     <span className="flex items-center gap-2">
@@ -97,28 +102,16 @@ export function HomeQuickActions() {
         icon="team"
         label="Join"
         tileClassName="bg-brand text-ink"
-        onClick={() =>
-          // TODO(live-draft): joining a league needs the league backend —
-          // invite codes don't exist yet.
-          toast({
-            title: 'Join a league',
-            description:
-              'Ask your commissioner for an invite code to join a league.',
-          })
-        }
+        onClick={() => setJoinLeagueOpen(true)}
       />
       <ActionChip
         icon="cup"
         label="League"
         tileClassName="bg-accent text-accent-foreground"
-        onClick={() =>
-          // TODO(live-draft): league creation ships with the league backend.
-          toast({
-            title: 'New league',
-            description: 'League setup is on the way — starting with scoring.',
-          })
-        }
+        onClick={() => setCreateLeagueOpen(true)}
       />
+      <LeagueCreateModal open={createLeagueOpen} onOpenChange={setCreateLeagueOpen} />
+      <JoinLeagueDialog open={joinLeagueOpen} onOpenChange={setJoinLeagueOpen} />
       </>
       )}
       <ActionChip
