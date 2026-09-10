@@ -35,12 +35,24 @@ function useInvalidateMembers(leagueId: string) {
   }
 }
 
+/** `add_placeholder_seat`'s return (063:467-473). `seats_filled`/`team_count`
+ *  are the league's own postcondition — the only authoritative answer to
+ *  "is this league seated yet" — and a bulk fill MUST report from them rather
+ *  than from a client-side iteration count (R958). */
+export interface PlaceholderSeatResult {
+  member_id: string
+  team_id: string
+  team_name: string
+  seats_filled: number
+  team_count: number
+}
+
 /** POST /api/leagues/[id]/members — create an empty placeholder seat (§7.2). */
 export function useAddPlaceholderSeat(leagueId: string) {
   const invalidate = useInvalidateMembers(leagueId)
   return useMutation({
     mutationFn: (teamName?: string) =>
-      sendLeagueAction(
+      sendLeagueAction<PlaceholderSeatResult>(
         `/api/leagues/${leagueId}/members`,
         jsonInit('POST', teamName ? { team_name: teamName } : {}),
       ),

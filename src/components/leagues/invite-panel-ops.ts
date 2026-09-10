@@ -309,3 +309,97 @@ export function validateSlug(raw: string): string | null {
   }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// Bulk seat fill — the OUTCOME classifier (R958/R964)
+// ---------------------------------------------------------------------------
+
+/** The `seats_filled` / `team_count` postcondition `add_placeholder_seat`
+ *  returns (063:467-473). The ONLY authoritative answer to "is this league
+ *  seated yet" — `openCount` is derived from a cached league document with no
+ *  window-focus refetch and no realtime on `league_members`, so it can be
+ *  stale HIGH (managers joined by link since the last fetch) or stale LOW. */
+export interface SeatCounts {
+  filled: number
+  total: number
+}
+
+export interface FillOutcome {
+  title: string
+  description: string
+}
+
+/** Narrow an `add_placeholder_seat` response to its seat counts, or null when
+ *  the shape is not what we expect (never trust an unvalidated body). */
+export function readSeatCounts(body: unknown): SeatCounts | null {
+  if (body === null || typeof body !== 'object') return null
+  const row = body as { seats_filled?: unknown; team_count?: unknown }
+  const filled = row.seats_filled
+  const total = row.team_count
+  if (typeof filled !== 'number' || typeof total !== 'number') return null
+  if (!Number.isFinite(filled) || !Number.isFinite(total) || total <= 0) return null
+  return { filled, total }
+}
+
+/** True when the RPC refused because the league is ALREADY at capacity —
+ *  i.e. the work this button exists to do is done. 063:446 raises this
+ *  sentence and the API passes `error.message` straight through, so the
+ *  substring is the only signal available; it is matched narrowly and the
+ *  sentence is spec-pinned (§4 rule 13's byte-identical discipline). Treating
+ *  it as failure is CLAUDE.md's "never let 'nothing happened' mean 'it
+ *  worked'" running in REVERSE: inferring failure from a refusal without
+ *  asserting its reason. */
+export function isAlreadyFullRefusal(message: string): boolean {
+  return /already has all \d+ seats/.test(message)
+}
+
+/** What to tell the commissioner after a bulk fill.
+ *
+ *  Reports from `seats` — the SERVER's numbers — and falls back to the client
+ *  iteration count only when no response carried them. `added === 0` with a
+ *  complete league is the concurrent case: someone else finished the job.
+ *
+ *  The share-link sentence is load-bearing, not decoration. Both self-serve
+ *  join paths count MATERIALISED franchises, not unclaimed seats
+ *  (062:1005-1008 and the general-claim arm at 062:911-916), so a league at
+ *  capacity answers "This league is full" to its own invite link — and no
+ *  verb anywhere removes a placeholder seat, so this is not undoable. What
+ *  still works is a SEAT-TARGETED invite: that arm takes `target_team_id` and
+ *  never reaches the capacity check (062:902), which is why the honest
+ *  instruction is "invite a manager to a specific seat", not "share the
+ *  link". */
+export function fillOutcome(
+  seats: SeatCounts | null,
+  added: number,
+  requested: number,
+): FillOutcome {
+  const seatWord = (n: number) => `${n} seat${n === 1 ? '' : 's'}`
+
+  if (seats && seats.filled >= seats.total) {
+    return {
+      title: added === 0 ? 'Every seat already exists' : `${seatWord(added)} added`,
+      description:
+        `All ${seats.total} franchises exist, so the draft can start. The shared invite ` +
+        `link will now answer "league is full" — invite managers to a specific seat instead.`,
+    }
+  }
+
+  if (seats) {
+    const short = seats.total - seats.filled
+    return {
+      title: `${seatWord(added)} added`,
+      description:
+        `${seats.filled} of ${seats.total} franchises exist — ${seatWord(short)} still ` +
+        `open. Press it again to finish.`,
+    }
+  }
+
+  // No server counts came back: say what we DID, never that the league is complete.
+  return {
+    title: `${seatWord(added)} added`,
+    description:
+      added >= requested
+        ? 'Reload the page to confirm every seat exists.'
+        : `Stopped after ${added} of ${requested}. Reload the page to see the current seats.`,
+  }
+}
