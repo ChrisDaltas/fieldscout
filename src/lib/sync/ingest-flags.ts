@@ -3,8 +3,10 @@
  * migration 122's `system_flags`; spec §23.2 / §24.1 / E45; PROGRESS D322,
  * discharges F217 and binds F218/R714's orphan escape — F263(e)).
  *
- * Two keys, one table (`system_flags(key, value jsonb, updated_at)` —
- * world-SELECT for the banner, service-role writes only):
+ * Three keys, one table (`system_flags(key, value jsonb, updated_at)` —
+ * world-SELECT for the banner; the sync routes write as service_role and
+ * 124's `scoring-stall-check` pg_cron job writes as postgres; still no
+ * client write policy for any role):
  *
  *   `stats_degraded` — §23.2's incident flag as it survives across
  *     serverless invocations. L.D2.1's `DegradationTracker` counts
@@ -29,7 +31,16 @@
  *     (both writes landed): a crash before this write leaves no escape,
  *     which is the safe direction (the row stays held, never scored stale).
  *
- * Time: no clock is read here — every instant comes from the poll report.
+ *   `scoring_stalled` — 124's drain stall check, written IN THE DATABASE by
+ *     `public.scoring_stall_check()` every minute. Read here only
+ *     (`readLiveScoringFlags`), never written from TS: one arm counts
+ *     `score_fanout` rows the claim would still take (a queue the client
+ *     cannot see), and the other READS the `ingest_poll:` keys above — so
+ *     the two schedulers check each other, and a pipeline that goes
+ *     completely dark cannot read as healthy.
+ *
+ * Time: no clock is read here — every instant comes from the poll report
+ * (or, for `scoring_stalled`, from the database that wrote it).
  * The writers are `upsert`s that assert their row count (loud emptiness).
  */
 
@@ -44,6 +55,9 @@ import type { IngestReport } from './ingest-week'
 export type FlagsClient = SupabaseClient<Database>
 
 export const STATS_DEGRADED_KEY = 'stats_degraded'
+
+/** 124's drain stall check — written every minute by the `scoring-stall-check` pg_cron job (`public.scoring_stall_check()`), read by the in-season banner. */
+export const SCORING_STALLED_KEY = 'scoring_stalled'
 
 export function ingestPollKey(season: number, week: number): string {
   return `ingest_poll:${season}:${week}`
@@ -63,6 +77,46 @@ export interface IngestPollFlag {
   provider: string
 }
 
+/**
+ * 124's `scoring_stalled`, written in the database every minute. TWO arms,
+ * because a dead scheduler produces an EMPTY queue, not a backed-up one:
+ *
+ *   * `queue_undrained` — `score_fanout` holds rows `score_fanout_claim`
+ *     would still take (its own claimability predicate — a hard-killed
+ *     drain's stale `claimed_at` and an elapsed `deferred_until` BOTH
+ *     count) that nothing has moved in `threshold_minutes`. The 2026-09-10
+ *     incident's signature: 24 rows, six hours, `team_week_results` 0.
+ *   * `ingest_stale` — no successful ingestion poll has been recorded in
+ *     `ingest_threshold_minutes`. Both of 124's pings share one helper and
+ *     one pair of Vault secrets, so they fail TOGETHER; with `sync-live`
+ *     dead nothing is ever enqueued and the first arm would read an empty
+ *     queue as health.
+ *
+ * `checked_at` moves every minute whether or not anything is wrong — a
+ * FROZEN `checked_at` is the tell that the checker itself stopped (F330).
+ * Nothing in the client reads that freshness: the surfaces that would are
+ * under a no-clock pin (§23.3 / F226), so the assertion belongs in CI.
+ */
+export interface ScoringStalledFlag {
+  stalled: boolean
+  /** Which arm(s) raised it: `queue_undrained`, `ingest_stale`. Empty when it is not raised. */
+  reasons: string[]
+  /** ARM 1 — `score_fanout` rows the claim would still take, untouched past the threshold. */
+  rows: number
+  oldest_enqueued_at: string | null
+  threshold_minutes: number | null
+  /** ARM 2 — no `ingest_poll:<season>:<week>` row has been written inside `ingest_threshold_minutes`. */
+  ingest_stale: boolean
+  last_ingest_at: string | null
+  ingest_threshold_minutes: number | null
+  checked_at: string | null
+}
+
+/** What the in-season scoring surfaces read in ONE query: both reasons the scores on screen may be behind. */
+export interface LiveScoringFlags extends StatsDegradedFlag {
+  stall: ScoringStalledFlag
+}
+
 const EMPTY_FLAG: StatsDegradedFlag = {
   degraded: false,
   consecutive_failures: 0,
@@ -70,6 +124,18 @@ const EMPTY_FLAG: StatsDegradedFlag = {
   last_success_at: null,
   last_error: null,
   provider: null,
+}
+
+const EMPTY_STALL: ScoringStalledFlag = {
+  stalled: false,
+  reasons: [],
+  rows: 0,
+  oldest_enqueued_at: null,
+  threshold_minutes: null,
+  ingest_stale: false,
+  last_ingest_at: null,
+  ingest_threshold_minutes: null,
+  checked_at: null,
 }
 
 function asRecord(value: Json | null | undefined): Record<string, Json | undefined> {
@@ -80,20 +146,69 @@ function str(value: Json | undefined): string | null {
   return typeof value === 'string' ? value : null
 }
 
+function nonNegativeInt(value: Json | undefined): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+/** One reading of a stored `stats_degraded` value — malformed reads as the empty flag's field, never as a wrong number. */
+function parseStatsDegraded(value: Json | null | undefined): StatsDegradedFlag {
+  const v = asRecord(value)
+  return {
+    degraded: v.degraded === true,
+    consecutive_failures: nonNegativeInt(v.consecutive_failures) ?? 0,
+    last_failure_at: str(v.last_failure_at),
+    last_success_at: str(v.last_success_at),
+    last_error: str(v.last_error),
+    provider: str(v.provider),
+  }
+}
+
+/** One reading of a stored `scoring_stalled` value (124). A malformed field reads as the empty flag's, never as a wrong number. */
+function parseScoringStalled(value: Json | null | undefined): ScoringStalledFlag {
+  const v = asRecord(value)
+  return {
+    stalled: v.stalled === true,
+    reasons: Array.isArray(v.reasons) ? v.reasons.filter((r): r is string => typeof r === 'string') : [],
+    rows: nonNegativeInt(v.rows) ?? 0,
+    oldest_enqueued_at: str(v.oldest_enqueued_at),
+    threshold_minutes: nonNegativeInt(v.threshold_minutes),
+    ingest_stale: v.ingest_stale === true,
+    last_ingest_at: str(v.last_ingest_at),
+    ingest_threshold_minutes: nonNegativeInt(v.ingest_threshold_minutes),
+    checked_at: str(v.checked_at),
+  }
+}
+
 /** The persisted flag, or the empty flag when no row exists yet (a fresh deploy). */
 export async function readStatsDegraded(db: FlagsClient): Promise<StatsDegradedFlag> {
   const { data, error } = await db.from('system_flags').select('value').eq('key', STATS_DEGRADED_KEY).maybeSingle()
   if (error) throw new Error(`system_flags read (${STATS_DEGRADED_KEY}): ${error.message}`)
   if (!data) return { ...EMPTY_FLAG }
-  const v = asRecord(data.value)
-  const failures = typeof v.consecutive_failures === 'number' && Number.isInteger(v.consecutive_failures) && v.consecutive_failures >= 0 ? v.consecutive_failures : 0
+  return parseStatsDegraded(data.value)
+}
+
+/**
+ * BOTH reasons the scores on an in-season page may be behind, in ONE round
+ * trip (the banner polls this every 60 s — a second query per surface would
+ * double that for one boolean):
+ *
+ *   * `stats_degraded` (122) — the PROVIDER stopped answering;
+ *   * `scoring_stalled` (124) — the DRAIN stopped running, which is the
+ *     2026-09-10 incident and the one nothing could see.
+ *
+ * A missing row is the empty flag, not an error — a fresh deploy, or a
+ * database that has not yet received 124. A read ERROR still throws: "we
+ * could not read whether the scores are behind" is not "they are fine".
+ */
+export async function readLiveScoringFlags(db: FlagsClient): Promise<LiveScoringFlags> {
+  const { data, error } = await db.from('system_flags').select('key, value').in('key', [STATS_DEGRADED_KEY, SCORING_STALLED_KEY])
+  if (error) throw new Error(`system_flags read (${STATS_DEGRADED_KEY}, ${SCORING_STALLED_KEY}): ${error.message}`)
+  const rows = data ?? []
+  const degraded = rows.find((r) => r.key === STATS_DEGRADED_KEY)
+  const stalled = rows.find((r) => r.key === SCORING_STALLED_KEY)
   return {
-    degraded: v.degraded === true,
-    consecutive_failures: failures,
-    last_failure_at: str(v.last_failure_at),
-    last_success_at: str(v.last_success_at),
-    last_error: str(v.last_error),
-    provider: str(v.provider),
+    ...(degraded ? parseStatsDegraded(degraded.value) : { ...EMPTY_FLAG }),
+    stall: stalled ? parseScoringStalled(stalled.value) : { ...EMPTY_STALL },
   }
 }
 

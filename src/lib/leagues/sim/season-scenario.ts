@@ -134,7 +134,7 @@
  *     still only COUNTS it and never asserts an arithmetic consequence.
  *   - Its window sits INSIDE the scenario's own: it kicks off at the earliest
  *     kickoff of a game the scenario never postpones and runs for that same
- *     game's duration. So `weekBounds` (ingest-week.ts:308-317) cannot move
+ *     game's duration. So `weekBounds` cannot move
  *     `nfl_weeks.first_kickoff_at` (the filler kickoff is never earlier than
  *     the in-week minimum) and cannot move the instant every in-week game
  *     first reads `final` (the filler ends no later than the last core game).
@@ -418,11 +418,15 @@ export function uncoveredClubs(
  *     games (flexed kickoffs included, since a flex can move a game earlier).
  *     A filler that kicked off before it would move the week's first kickoff
  *     — and with it 111's fallback lock datum.
- *   - `last_game_ends_at` is stamped at the FIRST poll that sees every
- *     in-week game `final`. That instant is the maximum end over the games
- *     that stay in the week, i.e. the ones the scenario never postpones —
- *     the same set `driveSeason` uses for its `close` instant. A filler
- *     ending later would push the week's close past the scenario's own.
+ *   - `last_game_ends_at` is WRITTEN at the FIRST poll that sees every
+ *     in-week game `final`. That observation instant is the maximum end over
+ *     the games that stay in the week, i.e. the ones the scenario never
+ *     postpones — the same set `driveSeason` uses for its `close` instant. A
+ *     filler ending later would push the week's close past the scenario's
+ *     own. (Since Q50 the VALUE written is `max(observation, the week's
+ *     Tuesday 00:00 Pacific floor)`; the floor is a constant of the week and
+ *     identical for both slates, so it cannot tell them apart either — which
+ *     is what the composition pin asserts.)
  *
  * Throws rather than publishes. A slate that quietly moved a correction
  * window would be exactly the "plausible result" CLAUDE.md forbids.

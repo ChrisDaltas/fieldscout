@@ -518,15 +518,20 @@ describe('weekBounds cannot tell the slates apart — the beats the scenario dec
         }
         const coreRows = await gameRowsAt(anchored, at)
         const fullRows = await gameRowsAt(full, at)
+        // Both slates take the SAME Q50 floor (it derives from the week's
+        // `starts_at`, which is identical on either side), so the composition
+        // property is untouched by it.
         const a = weekBounds(
           coreRows.filter((g) => g.week === anchored.week),
           priorCore,
           stamp,
+          target.weekStartsAt,
         )
         const b = weekBounds(
           fullRows.filter((g) => g.week === anchored.week),
           priorFull,
           stamp,
+          target.weekStartsAt,
         )
         expect(b, `${id} @ ${at.toISOString()}`).toEqual(a)
         priorCore = a

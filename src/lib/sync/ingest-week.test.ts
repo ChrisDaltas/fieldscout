@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import type { ProviderGame, ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
+import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 
 import {
@@ -114,31 +115,106 @@ describe('diffGames (§23.2 diff-aware)', () => {
   })
 })
 
-describe('weekBounds (§12.20 first_kickoff_at / last_game_ends_at; E43)', () => {
+describe('weekBounds (§12.20 first_kickoff_at / last_game_ends_at; E43; Q50 the release floor)', () => {
+  // 2026 week 2's calendar row (039:66) — Wednesday 00:00 ET. Every floor
+  // below is DERIVED from this and from nothing else.
+  const WEEK2_STARTS_AT = '2026-09-16T04:00:00.000Z'
+  /** Q50(a): the first Tuesday 00:00 America/Los_Angeles after WEEK2_STARTS_AT. */
+  const WEEK2_FLOOR = '2026-09-22T07:00:00.000Z'
   const now = new Date('2026-09-21T04:00:00Z')
   const g1Final: GameRow = { ...G1_ROW, status: 'final' }
   const g3Final: GameRow = { ...G3_ROW, status: 'final' }
 
-  it('first_kickoff_at is the earliest in-week kickoff; last_game_ends_at stays NULL while any game is ahead or live', () => {
-    expect(weekBounds([G3_ROW, G1_ROW], null, now)).toEqual({
+  it('CASE 4 — not all final: first_kickoff_at is the earliest in-week kickoff and last_game_ends_at stays NULL while any game is ahead or live', () => {
+    expect(weekBounds([G3_ROW, G1_ROW], null, now, WEEK2_STARTS_AT)).toEqual({
       first_kickoff_at: '2026-09-20T17:00:00.000Z',
       last_game_ends_at: null,
     })
-    expect(weekBounds([g1Final, { ...G3_ROW, status: 'live' }], null, now)).toEqual({
+    expect(weekBounds([g1Final, { ...G3_ROW, status: 'live' }], null, now, WEEK2_STARTS_AT)).toEqual({
       first_kickoff_at: '2026-09-20T17:00:00.000Z',
       last_game_ends_at: null,
     })
   })
 
-  it('last_game_ends_at = the injected poll instant on the first all-final observation, then kept', () => {
-    const first = weekBounds([g1Final, g3Final], null, now)
+  it('CASE 1 — the ordinary week: MNF ends ~21:30 PT Monday and the poll observes all-final at 21:31 PT, so the stamp is TUESDAY 00:00 PT, not the observation', () => {
+    // Per-minute polling (124) observes all-final within a minute of the last
+    // whistle. Q50: "never before Tuesday 00:00 Pacific".
+    const observed = new Date('2026-09-22T04:31:00Z') // Mon 2026-09-21, 21:31 PDT
+    const bounds = weekBounds([g1Final, g3Final], null, observed, WEEK2_STARTS_AT)
+    expect(bounds).toEqual({
+      first_kickoff_at: '2026-09-20T17:00:00.000Z',
+      last_game_ends_at: WEEK2_FLOOR, // 2026-09-22T07:00Z = Tue 00:00 PDT
+    })
+    // ...and the stamp is ~2h29m LATER than the instant that was observed —
+    // the whole behaviour change Q50(b) predicted.
+    expect(new Date(bounds.last_game_ends_at!).getTime() - observed.getTime()).toBe(2 * 3600_000 + 29 * 60_000)
+    // The one-unit sibling: a poll ONE MILLISECOND past the floor stamps
+    // itself, so the floor is a floor and not a rounding rule.
+    const pastByOneMs = new Date(Date.parse(WEEK2_FLOOR) + 1)
+    expect(weekBounds([g1Final, g3Final], null, pastByOneMs, WEEK2_STARTS_AT).last_game_ends_at).toBe(
+      '2026-09-22T07:00:00.001Z',
+    )
+  })
+
+  it('CASE 2 — past the floor (THE TRAP): a game postponed into Tuesday and finishing 14:00 PT stamps THAT Tuesday, never the FOLLOWING one', () => {
+    // Chris, 2026-09-09: "in the scenario where there's a weather delay on a
+    // monday night game it might not play until Tuesday… we would basically
+    // want it to be as soon as the game has ended since we are past the
+    // normal unlock time." The floor is a constant of the WEEK
+    // (`starts_at`), so a late kickoff cannot push it forward a week.
+    const movedToTuesday: GameRow = { ...G3_ROW, kickoff_at: '2026-09-22T17:05:00.000Z', status: 'final' }
+    const observed = new Date('2026-09-22T21:00:00Z') // Tue 2026-09-22, 14:00 PDT
+    const bounds = weekBounds([g1Final, movedToTuesday], null, observed, WEEK2_STARTS_AT)
+    expect(bounds.last_game_ends_at).toBe('2026-09-22T21:00:00.000Z') // immediate
+    expect(bounds.last_game_ends_at).not.toBe('2026-09-29T07:00:00.000Z') // NOT the following Tuesday
+    // The proof it is anchored on the week and not on the last kickoff: the
+    // floor computed from that Tuesday kickoff WOULD be the following week.
+    expect(weekReleaseFloor(movedToTuesday.kickoff_at).toISOString()).toBe('2026-09-29T07:00:00.000Z')
+    expect(weekReleaseFloor(WEEK2_STARTS_AT).toISOString()).toBe(WEEK2_FLOOR)
+  })
+
+  it('CASE 3 — DST: the identical Monday-night scenario in a week after the 2026-11-01 fall-back floors exactly 3600 s later in UTC', () => {
+    // 2026 week 9 (039:73) — Wednesday 00:00 EST. Its slate is entirely PST.
+    const WEEK9_STARTS_AT = '2026-11-04T05:00:00.000Z'
+    const wk9Sun: GameRow = { ...G1_ROW, id: '2026-wk09-DAL@PHI', week: 9, kickoff_at: '2026-11-08T18:00:00.000Z', status: 'final' }
+    const wk9Mnf: GameRow = { ...G3_ROW, id: '2026-wk09-SEA@SF', week: 9, kickoff_at: '2026-11-10T01:15:00.000Z', status: 'final' }
+    // Monday 21:31 PACIFIC in each week — the same wall clock, one before the
+    // fall-back and one after.
+    const sepStamp = weekBounds([g1Final, g3Final], null, new Date('2026-09-22T04:31:00Z'), WEEK2_STARTS_AT)
+      .last_game_ends_at!
+    const novStamp = weekBounds([wk9Sun, wk9Mnf], null, new Date('2026-11-10T05:31:00Z'), WEEK9_STARTS_AT)
+      .last_game_ends_at!
+    expect(sepStamp).toBe('2026-09-22T07:00:00.000Z') // PDT, UTC−7
+    expect(novStamp).toBe('2026-11-10T08:00:00.000Z') // PST, UTC−8
+    // The absolute instants are whole weeks apart PLUS exactly one hour: the
+    // UTC time-of-day moved 3600 s while the Pacific wall clock did not.
+    const DAY_MS = 24 * 3600_000
+    const utcTimeOfDay = (iso: string): number => ((Date.parse(iso) % DAY_MS) + DAY_MS) % DAY_MS
+    expect(utcTimeOfDay(sepStamp)).toBe(7 * 3600_000)
+    expect(utcTimeOfDay(novStamp)).toBe(8 * 3600_000)
+    expect(utcTimeOfDay(novStamp) - utcTimeOfDay(sepStamp)).toBe(3600_000)
+    // A hard-coded 07:00Z would red here; a hard-coded 08:00Z would red the
+    // September line above. Only zone data satisfies both.
+  })
+
+  it('CASE 5 — idempotence: a prior stamp wins outright and the instant never moves, floor-valued or not (R709/D303(4))', () => {
+    const first = weekBounds([g1Final, g3Final], null, now, WEEK2_STARTS_AT)
     expect(first).toEqual({
       first_kickoff_at: '2026-09-20T17:00:00.000Z',
-      last_game_ends_at: '2026-09-21T04:00:00.000Z',
+      last_game_ends_at: WEEK2_FLOOR,
     })
-    const later = weekBounds([g1Final, g3Final], first, new Date('2026-09-21T04:20:00Z'))
-    expect(later.last_game_ends_at).toBe('2026-09-21T04:00:00.000Z') // kept, not re-stamped
+    // A later poll, still before the floor: kept, not re-stamped.
+    const later = weekBounds([g1Final, g3Final], first, new Date('2026-09-21T04:20:00Z'), WEEK2_STARTS_AT)
+    expect(later.last_game_ends_at).toBe(WEEK2_FLOOR)
     expect(sameBounds(first, later)).toBe(true)
+    // A poll well PAST the floor: still kept — the floor shapes the FIRST
+    // stamp only, so the release instant a league already saw never moves.
+    const wellAfter = weekBounds([g1Final, g3Final], first, new Date('2026-09-24T00:00:00Z'), WEEK2_STARTS_AT)
+    expect(wellAfter.last_game_ends_at).toBe(WEEK2_FLOOR)
+    // The one-unit sibling: with NO prior, that same late poll stamps itself.
+    expect(
+      weekBounds([g1Final, g3Final], null, new Date('2026-09-24T00:00:00Z'), WEEK2_STARTS_AT).last_game_ends_at,
+    ).toBe('2026-09-24T00:00:00.000Z')
   })
 
   it('a postponed-out game never bounds the week (E43): it neither sets first_kickoff_at nor holds last_game_ends_at open', () => {
@@ -147,36 +223,44 @@ describe('weekBounds (§12.20 first_kickoff_at / last_game_ends_at; E43)', () =>
       status: 'postponed',
       kickoff_at: '2026-09-20T10:00:00.000Z', // earlier than every in-week game — must be ignored
     }
-    expect(weekBounds([postponedEarly, g3Final], null, now)).toEqual({
+    expect(weekBounds([postponedEarly, g3Final], null, now, WEEK2_STARTS_AT)).toEqual({
       first_kickoff_at: '2026-09-21T00:20:00.000Z',
-      last_game_ends_at: '2026-09-21T04:00:00.000Z',
+      last_game_ends_at: WEEK2_FLOOR,
     })
     // The one-unit sibling: the same game NOT postponed bounds both.
     const early: GameRow = { ...postponedEarly, status: 'scheduled' }
-    expect(weekBounds([early, g3Final], null, now)).toEqual({
+    expect(weekBounds([early, g3Final], null, now, WEEK2_STARTS_AT)).toEqual({
       first_kickoff_at: '2026-09-20T10:00:00.000Z',
       last_game_ends_at: null,
     })
   })
 
   it('the stamp is derived, not sticky (R709): a later non-final in-week game re-opens the week, and the next all-final observation re-stamps at ITS instant', () => {
-    const ended = weekBounds([g1Final, g3Final], null, now)
-    expect(ended.last_game_ends_at).toBe('2026-09-21T04:00:00.000Z')
+    const ended = weekBounds([g1Final, g3Final], null, now, WEEK2_STARTS_AT)
+    expect(ended.last_game_ends_at).toBe(WEEK2_FLOOR)
     // A game moved INTO the week (or a provider status regression) while the
     // stored stamp exists: the week is genuinely playing again → NULL.
     const movedIn: GameRow = { ...G1_ROW, id: '2026-wk02-NYG@WAS', home_team: 'WAS', away_team: 'NYG', status: 'live' }
-    const reopened = weekBounds([g1Final, g3Final, movedIn], ended, new Date('2026-09-22T01:00:00Z'))
+    const reopened = weekBounds([g1Final, g3Final, movedIn], ended, new Date('2026-09-22T01:00:00Z'), WEEK2_STARTS_AT)
     expect(reopened).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: null })
-    // Then all final again: re-stamped at the NEW observation, not the old one.
-    const reclosed = weekBounds([g1Final, g3Final, { ...movedIn, status: 'final' }], reopened, new Date('2026-09-22T04:00:00Z'))
-    expect(reclosed.last_game_ends_at).toBe('2026-09-22T04:00:00.000Z')
+    // Then all final again: re-stamped at the NEW observation (past the floor
+    // by then, so the observation wins), not the old one.
+    const reclosed = weekBounds(
+      [g1Final, g3Final, { ...movedIn, status: 'final' }],
+      reopened,
+      new Date('2026-09-23T04:00:00Z'),
+      WEEK2_STARTS_AT,
+    )
+    expect(reclosed.last_game_ends_at).toBe('2026-09-23T04:00:00.000Z')
     // The one-unit sibling: the same set STILL all-final keeps the stamp.
-    expect(weekBounds([g1Final, g3Final], ended, new Date('2026-09-22T01:00:00Z')).last_game_ends_at).toBe('2026-09-21T04:00:00.000Z')
+    expect(
+      weekBounds([g1Final, g3Final], ended, new Date('2026-09-22T01:00:00Z'), WEEK2_STARTS_AT).last_game_ends_at,
+    ).toBe(WEEK2_FLOOR)
   })
 
-  it('a week with no in-week games bounds nothing', () => {
-    expect(weekBounds([], null, now)).toEqual({ first_kickoff_at: null, last_game_ends_at: null })
-    expect(weekBounds([{ ...G1_ROW, status: 'postponed' }], null, now)).toEqual({
+  it('a week with no in-week games bounds nothing (and never computes a floor)', () => {
+    expect(weekBounds([], null, now, WEEK2_STARTS_AT)).toEqual({ first_kickoff_at: null, last_game_ends_at: null })
+    expect(weekBounds([{ ...G1_ROW, status: 'postponed' }], null, now, WEEK2_STARTS_AT)).toEqual({
       first_kickoff_at: null,
       last_game_ends_at: null,
     })
@@ -355,7 +439,16 @@ const EMPTY_PROVIDER: StatsProvider = {
 }
 
 function weekRows(n: number): Array<Record<string, unknown>> {
-  return Array.from({ length: n }, (_, i) => ({ season: 2026, week: i + 1, first_kickoff_at: null, last_game_ends_at: null }))
+  // `starts_at` is NOT NULL in 039 and is Q50's floor anchor, so the fixture
+  // carries it (week 1's Wednesday 00:00 ET, plus a week per row).
+  const WEEK1_STARTS_MS = Date.parse('2026-09-09T04:00:00.000Z')
+  return Array.from({ length: n }, (_, i) => ({
+    season: 2026,
+    week: i + 1,
+    starts_at: new Date(WEEK1_STARTS_MS + i * 7 * 24 * 3600_000).toISOString(),
+    first_kickoff_at: null,
+    last_game_ends_at: null,
+  }))
 }
 
 describe('readWeeks refuses a result set AT the PostgREST cap (rule 10, R712)', () => {

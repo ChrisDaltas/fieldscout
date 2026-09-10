@@ -40,7 +40,7 @@ import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { PlayoffBracket } from '@/lib/leagues/api/playoffs-service'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
-import type { StatsDegradedFlag } from '@/lib/sync/ingest-flags'
+import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
 import { LeagueHomeStates } from './league-home-states'
 import {
@@ -474,7 +474,7 @@ function renderHome(seed: { bracket?: PlayoffBracket | 'error' | 'missing'; stat
   qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 15), weekDoc)
   const feed: ActivityFeed = { items: [], limit: 8, has_more: false, next_before: null, next_before_id: null }
   qc.setQueryData(leagueActivityKeys.feed(LEAGUE, { limit: 8 }), feed)
-  const flag: StatsDegradedFlag = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: null, last_error: null, provider: 'sleeper+nflverse' }
+  const flag: LiveScoringFlags = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: null, last_error: null, provider: 'sleeper+nflverse', stall: { stalled: false, reasons: [], rows: 0, oldest_enqueued_at: null, threshold_minutes: 10, ingest_stale: false, last_ingest_at: null, ingest_threshold_minutes: 120, checked_at: null } }
   qc.setQueryData(statsDegradedKeys.flag(), flag)
   const b = seed.bracket ?? BUILT_DOC
   if (b === 'error') failQuery(qc, playoffBracketKeys.all(LEAGUE), new Error('bracket read failed'))

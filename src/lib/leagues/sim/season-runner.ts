@@ -91,6 +91,7 @@ import {
   CHARTED_PLACEHOLDER_KEY,
   SyntheticStatsProvider,
 } from '../stats/synthetic/synthetic-stats-provider'
+import { weekReleaseFloor } from '../time/release-floor'
 import { VirtualClock } from '../time/virtual-clock'
 
 import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
@@ -775,7 +776,7 @@ export async function readLeagueState(
 // The timeline
 // ---------------------------------------------------------------------------
 
-type InstantKind = 'open' | 'poll' | 'close' | 'finalize'
+type InstantKind = 'open' | 'poll' | 'close' | 'release' | 'finalize'
 
 interface TimelineEntry {
   at: Date
@@ -891,9 +892,12 @@ async function driveSeason(
       timeline.push({ at: instant.at, week, kind: 'poll', label: instant.label })
     }
     // The close: one minute after the last in-week game ends. Ingestion
-    // stamps `nfl_weeks.last_game_ends_at` at the poll that first sees every
+    // WRITES `nfl_weeks.last_game_ends_at` at the poll that first sees every
     // in-week game final (`weekBounds`), which is the last `final <game>`
-    // instant above — so the advance one minute later has its datum.
+    // instant above — but since Q50 the instant it writes is the RELEASE
+    // instant, held to the week's Tuesday 00:00 Pacific floor. So this beat
+    // now asserts the NEGATIVE half of the ruling: the games are over, the
+    // datum is recorded, and the week must still be `live`.
     const lastEnd = Math.max(
       ...scenario.games
         .filter((g) => g.postponement === undefined)
@@ -903,6 +907,16 @@ async function driveSeason(
         }),
     )
     timeline.push({ at: new Date(lastEnd + MINUTE_MS), week, kind: 'close', label: 'week closes (games over)' })
+    // The RELEASE: one minute past Q50's floor, the first instant at which
+    // `league_week_advance` can legally flip the week to `correction_window`.
+    // Without this beat the flip would depend on the NEXT week's `open` beat
+    // happening to run the same job — which the last driven week never gets.
+    timeline.push({
+      at: new Date(weekReleaseFloor(row.starts_at).getTime() + MINUTE_MS),
+      week,
+      kind: 'release',
+      label: 'players release (Q50 floor: Tue 00:00 PT)',
+    })
     timeline.push({
       at: new Date(Date.parse(row.correction_window_ends_at) + MINUTE_MS),
       week,
@@ -1089,7 +1103,7 @@ async function driveSeason(
     clock.advanceTo(entry.at)
     const pNow = entry.at.toISOString()
 
-    if (entry.kind === 'open' || entry.kind === 'close') {
+    if (entry.kind === 'open' || entry.kind === 'close' || entry.kind === 'release') {
       // The advance job at this instant, run TWICE — the recorded idempotence
       // proof (`dev-drive-inseason-week.ts:273-277`): the second pass must
       // find nothing left to do at the same `p_now`.

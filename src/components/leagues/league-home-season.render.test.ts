@@ -35,7 +35,7 @@ import { statsDegradedKeys, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { ActivityFeed } from '@/lib/leagues/api/activity-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
-import type { StatsDegradedFlag } from '@/lib/sync/ingest-flags'
+import type { LiveScoringFlags, ScoringStalledFlag } from '@/lib/sync/ingest-flags'
 
 import { FEED_EMPTY_COPY } from './activity-feed-ops'
 import {
@@ -176,8 +176,11 @@ const FEED: ActivityFeed = {
   next_before_id: null,
 }
 
-const FLAG_OK: StatsDegradedFlag = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: '2099-09-13T18:00:00Z', last_error: null, provider: 'sleeper+nflverse' }
-const FLAG_DEGRADED: StatsDegradedFlag = { ...FLAG_OK, degraded: true, consecutive_failures: 3, last_failure_at: '2099-09-13T18:03:00Z', last_error: 'timeout' }
+const NO_STALL: ScoringStalledFlag = { stalled: false, reasons: [], rows: 0, oldest_enqueued_at: null, threshold_minutes: 10, ingest_stale: false, last_ingest_at: '2099-09-13T18:04:00Z', ingest_threshold_minutes: 120, checked_at: '2099-09-13T18:05:00Z' }
+const FLAG_OK: LiveScoringFlags = { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: '2099-09-13T18:00:00Z', last_error: null, provider: 'sleeper+nflverse', stall: NO_STALL }
+const FLAG_DEGRADED: LiveScoringFlags = { ...FLAG_OK, degraded: true, consecutive_failures: 3, last_failure_at: '2099-09-13T18:03:00Z', last_error: 'timeout' }
+/** 124: the score-week drain stopped — the provider is fine and the queue is untouched. */
+const FLAG_STALLED: LiveScoringFlags = { ...FLAG_OK, stall: { ...NO_STALL, stalled: true, reasons: ['queue_undrained'], rows: 24, oldest_enqueued_at: '2099-09-13T17:50:35Z' } }
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
   const query = client.getQueryCache().build(client, { queryKey })
@@ -196,7 +199,7 @@ interface Seed {
   standings?: typeof GOLDEN_STANDINGS | 'error' | 'missing'
   lineup?: TeamLineupRow | null | 'missing'
   feed?: ActivityFeed | 'error' | 'missing'
-  flag?: StatsDegradedFlag
+  flag?: LiveScoringFlags
   connection?: 'live' | 'reconnecting' | 'connecting'
 }
 
@@ -434,6 +437,10 @@ describe('complete — the champion banner from the STORED id, the final standin
     vi.mocked(useStatsDegraded).mockClear()
     renderHome({ detail: detailWith({ status: 'complete' }) })
     expect(vi.mocked(useStatsDegraded).mock.calls.at(-1)).toEqual([{ enabled: false }])
+  })
+  it('a STALLED DRAIN raises the same banner with the provider healthy (124: `scoring_stalled`)', () => {
+    expect(renderHome({ flag: FLAG_STALLED })).toContain(LIVE_STATS_DELAYED_COPY)
+    expect(renderHome({ flag: { ...FLAG_STALLED, stall: { ...FLAG_STALLED.stall, stalled: false } } })).not.toContain(LIVE_STATS_DELAYED_COPY)
   })
 })
 

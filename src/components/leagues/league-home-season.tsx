@@ -16,7 +16,7 @@ import { useMatchupsLive } from '@/hooks/use-matchups'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
 import { useSchedule } from '@/hooks/use-schedule'
 import { useStandingsLive } from '@/hooks/use-standings'
-import { useStatsDegraded } from '@/hooks/use-stats-degraded'
+import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { PlayoffBracket as PlayoffBracketDoc } from '@/lib/leagues/api/playoffs-service'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
@@ -107,6 +107,9 @@ export function SeasonHero({
   const standings = useStandingsLive(leagueId)
   const lineup = useLineup(myTeamId ?? undefined, inPlay && week !== null ? week : undefined)
   const degraded = useStatsDegraded({ enabled: inPlay && scoringLive(matchups.data?.league_week.status) })
+  // Provider degradation (122) OR a stalled score-week drain (124) — one
+  // banner, because "scores show the last update we received" is true of both.
+  const delay = liveScoringDelay(degraded.data)
   // L.D5.5: the bracket card on the `playoffs` hero — the SAME component the
   // standings page's "Playoffs" tab mounts (§16.5.1's playoffs row: "L.D5.5's
   // tab carries the full bracket"); fetched only in that state.
@@ -124,8 +127,8 @@ export function SeasonHero({
 
       {connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {matchupsProblem && matchups.data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
-      {inPlay && degraded.data?.degraded && (
-        <LiveStatsDelayedBanner since={degraded.data.last_success_at ? formatInstantWithDate(degraded.data.last_success_at, leagueTimeZone).local : null} />
+      {inPlay && delay.delayed && (
+        <LiveStatsDelayedBanner since={delay.since ? formatInstantWithDate(delay.since, leagueTimeZone).local : null} />
       )}
 
       {state === 'complete' ? (

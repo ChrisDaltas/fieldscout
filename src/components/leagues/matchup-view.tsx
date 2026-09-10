@@ -15,7 +15,7 @@ import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
-import { useStatsDegraded } from '@/hooks/use-stats-degraded'
+import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
@@ -148,6 +148,10 @@ function MatchupContent({
   // so only a week that is scoring asks — an `upcoming` / `final` week
   // cannot be delayed. The league home's hero applies the same gate.
   const degraded = useStatsDegraded({ enabled: scoringLive(matchups.data?.league_week.status) })
+  // Either §23.2 reason the numbers below may be behind: the provider stopped
+  // answering (122's `stats_degraded`) or the score-week drain stopped running
+  // (124's `scoring_stalled` — the 2026-09-10 stall).
+  const delay = liveScoringDelay(degraded.data)
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
 
@@ -196,8 +200,8 @@ function MatchupContent({
 
       {matchups.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {problem && doc && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
-      {degraded.data?.degraded && (
-        <LiveStatsDelayedBanner since={degraded.data.last_success_at ? formatInstantWithDate(degraded.data.last_success_at, leagueTimeZone).local : null} />
+      {delay.delayed && (
+        <LiveStatsDelayedBanner since={delay.since ? formatInstantWithDate(delay.since, leagueTimeZone).local : null} />
       )}
 
       <WeekStrip leagueId={leagueId} week={week} weeks={weeks} weekStatus={doc?.league_week.status ?? null} />

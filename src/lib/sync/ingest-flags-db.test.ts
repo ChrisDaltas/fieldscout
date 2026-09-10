@@ -39,6 +39,7 @@ import {
   loadDegradationTracker,
   persistPollOutcome,
   readLastPollCompletedAt,
+  readLiveScoringFlags,
   readStatsDegraded,
   STATS_DEGRADED_KEY,
 } from './ingest-flags'
@@ -119,6 +120,14 @@ describe('system_flags — the persisted ingestion flags (122, F217)', () => {
     const key = await service.from('system_flags').select('value, updated_at').eq('key', ingestPollKey(SEASON, 1)).single()
     expect(key.data!.value).toEqual({ completed_at: '2099-09-13T18:01:00.000Z', provider: 'synthetic' })
     expect(new Date(key.data!.updated_at).toISOString()).toBe('2099-09-13T18:01:00.000Z')
+    // 124 ARM 2 RESTS ON THIS EQUALITY. `scoring_stall_check` reads
+    // `max(updated_at)` over the `ingest_poll:%` keys — the COLUMN, so a
+    // malformed value can never raise inside a cron job — and calls it the
+    // last successful ingestion. That is only honest while the two are the
+    // same instant. A change that lets them drift reds HERE, by name,
+    // instead of silently widening the window in which a dead scheduler
+    // reads as healthy.
+    expect(new Date(key.data!.updated_at).toISOString()).toBe((key.data!.value as { completed_at: string }).completed_at)
   })
 
   it('the worker’s seam, bound: a polled week answers its stamp, an unpolled week null; a later poll moves the stamp forward', async () => {
@@ -127,6 +136,27 @@ describe('system_flags — the persisted ingestion flags (122, F217)', () => {
     expect(await seam(SEASON, 2)).toBeNull()
     await persistPollOutcome(service, new DegradationTracker(), report(1, '2099-09-13T18:01:20.000Z', true, false))
     expect(await seam(SEASON, 1)).toBe('2099-09-13T18:01:20.000Z')
+  })
+
+  it('the banner’s ONE round trip reads BOTH keys: `readLiveScoringFlags` agrees with `readStatsDegraded` on the provider half and carries 124’s stall half (never the wrong key’s value)', async () => {
+    const [degraded, both] = await Promise.all([readStatsDegraded(service), readLiveScoringFlags(service)])
+    const { stall, ...providerHalf } = both
+    // The `.in()` query must map each row to its own key — the failure this
+    // pins is a two-key read that hands one key's value to the other field.
+    expect(providerHalf).toEqual(degraded)
+    // `scoring_stalled` is written IN THE DATABASE by the per-minute
+    // `scoring-stall-check` job, so its VALUES are not this suite's to assert
+    // (that is pgTAP 072 §E's job, deterministically). What is asserted here
+    // is that the reader produces the parsed shape either way — a missing row
+    // reads as the empty stall, never as undefined.
+    expect(typeof stall.stalled).toBe('boolean')
+    expect(stall).toHaveProperty('oldest_enqueued_at')
+    expect(stall).toHaveProperty('checked_at')
+    // Both of 124's arms reach the client, or the banner can only ever
+    // report the half that has queue rows to age.
+    expect(typeof stall.ingest_stale).toBe('boolean')
+    expect(Array.isArray(stall.reasons)).toBe(true)
+    expect(stall).toHaveProperty('last_ingest_at')
   })
 
   it('RLS: ANON reads the flag (the banner) and cannot write it — INSERT refused (42501), UPDATE matches 0 rows', async () => {
