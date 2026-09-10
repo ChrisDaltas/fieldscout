@@ -55,6 +55,7 @@ function entry(over: Partial<LeagueWeekReport>): LeagueWeekReport {
     affected_team_ids: [],
     provisional_team_ids: [],
     bench_player_ids: [],
+    commish_edited_team_ids: [],
     teams: [],
     pending_kept_provisional: [],
     problems: [],

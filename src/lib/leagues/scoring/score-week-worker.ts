@@ -43,6 +43,14 @@
  *      minted a row for a week it did not play. A rostered player no lineup
  *      starts is bench — no recompute (§22.2's incremental rule). Bench and
  *      IR slots are excluded; the roster's `ir_slots` keys say which.
+ *      (5b) PLUS every team whose week lineup carries `edited_by_commish`
+ *      (R965): a commissioner edit moves the STARTER SET, and the starter it
+ *      removes is by definition no longer reachable through step (5) — the
+ *      queued player starts nowhere, `affected` is empty and the row would be
+ *      consumed with the stale points left standing. The flag is the only
+ *      signal of that in the drain's own reads. It costs one idempotent extra
+ *      team per drain of an OPEN week and changes nothing for a stat-driven
+ *      drain.
  *   6. RECOMPUTE (the one pipeline — D33/D57/F23) — per affected team, every
  *      starter through
  *        `scorePlayerWeek(resolveRules(snapshot, position),
@@ -549,6 +557,10 @@ export interface LeagueWeekReport {
   provisional_team_ids: string[]
   /** Mapped players no lineup of the week starts (bench / unstarted). */
   bench_player_ids: string[]
+  /** Teams FORCED into the recompute because a commissioner wrote their week
+   *  lineup (`team_lineups.edited_by_commish`) — step (5b) / R965. Empty on
+   *  every ordinary drain. */
+  commish_edited_team_ids: string[]
   teams: TeamWeekScore[]
   /** `total_points` teams sent pending while a provisional row already
    *  exists — the door keeps the last value (F259(d); F263). */
@@ -639,6 +651,11 @@ interface LeagueRow {
 interface LineupRow {
   team_id: string
   slot_map: Json
+  /** 112:276 — TRUE on a row a COMMISSIONER wrote (`set_lineup`'s commissioner
+   *  arm, 114:644; the audited override, 123). It is the only signal in the
+   *  drain's own reads that a team's STARTER SET moved without a stat delta —
+   *  see `scoreLeagueWeek` step (5b). */
+  edited_by_commish: boolean
 }
 
 function must<T>(result: { data: T | null; error: { message: string } | null }, what: string): T {
@@ -875,6 +892,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
     affected_team_ids: [],
     provisional_team_ids: [],
     bench_player_ids: [],
+    commish_edited_team_ids: [],
     teams: [],
     pending_kept_provisional: [],
     problems: [],
@@ -919,13 +937,14 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   const lineupRows: LineupRow[] = []
   for (const part of chunk([...teams.keys()], IN_CHUNK)) {
     const rows = must(
-      await db.from('team_lineups').select('team_id, slot_map').eq('season', season).eq('week', week).in('team_id', part),
+      await db.from('team_lineups').select('team_id, slot_map, edited_by_commish').eq('season', season).eq('week', week).in('team_id', part),
       'team_lineups read',
     )
     lineupRows.push(...rows)
   }
   const irKeys = irKeysOf(league.roster_settings)
   const startersByTeam = new Map<string, string[]>()
+  const commishEdited = new Set<string>()
   for (const row of lineupRows) {
     const starters = startersOf(row.slot_map, irKeys)
     if (starters === null) {
@@ -933,6 +952,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
       continue
     }
     startersByTeam.set(row.team_id, starters)
+    if (row.edited_by_commish === true) commishEdited.add(row.team_id)
   }
 
   const mapped = new Set(input.players)
@@ -954,6 +974,29 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   //      week (F262(d)); a seated team with no lineup row is NAMED, not
   //      zero-filled (its absence holds finalization by name — R788).
   const toCompute = new Set(affected)
+
+  // (5b) THE COMMISSIONER'S EDIT — R965. Steps (3)/(5) reach a team only
+  //      through a STARTER of the week, which is exactly the team a lineup
+  //      edit can no longer be reached through: bench a kicked-off starter
+  //      without replacing him and the queued player starts NOWHERE, so
+  //      `affected` is empty, `toCompute.size === 0` returns `skipped` and the
+  //      row is consumed — the lineup moved and `team_week_results.points`
+  //      keeps the benched player's points for ever (CLAUDE.md: never let
+  //      "nothing happened" mean "it worked"). `commish_edit_lineup` (123)
+  //      enqueues the changed starters so the drain VISITS this league-week;
+  //      the flag on the row it wrote is what makes the drain compute THIS
+  //      team once it is here — including the case where a starting slot was
+  //      left EMPTY and there is no queued starter to find it by.
+  //      Cost and blast radius, measured rather than assumed: the flag is
+  //      sticky for the week, so an edited team is recomputed on every drain
+  //      of that week — idempotently (the door reports `no_change`) and only
+  //      while the week is OPEN, because a `final` week returns at step (4)
+  //      above and an `upcoming` week is held. Ordinary stat-driven drains are
+  //      untouched: no flag, no force, and a bench player's delta still
+  //      recomputes nobody.
+  for (const teamId of commishEdited) toCompute.add(teamId)
+  report.commish_edited_team_ids = [...commishEdited].sort()
+
   if (report.mode === 'total_points') {
     const existing = must(
       await db.from('team_week_results').select('team_id').eq('league_id', league.id).eq('season', season).eq('week', week),
@@ -981,7 +1024,9 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
 
   if (toCompute.size === 0) {
     report.outcome = 'skipped'
-    report.problems.push(`no team starts a mapped player this week (${report.mapped_player_ids.length} mapped, all bench/unstarted) — nothing to recompute`)
+    report.problems.push(
+      `no team starts a mapped player this week (${report.mapped_player_ids.length} mapped, all bench/unstarted) and no lineup of the week is commissioner-edited — nothing to recompute`,
+    )
     return report
   }
 
@@ -1207,6 +1252,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
             affected_team_ids: [],
             provisional_team_ids: [],
             bench_player_ids: [],
+            commish_edited_team_ids: [],
             teams: [],
             pending_kept_provisional: [],
             problems: [`QUARANTINED league ${leagueId} week ${week}: ${err.message} — nothing written for it; siblings scored`],

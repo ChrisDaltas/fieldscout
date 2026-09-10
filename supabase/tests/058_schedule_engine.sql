@@ -1088,6 +1088,17 @@ select results_eq(
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 returning 1) select count(*) from r $$,
   $$ values (1::bigint) $$,
   'a non-status UPDATE on a final week passes (the guard fires on status only)');
+-- 123: `reopened_by_action_id` now carries the FK 056:68 parked for
+-- "M6 adds the FK with the table", so the audited-reopen cells need REAL audit
+-- rows to point at. The ids below are the ones the F4 cells already used.
+insert into commissioner_actions (id, league_id, actor_id, action_type, target_type, reason) values
+ ('a0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000008',
+  '91000000-0000-4000-8000-000000000001', 'reopen_week', 'schedule', 'pgtap F4 reopen #1'),
+ ('a0000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000008',
+  '91000000-0000-4000-8000-000000000001', 'reopen_week', 'schedule', 'pgtap F4 reopen #2'),
+ ('a0000000-0000-4000-8000-000000000009', 'b1000000-0000-4000-8000-000000000008',
+  '91000000-0000-4000-8000-000000000001', 'reopen_week', 'schedule', 'pgtap F4 reopen #9');
+
 select throws_like(
   $$ update league_weeks set status = 'correction_window'
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 $$,

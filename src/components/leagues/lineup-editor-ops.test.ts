@@ -299,3 +299,132 @@ describe('hints and chips (§7.3.6 allow_illegal_lineups; §16.5.4 flags)', () =
     expect(locksAtCopy('Sun, Sep 13 · 1:00 PM')).toBe('Locks from Sun, Sep 13 · 1:00 PM')
   })
 })
+
+describe('THE COMMISSIONER OVERRIDE (M6A, §15.4:1695 / PROGRESS §3(g))', () => {
+  const base: Placement = { 'qb:0': 'qb1', 'rb:0': 'rbA', 'rb:1': 'rbB', 'te:0': 'te1' }
+  const ctx = { slots, players, locked: new Set(['rbA']), currentWeek: 1 }
+  const exempt = { ...ctx, lockExempt: true }
+
+  it('lockExempt lifts BOTH lock arms — the mover’s and the occupant’s', () => {
+    // Without it, these are the refusals the manager gets (pinned above too).
+    expect(planMove(base, 'rbA', { kind: 'bench' }, ctx)).toMatchObject({ ok: false, reason: 'locked' })
+    expect(planMove(base, 'rbB', { kind: 'slot', key: 'rb:0' }, ctx)).toMatchObject({ ok: false, reason: 'locked' })
+    // With it, both plan. This is what gives `commish_edit_lineup` a door: a
+    // client that refuses to BUILD a lock-violating map leaves the lock-exempt
+    // server verb unreachable.
+    const moved = planMove(base, 'rbA', { kind: 'bench' }, exempt)
+    expect(moved).toMatchObject({ ok: true })
+    if (moved.ok) expect('rb:0' in moved.next).toBe(false)
+    const displaced = planMove(base, 'rbB', { kind: 'slot', key: 'rb:0' }, exempt)
+    expect(displaced).toMatchObject({ ok: true, displaced: 'rbA' })
+  })
+
+  it('lockExempt lifts TIMING only — position eligibility still refuses, because the override is not a legality waiver', () => {
+    expect(planMove(base, 'wrA', { kind: 'slot', key: 'te:0' }, exempt)).toMatchObject({
+      ok: false,
+      reason: 'ineligible',
+    })
+    expect(planMove(base, 'rbA', { kind: 'slot', key: 'rb:0' }, exempt)).toMatchObject({ ok: false, reason: 'noop' })
+  })
+
+  it('R971 — a save whose SCORE did not follow can NEVER render as "Lineup saved."', () => {
+    const nameOf = (id: string) => players.get(id)?.full_name ?? id
+    const labelOf = (k: string) => slots.find((s) => s.key === k)?.label ?? k
+    const FLAGS_CLEAN = { illegal: false, bye: [], out: [], empty: [], ir_ineligible: [] }
+    const base = { no_changes: false, rearranged: false, moved: [], flags: FLAGS_CLEAN }
+    // The control: no score consequence at all is the plain sentence.
+    expect(saveOutcomeCopy(base, nameOf, labelOf)).toBe('Lineup saved.')
+    expect(saveOutcomeCopy({ ...base, score_stale: false, score_stale_reason: null }, nameOf, labelOf)).toBe('Lineup saved.')
+
+    // A final week: the lineup moved and the standings did not. This is the
+    // whole purpose of the field, and the previous copy dropped it on the
+    // floor — the commissioner was told "Lineup saved." and believed the week
+    // was corrected while the matchup cell kept the pre-edit total.
+    const final = saveOutcomeCopy({ ...base, score_stale: true, score_stale_reason: 'week_final' }, nameOf, labelOf)
+    expect(final).toContain('The SCORE did not follow')
+    expect(final).toContain('already final')
+    expect(final).not.toBe('Lineup saved.')
+
+    // The other named reason.
+    const unstamped = saveOutcomeCopy({ ...base, score_stale: true, score_stale_reason: 'stats_unstamped' }, nameOf, labelOf)
+    expect(unstamped).toContain('The SCORE did not follow')
+    expect(unstamped).toContain('not timestamped')
+
+    // A reason this build has never seen is still SAID — a future arm must
+    // not fall through into plain success.
+    const unknown = saveOutcomeCopy({ ...base, score_stale: true, score_stale_reason: 'some_future_arm' }, nameOf, labelOf)
+    expect(unknown).toContain('The SCORE did not follow')
+    expect(unknown).toContain('some_future_arm')
+
+    // …and it survives the re-seat branch, which used to win the race.
+    const reseated = saveOutcomeCopy(
+      { no_changes: false, rearranged: true, moved: [{ player_id: 'qb1', from: null, to: 'qb:0' }], flags: FLAGS_CLEAN, score_stale: true, score_stale_reason: 'week_final' },
+      nameOf,
+      labelOf,
+    )
+    expect(reseated).toContain('re-seated')
+    expect(reseated).toContain('The SCORE did not follow')
+
+    // A NO-OP outranks it: nothing was written, so there is no score to chase.
+    expect(saveOutcomeCopy({ ...base, no_changes: true, score_stale: true, score_stale_reason: 'week_final' }, nameOf, labelOf)).toBe(
+      'Nothing changed — this lineup was already set.',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R973 — OVERRIDE MODE MUST ACTUALLY UNLOCK THE EDITOR, not just show its door
+//
+// The fix-round review MEASURED this hole: `lockExempt` was deleted from the
+// BenchZone call site — leaving the door, `planMove` and `SlotSeat` intact —
+// and 43 files / 943 tests still passed. In the app that is blocker 2 restored
+// exactly: Chris clicks "Override as commissioner" on Team 7, the banner and
+// the Reason field appear, and Darnold's bench row is still frozen, so he
+// cannot select him, cannot seat him, and Save never leaves `disabled`.
+//
+// `overrideMode` is component-internal state and `renderToStaticMarkup` cannot
+// click, so this is a SOURCE pin (the house pattern — see the lock pins above
+// and `ui/elevation-rule.test.ts`). It fails if ANY of the four sites the
+// editor's own comment names is dropped.
+// ---------------------------------------------------------------------------
+
+describe('R973 — the four `lockExempt` sites move together, or the door leads nowhere', () => {
+  const editor = readFileSync(
+    path.resolve(process.cwd(), 'src/components/leagues/lineup-editor.tsx'),
+    'utf8',
+  )
+
+  it('derives the exemption from override mode, and from nothing else', () => {
+    expect(editor).toMatch(/const lockExempt = overrideMode/)
+  })
+
+  it('feeds planMove through the memo (site 1 — both arms)', () => {
+    // The `ctx` the plan is computed against must carry it, AND it must be a
+    // dependency, or the plan goes stale the moment override mode flips.
+    expect(editor).toMatch(/\{ slots, players, locked, currentWeek, lockExempt \}/)
+    expect(editor).toMatch(/\[slots, players, locked, currentWeek, lockExempt\]/)
+  })
+
+  it('passes it down every one of the FIVE prop hops', () => {
+    // :364 slot seat · :387 starter row · :406 bench zone · :635 SlotSeat→
+    // PlayerRow · :780 BenchZone→PlayerRow. The last two are the pass-THROUGHS,
+    // and they matter as much as the first three: `frozen` is computed in
+    // PlayerRow, so a hop dropped there leaves the row inert with the door
+    // still open. Measured regression: deleting exactly ONE left every suite
+    // green (43 files / 943 tests).
+    const passes = editor.match(/lockExempt=\{lockExempt\}/g) ?? []
+    expect(passes.length).toBe(5)
+  })
+
+  it('is what unfreezes a locked row — in BOTH components that gate interaction', () => {
+    // `frozen` drives useDraggable({disabled}), onClick={undefined} and the
+    // droppable. If this expression loses `lockExempt`, a locked player stays
+    // inert in override mode.
+    const frozen = editor.match(/const frozen = locked && !lockExempt/g) ?? []
+    expect(frozen.length).toBe(2)
+  })
+
+  it('does not let override mode be read-only (the Save path stays reachable)', () => {
+    expect(editor).toMatch(/const readOnly = !canEdit \|\| \(editability\.state !== 'open' && !overrideMode\)/)
+  })
+})

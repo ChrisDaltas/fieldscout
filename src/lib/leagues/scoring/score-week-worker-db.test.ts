@@ -102,6 +102,9 @@ const STAMP_MICRO = '2099-09-13T22:00:00.123456Z'
 const STAMP_MICRO_MINUS_1 = '2099-09-13T22:00:00.123455Z'
 const STAMP_5 = '2099-09-13T22:20:00.000Z'
 const STAMP_6 = '2099-09-13T22:40:00.000Z'
+/** R965's two instants (the commissioner-edit cell). */
+const STAMP_7 = '2099-09-13T23:00:00.000Z'
+const STAMP_8 = '2099-09-13T23:20:00.000Z'
 
 const P = {
   qb1: `${PREFIX}-qb1`,
@@ -494,6 +497,17 @@ async function results(leagueId: string, week: number): Promise<Array<{ team_id:
     'results read',
   )
   return (rows ?? []).map((r) => ({ team_id: r.team_id, points: Number(r.points), is_final: r.is_final }))
+}
+
+/** The ALPHA D/ST line — 15.00 under ESPN Standard (hand-computed in
+ *  score-week-worker.test.ts: def_sack 3×1 + def_int 1×2 + def_fumble_rec 1×2
+ *  + def_td 1×6 + PA 19 → 0 + YA 249 → +2). */
+const DST_LINE = { def_sacks: 3, def_interceptions: 1, def_fumble_recoveries: 1, def_tds: 1, def_points_allowed: 19, def_yards_allowed: 249 }
+
+function matchupHome(rows: Array<{ home: string; hs: number | null }>, teamId: string): number | null {
+  const row = rows.find((m) => m.home === teamId)
+  if (!row) throw new Error(`no matchup with ${teamId} at home`)
+  return row.hs
 }
 
 function drain(leagueIds?: string[]): Promise<BatchReport> {
@@ -1192,4 +1206,63 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(report.drained).toBe(PAGE_PLAYERS)
     expect(await queued()).toEqual([])
   }, 120_000)
+
+  it("R965 — THE COMMISSIONER'S EDIT: a starter is BENCHED and not replaced, so the one queued player starts NOWHERE. The pre-fix drain reported `skipped` and DELETED the row with the stale points standing; the team is recomputed anyway, because its lineup row is `edited_by_commish`", async () => {
+    // The shape is Chris's, exactly: `commish_edit_lineup` (123) lifts the
+    // lock, the commissioner benches a player whose game has already been
+    // played, and there is nobody to put in the seat — `dst:0` is left EMPTY.
+    // 123 enqueues the SYMMETRIC DIFFERENCE of old and new starters, which
+    // here is the removed player alone.
+    // A BASELINE, established here rather than inherited, so the cell is
+    // order-independent: an ordinary stat delta for the D/ST reaches T1
+    // through step (5) — he IS a current starter — and the door writes his
+    // points into the matchup cell. That is the control for everything below.
+    await plantLine(P.dst1, 1, DST_LINE, STAMP_7)
+    await enqueue([P.dst1], 1, STAMP_7)
+    const control = league(await drain([fx.l1]), fx.l1, 1)
+    expect(control.affected_team_ids).toEqual([fx.t1])
+    expect(control.commish_edited_team_ids).toEqual([])
+    const t1Before = Number(matchupHome(await matchupScores(fx.l1, 1), fx.t1))
+    expect(t1Before).toBeGreaterThan(15)
+
+    // What 123 WRITES: the seat empty, and the row flagged.
+    await must(
+      service
+        .from('team_lineups')
+        .update({
+          slot_map: { 'qb:0': P.qb1, 'rb:0': P.rb1, 'wr:0': P.wr1, 'te:0': P.te1, 'k:0': P.k1, 'ir1:0': P.ir1 },
+          edited_by_commish: true,
+        })
+        .eq('team_id', fx.t1)
+        .eq('season', SEASON)
+        .eq('week', 1),
+      'commissioner override write',
+    )
+    // What 123 ENQUEUES: the symmetric difference of old and new starters —
+    // the removed player, alone.
+    await plantLine(P.dst1, 1, DST_LINE, STAMP_8)
+    await enqueue([P.dst1], 1, STAMP_8)
+
+    const report = await drain([fx.l1])
+    const l1 = league(report, fx.l1, 1)
+
+    // THE PREMISE, measured rather than asserted from the outside: the queued
+    // player is a starter of NO team this week. Step (5) finds nothing, and
+    // before this fix that was the end of it — `toCompute.size === 0`,
+    // `outcome: 'skipped'`, and the row went to `toDelete`, not `toDefer`.
+    expect(l1.affected_team_ids).toEqual([])
+    expect(l1.bench_player_ids).toEqual([P.dst1])
+    // THE FIX: the team is forced by the flag on the row the commissioner wrote.
+    expect(l1.commish_edited_team_ids).toEqual([fx.t1])
+    expect(l1.outcome).toBe('written')
+
+    // AND THE SCORE ACTUALLY FOLLOWED — the D/ST's 15.00 is gone from the
+    // team total (hand-computed in score-week-worker.test.ts: def_sack 3×1 +
+    // def_int 1×2 + def_fumble_rec 1×2 + def_td 1×6 + PA 19 → 0 + YA 249 →
+    // +2 = 15.00). The door wrote it, so the matchup cell moved.
+    expect(Number(matchupHome(await matchupScores(fx.l1, 1), fx.t1))).toBeCloseTo(t1Before - 15, 2)
+    // The row is consumed, not left queued — the fix does not trade a stale
+    // score for a poisoned queue.
+    expect(await queued()).toEqual([])
+  }, 60_000)
 })

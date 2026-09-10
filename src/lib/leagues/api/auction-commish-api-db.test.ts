@@ -824,12 +824,21 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     expect(budgetPost).toContain(`${COMMISH_TEAM_NAME} -$${-EXACT_CUT} (total adjustment -$${-EXACT_CUT}`)
     expect(budgetPost).not.toContain(REASON)
     expect(JSON.stringify(afterRefuse)).not.toContain(REASON)
-    // (Untyped client on purpose: the table is absent from the generated
-    // types BECAUSE it does not exist — F32/F40 are still M6's.)
-    const untyped = service as unknown as SupabaseClient
-    const { error: noAuditTable } = await untyped.from('commissioner_actions').select('*').limit(1)
-    expect(noAuditTable).not.toBeNull()
-    expect(noAuditTable?.message).toMatch(/commissioner_actions/)
+    // F40, HALF DISCHARGED by migration 123. This probe used to assert that
+    // `commissioner_actions` DID NOT EXIST. It exists now — M6A L.E1.1 built
+    // the audit spine — so the pin INVERTS rather than being deleted: the
+    // table is readable, and `draft_adjust_budget` still writes NOTHING to it.
+    // That is the accurate state, and it is F40's remaining half: the budget
+    // adjustment is an §8.1 DRAFT control, not one of §15.4's ten overrides,
+    // so it got the table without getting the receipt. Asserting the empty
+    // read (rather than a missing table) means the day that verb starts
+    // logging, this cell reds and someone updates it deliberately.
+    const { data: auditRows, error: auditErr } = await service
+      .from('commissioner_actions')
+      .select('id, action_type, reason')
+      .eq('league_id', leagueId)
+    expect(auditErr).toBeNull()
+    expect(auditRows).toEqual([])
   }, 60_000)
 
   it('cancel-nomination PAUSED: lands; the bid row is VOIDED not deleted (D162), the sequence number is NOT consumed (D143), same nominator', async () => {
