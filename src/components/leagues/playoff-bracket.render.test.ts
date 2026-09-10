@@ -363,7 +363,12 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(r3.match(/150\.00/g)).toHaveLength(2)
     expect(r3).toContain('Tied — higher seed advances')
     expect(html).toContain(`data-champion="${T.alpha}"`)
-    expect(html).toContain('Champion · Alpha')
+    // The champion's NAME is now a door to their team page (§16.1), so the
+    // banner's text is no longer one contiguous run — assert the prefix, the
+    // name and the link the name became.
+    expect(html).toContain('Champion · <a')
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${T.alpha}"`)
+    expect(html).toContain('>Alpha</a>')
     expect(html).not.toContain('data-rollover-line="corrections-close"')
   })
 
@@ -394,7 +399,9 @@ describe('the no-bracket kinds (Q39 (C)/(D)): the standings ARE the playoff', ()
   it('playoffs off + complete: the copy and the STORED champion — never rank 1 by inference', () => {
     const html = renderTab({ bracket: NO_PLAYOFFS_COMPLETE_DOC, detail: detailWith({ status: 'complete', champion_team_id: T.bravo }) })
     expect(html).toContain(NO_PLAYOFFS_COPY)
-    expect(html).toContain('Champion · Bravo')
+    expect(html).toContain('Champion · <a')
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${T.bravo}"`)
+    expect(html).toContain('>Bravo</a>')
     expect(html).not.toContain('Regular season ends')
     const unwritten = renderTab({ bracket: { ...NO_PLAYOFFS_COMPLETE_DOC, champion_team_id: null } })
     expect(unwritten).toContain('No champion recorded for this season.')

@@ -41,7 +41,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 import { InlineIssue } from './settings-form-controls'
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import {
   buildJoinLink,
   deriveSeats,
@@ -77,7 +77,19 @@ import {
  * (email included) over the §12.23 RLS policy, but the render authority is the
  * ops layer, pinned in `invite-panel-ops.test.ts`.
  */
-export function InvitePanel({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
+export function InvitePanel({
+  leagueId,
+  detail,
+  linkTeams = true,
+}: {
+  leagueId: string
+  detail: LeagueDetail
+  /** Whether a seat's name is a door to that team's page. FALSE inside the
+   *  LIVE draft room (`commish-draft-panel.tsx`), where a navigate-away
+   *  affordance can pull a commissioner off the clock — the same hazard that
+   *  keeps the board grid, the presence bar and the lobby unlinked. */
+  linkTeams?: boolean
+}) {
   const { user } = useAuth()
   const canManage = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
 
@@ -113,6 +125,7 @@ export function InvitePanel({ leagueId, detail }: { leagueId: string; detail: Le
 
       <SeatsCard
         leagueId={leagueId}
+        linkTeams={linkTeams}
         detail={detail}
         seats={model.seats}
         total={model.total}
@@ -325,9 +338,11 @@ function SeatsCard({
   myRole,
   nowMs,
   invitesLoading,
+  linkTeams,
 }: {
   leagueId: string
   detail: LeagueDetail
+  linkTeams: boolean
   seats: Seat[]
   total: number
   claimedCount: number
@@ -356,6 +371,7 @@ function SeatsCard({
             key={seat.key}
             seat={seat}
             leagueId={leagueId}
+            linkTeams={linkTeams}
             detail={detail}
             canManage={canManage}
             myRole={myRole}
@@ -471,9 +487,11 @@ function SeatRow({
   myRole,
   nowMs,
   last,
+  linkTeams,
 }: {
   seat: Seat
   leagueId: string
+  linkTeams: boolean
   detail: LeagueDetail
   canManage: boolean
   myRole: string | null
@@ -491,8 +509,22 @@ function SeatRow({
       <div className="flex flex-wrap items-center gap-2.5">
         <Crest name={seat.status === 'open' ? '· ·' : seat.teamName} />
         <div className="mr-auto min-w-0">
+          {/* The seat list is the ONE place every franchise appears with its
+              id in hand, so it is a commissioner's index into the team pages
+              (§16.1 — `set_lineup` accepts a commissioner acting for an
+              unmanaged seat, `114:243`). Two honest limits: an OPEN ghost seat
+              carries `teamId: null` (`invite-panel-ops.ts`) and stays plain
+              text — no door where there is no team; and `linkTeams` is FALSE
+              in the live draft room, where navigating away can cost a pick.
+              NOTE this panel is NOT mounted on the in-season league home, so
+              in-season the commissioner's index is the STANDINGS table, not
+              this list. */}
           <div className="truncate text-[12px] font-extrabold leading-tight">
-            {seat.status === 'open' ? 'Open seat' : seat.teamName}
+            <TeamNameLink
+              name={seat.status === 'open' ? 'Open seat' : seat.teamName}
+              leagueId={leagueId}
+              teamId={linkTeams ? seat.teamId : null}
+            />
           </div>
           <SeatSubline seat={seat} />
         </div>

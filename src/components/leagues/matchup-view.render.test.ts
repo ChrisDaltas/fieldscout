@@ -604,6 +604,32 @@ describe('the week is resolved from stored facts (F248(b)) — the URL’s match
 })
 
 // ---------------------------------------------------------------------------
+// The DOOR pin — F322/C65 ("the server has the verb, the UI has no door")
+// ---------------------------------------------------------------------------
+
+describe('every franchise on screen is a door to its own team page (§16.1)', () => {
+  it('the scoreboard links BOTH sides; the box score links its own title', () => {
+    const html = renderMatchups()
+    expect(html).toContain(`data-team-link="${T1}"`)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${T1}"`)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${T2}"`)
+    // A wrong lineup is NOTICED on the box score, so its title is a door.
+    const box = html.slice(html.indexOf(`data-box="${T2}"`))
+    expect(box).toContain(`href="/app/leagues/${LEAGUE}/team/${T2}"`)
+  })
+
+  it('an "Around the league" row stays ONE anchor — never an <a> inside an <a>', () => {
+    // The row is already a link to its own matchup; a nested anchor would be
+    // invalid HTML AND would silently hollow out the E61 slice above, whose
+    // regex ends at the FIRST `</a>`. Reach is not lost: that matchup page
+    // renders both box scores, and those titles are team-page doors.
+    const row = renderMatchups().match(/<a[^>]*data-matchup-row="m2"[\s\S]*?<\/a>/)?.[0]
+    expect(row).toBeTruthy()
+    expect(row).not.toContain('data-team-link=')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Elevation (CLAUDE.md) — the feature files, since ui/’s pin stops at ui/
 // ---------------------------------------------------------------------------
 

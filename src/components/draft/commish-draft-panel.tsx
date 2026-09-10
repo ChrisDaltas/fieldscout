@@ -1291,7 +1291,10 @@ function SeatControlsSection({
       <Button variant="stroke" size="sm" onClick={() => setOpen((prev) => !prev)}>
         {open ? 'Hide seat controls' : 'Open seat controls'}
       </Button>
-      {open && <InvitePanel leagueId={leagueId} detail={detail} />}
+      {/* `linkTeams={false}`: a team-page link inside the LIVE room is a
+          navigate-away affordance that can cost a pick — the same reason the
+          board grid, presence bar and lobby stay unlinked. */}
+      {open && <InvitePanel leagueId={leagueId} detail={detail} linkTeams={false} />}
     </PanelSection>
   )
 }

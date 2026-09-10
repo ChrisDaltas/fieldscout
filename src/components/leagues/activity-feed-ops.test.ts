@@ -40,12 +40,15 @@ describe('feedLines — transactions carry their team + week; a system post carr
     // post, not a commissioner's act.
     { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 3 finalized with a postponed game.', actor_id: null },
   ]
-  it('the shapes — an actor’s system post is the commissioner’s; a NULL actor is the system’s', () => {
+  it('the shapes — an actor’s system post is the commissioner’s; a NULL actor is the system’s; a named team carries its id, an unnameable one carries none', () => {
+    // `teamId` rides beside `team` so the rendered name can be a door to the
+    // team page (§16.1). tx2's `t9` is NOT in `names`, so the line has no name
+    // AND no id: a franchise we cannot name gets no link, never a dead one.
     expect(feedLines(items, names)).toEqual([
-      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false },
-      { id: 'c1', kind: 'system', text: 'Schedule remixed (seed 42).', team: null, week: null, createdAt: '2099-09-11T12:00:00Z', commissioner: true },
-      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true },
-      { id: 'c2', kind: 'system', text: 'Week 3 finalized with a postponed game.', team: null, week: null, createdAt: '2099-09-12T12:00:00Z', commissioner: false },
+      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', teamId: 't1', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false },
+      { id: 'c1', kind: 'system', text: 'Schedule remixed (seed 42).', team: null, teamId: null, week: null, createdAt: '2099-09-11T12:00:00Z', commissioner: true },
+      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, teamId: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true },
+      { id: 'c2', kind: 'system', text: 'Week 3 finalized with a postponed game.', team: null, teamId: null, week: null, createdAt: '2099-09-12T12:00:00Z', commissioner: false },
     ])
     expect(COMMISSIONER_LABEL).toBe('✸ commissioner')
     expect(SYSTEM_LABEL).toBe('system')

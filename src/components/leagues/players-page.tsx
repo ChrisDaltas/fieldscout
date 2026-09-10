@@ -24,6 +24,7 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 
+import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import {
   FREE_AGENT_LABEL,
@@ -236,6 +237,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
         />
       ) : (
         <PoolTable
+          leagueId={leagueId}
           rows={rows}
           scope={scope}
           hadSearch={search.trim() !== '' || position !== ''}
@@ -395,6 +397,7 @@ export function MovePanel({
 // ---------------------------------------------------------------------------
 
 export function PoolTable({
+  leagueId,
   rows,
   scope,
   hadSearch,
@@ -404,6 +407,7 @@ export function PoolTable({
   onAdd,
   onDrop,
 }: {
+  leagueId: string
   rows: readonly PoolPlayerRow[]
   scope: PoolScope
   hadSearch: boolean
@@ -469,7 +473,7 @@ export function PoolTable({
                   )}
                 </TableCell>
                 <TableCell>
-                  <AvailabilityCell row={row} leagueTimeZone={leagueTimeZone} />
+                  <AvailabilityCell leagueId={leagueId} row={row} leagueTimeZone={leagueTimeZone} />
                 </TableCell>
                 {canAct && (
                   <TableCell className="text-right">
@@ -485,7 +489,7 @@ export function PoolTable({
   )
 }
 
-function AvailabilityCell({ row, leagueTimeZone }: { row: PoolPlayerRow; leagueTimeZone: string | null }) {
+function AvailabilityCell({ leagueId, row, leagueTimeZone }: { leagueId: string; row: PoolPlayerRow; leagueTimeZone: string | null }) {
   const a = row.availability
   if (a.kind === 'free_agent') return <Badge variant="stroke-green">{FREE_AGENT_LABEL}</Badge>
   if (a.kind === 'on_waivers') {
@@ -501,9 +505,13 @@ function AvailabilityCell({ row, leagueTimeZone }: { row: PoolPlayerRow; leagueT
       </span>
     )
   }
+  // The holder was a dead end: there is no Move button for another team's
+  // player (trades come later), so the only useful next step from here is
+  // that team's own page — and `teamId` is non-nullable on this branch.
+  // The accent stays the call site's; the link adds only its underline.
   return (
     <span className={cn('text-[12px] font-medium', a.mine ? 'font-bold text-accent-strong' : 'text-ink')} title={a.mine ? undefined : ROSTERED_ELSEWHERE_TITLE}>
-      {a.mine ? 'Your team' : a.teamName}
+      <TeamNameLink name={a.mine ? 'Your team' : a.teamName} leagueId={leagueId} teamId={a.teamId} />
     </span>
   )
 }

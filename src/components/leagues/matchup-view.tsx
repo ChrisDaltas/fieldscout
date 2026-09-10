@@ -20,7 +20,7 @@ import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
 
-import { Crest } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import { scoringLive } from './league-home-season-ops'
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import {
@@ -434,7 +434,11 @@ function Side({
     <div className={cn('flex min-w-0 flex-col gap-2 rounded-sm border border-ink px-3 py-2', mine && 'bg-accent-soft')} data-side={teamId} data-mine={mine || undefined}>
       <div className="flex items-center gap-2">
         <Crest name={name} src={null} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-ink">{name}</span>
+        {/* The name is the door to that franchise's page (§16.1) — the CREST
+            stays outside the anchor so the link's accessible name is the team
+            and not its initials twice over. `doc.league_id` is the document's
+            own league; nothing is threaded. */}
+        <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="min-w-0 flex-1 truncate text-[13px] font-bold text-ink" />
         {h2h.decided && (
           <Badge variant={h2h.variant} title={h2h.title} data-result={h2h.text}>
             {h2h.text}
@@ -512,9 +516,20 @@ function MatchupList({
           const home = scoreCell(m.home_score, m.status)
           const away = scoreCell(m.away_score, m.status)
           const mine = m.home_team_id === myTeamId || m.away_team_id === myTeamId
+          // A `linkable` row IS an anchor (to its own matchup), and an <a>
+          // inside an <a> is invalid HTML — so the team names get their door
+          // only on the rows that have none (the "Second opponents" list).
+          // Nothing is lost on a linkable row: its matchup page renders both
+          // box scores, whose titles are team-page links.
+          const doorId = (id: string | null) => (linkable ? null : id)
           const body = (
             <>
-              <span className={cn('min-w-0 flex-1 truncate text-[12px] font-bold', mine && 'text-accent-strong')}>{teamName(doc, m.home_team_id)}</span>
+              <TeamNameLink
+                name={teamName(doc, m.home_team_id)}
+                leagueId={doc.league_id}
+                teamId={doorId(m.home_team_id)}
+                className={cn('min-w-0 flex-1 truncate text-[12px] font-bold', mine && 'text-accent-strong')}
+              />
               <span className="fs-num shrink-0 text-[12px] font-medium" title={home.title ?? undefined}>
                 {home.text}
               </span>
@@ -522,7 +537,14 @@ function MatchupList({
               <span className="fs-num shrink-0 text-[12px] font-medium" title={away.title ?? undefined}>
                 {m.away_team_id ? away.text : '—'}
               </span>
-              <span className={cn('min-w-0 flex-1 truncate text-right text-[12px] font-bold', mine && 'text-accent-strong')}>{teamName(doc, m.away_team_id)}</span>
+              {/* A bye row has no away id — `teamName` renders the literal
+                  "Bye", which must stay non-interactive text. */}
+              <TeamNameLink
+                name={teamName(doc, m.away_team_id)}
+                leagueId={doc.league_id}
+                teamId={doorId(m.away_team_id)}
+                className={cn('min-w-0 flex-1 truncate text-right text-[12px] font-bold', mine && 'text-accent-strong')}
+              />
               {m.is_overridden && (
                 <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="shrink-0">
                   ✸
@@ -641,7 +663,9 @@ function TeamBox({
       <CardHeader className="min-h-0 py-2">
         <CardTitle className="flex items-center gap-2 text-[12px]">
           <Crest name={name} src={null} className="h-5 w-5" />
-          <span className="min-w-0 flex-1 truncate">{name}</span>
+          {/* A box score is where an empty lineup is actually noticed, so the
+              name above the starters is the door to the lineup editor. */}
+          <TeamNameLink name={name} leagueId={leagueId} teamId={teamId} className="min-w-0 flex-1 truncate" />
           {sum && (
             <span className="flex items-center gap-1 text-[11px] font-medium text-n-3" title={sum.title ?? undefined}>
               {BOX_SUM_LABEL}
