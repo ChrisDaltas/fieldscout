@@ -17,6 +17,7 @@ import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
+import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
 import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
@@ -116,6 +117,13 @@ function TeamPageContent({
   teamName: string
 }) {
   const { user } = useAuth()
+  // COMMISSIONER OVERRIDE MODE lives above this mount (PROGRESS §3(h)): Chris
+  // fixed four teams in one sitting, and a per-page flag would have made him
+  // re-enter the mode on each route. The page owns the read/write; the editor
+  // owns the switch and the work.
+  const overrideMode = useOverrideMode(leagueId)
+  const enterOverride = useCommishOverrideStore((s) => s.enter)
+  const exitOverride = useCommishOverrideStore((s) => s.exit)
   const schedule = useSchedule(leagueId)
   const weeks = useMemo(() => schedule.data?.weeks ?? [], [schedule.data])
   const currentWeek = useMemo(() => currentWeekOf(weeks), [weeks])
@@ -169,6 +177,11 @@ function TeamPageContent({
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* The mode, said at the TOP of the page — above the week picker and
+                the editor, so "it's on" is legible on a phone without
+                scrolling. A resting condition, so it is a fill, never a shadow
+                (CLAUDE.md). */}
+            {overrideMode && isCommish && <Badge variant="lime" data-override-mode-badge>✸ Override mode ON</Badge>}
             {lineup.data?.edited_by_commish && <Badge variant="stroke-purple">✸ commissioner-set</Badge>}
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
           </div>
@@ -243,6 +256,10 @@ function TeamPageContent({
                team after kickoff is offered it too (PROGRESS §3(a)). */
             isCommish={isCommish}
             leagueTimeZone={leagueTimeZone}
+            /* Only a commissioner can be IN the mode — the store is keyed by
+               league, and a member who is not one must never inherit it. */
+            overrideMode={overrideMode && isCommish}
+            onOverrideMode={(next) => (next ? enterOverride(leagueId) : exitOverride())}
           />
         </>
       )}

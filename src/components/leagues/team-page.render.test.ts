@@ -31,6 +31,7 @@ import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
+import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor } from './lineup-editor'
 import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
@@ -51,6 +52,16 @@ vi.mock('@/hooks/use-rosters', async (importOriginal) => {
 vi.mock('@/hooks/use-lineup', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/hooks/use-lineup')>()
   return { ...orig, useLineup: vi.fn(orig.useLineup), useSetLineup: vi.fn(orig.useSetLineup) }
+})
+// The override-mode READ is a spy over the real hook. It has to be: zustand v5
+// answers `useSyncExternalStore` with `getInitialState()` on the server
+// snapshot, and `renderToStaticMarkup` IS the server path — so `setState`
+// cannot reach a static render. The store's own behaviour (enter/exit, keyed
+// by league) is pinned directly in `stores/commish-override-store.test.ts`;
+// what this file pins is what the PAGE does with the answer.
+vi.mock('@/stores/commish-override-store', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
+  return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
 })
 
 // ---------------------------------------------------------------------------
@@ -330,6 +341,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             isCommissionerArm: false,
             isCommish: false,
             leagueTimeZone: null,
+            overrideMode: false,
+            onOverrideMode: () => {},
           }),
         ),
       ),
@@ -340,63 +353,237 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(html).not.toContain('Something went wrong')
   })
 
-  it('THE DOOR (M6A blocker): on the CURRENT, LIVE, OPEN week — the exact case the ruling is about — a COMMISSIONER has a persistent entry into override mode, and a manager has none', () => {
-    const render = (isCommish: boolean, editability: WeekEditability) => {
-      const client = new QueryClient()
-      return unescapeHtml(
-        renderToStaticMarkup(
-          createElement(
-            QueryClientProvider,
-            { client },
-            createElement(LineupEditor, {
-              leagueId: LEAGUE,
-              teamId: TEAM,
-              week: 1,
-              settings: settings.roster_settings,
-              allowIllegal: true,
-              roster,
-              stored: lineupRow,
-              currentWeek: 1,
-              editability,
-              canEdit: true,
-              isCommissionerArm: false,
-              isCommish,
-              leagueTimeZone: null,
-            }),
-          ),
+  // -------------------------------------------------------------------------
+  // OVERRIDE MODE IS A MODE (M6A; PROGRESS §3(h), ruled by Chris 2026-09-11).
+  //
+  // Every pin below is measured against a failure that actually happened in
+  // his league on 2026-09-11: the switch was reachable only after a refusal,
+  // Save then sat disabled behind an unmentioned Reason field, and teams 5 and
+  // 6 produced `set_lineup` refusals with ZERO `commissioner_actions` rows.
+  // `overrideMode` is a PROP now (the page owns it, over
+  // `commish-override-store`), so both states are real renders here rather
+  // than source greps.
+  // -------------------------------------------------------------------------
+
+  const renderEditor = (over: Partial<Parameters<typeof LineupEditor>[0]> = {}) => {
+    const client = new QueryClient()
+    return unescapeHtml(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LineupEditor, {
+            leagueId: LEAGUE,
+            teamId: TEAM,
+            week: 1,
+            settings: settings.roster_settings,
+            allowIllegal: true,
+            roster,
+            stored: lineupRow,
+            currentWeek: 1,
+            editability: { state: 'open' } as WeekEditability,
+            canEdit: true,
+            isCommissionerArm: false,
+            isCommish: true,
+            leagueTimeZone: null,
+            overrideMode: false,
+            onOverrideMode: () => {},
+            ...over,
+          }),
         ),
-      )
-    }
+      ),
+    )
+  }
 
-    // The week the ruling names: current, live, and therefore `open` —
-    // `weekEditability` returns {state:'open'} for it, so an entry hung off
-    // the CLOSED banner would never render here. That was the blocker: the
-    // commissioner could only reach the override after every game had ended.
-    const open = render(true, { state: 'open' })
-    expect(open).toContain('data-offer-override')
+  it('THE SWITCH: a commissioner has a persistent toggle on the CURRENT, LIVE, OPEN week — the state the shipped version could not reach — and a manager has none, in any state', () => {
+    // The week the ruling is about: current, live, therefore `open`. A control
+    // hung off the CLOSED banner never renders here (that was the blocker —
+    // he'd have had to wait until every game ended), and neither does one hung
+    // off a refusal, since the editor's own lock wall makes a refusal
+    // unconstructable: the locked RB is not draggable, has no onClick and no
+    // bench ×, so no lock-violating map can be built.
+    const open = renderEditor()
     expect(open).toContain('data-commish-tools')
-
-    // And it does not depend on provoking a server refusal either — which the
-    // editor's own lock wall makes impossible: the locked RB is not
-    // draggable, has no onClick and no bench ×, so no lock-violating map can
-    // be built and no refusal can come back to hang an offer on.
+    expect(open).toContain('data-override-toggle="off"')
+    expect(open).toContain('Turn on override mode')
     expect(open).not.toContain('role="alert"')
     const at = open.indexOf('data-player="rb-locked"')
     const lockedRow = open.slice(Math.max(0, at - 300), at + 300)
     expect(lockedRow).toContain('aria-disabled="true"')
-    expect(lockedRow).toContain('cursor-default')
     expect(open).not.toContain('Bench Render RB Locked')
 
-    // A past/closed week keeps the entry (§11.2:730's retroactive edit)…
-    expect(render(true, { state: 'closed', reason: PAST_WEEK_COPY })).toContain('data-offer-override')
-    // …and so does a league with no ladder yet.
-    expect(render(true, { state: 'unknown' })).toContain('data-offer-override')
+    // Every other week state carries the same switch — closed, and no ladder.
+    expect(renderEditor({ editability: { state: 'closed', reason: PAST_WEEK_COPY } })).toContain('data-override-toggle="off"')
+    expect(renderEditor({ editability: { state: 'unknown' } })).toContain('data-override-toggle="off"')
 
-    // THE MANAGER'S EDITOR IS UNCHANGED. No entry, in any state.
+    // R985: THE TOGGLE IS LOCKED WHILE A SAVE IS IN FLIGHT. Exiting mid-save
+    // flips `active` to the other hook, so the pending write loses its
+    // "Saving…" line and its success notice is swallowed by the exit message —
+    // the screen then claims the placements are unsaved while the save
+    // actually succeeded. On an open week it also re-enables Save as the
+    // MANAGER verb, inviting a second concurrent write against one draft.
+    vi.mocked(useSetLineup).mockReturnValueOnce({
+      data: undefined,
+      error: null,
+      isPending: true,
+      reset: () => {},
+      submit: () => {},
+    } as unknown as ReturnType<typeof useSetLineup>)
+    const saving = renderEditor()
+    expect(saving).toContain('data-override-toggle-blocked="saving"')
+    expect(saving).toContain('Wait for the save to finish.')
+
+    // THE MANAGER'S EDITOR IS UNCHANGED. No switch, no commissioner tools.
     for (const editability of [{ state: 'open' } as const, { state: 'closed', reason: PAST_WEEK_COPY } as const]) {
-      const managerHtml = render(false, editability)
-      expect(managerHtml).not.toContain('data-offer-override')
+      const managerHtml = renderEditor({ isCommish: false, editability })
+      expect(managerHtml).not.toContain('data-override-toggle')
       expect(managerHtml).not.toContain('data-commish-tools')
+      expect(managerHtml).not.toContain('data-override-mode="on"')
+    }
+  })
+
+  it('NO REASON INPUT EXISTS IN THE OVERRIDE PATH — not on entry, not per save, in either mode (its presence WAS the defect)', () => {
+    for (const html of [
+      renderEditor(),
+      renderEditor({ overrideMode: true }),
+      renderEditor({ overrideMode: true, editability: { state: 'closed', reason: PAST_WEEK_COPY } }),
+      // The commissioner ARM of the manager's verb: same ruling, same answer.
+      renderEditor({ isCommissionerArm: true }),
+    ]) {
+      expect(html).not.toContain('<input')
+      expect(html).not.toContain('data-override-reason')
+      expect(html).not.toMatch(/Reason \(required/)
+    }
+    // …and the file cannot grow one back without this failing.
+    const source = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/lineup-editor.tsx'), 'utf8')
+    expect(source).not.toContain("@/components/ui/input")
+    expect(source).not.toMatch(/<Input\b/)
+  })
+
+  it('THE VISIBLE STATE: present while ON, absent while OFF — a frame, a badge and an exit, none of it an error and none of it a resting shadow', () => {
+    const on = renderEditor({ overrideMode: true })
+    expect(on).toContain('data-override-mode="on"')
+    expect(on).toContain('✸ Override mode ON')
+    expect(on).toContain('border-brand-strong')
+    expect(on).toContain('bg-brand-soft')
+    expect(on).toContain('data-override-toggle="on"')
+    expect(on).toContain('Exit override mode')
+    // Not an error, and not elevated at rest — the frame and the bar carry
+    // fill + border only (the `hover:shadow-hard-*` on the Save button is a
+    // hover affordance and is exactly what the rule permits).
+    expect(on).not.toContain('bg-negative-soft')
+    const frameClass = on.slice(on.indexOf('class="') + 7, on.indexOf('"', on.indexOf('class="') + 7))
+    expect(frameClass).toContain('border-brand-strong')
+    expect(frameClass).not.toContain('shadow')
+    const bar = on.slice(on.indexOf('data-commish-tools'), on.indexOf('</div>', on.indexOf('data-commish-tools')))
+    expect(bar).not.toContain('shadow')
+
+    const off = renderEditor()
+    expect(off).toContain('data-override-mode="off"')
+    expect(off).not.toContain('Override mode ON')
+    expect(off).not.toContain('border-brand-strong')
+    expect(off).not.toContain('Exit override mode')
+  })
+
+  it('while ON the commissioner acts like any GM: the locked row is live, the closed week opens, and Save is the override', () => {
+    const on = renderEditor({ overrideMode: true })
+    const at = on.indexOf('data-player="rb-locked"')
+    const lockedRow = on.slice(Math.max(0, at - 400), at + 400)
+    // The 🔒 badge STAYS (it is the record of what is being overridden)…
+    expect(on).toContain('🔒')
+    // …but the wall is down: draggable, clickable, and it has its bench ×.
+    expect(lockedRow).toContain('aria-disabled="false"')
+    expect(lockedRow).toContain('cursor-grab')
+    expect(on).toContain('Bench Render RB Locked')
+    expect(on).toContain('Save override')
+
+    // A CLOSED week is editable in the mode — the past-week banner steps aside
+    // rather than contradicting the bar above it, and Save is still there.
+    const closedOn = renderEditor({ overrideMode: true, editability: { state: 'closed', reason: PAST_WEEK_COPY } })
+    expect(closedOn).not.toContain(PAST_WEEK_COPY)
+    expect(closedOn).toContain('Save override')
+  })
+
+  it('NO DISABLED CONTROL WITHOUT A STATED REASON — the clean editor says why Save is off, in both modes', () => {
+    for (const html of [renderEditor(), renderEditor({ overrideMode: true })] ) {
+      expect(html).toContain('data-save-hint')
+      expect(html).toContain('Nothing to save — this lineup already matches what’s stored. Move a player to enable Save.')
+      // The shipped shape: disabled, and the screen says nothing.
+      expect(html).not.toMatch(/disabled=""[\s\S]{0,400}<\/button>\s*<\/div>\s*<\/div>\s*$/)
+    }
+  })
+
+  it('the refusal keeps a way OUT — the shortcut turns on the SAME mode, and it is gone once the mode is on', () => {
+    const refusal = 'Render RB Locked’s game kicked off — a player whose game has started cannot enter or move slots (§11.2)'
+    const refused = () =>
+      ({
+        data: undefined,
+        error: new Error(refusal),
+        isPending: false,
+        reset: () => {},
+        submit: () => {},
+      }) as unknown as ReturnType<typeof useSetLineup>
+
+    // All three renders carry the SAME server refusal, so every absence below
+    // is a decision and not an accident of there being nothing to hang it on.
+    vi.mocked(useSetLineup).mockReturnValueOnce(refused())
+    const offered = renderEditor()
+    expect(offered).toContain(refusal)
+    expect(offered).toContain('data-offer-override')
+    expect(offered).toContain('Turn on override mode')
+    expect(offered).toContain('Your placements are still here — nothing was lost.')
+
+    // Already in the mode → the refusal still renders, the offer does not.
+    vi.mocked(useSetLineup).mockReturnValueOnce(refused())
+    const already = renderEditor({ overrideMode: true })
+    expect(already).toContain(refusal)
+    expect(already).not.toContain('data-offer-override')
+
+    // A plain manager is never offered it, refusal or no refusal.
+    vi.mocked(useSetLineup).mockReturnValueOnce(refused())
+    const manager = renderEditor({ isCommish: false })
+    expect(manager).toContain(refusal)
+    expect(manager).not.toContain('data-offer-override')
+  })
+
+  it('THE PAGE says it too, above the fold: the mode is a badge in the team card and the editor’s frame, for a commissioner only', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(false)
+    const off = renderTeamPage({ detail: { ...detail, my_role: 'commissioner' } })
+    expect(off).not.toContain('data-override-mode-badge')
+    expect(off).toContain('data-override-mode="off"')
+
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const asCommish = renderTeamPage({ detail: { ...detail, my_role: 'commissioner' } })
+      // The badge sits in the identity card ABOVE the week picker and the
+      // editor, so "it's on" is legible on a phone with nothing scrolled.
+      //
+      // R984: assert PRESENCE before ordering. The first cut compared
+      // `indexOf(...)` directly and passed with the badge DELETED — `indexOf`
+      // returns -1 and -1 < any real index, so the whole above-the-fold
+      // requirement (the thing Chris asked for by name) could regress in
+      // silence. Proven: deleting the badge left 21/21 green. The two sibling
+      // assertions do not save it either — the editor's own bar satisfies both,
+      // and it renders BELOW the week picker.
+      const badgeAt = asCommish.indexOf('data-override-mode-badge')
+      const weekPickerAt = asCommish.indexOf('aria-label="Week"')
+      const editorAt = asCommish.indexOf('data-lineup-editor')
+      expect(badgeAt).toBeGreaterThan(-1)
+      expect(weekPickerAt).toBeGreaterThan(-1)
+      expect(editorAt).toBeGreaterThan(-1)
+      expect(badgeAt).toBeLessThan(weekPickerAt)
+      expect(weekPickerAt).toBeLessThan(editorAt)
+      expect(asCommish).toContain('✸ Override mode ON')
+      expect(asCommish).toContain('data-override-mode="on"')
+
+      // The seeded viewer's role is `manager` — the mode must not reach him
+      // even when the store says the league is in it.
+      const asManager = renderTeamPage()
+      expect(asManager).not.toContain('data-override-mode-badge')
+      expect(asManager).toContain('data-override-mode="off"')
+      expect(asManager).not.toContain('data-commish-tools')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
     }
   })
 
@@ -450,6 +637,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             isCommissionerArm: false,
             isCommish: false,
             leagueTimeZone: null,
+            overrideMode: false,
+            onOverrideMode: () => {},
           }),
         ),
       ),
