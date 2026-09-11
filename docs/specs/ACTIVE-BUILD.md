@@ -14,8 +14,12 @@
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
 A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
 `L.E1.*` in order. **`L.E1.1` is LANDED** (PR #286, migration 123 — the
-`commissioner_actions` spine + `commish_edit_lineup`), so the next takeable task
-is **`L.E1.2`**, and **`L.E1.3` blocks `L.E1.4`**. Migration numbers **125–132**
+`commissioner_actions` spine + `commish_edit_lineup`) and **`L.E1.2` is LANDED**
+(PR #291, docs only — spec v2.16.39's errata, Q60–Q64 filed, D335–D354 and
+F334–F344 transcribed), so the next takeable task is **`L.E1.3`** (pgTAP 064 +
+067 gain explicit `league_members` coverage — its own commit, no migration), and
+**`L.E1.3` blocks `L.E1.4`**. *(Advanced from `L.E1.2` in L.E1.2's own fix round,
+R982 — the clause would otherwise have gone stale the moment that PR merged.)* Migration numbers **125–132**
 and pgTAP **073–080** are reservations confirmed at task time.
 
 **Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
@@ -25,17 +29,23 @@ ask**). Trade and FAAB overrides defer to M5 for want of a SUBJECT, not
 authority.
 
 **Read before taking any task:**
-1. **PROGRESS §3's STANDING RULE, all of (a)–(h)** — especially **(g)** the
-   game-day lock does not bind a commissioner, and **(h)** override is a MODE
+1. **PROGRESS §3's STANDING RULE, all of (a)–(i)** — especially **(g)** the
+   game-day lock does not bind a commissioner, **(h)** override is a MODE
    with **no reason prompt** (superseded its own "captured once" clause the day
-   it was written).
+   it was written), and **(i)** (ruled 2026-09-11, explaining Q59) — the test to
+   apply to every future verb: **commissioner powers FIX what is broken; they do
+   not CHANGE what the game is.** A TIMING or REACHABILITY refusal is a defect to
+   fix; a VALIDITY refusal binds him too and needs no question. L.E1.6's
+   roster-shape legality question turns on it. (Grep the clause headings —
+   PROGRESS line numbers move.)
 2. **Q59 is RULED (2026-09-11): timing is lifted, POSITIONAL legality is not.**
    *"even a commish cannot break the positional rules."* No exemption from E16.
 3. **The breakdown's citation discipline** (head of its §2): for `src/**` the
    IDENTIFIER is authoritative and the line number advisory — grep the symbol.
    Migration, pgTAP and `spec:` citations stay exact, and a wrong one THERE is a
    real error to report.
-4. **Q60–Q64** are open and Chris's; none blocks starting.
+4. **Q60–Q64** are open and Chris's (filed in PROGRESS §3 by L.E1.2); none
+   blocks starting — each names exactly what it blocks.
 
 > **⚠ THE HOLD-FILE INSTRUCTION IS RETIRED — do NOT follow M4's §4 rule 11.**
 > `tasks-M4-inseason.md` §4 rule 11 says every new migration extends
