@@ -79,7 +79,7 @@ Exit criteria 1 and 3 are measured green and shown three times over.
 
 ---
 
-## Active: **Redraft Leagues M4 — In-season core** *(approved by Chris 2026-09-01, PR #244 merged; Q29 ruled at approval)*
+## Previous: **Redraft Leagues M4 — In-season core** *(approved by Chris 2026-09-01, PR #244 merged; Q29 ruled at approval)* — **SUPERSEDED as the active build 2026-09-11; see "Paused: M4" above for what remains**
 
 **The breakdown is LAW — Chris approved and merged PR #244 (2026-09-01).**
 `docs/specs/tasks-M4-inseason.md` sequences the milestone (24 tasks, 6 lanes;
