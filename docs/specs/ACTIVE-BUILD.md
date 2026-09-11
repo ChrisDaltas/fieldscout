@@ -9,6 +9,66 @@
 
 ---
 
+## Active: **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
+
+**The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
+A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
+`L.E1.*` in order. **`L.E1.1` is LANDED** (PR #286, migration 123 — the
+`commissioner_actions` spine + `commish_edit_lineup`), so the next takeable task
+is **`L.E1.2`**, and **`L.E1.3` blocks `L.E1.4`**. Migration numbers **125–132**
+and pgTAP **073–080** are reservations confirmed at task time.
+
+**Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
+in PROGRESS §3 (*"a commissioner may do anything a manager can, on any team"* —
+**a verb that refuses a commissioner is a DEFECT to fix, never a question to
+ask**). Trade and FAAB overrides defer to M5 for want of a SUBJECT, not
+authority.
+
+**Read before taking any task:**
+1. **PROGRESS §3's STANDING RULE, all of (a)–(h)** — especially **(g)** the
+   game-day lock does not bind a commissioner, and **(h)** override is a MODE
+   with **no reason prompt** (superseded its own "captured once" clause the day
+   it was written).
+2. **Q59 is RULED (2026-09-11): timing is lifted, POSITIONAL legality is not.**
+   *"even a commish cannot break the positional rules."* No exemption from E16.
+3. **The breakdown's citation discipline** (head of its §2): for `src/**` the
+   IDENTIFIER is authoritative and the line number advisory — grep the symbol.
+   Migration, pgTAP and `spec:` citations stay exact, and a wrong one THERE is a
+   real error to report.
+4. **Q60–Q64** are open and Chris's; none blocks starting.
+
+> **⚠ THE HOLD-FILE INSTRUCTION IS RETIRED — do NOT follow M4's §4 rule 11.**
+> `tasks-M4-inseason.md` §4 rule 11 says every new migration extends
+> `supabase/HELD-FROM-PRODUCTION.txt`'s closed range in the same PR. **That was
+> true while production ran behind; it is false now.** Chris cleared the hold on
+> 2026-09-09 for go-live (commit `26eca84`) and production has since taken 123
+> and 124 — the file has **zero live entries**. Adding a hold line for a new
+> migration would keep the fix out of the very league it was written for; that
+> nearly happened with 123. **The default act for a new migration is
+> `npx supabase db push`, which is CHRIS'S to run, after merge.** A new migration
+> reds `db-drift.yml` between merge and push — that is rule 1 working, not a
+> defect.
+
+---
+
+## Paused: **Redraft Leagues M4 — In-season core** *(not abandoned — two items outstanding)*
+
+**M4 is 🟡, and the loop is NOT taking `L.D*` tasks while M6A is active.** What
+remains, so nobody has to re-derive it:
+- **`L.D6.4` — the real-2026 replay gate (exit criterion 2).** Was calendar-blocked
+  on the first recorded 2026 week; **that block is GONE** — week 1 is in the books
+  and Chris's live league carries real `player_stats`, `matchups` and scores.
+  Takeable whenever this file points back.
+- **F308 / blocker B11 — exit criterion 4 (continuity).** `test:gate:m4` last
+  exited 1 at `e2e/auction-live.spec.ts:213`, the nomination broadcast, and F308
+  is deliberately NOT in the flake policy. Diagnosed (the Realtime tenant's
+  100 events/s ceiling is the mechanism in the reproduction, F311) but the gate
+  instance's own trigger is unproven.
+
+Exit criteria 1 and 3 are measured green and shown three times over.
+
+---
+
 ## Active: **Redraft Leagues M4 — In-season core** *(approved by Chris 2026-09-01, PR #244 merged; Q29 ruled at approval)*
 
 **The breakdown is LAW — Chris approved and merged PR #244 (2026-09-01).**
