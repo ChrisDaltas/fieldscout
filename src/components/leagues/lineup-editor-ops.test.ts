@@ -20,6 +20,8 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import {
+  COMMISSIONER_ARM_REASON,
+  COMMISSIONER_OVERRIDE_REASON,
   formatKickoff,
   LOCK_RELEASE_UNRECORDED_COPY,
   LOCK_UNTIL_COPY,
@@ -32,8 +34,10 @@ import {
   designationOf,
   irStintChip,
   lockBadgeFor,
+  lineupSaveRequest,
   lockedPlayerIds,
   locksAtCopy,
+  overrideExitCopy,
   placementFromStored,
   placementsEqual,
   planMove,
@@ -373,14 +377,98 @@ describe('THE COMMISSIONER OVERRIDE (M6A, §15.4:1695 / PROGRESS §3(g))', () =>
 })
 
 // ---------------------------------------------------------------------------
+// OVERRIDE MODE IS A MODE — the save carries a fixed LABEL and asks for
+// nothing (M6A; PROGRESS §3(h) as superseded by Chris 2026-09-11:
+// "yeah i think no reason at all is fine … if anyone cares they can ask")
+//
+// Measured failure this replaces: teams 5 and 6, 2026-09-11 — a `set_lineup`
+// refusal at 15:10:47 and 15:12:01, and ZERO `commissioner_actions` rows,
+// because Save stayed disabled behind a Reason field the screen never
+// mentioned. The property that fixes it is that the request is a pure function
+// of the mode: nothing typed, and the second save identical to the first.
+// ---------------------------------------------------------------------------
+
+describe('lineupSaveRequest — one action, no input, twice in a row', () => {
+  const slotMap: Placement = { 'qb:0': 'p1', 'rb:0': 'p2' }
+
+  it('in override mode it is the AUDITED verb, carrying the fixed label', () => {
+    const req = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
+    expect(req.verb).toBe('commish_edit_lineup')
+    expect(req.reason).toBe(COMMISSIONER_OVERRIDE_REASON)
+    expect(req.slotMap).toEqual(slotMap)
+  })
+
+  it('override mode wins on the commissioner’s OWN team too (§3(a) — any action, any team)', () => {
+    expect(lineupSaveRequest({ overrideMode: true, isCommissionerArm: true, slotMap }).verb).toBe('commish_edit_lineup')
+    expect(lineupSaveRequest({ overrideMode: true, isCommissionerArm: true, slotMap }).reason).toBe(COMMISSIONER_OVERRIDE_REASON)
+  })
+
+  it('A SECOND SAVE IN THE SAME SESSION IS THE FIRST ONE AGAIN — no further input exists to give', () => {
+    const first = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
+    const second = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
+    expect(second).toEqual(first)
+    // …and the mode is not consumed by the save: the caller passes the same
+    // `true` and gets the same audited verb, which is what "it stays on until
+    // you exit it" means at this seam.
+    expect(second.verb).toBe('commish_edit_lineup')
+  })
+
+  it('outside the mode the manager’s verb is untouched: no reason as the team’s own manager', () => {
+    const req = lineupSaveRequest({ overrideMode: false, isCommissionerArm: false, slotMap })
+    expect(req.verb).toBe('set_lineup')
+    expect(req.reason).toBeNull()
+  })
+
+  it('the commissioner ARM of the manager’s verb is not prompted either — same ruling, its own label', () => {
+    const req = lineupSaveRequest({ overrideMode: false, isCommissionerArm: true, slotMap })
+    expect(req.verb).toBe('set_lineup')
+    expect(req.reason).toBe(COMMISSIONER_ARM_REASON)
+  })
+
+  it('both labels satisfy the SERVER’s own predicate — non-blank after 114/123’s btrim, and ≤ 500', () => {
+    // 123:665 / 114:316: `NULLIF(btrim(COALESCE(p_reason,''), E' \t\r\n'), '')`
+    // then RAISE when it is NULL. A label that trimmed to empty would restore
+    // the exact failure this replaces, with the suite still green.
+    for (const label of [COMMISSIONER_OVERRIDE_REASON, COMMISSIONER_ARM_REASON]) {
+      expect(label.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')).not.toBe('')
+      expect(label.length).toBeLessThanOrEqual(500)
+    }
+    // They are LABELS, not fabricated justifications: no invented narrative
+    // about a manager, a game or a message ends up in an audit row.
+    for (const label of [COMMISSIONER_OVERRIDE_REASON, COMMISSIONER_ARM_REASON]) {
+      expect(label.toLowerCase()).toContain('commissioner')
+      expect(label).not.toMatch(/unreachable|away|injur|asked|per his|because/i)
+    }
+  })
+})
+
+describe('overrideExitCopy — leaving the mode never eats the draft, and says what changed', () => {
+  it('with unsaved placements it keeps them and names the consequence', () => {
+    const copy = overrideExitCopy(true)
+    expect(copy).toContain('still here')
+    expect(copy).toMatch(/locks apply again/)
+    // It must never claim the work was thrown away — that is the bug class.
+    expect(copy).not.toMatch(/discard|lost|cleared/i)
+  })
+  it('with nothing unsaved it just says the mode is off', () => {
+    expect(overrideExitCopy(false)).toContain('Override mode off')
+    expect(overrideExitCopy(false)).not.toContain('still here')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // R973 — OVERRIDE MODE MUST ACTUALLY UNLOCK THE EDITOR, not just show its door
 //
 // The fix-round review MEASURED this hole: `lockExempt` was deleted from the
-// BenchZone call site — leaving the door, `planMove` and `SlotSeat` intact —
+// BenchZone call site — leaving the switch, `planMove` and `SlotSeat` intact —
 // and 43 files / 943 tests still passed. In the app that is blocker 2 restored
-// exactly: Chris clicks "Override as commissioner" on Team 7, the banner and
-// the Reason field appear, and Darnold's bench row is still frozen, so he
-// cannot select him, cannot seat him, and Save never leaves `disabled`.
+// exactly: Chris turns on override mode for Team 7, the frame and the banner
+// appear, and Darnold's bench row is still frozen, so he cannot select him,
+// cannot seat him, and Save never leaves `disabled`.
+//
+// (The Reason field this comment used to name is gone — Chris, 2026-09-11:
+// "yeah i think no reason at all is fine". The counts below are UNCHANGED by
+// that work: five hops, one memo, two `frozen` expressions, re-measured.)
 //
 // `overrideMode` is component-internal state and `renderToStaticMarkup` cannot
 // click, so this is a SOURCE pin (the house pattern — see the lock pins above

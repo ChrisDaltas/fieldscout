@@ -19,7 +19,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
-import { Input } from '@/components/ui/input'
 import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
@@ -30,8 +29,10 @@ import {
   buildEditorModel,
   formatKickoff,
   irStintChip,
+  lineupSaveRequest,
   lockBadgeFor,
   lockedPlayerIds,
+  overrideExitCopy,
   placementFromStored,
   placementsEqual,
   planMove,
@@ -88,6 +89,30 @@ import {
  * player, tap a seat — the keyboard/assistive path costs no second
  * mechanism.
  *
+ * **COMMISSIONER OVERRIDE MODE IS A MODE (M6A; PROGRESS §3(h), ruled by
+ * Chris 2026-09-11 after using the shipped flow on four teams).** *"the
+ * commissioner going into 'override mode' which lets them act like any GM in
+ * the league, and then when they're done they exit override mode. when
+ * override mode is active there is some visual indications that it's on."*
+ *
+ * So: ONE deliberate switch, offered to a commissioner in every week state
+ * (never behind a refusal, never behind `state === 'closed'`); it stays on
+ * across saves and across team pages until he turns it off (the state lives in
+ * `commish-override-store.ts`, keyed by league); while it is on the editor is
+ * framed and banner-marked so the mode is unmistakable; and **he is never
+ * asked for a reason** — *"yeah i think no reason at all is fine … if anyone
+ * cares they can ask"*, which supersedes §(h)'s "captured once" clause. The
+ * client sends a fixed label (`lineup-editor-ops.ts`'s
+ * `COMMISSIONER_OVERRIDE_REASON`) because the RPC RAISEs on a blank; the
+ * receipt is the audit row, not the sentence.
+ *
+ * What the shipped version did instead — offer the override only AFTER a
+ * refusal, then disable Save behind an unmentioned Reason field — cost Chris
+ * two of the four teams he tried to fix: `set_lineup` refusals at 15:10:47 and
+ * 15:12:01 with ZERO `commissioner_actions` rows behind them. A disabled
+ * control with no stated precondition is CLAUDE.md's "never let 'nothing
+ * happened' mean 'it worked'" wearing a button.
+ *
  * Elevation: nothing here rests elevated (CLAUDE.md). The one shadow is the
  * `DragOverlay` ghost — a true overlay floating over the page.
  */
@@ -104,7 +129,7 @@ export interface LineupEditorProps {
   currentWeek: number | null
   editability: WeekEditability
   /** The viewer may submit for this team (its manager, or the commissioner
-   *  — who must give a reason, D290/R738). */
+   *  — whose save carries the §15.4 label, never a prompted reason). */
   canEdit: boolean
   isCommissionerArm: boolean
   /** The viewer holds the commissioner role in THIS league. Distinct from
@@ -115,6 +140,13 @@ export interface LineupEditorProps {
   /** The league's named zone (`settings.draft.time_zone`) for the §16.4
    *  hover; null renders viewer-local only. */
   leagueTimeZone: string | null
+  /** COMMISSIONER OVERRIDE MODE, owned by the page (and under it by
+   *  `commish-override-store`, so the mode survives navigating from team 5 to
+   *  team 6). Lifted out of this component deliberately: it is a mode of the
+   *  commissioner's session, not of one mount, and being a prop is what lets
+   *  both of its states be rendered in a pin. */
+  overrideMode: boolean
+  onOverrideMode: (next: boolean) => void
 }
 
 type Notice = { tone: HintTone | 'positive'; text: string }
@@ -133,6 +165,8 @@ export function LineupEditor({
   isCommissionerArm,
   isCommish,
   leagueTimeZone,
+  overrideMode,
+  onOverrideMode,
 }: LineupEditorProps) {
   const slots = useMemo(() => slotInstances(settings), [settings])
   const players = useMemo(() => new Map(roster.map((p) => [p.player_id, p])), [roster])
@@ -156,14 +190,10 @@ export function LineupEditor({
   const [selected, setSelected] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [reason, setReason] = useState('')
-  // OVERRIDE MODE (M6A). LATCHED in its own state rather than derived from
-  // `mutation.error`, because `move()` calls `mutation.reset()` on every
-  // successful placement — a derived flag would vanish the instant the
-  // commissioner dragged anything, including the drag he makes to work
-  // around the refusal. Cleared only by Discard or a successful save.
-  const [overrideMode, setOverrideMode] = useState(false)
-  const [overrideReason, setOverrideReason] = useState('')
+  // NO REASON STATE, AND NO REASON INPUT — anywhere. Chris, 2026-09-11:
+  // *"yeah i think no reason at all is fine"* … *"if anyone cares they can
+  // ask"*. Both verbs that RAISE on a blank reason are fed a fixed label from
+  // `lineupSaveRequest`. Re-adding a text field here re-adds the defect.
 
   const mutation = useSetLineup(leagueId, teamId)
   const override = useCommishEditLineup(leagueId)
@@ -220,29 +250,45 @@ export function LineupEditor({
     else if (over.startsWith('slot:')) move(playerId, { kind: 'slot', key: over.slice(5) })
   }
 
+  // ONE action. No second field, no second press, and the SECOND save of a
+  // session is byte-identical to the first — `lineupSaveRequest` is pure and
+  // reads nothing the commissioner has to type.
   function save() {
     if (readOnly || !dirty) return
     setNotice(null)
-    if (overrideMode) {
-      // The AUDITED path (§15.4:1695). Same draft map — the commissioner does
-      // not rebuild anything; the reason is what he adds.
-      override.submit({ teamId, week, slotMap: draft, reason: overrideReason.trim() })
+    const request = lineupSaveRequest({ overrideMode, isCommissionerArm, slotMap: draft })
+    if (request.verb === 'commish_edit_lineup') {
+      // Clear the OTHER mutation first: `settled` and `refusal` read both
+      // hooks, and a stale success from the manager's verb would otherwise
+      // shadow this one's outcome for the whole session (the mode now outlives
+      // a save, so both hooks really can hold results at once).
+      mutation.reset()
+      override.submit({ teamId, week, slotMap: request.slotMap, reason: request.reason })
       return
     }
-    mutation.submit({
-      week,
-      slotMap: draft,
-      ...(isCommissionerArm ? { reason: reason.trim() || null } : {}),
-    })
+    override.reset()
+    mutation.submit({ week, slotMap: request.slotMap, reason: request.reason })
   }
+  /** Discard the PLACEMENTS. It does not leave override mode — the mode has
+   *  its own exit, and conflating the two is how the shipped version dropped
+   *  him out of it without saying so. */
   function discard() {
     setDraft(baseline.current)
     setSelected(null)
     setNotice(null)
     mutation.reset()
     override.reset()
-    setOverrideMode(false)
-    setOverrideReason('')
+  }
+  /**
+   * Leave the mode. **The draft is never touched** — his placements are his,
+   * and silently discarding them is the exact bug class this feature exists to
+   * end. What DOES change is what they are allowed to be, so that is said out
+   * loud instead of waiting to surface as a refusal.
+   */
+  function exitOverrideMode() {
+    setSelected(null)
+    setNotice({ tone: dirty ? 'caution' : 'positive', text: overrideExitCopy(dirty) })
+    onOverrideMode(false)
   }
 
   // After a SUCCESSFUL save, render the server's canonical map immediately
@@ -255,11 +301,9 @@ export function LineupEditor({
     const canonical = placementFromStored(settled.slot_map, roster)
     baseline.current = canonical
     setDraft(canonical)
-    // The exception is spent: a landed override leaves the editor back under
-    // the ordinary rules, so the next save is a normal one unless the server
-    // refuses again.
-    setOverrideMode(false)
-    setOverrideReason('')
+    // THE MODE SURVIVES THE SAVE. It used to be spent by one — which made
+    // every subsequent fix a fresh trip through the door, i.e. the
+    // per-transaction shape Chris rejected. He turns it off when he is done.
   }, [settled, roster])
 
   const nameOf = (id: string) => players.get(id)?.full_name ?? id
@@ -268,58 +312,93 @@ export function LineupEditor({
 
   const outcome = settled ? saveOutcomeCopy(settled, nameOf, labelOf) : null
   const refusal = (mutation.error ?? override.error)?.message ?? null
-  // The SECOND door, and only a convenience now that the persistent one above
-  // exists: a refusal is the one moment the intact draft and the server's
-  // reason are on screen together, so the same control is repeated there
-  // rather than making the commissioner scroll up and rebuild his placements.
-  // It is NOT filtered by the refusal's WORDS any more. The previous matcher
-  // read three substrings out of migration 114's refusal prose, which nothing
-  // pinned (071 §I pins the arms' TAILS, and neither tail contains "kicked off
-  // at") — so a reworded refusal would have removed the button with every
-  // suite green. Offering the override on a refusal it cannot lift costs a
-  // second identical refusal; hiding it on one it CAN lift costs Chris his ten
-  // placements, which is the bug this whole PR exists to fix.
+  // THE SHORTCUT INTO THE MODE — kept, deliberately, even though the mode's
+  // own switch is now persistent and unconditional above. The ruling makes the
+  // switch the way IN; it does not make a refusal a dead end, and a dead end is
+  // worse than what shipped. A refusal is the one moment the intact draft and
+  // the server's own words are on screen together, so the way out is offered
+  // right there rather than sending him up the page to find it. It enters the
+  // SAME mode — same state, same banner, same exit — so there is no second
+  // path to maintain, and it is not filtered by the refusal's WORDS (the old
+  // matcher read three substrings of migration 114's prose that nothing pins,
+  // so a reworded refusal would have silently removed the button).
   const canOfferOverride = isCommish && !overrideMode
 
   const draggingPlayer = dragging ? players.get(dragging) ?? null : null
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="flex flex-col gap-4" data-lineup-editor={teamId}>
-        {editability.state === 'closed' && (
-          <div role="status" className="flex flex-col gap-2 rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
-            <span>{editability.reason}</span>
-          </div>
+      {/* THE FRAME. While the mode is on the WHOLE editor is wrapped in a lime
+          "look here" surround (the palette's live-signal role — never a
+          control, and pointedly not `negative`, because this is a power in use,
+          not an error). Two tokens, no arbitrary values, no shadow: elevation
+          is a hover state and this is a resting condition, so it is carried by
+          fill + border exactly as CLAUDE.md requires. */}
+      <div
+        className={cn(
+          'flex flex-col gap-4',
+          overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3',
         )}
-        {/* THE DOOR (M6A) — and it is deliberately NOT a consequence of
-            anything. Chris's ruling is about the CURRENT, LIVE week ("an LM
-            should be able to set the lineup even after the games have
-            started"), and on that week neither of the two conditional entries
-            this editor could offer exists:
-              * `weekEditability` calls the current week `open` unless its
-                status is correction_window/final (lineup-editor-ops.ts:258-271),
-                so a banner hung off `state === 'closed'` never renders on game
-                day — a commissioner would have to wait until every game ended;
-              * a refusal-driven offer needs a SERVER refusal, and this
-                editor's own lock wall makes one unconstructable: a locked
-                player is `useDraggable({disabled:true})`, his row has no
-                `onClick`, his seat is an inert `useDroppable` and his bench ×
-                is hidden — no drag, no select, no Save, no refusal.
-            So the entry is PERSISTENT and unconditional on state: one control,
-            commissioner only, in every week state. The manager's editor is
-            byte-identical to before — `isCommish` is false for him. */}
-        {isCommish && canEdit && !overrideMode && (
+        data-lineup-editor={teamId}
+        data-override-mode={overrideMode ? 'on' : 'off'}
+      >
+        {/* THE SWITCH — first child, so it is on screen before anything has to
+            be scrolled, and present in EVERY week state: not behind a refusal,
+            not behind `state === 'closed'`. One control, commissioner only; the
+            manager's editor is byte-identical to before (`isCommish` is false
+            for him, so this whole subtree is absent). */}
+        {isCommish && canEdit && (
           <div
             role="status"
-            className="flex flex-wrap items-center gap-2 rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-ink"
             data-commish-tools
+            className={cn(
+              'flex flex-wrap items-center gap-2 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
+              overrideMode ? 'border-ink bg-brand' : 'border-ink bg-white',
+            )}
           >
-            <span className="min-w-[200px] flex-1">
-              Commissioner — you can edit this lineup after kickoff, or for a past week, through the audited override.
+            {overrideMode && (
+              <Badge variant="black" className="shrink-0">
+                ✸ Override mode ON
+              </Badge>
+            )}
+            <span className="min-w-[180px] flex-1">
+              {overrideMode
+                ? 'You are acting as this team’s GM. Locked players move, closed weeks open, and every save is recorded — who changed what, when. Exit when you’re done.'
+                : 'Commissioner — override mode lets you act as any team’s GM: edit after kickoff, or for a week that has closed. It stays on until you turn it off, and every save is recorded.'}
             </span>
-            <Button variant="stroke" size="sm" onClick={() => setOverrideMode(true)} data-offer-override>
-              Override as commissioner
+            {/* R985: the toggle is LOCKED while a save is in flight. Without
+                this, exiting mid-save flips `active` to the other hook, so the
+                pending write loses its "Saving…" line and its success notice is
+                swallowed by the exit message — the screen then says the
+                placements are unsaved while the save actually succeeded. On an
+                open week it also re-enables Save as the MANAGER verb, inviting
+                a second concurrent write against the same draft.
+                R986: entering clears any stale exit notice, which otherwise
+                sits on screen contradicting the ON state. */}
+            <Button
+              variant="stroke"
+              size="sm"
+              disabled={active.isPending}
+              title={active.isPending ? 'Wait for the save to finish.' : undefined}
+              onClick={() => {
+                if (active.isPending) return
+                if (overrideMode) {
+                  exitOverrideMode()
+                } else {
+                  setNotice(null)
+                  onOverrideMode(true)
+                }
+              }}
+              data-override-toggle={overrideMode ? 'on' : 'off'}
+              data-override-toggle-blocked={active.isPending ? 'saving' : undefined}
+            >
+              {overrideMode ? 'Exit override mode' : 'Turn on override mode'}
             </Button>
+          </div>
+        )}
+        {editability.state === 'closed' && !overrideMode && (
+          <div role="status" className="flex flex-col gap-2 rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
+            <span>{editability.reason}</span>
           </div>
         )}
         {editability.state === 'unknown' && (
@@ -415,9 +494,9 @@ export function LineupEditor({
             rendered VERBATIM (F224(e)); a client-side plan refusal is the
             editor's own copy, before any submit. */}
         {/* The refusal is the ONE moment the intact draft and the server's
-            reason are on screen together, so the audited path is offered from
-            HERE — re-submitting the SAME placements rather than asking the
-            commissioner to rebuild them. */}
+            reason are on screen together, so the way into the mode is repeated
+            HERE — it turns on the same mode the switch above does, keeping the
+            SAME placements rather than asking him to rebuild them. */}
         {refusal && (
           <div role="alert" className="flex flex-col gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink">
             <span>{refusal}</span>
@@ -427,12 +506,12 @@ export function LineupEditor({
                   variant="blue"
                   size="sm"
                   onClick={() => {
-                    setOverrideMode(true)
                     mutation.reset()
+                    onOverrideMode(true)
                   }}
                   data-offer-override
                 >
-                  Override as commissioner
+                  Turn on override mode
                 </Button>
               )}
               <Button
@@ -448,7 +527,7 @@ export function LineupEditor({
             </div>
             {canOfferOverride && (
               <span className="text-[11px] font-medium text-ink">
-                Your placements are still here — nothing was lost. Overriding keeps them and records the change.
+                Your placements are still here — nothing was lost. Override mode keeps them, lifts this refusal, and stays on until you exit it.
               </span>
             )}
           </div>
@@ -460,60 +539,22 @@ export function LineupEditor({
           <NoticeLine tone={settled && 'score_stale' in settled && settled.score_stale === true ? 'caution' : 'positive'} text={outcome} />
         )}
 
-        {overrideMode && (
-          <div
-            role="status"
-            className="flex flex-col gap-1 rounded-sm border border-accent bg-accent-soft px-3 py-2 text-[12px] font-semibold text-ink"
-            data-override-mode
-          >
-            <span>Commissioner override — locked players can be moved.</span>
-            <span className="text-[11px] font-medium">
-              This is recorded: the league sees who changed what, when, and why. Saving also posts to league chat.
-            </span>
-          </div>
-        )}
-
         {!readOnly && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {overrideMode && (
-              <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-[11px] font-bold text-ink">
-                Reason (required — this is an audited override, and the whole league can read it)
-                <Input
-                  value={overrideReason}
-                  onChange={(e) => setOverrideReason(e.target.value)}
-                  maxLength={500}
-                  className="h-btn-md px-2 text-[12px]"
-                  placeholder="e.g. manager unreachable — his game had already started"
-                  data-override-reason
-                />
-              </label>
-            )}
-            {!overrideMode && isCommissionerArm && (
-              <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-[11px] font-bold text-ink">
-                Reason (required — you are setting another team’s lineup; it posts to league chat)
-                <Input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  maxLength={500}
-                  className="h-btn-md px-2 text-[12px]"
-                  placeholder="e.g. manager away — set per his message"
-                />
-              </label>
-            )}
             {/* L.D6.2: the two commit controls carry stable hooks. Their only
                 other handle is their own label, and the label changes while
                 submitting ("Saving…"), so a browser spec would have to select
-                on prose that moves — the R399 vacuity lesson. */}
+                on prose that moves — the R399 vacuity lesson.
+
+                NO REASON FIELD, in either path. The button is disabled for
+                exactly two reasons and BOTH are named on screen below it —
+                nothing to save, or a save in flight. That is the whole of the
+                fix: the shipped version sat disabled behind an unmentioned
+                Reason field and said nothing at all. */}
             <Button
               variant="blue"
               size="md"
-              disabled={
-                !dirty ||
-                active.isPending ||
-                (overrideMode
-                  ? overrideReason.trim().length === 0
-                  : isCommissionerArm && reason.trim().length === 0)
-              }
+              disabled={!dirty || active.isPending}
               onClick={save}
               data-save-lineup
             >
@@ -523,9 +564,16 @@ export function LineupEditor({
             <Button variant="stroke" size="md" disabled={!dirty || active.isPending} onClick={discard} data-discard-lineup>
               Discard changes
             </Button>
-            {dirty && !active.isPending && (
-              <span className="text-[11px] font-medium text-n-3">Unsaved — the server confirms every placement.</span>
-            )}
+            {/* Every disabled state of those two says WHY, right here. */}
+            <span className="text-[11px] font-medium text-n-3" data-save-hint>
+              {active.isPending
+                ? 'Saving — the server confirms every placement.'
+                : dirty
+                  ? overrideMode
+                    ? 'Unsaved — saving records a commissioner override: who changed what, and when.'
+                    : 'Unsaved — the server confirms every placement.'
+                  : 'Nothing to save — this lineup already matches what’s stored. Move a player to enable Save.'}
+            </span>
           </div>
         )}
       </div>
