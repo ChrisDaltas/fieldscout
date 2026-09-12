@@ -59,7 +59,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 set local time zone 'UTC';   -- the jsonb rendering of `at` in K2b is a stored literal
 
-select plan(148);
+select plan(149);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -198,8 +198,13 @@ select is(
 -- C. Fixtures (postgres context — before any JWT claims; D49(7)).
 --    Calendar (2026, stored literals — 064''s week 3): starts 2026-09-23
 --    04:00Z, last game ends 09-29 04:00Z, window 10-01 10:00Z; one game
---    KC@BUF Thu 09-25 00:15Z. u01 owns everything and is L1''s member;
---    u99 is the outsider. L1 h2h in_season 8 teams (weeks 3 live / 4
+--    KC@BUF Thu 09-25 00:15Z. u01 owns everything and is L1''s
+--    COMMISSIONER; u02–u08 seat L1''s T2–T8 as managers (L.E1.3 — so every
+--    L1 seat is MANAGED under D339''s predicate, pinned by C1 below);
+--    u99 is the outsider and is a member of NOTHING (section L''s RLS
+--    probes turn on that). L2/L3/L4 are DELIBERATELY left unseated — no
+--    cell in this file reads their membership.
+--    L1 h2h in_season 8 teams (weeks 3 live / 4
 --    correction_window / 5 final / 6 upcoming); L2 total_points in_season
 --    4 teams (week 3 live); L3 COMPLETE (week 3 live — the refusal''s
 --    fixture); L4 PLAYOFFS 4 teams (week 3 live regular, week 7 live
@@ -214,7 +219,7 @@ select
   'authenticated', 'authenticated', 'pgtap-rt19-' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}',
   json_build_object('username', 'rt19_user' || i)::jsonb, now(), now()
-from unnest(array[1, 99]) i;
+from unnest(array[1, 2, 3, 4, 5, 6, 7, 8, 99]) i;
 
 update nfl_weeks set first_kickoff_at = null, last_game_ends_at = null where season = 2026;
 update nfl_weeks set last_game_ends_at = starts_at + interval '6 days' where season = 2026 and week in (1, 2);
@@ -262,6 +267,44 @@ from generate_series(1, 4) i;
 
 insert into league_members (league_id, user_id, team_id, role) values
  ('b7000000-0000-4000-8000-000000000001', '97000000-0000-4000-8000-000000000001', 'c7000000-0000-4000-8000-000000000001', 'commissioner');
+-- L.E1.3 (tasks-M6A §4 rule 14(d), D339): L1 (b7…0001) seats 8 teams
+-- (c7…0002–0008) with T1 as the only member row above, leaving seven
+-- unmanaged under D339's predicate. No cell in sections A–L reads
+-- league_members or depends on any of T2–T8 being unmanaged — the J/K
+-- sections below exercise matchups/team_week_results/league_player_pool
+-- broadcasts and the lineup lock tick, none of which key off manager
+-- status today — so every remaining L1 team gets a seated member row here,
+-- matching the same rule applied in 064. T1's row above stays the league's
+-- one 'commissioner' (063:327's partial unique caps it at one), so these
+-- are all managers. L2/L3/L4 are untouched: this task names only "067
+-- seats 8 teams in league b7…0001" (L.E1.3 item 2) and no cell elsewhere
+-- in this file turns on those leagues' membership either — which is why C1
+-- below is scoped to L1 and does not sweep every in_season league the way
+-- 064's B1 does.
+insert into league_members (league_id, user_id, team_id, role)
+select 'b7000000-0000-4000-8000-000000000001',
+       ('97000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       ('c7000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       'manager'
+from generate_series(2, 8) i;
+
+-- THE SEATING PREMISE, ASSERTED RATHER THAN ASSUMED (§4 rule 14(c), the
+-- 071:258-266 shape — R987), the L1-scoped twin of 064's B1. Without it the
+-- seating above is unfalsifiable: drop the INSERT and this file still
+-- reports 148/148. One golden string, same reasoning as 064's B1 — the
+-- LEFT JOIN is D339's predicate read from the other side and pins §12.2's
+-- one-row-per-seat invariant (120:558) at the same time, and the `teams=`
+-- clause means a vanished or an extra team reds too.
+select is(
+  (select format('teams=%s managed=%s commissioners=%s',
+                 count(*),
+                 count(*) filter (where m.user_id is not null),
+                 count(*) filter (where m.role = 'commissioner'))
+   from teams t
+   left join league_members m on m.team_id = t.id
+   where t.league_id = 'b7000000-0000-4000-8000-000000000001'),
+  'teams=8 managed=8 commissioners=1',
+  'C1 SEATING PREMISE: every one of L1''s 8 seats is MANAGED under D339''s predicate, one row each, T1 the commissioner — the premise L.E1.4''s arm (c) no-op depends on (L.E1.3)');
 
 insert into league_weeks (league_id, season, week, status) values
  ('b7000000-0000-4000-8000-000000000001', 2026, 3, 'live'),
