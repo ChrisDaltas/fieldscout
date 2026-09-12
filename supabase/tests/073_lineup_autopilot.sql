@@ -52,6 +52,30 @@
 --     `league_members` row at all is a NAMED, REPORTED state, never seized.
 --   * NO CELL INFERS EMPTINESS (§4 rule 15): every "nothing happened" cell
 --     asserts the REASON string beside it.
+--   * EVERY `autopilot_reason` VALUE THE MIGRATION CAN EMIT HAS A CELL
+--     (added in the #295 fix round — R1000 found two enumerated and asserted
+--     by nothing): `disabled_by_system_flag:autopilot_disabled` §F1b ·
+--     `no_unmanaged_seats_in_a_live_current_week` §I3b · `nothing_fillable`
+--     §E1b/§H1b · `every_candidate_locked` §J2 ·
+--     `every_unmanaged_looking_seat_declined_no_league_members_row` §K2/§K4 ·
+--     `no_row_and_no_materialize` §L2 · NULL (work happened) §D10/§F2b.
+--   * ONE CELL USES FAULT INJECTION AND SAYS SO (§L). `no_row_and_no_materialize`
+--     is a contract check on `lineup_carry_internal`, unreachable while that
+--     contract (INSERT-or-RAISE, `116:541-551`) holds — so rather than assert a
+--     guard that cannot execute (§4 rule 14(b)), §L replaces the carry with a
+--     non-inserting stub INSIDE THIS TRANSACTION, after §A10/§A11 have pinned
+--     the real one, and the file's `rollback` restores it.
+--   * §J IS ALSO THE ONLY CELL THAT RUNS THE PASS OVER A MAP CONTAINING A
+--     HEALTHY SEATED STARTER, and adding it FOUND A DEFECT (see 125's note at
+--     the classification loop): `lineup_designation_internal` returns NULL for a
+--     healthy player, `NULL IN (…)` is NULL, and the unguarded
+--     `IF v_locked OR NOT v_unhealthy` therefore DISPLACED every healthy
+--     starter — re-contesting a manager-set placement on value (D340) and, via
+--     the restore clause, writing one player into two slots. §J3/§J4 red on the
+--     unguarded form (measured: `flex:1` and `te:0` both held `ap-lk-te`).
+--   * THE KILL SWITCH'S GRANTS ARE MEASURED PER ROLE, NOT VIA `pg_policies`
+--     (§F1e, R998): RLS does not cover TRUNCATE, so a policy-only assertion
+--     cannot see the grant that let any signed-in user wipe the switch.
 --   * All work runs as postgres (`auth.uid()` NULL — the job's own
 --     precondition); the JWT-refusal cell sets a claim and resets it
 --     (`set_config(..., true)` persists to txn end — D49(7)).
@@ -61,7 +85,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(80);
+select plan(103);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the new function's posture, the tick's unchanged posture,
@@ -165,6 +189,12 @@ select ok(auth.uid() is null, 'A15 the claim is reset — the rest of the suite 
 --    AL3 `ba…0003` — allow_illegal_lineups FALSE, one OUT player: §H
 --    AL4 `ba…0004` — week 3 in `correction_window`: §I, with the live
 --                    positive control at the SAME instant
+--    AL5 `ba…0005` — T50 `ca…0050`: every slot full, one UNLOCKED OUT starter,
+--                    and the only other eligible candidate past kickoff: §J
+--                    (`every_candidate_locked`)
+--    AL6 `ba…0006` — T60 `ca…0060`: NO `league_members` row at all: §K (both
+--                    shapes of the D339 decline), then §L adds a placeholder
+--                    row and fault-injects the carry
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -207,7 +237,13 @@ from (values
  ('ba000000-0000-4000-8000-000000000001'::uuid, 'pgtap-ap-L1', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
  ('ba000000-0000-4000-8000-000000000002'::uuid, 'pgtap-ap-L2', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": false}'::jsonb),
  ('ba000000-0000-4000-8000-000000000003'::uuid, 'pgtap-ap-L3', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": false}'::jsonb),
- ('ba000000-0000-4000-8000-000000000004'::uuid, 'pgtap-ap-L4', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb)
+ ('ba000000-0000-4000-8000-000000000004'::uuid, 'pgtap-ap-L4', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
+ -- AL5 §J (R1000): every slot full, one unlocked OUT starter, and the ONLY
+ -- other eligible candidate already kicked off ⇒ `every_candidate_locked`.
+ ('ba000000-0000-4000-8000-000000000005'::uuid, 'pgtap-ap-L5', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
+ -- AL6 §K/§L (R999): its one seat has NO league_members row at all, so every
+ -- unmanaged-LOOKING seat in the league is declined.
+ ('ba000000-0000-4000-8000-000000000006'::uuid, 'pgtap-ap-L6', 8, '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb)
 ) as l(id, nm, tc, st);
 
 insert into teams (id, owner_id, name, league_id) values
@@ -218,7 +254,9 @@ insert into teams (id, owner_id, name, league_id) values
  ('ca000000-0000-4000-8000-000000000005', '9a000000-0000-4000-8000-000000000001', 'AP T5 late seat', 'ba000000-0000-4000-8000-000000000001'),
  ('ca000000-0000-4000-8000-000000000020', '9a000000-0000-4000-8000-000000000001', 'AP T20 no-illegal',  'ba000000-0000-4000-8000-000000000002'),
  ('ca000000-0000-4000-8000-000000000030', '9a000000-0000-4000-8000-000000000001', 'AP T30 nothing ok',  'ba000000-0000-4000-8000-000000000003'),
- ('ca000000-0000-4000-8000-000000000040', '9a000000-0000-4000-8000-000000000001', 'AP T40 closed week', 'ba000000-0000-4000-8000-000000000004');
+ ('ca000000-0000-4000-8000-000000000040', '9a000000-0000-4000-8000-000000000001', 'AP T40 closed week', 'ba000000-0000-4000-8000-000000000004'),
+ ('ca000000-0000-4000-8000-000000000050', '9a000000-0000-4000-8000-000000000001', 'AP T50 all locked',  'ba000000-0000-4000-8000-000000000005'),
+ ('ca000000-0000-4000-8000-000000000060', '9a000000-0000-4000-8000-000000000001', 'AP T60 no member',   'ba000000-0000-4000-8000-000000000006');
 
 -- AL1's week 3 is LIVE; AL4's is CORRECTION_WINDOW (§I flips it at the same
 -- instant as its positive control). Weeks 4-6 exist so nothing about the
@@ -227,7 +265,9 @@ insert into league_weeks (league_id, season, week, status)
 select l, 2026, g, case when g = 3 then 'live' else 'upcoming' end
 from (values ('ba000000-0000-4000-8000-000000000001'::uuid),
              ('ba000000-0000-4000-8000-000000000002'::uuid),
-             ('ba000000-0000-4000-8000-000000000003'::uuid)) v(l),
+             ('ba000000-0000-4000-8000-000000000003'::uuid),
+             ('ba000000-0000-4000-8000-000000000005'::uuid),
+             ('ba000000-0000-4000-8000-000000000006'::uuid)) v(l),
      generate_series(3, 6) g;
 -- AL4's week 3 starts LIVE and §I walks it to correction_window: the
 -- league_weeks transition guard (§12.17/F4) permits only
@@ -278,7 +318,17 @@ insert into players (id, full_name, position, team, status, adp) values
  -- AL3: nothing healthy at all
  ('ap-u-out',  'AP U Out WR', 'WR', 'DAL', 'Out',     1.0),
  -- AL4
- ('ap-p-qb',   'AP P QB',     'QB', 'DAL', 'Active',  1.0);
+ ('ap-p-qb',   'AP P QB',     'QB', 'DAL', 'Active',  1.0),
+ -- AL5 §J: four seated men (one of them an unlocked OUT man at flex:0) and ONE
+ -- other eligible candidate, whose KC game has already kicked off at the
+ -- instant — so the pass has something to do, does it, and changes nothing.
+ ('ap-lk-qb',  'AP LK QB',    'QB', 'DAL', 'Active',  1.0),
+ ('ap-lk-out', 'AP LK Out',   'WR', 'DAL', 'Out',     2.0),
+ ('ap-lk-rb',  'AP LK RB',    'RB', 'SF',  'Active',  3.0),
+ ('ap-lk-te',  'AP LK TE',    'TE', 'PHI', 'Active',  4.0),
+ ('ap-lk-kc',  'AP LK KC WR', 'WR', 'KC',  'Active',  0.5),
+ -- AL6 §K/§L: fillable on paper, never evaluated (no league_members row)
+ ('ap-x-qb',   'AP X QB',     'QB', 'DAL', 'Active',  1.0);
 
 -- T2's roster. INSERT ORDER IS DELIBERATE: 'ap-qb-a' goes in FIRST, so that
 -- with the Q62 ORDER BY deleted the aggregate falls back to a scan order that
@@ -310,7 +360,14 @@ insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_w
  ('ba000000-0000-4000-8000-000000000002', 'ca000000-0000-4000-8000-000000000020', 'ap-f-ok',  'bn', null),
  ('ba000000-0000-4000-8000-000000000002', 'ca000000-0000-4000-8000-000000000020', 'ap-f-qb',  'bn', null),
  ('ba000000-0000-4000-8000-000000000003', 'ca000000-0000-4000-8000-000000000030', 'ap-u-out', 'bn', null),
- ('ba000000-0000-4000-8000-000000000004', 'ca000000-0000-4000-8000-000000000040', 'ap-p-qb',  'bn', null);
+ ('ba000000-0000-4000-8000-000000000004', 'ca000000-0000-4000-8000-000000000040', 'ap-p-qb',  'bn', null),
+ -- AL5 / AL6
+ ('ba000000-0000-4000-8000-000000000005', 'ca000000-0000-4000-8000-000000000050', 'ap-lk-qb',  'bn', null),
+ ('ba000000-0000-4000-8000-000000000005', 'ca000000-0000-4000-8000-000000000050', 'ap-lk-out', 'bn', null),
+ ('ba000000-0000-4000-8000-000000000005', 'ca000000-0000-4000-8000-000000000050', 'ap-lk-rb',  'bn', null),
+ ('ba000000-0000-4000-8000-000000000005', 'ca000000-0000-4000-8000-000000000050', 'ap-lk-te',  'bn', null),
+ ('ba000000-0000-4000-8000-000000000005', 'ca000000-0000-4000-8000-000000000050', 'ap-lk-kc',  'bn', null),
+ ('ba000000-0000-4000-8000-000000000006', 'ca000000-0000-4000-8000-000000000060', 'ap-x-qb',   'bn', null);
 
 -- THE SEATS. T1 is a real manager; T2/T3/T5 are placeholder seats in
 -- `add_placeholder_seat`'s own shape (063:459-465: user_id NULL,
@@ -324,7 +381,10 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder) v
  ('ba000000-0000-4000-8000-000000000001', null, 'ca000000-0000-4000-8000-000000000005', 'manager', true),
  ('ba000000-0000-4000-8000-000000000002', null, 'ca000000-0000-4000-8000-000000000020', 'manager', true),
  ('ba000000-0000-4000-8000-000000000003', null, 'ca000000-0000-4000-8000-000000000030', 'manager', true),
- ('ba000000-0000-4000-8000-000000000004', null, 'ca000000-0000-4000-8000-000000000040', 'manager', true);
+ ('ba000000-0000-4000-8000-000000000004', null, 'ca000000-0000-4000-8000-000000000040', 'manager', true),
+ -- AL5's seat is a genuine placeholder; AL6's team gets NO ROW AT ALL (§K adds
+ -- one only in §L, where the point is a seat that IS unmanaged).
+ ('ba000000-0000-4000-8000-000000000005', null, 'ca000000-0000-4000-8000-000000000050', 'manager', true);
 
 -- THE WEEK-OPEN STATE, WRITTEN BY THE REAL CARRY rather than hand-planted, so
 -- every "empty" row below is byte-identical to what `league_week_advance`
@@ -339,8 +399,19 @@ from (values
  ('ba000000-0000-4000-8000-000000000001'::uuid, 'ca000000-0000-4000-8000-000000000004'::uuid),
  ('ba000000-0000-4000-8000-000000000002'::uuid, 'ca000000-0000-4000-8000-000000000020'::uuid),
  ('ba000000-0000-4000-8000-000000000003'::uuid, 'ca000000-0000-4000-8000-000000000030'::uuid),
- ('ba000000-0000-4000-8000-000000000004'::uuid, 'ca000000-0000-4000-8000-000000000040'::uuid)
+ ('ba000000-0000-4000-8000-000000000004'::uuid, 'ca000000-0000-4000-8000-000000000040'::uuid),
+ ('ba000000-0000-4000-8000-000000000005'::uuid, 'ca000000-0000-4000-8000-000000000050'::uuid),
+ ('ba000000-0000-4000-8000-000000000006'::uuid, 'ca000000-0000-4000-8000-000000000060'::uuid)
 ) as t(lg, tm);
+
+-- §J's STORED MAP, hand-planted over the carry's empty row: all four starting
+-- slots full, flex:0 holding the unlocked OUT man. Only `slot_map` is planted
+-- because the pass under test must write NOTHING — §J asserts the row is
+-- unchanged and the REPORT's reason, never the other projections (the carry
+-- wrote those, and 125 does not touch a row it does not change).
+update team_lineups
+   set slot_map = '{"qb:0": "ap-lk-qb", "flex:0": "ap-lk-out", "flex:1": "ap-lk-rb", "te:0": "ap-lk-te"}'::jsonb
+ where team_id = 'ca000000-0000-4000-8000-000000000050' and season = 2026 and week = 3;
 
 -- The §4 rule 14(c) PREMISE BLOCK. Without these the whole file is
 -- unfalsifiable: one mis-seated member row turns §D1 into a tautology.
@@ -598,9 +669,29 @@ select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000
 select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'disabled_by_system_flag:autopilot_disabled',
   'F1b …and autopilot_reason NAMES THE FLAG, so an operator reading the tick''s output learns why it is doing nothing');
 select is(current_setting('pgtap.r')::jsonb -> 'autopiloted', '[]'::jsonb,
-  'F1c …autopiloted[] is empty, and the arm short-circuited before its driving query ran at all');
+  'F1c …autopiloted[] is empty (R1002: that alone does NOT show the short-circuit — an arm that ran its query and wrote nothing looks identical; F1c2 is the cell that tells them apart)');
+select is(current_setting('pgtap.r')::jsonb -> 'skipped', '[]'::jsonb,
+  'F1c2 …and skipped[] is EMPTY TOO, which is what distinguishes "the arm never ran" from "it ran and wrote nothing": T4 has no league_members row, so arm (c)''s driving query WOULD name it here the moment the `IF NOT v_ap_off` short-circuit (125, arm (c)''s first line) were removed');
 select is((select count(*)::int from pg_policies where schemaname = 'public' and tablename = 'system_flags' and cmd <> 'SELECT'),
-  0, 'F1d system_flags still has NO write policy for any role (122:111-114) — the switch is a service_role write and nothing else, which is what makes it safe to document in the banner');
+  0, 'F1d system_flags still has NO write policy for any role (122:111-114) — necessary for "a service_role write and nothing else", and NOT sufficient: RLS does not cover TRUNCATE, which is F1e''s subject');
+-- R998: THE BANNER'S "AND NOTHING ELSE" IS MEASURED PER ROLE, the 071/123 way.
+-- A `pg_policies` assertion structurally cannot see a TRUNCATE grant — which is
+-- exactly how `anon`/`authenticated` kept TRUNCATE on this table from 122 until
+-- migration 125 section 0 took it away (measured: `set local role
+-- authenticated; truncate public.system_flags;` SUCCEEDED, 2 rows → 0).
+select ok(
+  not has_table_privilege('anon', 'public.system_flags', 'TRUNCATE')
+  and not has_table_privilege('authenticated', 'public.system_flags', 'TRUNCATE')
+  and not exists (
+    select 1 from pg_class c
+      cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where c.oid = 'public.system_flags'::regclass
+      and a.privilege_type = 'TRUNCATE' and a.grantee = 0),
+  'F1e THE KILL SWITCH CANNOT BE WIPED BY A CLIENT: TRUNCATE is revoked from anon, from authenticated AND from PUBLIC (grantee 0) — RLS does not cover TRUNCATE (D350, 123:485-491), so without this REVOKE any signed-in user could release the operator''s emergency brake and take stats_degraded and every ingest_poll:* key with it (125 §0, R998)');
+select ok(
+  has_table_privilege('service_role', 'public.system_flags', 'TRUNCATE')
+  and has_table_privilege('postgres', 'public.system_flags', 'TRUNCATE'),
+  'F1f …and the OPERATOR still can: service_role and the owner keep TRUNCATE, so the REVOKE narrowed the door without locking the recovery path out of it (the 123:491 shape — a REVOKE, not a BEFORE TRUNCATE trigger, because this is operational state and not the audit log)');
 delete from system_flags where key = 'autopilot_disabled';
 select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000001')::text, true);
 select is((select slot_map - 'ir1:0' from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000002' and week = 3),
@@ -680,6 +771,118 @@ select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000
   'I3 THE SAME FIXTURE AT THE SAME INSTANT is NOT touched once the week closes — filling a week that has been played is a scoring rewrite, not a fallback (break probe: drop the lw.status clause and this cell reds)');
 select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'no_unmanaged_seats_in_a_live_current_week',
   'I3b …and the reason says precisely what the arm saw — not a bare "no unmanaged seats", which would be a plausible-looking silence about a seat that plainly does exist (§4 rule 15)');
+
+-- ---------------------------------------------------------------------------
+-- J. `every_candidate_locked` (R1000) — one of the five autopilot_reason values
+--    item 4 enumerates, and it was asserted by NO cell. AL5: every starting
+--    slot is full, flex:0 holds an unlocked OUT man (so the pass has work to
+--    do and does NOT short-circuit), and the only other eligible candidate's
+--    game has already kicked off — so Q63's restore puts the OUT man straight
+--    back, the map is unchanged, and nothing is unfillable.
+-- ---------------------------------------------------------------------------
+select is(
+  (select format('map=%s out_is_unlocked=%s only_other_wr_is_locked=%s',
+                 (select slot_map::text from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000050' and week = 3),
+                 (select (g.kickoff_at > '2026-09-25 00:15:01+00'::timestamptz)::text from nfl_games g
+                   where g.season = 2026 and g.week = 3 and 'DAL' in (g.home_team, g.away_team)),
+                 (select (g.kickoff_at <= '2026-09-25 00:15:01+00'::timestamptz)::text from nfl_games g
+                   where g.season = 2026 and g.week = 3 and 'KC' in (g.home_team, g.away_team)))),
+  'map={"qb:0": "ap-lk-qb", "te:0": "ap-lk-te", "flex:0": "ap-lk-out", "flex:1": "ap-lk-rb"} out_is_unlocked=true only_other_wr_is_locked=true',
+  'J1 PREMISE (§4 rule 14(c)): AL5''s stored map fills ALL FOUR starting slots, the OUT man at flex:0 is UNLOCKED (his DAL game is Sunday, so the pass must evaluate him) and the ONLY other eligible WR''s KC game kicked off BEFORE the instant');
+select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000005')::text, true);
+select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'every_candidate_locked',
+  'J2 autopilot_reason = every_candidate_locked — the pass looked, found nobody it was ALLOWED to seat, and says which kind of emptiness that is (§4 rule 15); before this cell the value was enumerated by item 4 and asserted by nothing');
+select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000050' and week = 3),
+  '{"qb:0": "ap-lk-qb", "flex:0": "ap-lk-out", "flex:1": "ap-lk-rb", "te:0": "ap-lk-te"}'::jsonb,
+  'J3 …and the row is BYTE-UNCHANGED: the displaced OUT man goes straight back where he was (Q63''s restore), because autopilot never turns an occupied slot into an empty one');
+select is(current_setting('pgtap.r')::jsonb -> 'autopiloted', '[]'::jsonb,
+  'J4 …nothing is in autopiloted[] — `changed` is FALSE by value (the map equals the stored map), so no UPDATE ran at all');
+select ok(
+  (select (x ->> 'team_id') = 'ca000000-0000-4000-8000-000000000050'
+      and (x ->> 'kickoff_at')::timestamptz = '2026-09-25 00:15:00+00'::timestamptz
+   from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped_locked') x
+   where x ->> 'player_id' = 'ap-lk-kc'),
+  'J4b …and the one candidate the lock excluded is NAMED with his team and his kickoff instant — which is what makes the reason checkable rather than a mood');
+select is(current_setting('pgtap.r')::jsonb -> 'autopilot_unfillable', '[]'::jsonb,
+  'J4c …with NOTHING in autopilot_unfillable — that is precisely the difference between this arm and `nothing_fillable`: every slot IS filled, and the candidate who could have improved it was locked');
+
+-- ---------------------------------------------------------------------------
+-- K. THE D339 DECLINE REPORTS ITSELF (R999). Before the fix round the same
+--    pass that correctly REFUSES to seize a team reported either a
+--    materialization failure that did not happen (a seat with no lineup row)
+--    or "nothing_fillable" about seats it never evaluated (a seat with one).
+--    AL6's single seat has NO league_members row, so BOTH shapes are reachable
+--    on one league: row-present first, then row-deleted.
+-- ---------------------------------------------------------------------------
+select is(
+  (select format('member_rows=%s lineup_rows=%s week=%s',
+                 (select count(*)::int from league_members where team_id = 'ca000000-0000-4000-8000-000000000060'),
+                 (select count(*)::int from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000060' and season = 2026 and week = 3),
+                 (select status from league_weeks where league_id = 'ba000000-0000-4000-8000-000000000006' and week = 3))),
+  'member_rows=0 lineup_rows=1 week=live',
+  'K1 PREMISE: AL6''s one team has ZERO league_members rows, DOES have a week-3 lineup row, and its week is LIVE — so the seat matches arm (c)''s predicate and is then declined by the has_member guard');
+select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000006')::text, true);
+select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'every_unmanaged_looking_seat_declined_no_league_members_row',
+  'K2 CASE 2 (lineup row PRESENT): the reason names the DECLINE. It used to read `nothing_fillable` — a statement about seats the pass deliberately never looked at (§4 rule 15''s own shape, in the field built to abolish it)');
+select is(
+  (select x - 'why' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x),
+  '{"reason": "no_league_members_row", "team_id": "ca000000-0000-4000-8000-000000000060", "league_id": "ba000000-0000-4000-8000-000000000006"}'::jsonb,
+  'K2b …and skipped[] still names the team and the reason (D339''s unsafe failure direction is reported per seat; the reason field describes the PASS)');
+select is(current_setting('pgtap.r')::jsonb -> 'autopiloted', '[]'::jsonb,
+  'K2c …and nothing was autopiloted — the refusal is real, not cosmetic');
+delete from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000060' and season = 2026 and week = 3;
+select is((select count(*)::int from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000060' and season = 2026 and week = 3),
+  0, 'K3 PREMISE for CASE 1: the same seat now has NO lineup row either (the shape that used to be misreported)');
+select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000006')::text, true);
+select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'every_unmanaged_looking_seat_declined_no_league_members_row',
+  'K4 CASE 1 (lineup row ABSENT): the SAME decline reason — it used to read `no_row_and_no_materialize`, reporting a materialize that never ran, because the seat was declined BEFORE the carry was reached');
+select is(current_setting('pgtap.r')::jsonb -> 'seats_materialized', '[]'::jsonb,
+  'K4b …and seats_materialized[] is empty, which is the table-side proof that no materialize was attempted on a declined seat');
+
+-- ---------------------------------------------------------------------------
+-- L. `no_row_and_no_materialize`, NOW MEANING WHAT IT SAYS (R999/R1000). The
+--    arm is a CONTRACT CHECK on `lineup_carry_internal`, whose own contract is
+--    INSERT-or-RAISE (116:541-551) — so it is unreachable while that contract
+--    holds, and §4 rule 14(b) forbids asserting a guard that cannot execute.
+--    It is made reachable here by FAULT INJECTION: the carry is replaced, in
+--    this transaction only, with a stub that returns without inserting. The
+--    `rollback` at the end of this file restores the real function; §A10/§A11
+--    pinned the real one at the top of the suite, before any of this.
+-- ---------------------------------------------------------------------------
+insert into league_members (league_id, user_id, team_id, role, is_placeholder) values
+ ('ba000000-0000-4000-8000-000000000006', null, 'ca000000-0000-4000-8000-000000000060', 'manager', true);
+select is(
+  (select format('member_rows=%s seated=%s lineup_rows=%s',
+                 (select count(*)::int from league_members where team_id = 'ca000000-0000-4000-8000-000000000060'),
+                 (select count(*)::int from league_members where team_id = 'ca000000-0000-4000-8000-000000000060' and user_id is not null),
+                 (select count(*)::int from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000060' and season = 2026 and week = 3))),
+  'member_rows=1 seated=0 lineup_rows=0',
+  'L1 PREMISE: AL6''s seat is now a GENUINE unmanaged seat (one placeholder league_members row, no seated user) with NO lineup row — so the pass reaches the materialize step instead of declining');
+create or replace function lineup_carry_internal(
+  p_league_id uuid, p_team_id uuid, p_season integer, p_week integer, p_at timestamptz
+) returns jsonb language sql as $stub$
+  -- FAULT INJECTION (this transaction only): the carry returns a plausible
+  -- result and writes NOTHING. This is the "nothing happened read as it
+  -- worked" shape the arm under test exists to catch.
+  select jsonb_build_object('team_id', p_team_id, 'week', p_week, 'stub', true);
+$stub$;
+select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000006')::text, true);
+select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'no_row_and_no_materialize',
+  'L2 with the carry returning without inserting, autopilot_reason = no_row_and_no_materialize — the value now means exactly that: a seat that REACHED the materialize step and still had no row');
+select is(
+  (select x - 'why' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x),
+  '{"week": 3, "reason": "no_row_and_no_materialize", "team_id": "ca000000-0000-4000-8000-000000000060", "league_id": "ba000000-0000-4000-8000-000000000006"}'::jsonb,
+  'L2b …and the seat is NAMED in skipped[] with that reason — a 0-row read is reported, never inferred (§4 rule 15)');
+select ok(
+  (select x ->> 'why' like '%INSERT-or-RAISE%' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'skipped') x
+   where x ->> 'team_id' = 'ca000000-0000-4000-8000-000000000060'),
+  'L2c …and the `why` names the CONTRACT that was broken (116:541-551), so an operator reading the tick output knows this is a bug in the carry and not a quiet league');
+select is(current_setting('pgtap.r')::jsonb -> 'failures', '[]'::jsonb,
+  'L3 failures[] is EMPTY: the post-carry existence check CONTINUEs before the chooser, so the P0002 "no team_lineups row" refusal (§B7) never fires and nothing is swallowed by the per-league handler as an opaque error');
+select is(current_setting('pgtap.r')::jsonb -> 'seats_materialized', '[]'::jsonb,
+  'L3b …and seats_materialized[] stays EMPTY — a seat is only claimed as materialized once its row has been read back');
+select is(current_setting('pgtap.r')::jsonb -> 'autopiloted', '[]'::jsonb,
+  'L3c …and nothing was autopiloted: no invented lineup, no partial write');
 
 select * from finish();
 rollback;

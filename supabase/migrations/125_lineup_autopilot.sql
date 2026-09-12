@@ -31,6 +31,10 @@
 --      INCLUDING (b)'s SELECT list.
 --   3. Arm (c) writes `slot_map`, `starters`, `bench` and `locked_at`
 --      TOGETHER (114's row shape, `116:543-546`) — never `slot_map` alone.
+--   4. `REVOKE TRUNCATE ON TABLE system_flags` (section 0) — this migration
+--      mints the `autopilot_disabled` kill switch in that table, and until now
+--      ANY signed-in user could TRUNCATE it away (R998; see the kill-switch
+--      paragraph below for the measurement and F348/F349 for the record).
 --
 -- WHAT THIS MIGRATION DOES NOT DO, AND IT IS STATED BECAUSE A SUPERSEDED
 -- DRAFT OF THE BREAKDOWN DID ALL THREE (tasks-M6A §2.3 / D337):
@@ -57,7 +61,10 @@
 --   (H4) the RETURN: five new keys plus `autopilot_reason`, and the existing
 --        `reason` CASE gains `v_ap_writes` so a pass that autopiloted can
 --        never report `no_changes`.
--- Everything else is byte-identical, and pgTAP 073 §K pins the posture.
+-- Everything else is byte-identical, and pgTAP 073 §A pins the posture.
+-- (The §-letters in this banner were corrected in the #295 fix round — they
+-- named sections 073 does not have, which is the R1002 class of claim: a
+-- citation the proof surface cannot honour.)
 --
 -- WHY THE HOOK IS THE TICK AND NOT WEEK OPEN (D337, the must-fix that
 -- invalidated a design rather than a citation). `lineup_carry_internal`'s one
@@ -89,7 +96,7 @@
 -- from `lineup_current_week_internal` (`112:360-374`), which derives it from
 -- `nfl_weeks.starts_at` — so the current week sits in `correction_window`
 -- from the last whistle until finalize, and filling it then is a scoring
--- rewrite of a week that has been played. pgTAP 073 §P pins it with a
+-- rewrite of a week that has been played. pgTAP 073 §I pins it with a
 -- positive control at the SAME instant.
 --
 -- THE "NO MANAGER" PREDICATE READS `league_members`, NEVER `teams.status`
@@ -208,10 +215,30 @@
 -- `{"disabled": false}`) re-enables it at the very next minute. When the flag
 -- is set the tick writes no lineup and `autopilot_reason` NAMES the flag.
 --
+-- "AND NOTHING ELSE" WAS FALSE AS MEASURED UNTIL THIS MIGRATION, AND THAT IS
+-- WHY SECTION 0 BELOW EXISTS (R998, the #295 fix round; D350's own lesson,
+-- `123:485-491`). RLS DOES NOT COVER TRUNCATE and the Supabase default grants
+-- TRUNCATE on a new public table to `anon` AND `authenticated`, so ANY SIGNED-IN
+-- USER COULD WIPE THE OPERATOR'S KILL SWITCH — measured on the local stack
+-- inside a rolled-back transaction: `set local role authenticated; truncate
+-- public.system_flags;` SUCCEEDED and took the table from 2 rows to 0, while
+-- the same role's INSERT is refused 42501 by RLS. 122 created the table
+-- without the REVOKE (the gap PRE-DATES this PR and also exposed F238's
+-- `stats_degraded` and the `ingest_poll:*` deferral keys — PROGRESS **F348**
+-- records the omission's origin, and **F349** records the app-wide sweep);
+-- L.E1.4 is what turns that table into a SAFETY CONTROL, so it closes it here:
+--
+--     REVOKE TRUNCATE ON TABLE system_flags FROM PUBLIC, anon, authenticated;
+--
+-- pgTAP 073 §F asserts it PER ROLE with `has_table_privilege` (the `071`/`123`
+-- shape) and not with `pg_policies` — a policy-only assertion structurally
+-- cannot see a TRUNCATE grant, which is exactly how the hole survived.
+--
 -- "NEVER LET 'NOTHING HAPPENED' MEAN 'IT WORKED'" IS THE DELIVERABLE HERE,
 -- NOT A SENTIMENT (§4 rule 15). A pass that fills nothing SAYS WHY:
--- `autopilot_reason` distinguishes `no_unmanaged_seats` / `nothing_fillable` /
--- `every_candidate_locked` / `no_row_and_no_materialize` /
+-- `autopilot_reason` distinguishes `no_unmanaged_seats_in_a_live_current_week`
+-- / `every_unmanaged_looking_seat_declined_no_league_members_row` /
+-- `nothing_fillable` / `every_candidate_locked` / `no_row_and_no_materialize` /
 -- `disabled_by_system_flag:autopilot_disabled`, and every seat filled, seat
 -- materialized, slot refused, candidate locked and team declined is NAMED in
 -- an array. The UPDATE asserts `ROW_COUNT = 1` (`119:882-886`'s shape) rather
@@ -219,9 +246,15 @@
 --
 -- THE THREE COLUMNS ARE WRITTEN TOGETHER, AND THAT IS NOT TIDINESS.
 -- `slot_map`, `starters` and `bench` are redundant projections of one truth:
--- `checkLineupLegality` reads `slot_map` while the box score and the scoring
--- worker read `starters`, so a partial write is silent until they disagree in
--- front of a user. `locked_at` goes with them because arm (b) would otherwise
+-- `checkLineupLegality` AND the scoring worker read `slot_map`
+-- (`score-week-worker.ts:940` selects `team_id, slot_map` and derives the
+-- starters from it — PROGRESS **F347**, which is why proof (o)'s break probe
+-- omits the `slot_map` entry and not the `starters` element) while the box
+-- score renders `starters`, so a partial write is silent until they disagree
+-- in front of a user. [Corrected in the #295 fix round: this paragraph
+-- originally said the worker reads `starters`, which F347 had already
+-- measured as false in the very same PR.]
+-- `locked_at` goes with them because arm (b) would otherwise
 -- re-derive it one minute later and make the write look like a second change.
 -- `set_at` and `edited_by_commish` are deliberately NOT touched: item 3
 -- enumerates four columns, autopilot is not a commissioner act (D338), and
@@ -231,7 +264,10 @@
 -- fresh local `db reset` 001-125 + pgTAP 073 + the full `npm run test:db` and
 -- the stack vitest suite `lineup-autopilot-score-db.test.ts` in this PR. No
 -- launch-surface table is touched: one new function, one `CREATE OR REPLACE`
--- of an existing job RPC, zero DDL.
+-- of an existing job RPC, ZERO DDL, and one `REVOKE TRUNCATE` on 122's
+-- `system_flags` (section 0 — a grant narrowing, never a schema change; it
+-- takes away a privilege no caller in this repo uses and no client can
+-- legitimately need, the `123:410` / `123:491` precedent exactly).
 --
 -- HOLD FILE: NO entry is added for 125, and that is deliberate. The
 -- production hold was CLEARED 2026-09-09 (PR #282) and production has taken
@@ -248,6 +284,31 @@
 -- intentional, D50) ⇒ 125; pgTAP head `072_cron_ping_and_stall_check.sql` by
 -- `ls supabase/tests/ | tail -1` ⇒ 073.
 -- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 0. THE KILL SWITCH'S TABLE IS MADE UN-WIPEABLE (R998, #295's fix round)
+--
+--    `system_flags` (122:99-104) becomes a SAFETY CONTROL in this migration:
+--    `autopilot_disabled` is the operator's emergency brake on live scoring.
+--    RLS does not cover TRUNCATE and the Supabase default grants it on a new
+--    public table to `anon` and `authenticated` (D350, measured at `123:485-491`
+--    and re-measured for THIS table: `set local role authenticated; truncate
+--    public.system_flags;` SUCCEEDED, 2 rows → 0, inside a rolled-back
+--    transaction, while the same role's INSERT is refused 42501). So a
+--    signed-in user could release the brake — and wipe `stats_degraded`
+--    (§23.2's incident flag) and every `ingest_poll:<season>:<week>` deferral
+--    key with it. 122 omitted this (the hole PRE-DATES this PR — PROGRESS
+--    F348); 123 got it right for both of its own tables. Taken away here,
+--    in the migration that makes the table load-bearing.
+--
+--    No BEFORE TRUNCATE trigger, deliberately: `commissioner_actions` has one
+--    because §12.12 makes "even a commissioner cannot remove an entry" a LAW
+--    claim (`123:398-409`); `system_flags` is operational state whose writer is
+--    `service_role`, so the REVOKE is the whole guarantee and the owner
+--    (postgres) must stay able to truncate it in a recovery. `commish_lineup_actions`
+--    took exactly this shape for the same reason (`123:484-491`).
+-- ---------------------------------------------------------------------------
+REVOKE TRUNCATE ON TABLE system_flags FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 1. lineup_autopilot_internal — the PURE chooser
@@ -437,8 +498,20 @@ BEGIN
     END IF;
     v_locked := (v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
                 AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at;
+    -- THE `COALESCE` AROUND THE `IN` IS LOAD-BEARING, AND IT WAS MISSING UNTIL
+    -- #295's fix round CAUGHT IT WITH §J. `lineup_designation_internal`
+    -- returns NULL for a healthy player (112:337 — measured: 'Active' ⇒ NULL),
+    -- and `NULL IN (…)` is NULL, not FALSE. Unguarded, `v_unhealthy` was NULL
+    -- for EVERY healthy seated starter, `NOT NULL` is NULL, and the `IF` fell
+    -- to the ELSE: a healthy, manager-set or carried starter was DISPLACED and
+    -- re-contested on value — a D340 violation — and, because such a man also
+    -- re-entered the candidate pool below, `v_restored` could seat him at his
+    -- old key while pass 1 had already placed him elsewhere, writing ONE PLAYER
+    -- INTO TWO SLOTS. Invisible to every other cell in 073 because no other
+    -- fixture ran the pass over a map with a HEALTHY SEATED STARTER in it; §J
+    -- is that fixture, and it reds on the unguarded form.
     v_unhealthy := COALESCE((v_kick -> v_pid ->> 'on_bye')::boolean, FALSE)
-                   OR (v_by_pid -> v_pid ->> 'designation') IN ('OUT', 'IR', 'PUP', 'NFI', 'Suspended');
+                   OR COALESCE((v_by_pid -> v_pid ->> 'designation') IN ('OUT', 'IR', 'PUP', 'NFI', 'Suspended'), FALSE);
     IF v_locked OR NOT v_unhealthy THEN
       v_seated := v_seated || v_pid;
       v_fixed := v_fixed || jsonb_build_object(
@@ -482,8 +555,12 @@ BEGIN
         'reason', 'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner''s exemption (D338)');
       CONTINUE;
     END IF;
+    -- Same `COALESCE` as the classification loop above, for the same reason and
+    -- stated once there. Benign on this side (`IF NULL THEN` does not fire, so a
+    -- healthy man landed in `v_free` anyway) and written explicitly regardless:
+    -- the two loops must classify one player identically or the pools disagree.
     v_unhealthy := COALESCE((v_kick -> v_pid ->> 'on_bye')::boolean, FALSE)
-                   OR (v_e ->> 'designation') IN ('OUT', 'IR', 'PUP', 'NFI', 'Suspended');
+                   OR COALESCE((v_e ->> 'designation') IN ('OUT', 'IR', 'PUP', 'NFI', 'Suspended'), FALSE);
     IF v_unhealthy THEN
       IF v_allow THEN
         -- A PREFERENCE, not a filter: seated LAST, never left out, because an
@@ -681,7 +758,7 @@ DECLARE
   v_ap_seats       INTEGER := 0;   -- unmanaged seats arm (c) EVALUATED
   v_ap_writes      INTEGER := 0;   -- lineup rows arm (c) wrote
   v_ap_no_member   INTEGER := 0;   -- teams declined: no league_members row at all (D339)
-  v_ap_no_row      INTEGER := 0;   -- seats with no lineup row that were NOT materialized
+  v_ap_no_row      INTEGER := 0;   -- seats that REACHED the materialize step and STILL had no row (R998/R999: counted after the carry, never on the D339 path)
   v_autopiloted    JSONB := '[]'::jsonb;
   v_ap_mat         JSONB := '[]'::jsonb;
   v_ap_unfill      JSONB := '[]'::jsonb;
@@ -897,10 +974,12 @@ BEGIN
             -- all, and autopilot would then seize a human's team. Declined,
             -- and NAMED.
             IF NOT v_ap.has_member THEN
+              -- R999: this seat is DECLINED, and the report says exactly that.
+              -- It does NOT touch `v_ap_no_row` — the decline happens BEFORE
+              -- the materialize step is reached, so calling it "no row and no
+              -- materialize" would report a failure that never happened
+              -- (§4 rule 15's own shape, in the field built to abolish it).
               v_ap_no_member := v_ap_no_member + 1;
-              IF v_ap.lineup_id IS NULL THEN
-                v_ap_no_row := v_ap_no_row + 1;
-              END IF;
               v_skipped := v_skipped || jsonb_build_object(
                 'league_id', v_lg.id, 'team_id', v_ap.team_id,
                 'reason', 'no_league_members_row',
@@ -917,6 +996,26 @@ BEGIN
             -- `failures[]` rather than a silent second row (116:541-551).
             IF v_ap.lineup_id IS NULL THEN
               PERFORM public.lineup_carry_internal(v_lg.id, v_ap.team_id, v_league.season, v_current, p_now);
+              -- THE MATERIALIZE IS ASSERTED, NOT ASSUMED (R999). The carry's
+              -- contract is INSERT-or-RAISE (`116:541-551`), so this re-read
+              -- can only come back empty if that contract is ever weakened —
+              -- and THAT is what `no_row_and_no_materialize` means. Without
+              -- this check the chooser below would raise P0002 into
+              -- `failures[]` and the reason field would say nothing about the
+              -- seat; with it, the pass NAMES the seat and why.
+              IF NOT EXISTS (
+                SELECT 1 FROM public.team_lineups tl
+                WHERE tl.team_id = v_ap.team_id
+                  AND tl.season = v_league.season
+                  AND tl.week = v_current)
+              THEN
+                v_ap_no_row := v_ap_no_row + 1;
+                v_skipped := v_skipped || jsonb_build_object(
+                  'league_id', v_lg.id, 'team_id', v_ap.team_id, 'week', v_current,
+                  'reason', 'no_row_and_no_materialize',
+                  'why', 'lineup_carry_internal returned without leaving a team_lineups row for this (team, season, week) — its own contract is INSERT-or-RAISE (116:541-551), so this is a contract violation reported rather than a 0-row UPDATE read as "nothing to do" (§4 rule 15)');
+                CONTINUE;
+              END IF;
               v_ap_mat := v_ap_mat || jsonb_build_object(
                 'league_id', v_lg.id, 'team_id', v_ap.team_id, 'week', v_current,
                 'why_absent', 'the week''s one-shot auto-carry (118:1816-1824) had already run when this seat was minted');
@@ -997,16 +1096,32 @@ BEGIN
     'seats_materialized',   v_ap_mat,
     'autopilot_unfillable', v_ap_unfill,
     'skipped_locked',       v_ap_locked,
+    -- THE ARMS ARE ORDERED, AND THE ORDER IS THE POINT (R999, #295's fix
+    -- round). Each arm names a condition that was actually MEASURED on this
+    -- pass; none of them describes work the pass did not attempt.
     'autopilot_reason', CASE
       WHEN v_ap_off THEN 'disabled_by_system_flag:autopilot_disabled'
       WHEN v_ap_writes > 0 THEN NULL                       -- the arrays say what happened
+      -- A seat that reached the materialize step and STILL had no row: the
+      -- carry's INSERT-or-RAISE contract broke. Ahead of the `v_ap_seats = 0`
+      -- arms because such a seat is CONTINUEd before `v_ap_seats` is
+      -- incremented, and "no unmanaged seats" would then be a lie about it.
+      WHEN v_ap_no_row > 0 THEN 'no_row_and_no_materialize'
+      -- EVERY unmanaged-LOOKING seat was declined for want of a
+      -- `league_members` row (D339's unsafe failure direction). Before the
+      -- fix round this fell through to `nothing_fillable` — "nothing was
+      -- fillable" about seats the pass deliberately never evaluated — or, when
+      -- the seat also had no lineup row, to `no_row_and_no_materialize`, a
+      -- materialization failure that never happened. `skipped[]` names each
+      -- team; this says why the pass as a whole was silent.
+      WHEN v_ap_seats = 0 AND v_ap_no_member > 0
+        THEN 'every_unmanaged_looking_seat_declined_no_league_members_row'
       -- Precisely worded on purpose: arm (c)'s driving query is bounded to
       -- `lw.status = 'live'`, so "saw nothing" also covers an unmanaged seat
       -- in a current week that has closed into `correction_window`. A bare
       -- "no unmanaged seats" there would be a plausible-looking silence about
       -- a seat that does exist (§4 rule 15).
-      WHEN v_ap_seats = 0 AND v_ap_no_member = 0 THEN 'no_unmanaged_seats_in_a_live_current_week'
-      WHEN v_ap_seats = 0 AND v_ap_no_row > 0 THEN 'no_row_and_no_materialize'
+      WHEN v_ap_seats = 0 THEN 'no_unmanaged_seats_in_a_live_current_week'
       WHEN jsonb_array_length(v_ap_unfill) = 0
            AND jsonb_array_length(v_ap_locked) > 0 THEN 'every_candidate_locked'
       ELSE 'nothing_fillable' END,
