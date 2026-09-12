@@ -14,12 +14,14 @@
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
 A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
 `L.E1.*` in order. **`L.E1.1` is LANDED** (PR #286, migration 123 — the
-`commissioner_actions` spine + `commish_edit_lineup`) and **`L.E1.2` is LANDED**
+`commissioner_actions` spine + `commish_edit_lineup`), **`L.E1.2` is LANDED**
 (PR #291, docs only — spec v2.16.39's errata, Q60–Q64 filed, D335–D354 and
-F334–F344 transcribed), so the next takeable task is **`L.E1.3`** (pgTAP 064 +
-067 gain explicit `league_members` coverage — its own commit, no migration), and
-**`L.E1.3` blocks `L.E1.4`**. *(Advanced from `L.E1.2` in L.E1.2's own fix round,
-R982 — the clause would otherwise have gone stale the moment that PR merged.)* Migration numbers **125–132**
+F334–F344 transcribed), and **`L.E1.3` is LANDED** (pgTAP 064 + 067 gain explicit
+`league_members` coverage, its own commit, no migration — PR pending merge), so
+the next takeable task is **`L.E1.4`** (migration 125 + pgTAP 073 — the lineup
+autopilot arm itself; D337/D338/D339/D354/D340; discharges F334). *(Advanced
+from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by L.E1.3's own
+session so the pointer is already correct the moment that PR merges.)* Migration numbers **125–132**
 and pgTAP **073–080** are reservations confirmed at task time.
 
 **Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
