@@ -366,6 +366,20 @@ interface AuditFinalCell {
 
 ## 6. Task list (one Builder session each; ≤ half a day)
 
+**[Line-number note — R992, L.E1.3's fix round. L.E1.3 LANDED and it moved lines inside `supabase/tests/064_week_workers.sql` (**+64** for everything from line 257 on) and `supabase/tests/067_inseason_realtime.sql` (**+5** from the section-C header on, and a further +38 — **+43** total — from the seating block at `067:270` on). Every pgTAP citation below and in §9's C69 is AS OF THE BREAKDOWN (PR #289). The text is left as written so the doc stays a faithful record; use this table instead — re-measured on `feat/M6A-L.E1.3-league-members-coverage`, and re-measure yourself with `grep` before relying on any of it:**
+
+| cited as | now | what it is |
+|---|---|---|
+| `064:133` | **unchanged** | the eleventh `lineup_lock_tick` occurrence — the `throws_ok` refusal cell, outside the report range |
+| `064:235-243` | **unchanged** | rule 14(a)'s / C69's `players` insert. *(R992 listed this as shifting to `258-266`; measured, it does not — L.E1.3's insert lands after line 256.)* |
+| `064:307-324` | `064:371-388` | the C2d–C2k week-open goldens |
+| `064:429 :444 :454 :462 :467 :474 :482 :491 :499 :508` | `493 508 518 526 531 538 546 555 563 572` | the ten report-producing `lineup_lock_tick` calls |
+| `067:250-252` | `067:255-257` | L1's `teams` insert (8 seats) |
+| `067:263-264` | `067:268-269` | the pre-L.E1.3 single `league_members` row — now L1's commissioner row, with the seven manager rows at `067:284-289` and the `C1` premise block (comment + cell) at `067:291-307` |
+| `067:716-732` | `067:759-775` | 067's four report-producing tick calls |
+
+**Each suite also gained ONE premise cell, so the plan counts moved: 064 `plan(140)` → `plan(141)` (`B1`, at `064:309-319`), 067 `plan(148)` → `plan(149)` (`C1`, at `067:298-307`). This breaks no stated proof — L.E1.3's "byte-identical" requirement is over the tick REPORTS, not the plan count.]**
+
 Dependency order — **schema lane serialized** (plan §2.2); the fixture, API, UI and gate lanes fan out behind their deps:
 
 ```
