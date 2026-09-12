@@ -61,7 +61,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(140);
+select plan(141);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — shape, REVOKE, cron rows, the column comment, the sweep
@@ -259,23 +259,64 @@ insert into league_player_pool (league_id, player_id, state, waivers_until) valu
 -- "unmanaged" and a predicate proof could not distinguish that from
 -- "autopilot seats everyone" — it would pass with the predicate deleted.
 -- None of this file's goldens (C/D/E) depend on any L1 or L2 team being
--- UNMANAGED, so every one of them gets a seated member row here, matching
--- the rule 067 applies at 067:716-732. L3 is DELIBERATELY left with NO
--- member rows: it is 'scheduled' and untouched by every worker in this
--- file (C2j/C2k assert exactly that — no lineup row is even written for
--- it), so asserting "managed" over it would assert nothing.
+-- UNMANAGED, so every one of them gets a seated member row here. This is
+-- the coverage L.E1.3 COMPLETES in 067 as well (R988): 067's seating is at
+-- 067:268-289 (its premise cell C1 at 067:291-307), and before this task it
+-- held ONE member row for eight L1 teams — the very defect rule 14(d)
+-- names, not a rule 067 had already applied.
+--
+-- SEAT 1 OF EACH LEAGUE IS THE COMMISSIONER, not a manager (R989). Both
+-- in_season leagues here carry owner_id 96…0001, and create_league ALWAYS
+-- seats its creator 'commissioner' (118:2418 — the newest definition),
+-- while 063:327's partial unique one_commissioner_per_league caps it at one
+-- PER LEAGUE (so one each is legal). An all-'manager' fixture is a state
+-- §7.2 forbids and no sanctioned path can produce, and it would make
+-- is_league_commish (052:96) FALSE for every user here — so every future
+-- commissioner-verb refusal cell added to this suite would pass because
+-- NOBODY is commissioner, which is rule 14's exact species.
+--
+-- L3 is DELIBERATELY left with NO member rows: it is 'scheduled' and
+-- untouched by every worker in this file (C2j/C2k assert exactly that — no
+-- lineup row is even written for it), so asserting "managed" over it would
+-- assert nothing. B1 below is scoped to the two in_season leagues for that
+-- reason.
 insert into league_members (league_id, user_id, team_id, role)
 select 'b6000000-0000-4000-8000-000000000001',
        ('96000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
        ('c6000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
-       'manager'
+       case when i = 1 then 'commissioner' else 'manager' end
 from generate_series(1, 10) i;
 insert into league_members (league_id, user_id, team_id, role)
 select 'b6000000-0000-4000-8000-000000000002',
        ('96000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
        ('c6000000-0000-4000-8000-0000000000' || (20 + i)::text)::uuid,
-       'manager'
+       case when i = 1 then 'commissioner' else 'manager' end
 from generate_series(1, 8) i;
+
+-- THE SEATING PREMISE, ASSERTED RATHER THAN ASSUMED (§4 rule 14(c), the
+-- 071:258-266 shape — R987). Without this cell the seating above is
+-- unfalsifiable: under-seating by one team (generate_series(1, 9)) leaves
+-- m31's away side unmanaged and the suite still reports 140/140, so the one
+-- premise this task exists to establish could silently rot.
+-- ONE golden string rather than three cells, because each clause closes a
+-- hole the others leave open: a bare "unmanaged = 0" is also true of an
+-- EMPTY teams set, and a bare "18 managed" survives a nineteenth team
+-- arriving unseated. The LEFT JOIN is D339's predicate
+-- (`NOT EXISTS … m.team_id = t.id AND m.user_id IS NOT NULL`) read from the
+-- other side, and it additionally pins the invariant D339 says must be
+-- asserted and never inferred — ONE league_members row per seat (§12.2,
+-- 120:558): a second row for one team would make `teams` count 19.
+select is(
+  (select format('teams=%s managed=%s commissioners=%s',
+                 count(*),
+                 count(*) filter (where m.user_id is not null),
+                 count(*) filter (where m.role = 'commissioner'))
+   from teams t
+   join leagues l on l.id = t.league_id
+   left join league_members m on m.team_id = t.id
+   where l.status = 'in_season' and l.id::text like 'b6%'),
+  'teams=18 managed=18 commissioners=2',
+  'B1 SEATING PREMISE: every seat in both in_season leagues (L1''s 10 + L2''s 8) is MANAGED under D339''s predicate, one row each, seat 1 of each the commissioner — the premise L.E1.4''s arm (c) no-op and L.E1.3''s own "the goldens did not move" observation both depend on');
 
 -- Week 3 matchups (L1): five primary rows + five secondary (derangement)
 -- rows, scores as the door would have left them at the window close.
