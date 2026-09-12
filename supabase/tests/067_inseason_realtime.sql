@@ -214,7 +214,7 @@ select
   'authenticated', 'authenticated', 'pgtap-rt19-' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}',
   json_build_object('username', 'rt19_user' || i)::jsonb, now(), now()
-from unnest(array[1, 99]) i;
+from unnest(array[1, 2, 3, 4, 5, 6, 7, 8, 99]) i;
 
 update nfl_weeks set first_kickoff_at = null, last_game_ends_at = null where season = 2026;
 update nfl_weeks set last_game_ends_at = starts_at + interval '6 days' where season = 2026 and week in (1, 2);
@@ -262,6 +262,22 @@ from generate_series(1, 4) i;
 
 insert into league_members (league_id, user_id, team_id, role) values
  ('b7000000-0000-4000-8000-000000000001', '97000000-0000-4000-8000-000000000001', 'c7000000-0000-4000-8000-000000000001', 'commissioner');
+-- L.E1.3 (tasks-M6A §4 rule 14(d), D339): L1 (b7…0001) seats 8 teams
+-- (c7…0002–0008) with T1 as the only member row above, leaving seven
+-- unmanaged under D339's predicate. No cell in sections A–L reads
+-- league_members or depends on any of T2–T8 being unmanaged — the J/K
+-- sections below exercise matchups/team_week_results/league_player_pool
+-- broadcasts and the lineup lock tick, none of which key off manager
+-- status today — so every remaining L1 team gets a seated member row here,
+-- matching the same rule applied in 064. L2/L3/L4 are untouched: this task
+-- names only "067 seats 8 teams in league b7…0001" (L.E1.3 item 2) and no
+-- cell elsewhere in this file turns on those leagues' membership either.
+insert into league_members (league_id, user_id, team_id, role)
+select 'b7000000-0000-4000-8000-000000000001',
+       ('97000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       ('c7000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       'manager'
+from generate_series(2, 8) i;
 
 insert into league_weeks (league_id, season, week, status) values
  ('b7000000-0000-4000-8000-000000000001', 2026, 3, 'live'),

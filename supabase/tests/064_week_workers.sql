@@ -162,7 +162,7 @@ select
   'authenticated', 'authenticated', 'pgtap-ww' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}',
   json_build_object('username', 'ww_user' || i)::jsonb, now(), now()
-from generate_series(1, 2) i;
+from generate_series(1, 10) i;
 
 -- Weeks 1–2 are OVER and STAMPED (ingestion recorded their last game end —
 -- an unstamped past week with no game rows binds every player through the
@@ -253,6 +253,29 @@ insert into league_player_pool (league_id, player_id, state, waivers_until) valu
  ('b6000000-0000-4000-8000-000000000001', 'ww-fa-kc',  'free_agent', null),
  ('b6000000-0000-4000-8000-000000000001', 'ww-wv-dal', 'on_waivers', '2026-09-26 00:00:00+00'),
  ('b6000000-0000-4000-8000-000000000001', 'ww-qb',     'rostered',   null);
+
+-- L.E1.3 (tasks-M6A §4 rule 14(d), D339): this suite had ZERO league_members
+-- rows, so under D339's autopilot predicate every team here read as
+-- "unmanaged" and a predicate proof could not distinguish that from
+-- "autopilot seats everyone" — it would pass with the predicate deleted.
+-- None of this file's goldens (C/D/E) depend on any L1 or L2 team being
+-- UNMANAGED, so every one of them gets a seated member row here, matching
+-- the rule 067 applies at 067:716-732. L3 is DELIBERATELY left with NO
+-- member rows: it is 'scheduled' and untouched by every worker in this
+-- file (C2j/C2k assert exactly that — no lineup row is even written for
+-- it), so asserting "managed" over it would assert nothing.
+insert into league_members (league_id, user_id, team_id, role)
+select 'b6000000-0000-4000-8000-000000000001',
+       ('96000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       ('c6000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       'manager'
+from generate_series(1, 10) i;
+insert into league_members (league_id, user_id, team_id, role)
+select 'b6000000-0000-4000-8000-000000000002',
+       ('96000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid,
+       ('c6000000-0000-4000-8000-0000000000' || (20 + i)::text)::uuid,
+       'manager'
+from generate_series(1, 8) i;
 
 -- Week 3 matchups (L1): five primary rows + five secondary (derangement)
 -- rows, scores as the door would have left them at the window close.
