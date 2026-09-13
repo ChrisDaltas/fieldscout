@@ -48,7 +48,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(212);
+select plan(213);
 
 -- ---------------------------------------------------------------------------
 -- A. Shape pins — §12.8 / §12.18 / §12.9 / §12.19 column-for-column, the
@@ -458,11 +458,20 @@ select throws_ok(
      where league_id = 'a4000000-0000-4000-8000-00000000000a' and week = 1 $$,
   '23514', null,
   $$result = 'banana' rejected$$);
+-- D302's claim is unchanged — an explicit NULL is REFUSED — but from
+-- migration 126 the refusal arrives one layer earlier: `NULL IS DISTINCT FROM
+-- FALSE`, so the §12.12 backstop (trg_matchups_override_guard, F325/D343)
+-- fires BEFORE the NOT NULL constraint can. The pair below keeps both halves
+-- provable: the write is refused, AND the column is still declared NOT NULL,
+-- so a future PR that dropped the trigger would still red on the constraint
+-- rather than silently accepting a three-valued flag.
 select throws_ok(
   $$ update matchups set is_overridden = null
      where league_id = 'a4000000-0000-4000-8000-00000000000a' and week = 1 $$,
-  '23502', null,
-  'is_overridden explicit NULL rejected (D302 tightening — §22.2''s "never an overridden cell" needs a two-valued flag)');
+  'P0001', null,
+  'is_overridden explicit NULL rejected (D302 tightening — §22.2''s "never an overridden cell" needs a two-valued flag). From 126 the refusal is the §12.12 backstop''s, which sees NULL as DISTINCT FROM FALSE and stops the write before the NOT NULL constraint is reached');
+select col_not_null('public', 'matchups', 'is_overridden',
+  '…and the NOT NULL constraint D302 added is STILL DECLARED (109:168) — the backstop pre-empts it, it does not replace it');
 -- The §22.4 partial index tracks status: the finalized row left it.
 select is(
   (select count(*) from matchups

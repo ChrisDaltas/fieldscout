@@ -335,6 +335,52 @@ async function must<T>(p: PromiseLike<{ data: T; error: { message: string } | nu
   return data
 }
 
+// 126 / M6A L.E1.5 (F325, D343): `matchups.is_overridden` now carries §12.12's
+// backstop — `trg_matchups_override_guard`, BEFORE UPDATE, ENABLE ALWAYS —
+// which refuses ANY statement that MOVES the flag without
+// `app.commish_action_id`, service_role included. That is the whole point of
+// it: no code path, privileged or not, changes an overridable cell without an
+// audit row (§12.12's own caveat, and M6A exit criterion 1). Production
+// reaches this state through `commish_edit_score` / `commish_set_result`, and
+// pgTAP 074 §E/§H prove both the write and the refusal.
+//
+// This suite needs the STATE, not the audited act, and a `set_config` cannot
+// ride a PostgREST request. So it RE-CREATES the row: the trigger is BEFORE
+// UPDATE only, and migration 126's banner records that INSERT is deliberately
+// unguarded (the schedule engine, Remix and the bracket all take the column
+// default, and no client holds an INSERT policy on `matchups` at all).
+async function setOverrideFlag(
+  matchupId: string,
+  on: boolean,
+  scores: { home: number; away: number },
+): Promise<void> {
+  const rows = await must(
+    service.from('matchups').select('*').eq('id', matchupId).limit(1),
+    'read the matchup before re-creating it',
+  )
+  const row = rows?.[0]
+  if (!row) throw new Error(`setOverrideFlag: no matchup ${matchupId}`)
+  await must(service.from('matchups').delete().eq('id', matchupId).select('id'), 'drop the matchup row')
+  const recreated: Database['public']['Tables']['matchups']['Insert'] = {
+    id: row.id,
+    league_id: row.league_id,
+    season: row.season,
+    week: row.week,
+    round_type: row.round_type,
+    home_team_id: row.home_team_id,
+    away_team_id: row.away_team_id,
+    home_seed: row.home_seed,
+    away_seed: row.away_seed,
+    status: row.status,
+    result: row.result,
+    override_action_id: row.override_action_id,
+    home_score: scores.home,
+    away_score: scores.away,
+    is_overridden: on,
+  }
+  await must(service.from('matchups').insert(recreated).select('id'), 'recreate the matchup row with the flag set')
+}
+
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
   for (const row of data ?? []) await service.auth.admin.deleteUser(row.id)
@@ -920,7 +966,13 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
 
   it('the door’s report is read (F259(e)): a delta whose only touched row is protected is `nothing_writable` — logged as a PROBLEM, never success', async () => {
     // Override T3's matchup (§22.2 — never auto-recomputed), then a delta for T3's WR.
-    await must(service.from('matchups').update({ is_overridden: true, home_score: 55, away_score: 44 }).eq('league_id', fx.l1).eq('home_team_id', fx.t3), 'override')
+    const found = await must(
+      service.from('matchups').select('id').eq('league_id', fx.l1).eq('home_team_id', fx.t3).limit(1),
+      'find T3\u2019s matchup',
+    )
+    const protectedId = found?.[0]?.id
+    if (!protectedId) throw new Error('fixture: T3 has no week-1 matchup')
+    await setOverrideFlag(protectedId, true, { home: 55, away: 44 })
     await enqueue([P.wr3], 1, STAMP)
     const report = await drain()
     const l1 = league(report, fx.l1, 1)
@@ -929,7 +981,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(report.nothing_writable).toBe(1)
     expect(report.problems.some((p) => p.includes('door wrote NOTHING'))).toBe(true)
     expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t3, away: fx.t4, hs: 55, as: 44 })
-    await must(service.from('matchups').update({ is_overridden: false, home_score: 0, away_score: 0 }).eq('league_id', fx.l1).eq('home_team_id', fx.t3), 'un-override')
+    await setOverrideFlag(protectedId, false, { home: 0, away: 0 })
   })
 
   it('the week’s door state: an `upcoming` week HOLDS the row (named every drain); a `final` week CONSUMES it with no cell changed (D295(b))', async () => {

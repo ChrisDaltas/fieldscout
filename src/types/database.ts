@@ -275,6 +275,58 @@ export type Database = {
           },
         ]
       }
+      commish_matchup_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          matchup_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_matchup_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_matchup_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_matchup_actions_matchup_id_fkey"
+            columns: ["matchup_id"]
+            isOneToOne: false
+            referencedRelation: "matchups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commissioner_actions: {
         Row: {
           acting_as_team_id: string | null
@@ -3876,6 +3928,41 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_edit_score: {
+        Args: {
+          p_action_id?: string
+          p_away: number
+          p_home: number
+          p_league_id: string
+          p_matchup_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      commish_matchup_override_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_away: number
+          p_home: number
+          p_league_id: string
+          p_matchup_id: string
+          p_reason: string
+          p_verb: string
+          p_winner: string
+        }
+        Returns: Json
+      }
+      commish_set_result: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason?: string
+          p_winner: string
+        }
+        Returns: Json
+      }
       create_league: {
         Args: {
           p_action_id: string
@@ -4991,6 +5078,8 @@ export type CommissionerAction =
   Database['public']['Tables']['commissioner_actions']['Row']
 export type CommishLineupAction =
   Database['public']['Tables']['commish_lineup_actions']['Row']
+export type CommishMatchupAction =
+  Database['public']['Tables']['commish_matchup_actions']['Row']
 export type LineupAction = Database['public']['Tables']['lineup_actions']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']

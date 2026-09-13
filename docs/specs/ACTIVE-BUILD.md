@@ -19,28 +19,50 @@ A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
 F334–F344 transcribed), **`L.E1.3` is LANDED** (PR **#294** —
 pgTAP 064 + 067 gain explicit `league_members` coverage and each gains ONE
 seating-premise cell, its own commit, no migration; re-review CLEAN with three
-nits recorded, **R997 filed as F346**, now swept), and **`L.E1.4` is LANDED**
-(PR **#295** — migration **125** + pgTAP **073** `plan(80)` + one stack vitest
+nits recorded, **R997 filed as F346**, now swept), **`L.E1.4` is LANDED**
+(PR **#295** — migration **125** + pgTAP **073** `plan(103)` — `plan(80)` as first
+built, taken to 103 by its own fix round — plus one stack vitest
 suite: `lineup_autopilot_internal` as a PURE chooser plus a THIRD ARM (c) on
 `lineup_lock_tick`, four hunks against `119:696`'s file text with arms (a)/(b)
 byte-identical and the carry / `league_week_advance` / `118:1825` untouched;
 **Q62 and Q63 shipped their recommendations on silence**; the
 `autopilot_disabled` kill switch minted on `system_flags`; **discharges F334 and
-F346**, mints **F347**, records **D356**), so
-the next takeable task is **`L.E1.5`** (migration **126** + pgTAP **074** —
-`commish_edit_score` / `commish_set_result` as ONE verb with two arms, F325's
-`matchups` backstop with D343's corrected predicate, and `rebuild_team_week_results`'
-GUC narrowing per D344; **Q61 is open and shapes its COPY, not its structure**,
-and **seam migration 131 is L.E1.5's ONLY**). *(Advanced from `L.E1.2` in
-L.E1.2's own fix round, R982; advanced again by L.E1.3's and L.E1.4's own
-sessions so the pointer is already correct the moment each PR merges.)*
+F346**, mints **F347**, records **D356**), and **`L.E1.5` is LANDED**
+(migration **126** + pgTAP **074** `plan(104)` — `commish_edit_score` /
+`commish_set_result` as ONE verb with two optional arms over one internal and one
+replay namespace, **F325's `matchups` backstop discharged in the same migration as
+its first writer** with D343's corrected predicate in the trigger's `WHEN` clause,
+and `rebuild_team_week_results` replaced against `117:758-891`'s file text with
+**exactly one body hunk** per D344. **THE SPLIT SEAM WAS NOT TAKEN — 131 / pgTAP
+079 stay unspent and §6's dependency graph is unamended.** **Q61 shipped to its
+recommendation with the default on ONE labelled line** — grep `Q61 SWAP LINE` in
+126; it stays OPEN because Chris has not ruled, but a different answer is now a
+one-line migration rather than a design. Mints **F351**, records **D357**), so
+the next takeable task is **`L.E1.6`** (migration **127** + pgTAP **075** —
+`commish_move_player` + `commish_force_add_drop`, D346/D350/D353, the **F344**
+badge cell, the **F350** sweep, and F324's second-site amendment; **Q59 is RULED
+and binds it — timing is lifted, POSITIONAL legality is not**). *(Advanced from
+`L.E1.2` in L.E1.2's own fix round, R982; advanced again by L.E1.3's, L.E1.4's
+and L.E1.5's own sessions so the pointer is already correct the moment each PR
+merges.)*
 Migration numbers **125–132** and pgTAP **073–080** are reservations confirmed at
-task time — **125 / 073 are now SPENT**.
+task time — **125 / 073 and 126 / 074 are now SPENT**; **131 / 079 were RESERVED
+for L.E1.5's seam and are released unspent**, and **132 / 080 stay L.E1.8's**.
 
-> **⚠️ MIGRATION 125 IS NOT ON PRODUCTION YET.** `npx supabase db push` is
-> **Chris's to run after PR #295 merges**; `db-drift.yml` is expected red in
-> between, which is the drift check working. No `HELD-FROM-PRODUCTION` entry was
-> added and none should be — the hold was cleared 2026-09-09 (PR #282).
+> **⚠️ MIGRATIONS 125 AND 126 ARE NOT ON PRODUCTION YET.** `npx supabase db push`
+> is **Chris's to run**; `db-drift.yml` is expected red until he does, which is the
+> drift check working. No `HELD-FROM-PRODUCTION` entry was added for either and
+> none should be — the hold was cleared 2026-09-09 (PR #282).
+>
+> **126 CHANGES WHAT THE DATABASE ALLOWS, so read this before the push.** It adds
+> `trg_matchups_override_guard` (`BEFORE UPDATE`, `ENABLE ALWAYS`) on `matchups`:
+> from the moment it lands, **no statement may move `is_overridden` in either
+> direction without `app.commish_action_id`** — not `authenticated`, not
+> `service_role`, not the table owner. That is §12.12's own ask and M6A exit
+> criterion 1, and it is why two stack test suites and one pgTAP fixture had to
+> change in the same PR. Nothing in production writes that column today (measured:
+> zero writers in 109–125), so the push is safe; but **any future hand-run SQL that
+> sets the flag will be refused**, and the route through it is an audited verb.
 
 **Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
 in PROGRESS §3 (*"a commissioner may do anything a manager can, on any team"* —
