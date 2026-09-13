@@ -293,7 +293,9 @@ BEGIN
       -- that every TRUE flag has a receipt behind it. It is not. What makes
       -- that true in practice is that `matchups` carries no UPDATE policy for
       -- any role (109:193-194), so the only callers who get here at all are
-      -- the DEFINER verbs and the owner.
+      -- the DEFINER verbs, the SERVICE ROLE and the owner (126:107 states the
+      -- same set; service_role holds UPDATE and rolbypassrls, which is why
+      -- reconcile-db and score-week-worker-db had to be rewritten — D357(9)).
       'matchups.is_overridden changed on matchup % (% → %) with no app.commish_action_id set — an override is written only by an audited commissioner verb, which sets that GUC transaction-locally in the same transaction as its commissioner_actions row (§12.12, §10.3)',
       NEW.id, OLD.is_overridden, NEW.is_overridden
       USING ERRCODE = 'P0001';

@@ -591,7 +591,7 @@ select is((select is_overridden from matchups where id = 'd5000000-0000-4000-800
 
 -- H5 aims at `d5…42`, whose status ACTUALLY MOVES (`live` → `final`). It used
 -- to aim at `d5…32`, which the fixture inserts as `'final'` already
--- (`:290-291`): the WHEN clause was correctly false either way, so the cell
+-- (`:292-293`): the WHEN clause was correctly false either way, so the cell
 -- proved what it claimed while exercising a zero-change UPDATE (R1011). Week 4
 -- is `live` and is never finalized by this suite, so moving one of its
 -- matchups to `final` here disturbs no later cell; §I has already run.

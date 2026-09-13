@@ -72,8 +72,8 @@ for L.E1.5's seam and are released unspent**, and **132 / 080 stay L.E1.8's**.
 > that `app.commish_action_id` is non-empty; it does not verify that an audit row
 > exists, and a forged value passes. That is §12.12's own printed check and it is
 > not a hole — `matchups` carries no UPDATE policy for any role (`109:193-194`), so
-> the only callers who reach the trigger at all are the DEFINER verbs and the table
-> owner. **Do not read the guard as proof that every `TRUE` flag has a receipt
+> the only callers who reach the trigger at all are the DEFINER verbs, **the service
+> role** and the table owner. **Do not read the guard as proof that every `TRUE` flag has a receipt
 > behind it, and do not GRANT EXECUTE on `rebuild_team_week_results` believing the
 > GUC would hold that door — the REVOKE does (`117:892-893`).**
 

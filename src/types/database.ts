@@ -3953,6 +3953,15 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_override_freeze_internal: {
+        Args: {
+          p_matchup_final: boolean
+          p_set_over: boolean
+          p_was_overridden: boolean
+          p_week_final: boolean
+        }
+        Returns: Json
+      }
       commish_set_result: {
         Args: {
           p_action_id?: string
