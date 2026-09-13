@@ -7,6 +7,15 @@
 -- Numbering: pgTAP head measured 074 by `ls supabase/tests/ | tail -1` ⇒ 075.
 --
 -- Falsifiability notes (tasks-M1 §4.3, carried by tasks-M4 §4 rules 9 + 14):
+--   * **WHAT THE FIX ROUND ADDED, AND WHY EACH CELL EXISTS (PR #297).** §P
+--     walks the PRIMARY (symmetric-difference) enqueue, which the first cut
+--     left with ZERO coverage — every arm it had made that INSERT
+--     non-inserting, so a `now()` stamp on it reded nothing and the build
+--     round's own probe could not tell it from the reach-set INSERT (§4 rule
+--     14). §Q pins that a half-no-op is stamped by the plan that EXECUTED and
+--     not by the parameters that were sent. §R pins that an IR spot is not a
+--     starting slot. §S pins that a shared `action_id` is refused by name
+--     rather than escaping as a raw 23505.
 --   * **THE PAIRED LOCK CONTRAST IS §C AND ITS TWO CELLS ARE ADJACENT (C2/C3)
 --     SO NEITHER CAN DRIFT.** The MANAGER's verb refuses the drop of a
 --     kicked-off starter BY MESSAGE, and the COMMISSIONER's verb lands the
@@ -44,10 +53,19 @@
 --     therefore defence against a schema that would permit several — which is
 --     what `123:236-238` assumes — and this suite pins the equality, not the
 --     aggregate choice. No cell here claims otherwise.
---   * **THE SCORING ARMS ARE WALKED, NOT ASSUMED.** `score_enqueued` (§C),
---     `stats_unstamped` + `score_stale` (§D), `no_stat_row` + NOT stale (§H1),
---     and `week_final` on a closed week with NOTHING enqueued (§H6, on its own
---     league so no earlier cell's week has to be moved under it).
+--   * **THE SCORING ARMS ARE WALKED, NOT ASSUMED — AND THE FIRST CUT'S
+--     VERSION OF THIS LINE WAS FALSE (R1016).** It claimed `score_enqueued`
+--     was walked at §C; §C's `score_enqueued` is EMPTY (the dropped man is
+--     `unrostered`), and so is every other arm the first cut had:
+--     `stats_unstamped` (§D), `no_stat_row` (§H1) and `week_final` (§H6) are
+--     all NON-INSERTING by construction. **No cell observed the primary
+--     INSERT at all**, so stamping it `now()` reded nothing. The arms as they
+--     now stand: the PRIMARY enqueue with its stamp as an EQUALITY (**§P**),
+--     `unrostered` + the reach set (§C), `stats_unstamped` + `score_stale`
+--     (§D), `no_stat_row` + NOT stale (§H1), `week_final` on a closed week
+--     with NOTHING enqueued (§H6, on its own league so no earlier cell's week
+--     has to be moved under it), and the IR spot that is NOT a starting slot
+--     and therefore enqueues nothing at all (**§R**).
 --   * **THE WIDENING IS PINNED WITH ITS PREMISE (§B9 + §J).** B9 asserts
 --     `edited_by_commish` is FALSE on the row the MANAGER set, so §J's TRUE is
 --     a transition and not a fixture default. The user-visible half is
@@ -78,7 +96,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(128);
+select plan(158);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the two internals
@@ -129,8 +147,8 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'public.commish_roster_override_internal(uuid,uuid,text,text,text,uuid,uuid,uuid,timestamptz,text,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.commish_roster_override_internal(uuid,uuid,text,text,text,uuid,uuid,uuid,timestamptz,text,text)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.commish_roster_lineup_sync_internal(uuid,uuid,integer,integer,integer,text,text)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.commish_roster_lineup_sync_internal(uuid,uuid,integer,integer,integer,text,text)', 'EXECUTE'),
+  and not has_function_privilege('authenticated', 'public.commish_roster_lineup_sync_internal(uuid,uuid,integer,integer,integer,text,text,text[])', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.commish_roster_lineup_sync_internal(uuid,uuid,integer,integer,integer,text,text,text[])', 'EXECUTE'),
   'A11 both internals are triple-REVOKEd — no client can supply the instant (rule 10: the seam is postgres-only)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -242,7 +260,10 @@ insert into players (id, full_name, position, team, status) values
  ('cr-f5',  'CR F5',  'WR', 'MIA', 'Active'),
  ('cr-f6',  'CR F6',  'RB', 'MIA', 'Active'),
  ('cr-f7',  'CR F7',  'WR', 'MIA', 'Active'),
- ('cr-f8',  'CR F8',  'QB', 'MIA', 'Active');
+ ('cr-f8',  'CR F8',  'QB', 'MIA', 'Active'),
+ -- ADDED BY THE FIX ROUND (R1016 / R1018):
+ ('cr-qb2', 'CR QB2', 'QB', 'NYG', 'Active'),   -- T1's week-3 STARTER, a healthy 20-minute-old line: §P's primary-enqueue subject
+ ('cr-ir2', 'CR IR2', 'TE', 'SF',  'Active');   -- T2's IR-slotted player: §R's subject
 
 insert into league_rosters (league_id, team_id, player_id) values
  ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 'cr-qb1'),
@@ -250,6 +271,8 @@ insert into league_rosters (league_id, team_id, player_id) values
  ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 'cr-wr1'),
  ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 'cr-wr2'),
  ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 'cr-te1'),
+ ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 'cr-ir2'),
+ ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000001', 'cr-qb2'),
  ('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000003', 'cr-t3a'),
  ('be000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000006', 'cr-l2a'),
  ('be000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000007', 'cr-l3a');
@@ -274,8 +297,15 @@ insert into player_stats (player_id, season, week, stat_type, updated_at) values
  -- is deleted (F353). Nothing scores him differently — he is how the drain
  -- ARRIVES.
  ('cr-te1', 2026, 3, 'weekly', now() - interval '45 minutes'),
- ('cr-l3a', 2026, 3, 'weekly', now() - interval '90 minutes');
+ ('cr-l3a', 2026, 3, 'weekly', now() - interval '90 minutes'),
+ -- cr-qb2's line, 20 minutes old — a THIRD distinct age, so §P's equality pin
+ -- is against a value no other cell in this file could have supplied and no
+ -- constant could match (R1016).
+ ('cr-qb2', 2026, 3, 'weekly', now() - interval '20 minutes');
 -- cr-rb1 deliberately has NO row at all (§H1's `no_stat_row` arm).
+-- cr-ir2 gets his line LATE, immediately before §R, and the reason is written
+-- there: at fixture time it would join §C's reach set and turn C25's
+-- single-element queue pin into a two-element one.
 delete from score_fanout where season = 2026 and week = 3;
 
 -- T3's and T7's week-3 rows, planted directly (postgres context): the two
@@ -287,7 +317,11 @@ insert into team_lineups (team_id, season, week, slot_map, starters, bench) valu
  ('ce000000-0000-4000-8000-000000000003', 2026, 3, '{"rb:0": "cr-t3a"}'::jsonb,
   '[{"slot": "rb:0", "slot_key": "rb", "label": "RB", "player_id": "cr-t3a", "position": "RB", "flags": []}]'::jsonb, '[]'::jsonb),
  ('ce000000-0000-4000-8000-000000000007', 2026, 3, '{"qb:0": "cr-l3a"}'::jsonb,
-  '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "cr-l3a", "position": "QB", "flags": []}]'::jsonb, '[]'::jsonb);
+  '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "cr-l3a", "position": "QB", "flags": []}]'::jsonb, '[]'::jsonb),
+ -- T1's week-3 row (§P): cr-qb2 in a STARTING slot, so his move vacates one
+ -- and the PRIMARY enqueue has something to insert.
+ ('ce000000-0000-4000-8000-000000000001', 2026, 3, '{"qb:0": "cr-qb2"}'::jsonb,
+  '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "cr-qb2", "position": "QB", "flags": []}]'::jsonb, '[]'::jsonb);
 
 -- L1's current week is LIVE (the enqueue arm); L3's walks the §12.17/F4
 -- transition IN ORDER to FINAL (the week_final arm). Done after the lineup
@@ -342,6 +376,24 @@ select is((select slot_map from team_lineups
            where team_id = 'ce000000-0000-4000-8000-000000000002' and season = 2026 and week = 3),
   '{"qb:0": "cr-qb1", "rb:0": "cr-rb1", "wr:0": "cr-wr1"}'::jsonb,
   'B11 PREMISE: the stored week-3 map is the submitted one');
+-- ── The fix round's own premises (R1016 / R1018) ───────────────────────────
+select ok(
+  (select count(*)::int from player_stats where player_id = 'cr-qb2' and season = 2026 and week = 3) = 1
+  and (select updated_at between now() - interval '25 minutes' and now() - interval '15 minutes'
+       from player_stats where player_id = 'cr-qb2' and season = 2026 and week = 3),
+  'B12 PREMISE FOR §P: cr-qb2 carries exactly ONE week-3 stat line and it is 20 minutes old — a THIRD age, distinct from cr-te1''s 45 and cr-qb1''s 90, so §P''s stamp equality cannot be satisfied by another player''s value, by now(), or by any constant');
+select ok(
+  (select slot_map = '{"qb:0": "cr-qb2"}'::jsonb from team_lineups
+   where team_id = 'ce000000-0000-4000-8000-000000000001' and season = 2026 and week = 3)
+  and exists (select 1 from league_rosters
+              where league_id = 'be000000-0000-4000-8000-000000000001'
+                and team_id = 'ce000000-0000-4000-8000-000000000001' and player_id = 'cr-qb2'),
+  'B13 PREMISE FOR §P: T1 rosters cr-qb2 AND starts him in qb:0 — a STARTING slot, so moving him genuinely changes the current week''s starter set. Without this the §P enqueue would have nothing to insert and the cell would pass on an empty queue');
+select is(
+  (select array_agg(s ->> 'key' order by s ->> 'key')
+   from jsonb_array_elements((select roster_settings -> 'ir_slots' from leagues where id = 'be000000-0000-4000-8000-000000000001')) s),
+  array['ir1'],
+  'B14 PREMISE FOR §R: L1 configures exactly ONE ir_slots key, `ir1` — so §R''s subject really does sit under an IR key that the scoring worker''s irKeysOf() would exclude, and the filter under test has a real spot to filter');
 -- Captured as a literal so §J2 compares against the MANAGER's value rather
 -- than against "not null", which a verb that overwrote it would also satisfy.
 select set_config('pgtap.cr_set_at', coalesce((select set_at::text from team_lineups
@@ -356,11 +408,16 @@ select set_config('pgtap.cr_actions_before', (select count(*)::text from commiss
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
-select throws_ok(
+-- R1021: BY MESSAGE, which is what the suite header and the PR body both
+-- claim. `throws_ok(…, 'P0001', null, …)` pinned only the SQLSTATE, so any
+-- other P0001 in 115's body (a full roster, a broken mirror) would have
+-- satisfied "the manager is refused BY THE LOCK". `locked for drops` is E32's
+-- own string, and K2 pins that the same string is still in `prosrc`.
+select throws_like(
   $$ select public.roster_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
        null, 'cr-qb1', 'af000000-0000-4000-8000-000000000002'::uuid) $$,
-  'P0001', null,
-  'C2 THE CONTRAST (1/2): the MANAGER''s verb REFUSES this exact drop at this exact instant — cr-qb1''s game kicked off one second ago (E32, 115:528-537, unconditional under Q34(B))');
+  '%locked for drops%',
+  'C2 THE CONTRAST (1/2): the MANAGER''s verb REFUSES this exact drop at this exact instant, BY MESSAGE and not merely by SQLSTATE — cr-qb1''s game kicked off one second ago (E32, 115:528-537, unconditional under Q34(B))');
 
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select lives_ok(
@@ -453,9 +510,19 @@ select is(current_setting('pgtap.cr_drop')::jsonb ->> 'score_stale', 'false',
 
 -- ---------------------------------------------------------------------------
 -- H2/H3 (kept here, beside their fixture): THE STARVATION TRAP, as an
---       EQUALITY. 071's cell asserts `enqueued_at <= min(updated_at)`, which
---       -infinity also satisfies. cr-qb1 has TWO week-3 lines an hour apart
---       (B7), so this tells MIN from MAX and from any constant.
+--       EQUALITY, on the REACH-SET enqueue. 071's cell asserts
+--       `enqueued_at <= min(updated_at)`, which -infinity also satisfies; this
+--       one pins the exact value, so a now() stamp and any constant both red.
+--       [CORRECTED in the fix round: this header used to say "cr-qb1 has TWO
+--       week-3 lines an hour apart (B7), so this tells MIN from MAX" — false
+--       on both counts. `player_stats` carries UNIQUE(player_id, season, week)
+--       (001:171), so there is exactly ONE line per player-week and no cell
+--       here tells MIN from MAX; B7's subject is cr-te1, not cr-qb1; and the
+--       falsifiability note at the head of this file has said so all along.
+--       The contradiction is left visible rather than silently rewritten.]
+--       **This pins the REACH-SET insert (`:1162`). The PRIMARY insert's own
+--       stamp is §P's P3 — two sites, two cells, so a probe on either one is
+--       attributable (R1016).**
 -- ---------------------------------------------------------------------------
 select is(
   (select f.enqueued_at from score_fanout f where f.season = 2026 and f.week = 3 and f.player_id = 'cr-te1'),
@@ -560,12 +627,18 @@ select is((select count(*)::int from team_lineups tl, jsonb_each_text(tl.slot_ma
            where tl.team_id = 'ce000000-0000-4000-8000-000000000003' and tl.season = 2026 and tl.week = 3
              and e.value = 'cr-wr1'), 0,
   'I2 …and in NO slot_map value: an added player lands on the bench, never in a slot — which is also what keeps him out of the symmetric difference the enqueue is built from');
+-- R1022(a): the scan covers ALL FOUR functions 127 creates, not only the two
+-- internals. The first cut omitted the two SECURITY DEFINER doors from the
+-- `proname in (…)` list while the description claimed "neither 127 function" —
+-- a claim narrower than the scan that backed it, which is the species this
+-- slice keeps catching. A6 pins that these four are the whole of 127.
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('commish_roster_override_internal', 'commish_roster_lineup_sync_internal')
+     and p.proname in ('commish_move_player', 'commish_force_add_drop',
+                       'commish_roster_override_internal', 'commish_roster_lineup_sync_internal')
      and p.prosrc like '%lineup_fit_internal%'),
-  0, 'I3 …and F350 is RE-ROUTED rather than discharged, for a MEASURED reason: neither 127 function calls lineup_fit_internal at all, so this task is not the "next caller that could pass a duplicate" its routing assumed. The matcher still has no guard and its three callers still rely on their own COALESCE discipline (D356(7c))');
+  0, 'I3 …and F350 is RE-ROUTED rather than discharged, for a MEASURED reason: NONE of 127''s four functions calls lineup_fit_internal at all (both doors and both internals scanned — R1022), so this task is not the "next caller that could pass a duplicate" its routing assumed. The matcher still has no guard and its three callers still rely on their own COALESCE discipline (D356(7c))');
 
 -- ---------------------------------------------------------------------------
 -- E. EXCLUSIVITY BINDS THE COMMISSIONER — REFUSED BY NAME, NOT SILENTLY
@@ -625,6 +698,82 @@ select is((select count(*)::int from transactions
   'F9 …and every executed call wrote exactly one transactions row (the drop, the move, and the two adds)');
 
 -- ---------------------------------------------------------------------------
+-- P. THE PRIMARY (SYMMETRIC-DIFFERENCE) ENQUEUE — THE HALF D346 ITEM 4
+--    ACTUALLY NAMES, AND THE HALF THE FIRST CUT NEVER OBSERVED (R1016).
+--
+--    Every scoring arm the first cut had made `127`'s FIRST `INSERT INTO
+--    score_fanout` non-inserting: §C's changed starter is `unrostered` (his
+--    roster row is gone), §D's carries a NULL stamp, §H1's has no stat row and
+--    §H6's week is final. So the PRIMARY insert never wrote a row in the whole
+--    suite, and stamping it `now()` — the exact trap D346 calls "the trap" —
+--    reded NOTHING. The round's own break probe changed BOTH inserts at once
+--    and therefore could not attribute its red to either. This section is the
+--    cell that makes the primary site falsifiable ON ITS OWN.
+--
+--    THE ISOLATION IS STRUCTURAL, NOT ASSERTED: the reach-set query excludes
+--    every member of `v_rescore` by name (`NOT (r.player_id = ANY (v_rescore))`),
+--    so the row this section pins CANNOT have come from the reach INSERT. P5
+--    makes that visible by showing the reach set EMPTY at this call.
+-- ---------------------------------------------------------------------------
+-- The caps subject (R1022): ONE completed acquisition for T3 — the team this
+-- move's player ARRIVES on — and none for T1, the team he leaves. Planted as
+-- postgres, type `add_drop` so F9's commissioner_move count above is untouched
+-- and `action_id` NULL so §S's namespace guard is not involved.
+insert into transactions (league_id, type, status, initiator_team_id, initiated_by, payload, week)
+values ('be000000-0000-4000-8000-000000000001', 'add_drop', 'complete',
+        'ce000000-0000-4000-8000-000000000003', null, '{"add_player_id": "cr-t3a"}'::jsonb, 3);
+select is(
+  (select count(*)::int from transactions t
+   where t.league_id = 'be000000-0000-4000-8000-000000000001' and t.status = 'complete' and t.week = 3
+     and (t.payload ->> 'add_player_id') is not null
+     and t.initiator_team_id = 'ce000000-0000-4000-8000-000000000003')
+  || '/' ||
+  (select count(*)::int from transactions t
+   where t.league_id = 'be000000-0000-4000-8000-000000000001' and t.status = 'complete' and t.week = 3
+     and (t.payload ->> 'add_player_id') is not null
+     and t.initiator_team_id = 'ce000000-0000-4000-8000-000000000001'),
+  '1/0',
+  'P0 PREMISE FOR P7/P8 (R1022): the RECEIVING team (T3) has ONE counted week-3 acquisition and the LOSING team (T1) has NONE. Without two different numbers a cell asserting "the caps are the acquiring team''s" passes whichever team the code counted — 115:497-506''s count is 0 for every team in this fixture by default, which is exactly the vacuity §4 rule 14 forbids');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_move_player('be000000-0000-4000-8000-000000000001', 'cr-qb2',
+       'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000003',
+       'he was drafted into my own team by mistake', 'af000000-0000-4000-8000-000000000040'::uuid) $$,
+  'P1 a MOVE of a STARTER who is still rostered afterwards and carries a healthy, stampable week-3 line — the ONE shape in which the primary enqueue actually inserts');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select set_config('pgtap.cr_pri', (select result::text from commish_roster_actions
+  where action_id = 'af000000-0000-4000-8000-000000000040'), true);
+
+select is(current_setting('pgtap.cr_pri')::jsonb -> 'score_enqueued', '["cr-qb2"]'::jsonb,
+  'P2 THE PRIMARY ENQUEUE FIRES: the changed starter is queued by the symmetric-difference INSERT (127''s first INSERT INTO score_fanout), and score_enqueued is NON-EMPTY for the first time in this suite. Every other scoring cell here walks an arm where that INSERT writes nothing, which is how a now() stamp on it survived the first round');
+select is(
+  (select f.enqueued_at from score_fanout f where f.season = 2026 and f.week = 3 and f.player_id = 'cr-qb2'),
+  (select min(ps.updated_at) from player_stats ps where ps.season = 2026 and ps.week = 3 and ps.player_id = 'cr-qb2'),
+  'P3 …AND ITS STAMP IS AN EQUALITY AGAINST THE PLAYER''S OWN player_stats.updated_at — the PRIMARY site''s own pin, independent of H2''s (which pins the REACH site). The worker''s readiness rule is `updated_at >= enqueued_at`, so a now()/p_at stamp here is not_ready FOREVER: deferred every drain, never scored, worse than doing nothing');
+select ok(
+  (select f.enqueued_at < now() - interval '15 minutes' from score_fanout f
+   where f.season = 2026 and f.week = 3 and f.player_id = 'cr-qb2'),
+  'P4 …and the stamp is 20 minutes in the PAST, which is what makes P3 falsifiable rather than tautological: a now() stamp reds both');
+select is(current_setting('pgtap.cr_pri')::jsonb -> 'score_reach_enqueued', '[]'::jsonb,
+  'P5 THE ISOLATION, SHOWN: the REACH set is EMPTY at this call (T1 has nobody left, and T3''s other players have no stampable week-3 line), so the queue row P2/P3 pin can only have come from the PRIMARY insert. The reach query also excludes every member of v_rescore by name, so the two sites can never write the same row — a probe on either one is attributable');
+select ok(
+  current_setting('pgtap.cr_pri')::jsonb -> 'score_not_enqueued' = '[]'::jsonb
+  and (current_setting('pgtap.cr_pri')::jsonb ->> 'score_stale') = 'false'
+  and (current_setting('pgtap.cr_pri')::jsonb ->> 'score_reachable') = 'true',
+  'P6 …and nothing is left unexplained: score_not_enqueued is empty because every changed starter WAS queued, reachability is measured TRUE, and score_stale is FALSE — the only arm in this suite where all three hold at once');
+select is(current_setting('pgtap.cr_pri')::jsonb -> 'caps' ->> 'team_id',
+  'ce000000-0000-4000-8000-000000000003',
+  'P7 R1022: the acquisition counts on the receipt are the ACQUIRING team''s — on a MOVE that is the DESTINATION, not the source. The first cut counted the move''s FROM team, so a league reading its own budget was shown the wrong franchise''s numbers; the receipt now NAMES whose they are');
+select is(
+  (current_setting('pgtap.cr_pri')::jsonb -> 'caps' ->> 'used_week_before') || '/' ||
+  (current_setting('pgtap.cr_pri')::jsonb -> 'caps' ->> 'used_season_before'),
+  '1/1',
+  'P8 …and they are T3''s 1/1 (P0''s premise), not T1''s 0/0 — the cell reds the moment the count follows v_team_a again');
+
+-- ---------------------------------------------------------------------------
 -- G. THE NO-OP — Chris's one condition: "no receipt if nothing is done. only
 --    when something is done." The three counts are captured as literals FIRST.
 -- ---------------------------------------------------------------------------
@@ -675,6 +824,146 @@ select is((select team_id from league_rosters
            where league_id = 'be000000-0000-4000-8000-000000000001' and player_id = 'cr-wr1'),
   'ce000000-0000-4000-8000-000000000003'::uuid,
   'G10 …and the roster did NOT move on the replay: the returned document is a record, not an instruction');
+
+-- ---------------------------------------------------------------------------
+-- Q. THE HALF-NO-OP — THE AUDIT ROW DESCRIBES THE PLAN THAT EXECUTED, NOT THE
+--    PARAMETERS THAT WERE SENT (R1019).
+--
+--    A call whose ADD arm is a no-op (he is already on this roster) and whose
+--    DROP arm executes is a PURE DROP. The first cut keyed `action_type` and
+--    `arm` on `p_add IS NOT NULL`, so it stamped this `force_add` with
+--    `added_player_id` NULL — and tasks-M6A §5 calls that shape CONTRACTUAL
+--    "so the activity feed can render them without a special case", which
+--    means the feed would have rendered a drop as an add. No cell covered the
+--    combination at all: §C is a pure drop, §F pure adds, §G a total no-op.
+-- ---------------------------------------------------------------------------
+select ok(
+  exists (select 1 from league_rosters where league_id = 'be000000-0000-4000-8000-000000000001'
+            and team_id = 'ce000000-0000-4000-8000-000000000002' and player_id = 'cr-wr2')
+  and exists (select 1 from league_rosters where league_id = 'be000000-0000-4000-8000-000000000001'
+            and team_id = 'ce000000-0000-4000-8000-000000000002' and player_id = 'cr-w1'),
+  'Q0 PREMISE: cr-wr2 is ALREADY on T2 (so the add arm below is genuinely a no-op) and cr-w1 IS on T2 (so the drop arm genuinely executes). Without both, "the plan that executed" and "the parameters that were sent" would not differ and the cell would pass either way');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       'cr-wr2', 'cr-w1', 'tidying up after myself', 'af000000-0000-4000-8000-000000000041'::uuid) $$,
+  'Q1 a call with BOTH arms supplied, whose add is already true and whose drop is not, lands');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select set_config('pgtap.cr_half', (select result::text from commish_roster_actions
+  where action_id = 'af000000-0000-4000-8000-000000000041'), true);
+select is(current_setting('pgtap.cr_half')::jsonb ->> 'action_type', 'force_drop',
+  'Q2 R1019: the action_type is force_drop — what HAPPENED — and not force_add, which is what the parameters said. §5 calls this shape contractual so the activity feed can render it without a special case; a pure drop rendered as an add is that contract broken');
+select is(current_setting('pgtap.cr_half')::jsonb ->> 'arm', 'drop',
+  'Q3 …and the arm is `drop`, not `add+drop`: only one half of the request changed anything');
+select is(
+  coalesce(current_setting('pgtap.cr_half')::jsonb ->> 'added_player_id', 'null') || '/' ||
+  coalesce(current_setting('pgtap.cr_half')::jsonb ->> 'dropped_player_id', 'null'),
+  'null/cr-w1',
+  'Q4 …and the two id fields agree with it: nothing was added, cr-w1 was dropped. THIS is the pairing the first cut contradicted — action_type force_add beside added_player_id NULL');
+select is(
+  (select action_type || '/' || target_id from commissioner_actions
+   where metadata ->> 'action_id' = 'af000000-0000-4000-8000-000000000041'),
+  'force_drop/cr-w1',
+  'Q5 …and the AUDIT ROW carries the same answer, which is the one that matters: commissioner_actions is what §12.12 preserves and what the feed reads, so a wrong action_type there is wrong for ever (audit rows are immutable — 123:333-337)');
+select is((select count(*)::int from league_rosters
+           where league_id = 'be000000-0000-4000-8000-000000000001' and player_id = 'cr-wr2'), 1,
+  'Q6 …and the no-op add arm wrote nothing twice: cr-wr2 is still on exactly ONE roster row. A no-op arm that quietly re-INSERTed would have been refused by 072:147''s UNIQUE, but the count is asserted rather than inferred from the absence of an error');
+
+-- ---------------------------------------------------------------------------
+-- R. AN IR SPOT IS NOT A STARTING SLOT (R1018).
+--
+--    `123:1022-1029` — the clause this task was told to read in full —
+--    excludes `ir_slots` keys when it builds the old starter set, and the
+--    first cut of 127 dropped that filter. `v_vacated := v_key` fired for ANY
+--    slot_map key, so a move out of `ir1:0` reported a vacated slot, set
+--    `score_stale`, queued a row and told the whole league "a week-3 starting
+--    slot was emptied" — when the worker's own `startersOf` had never counted
+--    that player as a starter at all. The R969 false alarm, in the field whose
+--    only job is to be believed.
+--
+--    cr-ir2's stat line is inserted HERE and not at fixture time, on purpose:
+--    at fixture time he joins §C's REACH set and C25's single-element queue
+--    pin becomes a two-element one. He needs the line so that WITHOUT the
+--    filter the enqueue would demonstrably fire — otherwise R3/R6 below would
+--    be green for the wrong reason (`no_stat_row`), which is §4 rule 14 one
+--    level down.
+-- ---------------------------------------------------------------------------
+update team_lineups
+set slot_map = slot_map || '{"ir1:0": "cr-ir2"}'::jsonb,
+    bench = (select coalesce(jsonb_agg(x order by x #>> '{}'), '[]'::jsonb)
+             from jsonb_array_elements(bench) x where (x #>> '{}') <> 'cr-ir2')
+where team_id = 'ce000000-0000-4000-8000-000000000002' and season = 2026 and week = 3;
+insert into player_stats (player_id, season, week, stat_type, updated_at)
+values ('cr-ir2', 2026, 3, 'weekly', now() - interval '30 minutes');
+select is((select slot_map ->> 'ir1:0' from team_lineups
+           where team_id = 'ce000000-0000-4000-8000-000000000002' and season = 2026 and week = 3),
+  'cr-ir2',
+  'R0a PREMISE: cr-ir2 sits under T2''s `ir1:0` key in the CURRENT week''s stored map — an IR spot (B14 pinned that `ir1` is L1''s only one), which the scoring worker''s startersOf() skips by prefix');
+select ok(
+  (select count(*)::int from player_stats where player_id = 'cr-ir2' and season = 2026 and week = 3) = 1
+  and (select updated_at is not null from player_stats where player_id = 'cr-ir2' and season = 2026 and week = 3),
+  'R0b PREMISE, AND IT IS THE ONE THAT MATTERS: cr-ir2 carries a STAMPABLE week-3 line. So if the IR filter were missing the enqueue WOULD fire and R3/R6 would red — their green is attributable to the filter and not to a player the queue could never have stamped anyway');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_move_player('be000000-0000-4000-8000-000000000001', 'cr-ir2',
+       'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000003',
+       'his IR stint belongs to the other franchise', 'af000000-0000-4000-8000-000000000042'::uuid) $$,
+  'R1 a MOVE of a player who occupies an IR SPOT in the current week lands');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select set_config('pgtap.cr_ir', (select result::text from commish_roster_actions
+  where action_id = 'af000000-0000-4000-8000-000000000042'), true);
+select is(current_setting('pgtap.cr_ir')::jsonb ->> 'vacated_current_slot', null,
+  'R2 …and NO starting slot is reported vacated: an IR spot is not in the starter set the worker computes, so emptying one changes no score. The filter is the WORKER''s own predicate (split the key on ":" and test the prefix against irKeysOf) rather than 123''s whole-instance-key form, because this field exists to predict what the worker will see');
+select ok(
+  current_setting('pgtap.cr_ir')::jsonb -> 'score_enqueued' = '[]'::jsonb
+  and current_setting('pgtap.cr_ir')::jsonb -> 'score_not_enqueued' = '[]'::jsonb,
+  'R3 …so NOTHING is enqueued and nothing is left unexplained: there was no changed starter to queue, which is different from a changed starter the queue could not stamp (§D) and different again from one nobody rosters (§C)');
+select ok(
+  (current_setting('pgtap.cr_ir')::jsonb ->> 'score_stale') = 'false'
+  and current_setting('pgtap.cr_ir')::jsonb ->> 'score_stale_reason' is null,
+  'R4 …and score_stale is FALSE with no reason — the R969 standard: a false alarm in this field is as damaging as a missed one, because the whole job of the field is to be believed');
+select ok(
+  (current_setting('pgtap.cr_ir')::jsonb ->> 'system_post') not like '%starting slot was emptied%',
+  'R5 …and THE LEAGUE IS NOT TOLD A STARTING SLOT WAS EMPTIED, because none was. This is the user-visible half: the first cut posted that sentence into league chat for every IR move');
+select is((select count(*)::int from score_fanout where season = 2026 and week = 3 and player_id = 'cr-ir2'), 0,
+  'R6 …and no queue row exists for him at all — asserted on the table, not only on the receipt, so a receipt that lied about its own INSERT would still red');
+select ok(
+  (select not (slot_map ? 'ir1:0') from team_lineups
+   where team_id = 'ce000000-0000-4000-8000-000000000002' and season = 2026 and week = 3),
+  'R7 …WHILE THE LINEUP ROW DID CHANGE: `ir1:0` is gone from the map. Without this cell R2-R6 would all be satisfiable by a call that did nothing at all, which is the §4 rule 15 failure this whole slice is about');
+
+-- ---------------------------------------------------------------------------
+-- S. THE SHARED action_id NAMESPACE — REFUSED BY NAME, NEVER A RAW 23505
+--    (R1017). `uniq_transactions_league_action` (113:283-285) is ONE
+--    (league_id, action_id) space across the manager's verb and this one, and
+--    115:429-443 guards only its own direction (R732). Without the mirror the
+--    collision reached (17)'s INSERT and surfaced as `duplicate key value
+--    violates unique constraint` — and `mapInSeasonRpcError` has no 23505 arm,
+--    so the client got a 500 for a re-used key.
+-- ---------------------------------------------------------------------------
+insert into transactions (league_id, type, status, initiator_team_id, initiated_by, payload, week, action_id)
+values ('be000000-0000-4000-8000-000000000001', 'add_drop', 'complete',
+        'ce000000-0000-4000-8000-000000000002', null, '{}'::jsonb, 3,
+        'af000000-0000-4000-8000-000000000050');
+select ok(
+  exists (select 1 from transactions where league_id = 'be000000-0000-4000-8000-000000000001'
+            and action_id = 'af000000-0000-4000-8000-000000000050' and type = 'add_drop')
+  and not exists (select 1 from commish_roster_actions
+            where action_id = 'af000000-0000-4000-8000-000000000050'),
+  'S1 PREMISE: this action_id is spent in `transactions` by the MANAGER''s verb and is UNKNOWN to this family''s own ledger — so the call below gets past the step-3 replay and reaches the guard under test. If the ledger knew it, the cell would be testing the replay path instead and would pass for the wrong reason');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_like(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       'cr-fa2', null, 'reusing a key by accident', 'af000000-0000-4000-8000-000000000050'::uuid) $$,
+  '%already names a "add_drop" transaction in this league%',
+  'S2 …and the override is REFUSED BY NAME, naming the verb that owns the key — not a raw 23505 from the transactions INSERT four hundred lines later (which mapInSeasonRpcError has no arm for, so it reaches the client as a 500). 115:429-443''s R732 check, mirrored in the direction it never covered');
+reset role;
+select set_config('request.jwt.claims', '', true);
 
 -- ---------------------------------------------------------------------------
 -- H. THE REMAINING SCORING ARMS. (H2/H3 sit beside their fixture, above.)

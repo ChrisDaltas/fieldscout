@@ -4041,6 +4041,7 @@ export type Database = {
           p_add: string
           p_current: number
           p_first_week: number
+          p_ir_keys: string[]
           p_league_id: string
           p_remove: string
           p_season: number

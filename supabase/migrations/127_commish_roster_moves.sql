@@ -10,8 +10,9 @@
 --      ledger (D350), `UNIQUE (league_id, action_id)` + `REVOKE TRUNCATE`.
 --   2. `commish_roster_lineup_sync_internal` — the lineup consequence, shared
 --      by both verbs: 115's interplay loop (`115:673-730`) with D346's
---      `edited_by_commish = TRUE` added and the vacated CURRENT-week slot
---      returned so the caller can compute the score enqueue.
+--      `edited_by_commish = TRUE` added and the vacated CURRENT-week STARTING
+--      slot returned so the caller can compute the score enqueue (an IR spot
+--      is not a starting slot — R1018).
 --   3. `commish_roster_override_internal` — ONE internal, TWO verbs behind a
 --      `p_verb` discriminator (126's proven shape), writing `league_rosters`,
 --      `league_player_pool`, `team_lineups` and `transactions` in one
@@ -200,7 +201,20 @@
 -- `score_stale_reason = 'unreachable'` rather than reporting a success.
 -- `score_reach_enqueued[]` and `score_reachable` are on the receipt and in the
 -- audit metadata. A MOVE never needs this (the player stays rostered, on the
--- other team) and gets it anyway, which costs at most `roster_size` rows.
+-- other team) and gets it anyway, which costs at most `roster_size` rows per
+-- touched team.
+--
+-- **AND THE COST IS NOT ONLY THIS LEAGUE'S, WHICH IS STATED HERE RATHER THAN
+-- DISCOVERED (R1023).** `score_fanout` is keyed `(season, week, player_id)`
+-- with no league column — that is the queue's design, and it is why the worker
+-- has to map a player back to leagues through the roster index at all. So
+-- every row this verb writes, primary and reach set alike, makes those players
+-- re-drain for **every other in-season league that also rosters them**, which
+-- in a popular player's case is all of them. It is harmless — the drain is
+-- idempotent, recomputes the same numbers and consumes the row — but it is a
+-- real fan-out in shared infrastructure and a future load question (§22.6 is
+-- M7's), not a per-league cost. Narrowing it would mean a league-scoped queue,
+-- which is a schema change and a worker change, and is NOT taken here.
 --
 -- **F344 — THE FLAG IS WIDENED, IN D346's OWN WORDS, AND THAT IS STATED HERE
 -- RATHER THAN DISCOVERED IN THE UI.** `team_lineups.edited_by_commish` meant
@@ -306,6 +320,34 @@
 --     authored against the repo's migration chain and never against a deployed
 --     body; a red `db-drift.yml` between merge and push is that check working.
 --
+-- ── THE FIX ROUND (PR #297, 2026-09-13) — FIVE SHOULD-FIXES AND THREE NITS ─
+-- 127 is EDITED IN PLACE and no new number is minted: 125, 126 and 127 all
+-- still await Chris's `npx supabase db push`, so there is no deployed body to
+-- diverge from, and 128 is L.E1.7's. What changed and where:
+--   * **R1016** — the PRIMARY (symmetric-difference) enqueue had ZERO
+--     coverage: every §C/§D/§H arm of the first cut made it non-inserting
+--     (`unrostered`, `stats_unstamped`, `no_stat_row`, `week_final`), so
+--     stamping it `now()` reded nothing. The build round's own probe 2 changed
+--     BOTH enqueue sites at once and therefore could not tell them apart —
+--     the vacuous-proof species §4 rule 14 exists for. pgTAP 075 **§P** is the
+--     cell that walks it, and the reviewer's isolated probe (only the primary
+--     stamp → `p_at`) is now a red-by-name.
+--   * **R1017** — a raw 23505 could escape to the wire: `action_id` is a
+--     SHARED `(league_id, action_id)` namespace with the manager's verb.
+--     Guarded by name at step (3b), 115's R732 check mirrored.
+--   * **R1018** — an IR spot was treated as a vacated STARTING slot. Filtered
+--     with the scoring worker's own predicate; see section 2's banner.
+--   * **R1019** — `action_type` / `arm` keyed on the PARAMETERS, so an
+--     add-no-op + real drop was stamped `force_add`. Keyed on the normalized
+--     plan; see step (7).
+--   * **R1020** — the retired-franchise refusal named a remedy nobody built.
+--     Re-measured and re-worded; **F354** owns the missing capability.
+--   * **R1021 / R1022 / R1023** — 075's C2 pins the manager's refusal BY
+--     MESSAGE (the suite header's claim made true); 075 I3 scans all four
+--     functions, not two; the `caps` counts follow the ACQUIRING team and the
+--     receipt names it; the reach set's cross-league fan-out is stated in
+--     SCORING above.
+--
 -- MIGRATION CHECKLIST (tasks-M4 §4 rule 5): additive only — one new table,
 -- THREE new functions, ZERO functions replaced (so there is no D137 hunk count
 -- to state: nothing existing is re-authored). No column dropped, no constraint
@@ -371,9 +413,25 @@ REVOKE TRUNCATE ON TABLE commish_roster_actions FROM PUBLIC, anon, authenticated
 --      (A) `edited_by_commish = TRUE` rides the same UPDATE (D346). `set_at`
 --          does NOT: nobody SET this lineup, a roster move changed it
 --          underneath (the D356(5) four-columns-not-five posture).
---      (B) it RETURNS the CURRENT week's vacated slot key, so the caller can
---          compute the score enqueue from measured before/after starter sets
---          rather than from an assumption about where the player sat.
+--      (B) it RETURNS the CURRENT week's vacated STARTING slot key, so the
+--          caller can compute the score enqueue from measured before/after
+--          starter sets rather than from an assumption about where the player
+--          sat.
+--
+--    **AN IR SPOT IS NOT A STARTING SLOT, AND THE FILTER IS THE WORKER'S OWN
+--    (R1018).** `123:1022-1029` excludes `v_ir_spots` keys when it builds the
+--    old starter set, and the first cut of this file dropped that filter — so
+--    a move out of `ir1:0` reported a vacated slot, set `score_stale`, queued
+--    a row and told the whole league *"a week-N starting slot was emptied"*
+--    when the starter set had not changed at all: the R969 false alarm, in the
+--    field whose only job is to be believed. The predicate used here is the
+--    SCORING WORKER's rather than 123's, deliberately: `startersOf`
+--    (`score-week-worker.ts:415-425`) splits the map key on `':'` and tests
+--    the PREFIX against `irKeysOf`'s BARE keys (`:397-407`), while 123 matches
+--    the whole instance key `'<key>:0'`. The two agree on every map 123 can
+--    write; they differ on an `ir1:1`, and this field exists to predict what
+--    the WORKER will see. `p_ir_keys` therefore carries bare keys and the test
+--    is on `split_part(key, ':', 1)`.
 --
 --    Q32 (Chris, 2026-09-03) still governs the removal: the entry is ALWAYS
 --    cleared — there is no kept phantom — and IR keys are roster-level spots
@@ -387,7 +445,8 @@ CREATE OR REPLACE FUNCTION commish_roster_lineup_sync_internal(
   p_first_week INTEGER,
   p_current    INTEGER,
   p_remove     TEXT,
-  p_add        TEXT
+  p_add        TEXT,
+  p_ir_keys    TEXT[]      -- the league's BARE ir_slots keys (R1018); never NULL-meaning-none by accident
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SET search_path = ''
@@ -426,7 +485,14 @@ BEGIN
         INTO v_starters
         FROM jsonb_array_elements(v_starters) WITH ORDINALITY AS t(s, ord);
         v_rows := v_rows || jsonb_build_object('week', v_row.week, 'slot', v_key, 'arm', 'removed');
-        IF v_row.week = p_current THEN
+        -- R1018: only a STARTING slot counts as vacated. An IR spot is not in
+        -- the worker's starter set (`startersOf` skips any key whose prefix is
+        -- an `ir_slots` key), so emptying one changes no score and must not
+        -- raise `score_stale`, queue a row, or tell the league a starting slot
+        -- was emptied. The row itself is still reported in `rows` above — the
+        -- lineup DID change, and under-reporting that would be its own lie.
+        IF v_row.week = p_current
+           AND NOT (split_part(v_key, ':', 1) = ANY (COALESCE(p_ir_keys, ARRAY[]::text[]))) THEN
           v_vacated := v_key;
         END IF;
         v_changed := TRUE;
@@ -491,7 +557,7 @@ BEGIN
   RETURN jsonb_build_object('rows', v_rows, 'vacated_current_slot', v_vacated);
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION commish_roster_lineup_sync_internal(UUID, UUID, INTEGER, INTEGER, INTEGER, TEXT, TEXT)
+REVOKE EXECUTE ON FUNCTION commish_roster_lineup_sync_internal(UUID, UUID, INTEGER, INTEGER, INTEGER, TEXT, TEXT, TEXT[])
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -575,6 +641,9 @@ DECLARE
   v_lineups       JSONB := '[]'::jsonb;
   v_sync          JSONB;
   v_vacated       TEXT := NULL;
+  v_ir_keys       TEXT[] := ARRAY[]::text[];   -- R1018: the league's BARE ir_slots keys
+  v_txn_type      TEXT;                        -- R1017: the verb that already owns this action_id
+  v_cap_team      UUID;                        -- R1022: the team the acquisition counts are ABOUT
   v_before        JSONB;
   v_before_drop   JSONB;
   v_after         JSONB;
@@ -663,6 +732,26 @@ BEGIN
     RETURN v_result;
   END IF;
 
+  -- (3b) THE SECOND REPLAY KEY, GUARDED BY NAME (R1017; 115's R732 check at
+  --      `115:429-443` is the mirror of this one, and it guards only its own
+  --      direction). `uniq_transactions_league_action` (`113:283-285`) is a
+  --      SHARED `(league_id, action_id)` namespace across the manager's verb
+  --      and this one, so an action_id already spent on a `roster_add_drop`
+  --      submit would otherwise reach (17)'s INSERT and escape as a raw 23505
+  --      — a 500 at the client, because `mapInSeasonRpcError` has no 23505
+  --      arm. This family's OWN ledger (step 3) has already answered every
+  --      retry of THIS verb, so reaching here means a DIFFERENT verb owns the
+  --      key: refuse by name and say which.
+  SELECT t.type INTO v_txn_type
+  FROM public.transactions t
+  WHERE t.league_id = p_league_id AND t.action_id = p_action_id;
+  IF FOUND THEN
+    RAISE EXCEPTION
+      '%: action_id % already names a "%" transaction in this league — an action_id identifies ONE submit of ONE verb (R732/R1017). Mint a new action_id for this override, or retry the verb that owns that one',
+      p_verb, p_action_id, v_txn_type
+      USING ERRCODE = 'P0001';
+  END IF;
+
   -- (4) THE REASON, required unconditionally (§15.4:1690's header, "all
   --     require reason"). Blank = nothing but whitespace INCLUDING tabs and
   --     newlines (R745 — plain btrim strips SPACES only); bounded at 500, the
@@ -707,10 +796,27 @@ BEGIN
   -- A `retired` franchise is SEALED (spec:183 — "name/record frozen";
   -- §7.2.1). Under standing rule (i) this is a LEGALITY gate, not a timing
   -- one: a sealed franchise is not a place a roster move can land. F352.
+  --
+  -- R1020 — THE MESSAGE NAMES A DOOR THAT EXISTS, OR IT SAYS THAT NONE DOES.
+  -- The first cut said *"Un-retire the franchise first"*. Measured by
+  -- exhausting every `UPDATE … teams` in migrations 001-127 (eleven of them,
+  -- `grep -n 'UPDATE public\.teams'`): the column's CHECK is
+  -- `('active','orphaned','retired')`; **three sites write `'active'` and all
+  -- three are guarded by the same `CASE WHEN status = 'orphaned' THEN 'active'
+  -- ELSE status END`** — `seat_league_member_internal` (`062:282-285`, newest
+  -- body `077:442-445`) and `remove_manager`'s successor arm (`063:903-906`,
+  -- newest body `120:454-457`). **NOT ONE SITE READS `'retired'` AND WRITES
+  -- ANYTHING ELSE.** So an ORPHANED franchise can be re-activated by a new
+  -- owner claiming the seat, and a RETIRED one cannot be un-retired by any
+  -- verb that exists — the remedy the first message named was a route to
+  -- nowhere, which is the F351 posture ("route it, don't leave it") failing in
+  -- its worst direction. The message now says the capability is missing rather
+  -- than implying it exists, and offers the route that DOES exist. **F354**
+  -- owns the gap; building the verb is not this task's scope.
   IF v_team_a.status = 'retired'
      OR (v_is_move AND v_team_b.status = 'retired') THEN
     RAISE EXCEPTION
-      '%: a retired franchise is sealed — its roster and record are frozen (§7.2.1, spec:183). Un-retire the franchise first; this is a legality gate and it binds the commissioner too (PROGRESS standing rule (i), F352)', p_verb
+      '%: a retired franchise is sealed — its roster and record are frozen (§7.2.1, spec:183). This is a legality gate and it binds the commissioner too (PROGRESS standing rule (i), F352). The franchise would have to be un-retired first, and NO VERB DOES THAT TODAY — every site that writes teams.status = active is guarded "WHEN status = orphaned", so nothing un-retires a franchise (F354). Until one exists, move these players to another franchise instead', p_verb
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -745,6 +851,13 @@ BEGIN
        + COALESCE((v_league.roster_settings ->> 'bench')::int, 0)
        + COALESCE(jsonb_array_length(v_league.roster_settings -> 'ir_slots'), 0)
   INTO v_roster_size;
+  -- R1018: the league's BARE `ir_slots` keys, in the scoring worker's own
+  -- shape (`irKeysOf`, `score-week-worker.ts:397-407`). Passed to the lineup
+  -- sync so an IR spot can never be mistaken for a vacated starting slot.
+  SELECT COALESCE(array_agg(s ->> 'key'), ARRAY[]::text[])
+  INTO v_ir_keys
+  FROM jsonb_array_elements(COALESCE(v_league.roster_settings -> 'ir_slots', '[]'::jsonb)) s
+  WHERE COALESCE(s ->> 'key', '') <> '';
 
   -- The acquisition counts, hoisted here and assigned for EVERY call (R763 —
   -- 115:489-506 had to hoist them for exactly this reason: a branch that left
@@ -752,14 +865,24 @@ BEGIN
   -- below — to decide whether a cap WOULD have refused (so `bypassed[]` names
   -- a real refusal and not a hypothetical one) and to report the league's own
   -- numbers back unchanged.
+  --
+  -- **THEY ARE COUNTED FOR THE TEAM THAT ACQUIRES, AND THE RECEIPT SAYS WHICH
+  -- TEAM THAT IS (R1022).** An acquisition cap throttles the team a player
+  -- ARRIVES on; the first cut counted `v_team_a`, which on a MOVE is the team
+  -- the player LEAVES — so `caps.used_week_before` reported the wrong
+  -- franchise's budget in a field the league is invited to read. On a move
+  -- that is `v_team_b`; on an add/drop it is the one team named. `caps.team_id`
+  -- is on the receipt so the number can never again be read against the wrong
+  -- roster.
+  v_cap_team := CASE WHEN v_is_move THEN v_team_b.id ELSE v_team_a.id END;
   SELECT count(*)::int INTO v_used_week
   FROM public.transactions t
-  WHERE t.league_id = p_league_id AND t.initiator_team_id = v_team_a.id
+  WHERE t.league_id = p_league_id AND t.initiator_team_id = v_cap_team
     AND t.status = 'complete' AND t.week = v_current
     AND (t.payload ->> 'add_player_id') IS NOT NULL;
   SELECT count(*)::int INTO v_used_season
   FROM public.transactions t
-  WHERE t.league_id = p_league_id AND t.initiator_team_id = v_team_a.id
+  WHERE t.league_id = p_league_id AND t.initiator_team_id = v_cap_team
     AND t.status = 'complete'
     AND (t.payload ->> 'add_player_id') IS NOT NULL;
 
@@ -852,14 +975,32 @@ BEGIN
   v_affected := CASE
     WHEN v_is_move THEN jsonb_build_array(p_from_team_id, p_to_team_id)
     ELSE jsonb_build_array(p_team_id) END;                       -- D353
+  -- R1019 — THE AUDIT ROW DESCRIBES THE PLAN THAT EXECUTED, NEVER THE
+  -- PARAMETERS THAT WERE SENT. The first cut keyed both on `p_add IS NOT
+  -- NULL`, so a call whose ADD arm was a no-op (he is already on this roster)
+  -- and whose DROP arm executed was stamped `action_type = 'force_add'` with
+  -- `added_player_id` NULL — and tasks-M6A §5 calls this shape contractual
+  -- *"so the activity feed can render them without a special case"*, which
+  -- means the feed would render a pure drop as an add. Keyed on the NORMALIZED
+  -- plan (`v_gain_player` / `v_lose_player`) the stamp is what happened.
+  --
+  -- The one place the PARAMETERS are still the honest answer is a total no-op:
+  -- nothing executed, no audit row is written at all, and the returned
+  -- document's job there is to say what was ASKED and that it changed nothing
+  -- (`no_changes` + `no_changes_why` carry the rest).
   v_action_type := CASE
-    WHEN v_is_move THEN 'move_player'
-    WHEN p_add IS NOT NULL THEN 'force_add'
+    WHEN v_is_move                 THEN 'move_player'
+    WHEN v_no_changes              THEN CASE WHEN p_add IS NOT NULL THEN 'force_add' ELSE 'force_drop' END
+    WHEN v_gain_player IS NOT NULL THEN 'force_add'
     ELSE 'force_drop' END;
   v_arm := CASE
-    WHEN v_is_move THEN 'move'
-    WHEN p_add IS NOT NULL AND p_drop IS NOT NULL THEN 'add+drop'
-    WHEN p_add IS NOT NULL THEN 'add'
+    WHEN v_is_move    THEN 'move'
+    WHEN v_no_changes THEN CASE
+                             WHEN p_add IS NOT NULL AND p_drop IS NOT NULL THEN 'add+drop'
+                             WHEN p_add IS NOT NULL THEN 'add'
+                             ELSE 'drop' END
+    WHEN v_gain_player IS NOT NULL AND v_lose_player IS NOT NULL THEN 'add+drop'
+    WHEN v_gain_player IS NOT NULL THEN 'add'
     ELSE 'drop' END;
 
   IF NOT v_no_changes THEN
@@ -1041,14 +1182,16 @@ BEGIN
     v_sync := public.commish_roster_lineup_sync_internal(
       p_league_id, v_team_a.id, v_league.season, v_current, v_current,
       CASE WHEN v_lose_team = v_team_a.id THEN v_lose_player END,
-      CASE WHEN v_gain_team = v_team_a.id THEN v_gain_player END);
+      CASE WHEN v_gain_team = v_team_a.id THEN v_gain_player END,
+      v_ir_keys);
     v_lineups := v_lineups || jsonb_build_object('team_id', v_team_a.id, 'rows', v_sync -> 'rows');
     v_vacated := v_sync ->> 'vacated_current_slot';
     IF v_is_move THEN
       v_sync := public.commish_roster_lineup_sync_internal(
         p_league_id, v_team_b.id, v_league.season, v_current, v_current,
         CASE WHEN v_lose_team = v_team_b.id THEN v_lose_player END,
-        CASE WHEN v_gain_team = v_team_b.id THEN v_gain_player END);
+        CASE WHEN v_gain_team = v_team_b.id THEN v_gain_player END,
+        v_ir_keys);
       v_lineups := v_lineups || jsonb_build_object('team_id', v_team_b.id, 'rows', v_sync -> 'rows');
       v_vacated := COALESCE(v_vacated, v_sync ->> 'vacated_current_slot');
     END IF;
@@ -1151,7 +1294,11 @@ BEGIN
       --       are there to make the drain VISIT this league-week at all. Each
       --       carries its OWN stamp and `ON CONFLICT DO NOTHING`, so a healthy
       --       existing row is never re-stamped and the set costs at most
-      --       `roster_size` rows per touched team.
+      --       `roster_size` rows per touched team — plus the CROSS-LEAGUE
+      --       fan-out named in the banner (R1023): the queue is keyed
+      --       `(season, week, player_id)` with no league column, so these rows
+      --       re-drain these players for every other in-season league that
+      --       rosters them. Idempotent, and deliberately not narrowed here.
       SELECT COALESCE(array_agg(DISTINCT r.player_id), ARRAY[]::text[]) INTO v_reach
       FROM public.league_rosters r
       WHERE r.league_id = p_league_id
@@ -1363,6 +1510,9 @@ BEGIN
       -- consumes it. Said here so a league reading its own budget is not
       -- surprised by a number that did not move.
       'commissioner_move_not_counted', TRUE,
+      -- R1022: WHOSE counts these are, said in the document. A cap throttles
+      -- the ACQUIRING team, which on a move is the destination — not v_team_a.
+      'team_id',            v_cap_team,
       'used_week_before',   v_used_week,
       'used_season_before', v_used_season),
     'score_enqueued',         v_enqueued,
