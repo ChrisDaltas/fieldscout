@@ -327,6 +327,58 @@ export type Database = {
           },
         ]
       }
+      commish_roster_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_roster_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_roster_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_roster_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commissioner_actions: {
         Row: {
           acting_as_team_id: string | null
@@ -3939,6 +3991,17 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_force_add_drop: {
+        Args: {
+          p_action_id?: string
+          p_add?: string
+          p_drop?: string
+          p_league_id: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
       commish_matchup_override_internal: {
         Args: {
           p_action_id: string
@@ -3953,12 +4016,51 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_move_player: {
+        Args: {
+          p_action_id?: string
+          p_from_team_id: string
+          p_league_id: string
+          p_player_id: string
+          p_reason?: string
+          p_to_team_id: string
+        }
+        Returns: Json
+      }
       commish_override_freeze_internal: {
         Args: {
           p_matchup_final: boolean
           p_set_over: boolean
           p_was_overridden: boolean
           p_week_final: boolean
+        }
+        Returns: Json
+      }
+      commish_roster_lineup_sync_internal: {
+        Args: {
+          p_add: string
+          p_current: number
+          p_first_week: number
+          p_league_id: string
+          p_remove: string
+          p_season: number
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      commish_roster_override_internal: {
+        Args: {
+          p_action_id: string
+          p_add: string
+          p_at: string
+          p_drop: string
+          p_from_team_id: string
+          p_league_id: string
+          p_player_id: string
+          p_reason: string
+          p_team_id: string
+          p_to_team_id: string
+          p_verb: string
         }
         Returns: Json
       }
@@ -5055,6 +5157,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 
