@@ -623,8 +623,17 @@ delete from nfl_games where id = 'sr-w3-a';
 savepoint f_r733;
 select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and home_score = 0 and away_score = 0), 8,
   'PREMISE (R733): engine-written rows carry scores 0, not NULL (109''s DEFAULT) — the freeze keys on non-zero');
+-- 126 / M6A L.E1.5 (F325/D343): `matchups.is_overridden` now carries the
+-- §12.12 backstop — an UPDATE that moves the flag with no
+-- `app.commish_action_id` GUC is refused, as the OWNER too. The production
+-- route to this state is `commish_edit_score` / `commish_set_result`; this
+-- fixture only needs the STATE, so it states the precondition the backstop
+-- demands and clears it again immediately, so no later cell in this file
+-- inherits an armed GUC (set_config(..., true) lasts to transaction end).
+select set_config('app.commish_action_id', '00000000-0000-4000-8000-00000000f325', true);
 update matchups set is_overridden = true
 where id = (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and round_type = 'regular' order by home_team_id limit 1);
+select set_config('app.commish_action_id', '', true);
 update matchups set home_score = 12.5
 where id = (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 6 and round_type = 'regular' order by home_team_id limit 1);
 create temp table sr_l8w5 on commit drop as

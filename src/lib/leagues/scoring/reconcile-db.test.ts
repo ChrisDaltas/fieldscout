@@ -115,6 +115,52 @@ async function must<T>(p: PromiseLike<{ data: T; error: { message: string } | nu
   return data
 }
 
+// 126 / M6A L.E1.5 (F325, D343): `matchups.is_overridden` now carries §12.12's
+// backstop — `trg_matchups_override_guard`, BEFORE UPDATE, ENABLE ALWAYS —
+// which refuses ANY statement that MOVES the flag without
+// `app.commish_action_id`, service_role included. That is the whole point of
+// it: no code path, privileged or not, changes an overridable cell without an
+// audit row (§12.12's own caveat, and M6A exit criterion 1). Production
+// reaches this state through `commish_edit_score` / `commish_set_result`, and
+// pgTAP 074 §E/§H prove both the write and the refusal.
+//
+// This suite needs the STATE, not the audited act, and a `set_config` cannot
+// ride a PostgREST request. So it RE-CREATES the row: the trigger is BEFORE
+// UPDATE only, and migration 126's banner records that INSERT is deliberately
+// unguarded (the schedule engine, Remix and the bracket all take the column
+// default, and no client holds an INSERT policy on `matchups` at all).
+async function setOverrideFlag(
+  matchupId: string,
+  on: boolean,
+  scores: { home: number; away: number },
+): Promise<void> {
+  const rows = await must(
+    service.from('matchups').select('*').eq('id', matchupId).limit(1),
+    'read the matchup before re-creating it',
+  )
+  const row = rows?.[0]
+  if (!row) throw new Error(`setOverrideFlag: no matchup ${matchupId}`)
+  await must(service.from('matchups').delete().eq('id', matchupId).select('id'), 'drop the matchup row')
+  const recreated: Database['public']['Tables']['matchups']['Insert'] = {
+    id: row.id,
+    league_id: row.league_id,
+    season: row.season,
+    week: row.week,
+    round_type: row.round_type,
+    home_team_id: row.home_team_id,
+    away_team_id: row.away_team_id,
+    home_seed: row.home_seed,
+    away_seed: row.away_seed,
+    status: row.status,
+    result: row.result,
+    override_action_id: row.override_action_id,
+    home_score: scores.home,
+    away_score: scores.away,
+    is_overridden: on,
+  }
+  await must(service.from('matchups').insert(recreated).select('id'), 'recreate the matchup row with the flag set')
+}
+
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
   for (const row of data ?? []) await service.auth.admin.deleteUser(row.id)
@@ -322,12 +368,12 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
   })
 
   it('an OVERRIDDEN cell is excluded, never compared (§22.2/§23.2)', async () => {
-    await must(service.from('matchups').update({ is_overridden: true, home_score: 55, away_score: 44 }).eq('id', fx.m34), 'override')
+    await setOverrideFlag(fx.m34, true, { home: 55, away: 44 })
     const report = await run()
     expect(report.excluded_overridden).toBe(1)
     expect(report.cells).toBe(3)
     expect(find(report, 'drift')).toEqual([])
-    await must(service.from('matchups').update({ is_overridden: false, home_score: 5, away_score: 0 }).eq('id', fx.m34), 'un-override')
+    await setOverrideFlag(fx.m34, false, { home: 5, away: 0 })
     expect((await run()).cells).toBe(5)
   })
 
