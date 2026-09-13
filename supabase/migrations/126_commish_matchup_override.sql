@@ -15,6 +15,9 @@
 --      TEXT with its first guard NARROWED (D344), so `117:722-728`'s header
 --      promise ("called ... in-body by M6's audited commissioner verbs") is
 --      true for the first time.
+--   3b. `commish_override_freeze_internal` — the PURE freeze chooser, taking
+--      Q61's still-open decision as an ARGUMENT so BOTH rulings' copy is
+--      honest and provable today (R1007).
 --   4. `commish_matchup_override_internal` — ONE verb, TWO optional arms
 --      (D341), writing `home_score` / `away_score` / `result` /
 --      `is_overridden` / `override_action_id` in a SINGLE statement.
@@ -90,11 +93,20 @@
 --     THEN RAISE ... 42501
 -- and it costs nothing, because `log_commissioner_action_internal` already
 -- sets that GUC transaction-locally as a side effect of writing the audit row
--- (`123:447`). The GUC cannot be forged from a client: `set_config` is
--- reachable, but a GUC alone opens no door — the rebuild still refuses every
--- caller who cannot also reach a `commissioner_actions` INSERT, and the
--- backstop above refuses every `is_overridden` write that has not been
--- through the helper. **The security claim is asserted FIRST in pgTAP 074
+-- (`123:447`). **THE GUC IS NOT THE SECURITY BOUNDARY. THE REVOKE IS — AND
+-- THIS PARAGRAPH SAYS SO PLAINLY SO THAT NOBODY LATER GRANTS EXECUTE ON THE
+-- REBUILD BELIEVING THE GUC WOULD HOLD THE DOOR (R1010).** A GUC is a string:
+-- `set_config('app.commish_action_id', 'anything', true)` is reachable by any
+-- caller, and NEITHER this guard NOR the backstop above joins that string to a
+-- `commissioner_actions` row — a forged value passes both. What actually keeps
+-- a client out of the rebuild is the REVOKE (`117:892-893`, re-stated at the
+-- foot of §3 below and pinned by pgTAP 074 **A2**: neither `anon` nor
+-- `authenticated` holds EXECUTE), and what keeps a client out of `matchups`
+-- is that the table carries no UPDATE policy for any role at all
+-- (`109:193-194`). The GUC narrows a guard for callers who are ALREADY through
+-- those doors — the audited verbs, the service role and the table owner — and
+-- forging it buys an owner nothing he did not already have. It is an
+-- INTENT marker, not a credential. **The security claim is asserted FIRST in pgTAP 074
 -- (§A): a signed-in caller with NO GUC is still refused with 42501**, and the
 -- mandated break probe reverts this narrowing and watches the in-body
 -- propagation cell red.
@@ -165,9 +177,29 @@
 -- one (§4 rule 15). That is what ships: `live_scoring_frozen` +
 -- `live_scoring_frozen_why` in the result AND a clause in the `league_chat`
 -- post. **THE SWAP IS ONE LINE** — grep `Q61 SWAP LINE` below; changing
--- `v_set_overridden := TRUE;` to `v_set_overridden := v_week_final;` ships the
--- other ruling with no other edit, because every downstream field already
--- reads that variable.
+-- `v_set_over := TRUE;` to `v_set_over := v_week_final;` ships the other
+-- ruling with no other edit, because every downstream field already reads
+-- that variable. *(The variable is `v_set_over`, declared at §4's DECLARE
+-- block — this paragraph named a `v_set_overridden` that exists nowhere in
+-- the file until R1010's round corrected it, and a reader grepping the
+-- banner's own target found nothing.)*
+--
+-- **AND THE SWAP IS ONE LINE IN CORRECTNESS, NOT ONLY IN PLUMBING (R1007).**
+-- It very nearly was not. The freeze COPY used to be an inline `CASE` whose
+-- `ELSE` arm read `week_final — live scoring for this week is over`; trace the
+-- swap on a LIVE week with a LIVE matchup — the exact case the other ruling
+-- exists to serve — and `v_set_over` is FALSE, `v_frozen` is correctly FALSE,
+-- and every `WHEN` falls through to that `ELSE`, so the verb would have told a
+-- league the week was final **while it was live**, and the chat post (a bare
+-- `CASE WHEN v_frozen … ELSE '' END`) would have said NOTHING AT ALL about the
+-- drain that was about to overwrite the commissioner's number. That is the
+-- discovered consequence §4 rule 15 forbids, hiding on the branch no cell
+-- walked. The freeze copy is therefore NOT inline: it is
+-- `commish_override_freeze_internal`, a PURE chooser (§3b) that takes
+-- `p_set_over` as an ARGUMENT and carries a `not_frozen` arm, so pgTAP 074 §L
+-- proves BOTH rulings' copy honest today without editing the swap line —
+-- the `lineup_autopilot_internal` pure-chooser precedent (125/D356) applied to
+-- a decision that is still Chris's.
 --
 -- WHAT THIS MIGRATION DOES NOT DO, DELIBERATELY
 --   * `score_write_week_batch` (119), `finalize_matchups` (118),
@@ -188,7 +220,8 @@
 --     vocabulary and Q64's subject, reserved to L.E1.8's seam.
 --
 -- MIGRATION CHECKLIST (tasks-M4 §4 rule 5): additive only — one new table,
--- one new trigger on an existing table, four new functions, one function
+-- one new trigger on an existing table, FIVE new functions (the fifth is §3b's
+-- pure freeze chooser, added in R1007's fix round), one function
 -- replaced (D137, one body hunk, provenance above). No column dropped, no
 -- constraint weakened, no grant widened: every new function is REVOKEd from
 -- PUBLIC/anon and the two client doors keep EXECUTE for `authenticated` only,
@@ -253,7 +286,15 @@ BEGIN
   IF NEW.is_overridden IS DISTINCT FROM OLD.is_overridden
      AND COALESCE(current_setting('app.commish_action_id', true), '') = '' THEN
     RAISE EXCEPTION
-      'matchups.is_overridden changed on matchup % (% → %) with no audit entry — an override is written only by an audited commissioner verb, which sets app.commish_action_id in the same transaction as its commissioner_actions row (§12.12, §10.3)',
+      -- The message says what the guard ACTUALLY checked — a non-empty GUC —
+      -- and NOT "no audit entry", which it never verifies: it reads a string
+      -- and joins it to nothing, so a forged value would pass (R1010). Saying
+      -- "no audit entry" would invite a reader to treat this trigger as proof
+      -- that every TRUE flag has a receipt behind it. It is not. What makes
+      -- that true in practice is that `matchups` carries no UPDATE policy for
+      -- any role (109:193-194), so the only callers who get here at all are
+      -- the DEFINER verbs and the owner.
+      'matchups.is_overridden changed on matchup % (% → %) with no app.commish_action_id set — an override is written only by an audited commissioner verb, which sets that GUC transaction-locally in the same transaction as its commissioner_actions row (§12.12, §10.3)',
       NEW.id, OLD.is_overridden, NEW.is_overridden
       USING ERRCODE = 'P0001';
   END IF;
@@ -468,6 +509,79 @@ REVOKE EXECUTE ON FUNCTION rebuild_team_week_results(UUID, INTEGER)
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- 3b. commish_override_freeze_internal — THE FREEZE CHOOSER, PURE, so that
+--     Q61's OTHER ruling is PROVEN code and not unproven code (R1007).
+--
+--     WHY THIS IS A FUNCTION AND NOT THREE INLINE `CASE`s. `is_overridden`
+--     decides whether `score_write_week_batch` will overwrite the
+--     commissioner within the minute (119:634/:654), and §4 rule 15 says the
+--     consequence must be NAMED. Q61 is open, so `v_set_over` has two lawful
+--     values — and an inline CASE written around the shipped `TRUE` had an
+--     `ELSE` that silently assumed "not frozen AND the matchup is not final ⇒
+--     the week is final", which is true ONLY while that literal stands. Flip
+--     the swap line and the verb reports `week_final` on a LIVE week and the
+--     chat post falls silent about the overwrite. Taking the decision as an
+--     ARGUMENT makes both rulings reachable from a test (pgTAP 074 §L walks
+--     all five states), and it single-sources the three texts — `frozen`, its
+--     `why`, and the chat clause — so they cannot drift apart.
+--     This is `lineup_autopilot_internal`'s pure-chooser shape (125, D356).
+--
+--     THE FIVE STATES, and each one's truth condition:
+--       frozen + previously overridden  → already_frozen
+--       frozen                          → frozen_by_this_override
+--       flag NOT set, live week, live matchup → not_frozen: THE DRAIN WILL
+--         OVERWRITE THIS NUMBER. Unreachable under the shipped `TRUE`, and
+--         the whole reason this function exists.
+--       matchup already final           → matchup_already_final (the door
+--         skips a final row regardless of the flag, so no overwrite is
+--         coming and promising one would be the mirror-image lie)
+--       otherwise                       → week_final (provably the only
+--         remaining case: NOT frozen AND NOT overwritable AND the matchup is
+--         not final together imply the WEEK is final)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION commish_override_freeze_internal(
+  p_set_over       BOOLEAN,
+  p_week_final     BOOLEAN,
+  p_matchup_final  BOOLEAN,
+  p_was_overridden BOOLEAN
+) RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  WITH s AS (
+    SELECT (p_set_over     AND NOT p_week_final AND NOT p_matchup_final) AS frozen,
+           (NOT p_set_over AND NOT p_week_final AND NOT p_matchup_final) AS overwritable
+  )
+  SELECT jsonb_build_object(
+    'frozen', s.frozen,
+    'why', CASE
+      WHEN s.frozen AND p_was_overridden THEN
+        'already_frozen — this row was overridden before this edit; live scoring was already skipping it (119:634)'
+      WHEN s.frozen THEN
+        'frozen_by_this_override — score_write_week_batch will skip this matchup for the rest of the week (119:634/:654); un-freezing is a second audited act'
+      WHEN s.overwritable THEN
+        'not_frozen — the override flag was NOT set, so score_write_week_batch will overwrite this number on its next drain (119:654); nothing here is permanent until the week closes'
+      WHEN p_matchup_final THEN
+        'matchup_already_final — the write door skips a final row regardless of the flag (119:634)'
+      ELSE
+        'week_final — live scoring for this week is over; the write door refuses a final week outright (119:566-568)'
+    END,
+    -- The §10.3 chat post's clause, from the SAME evaluation, so the league
+    -- reads the same consequence the result document reports.
+    'chat_clause', CASE
+      WHEN s.frozen THEN
+        ' — live scoring has STOPPED for this matchup for the rest of the week'
+      WHEN s.overwritable THEN
+        ' — live scoring CONTINUES for this matchup: the override flag was not set, so the next scoring drain will overwrite this number'
+      ELSE ''
+    END)
+  FROM s;
+$$;
+REVOKE EXECUTE ON FUNCTION commish_override_freeze_internal(BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN)
+  FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 4. commish_matchup_override_internal — ONE verb, TWO optional arms (D341).
 --    PLAIN (not DEFINER), search_path='', triple-REVOKEd, taking the instant
 --    as an argument (the TimeProvider seam pgTAP drives) — 123:498-505's
@@ -526,6 +640,7 @@ DECLARE
   v_rebuild      JSONB;
   v_rebuilt      BOOLEAN := FALSE;
   v_not_why      TEXT;
+  v_freeze       JSONB;
   v_frozen       BOOLEAN;
   v_frozen_why   TEXT;
   v_message      TEXT;
@@ -684,7 +799,14 @@ BEGIN
   --     v_set_over := v_week_final;
   -- (freeze a closed week, leave a live week to the next drain). Nothing else
   -- moves: the no-op comparison, the UPDATE, `live_scoring_frozen`, the chat
-  -- post and the result document all read this variable.
+  -- post and the result document all read this variable — and the freeze COPY
+  -- reads it as an ARGUMENT to §3b's pure chooser, which carries a `not_frozen`
+  -- arm naming the overwrite. **That last part is what makes the swap one line
+  -- in CORRECTNESS and not merely in plumbing (R1007):** before the chooser,
+  -- flipping this literal made the verb report `week_final` on a LIVE week and
+  -- made the chat post say nothing about the drain about to overwrite the
+  -- commissioner. pgTAP 074 §L walks BOTH rulings' arms, so the branch this
+  -- line does not take is proven rather than merely written.
   v_set_over := TRUE;
   -- ──────────────────────────────────────────────────────────────────────────
 
@@ -725,17 +847,16 @@ BEGIN
   --      row it skipped. So once this row is overridden, live scoring has
   --      STOPPED for it for the rest of the week — a stated consequence here
   --      and in the chat post, never a discovered one.
-  v_frozen := v_set_over AND NOT v_week_final AND v_row.status <> 'final';
-  v_frozen_why := CASE
-    WHEN v_frozen AND v_row.is_overridden THEN
-      'already_frozen — this row was overridden before this edit; live scoring was already skipping it (119:634)'
-    WHEN v_frozen THEN
-      'frozen_by_this_override — score_write_week_batch will skip this matchup for the rest of the week (119:634/:654); un-freezing is a second audited act'
-    WHEN v_row.status = 'final' THEN
-      'matchup_already_final — the write door skips a final row regardless of the flag (119:634)'
-    ELSE
-      'week_final — live scoring for this week is over; the write door refuses a final week outright (119:566-568)'
-  END;
+  --      The copy comes from the PURE chooser at §3b, which takes the Q61
+  --      decision as an ARGUMENT. That is what makes the swap line one line in
+  --      CORRECTNESS and not only in plumbing: under the other ruling this
+  --      call returns the `not_frozen` arm — "the next drain will overwrite
+  --      this number" — instead of falling through to a `week_final` that
+  --      would be a lie on a live week (R1007). pgTAP 074 §L walks both.
+  v_freeze     := public.commish_override_freeze_internal(
+                    v_set_over, v_week_final, v_row.status = 'final', v_row.is_overridden);
+  v_frozen     := (v_freeze ->> 'frozen')::boolean;
+  v_frozen_why := v_freeze ->> 'why';
 
   v_affected := CASE WHEN v_row.away_team_id IS NULL
     THEN jsonb_build_array(v_row.home_team_id)
@@ -821,9 +942,12 @@ BEGIN
                         || CASE WHEN v_row.away_team_id IS NULL THEN '' ELSE '–' || v_new_away END
                  ELSE 'result set to ' || COALESCE(v_new_result, 'none') END
       || ' by ' || public.draft_actor_name() || ' (commissioner override)'
-      || CASE WHEN v_frozen
-              THEN ' — live scoring has STOPPED for this matchup for the rest of the week'
-              ELSE '' END
+      -- The clause comes from the SAME chooser evaluation as
+      -- `live_scoring_frozen_why`, so the post and the receipt can never
+      -- disagree — and under Q61's other ruling the post NAMES the overwrite
+      -- instead of falling silent about it, which was the half of R1007 that
+      -- the league, not the commissioner, would have paid for.
+      || (v_freeze ->> 'chat_clause')
       || ' — reason: ' || v_reason;
     INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
     VALUES (p_league_id, auth.uid(), v_message, 'league', TRUE);

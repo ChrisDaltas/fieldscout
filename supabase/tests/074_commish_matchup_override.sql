@@ -78,7 +78,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(104);
+select plan(117);
 
 -- ---------------------------------------------------------------------------
 -- A. THE SECURITY CLAIM, FIRST (D344). Read the banner note before touching
@@ -166,8 +166,9 @@ select ok(
                  'public.commish_set_result(uuid,uuid,uuid,text,uuid)'::regprocedure,
                  'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)'::regprocedure,
                  'public.matchups_override_guard_internal()'::regprocedure,
+                 'public.commish_override_freeze_internal(boolean,boolean,boolean,boolean)'::regprocedure,
                  'public.rebuild_team_week_results(uuid,integer)'::regprocedure)),
-  'B10 every function this migration writes or replaces pins search_path='''' (§4.1)');
+  'B10 every function this migration writes or replaces pins search_path='''' (§4.1) — all SIX, the pure freeze chooser included');
 select ok(
   has_function_privilege('authenticated', 'public.commish_edit_score(uuid,uuid,numeric,numeric,text,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.commish_set_result(uuid,uuid,uuid,text,uuid)', 'EXECUTE')
@@ -178,8 +179,10 @@ select ok(
   not has_function_privilege('anon', 'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.matchups_override_guard_internal()', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'public.matchups_override_guard_internal()', 'EXECUTE'),
-  'B12 …and the internal + the trigger function are triple-REVOKEd (no client reaches the instant-taking seam)');
+  and not has_function_privilege('authenticated', 'public.matchups_override_guard_internal()', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.commish_override_freeze_internal(boolean,boolean,boolean,boolean)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.commish_override_freeze_internal(boolean,boolean,boolean,boolean)', 'EXECUTE'),
+  'B12 …and the internal, the trigger function and the freeze chooser are all triple-REVOKEd (no client reaches the instant-taking seam, and none reaches the chooser either)');
 
 -- THE BACKSTOP'S FORM (F325 / D343).
 select ok(
@@ -575,7 +578,7 @@ select is(coalesce(current_setting('app.commish_action_id', true), ''), '',
 select throws_ok(
   $$ update matchups set is_overridden = true where id = 'd5000000-0000-4000-8000-000000000052' $$,
   'P0001', null,
-  'H1 F325 DISCHARGED: a DIRECT `UPDATE matchups SET is_overridden = TRUE` with no audit entry is REFUSED — executed AS THE OWNER, which is the role every SECURITY DEFINER writer runs as and the one RLS cannot restrain (123:339-410''s measurement, one table over)');
+  'H1 F325 DISCHARGED: a DIRECT `UPDATE matchups SET is_overridden = TRUE` with no `app.commish_action_id` SET is REFUSED — executed AS THE OWNER, which is the role every SECURITY DEFINER writer runs as and the one RLS cannot restrain (123:339-410''s measurement, one table over). The guard checks the GUC and nothing else; it does NOT verify that an audit row exists, and R1010 corrected its message to say so');
 select is((select is_overridden from matchups where id = 'd5000000-0000-4000-8000-000000000052'), false,
   'H2 …and the row is still FALSE: the trigger PREVENTED the write, it did not merely complain about it');
 
@@ -586,9 +589,19 @@ select throws_ok(
 select is((select is_overridden from matchups where id = 'd5000000-0000-4000-8000-000000000041'), true,
   'H4 …and the override stands');
 
+-- H5 aims at `d5…42`, whose status ACTUALLY MOVES (`live` → `final`). It used
+-- to aim at `d5…32`, which the fixture inserts as `'final'` already
+-- (`:290-291`): the WHEN clause was correctly false either way, so the cell
+-- proved what it claimed while exercising a zero-change UPDATE (R1011). Week 4
+-- is `live` and is never finalized by this suite, so moving one of its
+-- matchups to `final` here disturbs no later cell; §I has already run.
+select is((select status from matchups where id = 'd5000000-0000-4000-8000-000000000042'), 'live',
+  'H5a PREMISE: d5…42 is `live`, so the UPDATE below is a REAL status transition and not a no-op wearing a lives_ok''s clothes');
 select lives_ok(
-  $$ update matchups set status = 'final' where id = 'd5000000-0000-4000-8000-000000000032' $$,
-  'H5 A STATUS-ONLY UPDATE on a NON-overridden row passes untouched — the WHEN clause means the scoring door''s per-row UPDATEs never enter the trigger function at all (the hot-path cost 123 deferred this trigger for)');
+  $$ update matchups set status = 'final' where id = 'd5000000-0000-4000-8000-000000000042' $$,
+  'H5 A REAL STATUS-ONLY TRANSITION (live → final) on a NON-overridden row passes untouched — the WHEN clause means the scoring door''s per-row UPDATEs never enter the trigger function at all (the hot-path cost 123 deferred this trigger for). H12 carries the same transition on an ALREADY-OVERRIDDEN row, which is the half §12.12''s printed predicate breaks');
+select is((select status from matchups where id = 'd5000000-0000-4000-8000-000000000042'), 'final',
+  'H5b …and the transition LANDED: the trigger let a real move through, it did not merely decline to complain about a write that changed nothing');
 
 -- H6 — THE pg_cron CASE. This is the cell the printed predicate breaks, and
 -- the fixture is the cell: d5…51 must ALREADY be overridden when finalize
@@ -692,6 +705,79 @@ select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('score_write_week_batch', 'finalize_matchups')),
   2, 'K3 …and both are still ONE overload each — neither gained a commissioner-exempt sibling (the 071:835-867 shape, applied to this verb''s two neighbours)');
+
+-- ---------------------------------------------------------------------------
+-- L. THE FREEZE CHOOSER — **BOTH OF Q61'S RULINGS, PROVEN (R1007).**
+--    Q61 is open and is Chris's. The shipped swap line is `v_set_over := TRUE`,
+--    so §E and §J only ever walk the TRUE arms — which is exactly why a lie on
+--    the FALSE branch survived to review: under the documented one-line swap,
+--    on a LIVE week with a LIVE matchup, the old inline CASE fell through every
+--    WHEN to an ELSE reading `week_final — live scoring for this week is over`
+--    **while the week was live**, and the chat post said NOTHING about the
+--    drain about to overwrite the commissioner's number (§4 rule 15's
+--    discovered consequence, on the one branch no cell walked).
+--    `commish_override_freeze_internal` is PURE and takes the decision as an
+--    ARGUMENT, so the cells below reach the other ruling WITHOUT editing the
+--    swap line — the `lineup_autopilot_internal` pure-chooser shape (125/D356).
+-- ---------------------------------------------------------------------------
+reset role;
+select ok(
+  not (select prosecdef from pg_proc
+       where oid = 'public.commish_override_freeze_internal(boolean,boolean,boolean,boolean)'::regprocedure)
+  and (select provolatile = 'i' from pg_proc
+       where oid = 'public.commish_override_freeze_internal(boolean,boolean,boolean,boolean)'::regprocedure),
+  'L1 the chooser is PLAIN (not DEFINER) and IMMUTABLE — it reads no table, no GUC and no clock, which is what makes every state below reachable from a test instead of only from a fixture that cannot exist');
+
+-- The SHIPPED ruling, re-derived — and it agrees with what E11/E12 actually
+-- got out of the verb, so this section is about the same code the verb runs.
+select is(
+  public.commish_override_freeze_internal(true, false, false, false) ->> 'why',
+  (select r ->> 'live_scoring_frozen_why' from _e),
+  'L2 WIRE-UP: the chooser''s answer for (flag set, live week, live matchup, not previously overridden) is BYTE-IDENTICAL to the `live_scoring_frozen_why` the real verb returned in E12 — so §L is exercising the verb''s own copy, not a parallel table of strings');
+
+-- ── THE OTHER RULING (`v_set_over := v_week_final;`) ON A LIVE WEEK ──────────
+select is(
+  (public.commish_override_freeze_internal(false, false, false, false) ->> 'frozen')::boolean,
+  false,
+  'L3 Q61''s OTHER RULING, live week, live matchup: the flag is NOT set, so nothing is frozen — correct, and the only part the old inline CASE got right');
+select alike(
+  public.commish_override_freeze_internal(false, false, false, false) ->> 'why',
+  'not_frozen%',
+  'L4 **THE R1007 CELL**: …and the reason is `not_frozen`, NOT `week_final`. The old ELSE arm silently assumed "not frozen AND the matchup is not final ⇒ the week is final", which holds only while the swap line is the literal TRUE — flip it and the verb told the league the week was over while it was live');
+select alike(
+  public.commish_override_freeze_internal(false, false, false, false) ->> 'why',
+  '%overwrite this number on its next drain%',
+  'L5 …and it NAMES THE CONSEQUENCE (§4 rule 15): score_write_week_batch will overwrite the commissioner''s number on its next drain (119:654). A commissioner who is told "week_final" has been told the opposite of what is about to happen to his edit');
+select alike(
+  public.commish_override_freeze_internal(false, false, false, false) ->> 'chat_clause',
+  '%the next scoring drain will overwrite this number%',
+  'L6 …and THE LEAGUE IS TOLD TOO. The chat post''s clause was a bare `CASE WHEN v_frozen … ELSE '''' END`, so under the other ruling §10.3''s undisableable post would have said nothing at all about the overwrite — the half of R1007 the league, not the commissioner, would have paid for');
+
+-- ── THE ARMS THAT MUST **NOT** PROMISE AN OVERWRITE ─────────────────────────
+select is(
+  public.commish_override_freeze_internal(false, false, true, false) ->> 'why',
+  'matchup_already_final — the write door skips a final row regardless of the flag (119:634)',
+  'L7 flag NOT set but the MATCHUP is already final: still `matchup_already_final`, because the write door skips a final row whatever the flag says (119:634) — promising an overwrite here would be the mirror-image lie');
+select is(
+  public.commish_override_freeze_internal(false, false, true, false) ->> 'chat_clause',
+  '',
+  'L8 …and the chat post stays SILENT on that row, because there is no consequence to name');
+select alike(
+  public.commish_override_freeze_internal(false, true, false, false) ->> 'why',
+  'week_final%',
+  'L9 flag NOT set on a FINAL week: `week_final` — the old ELSE''s text, now reached only when it is actually TRUE');
+select alike(
+  public.commish_override_freeze_internal(true, false, false, true) ->> 'why',
+  'already_frozen%',
+  'L10 …and the already-overridden arm still wins over the generic freeze arm, in the order the migration prints it');
+
+select ok(
+  (select prosrc like '%commish_override_freeze_internal%'
+   from pg_proc where oid = 'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)'::regprocedure)
+  and (select prosrc not like '%frozen_by_this_override%'
+          and prosrc not like '%refuses a final week outright%'
+       from pg_proc where oid = 'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)'::regprocedure),
+  'L11 …and the verb DELEGATES: it calls the chooser and carries NO second copy of the freeze strings in its own body. Without this cell someone could re-inline the CASE, leave §L green against a function nothing calls, and reintroduce R1007 whole');
 
 select * from finish();
 rollback;

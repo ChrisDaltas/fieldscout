@@ -28,7 +28,7 @@ byte-identical and the carry / `league_week_advance` / `118:1825` untouched;
 **Q62 and Q63 shipped their recommendations on silence**; the
 `autopilot_disabled` kill switch minted on `system_flags`; **discharges F334 and
 F346**, mints **F347**, records **D356**), and **`L.E1.5` is LANDED**
-(migration **126** + pgTAP **074** `plan(104)` — `commish_edit_score` /
+(migration **126** + pgTAP **074** `plan(117)` after its fix round — `commish_edit_score` /
 `commish_set_result` as ONE verb with two optional arms over one internal and one
 replay namespace, **F325's `matchups` backstop discharged in the same migration as
 its first writer** with D343's corrected predicate in the trigger's `WHEN` clause,
@@ -37,7 +37,11 @@ and `rebuild_team_week_results` replaced against `117:758-891`'s file text with
 079 stay unspent and §6's dependency graph is unamended.** **Q61 shipped to its
 recommendation with the default on ONE labelled line** — grep `Q61 SWAP LINE` in
 126; it stays OPEN because Chris has not ruled, but a different answer is now a
-one-line migration rather than a design. Mints **F351**, records **D357**), so
+one-line migration rather than a design — **and after the fix round the swap is
+one line in CORRECTNESS as well as in plumbing (R1007): the freeze copy moved
+into `commish_override_freeze_internal`, a PURE chooser taking that decision as
+an ARGUMENT, and pgTAP 074 §L walks BOTH rulings' arms.** Mints **F351**,
+records **D357** (amended in place through (13) by the fix round)), so
 the next takeable task is **`L.E1.6`** (migration **127** + pgTAP **075** —
 `commish_move_player` + `commish_force_add_drop`, D346/D350/D353, the **F344**
 badge cell, the **F350** sweep, and F324's second-site amendment; **Q59 is RULED
@@ -63,6 +67,15 @@ for L.E1.5's seam and are released unspent**, and **132 / 080 stay L.E1.8's**.
 > change in the same PR. Nothing in production writes that column today (measured:
 > zero writers in 109–125), so the push is safe; but **any future hand-run SQL that
 > sets the flag will be refused**, and the route through it is an audited verb.
+>
+> **The GUC is an INTENT marker, not a credential (R1010).** The trigger checks
+> that `app.commish_action_id` is non-empty; it does not verify that an audit row
+> exists, and a forged value passes. That is §12.12's own printed check and it is
+> not a hole — `matchups` carries no UPDATE policy for any role (`109:193-194`), so
+> the only callers who reach the trigger at all are the DEFINER verbs and the table
+> owner. **Do not read the guard as proof that every `TRUE` flag has a receipt
+> behind it, and do not GRANT EXECUTE on `rebuild_team_week_results` believing the
+> GUC would hold that door — the REVOKE does (`117:892-893`).**
 
 **Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
 in PROGRESS §3 (*"a commissioner may do anything a manager can, on any team"* —
