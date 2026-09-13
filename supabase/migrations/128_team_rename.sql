@@ -58,7 +58,7 @@
 --         USING (auth.uid() = owner_id AND league_id IS NULL)
 --     whose SECOND conjunct excludes every league franchise. A team with a
 --     non-NULL `league_id` matches **no UPDATE policy at all**, so its `name`
---     is written once at INSERT (`060:292` / `063:451` / `077:339` /
+--     is written once at INSERT (`060:292` / `063:455-456` / `077:339` /
 --     `118:2412` / `120:531`) and is thereafter unchangeable by any role short
 --     of the table owner.
 --   * pgTAP 076 §C asserts that gap **before this migration closes it**, with
@@ -113,14 +113,14 @@
 -- (`120:540`; exhaustively: the other ten `UPDATE … teams` statements write
 -- `'orphaned'` or `'active'`), and the same arm re-points the seat's
 -- `league_members` row at the SUCCESSOR with `user_id = NULL`
--- (`120:564-570`). A retired franchise therefore has **no `league_members`
+-- (`120:565-570`). A retired franchise therefore has **no `league_members`
 -- row naming any user at all**, and `rename_own_team`'s auth predicate — the
 -- exact complement of `set_lineup_internal`'s own (`114:240-243`, under the
 -- F35 doctrine comment at `114:237`) — can never match one. A retired guard
 -- placed after that gate could not execute, and a pgTAP cell for it would need
 -- a fixture the product cannot produce. pgTAP 076 **F7** asserts the MECHANISM
 -- instead: the manager door answers a retired franchise with its one no-leak
--- 42501, and the cell's description names `120:564-570` as the reason. If a
+-- 42501, and the cell's description names `120:565-570` as the reason. If a
 -- future migration ever leaves a seated `league_members` row on a retired
 -- franchise, F7 is what notices.
 --
@@ -303,7 +303,7 @@ REVOKE TRUNCATE ON TABLE commish_team_actions FROM PUBLIC, anon, authenticated;
 --    NOTE ON THE EXISTING 60-CHARACTER TEAM-NAME BOUND. `createLeagueInput`'s
 --    OPTIONAL `team_name` is `.max(60)` while the LEAGUE name is `.max(100)`,
 --    and no SQL bound exists on either (measured: no CHECK and no UNIQUE on
---    `teams.name` in 001-127; `060:292` / `063:451` / `077:339` / `118:2412`
+--    `teams.name` in 001-127; `060:292` / `063:455-456` / `077:339` / `118:2412`
 --    only `btrim` it). The breakdown chose 100 for this verb explicitly, so
 --    100 is what ships; the divergence is recorded as **F356** for L.E1.11 to
 --    settle in one place rather than have two client schemas disagree.
@@ -647,7 +647,7 @@ REVOKE EXECUTE ON FUNCTION commish_rename_team(UUID, UUID, TEXT, TEXT, UUID)
 --    comment (§4 rule 15).
 --
 --    A STANDALONE TEAM IS ROUTED, NOT SILENTLY HANDLED. `league_id IS NULL`
---    teams already have a working door — `095:635-639`'s UPDATE policy — so
+--    teams already have a working door — `095:636-639`'s UPDATE policy — so
 --    this verb refuses them BY NAME and says which door to use, rather than
 --    becoming a second writer for a surface that is not broken (§4 rule 13's
 --    spirit: close the gap, do not widen anything else).
@@ -691,7 +691,7 @@ BEGIN
         USING ERRCODE = '42501';
     END IF;
     RAISE EXCEPTION
-      'rename_own_team: team % is a STANDALONE team, not a league franchise — rename it with a direct UPDATE, which its own RLS policy already allows (095:635-639, USING (auth.uid() = owner_id AND league_id IS NULL)). This verb exists because a LEAGUE franchise matches no UPDATE policy at all (F338)', p_team_id
+      'rename_own_team: team % is a STANDALONE team, not a league franchise — rename it with a direct UPDATE, which its own RLS policy already allows (095:636-639, USING (auth.uid() = owner_id AND league_id IS NULL)). This verb exists because a LEAGUE franchise matches no UPDATE policy at all (F338)', p_team_id
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -704,7 +704,7 @@ BEGIN
   --     rule 14(b) / D267). `remove_manager`'s retire arm is the only writer
   --     of `status = 'retired'` (`120:540`) and the same arm re-points the
   --     seat's league_members row at the SUCCESSOR with `user_id = NULL`
-  --     (`120:564-570`), so a retired franchise carries no league_members row
+  --     (`120:565-570`), so a retired franchise carries no league_members row
   --     naming any user and can never reach the line below. A guard here
   --     could not execute and could not be proven; pgTAP 076 F7 asserts the
   --     MECHANISM instead — a retired franchise is answered by this 42501 —

@@ -9,7 +9,7 @@
 --       POSITIVE CONTROL (§4 rules 14(c) and 15: a 0-row UPDATE asserts WHY,
 --       never merely THAT). (i) the row exists, is readable under the owner's
 --       own JWT, and is a LEAGUE team; (ii) that role's `UPDATE teams SET
---       name … RETURNING id` touches ZERO rows, because `095:635-639`'s only
+--       name … RETURNING id` touches ZERO rows, because `095:636-639`'s only
 --       UPDATE policy on the table is `USING (auth.uid() = owner_id AND
 --       league_id IS NULL)` and the second conjunct excludes this row;
 --       (iii) THE POSITIVE CONTROL — the same role, in the same transaction,
@@ -138,7 +138,7 @@ select is(
 --    team (league_id IS NULL) and exists ONLY to be §C's positive control.
 --
 --    T4 carries NO league_members row, and that is not an oversight — it is
---    what `remove_manager`'s retire arm produces: `120:564-570` re-points the
+--    what `remove_manager`'s retire arm produces: `120:565-570` re-points the
 --    seat's row at the SUCCESSOR with `user_id = NULL`. §F7 depends on it.
 -- ---------------------------------------------------------------------------
 insert into auth.users
@@ -171,7 +171,7 @@ insert into teams (id, owner_id, name, league_id, list_id, status, successor_tea
  ('cf000000-0000-4000-8000-000000000003', '9f000000-0000-4000-8000-000000000003', 'CR Bravo',     'bf000000-0000-4000-8000-000000000001', null, 'active',   null, now() - interval '10 days', now() - interval '10 days'),
  ('cf000000-0000-4000-8000-000000000005', '9f000000-0000-4000-8000-000000000001', 'CR Successor', 'bf000000-0000-4000-8000-000000000001', null, 'orphaned', null, now() - interval '10 days', now() - interval '10 days'),
  ('cf000000-0000-4000-8000-000000000004', '9f000000-0000-4000-8000-000000000001', 'CR Sealed',    'bf000000-0000-4000-8000-000000000001', null, 'retired',  'cf000000-0000-4000-8000-000000000005', now() - interval '10 days', now() - interval '10 days'),
- -- u2's STANDALONE team: league_id IS NULL, so 095:635-639's UPDATE policy
+ -- u2's STANDALONE team: league_id IS NULL, so 095:636-639's UPDATE policy
  -- DOES match it. §C3's positive control and nothing else.
  ('cf000000-0000-4000-8000-000000000006', '9f000000-0000-4000-8000-000000000002', 'Solo Squad',   null, null, 'active', null, now() - interval '10 days', now() - interval '10 days');
 
@@ -216,7 +216,7 @@ with u as (update teams set name = 'Solo Squad Renamed' where id = 'cf000000-000
 insert into _rename_probe select 'standalone', count(*)::int from u;
 
 select is((select n from _rename_probe where op = 'league_team'),
-  0, 'C2 (ii) THE GAP: that same role''s UPDATE … RETURNING id touches ZERO rows. THE REASON, NAMED: the only UPDATE policy on `teams` in the whole chain is 095:635-639, `USING (auth.uid() = owner_id AND league_id IS NULL)`, and the SECOND conjunct excludes every league franchise — so a league team''s name is written once at INSERT and is thereafter unchangeable by any role short of the table owner (F338)');
+  0, 'C2 (ii) THE GAP: that same role''s UPDATE … RETURNING id touches ZERO rows. THE REASON, NAMED: the only UPDATE policy on `teams` in the whole chain is 095:636-639, `USING (auth.uid() = owner_id AND league_id IS NULL)`, and the SECOND conjunct excludes every league franchise — so a league team''s name is written once at INSERT and is thereafter unchangeable by any role short of the table owner (F338)');
 select is((select n from _rename_probe where op = 'standalone'),
   1, 'C3 (iii) THE POSITIVE CONTROL: the SAME role, in the SAME transaction, renaming a STANDALONE team it owns (league_id IS NULL) touches exactly ONE row. So C2''s zero is attributable to the policy predicate — not to a wrong id, a missing fixture, or a `set role` that never took');
 select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000002'),
@@ -335,8 +335,8 @@ select throws_ok(
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_like(
   $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000006', 'Solo Renamed') $$,
-  '%STANDALONE team%095:635-639%',
-  'F9 a STANDALONE team the caller owns is ROUTED, not handled twice: it already has a working door (095:635-639''s UPDATE policy, proven live by C3), so this verb refuses by name and says which one — rather than becoming a second writer for a surface that is not broken');
+  '%STANDALONE team%095:636-639%',
+  'F9 a STANDALONE team the caller owns is ROUTED, not handled twice: it already has a working door (095:636-639''s UPDATE policy, proven live by C3), so this verb refuses by name and says which one — rather than becoming a second writer for a surface that is not broken');
 reset role;
 select set_config('request.jwt.claims', '', true);
 update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000003';
@@ -576,7 +576,7 @@ select is(
   (select qual from pg_policies
    where schemaname = 'public' and tablename = 'teams' and cmd = 'UPDATE'),
   '((auth.uid() = owner_id) AND (league_id IS NULL))',
-  'K2 …and it is still 095:635-639''s predicate, byte for byte: a league franchise matches no UPDATE policy at all');
+  'K2 …and it is still 095:636-639''s predicate, byte for byte: a league franchise matches no UPDATE policy at all');
 select ok(
   (select p.prosrc like '%set_lineup: not a manager of this team%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
