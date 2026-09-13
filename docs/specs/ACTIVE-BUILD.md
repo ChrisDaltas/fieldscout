@@ -16,16 +16,31 @@ A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
 `L.E1.*` in order. **`L.E1.1` is LANDED** (PR #286, migration 123 — the
 `commissioner_actions` spine + `commish_edit_lineup`), **`L.E1.2` is LANDED**
 (PR #291, docs only — spec v2.16.39's errata, Q60–Q64 filed, D335–D354 and
-F334–F344 transcribed), and **`L.E1.3` is LANDED** (PR **#294** —
+F334–F344 transcribed), **`L.E1.3` is LANDED** (PR **#294** —
 pgTAP 064 + 067 gain explicit `league_members` coverage and each gains ONE
 seating-premise cell, its own commit, no migration; re-review CLEAN with three
-nits recorded, **R997 filed as F346** for L.E1.4 to sweep — §9's C69 still
-states the zero this PR abolished), so
-the next takeable task is **`L.E1.4`** (migration 125 + pgTAP 073 — the lineup
-autopilot arm itself; D337/D338/D339/D354/D340; discharges F334). *(Advanced
-from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by L.E1.3's own
-session so the pointer is already correct the moment that PR merges.)* Migration numbers **125–132**
-and pgTAP **073–080** are reservations confirmed at task time.
+nits recorded, **R997 filed as F346**, now swept), and **`L.E1.4` is LANDED**
+(PR **#295** — migration **125** + pgTAP **073** `plan(80)` + one stack vitest
+suite: `lineup_autopilot_internal` as a PURE chooser plus a THIRD ARM (c) on
+`lineup_lock_tick`, four hunks against `119:696`'s file text with arms (a)/(b)
+byte-identical and the carry / `league_week_advance` / `118:1825` untouched;
+**Q62 and Q63 shipped their recommendations on silence**; the
+`autopilot_disabled` kill switch minted on `system_flags`; **discharges F334 and
+F346**, mints **F347**, records **D356**), so
+the next takeable task is **`L.E1.5`** (migration **126** + pgTAP **074** —
+`commish_edit_score` / `commish_set_result` as ONE verb with two arms, F325's
+`matchups` backstop with D343's corrected predicate, and `rebuild_team_week_results`'
+GUC narrowing per D344; **Q61 is open and shapes its COPY, not its structure**,
+and **seam migration 131 is L.E1.5's ONLY**). *(Advanced from `L.E1.2` in
+L.E1.2's own fix round, R982; advanced again by L.E1.3's and L.E1.4's own
+sessions so the pointer is already correct the moment each PR merges.)*
+Migration numbers **125–132** and pgTAP **073–080** are reservations confirmed at
+task time — **125 / 073 are now SPENT**.
+
+> **⚠️ MIGRATION 125 IS NOT ON PRODUCTION YET.** `npx supabase db push` is
+> **Chris's to run after PR #295 merges**; `db-drift.yml` is expected red in
+> between, which is the drift check working. No `HELD-FROM-PRODUCTION` entry was
+> added and none should be — the hold was cleared 2026-09-09 (PR #282).
 
 **Scope is spec §15.4 IN FULL plus `commish_rename_team`**, per the standing rule
 in PROGRESS §3 (*"a commissioner may do anything a manager can, on any team"* —

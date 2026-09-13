@@ -3919,6 +3919,7 @@ export type Database = {
         }
         Returns: Json
       }
+      cron_ping_route: { Args: { p_path: string }; Returns: number }
       delete_mock_draft: { Args: { p_draft_id: string }; Returns: undefined }
       draft_actor_name: { Args: never; Returns: string }
       draft_adjust_budget: {
@@ -4374,6 +4375,16 @@ export type Database = {
         Returns: Json
       }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
+      lineup_autopilot_internal: {
+        Args: {
+          p_at: string
+          p_league_id: string
+          p_season: number
+          p_team_id: string
+          p_week: number
+        }
+        Returns: Json
+      }
       lineup_carry_internal: {
         Args: {
           p_at: string
@@ -4660,6 +4671,7 @@ export type Database = {
         Returns: string
       }
       scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
+      scoring_stall_check: { Args: { p_now?: string }; Returns: Json }
       scoring_tier_keys_from_cuts: {
         Args: { p_cuts: Json; p_prefix: string }
         Returns: string[]
