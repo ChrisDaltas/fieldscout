@@ -587,6 +587,45 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     }
   })
 
+  // -------------------------------------------------------------------------
+  // F344 / D346 — THE WIDENING, PINNED IN THE TASK THAT CAUSES IT (L.E1.6).
+  //
+  // Migration 127's roster verbs route their eviction THROUGH the
+  // `team_lineups` row and set `edited_by_commish = TRUE`, reusing the
+  // drain-side force `score-week-worker.ts` already reads. The flag used to
+  // mean "a commissioner SET this lineup"; it now also means "a commissioner
+  // CHANGED this lineup row" — so a week a MANAGER set can carry the badge.
+  // The consequence is asserted here rather than discovered in the UI;
+  // L.E1.13 re-reads the copy against the wider meaning.
+  //
+  // The fixture state is exactly what pgTAP 075 §C11-§C13 + §J1 measure on
+  // the database: the evicted player's key GONE from `slot_map`, his
+  // `starters[]` entry nulled and flagged `["empty"]`, `edited_by_commish`
+  // TRUE and `set_at` UNMOVED (four columns, not five).
+  // -------------------------------------------------------------------------
+  it('F344 PREMISE: a lineup the MANAGER set renders NO ✸ commissioner-set badge', () => {
+    expect(renderTeamPage()).not.toContain('✸ commissioner-set')
+  })
+
+  it('F344: after a commissioner force-drop out of a starting slot, the MANAGER’s own week renders ✸ commissioner-set — the user-visible consequence of D346', () => {
+    const evicted: TeamLineupRow = {
+      ...lineupRow,
+      slot_map: { 'rb:0': 'rb-open', 'rb:1': 'rb-locked', 'wr:0': 'wr1' },
+      starters: lineupRow.starters.map((s) =>
+        s.slot === 'qb:0' ? { ...s, player_id: null, position: null, kickoff_at: null, flags: ['empty'] } : s,
+      ),
+      edited_by_commish: true,
+      // NOT moved: nobody SET this lineup, a roster move changed it underneath.
+      set_at: lineupRow.set_at,
+    }
+    const html = renderTeamPage({ lineup: evicted })
+    expect(html).toContain('✸ commissioner-set')
+    // …and the emptied slot renders as empty, not as a ghost naming a player
+    // who is no longer on the roster.
+    const qb = html.slice(html.indexOf('data-slot="qb:0"'), html.indexOf('data-slot="rb:0"'))
+    expect(qb).toContain('Empty')
+  })
+
   it('bye starter: the server flag chip under allow_illegal_lineups = true is caution copy', () => {
     const html = renderTeamPage()
     const wr = html.slice(html.indexOf('data-slot="wr:0"'), html.indexOf('data-bench'))

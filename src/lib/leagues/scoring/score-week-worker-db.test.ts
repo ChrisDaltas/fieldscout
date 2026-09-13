@@ -87,6 +87,8 @@ const ACTION = {
   l3: 'afe00000-0000-4000-8000-000000000003',
   l4: 'afe00000-0000-4000-8000-000000000004',
   page: Array.from({ length: PAGE_LEAGUES }, (_, i) => `afe00000-0000-4000-8000-0000000000${11 + i}`),
+  /** L.E1.6 — the commissioner's roster override (migration 127). */
+  roster: 'afe00000-0000-4000-8000-000000000030',
 } as const
 
 /** The poll instant every planted stat row and queue row carries. */
@@ -105,6 +107,8 @@ const STAMP_6 = '2099-09-13T22:40:00.000Z'
 /** R965's two instants (the commissioner-edit cell). */
 const STAMP_7 = '2099-09-13T23:00:00.000Z'
 const STAMP_8 = '2099-09-13T23:20:00.000Z'
+/** L.E1.6's instant (the commissioner ROSTER-move cell, migration 127). */
+const STAMP_9 = '2099-09-13T23:40:00.000Z'
 
 const P = {
   qb1: `${PREFIX}-qb1`,
@@ -1315,6 +1319,121 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(Number(matchupHome(await matchupScores(fx.l1, 1), fx.t1))).toBeCloseTo(t1Before - 15, 2)
     // The row is consumed, not left queued — the fix does not trade a stale
     // score for a poisoned queue.
+    expect(await queued()).toEqual([])
+  }, 60_000)
+
+  it("L.E1.6 / D346 — THE ROSTER VERB'S EVICTION REACHES THE DRAIN: `commish_force_add_drop` (migration 127) takes a STARTER off the roster through its own public door, and the team is recomputed anyway — because 127 routes the eviction THROUGH the week's `team_lineups` row and sets `edited_by_commish` there", async () => {
+    // WHY THIS CELL EXISTS BESIDE R965's. R965 plants by hand what 123 writes;
+    // this one drives migration 127's REAL verb and then drains, so the claim
+    // "the roster verbs inherit 123's scoring clause at zero worker cost"
+    // (D346) is MEASURED end to end rather than inferred from the lineup
+    // verb's cell. Break probe 1 of the PR (delete the worker's step (5b)
+    // force) reds this cell and R965's together.
+    //
+    // The previous cell left T1's row flagged, so it is CLEARED first: this
+    // cell must prove 127's OWN write, not 123's leftover.
+    await must(
+      service.from('team_lineups').update({ edited_by_commish: false }).eq('team_id', fx.t1).eq('season', SEASON).eq('week', 1),
+      'clear the flag R965 left set',
+    )
+
+    // A BASELINE through the real pipeline, and the kicker's OWN contribution
+    // read out of it — so the delta asserted below is exact and does not drift
+    // with the lines this file re-plants above.
+    const K_LINE = { fg_0_39: 2, fg_made_40_plus: 1, xp_made: 2 }
+    await plantLine(P.k1, 1, K_LINE, STAMP_9)
+    await enqueue([P.k1], 1, STAMP_9)
+    const base = league(await drain([fx.l1]), fx.l1, 1)
+    const kPts = base.teams.find((t) => t.team_id === fx.t1)!.starters.find((s) => s.player_id === P.k1)!.points!
+    expect(kPts).toBeGreaterThan(0)
+    const before = Number(matchupHome(await matchupScores(fx.l1, 1), fx.t1))
+    expect(before).toBe(base.teams.find((t) => t.team_id === fx.t1)!.points)
+
+    // THE VERB — 127's public door, as the commissioner. It lifts E32 (the
+    // kicker's game has kicked off in the synthetic calendar), evicts him from
+    // the week's slot_map, flags the row, and enqueues him with his OWN MIN
+    // player_stats.updated_at.
+    const { data, error } = await commishClient.rpc('commish_force_add_drop', {
+      p_league_id: fx.l1,
+      p_team_id: fx.t1,
+      // EVERY argument is sent explicitly, `p_add` as an explicit null rather
+      // than omitted: PostgREST resolves an RPC by the exact SET of keys in
+      // the body, so an omitted defaulted argument makes it search for a
+      // five-parameter overload and answer PGRST202 (measured on this very
+      // call). L.E1.10's service must send all six for the same reason.
+      p_add: null as unknown as string,
+      p_drop: P.k1,
+      p_reason: 'a manager who never showed',
+      p_action_id: ACTION.roster,
+    } as unknown as Database['public']['Functions']['commish_force_add_drop']['Args'])
+    expect(error).toBeNull()
+    const receipt = data as unknown as Record<string, unknown>
+    expect(receipt.no_changes).toBe(false)
+    expect(receipt.vacated_current_slot).toBe('k:0')
+    // The DROPPED man is deliberately NOT queued — his roster row is gone, so
+    // a row for him maps to no league — and he is NAMED with that reason
+    // instead of being folded into an empty array.
+    expect(receipt.score_enqueued).toEqual([])
+    expect(receipt.score_not_enqueued).toEqual([{ player_id: P.k1, why: 'unrostered' }])
+    // F353 — THE HALF D346 DID NOT ANTICIPATE, AND THIS CELL IS WHERE IT WAS
+    // FOUND. The worker maps a queued player to LEAGUES through the roster
+    // index (its own step-3 docblock: "The LEAGUE comes from the roster
+    // index"), and the drop has just DELETED the kicker's roster row — so his
+    // queue row maps to NOTHING. Measured on the first cut of migration 127,
+    // which shipped 123's two halves and nothing else: the drain below
+    // returned `leagues: []` while the IDENTICAL drain above reported this
+    // league `written`. The verb therefore also queues players the league
+    // STILL rosters, and says whether that worked.
+    expect(receipt.score_reachable).toBe(true)
+    expect(Array.isArray(receipt.score_reach_enqueued)).toBe(true)
+    expect((receipt.score_reach_enqueued as string[]).length).toBeGreaterThan(0)
+    expect(receipt.score_stale).toBe(false)
+    expect(receipt.commissioner_action_id).toEqual(expect.any(String))
+
+    // WHAT 127 WROTE, measured on the row the worker reads.
+    const rows = await must(
+      service.from('team_lineups').select('slot_map, edited_by_commish').eq('team_id', fx.t1).eq('season', SEASON).eq('week', 1),
+      'T1 week-1 lineup after the override',
+    )
+    const row = rows![0]
+    expect(row.edited_by_commish).toBe(true)
+    expect(Object.values(row.slot_map as Record<string, string>)).not.toContain(P.k1)
+    // THE STARVATION TRAP, over EVERY row 127 wrote: each carries that
+    // player's OWN `player_stats.updated_at`, never `now()`. The worker's
+    // readiness rule is `updated_at >= enqueued_at`, so a `now()` stamp would
+    // be `not_ready` for ever — deferred every drain and never scored, which
+    // is worse than doing nothing.
+    const reached = receipt.score_reach_enqueued as string[]
+    for (const pid of reached) {
+      const lines = await must(
+        service.from('player_stats').select('updated_at').eq('player_id', pid).eq('season', SEASON).eq('week', 1),
+        `player_stats ${pid}`,
+      )
+      const own = Math.min(...(lines ?? []).map((l) => new Date(l.updated_at!).getTime()))
+      expect(new Date((await queuedRaw(pid, 1))!).getTime()).toBe(own)
+      expect(own).toBeLessThan(Date.parse(STAMP_9) + 1)
+    }
+    // And the dropped man has no row at all — 127 did not queue one for him.
+    expect(await queuedRaw(P.k1, 1)).toBeNull()
+
+    const report = await drain([fx.l1])
+    const l1 = league(report, fx.l1, 1)
+    // THE PREMISE, measured: the dropped player is not in `mapped_player_ids`
+    // at all — his roster row is gone, so the worker's step-3 map cannot reach
+    // this league THROUGH HIM. That is F353, and the only reason the drain
+    // arrives at all is the reach set 127 queued alongside him.
+    expect(l1.mapped_player_ids).not.toContain(P.k1)
+    expect(l1.mapped_player_ids.length).toBeGreaterThan(0)
+    // THE FORCE fired: the team carries `edited_by_commish` and the drain says
+    // so by name. (In THIS fixture the reach beacons include current starters,
+    // so the team is also reached the ordinary way — the cell that ISOLATES
+    // the force, with nothing else queued, is the R965 one above; probe 1 of
+    // this PR reds there.)
+    expect(l1.commish_edited_team_ids).toEqual([fx.t1])
+    expect(l1.outcome).toBe('written')
+    // AND THE SCORE ACTUALLY FOLLOWED — the kicker's points are gone from the
+    // team total, by exactly his own contribution.
+    expect(Number(matchupHome(await matchupScores(fx.l1, 1), fx.t1))).toBeCloseTo(before - kPts, 2)
     expect(await queued()).toEqual([])
   }, 60_000)
 })
