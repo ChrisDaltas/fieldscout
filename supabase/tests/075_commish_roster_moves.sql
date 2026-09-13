@@ -758,7 +758,7 @@ select ok(
    where f.season = 2026 and f.week = 3 and f.player_id = 'cr-qb2'),
   'P4 …and the stamp is 20 minutes in the PAST, which is what makes P3 falsifiable rather than tautological: a now() stamp reds both');
 select is(current_setting('pgtap.cr_pri')::jsonb -> 'score_reach_enqueued', '[]'::jsonb,
-  'P5 THE ISOLATION, SHOWN: the REACH set is EMPTY at this call (T1 has nobody left, and T3''s other players have no stampable week-3 line), so the queue row P2/P3 pin can only have come from the PRIMARY insert. The reach query also excludes every member of v_rescore by name, so the two sites can never write the same row — a probe on either one is attributable');
+  'P5 THE ISOLATION, SHOWN: the reach INSERT queued NOTHING at this call — its two members carry no stampable week-3 line, so it EXECUTED and wrote no row (it was not skipped) — and the queue row P2/P3 pin can therefore only have come from the PRIMARY insert. The reach query also excludes every member of v_rescore by name, so the two sites can never write the same row — a probe on either one is attributable');
 select ok(
   current_setting('pgtap.cr_pri')::jsonb -> 'score_not_enqueued' = '[]'::jsonb
   and (current_setting('pgtap.cr_pri')::jsonb ->> 'score_stale') = 'false'
@@ -1035,8 +1035,8 @@ select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000
 select throws_like(
   $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000006',
        null, 'cr-l2a', 'clearing him out', 'af000000-0000-4000-8000-00000000000e'::uuid) $$,
-  '%a retired franchise is sealed%F352%',
-  'N2 A RETIRED FRANCHISE IS SEALED: its roster and record are frozen (spec:183, §7.2.1), so a roster move has nowhere to land. Recorded as F352 so the next reader finds a decision and not an oversight');
+  '%a retired franchise is sealed%NO VERB DOES THAT TODAY%F354%',
+  'N2 A RETIRED FRANCHISE IS SEALED: its roster and record are frozen (spec:183, §7.2.1), so a roster move has nowhere to land. Recorded as F352 so the next reader finds a decision and not an oversight. THE PATTERN PINS THE CORRECTED WORDING (R1026): the first cut said "Un-retire the franchise first", which routed the commissioner to a door that does not exist, and a pattern of ''%sealed%F352%'' stayed green on it');
 reset role;
 select set_config('request.jwt.claims', '', true);
 

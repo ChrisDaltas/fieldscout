@@ -801,9 +801,9 @@ BEGIN
   -- The first cut said *"Un-retire the franchise first"*. Measured by
   -- exhausting every `UPDATE … teams` in migrations 001-127 (eleven of them,
   -- `grep -n 'UPDATE public\.teams'`): the column's CHECK is
-  -- `('active','orphaned','retired')`; **three sites write `'active'` and all
-  -- three are guarded by the same `CASE WHEN status = 'orphaned' THEN 'active'
-  -- ELSE status END`** — `seat_league_member_internal` (`062:282-285`, newest
+  -- `('active','orphaned','retired')`; **four statements across two functions
+  -- write `'active'` and all four are guarded by the same
+  -- `CASE WHEN status = 'orphaned' THEN 'active' ELSE status END`** — `seat_league_member_internal` (`062:282-285`, newest
   -- body `077:442-445`) and `remove_manager`'s successor arm (`063:903-906`,
   -- newest body `120:454-457`). **NOT ONE SITE READS `'retired'` AND WRITES
   -- ANYTHING ELSE.** So an ORPHANED franchise can be re-activated by a new
