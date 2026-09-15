@@ -61,12 +61,20 @@ refusal is the spec's own (`spec:183`, a sealed franchise's name is frozen) and
 its message names **F354** rather than a remedy nobody built. **Discharges
 F338**, mints **F355 / F356**, records **D359**. The manager arm is a documented
 **clean drop seam** — migration 128's banner and pgTAP 076's header say exactly
-what to delete), so
-the next takeable task is **`L.E1.8`** (migration **129** + pgTAP **077** —
-`commish_change_setting`, per-key read-modify-write against **`118:2438`**'s
-file text, D347, with **Q64** still unruled and the `rescore` arm's refusal
-owed by name). *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982;
-advanced again by L.E1.3's, L.E1.4's and L.E1.5's own sessions.*
+what to delete), and **`L.E1.8` is LANDED** (migration **129** + pgTAP **077**
+`plan(121)` — `commish_change_setting`, a PER-KEY read-modify-write, **zero
+D137 hunks** (118 byte-untouched and pinned); the per-key policy table ships as
+data (`commish_setting_policy`); the FAAB re-seed narrowed to pre-draft and the
+snapshot re-freeze kept, both re-decided in the banner; `rescore` built to
+**Q64's recommendation** — a final week refused BY NAME behind one marked
+`-- Q64 SEAM` block, `reopen_week` NOT built, seam numbers **132 / 080 released
+unspent**. **Discharges F345**, mints **F359**, records **D360**), so
+the next takeable task is **`L.E1.9`** (migration **130** + pgTAP **078** —
+`commish_edit_schedule`, the lock-exempt sibling, plus `schedule_edit_matchup`'s
+ONE receipt hunk against **`111:785`**'s file text, D348 — and NOT `111:738-740`,
+which is `schedule_remix_confirm`'s park, F341). *(Advanced from `L.E1.2` in
+L.E1.2's own fix round, R982; advanced again by L.E1.3's, L.E1.4's, L.E1.5's,
+L.E1.7's and L.E1.8's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
@@ -79,15 +87,17 @@ advanced again by L.E1.3's, L.E1.4's and L.E1.5's own sessions.*
 > describing one.** If a future PR lands an `L.E1.*` task without moving this
 > line, that is a review finding in its own right.*
 Migration numbers **125–132** and pgTAP **073–080** are reservations confirmed at
-task time — **125 / 073, 126 / 074, 127 / 075 and 128 / 076 are now SPENT**;
+task time — **125 / 073, 126 / 074, 127 / 075, 128 / 076 and 129 / 077 are now SPENT**;
 **131 / 079 were RESERVED for L.E1.5's seam and are released unspent**, and
-**132 / 080 stay L.E1.8's**. Next free: **129 / 077**.
+**132 / 080 were RESERVED for L.E1.8's seam (`reopen_week`) and are released
+unspent too — F359's task takes the next free number at its own time (D161)**.
+Next free: **130 / 078**.
 
-> **⚠️ MIGRATIONS 125, 126, 127 AND 128 ARE NOT ON PRODUCTION YET.**
+> **⚠️ MIGRATIONS 125, 126, 127, 128 AND 129 ARE NOT ON PRODUCTION YET.**
 > `npx supabase db push` is **Chris's to run**; `db-drift.yml` is expected red
 > until he does, which is the drift check working. No `HELD-FROM-PRODUCTION`
 > entry was added for any of them and none should be — the hold was cleared
-> 2026-09-09 (PR #282) and the file is retired. Because none of the four is
+> 2026-09-09 (PR #282) and the file is retired. Because none of the five is
 > deployed, each was authored against the REPO's chain and a fix round may still
 > edit one in place; the moment Chris pushes, that stops being true.
 >
