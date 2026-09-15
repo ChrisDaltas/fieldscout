@@ -41,22 +41,55 @@ one-line migration rather than a design — **and after the fix round the swap i
 one line in CORRECTNESS as well as in plumbing (R1007): the freeze copy moved
 into `commish_override_freeze_internal`, a PURE chooser taking that decision as
 an ARGUMENT, and pgTAP 074 §L walks BOTH rulings' arms.** Mints **F351**,
-records **D357** (amended in place through (13) by the fix round)), so
-the next takeable task is **`L.E1.6`** (migration **127** + pgTAP **075** —
-`commish_move_player` + `commish_force_add_drop`, D346/D350/D353, the **F344**
-badge cell, the **F350** sweep, and F324's second-site amendment; **Q59 is RULED
-and binds it — timing is lifted, POSITIONAL legality is not**). *(Advanced from
-`L.E1.2` in L.E1.2's own fix round, R982; advanced again by L.E1.3's, L.E1.4's
-and L.E1.5's own sessions so the pointer is already correct the moment each PR
-merges.)*
+records **D357** (amended in place through (13) by the fix round)),
+**`L.E1.6` is LANDED** (PR **#297** — migration **127** + pgTAP **075**
+`plan(158)` after its fix round, plus two stack vitest cells:
+`commish_move_player` / `commish_force_add_drop` as ONE `p_verb`-discriminated
+internal under two DEFINER doors, a shared lineup-sync helper, and
+`commish_roster_actions` (D350). **115 is byte-untouched and PINNED** (075 §K).
+TIMING lifted and NAMED in `bypassed[]`; LEGALITY kept and refused BY NAME —
+**F324's second site recorded, not decided**. **F353** is the round's own find
+(a force-DROP's enqueue reached NO league, because the worker maps a queued
+player through `league_rosters`). **Half-discharges F344**, **re-routes F350**
+(127 never calls the matcher — 075 **I3** proves zero `prosrc` hits), mints
+**F352 / F353 / F354**, records **D358**), and **`L.E1.7` is LANDED**
+(migration **128** + pgTAP **076** `plan(89)` — `commish_rename_team` **and**
+`rename_own_team`, the manager's own, because F338's gap was TOTAL. **128
+REPLACES NOTHING — zero D137 hunks**, every function is new. §C asserts the gap
+BEFORE the verb closes it, with its premise and a positive control; the one
+refusal is the spec's own (`spec:183`, a sealed franchise's name is frozen) and
+its message names **F354** rather than a remedy nobody built. **Discharges
+F338**, mints **F355 / F356**, records **D359**. The manager arm is a documented
+**clean drop seam** — migration 128's banner and pgTAP 076's header say exactly
+what to delete), so
+the next takeable task is **`L.E1.8`** (migration **129** + pgTAP **077** —
+`commish_change_setting`, per-key read-modify-write against **`118:2438`**'s
+file text, D347, with **Q64** still unruled and the `rescore` arm's refusal
+owed by name). *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982;
+advanced again by L.E1.3's, L.E1.4's and L.E1.5's own sessions.*
+> **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
+> HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
+> pointer inside its own PR, so a fresh `/build-next` reading this file first —
+> which the loop mandates — always found an unbuilt task. **PR #297 landed
+> L.E1.6 without touching this line**, so for a day the pointer named a task
+> that was already merged, and the next session would have rebuilt it (burning
+> migration 128 on a duplicate of 127, or halting). **L.E1.7's PR repairs it and
+> records why: the pointer is not a summary of what happened, it is the input to
+> the next build, so advancing it is part of finishing a task — not part of
+> describing one.** If a future PR lands an `L.E1.*` task without moving this
+> line, that is a review finding in its own right.*
 Migration numbers **125–132** and pgTAP **073–080** are reservations confirmed at
-task time — **125 / 073 and 126 / 074 are now SPENT**; **131 / 079 were RESERVED
-for L.E1.5's seam and are released unspent**, and **132 / 080 stay L.E1.8's**.
+task time — **125 / 073, 126 / 074, 127 / 075 and 128 / 076 are now SPENT**;
+**131 / 079 were RESERVED for L.E1.5's seam and are released unspent**, and
+**132 / 080 stay L.E1.8's**. Next free: **129 / 077**.
 
-> **⚠️ MIGRATIONS 125 AND 126 ARE NOT ON PRODUCTION YET.** `npx supabase db push`
-> is **Chris's to run**; `db-drift.yml` is expected red until he does, which is the
-> drift check working. No `HELD-FROM-PRODUCTION` entry was added for either and
-> none should be — the hold was cleared 2026-09-09 (PR #282).
+> **⚠️ MIGRATIONS 125, 126, 127 AND 128 ARE NOT ON PRODUCTION YET.**
+> `npx supabase db push` is **Chris's to run**; `db-drift.yml` is expected red
+> until he does, which is the drift check working. No `HELD-FROM-PRODUCTION`
+> entry was added for any of them and none should be — the hold was cleared
+> 2026-09-09 (PR #282) and the file is retired. Because none of the four is
+> deployed, each was authored against the REPO's chain and a fix round may still
+> edit one in place; the moment Chris pushes, that stops being true.
 >
 > **126 CHANGES WHAT THE DATABASE ALLOWS, so read this before the push.** It adds
 > `trg_matchups_override_guard` (`BEFORE UPDATE`, `ENABLE ALWAYS`) on `matchups`:

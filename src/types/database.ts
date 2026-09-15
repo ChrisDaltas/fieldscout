@@ -379,6 +379,58 @@ export type Database = {
           },
         ]
       }
+      commish_team_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_team_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_team_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_team_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commissioner_actions: {
         Row: {
           acting_as_team_id: string | null
@@ -4036,6 +4088,27 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_rename_team: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_name?: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      commish_rename_team_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_name: string
+          p_reason: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
       commish_roster_lineup_sync_internal: {
         Args: {
           p_add: string
@@ -4730,6 +4803,14 @@ export type Database = {
         }
         Returns: Json
       }
+      rename_own_team: {
+        Args: { p_name?: string; p_team_id: string }
+        Returns: Json
+      }
+      rename_own_team_internal: {
+        Args: { p_at: string; p_name: string; p_team_id: string }
+        Returns: Json
+      }
       reorder_list_players: {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
@@ -4947,6 +5028,10 @@ export type Database = {
       }
       team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
       team_league_id: { Args: { p_team_id: string }; Returns: string }
+      team_rename_normalize_internal: {
+        Args: { p_name: string; p_verb: string }
+        Returns: string
+      }
       team_week_result_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["team_week_results"]["Row"] }
         Returns: Json
