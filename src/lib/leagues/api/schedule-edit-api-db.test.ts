@@ -21,10 +21,13 @@
  *     answered 200 with the first edit's result (F65(b)); both hold with the
  *     ids sent UPPERCASE (R768).
  *   - **E41's two states through the route** (F233(e)'s "the E41 pair"):
- *     with the league's Week 1 kickoff AHEAD (a 2099 game row) an edit needs
- *     no reason; with it BEHIND (a 2001 game row) the same edit is refused
- *     by name without a reason (22023 → 400, verbatim) and succeeds with
- *     one, the system post carrying the override and the reason. The
+ *     with the league's Week 1 kickoff AHEAD (a 2099 game row) the post
+ *     carries no override tail; with it BEHIND (a 2001 game row) the same
+ *     edit is refused by name without a reason (22023 → 400, verbatim) and
+ *     succeeds with one, the system post carrying the override and the
+ *     reason. Since migration 130 (M6A L.E1.9) a reason is required in BOTH
+ *     states — the receipt's `reason` is NOT NULL — so the free-window
+ *     no-reason edit is a refusal cell too, by 130's own message. The
  *     instants are the F215/F226 literals (2001-09-09 / 2099-09-13 — neither
  *     can rot around transaction `now()`); the ±1s boundary itself is 059's.
  *   - The family mapping: P0001 → 409 and P0002 → 404 with the RPC's copy
@@ -118,6 +121,7 @@ interface EditResult {
   reason_required: boolean
   window: { free: boolean; reason_required: boolean; datum_arm: string }
   system_post: string
+  commissioner_action_id: string // migration 130: the receipt's id, folded into the document
 }
 interface WeekRow {
   id: string
@@ -308,6 +312,11 @@ describe('POST …/schedule/matchup — one pairing, re-seated in body (§11.7)'
       matchup_id: edited.id,
       home_team_id: edited.home_team_id,
       away_team_id: sibling.away_team_id,
+      // Migration 130 (M6A L.E1.9): every edit writes a `commissioner_actions`
+      // receipt whose `reason` is NOT NULL, so a reason is required BEFORE
+      // Week 1 kickoff too — the reason-less free-window edit is now the
+      // refusal case below (`describe('E41 …')`).
+      reason: 'seed correction',
       action_id: ACTION.free,
     })
     expect(response.status, errorText(response)).toBe(200)
@@ -322,8 +331,11 @@ describe('POST …/schedule/matchup — one pairing, re-seated in body (§11.7)'
     expect(result.siblings[0].matchup_id).toBe(sibling.id)
     expect(result.siblings[0].after).toEqual({ home_team_id: sibling.home_team_id, away_team_id: edited.away_team_id })
     expect(result.rows_changed).toBe(2)
-    expect(result.reason_required).toBe(false)
-    expect(result.window.free).toBe(true)
+    // Since 130: top-level `reason_required` says a reason WAS required (it
+    // always is now); `window.reason_required` keeps E41's meaning.
+    expect(result.reason_required).toBe(true)
+    expect(result.window).toMatchObject({ free: true, reason_required: false })
+    expect(typeof result.commissioner_action_id).toBe('string')
 
     const after = await weekRows(2)
     expect(after.find((r) => r.id === edited.id)).toMatchObject({ home_team_id: edited.home_team_id, away_team_id: sibling.away_team_id })
@@ -516,7 +528,7 @@ describe('E41 — free until the league’s Week 1 kickoff, a reason REQUIRED af
     expect(seatsEveryTeamOnce(await weekRows(3))).toBe(true)
   })
 
-  it('with Week 1 kickoff AHEAD (2099): the same shape of edit needs no reason — the window is the server’s reading of the datum', async () => {
+  it('with Week 1 kickoff AHEAD (2099): the window is free (no override tail) — but since migration 130 the RECEIPT still needs a reason', async () => {
     const { error } = await service.from('nfl_games').update({ kickoff_at: KICKOFF_FUTURE }).eq('id', WEEK1_GAME_ID)
     expect(error).toBeNull()
     const [a, b] = await weekRows(4)
@@ -526,10 +538,25 @@ describe('E41 — free until the league’s Week 1 kickoff, a reason REQUIRED af
       away_team_id: b.away_team_id!,
       action_id: ACTION.futureFree,
     })
-    expect(r.status, errorText(r)).toBe(200)
-    const result = r.body as unknown as EditResult
+    // Migration 130: the receipt needs a reason in the free window too —
+    // refused by name (22023 → 400, verbatim), and NOT by E41's own gate.
+    expect(r.status).toBe(400)
+    expect(errorText(r)).toContain('every matchup edit requires a reason')
+    expect(errorText(r)).toContain('before Week 1 kickoff too')
+    expect(await ledgerCount(ACTION.futureFree)).toBe(0)
+
+    const withReason = await editMatchup(commishClient, leagueId, {
+      matchup_id: a.id,
+      home_team_id: a.home_team_id,
+      away_team_id: b.away_team_id!,
+      reason: 'week-4 balance',
+      action_id: ACTION.futureFree,
+    })
+    expect(withReason.status, errorText(withReason)).toBe(200)
+    const result = withReason.body as unknown as EditResult
     expect(result.window).toMatchObject({ free: true, reason_required: false, datum_arm: 'nfl_games' })
     expect(result.system_post).not.toContain('commissioner override')
+    expect(result.system_post).toMatch(/\.$/)
   })
 })
 
@@ -545,6 +572,7 @@ describe('the guard compares against what POSTGRES wrote (R768)', () => {
       matchup_id: a.id.toUpperCase(),
       home_team_id: a.home_team_id.toUpperCase(),
       away_team_id: b.away_team_id!.toUpperCase(),
+      reason: 'uppercase ids',
       action_id: ACTION.upper.toUpperCase(),
     })
     expect(r.status, errorText(r)).toBe(200)
@@ -556,6 +584,7 @@ describe('the guard compares against what POSTGRES wrote (R768)', () => {
       matchup_id: a.id,
       home_team_id: a.home_team_id,
       away_team_id: b.away_team_id!,
+      reason: 'uppercase ids',
       action_id: ACTION.upper,
     })
     expect(replay.status).toBe(200)

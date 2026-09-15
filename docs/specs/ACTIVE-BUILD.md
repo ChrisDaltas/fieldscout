@@ -68,13 +68,23 @@ data (`commish_setting_policy`); the FAAB re-seed narrowed to pre-draft and the
 snapshot re-freeze kept, both re-decided in the banner; `rescore` built to
 **Q64's recommendation** — a final week refused BY NAME behind one marked
 `-- Q64 SEAM` block, `reopen_week` NOT built, seam numbers **132 / 080 released
-unspent**. **Discharges F345**, mints **F359**, records **D360**), so
-the next takeable task is **`L.E1.9`** (migration **130** + pgTAP **078** —
-`commish_edit_schedule`, the lock-exempt sibling, plus `schedule_edit_matchup`'s
-ONE receipt hunk against **`111:785`**'s file text, D348 — and NOT `111:738-740`,
-which is `schedule_remix_confirm`'s park, F341). *(Advanced from `L.E1.2` in
-L.E1.2's own fix round, R982; advanced again by L.E1.3's, L.E1.4's, L.E1.5's,
-L.E1.7's and L.E1.8's own sessions.*
+unspent**. **Discharges F345**, mints **F359**, records **D360**), and
+**`L.E1.9` is LANDED** (migration **130** + pgTAP **078** `plan(118)` —
+`commish_edit_schedule`, the lock-exempt sibling (lifts `111:887` / `:904` /
+`:913` / `:993`, each named in `bypassed[]` and proven by an ADJACENT paired
+contrast; KEEPS `111:894` (§22.2) and `111:881` (a bracket row — **F360**)),
+plus `schedule_edit_matchup`'s **ONE receipt hunk** against `111:785-1153`'s
+file text (D137 — `diff -u` shows one `@@`, zero original lines touched;
+`schedule_remix_confirm`'s pre-130 prosrc md5 is a stored-literal pin, F341's
+wall). The hunk makes 111's reason UNCONDITIONAL (the receipt's `reason` is
+NOT NULL) — 059 / the stack vitest amended, the M4 panel hint is **F361**.
+**Discharges F339**, F225 in part (the `schedule_edit_matchup` half), mints
+**F360 / F361**, records **D361**), so
+the next takeable task is **`L.E1.10`** (API + hooks, part 1: `/commish/score`,
+`/commish/result`, `/commish/move-player`, `/commish/roster` — D351's
+route/service/hook doctrine; depends L.E1.5 + L.E1.6, both landed).
+*(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's and L.E1.9's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
@@ -87,18 +97,19 @@ L.E1.7's and L.E1.8's own sessions.*
 > describing one.** If a future PR lands an `L.E1.*` task without moving this
 > line, that is a review finding in its own right.*
 Migration numbers **125–132** and pgTAP **073–080** are reservations confirmed at
-task time — **125 / 073, 126 / 074, 127 / 075, 128 / 076 and 129 / 077 are now SPENT**;
+task time — **125 / 073, 126 / 074, 127 / 075, 128 / 076, 129 / 077 and 130 / 078 are now SPENT**;
 **131 / 079 were RESERVED for L.E1.5's seam and are released unspent**, and
 **132 / 080 were RESERVED for L.E1.8's seam (`reopen_week`) and are released
 unspent too — F359's task takes the next free number at its own time (D161)**.
-Next free: **130 / 078**.
+Next free: **131 / 079** (the M6A band is exhausted; the next schema task
+measures with `ls … | tail -1`, D161).
 
-> **⚠️ MIGRATIONS 125, 126, 127, 128 AND 129 ARE NOT ON PRODUCTION YET.**
+> **⚠️ MIGRATIONS 125, 126, 127, 128, 129 AND 130 ARE NOT ON PRODUCTION YET.**
 > `npx supabase db push` is **Chris's to run**; `db-drift.yml` is expected red
 > until he does, which is the drift check working. No `HELD-FROM-PRODUCTION`
 > entry was added for any of them and none should be — the hold was cleared
 > 2026-09-09 (PR #282); the file stays in the tree as the hold's record and
-> no entry is added (R1042). Because none of the five is
+> no entry is added (R1042). Because none of the six is
 > deployed, each was authored against the REPO's chain and a fix round may still
 > edit one in place; the moment Chris pushes, that stops being true.
 >

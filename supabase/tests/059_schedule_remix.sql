@@ -761,15 +761,23 @@ set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
--- H1. Side flip (free window, no reason): one row.
+-- H1. Side flip (free window): one row.
+-- [migration 130 / M6A L.E1.9 (D348, F225, F339): `schedule_edit_matchup` now
+-- writes its `commissioner_actions` receipt on EVERY edit, and that row's
+-- `reason` is NOT NULL (123:295-296) — so a reason is required BEFORE Week 1
+-- kickoff too, refused by name without one (pgTAP 078 §D pins the refusal and
+-- the receipt). H1-H4 therefore pass a reason where they passed NULL, and
+-- H1's top-level `reason_required` is TRUE (a reason WAS required); the
+-- post's free-window text — no override tail — is unchanged, and
+-- `window.reason_required` keeps E41's meaning (078 D4).]
 select results_eq(
   $$ select (r ->> 'rows_changed')::int, r -> 'siblings', (r ->> 'reason_required')::boolean,
             r ->> 'system_post' like 'Week 5 matchup edited by sr_user1: % vs % (was % vs %).'
-     from sr_w5 w, lateral public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', w.id, w.a, w.h, null,
+     from sr_w5 w, lateral public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', w.id, w.a, w.h, 'side flip',
                                                          'a0000000-0000-4000-8000-000000000011') r
      where w.k = 1 $$,
-  $$ values (1, '[]'::jsonb, false, true) $$,
-  'EDIT side flip in the free window, no reason: 1 row, no siblings, the post names before/after');
+  $$ values (1, '[]'::jsonb, true, true) $$,
+  'EDIT side flip in the free window: 1 row, no siblings, the post names before/after with NO override tail (reason_required is TRUE since migration 130 — the receipt needs one)');
 select is(
   (select (m.home_team_id, m.away_team_id) = (w.a, w.h) from sr_w5 w join public.matchups m on m.id = w.id where w.k = 1),
   true, '…the row is flipped');
@@ -786,7 +794,7 @@ select results_eq(
             (r -> 'siblings' -> 0 -> 'after' ->> 'home_team_id')::uuid = (select h from sr_w5 where k = 2),
             (r -> 'siblings' -> 0 -> 'after' ->> 'away_team_id')::uuid = (select h from sr_w5 where k = 1)
      from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', (select id from sr_w5 where k = 1),
-            (select a from sr_w5 where k = 1), (select a from sr_w5 where k = 2), null,
+            (select a from sr_w5 where k = 1), (select a from sr_w5 where k = 2), 're-pair',
             'a0000000-0000-4000-8000-000000000013') r $$,
   $$ values (2, 1, true, '["away"]'::jsonb, true, true) $$,
   'EDIT one new team: 2 rows — the displaced team takes the vacated AWAY slot of the sibling');
@@ -798,7 +806,7 @@ select results_eq(
             (r -> 'siblings' -> 0 -> 'after' ->> 'home_team_id')::uuid = (select h from sr_w5 where k = 3),
             (r -> 'siblings' -> 0 -> 'after' ->> 'away_team_id')::uuid = (select a from sr_w5 where k = 3)
      from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', (select id from sr_w5 where k = 3),
-            (select h from sr_w5 where k = 4), (select a from sr_w5 where k = 4), null,
+            (select h from sr_w5 where k = 4), (select a from sr_w5 where k = 4), 're-pair',
             'a0000000-0000-4000-8000-000000000014') r $$,
   $$ values (2, 1, '["home", "away"]'::jsonb, true, true) $$,
   'EDIT pairing swap (both new teams from ONE sibling): 2 rows, both slots of the sibling re-seated');
@@ -809,7 +817,7 @@ select is(pg_temp.sr_once(5), 8, '…week 5 still seats every team exactly once'
 select results_eq(
   $$ select (r ->> 'rows_changed')::int, jsonb_array_length(r -> 'siblings')
      from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', (select id from sr_w6 where k = 1),
-            (select a from sr_w6 where k = 2), (select h from sr_w6 where k = 3), null,
+            (select a from sr_w6 where k = 2), (select h from sr_w6 where k = 3), 're-pair',
             'a0000000-0000-4000-8000-000000000015') r $$,
   $$ values (3, 2) $$,
   'EDIT two new teams from two siblings: 3 rows');
@@ -927,7 +935,7 @@ select lives_ok(
        (select id from matchups where league_id = 'b2000000-0000-4000-8000-000000000009' and week = 8 and round_type = 'regular' order by home_team_id limit 1),
        (select away_team_id from matchups where league_id = 'b2000000-0000-4000-8000-000000000009' and week = 8 and round_type = 'regular' order by home_team_id limit 1),
        (select home_team_id from matchups where league_id = 'b2000000-0000-4000-8000-000000000009' and week = 8 and round_type = 'regular' order by home_team_id limit 1),
-       null, 'a0000000-0000-4000-8000-000000000036') $$,
+       'side flip', 'a0000000-0000-4000-8000-000000000036') $$,   -- reason: required since migration 130 (see H1's note)
   '…while a SIDE FLIP in that same week lives (no sibling ⇒ no parking needed) — the one-unit sibling');
 reset role;
 delete from matchups where league_id = 'b2000000-0000-4000-8000-000000000009' and round_type in ('playoff', 'third_place');
