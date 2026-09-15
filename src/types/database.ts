@@ -379,6 +379,51 @@ export type Database = {
           },
         ]
       }
+      commish_setting_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          setting_key: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          setting_key: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          setting_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_setting_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_setting_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commish_team_actions: {
         Row: {
           action_id: string
@@ -4009,6 +4054,29 @@ export type Database = {
         }[]
       }
       claim_league_invite: { Args: { p_token: string }; Returns: Json }
+      commish_change_setting: {
+        Args: {
+          p_action_id?: string
+          p_key: string
+          p_league_id: string
+          p_reason?: string
+          p_rescore?: boolean
+          p_value?: Json
+        }
+        Returns: Json
+      }
+      commish_change_setting_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_key: string
+          p_league_id: string
+          p_reason: string
+          p_rescore: boolean
+          p_value: Json
+        }
+        Returns: Json
+      }
       commish_edit_lineup: {
         Args: {
           p_action_id?: string
@@ -4148,6 +4216,27 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_setting_bool_internal: {
+        Args: { p_key: string; p_value: Json }
+        Returns: Json
+      }
+      commish_setting_canon_internal: {
+        Args: {
+          p_key: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_value: Json
+        }
+        Returns: Json
+      }
+      commish_setting_enum_internal: {
+        Args: { p_allowed: string[]; p_key: string; p_value: Json }
+        Returns: Json
+      }
+      commish_setting_int_internal: {
+        Args: { p_hi: number; p_key: string; p_lo: number; p_value: Json }
+        Returns: Json
+      }
+      commish_setting_policy: { Args: { p_key: string }; Returns: Json }
       create_league: {
         Args: {
           p_action_id: string
