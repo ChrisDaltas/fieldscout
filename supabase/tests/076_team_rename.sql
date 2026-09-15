@@ -18,13 +18,16 @@
 --       wrong id, or a `set role` that never took would all produce it.
 --   §E  the verb renaming, and its receipt.
 --   §F  the MANAGER's own rename — THE DROP SEAM's cells, INCLUDING the
---       manager arm's own retired guard (F10-F12, R1029). If the manager arm
---       is dropped, delete §F (F1-F12) whole, drop `rename_own_team` /
+--       manager arm's own retired guard (F10-F12, R1029) and the lock-order
+--       pins that keep that guard and the auth predicate AFTER the `FOR
+--       UPDATE` re-read (F13-F14, R1036/R1037). If the manager arm is
+--       dropped, delete §F (F1-F14) whole, drop `rename_own_team` /
 --       `rename_own_team_internal` from A6's expected count (5 → 3) and from
 --       the name lists in A7, A8, A11, A12, delete A10 and A14, delete J6
---       (the anon probe of the manager door — R1030), and take `plan(92)`
---       down to 77. Executed on a scratch copy in the R1030 fix round:
---       77/77, nothing dangling.
+--       (the anon probe of the manager door — R1030), and take `plan(94)`
+--       down to 77 (94 − 14 − 2 − 1). Executed on a scratch copy in the
+--       R1030 fix round (then 92 − 12): 77/77, nothing dangling; the R1036
+--       round added two §F cells and removed none, so the result stands.
 --   §G  Chris's one condition: a SECOND identical call writes NO audit row and
 --       NO chat post while the replay LEDGER row IS written; plus the
 --       byte-identical replay on a real change.
@@ -57,7 +60,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(92);
+select plan(94);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the shared normalizer and
@@ -315,10 +318,11 @@ update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000
 
 -- ---------------------------------------------------------------------------
 -- F. THE MANAGER'S OWN RENAME — ***THE DROP SEAM***. If Chris wants only the
---    commissioner's half: delete this whole section (F1-F12) together with §4
+--    commissioner's half: delete this whole section (F1-F14) together with §4
 --    of migration 128, adjust §A as the header note says, delete J6, and take
---    plan(92) down to 77. No other section reads these cells or the manager
---    verb (J6 CALLS it, which is why it goes too — R1030).
+--    plan(94) down to 77 (94 − 14 − 2 − 1). No other section reads these
+--    cells or the manager verb (J6 CALLS it, which is why it goes too —
+--    R1030).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
@@ -376,6 +380,32 @@ reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000007'),
   'CR Sealed Seated', 'F12 …and the sealed franchise still carries its sealed name — the refusal wrote nothing');
+
+-- THE LOCK-ORDER PINS (R1036 / R1037, the second fix round of PR #298). The
+-- guard F11 proves is only as good as the row it reads: the first fix round
+-- evaluated it on step (1)'s UNLOCKED select, BEFORE the league lock, so a
+-- retire that committed while the rename was blocked on that lock was never
+-- seen and the rename landed on the sealed franchise (`Raced Past The Seal |
+-- retired` — the Reviewer's two-session probe). F11 cannot notice that: a
+-- single pgTAP transaction never blocks on its own lock. What CAN be pinned
+-- in-suite is the ORDER in the function text — `strpos` returns the FIRST
+-- occurrence, so if the first `status = 'retired'` sits after the `FOR UPDATE`
+-- re-read, every one does. A copy of the guard moved back above the lock reds
+-- F13 by name. F14 pins the AUTH predicate the same way (R1037: the same race
+-- lets a just-ousted manager land an in-flight rename; spec:187 promises "no
+-- race window"). ***THE R1036 BREAK PROBE'S TARGET.***
+select ok(
+  (select strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE') > 0
+      and strpos(p.prosrc, 'v_team.status = ''retired''') > strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE')
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'rename_own_team_internal'),
+  'F13 LOCK ORDER (R1036): in rename_own_team_internal''s prosrc the FIRST `v_team.status = ''retired''` occurs AFTER the `WHERE t.id = p_team_id FOR UPDATE` re-read — the guard reads the LOCKED row, the commissioner arm''s shape (128 §3 steps 5 → 6). Moved back above the lock, a retire committed while this call waits on the league lock is invisible to it and the rename lands on a sealed franchise');
+select ok(
+  (select strpos(p.prosrc, 'm.user_id = auth.uid()') > 0
+      and strpos(p.prosrc, 'm.user_id = auth.uid()') > strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE')
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'rename_own_team_internal'),
+  'F14 LOCK ORDER (R1037): the AUTH predicate `m.user_id = auth.uid()` ALSO first occurs AFTER the FOR UPDATE re-read — the seat is checked as it is under the league lock remove_manager also takes (120:271), so a manager ousted while his rename waited cannot land it (spec:187, "no race window")');
 
 -- ---------------------------------------------------------------------------
 -- G. CHRIS'S ONE CONDITION — "no receipt if nothing is done. only when

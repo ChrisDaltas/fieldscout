@@ -72,17 +72,18 @@
 -- Four deletions, no edits anywhere else, and nothing in M6A moves:
 --   (1) §4 of this file — `rename_own_team_internal` + `rename_own_team` and
 --       their REVOKEs. The file's §§1-3 do not reference them.
---   (2) pgTAP 076: delete §F (`F1`-`F12`, its fixture premise F10 included)
---       whole; in §A take A6's expected function count 5 → 3, drop the two
---       `rename_own_team%` names from A7 / A8 / A11 / A12's lists, and
---       delete A10 and A14; in §J delete **J6** (the anon probe of the
---       manager door — R1030: the first cut's seam omitted it, and a seam
---       executed as written left the suite red on `42883 function
---       public.rename_own_team does not exist`); then `plan(92)` →
---       `plan(77)` (92 − 12 − 2 − 1). §B's fixture rows for T6/u6 and cell
---       B1 may stay — they are fixture, not manager-verb, cells. **EXECUTED
---       ON A SCRATCH COPY in the R1030 fix round: 77/77 green, nothing
---       dangling.**
+--   (2) pgTAP 076: delete §F (`F1`-`F14`, its fixture premise F10 and the
+--       R1036/R1037 lock-order pins F13/F14 included) whole; in §A take
+--       A6's expected function count 5 → 3, drop the two `rename_own_team%`
+--       names from A7 / A8 / A11 / A12's lists, and delete A10 and A14; in
+--       §J delete **J6** (the anon probe of the manager door — R1030: the
+--       first cut's seam omitted it, and a seam executed as written left the
+--       suite red on `42883 function public.rename_own_team does not
+--       exist`); then `plan(94)` → `plan(77)` (94 − 14 − 2 − 1). §B's
+--       fixture rows for T6/u6 and cell B1 may stay — they are fixture, not
+--       manager-verb, cells. **EXECUTED ON A SCRATCH COPY in the R1030 fix
+--       round (then 92 − 12): 77/77 green, nothing dangling; the R1036 round
+--       added two §F cells and removed none, so the result is unchanged.**
 --   (3) `src/types/database.ts` — REGENERATE, never hand-edit. `supabase gen
 --       types` emits every public-schema function REGARDLESS OF GRANTS
 --       (measured on this migration: all five of its functions appear under
@@ -115,9 +116,24 @@
 --
 -- **THE MANAGER PATH CARRIES THE SAME RETIRED GUARD (R1029, the fix round of
 -- PR #298).** `spec:183` freezes a retired franchise's name FOR EVERYONE, so
--- `rename_own_team_internal` step (3b) refuses `status = 'retired'` BY NAME
+-- `rename_own_team_internal` step (5) refuses `status = 'retired'` BY NAME
 -- with the same F354-naming message shape as the commissioner arm's step (6),
 -- so a future reader finds one truth, not two.
+--
+-- **AND IT READS THE LOCKED ROW (R1036 + R1037, the SECOND fix round of PR
+-- #298 — one more round than the build loop's cap, authorized by Chris on
+-- 2026-09-15 because R1036 was NEW, introduced by the R1029 fix itself, not a
+-- survivor of the first review).** The first fix round placed the guard
+-- BEFORE the `FOR UPDATE` re-read, on the unlocked step-(1) row, so a retire
+-- that committed while the rename was blocked on the league lock was invisible
+-- to it and the rename landed on the sealed franchise. The guard — and the
+-- AUTH predicate with it (R1037: the same race lets a manager `remove_manager`
+-- has just ousted land an in-flight rename; `spec:187` promises *"no race
+-- window"*) — now sit AFTER the lock-then-re-read at step (3), exactly the
+-- commissioner arm's shape (its step 5 → 6). pgTAP 076 **F13/F14** pin both
+-- orders as `prosrc` positions, so moving either gate back above the lock
+-- reds by name. 128 still replaces nothing: these are edits to 128's own new
+-- bodies, in place, because 125-128 all still await `db push`.
 --
 -- WHAT THE FIRST CUT SAID, RETRACTED IN PLACE (the F342 precedent — struck,
 -- with the correction beside it): ~~"the manager path carries no retired
@@ -698,7 +714,11 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  -- (1) THE FRANCHISE, read first because the caller supplies no league id.
+  -- (1) THE FRANCHISE, read UNLOCKED first because the caller supplies no
+  --     league id and the house lock order (rule 8) is `leagues` FIRST — so
+  --     this read exists only to learn WHICH league row to lock, and to route
+  --     a standalone team. NOTHING BELOW IS DECIDED ON THIS ROW: every gate
+  --     (auth, retired) reads the locked re-read at step (3) — R1036/R1037.
   --     A team that does not exist is answered with the SAME no-leak 42501 as
   --     one the caller does not manage.
   SELECT t.* INTO v_team FROM public.teams t WHERE t.id = p_team_id;
@@ -709,7 +729,11 @@ BEGIN
 
   -- (2) STANDALONE TEAMS ARE ROUTED, not handled twice. Authorize as the
   --     owner first so a stranger still gets the no-leak 42501 and learns
-  --     nothing about which teams exist.
+  --     nothing about which teams exist. (`teams.league_id` has NO writer
+  --     anywhere in 001-128 — the eleven `UPDATE … teams` statements in the
+  --     banner write only `owner_id` / `status` / `retired_at_week` /
+  --     `successor_team_id` / `updated_at` — so the league this row names
+  --     cannot change between this read and the lock below.)
   IF v_team.league_id IS NULL THEN
     IF v_team.owner_id IS DISTINCT FROM auth.uid() THEN
       RAISE EXCEPTION 'rename_own_team: not the manager of this team'
@@ -720,12 +744,47 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- (3) AUTH — the exact complement of `set_lineup_internal`'s own manager
+  -- (3) LOCK, THEN RE-READ — BEFORE any gate is evaluated. The LEAGUE row is
+  --     locked first, in the house order (rule 8), so this verb,
+  --     `commish_rename_team` and `remove_manager` (`120:271` — its retire
+  --     and vacate arms lock the same league row first) all serialize on ONE
+  --     point and cannot deadlock against each other. Then the franchise row
+  --     itself, so the reported `previous_name` is the value this statement
+  --     actually replaced.
+  --
+  --     WHY THE GATES SIT AFTER THIS AND NOT BEFORE IT (R1036, the second fix
+  --     round of PR #298, by Chris's ruling of 2026-09-15): the first fix
+  --     round put the retired guard at the OLD step (3b), reading step (1)'s
+  --     UNLOCKED row. A retire committed while this call was blocked on the
+  --     league lock was therefore never seen — the Reviewer held the league
+  --     lock in one session, retired the franchise, slept, committed; a
+  --     manager's rename in a second session waited ~4.5 s on that lock and
+  --     then LANDED on the freshly sealed franchise (`Raced Past The Seal |
+  --     retired`). The commissioner arm was never exposed, because its guard
+  --     (step 6) already read its locked re-read (step 5). The manager arm now
+  --     has the SAME shape: lock, re-read, THEN decide. R1037 rides along —
+  --     the AUTH predicate is evaluated here too, against the seat as it is
+  --     AFTER the lock, so a manager `remove_manager` has just ousted (the
+  --     vacate arm NULLs `user_id` on the row at `120:565-570`'s sibling,
+  --     `:645`) cannot land a rename that was in flight when he lost the
+  --     seat. That is `spec:187`'s own promise — *"Access ends the instant
+  --     the stint closes … no race window"* — kept at the only place it can
+  --     be, after the lock. pgTAP 076 F13/F14 pin BOTH orders in `prosrc`.
+  PERFORM 1 FROM public.leagues l WHERE l.id = v_team.league_id FOR UPDATE;
+  SELECT t.* INTO v_team FROM public.teams t WHERE t.id = p_team_id FOR UPDATE;
+  IF NOT FOUND THEN
+    -- Deleted between (1) and the lock: the same no-leak answer as (1).
+    RAISE EXCEPTION 'rename_own_team: not the manager of this team'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- (4) AUTH — the exact complement of `set_lineup_internal`'s own manager
   --     check (`114:240-243`, under the F35 doctrine comment at `114:237`:
   --     league_members' cache column, NEVER a stint). One no-leak 42501
   --     covering "no such team" and "not your seat" alike. Auth runs BEFORE
   --     the retired guard below, so a stranger probing a sealed franchise
-  --     still learns nothing (pgTAP 076 F7).
+  --     still learns nothing (pgTAP 076 F7). Evaluated UNDER the league lock
+  --     (step 3), never on the pre-lock read — R1037.
   IF NOT EXISTS (
     SELECT 1 FROM public.league_members m
     WHERE m.team_id = p_team_id AND m.user_id = auth.uid()
@@ -734,14 +793,15 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  -- (3b) THE SEALED FRANCHISE — the same refusal the commissioner arm makes
-  --      at its step (6), because `spec:183` freezes the name FOR EVERYONE.
-  --      Added in the R1029 fix round: the first cut omitted it on the claim
-  --      that `120:565-570` made a seated retired franchise structurally
-  --      unreachable — it does not (see THE MANAGER PATH in the banner:
-  --      `077:428-437`'s fallback INSERT seats whatever team id it is handed,
-  --      and only three OTHER verbs' guards keep a retired one out). One
-  --      message shape for both doors, so a reader finds one truth.
+  -- (5) THE SEALED FRANCHISE — the same refusal the commissioner arm makes
+  --     at its step (6), because `spec:183` freezes the name FOR EVERYONE.
+  --     Added in the R1029 fix round: the first cut omitted it on the claim
+  --     that `120:565-570` made a seated retired franchise structurally
+  --     unreachable — it does not (see THE MANAGER PATH in the banner:
+  --     `077:428-437`'s fallback INSERT seats whatever team id it is handed,
+  --     and only three OTHER verbs' guards keep a retired one out). One
+  --     message shape for both doors, so a reader finds one truth. Reads the
+  --     LOCKED row from step (3), not the pre-lock read — R1036.
   IF v_team.status = 'retired' THEN
     RAISE EXCEPTION
       'rename_own_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds everyone, commissioner and manager alike. NO VERB UN-RETIRES A FRANCHISE TODAY (F354), so there is no "un-retire first" to offer; the seat now lives on the SUCCESSOR franchise (%)',
@@ -749,17 +809,9 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- (4) THE NAME, through the SAME shared gate the commissioner's verb uses
+  -- (6) THE NAME, through the SAME shared gate the commissioner's verb uses
   --     (§2) — one bound, one trim class, one message shape.
   v_new_name := public.team_rename_normalize_internal(p_name, 'rename_own_team');
-
-  -- (5) Re-read under a row lock so the reported `previous_name` is the value
-  --     this statement actually replaced. The LEAGUE row is locked first, in
-  --     the house order (rule 8), so this verb and `commish_rename_team` —
-  --     which can both target the same franchise — acquire their two locks in
-  --     the same sequence and cannot deadlock against each other.
-  PERFORM 1 FROM public.leagues l WHERE l.id = v_team.league_id FOR UPDATE;
-  SELECT t.* INTO v_team FROM public.teams t WHERE t.id = p_team_id FOR UPDATE;
   v_old_name := v_team.name;
 
   SELECT COALESCE(jsonb_agg(t.id ORDER BY t.name, t.id), '[]'::jsonb) INTO v_collides
