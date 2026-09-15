@@ -246,7 +246,7 @@
 -- default grants it to `anon`/`authenticated`, which is why pgTAP asserts it
 -- with `has_table_privilege` per role and not through `pg_policies`);
 -- **NO `HELD-FROM-PRODUCTION.txt` ENTRY — the hold is over (PR #282), and the
--- file is retired.** Migrations 125, 126, 127 and now 128 all await Chris's
+-- no entry is added — the file stays in the tree with zero live entries.** Migrations 125, 126, 127 and now 128 all await Chris's
 -- `npx supabase db push`; 128 is authored against the repo's chain and never
 -- against a deployed body (CLAUDE.md migration discipline).
 --
