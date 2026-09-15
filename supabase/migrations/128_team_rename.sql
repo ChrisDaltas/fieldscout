@@ -72,10 +72,17 @@
 -- Four deletions, no edits anywhere else, and nothing in M6A moves:
 --   (1) §4 of this file — `rename_own_team_internal` + `rename_own_team` and
 --       their REVOKEs. The file's §§1-3 do not reference them.
---   (2) pgTAP 076: delete §F (`F1`-`F9`) whole; in §A take A6's expected
---       function count 5 → 3, drop the two `rename_own_team%` names from
---       A7 / A8 / A11 / A12's lists, and delete A10 and A14; then
---       `plan(89)` → `plan(78)`.
+--   (2) pgTAP 076: delete §F (`F1`-`F12`, its fixture premise F10 included)
+--       whole; in §A take A6's expected function count 5 → 3, drop the two
+--       `rename_own_team%` names from A7 / A8 / A11 / A12's lists, and
+--       delete A10 and A14; in §J delete **J6** (the anon probe of the
+--       manager door — R1030: the first cut's seam omitted it, and a seam
+--       executed as written left the suite red on `42883 function
+--       public.rename_own_team does not exist`); then `plan(92)` →
+--       `plan(77)` (92 − 12 − 2 − 1). §B's fixture rows for T6/u6 and cell
+--       B1 may stay — they are fixture, not manager-verb, cells. **EXECUTED
+--       ON A SCRATCH COPY in the R1030 fix round: 77/77 green, nothing
+--       dangling.**
 --   (3) `src/types/database.ts` — REGENERATE, never hand-edit. `supabase gen
 --       types` emits every public-schema function REGARDLESS OF GRANTS
 --       (measured on this migration: all five of its functions appear under
@@ -106,23 +113,40 @@
 -- the commissioner to un-retire first, which R1020 already had to correct once
 -- in 127: a remedy that does not exist is a route to nowhere.
 --
--- **THE MANAGER PATH CARRIES NO RETIRED GUARD, AND THAT IS A MEASUREMENT,
--- NOT AN OMISSION (§4 rule 14(b) / D267 — a guard an outer gate has already
--- made unreachable is replaced by the assertion that it is unreachable).**
--- `remove_manager`'s retire arm is the ONLY writer of `status = 'retired'`
--- (`120:540`; exhaustively: the other ten `UPDATE … teams` statements write
--- `'orphaned'` or `'active'`), and the same arm re-points the seat's
--- `league_members` row at the SUCCESSOR with `user_id = NULL`
--- (`120:565-570`). A retired franchise therefore has **no `league_members`
--- row naming any user at all**, and `rename_own_team`'s auth predicate — the
--- exact complement of `set_lineup_internal`'s own (`114:240-243`, under the
--- F35 doctrine comment at `114:237`) — can never match one. A retired guard
--- placed after that gate could not execute, and a pgTAP cell for it would need
--- a fixture the product cannot produce. pgTAP 076 **F7** asserts the MECHANISM
--- instead: the manager door answers a retired franchise with its one no-leak
--- 42501, and the cell's description names `120:565-570` as the reason. If a
--- future migration ever leaves a seated `league_members` row on a retired
--- franchise, F7 is what notices.
+-- **THE MANAGER PATH CARRIES THE SAME RETIRED GUARD (R1029, the fix round of
+-- PR #298).** `spec:183` freezes a retired franchise's name FOR EVERYONE, so
+-- `rename_own_team_internal` step (3b) refuses `status = 'retired'` BY NAME
+-- with the same F354-naming message shape as the commissioner arm's step (6),
+-- so a future reader finds one truth, not two.
+--
+-- WHAT THE FIRST CUT SAID, RETRACTED IN PLACE (the F342 precedent — struck,
+-- with the correction beside it): ~~"the manager path carries no retired
+-- guard, and that is a measurement, not an omission (§4 rule 14(b) / D267):
+-- `120:565-570` re-points the seat at the successor with `user_id = NULL`, so
+-- a retired franchise has no `league_members` row naming any user, the auth
+-- predicate can never match one, a guard after it could not execute, and a
+-- pgTAP cell for it would need a fixture the product cannot produce"~~.
+-- THE CORRECTION: that exclusion was never STRUCTURAL — it was an invariant
+-- maintained by three OTHER verbs' guards (`create_league_invite` `062:378`,
+-- `claim_league_invite` `062:865`, `assign_manager` `063:688`, each refusing
+-- `retired` before `seat_league_member_internal`'s branch (b) is reached),
+-- and that helper's fallback at `077:428-437` does an UNCONDITIONAL
+-- `INSERT INTO league_members (…, team_id = p_team_id)` when its UPDATE
+-- matches 0 rows — which is exactly what happens for a retired team, whose
+-- row was re-pointed at the successor. None of those three guards was pinned
+-- by 076, and F7's fixture omitted the seated row BY HAND, so F7 asserted its
+-- own premise rather than anything `remove_manager` produced. The Reviewer
+-- planted a `retired` team plus a seated `league_members` row in a rolled-back
+-- transaction and renamed it through the manager door: `Unsealed By Manager |
+-- retired`. The state IS reachable in SQL, so the guard IS provable — which is
+-- also why this is not rule 14(b)'s species: that rule is about a guard an
+-- outer condition IN THE SAME FUNCTION has excluded, not one that three
+-- remote verbs happen to keep out today. pgTAP 076 **F10-F12** use exactly
+-- that fixture (T6 `retired`, seated by u6): F10 asserts the seated row is
+-- there, F11 the refusal BY NAME, F12 the sealed name untouched. **F7** stays
+-- and now says what it proves — that a retired franchise with NO seat is
+-- answered by the auth 42501 (auth runs before the guard, and a stranger
+-- learns nothing) — not that the guard is unnecessary.
 --
 -- ---------------------------------------------------------------------------
 -- THE PROPAGATION FINDING (item 4) — A RECEIPT RECORDS WHAT WAS TRUE
@@ -298,7 +322,7 @@ REVOKE TRUNCATE ON TABLE commish_team_actions FROM PUBLIC, anon, authenticated;
 --    (`123:290-294`, DEVIATION 1): plain `btrim` strips SPACES ONLY, so a
 --    tab- or newline-only name would pass a naive `NULLIF(btrim(x), '')` and
 --    a franchise would end up named E'\t'. That is R745's hole, already fixed
---    twice (`112:756`, `114:315`), and it is not re-opened here.
+--    twice (`112:756`, `114:316`), and it is not re-opened here.
 --
 --    NOTE ON THE EXISTING 60-CHARACTER TEAM-NAME BOUND. `createLeagueInput`'s
 --    OPTIONAL `team_name` is `.max(60)` while the LEAGUE name is `.max(100)`,
@@ -617,9 +641,10 @@ REVOKE EXECUTE ON FUNCTION commish_rename_team(UUID, UUID, TEXT, TEXT, UUID)
 
 -- ---------------------------------------------------------------------------
 -- 4. rename_own_team — THE MANAGER'S OWN RENAME. ***THIS SECTION IS THE DROP
---    SEAM*** (see the banner): delete §4 in full, pgTAP 076 §F + cell E4, the
---    two generated `rename_own_team` entries in `src/types/database.ts`, and
---    D359's `rename_own_team` sentences, and nothing else moves.
+--    SEAM*** (see the banner for the exact list): delete §4 in full, pgTAP
+--    076 §F + A10 + A14 + J6 (and the §A list edits), the two generated
+--    `rename_own_team` entries in `src/types/database.ts`, and D359's
+--    `rename_own_team` sentences, and nothing else moves.
 --
 --    IT RIDES NO AUTHORITY. No §15.4 line, no ruling — only F338's
 --    measurement that the gap is total for a manager exactly as for a
@@ -698,24 +723,30 @@ BEGIN
   -- (3) AUTH — the exact complement of `set_lineup_internal`'s own manager
   --     check (`114:240-243`, under the F35 doctrine comment at `114:237`:
   --     league_members' cache column, NEVER a stint). One no-leak 42501
-  --     covering "no such team" and "not your seat" alike.
-  --
-  --     ***THIS GATE IS ALSO WHY THERE IS NO RETIRED REFUSAL BELOW*** (§4
-  --     rule 14(b) / D267). `remove_manager`'s retire arm is the only writer
-  --     of `status = 'retired'` (`120:540`) and the same arm re-points the
-  --     seat's league_members row at the SUCCESSOR with `user_id = NULL`
-  --     (`120:565-570`), so a retired franchise carries no league_members row
-  --     naming any user and can never reach the line below. A guard here
-  --     could not execute and could not be proven; pgTAP 076 F7 asserts the
-  --     MECHANISM instead — a retired franchise is answered by this 42501 —
-  --     so a future migration that leaves a seated row on a retired franchise
-  --     is what turns that cell red.
+  --     covering "no such team" and "not your seat" alike. Auth runs BEFORE
+  --     the retired guard below, so a stranger probing a sealed franchise
+  --     still learns nothing (pgTAP 076 F7).
   IF NOT EXISTS (
     SELECT 1 FROM public.league_members m
     WHERE m.team_id = p_team_id AND m.user_id = auth.uid()
   ) THEN
     RAISE EXCEPTION 'rename_own_team: not the manager of this team'
       USING ERRCODE = '42501';
+  END IF;
+
+  -- (3b) THE SEALED FRANCHISE — the same refusal the commissioner arm makes
+  --      at its step (6), because `spec:183` freezes the name FOR EVERYONE.
+  --      Added in the R1029 fix round: the first cut omitted it on the claim
+  --      that `120:565-570` made a seated retired franchise structurally
+  --      unreachable — it does not (see THE MANAGER PATH in the banner:
+  --      `077:428-437`'s fallback INSERT seats whatever team id it is handed,
+  --      and only three OTHER verbs' guards keep a retired one out). One
+  --      message shape for both doors, so a reader finds one truth.
+  IF v_team.status = 'retired' THEN
+    RAISE EXCEPTION
+      'rename_own_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds everyone, commissioner and manager alike. NO VERB UN-RETIRES A FRANCHISE TODAY (F354), so there is no "un-retire first" to offer; the seat now lives on the SUCCESSOR franchise (%)',
+      p_team_id, COALESCE(v_team.successor_team_id::text, 'none recorded')
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- (4) THE NAME, through the SAME shared gate the commissioner's verb uses

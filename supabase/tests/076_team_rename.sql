@@ -17,11 +17,14 @@
 --       (i) and (iii) the zero in (ii) is unattributable: an empty fixture, a
 --       wrong id, or a `set role` that never took would all produce it.
 --   §E  the verb renaming, and its receipt.
---   §F  the MANAGER's own rename — THE DROP SEAM's cells. If the manager arm
---       is dropped, delete §F (F1-F9) whole, drop `rename_own_team` /
+--   §F  the MANAGER's own rename — THE DROP SEAM's cells, INCLUDING the
+--       manager arm's own retired guard (F10-F12, R1029). If the manager arm
+--       is dropped, delete §F (F1-F12) whole, drop `rename_own_team` /
 --       `rename_own_team_internal` from A6's expected count (5 → 3) and from
---       the name lists in A7, A8, A11, A12, delete A10 and A14, and take
---       `plan(89)` down to 78.
+--       the name lists in A7, A8, A11, A12, delete A10 and A14, delete J6
+--       (the anon probe of the manager door — R1030), and take `plan(92)`
+--       down to 77. Executed on a scratch copy in the R1030 fix round:
+--       77/77, nothing dangling.
 --   §G  Chris's one condition: a SECOND identical call writes NO audit row and
 --       NO chat post while the replay LEDGER row IS written; plus the
 --       byte-identical replay on a real change.
@@ -54,7 +57,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(89);
+select plan(92);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the shared normalizer and
@@ -136,10 +139,15 @@ select is(
 --    Successor' (orphaned, an unclaimed placeholder seat). u5 is a member of
 --    L1 with NO team; u4 is an outsider. S1 'Solo Squad' is u2's STANDALONE
 --    team (league_id IS NULL) and exists ONLY to be §C's positive control.
+--    T6 'CR Sealed Seated' is RETIRED **and seated by u6** — the Reviewer's
+--    R1029 fixture, hand-inserted exactly the way this file's other rows
+--    are, and the state 077:428-437's fallback INSERT can produce for any
+--    team id it is handed. §F10-F12 depend on it.
 --
---    T4 carries NO league_members row, and that is not an oversight — it is
---    what `remove_manager`'s retire arm produces: `120:565-570` re-points the
---    seat's row at the SUCCESSOR with `user_id = NULL`. §F7 depends on it.
+--    T4 carries NO league_members row — the shape `remove_manager`'s retire
+--    arm produces (`120:565-570` re-points the seat's row at the SUCCESSOR
+--    with `user_id = NULL`). §F7 depends on it: with no seat, the AUTH 42501
+--    answers before the retired guard is reached.
 -- ---------------------------------------------------------------------------
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -150,7 +158,7 @@ select
   'authenticated', 'authenticated', 'pgtap-tr' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}',
   json_build_object('username', 'tr_user' || i)::jsonb, now(), now()
-from generate_series(1, 5) i;
+from generate_series(1, 6) i;
 
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id,
                      scoring_rules_snapshot, lineup_lock, waiver_type, settings, roster_settings) values
@@ -173,7 +181,10 @@ insert into teams (id, owner_id, name, league_id, list_id, status, successor_tea
  ('cf000000-0000-4000-8000-000000000004', '9f000000-0000-4000-8000-000000000001', 'CR Sealed',    'bf000000-0000-4000-8000-000000000001', null, 'retired',  'cf000000-0000-4000-8000-000000000005', now() - interval '10 days', now() - interval '10 days'),
  -- u2's STANDALONE team: league_id IS NULL, so 095:636-639's UPDATE policy
  -- DOES match it. §C3's positive control and nothing else.
- ('cf000000-0000-4000-8000-000000000006', '9f000000-0000-4000-8000-000000000002', 'Solo Squad',   null, null, 'active', null, now() - interval '10 days', now() - interval '10 days');
+ ('cf000000-0000-4000-8000-000000000006', '9f000000-0000-4000-8000-000000000002', 'Solo Squad',   null, null, 'active', null, now() - interval '10 days', now() - interval '10 days'),
+ -- T6: RETIRED and still SEATED by u6 (R1029's fixture). No successor on
+ -- purpose, so F11 also pins the 'none recorded' arm of the message.
+ ('cf000000-0000-4000-8000-000000000007', '9f000000-0000-4000-8000-000000000006', 'CR Sealed Seated', 'bf000000-0000-4000-8000-000000000001', null, 'retired', null, now() - interval '10 days', now() - interval '10 days');
 
 insert into league_members (league_id, user_id, team_id, role, is_placeholder) values
  ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'cf000000-0000-4000-8000-000000000001', 'commissioner', false),
@@ -181,13 +192,17 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder) v
  ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000003', 'cf000000-0000-4000-8000-000000000003', 'manager',      false),
  ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000005', null,                                   'manager',      false),
  -- The retired franchise's seat, re-pointed at the SUCCESSOR with user_id
- -- NULL — 120:564-570's shape, reproduced exactly. T4 gets no row.
- ('bf000000-0000-4000-8000-000000000001', null, 'cf000000-0000-4000-8000-000000000005', 'manager', true);
+ -- NULL — 120:565-570's shape, reproduced exactly. T4 gets no row.
+ ('bf000000-0000-4000-8000-000000000001', null, 'cf000000-0000-4000-8000-000000000005', 'manager', true),
+ -- R1029's fixture: a SEATED row on a RETIRED franchise. The product's three
+ -- seat doors refuse this today (062:378, 062:865, 063:688) but nothing
+ -- structural does — 077:428-437 INSERTs whatever team id it is handed.
+ ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000006', 'cf000000-0000-4000-8000-000000000007', 'manager', false);
 
 select is((select count(*)::int from league_members
            where league_id = 'bf000000-0000-4000-8000-000000000001'
              and team_id = 'cf000000-0000-4000-8000-000000000004'),
-  0, 'B1 PREMISE for §F7: the RETIRED franchise carries NO league_members row at all — 120:564-570 re-points the seat at the successor with user_id NULL, which is why rename_own_team needs no retired guard (§4 rule 14(b): a guard an outer gate has already excluded is replaced by the assertion that it is excluded)');
+  0, 'B1 PREMISE for §F7: T4, the RETIRED franchise with NO seat, carries NO league_members row — the shape 120:565-570 leaves behind — so F7''s 42501 is the AUTH gate answering first. (This is a fixture premise, NOT a proof that the state is unreachable: R1029 showed it is reachable, and §F10-F12 prove the guard on the seated case)');
 select is((select status from teams where id = 'cf000000-0000-4000-8000-000000000004'),
   'retired', 'B2 PREMISE for §I: T4 really is `retired` — the §I refusal is about a state that exists in the fixture, not a spelling');
 select is((select count(*)::int from commissioner_actions
@@ -300,9 +315,10 @@ update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000
 
 -- ---------------------------------------------------------------------------
 -- F. THE MANAGER'S OWN RENAME — ***THE DROP SEAM***. If Chris wants only the
---    commissioner's half: delete this whole section (F1-F9) together with §4
---    of migration 128, adjust §A as the header note says, and take plan(90)
---    down to 79. No other section reads these cells or the manager verb.
+--    commissioner's half: delete this whole section (F1-F12) together with §4
+--    of migration 128, adjust §A as the header note says, delete J6, and take
+--    plan(92) down to 77. No other section reads these cells or the manager
+--    verb (J6 CALLS it, which is why it goes too — R1030).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
@@ -327,7 +343,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000004', 'Unseal Me') $$,
   '42501', 'rename_own_team: not the manager of this team',
-  'F7 THE RETIRED FRANCHISE IS UNREACHABLE THROUGH THIS DOOR, and that is WHY there is no retired guard in it (§4 rule 14(b)): 120:540 is the only writer of status=retired and the same arm re-points the seat''s league_members row at the SUCCESSOR with user_id NULL (120:564-570), so no user ever matches. B1 asserts that premise; if a future migration leaves a seated row on a retired franchise, THIS cell is what notices');
+  'F7 a RETIRED franchise with NO seat (T4 — the shape 120:565-570 leaves behind, B1) is answered by the AUTH 42501, because auth runs BEFORE the retired guard: a stranger probing a sealed franchise learns nothing. This cell proves the ORDER of the two gates, not that the guard is unnecessary — the first cut claimed the seated state was unreachable and R1029 disproved it; F10-F12 prove the guard itself');
 select throws_ok(
   $$ select public.rename_own_team('00000000-0000-4000-8000-0000000000bb', 'Ghost') $$,
   '42501', 'rename_own_team: not the manager of this team',
@@ -340,6 +356,26 @@ select throws_like(
 reset role;
 select set_config('request.jwt.claims', '', true);
 update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000003';
+
+-- THE MANAGER ARM'S OWN RETIRED GUARD (R1029) — spec:183 freezes the name for
+-- EVERYONE. The fixture is the Reviewer's: a retired franchise WITH a seated
+-- league_members row (T6 / u6), the state the first cut called "one the
+-- product cannot produce" and which 077:428-437's fallback INSERT produces
+-- for any team id it is handed. ***THE R1029 BREAK PROBE'S TARGET.***
+select is((select count(*)::int from league_members
+           where team_id = 'cf000000-0000-4000-8000-000000000007'
+             and user_id = '9f000000-0000-4000-8000-000000000006'),
+  1, 'F10 PREMISE: T6 is RETIRED *and* u6 holds a seated league_members row on it — so the call below passes the AUTH gate and REACHES the retired guard. Without this premise F11 could pass on the auth 42501 and prove nothing about the guard');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
+select throws_like(
+  $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000007', 'Unsealed By Manager') $$,
+  '%its name is FROZEN%NO VERB UN-RETIRES A FRANCHISE TODAY (F354)%SUCCESSOR franchise (none recorded)%',
+  'F11 A SEATED MANAGER CANNOT RENAME HIS OWN RETIRED FRANCHISE: spec:183 freezes the name for everyone, not only against the commissioner. The pattern pins the FROZEN wording, the F354 honesty and the successor arm (here "none recorded") — the SAME message shape as I1, so a reworded or softened refusal reds this cell rather than passing on a substring');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000007'),
+  'CR Sealed Seated', 'F12 …and the sealed franchise still carries its sealed name — the refusal wrote nothing');
 
 -- ---------------------------------------------------------------------------
 -- G. CHRIS'S ONE CONDITION — "no receipt if nothing is done. only when
