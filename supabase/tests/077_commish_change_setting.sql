@@ -22,6 +22,10 @@
 --       PROBE 2's TARGET*** (make the no-op write an audit row ⇒ D reds).
 --   §E  a REFUSED-in-season key refused BY NAME (the season window; the
 --       bracket keys once the bracket exists), with a positive control.
+--       E2 pins `team_count`'s message as PRE-DRAFT ONLY with NO post-draft
+--       route (§7.3 erratum v2.16.40, Q65 (b)); its pattern is RED on the
+--       first cut's `add_placeholder_seat` wording (R1039 — shown in the
+--       fix round, not claimed).
 --   §F  THE FAAB RE-SEED PROVEN NOT TO FIRE IN-SEASON, with its premise
 --       (§4 rule 14(c) / F345), AND a pre-draft positive control proving the
 --       statement still exists behind the status condition. ***BREAK PROBE
@@ -33,7 +37,8 @@
 --       stamped with the stat line's own updated_at, IR excluded, the
 --       unqueueable NAMED.
 --   §H  the reason gate, the shape gates, the value gates — one unit either
---       side where a bound exists.
+--       side where a bound exists; H13/H14 pin that the stored
+--       `roster_settings` is REBUILT from the known keys (R1040).
 --   §I  AUTH — one no-leak 42501 (071 §F).
 --   §J  REPLAY — byte-identical, nothing re-written.
 --   §K  NEVER-WEAKEN PINS (§4 rule 13): 118's `update_league_settings` is
@@ -48,7 +53,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(121);
+select plan(123);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS
@@ -373,8 +378,8 @@ select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'team_count', '10'::jsonb, false, 'two more teams',
        '0e000000-0000-4000-8000-000000000031'::uuid) $$,
-  '%team_count cannot be changed through this verb%seats%schedule already exist%',
-  'E2 …team_count likewise: seats and a schedule exist for the stored count');
+  '%team_count cannot be changed through this verb%team_count is PRE-DRAFT ONLY (§7.3, erratum v2.16.40%post-draft there is NO route%no verb raises this number in-season%',
+  'E2 …team_count is refused as PRE-DRAFT ONLY by spec (§7.3 erratum v2.16.40, Q65 (b)) and the message says there is NO post-draft route — this pattern is RED on the first cut''s wording, which pointed at add_placeholder_seat (R1039)');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'schedule_mode', '"total_points"'::jsonb, false, 'no more matchups',
@@ -667,6 +672,17 @@ select set_config('pgtap.cs_h12',
      false, 'a second RB slot', '0e000000-0000-4000-8000-000000000070'::uuid)::text), true);
 select is(current_setting('pgtap.cs_h12')::jsonb -> 'consequences' ->> 'lineups_not_refit', '2',
   'H12 roster_settings lands in-season (§7.3 header) and the document COUNTS the lineup rows nothing re-fit — L1''s two week-4 lineups — so "warned" is a number, not a mood');
+-- R1040: the STORED object is rebuilt from the known keys — an unknown
+-- top-level key and an unknown key inside a slot are DROPPED by the server
+-- floor, not left for L.E1.11's Zod mirror; `label` survives where sent.
+select lives_ok(
+  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'roster_settings', '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1, "hint": "drop me"}, {"key": "rb", "eligible": ["RB"], "count": 2}], "bench": 3, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0, "bogus": true}'::jsonb,
+       false, 'unknown keys sent', '0e000000-0000-4000-8000-000000000071'::uuid) $$,
+  'H13 a roster_settings object carrying an unknown top-level key and an unknown slot key is ACCEPTED (the floor strips, it does not refuse)');
+select is((select roster_settings from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+  '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "rb", "eligible": ["RB"], "count": 2}], "bench": 3, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0}'::jsonb,
+  'H14 …and what is STORED is the object REBUILT from the four known keys and each slot''s key/label/eligible/count — "bogus" and "hint" are gone, "label" kept where sent (R1040)');
 reset role;
 select set_config('request.jwt.claims', '', true);
 

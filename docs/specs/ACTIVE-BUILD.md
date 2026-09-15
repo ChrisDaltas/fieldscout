@@ -97,7 +97,8 @@ Next free: **130 / 078**.
 > `npx supabase db push` is **Chris's to run**; `db-drift.yml` is expected red
 > until he does, which is the drift check working. No `HELD-FROM-PRODUCTION`
 > entry was added for any of them and none should be — the hold was cleared
-> 2026-09-09 (PR #282) and the file is retired. Because none of the five is
+> 2026-09-09 (PR #282); the file stays in the tree as the hold's record and
+> no entry is added (R1042). Because none of the five is
 > deployed, each was authored against the REPO's chain and a fix round may still
 > edit one in place; the moment Chris pushes, that stops being true.
 >
