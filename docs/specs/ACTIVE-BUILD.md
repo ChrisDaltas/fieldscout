@@ -98,7 +98,7 @@ NO migration, NO pgTAP, NO typegen — **131 / 079 still unspent**; built to
 127's in-body gates still refuse a blank reason until L.E1.15, and four
 stack cells pin that 400 BY NAME so the sweep reds them; F65(b) guard per
 verb on its own fields + the verb (shared ledgers, D350); records **D362**), so
-**`L.E1.15` is LANDED** (the reason-optional sweep, F362 — migration **131** +
+**`L.E1.15` is LANDED** (PR **#302** — the reason-optional sweep, F362 — migration **131** +
 pgTAP **079** + eight re-cut suites; Q66 brought to the CODE: ONE migration
 `CREATE OR REPLACE`-ing all eight bodies against their newest definers' FILE
 TEXT (D137; 123 in production, 125–130 unpushed — **the Architect's two open
