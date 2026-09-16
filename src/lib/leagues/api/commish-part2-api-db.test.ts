@@ -21,8 +21,10 @@
  *     blank) reason and asserts the 200, the NULL-reason receipt and a
  *     system post with NO "— reason:" clause. No transitional state remains.
  *   - **F65(b) at the wire, on the REAL ledger**: a REUSED action_id naming a
- *     different team-name / key / matchup is refused 409 by the service,
- *     never answered 200 with the first submit's document.
+ *     different team-name / key / VALUE (R1058, D351) / matchup — including
+ *     a later-week row carrying the identical pairing, so the `matchup_id`
+ *     line alone stands (R1059) — is refused 409 by the service, never
+ *     answered 200 with the first submit's document.
  *   - **`GET /commish/log` (spec:1703)**: a MEMBER who is not the
  *     commissioner CAN read it and sees every receipt above, newest first,
  *     actor username resolved, `reason` as `string | null`; an authenticated
@@ -396,6 +398,19 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
   })
 
+  it('R1058 (D351) on the REAL ledger — the reviewer’s P1: 72 landed under id A, 96 under id B; id A re-sent for the SAME key with 120 is a 409, the blob still holds 96 and A still has ONE receipt (never a 200 saying 72)', async () => {
+    // THE PREMISE (§4 rule 14(c)): both earlier submits landed, and the blob
+    // holds the SECOND one's value.
+    expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
+    expect(await receiptsFor(ACTION.settingNoReason)).toHaveLength(1)
+    expect(await blobSetting('waiver_period_hours')).toBe(96)
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: 120, action_id: ACTION.setting, reason: 'a different value on a spent id' })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE)
+    expect(await blobSetting('waiver_period_hours')).toBe(96)
+    expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
+  })
+
   it('a REFUSED-in-season key (team_count, Q65) comes back 409 with 129’s copy VERBATIM and writes NO receipt', async () => {
     const res = await commishChangeSetting(commishClient, leagueId, { key: 'team_count', value: 10, action_id: ACTION.settingRefused, reason: 'try' })
     expect(res.status).toBe(409)
@@ -470,6 +485,32 @@ describe('POST …/commish/schedule — commishEditSchedule over the real RPC', 
     expect(res.status).toBe(409)
     expect(errorText(res)).toBe(COMMISH_SCHEDULE_ACTION_ID_REUSED_MESSAGE)
     expect((await weekRows(2)).find((r) => r.id === other.id)).toStrictEqual(other)
+    expect(await receiptsFor(ACTION.schedule)).toHaveLength(1)
+  })
+
+  it('R1059 — the cell where ONLY the `matchup_id` guard line stands: the schedule action_id re-sent against a LATER-week row carrying the IDENTICAL pairing is a 409 — that row is untouched', async () => {
+    // THE PREMISE (§4 rule 14(c)): the swapped week-2 pairing recurs in a
+    // later regular-season week (an 8-team round-robin repeats after 7
+    // weeks). Found by search, asserted present — never assumed.
+    const edited = (await weekRows(2))[0]
+    const { data: later, error } = await service
+      .from('matchups')
+      .select('id, week, home_team_id, away_team_id')
+      .eq('league_id', leagueId)
+      .eq('round_type', 'regular')
+      .eq('home_team_id', edited.home_team_id)
+      .eq('away_team_id', edited.away_team_id!)
+      .gt('week', 2)
+      .order('week')
+    if (error) throw new Error(`matchups read: ${error.message}`)
+    expect(later!.length, 'the swapped pairing recurs in a later week').toBeGreaterThanOrEqual(1)
+    const twin = later![0]
+    expect(twin.id).not.toBe(edited.id)
+    // Same verb, same id, same home, same away — only the ROW differs.
+    const res = await commishEditSchedule(commishClient, leagueId, { matchup_id: twin.id, home_team_id: edited.home_team_id, away_team_id: edited.away_team_id!, action_id: ACTION.schedule, reason: 'the same pairing on another row, on a spent id' })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(COMMISH_SCHEDULE_ACTION_ID_REUSED_MESSAGE)
+    expect((await weekRows(twin.week)).find((r) => r.id === twin.id)).toStrictEqual(twin)
     expect(await receiptsFor(ACTION.schedule)).toHaveLength(1)
   })
 })

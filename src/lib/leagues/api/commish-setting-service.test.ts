@@ -9,9 +9,10 @@
  *   - §15.4:1701's argument order (key, value, rescore, reason), the value
  *     ALWAYS sent (null too), an absent reason OMITTED;
  *   - the family mapper's four arms VERBATIM, and the F65(b) guard on key +
- *     rescore + verb + id — and, said out loud, NOT on the value (129 echoes
- *     it canonicalised, `129:1076`; a value guard would 409 a landed first
- *     submit — see the service header and the PROGRESS F-row).
+ *     VALUE + rescore + verb + id — the value compared TOLERANTLY (R1058 /
+ *     D351: 129 echoes it canonicalised, `129:1076`, so `"72"` sent for `72`
+ *     echoed is the same submit and `120` for `72` is not; F364 stays the
+ *     durable exact-echo fix).
  *
  * The live half (the policy table, the per-key canonicalisation, the
  * rescore arm, the receipt) is pgTAP 077 + the stack suite.
@@ -23,6 +24,7 @@ import {
   COMMISH_SETTING_FORBIDDEN_MESSAGE,
   commishChangeSetting,
   commishChangeSettingInputSchema,
+  settingValueMatchesEcho,
 } from './commish-setting-service'
 
 const LEAGUE = 'b4000000-0000-4000-8000-000000000001'
@@ -141,9 +143,65 @@ describe('commishChangeSetting — the RPC call, the mapper, the F65(b) guard', 
     }
   })
 
-  it('F65(b)’s measured limit, pinned so it is seen: a document whose CANONICAL value differs from the sent form ("72" sent, 72 echoed) is STILL a 200 — the value is not in the guard', async () => {
+  it('R1058 (D351): "72" sent / 72 echoed is the SAME submit ⇒ 200 — a canonical echo of a non-canonical form never 409s a landed change', async () => {
     const { client } = rpcDouble({ data: result, error: null }) // requested_value: 72
     const res = await commishChangeSetting(client, LEAGUE, { ...body, value: '72' })
     expect(res.status).toBe(200)
+  })
+
+  it('R1058 (D351): 120 sent / 72 echoed is a DIFFERENT value on a spent id ⇒ 409, never the first submit’s document', async () => {
+    const { client } = rpcDouble({ data: result, error: null }) // requested_value: 72
+    const res = await commishChangeSetting(client, LEAGUE, { ...body, value: 120 })
+    expect(res.status).toBe(409)
+    expect(res.body).toStrictEqual({ error: COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE })
+  })
+
+  it('R1058: a roster_settings object sent WITH an unknown key and a null label vs its R1040 canonical echo (unknown key dropped, label stripped) ⇒ 200; a GENUINELY different object (bench 6 vs 7) ⇒ 409', async () => {
+    const sent = {
+      starting_slots: [{ key: 'QB', label: null, eligible: ['QB'], count: 1, colour: 'red' }],
+      bench: 6,
+      ir_slots: [],
+      swap_spots: 0,
+      unknown_top_level: true,
+    }
+    const canonical = { starting_slots: [{ key: 'QB', eligible: ['QB'], count: 1 }], bench: 6, ir_slots: [], swap_spots: 0 }
+    const roster = { ...result, key: 'roster_settings', value: canonical, previous_value: canonical, requested_value: canonical }
+    const same = await commishChangeSetting(rpcDouble({ data: roster, error: null }).client, LEAGUE, { ...body, key: 'roster_settings', value: sent })
+    expect(same.status).toBe(200)
+    const different = await commishChangeSetting(rpcDouble({ data: roster, error: null }).client, LEAGUE, { ...body, key: 'roster_settings', value: { ...sent, bench: 7 } })
+    expect(different.status).toBe(409)
+    expect(different.body).toStrictEqual({ error: COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE })
+  })
+})
+
+describe('settingValueMatchesEcho — tolerant exactly where 129 canonicalises, strict elsewhere', () => {
+  it('scalars: trim, case and integer text are 129’s forms (129:376-378, :404-406, :536); a different number, string or type is not', () => {
+    expect(settingValueMatchesEcho(' 072 ', 72)).toBe(true)
+    expect(settingValueMatchesEcho('TRUE', true)).toBe(true)
+    expect(settingValueMatchesEcho(' FAAB ', 'faab')).toBe(true)
+    expect(settingValueMatchesEcho('AA000000-0000-4000-8000-000000000007', 'aa000000-0000-4000-8000-000000000007')).toBe(true)
+    expect(settingValueMatchesEcho(120, 72)).toBe(false)
+    expect(settingValueMatchesEcho('rolling_priority', 'faab')).toBe(false)
+    expect(settingValueMatchesEcho(false, true)).toBe(false)
+    expect(settingValueMatchesEcho({ a: 1 }, 72)).toBe(false)
+    expect(settingValueMatchesEcho(null, 72)).toBe(false)
+  })
+
+  it('an echoed null is matched by a sent null or "none" (129:466-467) and by nothing else; an ABSENT echo matches nothing', () => {
+    expect(settingValueMatchesEcho(null, null)).toBe(true)
+    expect(settingValueMatchesEcho(' None ', null)).toBe(true)
+    expect(settingValueMatchesEcho(0, null)).toBe(false)
+    expect(settingValueMatchesEcho('', null)).toBe(false)
+    expect(settingValueMatchesEcho(null, undefined)).toBe(false)
+    expect(settingValueMatchesEcho(72, undefined)).toBe(false)
+  })
+
+  it('arrays: element-wise in order (129 keeps order); objects: every key the ECHO carries, sent extras ignored, an echoed key the sent object lacks is a mismatch', () => {
+    expect(settingValueMatchesEcho(['win_pct', 'points_for'], ['win_pct', 'points_for'])).toBe(true)
+    expect(settingValueMatchesEcho(['points_for', 'win_pct'], ['win_pct', 'points_for'])).toBe(false)
+    expect(settingValueMatchesEcho(['win_pct'], ['win_pct', 'points_for'])).toBe(false)
+    expect(settingValueMatchesEcho({ bench: '6', extra: 1 }, { bench: 6 })).toBe(true)
+    expect(settingValueMatchesEcho({ extra: 1 }, { bench: 6 })).toBe(false)
+    expect(settingValueMatchesEcho([{ bench: 6 }], { bench: 6 })).toBe(false)
   })
 })

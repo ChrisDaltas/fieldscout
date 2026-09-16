@@ -23,19 +23,30 @@
  * no-reason request LANDS with a NULL-reason receipt and a post with no
  * `— reason:` clause — the stack suite pins that end to end.
  *
- * THE IDENTITY GUARD'S ONE MEASURED LIMIT (F65(b)). 129 echoes the key and
- * the rescore flag as sent, but the value only in CANONICAL form
+ * THE IDENTITY GUARD AND THE VALUE (F65(b), D351, R1058). 129 echoes the
+ * key and the rescore flag as sent, but the value only in CANONICAL form
  * (`requested_value` is `v_canon`, `129:1076` — `"72"` comes back as `72`
- * for an integer key, R1040's canonicaliser strips unknown
- * `roster_settings` keys). A guard that compared the sent value to the echo
- * would answer a lawful FIRST submit sent in a non-canonical form with a 409
- * — a landed change reported as a failure, the worst outcome this layer can
- * produce. So the guard here is `verb` + `action_id` + `key` +
- * `rescore_requested`; a replay with a different VALUE for the same key
- * still returns the first submit's document. The hook mints one `action_id`
- * per submit, so that needs a client bug to reach; the closing fix (129
- * echoing the value AS SENT beside the canonical one) is filed as an F-row
- * in PROGRESS, not improvised here.
+ * for an integer key, R1040's canonicaliser rebuilds `roster_settings` from
+ * its known keys and drops the rest). A STRICT value compare would answer a
+ * lawful FIRST submit sent in a non-canonical form with a 409 — a landed
+ * change reported as a failure, the worst outcome this layer can produce —
+ * but D351 says the identity guard covers the document's identity fields
+ * and for a setting change the VALUE is one: a same-key DIFFERENT-value
+ * replay of a spent id answered 200 with the first submit's document is
+ * exactly the "change nobody made" F65(b) forbids (R1058's live probe: 72
+ * then 96 landed, a replay of the first id with 120 was told 72 while the
+ * blob held 96). So the guard compares the value TOLERANTLY, in the shape
+ * 129's canonicalisers permit and no wider (`settingValueMatchesEcho`):
+ * scalars as trimmed, lower-cased strings with integer text compared
+ * numerically (129's `btrim` / `lower` / `::integer` — `129:376-378`,
+ * `:404-406`, `:536`); an echoed `null` matched by a sent `null` or a
+ * `"none"` string (`129:466-467`, `trade_deadline_week`'s only null form);
+ * arrays element-wise in order (129 keeps order, `129:522`); objects
+ * recursively, RESTRICTED TO THE KEYS THE ECHO CARRIES (the sent object may
+ * carry keys R1040 drops — those must not become a false 409). `"72"` ↔ `72`
+ * passes; `120` ↔ `72` is refused. This is the INTERIM guard; the durable
+ * fix (129 echoing the value AS SENT beside the canonical one, then an exact
+ * compare) stays filed as PROGRESS F364.
  *
  * SQLSTATE mapping is the family's (`inseason-errors.ts`), imported never
  * re-derived; only the 42501 copy is this route's. Refusal text verbatim.
@@ -126,7 +137,46 @@ interface ResultShape {
   verb?: unknown
   action_id?: unknown
   key?: unknown
+  requested_value?: unknown
   rescore_requested?: unknown
+}
+
+/** A scalar in the form 129's canonicalisers reduce it to: trimmed,
+ *  lower-cased, integer text as its number (`"072"` and `72` are one value
+ *  to `129:376-378`'s `btrim … ::integer`). */
+function scalarForm(v: string | number | boolean): string {
+  const s = String(v).trim().toLowerCase()
+  return /^-?[0-9]+$/.test(s) ? String(Number(s)) : s
+}
+
+/**
+ * R1058 (D351 — the value is an identity field): does the value the caller
+ * SENT match the CANONICAL echo 129 returned as `requested_value`? Tolerant
+ * exactly where 129 canonicalises (see the header), strict everywhere else:
+ *
+ *   - echo `null`      ⇐ sent `null`, or a `"none"` string (`129:466-467`);
+ *   - echo array       ⇐ a sent array of the same length, element-wise;
+ *   - echo object      ⇐ a sent object matching on EVERY KEY THE ECHO
+ *                        CARRIES — keys the sent object carries beyond those
+ *                        are R1040's drops, never a mismatch;
+ *   - echo scalar      ⇐ a sent scalar with the same `scalarForm`;
+ *   - echo absent (`undefined`) — no echo at all — is never a match.
+ */
+export function settingValueMatchesEcho(sent: Json | undefined, echo: unknown): boolean {
+  if (echo === undefined) return false
+  if (echo === null) {
+    return sent === null || (typeof sent === 'string' && sent.trim().toLowerCase() === 'none')
+  }
+  if (Array.isArray(echo)) {
+    return Array.isArray(sent) && sent.length === echo.length && echo.every((e, i) => settingValueMatchesEcho(sent[i], e))
+  }
+  if (typeof echo === 'object') {
+    if (sent === null || typeof sent !== 'object' || Array.isArray(sent)) return false
+    const sentObject = sent as { [key: string]: Json | undefined }
+    return Object.entries(echo as Record<string, unknown>).every(([k, e]) => settingValueMatchesEcho(sentObject[k], e))
+  }
+  if (sent === null || sent === undefined || typeof sent === 'object') return false
+  return scalarForm(sent) === scalarForm(echo as string | number | boolean)
 }
 
 /**
@@ -163,16 +213,17 @@ export async function commishChangeSetting(
     return mapInSeasonRpcError(error, COMMISH_SETTING_FORBIDDEN_MESSAGE)
   }
 
-  // F65(b): identity for a setting change is (key, rescore) + the verb + the
-  // id — NOT the value, for the measured reason in the header (129 echoes
-  // the value canonicalised, `129:1076`). 129's replay is keyed on
-  // (league_id, action_id) alone (`129:724-725`), so a reused id sent for a
-  // DIFFERENT key would otherwise return the first key's document as a 200.
+  // F65(b): identity for a setting change is (key, value, rescore) + the verb
+  // + the id. 129's replay is keyed on (league_id, action_id) alone
+  // (`129:724-725`), so a reused id sent for a DIFFERENT key or value would
+  // otherwise return the first submit's document as a 200. The value is
+  // compared TOLERANTLY (R1058, the header): 129 echoes it canonicalised.
   const result = (data ?? {}) as ResultShape
   if (
     result.verb !== 'commish_change_setting' ||
     result.action_id !== action_id ||
     result.key !== key ||
+    !settingValueMatchesEcho(value, result.requested_value) ||
     result.rescore_requested !== rescore
   ) {
     return { status: 409, body: { error: COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE } }
