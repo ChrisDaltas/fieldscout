@@ -762,6 +762,14 @@ select set_config('request.jwt.claims',
   '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
 -- H1. Side flip (free window, no reason): one row.
+-- [migration 130 / M6A L.E1.9 (D348, F339): `schedule_edit_matchup` now
+-- writes its `commissioner_actions` receipt on EVERY edit. Under PROGRESS Q66
+-- (Chris, 2026-09-16; spec v2.16.41) a reason is OPTIONAL on every
+-- commissioner action, so H1-H4 and the `…36` side flip pass NULL exactly as
+-- they did before 130 and the receipt stores `reason IS NULL` (pgTAP 078 §D
+-- pins the receipt and the NULL). The first cut of 130 had made H1-H4 pass a
+-- reason and H1's `reason_required` TRUE; that was R1046's finding and is
+-- reverted here — `reason_required` is `false` again in the free window.]
 select results_eq(
   $$ select (r ->> 'rows_changed')::int, r -> 'siblings', (r ->> 'reason_required')::boolean,
             r ->> 'system_post' like 'Week 5 matchup edited by sr_user1: % vs % (was % vs %).'
@@ -769,7 +777,7 @@ select results_eq(
                                                          'a0000000-0000-4000-8000-000000000011') r
      where w.k = 1 $$,
   $$ values (1, '[]'::jsonb, false, true) $$,
-  'EDIT side flip in the free window, no reason: 1 row, no siblings, the post names before/after');
+  'EDIT side flip in the free window, no reason: 1 row, no siblings, the post names before/after (a reason is optional — Q66; the receipt is written with reason NULL, 078 §D)');
 select is(
   (select (m.home_team_id, m.away_team_id) = (w.a, w.h) from sr_w5 w join public.matchups m on m.id = w.id where w.k = 1),
   true, '…the row is flipped');

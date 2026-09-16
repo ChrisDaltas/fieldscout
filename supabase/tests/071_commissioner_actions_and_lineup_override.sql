@@ -73,7 +73,11 @@ select columns_are('public', 'commissioner_actions',
         'reason', 'before', 'after', 'metadata', 'acting_as_team_id',
         'reverts_action_id', 'prev_hash', 'row_hash', 'created_at'],
   'commissioner_actions: §12.12''s columns PLUS acting_as_team_id (§10.3:701 lists it; the DDL''s omission is the erratum)');
-select col_not_null('public', 'commissioner_actions', 'reason', 'reason NOT NULL (§12.12:1195)');
+-- [migration 130 §0 / PROGRESS Q66 (Chris, 2026-09-16; spec v2.16.41): a
+-- reason is OPTIONAL on every commissioner action — 123:295's NOT NULL is
+-- DROPPED by 130 and this pin flips with it. The explicit-class CHECK and the
+-- 500 bound survive for a NON-NULL reason (pgTAP 078 §M pins the new text).]
+select col_is_null('public', 'commissioner_actions', 'reason', 'reason NULLABLE since migration 130 (Q66 / spec v2.16.41 §10.3 — was NOT NULL at 123:295, §12.12:1195)');
 select col_not_null('public', 'commissioner_actions', 'created_at',
   'created_at NOT NULL — TIGHTENED from §12.12:1202''s nullable (111:220/112:324 precedent; a NULL is unreachable by the activity feed''s composite cursor, R770)');
 select col_type_is('public', 'commissioner_actions', 'target_id', 'text',

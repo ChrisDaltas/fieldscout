@@ -379,6 +379,51 @@ export type Database = {
           },
         ]
       }
+      commish_schedule_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          matchup_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_schedule_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_schedule_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commish_setting_actions: {
         Row: {
           action_id: string
@@ -488,7 +533,7 @@ export type Database = {
           league_id: string
           metadata: Json | null
           prev_hash: string | null
-          reason: string
+          reason: string | null
           reverts_action_id: string | null
           row_hash: string | null
           target_id: string | null
@@ -505,7 +550,7 @@ export type Database = {
           league_id: string
           metadata?: Json | null
           prev_hash?: string | null
-          reason: string
+          reason?: string | null
           reverts_action_id?: string | null
           row_hash?: string | null
           target_id?: string | null
@@ -522,7 +567,7 @@ export type Database = {
           league_id?: string
           metadata?: Json | null
           prev_hash?: string | null
-          reason?: string
+          reason?: string | null
           reverts_action_id?: string | null
           row_hash?: string | null
           target_id?: string | null
@@ -4097,6 +4142,29 @@ export type Database = {
           p_slot_map: Json
           p_team_id: string
           p_week: number
+        }
+        Returns: Json
+      }
+      commish_edit_schedule: {
+        Args: {
+          p_action_id?: string
+          p_away: string
+          p_home: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      commish_edit_schedule_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_away: string
+          p_home: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason: string
         }
         Returns: Json
       }
