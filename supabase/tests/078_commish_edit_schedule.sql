@@ -15,11 +15,13 @@
 --       commissioner_actions row with the right target and reason while the
 --       existing schedule_actions row and league_chat post are STILL written.
 --       ***BREAK PROBE 2's TARGET*** (delete the log call ⇒ C2 reds).
---   §D  111's RECEIPT, free-window arm (L2): a reason-less free-window edit is
---       now REFUSED BY NAME (the user-visible consequence the banner states —
---       F225's partial discharge); with a reason it lands with its receipt; a
---       NO-OP edit is still a REFUSAL and writes NONE of the three; a
---       tab/newline-only reason and a 501-character reason are refused.
+--   §D  111's RECEIPT, free-window arm (L2) — RE-CUT UNDER Q66 (Chris,
+--       2026-09-16; spec v2.16.41): a reason-less free-window edit LANDS and
+--       writes EXACTLY ONE receipt whose `reason` IS NULL; a whitespace-only
+--       reason stores NULL, never ''; a non-empty reason is stored TRIMMED;
+--       a NO-OP edit is still a REFUSAL and writes NONE of the three; a
+--       501-character reason is refused. ***BREAK PROBE (i)'s TARGET*** (the
+--       reason refusal re-added to the hunk ⇒ D1/D2/D7 red by name).
 --   §E  THE PAIRED CONTRASTS, one per lifted refusal, ADJACENT cells at the
 --       SAME fixture state: 111 refuses BY NAME, the sibling lands it and
 --       names the bypass in `bypassed[]` — 111:887 (matchup status),
@@ -30,8 +32,13 @@
 --       a bracket row are refused BY NAME by BOTH verbs (§22.2 / F360).
 --   §G  the sibling's NO-OP: `no_changes: true`, no receipt, no post, ledger
 --       row written, `commissioner_action_id` NULL, WHY named.
---   §H  the sibling's reason gate and shape gates. ***BREAK PROBE 3's
---       TARGET*** (loosen the class to plain btrim ⇒ H2 reds).
+--   §H  the sibling's reason handling (OPTIONAL under Q66: blank / tabs /
+--       NULL all LAND with a NULL-reason receipt; 501 refused) and its shape
+--       gates. ***BREAK PROBE (iv)'s TARGET*** (the sibling's reason refusal
+--       re-added ⇒ H1/H2/H3 red).
+--   §M  Q66's SCHEMA CHANGE (130 §0): `commissioner_actions.reason` nullable,
+--       its CHECK re-minted as `reason IS NULL OR <class + bound>` (a stored
+--       literal), a NULL reason INSERTS, '' / tab-only / 501 are still 23514.
 --   §I  AUTH — one no-leak 42501 (071 §F).
 --   §J  REPLAY — byte-identical, nothing re-written.
 --   §K  WHAT SCORING DID NOT DO on a live week (§4 rule 15), with the
@@ -50,7 +57,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(118);
+select plan(129);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS
@@ -318,40 +325,58 @@ select ok((select message like 'Week 2 matchup edited by es_user1: ES T4 vs ES T
            from league_chat where league_id = 'bf000000-0000-4000-8000-000000000001' and is_system),
   'C11 …with 111''s own text, byte for byte — the override tail because the league''s Week 1 has kicked off');
 select is(current_setting('pgtap.es_c1')::jsonb ->> 'reason_required' || '|' || (current_setting('pgtap.es_c1')::jsonb -> 'window' ->> 'reason_required'),
-  'true|true', 'C12 …reason_required is true at the top level AND in E41''s window (the post-kickoff arm — both meanings agree here)');
+  'true|true', 'C12 …reason_required is true at the top level AND in E41''s window — TRUE AS MEASURED: 111''s OWN post-kickoff gate (111:952-957) is an original line outside the one hunk and still requires one after Week 1 kickoff; under Q66 that is F362''s (the sweep), and this cell flips when the sweep lands');
 
 -- ---------------------------------------------------------------------------
--- D. 111's RECEIPT — the FREE-WINDOW arm (L2). The banner''s one user-visible
---    consequence: a reason is required BEFORE Week 1 kickoff too.
+-- D. 111's RECEIPT — the FREE-WINDOW arm (L2), UNDER Q66 (Chris, 2026-09-16;
+--    spec v2.16.41): a reason is OPTIONAL; the receipt is ALWAYS written.
+--    ***BREAK PROBE (i)'s TARGET*** (re-add the refusal ⇒ D1/D2/D7 red).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
-       'df000000-0000-4000-8000-000000000041',
-       'cf000000-0000-4000-8000-00000000000c', 'cf000000-0000-4000-8000-00000000000b',
-       null, '0f000000-0000-4000-8000-000000000010'::uuid) $$,
-  '%every matchup edit requires a reason%before Week 1 kickoff too%',
-  'D1 A FREE-WINDOW EDIT WITH NO REASON IS NOW REFUSED BY NAME (22023): the receipt needs one (commissioner_actions.reason NOT NULL, 123:295-296; §15.4:1690; standing rule (b)) — 111:952-957 alone would have let this through (059 H1''s old contract)');
-select set_config('pgtap.es_d2',
-  (select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
-     'df000000-0000-4000-8000-000000000041',
-     'cf000000-0000-4000-8000-00000000000c', 'cf000000-0000-4000-8000-00000000000b',
-     'seed correction', '0f000000-0000-4000-8000-000000000010'::uuid)::text), true);
+select lives_ok(
+  $$ select set_config('pgtap.es_d1',
+       (select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
+          'df000000-0000-4000-8000-000000000041',
+          'cf000000-0000-4000-8000-00000000000c', 'cf000000-0000-4000-8000-00000000000b',
+          null, '0f000000-0000-4000-8000-000000000010'::uuid)::text), true) $$,
+  'D1 A FREE-WINDOW EDIT WITH NO REASON LANDS (Q66: "we should not require a reason for anything") — the first cut refused this by name (R1046), and re-adding that refusal reds here');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select count(*)::int from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
-  1, 'D2 …with a reason the SAME edit lands with EXACTLY ONE receipt');
-select is((select target_id || '|' || reason from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
-  'df000000-0000-4000-8000-000000000041|seed correction', 'D3 …targeting M41 with the reason given');
-select is(current_setting('pgtap.es_d2')::jsonb ->> 'reason_required' || '|' || (current_setting('pgtap.es_d2')::jsonb -> 'window' ->> 'reason_required') || '|' || (current_setting('pgtap.es_d2')::jsonb -> 'window' ->> 'free'),
-  'true|false|true', 'D4 …the top-level reason_required is TRUE (a reason WAS required) while window.reason_required / window.free keep E41''s meaning (free window, no override)');
+  1, 'D2 …and writes EXACTLY ONE receipt — the audit row is what Q66 REQUIRES ("what is required is storing the transaction")');
+select is((select target_id || '|' || coalesce(reason, '<NULL>') from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
+  'df000000-0000-4000-8000-000000000041|<NULL>', 'D3 …targeting M41 with reason IS NULL — stored as NULL, not as '''' (130 §0 made the column nullable)');
+select is(current_setting('pgtap.es_d1')::jsonb ->> 'reason_required' || '|' || (current_setting('pgtap.es_d1')::jsonb -> 'window' ->> 'reason_required') || '|' || (current_setting('pgtap.es_d1')::jsonb -> 'window' ->> 'free'),
+  'false|false|true', 'D4 …reason_required is FALSE at the top level and in E41''s window (free window — 111''s own NOT v_free, untouched by the hunk), free = true');
 select ok((select message like 'Week 4 matchup edited by es_user1: ES T12 vs ES T11 (was ES T11 vs ES T12).'
            from league_chat where league_id = 'bf000000-0000-4000-8000-000000000002' and is_system),
-  'D5 …and the post is 111''s free-window text, ending in "." with NO override tail — the receipt did not change what the league reads');
-select is((select count(*)::int from schedule_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
-  1, 'D6 …and the schedule_actions row is written too');
--- THE NO-OP STAYS A REFUSAL (D348) and writes NONE of the three.
+  'D5 …and the post is 111''s free-window text, ending in "." with NO override tail and NO reason clause');
+select is((select count(*)::int from schedule_actions where league_id = 'bf000000-0000-4000-8000-000000000002') || '|'
+          || (select (result ->> 'commissioner_action_id' = (select id::text from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002'))::text
+              from schedule_actions where action_id = '0f000000-0000-4000-8000-000000000010'),
+  '1|true', 'D6 …and the schedule_actions row is written too, carrying the receipt''s id');
+-- WHITESPACE-ONLY ⇒ NULL, never ''; NON-EMPTY ⇒ TRIMMED.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
+       'df000000-0000-4000-8000-000000000042',
+       'cf000000-0000-4000-8000-00000000000e', 'cf000000-0000-4000-8000-00000000000d',
+       E' \t\r\n ', '0f000000-0000-4000-8000-000000000012'::uuid) $$,
+  'D7 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is treated as NO reason and LANDS (Q66) — 111:951''s plain btrim would have passed the tabs through as text; the hunk''s explicit class does not');
+select lives_ok(
+  $$ select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
+       'df000000-0000-4000-8000-000000000043',
+       'cf000000-0000-4000-8000-000000000010', 'cf000000-0000-4000-8000-00000000000f',
+       E'\t seed correction \n', '0f000000-0000-4000-8000-000000000014'::uuid) $$,
+  'D8 a non-empty reason wrapped in tabs and newlines lands…');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is((select string_agg(target_id || '=' || coalesce(reason, '<NULL>'), ' ' order by target_id) from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
+  'df000000-0000-4000-8000-000000000041=<NULL> df000000-0000-4000-8000-000000000042=<NULL> df000000-0000-4000-8000-000000000043=seed correction',
+  'D9 …THE THREE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not '''' — the table CHECK still refuses ''''), tab-wrapped ⇒ stored TRIMMED as "seed correction"');
+-- THE NO-OP STAYS A REFUSAL (D348); the 500 bound stays; neither writes.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_like(
@@ -359,27 +384,20 @@ select throws_like(
        'df000000-0000-4000-8000-000000000041',
        'cf000000-0000-4000-8000-00000000000c', 'cf000000-0000-4000-8000-00000000000b',
        'again', '0f000000-0000-4000-8000-000000000011'::uuid) $$,
-  '%nothing to change%', 'D7 a NO-OP edit on 111''s verb is STILL A REFUSAL by name (D348: user-visible behaviour, unchanged; it fires before the hunk)');
+  '%nothing to change%', 'D10a a NO-OP edit on 111''s verb is STILL A REFUSAL by name (D348: user-visible behaviour, unchanged; it fires before the hunk)');
 select throws_ok(
   $$ select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
-       'df000000-0000-4000-8000-000000000042',
-       'cf000000-0000-4000-8000-00000000000e', 'cf000000-0000-4000-8000-00000000000d',
-       E' \t\r\n ', '0f000000-0000-4000-8000-000000000012'::uuid) $$,
-  '22023', null, 'D8 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is refused (F225''s R745 hole: 111:951''s plain btrim strips spaces only — the hunk''s class does not)');
-select throws_ok(
-  $$ select public.schedule_edit_matchup('bf000000-0000-4000-8000-000000000002',
-       'df000000-0000-4000-8000-000000000042',
-       'cf000000-0000-4000-8000-00000000000e', 'cf000000-0000-4000-8000-00000000000d',
+       'df000000-0000-4000-8000-000000000044',
+       'cf000000-0000-4000-8000-000000000012', 'cf000000-0000-4000-8000-000000000011',
        repeat('x', 501), '0f000000-0000-4000-8000-000000000013'::uuid) $$,
-  '22023', null, 'D9 a 501-character reason is refused (the league_chat bound, F225''s R746 half)');
+  '22023', null, 'D10b a 501-character reason is refused (the league_chat bound, F225''s R746 half — the bound survives Q66; only the presence gate went)');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select count(*)::int from commissioner_actions where league_id = 'bf000000-0000-4000-8000-000000000002') || '|'
           || (select count(*)::int from league_chat where league_id = 'bf000000-0000-4000-8000-000000000002') || '|'
-          || (select count(*)::int from schedule_actions where league_id = 'bf000000-0000-4000-8000-000000000002'),
-  '1|1|1', 'D10 …and the three refusals wrote NONE of the three rows: receipt, post and ledger are all still exactly one');
-select is((select home_team_id::text from matchups where id = 'df000000-0000-4000-8000-000000000042'),
-  'cf000000-0000-4000-8000-00000000000d', 'D11 …and M42 is untouched');
+          || (select count(*)::int from schedule_actions where league_id = 'bf000000-0000-4000-8000-000000000002') || '|'
+          || (select home_team_id::text from matchups where id = 'df000000-0000-4000-8000-000000000044'),
+  '3|3|3|cf000000-0000-4000-8000-000000000011', 'D11 …and the two refusals wrote NONE of the three rows (still exactly three each) and M44 is untouched');
 
 -- ---------------------------------------------------------------------------
 -- E. THE PAIRED CONTRASTS — one per lifted refusal, ADJACENT, SAME state.
@@ -530,8 +548,8 @@ select throws_like(
        'df000000-0000-4000-8000-000000000023',
        'cf000000-0000-4000-8000-000000000002', 'cf000000-0000-4000-8000-000000000001',
        'x', '0f000000-0000-4000-8000-000000000032'::uuid) $$,
-  '%is a playoff row%seeded by the playoffs engine from the standings (§11.5, 118:1075-1077)%every-team-once re-validation this verb keeps%No verb hand-edits a bracket today (PROGRESS F360)%',
-  'F3b …and so does the sibling, BY NAME, saying WHY lifting 111:881 lands nothing (the kept uniqueness re-validation, the engine''s re-seed) and that the gap is F360''s — not a silent refusal, not a vacuous lift');
+  '%is a playoff row%Playoff matchups are set automatically today%re-seeds them at each sync (§11.5, 118:1573-1594)%every-team-once re-validation (§11.7) cannot hold over a bracket subset%Hand-picking playoff matchups is a planned commissioner feature with its own verb (PROGRESS F360, ruled 2026-09-16)%',
+  'F3b …and so does the sibling, BY NAME, saying that playoff matchups are set automatically TODAY and that hand-picking them is a PLANNED commissioner feature (F360, ruled 2026-09-16 — R1047), with the two mechanisms the bracket verb must respect (the kept re-validation, 118:1573-1594''s re-seed) — never a permanent legality wall. ***BREAK PROBE (iii)*** : the first cut''s wording ("No verb hand-edits a bracket today", cite 118:1075-1077) reds this pattern');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select count(*)::int from commish_schedule_actions where action_id in
@@ -572,28 +590,43 @@ select is(current_setting('pgtap.es_g1')::jsonb ->> 'rows_changed' || '|' || coa
   '0|null', 'G8 …rows_changed 0 and no system_post');
 
 -- ---------------------------------------------------------------------------
--- H. THE SIBLING''s REASON GATE AND SHAPE GATES. ***BREAK PROBE 3''s TARGET.***
+-- H. THE SIBLING''s REASON HANDLING (OPTIONAL — Q66) AND SHAPE GATES.
+--    ***BREAK PROBE (iv)''s TARGET*** (re-add the sibling''s refusal ⇒ H1-H3).
+--    M31 is (T4,T1) after E3; H1 flips it to (T1,T4), H2 flips it back, so
+--    the later cells that read "M31 still T4 home" stay true.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_ok(
+select lives_ok(
+  $$ select set_config('pgtap.es_h1',
+       (select public.commish_edit_schedule('bf000000-0000-4000-8000-000000000001',
+          'df000000-0000-4000-8000-000000000031',
+          'cf000000-0000-4000-8000-000000000001', 'cf000000-0000-4000-8000-000000000004',
+          '   ', '0f000000-0000-4000-8000-000000000050'::uuid)::text), true) $$,
+  'H1 a BLANK reason LANDS (Q66: optional everywhere) — this week is upcoming-but-kicked-off, so E41 alone would once have demanded one; the first cut refused this (22023) and re-adding that refusal reds here');
+select is((select coalesce(reason, '<NULL>') from commissioner_actions where metadata ->> 'action_id' = '0f000000-0000-4000-8000-000000000050'),
+  '<NULL>', 'H1b …its receipt IS written, with reason NULL — not ''''');
+select ok((select message not like '% — reason: %' and message like 'Week 3 matchup edited by es_user1 (commissioner override): ES T1 vs ES T4 (was ES T4 vs ES T1) — lifted: kickoff_lock'
+           from league_chat where league_id = 'bf000000-0000-4000-8000-000000000001' and is_system
+             and message like 'Week 3 matchup edited by es_user1 (commissioner override): ES T1 vs ES T4%'),
+  'H1c …and its post carries the override marker and the lifted gate but NO "— reason:" clause (the clause is conditional, never "reason: <NULL>")');
+select lives_ok(
   $$ select public.commish_edit_schedule('bf000000-0000-4000-8000-000000000001',
        'df000000-0000-4000-8000-000000000031',
-       'cf000000-0000-4000-8000-000000000001', 'cf000000-0000-4000-8000-000000000004',
-       '   ', '0f000000-0000-4000-8000-000000000050'::uuid) $$,
-  '22023', null, 'H1 a blank reason is refused UNCONDITIONALLY — this week is upcoming-but-kicked-off, 111 would have required one too; H3 is the case 111 would not');
-select throws_ok(
-  $$ select public.commish_edit_schedule('bf000000-0000-4000-8000-000000000001',
-       'df000000-0000-4000-8000-000000000031',
-       'cf000000-0000-4000-8000-000000000001', 'cf000000-0000-4000-8000-000000000004',
+       'cf000000-0000-4000-8000-000000000004', 'cf000000-0000-4000-8000-000000000001',
        E' \t\r\n ', '0f000000-0000-4000-8000-000000000051'::uuid) $$,
-  '22023', null, 'H2 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is refused (R745: plain btrim strips spaces only — 111:951''s hole, closed in the sibling by the explicit class)');
-select throws_ok(
+  'H2 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is treated as no reason and LANDS (the explicit class, R745 — still the class that decides "blank")');
+select is((select coalesce(reason, '<NULL>') from commissioner_actions where metadata ->> 'action_id' = '0f000000-0000-4000-8000-000000000051'),
+  '<NULL>', 'H2b …stored as NULL, never as the tabs themselves');
+select lives_ok(
   $$ select public.commish_edit_schedule('bf000000-0000-4000-8000-000000000002',
        'df000000-0000-4000-8000-000000000051',
        'cf000000-0000-4000-8000-00000000000d', 'cf000000-0000-4000-8000-00000000000b',
        null, '0f000000-0000-4000-8000-000000000052'::uuid) $$,
-  '22023', null, 'H3 a NULL reason in the FREE window (L2, Week 1 ahead) is refused too — UNCONDITIONAL, where 111:952-957 keys on the window');
+  'H3 a NULL reason in the FREE window (L2, Week 1 ahead) lands too — no window requires one');
+select is((select coalesce(reason, '<NULL>') || '|' || (current_setting('pgtap.es_h1')::jsonb ->> 'reason_required') || '|' || (current_setting('pgtap.es_h1')::jsonb -> 'window' ->> 'reason_required')
+           from commissioner_actions where metadata ->> 'action_id' = '0f000000-0000-4000-8000-000000000052'),
+  '<NULL>|false|false', 'H3b …with a NULL-reason receipt; and the sibling''s document says reason_required = false at both levels (nothing requires one — the field stays for the panel, F361)');
 select throws_ok(
   $$ select public.commish_edit_schedule('bf000000-0000-4000-8000-000000000001',
        'df000000-0000-4000-8000-000000000031',
@@ -627,7 +660,7 @@ select throws_like(
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select home_team_id::text from matchups where id = 'df000000-0000-4000-8000-000000000031'),
-  'cf000000-0000-4000-8000-000000000004', 'H9 …and none of the eight refusals wrote anything (M31 still T4 home)');
+  'cf000000-0000-4000-8000-000000000004', 'H9 …and none of the five refusals (H4-H8) wrote anything (M31 is T4 home again after H1/H2''s round trip)');
 
 -- ---------------------------------------------------------------------------
 -- I. AUTH — one no-leak 42501 (071 §F).
@@ -686,7 +719,7 @@ select set_config('request.jwt.claims', '', true);
 select is((select home_team_id::text from matchups where id = 'df000000-0000-4000-8000-000000000031'),
   'cf000000-0000-4000-8000-000000000004', 'J2 …and NOTHING was written on the replay: the returned document is a record, not an instruction');
 select is((select count(*)::int from commish_schedule_actions where league_id = 'bf000000-0000-4000-8000-000000000001'),
-  5, 'J3 …the ledger holds exactly the five submits (E1-E4 + G''s no-op); the replay added none');
+  7, 'J3 …the ledger holds exactly the seven submits (E1-E4 + G''s no-op + H1/H2); the replay added none');
 
 -- ---------------------------------------------------------------------------
 -- K. WHAT SCORING DID NOT DO on the LIVE week (E2), with its premise (B12).
@@ -768,6 +801,35 @@ select is(
      (select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'commish_edit_schedule_internal'), 'is_league_commish', 'g')),
   1, 'L11 the sibling names is_league_commish exactly once too — its lifts are the ABSENCE of gates, never an arm inside one');
+
+-- ---------------------------------------------------------------------------
+-- M. Q66''s SCHEMA CHANGE (130 §0) — pinned LAST, because the direct INSERTs
+--    below add rows the count cells above must not see (and the append-only
+--    trigger, 123:375, forbids deleting them again).
+-- ---------------------------------------------------------------------------
+select col_is_null('public', 'commissioner_actions', 'reason',
+  'M1 commissioner_actions.reason is NULLABLE (130 §0 dropped 123:295''s NOT NULL — the first writer under Q66 lands the column change once, for F362''s sweep to build on)');
+select is(
+  (select pg_get_constraintdef(c.oid) from pg_constraint c
+   where c.conrelid = 'public.commissioner_actions'::regclass and c.conname = 'commissioner_actions_reason_check'),
+  E'CHECK (((reason IS NULL) OR ((length(btrim(reason, \' \t\r\n\'::text)) > 0) AND (length(reason) <= 500))))',
+  'M2 …and its CHECK, as a stored literal, is `reason IS NULL OR <123''s explicit class AND the 500 bound>` — the class and the bound SURVIVE Q66 for a non-NULL reason');
+select lives_ok(
+  $$ insert into commissioner_actions (league_id, actor_id, action_type, target_type, target_id, reason)
+     values ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'edit_schedule', 'schedule', 'm3', null) $$,
+  'M3 a NULL reason INSERTS at the table (the column change is real, not only the verbs'' normalisation)');
+select throws_ok(
+  $$ insert into commissioner_actions (league_id, actor_id, action_type, target_type, target_id, reason)
+     values ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'edit_schedule', 'schedule', 'm4', '') $$,
+  '23514', null, 'M4 …while '''' is STILL refused by the CHECK — "no reason" is NULL, never the empty string');
+select throws_ok(
+  $$ insert into commissioner_actions (league_id, actor_id, action_type, target_type, target_id, reason)
+     values ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'edit_schedule', 'schedule', 'm5', E'\t\n') $$,
+  '23514', null, 'M5 …and a tab/newline-only string is still refused (the explicit class, R745)');
+select throws_ok(
+  $$ insert into commissioner_actions (league_id, actor_id, action_type, target_type, target_id, reason)
+     values ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'edit_schedule', 'schedule', 'm6', repeat('x', 501)) $$,
+  '23514', null, 'M6 …and 501 characters are still refused (the 500 bound, F40/R746)');
 
 select * from finish();
 rollback;

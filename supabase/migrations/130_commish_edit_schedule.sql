@@ -9,6 +9,19 @@
 -- same audit rules"), §10.3, §10.4, §12.12, §22.2, E41 (`spec:2016`).)
 --
 -- WHAT THIS MIGRATION DOES
+--   0. **Q66 (Chris, 2026-09-16 — spec v2.16.41): A REASON IS OPTIONAL ON
+--      EVERY COMMISSIONER ACTION; THE AUDIT ROW IS ALWAYS WRITTEN.** This is
+--      the FIRST writer under that ruling, so it carries the ONE schema
+--      change the ruling needs and lands it once, for the sweep (PROGRESS
+--      F362) to build on: `commissioner_actions.reason` DROPS its NOT NULL
+--      and its CHECK becomes `reason IS NULL OR <123's non-blank class + 500
+--      bound>`. 123 is IN PRODUCTION and is not edited; the change is an
+--      `ALTER TABLE` here (§0 below). A blank / whitespace-only reason is
+--      stored as NULL, never as '' and never refused; a non-empty reason is
+--      stored TRIMMED (the explicit `E' \t\r\n'` class — that part of F225
+--      stands) and bounded at 500. Only 130's two verbs pass NULL today; the
+--      six earlier verbs (123, 125-129) still refuse a blank reason in-body
+--      until the sweep lands — a known, recorded transitional state (F362).
 --   1. `commish_schedule_actions` — the sibling's OWN zero-policy replay
 --      ledger (D350), `UNIQUE (league_id, action_id)` + `REVOKE TRUNCATE`.
 --   2. `commish_edit_schedule_internal` + `commish_edit_schedule` — a NEW
@@ -17,9 +30,9 @@
 --      permutation, the same parking step, the same in-body re-validation),
 --      but as a COMMISSIONER OVERRIDE — the timing gates 111 raises against a
 --      commissioner are lifted and NAMED in `bypassed[]`, the reason is
---      required UNCONDITIONALLY with the explicit `E' \t\r\n'` class, a no-op
---      returns `no_changes: true` instead of raising, and every change writes
---      its `commissioner_actions` row through the ONE logging helper.
+--      OPTIONAL (Q66) and normalised in the explicit `E' \t\r\n'` class, a
+--      no-op returns `no_changes: true` instead of raising, and every change
+--      writes its `commissioner_actions` row through the ONE logging helper.
 --   3. `schedule_edit_matchup` (111's verb) gains the receipt it has never
 --      had — `CREATE OR REPLACE` against **111:785-1153's FILE TEXT** (D137),
 --      **EXACTLY ONE NEW HUNK**, at the seam between the in-txn `league_chat`
@@ -60,14 +73,14 @@
 -- | 111:993  | a SIBLING row's status ≠ `scheduled`     | **LIFTED** → `bypassed` `sibling_status_gate:<matchup_id>:<status>` (111:887's own rule, applied to the row the new team vacates) |
 -- | 111:894  | the cell carries a score, a result or `is_overridden` | **KEPT, refused BY NAME** — §22.2 / rule 9: a scored or overridden cell is never rewritten; correcting it is `commish_edit_score`'s (126) |
 -- | 111:999  | a SIBLING cell carries a score / result / flag | **KEPT** — the same rule on the row the edit would re-seat |
--- | 111:881  | round_type ∉ (regular, secondary)        | **KEPT, refused BY NAME — PROGRESS F360.** §2.2 lists it among the four, but lifting it lands nothing: bracket rows (`playoff` / `consolation` / `third_place`) seat a SUBSET of the league, and 111's in-body uniqueness re-validation (`111:1075-1091`, KEPT here as a legality gate) counts EVERY non-retired team once per (week, round_type) — so a bracket edit would be refused one gate later with a message about regular-season uniqueness, and even a landed one would be re-seeded away at the next round advance by `playoff_bracket_sync_internal` (118:1075-1077). Under (i) a hand-edited bracket is not a repair of anything inside the rules; a bracket-repair verb, if ever asked for, is F360's and needs its own re-validation. The refusal here names all of that |
+-- | 111:881  | round_type ∉ (regular, secondary)        | **KEPT, refused BY NAME — PROGRESS F360, RULED 2026-09-16 (R1047): hand-picking playoff matchups is a WANTED commissioner feature and its OWN task, not a lift here.** §2.2 lists it among the four, but lifting it in THIS verb lands nothing: bracket rows (`playoff` / `consolation` / `third_place`) seat a SUBSET of the league, and 111's in-body uniqueness re-validation (`111:1075-1091`, KEPT here as a legality gate) counts EVERY non-retired team once per (week, round_type) — so a bracket edit would be refused one gate later with a message about regular-season uniqueness, and even a landed one would be re-seeded away at the next sync: `playoff_bracket_sync_internal` DELETEs the round's `playoff` rows with `home_seed IS NOT NULL` and re-INSERTs them from the standings (**118:1573-1594** — the earlier `118:1075-1077` cite pointed at variable assignments, corrected in the fix round). The bracket verb F360 now names must make BOTH of those respect a manual pairing. The refusal here says that playoff matchups are set automatically today and that hand-picking them is a planned commissioner feature — not a legality wall |
 -- | 111:867  | league status ≠ `in_season`              | **KEPT** — standing rule (a)'s own bound: "at any time the league is in a state where the action is meaningful"; a regular-season pairing is meaningful only in season |
 -- | 111:919  | bye row                                  | **KEPT** — v1 schedules have no bye to edit |
 -- | 111:926-934 | a foreign or retired team               | **KEPT** — F222(a): only this league's seated franchises pair |
 -- | 111:1034-1041 | the parking type is occupied           | **KEPT** — the permutation cannot be made safe under the unique indexes |
 -- | 111:1086-1107 | uniqueness + E40 after the write       | **KEPT** — legality of the resulting week |
 -- | 111:938-943 | the no-op                               | not a refusal here: `no_changes: true` (D336 part 3), ledger row written, no receipt, no post |
--- | 111:952-957 | reason required only after Week 1 kickoff | superseded: the reason is required UNCONDITIONALLY (§15.4:1690, standing rule (b)); E41's window is still evaluated and REPORTED (`window`) because the chat post and the receipt say whether the edit fell inside it |
+-- | 111:952-957 | reason required only after Week 1 kickoff | ~~superseded: the reason is required UNCONDITIONALLY (§15.4:1690, standing rule (b))~~ **STRUCK 2026-09-16 (Q66): the reason is OPTIONAL in every window (spec v2.16.41 — §10 / §11.7 / §15.4 / E41). The sibling requires none; 111's own post-kickoff gate at `111:952-957` is an ORIGINAL line outside the one hunk and stays as written until the sweep (F362) touches 111 — see "111's RECEIPT HUNK" below.** E41's window is still evaluated and REPORTED (`window`) because the chat post and the receipt say whether the edit fell inside it |
 --
 -- Every gate reads the row this call LOCKED: `leagues … FOR UPDATE` is the
 -- first statement after the shape checks (rule 8, R1036), and the matchup,
@@ -88,33 +101,54 @@
 -- (Remix is `schedule_remix_confirm`'s).
 --
 -- ---------------------------------------------------------------------------
--- 111's RECEIPT HUNK, AND THE ONE USER-VISIBLE CONSEQUENCE IT CARRIES
+-- 111's RECEIPT HUNK — RE-DERIVED UNDER Q66 (2026-09-16)
 -- ---------------------------------------------------------------------------
--- `commissioner_actions.reason` is `NOT NULL` with the explicit-class CHECK
--- (`123:295-296`). 111 requires a reason only AFTER Week 1 kickoff
--- (`111:952-957`) and lets `v_reason` be NULL before it — so a receipt for a
--- free-window edit cannot be written without a reason. The hunk therefore
--- does what F225's amendment (PROGRESS, 2026-09-11) says it does — *"the
--- reason gate moves to the explicit `E' \t\r\n'` class with the 500 bound,
--- as part of the same one-hunk receipt change"* — and what §15.4:1690 says
--- of every override (*"all require `reason`; all write `commissioner_actions`"*)
--- and standing rule (b) says of every change (*"an audited row with a
--- reason"*): **`schedule_edit_matchup` now requires a non-blank reason on
--- EVERY edit, before Week 1 kickoff too, refused BY NAME (22023) when
--- absent, tab/newline-only or over 500 characters.** The hunk also folds the
--- receipt's id into the returned document (`commissioner_action_id`) and
--- sets the top-level `reason_required` to TRUE — it was a mirror of E41's
--- window flag and would otherwise report `false` for an edit that just
--- required one; `window.reason_required` keeps E41's meaning. The no-op
--- (`111:938-943`) stays a REFUSAL — it fires BEFORE the hunk and writes none
--- of the three rows (D348). Suites that pinned the old free-window contract
--- are amended in this PR and say so in their own text: pgTAP 059 §H (H1-H4
--- now pass a reason; H1's `reason_required` is `true`) and
--- `schedule-edit-api-db.test.ts` (the three free-window edits pass a reason;
--- a reason-less free-window edit is now the refusal cell). The M4 schedule
--- panel's hint (*"required after Week 1 kickoff"*) is stale and is
--- **PROGRESS F361**, L.E1.13's — the panel already renders a reason refusal
--- against the field, so the change is legible today.
+-- THE FIRST CUT (2026-09-15) made the reason UNCONDITIONAL here, because
+-- `commissioner_actions.reason` was NOT NULL (`123:295-296`) and the receipt
+-- could not otherwise be written for a free-window edit. The Reviewer
+-- (R1046) showed that decided a spec conflict (§11.7:770 / E41 grant a
+-- reason-free window) by a D-row instead of a Q; Q66 was filed and Chris
+-- RULED (2026-09-16): *"No we should not require a reason for anything …
+-- I think it's fine to have one but it's not required. What is required is
+-- storing the transaction and displaying it in the 'activity' section of the
+-- League Home."* Spec v2.16.41 folds that into §10, §11.7, §15.4 and E41.
+--
+-- WHAT THE HUNK DOES NOW: the receipt is written on EVERY edit (audit
+-- always); the reason it stores is `NULLIF(btrim(v_reason, E' \t\r\n'), '')`
+-- — NULL when absent or whitespace-only (§0's column change makes that
+-- storable), the explicit class otherwise, bounded at 500 by name. NO
+-- refusal for a missing reason. The receipt's id is folded into the returned
+-- document (`commissioner_action_id`). The hunk does NOT touch the top-level
+-- `reason_required` any more: 111 computes it as `NOT v_free` at
+-- `111:1140`/`:1146` and that is still TRUE AS MEASURED — see the next
+-- paragraph. The no-op (`111:938-943`) stays a REFUSAL — it fires BEFORE the
+-- hunk and writes none of the three rows (D348).
+--
+-- WHAT THE HUNK DELIBERATELY DOES NOT DO, AND WHY (the one-hunk discipline
+-- vs the ruling's reach): 111's OWN post-kickoff gate (`111:952-957`,
+-- *"a matchup edit after the first kickoff … requires a reason"*) and its
+-- post text (`111:1123`, the `— reason: ' || v_reason` tail, which would
+-- concatenate to NULL) are ORIGINAL lines outside the hunk. Under Q66 that
+-- gate is now a defect against the spec (a verb refusing a commissioner —
+-- standing rule (a)/(f): file and fix), but removing it here is a SECOND
+-- and THIRD hunk in a body D137 / F341 / this task's text say carries
+-- exactly one. It is therefore FILED, not built: PROGRESS **F362** (the
+-- reason-optional sweep) owns `111:952-957` and `111:1123` together with the
+-- six earlier verbs' in-body gates and R1048's plain-`btrim` post. Until the
+-- sweep lands, `schedule_edit_matchup` still refuses a reason-less edit
+-- AFTER Week 1 kickoff (by 111's own gate — pgTAP 078 C-family and the stack
+-- vitest's 2001 cells pin that transitional state BY NAME as F362's), and
+-- lands one BEFORE it with a NULL-reason receipt (078 §D). The sibling
+-- `commish_edit_schedule` is fully under the ruling today: no reason gate in
+-- any window (078 §H1-H3).
+--
+-- Suites re-cut toward the ruling in the fix round: pgTAP 059 §H (H1-H4 and
+-- the `…36` side flip pass NO reason again; H1's `reason_required` is back
+-- to `false`), `schedule-edit-api-db.test.ts` (the free-window edits pass no
+-- reason and assert a receipt whose `reason` IS NULL), pgTAP 078 §D/§H/§M.
+-- The M4 schedule panel's hint (*"required after Week 1 kickoff"*) is stale
+-- the OTHER way now — a reason is optional everywhere — and stays
+-- **PROGRESS F361**, re-scoped, L.E1.13's.
 --
 -- ---------------------------------------------------------------------------
 -- D137 PROVENANCE
@@ -128,8 +162,9 @@
 -- **HUNK COUNT: 1** — inserted after `111:1146` (the `v_result` build) and
 -- before `111:1148` (the `schedule_actions` INSERT). `diff -u` of
 -- `111:785-1153` against §4 below shows exactly one `@@` hunk (shown in the
--- PR). The DECLARE block is untouched on purpose: the receipt id is carried in
--- `v_result` itself, so no new variable was needed.
+-- PR; RE-DERIVED and re-counted in the Q66 fix round, 2026-09-16 — still
+-- one `@@`, zero `-` lines). The DECLARE block is untouched on purpose: the
+-- receipt id is carried in `v_result` itself, so no new variable was needed.
 -- `schedule_remix_confirm` (`111:573-784`): NOT replaced, NOT touched. Its
 -- pre-130 `md5(prosrc)` = `d6fdf4664703904554356009a30a1fc2` (8932 chars) is
 -- pinned as a stored literal in pgTAP 078 §L, so a hunk that wanders into it
@@ -141,7 +176,12 @@
 -- are byte-untouched.
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4): additive (one new table, two new
--- functions) plus ONE `CREATE OR REPLACE` with a stated one-hunk diff; no
+-- functions) plus ONE `CREATE OR REPLACE` with a stated one-hunk diff, plus
+-- ONE `ALTER TABLE` on a production table (§0: `commissioner_actions.reason`
+-- DROP NOT NULL + CHECK relaxed — a WIDENING, no existing row can fail it,
+-- no backfill, no data rewrite; typegen turns `reason: string` into
+-- `string | null` and every TypeScript consumer compiles — measured, the
+-- only reader of the Row type is the `CommissionerAction` alias); no
 -- column dropped, no policy dropped, no signature changed (`schedule_edit_
 -- matchup(UUID, UUID, UUID, UUID, TEXT, UUID)` is the same overload —
 -- `inseason-routes.test.ts`'s six-argument pin is untouched); RLS enabled
@@ -154,8 +194,10 @@
 -- never against a deployed body (CLAUDE.md migration discipline).
 -- `npx supabase db push` for 125-130 is Chris's after merge.
 --
--- WAIVERS: none. R6 and D38 are not engaged — no constraint is added to an
--- existing table and nothing is backfilled.
+-- WAIVERS: none. R6 and D38 are not engaged — §0 REPLACES an existing CHECK
+-- with a strictly weaker one (every row that satisfied the old predicate
+-- satisfies the new; `ALTER … ADD CONSTRAINT` validates the existing rows
+-- and cannot fail) and nothing is backfilled.
 --
 -- D336's SEVEN PARTS, AND WHERE EACH ONE IS
 --   (1) the ledger      → §1, `commish_schedule_actions`
@@ -171,12 +213,34 @@
 --                         triple-REVOKEd, under a SECURITY DEFINER wrapper
 --                         passing `now()` (D307(3)); in-body auth as ONE
 --                         no-leak 42501
---   (6) the reason gate → §2 step (4), the explicit `E' \t\r\n'` class,
---                         matching the table CHECK (`123:295-296`)
+--   (6) the reason gate → §2 step (4): OPTIONAL under Q66 — normalised in the
+--                         explicit `E' \t\r\n'` class (blank ⇒ NULL), the
+--                         500 bound by name, matching §0's relaxed CHECK
 --   (7) the result      → names every gate bypassed and WHY, the affected
 --                         teams (D353), what scoring did NOT do, with
 --                         `commissioner_action_id` NULL on a no-op
 -- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 0. Q66 — `commissioner_actions.reason` becomes NULLABLE (spec v2.16.41).
+--    123 is in production (hosted tops out at 124), so its column definition
+--    at 123:295-296 is not edited; this ALTER is the whole change. The CHECK
+--    keeps 123's explicit whitespace class and the 500 bound for a NON-NULL
+--    reason — '' and a tab/newline-only string are still refused by the
+--    table (23514), because a verb that wants "no reason" stores NULL. The
+--    constraint name is the one Postgres minted for 123's inline CHECK
+--    (`commissioner_actions_reason_check`, measured on the local chain);
+--    it is re-minted under the same name so pgTAP 078 §M can pin its text.
+-- ---------------------------------------------------------------------------
+ALTER TABLE commissioner_actions
+  ALTER COLUMN reason DROP NOT NULL;
+ALTER TABLE commissioner_actions
+  DROP CONSTRAINT commissioner_actions_reason_check;
+ALTER TABLE commissioner_actions
+  ADD CONSTRAINT commissioner_actions_reason_check
+  CHECK (reason IS NULL OR (length(btrim(reason, E' \t\r\n')) > 0 AND length(reason) <= 500));
+COMMENT ON COLUMN commissioner_actions.reason IS
+  'OPTIONAL since migration 130 (PROGRESS Q66, Chris 2026-09-16; spec v2.16.41 §10.3): a commissioner action always writes its row, a reason is free text the actor MAY give. NULL = none given (a blank or whitespace-only input is stored as NULL by the verbs, never as ''''); non-NULL is non-blank in the explicit E'' \t\r\n'' class and at most 500 characters. Readers render "no reason given" for NULL.';
 
 -- ---------------------------------------------------------------------------
 -- 1. commish_schedule_actions — this verb's OWN replay ledger (D350). Never
@@ -301,16 +365,14 @@ BEGIN
     RETURN v_result;
   END IF;
 
-  -- (4) THE REASON, required UNCONDITIONALLY (§15.4:1690 "all require
-  --     reason" — not only after Week 1 kickoff as 111:952-957 has it); the
-  --     explicit whitespace class (R745 / F225); the 500 bound
-  --     (`123:295-296`). A client-supplied LABEL, never a prompt (F343).
+  -- (4) THE REASON — OPTIONAL (Q66, Chris 2026-09-16; spec v2.16.41 §10 /
+  --     §15.4). Normalised in the explicit whitespace class (R745 / F225):
+  --     absent or whitespace-only ⇒ NULL, stored as NULL (§0's column
+  --     change), never refused and never ''; a non-empty reason is stored
+  --     trimmed and bounded at 500 by name (the league_chat bound). What IS
+  --     required is the audit row (step 15c) and the chat post (15d).
   v_reason := NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), '');
-  IF v_reason IS NULL THEN
-    RAISE EXCEPTION 'commish_edit_schedule: a reason is required — this verb writes an audited commissioner_actions row the whole league can read (§15.4, §10.3)'
-      USING ERRCODE = '22023';
-  END IF;
-  IF char_length(v_reason) > 500 THEN
+  IF v_reason IS NOT NULL AND char_length(v_reason) > 500 THEN
     RAISE EXCEPTION 'commish_edit_schedule: the reason is % characters — at most 500 (the league_chat bound; §12.13)', char_length(v_reason)
       USING ERRCODE = '22023';
   END IF;
@@ -333,14 +395,16 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  -- (7) KEPT (F360): a bracket row is the playoffs engine's. See the banner —
-  --     lifting 111:881 lands nothing, because the uniqueness re-validation
-  --     this verb KEEPS counts every team once per (week, round_type) and a
+  -- (7) KEPT (F360, ruled 2026-09-16 — a bracket verb is its own task): a
+  --     bracket row is the playoffs engine's. See the banner — lifting
+  --     111:881 HERE lands nothing, because the uniqueness re-validation this
+  --     verb KEEPS counts every team once per (week, round_type) and a
   --     bracket seats a subset; and `playoff_bracket_sync_internal`
-  --     (118:1075-1077) re-seeds bracket rows at each round advance.
+  --     (118:1573-1594) DELETEs and re-INSERTs the round's seeded rows at
+  --     each sync. The message says "planned feature", not "illegal".
   IF v_m.round_type NOT IN ('regular', 'secondary') THEN
     RAISE EXCEPTION
-      'commish_edit_schedule: matchup % is a % row — only regular-season pairings (regular / secondary) are re-paired here; a bracket row is seeded by the playoffs engine from the standings (§11.5, 118:1075-1077) and would be re-seeded away at the next round advance, and the every-team-once re-validation this verb keeps (§11.7) cannot hold over a bracket subset. No verb hand-edits a bracket today (PROGRESS F360)',
+      'commish_edit_schedule: matchup % is a % row — only regular-season pairings (regular / secondary) are re-paired here. Playoff matchups are set automatically today: the playoffs engine seeds them from the standings and re-seeds them at each sync (§11.5, 118:1573-1594), and this verb''s every-team-once re-validation (§11.7) cannot hold over a bracket subset. Hand-picking playoff matchups is a planned commissioner feature with its own verb (PROGRESS F360, ruled 2026-09-16) — not available yet',
       p_matchup_id, v_m.round_type
       USING ERRCODE = 'P0001';
   END IF;
@@ -414,7 +478,9 @@ BEGIN
   v_no_changes := (p_home = v_old_home AND p_away = v_old_away);
 
   -- (14) E41's window, REPORTED not enforced: the league's FIRST week's
-  --      kickoff, at p_at. The reason was already required at (4).
+  --      kickoff, at p_at. Under Q66 it gates nothing here (no reason is
+  --      required in either window); the post and the receipt still say
+  --      which side of it the edit fell on.
   SELECT min(w.week) INTO v_first
   FROM public.league_weeks w
   WHERE w.league_id = p_league_id AND w.season = v_league.season;
@@ -636,7 +702,8 @@ BEGIN
 
     -- (15d) §10.3: override system messages auto-post to league chat and
     --       CANNOT be disabled. Before/after in the text (D97), the bypassed
-    --       gates named (R971's shape), the reason last.
+    --       gates named (R971's shape), the reason last — WHEN one was given
+    --       (Q66: the clause is conditional, never "reason: <NULL>").
     SELECT jsonb_object_agg(t.id::text, t.name) INTO v_names
     FROM public.teams t WHERE t.league_id = p_league_id;
     v_message := 'Week ' || v_m.week || CASE WHEN v_m.round_type = 'secondary' THEN ' (second game)' ELSE '' END
@@ -651,7 +718,7 @@ BEGIN
       || CASE WHEN jsonb_array_length(v_bypassed) > 0
               THEN ' — lifted: ' || (SELECT string_agg(b #>> '{}', ', ') FROM jsonb_array_elements(v_bypassed) b)
               ELSE '' END
-      || ' — reason: ' || v_reason;
+      || CASE WHEN v_reason IS NOT NULL THEN ' — reason: ' || v_reason ELSE '' END;
     INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
     VALUES (p_league_id, auth.uid(), v_message, 'league', TRUE);
   END IF;
@@ -683,14 +750,14 @@ BEGIN
     'bypassed_why',           v_bypassed_why,
     'affected_team_ids',      COALESCE(v_affected, '[]'::jsonb),
     'scoring',                v_scoring,             -- NULL on a no-op
-    'reason_required',        TRUE,
+    'reason_required',        FALSE,                 -- Q66: nothing requires one; kept for the panel (F361)
     'window', jsonb_build_object(
       'evaluated_at',     p_at,
       'first_kickoff_at', v_window.first_kickoff_at,
       'datum_arm',        v_window.datum_arm,
       'free',             v_window.free,
-      'reason_required',  TRUE),
-    'reason',                 v_reason,
+      'reason_required',  FALSE),                -- Q66: E41 no longer requires one after kickoff either
+    'reason',                 v_reason,             -- NULL when none was given
     'system_post',            v_message,             -- NULL on a no-op
     'evaluated_at',           p_at);
 
@@ -716,7 +783,7 @@ CREATE OR REPLACE FUNCTION commish_edit_schedule(
   p_matchup_id UUID,
   p_home       UUID,
   p_away       UUID,
-  p_reason     TEXT DEFAULT NULL,  -- REQUIRED in-body (22023) — §15.4:1690, "all require reason"
+  p_reason     TEXT DEFAULT NULL,  -- OPTIONAL (Q66 / spec v2.16.41): blank ⇒ NULL, never refused; ≤ 500 when given
   p_action_id  UUID DEFAULT NULL   -- REQUIRED in-body (22023)
 ) RETURNS JSONB
 LANGUAGE plpgsql
@@ -1105,30 +1172,28 @@ BEGIN
     'system_post',    v_message
   );
 
-  -- ── migration 130 / L.E1.9 (D348, F339, F225): THE RECEIPT — the ONE new
-  -- hunk in this body. §15.4:1690: "all require reason; all write
-  -- commissioner_actions". The reason gate lands here in the explicit
-  -- `E' \t\r\n'` class with the 500 bound (F225's R745 hole; the table CHECK
-  -- at 123:295-296 is the same class), UNCONDITIONALLY — before Week 1 kickoff
-  -- too, because `commissioner_actions.reason` is NOT NULL and standing rule
-  -- (b) says a change writes "an audited row with a reason". The no-op above
-  -- (…"nothing to change") fires before this point and stays a refusal.
-  -- The receipt's id is folded into `v_result` (so the ledger row and the
-  -- replay carry it) and the top-level `reason_required` becomes TRUE —
-  -- `window.reason_required` keeps E41's meaning. No DECLARE change.
-  IF NULLIF(btrim(COALESCE(v_reason, ''), E' \t\r\n'), '') IS NULL THEN
-    RAISE EXCEPTION
-      'schedule_edit_matchup: every matchup edit requires a reason — it writes an audited commissioner_actions row the whole league can read (§15.4 "all require reason", §10.3; migration 130) — before Week 1 kickoff too'
-      USING ERRCODE = '22023';
-  END IF;
-  IF char_length(btrim(v_reason, E' \t\r\n')) > 500 THEN
+  -- ── migration 130 / L.E1.9 (D348, F339, F225; Q66 fix round 2026-09-16):
+  -- THE RECEIPT — the ONE new hunk in this body. Spec v2.16.41 §10.3 /
+  -- §15.4: every override WRITES commissioner_actions; a reason is OPTIONAL.
+  -- The reason stored is 111's `v_reason` re-normalised in the explicit
+  -- `E' \t\r\n'` class (F225's R745 hole; 130 §0's CHECK is the same class):
+  -- absent or whitespace-only ⇒ NULL (never refused, never ''), otherwise
+  -- trimmed and bounded at 500 by name. NO refusal for a missing reason
+  -- here. 111's own post-kickoff gate above (111:952-957) and its post text
+  -- (111:1123) are ORIGINAL lines outside this hunk and are F362's (the
+  -- sweep) — see the banner. The no-op above (…"nothing to change") fires
+  -- before this point and stays a refusal. The receipt's id is folded into
+  -- `v_result` (so the ledger row and the replay carry it); `reason_required`
+  -- is left as 111 computed it (`NOT v_free`), which is true as measured
+  -- until the sweep removes that gate. No DECLARE change.
+  IF v_reason IS NOT NULL AND char_length(btrim(v_reason, E' \t\r\n')) > 500 THEN
     RAISE EXCEPTION 'schedule_edit_matchup: the reason is % characters — at most 500 (the league_chat bound; §12.13)', char_length(btrim(v_reason, E' \t\r\n'))
       USING ERRCODE = '22023';
   END IF;
   v_result := v_result || jsonb_build_object(
-    'reason_required', TRUE,
     'commissioner_action_id', public.log_commissioner_action_internal(
-      p_league_id, auth.uid(), 'edit_schedule', 'schedule', p_matchup_id::text, btrim(v_reason, E' \t\r\n'),
+      p_league_id, auth.uid(), 'edit_schedule', 'schedule', p_matchup_id::text,
+      NULLIF(btrim(COALESCE(v_reason, ''), E' \t\r\n'), ''),
       v_result -> 'matchup' -> 'before',
       v_result -> 'matchup' -> 'after',
       jsonb_build_object(

@@ -533,7 +533,7 @@ export type Database = {
           league_id: string
           metadata: Json | null
           prev_hash: string | null
-          reason: string
+          reason: string | null
           reverts_action_id: string | null
           row_hash: string | null
           target_id: string | null
@@ -550,7 +550,7 @@ export type Database = {
           league_id: string
           metadata?: Json | null
           prev_hash?: string | null
-          reason: string
+          reason?: string | null
           reverts_action_id?: string | null
           row_hash?: string | null
           target_id?: string | null
@@ -567,7 +567,7 @@ export type Database = {
           league_id?: string
           metadata?: Json | null
           prev_hash?: string | null
-          reason?: string
+          reason?: string | null
           reverts_action_id?: string | null
           row_hash?: string | null
           target_id?: string | null
