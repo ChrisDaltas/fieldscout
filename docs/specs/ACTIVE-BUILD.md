@@ -90,11 +90,34 @@ FILED AS tasks-M6A §6 AMENDMENT NOTES (proposed L.E1.15 / L.E1.16), UNBUILT,
 PENDING CHRIS'S APPROVAL OF THE AMENDMENT.** D361(6) retracted into Q66.
 **Discharges F339**, F225 in part (the `schedule_edit_matchup` half), mints
 **F360 / F361 / F362**, records **D361**), so
-the next takeable task is **`L.E1.10`** *(**Order after L.E1.10, ruled by Chris 2026-09-16 at PR #300's merge:** **L.E1.15** — the reason-optional sweep, F362 — runs **immediately after L.E1.10** and before L.E1.11, so no further route is built on the old reason-required contract; **L.E1.16** — `commish_edit_bracket`, F360 — is **appended after L.E1.14**. Both are approved amendments to tasks-M6A §6, filed there additively. Every route built from here on takes `reason` as OPTIONAL — no `.min(1)`.)* (API + hooks, part 1: `/commish/score`,
-`/commish/result`, `/commish/move-player`, `/commish/roster` — D351's
-route/service/hook doctrine; depends L.E1.5 + L.E1.6, both landed).
+**`L.E1.10` is LANDED** (API + hooks, part 1 — `/commish/score`,
+`/commish/result`, `/commish/move-player`, `/commish/roster` over 126/127;
+NO migration, NO pgTAP, NO typegen — **131 / 079 still unspent**; built to
+**Q66** with `reason` OPTIONAL on all four schemas (`optionalReason`, no
+`.min(1)`); **the transitional state is recorded, not hidden** — 126's and
+127's in-body gates still refuse a blank reason until L.E1.15, and four
+stack cells pin that 400 BY NAME so the sweep reds them; F65(b) guard per
+verb on its own fields + the verb (shared ledgers, D350); records **D362**), so
+the next takeable task is **`L.E1.15`** — **the reason-optional sweep (F362)**,
+*ruled by Chris 2026-09-16 at PR #300's merge to run **immediately after
+L.E1.10** and before L.E1.11, so no further route is built on the old
+reason-required contract* (its approved amendment note sits in tasks-M6A §6
+beside L.E1.14: `commish_edit_lineup` (123, PUSHED → a `CREATE OR REPLACE`
+against 123's FILE TEXT in a NEW migration, D137), 126 / 127 / 128 / 129's
+verbs (unpushed at filing — **the Architect decides in-place edits vs one
+new migration; if Chris has pushed 125–130 by then it is one new migration
+for all**), 111's own post-kickoff gate + post text and `schedule_remix_confirm`'s
+gate (F341's remainder), 112's `set_lineup` commissioner arm named so it is
+ruled in or out, every chat-post `— reason:` clause made conditional,
+standing rule (h)/F343 clarified, `commish-lineup-service.ts:84` +
+`use-commish-lineup.ts:42-44` (R1052), **and L.E1.10's four `TRANSITIONAL
+(F362 / L.E1.15)` stack cells in `commish-overrides-api-db.test.ts` re-cut
+to NULL-reason receipts**; migration / pgTAP numbers measured at task time,
+D161). After it: L.E1.11 → L.E1.12 → L.E1.13 → L.E1.14 → **L.E1.16**
+(`commish_edit_bracket`, F360). Every route built from here on takes
+`reason` as OPTIONAL — no `.min(1)`.
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's and L.E1.9's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's and L.E1.10's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
