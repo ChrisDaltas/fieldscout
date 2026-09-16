@@ -53,7 +53,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(123);
+select plan(130);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS
@@ -614,10 +614,15 @@ select set_config('request.jwt.claims', '', true);
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_ok(
-  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, E' \t\r\n ', '0e000000-0000-4000-8000-000000000060'::uuid) $$,
-  '22023', null, 'H1 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is refused (R745: plain btrim strips spaces only)');
+-- H1 RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66): the reason is OPTIONAL.
+-- The refusal becomes a SOURCE pin here (count-neutral for §I-§L); the
+-- BEHAVIOURAL landings are §Q at the end. ***THE L.E1.15 BREAK PROBE'S
+-- TARGET*** for this verb: re-add 129:734-737's gate and H1 reds by name.
+select ok(
+  (select p.prosrc not like '%commish_change_setting: a reason is required%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'),
+  'H1 Q66 (131): commish_change_setting_internal no longer carries 129:735''s "a reason is required" refusal — the gate is a NORMALISATION now (the explicit class still decides "blank", and blank ⇒ NULL)');
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'bench_lock', 'false'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000061'::uuid) $$,
@@ -790,6 +795,47 @@ select ok((select bool_and(commish_setting_policy(k) ->> 'refused_why' is not nu
            from unnest(array['regular_season_weeks', 'team_count', 'schedule_mode', 'format', 'lineup_lock', 'divisions', 'playoff_byes', 'schedule_seed', 'draft', 'playoff_teams']) k),
   'L5 …every refused and bracket key carries a non-null refused_why (L.E1.13 renders it verbatim)');
 select is(commish_setting_policy('player_game_lock'), null, 'L6 a retired / unknown key has NO policy row — and the verb refuses it by name (E9)');
+
+-- ---------------------------------------------------------------------------
+-- Q. THE REASON IS OPTIONAL — Q66 (spec v2.16.41 §10.3 / §15.4), landed for
+--    this verb by migration 131 (L.E1.15 / F362). The sweep's proof shape,
+--    on `bench_lock` (a free key; §J left it `true`). Runs LAST so no earlier
+--    count premise moves.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'bench_lock', 'false'::jsonb, false, null, '0e000000-0000-4000-8000-000000000090'::uuid) $$,
+  'Q1 a NO-reason setting change LANDS (Q66). Re-adding 129:734-737''s refusal reds here');
+select lives_ok(
+  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'bench_lock', 'true'::jsonb, false, E' \t\r\n ', '0e000000-0000-4000-8000-000000000091'::uuid) $$,
+  'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and LANDS (the explicit class still decides "blank", R745)');
+select lives_ok(
+  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'bench_lock', 'false'::jsonb, false, E'\t lock off \n', '0e000000-0000-4000-8000-000000000092'::uuid) $$,
+  'Q3 a real reason wrapped in tabs and newlines lands…');
+select throws_ok(
+  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'bench_lock', 'true'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000093'::uuid) $$,
+  '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the bound survives Q66; only the presence gate went)');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is(
+  (select string_agg(action_type || '|' || target_id || '=' || coalesce(reason, '<NULL>'), ' ' order by metadata ->> 'action_id')
+   from commissioner_actions where league_id = 'be000000-0000-4000-8000-000000000001'
+     and metadata ->> 'action_id' in ('0e000000-0000-4000-8000-000000000090', '0e000000-0000-4000-8000-000000000091',
+                                      '0e000000-0000-4000-8000-000000000092', '0e000000-0000-4000-8000-000000000093')),
+  'change_setting|bench_lock=<NULL> change_setting|bench_lock=<NULL> change_setting|bench_lock=lock off',
+  'Q5 THE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none');
+select is(
+  (select string_agg(message, '|' order by message) from league_chat
+   where league_id = 'be000000-0000-4000-8000-000000000001' and is_system and message like 'Setting bench_lock changed%'),
+  'Setting bench_lock changed from false to true by cs_user1 (commissioner override)|Setting bench_lock changed from true to false by cs_user1 (commissioner override)|Setting bench_lock changed from true to false by cs_user1 (commissioner override) — reason: lock off',
+  'Q6 THE POSTS, pinned by content: the two no-reason landings end at the override marker with NO "— reason:" clause; the reasoned one carries the TRIMMED reason');
+select is((select settings ->> 'bench_lock' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+  'false', 'Q7 …and the league carries Q3''s value: the three landings wrote, the refusal did not');
 
 select * from finish();
 rollback;

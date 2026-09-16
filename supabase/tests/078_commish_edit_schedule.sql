@@ -325,7 +325,7 @@ select ok((select message like 'Week 2 matchup edited by es_user1: ES T4 vs ES T
            from league_chat where league_id = 'bf000000-0000-4000-8000-000000000001' and is_system),
   'C11 …with 111''s own text, byte for byte — the override tail because the league''s Week 1 has kicked off');
 select is(current_setting('pgtap.es_c1')::jsonb ->> 'reason_required' || '|' || (current_setting('pgtap.es_c1')::jsonb -> 'window' ->> 'reason_required'),
-  'true|true', 'C12 …reason_required is true at the top level AND in E41''s window — TRUE AS MEASURED: 111''s OWN post-kickoff gate (111:952-957) is an original line outside the one hunk and still requires one after Week 1 kickoff; under Q66 that is F362''s (the sweep), and this cell flips when the sweep lands');
+  'false|false', 'C12 …reason_required is FALSE at the top level AND in E41''s window — FLIPPED BY MIGRATION 131 (L.E1.15 / F362, the sweep this cell was written to red on): 111''s post-kickoff gate (111:952-957) is gone, so the gate''s own report field says so; the field is kept for the panel (F361)');
 
 -- ---------------------------------------------------------------------------
 -- D. 111's RECEIPT — the FREE-WINDOW arm (L2), UNDER Q66 (Chris, 2026-09-16;
@@ -781,12 +781,12 @@ select is(
   (select count(*)::int from regexp_matches(
      (select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'schedule_remix_confirm'), 'log_commissioner_action_internal', 'g')),
-  0, 'L7 schedule_remix_confirm calls it ZERO times — its park at 111:738-740 is still F341''s and was NOT the hunk''s landing site');
+  1, 'L7 schedule_remix_confirm calls it EXACTLY ONCE — RE-DERIVED BY MIGRATION 131 (L.E1.15 / F362): F341''s park at 111:738-740 is discharged, the Remix verb writes its own receipt through the ONE helper (130 kept it at zero; 131 is the migration that landed the hunk there, deliberately)');
 select is(
   (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'schedule_remix_confirm'),
-  'd6fdf4664703904554356009a30a1fc2',
-  'L8 F341''s WALL: schedule_remix_confirm''s prosrc md5 equals its pre-130 literal (measured on the 001-129 chain) — byte-untouched by this migration');
+  '37f7a113fb12437b7019ca9eb242bc92',
+  'L8 F341''s WALL, MOVED ON PURPOSE: schedule_remix_confirm''s prosrc md5 equals its post-131 literal (MEASURED on the fresh 001-131 chain, not copied — the pre-130 literal was d6fdf4664703904554356009a30a1fc2, and 131 is the only migration since that touches this body: four hunks, listed in 131''s section 7 header)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('schedule_edit_matchup', 'schedule_remix_confirm')),

@@ -98,7 +98,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(157);
+select plan(158);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — §12.13 columns, the policy swap, the ledger, the functions,
@@ -844,42 +844,50 @@ reset role;
 -- The league's commissioner MAY set T2's lineup (D293): edited_by_commish = TRUE.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "93000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_ok(
-  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+-- RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66 — spec v2.16.41 §10.3 / §15.4):
+-- a commissioner setting another team's lineup IS a commissioner action, so
+-- the reason is OPTIONAL on this arm too. R738's refusals become
+-- normalisations; R746's 500 bound stays. Re-adding 114:317-321's gate reds
+-- the first cell BY NAME.
+select set_config('pgtap.lu_nr', public.set_lineup(
+  'b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+  '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+  'a3000000-0000-4000-8000-000000000023')::text, true);
+select is((current_setting('pgtap.lu_nr')::jsonb ->> 'no_changes') || '|' || (current_setting('pgtap.lu_nr')::jsonb ->> 'edited_by_commish') || '|' || coalesce(current_setting('pgtap.lu_nr')::jsonb ->> 'reason', '<NULL>'),
+  'false|true|<NULL>',
+  'Q66 (131): the COMMISSIONER without a reason LANDS — a real change, edited_by_commish = TRUE, and the document echoes reason NULL (never '''')');
+select is((select string_agg(message, '|') from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system),
+  'Week 3 lineup for LU T2 set by lu_user1 (commissioner)',
+  'Q66 (131): the D97 in-txn system post carries the week, the team and the actor, and NO "— reason:" clause (conditional, never "reason: <NULL>")');
+select is((select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
        '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-       'a3000000-0000-4000-8000-000000000023') $$,
-  '22023', null, 'R738: the COMMISSIONER without a reason is refused 22023 (the D290 interim audit posture)');
-select throws_ok(
-  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
+       'a3000000-0000-4000-8000-00000000002a', '   ') ->> 'reason'),
+  null, 'Q66 (131): a blank reason is normalised to NULL, not refused (an identical map ⇒ no_changes, nothing posted)');
+select is((select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
        '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-       'a3000000-0000-4000-8000-000000000023', '   ') $$,
-  '22023', null, 'R738: a blank reason is no reason');
-select throws_ok(
-  $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
-       '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-       'a3000000-0000-4000-8000-000000000023', E' \t\n ') $$,
-  '22023', null, 'R745: a tab/newline-only reason is blank too (btrim strips spaces only by default)');
+       'a3000000-0000-4000-8000-00000000002b', E' \t\n ') ->> 'reason'),
+  null, 'R745 under Q66 (131): a tab/newline-only reason is blank too — the explicit class still decides "blank", and blank ⇒ NULL');
 select throws_like(
   $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
        '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-       'a3000000-0000-4000-8000-000000000023', repeat('x', 501)) $$,
+       'a3000000-0000-4000-8000-00000000002c', repeat('x', 501)) $$,
   '%the reason is 501 characters — at most 500%',
-  'R746: a 501-character reason is refused by name (the DEFINER post bypasses the 500-char client policy)');
-select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 0,
-  'R738: nothing posted by the refusals');
+  'R746: a 501-character reason is STILL refused by name (the DEFINER post bypasses the 500-char client policy; the bound survives Q66)');
+select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 1,
+  'Q66 (131): exactly ONE post so far — the no-reason landing''s; the two no-ops and the refusal posted nothing');
 select set_config('pgtap.lu_rh', public.set_lineup(
   'b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
-  '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
-  'a3000000-0000-4000-8000-000000000023', 'manager on vacation')::text, true);
-select is((select string_agg(message, '|') from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system),
-  'Week 3 lineup for LU T2 set by lu_user1 (commissioner) — reason: manager on vacation',
-  'R738: the D97 in-txn system post carries the week, the team, the actor and the reason (pinned by content)');
+  '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr2", "wr:0": "lu-wr3", "wr:1": "lu-wr1", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
+  'a3000000-0000-4000-8000-00000000002d', 'manager on vacation')::text, true);
+select is((select string_agg(message, '|' order by message) from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system),
+  'Week 3 lineup for LU T2 set by lu_user1 (commissioner)|Week 3 lineup for LU T2 set by lu_user1 (commissioner) — reason: manager on vacation',
+  'R738: WITH a reason (a real change — the two UNLOCKED receivers wr:1/flex2:0 swapped; KC is the only kicked-off team) the D97 in-txn system post carries the week, the team, the actor AND the reason (pinned by content)');
 select is(current_setting('pgtap.lu_rh')::jsonb ->> 'reason', 'manager on vacation', 'R738: the result echoes the reason');
 select lives_ok(
   $$ select public.set_lineup('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 3,
        '{"qb:0": "lu-qb1", "rb:0": "lu-rb2", "rb:1": "lu-rb4", "flex1:0": "lu-rb1", "flex2:0": "lu-wr1", "wr:0": "lu-wr3", "wr:1": "lu-wr2", "te:0": "lu-te1", "k:0": "lu-k1", "dst:0": "lu-dst1", "superflex:0": "lu-rb3"}',
        'a3000000-0000-4000-8000-000000000029', repeat('x', 500)) $$,
-  'R746: exactly 500 characters is accepted (the one-unit positive; an identical map ⇒ no_changes, nothing posted)');
+  'R746: exactly 500 characters is accepted (the one-unit positive; this restores the pre-swap map — a real change, so it posts a third system row)');
 select is((current_setting('pgtap.lu_rh')::jsonb ->> 'edited_by_commish')::boolean, true,
   'H the COMMISSIONER sets another team''s lineup under the same lock law — edited_by_commish = TRUE in the result');
 select is((select edited_by_commish from team_lineups where team_id = 'c3000000-0000-4000-8000-000000000002' and week = 3), true,
@@ -901,8 +909,8 @@ select throws_like(
   'H a league not in season (L3, scheduled) refuses by name');
 -- The manager's FUTURE-week set: the row is created, slot_key untouched.
 select set_config('request.jwt.claims', '{"sub": "93000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
-select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 1,
-  'R738: the manager''s own sets never post (one system row in L1 — the commissioner''s)');
+select is((select count(*)::int from league_chat where league_id = 'b3000000-0000-4000-8000-000000000001' and is_system), 3,
+  'R738: the manager''s own sets never post (three system rows in L1 — all the commissioner''s: the no-reason landing, the reasoned swap, the 500-character restore)');
 select set_config('pgtap.lu_roster_before', (select string_agg(player_id || ':' || coalesce(slot_key, '-'), ',' order by player_id)
                                             from league_rosters where team_id = 'c3000000-0000-4000-8000-000000000002'), true);
 select lives_ok(

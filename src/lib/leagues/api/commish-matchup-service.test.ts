@@ -7,9 +7,9 @@
  * OPTIONAL AT THE FIELD LEVEL** (Q66 — Chris, 2026-09-16; spec v2.16.41).
  * An absent, blank or tab-only reason PASSES the schema (normalised to
  * absent, never `''`), while a 501-char or non-string one is still a field
- * error. This suite proves the SCHEMA only — end-to-end, 126's in-body gate
- * still refuses a missing reason until L.E1.15 (F362) lands, and the stack
- * suite pins that transitional 400 by name.
+ * error. This suite proves the SCHEMA only — end-to-end (since migration
+ * 131 / L.E1.15, F362) a no-reason request lands with a NULL-reason receipt,
+ * and the stack suite pins that.
  *
  * The rest is D351's contract: §15.4's argument order on the wire, the
  * family mapper's four arms with the message VERBATIM, and the F65(b)
@@ -211,9 +211,9 @@ describe('commishEditScore — the RPC call, the mapper, the F65(b) guard', () =
     const conflict = 'commish_edit_score: matchup da… is not a matchup of league b4…'
     expect(await commishEditScore(rpcDouble({ data: null, error: { code: 'P0001', message: conflict } }).client, LEAGUE, scoreBody)).toStrictEqual({ status: 409, body: { error: conflict } })
 
-    // THE TRANSITIONAL STATE, at the unit layer: 126:720-725 still raises
-    // 22023 for a blank reason until L.E1.15 / F362. The service maps it like
-    // any other 22023 — a 400 with the text verbatim, no special case.
+    // A 22023 with the pre-131 gate text (126 no longer raises it — L.E1.15 /
+    // F362 — but the MAPPER is what is under test here): the service maps any
+    // 22023 to a 400 with the text verbatim, no special case.
     const gate = 'commish_edit_score: a reason is required — this verb writes an audited commissioner_actions row the whole league can read (§15.4, §10.3)'
     expect(await commishEditScore(rpcDouble({ data: null, error: { code: '22023', message: gate } }).client, LEAGUE, { ...scoreBody, reason: '' })).toStrictEqual({ status: 400, body: { error: gate } })
   })

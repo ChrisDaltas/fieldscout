@@ -7,8 +7,8 @@
  * THIS IS NOT `setLineup` WITH A FLAG. `lineup-service.ts` is the MANAGER's
  * door and is not touched by this file: `set_lineup` keeps both of its lock
  * arms (114:449-462, 114:464-476) for every caller, commissioner included.
- * This is the separate, lock-exempt, reason-required, AUDITED verb an
- * exception goes through — the shape §15.4 gives every commissioner override.
+ * This is the separate, lock-exempt, AUDITED verb an exception goes through
+ * — the shape §15.4 gives every commissioner override.
  *
  * Same D68/D71 layering as `lineup-service.ts` (extend the pattern, never
  * fork the module): the Route Handler is auth + param plumbing, and
@@ -21,10 +21,10 @@
  * the league row lock.
  *
  * WHAT DIFFERS FROM `setLineup`, on the wire:
- *   - `reason` is REQUIRED, not `.nullish()` — §15.4:1689's header is "all
- *     require `reason`". Requiring it at the Zod layer turns 123's in-body
- *     22023 into a FIELD error the form can route, so the commissioner learns
- *     it before the round trip;
+ *   - `reason` is OPTIONAL here as everywhere (Q66, spec v2.16.41 — the
+ *     audit row is always written, a reason is free text the actor MAY give;
+ *     migration 131 / L.E1.15 / F362 swept the `.min(1)` this schema carried
+ *     and 123's in-body refusal together). The 500 bound stays a FIELD error;
  *   - `team_id` rides the BODY rather than a path segment, because §15.4
  *     addresses this route at the league (`/commish/lineup`), not the team;
  *   - the result carries 123's own keys — `commissioner_action_id`,
@@ -45,6 +45,7 @@ import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import { optionalReason } from './commish-matchup-service'
 import { mapInSeasonRpcError } from './inseason-errors'
 import { normalizedUuid } from './inseason-ids'
 import type { ServiceResult } from './leagues-service'
@@ -72,16 +73,20 @@ const playerId = z.string().trim().min(1).max(64)
  * the override writes a BYTE-COMPATIBLE `team_lineups` row (the scoring
  * worker reads `slot_map` and the lock tick walks `starters[]`).
  *
- * `reason` is the one schema difference from `setLineupInputSchema`: REQUIRED
- * here, and bounded at 500 to match both the in-body check and the table
- * CHECK, so an over-long reason is a field error rather than a raise.
+ * `reason` is OPTIONAL (Q66 — Chris, 2026-09-16; spec v2.16.41 §10.3 /
+ * §15.4; PROGRESS F362 / R1052, swept by L.E1.15 with migration 131). It is
+ * the ONE shape every commissioner route uses — `optionalReason` from
+ * `commish-matchup-service.ts`: trimmed, ≤ 500 (the in-body check and the
+ * table CHECK — an over-long reason is a field error rather than a raise),
+ * blank / tab-only normalised to ABSENT, never `''`. The `.min(1)` this
+ * schema carried before 131 was the OLD contract; do not re-add it.
  */
 export const commishEditLineupInputSchema = z.strictObject({
   team_id: normalizedUuid,
   week: z.number().int().min(1).max(18),
   slot_map: z.record(slotKey, playerId),
   action_id: normalizedUuid,
-  reason: z.string().trim().min(1).max(500),
+  reason: optionalReason,
 })
 export type CommishEditLineupInput = z.infer<typeof commishEditLineupInputSchema>
 
@@ -115,7 +120,8 @@ export interface CommishEditLineupResult {
   }
   locked_at: string | null
   edited_by_commish: true
-  reason: string
+  /** NULL when none was given (130 §0 / 131 — Q66). */
+  reason: string | null
   system_post: string | null
   evaluated_at: string
   week_datum: { first_kickoff_at: string | null; datum_arm: string; kicked_off: boolean }
@@ -183,12 +189,15 @@ export async function commishEditLineup(
   }
   const { team_id, week, slot_map, action_id, reason } = parsed.data
 
+  // §15.4:1695's printed order. An absent reason is OMITTED, not sent as
+  // null: the RPC's `p_reason` DEFAULTS to NULL and typegen prints it
+  // optional (`p_reason?: string`) — the L.E1.10 shape.
   const { data, error } = await supabase.rpc('commish_edit_lineup', {
     p_league_id: leagueId,
     p_team_id: team_id,
     p_week: week,
     p_slot_map: slot_map,
-    p_reason: reason,
+    ...(reason === undefined ? {} : { p_reason: reason }),
     p_action_id: action_id,
   })
   if (error) {

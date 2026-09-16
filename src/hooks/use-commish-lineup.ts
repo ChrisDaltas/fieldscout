@@ -17,8 +17,9 @@ import { leagueRosterKeys } from './use-rosters'
  * path and is unchanged — `set_lineup` still refuses to move a player whose
  * game has kicked off, for a commissioner as much as a manager. This hook is
  * the exception door: the server verb it calls lifts the lock, the past-week
- * gate and the closed-week gate, REQUIRES a reason, and writes an audit row
- * the whole league can read — but only when something actually changed.
+ * gate and the closed-week gate, and writes an audit row the whole league can
+ * read — but only when something actually changed. A reason is OPTIONAL
+ * (Q66; migration 131 / L.E1.15).
  *
  * The invalidation contract is `setLineupMutationOptions`': re-read BOTH the
  * week's lineup and the league's rosters on success AND on error (R822(i) —
@@ -39,9 +40,12 @@ export interface CommishEditLineupInput {
   week: number
   /** The FULL canonical map incl. IR keys (F224(e)). */
   slotMap: Record<string, string>
-  /** REQUIRED — §15.4:1689, "all require `reason`". It is written verbatim
-   *  into the audit row and the league-chat system post. */
-  reason: string
+  /** OPTIONAL — Q66 (Chris, 2026-09-16; spec v2.16.41 §10.3 / §15.4; swept
+   *  by L.E1.15 / F362 / R1052). When given it is written TRIMMED into the
+   *  audit row and the league-chat system post; when absent or blank the
+   *  receipt stores NULL and the post carries no reason clause. The client
+   *  may send nothing (PROGRESS (h) / F343 as amended). */
+  reason?: string
 }
 
 export interface CommishEditLineupVariables {
@@ -49,7 +53,7 @@ export interface CommishEditLineupVariables {
   week: number
   slot_map: Record<string, string>
   action_id: string
-  reason: string
+  reason?: string
 }
 
 /**
@@ -84,7 +88,9 @@ export function useCommishEditLineup(leagueId: string) {
     team_id: input.teamId,
     week: input.week,
     slot_map: input.slotMap,
-    reason: input.reason,
+    // Omitted from the JSON body when absent (JSON.stringify drops
+    // `undefined`), so the strict schema sees no key at all.
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
     // One action_id per submit (D68(1)); re-invoking `mutate` with THESE
     // variables replays, a new `submit` call is a new id (R815).
     action_id: crypto.randomUUID(),

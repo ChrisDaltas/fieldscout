@@ -78,7 +78,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(117);
+select plan(125);
 
 -- ---------------------------------------------------------------------------
 -- A. THE SECURITY CLAIM, FIRST (D344). Read the banner note before touching
@@ -336,14 +336,21 @@ select is((select home_score from matchups where id = 'd5000000-0000-4000-8000-0
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "95000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
-select throws_ok(
-  $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000041',
-       70, 40, null, 'e5000000-0000-4000-8000-000000000001'::uuid) $$,
-  '22023', null, 'D1 a MISSING reason is refused (§15.4:1690''s header: "all require reason")');
-select throws_ok(
-  $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000041',
-       70, 40, E' \t\r\n ', 'e5000000-0000-4000-8000-000000000002'::uuid) $$,
-  '22023', null, 'D2 a reason of SPACE+TAB+CR+NEWLINE is blank and refused — the explicit E'' \t\r\n'' class, because plain btrim strips SPACES ONLY (the R745 hole §12.12''s printed CHECK still has)');
+-- D1/D2 RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66): the reason is
+-- OPTIONAL. The two refusals become SOURCE pins here (count-neutral for §E-§G's
+-- premises, which watch d5…41); the BEHAVIOURAL landings are §Q at the end.
+-- ***THE L.E1.15 BREAK PROBE'S TARGET*** for this verb: re-add 126:721-725's
+-- gate and D1 reds by name.
+select ok(
+  (select p.prosrc not like '%: a reason is required — this verb writes an audited commissioner_actions row%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_matchup_override_internal'),
+  'D1 Q66 (131): commish_matchup_override_internal no longer carries 126:723''s "a reason is required" refusal — the gate is a NORMALISATION now');
+select ok(
+  (select p.prosrc like '%CASE WHEN v_reason IS NOT NULL THEN '' — reason: '' || v_reason ELSE '''' END%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_matchup_override_internal'),
+  'D2 Q66 (131): …and its chat post''s "— reason:" clause is CONDITIONAL in the source');
 select throws_ok(
   $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000041',
        70, 40, repeat('x', 501), 'e5000000-0000-4000-8000-000000000003'::uuid) $$,
@@ -778,6 +785,47 @@ select ok(
           and prosrc not like '%refuses a final week outright%'
        from pg_proc where oid = 'public.commish_matchup_override_internal(uuid,uuid,numeric,numeric,uuid,uuid,timestamptz,text,text)'::regprocedure),
   'L11 …and the verb DELEGATES: it calls the chooser and carries NO second copy of the freeze strings in its own body. Without this cell someone could re-inline the CASE, leave §L green against a function nothing calls, and reintroduce R1007 whole');
+
+-- ---------------------------------------------------------------------------
+-- Q. THE REASON IS OPTIONAL — Q66 (spec v2.16.41 §10.3 / §15.4), landed for
+--    126's two doors by migration 131 (L.E1.15 / F362). The sweep's proof
+--    shape, on d5…54 (week 5, 30.00–31.00 in the fixture, watched by no
+--    earlier cell). Runs LAST so no earlier count premise moves.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "95000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000054',
+       35, 36, null, 'e5000000-0000-4000-8000-000000000090'::uuid) $$,
+  'Q1 a NO-reason score correction LANDS through the score door (Q66). Re-adding 126:721-725''s refusal reds here');
+select lives_ok(
+  $$ select commish_set_result('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000054',
+       'c5000000-0000-4000-8000-000000000007'::uuid, E' \t\r\n ', 'e5000000-0000-4000-8000-000000000091'::uuid) $$,
+  'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and LANDS through the result door (the explicit class still decides "blank", R745)');
+select lives_ok(
+  $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000054',
+       37, 38, E'\t stat correction \n', 'e5000000-0000-4000-8000-000000000092'::uuid) $$,
+  'Q3 a real reason wrapped in tabs and newlines lands…');
+select throws_ok(
+  $$ select commish_edit_score('b5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000054',
+       39, 40, repeat('x', 501), 'e5000000-0000-4000-8000-000000000093'::uuid) $$,
+  '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the bound survives Q66; only the presence gate went)');
+reset role;
+select is(
+  (select string_agg(action_type || '=' || coalesce(reason, '<NULL>'), ' ' order by metadata ->> 'action_id')
+   from commissioner_actions where target_id = 'd5000000-0000-4000-8000-000000000054'),
+  'edit_score=<NULL> set_result=<NULL> edit_score=stat correction',
+  'Q5 THE RECEIPTS on d5…54: no reason ⇒ NULL, whitespace-only ⇒ NULL (not ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none — one receipt per landing, through both doors');
+select is(
+  (select count(*)::int from league_chat where league_id = 'b5000000-0000-4000-8000-000000000001' and is_system
+     and message like 'Week 5 — % vs %: % by mo_user1 (commissioner override)%' and message not like '% — reason: %'),
+  2, 'Q6 …and EXACTLY the two no-reason landings posted with the override marker and NO "— reason:" clause (every earlier post in this file carried one)');
+select is(
+  (select count(*)::int from league_chat where league_id = 'b5000000-0000-4000-8000-000000000001' and is_system
+     and message like 'Week 5 — % vs %: score set to 37–38 by mo_user1 (commissioner override)% — reason: stat correction'),
+  1, 'Q7 …while the reasoned landing''s post carries the TRIMMED reason after the freeze clause');
+select is((select home_score || '|' || away_score || '|' || result from matchups where id = 'd5000000-0000-4000-8000-000000000054'),
+  '37|38|away', 'Q8 …and the row holds Q3''s numbers (the derived result re-read): the three landings wrote, the refusal did not');
 
 select * from finish();
 rollback;
