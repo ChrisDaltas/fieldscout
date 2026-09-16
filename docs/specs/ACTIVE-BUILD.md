@@ -76,10 +76,20 @@ contrast; KEEPS `111:894` (§22.2) and `111:881` (a bracket row — **F360**)),
 plus `schedule_edit_matchup`'s **ONE receipt hunk** against `111:785-1153`'s
 file text (D137 — `diff -u` shows one `@@`, zero original lines touched;
 `schedule_remix_confirm`'s pre-130 prosrc md5 is a stored-literal pin, F341's
-wall). The hunk makes 111's reason UNCONDITIONAL (the receipt's `reason` is
-NOT NULL) — 059 / the stack vitest amended, the M4 panel hint is **F361**.
+wall). ~~The hunk makes 111's reason UNCONDITIONAL (the receipt's `reason` is
+NOT NULL) — 059 / the stack vitest amended, the M4 panel hint is **F361**.~~
+**FIX ROUND 2026-09-16 on TWO RULINGS BY CHRIS: (1) Q66 — a reason is
+OPTIONAL on every commissioner action, the audit row is ALWAYS written, every
+action is shown in League Home's activity section (spec v2.16.41); 130 §0
+makes `commissioner_actions.reason` nullable once (123 is in production,
+untouched) and both of 130's verbs are under the ruling — 111's OWN
+post-kickoff gate is outside the one hunk and is the sweep's; (2) R1047 —
+hand-picking playoff matchups is a WANTED feature, its own task. THE SWEEP
+(F362, the six earlier verbs + 111/112) AND THE BRACKET VERB (F360) ARE
+FILED AS tasks-M6A §6 AMENDMENT NOTES (proposed L.E1.15 / L.E1.16), UNBUILT,
+PENDING CHRIS'S APPROVAL OF THE AMENDMENT.** D361(6) retracted into Q66.
 **Discharges F339**, F225 in part (the `schedule_edit_matchup` half), mints
-**F360 / F361**, records **D361**), so
+**F360 / F361 / F362**, records **D361**), so
 the next takeable task is **`L.E1.10`** (API + hooks, part 1: `/commish/score`,
 `/commish/result`, `/commish/move-player`, `/commish/roster` — D351's
 route/service/hook doctrine; depends L.E1.5 + L.E1.6, both landed).
