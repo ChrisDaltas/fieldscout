@@ -102,6 +102,8 @@ const ACTION = {
   forged: 'afc00000-0000-4000-8000-000000000016',
   overrideNoReason: 'afc00000-0000-4000-8000-000000000017',
   overrideWithReason: 'afc00000-0000-4000-8000-000000000018',
+  /** Q66 / 131: a blank reason after kickoff lands too, storing NULL. */
+  overrideBlank: 'afc00000-0000-4000-8000-00000000001c',
   futureFree: 'afc00000-0000-4000-8000-000000000019',
   /** Q66: a whitespace-only reason stores NULL. */
   whitespace: 'afc00000-0000-4000-8000-00000000001b',
@@ -500,8 +502,8 @@ describe('the auth matrix — only the commissioner edits (§11.7)', () => {
 //    kickoff check (R730) reads the 2099 week datum and stays free.
 // ---------------------------------------------------------------------------
 
-describe('E41 — free until the league’s Week 1 kickoff; after it, 111’s OWN gate still requires a reason (D290 — under Q66 a transitional state, PROGRESS F362)', () => {
-  it('with Week 1 kicked off (2001): the edit is refused by name WITHOUT a reason (22023 → 400, verbatim), nothing written — 111:952-957, NOT 130’s hunk (F362 removes it)', async () => {
+describe('E41 — free until the league’s Week 1 kickoff; after it the edit is an OVERRIDE, and the reason is OPTIONAL either way (Q66 — migration 131 / L.E1.15 / F362 removed 111:952-957)', () => {
+  it('with Week 1 kicked off (2001): the edit LANDS WITHOUT a reason — 200, the override tail with NO "— reason:" clause, ONE receipt with reason NULL (before 131 this was 111’s own 22023 → 400)', async () => {
     const { error } = await service
       .from('nfl_games')
       .insert({ id: WEEK1_GAME_ID, season: SYNTHETIC_SEASON, week: 1, home_team: 'SEA', away_team: 'SEB', kickoff_at: KICKOFF_PAST })
@@ -509,32 +511,41 @@ describe('E41 — free until the league’s Week 1 kickoff; after it, 111’s OW
 
     const [a, b] = await weekRows(3)
     const posts = await systemPostCount()
-    const refused = await editMatchup(commishClient, leagueId, {
+    const r = await editMatchup(commishClient, leagueId, {
       matchup_id: a.id,
       home_team_id: a.home_team_id,
       away_team_id: b.away_team_id!,
       action_id: ACTION.overrideNoReason,
     })
-    expect(refused.status).toBe(400)
-    expect(errorText(refused)).toContain('schedule_edit_matchup:')
-    expect(errorText(refused)).toContain('league Week 1 kicked off at')
-    expect(errorText(refused)).toContain('requires a reason')
-    expect(await ledgerCount(ACTION.overrideNoReason)).toBe(0)
-    expect(await systemPostCount()).toBe(posts)
-    expect((await weekRows(3)).slice(0, 2)).toEqual([a, b]) // untouched
+    expect(r.status, errorText(r)).toBe(200)
+    const result = r.body as unknown as EditResult
+    expect(result.reason_required).toBe(false)
+    expect(result.window).toMatchObject({ free: false, reason_required: false, datum_arm: 'nfl_games' })
+    expect(result.system_post).toMatch(/— after Week 1 kickoff \(commissioner override\)$/)
+    expect(result.system_post).not.toContain('— reason:')
+    expect(await ledgerCount(ACTION.overrideNoReason)).toBe(1)
+    expect(await systemPostCount()).toBe(posts + 1)
+    expect(seatsEveryTeamOnce(await weekRows(3))).toBe(true)
+    const rows = await receiptsFor(ACTION.overrideNoReason)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reason).toBeNull()
   })
 
-  it('…and a blank reason is the same refusal', async () => {
+  it('…and a blank reason after kickoff lands the same way, storing NULL — never ""', async () => {
     const [a, b] = await weekRows(3)
     const blank = await editMatchup(commishClient, leagueId, {
       matchup_id: a.id,
       home_team_id: a.home_team_id,
       away_team_id: b.away_team_id!,
       reason: '   ',
-      action_id: ACTION.overrideNoReason,
+      action_id: ACTION.overrideBlank,
     })
-    expect(blank.status).toBe(400)
-    expect(errorText(blank)).toContain('requires a reason')
+    expect(blank.status, errorText(blank)).toBe(200)
+    expect((blank.body as unknown as EditResult).system_post).not.toContain('— reason:')
+    const rows = await receiptsFor(ACTION.overrideBlank)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reason).toBeNull()
+    expect(rows[0].reason).not.toBe('')
   })
 
   it('WITH a reason: the edit applies as a commissioner override and the D97 post carries the override and the reason', async () => {
@@ -548,8 +559,9 @@ describe('E41 — free until the league’s Week 1 kickoff; after it, 111’s OW
     })
     expect(r.status, errorText(r)).toBe(200)
     const result = r.body as unknown as EditResult
-    expect(result.reason_required).toBe(true)
-    expect(result.window).toMatchObject({ free: false, reason_required: true, datum_arm: 'nfl_games' })
+    // 131 flipped the gate's own report field: nothing requires a reason.
+    expect(result.reason_required).toBe(false)
+    expect(result.window).toMatchObject({ free: false, reason_required: false, datum_arm: 'nfl_games' })
     expect(result.system_post).toContain('after Week 1 kickoff (commissioner override) — reason: bye-week balance')
     expect(seatsEveryTeamOnce(await weekRows(3))).toBe(true)
     // The receipt stores the reason as given (trimmed).

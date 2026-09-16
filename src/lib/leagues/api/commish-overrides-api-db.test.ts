@@ -18,20 +18,17 @@
  *     reason stored TRIMMED (the service trims before the wire).
  *   - **F65(b) at the wire**: a REUSED action_id naming different numbers is
  *     refused 409 by the service, never answered 200 with the first
- *     submit's document — proved on the real replay ledger, not a double.
- *
- * ⚠ **THE TRANSITIONAL STATE, PINNED BY NAME (one cell per verb).** Chris
- * ruled Q66 (2026-09-16, spec v2.16.41): a reason is OPTIONAL on every
- * commissioner action. The four ROUTES build to the ruling — their schemas
- * accept an absent reason (`commish-matchup-service.test.ts`). But 126's
- * (`126:720-725`) and 127's (`127:759-763`) in-body gates PREDATE it and
- * still refuse a blank reason with 22023 by name; **L.E1.15 (the
- * reason-optional sweep, PROGRESS F362) is the task that relaxes them.** So
- * TODAY a no-reason request passes the schema, reaches SQL, and returns the
- * family mapper's 400 with the verb's own gate text verbatim. The `no
- * reason` cells below assert exactly that — so when L.E1.15 lands they are
- * the cells that RED and get re-cut to assert a NULL-reason receipt. Nothing
- * here claims end-to-end optional-reason works before that task.
+ *     submit's document — proved on the real replay ledger, not a double;
+ *     and (R1053) the CROSS-DOOR replay on the real ledger too — 126's and
+ *     127's ledgers are each SHARED by their two doors (D350), so a
+ *     `/result` action_id re-sent to `/score`, and a move id re-sent to
+ *     `/roster`, must be a 409 and never the sibling verb's document as a 200.
+ *   - **THE REASON IS OPTIONAL END-TO-END (Q66 — Chris, 2026-09-16; spec
+ *     v2.16.41; migration 131 / L.E1.15 / F362)**: one cell per verb sends NO
+ *     (or a blank) reason and asserts the 200, the NULL-reason receipt and a
+ *     system post with NO "— reason:" clause. Between L.E1.10 and L.E1.15
+ *     these four cells pinned the transitional 22023 → 400 by name; the sweep
+ *     is what re-cut them.
  *
  * Requires the local stack — D59(5) precedent; FAILS loudly when the stack
  * is down, never skips (§4.3).
@@ -58,7 +55,12 @@ import {
   commishEditScore,
   commishSetResult,
 } from './commish-matchup-service'
-import { COMMISH_ROSTER_FORBIDDEN_MESSAGE, commishForceAddDrop, commishMovePlayer } from './commish-roster-service'
+import {
+  COMMISH_ROSTER_ACTION_ID_REUSED_MESSAGE,
+  COMMISH_ROSTER_FORBIDDEN_MESSAGE,
+  commishForceAddDrop,
+  commishMovePlayer,
+} from './commish-roster-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -105,10 +107,6 @@ const ACTION = {
   roster: 'b0200000-0000-4000-8000-000000000041',
   rosterNoReason: 'b0200000-0000-4000-8000-000000000042',
 } as const
-
-/** 126's / 127's gate text, verbatim (the `%` is the verb). */
-const REASON_GATE = (verb: string) =>
-  `${verb}: a reason is required — this verb writes an audited commissioner_actions row the whole league can read (§15.4, §10.3)`
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -212,6 +210,13 @@ async function receiptsFor(actionId: string): Promise<Array<{ action_type: strin
     .eq('metadata->>action_id', actionId)
   if (error) throw new Error(`commissioner_actions read: ${error.message}`)
   return data ?? []
+}
+
+/** The system posts in this league whose text matches `pattern` (SQL LIKE). */
+async function systemPostsLike(pattern: string): Promise<string[]> {
+  const { data, error } = await service.from('league_chat').select('message').eq('league_id', leagueId).eq('is_system', true).like('message', pattern)
+  if (error) throw new Error(`league_chat read: ${error.message}`)
+  return (data ?? []).map((r) => r.message)
 }
 
 async function rosterTeamOf(playerId: string): Promise<string[]> {
@@ -385,9 +390,7 @@ describe('POST …/commish/score — commishEditScore over the real RPC', () => 
     expect(await receiptsFor(ACTION.scoreMember)).toHaveLength(0)
   })
 
-  it('TRANSITIONAL (F362 / L.E1.15): NO reason passes the schema and is refused by 126’s OWN in-body gate — 22023 → 400, its text verbatim, no receipt', async () => {
-    // When L.E1.15 relaxes 126:720-725 this cell REDS: re-cut it to assert a
-    // 200 with `reason: null` on the receipt (the 078 §D posture).
+  it('Q66 (131 / L.E1.15): NO reason LANDS — 200, `reason: null` in the document, ONE receipt with reason NULL, and a system post with NO "— reason:" clause', async () => {
     const target = (await weekRows(2))[1]
     const res = await commishEditScore(commishClient, leagueId, {
       matchup_id: target.id,
@@ -395,9 +398,19 @@ describe('POST …/commish/score — commishEditScore over the real RPC', () => 
       away_score: 71,
       action_id: ACTION.scoreNoReason,
     })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toBe(REASON_GATE('commish_edit_score'))
-    expect(await receiptsFor(ACTION.scoreNoReason)).toHaveLength(0)
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { matchup_id: string; reason: string | null; commissioner_action_id: string | null; no_changes: boolean }
+    expect(body.matchup_id).toBe(target.id)
+    expect(body.reason).toBeNull()
+    expect(body.no_changes).toBe(false)
+    expect(body.commissioner_action_id).not.toBeNull()
+    const receipts = await receiptsFor(ACTION.scoreNoReason)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ action_type: 'edit_score', target_id: target.id, reason: null })
+    const posts = await systemPostsLike('%score set to 70–71 by %(commissioner override)%')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).not.toContain('— reason:')
+    expect(posts[0]).not.toMatch(/reason/)
   })
 })
 
@@ -432,8 +445,7 @@ describe('POST …/commish/result — commishSetResult over the real RPC', () =>
     expect(receipts[0]).toMatchObject({ action_type: 'set_result', target_type: 'matchup', target_id: row.id, reason: 'ineligible starter on the away side' })
   })
 
-  it('TRANSITIONAL (F362 / L.E1.15): NO reason → 126’s own gate, 400 verbatim, no receipt', async () => {
-    // Reds when L.E1.15 lands — re-cut to a 200 with a NULL-reason receipt.
+  it('Q66 (131 / L.E1.15): a TAB-ONLY reason is NO reason and LANDS — 200, ONE receipt with reason NULL (not ""), a post with NO "— reason:" clause', async () => {
     const row = (await weekRows(3))[1]
     const res = await commishSetResult(commishClient, leagueId, {
       matchup_id: row.id,
@@ -441,9 +453,37 @@ describe('POST …/commish/result — commishSetResult over the real RPC', () =>
       action_id: ACTION.resultNoReason,
       reason: '\t',
     })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toBe(REASON_GATE('commish_set_result'))
-    expect(await receiptsFor(ACTION.resultNoReason)).toHaveLength(0)
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { matchup_id: string; result: string; reason: string | null; commissioner_action_id: string | null }
+    expect(body.matchup_id).toBe(row.id)
+    expect(body.result).toBe('away')
+    expect(body.reason).toBeNull()
+    expect(body.commissioner_action_id).not.toBeNull()
+    const receipts = await receiptsFor(ACTION.resultNoReason)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ action_type: 'set_result', target_id: row.id, reason: null })
+    const { data: stored } = await service.from('matchups').select('result').eq('id', row.id).single()
+    expect(stored).toStrictEqual({ result: 'away' })
+    const posts = await systemPostsLike('%result set to away by %(commissioner override)%')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).not.toContain('— reason:')
+  })
+
+  it('F65(b) CROSS-DOOR on the REAL ledger (R1053): the /result action_id re-sent to /score is a 409 — never the result document answered as a 200 score', async () => {
+    const row = (await weekRows(3))[0]
+    const res = await commishEditScore(commishClient, leagueId, {
+      matchup_id: row.id,
+      home_score: 12,
+      away_score: 34,
+      action_id: ACTION.result, // spent by commishSetResult above; 126's ledger is SHARED by both doors (D350)
+      reason: 'a score on a result id',
+    })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(COMMISH_MATCHUP_ACTION_ID_REUSED_MESSAGE)
+    const { data: stored } = await service.from('matchups').select('home_score, away_score, result').eq('id', row.id).single()
+    expect(stored).toMatchObject({ result: 'home' }) // the first submit's; no score was written
+    expect(stored?.home_score).not.toBe(12)
+    expect(await receiptsFor(ACTION.result)).toHaveLength(1) // still the first submit's
   })
 })
 
@@ -452,22 +492,7 @@ describe('POST …/commish/result — commishSetResult over the real RPC', () =>
 // ---------------------------------------------------------------------------
 
 describe('POST …/commish/move-player — commishMovePlayer over the real RPC', () => {
-  it('TRANSITIONAL (F362 / L.E1.15) FIRST, while the premise still holds: NO reason → 127’s own gate, 400 verbatim, the player has NOT moved, no receipt', async () => {
-    // Reds when L.E1.15 lands — re-cut to a 200 with a NULL-reason receipt
-    // (and re-order: this cell then consumes the move the next cell makes).
-    const res = await commishMovePlayer(commishClient, leagueId, {
-      player_id: MOVER,
-      from_team_id: commishTeamId,
-      to_team_id: memberTeamId,
-      action_id: ACTION.moveNoReason,
-    })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toBe(REASON_GATE('commish_move_player'))
-    expect(await rosterTeamOf(MOVER)).toStrictEqual([commishTeamId])
-    expect(await receiptsFor(ACTION.moveNoReason)).toHaveLength(0)
-  })
-
-  it('a seated manager gets the route’s own no-leak 403 and moves nothing', async () => {
+  it('a seated manager gets the route’s own no-leak 403, moves nothing and writes NO receipt (R1054)', async () => {
     const res = await commishMovePlayer(memberClient, leagueId, {
       player_id: MOVER,
       from_team_id: commishTeamId,
@@ -478,6 +503,7 @@ describe('POST …/commish/move-player — commishMovePlayer over the real RPC',
     expect(res.status).toBe(403)
     expect(errorText(res)).toBe(COMMISH_ROSTER_FORBIDDEN_MESSAGE)
     expect(await rosterTeamOf(MOVER)).toStrictEqual([commishTeamId])
+    expect(await receiptsFor(ACTION.moveMember)).toHaveLength(0)
   })
 
   it('a commissioner moves the player from his own team to the member’s WITH a reason: 200, the identity fields echo, league_rosters now holds him on the destination, one receipt', async () => {
@@ -505,6 +531,28 @@ describe('POST …/commish/move-player — commishMovePlayer over the real RPC',
     expect(receipts).toHaveLength(1)
     expect(receipts[0]).toMatchObject({ reason: 'voided trade unwound by hand' })
   })
+
+  it('Q66 (131 / L.E1.15): NO reason LANDS — the commissioner moves him BACK: 200, ONE receipt with reason NULL, a post with NO "— reason:" clause', async () => {
+    const res = await commishMovePlayer(commishClient, leagueId, {
+      player_id: MOVER,
+      from_team_id: memberTeamId,
+      to_team_id: commishTeamId,
+      action_id: ACTION.moveNoReason,
+    })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { moved_player_id: string; reason: string | null; commissioner_action_id: string | null; no_changes: boolean }
+    expect(body.moved_player_id).toBe(MOVER)
+    expect(body.reason).toBeNull()
+    expect(body.no_changes).toBe(false)
+    expect(body.commissioner_action_id).not.toBeNull()
+    expect(await rosterTeamOf(MOVER)).toStrictEqual([commishTeamId])
+    const receipts = await receiptsFor(ACTION.moveNoReason)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ action_type: 'move_player', reason: null })
+    const posts = await systemPostsLike('Vitest CO Mover moved from CO Team 2 to Commish Team by %(commissioner override)%')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).not.toContain('— reason:')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -512,20 +560,6 @@ describe('POST …/commish/move-player — commishMovePlayer over the real RPC',
 // ---------------------------------------------------------------------------
 
 describe('POST …/commish/roster — commishForceAddDrop over the real RPC', () => {
-  it('TRANSITIONAL (F362 / L.E1.15) FIRST: NO reason → 127’s own gate, 400 verbatim, the free agent is still on no roster, no receipt', async () => {
-    // Reds when L.E1.15 lands — re-cut to a 200 with a NULL-reason receipt.
-    const res = await commishForceAddDrop(commishClient, leagueId, {
-      team_id: commishTeamId,
-      add_player_id: FREE_AGENT,
-      action_id: ACTION.rosterNoReason,
-      reason: '   ',
-    })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toBe(REASON_GATE('commish_force_add_drop'))
-    expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([])
-    expect(await receiptsFor(ACTION.rosterNoReason)).toHaveLength(0)
-  })
-
   it('a commissioner force-adds the free agent to his own roster WITH a reason: 200, the identity fields echo, league_rosters holds him, the pool says rostered, one receipt', async () => {
     const res = await commishForceAddDrop(commishClient, leagueId, {
       team_id: commishTeamId,
@@ -551,5 +585,40 @@ describe('POST …/commish/roster — commishForceAddDrop over the real RPC', ()
     const receipts = await receiptsFor(ACTION.roster)
     expect(receipts).toHaveLength(1)
     expect(receipts[0]).toMatchObject({ reason: 'manager unreachable — IR replacement' })
+  })
+
+  it('Q66 (131 / L.E1.15): a BLANK reason is NO reason and the force-DROP LANDS — 200, ONE receipt with reason NULL (not ""), the free agent is off the roster, a post with NO "— reason:" clause', async () => {
+    const res = await commishForceAddDrop(commishClient, leagueId, {
+      team_id: commishTeamId,
+      drop_player_id: FREE_AGENT,
+      action_id: ACTION.rosterNoReason,
+      reason: '   ',
+    })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { drop_player_id: string | null; reason: string | null; commissioner_action_id: string | null; no_changes: boolean }
+    expect(body.drop_player_id).toBe(FREE_AGENT)
+    expect(body.reason).toBeNull()
+    expect(body.no_changes).toBe(false)
+    expect(body.commissioner_action_id).not.toBeNull()
+    expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([])
+    const receipts = await receiptsFor(ACTION.rosterNoReason)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ action_type: 'force_drop', reason: null })
+    const posts = await systemPostsLike('Commish Team: dropped Vitest CO Free Agent by %(commissioner override)%')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).not.toContain('— reason:')
+  })
+
+  it('F65(b) CROSS-DOOR on the REAL ledger (R1053): the /move-player action_id re-sent to /roster is a 409 — never the move document answered as a 200 add', async () => {
+    const res = await commishForceAddDrop(commishClient, leagueId, {
+      team_id: commishTeamId,
+      add_player_id: FREE_AGENT,
+      action_id: ACTION.move, // spent by commishMovePlayer above; 127's ledger is SHARED by both doors (D350)
+      reason: 'an add on a move id',
+    })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(COMMISH_ROSTER_ACTION_ID_REUSED_MESSAGE)
+    expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([]) // nothing was added
+    expect(await receiptsFor(ACTION.move)).toHaveLength(1) // still the move's
   })
 })

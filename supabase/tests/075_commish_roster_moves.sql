@@ -96,7 +96,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(158);
+select plan(166);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the two internals
@@ -1081,11 +1081,15 @@ reset role;
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_ok(
-  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
-       null, 'cr-te1', E' \t\r\n ', 'af000000-0000-4000-8000-000000000020'::uuid) $$,
-  '22023', null,
-  'M1 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is refused — plain btrim strips SPACES ONLY, which is the exact hole R745 had to fix twice; the explicit E'' \t\r\n'' class is used at all three layers (123:295-296)');
+-- M1 RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66): the reason is OPTIONAL.
+-- The refusal becomes a SOURCE pin here (count-neutral for §M2-§S); the
+-- BEHAVIOURAL landings are §Q at the end. ***THE L.E1.15 BREAK PROBE'S
+-- TARGET*** for this verb: re-add 127:760-764's gate and M1 reds by name.
+select ok(
+  (select p.prosrc not like '%: a reason is required — this verb writes an audited commissioner_actions row%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_roster_override_internal'),
+  'M1 Q66 (131): commish_roster_override_internal no longer carries 127:762''s "a reason is required" refusal — the gate is a NORMALISATION now (the explicit E'' \t\r\n'' class still decides "blank", and blank ⇒ NULL)');
 select throws_ok(
   $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
        null, 'cr-te1', repeat('x', 501), 'af000000-0000-4000-8000-000000000021'::uuid) $$,
@@ -1155,6 +1159,50 @@ select is(
    where n.nspname = 'public' and p.proname = 'commish_roster_override_internal'
      and p.prosrc like '%log_commissioner_action_internal%'),
   1, 'K6 …and it writes its receipt through the ONE shared logging helper (123:417-453), never a second INSERT into commissioner_actions');
+
+-- ---------------------------------------------------------------------------
+-- Q. THE REASON IS OPTIONAL — Q66 (spec v2.16.41 §10.3 / §15.4), landed for
+--    127's two doors by migration 131 (L.E1.15 / F362). The sweep's proof
+--    shape, on cr-te1 (§M3 force-dropped him from T2, so he is a free agent
+--    here). Runs LAST so no earlier count premise moves.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       'cr-te1', null, null, 'af000000-0000-4000-8000-000000000060'::uuid) $$,
+  'Q1 a NO-reason force-add LANDS (Q66). Re-adding 127:760-764''s refusal reds here');
+select lives_ok(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       null, 'cr-te1', E' \t\r\n ', 'af000000-0000-4000-8000-000000000061'::uuid) $$,
+  'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and the force-drop LANDS (the explicit class still decides "blank", R745)');
+select lives_ok(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       'cr-te1', null, E'\t IR replacement \n', 'af000000-0000-4000-8000-000000000062'::uuid) $$,
+  'Q3 a real reason wrapped in tabs and newlines lands…');
+select throws_ok(
+  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
+       null, 'cr-te1', repeat('x', 501), 'af000000-0000-4000-8000-000000000063'::uuid) $$,
+  '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the bound survives Q66; only the presence gate went)');
+reset role;
+select is(
+  (select string_agg(action_type || '=' || coalesce(reason, '<NULL>'), ' ' order by metadata ->> 'action_id')
+   from commissioner_actions where league_id = 'be000000-0000-4000-8000-000000000001'
+     and metadata ->> 'action_id' in ('af000000-0000-4000-8000-000000000060', 'af000000-0000-4000-8000-000000000061',
+                                      'af000000-0000-4000-8000-000000000062', 'af000000-0000-4000-8000-000000000063')),
+  'force_add=<NULL> force_drop=<NULL> force_add=IR replacement',
+  'Q5 THE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none');
+select is(
+  (select count(*)::int from league_chat where league_id = 'be000000-0000-4000-8000-000000000001' and is_system
+     and message like '%CR TE1 by cr_user1 (commissioner override%)%' and message not like '% — reason: %'),
+  2, 'Q6 …and EXACTLY the two no-reason landings posted with the override marker and NO "— reason:" clause (every earlier post in this file carried one)');
+select is(
+  (select count(*)::int from league_chat where league_id = 'be000000-0000-4000-8000-000000000001' and is_system
+     and message like '%added CR TE1 by cr_user1 (commissioner override%) — reason: IR replacement'),
+  1, 'Q7 …while the reasoned landing''s post carries the TRIMMED reason');
+select is((select count(*)::int from league_rosters where league_id = 'be000000-0000-4000-8000-000000000001'
+           and team_id = 'ce000000-0000-4000-8000-000000000002' and player_id = 'cr-te1'),
+  1, 'Q8 …and cr-te1 is on T2 again (Q3''s add): the three landings wrote, the refusal did not');
 
 select * from finish();
 rollback;

@@ -60,7 +60,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(94);
+select plan(101);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the shared normalizer and
@@ -512,12 +512,15 @@ select is(current_setting('pgtap.tr_h')::jsonb -> 'propagation' ->> 'frozen_rece
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_ok(
-  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
-       'cf000000-0000-4000-8000-000000000002', 'Any Name', E' \t\r\n ',
-       '0f000000-0000-4000-8000-000000000001'::uuid) $$,
-  '22023', null,
-  'D1 a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is refused — plain btrim strips SPACES ONLY, the exact hole R745 had to fix twice; the explicit E'' \t\r\n'' class is used at every layer (123:295-296)');
+-- D1 RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66): the reason is OPTIONAL.
+-- The refusal becomes a SOURCE pin here (count-neutral for §E-§K); the
+-- BEHAVIOURAL landings are §Q at the end. ***THE L.E1.15 BREAK PROBE'S
+-- TARGET*** for this verb: re-add 128:462-466's gate and D1 reds by name.
+select ok(
+  (select p.prosrc not like '%commish_rename_team: a reason is required%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_rename_team_internal'),
+  'D1 Q66 (131): commish_rename_team_internal no longer carries 128:464''s "a reason is required" refusal — the gate is a NORMALISATION now (the explicit E'' \t\r\n'' class still decides "blank", and blank ⇒ NULL)');
 select throws_ok(
   $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
        'cf000000-0000-4000-8000-000000000002', 'Any Name', repeat('x', 501),
@@ -652,6 +655,52 @@ select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'set_lineup')),
   2, 'K4 …and both are still ONE overload each — no second signature crept in beside them');
+
+-- ---------------------------------------------------------------------------
+-- Q. THE REASON IS OPTIONAL — Q66 (spec v2.16.41 §10.3 / §15.4), landed for
+--    the COMMISSIONER arm by migration 131 (L.E1.15 / F362); rename_own_team
+--    never required one and is untouched. The sweep's proof shape, on T2
+--    (cf…02, which §H left as `Third Identity`). Runs LAST so no earlier
+--    count premise moves.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
+       'cf000000-0000-4000-8000-000000000002', 'Fourth Identity', null,
+       '0f000000-0000-4000-8000-000000000060'::uuid) $$,
+  'Q1 a NO-reason rename LANDS (Q66). Re-adding 128:462-466''s refusal reds here');
+select lives_ok(
+  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
+       'cf000000-0000-4000-8000-000000000002', 'Fifth Identity', E' \t\r\n ',
+       '0f000000-0000-4000-8000-000000000061'::uuid) $$,
+  'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and LANDS (the explicit class still decides "blank", R745)');
+select lives_ok(
+  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
+       'cf000000-0000-4000-8000-000000000002', 'Sixth Identity', E'\t owner asked \n',
+       '0f000000-0000-4000-8000-000000000062'::uuid) $$,
+  'Q3 a real reason wrapped in tabs and newlines lands…');
+select throws_ok(
+  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
+       'cf000000-0000-4000-8000-000000000002', 'Seventh Identity', repeat('x', 501),
+       '0f000000-0000-4000-8000-000000000063'::uuid) $$,
+  '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the bound survives Q66; only the presence gate went)');
+reset role;
+select is(
+  (select string_agg(action_type || '=' || coalesce(reason, '<NULL>'), ' ' order by metadata ->> 'action_id')
+   from commissioner_actions where target_id = 'cf000000-0000-4000-8000-000000000002'
+     and metadata ->> 'action_id' in ('0f000000-0000-4000-8000-000000000060', '0f000000-0000-4000-8000-000000000061',
+                                      '0f000000-0000-4000-8000-000000000062', '0f000000-0000-4000-8000-000000000063')),
+  'reassign_team=<NULL> reassign_team=<NULL> reassign_team=owner asked',
+  'Q5 THE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none');
+select is(
+  (select string_agg(message, '|' order by message) from league_chat
+   where league_id = 'bf000000-0000-4000-8000-000000000001' and is_system
+     and message like '% Identity is now % Identity%'),
+  'Fifth Identity is now Sixth Identity — renamed by tr_user1 (commissioner override) — reason: owner asked|Fourth Identity is now Fifth Identity — renamed by tr_user1 (commissioner override)|Third Identity is now Fourth Identity — renamed by tr_user1 (commissioner override)',
+  'Q6 THE POSTS, pinned by content: the two no-reason landings end at the override marker with NO "— reason:" clause; the reasoned one carries the TRIMMED reason');
+select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000002'),
+  'Sixth Identity', 'Q7 …and the franchise carries Q3''s name: the three landings wrote, the refusal did not');
 
 select * from finish();
 rollback;

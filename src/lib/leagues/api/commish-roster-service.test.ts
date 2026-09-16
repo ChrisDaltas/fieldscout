@@ -3,9 +3,9 @@
  * override (M6A task L.E1.10; spec §15.4:1694-1695; migration 127; PROGRESS
  * D351). The same three proofs as the matchup suite, for this family:
  *
- *   - the SCHEMA accepts an absent / blank reason (Q66) — schema-level only;
- *     127's in-body gate still refuses one until L.E1.15 / F362 (the stack
- *     suite pins that by name);
+ *   - the SCHEMA accepts an absent / blank reason (Q66) — and since
+ *     migration 131 (L.E1.15 / F362) so does 127 end-to-end (the stack suite
+ *     pins the NULL-reason receipt);
  *   - §15.4:1694's / 127:249's argument order, absent args OMITTED;
  *   - the family mapper's four arms VERBATIM, and the F65(b) guard per verb
  *     — a reused `action_id` for a different player / team / verb is a 409.

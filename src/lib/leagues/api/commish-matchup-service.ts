@@ -24,18 +24,15 @@
  * reason is optional on every commissioner action; the audit row is always
  * written"). The schema is `z.string().trim().max(500).optional()` with
  * blank / whitespace-only normalised to ABSENT (never `''`), so the route
- * never refuses a missing reason at the field level. Do NOT copy
- * `commish-lineup-service.ts:84`'s `.min(1)` — that file carries the OLD
- * contract and is on L.E1.15's list (F362).
+ * never refuses a missing reason at the field level. `optionalReason` is
+ * THE shape for every commissioner route (the lineup route adopted it in
+ * L.E1.15); never `.min(1)`.
  *
- * ⚠ TRANSITIONAL STATE, recorded not hidden: migration 126's in-body gate
- * (`126:720-725`) still REFUSES a blank reason with 22023 by name — its text
- * predates the ruling, and L.E1.15 (the reason-optional sweep, F362) is the
- * task that relaxes it. So today a request with no reason passes this schema,
- * reaches SQL, and comes back as the family mapper's 400 with 126's own
- * message verbatim. Nothing here special-cases that: it is mapped through
- * `mapInSeasonRpcError` like any other refusal, and the stack suite pins it by
- * name so the cell reds — and gets re-cut — when the sweep lands.
+ * END-TO-END since migration 131 (L.E1.15, F362): 126's in-body gate is a
+ * normalisation, so a no-reason request LANDS with a NULL-reason receipt and
+ * a post without a reason clause — the stack suite pins that shape per verb.
+ * (Between L.E1.10 and L.E1.15 the gate still refused; that transitional 400
+ * was pinned by name and re-cut when the sweep landed.)
  *
  * SQLSTATE mapping is the family's (`inseason-errors.ts`), imported never
  * re-derived; only the 42501 copy is this route's. Refusal text is surfaced

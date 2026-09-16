@@ -17,7 +17,7 @@ const idSchema = z.uuid()
  *  `PATCH /api/leagues/[id]/teams/[tid]/lineup` is unchanged and still
  *  enforces the per-player kickoff lock on every caller, commissioner
  *  included. This route is the exception path: it lifts the lock, the
- *  past-week gate and the closed-week gate, REQUIRES a reason, and writes a
+ *  past-week gate and the closed-week gate, and writes a
  *  `commissioner_actions` row the whole league can read — but only when
  *  something actually changed (PROGRESS §3(b), Chris: "no receipt if nothing
  *  is done. only when something is done.").
@@ -26,9 +26,10 @@ const idSchema = z.uuid()
  *  RPC call, the SQLSTATE mapping and the F65(b) identity guard all live in
  *  `commish-lineup-service.ts`, which the stack suite drives directly.
  *
- *  Body: { team_id, week, slot_map, action_id, reason } — the FULL canonical
+ *  Body: { team_id, week, slot_map, action_id, reason? } — the FULL canonical
  *  map incl. IR keys, one UUID per submit (re-sending the same body replays
- *  it), and a reason that is REQUIRED here.
+ *  it), and a reason that is OPTIONAL (Q66; migration 131 / L.E1.15 — the
+ *  receipt is always written, with reason NULL when none was given).
  *
  *  Authorization is the RPC's: 123 raises one no-leak 42501 for "no such
  *  league" and "not a commissioner" alike. This handler deliberately does not

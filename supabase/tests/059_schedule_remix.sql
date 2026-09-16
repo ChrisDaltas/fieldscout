@@ -77,7 +77,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(149);
+select plan(151);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the ledger, the five functions, grants (§4.1)
@@ -535,26 +535,50 @@ update nfl_games set kickoff_at = now() + interval '1 second' where id = 'sr-w10
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 555, null, 'a0000000-0000-4000-8000-000000000002') $$,
-  '%requires a reason%', 'post-kickoff confirm with NO reason refuses by name (E41/D290)');
-select throws_ok(
-  $$ select public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 555, '   ', 'a0000000-0000-4000-8000-000000000002') $$,
-  '22023', null, 'post-kickoff confirm with a BLANK reason refuses 22023 (a reason is non-blank)');
-select is(
-  (select (p -> 'window' ->> 'reason_required')::boolean from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 555) p),
-  true, 'the preview says so ahead of time: window.reason_required = true');
+-- RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66 — spec v2.16.41 §11.7 / E41):
+-- a reason is OPTIONAL after kickoff too. The three cells that refused here
+-- now LAND; the receipt (F341's parked commissioner_actions row) is written
+-- on every confirm. Re-adding 111:671-675's gate reds the first cell BY NAME.
 select results_eq(
   $$ select (r ->> 'reason_required')::boolean, (r -> 'window' ->> 'free')::boolean, (r ->> 'matchups_replaced')::int,
-            r ->> 'system_post' like '%— after Week 1 kickoff (commissioner override) — reason: Bye-week fix%'
+            r ->> 'system_post' like '%— after Week 1 kickoff (commissioner override)'
+              and r ->> 'system_post' not like '% — reason: %',
+            r ->> 'commissioner_action_id' is not null
+     from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 556, null, 'a0000000-0000-4000-8000-000000000002') r $$,
+  $$ values (false, false, 104, true, true) $$,
+  'Q66 (131): post-kickoff confirm with NO reason LANDS — reason_required = false, the override clause with NO "— reason:" tail, 104 rows (week 1 under way and frozen, R730), and a receipt id in the document');
+select results_eq(
+  $$ select (r ->> 'reason_required')::boolean,
+            r ->> 'system_post' like '%(commissioner override)' and r ->> 'system_post' not like '% — reason: %'
+     from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 557, E' \t\r\n ', 'a0000000-0000-4000-8000-000000000006') r $$,
+  $$ values (false, true) $$,
+  'Q66 (131): a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is treated as NO reason and LANDS (the explicit class — 111:670''s plain btrim would have posted the tabs as text)');
+select is(
+  (select (p -> 'window' ->> 'reason_required')::boolean from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 555) p),
+  true, 'the PREVIEW still says window.reason_required = true — schedule_window_internal (111:508) is a READ function outside the sweep (F361''s remainder: the panel''s hint and gate are L.E1.13''s); the CONFIRM no longer requires one');
+select results_eq(
+  $$ select (r ->> 'reason_required')::boolean, (r -> 'window' ->> 'free')::boolean, (r ->> 'matchups_replaced')::int,
+            r ->> 'system_post' like '%— after Week 1 kickoff (commissioner override) — reason: Bye-week fix'
      from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 555, '  Bye-week fix  ',
-                                        'a0000000-0000-4000-8000-000000000002') r $$,
-  $$ values (true, false, 104, true) $$,
-  'post-kickoff confirm WITH a reason succeeds (the one-unit positive): override clause + the trimmed reason in the post; 104 rows — week 1 itself is under way and frozen (R730)');
+                                        'a0000000-0000-4000-8000-000000000007') r $$,
+  $$ values (false, false, 104, true) $$,
+  'post-kickoff confirm WITH a reason succeeds (the one-unit positive): override clause + the TRIMMED reason in the post; 104 rows — week 1 itself is under way and frozen (R730); reason_required is false even so (131). Seed 555 lands LAST so the frozen-week cells below still read 555''s rows');
 select is((select count(*)::int from league_chat where league_id = 'b2000000-0000-4000-8000-000000000008'
            and message like '%commissioner override) — reason: Bye-week fix'), 1,
-  'the override post landed in league chat with the reason (the one place it lives until M6 — D290)');
+  'the override post landed in league chat with the reason (and ONLY the reason-bearing confirm carries the clause)');
 reset role;
+select is(
+  (select string_agg(action_type || '|' || target_type || '|' || target_id || '|' || coalesce(reason, '<NULL>'), ' ; ' order by metadata ->> 'action_id')
+   from commissioner_actions where league_id = 'b2000000-0000-4000-8000-000000000008'
+     and metadata ->> 'action_id' in ('a0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000007')),
+  'edit_schedule|schedule|b2000000-0000-4000-8000-000000000008|<NULL> ; edit_schedule|schedule|b2000000-0000-4000-8000-000000000008|<NULL> ; edit_schedule|schedule|b2000000-0000-4000-8000-000000000008|Bye-week fix',
+  'THE RECEIPTS (F341 discharged by 131): these three confirms ⇒ three commissioner_actions rows (the earlier free-window remixes above wrote theirs too — every confirm is audited now) — no reason ⇒ NULL, whitespace-only ⇒ NULL (never ''''), tab-free reason stored TRIMMED — each edit_schedule / schedule / <league_id>');
+select is(
+  (select (metadata ->> 'verb') || '|' || (metadata ->> 'change_count' is not null)::text || '|' || jsonb_array_length(metadata -> 'affected_team_ids')::text
+     || '|' || (before ->> 'schedule_seed') || '->' || (after ->> 'schedule_seed')
+   from commissioner_actions where league_id = 'b2000000-0000-4000-8000-000000000008' and metadata ->> 'action_id' = 'a0000000-0000-4000-8000-000000000007'),
+  'schedule_remix_confirm|true|8|557->555',
+  '…and the receipt carries the verb, the plan''s change_count, every seated franchise in affected_team_ids (D353 — 8 teams), and before/after = the seed it replaced and the seed it wrote');
 
 -- F4. R730 — a LATER week whose OWN first kickoff has passed is frozen by
 -- name (`week_kicked_off`) whatever league_weeks.status says, for BOTH verbs,
@@ -970,23 +994,31 @@ select throws_like(
        (select a from sr_l8w9 where round_type = 'secondary' order by h limit 1),
        'E40 probe', 'a0000000-0000-4000-8000-000000000041') $$,
   '%(E40)%', 'E40: a regular pairing that duplicates the week''s SECONDARY pairing refuses by name — a second game is never the primary opponent');
-select throws_like(
-  $$ select public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008',
-       (select id from sr_l8w9 where round_type = 'regular' order by h limit 1),
-       (select a from sr_l8w9 where round_type = 'regular' order by h limit 1),
-       (select h from sr_l8w9 where round_type = 'regular' order by h limit 1),
-       null, 'a0000000-0000-4000-8000-000000000042') $$,
-  '%requires a reason%', 'post-kickoff EDIT with no reason refuses by name (E41/D290 — same law as Remix)');
+-- RE-CUT BY MIGRATION 131 (L.E1.15 / F362, Q66): the post-kickoff EDIT with no
+-- reason LANDS (111:952-957's gate is gone; same law as Remix), so the
+-- reason-bearing positive below swaps the pairing BACK under a fresh id.
+select results_eq(
+  $$ select (r ->> 'rows_changed')::int, (r ->> 'reason_required')::boolean,
+            r ->> 'system_post' like 'Week 9 matchup edited by sr_user1: % vs % (was % vs %) — after Week 1 kickoff (commissioner override)'
+              and r ->> 'system_post' not like '% — reason: %',
+            r ->> 'commissioner_action_id' is not null
+     from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008',
+            (select id from sr_l8w9 where round_type = 'regular' order by h limit 1),
+            (select a from sr_l8w9 where round_type = 'regular' order by h limit 1),
+            (select h from sr_l8w9 where round_type = 'regular' order by h limit 1),
+            null, 'a0000000-0000-4000-8000-000000000042') r $$,
+  $$ values (1, false, true, true) $$,
+  'Q66 (131): post-kickoff EDIT with NO reason LANDS — reason_required = false, the override clause with NO "— reason:" tail, and a receipt id (E41 no longer gates; same law as Remix)');
 select results_eq(
   $$ select (r ->> 'rows_changed')::int, (r ->> 'reason_required')::boolean,
             r ->> 'system_post' like 'Week 9 matchup edited by sr_user1: % vs % (was % vs %) — after Week 1 kickoff (commissioner override) — reason: Owner swap'
      from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008',
             (select id from sr_l8w9 where round_type = 'regular' order by h limit 1),
-            (select a from sr_l8w9 where round_type = 'regular' order by h limit 1),
             (select h from sr_l8w9 where round_type = 'regular' order by h limit 1),
-            'Owner swap', 'a0000000-0000-4000-8000-000000000042') r $$,
-  $$ values (1, true, true) $$,
-  'post-kickoff EDIT with a reason succeeds: override clause + reason in the post (the one-unit positive)');
+            (select a from sr_l8w9 where round_type = 'regular' order by h limit 1),
+            'Owner swap', 'a0000000-0000-4000-8000-000000000045') r $$,
+  $$ values (1, false, true) $$,
+  'post-kickoff EDIT with a reason succeeds: override clause + reason in the post (the one-unit positive; reason_required stays false under 131)');
 select results_eq(
   $$ select (r ->> 'rows_changed')::int
      from public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000008',
@@ -1035,8 +1067,8 @@ reset role;
 -- ---------------------------------------------------------------------------
 -- I. The ledger has no client path for any role (§4.2) + its CHECK/UNIQUE
 -- ---------------------------------------------------------------------------
-select is((select count(*)::int from schedule_actions), 13,
-  'PREMISE (postgres): the ledger holds 13 rows — 4 L8 remixes (…01/…02/…62/…03) + 1 L8b remix (…44) + 6 L8b edits (…11/…13/…14/…15/…36) + 3 L8 edits (…61/…42/…43); every refused or rolled-back action left NO row');
+select is((select count(*)::int from schedule_actions), 16,
+  'PREMISE (postgres): the ledger holds 16 rows — 6 L8 remixes (…01/…02/…06/…07/…62/…03; …06 and …07 are 131''s no-reason landings) + 1 L8b remix (…44) + 6 L8b edits (…11/…13/…14/…15/…36) + 4 L8 edits (…61/…42/…45/…43; …42 is 131''s no-reason landing, …45 its reasoned swap back); every refused or rolled-back action left NO row');
 select throws_ok(
   $$ insert into schedule_actions (league_id, action_id, kind, actor_id, result)
      values ('b2000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-0000000000ff', 'banana', '92000000-0000-4000-8000-000000000001', '{}') $$,

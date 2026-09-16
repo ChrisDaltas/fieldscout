@@ -22,14 +22,11 @@
  * REASON — OPTIONAL (Q66, ruled by Chris 2026-09-16, spec v2.16.41). The
  * schema is `commish-matchup-service.ts`'s `optionalReason` — one shape for
  * every L.E1.10 route: trimmed, ≤ 500, blank / tab-only normalised to ABSENT.
- * Never `.min(1)` (F362; the lineup template's `:84` is the OLD contract).
+ * Never `.min(1)` (F362 — the lineup route adopted this shape in L.E1.15).
  *
- * ⚠ TRANSITIONAL STATE, recorded not hidden: 127's in-body gate
- * (`127:759-763`) still REFUSES a blank reason with 22023 by name; L.E1.15
- * (F362) relaxes it. A no-reason request therefore passes this schema and
- * returns the mapper's 400 with 127's text verbatim — mapped like any other
- * refusal, never special-cased, and pinned by name in the stack suite so the
- * cell reds and gets re-cut when the sweep lands.
+ * END-TO-END since migration 131 (L.E1.15, F362): 127's in-body gate is a
+ * normalisation, so a no-reason request LANDS with a NULL-reason receipt and
+ * a post without a reason clause — the stack suite pins that per verb.
  *
  * SQLSTATE mapping is the family's (`inseason-errors.ts`), imported never
  * re-derived; only the 42501 copy is this route's. Refusal text verbatim.

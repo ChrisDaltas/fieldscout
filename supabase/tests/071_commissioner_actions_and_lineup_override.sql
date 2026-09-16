@@ -61,7 +61,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(118);
+select plan(126);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — §12.12's table, its policies, the immutability trigger,
@@ -536,16 +536,21 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
--- THE REASON IS REQUIRED UNCONDITIONALLY (§15.4:1689's header), which is the
--- one place this verb is STRICTER than set_lineup.
-select throws_ok(
-  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
-       '{"qb:0": "ce-qb2", "rb:0": "ce-rb1"}'::jsonb, null, 'e4000000-0000-4000-8000-00000000000a'::uuid) $$,
-  '22023', null, 'a MISSING reason is refused (§15.4: "all require reason") — set_lineup would have accepted it from a manager');
-select throws_ok(
-  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
-       '{"qb:0": "ce-qb2", "rb:0": "ce-rb1"}'::jsonb, E' \t\r\n ', 'e4000000-0000-4000-8000-00000000000b'::uuid) $$,
-  '22023', null, 'a reason of SPACE+TAB+CR+NEWLINE is blank and refused (R745''s explicit class, not btrim''s default)');
+-- THE REASON IS OPTIONAL (Q66, migration 131 / L.E1.15, F362 — spec v2.16.41
+-- §10.3 / §15.4). The two refusal cells that stood here are re-cut as SOURCE
+-- pins (count-neutral for the §G premises below); the BEHAVIOURAL landings
+-- are §Q at the end of this file. ***THE L.E1.15 BREAK PROBE'S TARGET*** for
+-- this verb: re-add 123:666-670's gate and the first pin reds by name.
+select ok(
+  (select p.prosrc not like '%commish_edit_lineup: a reason is required%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_edit_lineup_internal'),
+  'Q66 (131): commish_edit_lineup_internal no longer carries 123:668''s "a reason is required" refusal — the gate is a NORMALISATION now (§4 rule 12 re-read)');
+select ok(
+  (select p.prosrc like '%CASE WHEN v_reason IS NOT NULL THEN '' — reason: '' || v_reason ELSE '''' END%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'commish_edit_lineup_internal'),
+  'Q66 (131): …and its chat post''s "— reason:" clause is CONDITIONAL in the source (never "reason: <NULL>")');
 select throws_ok(
   $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
        '{"qb:0": "ce-qb2", "rb:0": "ce-rb1"}'::jsonb, repeat('x', 501), 'e4000000-0000-4000-8000-00000000000c'::uuid) $$,
@@ -894,6 +899,59 @@ select is((select slot_map from team_lineups where team_id = 'c4000000-0000-4000
   '{"qb:0": "ce-qb1", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb,
   '…and the canonical map is the re-seated one: the LOCKED ce-qb1 was moved by the matcher itself, which is precisely what a manager''s verb may never do');
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- Q. THE REASON IS OPTIONAL — Q66 (Chris, 2026-09-16; spec v2.16.41 §10.3 /
+--    §15.4), landed for THIS verb by migration 131 (L.E1.15 / F362). The
+--    proof shape the sweep prescribes, per verb: the no-reason call LANDS with
+--    a receipt whose reason IS NULL; whitespace-only ⇒ NULL, not ''; a real
+--    reason stored TRIMMED; 500 lives (§F above), 501 still refused; the chat
+--    post carries NO "— reason:" clause on a no-reason call. Runs LAST so no
+--    earlier count premise moves. The map edits are on T2 (c4…02), whose
+--    week-3 map §J left as {qb:0 ce-qb1, wr:0 ce-wr2, flex:0 ce-wr1}.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "ce-qb1", "rb:0": "ce-rb1", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb, null,
+       'e4000000-0000-4000-8000-000000000040'::uuid) $$,
+  'Q1 a NO-reason edit LANDS (Q66 — "we should not require a reason for anything"): rb:0 filled, nothing else moved. Re-adding 123:666-670''s refusal reds here');
+select lives_ok(
+  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "ce-qb1", "rb:0": "ce-rb2", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb, E' \t\r\n ',
+       'e4000000-0000-4000-8000-000000000041'::uuid) $$,
+  'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and LANDS (the explicit E'' \t\r\n'' class still decides "blank", R745)');
+select lives_ok(
+  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "ce-qb1", "rb:0": "ce-rb1", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb, E'\t manager unreachable \n',
+       'e4000000-0000-4000-8000-000000000042'::uuid) $$,
+  'Q3 a real reason wrapped in tabs and newlines lands…');
+select throws_ok(
+  $$ select commish_edit_lineup('b4000000-0000-4000-8000-000000000001', 'c4000000-0000-4000-8000-000000000002', 3,
+       '{"qb:0": "ce-qb1", "rb:0": "ce-rb2", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb, repeat('x', 501),
+       'e4000000-0000-4000-8000-000000000043'::uuid) $$,
+  '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the league_chat bound survives Q66; only the presence gate went)');
+reset role;
+select is(
+  (select string_agg((metadata ->> 'action_id') || '=' || coalesce(reason, '<NULL>'), ' ' order by metadata ->> 'action_id')
+   from commissioner_actions where action_type = 'edit_lineup'
+     and metadata ->> 'action_id' in ('e4000000-0000-4000-8000-000000000040', 'e4000000-0000-4000-8000-000000000041',
+                                      'e4000000-0000-4000-8000-000000000042', 'e4000000-0000-4000-8000-000000000043')),
+  'e4000000-0000-4000-8000-000000000040=<NULL> e4000000-0000-4000-8000-000000000041=<NULL> e4000000-0000-4000-8000-000000000042=manager unreachable',
+  'Q5 THE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not '''' — 130 §0''s CHECK still refuses ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none');
+select is(
+  (select count(*)::int from league_chat where league_id = 'b4000000-0000-4000-8000-000000000001' and is_system
+     and message like 'Week 3 lineup for CE T2 edited by ce_user1 (commissioner override%)' and message not like '%reason%'),
+  2, 'Q6 …and EXACTLY the two no-reason landings (Q1, Q2) posted with the override marker and NO "— reason:" clause — every earlier T2 post in this file carried one (the clause is conditional: never "reason: <NULL>", never "reason: " with nothing after it)');
+select is(
+  (select count(*)::int from league_chat where league_id = 'b4000000-0000-4000-8000-000000000001' and is_system
+     and message like 'Week 3 lineup for CE T2 edited by ce_user1 (commissioner override%) — reason: manager unreachable'),
+  1, 'Q7 …while the reasoned landing''s post carries the trimmed reason after the marker — pinned by content');
+select is(
+  (select slot_map from team_lineups where team_id = 'c4000000-0000-4000-8000-000000000002' and week = 3),
+  '{"qb:0": "ce-qb1", "rb:0": "ce-rb1", "wr:0": "ce-wr2", "flex:0": "ce-wr1"}'::jsonb,
+  'Q8 …and the row holds Q3''s map: the three landings wrote, the refusal did not');
 
 select * from finish();
 rollback;

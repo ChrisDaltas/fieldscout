@@ -2,13 +2,15 @@
  * commish-lineup-service.test.ts — the PURE half of the audited commissioner
  * lineup override (M6A task L.E1.2; spec §15.4:1695; migration 123).
  *
- * The one thing this suite exists to prove that `lineup-service.test.ts`
- * cannot: THE REASON IS REQUIRED HERE AND OPTIONAL THERE. §15.4:1689's header
- * is "all require `reason`", so the override refuses a missing one at the Zod
- * layer — a FIELD error the form can route — where the manager's verb accepts
- * `undefined` and lets 123/114 decide. Every other wire rule is deliberately
- * the same shape, and is pinned here so a future edit that "unifies" the two
- * schemas has to break a named cell to do it.
+ * THE REASON IS OPTIONAL HERE TOO (Q66 — Chris, 2026-09-16; spec v2.16.41
+ * §10.3 / §15.4; migration 131 / L.E1.15 / F362 / R1052). Before the sweep
+ * this schema carried `.min(1)` and the cells below refused a missing or
+ * blank reason; now they prove the INVERSE — an absent, blank or tab-only
+ * reason PASSES (normalised to absent, never `''`) and is OMITTED from the
+ * RPC call, while a 501-char or non-string one is still a FIELD error. Every
+ * other wire rule is deliberately the same shape as `lineup-service.ts`, and
+ * is pinned here so a future edit that "unifies" the two schemas has to
+ * break a named cell to do it.
  *
  * The live half (the auth matrix, the verbatim lock refusal, the lock
  * exemption actually landing, the no-op writing no audit row, replay) is
@@ -36,7 +38,7 @@ const ok = {
   reason: 'manager unreachable — his game had already started',
 }
 
-describe('commishEditLineupInputSchema — §15.4:1689, "all require reason"', () => {
+describe('commishEditLineupInputSchema — the reason is OPTIONAL (Q66 / L.E1.15)', () => {
   it('accepts the map whole and LOWER-CASES both uuids (R768 — the guard compares against what Postgres wrote)', () => {
     const parsed = commishEditLineupInputSchema.parse(ok)
     expect(parsed.slot_map).toStrictEqual(ok.slot_map)
@@ -44,22 +46,28 @@ describe('commishEditLineupInputSchema — §15.4:1689, "all require reason"', (
     expect(parsed.team_id).toBe(TEAM_LC)
   })
 
-  it('THE DIFFERENCE FROM set_lineup: a MISSING reason is refused here, where the manager’s schema allows it', () => {
+  it('a MISSING reason is ACCEPTED (Q66 — the inverse of the pre-131 `.min(1)`); the body parses with reason absent', () => {
     const without: Partial<typeof ok> = { ...ok }
     delete without.reason
-    expect(commishEditLineupInputSchema.safeParse(without).success).toBe(false)
+    const parsed = commishEditLineupInputSchema.safeParse(without)
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.reason).toBeUndefined()
   })
 
-  it('a BLANK reason is refused — whitespace only is not a reason (the R745 class, mirrored in-body and at the table CHECK)', () => {
-    for (const reason of ['', '   ', '\t\t', '\n', ' \t\r\n ', null]) {
-      expect(commishEditLineupInputSchema.safeParse({ ...ok, reason }).success, JSON.stringify(reason)).toBe(false)
+  it('a BLANK / tab-only reason is ACCEPTED and normalised to ABSENT — never to the empty string (the R745 class still decides "blank"; the table CHECK still refuses "")', () => {
+    for (const reason of ['', '   ', '\t\t', '\n', ' \t\r\n ']) {
+      const parsed = commishEditLineupInputSchema.safeParse({ ...ok, reason })
+      expect(parsed.success, JSON.stringify(reason)).toBe(true)
+      expect(parsed.data?.reason, JSON.stringify(reason)).toBeUndefined()
     }
   })
 
-  it('the reason is trimmed and bounded at 500 — the league_chat bound, so an over-long one is a FIELD error, not a raise', () => {
+  it('the reason is trimmed and bounded at 500 — 501 and a non-string are still FIELD errors, not raises', () => {
     expect(commishEditLineupInputSchema.parse({ ...ok, reason: '  because  ' }).reason).toBe('because')
     expect(commishEditLineupInputSchema.safeParse({ ...ok, reason: 'x'.repeat(500) }).success).toBe(true)
     expect(commishEditLineupInputSchema.safeParse({ ...ok, reason: 'x'.repeat(501) }).success).toBe(false)
+    expect(commishEditLineupInputSchema.safeParse({ ...ok, reason: null }).success).toBe(false)
+    expect(commishEditLineupInputSchema.safeParse({ ...ok, reason: 42 }).success).toBe(false)
   })
 
   it('team_id rides the BODY and must be a uuid — §15.4 addresses this route at the league, not the team', () => {
@@ -98,7 +106,7 @@ const goodResult = {
 }
 
 describe('commishEditLineup — the RPC call and the F65(b) identity guard', () => {
-  it('calls commish_edit_lineup with §15.4’s argument order and ALWAYS sends p_reason', async () => {
+  it('calls commish_edit_lineup with §15.4’s argument order and sends p_reason when one is given', async () => {
     const { client, rpc } = rpcDouble({ data: goodResult, error: null })
     const res = await commishEditLineup(client, LEAGUE, ok)
     expect(res.status).toBe(200)
@@ -118,10 +126,25 @@ describe('commishEditLineup — the RPC call and the F65(b) identity guard', () 
     expect(rpc.mock.calls.map((c) => c[0])).not.toContain('set_lineup')
   })
 
-  it('a bad body is a 400 with field errors, and the RPC is never reached', async () => {
+  it('OMITS p_reason when the reason is absent or blank — the RPC’s DEFAULT NULL stands; nothing is sent as "" (the L.E1.10 shape)', async () => {
+    const { client, rpc } = rpcDouble({ data: { ...goodResult, reason: null }, error: null })
+    const without: Partial<typeof ok> = { ...ok }
+    delete without.reason
+    expect((await commishEditLineup(client, LEAGUE, without)).status).toBe(200)
+    expect((await commishEditLineup(client, LEAGUE, { ...ok, reason: ' \t ' })).status).toBe(200)
+    expect(rpc).toHaveBeenCalledTimes(2)
+    for (const call of rpc.mock.calls) {
+      expect(call[0]).toBe('commish_edit_lineup')
+      expect(call[1]).not.toHaveProperty('p_reason')
+    }
+  })
+
+  it('a bad body is a 400 with field errors, and the RPC is never reached — but a blank reason is NOT a bad body', async () => {
     const { client, rpc } = rpcDouble({ data: null, error: null })
-    const res = await commishEditLineup(client, LEAGUE, { ...ok, reason: '   ' })
+    const res = await commishEditLineup(client, LEAGUE, { ...ok, week: 0 })
     expect(res.status).toBe(400)
+    const tooLong = await commishEditLineup(client, LEAGUE, { ...ok, reason: 'x'.repeat(501) })
+    expect(tooLong.status).toBe(400)
     expect(rpc).not.toHaveBeenCalled()
   })
 

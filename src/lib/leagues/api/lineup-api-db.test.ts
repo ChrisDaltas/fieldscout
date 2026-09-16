@@ -146,6 +146,8 @@ const ACTION = {
   outsider: 'afa00000-0000-4000-8000-000000000015',
   fellow: 'afa00000-0000-4000-8000-000000000016',
   commish: 'afa00000-0000-4000-8000-000000000017',
+  /** Q66 / 131: the commissioner arm with NO reason lands. */
+  commishNoReason: 'afa00000-0000-4000-8000-00000000001e',
   badKey: 'afa00000-0000-4000-8000-000000000018',
   notRostered: 'afa00000-0000-4000-8000-000000000019',
   /** R768's fixture: sent UPPERCASE on the wire. */
@@ -449,26 +451,31 @@ describe('the auth matrix (member / non-member / fellow manager / commissioner)'
     expect(await storedSlotMap()).toStrictEqual(baseMap())
   })
 
-  it('the COMMISSIONER without a reason is 400 with 112\'s own words; with one, 200 and recorded', async () => {
+  it('the COMMISSIONER without a reason LANDS (Q66 — migration 131 / L.E1.15: a commissioner setting another team\'s lineup is a commissioner action, so the reason is optional); with one, the post carries it', async () => {
     const before = await storedSlotMap()
     const next = { ...before, 'wr:1': wrC }
-    const noReason = await setLineup(commishClient, leagueId, managerTeamId, body(next, ACTION.commish))
-    expect(noReason.status).toBe(400)
-    expect(errorText(noReason)).toContain("a commissioner setting another team's lineup must give a reason")
-    expect(await storedSlotMap()).toStrictEqual(before)
+    const noReason = await setLineup(commishClient, leagueId, managerTeamId, body(next, ACTION.commishNoReason))
+    expect(noReason.status, errorText(noReason)).toBe(200)
+    const noReasonDoc = noReason.body as unknown as SetLineupResult
+    expect(noReasonDoc.edited_by_commish).toBe(true)
+    expect(noReasonDoc.reason).toBeNull()
+    expect(noReasonDoc.system_post).toMatch(/\(commissioner\)$/) // no "— reason:" clause
+    expect(noReasonDoc.system_post).not.toContain('reason')
+    expect(await storedSlotMap()).toStrictEqual(next)
 
+    // With a reason, a further change (back to the manager's map) posts it.
     const withReason = await setLineup(
       commishClient,
       leagueId,
       managerTeamId,
-      body(next, ACTION.commish, { reason: 'manager on vacation' }),
+      body(before, ACTION.commish, { reason: 'manager on vacation' }),
     )
     expect(withReason.status, errorText(withReason)).toBe(200)
     const doc = withReason.body as unknown as SetLineupResult
     expect(doc.edited_by_commish).toBe(true)
     expect(doc.reason).toBe('manager on vacation')
     expect(doc.system_post).toContain('reason: manager on vacation')
-    expect(await storedSlotMap()).toStrictEqual(next)
+    expect(await storedSlotMap()).toStrictEqual(before)
 
     // Put the manager's own map back for the cells that follow (a fresh id —
     // a new gesture).
