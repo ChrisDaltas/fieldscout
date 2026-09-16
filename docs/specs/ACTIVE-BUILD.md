@@ -90,7 +90,7 @@ FILED AS tasks-M6A §6 AMENDMENT NOTES (proposed L.E1.15 / L.E1.16), UNBUILT,
 PENDING CHRIS'S APPROVAL OF THE AMENDMENT.** D361(6) retracted into Q66.
 **Discharges F339**, F225 in part (the `schedule_edit_matchup` half), mints
 **F360 / F361 / F362**, records **D361**), so
-the next takeable task is **`L.E1.10`** (API + hooks, part 1: `/commish/score`,
+the next takeable task is **`L.E1.10`** *(**Order after L.E1.10, ruled by Chris 2026-09-16 at PR #300's merge:** **L.E1.15** — the reason-optional sweep, F362 — runs **immediately after L.E1.10** and before L.E1.11, so no further route is built on the old reason-required contract; **L.E1.16** — `commish_edit_bracket`, F360 — is **appended after L.E1.14**. Both are approved amendments to tasks-M6A §6, filed there additively. Every route built from here on takes `reason` as OPTIONAL — no `.min(1)`.)* (API + hooks, part 1: `/commish/score`,
 `/commish/result`, `/commish/move-player`, `/commish/roster` — D351's
 route/service/hook doctrine; depends L.E1.5 + L.E1.6, both landed).
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
