@@ -804,8 +804,9 @@ REVOKE EXECUTE ON FUNCTION commish_edit_schedule(UUID, UUID, UUID, UUID, TEXT, U
 -- 4. schedule_edit_matchup — 111's verb, CREATE OR REPLACE against
 --    111:785-1153's FILE TEXT with EXACTLY ONE NEW HUNK (the receipt), placed
 --    between the league_chat post (111:1123-1124) and the schedule_actions
---    INSERT (111:1148-1149). See the banner: D137 provenance, the pre-130
---    md5, the hunk count, and the one user-visible consequence. The text
+--    INSERT (111:1148-1149). See the banner section "111's RECEIPT HUNK —
+--    RE-DERIVED UNDER Q66 (2026-09-16)": D137 provenance, the pre-130 md5,
+--    the hunk count, and the transitional state F362 owns. The text
 --    below is the extraction, not a re-typing — the hunk is the only block
 --    that is not 111's.
 -- ---------------------------------------------------------------------------
