@@ -36,6 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { LineupEditor } from './lineup-editor'
 import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
+import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
 import { TeamPage } from './team-page'
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -338,7 +339,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             currentWeek: 1,
             editability: { state: 'open' },
             canEdit: true,
-            isCommissionerArm: false,
             isCommish: false,
             leagueTimeZone: null,
             overrideMode: false,
@@ -383,7 +383,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             currentWeek: 1,
             editability: { state: 'open' } as WeekEditability,
             canEdit: true,
-            isCommissionerArm: false,
             isCommish: true,
             leagueTimeZone: null,
             overrideMode: false,
@@ -447,8 +446,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
       renderEditor(),
       renderEditor({ overrideMode: true }),
       renderEditor({ overrideMode: true, editability: { state: 'closed', reason: PAST_WEEK_COPY } }),
-      // The commissioner ARM of the manager's verb: same ruling, same answer.
-      renderEditor({ isCommissionerArm: true }),
     ]) {
       expect(html).not.toContain('<input')
       expect(html).not.toContain('data-override-reason')
@@ -603,11 +600,11 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
   // `starters[]` entry nulled and flagged `["empty"]`, `edited_by_commish`
   // TRUE and `set_at` UNMOVED (four columns, not five).
   // -------------------------------------------------------------------------
-  it('F344 PREMISE: a lineup the MANAGER set renders NO ✸ commissioner-set badge', () => {
-    expect(renderTeamPage()).not.toContain('✸ commissioner-set')
+  it('F344 PREMISE: a lineup the MANAGER set renders NO commissioner badge', () => {
+    expect(renderTeamPage()).not.toContain('data-commish-changed')
   })
 
-  it('F344: after a commissioner force-drop out of a starting slot, the MANAGER’s own week renders ✸ commissioner-set — the user-visible consequence of D346', () => {
+  it('F344: after a commissioner force-drop out of a starting slot, the MANAGER’s own week renders the badge — and (L.E1.13 item 3b) its WORDS widened with the flag: "changed by commissioner", never "commissioner-set" over a week the manager set himself', () => {
     const evicted: TeamLineupRow = {
       ...lineupRow,
       slot_map: { 'rb:0': 'rb-open', 'rb:1': 'rb-locked', 'wr:0': 'wr1' },
@@ -619,7 +616,11 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
       set_at: lineupRow.set_at,
     }
     const html = renderTeamPage({ lineup: evicted })
-    expect(html).toContain('✸ commissioner-set')
+    expect(html).toContain('data-commish-changed')
+    expect(html).toContain(COMMISH_CHANGED_BADGE)
+    expect(html).toContain(COMMISH_CHANGED_TITLE)
+    // The old words are GONE: nobody SET this lineup (`set_at` did not move).
+    expect(html).not.toContain('commissioner-set')
     // …and the emptied slot renders as empty, not as a ghost naming a player
     // who is no longer on the roster.
     const qb = html.slice(html.indexOf('data-slot="qb:0"'), html.indexOf('data-slot="rb:0"'))
@@ -673,7 +674,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             currentWeek: 2,
             editability: { state: 'closed', reason: PAST_WEEK_COPY },
             canEdit: true,
-            isCommissionerArm: false,
             isCommish: false,
             leagueTimeZone: null,
             overrideMode: false,
@@ -706,6 +706,82 @@ function restingShadowsIn(source: string): string[] {
   }
   return hits
 }
+
+// ---------------------------------------------------------------------------
+// M6A L.E1.13 — the commissioner's team-page tools are a FACE OF OVERRIDE MODE
+// (rule (h)): gated on the ROLE and on the ONE switch, never a second toggle;
+// rename has TWO arms and the manager's is NOT inside the mode.
+// ---------------------------------------------------------------------------
+
+describe('the team page’s commissioner tools and rename arms (L.E1.13) — free vs gated', () => {
+  const asCommish = { ...detail, my_role: 'commissioner' as const }
+  /** The viewer is the commissioner and this team is SOMEONE ELSE's seat. */
+  const asCommishElsewhere = {
+    ...asCommish,
+    members: detail.members.map((m) => (m.user_id === 'user-manager' ? { ...m, team_id: 'team-2' } : { ...m, team_id: TEAM })),
+  }
+
+  it('MODE OFF: no roster tools for anyone; the team’s own manager has HIS rename arm; a commissioner on another team’s page is told the mode is the way — never a dead control', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(false)
+    try {
+      const manager = renderTeamPage()
+      expect(manager).not.toContain('data-team-commish-tools')
+      expect(manager).toContain('data-rename-open="manager"')
+      // A commissioner whose OWN seat is this team is its manager too: outside
+      // the mode he exercises no §10.1 power, so it is the manager's arm.
+      const ownSeat = renderTeamPage({ detail: asCommish })
+      expect(ownSeat).not.toContain('data-team-commish-tools')
+      expect(ownSeat).toContain('data-rename-open="manager"')
+      expect(ownSeat).not.toContain('data-rename-hint')
+      const commish = renderTeamPage({ detail: asCommishElsewhere })
+      expect(commish).not.toContain('data-team-commish-tools')
+      expect(commish).not.toContain('data-rename-open')
+      expect(commish).toContain('data-rename-hint')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('MODE ON, commissioner: the roster tools mount under the editor with one row per rostered player, the rename is the AUDITED arm, and there is still exactly ONE override switch on the page', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const html = renderTeamPage({ detail: asCommish })
+      expect(html).toContain('data-team-commish-tools')
+      expect(html.match(/data-tools-player=/g)).toHaveLength(roster.length)
+      expect(html.indexOf('data-team-commish-tools')).toBeGreaterThan(html.indexOf('data-lineup-editor'))
+      expect(html).toContain('data-rename-open="commissioner"')
+      expect(html).not.toContain('data-rename-hint')
+      expect(html.match(/data-override-toggle/g)).toHaveLength(1)
+      // The move targets are the OTHER franchises — never the team itself.
+      expect(html).toContain('aria-label="Move Render QB to"')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('MODE ON in the store, but the viewer is a MANAGER: the mode never reaches him — no tools, and his rename stays the manager’s arm', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const html = renderTeamPage()
+      expect(html).not.toContain('data-team-commish-tools')
+      expect(html).toContain('data-rename-open="manager"')
+      expect(html).not.toContain('data-rename-open="commissioner"')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('a roster that FAILED to load mounts no tools — the page renders its error card, never an empty tools panel', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const html = renderTeamPage({ detail: asCommish, rosters: 'error' })
+      expect(html).toContain('Couldn’t load this roster.')
+      expect(html).not.toContain('data-team-commish-tools')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+})
 
 describe('elevation is a hover affordance, never a resting one — the L.D5.1 files', () => {
   const read = (f: string) => readFileSync(path.resolve(process.cwd(), 'src/components/leagues', f), 'utf8')

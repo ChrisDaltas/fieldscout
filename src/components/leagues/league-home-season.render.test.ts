@@ -23,6 +23,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import { commishLogKeys } from '@/hooks/use-commish-log'
 import { leagueActivityKeys } from '@/hooks/use-league-activity'
 import { useLeagueChannel } from '@/hooks/use-league-channel'
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -33,11 +34,12 @@ import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
 import { statsDegradedKeys, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { ActivityFeed } from '@/lib/leagues/api/activity-service'
+import type { CommishLogItem, CommishLogPage } from '@/lib/leagues/api/commish-log-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import type { LiveScoringFlags, ScoringStalledFlag } from '@/lib/sync/ingest-flags'
 
-import { FEED_EMPTY_COPY } from './activity-feed-ops'
+import { COMMISH_LOG_EMPTY_COPY, COMMISH_LOG_PROBLEM_COPY, COMMISH_LOG_TITLE, FEED_EMPTY_COPY } from './activity-feed-ops'
 import {
   CHAMPION_UNRECORDED_COPY,
   LINEUP_NOT_SET_COPY,
@@ -51,7 +53,7 @@ import {
 import { LeagueHomeStates } from './league-home-states'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
-import { LIVE_STATS_DELAYED_COPY, RECONNECTING_COPY, STALE_SCORES_COPY } from './status-banners'
+import { LIVE_STATS_DELAYED_COPY, RECONNECTING_COPY, STALE_LEAGUE_COPY, STALE_SCORES_COPY } from './status-banners'
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-commish' }, profile: { username: 'chris' } }),
@@ -199,8 +201,37 @@ interface Seed {
   standings?: typeof GOLDEN_STANDINGS | 'error' | 'missing'
   lineup?: TeamLineupRow | null | 'missing'
   feed?: ActivityFeed | 'error' | 'missing'
+  log?: CommishLogPage | 'error' | 'degraded' | 'missing'
   flag?: LiveScoringFlags
   connection?: 'live' | 'reconnecting' | 'connecting'
+}
+
+const logItem = (over: Partial<CommishLogItem> & Pick<CommishLogItem, 'id'>): CommishLogItem => ({
+  action_type: 'edit_score',
+  actor: { id: 'u-commish', username: 'chris' },
+  target_type: 'matchup',
+  target_id: 'w2-m1',
+  reason: null,
+  before: null,
+  after: null,
+  metadata: null,
+  acting_as_team_id: null,
+  reverts_action_id: null,
+  created_at: '2099-09-14T18:00:00.000Z',
+  ...over,
+})
+
+/** One row per verb's receipt shape, as the migrations write them (131). */
+const LOG: CommishLogPage = {
+  limit: 8,
+  has_more: false,
+  next_cursor: null,
+  items: [
+    logItem({ id: 'ca-score', before: { home_score: 98.4, away_score: 97.1, result: 'home_win', is_overridden: false }, after: { home_score: 96.4, away_score: 97.1, result: 'away_win', is_overridden: true }, metadata: { week: 2 }, reason: 'Started an ineligible player' }),
+    logItem({ id: 'ca-rename', action_type: 'reassign_team', target_type: 'team', target_id: T1, before: { name: 'Old Name' }, after: { name: 'New Name' }, metadata: { verb: 'commish_rename_team' } }),
+    logItem({ id: 'ca-move', action_type: 'move_player', target_type: 'player', target_id: 'p9', before: { team_id: 'a', slot_key: 'bn', acquisition_type: 'draft' }, after: { team_id: 'b', slot_key: 'bn', acquisition_type: 'commissioner' }, metadata: { player_name: 'Moved Guy', from_team_name: 'Alpha', to_team_name: 'Bravo' } }),
+    logItem({ id: 'ca-setting', action_type: 'change_setting', target_type: 'setting', target_id: 'waiver_period_hours', before: { waiver_period_hours: 48 }, after: { waiver_period_hours: 72 }, metadata: {} }),
+  ],
 }
 
 function renderHome(seed: Seed = {}): string {
@@ -230,6 +261,11 @@ function renderHome(seed: Seed = {}): string {
   const feed = seed.feed ?? FEED
   if (feed === 'error') failQuery(qc, leagueActivityKeys.feed(LEAGUE, { limit: 8 }), new Error('feed read failed'))
   else if (feed !== 'missing') qc.setQueryData(leagueActivityKeys.feed(LEAGUE, { limit: 8 }), feed)
+
+  const log = seed.log ?? LOG
+  if (log === 'error') failQuery(qc, commishLogKeys.page(LEAGUE, undefined, 8), new Error('commissioner_actions: boom'))
+  else if (log === 'degraded') failQuery(qc, commishLogKeys.page(LEAGUE, undefined, 8), new Error('refetch failed'), LOG)
+  else if (log !== 'missing') qc.setQueryData(commishLogKeys.page(LEAGUE, undefined, 8), log)
 
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
 
@@ -484,6 +520,57 @@ describe('§16.5.4 — the required states', () => {
     expect(renderHome({ feed: { ...FEED, items: [] } })).toContain(FEED_EMPTY_COPY)
     expect(renderHome({ feed: 'error' })).toContain('Couldn’t load the activity feed.')
   })
+  it('Q66 — COMMISSIONER ACTIONS are shown in League Home’s activity section, read from the §10.3 log: one line per receipt, the actor named, the act read from before/after (a rename says "renamed", never "reassign team" — F355)', () => {
+    const html = renderHome()
+    const section = html.slice(html.indexOf('data-commish-log'))
+    expect(html.indexOf('data-commish-log')).toBeGreaterThan(html.indexOf('data-activity-feed'))
+    expect(section).toContain(COMMISH_LOG_TITLE)
+    expect(section.match(/data-commish-log-item=/g)).toHaveLength(4)
+    expect(section).toContain('corrected a Week 2 score: 98.4–97.1 → 96.4–97.1')
+    expect(section).toContain('renamed Old Name to New Name')
+    expect(section).not.toContain('reassign')
+    expect(section).toContain('moved Moved Guy from Alpha to Bravo')
+    expect(section).toContain('changed the waiver period hours setting: 48 → 72')
+    expect(section).toContain('<span class="font-bold">chris</span>')
+    // C70: a row is a CLAIM — nothing says a verb ran.
+    expect(section).not.toMatch(/applied|verified|executed/i)
+  })
+
+  it('Q66 — a reason is OPTIONAL: given, it is quoted; NULL, it is ABSENT — exactly ONE reason clause for four rows, never the word "null", never an empty quote (§10.3)', () => {
+    const section = renderHome().slice(renderHome().indexOf('data-commish-log'))
+    expect(section.match(/data-commish-log-reason/g)).toHaveLength(1)
+    expect(section).toContain(' — reason: “Started an ineligible player”')
+    expect(section).not.toContain('null')
+    expect(section).not.toContain('“”')
+    expect(section).not.toMatch(/reason: *</)
+  })
+
+  it('the commissioner log’s own four states: skeleton · EMPTY by reason · a FAILED read is error-with-retry and NEVER the empty copy · degraded keeps the rows under the stale banner · has_more says so', () => {
+    const loading = renderHome({ log: 'missing' })
+    expect(loading).toContain('data-skeleton="commish-log"')
+    expect(loading).not.toContain(COMMISH_LOG_EMPTY_COPY)
+
+    const empty = renderHome({ log: { ...LOG, items: [] } })
+    expect(empty).toContain('data-empty="commish-log"')
+    expect(empty).toContain(COMMISH_LOG_EMPTY_COPY)
+
+    const failed = renderHome({ log: 'error' })
+    expect(failed).toContain('data-problem="commish-log"')
+    expect(failed).toContain(COMMISH_LOG_PROBLEM_COPY)
+    expect(failed).not.toContain(COMMISH_LOG_EMPTY_COPY)
+    expect(failed).not.toContain('data-empty="commish-log"')
+    // …and the feed above it is untouched by the log's failure.
+    expect(failed).toContain('data-feed-items')
+
+    const degraded = renderHome({ log: 'degraded' })
+    const section = degraded.slice(degraded.indexOf('data-commish-log'))
+    expect(section).toContain(STALE_LEAGUE_COPY)
+    expect(section.match(/data-commish-log-item=/g)).toHaveLength(4)
+
+    expect(renderHome()).not.toContain('data-commish-log-more')
+    expect(renderHome({ log: { ...LOG, has_more: true, next_cursor: 'x' } })).toContain('data-commish-log-more')
+  })
+
   it('the standings peek: error-with-retry', () => {
     expect(renderHome({ standings: 'error' })).toContain('Couldn’t load the standings.')
   })

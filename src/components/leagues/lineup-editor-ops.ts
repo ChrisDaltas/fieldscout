@@ -488,47 +488,41 @@ export function startersByKey(starters: readonly LineupStarter[] | undefined): M
 }
 
 // ---------------------------------------------------------------------------
-// COMMISSIONER OVERRIDE MODE — which verb a save goes through, and the LABEL
-// it carries (M6A; PROGRESS §3 STANDING RULE (a)/(b)/(g)/(h))
+// COMMISSIONER OVERRIDE MODE — which verb a save goes through (M6A; PROGRESS
+// §3 STANDING RULE (a)/(b)/(g)/(h); Q66)
 // ---------------------------------------------------------------------------
 
 /**
- * THE LABEL THE CLIENT SENDS AS `p_reason` FOR `commish_edit_lineup`. It is a
- * LABEL, not a user-supplied reason, and it must not be read as one.
+ * NO REASON GOES ON THE WIRE — and there is no label standing in for one
+ * (M6A L.E1.13; PROGRESS F363(d) / F343; Q66, spec v2.16.41).
  *
  * **Chris, 2026-09-11, superseding §(h)'s "captured once" clause:** *"yeah i
  * think no reason at all is fine"* … *"if anyone cares they can ask"*. So the
  * commissioner is never prompted — not per save, not on entering the mode.
  * The receipt he cares about is the one §(b) names: WHO changed WHAT, WHEN,
  * and the before/after map — and `commissioner_actions` stores all of that
- * without a sentence from him. The explanation lives in the league's
- * conversation, which is where it always actually lived.
+ * without a sentence from him.
  *
- * The database still refuses a blank `p_reason` (123:666 RAISEs, and spec
- * §15.4 says every commissioner action carries one), so SOMETHING must go on
- * the wire. This is that something: a flat naming of the mechanism. Deliberately
- * NOT prose that pretends to be a justification — a fabricated
- * "manager unreachable" in an audit row is worse than a label that says only
- * what happened. Changing the server to accept a blank is a migration plus a
- * spec edit and buys nothing visible; it is explicitly out of scope.
+ * Until migration 131 both verbs RAISEd on a blank `p_reason` (123:666,
+ * 114:317), so this file sent two fixed LABELS (`'commissioner override'`,
+ * `'commissioner action'`) purely to satisfy that gate. 130 §0 made the
+ * column nullable and 131 made every commissioner verb NORMALISE a blank
+ * reason to NULL, so the labels had no job left — and they had a cost:
+ * League Home's activity section (Q66's second clause) renders a receipt's
+ * reason when it has one, so a label would print as if the commissioner had
+ * SAID "commissioner override" about every lineup he fixed, beside matchup,
+ * roster, rename and settings rows that correctly print none (D365(3)).
+ * They are REMOVED: the receipt is `reason IS NULL` and the §10.3 post has
+ * no "— reason:" clause, the same as every other M6A surface.
  */
-export const COMMISSIONER_OVERRIDE_REASON = 'commissioner override'
 
-/**
- * The same label for the OTHER verb that refuses a blank reason: `set_lineup`'s
- * commissioner arm (114:317 RAISEs when the actor is not the team's manager).
- * A commissioner setting another team's lineup inside the ordinary rules is not
- * overriding anything, so it gets its own honest wording rather than borrowing
- * the override's. Same ruling, same reasoning: he is not prompted either.
- */
-export const COMMISSIONER_ARM_REASON = 'commissioner action'
-
-/** The request a Save makes — which verb, and what reason rides along. Pure, so
- *  the "no input is ever needed, and the second save is the same as the first"
- *  property is pinnable without a browser. */
+/** The request a Save makes — which verb. Pure, so the "no input is ever
+ *  needed, and the second save is the same as the first" property is pinnable
+ *  without a browser. There is deliberately NO `reason` member: nothing a
+ *  future edit could populate from a text field. */
 export type LineupSaveRequest =
-  | { verb: 'commish_edit_lineup'; slotMap: Placement; reason: string }
-  | { verb: 'set_lineup'; slotMap: Placement; reason: string | null }
+  | { verb: 'commish_edit_lineup'; slotMap: Placement }
+  | { verb: 'set_lineup'; slotMap: Placement }
 
 /**
  * Decide the save. `overrideMode` wins over everything: while it is on the
@@ -540,20 +534,8 @@ export type LineupSaveRequest =
  * shipped flow lacked (its second save waited on a Reason field the screen
  * never mentioned).
  */
-export function lineupSaveRequest(args: {
-  overrideMode: boolean
-  /** Acting for a team that is not mine — 114's non-manager arm. */
-  isCommissionerArm: boolean
-  slotMap: Placement
-}): LineupSaveRequest {
-  if (args.overrideMode) {
-    return { verb: 'commish_edit_lineup', slotMap: args.slotMap, reason: COMMISSIONER_OVERRIDE_REASON }
-  }
-  return {
-    verb: 'set_lineup',
-    slotMap: args.slotMap,
-    reason: args.isCommissionerArm ? COMMISSIONER_ARM_REASON : null,
-  }
+export function lineupSaveRequest(args: { overrideMode: boolean; slotMap: Placement }): LineupSaveRequest {
+  return { verb: args.overrideMode ? 'commish_edit_lineup' : 'set_lineup', slotMap: args.slotMap }
 }
 
 /**

@@ -15,6 +15,7 @@
  * without a shape change.
  */
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
+import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
 export interface FeedLine {
   id: string
@@ -113,3 +114,117 @@ export const COMMISSIONER_LABEL = '✸ commissioner'
  *  worker's notice). Plain, so a postponed-week argument is not pointed at
  *  the commissioner (R895). */
 export const SYSTEM_LABEL = 'system'
+
+// ---------------------------------------------------------------------------
+// COMMISSIONER ACTIONS — the §10.3 log, shown in League Home's activity
+// section (M6A L.E1.13; Q66, spec v2.16.41 §10 / §10.3: *"What is required is
+// storing the transaction and displaying it in the 'activity' section of the
+// League Home"*). Reads `GET /commish/log` (`use-commish-log.ts`).
+//
+// Three rules the rendering keeps (D364(8)/(9)):
+//  * A row is a CLAIM that a commissioner acted, not proof a verb ran (C70 —
+//    123:335 lets a commissioner's client append one). Nothing here says
+//    "applied" / "verified", and the section's title is the LOG's.
+//  * The ACT is read from the `before`/`after` KEY SET, never from
+//    `action_type` alone (F355 — a rename's `action_type` is
+//    `'reassign_team'`, which does not say "rename" to a reader).
+//  * A NULL reason renders as ABSENT — never the word "null", never an empty
+//    "— reason:" clause (§10.3: *"an entry with no reason renders as such,
+//    never as an empty quote"*).
+// ---------------------------------------------------------------------------
+
+export const COMMISH_LOG_TITLE = 'Commissioner actions'
+export const COMMISH_LOG_EMPTY_COPY = 'No commissioner actions yet — every correction a commissioner makes is listed here, for the whole league to see.'
+export const COMMISH_LOG_PROBLEM_COPY = 'Couldn’t load the commissioner actions.'
+export const COMMISH_LOG_UNNAMED_ACTOR = 'A commissioner'
+
+export interface CommishLogLine {
+  id: string
+  actor: string
+  /** What the row records, in words — never empty. */
+  text: string
+  /** The reason AS GIVEN, or null when none was (rendered as absent). */
+  reason: string | null
+  createdAt: string
+}
+
+type Doc = Record<string, unknown>
+const asDoc = (value: unknown): Doc => (value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Doc) : {})
+const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null)
+const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+
+function weekClause(metadata: Doc): string {
+  const week = num(metadata.week)
+  return week === null ? '' : `Week ${week} `
+}
+
+/** A settings value in words: a scalar as itself, null as "none", anything
+ *  structured as "(updated)" — never `[object Object]`, never "null". */
+function settingValue(value: unknown): string {
+  if (value === null || value === undefined) return 'none'
+  if (typeof value === 'object') return '(updated)'
+  return String(value)
+}
+
+const score = (value: unknown): string => (num(value) === null ? '—' : String(value))
+
+function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'target_id' | 'before' | 'after' | 'metadata'>, teamNames: ReadonlyMap<string, string>): string {
+  const before = asDoc(item.before)
+  const after = asDoc(item.after)
+  const metadata = asDoc(item.metadata)
+
+  // A RENAME — 128 writes {name} both sides (action_type 'reassign_team', F355).
+  if ('name' in after && 'name' in before) {
+    return `renamed ${text(before.name) ?? 'a team'} to ${text(after.name) ?? 'a new name'}`
+  }
+  // A LINEUP — 123 writes the whole lineup row both sides.
+  if ('slot_map' in after) {
+    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
+    return `set ${team}’s ${weekClause(metadata)}lineup`
+  }
+  // A SCORE / RESULT — 126 writes {home_score, away_score, result, is_overridden}.
+  if ('home_score' in after || 'result' in after) {
+    const moved = before.home_score !== after.home_score || before.away_score !== after.away_score
+    return moved
+      ? `corrected a ${weekClause(metadata)}score: ${score(before.home_score)}–${score(before.away_score)} → ${score(after.home_score)}–${score(after.away_score)}`
+      : `set the result of a ${weekClause(metadata)}matchup`
+  }
+  // A REMIX — 131's receipt carries the seed both sides.
+  if ('schedule_seed' in after) {
+    const changed = num(metadata.change_count)
+    return `remixed the schedule${changed === null ? '' : ` (${changed} team-week pairings changed)`}`
+  }
+  // A ROSTER MOVE — 127 writes {team_id, slot_key, acquisition_type} both
+  // sides and names the player and the teams in metadata.
+  if ('acquisition_type' in after || 'acquisition_type' in before) {
+    const player = text(metadata.player_name) ?? 'a player'
+    const from = text(metadata.from_team_name)
+    const to = text(metadata.to_team_name)
+    if (from && to) return `moved ${player} from ${from} to ${to}`
+    if (to) return `added ${player} to ${to}`
+    if (from) return `dropped ${player} from ${from}`
+    return `changed ${player}’s roster spot`
+  }
+  // A SETTING — 129 writes {<key>: value} both sides, ONE key.
+  if (item.target_type === 'setting') {
+    const key = Object.keys(after)[0] ?? item.target_id ?? 'a setting'
+    return `changed the ${key.replace(/_/g, ' ')} setting: ${settingValue(before[key])} → ${settingValue(after[key])}`
+  }
+  // A SCHEDULE EDIT — 130/131 write the pairing both sides.
+  if (item.target_type === 'schedule') return `edited a ${weekClause(metadata)}matchup pairing`
+  // Anything newer than this file: the action's own name — never an empty line.
+  return item.action_type.replace(/_/g, ' ')
+}
+
+export function commishLogLines(items: readonly CommishLogItem[], teamNames: ReadonlyMap<string, string>): CommishLogLine[] {
+  return items.map((item) => {
+    const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
+    return {
+      id: item.id,
+      actor: text(item.actor.username) ?? COMMISH_LOG_UNNAMED_ACTOR,
+      text: `${actText(item, teamNames)}${actingFor ? ` (acting for ${actingFor})` : ''}`,
+      reason: text(item.reason)?.trim() ?? null,
+      createdAt: item.created_at,
+    }
+  })
+}

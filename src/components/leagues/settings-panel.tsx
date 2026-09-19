@@ -10,6 +10,8 @@ import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useCommishChangeSetting } from '@/hooks/use-commish-setting'
+import { useCommishSettingPolicies } from '@/hooks/use-commish-setting-policy'
 import { toast } from '@/hooks/use-toast'
 import {
   LeaguePatchError,
@@ -33,9 +35,11 @@ import {
   type Tiebreaker,
 } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
+import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
 import { Crest } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
+import { OverrideModeBar } from './override-mode-bar'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringEditor } from './scoring-editor'
 import { isCustomScoringReference } from './scoring-editor-ops'
@@ -54,7 +58,25 @@ import {
   SectionLabel,
   ToggleRow,
 } from './settings-form-controls'
-import { divisionSelectOptions, playoffTeamsControl, scheduleModePatch } from './settings-panel-ops'
+import {
+  RESCORE_TOGGLE_HINT,
+  RESCORE_TOGGLE_LABEL,
+  SCORING_SYSTEM_KEY,
+  SETTINGS_OVERRIDE_BAR_OFF_COPY,
+  SETTINGS_OVERRIDE_BAR_ON_COPY,
+  SETTINGS_POLICY_LOADING_COPY,
+  SETTINGS_POLICY_PROBLEM_COPY,
+  divisionSelectOptions,
+  inSeasonChangePlan,
+  inSeasonRefusal,
+  playoffTeamsControl,
+  scheduleModePatch,
+  settingOutcome,
+  settingPolicyKeys,
+  type InSeasonChange,
+  type SettingPolicies,
+  type SettingSaveResult,
+} from './settings-panel-ops'
 
 /**
  * League settings panel (M1 task L.A2.4; spec §16.2 settings-panel, §7.3
@@ -74,9 +96,24 @@ import { divisionSelectOptions, playoffTeamsControl, scheduleModePatch } from '.
  *
  * Access (§17): editing is commissioner / co-commissioner only — a manager
  * sees the same grouped forms READ-ONLY. §7.1 edit-lock: all settings edit in
- * `setup`/`scheduled`; once past `scheduled` the structural surface locks and
- * the panel shows the lock state (M1 renders the 409 the L.A1.13 route already
- * returns; the mid-season override path is M6).
+ * `setup`/`scheduled`; once past `scheduled` the structural surface locks.
+ *
+ * **IN-SEASON EDITING IS A FACE OF COMMISSIONER OVERRIDE MODE (M6A L.E1.13
+ * item 3; PROGRESS §3 STANDING RULE (h); D347 / D360).** Past `scheduled` a
+ * commissioner sees `OverrideModeBar` — THE SAME switch, over the same store,
+ * the team and matchup pages mount; never a panel-local "override" toggle.
+ * While it is on the form is editable again and Save goes through 129's
+ * `commish_change_setting`, ONE KEY PER CALL (each its own receipt and §10.3
+ * post), with NO reason input and none on the wire (Q66). Which controls are
+ * open is 129's policy table, READ (`useCommishSettingPolicies`), never
+ * mirrored: a key it marks refused-in-season is closed and shows 129's
+ * refusal copy VERBATIM. Until that table has been read the form stays
+ * closed, and a FAILED read says so by name — it is never rendered as "locked"
+ * or as "everything is open". Each key's result renders through
+ * `settingOutcome` (`no_changes` never says "saved";
+ * `rescore_not_performed_why` FIRST among the success arms, never swallowed
+ * — R971 / §4 rule 15) or as the verb's refusal verbatim. Not optimistic,
+ * not retried: the form re-seeds from the re-read league after every call.
  *
  * Save is one atomic PATCH of the FULL reconciled settings (+ the scoring
  * template only when it changed). A whole-object save is deliberate: R108's
@@ -114,12 +151,49 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
     )
   }
 
+  return <SettingsPanelBody leagueId={leagueId} data={data} />
+}
+
+function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const isCommish = data.my_role === 'commissioner' || data.my_role === 'co_commissioner'
   const status = data.league.status
   // §7.1: everything edits in setup/scheduled; past that the structural surface
-  // is override-only (M6) — M1 renders the lock, not the override.
+  // is override-only — a face of COMMISSIONER OVERRIDE MODE (rule (h)).
   const pastScheduled = status !== 'setup' && status !== 'scheduled'
-  const canEdit = isCommish && !pastScheduled
+  // Only a commissioner can be IN the mode — the store is keyed by league,
+  // and a member who is not one must never inherit it.
+  const storeMode = useOverrideMode(leagueId)
+  const enterOverride = useCommishOverrideStore((s) => s.enter)
+  const exitOverride = useCommishOverrideStore((s) => s.exit)
+  const inSeasonOverride = isCommish && pastScheduled && storeMode
+  const policyKeys = useMemo(() => settingPolicyKeys(data.settings), [data.settings])
+  const policies = useCommishSettingPolicies(policyKeys, inSeasonOverride)
+  const change = useCommishChangeSetting(leagueId)
+  const [saving, setSaving] = useState(false)
+  const [results, setResults] = useState<SettingSaveResult[]>([])
+  const canEdit = isCommish && (!pastScheduled || (inSeasonOverride && policies.data !== undefined && !saving))
+
+  /** ONE `commish_change_setting` call per changed key, IN ORDER, never in
+   *  parallel (each call re-reads the league and re-seeds the form; 129 locks
+   *  the league row per call). A refusal stops nothing — every key gets its
+   *  own line, and the keys after it are still attempted. Lives HERE, above
+   *  the form, because the form remounts on every landed key. */
+  async function saveInSeason(changes: readonly InSeasonChange[], rescore: boolean) {
+    if (saving || changes.length === 0) return
+    setSaving(true)
+    setResults([])
+    const out: SettingSaveResult[] = []
+    for (const { key, value } of changes) {
+      try {
+        const doc = await change.submitAsync({ key, value, ...(key === SCORING_SYSTEM_KEY ? { rescore } : {}) })
+        out.push({ key, ok: true, outcome: settingOutcome(doc), bypassed: doc.bypassed ?? [] })
+      } catch (cause) {
+        out.push({ key, ok: false, refusal: cause instanceof Error ? cause.message : 'The change could not be saved.' })
+      }
+      setResults([...out])
+    }
+    setSaving(false)
+  }
 
   // Re-seed the form from the persisted baseline whenever it changes — a
   // successful save invalidates the detail query, the refetched settings
@@ -139,9 +213,17 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
         />
       )}
       {isCommish && pastScheduled && (
-        <InlineIssue
-          tone="warning"
-          message="Settings are locked once the draft starts. Changing them mid-season is a commissioner override — that arrives with the in-season tools."
+        <InSeasonOverrideBlock
+          on={inSeasonOverride}
+          saving={saving}
+          policyState={!inSeasonOverride ? 'idle' : policies.isPending ? 'loading' : policies.isError ? 'error' : 'ready'}
+          onRetryPolicies={() => void policies.refetch()}
+          results={results}
+          onToggle={(next) => {
+            setResults([])
+            if (next) enterOverride(leagueId)
+            else exitOverride()
+          }}
         />
       )}
       {/* League name + crest — cosmetic, commissioner-editable in EVERY
@@ -157,6 +239,7 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
         leagueId={leagueId}
         detail={data}
         canEdit={canEdit}
+        inSeason={inSeasonOverride && policies.data !== undefined ? { policies: policies.data, saving, onSave: saveInSeason } : null}
       />
       {/* §7.3.3.1 custom scoring editor (SE.7) + the member read-only view
           (SE.9 — the spec's access bullet routes member visibility through
@@ -325,6 +408,98 @@ function LeagueProfileCard({
   )
 }
 
+/**
+ * The in-season head of the panel: THE override switch (`OverrideModeBar` —
+ * the same component, the same store, as the team and matchup pages; rule
+ * (h)), the policy table's loading / FAILED states, and the per-key results
+ * of the last save. While the mode is on the block is framed in the lime
+ * "look here" tokens (fill + border; never a shadow — CLAUDE.md).
+ */
+export function InSeasonOverrideBlock({
+  on,
+  saving,
+  policyState,
+  onRetryPolicies,
+  results,
+  onToggle,
+}: {
+  on: boolean
+  saving: boolean
+  policyState: 'idle' | 'loading' | 'error' | 'ready'
+  onRetryPolicies: () => void
+  results: readonly SettingSaveResult[]
+  onToggle: (next: boolean) => void
+}) {
+  return (
+    <div
+      className={cn('flex flex-col gap-3', on && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
+      data-settings-override={on ? 'on' : 'off'}
+    >
+      <OverrideModeBar on={on} busy={saving} onToggle={onToggle}>
+        {on ? SETTINGS_OVERRIDE_BAR_ON_COPY : SETTINGS_OVERRIDE_BAR_OFF_COPY}
+      </OverrideModeBar>
+      {policyState === 'loading' && (
+        <div className="flex flex-col gap-1.5" role="status" data-skeleton="setting-policies">
+          <p className="text-[12px] font-semibold text-ink">{SETTINGS_POLICY_LOADING_COPY}</p>
+          <Skeleton className="h-6 rounded-sm" />
+        </div>
+      )}
+      {policyState === 'error' && (
+        // A FAILED read is never "locked" and never "everything is open".
+        <div role="alert" className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" data-problem="setting-policies">
+          <p className="text-[12px] font-bold text-ink">{SETTINGS_POLICY_PROBLEM_COPY}</p>
+          <Button type="button" variant="stroke" size="sm" onClick={onRetryPolicies}>
+            <Icon name="reset" size={13} /> Retry
+          </Button>
+        </div>
+      )}
+      {saving && (
+        <p role="status" className="text-[12px] font-semibold text-ink" data-settings-saving>
+          Saving — one recorded change per setting…
+        </p>
+      )}
+      {results.length > 0 && (
+        <ul className="flex flex-col gap-1.5" data-setting-results>
+          {results.map((r) =>
+            r.ok ? (
+              <li
+                key={r.key}
+                role="status"
+                className={cn(
+                  'flex flex-col gap-1 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
+                  r.outcome.tone === 'positive' && 'border-positive bg-positive-soft',
+                  r.outcome.tone === 'caution' && 'border-ink bg-caution-soft',
+                  r.outcome.tone === 'neutral' && 'border-ink bg-n-4',
+                )}
+                data-setting-result={r.key}
+                data-setting-outcome={r.outcome.branch}
+              >
+                <span>{r.outcome.text}</span>
+                {r.outcome.branch !== 'no_changes' && r.bypassed.length > 0 && (
+                  <span className="text-[11px] font-medium" data-setting-bypassed>
+                    {`This change walked past: ${r.bypassed.join(', ')}.`}
+                  </span>
+                )}
+              </li>
+            ) : (
+              // The verb's refusal, VERBATIM — that text is the UX.
+              <li
+                key={r.key}
+                role="alert"
+                className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink"
+                data-setting-result={r.key}
+                data-setting-outcome="refused"
+              >
+                {`${r.key.replace(/_/g, ' ')}: not saved — ${r.refusal}`}
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function PanelShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   return (
@@ -355,14 +530,24 @@ function SettingsPanelSkeleton() {
 // The editable form (seeded from the persisted baseline, remounted on save)
 // ---------------------------------------------------------------------------
 
+/** The in-season (override-mode) arm of the form: 129's policy table, and
+ *  the per-key save that lives above the form (it remounts per landed key). */
+interface InSeasonArm {
+  policies: SettingPolicies
+  saving: boolean
+  onSave: (changes: readonly InSeasonChange[], rescore: boolean) => void
+}
+
 function SettingsForm({
   leagueId,
   detail,
   canEdit,
+  inSeason,
 }: {
   leagueId: string
   detail: LeagueDetail
   canEdit: boolean
+  inSeason: InSeasonArm | null
 }) {
   const initialSettings = detail.settings
   const initialScoringId = detail.league.scoring_system_id
@@ -401,10 +586,33 @@ function SettingsForm({
 
   const errorsFor = (field: string) => validation.errors.filter((e) => e.field === field)
 
-  const canSubmit = canEdit && dirty && validation.valid && !isPending
+  // IN-SEASON (override mode): which keys 129 refuses, and the per-key plan.
+  const [rescore, setRescore] = useState(false)
+  const refusedFor = (key: string): string | null =>
+    inSeason ? inSeasonRefusal(inSeason.policies[key], detail.league.status) : null
+  const plan = inSeason
+    ? inSeasonChangePlan({
+        baseline: initialSettings,
+        working,
+        baselineScoringId: initialScoringId,
+        scoringId,
+        policies: inSeason.policies,
+        leagueStatus: detail.league.status,
+      })
+    : null
+  const draftRefusal = refusedFor('draft')
+  const scoringChanged = scoringId !== null && scoringId !== initialScoringId
+
+  const canSubmit = inSeason
+    ? canEdit && validation.valid && plan !== null && plan.send.length > 0 && !inSeason.saving
+    : canEdit && dirty && validation.valid && !isPending
 
   async function handleSave() {
     if (!canSubmit) return
+    if (inSeason && plan) {
+      inSeason.onSave(plan.send, rescore)
+      return
+    }
     setServerError(null)
     const body: UpdateLeagueSettingsBody = { settings: working }
     if (scoringId !== null && scoringId !== initialScoringId) {
@@ -491,8 +699,14 @@ function SettingsForm({
           legible. See CLAUDE.md → "Elevation". */}
       {canEdit && (
         <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
-          <span className="text-[12px] font-bold text-n-3">
-            {dirty ? 'You have unsaved changes.' : 'All changes saved.'}
+          <span className="text-[12px] font-bold text-n-3" data-save-summary>
+            {plan
+              ? plan.send.length > 0
+                ? `${plan.send.length} setting${plan.send.length === 1 ? '' : 's'} to save — each is recorded and posted to the league.`
+                : 'Nothing to save yet — change a setting below.'
+              : dirty
+                ? 'You have unsaved changes.'
+                : 'All changes saved.'}
           </span>
           {!validation.valid && dirty && (
             <Badge variant="stroke" className="text-negative-strong">
@@ -508,7 +722,7 @@ function SettingsForm({
             disabled={!canSubmit}
             onClick={handleSave}
           >
-            {isPending ? (
+            {isPending || inSeason?.saving ? (
               <>
                 <Icon name="repeat" size={13} className="animate-spin" />
                 Saving…
@@ -526,6 +740,13 @@ function SettingsForm({
       {serverError && (serverError.status === 403 || serverError.status === 409) && (
         <InlineIssue tone="error" message={serverError.message} />
       )}
+      {/* A changed key 129 refuses in-season is NEVER sent and never silently
+          dropped: it is listed, with 129's own words. */}
+      {plan?.refused.map((r) => (
+        <div key={r.key} data-refused-change={r.key}>
+          <InlineIssue tone="warning" message={`${r.key.replace(/_/g, ' ')} was changed in this draft but can’t change mid-season, so it will NOT be saved — ${r.why}`} />
+        </div>
+      ))}
 
       {/* `disabled` on the fieldset makes every native control (inputs, the
           Radix Select/Switch triggers — all buttons) read-only in one place;
@@ -533,9 +754,18 @@ function SettingsForm({
       <fieldset
         disabled={!canEdit}
         className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
+        data-settings-fieldset={canEdit ? 'open' : 'closed'}
       >
         <PageSectionHeading>Draft setup</PageSectionHeading>
-
+        {draftRefusal !== null && (
+          <div data-refused-key="draft">
+            <InlineIssue tone="warning" message={draftRefusal} />
+          </div>
+        )}
+        {/* A nested fieldset: 129 refuses the whole `draft` block in-season, so
+            its two groups close as one (a disabled ancestor cannot be re-enabled
+            by a child — this only ever CLOSES more). */}
+        <fieldset disabled={draftRefusal !== null} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0" data-draft-fieldset={draftRefusal !== null ? 'closed' : 'open'}>
         <ScheduleDraftGroup
           value={working.draft.draft_scheduled_at}
           year={detail.league.season}
@@ -549,12 +779,13 @@ function SettingsForm({
           errorsFor={errorsFor}
           leagueId={leagueId}
           detail={detail}
-          canEdit={canEdit}
+          canEdit={canEdit && draftRefusal === null}
         />
+        </fieldset>
 
         <PageSectionHeading>League settings</PageSectionHeading>
 
-        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} refusedFor={refusedFor} />
 
         <GroupCard title="Roster & lineup slots">
           <RosterSlotBuilder
@@ -606,6 +837,13 @@ function SettingsForm({
                 message="Saving switches this league back to the shared template — your previous customizations remain saved but unattached."
               />
             )}
+          {/* Q64 / D360(8): `rescore` is asked for BY NAME, only for a scoring
+              change, only in-season — never a silent default either way. */}
+          {inSeason && scoringChanged && (
+            <div data-rescore-toggle>
+              <ToggleRow id="set-rescore" label={RESCORE_TOGGLE_LABEL} hint={RESCORE_TOGGLE_HINT} checked={rescore} onCheckedChange={setRescore} />
+            </div>
+          )}
           {forkError && (
             <InlineIssue
               tone="error"
@@ -674,16 +912,22 @@ function FormatGroup({
   s,
   onSettings,
   errorsFor,
+  refusedFor,
 }: {
   s: LeagueSettings
   onSettings: (patch: Partial<LeagueSettings>) => void
   errorsFor: (field: string) => FieldIssue[]
+  /** In-season: 129's refusal copy for a key, VERBATIM, or null (L.E1.13). */
+  refusedFor: (key: string) => string | null
 }) {
   const playoffTeamOptions = PLAYOFF_TEAMS_OPTIONS.filter((n) => n <= s.team_count)
+  /** A refused key's control is closed and its hint IS the refusal copy. */
+  const closed = (key: string) => refusedFor(key) !== null
+  const hintFor = (key: string, hint?: string) => refusedFor(key) ?? hint
 
   return (
     <GroupCard title="Basic settings">
-      <FieldRow label="Teams" htmlFor="set-teams" hint="Even counts 8–16 (v1).">
+      <FieldRow label="Teams" htmlFor="set-teams" hint={hintFor('team_count', 'Even counts 8–16 (v1).')}>
         <ChoiceSelect
           id="set-teams"
           ariaLabel="Number of teams"
@@ -691,10 +935,11 @@ function FormatGroup({
           options={numOptions([8, 10, 12, 14, 16])}
           onValueChange={(v) => onSettings({ team_count: Number(v) as LeagueSettings['team_count'] })}
           width="w-28"
+          disabled={closed('team_count')}
         />
       </FieldRow>
 
-      <FieldRow label="Divisions" htmlFor="set-divisions">
+      <FieldRow label="Divisions" htmlFor="set-divisions" hint={hintFor('divisions')}>
         <ChoiceSelect
           id="set-divisions"
           ariaLabel="Divisions"
@@ -702,12 +947,13 @@ function FormatGroup({
           options={divisionSelectOptions()} // v2.16.12 (Q30 (d)): ONE option — divisions are cut from v1; settings-panel-ops is the pin's home
           onValueChange={(v) => onSettings({ divisions: Number(v) })}
           width="w-28"
+          disabled={closed('divisions')}
         />
       </FieldRow>
 
       <SectionLabel>Season &amp; playoffs</SectionLabel>
 
-      <FieldRow label="Regular season weeks" htmlFor="set-rsw">
+      <FieldRow label="Regular season weeks" htmlFor="set-rsw" hint={hintFor('regular_season_weeks')}>
         <ChoiceSelect
           id="set-rsw"
           ariaLabel="Regular season weeks"
@@ -715,6 +961,7 @@ function FormatGroup({
           options={numOptions([12, 13, 14, 15])}
           onValueChange={(v) => onSettings({ regular_season_weeks: Number(v) })}
           width="w-28"
+          disabled={closed('regular_season_weeks')}
         />
       </FieldRow>
 
@@ -726,7 +973,7 @@ function FormatGroup({
         </Badge>
       </FieldRow>
 
-      <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint={playoffTeamsControl(s.schedule_mode).hint}>
+      <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint={hintFor('playoff_teams', playoffTeamsControl(s.schedule_mode).hint)}>
         <ChoiceSelect
           id="set-playoff-teams"
           ariaLabel="Playoff teams"
@@ -734,11 +981,11 @@ function FormatGroup({
           options={numOptions(playoffTeamOptions)}
           onValueChange={(v) => onSettings({ playoff_teams: Number(v) as LeagueSettings['playoff_teams'] })}
           width="w-28"
-          disabled={playoffTeamsControl(s.schedule_mode).disabled} // Q39 (C): no bracket in a total-points league — settings-panel-ops is the pin's home
+          disabled={playoffTeamsControl(s.schedule_mode).disabled || closed('playoff_teams')} // Q39 (C): no bracket in a total-points league — settings-panel-ops is the pin's home
         />
       </FieldRow>
 
-      <FieldRow label="Weeks per playoff round" htmlFor="set-ppr">
+      <FieldRow label="Weeks per playoff round" htmlFor="set-ppr" hint={hintFor('playoff_weeks_per_round')}>
         <ChoiceSelect
           id="set-ppr"
           ariaLabel="Weeks per playoff round"
@@ -750,6 +997,7 @@ function FormatGroup({
           onValueChange={(v) =>
             onSettings({ playoff_weeks_per_round: Number(v) as LeagueSettings['playoff_weeks_per_round'] })
           }
+          disabled={closed('playoff_weeks_per_round')}
         />
       </FieldRow>
 
@@ -759,7 +1007,7 @@ function FormatGroup({
 
       <SectionLabel>Scoring format</SectionLabel>
 
-      <FieldRow label="Schedule" htmlFor="set-schedule" hint="Total-points has no matchups.">
+      <FieldRow label="Schedule" htmlFor="set-schedule" hint={hintFor('schedule_mode', 'Total-points has no matchups.')}>
         <ChoiceSelect
           id="set-schedule"
           ariaLabel="Schedule mode"
@@ -769,40 +1017,47 @@ function FormatGroup({
             { value: 'total_points', label: 'Total points' },
           ]}
           onValueChange={(v) => onSettings(scheduleModePatch(v as LeagueSettings['schedule_mode']))} // Q39 (C): total-points carries playoff_teams 0
+          disabled={closed('schedule_mode')}
         />
       </FieldRow>
 
       <ToggleRow
         id="set-median"
         label="Median game"
-        hint="Extra weekly game vs the league median."
+        hint={hintFor('median_game', 'Extra weekly game vs the league median.')}
+        disabled={closed('median_game')}
         checked={s.median_game}
         onCheckedChange={(median_game) => onSettings({ median_game })}
       />
       <ToggleRow
         id="set-second-opponent"
         label="Second opponent"
-        hint="A second H2H matchup each week."
+        hint={hintFor('second_opponent', 'A second H2H matchup each week.')}
+        disabled={closed('second_opponent')}
         checked={s.second_opponent}
         onCheckedChange={(second_opponent) => onSettings({ second_opponent })}
       />
       <ToggleRow
         id="set-reseed"
         label="Reseed playoffs"
-        hint="Re-rank by seed each round."
+        hint={hintFor('playoff_reseed', 'Re-rank by seed each round.')}
+        disabled={closed('playoff_reseed')}
         checked={s.playoff_reseed}
         onCheckedChange={(playoff_reseed) => onSettings({ playoff_reseed })}
       />
       <ToggleRow
         id="set-consolation"
         label="Consolation bracket"
-        hint="Toilet bowl for non-playoff teams."
+        hint={hintFor('consolation_bracket', 'Toilet bowl for non-playoff teams.')}
+        disabled={closed('consolation_bracket')}
         checked={s.consolation_bracket}
         onCheckedChange={(consolation_bracket) => onSettings({ consolation_bracket })}
       />
       <ToggleRow
         id="set-third-place"
         label="Third-place game"
+        hint={hintFor('third_place_game')}
+        disabled={closed('third_place_game')}
         checked={s.third_place_game}
         onCheckedChange={(third_place_game) => onSettings({ third_place_game })}
       />

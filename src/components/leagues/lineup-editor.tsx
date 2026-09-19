@@ -103,9 +103,9 @@ import { OverrideModeBar } from './override-mode-bar'
  * framed and banner-marked so the mode is unmistakable; and **he is never
  * asked for a reason** — *"yeah i think no reason at all is fine … if anyone
  * cares they can ask"*, which supersedes §(h)'s "captured once" clause. The
- * client sends a fixed label (`lineup-editor-ops.ts`'s
- * `COMMISSIONER_OVERRIDE_REASON`) because the RPC RAISEs on a blank; the
- * receipt is the audit row, not the sentence.
+ * client sends NO reason at all (since migration 131 the verbs store NULL —
+ * Q66; the fixed labels this file used to send were removed by L.E1.13,
+ * F363(d)); the receipt is the audit row, not the sentence.
  *
  * What the shipped version did instead — offer the override only AFTER a
  * refusal, then disable Save behind an unmentioned Reason field — cost Chris
@@ -130,13 +130,12 @@ export interface LineupEditorProps {
   currentWeek: number | null
   editability: WeekEditability
   /** The viewer may submit for this team (its manager, or the commissioner
-   *  — whose save carries the §15.4 label, never a prompted reason). */
+   *  — whose save carries NO reason and is never prompted for one; Q66). */
   canEdit: boolean
-  isCommissionerArm: boolean
-  /** The viewer holds the commissioner role in THIS league. Distinct from
-   *  `isCommissionerArm`, which only means "acting for a team that is not
-   *  mine": a commissioner fixing HIS OWN team after kickoff needs the
-   *  audited override too (PROGRESS §3(a) — any action, on any team). */
+  /** The viewer holds the commissioner role in THIS league — the ROLE, not
+   *  "acting for a team that is not mine": a commissioner fixing HIS OWN
+   *  team after kickoff needs the audited override too (PROGRESS §3(a) —
+   *  any action, on any team). */
   isCommish: boolean
   /** The league's named zone (`settings.draft.time_zone`) for the §16.4
    *  hover; null renders viewer-local only. */
@@ -163,7 +162,6 @@ export function LineupEditor({
   currentWeek,
   editability,
   canEdit,
-  isCommissionerArm,
   isCommish,
   leagueTimeZone,
   overrideMode,
@@ -257,18 +255,18 @@ export function LineupEditor({
   function save() {
     if (readOnly || !dirty) return
     setNotice(null)
-    const request = lineupSaveRequest({ overrideMode, isCommissionerArm, slotMap: draft })
+    const request = lineupSaveRequest({ overrideMode, slotMap: draft })
     if (request.verb === 'commish_edit_lineup') {
       // Clear the OTHER mutation first: `settled` and `refusal` read both
       // hooks, and a stale success from the manager's verb would otherwise
       // shadow this one's outcome for the whole session (the mode now outlives
       // a save, so both hooks really can hold results at once).
       mutation.reset()
-      override.submit({ teamId, week, slotMap: request.slotMap, reason: request.reason })
+      override.submit({ teamId, week, slotMap: request.slotMap })
       return
     }
     override.reset()
-    mutation.submit({ week, slotMap: request.slotMap, reason: request.reason })
+    mutation.submit({ week, slotMap: request.slotMap })
   }
   /** Discard the PLACEMENTS. It does not leave override mode — the mode has
    *  its own exit, and conflating the two is how the shipped version dropped
