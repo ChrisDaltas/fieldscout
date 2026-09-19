@@ -83,6 +83,8 @@ const ACTION = {
   settingNoReason: 'b0300000-0000-4000-8000-000000000022',
   settingMember: 'b0300000-0000-4000-8000-000000000023',
   settingRefused: 'b0300000-0000-4000-8000-000000000024',
+  settingNonCanonical: 'b0300000-0000-4000-8000-000000000025',
+  settingEnumCase: 'b0300000-0000-4000-8000-000000000026',
   schedule: 'b0300000-0000-4000-8000-000000000031',
   scheduleNoReason: 'b0300000-0000-4000-8000-000000000032',
   scheduleMember: 'b0300000-0000-4000-8000-000000000033',
@@ -411,6 +413,24 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
   })
 
+  it('F365 / R1062 on the REAL verb — the narrowed guard still answers a lawful FIRST submit in a NON-CANONICAL depth-0 form with 200 (" 48 " lands as 48, never a false 409 for a change that landed), and a same-id replay with 120 is a 409', async () => {
+    const first = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: ' 48 ', action_id: ACTION.settingNonCanonical })
+    expect(first.status).toBe(200)
+    expect((first.body as { requested_value: unknown; no_changes: boolean }).requested_value).toBe(48)
+    expect(await blobSetting('waiver_period_hours')).toBe(48)
+    expect(await receiptsFor(ACTION.settingNonCanonical)).toHaveLength(1)
+    const replay = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: '120', action_id: ACTION.settingNonCanonical })
+    expect(replay.status).toBe(409)
+    expect(await blobSetting('waiver_period_hours')).toBe(48)
+  })
+
+  it('F365 — THE PREMISE of the enum arm, measured on the real verb: 129 only btrims an enum, so an UPPER-CASE enum is REFUSED by name (never canonicalised to an echo the guard would have to fold) and writes no receipt', async () => {
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_type', value: 'ROLLING_PRIORITY', action_id: ACTION.settingEnumCase })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(errorText(res)).not.toBe(COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE)
+    expect(await receiptsFor(ACTION.settingEnumCase)).toHaveLength(0)
+  })
+
   it('a REFUSED-in-season key (team_count, Q65) comes back 409 with 129’s copy VERBATIM and writes NO receipt', async () => {
     const res = await commishChangeSetting(commishClient, leagueId, { key: 'team_count', value: 10, action_id: ACTION.settingRefused, reason: 'try' })
     expect(res.status).toBe(409)
@@ -521,7 +541,7 @@ describe('POST …/commish/schedule — commishEditSchedule over the real RPC', 
 
 describe('GET …/commish/log — readCommishLog over the real table', () => {
   /** The six receipts the cells above wrote, by action_id. */
-  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.schedule, ACTION.scheduleNoReason]
+  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.settingNonCanonical, ACTION.schedule, ACTION.scheduleNoReason]
 
   it('a MEMBER who is not the commissioner CAN read it (spec:1703): every receipt above, newest first, the actor’s username resolved, `reason` null where none was given and never the string "null"', async () => {
     const res = await readCommishLog(memberClient, leagueId, {})
