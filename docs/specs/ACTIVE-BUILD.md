@@ -107,16 +107,26 @@ D363), every gate a normalisation, every post clause conditional, 111's
 `reason_required` → false, `schedule_remix_confirm`'s receipt landed (F341
 discharged; 078 L7/L8 re-derived), the L.E1.1 route + hook (R1052) and
 L.E1.10's four transitional stack cells re-cut (R1053/R1054 taken), (h)/F343
-clarified, out-of-scope remainders → **F363**; records **D363**), so
-the next takeable task is **`L.E1.11`** — API + hooks part 2 (`/commish/team`,
-`/commish/setting`, `/commish/schedule`, `GET /commish/log`; D351; the C70
-caveat in the log service's docblock). After it: L.E1.12 → L.E1.13 → L.E1.14 →
-**L.E1.16** (`commish_edit_bracket`, F360). Every route built from here on
-takes `reason` as OPTIONAL — `optionalReason`, no `.min(1)`. ⚠ **Chris owes
-`npx supabase db push` for migrations 125–131** (hosted tops out at 124; 131
-re-defines 123's verb, which IS in production).
+clarified, out-of-scope remainders → **F363**; records **D363**), and
+**`L.E1.11` is LANDED** (API + hooks, part 2 — `/commish/team`,
+`/commish/setting`, `/commish/schedule` over 128/129/130 (via 131) and
+**`GET /commish/log`**, the activity-section read surface Q66 named; NO
+migration, NO pgTAP, NO typegen — heads stay 131 / 079; `reason` OPTIONAL end
+to end with no transitional state, 18 stack cells; F65(b) per verb on its own
+fields — **the setting guard omits the VALUE on measurement (129 echoes it
+canonicalised), filed as F364**; the log read gated before the first
+`.from(`, ONE opaque composite cursor, the same-instant pair proven with its
+premise planted; C70 in the docblock, no execution field; F363(b) re-routed
+to L.E1.12; records **D364**), so
+the next takeable task is **`L.E1.12`** — UI part 1: the matchup override
+control and the standings surface (**override MODE, no reason input** —
+standing rule (h), F343; render `no_changes` / `score_stale` /
+`standings_not_rebuilt_why` FIRST among the success branches, D362(8)).
+After it: L.E1.13 → L.E1.14 → **L.E1.16** (`commish_edit_bracket`, F360).
+⚠ **Chris owes `npx supabase db push` for migrations 125–131** (hosted tops
+out at 124; 131 re-defines 123's verb, which IS in production).
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's and L.E1.15's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's and L.E1.11's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
