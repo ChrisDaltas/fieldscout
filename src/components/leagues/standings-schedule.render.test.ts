@@ -58,7 +58,6 @@ import {
   OVERRIDE_WINDOW_TITLE,
   PLAYOFF_PENDING_COPY,
   REASON_HINT_COPY,
-  REASON_REQUIRED_COPY,
 } from './schedule-view-ops'
 import { GOLDEN_STANDINGS, NAMES, SCHEDULE } from './standings-schedule.fixtures'
 import { StandingsPage } from './standings-page'
@@ -453,24 +452,24 @@ function renderEditForm(mock: Partial<ReturnType<typeof useEditMatchup>>): strin
 }
 
 describe('the matchup edit form', () => {
-  it('offers the reason always, saves through the hook, and names the E41 law on the label', () => {
+  it('offers the reason always, saves through the hook, and says it is OPTIONAL — never "required" (Q66 / F361)', () => {
     const html = renderEditForm({})
     expect(html).toContain('data-edit-form')
     expect(html).toContain('data-edit-reason')
-    expect(html).toContain('required after Week 1 kickoff')
+    expect(html).toContain('optional — posted to league chat if you give one')
+    expect(between(html, 'data-edit-form', 'data-edit-save')).not.toMatch(/required/i)
     expect(html).toContain('data-edit-save')
   })
 
-  it('a refusal renders the RPC’s sentence VERBATIM (role="alert") — and a missing-reason refusal marks the field (probe 4’s cell)', () => {
-    // 111's own 22023 text (F233(e)); the mapper answers 400 and the client
-    // strips only the `fn: ` prefix and the trailing citation.
-    const refusal =
-      'league Week 1 kicked off at 2001-09-09T17:00:00+00:00 (nfl_games) — a matchup edit after the first kickoff is a commissioner override and requires a reason'
+  it('a refusal renders the RPC’s sentence VERBATIM (role="alert") — and a refusal that names the reason marks the field (probe 4’s cell)', () => {
+    // The one reason refusal left since 131 — the 500 bound (22023 → 400);
+    // the client strips only the `fn: ` prefix and the trailing citation.
+    const refusal = 'the reason is 501 characters — at most 500'
     const html = renderEditForm({ isError: true, error: new Error(refusal) })
     expect(html).toContain(refusal)
     expect(html).toContain('role="alert"')
     expect(html).toContain('aria-invalid="true"')
-    expect(html).toContain('required — see the refusal below')
+    expect(html).toContain('see the refusal below')
     expect(html).not.toContain('Something went wrong')
   })
 
@@ -612,15 +611,22 @@ describe('the Remix panel', () => {
     expect(html).not.toContain('data-confirm-gate')
   })
 
-  it('OVERRIDE (E41 after kickoff, D290): the override copy, the reason field REQUIRED, Confirm disabled until a reason exists (probe 4’s cell)', () => {
+  it('OVERRIDE (E41 after kickoff, D290): the override copy, the reason field OFFERED as optional, and Confirm OPEN with an empty reason — even when the preview still answers `reason_required: true` (Q66 / F363(c) / R1056)', () => {
+    // OVERRIDE_PLAN deliberately carries `reason_required: true`: a database
+    // that has not received migration 132 yet still says so, and no UI may
+    // block on an empty reason because of it.
     const html = renderRemix({ data: OVERRIDE_PLAN })
     expect(html).toContain('data-window="override"')
     expect(html).toContain(OVERRIDE_WINDOW_TITLE)
-    expect(html).toContain('a reason is required')
+    expect(html).toContain('A reason is optional')
+    expect(html).not.toContain('a reason is required')
     expect(html).toContain('data-remix-reason')
-    expect(openTagOf(html, 'data-confirm-remix')).toMatch(/ disabled=""/)
-    expect(between(html, 'data-confirm-gate', '</span>')).toContain(REASON_REQUIRED_COPY)
-    expect(between(html, 'data-system-post-preview', '</p>')).toContain('commissioner override')
+    expect(html).toContain('Reason (optional')
+    expect(openTagOf(html, 'data-confirm-remix')).not.toMatch(/ disabled=""/)
+    expect(html).not.toContain('data-confirm-gate')
+    const post = between(html, 'data-system-post-preview', '</p>')
+    expect(post).toContain('commissioner override')
+    expect(post).not.toContain('reason:')
   })
 
   it('an identical seed is an explicit no-changes state with Confirm disabled', () => {

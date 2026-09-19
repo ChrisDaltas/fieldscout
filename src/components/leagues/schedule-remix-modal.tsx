@@ -50,9 +50,12 @@ import { StatusBanner } from './status-banners'
  *
  * **E41's two states, both rendered (D290).** The preview's `window` —
  * evaluated by 111 at transaction time from `nfl_games.kickoff_at` — picks
- * the copy: FREE (no reason) before the league's Week 1 kickoff, OVERRIDE
- * (reason REQUIRED, posted with the change) after it. The modal never
- * evaluates the window itself; `confirmGate` reads the flag.
+ * the copy: FREE before the league's Week 1 kickoff, OVERRIDE (audited,
+ * posted) after it. The modal never evaluates the window itself. **A reason
+ * is OPTIONAL and never gates Confirm** (Q66, spec v2.16.41; F363(c) /
+ * R1056 — flipped together with migration 132's `window.reason_required`):
+ * the field is OFFERED after kickoff, keyed on `window.free`, and an empty
+ * one blocks nothing.
  *
  * **Never optimistic.** A Remix rewrites the season: Confirm shows a
  * submitting state, a refusal renders the RPC's sentence VERBATIM
@@ -201,7 +204,6 @@ export function ScheduleRemixPanel({
             </Button>
             <ConfirmButton
               plan={plan}
-              reason={reason}
               pending={confirm.isPending}
               onConfirm={() =>
                 plan && confirm.confirm({ seed: plan.seed, reason: reason.trim() || null })
@@ -216,16 +218,14 @@ export function ScheduleRemixPanel({
 
 function ConfirmButton({
   plan,
-  reason,
   pending,
   onConfirm,
 }: {
   plan: RemixPreview | null
-  reason: string
   pending: boolean
   onConfirm: () => void
 }) {
-  const gate = confirmGate(plan, reason)
+  const gate = confirmGate(plan)
   return (
     <span className="flex flex-col items-end gap-1">
       <Button
@@ -349,9 +349,9 @@ function PreviewPanel({
         </details>
       )}
 
-      {plan.window.reason_required && (
+      {!plan.window.free && (
         <label className="flex flex-col gap-1 text-[11px] font-bold text-ink">
-          Reason (required — posted to league chat)
+          Reason (optional — posted to league chat if you give one)
           <Input
             className="h-btn-md px-2 text-[12px]"
             value={reason}

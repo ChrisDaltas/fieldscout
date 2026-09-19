@@ -16,11 +16,14 @@ import type {
  * Everything decidable without a socket or a clock lives here so it can be
  * node-tested. Two rules the file keeps:
  *
- * 1. **The server decides; this file only reads what it said.** Whether a
- *    Remix needs a reason is 111's `window.reason_required`, evaluated at
- *    transaction time from `nfl_games.kickoff_at` (E41/D307(3)) — the modal
- *    renders the two D290 copies from that flag and never computes a window
- *    of its own. Whether a matchup MAY be edited is likewise 111's; the
+ * 1. **The server decides; this file only reads what it said.** Which of
+ *    D290's two copies the modal renders is 111's `window.free`, evaluated
+ *    at transaction time from `nfl_games.kickoff_at` (E41/D307(3)) — never a
+ *    window computed here. **A reason is NEVER required** (Q66, spec
+ *    v2.16.41; F363(c) / R1056): `window.reason_required` is the literal
+ *    FALSE since migration 132 and NOTHING in this file reads it as a gate —
+ *    an un-pushed database still answering `NOT free` must not be able to
+ *    block a Confirm the verb (131) would land. Whether a matchup MAY be edited is likewise 111's; the
  *    affordance here (`matchupEditable`) mirrors the checks a client can see
  *    (week `upcoming`, row `scheduled`, unscored, un-overridden, a real
  *    pairing) so the button is shown where an edit can possibly succeed, and
@@ -178,7 +181,7 @@ export function formatScore(score: number | null, status: string): string {
  *  only — the datum is the kickoff, which the server reads at call time
  *  (E41); the modal's copy comes from the preview's `window`. */
 export const REASON_HINT_COPY =
-  'Week 1 has started — a matchup edit or a remix is now a commissioner override and asks for a reason.'
+  'Week 1 has started — a matchup edit or a remix is now a commissioner override: it is recorded and posted to the league. A reason is optional.'
 
 export function reasonHint(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]): string | null {
   if (weeks.length === 0) return null
@@ -221,14 +224,15 @@ export const FREE_WINDOW_TITLE = 'Free remix'
 export const OVERRIDE_WINDOW_TITLE = 'Commissioner override'
 
 /**
- * D290 / E41's two states, BOTH rendered from the server's flag: before the
- * league's Week 1 kickoff a remix is free (no reason); after it, an audited
- * override whose reason is REQUIRED and posted with the change. The kickoff
+ * D290 / E41's two states, BOTH rendered from the server's `window.free`:
+ * before the league's Week 1 kickoff a remix is free; after it, an audited
+ * override. A reason is OPTIONAL in both (Q66) — offered after kickoff,
+ * posted with the change when given, never demanded. The kickoff
  * shown is the server's datum (`window.first_kickoff_at`), pre-formatted by
  * the caller (viewer-local, league zone on hover — §16.4).
  */
 export function remixWindowCopy(window: WindowFlags, firstKickoffLocal: string | null): WindowCopy {
-  if (window.free && !window.reason_required) {
+  if (window.free) {
     return {
       tone: 'accent',
       title: FREE_WINDOW_TITLE,
@@ -238,7 +242,7 @@ export function remixWindowCopy(window: WindowFlags, firstKickoffLocal: string |
   return {
     tone: 'caution',
     title: OVERRIDE_WINDOW_TITLE,
-    body: `Week 1 kicked off${firstKickoffLocal ? ` ${firstKickoffLocal}` : ''} — this remix is an audited commissioner override: a reason is required and is posted to league chat with the change.`,
+    body: `Week 1 kicked off${firstKickoffLocal ? ` ${firstKickoffLocal}` : ''} — this remix is an audited commissioner override: it is recorded and posted to league chat. A reason is optional — if you give one, it is posted with the change.`,
   }
 }
 
@@ -353,8 +357,10 @@ export function sideBySide(
  *  (111:741–747), with the actor named by the caller. Labelled a preview on
  *  screen; after the confirm the result's own `system_post` is rendered
  *  verbatim in its place. */
-/** The two flags the modal's decisions read — nothing else of the window. */
-export type WindowFlags = Pick<RemixPreview['window'], 'free' | 'reason_required'>
+/** The ONE flag the modal's decisions read — nothing else of the window.
+ *  `reason_required` is deliberately NOT in this type (F363(c)): no decision
+ *  here may depend on it. */
+export type WindowFlags = Pick<RemixPreview['window'], 'free'>
 
 export function systemPostPreview(
   plan: Pick<RemixPreview, 'weeks_regenerable' | 'regular_season_weeks' | 'change_count'> & { window: WindowFlags },
@@ -363,23 +369,23 @@ export function systemPostPreview(
 ): string {
   const weeks = plan.weeks_regenerable.join(', ')
   const head = `Schedule remixed by ${actorName}: ${plan.weeks_regenerable.length} of ${plan.regular_season_weeks} regular-season weeks regenerated (weeks ${weeks}), ${plan.change_count} team-week pairings changed`
-  if (plan.window.free && !plan.window.reason_required) return `${head}.`
-  return `${head} — after Week 1 kickoff (commissioner override) — reason: ${reason.trim() || '…'}`
+  if (plan.window.free) return `${head}.`
+  // 131's clause is CONDITIONAL (131:3608-3610): no reason ⇒ no "— reason:" tail.
+  const given = reason.trim()
+  return `${head} — after Week 1 kickoff (commissioner override)${given ? ` — reason: ${given}` : ''}`
 }
 
 export const NO_CHANGES_COPY = 'This seed changes nothing — roll again for a different season.'
 export const NOTHING_REGENERABLE_COPY = 'Every week is frozen — nothing left to remix this season.'
-export const REASON_REQUIRED_COPY = 'A reason is required after Week 1 kickoff (commissioner override).'
 
-/** Whether Confirm is enabled, and why not — decided from the server's plan
- *  and the reason field, never from a clock. */
+/** Whether Confirm is enabled, and why not — decided from the server's plan,
+ *  never from a clock and NEVER from the reason (Q66: an empty reason blocks
+ *  nothing — F363(c) / R1056). */
 export function confirmGate(
-  plan: (Pick<RemixPreview, 'no_changes' | 'weeks_regenerable'> & { window: WindowFlags }) | null,
-  reason: string,
+  plan: Pick<RemixPreview, 'no_changes' | 'weeks_regenerable'> | null,
 ): { ok: true } | { ok: false; why: string } {
   if (!plan) return { ok: false, why: 'Preview a remix first.' }
   if (plan.weeks_regenerable.length === 0) return { ok: false, why: NOTHING_REGENERABLE_COPY }
   if (plan.no_changes) return { ok: false, why: NO_CHANGES_COPY }
-  if (plan.window.reason_required && reason.trim() === '') return { ok: false, why: REASON_REQUIRED_COPY }
   return { ok: true }
 }

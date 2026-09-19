@@ -553,9 +553,11 @@ select results_eq(
      from public.schedule_remix_confirm('b2000000-0000-4000-8000-000000000008', 557, E' \t\r\n ', 'a0000000-0000-4000-8000-000000000006') r $$,
   $$ values (false, true) $$,
   'Q66 (131): a reason of nothing but whitespace INCLUDING TABS AND NEWLINES is treated as NO reason and LANDS (the explicit class — 111:670''s plain btrim would have posted the tabs as text)');
-select is(
-  (select (p -> 'window' ->> 'reason_required')::boolean from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 555) p),
-  true, 'the PREVIEW still says window.reason_required = true — schedule_window_internal (111:508) is a READ function outside the sweep (F361''s remainder: the panel''s hint and gate are L.E1.13''s); the CONFIRM no longer requires one');
+select results_eq(
+  $$ select (p -> 'window' ->> 'free')::boolean, (p -> 'window' ->> 'reason_required')::boolean
+     from public.schedule_preview('b2000000-0000-4000-8000-000000000008', 555) p $$,
+  $$ values (false, false) $$,
+  'Q66 (132, L.E1.13 / F363(c) / R1056): POST-KICKOFF the PREVIEW agrees with the CONFIRM — window.free = false (E41''s datum, untouched) and window.reason_required = FALSE. [Re-cut: until migration 132 this cell pinned TRUE, the contradiction R1056 recorded — 111:508 answered NOT free while 131''s confirm answered false.]');
 select results_eq(
   $$ select (r ->> 'reason_required')::boolean, (r -> 'window' ->> 'free')::boolean, (r ->> 'matchups_replaced')::int,
             r ->> 'system_post' like '%— after Week 1 kickoff (commissioner override) — reason: Bye-week fix'
