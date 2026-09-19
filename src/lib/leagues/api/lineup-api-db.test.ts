@@ -148,6 +148,8 @@ const ACTION = {
   commish: 'afa00000-0000-4000-8000-000000000017',
   /** Q66 / 131: the commissioner arm with NO reason lands. */
   commishNoReason: 'afa00000-0000-4000-8000-00000000001e',
+  /** F363(b) / L.E1.12: the commissioner arm with a BLANK reason lands too. */
+  commishBlankReason: 'afa00000-0000-4000-8000-00000000001f',
   badKey: 'afa00000-0000-4000-8000-000000000018',
   notRostered: 'afa00000-0000-4000-8000-000000000019',
   /** R768's fixture: sent UPPERCASE on the wire. */
@@ -476,6 +478,18 @@ describe('the auth matrix (member / non-member / fellow manager / commissioner)'
     expect(doc.reason).toBe('manager on vacation')
     expect(doc.system_post).toContain('reason: manager on vacation')
     expect(await storedSlotMap()).toStrictEqual(before)
+
+    // F363(b) (M6A L.E1.12): a BLANK reason is the same as none, end to end —
+    // the route no longer 400s it at the field level (it did: `.min(1)`), and
+    // 131's arm stores NULL. A change, so the receipt and post are written.
+    const blank = await setLineup(commishClient, leagueId, managerTeamId, body(next, ACTION.commishBlankReason, { reason: ' \t ' }))
+    expect(blank.status, errorText(blank)).toBe(200)
+    const blankDoc = blank.body as unknown as SetLineupResult
+    expect(blankDoc.no_changes).toBe(false)
+    expect(blankDoc.edited_by_commish).toBe(true)
+    expect(blankDoc.reason).toBeNull()
+    expect(blankDoc.system_post).not.toContain('reason')
+    expect(await storedSlotMap()).toStrictEqual(next)
 
     // Put the manager's own map back for the cells that follow (a fresh id —
     // a new gesture).
