@@ -20,8 +20,8 @@ import {
   OVERRIDE_PANEL_TITLE,
   bypassedCopy,
   overrideOutcome,
-  scoreDraftOf,
   scoreGate,
+  shownScoreDraft,
   type ScoreGate,
 } from './matchup-override-ops'
 import { OverrideModeBar } from './override-mode-bar'
@@ -72,8 +72,13 @@ export function MatchupOverrideTools({
   const result = useCommishSetResult(leagueId)
   // Which door spoke last — the panel shows ONE outcome, the latest.
   const [last, setLast] = useState<'score' | 'result' | null>(null)
-  const [homeDraft, setHomeDraft] = useState(() => scoreDraftOf(row.home_score))
-  const [awayDraft, setAwayDraft] = useState(() => scoreDraftOf(row.away_score))
+  // R1064: what he TYPED, or null while a field is untouched — an untouched
+  // field follows the stored score through live-scoring ticks; typed text is
+  // never overwritten (`shownScoreDraft`).
+  const [homeTyped, setHomeTyped] = useState<string | null>(null)
+  const [awayTyped, setAwayTyped] = useState<string | null>(null)
+  const homeDraft = shownScoreDraft(homeTyped, row.home_score)
+  const awayDraft = shownScoreDraft(awayTyped, row.away_score)
 
   const pending = score.isPending ? 'score' : result.isPending ? 'result' : null
   const spoke = last === 'score' ? score : last === 'result' ? result : null
@@ -100,8 +105,8 @@ export function MatchupOverrideTools({
           awayName={awayName}
           homeDraft={homeDraft}
           awayDraft={awayDraft}
-          onHomeDraft={setHomeDraft}
-          onAwayDraft={setAwayDraft}
+          onHomeDraft={setHomeTyped}
+          onAwayDraft={setAwayTyped}
           pending={pending}
           outcome={spoke?.data ?? null}
           refusal={spoke?.error?.message ?? null}

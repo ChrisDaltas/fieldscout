@@ -110,11 +110,14 @@ export function bypassedCopy(bypassed: readonly string[] | null | undefined): st
 // ---------------------------------------------------------------------------
 
 /** A fantasy score as typed: an optional sign, digits, up to two decimals
- *  (the stored NUMERIC's rendering). Anything else is null — never NaN, never
- *  a silently-coerced 0 (an empty field is NOT a zero). */
+ *  (the stored NUMERIC's rendering) — INCLUDING the two shapes a person
+ *  types on the way to a number, `.5` and `12.` (R1063: refusing them left
+ *  Save disabled under copy that never mentioned a leading digit). Anything
+ *  else is null — never NaN, never a silently-coerced 0 (an empty field, a
+ *  bare `.` and a bare `-` are NOT a zero). */
 export function parseScoreDraft(text: string): number | null {
   const trimmed = text.trim()
-  if (!/^-?\d+(\.\d{1,2})?$/.test(trimmed)) return null
+  if (!/^-?(\d+\.?\d{0,2}|\.\d{1,2})$/.test(trimmed)) return null
   const value = Number(trimmed)
   return Number.isFinite(value) ? value : null
 }
@@ -123,6 +126,17 @@ export function parseScoreDraft(text: string): number | null {
  *  starts EMPTY — an absent score is not 0 (E61's posture). */
 export function scoreDraftOf(score: number | null): string {
   return score === null ? '' : String(score)
+}
+
+/**
+ * What a score field SHOWS (R1064). Until the commissioner types in it the
+ * field FOLLOWS the stored score — so a live-scoring tick that lands while
+ * override mode is open is what Save would restate, not the pair that was on
+ * screen at mount. Once he has typed (`typed !== null`, the empty string
+ * included — clearing a field is typing) his text is NEVER overwritten.
+ */
+export function shownScoreDraft(typed: string | null, stored: number | null): string {
+  return typed ?? scoreDraftOf(stored)
 }
 
 export type ScoreGate =

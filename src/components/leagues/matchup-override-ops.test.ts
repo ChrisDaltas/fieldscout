@@ -24,6 +24,7 @@ import {
   parseScoreDraft,
   scoreDraftOf,
   scoreGate,
+  shownScoreDraft,
 } from './matchup-override-ops'
 
 const WHY = {
@@ -112,9 +113,21 @@ describe('the score draft — an empty field is NOT a zero', () => {
     expect(parseScoreDraft(' 102.25 ')).toBe(102.25)
     expect(parseScoreDraft('0')).toBe(0)
     expect(parseScoreDraft('-3.2')).toBe(-3.2)
-    for (const bad of ['', '   ', 'abc', '12.345', '1e3', '.', '12.', 'NaN', 'Infinity', '7,5']) {
+    // R1063: the two shapes a person types on the way to a number ARE numbers.
+    expect(parseScoreDraft('.5')).toBe(0.5)
+    expect(parseScoreDraft('12.')).toBe(12)
+    expect(parseScoreDraft('-.25')).toBe(-0.25)
+    for (const bad of ['', '   ', 'abc', '12.345', '.125', '1e3', '.', '-', '-.', 'NaN', 'Infinity', '7,5']) {
       expect(parseScoreDraft(bad), JSON.stringify(bad)).toBeNull()
     }
+  })
+
+  it('R1064: an UNTOUCHED field follows the stored score through a live tick; TYPED text — the empty string included — is never overwritten', () => {
+    expect(shownScoreDraft(null, 71.5)).toBe('71.5')
+    expect(shownScoreDraft(null, 74.1)).toBe('74.1') // the tick landed: the field moved with it
+    expect(shownScoreDraft(null, null)).toBe('')
+    expect(shownScoreDraft('80', 74.1)).toBe('80')
+    expect(shownScoreDraft('', 74.1)).toBe('') // he cleared it — clearing is typing
   })
 
   it('a pending (NULL) stored score starts as an EMPTY field, a stored one as its number', () => {
