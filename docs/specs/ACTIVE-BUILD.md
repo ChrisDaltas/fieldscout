@@ -126,16 +126,31 @@ the `✸` marker on the matchup and, per team, on the standings table over the
 live schedule read; **F363(b) discharged** — the manager lineup route's
 `reason` is `lineupReason`, blank ⇒ absent; NO migration — heads stay
 131 / 079; a bye row's score arm is unreachable through `/commish/score`,
-filed **F366**; records **D365**), so
-the next takeable task is **`L.E1.13`** — UI part 2: the team page (roster
-move, force add/drop, rename) and the in-season settings override — inside
-the SAME override mode (mount `OverrideModeBar`, never a second switch), no
-reason box; carries F363(c)/(d) and reads F365 before the settings UI.
-After it: L.E1.14 → **L.E1.16** (`commish_edit_bracket`, F360).
-⚠ **Chris owes `npx supabase db push` for migrations 125–131** (hosted tops
-out at 124; 131 re-defines 123's verb, which IS in production).
+filed **F366**; records **D365**), and
+**`L.E1.13` is LANDED** (UI part 2 — the team page's commissioner roster
+tools (move / drop / add) and BOTH rename arms, and the settings panel's
+in-season editing, every one a face of the SAME override mode — the pages
+mount `OverrideModeBar`, no second switch, no reason input and no reason on
+the wire (the lineup editor's two fixed labels are REMOVED — F363(d));
+**Q66's second clause is BUILT**: League Home's activity card shows the §10.3
+commissioner log, read from `GET /commish/log`, a NULL reason rendered as
+absent; the manager's own rename gets its route, `POST
+…/teams/[tid]/name` → `rename_own_team`; migration **132** + pgTAP **080**
+flip the Remix preview's `window.reason_required` to FALSE together with the
+modal's gate (F363(c) / R1056 — no UI blocks on an empty reason); **F365
+discharged** (the setting replay guard narrowed to 129's class), R1063 /
+R1064 taken; the `✸` badge's words widened with F344's flag; **discharges
+F343, F344, F361, F363(c)/(d), F365**, mints **F367 / F368 / F369**, records
+**D366**), so
+the next takeable task is **`L.E1.14`** — the synthetic gate learns about
+autopilot and about lawful overrides (TS only, no migration). After it:
+**L.E1.16** (`commish_edit_bracket`, F360).
+⚠ **Chris owes `npx supabase db push` for migrations 125–132** (hosted tops
+out at 124; 131 re-defines 123's verb, which IS in production; until 132 is
+pushed the hosted Remix preview still answers `reason_required = NOT free` —
+harmless, the modal no longer reads it as a gate).
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's and L.E1.12's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's and L.E1.13's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
