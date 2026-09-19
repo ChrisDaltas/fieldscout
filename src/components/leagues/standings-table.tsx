@@ -7,9 +7,13 @@ import { cn } from '@/lib/utils'
 
 import { Crest, TeamNameLink } from './league-cells'
 import {
+  STANDINGS_OVERRIDDEN_LEGEND,
+  STANDINGS_OVERRIDDEN_MARK,
+  STANDINGS_OVERRIDES_UNKNOWN_COPY,
   formatPoints,
   formatRecord,
   formatWinPct,
+  overriddenTitle,
   recordColumns,
   renderedChain,
   separatorLabel,
@@ -33,6 +37,10 @@ import {
  * the (still ranked, all-zero) rows; the table never infers emptiness from
  * `standings.length` (rule 10).
  *
+ * The `✸` marker beside a team (M6A L.E1.12) is `matchups.is_overridden`
+ * read through the schedule — present exactly when the flag is, with a
+ * legend under the table and a named line when the flag could not be read.
+ *
  * Numbers are `fs-num` (mono, tabular — the table primitive's contract).
  * Elevation: rows rest flat; the primitive's hover wash is the only
  * interaction paint (CLAUDE.md).
@@ -42,6 +50,8 @@ export function StandingsTable({
   settings,
   teamNames,
   highlightTeamId,
+  overridden = null,
+  overridesUnknown = false,
 }: {
   doc: LeagueStandings
   settings: { median_game: boolean; second_opponent: boolean }
@@ -50,11 +60,20 @@ export function StandingsTable({
   teamNames: ReadonlyMap<string, string>
   /** The viewer's own franchise, if any — a resting fill, never a shadow. */
   highlightTeamId: string | null
+  /** `team_id → weeks` whose matchup carries `matchups.is_overridden`
+   *  (`overriddenWeeksByTeam` over the schedule read — M6A L.E1.12). 117's
+   *  document does not carry the flag, so the PAGE supplies it; null/absent
+   *  (the bracket's mount) renders no marker and no legend. */
+  overridden?: ReadonlyMap<string, readonly number[]> | null
+  /** The flag could not be read — say so rather than show a clean table. */
+  overridesUnknown?: boolean
 }) {
   const chain = renderedChain(doc.chain)
   const columns = recordColumns(doc.standings, settings)
   const emptyCopy = standingsEmptyCopy(doc)
   const notes = skipNotes(doc.skipped, teamNames)
+  // The legend shows exactly when a RENDERED row carries the marker.
+  const anyOverridden = overridden != null && doc.standings.some((row) => overridden.has(row.team_id))
 
   return (
     <div className="flex flex-col gap-3" data-standings-table>
@@ -96,6 +115,7 @@ export function StandingsTable({
         <TableBody>
           {doc.standings.map((row) => {
             const separator = separatorLabel(row.separated_by)
+            const overriddenWeeks = overridden?.get(row.team_id) ?? null
             return (
               <TableRow
                 key={row.team_id}
@@ -114,6 +134,12 @@ export function StandingsTable({
                         viewer's row deliberately suppresses the table's row
                         wash (`hover:bg-accent-soft` above). */}
                     <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="font-bold text-ink" />
+                    {overriddenWeeks && (
+                      <Badge variant="stroke-purple" className="shrink-0" title={overriddenTitle(overriddenWeeks)} data-overridden={overriddenWeeks.join(',')}>
+                        <span aria-hidden="true">{STANDINGS_OVERRIDDEN_MARK}</span>
+                        <span className="sr-only">{overriddenTitle(overriddenWeeks)}</span>
+                      </Badge>
+                    )}
                   </span>
                 </TableCell>
                 <TableCell className="fs-num text-right">{formatRecord(row)}</TableCell>
@@ -137,6 +163,16 @@ export function StandingsTable({
         </TableBody>
       </Table>
 
+      {overridesUnknown && (
+        <p role="status" className="text-[11px] font-semibold text-ink" data-overrides-unknown>
+          {STANDINGS_OVERRIDES_UNKNOWN_COPY}
+        </p>
+      )}
+      {anyOverridden && (
+        <p className="text-[11px] font-medium text-n-3" data-overridden-legend>
+          {STANDINGS_OVERRIDDEN_LEGEND}
+        </p>
+      )}
       {notes.length > 0 && (
         <ul className="flex flex-col gap-1 text-[11px] font-medium text-n-3" data-skip-notes>
           {notes.map((note) => (

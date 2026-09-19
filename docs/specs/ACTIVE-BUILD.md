@@ -117,16 +117,25 @@ fields — **the setting guard omits the VALUE on measurement (129 echoes it
 canonicalised), filed as F364**; the log read gated before the first
 `.from(`, ONE opaque composite cursor, the same-instant pair proven with its
 premise planted; C70 in the docblock, no execution field; F363(b) re-routed
-to L.E1.12; records **D364**), so
-the next takeable task is **`L.E1.12`** — UI part 1: the matchup override
-control and the standings surface (**override MODE, no reason input** —
-standing rule (h), F343; render `no_changes` / `score_stale` /
-`standings_not_rebuilt_why` FIRST among the success branches, D362(8)).
-After it: L.E1.13 → L.E1.14 → **L.E1.16** (`commish_edit_bracket`, F360).
+to L.E1.12; records **D364**), and
+**`L.E1.12` is LANDED** (UI part 1 — override MODE on the matchup page
+through the lineup editor's own switch, lifted into `override-mode-bar.tsx`;
+both scores + declare-a-winner with NO reason field and NO reason on the
+wire; `no_changes` never says "saved" and the consequence arms render first;
+the `✸` marker on the matchup and, per team, on the standings table over the
+live schedule read; **F363(b) discharged** — the manager lineup route's
+`reason` is `lineupReason`, blank ⇒ absent; NO migration — heads stay
+131 / 079; a bye row's score arm is unreachable through `/commish/score`,
+filed **F366**; records **D365**), so
+the next takeable task is **`L.E1.13`** — UI part 2: the team page (roster
+move, force add/drop, rename) and the in-season settings override — inside
+the SAME override mode (mount `OverrideModeBar`, never a second switch), no
+reason box; carries F363(c)/(d) and reads F365 before the settings UI.
+After it: L.E1.14 → **L.E1.16** (`commish_edit_bracket`, F360).
 ⚠ **Chris owes `npx supabase db push` for migrations 125–131** (hosted tops
 out at 124; 131 re-defines 123's verb, which IS in production).
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's and L.E1.11's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's and L.E1.12's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —

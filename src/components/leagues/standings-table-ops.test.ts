@@ -17,13 +17,57 @@ import {
   NO_FINAL_WEEKS_COPY,
   formatRecord,
   formatWinPct,
+  overriddenTitle,
+  overriddenWeeksByTeam,
   recordColumns,
   renderedChain,
   separatorLabel,
   skipNotes,
   standingsEmptyCopy,
   tiebreakerLabel,
+  type OverriddenMatchupSlice,
 } from './standings-table-ops'
+
+// M6A L.E1.12 — the commissioner-adjusted marker reads the stored flag only.
+describe('overriddenWeeksByTeam — `matchups.is_overridden`, row-scoped (D342), regular season only', () => {
+  const row = (over: Partial<OverriddenMatchupSlice>): OverriddenMatchupSlice => ({
+    week: 1,
+    round_type: 'regular',
+    home_team_id: 't1',
+    away_team_id: 't2',
+    is_overridden: false,
+    ...over,
+  })
+
+  it('no flag ⇒ an EMPTY map (nothing is inferred from a score)', () => {
+    expect(overriddenWeeksByTeam([row({}), row({ week: 2 })]).size).toBe(0)
+  })
+
+  it('BOTH sides of a flagged row are marked, weeks sorted and unique across regular + secondary rows', () => {
+    const map = overriddenWeeksByTeam([
+      row({ week: 5, is_overridden: true }),
+      row({ week: 2, is_overridden: true, home_team_id: 't1', away_team_id: 't3' }),
+      row({ week: 5, is_overridden: true, round_type: 'secondary', home_team_id: 't1', away_team_id: 't4' }),
+      row({ week: 3 }), // not flagged
+    ])
+    expect(map.get('t1')).toStrictEqual([2, 5])
+    expect(map.get('t2')).toStrictEqual([5])
+    expect(map.get('t3')).toStrictEqual([2])
+    expect(map.get('t4')).toStrictEqual([5])
+    expect(map.size).toBe(4)
+  })
+
+  it('a playoff row feeds the bracket, not this table; a bye row marks its one side', () => {
+    expect(overriddenWeeksByTeam([row({ round_type: 'playoff', is_overridden: true })]).size).toBe(0)
+    const bye = overriddenWeeksByTeam([row({ away_team_id: null, is_overridden: true })])
+    expect([...bye.keys()]).toStrictEqual(['t1'])
+  })
+
+  it('the words name the weeks, singular and plural', () => {
+    expect(overriddenTitle([3])).toBe('Commissioner-adjusted — the score or result of this team’s Week 3 matchup was set by the commissioner.')
+    expect(overriddenTitle([3, 7])).toContain('Week 3, Week 7 matchups')
+  })
+})
 
 describe('the chain renders in the RPC’s STORED order — the DoD pin', () => {
   it('the golden chain is win_pct → points_for → head_to_head → points_against → division_record → coin_flip, labelled, in that order', () => {

@@ -588,6 +588,14 @@ GATE    {L.E1.4, L.E1.5} → L.E1.14 (autopilot invariant + lawful-override prov
 > **[AS-BUILT SCOPE NOTE — added by L.E1.11's fix round, 2026-09-16, additively (the R992 precedent: the Architect's text above is left exactly as written; `+` lines only).**
 > + This task ALSO carries PROGRESS **F363(b)**: the MANAGER lineup route's schema, `src/lib/leagues/api/lineup-service.ts:121` `reason: z.string().trim().min(1).max(500).nullish()` → the `optionalReason` shape (absent / null / blank all normalised to absent, ≤ 500, a non-string still refused), with its unit cells (blank and tab-only ACCEPTED at the field level; 501 chars and a non-string refused). Since migration 131 `set_lineup`'s commissioner arm normalises a blank reason to NULL, so a field-level 400 on a blank string is the route disagreeing with the verb.
 > + **That file is a ROUTE-SCHEMA change, not UI: the L.E1.12 reviewer treats `lineup-service.ts` and its test with FULL leagues-grade rigour (the §4 rules, a break probe shown red then restored), NOT the UI one-review-pass rule the DoD line above applies to the rest of this task** (R1060).]
+>
+> **[AS-BUILT NOTE — added by L.E1.12, 2026-09-19, additively (the R992 precedent: the Architect's text above is left exactly as written; `+` lines only).**
+> + **Item 2's "the client sends a fixed label" is SUPERSEDED by Q66 / migration 131 / rule (h)'s 2026-09-16 clarification** ("the client MAY SEND NOTHING … L.E1.12 / L.E1.13 decide"): this panel sends NO reason — the receipt is `reason IS NULL` and the post carries no `— reason:` clause. No reason field exists, pinned (probe P7).
+> + **Item 1's switch is the lineup editor's own, LIFTED — `src/components/leagues/override-mode-bar.tsx`** — not a second control (CLAUDE.md's no-near-duplicates; §2.6's "one switch"). Same markup, same store; `aria-pressed` added. **L.E1.13 mounts this component.**
+> + **Item 3 as built** (`matchup-override-ops.ts` → `overrideOutcome`): `no_changes` (never "saved") → `will_be_overwritten` (126's `not_frozen`; unreachable under the shipped flag, rendered anyway) → `live_scoring_stopped` (Q61) → `standings_rebuilt` → `standings_at_finalization`; the order is pinned (probe P3).
+> + **Item 4's standings half is sourced from the schedule read, not from 117's document** (which carries no flag): `overriddenWeeksByTeam` over `useScheduleLive`, a `✸` per team naming the weeks, a legend, and a named line when the flag could not be read. The matchup chip pre-existed (M4) and is now pinned present EXACTLY when the flag is (probe P12).
+> + **A BYE row gets no panel** — measured at `131:1047-1062`, neither arm can land through today's routes; said by name on screen, the route half filed as PROGRESS **F366**. `total_points` weeks mount nothing (no matchup row).
+> + F363(b) landed as `lineupReason` in `lineup-service.ts` with unit, injected-client and stack cells; probe P1 (restore `.min(1)`) reds all three. PROGRESS **D365**.]
 
 ---
 
