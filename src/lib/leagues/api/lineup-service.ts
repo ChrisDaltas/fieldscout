@@ -107,10 +107,27 @@ const slotKey = z.string().trim().min(1).max(32)
 const playerId = z.string().trim().min(1).max(64)
 
 /**
+ * The commissioner arm's reason (R738/D290) — OPTIONAL (Q66, spec v2.16.41;
+ * PROGRESS F363(b), M6A L.E1.12). Since migration 131 `set_lineup`'s
+ * commissioner arm NORMALISES a blank reason to NULL instead of refusing it,
+ * so a field-level 400 on `''` was the route disagreeing with the verb. The
+ * shape is `optionalReason`'s (`commish-matchup-service.ts`) plus this door's
+ * pre-existing `null`: absent / null / blank / whitespace-only all normalise
+ * to ABSENT (never `''` on the wire), a non-blank reason is trimmed, > 500
+ * (the league_chat bound) and a non-string are still field errors. Never
+ * `.min(1)`.
+ */
+export const lineupReason = z
+  .string()
+  .trim()
+  .max(500)
+  .nullish()
+  .transform((value) => (value ? value : undefined))
+
+/**
  * The wire body. `slot_map` is the FULL canonical map (F224(e)): every
  * started player under its slot instance, every IR player under its IR key,
- * nothing for an empty slot. `reason` is the commissioner arm's (R738/D290)
- * — 112 refuses a non-manager actor without one (22023, passed through).
+ * nothing for an empty slot. `reason` is `lineupReason` above — optional.
  */
 export const setLineupInputSchema = z.strictObject({
   week: z.number().int().min(1).max(18),
@@ -118,7 +135,7 @@ export const setLineupInputSchema = z.strictObject({
   // Normalised at the schema (R768): the F65(b) guard compares this against
   // the value POSTGRES wrote. See `inseason-ids.ts`.
   action_id: normalizedUuid,
-  reason: z.string().trim().min(1).max(500).nullish(),
+  reason: lineupReason,
 })
 export type SetLineupInput = z.infer<typeof setLineupInputSchema>
 

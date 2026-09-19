@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -12,10 +12,11 @@ import { Segment, SegmentItem, Tabs, TabsContent, TabsList, TabsTrigger } from '
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
+import { useScheduleLive } from '@/hooks/use-schedule'
 import { useProjectedStandingsLive, useStandingsLive } from '@/hooks/use-standings'
 
 import { PlayoffBracket } from './playoff-bracket'
-import { PROJECTED_COPY } from './standings-table-ops'
+import { PROJECTED_COPY, overriddenWeeksByTeam } from './standings-table-ops'
 import { StandingsTable } from './standings-table'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
@@ -81,6 +82,14 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
   const finalStandings = useStandingsLive(leagueId)
   const projected = useProjectedStandingsLive(leagueId, view === 'projected')
   const bracket = usePlayoffBracketLive(leagueId, tab === 'playoffs')
+  // M6A L.E1.12: 117's standings document carries no override flag, so the ✸
+  // marker reads `matchups.is_overridden` through the schedule read — the LIVE
+  // one, so an override made while this page is open reaches it on the room's
+  // `matchups` event (119's trigger) like every other read here; it JOINS the
+  // one refcounted room, never a second channel (F233(a)). A FAILED read is
+  // said, never rendered as "no overrides".
+  const schedule = useScheduleLive(leagueId)
+  const overridden = useMemo(() => (schedule.data ? overriddenWeeksByTeam(schedule.data.matchups) : null), [schedule.data])
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const teamNames = new Map(detail.teams.map((t) => [t.id, t.name]))
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
@@ -166,6 +175,8 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
               settings={{ median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent }}
               teamNames={teamNames}
               highlightTeamId={myTeamId}
+              overridden={overridden}
+              overridesUnknown={schedule.isError && !schedule.data}
             />
           ) : null}
         </TabsContent>

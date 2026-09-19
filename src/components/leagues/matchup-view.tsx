@@ -55,6 +55,7 @@ import {
   weekBadge,
   weekNav,
 } from './matchup-view-ops'
+import { MatchupOverrideTools } from './matchup-override-panel'
 import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
 
@@ -96,6 +97,13 @@ import { ProblemCard, problemCopy } from './team-page'
  * the reconnecting banner off the room's `connection`, and the "Live stats
  * delayed" banner off the `stats_degraded` flag (honest staleness — the
  * numbers stay).
+ *
+ * **The commissioner's override (M6A L.E1.12):** `MatchupOverrideTools`
+ * under the scoreboard of an h2h week — the override-MODE switch (PROGRESS
+ * §3(h)) and, while it is on, the both-scores / declare-a-winner panel. The
+ * `✸ Adjusted` marker above it reads `matchups.is_overridden`, which these
+ * verbs are the first to set. A `total_points` week has no matchup row to
+ * correct, so nothing mounts there.
  *
  * **Deliberately not here (each an F-row):** the ⚑ report-illegal-lineup
  * entry (§10.2 — its route and audit table are M6's); the league-home
@@ -312,6 +320,7 @@ function HeadToHeadWeek({
   const { primary, secondary } = splitRows(doc.matchups)
   const selected = selectedMatchup(primary, matchupId, myTeamId)
   const settings = { median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent }
+  const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
 
   if (!selected) {
     return <EmptyCard copy={emptyWeekCopy(doc.week, weeks, detail.settings.regular_season_weeks)} data-empty="no-matchups" />
@@ -320,6 +329,21 @@ function HeadToHeadWeek({
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
       <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} badge={false} />
+
+      {/* THE COMMISSIONER'S OVERRIDE (M6A L.E1.12; §15.4:1692-1693; PROGRESS
+          §3(h)): the mode switch is here in EVERY week state — never behind a
+          refusal — and the correction panel opens under it while the mode is
+          on. Commissioner only: a manager's page is unchanged. Keyed by the
+          matchup so the score drafts never carry from one row to another. */}
+      {isCommish && (
+        <MatchupOverrideTools
+          key={selected.id}
+          leagueId={leagueId}
+          row={selected}
+          homeName={teamName(doc, selected.home_team_id)}
+          awayName={selected.away_team_id ? teamName(doc, selected.away_team_id) : null}
+        />
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <TeamBox leagueId={leagueId} week={doc.week} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />

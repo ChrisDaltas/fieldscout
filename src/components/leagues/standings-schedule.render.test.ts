@@ -62,7 +62,7 @@ import {
 } from './schedule-view-ops'
 import { GOLDEN_STANDINGS, NAMES, SCHEDULE } from './standings-schedule.fixtures'
 import { StandingsPage } from './standings-page'
-import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
+import { NO_FINAL_WEEKS_COPY, STANDINGS_OVERRIDES_UNKNOWN_COPY } from './standings-table-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -136,6 +136,9 @@ function render(qc: QueryClient, element: React.ReactElement): string {
 interface StandingsSeed {
   detail?: LeagueDetail | 'error' | 'missing' | 'gone'
   standings?: LeagueStandings | 'error' | 'degraded' | 'missing'
+  /** M6A L.E1.12 — the ✸ marker's source. Default `missing` (the read is
+   *  still pending), which is what every pre-existing cell renders under. */
+  schedule?: LeagueSchedule | 'error' | 'missing'
 }
 
 function renderStandings(seed: StandingsSeed = {}): string {
@@ -148,6 +151,9 @@ function renderStandings(seed: StandingsSeed = {}): string {
   if (s === 'error') failQuery(qc, leagueStandingsKeys.all(LEAGUE), new Error('Only members of this league can view it.'))
   else if (s === 'degraded') failQuery(qc, leagueStandingsKeys.all(LEAGUE), new Error('standings: refetch boom'), GOLDEN_STANDINGS)
   else if (s !== 'missing') qc.setQueryData(leagueStandingsKeys.all(LEAGUE), s)
+  const sched = seed.schedule ?? 'missing'
+  if (sched === 'error') failQuery(qc, scheduleKeys.all(LEAGUE), new Error('matchups: boom'))
+  else if (sched !== 'missing') qc.setQueryData(scheduleKeys.all(LEAGUE), sched)
   return render(qc, createElement(StandingsPage, { leagueId: LEAGUE }))
 }
 
@@ -278,6 +284,63 @@ describe('standings — the table is the RPC’s order, the chain the stored ord
     const html = render(qc, createElement(StandingsPage, { leagueId: LEAGUE }))
     expect(html).toContain('vs median')
     expect(html).toContain('2nd opp')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The commissioner-adjusted marker — M6A L.E1.12 (`matchups.is_overridden`)
+//
+// PROBES (each shown RED against a one-site break, then restored):
+//   P10 — `overriddenWeeksByTeam` marks every team of every row (drop the
+//         `is_overridden !== true` test) → the exactly-when cell;
+//   P11 — swallow the failed read (`overridesUnknown={false}`) → the
+//         unknown cell.
+// ---------------------------------------------------------------------------
+
+describe('standings — the ✸ marker is present EXACTLY when `matchups.is_overridden` is', () => {
+  const rowOf = (html: string, teamId: string) => between(html, `data-team="${teamId}"`, '</tr>')
+
+  it('PREMISE: the fixture overrides exactly ONE regular-season row — m2, Week 1, t3 vs t4', () => {
+    const flagged = SCHEDULE.matchups.filter((m) => m.is_overridden)
+    expect(flagged.map((m) => [m.id, m.week, m.round_type, m.home_team_id, m.away_team_id])).toStrictEqual([['m2', 1, 'regular', 't3', 't4']])
+  })
+
+  it('both sides of the overridden row carry the marker (D342: one flag on the ROW), naming the week; the other teams carry none', () => {
+    const html = renderStandings({ schedule: SCHEDULE })
+    for (const teamId of ['t3', 't4']) {
+      const row = rowOf(html, teamId)
+      expect(row, teamId).toContain('data-overridden="1"')
+      expect(row, teamId).toContain('✸')
+      // The words are there for a screen reader, not only in a title.
+      expect(row, teamId).toContain('<span class="sr-only">Commissioner-adjusted — the score or result of this team’s Week 1 matchup was set by the commissioner.</span>')
+    }
+    for (const teamId of ['t1', 't2']) {
+      expect(rowOf(html, teamId), teamId).not.toContain('data-overridden')
+      expect(rowOf(html, teamId), teamId).not.toContain('✸')
+    }
+    expect(html).toContain('data-overridden-legend')
+  })
+
+  it('no flag ⇒ no marker and no legend', () => {
+    const clean = { ...SCHEDULE, matchups: SCHEDULE.matchups.map((m) => ({ ...m, is_overridden: false })) }
+    const html = renderStandings({ schedule: clean })
+    expect(html).toContain('data-team="t3"') // premise: the table rendered
+    expect(html).not.toContain('data-overridden')
+    expect(html).not.toContain('data-overrides-unknown')
+  })
+
+  it('a PLAYOFF row’s flag does not mark the regular-season table', () => {
+    const playoffOnly = { ...SCHEDULE, matchups: SCHEDULE.matchups.map((m) => (m.id === 'm2' ? { ...m, round_type: 'playoff' } : m)) }
+    expect(renderStandings({ schedule: playoffOnly })).not.toContain('data-overridden')
+  })
+
+  it('a FAILED flag read is SAID — an absent ✸ then means "unknown", never "no overrides"', () => {
+    const html = renderStandings({ schedule: 'error' })
+    expect(html).toContain('data-team="t3"') // the table still renders
+    expect(html).toContain('data-overrides-unknown')
+    expect(html).toContain(STANDINGS_OVERRIDES_UNKNOWN_COPY)
+    // …and a read still in flight says nothing yet.
+    expect(renderStandings()).not.toContain('data-overrides-unknown')
   })
 })
 

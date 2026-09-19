@@ -163,3 +163,54 @@ export function skipNotes(skipped: unknown, teamNames: ReadonlyMap<string, strin
  *  discharged: the control reads live data. */
 export const PROJECTED_COPY =
   'Projected: every open week is counted as if it ended now — the same tiebreaker chain over provisional scores. Results go official when the week finalizes.'
+
+// ---------------------------------------------------------------------------
+// The commissioner-adjusted marker (M6A L.E1.12 — `matchups.is_overridden`)
+// ---------------------------------------------------------------------------
+
+/** The slice of a schedule row the marker reads — `useSchedule`'s rows. */
+export interface OverriddenMatchupSlice {
+  week: number
+  round_type: string
+  home_team_id: string
+  away_team_id: string | null
+  is_overridden: boolean
+}
+
+export const STANDINGS_OVERRIDDEN_MARK = '✸'
+export const STANDINGS_OVERRIDDEN_LEGEND =
+  '✸ A commissioner set the score or result of at least one of this team’s matchups. Open that week’s matchup to see it.'
+/** Loud, not silent: if the flag could not be READ, an absent ✸ means
+ *  "unknown", never "no overrides" (CLAUDE.md — assert the reason for
+ *  emptiness). */
+export const STANDINGS_OVERRIDES_UNKNOWN_COPY =
+  'Couldn’t check for commissioner-adjusted matchups — a ✸ marker may be missing from this table.'
+
+/**
+ * `team_id → the weeks` in which a matchup of theirs carries
+ * `is_overridden` (sorted, unique). The flag is one boolean on the ROW (D342),
+ * so BOTH sides of an overridden matchup are marked. Playoff rows are left
+ * out: they feed the bracket, not this table (§11.5 — the standings are the
+ * regular season's); regular and `secondary` rows both feed its columns.
+ * Reads the stored flag and nothing else — no score is compared, nothing is
+ * inferred from a number looking "edited".
+ */
+export function overriddenWeeksByTeam(matchups: readonly OverriddenMatchupSlice[]): Map<string, number[]> {
+  const weeks = new Map<string, Set<number>>()
+  for (const m of matchups) {
+    if (m.is_overridden !== true || m.round_type === 'playoff') continue
+    for (const teamId of [m.home_team_id, m.away_team_id]) {
+      if (!teamId) continue
+      const set = weeks.get(teamId) ?? new Set<number>()
+      set.add(m.week)
+      weeks.set(teamId, set)
+    }
+  }
+  return new Map([...weeks.entries()].map(([teamId, set]) => [teamId, [...set].sort((a, b) => a - b)]))
+}
+
+/** The marker's words — its `title` and its screen-reader text. */
+export function overriddenTitle(weeks: readonly number[]): string {
+  const list = weeks.map((w) => `Week ${w}`).join(', ')
+  return `Commissioner-adjusted — the score or result of this team’s ${list} matchup${weeks.length === 1 ? '' : 's'} was set by the commissioner.`
+}

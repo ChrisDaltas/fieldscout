@@ -671,7 +671,8 @@ function restingShadowsIn(source: string): string[] {
   return hits
 }
 
-const FILES = ['matchup-view.tsx', 'matchup-view-ops.ts', 'status-banners.tsx']
+// M6A L.E1.12 added the override panel, its ops and the shared mode switch.
+const FILES = ['matchup-view.tsx', 'matchup-view-ops.ts', 'status-banners.tsx', 'matchup-override-panel.tsx', 'matchup-override-ops.ts', 'override-mode-bar.tsx']
 const HOOKS = ['use-box-score.ts', 'use-stats-degraded.ts']
 
 describe('elevation is a hover affordance, never a resting one — the L.D5.2 files', () => {
