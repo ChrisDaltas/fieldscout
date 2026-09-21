@@ -185,8 +185,10 @@ export interface RemixPreview {
   regular_season_weeks: number
   second_opponent: boolean
   team_count: number
-  /** E41: `free` before the league's first kickoff — `reason_required` is
-   *  the modal's gate, evaluated server-side at call time, never here. */
+  /** E41: `free` before the league's first kickoff, evaluated server-side at
+   *  call time, never here. `reason_required` gates NOTHING (Q66) — the
+   *  literal FALSE since migration 132; no surface may read it as a gate
+   *  (F363(c)). */
   window: {
     evaluated_at: string
     first_kickoff_at: string | null

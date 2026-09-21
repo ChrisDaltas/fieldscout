@@ -6,8 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
-import { COMMISSIONER_LABEL, FEED_EMPTY_COPY, FEED_TITLE, SYSTEM_LABEL, feedLines } from './activity-feed-ops'
+import {
+  COMMISH_LOG_EMPTY_COPY,
+  COMMISH_LOG_PROBLEM_COPY,
+  COMMISH_LOG_TITLE,
+  COMMISSIONER_LABEL,
+  FEED_EMPTY_COPY,
+  FEED_TITLE,
+  SYSTEM_LABEL,
+  commishLogLines,
+  feedLines,
+} from './activity-feed-ops'
 import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
@@ -22,8 +33,18 @@ import { problemCopy } from './team-page'
  * M4 slice — `transactions` rows and the league room's D97 system posts —
  * as one list. The "✸ commissioner" label is §13.4's treatment — worn by a
  * system post only when an actor wrote it; a NULL-actor post (a week
- * worker's notice) wears a plain "system" chip (R895); the link to
- * the audit entry waits for `commissioner_actions` (a later milestone's).
+ * worker's notice) wears a plain "system" chip (R895).
+ *
+ * **COMMISSIONER ACTIONS (M6A L.E1.13 — Q66, spec v2.16.41 §10 / §10.3).**
+ * Chris's ruling replaced the required reason with a required DISPLAY:
+ * every commissioner action is shown in League Home's activity section. The
+ * host hands in the §10.3 log (`useCommishLog` → `GET /commish/log`, any
+ * member reads it) as `commishLog`, and it renders as its own titled list
+ * inside this card — the same component, not a second feed (CLAUDE.md: no
+ * near-duplicates). It has its OWN four states: a failed log read is an
+ * error-with-retry and NEVER the "no commissioner actions yet" copy. A row
+ * is a CLAIM, not proof a verb ran (C70) — nothing here says "applied". A
+ * NULL reason renders as ABSENT. Omit the prop and the card is L.D5.4's.
  *
  * States (§16.5.4): skeleton · empty (designed copy) · error-with-retry ·
  * degraded (the stale banner over last-good items). Instants are STORED
@@ -37,6 +58,7 @@ export function ActivityFeed({
   onRetry,
   teamNames,
   leagueTimeZone,
+  commishLog,
 }: {
   leagueId: string
   items: readonly ActivityItem[] | undefined
@@ -45,6 +67,8 @@ export function ActivityFeed({
   onRetry: () => void
   teamNames: ReadonlyMap<string, string>
   leagueTimeZone: string | null
+  /** The §10.3 commissioner log (Q66). Omitted ⇒ the section is not mounted. */
+  commishLog?: CommishLogSectionProps
 }) {
   const lines = items ? feedLines(items, teamNames) : []
   return (
@@ -121,7 +145,83 @@ export function ActivityFeed({
             })}
           </ol>
         )}
+        {commishLog && <CommishLogSection {...commishLog} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />}
       </CardContent>
     </Card>
+  )
+}
+
+export interface CommishLogSectionProps {
+  items: readonly CommishLogItem[] | undefined
+  pending: boolean
+  problem: unknown
+  onRetry: () => void
+  /** The log holds more rows than this page shows. */
+  hasMore: boolean
+}
+
+function CommishLogSection({
+  items,
+  pending,
+  problem,
+  onRetry,
+  hasMore,
+  teamNames,
+  leagueTimeZone,
+}: CommishLogSectionProps & { teamNames: ReadonlyMap<string, string>; leagueTimeZone: string | null }) {
+  const lines = items ? commishLogLines(items, teamNames) : []
+  return (
+    <section className="flex flex-col gap-2 border-t border-ink pt-2" aria-label={COMMISH_LOG_TITLE} data-commish-log>
+      <h3 className="text-[12px] font-bold text-ink">{COMMISH_LOG_TITLE}</h3>
+      {problem != null && items && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
+      {pending && !items ? (
+        <div className="flex flex-col gap-1.5" data-skeleton="commish-log">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-6 rounded-sm" />
+          ))}
+        </div>
+      ) : problem != null && !items ? (
+        // A FAILED read is never the empty state (CLAUDE.md).
+        <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-problem="commish-log">
+          <p className="text-[12px] font-bold">{COMMISH_LOG_PROBLEM_COPY}</p>
+          <p className="text-[11px] font-medium text-n-3">{problemCopy(problem)}</p>
+          <Button variant="stroke" size="sm" onClick={onRetry}>
+            <Icon name="reset" size={13} /> Retry
+          </Button>
+        </div>
+      ) : lines.length === 0 ? (
+        <p className="text-[12px] font-medium text-n-3" data-empty="commish-log">
+          {COMMISH_LOG_EMPTY_COPY}
+        </p>
+      ) : (
+        <ol className="flex flex-col divide-y divide-n-4" data-commish-log-items>
+          {lines.map((line) => {
+            const when = formatInstantWithDate(line.createdAt, leagueTimeZone)
+            return (
+              <li key={line.id} className="flex flex-col gap-0.5 py-1.5" data-commish-log-item={line.id}>
+                <div className="flex min-w-0 items-start gap-2">
+                  <Badge variant="stroke-purple" className="shrink-0">
+                    {COMMISSIONER_LABEL}
+                  </Badge>
+                  <span className="min-w-0 flex-1 text-[12px] font-medium text-ink" data-commish-log-text>
+                    <span className="font-bold">{line.actor}</span> {line.text}
+                    {/* A NULL reason is ABSENT — no clause, no empty quote (§10.3). */}
+                    {line.reason !== null && <span data-commish-log-reason>{` — reason: “${line.reason}”`}</span>}
+                  </span>
+                </div>
+                <span className="fs-num text-[10px] font-medium text-n-3" title={when.title ?? undefined}>
+                  {when.local}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+      {hasMore && lines.length > 0 && (
+        <p className="text-[10px] font-medium text-n-3" data-commish-log-more>
+          Showing the latest <span className="fs-num">{lines.length}</span> — older actions are kept in the log.
+        </p>
+      )}
+    </section>
   )
 }

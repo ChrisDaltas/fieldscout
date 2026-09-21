@@ -23,6 +23,8 @@ import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
+import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, renameArm } from './team-commish-ops'
+import { TeamCommishTools, TeamRename } from './team-commish-tools'
 
 /**
  * Team page — §16.1 `…/leagues/[id]/team/[teamId]` ("Team/roster + weekly
@@ -60,6 +62,14 @@ import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status
  * counts down TO under the one per-player lock (Q34(A)); the record R779
  * mandates — `locked_at` as "locks from" — renders here, and the ticking
  * countdown waits for the ruling rather than inventing its referent (R801).
+ *
+ * **The commissioner's team-page tools (M6A L.E1.13).** Rename is inline in
+ * the header card — the MANAGER's arm for his own team outside override
+ * mode, the COMMISSIONER's audited arm for any team INSIDE it
+ * (`renameArm`). The roster tools (move / drop / add — `TeamCommishTools`)
+ * mount under the editor ONLY while override mode is on: they are a face of
+ * the ONE switch the editor's `OverrideModeBar` already is (rule (h)), never
+ * a second toggle, and there is no reason input anywhere (Q66).
  */
 export function TeamPage({ leagueId, teamId }: { leagueId: string; teamId: string }) {
   const league = useLeague(leagueId)
@@ -148,6 +158,18 @@ function TeamPageContent({
 
   const lockedAtView = lineup.data?.locked_at ? formatKickoff(lineup.data.locked_at, leagueTimeZone) : null
 
+  // Only a commissioner can be IN the mode — the store is keyed by league,
+  // and a member who is not one must never inherit it.
+  const inOverride = overrideMode && isCommish
+  const otherTeams = useMemo(
+    () => detail.teams.filter((t) => t.id !== teamId && t.status !== 'retired').map((t) => ({ id: t.id, name: t.name })),
+    [detail.teams, teamId],
+  )
+  const heldPlayerIds = useMemo(
+    () => new Set((rosters.data?.teams ?? []).flatMap((t) => t.roster.map((p) => p.player_id))),
+    [rosters.data],
+  )
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -181,10 +203,23 @@ function TeamPageContent({
                 the editor, so "it's on" is legible on a phone without
                 scrolling. A resting condition, so it is a fill, never a shadow
                 (CLAUDE.md). */}
-            {overrideMode && isCommish && <Badge variant="lime" data-override-mode-badge>✸ Override mode ON</Badge>}
-            {lineup.data?.edited_by_commish && <Badge variant="stroke-purple">✸ commissioner-set</Badge>}
+            {inOverride && <Badge variant="lime" data-override-mode-badge>✸ Override mode ON</Badge>}
+            {/* F344: the flag now also means "a roster move changed this row",
+                so the words widened with it (`team-commish-ops.ts`). */}
+            {lineup.data?.edited_by_commish && (
+              <Badge variant="stroke-purple" title={COMMISH_CHANGED_TITLE} data-commish-changed>
+                {COMMISH_CHANGED_BADGE}
+              </Badge>
+            )}
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
           </div>
+          <TeamRename
+            leagueId={leagueId}
+            teamId={teamId}
+            teamName={teamName}
+            arm={renameArm({ isCommish, isOwnTeam, overrideMode: inOverride })}
+            showOverrideHint={isCommish && !isOwnTeam && !inOverride}
+          />
         </CardContent>
       </Card>
 
@@ -249,18 +284,25 @@ function TeamPageContent({
             currentWeek={currentWeek}
             editability={editability}
             canEdit={canEdit}
-            isCommissionerArm={canEdit && !isOwnTeam}
-            /* The ROLE, not the arm. `isCommissionerArm` only means "acting
-               for a team that is not mine"; the audited override is gated on
-               being a commissioner at all, so a commissioner fixing HIS OWN
-               team after kickoff is offered it too (PROGRESS §3(a)). */
+            /* The ROLE, not "acting for a team that is not mine": the audited
+               override is gated on being a commissioner at all, so a
+               commissioner fixing HIS OWN team after kickoff is offered it
+               too (PROGRESS §3(a)). */
             isCommish={isCommish}
             leagueTimeZone={leagueTimeZone}
-            /* Only a commissioner can be IN the mode — the store is keyed by
-               league, and a member who is not one must never inherit it. */
-            overrideMode={overrideMode && isCommish}
+            overrideMode={inOverride}
             onOverrideMode={(next) => (next ? enterOverride(leagueId) : exitOverride())}
           />
+          {inOverride && (
+            <TeamCommishTools
+              leagueId={leagueId}
+              teamId={teamId}
+              teamName={teamName}
+              roster={rosterTeam.roster}
+              otherTeams={otherTeams}
+              heldPlayerIds={heldPlayerIds}
+            />
+          )}
         </>
       )}
     </div>

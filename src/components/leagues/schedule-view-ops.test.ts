@@ -24,7 +24,6 @@ import {
   OVERRIDE_WINDOW_TITLE,
   PLAYOFF_PENDING_COPY,
   REASON_HINT_COPY,
-  REASON_REQUIRED_COPY,
   TOTAL_POINTS_WEEK_COPY,
   confirmGate,
   diffByWeek,
@@ -167,22 +166,28 @@ describe('the commissioner’s edit affordance — the client-visible half of 11
 
 describe('D290 — E41’s two states, both rendered from the SERVER’s flag', () => {
   it('free: no reason; the first game named when the datum is known', () => {
-    const copy = remixWindowCopy({ free: true, reason_required: false }, 'Sun 1:00 PM')
+    const copy = remixWindowCopy({ free: true }, 'Sun 1:00 PM')
     expect(copy.tone).toBe('accent')
     expect(copy.title).toBe(FREE_WINDOW_TITLE)
     expect(copy.body).toContain('needs no reason')
     expect(copy.body).toContain('Sun 1:00 PM')
-    expect(remixWindowCopy({ free: true, reason_required: false }, null).body).not.toContain(
+    expect(remixWindowCopy({ free: true }, null).body).not.toContain(
       'first game',
     )
   })
 
-  it('override: reason required, posted with the change', () => {
-    const copy = remixWindowCopy({ free: false, reason_required: true }, 'Sun 1:00 PM')
+  it('override: audited and posted — a reason is OPTIONAL, never "required" (Q66 / F363(c))', () => {
+    const copy = remixWindowCopy({ free: false }, 'Sun 1:00 PM')
     expect(copy.tone).toBe('caution')
     expect(copy.title).toBe(OVERRIDE_WINDOW_TITLE)
-    expect(copy.body).toContain('a reason is required')
+    expect(copy.body).toContain('A reason is optional')
+    expect(copy.body).not.toMatch(/required/i)
     expect(copy.body).toContain('posted to league chat')
+  })
+
+  it('the window copy is keyed on `free` ALONE — a stale `reason_required: true` beside `free: true` (an un-pushed 132) changes nothing', () => {
+    const stale = { free: true, reason_required: true }
+    expect(remixWindowCopy(stale, null).title).toBe(FREE_WINDOW_TITLE)
   })
 
   it('the frozen-week reasons in words — every name 111 emits', () => {
@@ -311,47 +316,43 @@ describe('the system-post preview and the confirm gate', () => {
     weeks_regenerable: [3, 4, 5],
     regular_season_weeks: 14,
     change_count: 42,
-    window: { free: true, reason_required: false },
+    window: { free: true },
     no_changes: false,
   }
 
-  it('mirrors 111’s sentence — free ends with a full stop, override carries the reason', () => {
+  it('mirrors 131’s sentence — free ends with a full stop; override carries the reason ONLY when one was given (the conditional clause, 131:3608-3610)', () => {
     expect(systemPostPreview(plan, '', 'chris')).toBe(
       'Schedule remixed by chris: 3 of 14 regular-season weeks regenerated (weeks 3, 4, 5), 42 team-week pairings changed.',
     )
     expect(
       systemPostPreview(
-        { ...plan, window: { free: false, reason_required: true } },
+        { ...plan, window: { free: false } },
         ' bye-week balance ',
         'chris',
       ),
     ).toBe(
       'Schedule remixed by chris: 3 of 14 regular-season weeks regenerated (weeks 3, 4, 5), 42 team-week pairings changed — after Week 1 kickoff (commissioner override) — reason: bye-week balance',
     )
-    expect(
-      systemPostPreview({ ...plan, window: { free: false, reason_required: true } }, '', 'chris'),
-    ).toMatch(/reason: …$/)
+    // No reason ⇒ NO "— reason:" tail — never an empty clause, never a "…".
+    expect(systemPostPreview({ ...plan, window: { free: false } }, '   ', 'chris')).toBe(
+      'Schedule remixed by chris: 3 of 14 regular-season weeks regenerated (weeks 3, 4, 5), 42 team-week pairings changed — after Week 1 kickoff (commissioner override)',
+    )
   })
 
-  it('confirm is gated on the server’s plan: no plan, nothing regenerable, no changes, a missing required reason', () => {
-    expect(confirmGate(null, '')).toEqual({ ok: false, why: 'Preview a remix first.' })
-    expect(confirmGate({ ...plan, weeks_regenerable: [] }, '')).toEqual({
+  it('confirm is gated on the server’s plan — no plan, nothing regenerable, no changes — and NEVER on a reason (Q66 / F363(c) / R1056)', () => {
+    expect(confirmGate(null)).toEqual({ ok: false, why: 'Preview a remix first.' })
+    expect(confirmGate({ ...plan, weeks_regenerable: [] })).toEqual({
       ok: false,
       why: NOTHING_REGENERABLE_COPY,
     })
-    expect(confirmGate({ ...plan, no_changes: true }, '')).toEqual({
+    expect(confirmGate({ ...plan, no_changes: true })).toEqual({
       ok: false,
       why: NO_CHANGES_COPY,
     })
-    expect(confirmGate({ ...plan, window: { free: false, reason_required: true } }, '   ')).toEqual(
-      {
-        ok: false,
-        why: REASON_REQUIRED_COPY,
-      },
-    )
-    expect(
-      confirmGate({ ...plan, window: { free: false, reason_required: true } }, 'bye-week balance'),
-    ).toEqual({ ok: true })
-    expect(confirmGate(plan, '')).toEqual({ ok: true })
+    // After kickoff, with a database that STILL answers `reason_required:
+    // true` (132 not pushed yet): Confirm is open. The verb (131) lands it.
+    const stale = { ...plan, window: { free: false, reason_required: true } }
+    expect(confirmGate(stale)).toEqual({ ok: true })
+    expect(confirmGate(plan)).toEqual({ ok: true })
   })
 })

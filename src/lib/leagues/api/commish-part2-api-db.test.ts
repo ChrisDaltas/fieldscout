@@ -57,6 +57,11 @@ import { decodeCommishLogCursor, readCommishLog, type CommishLogPage } from './c
 import { COMMISH_SCHEDULE_ACTION_ID_REUSED_MESSAGE, COMMISH_SCHEDULE_FORBIDDEN_MESSAGE, commishEditSchedule } from './commish-schedule-service'
 import { COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE, COMMISH_SETTING_FORBIDDEN_MESSAGE, commishChangeSetting } from './commish-setting-service'
 import { COMMISH_TEAM_ACTION_ID_REUSED_MESSAGE, COMMISH_TEAM_FORBIDDEN_MESSAGE, commishRenameTeam } from './commish-team-service'
+import {
+  RENAME_OWN_TEAM_FORBIDDEN_MESSAGE,
+  RENAME_OWN_TEAM_NOT_IN_LEAGUE_MESSAGE,
+  renameOwnTeam,
+} from './team-rename-service'
 import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -83,6 +88,8 @@ const ACTION = {
   settingNoReason: 'b0300000-0000-4000-8000-000000000022',
   settingMember: 'b0300000-0000-4000-8000-000000000023',
   settingRefused: 'b0300000-0000-4000-8000-000000000024',
+  settingNonCanonical: 'b0300000-0000-4000-8000-000000000025',
+  settingEnumCase: 'b0300000-0000-4000-8000-000000000026',
   schedule: 'b0300000-0000-4000-8000-000000000031',
   scheduleNoReason: 'b0300000-0000-4000-8000-000000000032',
   scheduleMember: 'b0300000-0000-4000-8000-000000000033',
@@ -411,6 +418,24 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
   })
 
+  it('F365 / R1062 on the REAL verb — the narrowed guard still answers a lawful FIRST submit in a NON-CANONICAL depth-0 form with 200 (" 48 " lands as 48, never a false 409 for a change that landed), and a same-id replay with 120 is a 409', async () => {
+    const first = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: ' 48 ', action_id: ACTION.settingNonCanonical })
+    expect(first.status).toBe(200)
+    expect((first.body as { requested_value: unknown; no_changes: boolean }).requested_value).toBe(48)
+    expect(await blobSetting('waiver_period_hours')).toBe(48)
+    expect(await receiptsFor(ACTION.settingNonCanonical)).toHaveLength(1)
+    const replay = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: '120', action_id: ACTION.settingNonCanonical })
+    expect(replay.status).toBe(409)
+    expect(await blobSetting('waiver_period_hours')).toBe(48)
+  })
+
+  it('F365 — THE PREMISE of the enum arm, measured on the real verb: 129 only btrims an enum, so an UPPER-CASE enum is REFUSED by name (never canonicalised to an echo the guard would have to fold) and writes no receipt', async () => {
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_type', value: 'ROLLING_PRIORITY', action_id: ACTION.settingEnumCase })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(errorText(res)).not.toBe(COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE)
+    expect(await receiptsFor(ACTION.settingEnumCase)).toHaveLength(0)
+  })
+
   it('a REFUSED-in-season key (team_count, Q65) comes back 409 with 129’s copy VERBATIM and writes NO receipt', async () => {
     const res = await commishChangeSetting(commishClient, leagueId, { key: 'team_count', value: 10, action_id: ACTION.settingRefused, reason: 'try' })
     expect(res.status).toBe(409)
@@ -521,7 +546,7 @@ describe('POST …/commish/schedule — commishEditSchedule over the real RPC', 
 
 describe('GET …/commish/log — readCommishLog over the real table', () => {
   /** The six receipts the cells above wrote, by action_id. */
-  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.schedule, ACTION.scheduleNoReason]
+  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.settingNonCanonical, ACTION.schedule, ACTION.scheduleNoReason]
 
   it('a MEMBER who is not the commissioner CAN read it (spec:1703): every receipt above, newest first, the actor’s username resolved, `reason` null where none was given and never the string "null"', async () => {
     const res = await readCommishLog(memberClient, leagueId, {})
@@ -626,5 +651,69 @@ describe('GET …/commish/log — readCommishLog over the real table', () => {
     const res = await readCommishLog(memberClient, leagueId, { cursor: 'bm90LWEtY3Vyc29y' })
     expect(res.status).toBe(400)
     expect((res.body as { error: { fieldErrors: Record<string, string[]> } }).error.fieldErrors.cursor).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5. /teams/[tid]/name → rename_own_team (128 §4) — the MANAGER's own door
+//    (M6A L.E1.13). Runs LAST: it moves a team name and no earlier cell may
+//    find it moved. It writes NO receipt, so §4's WRITTEN census is unmoved.
+// ---------------------------------------------------------------------------
+
+describe('POST …/teams/[tid]/name — renameOwnTeam over the real RPC', () => {
+  const receiptCount = async () =>
+    ((await service.from('commissioner_actions').select('id').eq('league_id', leagueId)).data ?? []).length
+
+  it('a manager renames HIS OWN franchise: 200, 128’s document whole (audited: false, system_post: null), teams.name holds the TRIMMED name, and NO commissioner_actions row is written', async () => {
+    const before = await receiptCount()
+    const was = await teamName(memberTeamId)
+    const res = await renameOwnTeam(memberClient, leagueId, memberTeamId, { name: '  Named By Its Manager  ' })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { verb: string; team_id: string; name: string; previous_name: string; requested_name: string; no_changes: boolean; audited: boolean; system_post: string | null }
+    expect(body.verb).toBe('rename_own_team')
+    expect(body.team_id).toBe(memberTeamId)
+    expect(body.previous_name).toBe(was)
+    expect(body.requested_name).toBe('Named By Its Manager')
+    expect(body.no_changes).toBe(false)
+    expect(body.audited).toBe(false)
+    expect(body.system_post).toBeNull()
+    expect(await teamName(memberTeamId)).toBe('Named By Its Manager')
+    expect(await receiptCount()).toBe(before)
+  })
+
+  it('the same name again is a NO-OP said by name (no_changes + no_changes_why), never a bare success', async () => {
+    const res = await renameOwnTeam(memberClient, leagueId, memberTeamId, { name: 'Named By Its Manager' })
+    expect(res.status).toBe(200)
+    const body = res.body as { no_changes: boolean; no_changes_why: string | null }
+    expect(body.no_changes).toBe(true)
+    expect(body.no_changes_why).toContain('name_already_set')
+  })
+
+  it('a manager naming ANOTHER team gets the route’s no-leak 403 and renames nothing — a commissioner does too (his door is /commish/team)', async () => {
+    const was = await teamName(commishTeamId)
+    const res = await renameOwnTeam(memberClient, leagueId, commishTeamId, { name: 'Not Mine' })
+    expect(res.status).toBe(403)
+    expect(errorText(res)).toBe(RENAME_OWN_TEAM_FORBIDDEN_MESSAGE)
+    expect(await teamName(commishTeamId)).toBe(was)
+    const viaCommish = await renameOwnTeam(commishClient, leagueId, memberTeamId, { name: 'Commish Via Manager Door' })
+    expect(viaCommish.status).toBe(403)
+    expect(await teamName(memberTeamId)).toBe('Named By Its Manager')
+  })
+
+  it('THE URL’S LEAGUE IS CHECKED BEFORE THE WRITE: his own team under ANOTHER league id is a 404 and the name does not move; an OUTSIDER (measured: `teams` rows are readable to him, so the pre-read passes) meets the VERB’s no-leak 403', async () => {
+    const res = await renameOwnTeam(memberClient, '00000000-0000-4000-8000-000000000000', memberTeamId, { name: 'Wrong League' })
+    expect(res.status).toBe(404)
+    expect(errorText(res)).toBe(RENAME_OWN_TEAM_NOT_IN_LEAGUE_MESSAGE)
+    expect(await teamName(memberTeamId)).toBe('Named By Its Manager')
+    const outsider = await renameOwnTeam(outsiderClient, leagueId, memberTeamId, { name: 'Outsider' })
+    expect(outsider.status).toBe(403)
+    expect(errorText(outsider)).toBe(RENAME_OWN_TEAM_FORBIDDEN_MESSAGE)
+    expect(await teamName(memberTeamId)).toBe('Named By Its Manager')
+  })
+
+  it('a blank and a 101-character name are field errors before any round trip', async () => {
+    expect((await renameOwnTeam(memberClient, leagueId, memberTeamId, { name: '   ' })).status).toBe(400)
+    expect((await renameOwnTeam(memberClient, leagueId, memberTeamId, { name: 'x'.repeat(101) })).status).toBe(400)
+    expect(await teamName(memberTeamId)).toBe('Named By Its Manager')
   })
 })

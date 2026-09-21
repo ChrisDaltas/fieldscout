@@ -36,15 +36,24 @@
  * exactly the "change nobody made" F65(b) forbids (R1058's live probe: 72
  * then 96 landed, a replay of the first id with 120 was told 72 while the
  * blob held 96). So the guard compares the value TOLERANTLY, in the shape
- * 129's canonicalisers permit and no wider (`settingValueMatchesEcho`):
- * scalars as trimmed, lower-cased strings with integer text compared
- * numerically (129's `btrim` / `lower` / `::integer` — `129:376-378`,
- * `:404-406`, `:536`); an echoed `null` matched by a sent `null` or a
- * `"none"` string (`129:466-467`, `trade_deadline_week`'s only null form);
- * arrays element-wise in order (129 keeps order, `129:522`); objects
- * recursively, RESTRICTED TO THE KEYS THE ECHO CARRIES (the sent object may
- * carry keys R1040 drops — those must not become a false 409). `"72"` ↔ `72`
- * passes; `120` ↔ `72` is refused. This is the INTERIM guard; the durable
+ * 129's canonicalisers permit and NO WIDER (`settingValueMatchesEcho` —
+ * narrowed by L.E1.13, PROGRESS F365 / R1062: the first cut lower-cased and
+ * number-coerced EVERY scalar at EVERY depth, so `"FLEX"` for a stored
+ * `"Flex"` slot label, or `bench: "6"` for `6`, replayed as a 200). The
+ * tolerance is AT DEPTH 0 ONLY and PER 129's CLASS: a string is always
+ * trimmed (`btrim`, every typed arm); integer TEXT matches an echoed number
+ * (`::integer`, `129:376-378`); case is folded ONLY where 129 folds it — an
+ * echoed boolean (`129:404-406`), an echoed `null` for `"none"`
+ * (`129:466-467`, `trade_deadline_week`'s only null form), an echoed
+ * `"unlimited"` (`129:585`, `:590`) and an echoed uuid (`129:536`); an enum
+ * is trimmed and then compared EXACTLY. Everything NESTED — array elements
+ * (129 keeps order, `129:522`), and every value inside `roster_settings`,
+ * which 129 stores verbatim — is compared STRICTLY (`===`, same JSON type),
+ * with ONE carve-out kept at every depth: an object is matched on THE KEYS
+ * THE ECHO CARRIES (the sent object may carry keys R1040 drops — those must
+ * not become a false 409). `"72"` ↔ `72` passes; `120` ↔ `72`, nested
+ * `"FLEX"` ↔ `"Flex"` and `{bench:"6"}` ↔ `{bench:6}` are refused. This is
+ * the INTERIM guard; the durable
  * fix (129 echoing the value AS SENT beside the canonical one, then an exact
  * compare) stays filed as PROGRESS F364.
  *
@@ -141,25 +150,40 @@ interface ResultShape {
   rescore_requested?: unknown
 }
 
-/** A scalar in the form 129's canonicalisers reduce it to: trimmed,
- *  lower-cased, integer text as its number (`"072"` and `72` are one value
- *  to `129:376-378`'s `btrim … ::integer`). */
-function scalarForm(v: string | number | boolean): string {
-  const s = String(v).trim().toLowerCase()
-  return /^-?[0-9]+$/.test(s) ? String(Number(s)) : s
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const INTEGER_TEXT = /^-?[0-9]+$/
+
+/** STRICT, for everything nested: same JSON type and `===` on scalars,
+ *  arrays element-wise in order, objects on every key THE ECHO carries
+ *  (R1040's drops are the one tolerance that survives at depth). */
+function nestedMatchesEcho(sent: Json | undefined, echo: unknown): boolean {
+  if (echo === undefined) return false
+  if (echo === null || typeof echo !== 'object') return sent === echo
+  if (Array.isArray(echo)) {
+    return Array.isArray(sent) && sent.length === echo.length && echo.every((e, i) => nestedMatchesEcho(sent[i], e))
+  }
+  if (sent === null || sent === undefined || typeof sent !== 'object' || Array.isArray(sent)) return false
+  const sentObject = sent as { [key: string]: Json | undefined }
+  return Object.entries(echo as Record<string, unknown>).every(([k, e]) => nestedMatchesEcho(sentObject[k], e))
 }
 
 /**
- * R1058 (D351 — the value is an identity field): does the value the caller
- * SENT match the CANONICAL echo 129 returned as `requested_value`? Tolerant
- * exactly where 129 canonicalises (see the header), strict everywhere else:
+ * R1058 (D351 — the value is an identity field) as NARROWED by F365 / R1062:
+ * does the value the caller SENT match the CANONICAL echo 129 returned as
+ * `requested_value`? Tolerant at DEPTH 0 ONLY and per 129's class (see the
+ * header), strict for everything nested:
  *
- *   - echo `null`      ⇐ sent `null`, or a `"none"` string (`129:466-467`);
- *   - echo array       ⇐ a sent array of the same length, element-wise;
- *   - echo object      ⇐ a sent object matching on EVERY KEY THE ECHO
- *                        CARRIES — keys the sent object carries beyond those
- *                        are R1040's drops, never a mismatch;
- *   - echo scalar      ⇐ a sent scalar with the same `scalarForm`;
+ *   - echo `null`      ⇐ sent `null`, or a `"none"` string in any case
+ *                        (`129:466-467`);
+ *   - echo boolean     ⇐ the same boolean, or its text in any case
+ *                        (`129:404-406`);
+ *   - echo number      ⇐ the same number, or trimmed INTEGER text of it
+ *                        (`129:376-378`);
+ *   - echo string      ⇐ a sent string, TRIMMED; case-folded only when the
+ *                        echo is `"unlimited"` or uuid-shaped, else exact;
+ *   - echo array       ⇐ same length, each element STRICT;
+ *   - echo object      ⇐ every key the echo carries, each value STRICT —
+ *                        sent extras are R1040's drops, never a mismatch;
  *   - echo absent (`undefined`) — no echo at all — is never a match.
  */
 export function settingValueMatchesEcho(sent: Json | undefined, echo: unknown): boolean {
@@ -167,16 +191,18 @@ export function settingValueMatchesEcho(sent: Json | undefined, echo: unknown): 
   if (echo === null) {
     return sent === null || (typeof sent === 'string' && sent.trim().toLowerCase() === 'none')
   }
-  if (Array.isArray(echo)) {
-    return Array.isArray(sent) && sent.length === echo.length && echo.every((e, i) => settingValueMatchesEcho(sent[i], e))
+  if (typeof echo === 'object') return nestedMatchesEcho(sent, echo)
+  if (typeof echo === 'boolean') {
+    return sent === echo || (typeof sent === 'string' && sent.trim().toLowerCase() === String(echo))
   }
-  if (typeof echo === 'object') {
-    if (sent === null || typeof sent !== 'object' || Array.isArray(sent)) return false
-    const sentObject = sent as { [key: string]: Json | undefined }
-    return Object.entries(echo as Record<string, unknown>).every(([k, e]) => settingValueMatchesEcho(sentObject[k], e))
+  if (typeof echo === 'number') {
+    if (typeof sent === 'number') return sent === echo
+    return typeof sent === 'string' && INTEGER_TEXT.test(sent.trim()) && Number(sent.trim()) === echo
   }
-  if (sent === null || sent === undefined || typeof sent === 'object') return false
-  return scalarForm(sent) === scalarForm(echo as string | number | boolean)
+  if (typeof echo !== 'string' || typeof sent !== 'string') return false
+  const trimmed = sent.trim()
+  const folds = echo === 'unlimited' || UUID_SHAPE.test(echo)
+  return folds ? trimmed.toLowerCase() === echo : trimmed === echo
 }
 
 /**

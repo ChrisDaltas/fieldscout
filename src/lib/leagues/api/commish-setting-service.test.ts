@@ -174,15 +174,21 @@ describe('commishChangeSetting — the RPC call, the mapper, the F65(b) guard', 
   })
 })
 
-describe('settingValueMatchesEcho — tolerant exactly where 129 canonicalises, strict elsewhere', () => {
-  it('scalars: trim, case and integer text are 129’s forms (129:376-378, :404-406, :536); a different number, string or type is not', () => {
+describe('settingValueMatchesEcho — tolerant at DEPTH 0 and per 129’s class, STRICT for everything nested (F365 / R1062)', () => {
+  it('depth-0 scalars: trim always; integer text ↔ number (129:376-378); case folded ONLY for a boolean (129:404-406), "unlimited" (129:585) and a uuid (129:536) — an enum is trimmed, then EXACT', () => {
     expect(settingValueMatchesEcho(' 072 ', 72)).toBe(true)
     expect(settingValueMatchesEcho('TRUE', true)).toBe(true)
-    expect(settingValueMatchesEcho(' FAAB ', 'faab')).toBe(true)
+    expect(settingValueMatchesEcho(' faab ', 'faab')).toBe(true)
+    expect(settingValueMatchesEcho(' UNLIMITED ', 'unlimited')).toBe(true)
     expect(settingValueMatchesEcho('AA000000-0000-4000-8000-000000000007', 'aa000000-0000-4000-8000-000000000007')).toBe(true)
+    // 129 only btrims an enum — it never lower-cases one, so neither may the guard.
+    expect(settingValueMatchesEcho(' FAAB ', 'faab')).toBe(false)
+    expect(settingValueMatchesEcho('ROLLING_PRIORITY', 'rolling_priority')).toBe(false)
     expect(settingValueMatchesEcho(120, 72)).toBe(false)
+    expect(settingValueMatchesEcho('72.0', 72)).toBe(false)
     expect(settingValueMatchesEcho('rolling_priority', 'faab')).toBe(false)
     expect(settingValueMatchesEcho(false, true)).toBe(false)
+    expect(settingValueMatchesEcho(72, '72')).toBe(false)
     expect(settingValueMatchesEcho({ a: 1 }, 72)).toBe(false)
     expect(settingValueMatchesEcho(null, 72)).toBe(false)
   })
@@ -196,11 +202,23 @@ describe('settingValueMatchesEcho — tolerant exactly where 129 canonicalises, 
     expect(settingValueMatchesEcho(72, undefined)).toBe(false)
   })
 
-  it('arrays: element-wise in order (129 keeps order); objects: every key the ECHO carries, sent extras ignored, an echoed key the sent object lacks is a mismatch', () => {
+  it('NESTED IS STRICT (R1062’s three live probes): "FLEX" ≠ a stored "Flex", bench "6" ≠ 6, and an array element is not trimmed or folded — 129 stores roster_settings verbatim', () => {
+    const echo = { bench: 6, starting_slots: [{ label: 'Flex', count: 1 }] }
+    expect(settingValueMatchesEcho({ bench: 6, starting_slots: [{ label: 'Flex', count: 1 }] }, echo)).toBe(true)
+    expect(settingValueMatchesEcho({ bench: 6, starting_slots: [{ label: 'FLEX', count: 1 }] }, echo)).toBe(false)
+    expect(settingValueMatchesEcho({ bench: '6' }, { bench: 6 })).toBe(false)
+    expect(settingValueMatchesEcho({ on: 'true' }, { on: true })).toBe(false)
+    expect(settingValueMatchesEcho({ deadline: 'none' }, { deadline: null })).toBe(false)
+    expect(settingValueMatchesEcho([' win_pct'], ['win_pct'])).toBe(false)
+    expect(settingValueMatchesEcho(['WIN_PCT'], ['win_pct'])).toBe(false)
+  })
+
+  it('arrays: element-wise in order (129 keeps order); objects: every key the ECHO carries, sent extras ignored AT EVERY DEPTH (R1040’s drops), an echoed key the sent object lacks is a mismatch', () => {
     expect(settingValueMatchesEcho(['win_pct', 'points_for'], ['win_pct', 'points_for'])).toBe(true)
     expect(settingValueMatchesEcho(['points_for', 'win_pct'], ['win_pct', 'points_for'])).toBe(false)
     expect(settingValueMatchesEcho(['win_pct'], ['win_pct', 'points_for'])).toBe(false)
-    expect(settingValueMatchesEcho({ bench: '6', extra: 1 }, { bench: 6 })).toBe(true)
+    expect(settingValueMatchesEcho({ bench: 6, extra: 1 }, { bench: 6 })).toBe(true)
+    expect(settingValueMatchesEcho({ slots: [{ label: 'Flex', extra: 1 }] }, { slots: [{ label: 'Flex' }] })).toBe(true)
     expect(settingValueMatchesEcho({ extra: 1 }, { bench: 6 })).toBe(false)
     expect(settingValueMatchesEcho([{ bench: 6 }], { bench: 6 })).toBe(false)
   })

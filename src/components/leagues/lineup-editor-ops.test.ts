@@ -20,8 +20,6 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import {
-  COMMISSIONER_ARM_REASON,
-  COMMISSIONER_OVERRIDE_REASON,
   formatKickoff,
   LOCK_RELEASE_UNRECORDED_COPY,
   LOCK_UNTIL_COPY,
@@ -391,21 +389,16 @@ describe('THE COMMISSIONER OVERRIDE (M6A, §15.4:1695 / PROGRESS §3(g))', () =>
 describe('lineupSaveRequest — one action, no input, twice in a row', () => {
   const slotMap: Placement = { 'qb:0': 'p1', 'rb:0': 'p2' }
 
-  it('in override mode it is the AUDITED verb, carrying the fixed label', () => {
-    const req = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
+  it('in override mode it is the AUDITED verb — and NO reason rides along (Q66 / F363(d))', () => {
+    const req = lineupSaveRequest({ overrideMode: true, slotMap })
     expect(req.verb).toBe('commish_edit_lineup')
-    expect(req.reason).toBe(COMMISSIONER_OVERRIDE_REASON)
     expect(req.slotMap).toEqual(slotMap)
-  })
-
-  it('override mode wins on the commissioner’s OWN team too (§3(a) — any action, any team)', () => {
-    expect(lineupSaveRequest({ overrideMode: true, isCommissionerArm: true, slotMap }).verb).toBe('commish_edit_lineup')
-    expect(lineupSaveRequest({ overrideMode: true, isCommissionerArm: true, slotMap }).reason).toBe(COMMISSIONER_OVERRIDE_REASON)
+    expect(req).not.toHaveProperty('reason')
   })
 
   it('A SECOND SAVE IN THE SAME SESSION IS THE FIRST ONE AGAIN — no further input exists to give', () => {
-    const first = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
-    const second = lineupSaveRequest({ overrideMode: true, isCommissionerArm: false, slotMap })
+    const first = lineupSaveRequest({ overrideMode: true, slotMap })
+    const second = lineupSaveRequest({ overrideMode: true, slotMap })
     expect(second).toEqual(first)
     // …and the mode is not consumed by the save: the caller passes the same
     // `true` and gets the same audited verb, which is what "it stays on until
@@ -413,31 +406,15 @@ describe('lineupSaveRequest — one action, no input, twice in a row', () => {
     expect(second.verb).toBe('commish_edit_lineup')
   })
 
-  it('outside the mode the manager’s verb is untouched: no reason as the team’s own manager', () => {
-    const req = lineupSaveRequest({ overrideMode: false, isCommissionerArm: false, slotMap })
+  it('outside the mode it is the manager’s verb — for the team’s own manager AND for a commissioner acting inside the ordinary rules — with no reason either', () => {
+    const req = lineupSaveRequest({ overrideMode: false, slotMap })
     expect(req.verb).toBe('set_lineup')
-    expect(req.reason).toBeNull()
+    expect(req).not.toHaveProperty('reason')
   })
 
-  it('the commissioner ARM of the manager’s verb is not prompted either — same ruling, its own label', () => {
-    const req = lineupSaveRequest({ overrideMode: false, isCommissionerArm: true, slotMap })
-    expect(req.verb).toBe('set_lineup')
-    expect(req.reason).toBe(COMMISSIONER_ARM_REASON)
-  })
-
-  it('both labels satisfy the SERVER’s own predicate — non-blank after 114/123’s btrim, and ≤ 500', () => {
-    // 123:665 / 114:316: `NULLIF(btrim(COALESCE(p_reason,''), E' \t\r\n'), '')`
-    // then RAISE when it is NULL. A label that trimmed to empty would restore
-    // the exact failure this replaces, with the suite still green.
-    for (const label of [COMMISSIONER_OVERRIDE_REASON, COMMISSIONER_ARM_REASON]) {
-      expect(label.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')).not.toBe('')
-      expect(label.length).toBeLessThanOrEqual(500)
-    }
-    // They are LABELS, not fabricated justifications: no invented narrative
-    // about a manager, a game or a message ends up in an audit row.
-    for (const label of [COMMISSIONER_OVERRIDE_REASON, COMMISSIONER_ARM_REASON]) {
-      expect(label.toLowerCase()).toContain('commissioner')
-      expect(label).not.toMatch(/unreachable|away|injur|asked|per his|because/i)
+  it('THE LABELS ARE GONE (F363(d)): the request is exactly { verb, slotMap } — a label would print in League Home’s activity as if the commissioner had said it', () => {
+    for (const overrideMode of [true, false]) {
+      expect(Object.keys(lineupSaveRequest({ overrideMode, slotMap })).sort()).toEqual(['slotMap', 'verb'])
     }
   })
 })

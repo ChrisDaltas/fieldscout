@@ -56,9 +56,10 @@ import { ProblemCard, problemCopy } from './team-page'
  * 111's `schedule_edit_matchup` (`useEditMatchup`, F233(e) — one
  * `action_id` per submit), which re-seats the displaced teams itself and
  * writes the D97 post in the same transaction. The reason field is always
- * present on the form: whether it is REQUIRED is E41's, decided by the
- * server at call time — the ladder gives a hint (`reasonHint`), the
- * refusal renders VERBATIM (`role="alert"`) and marks the field. NEVER
+ * present on the form and ALWAYS OPTIONAL (Q66, spec v2.16.41 — since
+ * migration 131 the verb lands without one in every window; F361) — the
+ * ladder gives a hint (`reasonHint`), a refusal renders VERBATIM
+ * (`role="alert"`). NEVER
  * optimistic: the rows after an edit are the re-read server rows.
  *
  * **Pending by name (R801):** playoff weeks (Q39, L.D1.8) render "bracket
@@ -304,8 +305,8 @@ function TeamLabel({ leagueId, team, winner }: { leagueId: string; team: TeamRef
 /**
  * The manual edit (§11.7 "drag Team A ↔ Team C for Week 7" — as two selects
  * with a tap twin for every drag, the L.D5.1 posture). The reason is always
- * offered; E41 decides whether it was required, and the server's refusal
- * says so in its own words.
+ * offered and never required (Q66 / F361); a refusal that names the reason
+ * (the 500-character bound) still marks the field.
  */
 export function EditMatchupForm({
   leagueId,
@@ -389,7 +390,7 @@ export function EditMatchupForm({
         </label>
       </div>
       <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
-        Reason{reasonRefused ? ' (required — see the refusal below)' : ' (required after Week 1 kickoff; posted to league chat)'}
+        Reason{reasonRefused ? ' (see the refusal below)' : ' (optional — posted to league chat if you give one)'}
         <Input
           className={cn('h-btn-md px-2 text-[12px]', reasonRefused && 'border-negative')}
           value={reason}

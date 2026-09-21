@@ -10,6 +10,7 @@ import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { useCommishLog } from '@/hooks/use-commish-log'
 import { useLeagueActivityFeed } from '@/hooks/use-league-activity'
 import { useLineup } from '@/hooks/use-lineup'
 import { useMatchupsLive } from '@/hooks/use-matchups'
@@ -672,6 +673,11 @@ function FinalStandingsCard({
 
 function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const feed = useLeagueActivityFeed(leagueId, { limit: 8 })
+  // Q66 (spec v2.16.41 §10 / §10.3): every commissioner action is SHOWN in
+  // League Home's activity section — this is that read (`GET /commish/log`,
+  // any member). Re-read by every commissioner mutation hook on settle; a
+  // row is a claim, not proof a verb ran (C70 — `use-commish-log.ts`).
+  const log = useCommishLog(leagueId, { limit: COMMISH_LOG_HOME_LIMIT })
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   return (
     <ActivityFeed
@@ -682,9 +688,19 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       onRetry={() => feed.refetch()}
       teamNames={teamNames}
       leagueTimeZone={data.settings.draft.time_zone ?? null}
+      commishLog={{
+        items: log.data?.items,
+        pending: log.isPending,
+        problem: log.isError ? log.error : null,
+        onRetry: () => log.refetch(),
+        hasMore: log.data?.has_more ?? false,
+      }}
     />
   )
 }
+
+/** How many commissioner actions League Home shows (the log pages beyond it). */
+const COMMISH_LOG_HOME_LIMIT = 8
 
 /** The two post-draft doors (F46 / R281): the draft record and the practice
  *  launcher, which post-draft is purely the resume/recap list surface (071
