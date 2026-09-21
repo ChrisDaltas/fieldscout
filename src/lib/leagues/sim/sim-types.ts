@@ -357,6 +357,21 @@ export interface SeasonLeagueResult {
   /** Players passed over because §7.3.6 would refuse the DESIGNATION
    *  (OUT/IR/PUP/NFI/Suspended). Only ever non-zero in an OFF league. */
   benchedForLegality: number
+  /** Seats with NO manager (`league_members`, D339). The harness sets none of
+   *  their lineups (M6A L.E1.14 / F335) — the server's autopilot does. */
+  unmanagedSeats: number
+  /** Of those, the seats whose week-1 starting map the SERVER left non-empty.
+   *  They are counted inside `lineupsSeated` as well. */
+  lineupsAutopiloted: number
+  /** One row per seat: which hand set the week-1 lineup. `autopiloted = true`
+   *  ⇒ the harness never touched the seat. */
+  seatingTranscript: Array<{
+    teamId: string
+    autopiloted: boolean
+    reportedByTick: boolean
+    slotsFilled: number
+    emptySlotKeys: string[]
+  }>
   /** The league's D299 axes, as actually set (the printed matrix row). */
   matrixLine: string
   weeksDriven: number[]
@@ -424,6 +439,25 @@ export interface SeasonRunReport {
    * declaration that stands in for it is stale.
    */
   poolRows: number
+  /**
+   * M6A L.E1.14 — invariant 8's PREMISE, measured (§4 rule 14(c)): how many
+   * seats in the whole run have no manager. 0 means the unmanaged-seat
+   * invariant iterated nothing, and the run says so as a PROBLEM.
+   */
+  unmanagedSeats: number
+  /**
+   * D345 — invariant 6's provenance arm, measured: the ONE lawful commissioner
+   * override the run injected on a final cell, or null. null with a finalized
+   * week is a run PROBLEM (the arm asserted nothing).
+   */
+  lawfulOverride: {
+    leagueLabel: string
+    leagueId: string
+    week: number
+    matchupId: string
+    commissionerActionId: string
+    detail: string
+  } | null
   externalCalls: number
   workerErrors: string[]
   /** Reconcile findings that are NOT one of the seven invariants: counted by

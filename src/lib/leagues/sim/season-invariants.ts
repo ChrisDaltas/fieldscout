@@ -13,6 +13,17 @@
  *   6. zero final-cell rewrites           (spec §23.4; D295(b))
  *   7. zero unhandled worker errors       (spec §23.2)
  *
+ * M6A L.E1.14 (tasks-M6A §6; D345; F335/F336) adds an EIGHTH and teaches the
+ * sixth:
+ *
+ *   8. unmanaged seats are seated by the SERVER (spec §7.2.1(c) `spec:185`;
+ *      migration 125's arm (c); F334's second half) — see
+ *      `checkUnmanagedSeatsAutopiloted`, whose PREMISE (≥ 1 unmanaged seat
+ *      in the run) is asserted by the runner, never assumed (§4 rule 14(c)).
+ *   6. learns PROVENANCE, never an exemption — a lawful commissioner override
+ *      re-baselines the cell under its `commissioner_actions.id`; anything
+ *      else that moves a final cell still fails. See `checkFinalCellsImmutable`.
+ *
  * SAME SHAPE AS THE DRAFT SWEEP (`invariants.ts`): every invariant is a PURE
  * function over an audit snapshot the runner collected with a service-role
  * harness client, every failure NAMES its league AND its week, and each
@@ -156,6 +167,59 @@ export interface AuditFinalCell {
    *  `team_week_results`, rendered stably. */
   at_final: string
   at_end: string
+  /**
+   * D345 / F336 — the cell's PROVENANCE, as a SEQUENCE. `baselines[0]` is the
+   * at-finalize rendering with `licensed_by = null`. Every later entry is a
+   * rendering the runner recorded AT AN AUDITED EVENT:
+   *
+   *   - `licensed_by = <commissioner_actions.id>` — the rendering read back
+   *     right after an audited verb returned that receipt;
+   *   - `licensed_by = null` at index ≥ 1 — the runner re-read the cell just
+   *     BEFORE an audited verb and found it no longer byte-equal to the
+   *     previous baseline: DRIFT BETWEEN BASELINES, recorded so that a
+   *     re-baseline can never launder a rewrite that preceded it.
+   *
+   * A sequence and not one `licensed_by` field: one field supports exactly
+   * one re-baseline, and the assertion is about CONSECUTIVE baselines.
+   */
+  baselines: Array<{ rendered: string; licensed_by: string | null }>
+}
+
+/** One `commissioner_actions` row of the league — invariant 6's licence
+ *  ledger (§12.12; D336's `target_type` / `target_id`). */
+export interface AuditCommissionerAction {
+  id: string
+  target_type: string | null
+  target_id: string | null
+}
+
+/** A starting-slot INSTANCE of the league (`<slot_key>:<index>`), as stored. */
+export interface AuditStartingSlot {
+  key: string
+  eligible: readonly string[]
+}
+
+/**
+ * A seat the SERVER must seat (invariant 8). `shape` is WHY it is unmanaged:
+ * `member_row_user_id_null` is 125's predicate (D339 — a placeholder or a
+ * vacated seat); `no_member_row` is D339's UNSAFE direction, which arm (c)
+ * DECLINES by name (`skipped[]`) — such a seat is still listed here so that
+ * its empty lineup is a loud failure and never a quiet zero.
+ */
+export interface AuditUnmanagedSeat {
+  team_id: string
+  shape: 'member_row_user_id_null' | 'no_member_row'
+  /** The seat's roster, positions in the roster vocabulary (DEF → DST). */
+  roster: ReadonlyArray<{ player_id: string; position: string }>
+}
+
+/** One `autopilot_unfillable[]` entry a `lineup_lock_tick` pass reported
+ *  (`125:630-642`) — the SERVER naming a slot it could not fill, and why. */
+export interface AuditAutopilotUnfillable {
+  team_id: string
+  week: number
+  slot: string
+  reason: string
 }
 
 /** One `rebuild_team_week_results` probe (invariant 3). */
@@ -200,6 +264,17 @@ export interface SeasonAudit {
   results: readonly AuditWeekResult[]
   weeks: readonly AuditWeek[]
   finalCells: readonly AuditFinalCell[]
+  /** Every `commissioner_actions` row of the league (invariant 6's ledger). */
+  commissionerActions: readonly AuditCommissionerAction[]
+  /** `settings.allow_illegal_lineups` AS STORED (invariant 8's one excuse). */
+  allowIllegalLineups: boolean
+  /** The league's starting-slot instances (invariant 8). */
+  startingSlots: readonly AuditStartingSlot[]
+  /** Seats with no manager — read from `league_members`, never from
+   *  `teams.status` (D339). */
+  unmanagedSeats: readonly AuditUnmanagedSeat[]
+  /** What the tick itself NAMED unfillable, latest pass per (team, week, slot). */
+  autopilotUnfillable: readonly AuditAutopilotUnfillable[]
   rebuilds: readonly AuditRebuild[]
   reconcileFindings: readonly AuditReconcileFinding[]
   /** Loud lines from the jobs and the worker, already carrying league context. */
@@ -299,6 +374,15 @@ export function checkExclusivity(a: SeasonAudit): SeasonInvariantFailure[] {
  * Legality here is slot ELIGIBILITY, not availability: `allow_illegal_lineups`
  * (default true) legally starts a bye/OUT player, who scores 0 and is
  * FLAGGED — that is a §11.3 concern and is deliberately not asserted.
+ *
+ * RECORDED, NOT FIXED (M6A L.E1.14 item 3; PROGRESS Q59 / F324): this check
+ * has the SAME provenance blindness invariant 6 had before D345 — an
+ * `AuditLineup` carries no channel saying "a commissioner wrote this map", so
+ * a lawful `commish_edit_lineup` and a corrupt write are indistinguishable
+ * here. It is harmless TODAY only because Q59 ruled that a commissioner may
+ * lift TIMING and never positional LEGALITY, so every lawful map is still its
+ * own fit. If F324's legality half is ever ruled the other way, this check
+ * must be TAUGHT (a licence per lineup row), never exempted.
  */
 export function checkLineupLegality(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
@@ -577,18 +661,123 @@ export function checkPointsForOnce(a: SeasonAudit): SeasonInvariantFailure[] {
  * onward (R876/F268). And a `final` week's queue rows are CONSUMED with no
  * cell changed (`score-week-worker-db.test.ts:921`), so "no error fired" is
  * not the assertion — the STORED VALUE being byte-unchanged is.
+ *
+ * ── D345 / F336: TAUGHT PROVENANCE, NEVER EXEMPTED ─────────────────────────
+ * **There is no `if (m.is_overridden) continue` here and there must never be
+ * one.** The paragraph above is the refusal: reconcile already excludes
+ * overridden cells, so exempting them here too would leave NOTHING watching
+ * an overridden final cell. Instead the cell carries a SEQUENCE of baselines
+ * (`AuditFinalCell.baselines`) and the law is, per cell:
+ *
+ *   (a) `baselines[0]` is the at-finalize rendering, licensed by nobody;
+ *   (b) every LATER baseline must be licensed by EXACTLY ONE
+ *       `commissioner_actions` row, and that row's target must be THIS
+ *       matchup (`target_type = 'matchup'`, `target_id = matchup_id`) — a
+ *       missing row fails, a duplicated id fails, a row aimed at a different
+ *       matchup fails, and one receipt cannot license two baselines;
+ *   (c) a later baseline with `licensed_by = null` is DRIFT BETWEEN
+ *       BASELINES — the cell was not byte-identical between the previous
+ *       baseline and the instant just before the audited event — and fails;
+ *   (d) the LAST baseline must be byte-identical to the run-end rendering.
+ *
+ * With no override, (a) + (d) are exactly yesterday's check; with one, every
+ * byte of movement is accounted for or the sweep is red. Strictly stronger.
  */
 export function checkFinalCellsImmutable(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
+  const actionsById = new Map<string, AuditCommissionerAction[]>()
+  for (const action of a.commissionerActions) {
+    const list = actionsById.get(action.id) ?? []
+    list.push(action)
+    actionsById.set(action.id, list)
+  }
   for (const cell of a.finalCells) {
-    if (cell.at_final === cell.at_end) continue
+    const where = `matchup ${cell.matchup_id}`
+    const first = cell.baselines[0]
+    if (first === undefined || first.licensed_by !== null || first.rendered !== cell.at_final) {
+      out.push(
+        fail(
+          a,
+          'final-cell-immutable',
+          cell.week,
+          `${where}: baselines[0] must be the at-finalize rendering with no licence (got ` +
+            `${first === undefined ? 'no baseline at all' : `[${first.rendered}] licensed_by=${String(first.licensed_by)}`}; ` +
+            `at finalize [${cell.at_final}]) — the provenance record itself is malformed (D345)`,
+        ),
+      )
+      continue
+    }
+    const spent = new Set<string>()
+    for (let i = 1; i < cell.baselines.length; i++) {
+      const prior = cell.baselines[i - 1]!
+      const next = cell.baselines[i]!
+      if (next.licensed_by === null) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where} DRIFTED BETWEEN BASELINES: baseline ${i - 1} [${prior.rendered}] → [${next.rendered}] ` +
+              `with no audited event between them — a later re-baseline cannot launder it (§23.4/D295(b); D345)`,
+          ),
+        )
+        continue
+      }
+      // THE AUDIT-ROW REQUIREMENT (D345) — BEGIN. The L.E1.14 break probe
+      // deletes this block and watches the "no audit row" and "different
+      // matchup" pins redden by name.
+      const licences = actionsById.get(next.licensed_by) ?? []
+      if (licences.length !== 1) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where} was re-baselined [${prior.rendered}] → [${next.rendered}] under licence ${next.licensed_by}, ` +
+              `but ${licences.length} commissioner_actions row(s) carry that id (exactly 1 required) — ` +
+              `a final cell moved with NO audit row accounting for it (§12.12/§23.4; D345)`,
+          ),
+        )
+        continue
+      }
+      const licence = licences[0]!
+      if (licence.target_type !== 'matchup' || licence.target_id !== cell.matchup_id) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where} was re-baselined [${prior.rendered}] → [${next.rendered}] under licence ${next.licensed_by}, ` +
+              `but that audit row targets ${String(licence.target_type)} ${String(licence.target_id)} — ` +
+              `an override of a DIFFERENT target does not license this cell (D345)`,
+          ),
+        )
+        continue
+      }
+      // THE AUDIT-ROW REQUIREMENT (D345) — END.
+      if (spent.has(next.licensed_by)) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where}: licence ${next.licensed_by} is spent TWICE — one audit row accounts for exactly one baseline change (D345)`,
+          ),
+        )
+        continue
+      }
+      spent.add(next.licensed_by)
+    }
+    const last = cell.baselines[cell.baselines.length - 1]!
+    if (last.rendered === cell.at_end) continue
     out.push(
       fail(
         a,
         'final-cell-immutable',
         cell.week,
-        `matchup ${cell.matchup_id} changed after its week went final: ` +
-          `at finalize [${cell.at_final}] → at run end [${cell.at_end}] (§23.4/D295(b))`,
+        `${where} changed after its ` +
+          `${cell.baselines.length === 1 ? 'week went final' : `last audited baseline (licence ${String(last.licensed_by)})`}: ` +
+          `at finalize [${cell.at_final}] → last baseline [${last.rendered}] → at run end [${cell.at_end}] (§23.4/D295(b))`,
       ),
     )
   }
@@ -599,6 +788,100 @@ export function checkFinalCellsImmutable(a: SeasonAudit): SeasonInvariantFailure
 
 export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
   return a.workerErrors.map((line) => fail(a, 'zero-worker-errors', null, line))
+}
+
+// ── 8. Unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/F335) ─
+
+/**
+ * `spec:185`: a seat with no manager has its "lineups auto-set". Until M6A
+ * L.E1.14 the HARNESS did that (`seedLineups`' `manager ?? commishClient`
+ * fallback — F335), so every synthetic run was green over a production gap
+ * eleven seats wide. The harness no longer touches an unmanaged seat; this
+ * check is what notices when the SERVER does not either.
+ *
+ * For every unmanaged seat and every driven week that has OPENED
+ * (`status <> 'upcoming'`):
+ *
+ *   - a `team_lineups` row EXISTS (D354 — arm (c) materializes a seat that
+ *     has none);
+ *   - its starting map is NON-EMPTY whenever the roster could start anybody;
+ *   - NO starting slot is empty while an eligible rostered player sits
+ *     unstarted. That is a MAXIMALITY WITNESS, not a mirror of the matcher
+ *     (D289/D33): an empty slot beside an eligible bench player is a
+ *     length-one augmenting path, so no maximum matching leaves it — and
+ *     nothing here says WHICH player should start where.
+ *
+ * THE ONE EXCUSE, and it needs BOTH halves: the league stores
+ * `allow_illegal_lineups = false` (125 item 4c — a blocking designation or a
+ * bye is a HARD filter on seating someone new) AND the tick itself NAMED that
+ * slot in `autopilot_unfillable[]` for that team-week. A league that allows
+ * illegal lineups has no excuse at all (125 seats the unhealthy tail LAST
+ * rather than leave a zero), and a slot the server never named is never
+ * excused — "nothing happened" is not "it worked".
+ *
+ * A seat that is empty because every candidate's game had already kicked off
+ * FAILS here on purpose: the harness ticks at the week's open instant, before
+ * any kickoff, so a locked-out seat in a sim run means the tick did not run
+ * when it should have.
+ *
+ * PREMISE (§4 rule 14(c)): over zero unmanaged seats this returns `[]` having
+ * asserted nothing. The RUNNER therefore counts the run's unmanaged seats and
+ * makes zero a run PROBLEM (`season-runner.ts`); this function stays pure.
+ */
+export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantFailure[] {
+  const out: SeasonInvariantFailure[] = []
+  const driven = new Set(a.weeksDriven)
+  const openedWeeks = a.weeks.filter((w) => driven.has(w.week) && w.status !== 'upcoming').map((w) => w.week)
+  const named = new Set(a.autopilotUnfillable.map((u) => `${u.team_id}|${u.week}|${u.slot}`))
+  for (const seat of a.unmanagedSeats) {
+    const shapeNote =
+      seat.shape === 'no_member_row'
+        ? ' [this team has NO league_members row at all — arm (c) DECLINES such a seat by name (125, D339), so nothing will ever seat it]'
+        : ''
+    for (const week of openedWeeks) {
+      const lineup = a.lineups.find((l) => l.team_id === seat.team_id && l.week === week)
+      if (lineup === undefined) {
+        out.push(
+          fail(
+            a,
+            'unmanaged-seat-autopilot',
+            week,
+            `unmanaged team ${seat.team_id} has NO team_lineups row for week ${week} — the tick's arm (c) ` +
+              `materializes and fills such a seat (125/D354)${shapeNote}`,
+          ),
+        )
+        continue
+      }
+      const map = lineup.slot_map ?? {}
+      const started = startersOfMap(lineup.slot_map, lineup.ir_keys)
+      const held = new Set(Object.values(map).filter((v): v is string => typeof v === 'string'))
+      const bench = seat.roster.filter((p) => !held.has(p.player_id))
+      const shortfall: string[] = []
+      for (const slot of a.startingSlots) {
+        const occupant = map[slot.key]
+        if (typeof occupant === 'string' && occupant.length > 0) continue
+        const witnesses = bench.filter((p) => slot.eligible.includes(p.position))
+        if (witnesses.length === 0) continue // nobody on the roster could take it — lawful; F288's run PROBLEM names the key
+        if (!a.allowIllegalLineups && named.has(`${seat.team_id}|${week}|${slot.key}`)) continue
+        shortfall.push(`${slot.key} (eligible and unstarted: ${witnesses.map((p) => p.player_id).join(', ')})`)
+      }
+      if (shortfall.length === 0) continue
+      out.push(
+        fail(
+          a,
+          'unmanaged-seat-autopilot',
+          week,
+          started.length === 0
+            ? `unmanaged team ${seat.team_id} week ${week}: the starting map is EMPTY — nobody seated this seat, so it ` +
+                `scores a zero (spec:185; F334). Unfilled: ${shortfall.join('; ')}${shapeNote}`
+            : `unmanaged team ${seat.team_id} week ${week}: starting slot(s) left empty that the roster could fill — ` +
+                `${shortfall.join('; ')}` +
+                `${a.allowIllegalLineups ? '' : ' — and the tick never named them in autopilot_unfillable[]'}${shapeNote}`,
+        ),
+      )
+    }
+  }
+  return out
 }
 
 // ── Held weeks: CLASSIFIED, never counted (Q37) ─────────────────────────────
@@ -642,10 +925,12 @@ export function sweepSeasonAudit(a: SeasonAudit): SeasonInvariantFailure[] {
     ...checkPointsForOnce(a),
     ...checkFinalCellsImmutable(a),
     ...checkNoWorkerErrors(a),
+    ...checkUnmanagedSeatsAutopiloted(a),
   ]
 }
 
-/** The seven invariant names, in the row's order — the report's vocabulary. */
+/** The invariant names — L.D6.1's seven in the row's order, then M6A
+ *  L.E1.14's eighth — the report's vocabulary. */
 export const SEASON_INVARIANTS: readonly string[] = [
   'exclusivity',
   'lineup-legality',
@@ -654,6 +939,7 @@ export const SEASON_INVARIANTS: readonly string[] = [
   'pf-once-per-week',
   'final-cell-immutable',
   'zero-worker-errors',
+  'unmanaged-seat-autopilot',
 ]
 
 /** Adapter so a season failure can ride the draft sweep's printer if needed. */

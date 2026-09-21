@@ -81,6 +81,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/database'
 
+import { commishEditScore } from '../api/commish-matchup-service'
 import { setLineup } from '../api/lineup-service'
 import { reconcileSeason, type ReconcileReport } from '../scoring/reconcile'
 import { runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worker'
@@ -122,8 +123,11 @@ import {
   classifyHeldWeeks,
   startersOfMap,
   sweepSeasonAudit,
+  type AuditAutopilotUnfillable,
+  type AuditCommissionerAction,
   type AuditFinalCell,
   type AuditLineup,
+  type AuditUnmanagedSeat,
   type AuditRebuild,
   type AuditReconcileFinding,
   type SeasonAudit,
@@ -180,6 +184,19 @@ export interface LeagueState {
   startedAt: number
   finalCellByWeek: Map<number, Map<string, string>>
   weeksFinal: Set<number>
+  /**
+   * D345 / F336 (M6A L.E1.14): every baseline AFTER the at-finalize one, per
+   * week and cell key, appended by `rebaselineAroundAuditedEvent` — and by
+   * nothing else. `finalCellByWeek` stays the at-finalize rendering
+   * (`baselines[0]`), written once per week by `snapshotNewlyFinal`.
+   */
+  finalCellRebaselines: Map<number, Map<string, Array<{ rendered: string; licensed_by: string | null }>>>
+  /** What `lineup_lock_tick` NAMED unfillable (`autopilot_unfillable[]`,
+   *  125:630-642), latest pass per `team|week|slot` — invariant 8's one excuse. */
+  autopilotUnfillable: Map<string, AuditAutopilotUnfillable>
+  /** `team|week` for every seat-week a tick reported in `autopiloted[]` — the
+   *  SERVER's own word that it wrote the lineup (the transcript's flag). */
+  autopilotedSeatWeeks: Set<string>
 }
 
 function throwIfError(error: { message: string } | null, what: string): void {
@@ -240,29 +257,69 @@ function scenarioClubs(games: readonly { homeTeam: string; awayTeam: string }[])
   return [...new Set(games.flatMap((g) => [g.homeTeam, g.awayTeam]))].sort()
 }
 
-/** A matchup cell + the week's results, rendered stably (invariant 6). */
+/**
+ * A matchup cell, rendered stably (invariant 6).
+ *
+ * THE RESULTS ARE PARTITIONED BY OWNER (M6A L.E1.14, D345). Until this task
+ * every cell of a week embedded the WHOLE week's `team_week_results`, so a
+ * change to one matchup re-rendered all of its siblings — harmless while the
+ * only verdict was "did anything move", but D345's law is per cell ("every
+ * baseline change accounted for by exactly one audit row whose `target_id` is
+ * THAT matchup"), and under the old rendering one lawful override would have
+ * indicted every sibling cell for a change that was not theirs. Now:
+ *
+ *   - a PRIMARY row (`round_type <> 'secondary'`) renders its own columns plus
+ *     the full result row of ITS OWN sides — `week_results_write_internal`
+ *     derives a team's `points` / `h2h_result` from exactly that row
+ *     (117:371-387);
+ *   - a SECONDARY row renders its own columns only (its `second_result` is a
+ *     column of its sides' result rows, which their primary cells carry);
+ *   - every result row owned by NO primary row of the week (a `total_points`
+ *     league, a team with no game) lands in one `(no-primary-matchup)` cell.
+ *
+ * It is a PARTITION: every column and every result row the old rendering
+ * watched is still watched, exactly once or more. Nothing left the check.
+ */
 function renderCells(
   matchups: ReadonlyArray<Record<string, unknown>>,
   results: ReadonlyArray<Record<string, unknown>>,
 ): Map<string, string> {
   const byWeekMatchup = new Map<string, string>()
-  const resultsByWeek = new Map<number, string[]>()
-  for (const r of [...results].sort((a, b) => String(a.team_id).localeCompare(String(b.team_id)))) {
-    const week = Number(r.week)
-    const list = resultsByWeek.get(week) ?? []
-    list.push(
+  const resultByWeekTeam = new Map<string, string>()
+  for (const r of results) {
+    resultByWeekTeam.set(
+      `${Number(r.week)}|${String(r.team_id)}`,
       `${String(r.team_id)}=${String(r.points)}/${String(r.h2h_result)}/${String(r.median_result)}/${String(r.second_result)}/${String(r.is_final)}`,
     )
-    resultsByWeek.set(week, list)
   }
+  const owned = new Set<string>()
   for (const m of matchups) {
     const week = Number(m.week)
+    const sides =
+      m.round_type === 'secondary'
+        ? []
+        : [m.home_team_id, m.away_team_id]
+            .filter((t) => t !== null && t !== undefined)
+            .map(String)
+            .sort()
+    for (const teamId of sides) owned.add(`${week}|${teamId}`)
     byWeekMatchup.set(
       `${week}:${String(m.id)}`,
       `home=${String(m.home_score)} away=${String(m.away_score)} result=${String(m.result)} ` +
         `status=${String(m.status)} overridden=${String(m.is_overridden)} ` +
-        `results=[${(resultsByWeek.get(week) ?? []).join(',')}]`,
+        `results=[${sides.map((t) => resultByWeekTeam.get(`${week}|${t}`) ?? `${t}=(no result row)`).join(',')}]`,
     )
+  }
+  const unowned = new Map<number, string[]>()
+  for (const [key, rendered] of [...resultByWeekTeam].sort(([a], [b]) => a.localeCompare(b))) {
+    if (owned.has(key)) continue
+    const week = Number(key.split('|')[0])
+    const list = unowned.get(week) ?? []
+    list.push(rendered)
+    unowned.set(week, list)
+  }
+  for (const [week, list] of unowned) {
+    byWeekMatchup.set(`${week}:(no-primary-matchup)`, `results=[${list.join(',')}]`)
   }
   return byWeekMatchup
 }
@@ -303,6 +360,8 @@ export async function runSeasonSim(
     jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 },
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
     poolRows: 0,
+    unmanagedSeats: 0,
+    lawfulOverride: null,
     externalCalls: 0,
     workerErrors: [],
     reconcileSummary: { leagues: 0, cells: 0, counts: {}, alerts: 0, warns: 0, infos: 0 },
@@ -469,7 +528,15 @@ export async function runSeasonSim(
         emptySlotKeys: {},
         benchedForLegality: 0,
         slotsFilled: 0,
+        unmanagedSeats: 0,
+        autopiloted: 0,
+        transcript: [],
       }
+      // Invariant 8's premise is counted from the AUDIT (every seat the
+      // invariant actually iterated), not from the seating pass — a run that
+      // never reached `seedLineups` still says how many seats it should have
+      // watched.
+      report.unmanagedSeats += audit.unmanagedSeats.length
       const result: SeasonLeagueResult = {
         leagueLabel: state.label,
         leagueId: state.leagueId,
@@ -482,6 +549,9 @@ export async function runSeasonSim(
         lineupSlotsLeftEmpty: seating.emptySlots,
         lineupEmptySlotKeys: { ...seating.emptySlotKeys },
         benchedForLegality: seating.benchedForLegality,
+        unmanagedSeats: audit.unmanagedSeats.length,
+        lineupsAutopiloted: seating.autopiloted,
+        seatingTranscript: seating.transcript.map((t) => ({ ...t, emptySlotKeys: [...t.emptySlotKeys] })),
         matrixLine: state.matrixLine,
         weeksDriven: [...driven.weeksDriven],
         weeksFinal: [...state.weeksFinal].sort((a, b) => a - b),
@@ -515,6 +585,26 @@ export async function runSeasonSim(
           `${state.scheduleMode} · bridged ${bridgeCounts} rostered / ${startedBridged.size} started · ` +
           `${failures.length === 0 ? 'invariants OK' : `${failures.length} FAILURES`} · ` +
           `${(result.durationMs / 1000).toFixed(1)}s`,
+      )
+    }
+    // ---- M6A L.E1.14: the two PREMISES, measured and never assumed --------
+    // (§4 rule 14(c)). Invariant 8 over zero unmanaged seats, and invariant
+    // 6's provenance arm over zero overrides, both pass having asserted
+    // nothing — so each absence is a run PROBLEM, not a green.
+    if (report.unmanagedSeats < 1) {
+      report.problems.push(
+        `AUTOPILOT PREMISE: the run carries ${report.unmanagedSeats} unmanaged seat(s) — invariant 8 ` +
+          `(unmanaged-seat-autopilot) iterated NOTHING, so this run says nothing about §7.2.1(c). A season plan ` +
+          `seats min(teams, ${BOT_POOL_SIZE}) bots and fills the rest with placeholders: use --teams mixed or a size above ${BOT_POOL_SIZE}.`,
+      )
+    }
+    report.lawfulOverride = driven.lawfulOverride
+    const anyFinal = leagueStates.some((s) => s.weeksFinal.size > 0)
+    if (report.lawfulOverride === null && anyFinal) {
+      report.problems.push(
+        `PROVENANCE PREMISE: no lawful commissioner override was injected although a week reached 'final' — ` +
+          `invariant 6's provenance arm (D345) asserted nothing. Needs one h2h league whose final week has ` +
+          `>= 4 scored primary matchups and a strictly-highest scorer.`,
       )
     }
     report.scenarioEvidence = driven.evidence
@@ -769,6 +859,9 @@ export async function readLeagueState(
     startedAt: startedAtMs,
     finalCellByWeek: new Map(),
     weeksFinal: new Set(),
+    finalCellRebaselines: new Map(),
+    autopilotUnfillable: new Map(),
+    autopilotedSeatWeeks: new Set(),
   }
 }
 
@@ -793,6 +886,8 @@ interface DriveOutcome {
   workerErrorsByLeague: Map<string, string[]>
   noStatRowByLeague: Map<string, number>
   seatingByLeague: Map<string, LeagueSeating>
+  /** D345: the run's ONE injected lawful override, or null when none landed. */
+  lawfulOverride: LawfulOverrideInjection | null
   /** The published slate: the scenario's own games plus the filler slate the
    *  week is completed with (F286/D328), for the run banner. */
   slate: { coreGames: number; fillerGames: number; clubs: readonly string[] }
@@ -934,6 +1029,7 @@ async function driveSeason(
       workerErrorsByLeague,
       noStatRowByLeague,
       seatingByLeague: new Map(),
+      lawfulOverride: null,
       slate,
       evidence: { scenario: cfg.scenario, leagues: 0, assertions },
       workerNotes: [],
@@ -1091,6 +1187,10 @@ async function driveSeason(
 
   const actionRng = deriveStream(cfg.seed, `season:lineups:${deps.runTag}`)
   let seedLineupsAfterPoll = false
+  // Its OWN stream: drawing the override's action_id from `actionRng` would
+  // shift every lineup action_id after it and break run-to-run determinism.
+  const overrideRng = deriveStream(cfg.seed, `season:override:${deps.runTag}`)
+  let lawfulOverride: LawfulOverrideInjection | null = null
   // Set at the charted arrival; every LATER drain of the same week is counted
   // toward it. 122's ack DEFERS a held/not-ready row for a beat (R872), so the
   // recompute a charted delta provokes lands at a LATER instant than the poll
@@ -1230,6 +1330,15 @@ async function driveSeason(
       throwIfError(error, `${league.label}: lineup_lock_tick`)
       jobs.lockTick += 1
       collectJobFailures(data, `${league.label} lineup_lock_tick@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
+      // `autopilot_unfillable[]` entries carry no week of their own (125:630-642
+      // + the tick's `team_id` stamp), so they take the pass's current week —
+      // `lineup_current_week_internal`'s own rule (112:367-372): the newest
+      // league week whose `nfl_weeks.starts_at` is at or before `p_now`.
+      const tickWeek =
+        [...weekRows.values()]
+          .filter((w) => w.week >= firstWeek && Date.parse(w.starts_at) <= entry.at.getTime())
+          .reduce((n, w) => Math.max(n, w.week), firstWeek)
+      absorbAutopilotReport(data, league, tickWeek)
     }
 
     // E42: the flexed game's kickoff, read from the table either side of the
@@ -1334,6 +1443,17 @@ async function driveSeason(
       }
       seedLineupsAfterPoll = false
     }
+    // ---- D345: ONE lawful override per run, at the FIRST finalize that can
+    // carry one — injected LAST in the beat, after every measurement this
+    // instant takes (the charted arms compare league cells above), so the
+    // only thing that ever sees the moved cell is the rest of the season:
+    // every later poll, drain, tick and finalize runs over an overridden
+    // final cell, and invariant 6 then demands it is byte-identical to its
+    // licensed baseline at run end.
+    if (entry.kind === 'finalize' && lawfulOverride === null) {
+      lawfulOverride = await injectLawfulOverride(service, botClients, leagues, overrideRng, problems)
+      if (lawfulOverride !== null) log(`LAWFUL OVERRIDE INJECTED: ${lawfulOverride.leagueLabel} — ${lawfulOverride.detail}`)
+    }
     if (cfg.verbose === true) log(`  ${pNow} w${entry.week} ${entry.kind}: ${entry.label}`)
   }
 
@@ -1350,6 +1470,7 @@ async function driveSeason(
     workerErrorsByLeague,
     noStatRowByLeague,
     seatingByLeague,
+    lawfulOverride,
     slate,
     evidence: { scenario: cfg.scenario, leagues: leagues.length, assertions },
     workerNotes: [...measured.workerNotes.entries()].map(([reason, count]) => `${count}× ${reason}`).sort(),
@@ -1361,6 +1482,39 @@ async function readKickoff(service: Supabase, gameId: string): Promise<string | 
   const { data, error } = await service.from('nfl_games').select('kickoff_at').eq('id', gameId).maybeSingle()
   throwIfError(error, `kickoff read ${gameId}`)
   return data?.kickoff_at ?? null
+}
+
+/**
+ * What one `lineup_lock_tick` pass said about autopilot (125 H4), kept on the
+ * league: WHICH seat-weeks the SERVER says it wrote (`autopiloted[]` — the
+ * transcript's `reportedByTick`), and WHICH slots it named unfillable and why
+ * (`autopilot_unfillable[]` — invariant 8's one excuse). The LATEST pass wins
+ * per `team|week|slot`: a slot the tick could not fill at 12:58 and filled at
+ * 12:59 is filled, and the stored map — not this record — is what the
+ * invariant reads for that.
+ */
+function absorbAutopilotReport(data: unknown, league: LeagueState, tickWeek: number): void {
+  const doc = (data ?? {}) as { autopiloted?: unknown; autopilot_unfillable?: unknown }
+  if (Array.isArray(doc.autopiloted)) {
+    for (const raw of doc.autopiloted) {
+      const e = (raw ?? {}) as { league_id?: unknown; team_id?: unknown; week?: unknown }
+      if (e.league_id !== league.leagueId || typeof e.team_id !== 'string') continue
+      league.autopilotedSeatWeeks.add(`${e.team_id}|${Number(e.week)}`)
+    }
+  }
+  if (Array.isArray(doc.autopilot_unfillable)) {
+    const teamIds = new Set(league.teams.map((t) => t.id))
+    for (const raw of doc.autopilot_unfillable) {
+      const e = (raw ?? {}) as { team_id?: unknown; slot?: unknown; reason?: unknown }
+      if (typeof e.team_id !== 'string' || typeof e.slot !== 'string' || !teamIds.has(e.team_id)) continue
+      league.autopilotUnfillable.set(`${e.team_id}|${tickWeek}|${e.slot}`, {
+        team_id: e.team_id,
+        week: tickWeek,
+        slot: e.slot,
+        reason: String(e.reason ?? '(no reason given)'),
+      })
+    }
+  }
 }
 
 /** The three job payloads' `failures[]` ARE truthful (F244/R798) — surface them. */
@@ -1818,10 +1972,19 @@ function measureCorrectionArms(
  * `lineup_fit_internal` and the sim keeps whatever canonical map comes back —
  * which is exactly what invariant 2 then re-checks against the same oracle.
  *
- * A placeholder seat has no manager, so its lineup is set through the
- * COMMISSIONER arm of the same RPC with a reason — the D290/R738 interim
- * audit posture, which posts the system message to league chat. That is the
- * real door a commissioner uses, not a harness back-channel.
+ * ~~A placeholder seat has no manager, so its lineup is set through the
+ * COMMISSIONER arm of the same RPC with a reason.~~ **STRUCK by M6A L.E1.14
+ * (F335).** That fallback — `const client = manager ?? commishClient` — was
+ * the harness doing the SERVER's job: `spec:185` promises an unmanaged seat an
+ * auto-set lineup, nothing built it until migration 125, and every synthetic
+ * run was green meanwhile because this function seated those seats itself.
+ * An UNMANAGED seat (no `league_members` row carrying a non-null `user_id` —
+ * D339's predicate, read from the same table) is now LEFT ALONE: it reaches
+ * week open with the carry's empty row, `lineup_lock_tick`'s arm (c) fills it
+ * at the same instant (the tick runs BEFORE this function in the `open`
+ * beat), and this function only READS BACK what the server wrote, so the
+ * transcript can say which hand set each lineup (`autopiloted`). Invariant 8
+ * (`checkUnmanagedSeatsAutopiloted`) is what reddens when the server did not.
  */
 // §7.3.6's blocking designations and the `players.status` bridge moved to
 // `./designations` at L.D6.3 so the DRAFT runner's need-aware season personas
@@ -1906,6 +2069,27 @@ export interface LeagueSeating {
   benchedForLegality: number
   /** Slots actually filled across the league's accepted lineups. */
   slotsFilled: number
+  /** Seats with NO manager (D339's predicate, from `league_members`). The
+   *  harness sets none of them (F335); the run's total must be ≥ 1 or
+   *  invariant 8 asserted nothing (§4 rule 14(c)). */
+  unmanagedSeats: number
+  /** Of those, the seats whose week-1 starting map the SERVER left non-empty —
+   *  counted into `seated` too, so `seated` still means "has a lineup". */
+  autopiloted: number
+  /** One line per seat: WHICH HAND set the week-1 lineup. */
+  transcript: SeatTranscript[]
+}
+
+/** The seating transcript's row. `autopiloted = true` ⇒ the harness never
+ *  touched this seat; whatever map it holds, the SERVER wrote. */
+export interface SeatTranscript {
+  teamId: string
+  autopiloted: boolean
+  /** The tick's own `autopiloted[]` named this seat-week (125 H4). For a
+   *  harness-set seat this is always false. */
+  reportedByTick: boolean
+  slotsFilled: number
+  emptySlotKeys: string[]
 }
 
 async function seedLineups(
@@ -1926,31 +2110,18 @@ async function seedLineups(
       emptySlotKeys: {},
       benchedForLegality: 0,
       slotsFilled: 0,
+      unmanagedSeats: 0,
+      autopiloted: 0,
+      transcript: [],
     }
     out.set(league.leagueId, seating)
-    const commishClient = league.ownerId === null ? undefined : bots.get(league.ownerId)
-    if (commishClient === undefined) {
-      problems.push(`${league.label}: no signed-in bot client for the commissioner (owner ${league.ownerId ?? 'null'}) — lineups unset`)
-      continue
-    }
     // WHO may set a team's lineup, read from `league_members` rather than
     // inferred from `teams.owner_id`: a PLACEHOLDER seat is owned by the
     // commissioner (the D96 capacity remedy), so `owner_id` finds a client
-    // that is nonetheless not that team's MANAGER, and 112:684's commissioner
-    // arm then refuses for want of a reason. (Measured 2026-09-08: 34 of a
-    // 6-league run's lineups were refused exactly that way — the placeholder
+    // that is nonetheless not that team's MANAGER. (Measured 2026-09-08: 34 of
+    // a 6-league run's lineups were refused exactly that way — the placeholder
     // seats — until this read replaced the owner_id inference.)
-    const { data: memberRows, error: memberError } = await service
-      .from('league_members')
-      .select('user_id, team_id')
-      .eq('league_id', league.leagueId)
-    throwIfError(memberError, `${league.label}: league_members read for lineups`)
-    const managerByTeam = new Map<string, string>()
-    for (const row of memberRows ?? []) {
-      const teamId: string | null = row.team_id
-      const userId: string | null = row.user_id
-      if (teamId !== null && userId !== null) managerByTeam.set(teamId, userId)
-    }
+    const { managerByTeam } = await readSeatManagers(service, league, 'lineups')
 
     const { data: rosterRows, error } = await service
       .from('league_rosters')
@@ -1990,6 +2161,40 @@ async function seedLineups(
       )
     }
     for (const team of league.teams) {
+      const managerId = managerByTeam.get(team.id)
+      if (managerId === undefined) {
+        // F335: NOT the harness's seat to set. Read back what the SERVER
+        // wrote at this same instant (the tick ran before this function) and
+        // count it honestly — an empty slot here is F288's run PROBLEM exactly
+        // as it is for a harness-set seat (production must not be quieter
+        // than the harness, Q45), and an empty MAP is invariant 8's failure.
+        seating.unmanagedSeats += 1
+        const { data: stored, error: storedError } = await service
+          .from('team_lineups')
+          .select('slot_map')
+          .eq('team_id', team.id)
+          .eq('season', SYNTHETIC_SEASON)
+          .eq('week', week)
+          .maybeSingle()
+        throwIfError(storedError, `${league.label}: autopiloted lineup read-back (team ${team.id})`)
+        const map = ((stored?.slot_map ?? {}) as Record<string, unknown>) ?? {}
+        const filledKeys = league.slots.filter((sl) => typeof map[sl.key] === 'string' && (map[sl.key] as string).length > 0)
+        const emptyKeys = league.slots.filter((sl) => !filledKeys.includes(sl)).map((sl) => sl.key)
+        seating.transcript.push({
+          teamId: team.id,
+          autopiloted: true,
+          reportedByTick: league.autopilotedSeatWeeks.has(`${team.id}|${week}`),
+          slotsFilled: filledKeys.length,
+          emptySlotKeys: emptyKeys,
+        })
+        if (filledKeys.length === 0) continue // nobody seated it — NOT counted as seated; invariant 8 names it
+        seating.seated += 1
+        seating.autopiloted += 1
+        seating.slotsFilled += filledKeys.length
+        seating.emptySlots += emptyKeys.length
+        for (const key of emptyKeys) seating.emptySlotKeys[key] = (seating.emptySlotKeys[key] ?? 0) + 1
+        continue
+      }
       const roster = (byTeam.get(team.id) ?? []).sort(
         (a, b) => (a.adp ?? Number.POSITIVE_INFINITY) - (b.adp ?? Number.POSITIVE_INFINITY) || (a.id < b.id ? -1 : 1),
       )
@@ -2004,20 +2209,22 @@ async function seedLineups(
       )
       const slotMap = seat.slotMap
       if (Object.keys(slotMap).length === 0) continue
-      // The team's OWN manager where there is one; otherwise the league's
-      // commissioner with a reason — the D290/R738 arm of the same door
-      // (112:684 refuses a service-role caller outright, and a placeholder
-      // seat has no user, so this is the only lawful route to its lineup).
-      const managerId = managerByTeam.get(team.id)
-      const manager = managerId === undefined ? undefined : bots.get(managerId)
-      const client = manager ?? commishClient
-      const result = await setLineup(client, league.leagueId, team.id, {
+      // The team's OWN manager, through his own JWT (112:684 refuses a
+      // service-role caller outright). There is NO commissioner fallback any
+      // more (F335): a manager the run cannot sign in is a loud problem, never
+      // a quiet hand-off to somebody else's door.
+      const manager = bots.get(managerId)
+      if (manager === undefined) {
+        seating.refused += 1
+        problems.push(
+          `${league.label}: team ${team.id} is managed by ${managerId}, but the run holds no signed-in client for that user — lineup unset`,
+        )
+        continue
+      }
+      const result = await setLineup(manager, league.leagueId, team.id, {
         week,
         slot_map: slotMap,
         action_id: uuidFromRng(actionRng),
-        ...(manager === undefined
-          ? { reason: 'sim season harness (L.D6.1): seating an unclaimed franchise for the first scored week' }
-          : {}),
       })
       if (result.status !== 200) {
         seating.refused += 1
@@ -2027,6 +2234,13 @@ async function seedLineups(
         continue
       }
       seating.seated += 1
+      seating.transcript.push({
+        teamId: team.id,
+        autopiloted: false,
+        reportedByTick: false,
+        slotsFilled: Object.keys(slotMap).length,
+        emptySlotKeys: [...seat.emptySlots],
+      })
       seating.slotsFilled += Object.keys(slotMap).length
       seating.emptySlots += seat.emptySlots.length
       for (const key of seat.emptySlots) {
@@ -2059,7 +2273,7 @@ export async function snapshotNewlyFinal(service: Supabase, leagues: LeagueState
 async function readCells(service: Supabase, leagueId: string, week: number): Promise<Map<string, string>> {
   const { data: matchups, error: mError } = await service
     .from('matchups')
-    .select('id, week, home_score, away_score, result, status, is_overridden')
+    .select('id, week, round_type, home_team_id, away_team_id, home_score, away_score, result, status, is_overridden')
     .eq('league_id', leagueId)
     .eq('week', week)
     .order('id')
@@ -2074,6 +2288,227 @@ async function readCells(service: Supabase, leagueId: string, week: number): Pro
     (matchups ?? []) as unknown as Array<Record<string, unknown>>,
     (results ?? []) as unknown as Array<Record<string, unknown>>,
   )
+}
+
+/** The newest rendering the provenance record holds for one final cell. */
+function lastBaseline(state: LeagueState, week: number, key: string): string | undefined {
+  const later = state.finalCellRebaselines.get(week)?.get(key)
+  if (later !== undefined && later.length > 0) return later[later.length - 1]!.rendered
+  return state.finalCellByWeek.get(week)?.get(key)
+}
+
+function appendBaseline(
+  state: LeagueState,
+  week: number,
+  key: string,
+  entry: { rendered: string; licensed_by: string | null },
+): void {
+  let byKey = state.finalCellRebaselines.get(week)
+  if (byKey === undefined) {
+    byKey = new Map()
+    state.finalCellRebaselines.set(week, byKey)
+  }
+  const list = byKey.get(key) ?? []
+  list.push(entry)
+  byKey.set(key, list)
+}
+
+/**
+ * D345 / F336 — THE RE-BASELINE PATH, and the only writer of
+ * `finalCellRebaselines`. Wraps ONE audited event on an already-final week:
+ *
+ *   1. re-read the week's cells JUST BEFORE the event. A cell that no longer
+ *      equals its newest baseline DRIFTED, and the drift is RECORDED as an
+ *      unlicensed entry (`licensed_by: null`) — so the re-baseline in (3)
+ *      cannot launder a rewrite that preceded it;
+ *   2. run the event, which returns the `commissioner_actions.id` the verb
+ *      wrote (or `null`: a no-op wrote nothing, 126's `no_changes`);
+ *   3. re-read, and stamp EVERY cell that moved with that id. Every cell, not
+ *      only the target: a sibling that moved is stamped with a receipt whose
+ *      `target_id` is NOT that sibling, and `checkFinalCellsImmutable` fails
+ *      it by name. Nothing is filtered here — this function RECORDS, the
+ *      invariant JUDGES.
+ *
+ * It never decides whether a change was lawful, and it appends nothing for a
+ * cell that did not move.
+ */
+export async function rebaselineAroundAuditedEvent(
+  service: Supabase,
+  state: LeagueState,
+  week: number,
+  event: () => Promise<string | null>,
+): Promise<string | null> {
+  if (!state.finalCellByWeek.has(week)) {
+    throw new Error(
+      `${state.label}: week ${week} has no at-finalize snapshot — a re-baseline needs a baseline (snapshotNewlyFinal first)`,
+    )
+  }
+  const before = await readCells(service, state.leagueId, week)
+  for (const [key, rendered] of before) {
+    if (lastBaseline(state, week, key) !== rendered) appendBaseline(state, week, key, { rendered, licensed_by: null })
+  }
+  const actionId = await event()
+  const after = await readCells(service, state.leagueId, week)
+  for (const [key, rendered] of after) {
+    if (lastBaseline(state, week, key) !== rendered) appendBaseline(state, week, key, { rendered, licensed_by: actionId })
+  }
+  return actionId
+}
+
+/** What the run's one injected override did — printed on the transcript. */
+export interface LawfulOverrideInjection {
+  leagueLabel: string
+  leagueId: string
+  week: number
+  matchupId: string
+  commissionerActionId: string
+  detail: string
+}
+
+/**
+ * ONE lawful commissioner override per run, through the REAL door (D100):
+ * `commishEditScore` (the L.E1.10 service over 126/131's `commish_edit_score`)
+ * on a FINAL week, as the league's own commissioner, with NO reason (Q66 — a
+ * reason is optional and the audit row is written regardless). This is exit
+ * criterion 5 of the M6A slice: a lawful override must SURVIVE the gate, and
+ * it survives by being ACCOUNTED FOR, not by being skipped.
+ *
+ * WHICH CELL, and why it is chosen and not drawn: the week's strictly-highest
+ * scorer, +1.00 on his own side of his PRIMARY matchup. He already won (no
+ * other side of any row outscored him), so `result` stands; and with ≥ 8
+ * teams the top score is not one of the median's two middle values, so
+ * `league_weeks.median_score` and every other team's `median_result` stand
+ * too. The override therefore moves exactly ONE cell. That is a deliberate
+ * limit of the HARNESS, stated in `seasonCoverageGaps`: an override whose
+ * restated points reach another cell (a median flip; a secondary row's
+ * `second_result`, which lives in its sides' PRIMARY cells) is lawful in
+ * production and is NOT modelled here — D345's per-cell law as written would
+ * red it (PROGRESS F373).
+ */
+async function injectLawfulOverride(
+  service: Supabase,
+  bots: ReadonlyMap<string, Supabase>,
+  leagues: LeagueState[],
+  actionRng: () => number,
+  problems: string[],
+): Promise<LawfulOverrideInjection | null> {
+  for (const league of leagues) {
+    const commishClient = league.ownerId === null ? undefined : bots.get(league.ownerId)
+    if (commishClient === undefined) continue
+    for (const week of [...league.weeksFinal].sort((a, b) => a - b)) {
+      const { data: rows, error } = await service
+        .from('matchups')
+        .select('id, round_type, home_team_id, away_team_id, home_score, away_score, status, is_overridden')
+        .eq('league_id', league.leagueId)
+        .eq('week', week)
+        .order('id')
+      throwIfError(error, `${league.label}: override candidates (week ${week})`)
+      const primary = (rows ?? []).filter(
+        (m) => m.round_type !== 'secondary' && m.away_team_id !== null && m.status === 'final' && m.is_overridden !== true,
+      )
+      if (primary.length * 2 < 8) continue
+      const sides = primary.flatMap((m) => [
+        { matchup: m, side: 'home' as const, score: Number(m.home_score) },
+        { matchup: m, side: 'away' as const, score: Number(m.away_score) },
+      ])
+      if (sides.some((s) => !Number.isFinite(s.score))) continue
+      sides.sort((a, b) => b.score - a.score)
+      const top = sides[0]!
+      if (sides[1] !== undefined && sides[1].score === top.score) continue // no STRICT top — try elsewhere
+      const home = top.side === 'home' ? top.score + 1 : Number(top.matchup.home_score)
+      const away = top.side === 'away' ? top.score + 1 : Number(top.matchup.away_score)
+      let failure: string | null = null
+      const actionId = await rebaselineAroundAuditedEvent(service, league, week, async () => {
+        const result = await commishEditScore(commishClient, league.leagueId, {
+          matchup_id: top.matchup.id,
+          home_score: home,
+          away_score: away,
+          action_id: uuidFromRng(actionRng),
+        })
+        if (result.status !== 200) {
+          failure = `answered ${result.status}: ${JSON.stringify(result.body).slice(0, 300)}`
+          return null
+        }
+        const receipt = (result.body as { commissioner_action_id?: unknown }).commissioner_action_id
+        if (typeof receipt !== 'string' || receipt.length === 0) {
+          failure = `returned no commissioner_action_id: ${JSON.stringify(result.body).slice(0, 300)}`
+          return null
+        }
+        return receipt
+      })
+      if (actionId === null) {
+        problems.push(
+          `${league.label}: the injected lawful override (commish_edit_score, matchup ${top.matchup.id}, week ${week}) ` +
+            `${failure ?? 'wrote nothing'}`,
+        )
+        return null
+      }
+      return {
+        leagueLabel: league.label,
+        leagueId: league.leagueId,
+        week,
+        matchupId: top.matchup.id,
+        commissionerActionId: actionId,
+        detail:
+          `${top.side}_score ${top.score} → ${top.score + 1} on FINAL week ${week} by the league's commissioner, ` +
+          `no reason (Q66) — receipt ${actionId}`,
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * WHO manages each team, read from `league_members` — the same table
+ * `set_lineup_internal`'s auth (114:240-243) and arm (c)'s predicate (125,
+ * D339) read, and never inferred from `teams.owner_id` / `teams.status`.
+ * `managerByTeam` holds a team only when a member row carries a NON-NULL
+ * `user_id`; `teamsWithMemberRow` is what separates the two unmanaged shapes.
+ */
+async function readSeatManagers(
+  service: Supabase,
+  state: LeagueState,
+  what: string,
+): Promise<{ managerByTeam: Map<string, string>; teamsWithMemberRow: Set<string> }> {
+  const { data: memberRows, error: memberError } = await service
+    .from('league_members')
+    .select('user_id, team_id')
+    .eq('league_id', state.leagueId)
+  throwIfError(memberError, `${state.label}: league_members read for ${what}`)
+  const managerByTeam = new Map<string, string>()
+  const teamsWithMemberRow = new Set<string>()
+  for (const row of memberRows ?? []) {
+    const teamId: string | null = row.team_id
+    const userId: string | null = row.user_id
+    if (teamId === null) continue
+    teamsWithMemberRow.add(teamId)
+    if (userId !== null) managerByTeam.set(teamId, userId)
+  }
+  return { managerByTeam, teamsWithMemberRow }
+}
+
+async function readUnmanagedSeats(
+  service: Supabase,
+  state: LeagueState,
+  rosters: ReadonlyArray<{ team_id: string; player_id: string }>,
+  positionById: ReadonlyMap<string, string>,
+): Promise<AuditUnmanagedSeat[]> {
+  const { managerByTeam, teamsWithMemberRow } = await readSeatManagers(service, state, 'the audit')
+  const out: AuditUnmanagedSeat[] = []
+  for (const team of state.teams) {
+    if (managerByTeam.has(team.id)) continue
+    out.push({
+      team_id: team.id,
+      shape: teamsWithMemberRow.has(team.id) ? 'member_row_user_id_null' : 'no_member_row',
+      roster: rosters
+        .filter((r) => r.team_id === team.id)
+        .map((r) => {
+          const raw = (positionById.get(r.player_id) ?? '').toUpperCase()
+          return { player_id: r.player_id, position: raw === 'DEF' ? 'DST' : raw }
+        }),
+    })
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -2178,19 +2613,56 @@ export async function collectSeasonAudit(
   const finalCells: AuditFinalCell[] = []
   for (const [week, atFinal] of state.finalCellByWeek) {
     const atEnd = await readCells(service, state.leagueId, week)
+    // D345: `baselines[0]` is the at-finalize rendering, licensed by nobody;
+    // whatever `rebaselineAroundAuditedEvent` appended follows it, in order.
+    const later = state.finalCellRebaselines.get(week)
     for (const [key, before] of atFinal) {
       finalCells.push({
         week,
         matchup_id: key.split(':')[1] ?? key,
         at_final: before,
         at_end: atEnd.get(key) ?? '(the cell no longer exists)',
+        baselines: [{ rendered: before, licensed_by: null }, ...(later?.get(key) ?? [])],
       })
     }
     for (const [key, after] of atEnd) {
       if (atFinal.has(key)) continue
-      finalCells.push({ week, matchup_id: key.split(':')[1] ?? key, at_final: '(no cell at finalize)', at_end: after })
+      const absent = '(no cell at finalize)'
+      finalCells.push({
+        week,
+        matchup_id: key.split(':')[1] ?? key,
+        at_final: absent,
+        at_end: after,
+        baselines: [{ rendered: absent, licensed_by: null }, ...(later?.get(key) ?? [])],
+      })
     }
   }
+
+  // ---- Invariant 6's LICENCE LEDGER (D345) --------------------------------
+  // Every `commissioner_actions` row of the league, read as service role. A
+  // league writes a handful per season; the read still refuses a capped page
+  // rather than letting a truncated ledger turn a licensed cell into a
+  // false red (or hide a duplicate id).
+  const { data: actionRows, error: actionError } = await service
+    .from('commissioner_actions')
+    .select('id, target_type, target_id')
+    .eq('league_id', state.leagueId)
+    .order('id')
+  throwIfError(actionError, `${state.label}: audit commissioner_actions`)
+  if ((actionRows ?? []).length >= 1000) {
+    throw new Error(
+      `${state.label}: commissioner_actions read returned ${(actionRows ?? []).length} rows — PostgREST's cap; ` +
+        `refusing to read a possibly-truncated licence ledger as complete`,
+    )
+  }
+  const commissionerActions: AuditCommissionerAction[] = (actionRows ?? []).map((r) => ({
+    id: r.id,
+    target_type: r.target_type,
+    target_id: r.target_id,
+  }))
+
+  // ---- Invariant 8's seats: read from `league_members` (D339) -------------
+  const unmanagedSeats = await readUnmanagedSeats(service, state, rosters ?? [], positionById)
 
   // ---- Invariant 3's probe — a MUTATING probe, run last ------------------
   const rebuilds: AuditRebuild[] = []
@@ -2241,6 +2713,11 @@ export async function collectSeasonAudit(
     })),
     weeks: (weeks ?? []).map((w) => ({ week: w.week, status: String(w.status) })),
     finalCells,
+    commissionerActions,
+    allowIllegalLineups: state.allowIllegalLineups,
+    startingSlots: state.slots.map((s) => ({ key: s.key, eligible: [...s.eligible] })),
+    unmanagedSeats,
+    autopilotUnfillable: [...state.autopilotUnfillable.values()],
     rebuilds,
     reconcileFindings,
     workerErrors: [...workerErrors],
@@ -2818,6 +3295,16 @@ function seasonCoverageGaps(scenario: ScenarioId): string[] {
     'Q42 (a STARTER with a final game and no stat line) is COUNTED and CLASSIFIED, never asserted on: the ' +
       '§23.6 world publishes lines for eighteen players, so every other starter is a lawful no_stat_row by ' +
       'construction. Asserting either reading would harden an OPEN question (D327(9)).',
+    'A lawful override with a KNOCK-ON is NOT modelled (M6A L.E1.14 / D345). The run injects ONE commissioner ' +
+      'score correction on a final cell, chosen so it moves exactly that cell (the week\'s strictly-highest ' +
+      'scorer, +1.00: the result, the median and every other team\'s median_result stand). A production ' +
+      'override can lawfully reach OTHER final cells — restated points that flip another team\'s median ' +
+      'result, or a second-opponent result rendered in its sides\' primary cells — and D345\'s per-cell law ' +
+      '("exactly one audit row whose target_id is that matchup") as written would RED those siblings. ' +
+      'Widening the licence (e.g. to the receipt\'s affected_team_ids) is an Architect call. PROGRESS F373.',
+    'INVARIANT 2 (lineup legality) has NO provenance channel: a lawful commish_edit_lineup and a corrupt ' +
+      'lineup write are indistinguishable to it. Harmless while Q59 stands (a commissioner lifts TIMING, never ' +
+      'positional LEGALITY, so every lawful map is its own fit). Recorded, not fixed — PROGRESS Q59 / F324.',
   ]
   if (scenario === 'charted_late' || scenario === 'charted_revision') {
     gaps.push(
@@ -2893,7 +3380,25 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
         `benched for legality ${league.benchedForLegality}` +
         (league.allowIllegalLineups ? '' : '   <- §7.3.6 ENFORCED (D299 legality arm)'),
     )
+    // WHICH HAND set them (M6A L.E1.14 / F335): the harness sets a MANAGED
+    // seat through its manager's own door and never touches an unmanaged one.
+    const tickNamed = league.seatingTranscript.filter((t) => t.autopiloted && t.reportedByTick).length
+    lines.push(
+      `      set by: harness (manager's own door) ${league.lineupsSeated - league.lineupsAutopiloted} · ` +
+        `SERVER autopilot ${league.lineupsAutopiloted}/${league.unmanagedSeats} unmanaged seat(s) ` +
+        `(${tickNamed} named in a tick's autopiloted[])`,
+    )
   }
+  lines.push(
+    `UNMANAGED SEATS (invariant 8's premise, must be >= 1): ${report.unmanagedSeats} across the run · ` +
+      `${report.leagues.reduce((n, l) => n + l.lineupsAutopiloted, 0)} seated by the server at week 1`,
+  )
+  lines.push(
+    report.lawfulOverride === null
+      ? 'LAWFUL OVERRIDE (invariant 6\'s provenance arm, D345): NONE INJECTED'
+      : `LAWFUL OVERRIDE (invariant 6's provenance arm, D345): ${report.lawfulOverride.leagueLabel} matchup ` +
+          `${report.lawfulOverride.matchupId} — ${report.lawfulOverride.detail}`,
+  )
   const off = report.leagues.filter((l) => !l.allowIllegalLineups)
   if (off.length > 0) {
     lines.push(
