@@ -94,7 +94,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
                   <Link
                     href={entry.href}
                     onClick={close}
-                    className="flex h-[34px] items-center gap-2 rounded-sm px-2.5 text-[13px] font-medium text-n-3 transition-colors duration-200 ease-linear hover:bg-n-4 hover:text-ink"
+                    className="flex h-nav-tile items-center gap-2 rounded-sm px-2.5 text-[13px] font-medium text-n-3 transition-colors duration-200 ease-linear hover:bg-n-4 hover:text-ink"
                   >
                     <span className="truncate">{entry.name}</span>
                     {entry.subtitle && (

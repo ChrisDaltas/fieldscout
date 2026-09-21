@@ -71,6 +71,17 @@ const config: Config = {
           d: '#F97316',
           f: '#E5534B',
         },
+        // White-on-ink steps for the dark chrome (sidebar, rail). DEFAULT =
+        // resting text/icons, muted = section labels/roles/kbd text, wash =
+        // hover fill + crest tile fill, rule = divider lines, border = crest
+        // + kbd borders. One-off steps (20/40/60/70/80) stay as literal `white/NN`.
+        'on-ink': {
+          DEFAULT: 'rgb(255 255 255 / 0.75)',
+          muted: 'rgb(255 255 255 / 0.5)',
+          wash: 'rgb(255 255 255 / 0.1)',
+          rule: 'rgb(255 255 255 / 0.1)',
+          border: 'rgb(255 255 255 / 0.25)',
+        },
 
         /* ---- Legacy shadcn compatibility layer (HSL vars in globals.css) ---- */
         border: 'hsl(var(--border))',
@@ -199,12 +210,24 @@ const config: Config = {
         'rail-strip': '67px',
         'rail-panel': '256px',
         'card-pad': '16px',
+        // Shell-chrome constants shared across sidebar / rail / top bar.
+        // A token is shared between components only when they're the same
+        // design decision, not merely the same pixel number.
+        'count-chip': '14px', // unseen-count pill height + min-width
+        'nav-tile': '34px', // sidebar nav rows, collapsed icons, sidebar search, rail tool buttons, More-sheet rows. NOT the top search field.
+        'chrome-band': '37px', // sidebar logo band, rail account zone, rail panel head, draft bar — one continuous line across the app
+        'crest-row': '45px', // sidebar league rows, Teams panel rows
       },
       maxWidth: {
         content: '1152px',
         // Right context column — capped at a mobile-compliant width so it
         // stacks cleanly and the main column keeps the rest.
         rail: '374px',
+      },
+      // Tailwind v3's `minWidth` scale does NOT inherit from `spacing`, so
+      // the count-chip constant needs its own entry to generate min-w-count-chip.
+      minWidth: {
+        'count-chip': '14px',
       },
       // Hairline strokes: 0.5px everywhere (buttons opt back to 1px).
       borderWidth: {

@@ -125,11 +125,11 @@ function NavRow({
       href={item.href}
       title={collapsed ? item.label : undefined}
       className={cn(
-        'flex h-[34px] items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
-        collapsed && 'w-[34px] justify-center self-center px-0',
+        'flex h-nav-tile items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
+        collapsed && 'w-nav-tile justify-center self-center px-0',
         active
           ? 'bg-accent text-white'
-          : 'text-white/75 hover:bg-white/10 hover:text-white',
+          : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
       )}
     >
       <Icon name={item.icon} size={16} />
@@ -195,10 +195,10 @@ export function Sidebar() {
       )}
       aria-label="Main navigation"
     >
-      {/* Logo band — 37px, flush with the header line */}
+      {/* Logo band — h-chrome-band (37px), flush with the header line */}
       <div
         className={cn(
-          'flex h-[37px] shrink-0 items-center border-b border-white/10',
+          'flex h-chrome-band shrink-0 items-center border-b border-on-ink-rule',
           isCollapsed ? 'justify-center' : 'px-3.5',
         )}
       >
@@ -220,7 +220,7 @@ export function Sidebar() {
         <button
           onClick={toggleCollapsed}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-sm text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-nav-tile w-nav-tile shrink-0 items-center justify-center rounded-sm text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white"
         >
           <Icon name="burger" size={15} />
         </button>
@@ -228,18 +228,18 @@ export function Sidebar() {
           <button
             onClick={() => setPaletteOpen(true)}
             title="Search"
-            className="flex h-[34px] w-[34px] items-center justify-center rounded-sm text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex h-nav-tile w-nav-tile items-center justify-center rounded-sm text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white"
           >
             <Icon name="search" size={15} />
           </button>
         ) : (
           <button
             onClick={() => setPaletteOpen(true)}
-            className="flex h-[34px] min-w-0 flex-1 cursor-text items-center gap-2 rounded-sm border border-white/20 px-2.5 text-left text-[11px] font-semibold text-white/60 transition-colors hover:border-white/40"
+            className="flex h-nav-tile min-w-0 flex-1 cursor-text items-center gap-2 rounded-sm border border-white/20 px-2.5 text-left text-[11px] font-semibold text-white/60 transition-colors hover:border-white/40"
           >
             <Icon name="search" size={13} className="shrink-0 opacity-70" />
             <span className="truncate">Search players, lists, users…</span>
-            <kbd className="ml-auto shrink-0 rounded-sm border border-white/25 px-1 font-mono text-[9px] text-white/50">
+            <kbd className="ml-auto shrink-0 rounded-sm border border-on-ink-border px-1 font-mono text-[9px] text-on-ink-muted">
               /
             </kbd>
           </button>
@@ -275,8 +275,8 @@ export function Sidebar() {
             onClick={() => setMoreOpen((o) => !o)}
             title={isCollapsed ? (moreOpen ? 'Less' : 'More') : undefined}
             className={cn(
-              'flex h-[34px] items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white',
-              isCollapsed && 'w-[34px] justify-center self-center px-0',
+              'flex h-nav-tile items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white',
+              isCollapsed && 'w-nav-tile justify-center self-center px-0',
             )}
           >
             <Icon
@@ -291,11 +291,11 @@ export function Sidebar() {
           {featureFlags.leagues && myLeagues.length > 0 && (
           <div className={cn('mt-2.5', isCollapsed && 'mt-1.5')}>
             {isCollapsed ? (
-              <div className="mx-1.5 my-2 h-px bg-white/10" />
+              <div className="mx-1.5 my-2 h-px bg-on-ink-rule" />
             ) : (
               <button
                 onClick={() => setTeamsOpen((o) => !o)}
-                className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-[11px] font-bold text-white/50 transition-colors hover:text-white/80"
+                className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-[11px] font-bold text-on-ink-muted transition-colors hover:text-white/80"
               >
                 <span>Leagues</span>
                 <Icon
@@ -320,11 +320,11 @@ export function Sidebar() {
                     className={cn(
                       'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
                       isCollapsed
-                        ? 'h-[34px] w-[34px] justify-center self-center px-0'
-                        : 'h-[45px]',
+                        ? 'h-nav-tile w-nav-tile justify-center self-center px-0'
+                        : 'h-crest-row',
                       leagueActive
                         ? 'bg-accent text-white'
-                        : 'text-white/75 hover:bg-white/10 hover:text-white',
+                        : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
                     )}
                   >
                     {lg.avatar_url ? (
@@ -332,10 +332,10 @@ export function Sidebar() {
                       <img
                         src={lg.avatar_url}
                         alt=""
-                        className="h-[26px] w-[26px] shrink-0 rounded-sm border border-white/25 object-cover"
+                        className="h-[26px] w-[26px] shrink-0 rounded-sm border border-on-ink-border object-cover"
                       />
                     ) : (
-                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[10px] font-extrabold">
+                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-on-ink-border bg-on-ink-wash text-[10px] font-extrabold">
                         {leagueInitials(lg.name)}
                       </span>
                     )}
@@ -345,7 +345,7 @@ export function Sidebar() {
                         <span
                           className={cn(
                             'truncate text-[10px] font-semibold',
-                            leagueActive ? 'text-white/80' : 'text-white/50',
+                            leagueActive ? 'text-white/80' : 'text-on-ink-muted',
                           )}
                         >
                           {ROLE_LABEL[lg.my_role] ?? lg.my_role}

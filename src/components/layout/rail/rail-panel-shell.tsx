@@ -18,7 +18,7 @@ interface RailPanelShellProps {
 export function RailPanelShell({ title, onClose, children }: RailPanelShellProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[37px] shrink-0 items-center gap-2 border-b border-ink px-3">
+      <div className="flex h-chrome-band shrink-0 items-center gap-2 border-b border-ink px-3">
         <span className="mr-auto truncate text-[11px] font-extrabold text-ink">
           {title}
         </span>

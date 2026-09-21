@@ -71,7 +71,7 @@ export function DraftBar() {
   if (!draft) return null
 
   return (
-    <div className="flex h-[37px] shrink-0 items-center gap-3 border-b border-ink bg-brand px-7 text-ink">
+    <div className="flex h-chrome-band shrink-0 items-center gap-3 border-b border-ink bg-brand px-7 text-ink">
       <Button variant="dark" size="sm" shadow asChild>
         <Link href={draft.href} {...roomEntry}>
           Join

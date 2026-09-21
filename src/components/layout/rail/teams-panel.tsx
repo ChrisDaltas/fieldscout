@@ -53,7 +53,7 @@ export function TeamsPanel({ onClose, teams }: TeamsPanelProps) {
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {loading &&
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex h-[45px] items-center gap-2.5 border-b border-n-4 px-3">
+            <div key={i} className="flex h-crest-row items-center gap-2.5 border-b border-n-4 px-3">
               <Skeleton className="h-7 w-7 shrink-0 rounded-sm" />
               <Skeleton className="h-3 w-32" />
             </div>
@@ -74,7 +74,7 @@ export function TeamsPanel({ onClose, teams }: TeamsPanelProps) {
             <Link
               key={team.id}
               href={`/app/leagues/${team.id}`}
-              className="flex h-[45px] items-center gap-2.5 border-b border-n-4 px-3 transition-colors duration-200 ease-linear hover:bg-n-4"
+              className="flex h-crest-row items-center gap-2.5 border-b border-n-4 px-3 transition-colors duration-200 ease-linear hover:bg-n-4"
             >
               <UserAvatar
                 kind="team"

@@ -90,7 +90,7 @@ function NotificationBell() {
     >
       <Icon name="notification" size={14} />
       {unread > 0 && (
-        <span className="fs-num absolute right-0 top-0 inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-pill border border-ink bg-brand px-1 text-[9px] font-bold leading-none text-ink">
+        <span className="fs-num absolute right-0 top-0 inline-flex h-count-chip min-w-count-chip items-center justify-center rounded-pill border border-ink bg-brand px-1 text-[9px] font-bold leading-none text-ink">
           {unread > 9 ? '9+' : unread}
         </span>
       )}

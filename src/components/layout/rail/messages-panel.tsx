@@ -299,7 +299,7 @@ export function MessagesPanel({ onClose, threads = [] }: MessagesPanelProps) {
                     {preview}
                   </span>
                   {t.unread > 0 && (
-                    <span className="fs-num ml-auto inline-flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
+                    <span className="fs-num ml-auto inline-flex h-count-chip min-w-count-chip shrink-0 items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
                       {t.unread}
                     </span>
                   )}
