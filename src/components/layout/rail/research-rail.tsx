@@ -93,7 +93,7 @@ export function ResearchRail() {
                   'relative flex h-nav-tile w-nav-tile items-center justify-center rounded-sm transition-colors duration-200 ease-linear',
                   isActive
                     ? 'bg-white text-ink'
-                    : 'text-white/70 hover:bg-on-ink-wash hover:text-white',
+                    : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
                 )}
               >
                 <Icon name={tool.icon} size={16} />
