@@ -141,22 +141,34 @@ modal's gate (F363(c) / R1056 — no UI blocks on an empty reason); **F365
 discharged** (the setting replay guard narrowed to 129's class), R1063 /
 R1064 taken; the `✸` badge's words widened with F344's flag; **discharges
 F343, F344, F361, F363(c)/(d), F365**, mints **F367 / F368 / F369**, records
-**D366**), so
-the next takeable task is **`L.E1.14`** — the synthetic gate learns about
-autopilot and about lawful overrides (TS only, no migration). After it:
-**L.E1.16** (`commish_edit_bracket`, F360).
+**D366**), and
+**`L.E1.14` is LANDED** (TS only, NO migration — heads stay 133 / 081: the
+synthetic gate stops seating unmanaged seats — `seedLineups`' `manager ??
+commishClient` fallback is gone, so the SERVER's autopilot seats them or
+invariant 8 `unmanaged-seat-autopilot` reds, its premise a run PROBLEM; and
+invariant 6 is TAUGHT provenance, never exempted — `baselines[]`, a
+re-baseline path with a pre-event drift read, exactly one audit row per
+baseline change, `renderCells` re-cut as a partition by owner, one lawful
+`commish_edit_score` injected per run with no reason; **discharges F335 +
+F336**, builds F334's second half, mints **F373** (knock-on overrides are not
+modelled) and **F374** (the season gate is RED today on an
+`allow_illegal_lineups = false` league because the restored pool carries real
+`Out` QBs — whoever next runs `test:gate:m4` meets it), records **D368**), so
+the next takeable task is **`L.E1.16`** — `commish_edit_bracket`, hand-picked
+playoff matchups (F360; a schema task — measure the heads, D161). **F366**
+(a bye row's score through `/commish/score`) rides with or before it.
 ⚠ **Chris owes `npx supabase db push` for migrations 125–132** (hosted tops
 out at 124; 131 re-defines 123's verb, which IS in production; until 132 is
 pushed the hosted Remix preview still answers `reason_required = NOT free` —
 harmless, the modal no longer reads it as a gate).
 **`L.E1.17` (INSERTED BY RULING — Chris 2026-09-21, the repo went public) is
 BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
-mints F372, records D367. It does NOT move the pointer: next is still
-`L.E1.14`, then `L.E1.16`.** ⚠ **The push debt is now 125–133, and production
+mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
+L.E1.14's own PR moved it to `L.E1.16`.** ⚠ **The push debt is now 125–133, and production
 is NOT protected against the F349 TRUNCATE grant until Chris runs
 `npx supabase db push`.**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's and L.E1.13's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's and L.E1.14's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —
