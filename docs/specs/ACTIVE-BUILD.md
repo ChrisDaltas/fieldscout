@@ -149,6 +149,12 @@ autopilot and about lawful overrides (TS only, no migration). After it:
 out at 124; 131 re-defines 123's verb, which IS in production; until 132 is
 pushed the hosted Remix preview still answers `reason_required = NOT free` —
 harmless, the modal no longer reads it as a gate).
+**`L.E1.17` (INSERTED BY RULING — Chris 2026-09-21, the repo went public) is
+BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
+mints F372, records D367. It does NOT move the pointer: next is still
+`L.E1.14`, then `L.E1.16`.** ⚠ **The push debt is now 125–133, and production
+is NOT protected against the F349 TRUNCATE grant until Chris runs
+`npx supabase db push`.**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
 L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's and L.E1.13's own sessions.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
