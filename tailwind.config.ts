@@ -74,7 +74,7 @@ const config: Config = {
         // White-on-ink steps for the dark chrome (sidebar, rail). DEFAULT =
         // resting text/icons, muted = section labels/roles/kbd text, wash =
         // hover fill + crest tile fill, rule = divider lines, border = crest
-        // + kbd borders. One-off steps (20/40/60/70/80) stay as literal `white/NN`.
+        // + kbd borders. One-off steps (20/40/60/80) stay as literal `white/NN`.
         'on-ink': {
           DEFAULT: 'rgb(255 255 255 / 0.75)',
           muted: 'rgb(255 255 255 / 0.5)',
