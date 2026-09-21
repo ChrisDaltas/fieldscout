@@ -33,12 +33,17 @@ select is_empty(
 
 -- Catch-up grants on the existing surface (player_stats as the D18 witness):
 -- the FULL privilege set, all three API roles (R4 — not just a SELECT sample).
+-- RE-CUT by migration 133 (L.E1.17 / F349): RLS does not gate TRUNCATE, so
+-- anon/authenticated no longer hold it — the other SEVEN stand, service_role
+-- keeps all EIGHT. pgTAP 081 owns the schema-wide TRUNCATE assertion; these
+-- pins only keep the 037 model honest about what it still grants.
 select ok(
-  (select bool_and(has_table_privilege(r.rolename, 'public.player_stats', p.priv))
+  (select bool_and(has_table_privilege(r.rolename, 'public.player_stats', p.priv)
+                   = not (p.priv = 'TRUNCATE' and r.rolename <> 'service_role'))
    from (values ('anon'), ('authenticated'), ('service_role')) r(rolename)
    cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'),
                ('TRUNCATE'), ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) p(priv)),
-  'all 3 API roles hold all 8 table privileges on player_stats (037 catch-up)'
+  'player_stats: service_role holds all 8 table privileges; anon/authenticated hold exactly the 7 that are not TRUNCATE (037 catch-up, amended by 133)'
 );
 select ok(has_table_privilege('anon', 'public.player_stats', 'INSERT'),
   'anon holds INSERT on player_stats — RLS, not grants, is what denies writes');
@@ -62,11 +67,12 @@ create function public._grants_canary_fn() returns int
   language sql as 'select 1';
 
 select ok(
-  (select bool_and(has_table_privilege(r.rolename, 'public._grants_canary', p.priv))
+  (select bool_and(has_table_privilege(r.rolename, 'public._grants_canary', p.priv)
+                   = not (p.priv = 'TRUNCATE' and r.rolename <> 'service_role'))
    from (values ('anon'), ('authenticated'), ('service_role')) r(rolename)
    cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'),
                ('TRUNCATE'), ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) p(priv)),
-  'future table auto-grants all 8 privileges to all 3 API roles (037 table default ACL)'
+  'future table auto-grants 8 privileges to service_role and the 7 non-TRUNCATE ones to anon/authenticated (037 table default ACL, amended by 133)'
 );
 select ok(
   (select bool_and(has_sequence_privilege(r.rolename, 'public._grants_canary_id_seq', p.priv))
