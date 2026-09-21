@@ -10,6 +10,9 @@
  * is why its falsifiability lives here and is DECLARED rather than shipped
  * decorative (D267; `season-invariants.ts`'s banner).
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -645,6 +648,30 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
     a.lineups[2]!.slot_map = { 'qb:0': 'p5', 'ir1:0': 'p6' }
     a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, roster: a.unmanagedSeats[0]!.roster.filter((p) => p.player_id !== 'p10') }]
     expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+  })
+})
+
+describe('F335 — the harness never does the server\'s job again (source pins over season-runner.ts)', () => {
+  const source = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-runner.ts'), 'utf8')
+  // Comments are stripped first: the docblocks QUOTE the struck fallback.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  it('`seedLineups` has NO commissioner fallback — an unmanaged seat is never set by the harness', () => {
+    expect(code).not.toMatch(/\?\?\s*commishClient/)
+    // …and the ONE `setLineup` call the runner makes carries no `reason`
+    // (the commissioner arm's argument): it is a manager's own door only.
+    const calls = code.match(/await setLineup\([\s\S]*?\n {6}\}\)/g) ?? []
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain('setLineup(manager,')
+    expect(calls[0]).not.toContain('reason')
+  })
+
+  it('invariant 6 is never exempted for an overridden cell (D345 pre-refuses it)', () => {
+    const invariants = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-invariants.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    expect(invariants).not.toMatch(/is_overridden/)
+    expect(invariants).not.toMatch(/overridden\s*\)\s*continue/)
   })
 })
 
